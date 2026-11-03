@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ContentBrowserNewAssetDialog, ContentBrowserNewAssetMenu } from "./content-browser-new-asset-dialog";
+import { CONTENT_BROWSER_FOLDER_COLOR } from "./content-browser-folder-tile";
 import type { CreatableAssetType } from "../lib/content-browser-helpers";
 
 const layout = vi.hoisted(() => ({ phone: false }));
@@ -291,7 +292,7 @@ describe("ContentBrowserNewAssetMenu", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("lists Folder first and makes a folder from it instead of opening the New Asset dialog", () => {
+  it("lists Folder first under Structure, grey like folder tiles, and makes a folder instead of opening the New Asset dialog", () => {
     const onSelect = vi.fn();
     const onNewFolder = vi.fn();
     render(
@@ -299,8 +300,15 @@ describe("ContentBrowserNewAssetMenu", () => {
         <button type="button">New Asset</button>
       </ContentBrowserNewAssetMenu>,
     );
-    const items = [...screen.getByTestId("new-asset-type-menu").querySelectorAll("[data-testid^='search-item-']")];
+    const menu = screen.getByTestId("new-asset-type-menu");
+    const items = [...menu.querySelectorAll("[data-testid^='search-item-']")];
     expect(items[0]?.textContent).toBe("Folder");
+    const labels = [...menu.querySelectorAll("[data-slot='dropdown-menu-label']")].map((node) => node.textContent);
+    // The menu title, then Structure above every asset type category.
+    expect(labels.slice(0, 3)).toEqual(["New Asset", "Structure", "World"]);
+    expect(
+      screen.getByTestId("search-item-folder").querySelector("[data-type-icon='Folder']")?.getAttribute("stroke"),
+    ).toBe(CONTENT_BROWSER_FOLDER_COLOR);
 
     fireEvent.click(screen.getByTestId("search-item-folder"));
     expect(onNewFolder).toHaveBeenCalledTimes(1);

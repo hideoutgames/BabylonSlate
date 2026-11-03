@@ -40,6 +40,7 @@ import {
   creatableAssetTypeLabel,
   type CreatableAssetType,
 } from "../lib/content-browser-helpers";
+import { CONTENT_BROWSER_FOLDER_COLOR } from "./content-browser-folder-tile";
 import { FolderPickerDialog } from "./folder-picker-dialog";
 import { hasTouchInput } from "../lib/touch-input";
 import { usePhoneLayout, usePhoneTouchSizing } from "../shell/use-platform-layout";
@@ -154,13 +155,27 @@ function NewAssetLocation({
 /** New Asset menu id of the Folder entry, which is no asset type. */
 export const NEW_ASSET_FOLDER_ID = "folder";
 
+/** New Asset menu category of the Folder entry, above every asset type group. */
+export const NEW_ASSET_STRUCTURE_GROUP = "Structure";
+
 const NEW_ASSET_TYPE_ITEMS: SearchDialogItem[] = [
-  // First and ungrouped: a folder is made at once and renamed inline, with no dialog.
+  // First, in its own category: a folder is made at once and renamed inline,
+  // with no dialog. Grey like the Content Browser's folder tiles.
   {
     id: NEW_ASSET_FOLDER_ID,
     label: "Folder",
+    group: NEW_ASSET_STRUCTURE_GROUP,
     keywords: "New Folder Directory",
-    leading: <TypeVisualIcon visual={{ ...resolveTypeVisual({ family: "folder" }), icon: FolderIcon, iconKey: "Folder" }} />,
+    leading: (
+      <TypeVisualIcon
+        visual={{
+          ...resolveTypeVisual({ family: "folder" }),
+          icon: FolderIcon,
+          iconKey: "Folder",
+          colorVar: CONTENT_BROWSER_FOLDER_COLOR,
+        }}
+      />
+    ),
   },
   ...CREATABLE_ASSET_TYPE_GROUPS.flatMap((group) =>
     group.types.map((type) => ({
@@ -174,8 +189,9 @@ const NEW_ASSET_TYPE_ITEMS: SearchDialogItem[] = [
 ];
 
 /**
- * Compact searchable menu: Folder, then the creatable types grouped by
- * category. Folder creates a folder; a type opens the New Asset dialog.
+ * Compact searchable menu: Folder under Structure, then the creatable types
+ * grouped by category. Folder creates a folder; a type opens the New Asset
+ * dialog.
  */
 export function ContentBrowserNewAssetMenu({
   open,

@@ -531,7 +531,8 @@ function ContentBrowserWorkspaceBody({
     treeRenamingId,
     setTreeRenamingId,
     finishTreeRename,
-    gridRenamingPath,
+    startRename,
+    gridRenamingTarget,
     finishGridRename,
     dialogProps: nameDialogProps,
   } = useContentBrowserNameFlow({
@@ -544,6 +545,7 @@ function ContentBrowserWorkspaceBody({
     existingFolderPaths,
     browserRows,
     browserRoots,
+    gridItems,
     selectedFolderPath,
     setSelectedFolderPath,
     setSelectedGuids,
@@ -608,8 +610,12 @@ function ContentBrowserWorkspaceBody({
   // Scroll the windowed grid to the renaming tile so it mounts and shows its field.
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
-    if (!gridRenamingPath || !scroller) return;
-    const index = gridItems.findIndex((item) => item.kind === "folder" && item.path === gridRenamingPath);
+    if (!gridRenamingTarget || !scroller) return;
+    const index = gridItems.findIndex((item) =>
+      gridRenamingTarget.kind === "folder"
+        ? item.kind === "folder" && item.path === gridRenamingTarget.path
+        : item.kind === "asset" && item.asset.header.guid === gridRenamingTarget.guid,
+    );
     if (index < 0) return;
     const row = Math.floor(index / contentBrowserColumnCount(scroller.clientWidth));
     const top = CONTENT_BROWSER_GRID_PAD_PX + row * (CONTENT_BROWSER_TILE_HEIGHT_PX + CONTENT_BROWSER_GRID_GAP_PX);
@@ -618,7 +624,7 @@ function ContentBrowserWorkspaceBody({
     else if (bottom > scroller.scrollTop + scroller.clientHeight) {
       scroller.scrollTop = bottom + CONTENT_BROWSER_GRID_PAD_PX - scroller.clientHeight;
     }
-  }, [gridItems, gridRenamingPath, scrollerRef]);
+  }, [gridItems, gridRenamingTarget, scrollerRef]);
 
   const keybinds = useKeybindings();
   const {
@@ -653,7 +659,7 @@ function ContentBrowserWorkspaceBody({
     setOperationError,
     folderAssetCount,
     runCopySteps,
-    setNameDialog,
+    startRename,
     setRetargetPickerOpen,
     openMoveForSnapshot,
     setReferenceGuid,
@@ -708,7 +714,7 @@ function ContentBrowserWorkspaceBody({
         openTileMenu(guid, clientX, clientY);
       },
       consumeSelectClick,
-      finishFolderRename: finishGridRename,
+      finishRename: finishGridRename,
     };
   });
   const gridActions = useMemo<ContentBrowserGridActions>(
@@ -722,8 +728,8 @@ function ContentBrowserWorkspaceBody({
         gridHandlersRef.current?.openAssetMenu(guid, clientX, clientY),
       consumeSelectClick: () =>
         gridHandlersRef.current?.consumeSelectClick() ?? false,
-      finishFolderRename: (path, name) =>
-        gridHandlersRef.current?.finishFolderRename(path, name),
+      finishRename: (hit, name) =>
+        gridHandlersRef.current?.finishRename(hit, name),
     }),
     [],
   );
@@ -933,7 +939,7 @@ function ContentBrowserWorkspaceBody({
             pluginRootIcons={pluginRootIcons}
             sourceControlEnabled={sourceControl.enabled}
             tileLocks={tileLocks}
-            renamingFolderPath={gridRenamingPath}
+            renaming={gridRenamingTarget}
             gridActions={gridActions}
           />
         </ResizablePanel>

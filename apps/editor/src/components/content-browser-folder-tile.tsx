@@ -1,7 +1,5 @@
 import { FolderIcon, type LucideIcon } from "lucide-react";
 import {
-  InlineRenameInput,
-  SelectableText,
   TYPE_VISUAL_ICON_TILE_SIZE,
   TYPE_VISUAL_ICON_TILE_STROKE_WIDTH,
 } from "@haptic/editor-kit";
@@ -9,10 +7,13 @@ import {
   Card,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@haptic/ui/components/card";
 import { cn } from "@haptic/ui/lib/utils";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
+import { ContentBrowserTileName } from "./content-browser-tile-name";
+
+/** Folder glyph color in grid tiles, also used by the New Asset menu's Folder. */
+export const CONTENT_BROWSER_FOLDER_COLOR = "var(--muted-foreground)";
 
 export interface ContentBrowserFolderTileProps {
   path: string;
@@ -27,7 +28,7 @@ export interface ContentBrowserFolderTileProps {
   }) => void;
   onLongPressMenu: (clientX: number, clientY: number) => void;
   consumeSelectClick?: () => boolean;
-  /** Shows the name as a focused inline rename (a folder New Folder just made). */
+  /** Shows the name as a focused inline rename (New Folder or Rename). */
   renaming?: boolean;
   /** The trimmed new name, or null when cancelled or unchanged. */
   onRenameDone?: (name: string | null) => void;
@@ -85,24 +86,19 @@ export function ContentBrowserFolderTile({
             size={TYPE_VISUAL_ICON_TILE_SIZE}
             strokeWidth={TYPE_VISUAL_ICON_TILE_STROKE_WIDTH}
             absoluteStrokeWidth
-            className="size-10 shrink-0 overflow-visible text-muted-foreground"
+            color={CONTENT_BROWSER_FOLDER_COLOR}
+            className="size-10 shrink-0 overflow-visible"
             aria-hidden
           />
         </div>
         <CardHeader className="min-h-0 w-full flex-1 content-center gap-0.5 p-1.5">
-          {editing ? (
-            <InlineRenameInput
-              value={name}
-              aria-label="Folder Name"
-              data-testid={`content-folder-rename-${path}`}
-              className="h-5 min-h-5 w-full flex-none text-xs md:text-xs"
-              onDone={(next) => onRenameDone?.(next)}
-            />
-          ) : (
-            <CardTitle className="truncate text-xs font-medium">
-              <SelectableText>{name}</SelectableText>
-            </CardTitle>
-          )}
+          <ContentBrowserTileName
+            name={name}
+            editing={editing}
+            onRenameDone={onRenameDone}
+            aria-label="Folder Name"
+            data-testid={`content-folder-rename-${path}`}
+          />
           <CardDescription className="truncate text-[10px]">
             Folder
           </CardDescription>
