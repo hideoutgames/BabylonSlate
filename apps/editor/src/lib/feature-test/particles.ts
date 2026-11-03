@@ -24,6 +24,7 @@ import {
 } from "./context";
 import { classGraph, gExec, gNode, gWire } from "./graph";
 import { stressPoint } from "./layout";
+import { FEATURE_TEST_SPRITE_SHEET } from "./imports";
 import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./materials";
 import { FEATURE_TEST_TWO_D_CHARACTERS_LAYER } from "./two-d";
 
@@ -38,10 +39,13 @@ export const FEATURE_TEST_PARTICLE_NAMES = {
   stressEmitter: "FT_FxStressEmitter",
   flashEmitter: "FT_FxFlashEmitter",
   glowGraph: "FT_FxGlowGraph",
+  /** A flipbook: Sprite Sheet and Animate Sprite Sheet over the generated 4 × 4 sheet. */
+  sheetGraph: "FT_FxSheetGraph",
   /** Mixes the Basic fountain emitter and the CPU Particle Graph in one System. */
   showcase: "FT_FxShowcase",
   sparks: "FT_FxSparks",
   smoke: "FT_FxSmoke",
+  sheet: "FT_FxSheet",
   /** Heavy GPU workload, placed only in `FT_Stress`. */
   stress: "FT_FxStress",
   /** A Once burst that `FT_FxFlashRelay` replays from Event On Particles Finished. */
@@ -90,6 +94,7 @@ export function featureTestParticleAssetGuid(
 export async function buildFeatureTestParticles(ctx: FeatureTestContext): Promise<void> {
   const soft = requireRef(ctx.assets.materials.particle, "the particle Material");
   const glow = requireRef(ctx.assets.materials.particleAdditive, "the additive particle Material");
+  const sheetMaterial = requireRef(ctx.assets.materials.particleSheet, "the sprite sheet particle Material");
   const smokeMaterial = featureTestMaterialAssetGuid(ctx, "MaterialInstance", FEATURE_TEST_MATERIAL_NAMES.particleSmoke);
 
   const fountain = await saveEmitter(ctx, NAMES.fountainEmitter, fountainEmitter(soft));
@@ -101,6 +106,13 @@ export async function buildFeatureTestParticles(ctx: FeatureTestContext): Promis
       payload: payload(glowGraph(NAMES.glowGraph, glow)),
     })
   ).guid;
+
+  const sheetGraph = (
+    await ctx.createAsset("ParticleGraph", FOLDER, NAMES.sheetGraph, {
+      payload: payload(sheetFlipbookGraph(NAMES.sheetGraph, sheetMaterial)),
+    })
+  ).guid;
+  await saveSystem(ctx, NAMES.sheet, [sheetGraph], "world");
 
   const showcase = await saveSystem(ctx, NAMES.showcase, [fountain, graph], "world");
   const sparkBursts = await saveSystem(ctx, NAMES.sparks, [sparks], "world");
@@ -269,6 +281,7 @@ export async function placeFeatureTestParticles(ctx: FeatureTestContext): Promis
   sparkBursts.components[0]!.properties.parameterOverrides = { "Spark Intensity": [2] };
   ctx.addActor(sparkBursts, { zone: "particles" });
   ctx.addActor(emitterActor("smoke", "Rising Smoke", system(NAMES.smoke), zone.at(7, 0.1, -2)), { zone: "particles" });
+  ctx.addActor(emitterActor("sheet", "Sprite Sheet Flipbook", system(NAMES.sheet), zone.at(-7, 1.2, 4)), { zone: "particles" });
   const relay = flashRelays.get(ctx);
   if (!relay) throw new Error("FeatureTest could not find the Flash Relay Class");
   ctx.addActor(actor("ft-fx-flash-relay", "Flash Relay", tf(zone.at(0, 1.5, 4)), instanceComponents("ft-fx-flash-relay", relay.components), {
@@ -534,6 +547,51 @@ function glowGraph(name: string, materialGuid: string): ParticleGraphDocument {
     { id: "e-gravity-color", sourceNodeId: "gravity", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
     { id: "e-size-create", sourceNodeId: "sizeRandom", sourcePinId: "out", targetNodeId: "create", targetPinId: "size" },
     { id: "e-glowRate-output", sourceNodeId: "glowRate", sourcePinId: "out", targetNodeId: "output", targetPinId: "emitRate" },
+  );
+  return graph;
+}
+
+/**
+ * Sprite Sheet flipbook: a slow stream of large particles, each born on a random cell of the
+ * generated 4 × 4 sheet (Sprite Sheet, Random Start Cell) and stepping through all 16 cells at
+ * 8 frames a second (Animate Sprite Sheet, Loop), drawn by the sheet Material.
+ */
+function sheetFlipbookGraph(name: string, materialGuid: string): ParticleGraphDocument {
+  const graph = createDefaultParticleGraphDocument(name);
+  graph.materialGuid = materialGuid;
+  graph.settings = { capacity: 64, loop: "infinite", duration: 4, prewarm: 1, blendMode: "standard", billboard: "all" };
+  const edit = (id: string, properties: Record<string, unknown>) => {
+    const found = graph.nodes.find((entry) => entry.id === id);
+    if (!found) throw new Error(`FeatureTest Particle Graph has no "${id}" node.`);
+    Object.assign(found.properties, properties);
+  };
+  edit("create", { "default:emitPower": [0.6], "default:lifetime": [3], "default:size": [0.8], "default:color": [1, 1, 1, 1] });
+  edit("shape", { "default:radius": [0.4] });
+  edit("output", { "default:emitRate": [6] });
+  const { columns, rows } = FEATURE_TEST_SPRITE_SHEET;
+  graph.nodes.push(
+    {
+      id: "sheet",
+      type: "sprite.setup",
+      position: { x: 860, y: -200 },
+      properties: {
+        ...newParticleNodeProperties("sprite.setup"),
+        columns,
+        rows,
+        startCell: 0,
+        endCell: columns * rows - 1,
+        framesPerSecond: 8,
+        loop: true,
+        randomStartCell: true,
+      },
+    },
+    { id: "animate", type: "update.basicSprite", position: { x: 1100, y: -200 }, properties: {} },
+  );
+  graph.edges = graph.edges.filter((entry) => entry.id !== "e-velocity-color");
+  graph.edges.push(
+    { id: "e-velocity-sheet", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "sheet", targetPinId: "particle" },
+    { id: "e-sheet-animate", sourceNodeId: "sheet", sourcePinId: "out", targetNodeId: "animate", targetPinId: "particle" },
+    { id: "e-animate-color", sourceNodeId: "animate", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
   );
   return graph;
 }

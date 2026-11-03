@@ -38,6 +38,7 @@ export const FEATURE_TEST_MATERIAL_NAMES = {
   particle: "FT_MatParticleSoft",
   particleSmoke: "FT_MatParticleSmoke",
   particleAdditive: "FT_MatParticleGlow",
+  particleSheet: "FT_MatParticleSheet",
   postProcess: "FT_MatPostGrade",
   landscape: "FT_MatLandscape",
   overlayUnlit: "FT_MatOverlayUnlit",
@@ -76,6 +77,7 @@ export function featureTestMaterialAssetGuid(
  * - emissive: `Base Color` (color), `Roughness`, `Scroll Speed`, `Emissive Strength`
  * - translucent: `Base Color` (color), `Opacity`, `Roughness`, `Rim Color` (color)
  * - particle / particleAdditive: `Intensity` (+ `Falloff` on the additive glow)
+ * - particleSheet: `Sheet` (texture)
  * - postProcess: `Desaturation` (0..1), `Vignette` (0..1 edge darkening)
  * - overlayUnlit: `Tint` (color), `Opacity`, `Scroll Speed`
  * - landscape: none (see `landscapeMaterial` for the paint layer semantics)
@@ -108,6 +110,8 @@ export async function buildFeatureTestMaterials(ctx: FeatureTestContext): Promis
   const particle = await saveMaterial(ctx, NAMES.particle, particleSoftMaterial(NAMES.particle));
   await saveInstance(ctx, NAMES.particleSmoke, particle, "particle", { Intensity: float(0.75) });
   const particleAdditive = await saveMaterial(ctx, NAMES.particleAdditive, particleGlowMaterial(NAMES.particleAdditive));
+  const particleSheet = await saveMaterial(ctx, NAMES.particleSheet, particleSheetMaterial(NAMES.particleSheet,
+    requireRef(ctx.assets.textures.spriteSheet, "the sprite sheet Texture")));
   const postProcess = await saveMaterial(ctx, NAMES.postProcess, postGradeMaterial(NAMES.postProcess));
   const landscape = await saveMaterial(ctx, NAMES.landscape, landscapeMaterial(NAMES.landscape));
   const overlayUnlit = await saveMaterial(ctx, NAMES.overlayUnlit, overlayUnlitMaterial(NAMES.overlayUnlit));
@@ -120,6 +124,7 @@ export async function buildFeatureTestMaterials(ctx: FeatureTestContext): Promis
     translucent,
     particle,
     particleAdditive,
+    particleSheet,
     postProcess,
     landscape,
     overlayUnlit,
@@ -730,6 +735,29 @@ function particleGlowMaterial(name: string): MaterialDocument {
   wire(doc, "intensity", "out", "boost", "b");
   wire(doc, "particleColor", "color", "lit", "a");
   wire(doc, "glow", glowPin, "lit", "b");
+  wire(doc, "lit", "out", "output", "color");
+  return doc;
+}
+
+/**
+ * Particle domain sprite sheet: the Sheet Texture sampled at the particle UV (one cell of it when
+ * the Particle Graph has a Sprite Sheet) × Particle Color. Nearest sampling keeps cells crisp.
+ */
+function particleSheetMaterial(name: string, sheetGuid: string): MaterialDocument {
+  const doc = blankMaterial(name, "particle", {
+    blendMode: "translucent",
+    preview: { mesh: "plane", customMeshGuid: null },
+  });
+  node(doc, "sheet", "param.texture", 0, 0, { name: "Sheet", textureGuid: sheetGuid });
+  node(doc, "uv", "input.uv", 0, 1);
+  node(doc, "particleColor", "input.particleColor", 0, 2);
+  node(doc, "sample", "texture.sample", 1, 0, { filter: "nearest" });
+  node(doc, "lit", "math.multiply", 2, 1);
+  node(doc, "output", "output.particle", 3, 1);
+  wire(doc, "sheet", "out", "sample", "texture");
+  wire(doc, "uv", "uv", "sample", "uv");
+  wire(doc, "sample", "rgba", "lit", "a");
+  wire(doc, "particleColor", "color", "lit", "b");
   wire(doc, "lit", "out", "output", "color");
   return doc;
 }

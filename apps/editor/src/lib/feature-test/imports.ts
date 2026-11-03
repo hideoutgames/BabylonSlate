@@ -5,6 +5,7 @@ import {
 } from "@haptic/assets";
 import { SKYBOX_FACE_KEYS } from "@haptic/core";
 import { bundledAsciiTypeFace } from "@haptic/render/default-typeface";
+import { encodeRgbaPng } from "@haptic/render/png-encode";
 import { MANNEQUIN_ACTOR_ID, MANNEQUIN_ASSET_FOLDER, MANNEQUIN_CLASS_FILE, MANNEQUIN_CLASS_ID } from "../scaffold-empty-3d";
 import type { FeatureTestContext } from "./context";
 import {
@@ -23,6 +24,40 @@ const TEXTURES = "Textures";
 const SKY = "Sky";
 const MODELS = "Models";
 const FONTS = "Fonts";
+
+/** The generated sprite sheet's grid: Columns × Rows cells of `cell` pixels. */
+export const FEATURE_TEST_SPRITE_SHEET = { columns: 4, rows: 4, cell: 16 } as const;
+
+/**
+ * The sprite sheet's RGBA pixels, computed from numbers (no artwork): cell c (from the top
+ * left, row by row) is a disc whose hue steps around the colour wheel and whose radius grows
+ * with c % 4, on a transparent background, so each frame of a flipbook reads differently.
+ */
+export function featureTestSpriteSheetPixels(): { width: number; height: number; rgba: Uint8Array } {
+  const { columns, rows, cell } = FEATURE_TEST_SPRITE_SHEET;
+  const width = columns * cell;
+  const height = rows * cell;
+  const rgba = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = Math.floor(y / cell) * columns + Math.floor(x / cell);
+      const dx = (x % cell) + 0.5 - cell / 2;
+      const dy = (y % cell) + 0.5 - cell / 2;
+      const radius = 3 + (index % 4) * 1.5;
+      const inside = Math.hypot(dx, dy) <= radius;
+      // Hue sextants: full saturation and value.
+      const hue = (index / (columns * rows)) * 6;
+      const fall = 1 - Math.abs((hue % 2) - 1);
+      const [r, g, b] = [[1, fall, 0], [fall, 1, 0], [0, 1, fall], [0, fall, 1], [fall, 0, 1], [1, 0, fall]][Math.floor(hue) % 6]!;
+      const offset = (y * width + x) * 4;
+      rgba[offset] = Math.round(r * 255);
+      rgba[offset + 1] = Math.round(g * 255);
+      rgba[offset + 2] = Math.round(b * 255);
+      rgba[offset + 3] = inside ? 255 : 0;
+    }
+  }
+  return { width, height, rgba };
+}
 
 /** Engine billboard PNGs (already published) reused as UI icons. */
 const UI_ICON_STEMS = ["camera", "audio", "particles", "point_light", "spot_light", "navmesh", "default"] as const;
@@ -82,6 +117,12 @@ export async function importFeatureTestContent(ctx: FeatureTestContext): Promise
     createSkyboxFaceTextureResult({ name: "FT_Sky_Net", guid: netGuid, pngBytes: await host.loadBytes(SKYBOX_NET_PATH) }),
   );
   assets.textures.skyboxNet = netGuid;
+
+  const sheet = featureTestSpriteSheetPixels();
+  assets.textures.spriteSheet = single(
+    await ctx.importFile(TEXTURES, "FT_SpriteSheet_sprite.png", encodeRgbaPng(sheet.width, sheet.height, sheet.rgba)),
+    "Texture",
+  ).header.guid;
 
   const lut = await host.loadOptional(FEATURE_TEST_OPTIONAL_SLOTS.colorGradingLut);
   assets.textures.colorGradingLut = lut
