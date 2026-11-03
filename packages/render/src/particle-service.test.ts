@@ -1015,5 +1015,156 @@ describe("ParticleService", () => {
       expect(system.manualEmitCount).toBe(0);
     });
   });
+
+  describe("parameters", () => {
+    const assign = (parameters?: Record<string, number[]>) => ({ type: "assignParticle" as const, slotId: 1, actorGuid: "fx",
+      componentId: "particle-1", particleSystemGuid: "sys-1", play: true, ...(parameters ? { parameters } : {}) });
+    const set = (name: string, value: number[] | null) => ({ type: "setParticleParameter" as const, actorGuid: "fx", name, value });
+    /** The default graph with Update Size = Intensity spliced into its spine. */
+    const sizedGraph = graph("mat", (document) => {
+      document.parameters = [{ id: "p1", name: "Intensity", type: "float", defaultValue: [0.5] }];
+      document.nodes.push(
+        { id: "intensity", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "p1", valueType: "float" } },
+        { id: "size", type: "update.size", position: { x: 0, y: 0 }, properties: {} },
+      );
+      document.edges = document.edges.filter((edge) => edge.id !== "e-velocity-color");
+      document.edges.push(
+        { id: "e-velocity-size", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "size", targetPinId: "particle" },
+        { id: "e-size-color", sourceNodeId: "size", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
+        { id: "e-intensity-size", sourceNodeId: "intensity", sourcePinId: "out", targetNodeId: "size", targetPinId: "size" },
+      );
+    });
+    const withDefaults = (base: ParticleLibrary, parameterDefaults: Record<string, number[]>): ParticleLibrary => ({
+      ...base, systems: new Map([["sys-1", { ...base.systems.get("sys-1")!, parameterDefaults }]]),
+    });
+    const sizeAfterStep = (system: ParticleSystem) => {
+      system.animate(true);
+      return system.particles[0]?.size;
+    };
+
+    it("feeds a graph its component value, then on clearing the System default, before the next render", async () => {
+      const { scene, service, frame } = host();
+      service.setLibrary(withDefaults(library({ graph: sizedGraph }), { Intensity: [0.75] }));
+      service.handleCommand(assign({ Intensity: [2] }));
+      const system = scene.particleSystems[0] as ParticleSystem;
+      await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+      for (let i = 0; i < 10; i += 1) system.animate(true);
+      expect(sizeAfterStep(system)).toBeCloseTo(2, 6);
+      service.handleCommand(set("Intensity", [3]));
+      expect(sizeAfterStep(system)).toBeCloseTo(2, 6);
+      frame();
+      expect(sizeAfterStep(system)).toBeCloseTo(3, 6);
+      service.handleCommand(set("Intensity", null));
+      frame();
+      expect(sizeAfterStep(system)).toBeCloseTo(0.75, 6);
+    });
+
+    it("keeps a value set while the bundle still prepares", async () => {
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => { finish = resolve; });
+      const { scene, service, frame } = host({ ready: () => pending });
+      service.setLibrary(library({ graph: sizedGraph }));
+      service.handleCommand(assign());
+      service.handleCommand(set("Intensity", [4]));
+      frame();
+      finish();
+      const system = scene.particleSystems[0] as ParticleSystem;
+      await vi.waitFor(() => expect(system.isStarted()).toBe(true));
+      for (let i = 0; i < 10; i += 1) system.animate(true);
+      expect(sizeAfterStep(system)).toBeCloseTo(4, 6);
+    });
+
+    const boundEmitter = basic({
+      emitter: { capacity: 64 },
+      spawn: { rate: { mode: "constant", value: 10 } },
+      initialize: { lifetime: { mode: "constant", value: 2 }, speed: { mode: "constant", value: 4 }, size: { mode: "constant", value: 0.5 },
+        color: { mode: "constant", color: [1, 1, 1, 1] } },
+      forces: { gravity: { enabled: true, acceleration: [0, -9.81, 0] } },
+      bindings: [
+        { target: "spawn.rateScale", parameterName: "Rate" },
+        { target: "init.lifetimeScale", parameterName: "Life" },
+        { target: "init.speedScale", parameterName: "Speed" },
+        { target: "init.sizeScale", parameterName: "Size" },
+        { target: "init.colorTint", parameterName: "Tint" },
+        { target: "forces.gravity", parameterName: "Gravity" },
+      ],
+    });
+
+    it.each([false, true])("drives every Basic target from its parameters (GPU %s)", async (gpu) => {
+      const { scene, service, frame } = host({ gpu });
+      service.setLibrary(library({ "em-1": boundEmitter }));
+      service.handleCommand(assign({ Rate: [3], Life: [0.5], Speed: [2], Size: [4], Tint: [1, 0, 0, 0.5], Gravity: [0, 0, -2] }));
+      const system = scene.particleSystems[0] as ParticleSystem | GPUParticleSystem;
+      expect(system instanceof GPUParticleSystem).toBe(gpu);
+      const read = () => ({ rate: system.emitRate, life: [system.minLifeTime, system.maxLifeTime], speed: system.minEmitPower,
+        size: system.maxSize, gravity: system.gravity.asArray(), color: system.getColorGradients()![0]!.color1.asArray() });
+      expect(read()).toEqual({ rate: 30, life: [1, 1], speed: 8, size: 2, gravity: [0, 0, -2], color: [1, 0, 0, 0.5] });
+      service.handleCommand(set("Speed", [0.5]));
+      service.handleCommand(set("Tint", null));
+      frame();
+      expect(read()).toMatchObject({ speed: 2, color: [1, 1, 1, 1] });
+    });
+
+    it("rewrites a GPU system's gradient textures only when a tint changes, once per frame", async () => {
+      const { scene, service, frame } = host({ gpu: true });
+      service.setLibrary(library({ "em-1": boundEmitter }));
+      service.handleCommand(assign());
+      const system = scene.particleSystems[0] as GPUParticleSystem;
+      const refresh = vi.spyOn(system as unknown as { refreshGradientTextures: () => void }, "refreshGradientTextures");
+      for (let i = 0; i < 5; i += 1) {
+        service.handleCommand(set("Rate", [i]));
+        frame();
+      }
+      expect(refresh).not.toHaveBeenCalled();
+      service.handleCommand(set("Tint", [0, 1, 0, 1]));
+      service.handleCommand(set("Tint", [0, 0, 1, 1]));
+      frame();
+      expect(refresh).toHaveBeenCalledTimes(1);
+      service.handleCommand(set("Tint", [0, 0, 1, 1]));
+      frame();
+      frame();
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(system.getColorGradients()![0]!.color1.asArray()).toEqual([0, 0, 1, 1]);
+    });
+
+    it("reports a parameter whose type differs between slots and keeps the later slot on its own default", async () => {
+      const { scene, service, diagnostics } = host();
+      const tintGraph = graph("mat", (document) => {
+        Object.assign(document, sizedGraph.kind === "graph" ? structuredClone(sizedGraph.document) : {});
+        document.parameters = [{ id: "p1", name: "Speed", type: "float", defaultValue: [0.5] }];
+      });
+      // The graph declares Speed first as a Float; a colour binding named Speed in slot 2 conflicts.
+      const conflicting = basic({ bindings: [{ target: "init.colorTint", parameterName: "Speed" }] });
+      service.setLibrary(library({ graph: tintGraph, "em-1": conflicting }));
+      service.handleCommand(assign({ Speed: [9] }));
+      expect(diagnostics.filter((entry) => entry.code === "particle.parameter_type_conflict")).toEqual([
+        expect.objectContaining({ assetGuid: "sys-1", message: expect.stringContaining("slot 2") }),
+      ]);
+      const basicSystem = scene.particleSystems[1] as ParticleSystem;
+      expect(basicSystem.getColorGradients()![0]!.color1.asArray()).toEqual([1, 1, 1, 1]);
+    });
+
+    it("applies an edited System default or binding live, keeping the running systems", async () => {
+      const { scene, service } = host();
+      const base = library({ "em-1": boundEmitter, graph: sizedGraph });
+      service.setLibrary(base);
+      service.handleCommand(assign());
+      const [basicSystem, graphSystem] = scene.particleSystems as ParticleSystem[];
+      await vi.waitFor(() => expect(graphSystem!.isStarted()).toBe(true));
+      expect(service.updateLibrary(withDefaults(base, { Speed: [3], Intensity: [1.25] }))).toEqual({ tier: "live" });
+      expect(scene.particleSystems).toEqual([basicSystem, graphSystem]);
+      expect(basicSystem!.minEmitPower).toBe(12);
+      for (let i = 0; i < 10; i += 1) graphSystem!.animate(true);
+      expect(sizeAfterStep(graphSystem!)).toBeCloseTo(1.25, 6);
+      // Renaming the graph parameter keeps its blocks: the default now reaches it under the new name.
+      const renamed = graph("mat", (document) => {
+        Object.assign(document, sizedGraph.kind === "graph" ? structuredClone(sizedGraph.document) : {});
+        document.parameters = [{ id: "p1", name: "Heat", type: "float", defaultValue: [0.5] }];
+      });
+      expect(service.updateLibrary(withDefaults(library({ "em-1": boundEmitter, graph: renamed }), { Heat: [2] }))).toEqual({ tier: "live" });
+      expect(scene.particleSystems).toEqual([basicSystem, graphSystem]);
+      expect(sizeAfterStep(graphSystem!)).toBeCloseTo(2, 6);
+    });
+  });
 });
 

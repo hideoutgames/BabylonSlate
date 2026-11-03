@@ -1089,6 +1089,11 @@ export type CommandMessage =
       retrigger?: import("@haptic/core").ParticleRetrigger;
       /** The worker's Play generation, echoed by `particlePlaybackEnded`; previews omit it (0). */
       generation?: number;
+      /**
+       * The component's current parameter values by name (its overrides merged with runtime
+       * sets), so a reassignment, respawn or trace restore starts with them.
+       */
+      parameters?: Record<string, number[]>;
     }
   | {
       type: "setParticlePlaying";
@@ -1111,6 +1116,17 @@ export type CommandMessage =
       count: number;
       /** Index in the Particle System's emitter list; omitted or -1 for every slot. */
       slot?: number;
+    }
+  /**
+   * Set Particle Parameter: one parameter of a ParticleComponent (every one of the actor without
+   * `componentId`). `value` null drops the component's value, so the System or emitter default applies.
+   */
+  | {
+      type: "setParticleParameter";
+      actorGuid: string;
+      componentId?: string;
+      name: string;
+      value: number[] | null;
     }
   | { type: "sessionPaused"; paused: boolean; cause?: SessionPauseCause }
   /**

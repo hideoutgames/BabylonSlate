@@ -574,6 +574,15 @@ const INPUT_NODES: ParticleNodeDefinition[] = [
   constantNode("const.vec2", "Vector 2", VEC2),
   constantNode("const.vec3", "Vector 3", VEC3),
   constantNode("const.color", "Color", COLOR),
+  {
+    type: "input.parameter",
+    title: "Parameter",
+    category: "Parameters",
+    role: "input",
+    description: "A graph parameter that gameplay can set while the emitter runs. Its type is the parameter's.",
+    inputs: [],
+    outputs: [{ id: "out", name: "Value", type: FLOAT, followsValueType: true }],
+  },
 ];
 
 const UTILITY_NODES: ParticleNodeDefinition[] = [
@@ -835,6 +844,7 @@ const BY_TYPE = new Map(PARTICLE_CATALOG.map((definition) => [definition.type, d
 const VALUE_TYPE_DEFAULTS: Readonly<Record<string, ParticleNumericType>> = {
   "random.range": "float",
   "gradient.sample": "color",
+  "input.parameter": "float",
 };
 
 /** `properties.valueType` of a Random or Gradient node, with the node's default. */
@@ -941,7 +951,12 @@ export function particleNodeDefinitionFor(
   };
 }
 
-/** Add Node entries: every catalog node except the protected Emitter Output. */
+export const PARTICLE_PARAMETER_NODE_TYPE = "input.parameter";
+
+/**
+ * Add Node entries: every catalog node except the protected Emitter Output and the bare
+ * Parameter node, which Add Node offers once per declared parameter instead.
+ */
 export function particlePaletteEntries(): ParticleNodeDefinition[] {
-  return PARTICLE_CATALOG.filter((definition) => !definition.terminal);
+  return PARTICLE_CATALOG.filter((definition) => !definition.terminal && definition.type !== PARTICLE_PARAMETER_NODE_TYPE);
 }

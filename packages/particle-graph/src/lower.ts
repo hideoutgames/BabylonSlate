@@ -10,6 +10,7 @@ import {
 import type {
   ParticleGraphDocument,
   ParticleGraphNode,
+  ParticleGraphParameter,
   ParticleGraphSettings,
 } from "./document";
 import {
@@ -68,6 +69,11 @@ export interface ParticleBuildPlan {
   settings: ParticleGraphSettings;
   /** Topological: every operand references an earlier operation. Emitter Output is last. */
   operations: ParticleOperation[];
+  /**
+   * The graph's declared parameters. Parameter operations carry only `parameterId` and
+   * `valueType`, so names and defaults stay out of `hash`: editing them is a live change.
+   */
+  parameters: ParticleGraphParameter[];
   hash: string;
 }
 
@@ -220,6 +226,7 @@ export function lowerParticleGraphDocument(
     plan: {
       settings: { ...doc.settings },
       operations,
+      parameters: (doc.parameters ?? []).map((parameter) => ({ ...parameter, defaultValue: [...parameter.defaultValue] })),
       hash: hashParticlePlan(doc.settings, operations),
     },
   };

@@ -1,6 +1,7 @@
 import {
   NodeParticleBuildState,
   NodeParticleSystemSet,
+  ParticleInputBlock,
   type AbstractMesh,
   type IParticleSystem,
   type NodeParticleBlock,
@@ -66,6 +67,8 @@ export type RealizeParticleGraphResult =
       system: ParticleSystem;
       /** Babylon's build promises (none for the v1 catalog). */
       buildReady: Promise<void>;
+      /** Each declared parameter's input blocks by parameter id; writing their value updates the running system. */
+      parameterBlocks: Map<string, ParticleInputBlock[]>;
     }
   | { ok: false; diagnostics: ParticleGraphCompileDiagnostic[] };
 
@@ -102,6 +105,8 @@ export function realizeParticleGraph(plan: ParticleBuildPlan, options: RealizePa
   const realized = new Map<string, ParticleBlockRealization>();
   const diagnostics: ParticleGraphCompileDiagnostic[] = [];
   let systemBlock: SlateSystemBlock | undefined;
+  const parameters = new Map((plan.parameters ?? []).map((parameter) => [parameter.id, parameter]));
+  const parameterBlocks = new Map<string, ParticleInputBlock[]>();
   const track = (operation: ParticleOperation, blocks: readonly NodeParticleBlock[]) => {
     for (const block of blocks) {
       owner.set(block, operation);
@@ -119,7 +124,7 @@ export function realizeParticleGraph(plan: ParticleBuildPlan, options: RealizePa
     }
     let realization: ParticleBlockRealization;
     try {
-      realization = adapter({ operation, name, space: options.space, ...(options.noise ? { noise: options.noise } : {}),
+      realization = adapter({ operation, name, space: options.space, parameters, ...(options.noise ? { noise: options.noise } : {}),
         ...(options.meshShape ? { meshShape: options.meshShape } : {}) });
     } catch (thrown) {
       diagnostics.push({ code: "particle.compile.buildFailed", nodeId: operation.id, message: describeParticleThrow(thrown) });
@@ -127,6 +132,11 @@ export function realizeParticleGraph(plan: ParticleBuildPlan, options: RealizePa
     }
     track(operation, realization.blocks);
     if (realization.system) systemBlock = realization.system;
+    if (operation.nodeType === "input.parameter") {
+      const block = realization.outputs.out?.ownerBlock;
+      const id = String(operation.properties.parameterId ?? "");
+      if (block instanceof ParticleInputBlock) parameterBlocks.set(id, [...(parameterBlocks.get(id) ?? []), block]);
+    }
     // Producers are wired before consumers: Babylon resolves AutoDetect and
     // BasedOnInput port types from what is already connected.
     for (const [pinId, operand] of Object.entries(operation.inputs)) {
@@ -216,7 +226,7 @@ export function realizeParticleGraph(plan: ParticleBuildPlan, options: RealizePa
     // Created only after a successful build, so a failed build never leaks it; the
     // system's default dispose (through the SystemBlock hook) releases it.
     system.particleTexture = createParticleReadinessTexture(scene);
-    return { ok: true, set, system, buildReady: state.waitForBuildPromisesAsync() };
+    return { ok: true, set, system, buildReady: state.waitForBuildPromisesAsync(), parameterBlocks };
   } catch (thrown) {
     const failed = trace.building ?? state.notConnectedNonOptionalInputs[0]?.ownerBlock ?? null;
     const anchor = failed ? owner.get(failed) : undefined;

@@ -67,14 +67,59 @@ export const PARTICLE_GRAPH_LIMITS = {
   prewarm: { min: 0, max: PARTICLE_PREWARM_MAX_SECONDS },
 } as const;
 
+/** Longest parameter name, after trimming. */
+export const PARTICLE_PARAMETER_NAME_MAX = 64;
+
+/**
+ * A value gameplay can set at runtime by name (Set Particle Float Parameter, Particle
+ * System defaults, component overrides). Parameter nodes reference the stable `id`, so a
+ * rename or a new default never rebuilds the emitter.
+ */
+export interface ParticleGraphParameter {
+  id: string;
+  /** Unique in the graph, case-sensitive, 1–64 characters after trimming. */
+  name: string;
+  type: ParticleNumericType;
+  /** Sized to `type`. */
+  defaultValue: number[];
+}
+
 export interface ParticleGraphDocument {
   schemaVersion: typeof PARTICLE_GRAPH_SCHEMA_VERSION;
   name: string;
   /** Particle-domain Material; required to render. */
   materialGuid: string | null;
   settings: ParticleGraphSettings;
+  /** Declared runtime parameters, in authoring order. */
+  parameters: ParticleGraphParameter[];
   nodes: ParticleGraphNode[];
   edges: ParticleGraphEdge[];
+}
+
+/** A trimmed parameter name, or null when it is empty or longer than `PARTICLE_PARAMETER_NAME_MAX`. */
+export function normalizeParticleParameterName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const name = value.trim();
+  return name && name.length <= PARTICLE_PARAMETER_NAME_MAX ? name : null;
+}
+
+/** Drops parameters without an id or a valid name, and later duplicates of either. */
+export function normalizeParticleGraphParameters(value: unknown): ParticleGraphParameter[] {
+  if (!Array.isArray(value)) return [];
+  const ids = new Set<string>();
+  const names = new Set<string>();
+  const parameters: ParticleGraphParameter[] = [];
+  for (const entry of value) {
+    const record = asRecord(entry);
+    const id = typeof record.id === "string" ? record.id.trim() : "";
+    const name = normalizeParticleParameterName(record.name);
+    if (!id || !name || ids.has(id) || names.has(name)) continue;
+    const type = oneOf<ParticleNumericType>(record.type, ["float", "vec2", "vec3", "color"], "float");
+    ids.add(id);
+    names.add(name);
+    parameters.push({ id, name, type, defaultValue: resizeParticleValue(numberArray(record.defaultValue), type) });
+  }
+  return parameters;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -175,6 +220,8 @@ export function newParticleNodeProperties(type: string): Record<string, unknown>
       return { textureGuid: null };
     case "shape.mesh":
       return { source: "ownerMesh", modelGuid: null, useMeshNormals: true, useMeshColor: false };
+    case "input.parameter":
+      return { parameterId: "", valueType: "float" };
     default:
       return {};
   }
@@ -307,14 +354,29 @@ export function normalizeParticleGraphDocument(
   fallbackName = "Particle Graph",
 ): ParticleGraphDocument {
   const record = asRecord(value);
+  const parameters = normalizeParticleGraphParameters(record.parameters);
   return {
     schemaVersion: PARTICLE_GRAPH_SCHEMA_VERSION,
     name: asString(record.name, fallbackName),
     materialGuid: nullableGuid(record.materialGuid),
     settings: normalizeParticleGraphSettings(record.settings),
-    nodes: withOutput(normalizeNodes(record.nodes)),
+    parameters,
+    nodes: syncParameterNodeTypes(withOutput(normalizeNodes(record.nodes)), parameters),
     edges: normalizeEdges(record.edges),
   };
+}
+
+/** A Parameter node's output takes its parameter's type; one without a parameter keeps its own. */
+export function syncParameterNodeTypes(
+  nodes: ParticleGraphNode[],
+  parameters: readonly ParticleGraphParameter[],
+): ParticleGraphNode[] {
+  const types = new Map(parameters.map((parameter) => [parameter.id, parameter.type]));
+  return nodes.map((node) => {
+    if (node.type !== "input.parameter") return node;
+    const type = types.get(String(node.properties.parameterId ?? ""));
+    return type && node.properties.valueType !== type ? { ...node, properties: { ...node.properties, valueType: type } } : node;
+  });
 }
 
 function node(
@@ -356,6 +418,7 @@ export function createDefaultParticleGraphDocument(
     name,
     materialGuid: null,
     settings: createDefaultParticleGraphSettings(),
+    parameters: [],
     nodes: [
       node("create", "particle.create", 0, 0, {
         "default:lifetime": [1.5],

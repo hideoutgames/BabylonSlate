@@ -193,4 +193,32 @@ describe("particle graph document", () => {
     expect(doc.nodes.filter((entry) => entry.type === "utility.localVariable").map((entry) => entry.properties.scope)).toEqual(["loop", "particle"]);
     expect(newParticleNodeProperties("utility.localVariable")).toEqual({ scope: "particle" });
   });
+
+  it("keeps parameters with an id and a unique trimmed name, sized to their type, and types Parameter nodes by them", () => {
+    const doc = normalizeParticleGraphDocument({
+      parameters: [
+        { id: "p1", name: "  Intensity ", type: "float", defaultValue: [2, 9] },
+        { id: "p2", name: "Tint", type: "color", defaultValue: [1, 0, 0] },
+        { id: "p1", name: "Again", type: "float" },
+        { id: "p3", name: "Intensity", type: "vec3" },
+        { id: "", name: "Nameless id", type: "float" },
+        { id: "p4", name: "x".repeat(65), type: "float" },
+        { id: "p5", name: "Speed", type: "quaternion", defaultValue: ["fast"] },
+      ],
+      nodes: [
+        { id: "tint", type: "input.parameter", properties: { parameterId: "p2", valueType: "float" } },
+        { id: "lost", type: "input.parameter", properties: { parameterId: "gone", valueType: "vec2" } },
+      ],
+    });
+    expect(doc.parameters).toEqual([
+      { id: "p1", name: "Intensity", type: "float", defaultValue: [2] },
+      { id: "p2", name: "Tint", type: "color", defaultValue: [1, 0, 0, 1] },
+      { id: "p5", name: "Speed", type: "float", defaultValue: [0] },
+    ]);
+    const properties = (id: string) => doc.nodes.find((entry) => entry.id === id)!.properties;
+    expect(properties("tint").valueType).toBe("color");
+    expect(properties("lost").valueType).toBe("vec2");
+    expect(normalizeParticleGraphDocument({}).parameters).toEqual([]);
+    expect(normalizeParticleGraphDocument(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+  });
 });

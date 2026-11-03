@@ -62,6 +62,7 @@ import {
 import {
   resizeParticleValue,
   type ParticleGradientStop,
+  type ParticleGraphParameter,
   type ParticleGraphSettings,
   type ParticleNumericType,
   type ParticleOperation,
@@ -228,6 +229,8 @@ export interface ParticleBlockAdapterContext {
   noise?: (textureGuid: string | null) => ParticleNoiseSource;
   /** A Mesh Shape's geometry for its properties (Source, Model). Without it Mesh Shape spawns at the emitter. */
   meshShape?: (properties: Readonly<Record<string, unknown>>) => ParticleMeshShapeSource;
+  /** The plan's declared parameters by id. */
+  parameters: ReadonlyMap<string, ParticleGraphParameter>;
 }
 
 export type ParticleBlockAdapter = (context: ParticleBlockAdapterContext) => ParticleBlockRealization;
@@ -247,6 +250,14 @@ function babylonValue(type: ParticleNumericType, value: readonly number[]): numb
     case "vec3": return new Vector3(x, y, z);
     case "color": return new Color4(x, y, z, w);
   }
+}
+
+/**
+ * Writes a parameter value onto its input block. Babylon 9.29 builds an input block's output as
+ * `() => this.value`, so the running system reads the new value on its next evaluation.
+ */
+export function setParticleInputBlockValue(block: ParticleInputBlock, type: ParticleNumericType, value: readonly number[]): void {
+  block.value = babylonValue(type, value);
 }
 
 /** A typed constant; render always connects constants instead of writing `port.value`. */
@@ -559,6 +570,12 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
   "const.vec2": constant("vec2"),
   "const.vec3": constant("vec3"),
   "const.color": constant("color"),
+  "input.parameter": ({ name, operation, parameters }) => {
+    const parameter = parameters.get(String(operation.properties.parameterId ?? ""));
+    if (!parameter) throw new Error("The Parameter node's parameter does not exist.");
+    const block = particleConstantBlock(name, parameter.type, parameter.defaultValue);
+    return { blocks: [block], inputs: {}, outputs: { out: block.output } };
+  },
   "random.range": ({ name, operation }) => {
     const block = new ParticleRandomBlock(name);
     block.lockMode = operation.properties.lock === "everyRead" ? ParticleRandomBlockLocks.None : ParticleRandomBlockLocks.PerParticle;

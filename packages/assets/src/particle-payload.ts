@@ -8,6 +8,7 @@ import {
   PARTICLE_SYSTEM_MAX_EMITTERS,
   type ParticleSpace,
 } from "@haptic/core";
+import { normalizeParticleParameterValues } from "./particle-parameters";
 import {
   normalizeParticleGraphDocument,
   particleGraphDependencies,
@@ -37,6 +38,11 @@ export type ParticleSystemPayload = {
   space: ParticleSpace;
   /** Editor System Preview only. Ignored at runtime. Missing → true. */
   previewSkybox: boolean;
+  /**
+   * Default overrides for the derived parameters (`particleSystemParameters`), by name. A
+   * value is resized to the parameter's type where it applies; non-numeric entries are dropped.
+   */
+  parameterDefaults?: Record<string, number[]>;
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -56,6 +62,7 @@ export function createDefaultParticleSystemPayload(): ParticleSystemPayload {
     emitterGuids: [],
     space: "world",
     previewSkybox: true,
+    parameterDefaults: {},
   };
 }
 
@@ -75,6 +82,7 @@ export function normalizeParticleSystemPayload(
     emitterGuids: guids,
     space: rec.space === "local" ? "local" : "world",
     previewSkybox: rec.previewSkybox === false ? false : true,
+    parameterDefaults: normalizeParticleParameterValues(rec.parameterDefaults),
   };
 }
 
