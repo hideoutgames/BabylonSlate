@@ -111,10 +111,8 @@ export function particleNodePropertiesFromData(
 
 export interface ParticlePaletteNode {
   id: string;
-  /** The node type when `id` names one entry of several for it (one Parameter entry per parameter). */
+  /** The node type when `id` names one entry of several for it (one Parameter entry per value type). */
   nodeType?: string;
-  /** The added node's title when it differs from the entry's. */
-  nodeTitle?: string;
   title: string;
   category: string;
   description?: string;
@@ -141,40 +139,23 @@ function snapshotOf(parameter: ParticleGraphParameter): ParticleParameterSnapsho
 
 /**
  * Add Node entries in palette order; the Emitter Output is never offered. The **Parameter**
- * category follows **Constants**: a new-parameter entry per value type, then one entry per
- * declared parameter that places another Parameter node reading it.
+ * category follows **Constants** with one new-parameter entry per value type: each node reads
+ * its own parameter, so existing parameters are not offered again.
  */
-export function particlePaletteNodes(parameters: readonly ParticleGraphParameter[] = []): ParticlePaletteNode[] {
-  const parameterNode = (
-    id: string,
-    title: string,
-    properties: { parameterId: string; valueType: ParticleNumericType },
-    extra: Partial<ParticlePaletteNode> & { defaultData?: Record<string, unknown> } = {},
-  ): ParticlePaletteNode => ({
-    id,
-    nodeType: PARTICLE_PARAMETER_NODE_TYPE,
-    title,
-    category: PARTICLE_PARAMETER_CATEGORY,
-    ...extra,
-    pins: pinsForParticleNode(PARTICLE_PARAMETER_NODE_TYPE, properties),
-    defaultData: { ...properties, ...extra.defaultData, __particleRole: "input" },
+export function particlePaletteNodes(): ParticlePaletteNode[] {
+  const parameterEntries = NEW_PARAMETER_ENTRIES.map(({ type, title }): ParticlePaletteNode => {
+    const properties = { parameterId: "", valueType: type };
+    return {
+      id: `${PARTICLE_PARAMETER_NODE_TYPE}:new:${type}`,
+      nodeType: PARTICLE_PARAMETER_NODE_TYPE,
+      title,
+      category: PARTICLE_PARAMETER_CATEGORY,
+      description: "Adds a new parameter of this type. Name it and set its default in the Inspector.",
+      searchAliases: ["parameter", "new parameter"],
+      pins: pinsForParticleNode(PARTICLE_PARAMETER_NODE_TYPE, properties),
+      defaultData: { ...properties, __particleRole: "input" },
+    };
   });
-  const parameterEntries = [
-    ...NEW_PARAMETER_ENTRIES.map(({ type, title }) =>
-      parameterNode(`${PARTICLE_PARAMETER_NODE_TYPE}:new:${type}`, title, { parameterId: "", valueType: type }, {
-        description: "Adds a new parameter of this type. Name it and set its default in the Inspector.",
-        searchAliases: ["parameter", "new parameter"],
-      }),
-    ),
-    ...parameters.map((parameter) =>
-      parameterNode(`${PARTICLE_PARAMETER_NODE_TYPE}:${parameter.id}`, parameter.name,
-        { parameterId: parameter.id, valueType: parameter.type }, {
-          nodeTitle: parameter.name,
-          searchAliases: ["parameter"],
-          defaultData: { [PARTICLE_PARAMETER_SNAPSHOT_KEY]: snapshotOf(parameter) },
-        }),
-    ),
-  ];
   const entries = particlePaletteEntries().map((definition): ParticlePaletteNode => {
     const properties = newParticleNodeProperties(definition.type);
     return {

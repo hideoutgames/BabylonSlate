@@ -37,7 +37,6 @@ import {
   PARTICLE_SPRITE_SHEET_LIMITS,
   PARTICLE_UNSUPPORTED_V1_TYPES,
   PARTICLE_VALUE_TYPE_OPTIONS,
-  bindParticleParameterNode,
   clampParticlePinValue,
   convertParticleConstantToParameter,
   convertParticleParameterToConstant,
@@ -637,48 +636,30 @@ function GradientStopsEditor({
 }
 
 /**
- * A Parameter node's rows: the parameter it reads, then that parameter's **Name**, **Type** and
- * **Default**, which every node reading it shares. Retyping resizes the default and retypes
- * those nodes; picking another parameter drops the old one once no node reads it.
+ * A Parameter node's rows: its own parameter's **Name**, **Type** and **Default** (each
+ * parameter has one node). A taken name gets a `_N` suffix; retyping resizes the default and
+ * retypes the node. None while the parameter is missing.
  */
 function particleParameterNodeRows(
   document: ParticleGraphDocument,
   node: ParticleGraphNode,
   onChange: Commit,
 ): PropertyRow[] {
-  const parameters = document.parameters ?? [];
-  const parameter = parameters.find((entry) => entry.id === node.properties.parameterId);
-  const picker: PropertyRow = {
-    id: "parameterId",
-    kind: "enum",
-    label: "Parameter",
-    value: parameter?.id ?? "",
-    description: parameter
-      ? "Name, Type and Default are shared by every node of this parameter."
-      : "Its parameter is gone. Pick another, or convert the node to a Constant.",
-    options: parameters.map((entry) => ({ value: entry.id, label: entry.name })),
-    onChange: (parameterId) => {
-      const next = bindParticleParameterNode(document, node.id, parameterId);
-      if (next) onChange(next);
-    },
-  };
-  if (!parameter) return [picker];
+  const parameter = (document.parameters ?? []).find((entry) => entry.id === node.properties.parameterId);
+  if (!parameter) return [];
   const update = (next: typeof parameter, mergeKey?: string) =>
     onChange(withParticleParameter(document, next), mergeKey);
   return [
-    picker,
     {
       id: "parameterName",
       kind: "text",
       label: "Name",
       value: parameter.name,
-      description: `Gameplay sets it by this name. Unique in the graph, up to ${PARTICLE_PARAMETER_NAME_MAX} characters.`,
+      description: `Gameplay sets it by this name. Unique in the graph, up to ${PARTICLE_PARAMETER_NAME_MAX} characters; a taken name gets _1, _2 and so on.`,
       onChange: () => undefined,
       onCommit: (text) => {
         const name = normalizeParticleParameterName(text);
-        if (!name || name === parameter.name) return;
-        if (parameters.some((other) => other.id !== parameter.id && other.name === name)) return;
-        update({ ...parameter, name });
+        if (name && name !== parameter.name) update({ ...parameter, name });
       },
     },
     {
@@ -765,6 +746,11 @@ function ParticleNodeDetails({
       >
         {definition.description ? (
           <p className="px-2 py-1 text-xs text-muted-foreground">{definition.description}</p>
+        ) : null}
+        {node.type === PARTICLE_PARAMETER_NODE_TYPE && parameterRows.length === 0 ? (
+          <p className="px-2 py-1 text-xs text-destructive" data-testid="particle-parameter-missing">
+            Its parameter is missing. Convert the node to a Constant or delete it.
+          </p>
         ) : null}
         {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
         {assets.picker}
@@ -1186,7 +1172,7 @@ function ParticleGraphCanvas() {
       particleConnectionIsAllowed(graphRef.current, connection),
     [],
   );
-  const paletteNodes = useMemo(() => particlePaletteNodes(document.parameters), [document.parameters]);
+  const paletteNodes = useMemo(() => particlePaletteNodes(), []);
   // Menu actions read the document as it is when picked.
   const documentRef = useRef(document);
   documentRef.current = document;

@@ -1,5 +1,6 @@
 import { PARTICLE_PARAMETER_NODE_TYPE } from "./catalog";
 import {
+  PARTICLE_PARAMETER_NAME_MAX,
   newParticleNodeProperties,
   normalizeParticleParameterName,
   syncParameterNodeTypes,
@@ -30,23 +31,32 @@ export function particleParameterStartValue(type: ParticleNumericType): number[]
   return [...(newParticleNodeProperties(PARTICLE_CONSTANT_NODE_TYPES[type]).value as number[])];
 }
 
-/** `base`, else `base 2`, `base 3`…: the first name no parameter holds. */
+/**
+ * `name` when no other parameter holds it, else its stem (a trailing `_N` removed) with the
+ * first free `_1`, `_2`…, shortened so it stays within `PARTICLE_PARAMETER_NAME_MAX`.
+ * `exceptId` is the parameter being renamed, whose own name does not count as taken.
+ */
 export function uniqueParticleParameterName(
   parameters: readonly ParticleGraphParameter[],
-  base = "Parameter",
+  name = "Parameter",
+  exceptId?: string,
 ): string {
-  const taken = new Set(parameters.map((parameter) => parameter.name));
-  if (!taken.has(base)) return base;
-  for (let index = 2; ; index += 1) {
-    const name = `${base} ${index}`;
-    if (!taken.has(name)) return name;
+  const taken = new Set(
+    parameters.filter((parameter) => parameter.id !== exceptId).map((parameter) => parameter.name),
+  );
+  if (!taken.has(name)) return name;
+  const stem = name.replace(/_\d+$/, "") || name;
+  for (let index = 1; ; index += 1) {
+    const suffix = `_${index}`;
+    const candidate = `${stem.slice(0, PARTICLE_PARAMETER_NAME_MAX - suffix.length).trimEnd()}${suffix}`;
+    if (!taken.has(candidate)) return candidate;
   }
 }
 
 /**
  * Name, type and default of a Parameter node's parameter as the canvas carries them, so a
- * node pasted where its parameter is not declared (after a cut, or into another graph)
- * brings it back.
+ * pasted node brings its parameter: declared again where it is missing (after a cut, or in
+ * another graph), copied where another node already reads it.
  */
 export interface ParticleParameterSnapshot {
   name: string;
@@ -89,11 +99,14 @@ function withNodes(
 }
 
 /**
- * Parameters live while a Parameter node reads them. After an edit from `previous` to
- * `next`:
+ * One Parameter node per parameter, and parameters live while their node does. After an
+ * edit from `previous` to `next`:
  * - a Parameter node without a parameter (an Add Node type entry) gets a new one of its type;
- * - a node whose parameter is not declared but whose `snapshots` entry (by node id) names one
- *   reads the declared parameter of that name and type, else declares it again;
+ * - a node reading a parameter another node already reads (a copy, a duplicate or a paste)
+ *   gets a new parameter copied from its `snapshots` entry, else from that parameter, under a
+ *   free name. The node that read it before the edit keeps it, else the first in order;
+ * - a node whose parameter is not declared but has a snapshot declares it again under its id
+ *   and a free name; without one it stays in error;
  * - each parameter `previous` read that no node reads any more is dropped.
  * Parameters `previous` declared without a reader stay.
  */
@@ -106,37 +119,44 @@ export function reconcileParticleParameters(
   },
 ): ParticleGraphDocument {
   const parameters = [...next.parameters];
+  const declared = (id: string) => parameters.find((parameter) => parameter.id === id);
+  const earlier = new Set(previous.nodes.map((node) => node.id));
+  const owners = new Map<string, string>();
+  for (const node of [
+    ...next.nodes.filter((entry) => earlier.has(entry.id)),
+    ...next.nodes.filter((entry) => !earlier.has(entry.id)),
+  ]) {
+    const parameterId = node.type === PARTICLE_PARAMETER_NODE_TYPE ? parameterIdOf(node) : "";
+    if (parameterId && declared(parameterId) && !owners.has(parameterId)) owners.set(parameterId, node.id);
+  }
+  const declare = (id: string, source: ParticleParameterSnapshot): ParticleGraphParameter => {
+    const parameter = {
+      id,
+      name: uniqueParticleParameterName(parameters, source.name),
+      type: source.type,
+      defaultValue: resizeParticleValue(source.defaultValue, source.type),
+    };
+    parameters.push(parameter);
+    return parameter;
+  };
   const nodes = next.nodes.map((node) => {
     if (node.type !== PARTICLE_PARAMETER_NODE_TYPE) return node;
     const parameterId = parameterIdOf(node);
-    let parameter: ParticleGraphParameter | undefined;
+    const existing = parameterId ? declared(parameterId) : undefined;
+    const snapshot = options.snapshots?.get(node.id);
+    let parameter: ParticleGraphParameter;
     if (!parameterId) {
       const type = nodeValueType(node);
-      parameter = {
-        id: options.newId(),
-        name: uniqueParticleParameterName(parameters),
-        type,
-        defaultValue: particleParameterStartValue(type),
-      };
-      parameters.push(parameter);
-    } else if (!parameters.some((entry) => entry.id === parameterId)) {
-      const snapshot = options.snapshots?.get(node.id);
-      if (!snapshot) return node;
-      parameter = parameters.find(
-        (entry) => entry.name === snapshot.name && entry.type === snapshot.type,
-      );
-      if (!parameter) {
-        parameter = {
-          id: parameterId,
-          name: uniqueParticleParameterName(parameters, snapshot.name),
-          type: snapshot.type,
-          defaultValue: [...snapshot.defaultValue],
-        };
-        parameters.push(parameter);
-      }
+      parameter = declare(options.newId(), { name: "Parameter", type, defaultValue: particleParameterStartValue(type) });
+    } else if (existing) {
+      if (owners.get(parameterId) === node.id) return node;
+      parameter = declare(options.newId(), snapshot ?? existing);
+    } else if (snapshot) {
+      parameter = declare(parameterId, snapshot);
     } else {
       return node;
     }
+    owners.set(parameter.id, node.id);
     return {
       ...node,
       properties: { ...node.properties, parameterId: parameter.id, valueType: parameter.type },
@@ -216,37 +236,21 @@ export function convertParticleParameterToConstant(
 }
 
 /**
- * Replace one parameter (matched by id) and retype the Parameter nodes that read it.
- * `defaultValue` is resized to `type`.
+ * Replace one parameter (matched by id) and retype its Parameter node. A name another
+ * parameter holds gets a `_N` suffix; `defaultValue` is resized to `type`.
  */
 export function withParticleParameter(
   doc: ParticleGraphDocument,
   parameter: ParticleGraphParameter,
 ): ParticleGraphDocument {
-  const fitted = { ...parameter, defaultValue: resizeParticleValue(parameter.defaultValue, parameter.type) };
+  const fitted = {
+    ...parameter,
+    name: uniqueParticleParameterName(doc.parameters, parameter.name, parameter.id),
+    defaultValue: resizeParticleValue(parameter.defaultValue, parameter.type),
+  };
   return withNodes(
     doc,
     doc.parameters.map((entry) => (entry.id === parameter.id ? fitted : entry)),
     doc.nodes,
   );
-}
-
-/**
- * Point a Parameter node at another declared parameter; the old one is dropped once no node
- * reads it. Null when the node is not a Parameter node or `parameterId` is not declared.
- */
-export function bindParticleParameterNode(
-  doc: ParticleGraphDocument,
-  nodeId: string,
-  parameterId: string,
-): ParticleGraphDocument | null {
-  const parameter = doc.parameters.find((entry) => entry.id === parameterId);
-  const node = doc.nodes.find((entry) => entry.id === nodeId);
-  if (!parameter || node?.type !== PARTICLE_PARAMETER_NODE_TYPE) return null;
-  const nodes = doc.nodes.map((entry) =>
-    entry.id === nodeId
-      ? { ...entry, properties: { ...entry.properties, parameterId, valueType: parameter.type } }
-      : entry,
-  );
-  return withNodes(doc, withoutUnread(doc, doc.parameters, nodes), nodes);
 }

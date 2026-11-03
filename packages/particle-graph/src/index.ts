@@ -101,7 +101,6 @@ export {
 } from "./resolve";
 export {
   PARTICLE_CONSTANT_NODE_TYPES,
-  bindParticleParameterNode,
   convertParticleConstantToParameter,
   convertParticleParameterToConstant,
   particleConstantValueType,
