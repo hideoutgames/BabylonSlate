@@ -777,7 +777,6 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
       kind: "text",
       label: "Parameter Name",
       value: materialParameterName(node),
-      description: "Unique in the graph; a taken name gets _1, _2 and so on.",
       onChange: () => undefined,
       onCommit: (name) => commit(renameMaterialParameter(document, node.id, name)),
     }, {

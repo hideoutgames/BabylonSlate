@@ -198,7 +198,7 @@ export function SaveGameDefinitionPanel(_props: IDockviewPanelProps) {
         <FieldLegend>{selectedField.name}</FieldLegend>
         <PropertyGrid rows={[{
           id: `name-${selectedField.id}`, kind: "text", label: "Name", value: selectedField.name,
-          description: nameError?.fieldId === selectedField.id ? nameError.message : undefined,
+          error: nameError?.fieldId === selectedField.id ? nameError.message : undefined,
           // Checked like Add Field; a rejected name stays in the draft and the field keeps its last name.
           onChange: (name) => {
             const message = fieldNameError(definition, name, selectedField.id);

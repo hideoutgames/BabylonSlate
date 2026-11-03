@@ -1,6 +1,5 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import {
-  GLOBAL_PARAMETER_NAME_MAX,
   GLOBAL_PARAMETER_TYPES,
   GLOBAL_PARAMETER_TYPE_LABELS,
   globalParameterStartValue,
@@ -35,7 +34,6 @@ export function GlobalParameterListEditor({
       kind: "text",
       label: "Name",
       value: parameter.name,
-      description: `Class graphs set it by this name. Unique in the collection, up to ${GLOBAL_PARAMETER_NAME_MAX} characters; a taken name gets _1, _2 and so on.`,
       onChange: () => undefined,
       onCommit: (text) => {
         const name = normalizeGlobalParameterName(text);

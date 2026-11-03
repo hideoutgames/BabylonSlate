@@ -46,6 +46,7 @@ Before working on matching files or tasks, read the matching rule in full. Apply
 | Any behavioural, architectural, public API, data-format or integration change | [Documentation](.agents/rules/docs.md) |
 | `docs/**`, `apps/docs/**`; creating, moving or deleting documentation pages | [Docs site](.agents/rules/docs-site.md) |
 | `apps/editor/**`, `packages/editor-kit/**`, `packages/graph-ui/**`, `packages/scripting-nodes/**` | [Display names](.agents/rules/display-names.md) |
+| Inspector, Details or settings rows in `apps/editor/**`, `packages/editor-kit/**`, `packages/graph-ui/**`; `PropertyRow.description`, `FieldDescription`, `LabelHint` | [Row descriptions](.agents/rules/row-descriptions.md) |
 | `packages/ui/src/components/**`, `packages/editor-kit/src/**`, `packages/graph-ui/src/**`, `apps/editor/src/components/**`; reusable editor component changes | [Component catalog rules](.agents/reference/components.md#rules) |
 | New asset editor tabs or document kinds; `apps/editor/src/shell/window-catalog.ts`, `apps/editor/src/components/document-workspace.tsx` | [DockView asset editor tabs](.agents/rules/dockview-editor-tabs.md) |
 | Adding, removing or changing an engine component, asset type, engine base class, node family, console command, Play feature, or project or scene setting; `apps/editor/src/lib/feature-test/**`, `packages/core/src/engine-components.ts` | [FeatureTest starter](.agents/rules/feature-test.md) |

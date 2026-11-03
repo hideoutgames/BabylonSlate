@@ -190,7 +190,9 @@ export function text2DPropertyRows(
         label: TEXT2D_RENDERER_LABELS[value],
         disabled: value === "msdf" && msdfStatus !== "ready",
       })),
-      description: `${text2dMsdfDescription(msdfStatus)}${msdfStyleNote}`,
+      description: msdfStatus === "ready" ? `${text2dMsdfDescription(msdfStatus)}${msdfStyleNote}` : msdfStyleNote.trim() || undefined,
+      // Why MSDF is unavailable stays visible: the Font needs an atlas first.
+      status: msdfStatus === "ready" ? undefined : text2dMsdfDescription(msdfStatus),
       onChange: (next) => {
         const pair = Boolean(
           parsed.fontAssetGuid &&

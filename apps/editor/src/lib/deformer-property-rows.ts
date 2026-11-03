@@ -35,7 +35,7 @@ export function deformerPropertyRows(actorId: string, component: SerializedCompo
       const z = Math.floor(index / (properties.resolution[0] * properties.resolution[1]));
       return { kind: "vector3", id: id(`offset-${index}`), label: `Control ${x}, ${y}, ${z}`, defaultValue: [0, 0, 0],
         value: properties.offsets.slice(index * 3, index * 3 + 3) as [number, number, number],
-        description: `Control ${index} offset in target-local units.`, onChange: (value) => {
+        description: "Offset in target-local units.", onChange: (value) => {
           const offsets = [...properties.offsets];
           offsets.splice(index * 3, 3, ...value.slice(0, 3));
           update("offsets", offsets);

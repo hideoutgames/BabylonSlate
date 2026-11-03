@@ -469,7 +469,7 @@ export function TextureDetails({
           value: String(faceSize),
           options: HDR_FACE_SIZE_OPTIONS,
           disabled: encodeBlocked || hdrProgress !== null,
-          description: Number(payload.width) < faceSize
+          status: Number(payload.width) < faceSize
             ? `Converted at ${sizeLabel}: faces are at most about a quarter of the panorama's width.`
             : undefined,
           onChange: (value) => {
