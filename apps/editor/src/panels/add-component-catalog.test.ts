@@ -123,6 +123,7 @@ describe("Add Component catalog", () => {
       playOnStart: true,
       sortingLayer: "Default",
       orderInLayer: 0,
+      retrigger: "overlap",
     });
     expect(defaultPropertiesFor("MeshComponent")).toEqual({
       meshKind: "box",
