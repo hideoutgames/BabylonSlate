@@ -22,6 +22,7 @@ The new actor holds a Scene Streaming component and a 3D Text label that shows t
 - The streamed Scene must use the same Physics World (3D or 2D) as the Scene that loads it.
 - The editor never shows the streamed Scene's actors. They appear only in Play.
 - Renaming the target Scene updates the label.
+- Scripts can read and set **Target Scene**. A load that already started keeps its Scene; the next Load Scene node streams the new one.
 
 ## Related
 
