@@ -977,15 +977,21 @@ describe("compile holds after the first frame", () => {
     });
   });
 
-  it("a Play load counts its shader warm-up units", async () => {
+  it("a Play load counts its shader warm-up units, then the programs its graph's passes compile", async () => {
     const world = playWorld("sync", [point(10, [-1.5, 2.5, -1]), point(11, [1.5, 2.5, -1]), spot(12, [0, 5, 0])]);
     const shaders: string[] = [];
     await withClock(world.handle.prewarmSceneMaterials(undefined, ({ done, total }) => shaders.push(`${done}/${total}`)));
-    const total = Number(shaders[0]!.split("/")[1]);
-    expect({ shadersFrom: shaders[0], shadersTo: shaders.at(-1), shaderSteps: shaders.length }).toEqual({
-      shadersFrom: `0/${total}`, shadersTo: `${total}/${total}`, shaderSteps: total + 1,
-    });
-    expect(total).toBeGreaterThan(0);
+    const counts = shaders.map((entry) => entry.split("/").map(Number) as [number, number]);
+    const warmed = counts[0]![1];
+    const [, total] = counts.at(-1)!;
+    expect({
+      from: shaders[0], to: shaders.at(-1),
+      neverBack: counts.every(([done, of], index) => index === 0 || (done >= counts[index - 1]![0] && of >= counts[index - 1]![1])),
+    }).toEqual({ from: `0/${warmed}`, to: `${total}/${total}`, neverBack: true });
+    expect(warmed).toBeGreaterThan(0);
+    // Shadow depth and the other passes' programs, which no warm-up unit counts, compile after the warm-up: the count
+    // goes on through them instead of showing a finished warm-up meanwhile.
+    expect(total).toBeGreaterThan(warmed);
   });
 
   it.each(MODELS)("a burst of swaps adopts at most FIRST_DRAWS_PER_FRAME new variants per frame: %s", async (model) => {

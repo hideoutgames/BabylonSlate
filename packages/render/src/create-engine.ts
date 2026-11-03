@@ -51,6 +51,7 @@ import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets
 import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
 import { bridgeEngineEffects, releaseBridgedEffects } from "./effect-bridge";
+import { countEffectCompiles } from "./effect-requests";
 import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
@@ -3357,13 +3358,25 @@ function initializeEngine(
       settleSceneWater(scope.target, true);
       // Built-in water compiles the variant its pass draws when the graph below prepares: which one that is depends on
       // the view's plan, so a warm-up here would compile one nothing draws, and wait for its link.
-      await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh, onProgress);
+      let warmed = { done: 0, total: 0 };
+      await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh,
+        onProgress && ((count) => { warmed = count; onProgress(count); }));
       scope.assert();
-      if (!owner && options.playMode) await warmPlaySpawnables(scope.assert);
-      freezeLibraryMaterials();
-      outlineHost.refreshSettings();
-      if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
-      else await worldRenderer.prepare(scope.assert);
+      // The graph's own passes (shadow depth, geometry, reflection probes, outlines, screen effects) compile programs
+      // no warm-up unit counted, and on software GL they take longer than the warm-up: the count goes on through them.
+      const stopCounting = onProgress
+        ? countEffectCompiles(engine, ({ compiled, requested }) =>
+          onProgress({ done: warmed.done + compiled, total: warmed.total + requested }))
+        : null;
+      try {
+        if (!owner && options.playMode) await warmPlaySpawnables(scope.assert);
+        freezeLibraryMaterials();
+        outlineHost.refreshSettings();
+        if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
+        else await worldRenderer.prepare(scope.assert);
+      } finally {
+        stopCounting?.();
+      }
       scope.assert();
       // Play draws its starting state without view culling in the world presentation's loading frames, before the
       // first presented one, when the Scene holds a light, Play may spawn one, the spawn warm-up staged meshes, or a
