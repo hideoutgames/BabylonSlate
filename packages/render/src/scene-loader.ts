@@ -1,7 +1,7 @@
 import { createPooledPrimitiveVisual, POOLED_LEAF_SUFFIX } from "./pooled-primitive-visual";
 import { syncPooledLeafFlags } from "./pooled-visuals";
 import { applyOccluderProperty } from "./view-occlusion";
-import { Mesh, MeshBuilder, Quaternion, Scene, Vector3, type Matrix, type TransformNode } from "@babylonjs/core";
+import { Mesh, MeshBuilder, Quaternion, Scene, Vector3, type AbstractMesh, type Matrix, type TransformNode } from "@babylonjs/core";
 import { resolveOverlayLayout } from "@haptic/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
 import { bindEditorCable, configureCableMesh, findEditorCableMesh, hasEditorCableMeshes, pruneEditorCables, updateCablePreview } from "./cable-mesh";
@@ -128,7 +128,7 @@ function createOriginRootMesh(scene: Scene, actor: SerializedActor): Mesh {
   return root;
 }
 
-function visualIsPickable(mesh: Mesh, locked: boolean): boolean {
+function visualIsPickable(mesh: AbstractMesh, locked: boolean): boolean {
   if (
     (mesh.metadata as { editorUnpickable?: boolean } | null)?.editorUnpickable
   ) {
@@ -406,7 +406,8 @@ function applyModelPlaceholderVisibility(mesh: Mesh, actor: SerializedActor): vo
   hideModelPlaceholder(mesh);
   for (const child of mesh.getChildMeshes()) {
     // LOD levels stay unpickable; their master owns visibility and picking.
-    if (!(child instanceof Mesh) || child.isBlocked) continue;
+    if (child instanceof Mesh && child.isBlocked) continue;
+    // Parts that reuse a glTF mesh load as InstancedMeshes, each with its own flags.
     child.isVisible = actor.visible;
     child.isPickable = visualIsPickable(child, actor.locked);
   }
