@@ -18,7 +18,10 @@ import type { ViewportMode } from "@haptic/core";
 import { mapCanvasPointer, type PointerCanvasSize } from "./pick-coords";
 import type { RenderScheduler } from "./render-scheduler";
 import { createOverlayTransformBox } from "./overlay-transform-box";
+import { linkedAxisScale, type ScaleVector } from "./linked-axis-scale";
 import { ownedUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+
+export { linkedAxisScale, type ScaleVector } from "./linked-axis-scale";
 
 export type GizmoTool = "none" | "translate" | "rotate" | "scale";
 
@@ -75,7 +78,8 @@ export interface GizmoHost {
   /**
    * While linked, an X, Y or Z scale handle scales the other shown axes by
    * the same factor (`linkedAxisScale`), as the Inspector's linked Scale
-   * field does. Off by default; read when a drag starts.
+   * field does, and the overlay box keeps its proportions. Off by default;
+   * read when a drag starts.
    */
   setLinkedScale: (linked: boolean) => void;
   /** `tool` overrides the active tool for this attachment (a spline point always translates). */
@@ -83,6 +87,8 @@ export interface GizmoHost {
   attachedMesh: () => AbstractMesh | null;
   /** True while a gizmo handle drag is in progress. */
   isDragging: () => boolean;
+  /** Local axis an X, Y or Z scale handle is dragging (set before `onDragStart`); null otherwise. */
+  scaleDragAxis: () => 0 | 1 | 2 | null;
   /** True when a gizmo handle sits under the canvas point. */
   hitTest: (
     canvasX: number,
@@ -218,31 +224,6 @@ export function clampGizmoScreenScale(
     return (Math.sign(currentScale) || 1) * minAbs;
   }
   return currentScale;
-}
-
-export type ScaleVector = [number, number, number];
-
-/**
- * Scale after an axis handle drag while Scale is linked: the dragged axis
- * takes `value` and the other shown axes (X and Y in 2D, all three in 3D)
- * scale from `start` by the same factor, matching the Inspector's linked
- * Scale field. A zero start axis has no factor, so every shown axis takes
- * `value`; hidden axes keep their start.
- */
-export function linkedAxisScale(
-  start: Readonly<ScaleVector>,
-  axis: 0 | 1 | 2,
-  value: number,
-  mode: ViewportMode,
-): ScaleVector {
-  const shown = mode === "2d" ? 2 : 3;
-  const from = start[axis];
-  const next: ScaleVector = [...start];
-  for (let index = 0; index < shown; index++) {
-    if (index === axis || from === 0) next[index] = value;
-    else next[index] = start[index] * (value / from);
-  }
-  return next;
 }
 
 /** World axes a translate handle moves: an axis arrow one, a plane square two. */
@@ -532,6 +513,8 @@ export function createGizmoHost(
   // Babylon scales only the dragged local axis; a linked drag then rescales
   // the other axes from their drag-start values after each of its steps.
   let linkedScaleDrag: { axis: 0 | 1 | 2; start: ScaleVector } | null = null;
+  /** Local axis of the X, Y or Z scale handle being dragged. */
+  let activeScaleAxis: 0 | 1 | 2 | null = null;
 
   const linkScaleDrag = () => {
     const mesh = scale.attachedMesh;
@@ -565,6 +548,7 @@ export function createGizmoHost(
           })()
         : null;
     const scaleAxis = handle ? scaleAxes.get(handle) : undefined;
+    activeScaleAxis = scaleAxis ?? null;
     const scaled = scale.attachedMesh;
     linkedScaleDrag =
       linkedScale && scaled && scaleAxis !== undefined
@@ -578,6 +562,7 @@ export function createGizmoHost(
     dragging = false;
     snapDrag = null;
     linkedScaleDrag = null;
+    activeScaleAxis = null;
     releaseLease?.();
     releaseLease = null;
     options.scheduler?.invalidate("gizmo");
@@ -781,6 +766,7 @@ export function createGizmoHost(
     },
     setLinkedScale: (linked: boolean) => {
       linkedScale = linked;
+      overlayBox?.setLinkedScale(linked);
     },
     attachTo: (mesh, visuals, attach) => {
       attached = mesh;
@@ -790,6 +776,7 @@ export function createGizmoHost(
     },
     attachedMesh: () => attached,
     isDragging: () => dragging || overlayBox?.isDragging() === true,
+    scaleDragAxis: () => activeScaleAxis,
     hitTest: (canvasX, canvasY, canvasSize) => {
       const mapped = mapCanvasPointer(scene, canvasX, canvasY, canvasSize);
       const pick = layer.utilityLayerScene.pick(mapped.x, mapped.y);

@@ -1,11 +1,8 @@
 import type { Mesh } from "@babylonjs/core";
 import type { CommandMessage } from "@haptic/bridge";
-import type { SpriteAnimationPayload, SpriteFrame, SpritePayload } from "@haptic/assets";
-import {
-  spriteAnimationFrameAt,
-  spriteClipFrameAt,
-} from "@haptic/assets";
-import { applySpriteFrameUvs, setSpriteQuadSize } from "./sprite-quad";
+import type { SpriteAnimationPayload, SpritePayload } from "@haptic/assets";
+import { spriteAnimationFrameAt } from "@haptic/assets";
+import { setSpriteQuadSize, setSpriteQuadUvs } from "./sprite-quad";
 import { applySpriteVisibility } from "./mesh-assets";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 
@@ -46,32 +43,7 @@ export function seekGameplayAnimation(
   group.setWeightForAllAnimatables?.(weight);
 }
 
-/** Bake a legacy atlas clip frame's UVs, size and pivot into the sprite quad, as `createSpriteQuad` does. */
-export function applySpriteAnimFrame(
-  mesh: Mesh,
-  payload: SpritePayload,
-  clipName: string,
-  normalisedTime: number,
-): void {
-  const frame = spriteClipFrameAt(payload, clipName, normalisedTime);
-  if (!frame) return;
-  applySpriteFrameUvs(mesh, frame);
-  const ppu = payload.pixelsPerUnit > 0 ? payload.pixelsPerUnit : 100;
-  setSpriteQuadSize(mesh, (frame.width ?? 100) / ppu || 1, (frame.height ?? 100) / ppu || 1, frame.pivot);
-}
-
-/** Each Sprite Animation frame owns its whole texture; applySpriteFrameUvs reads only u/v/uSize/vSize. */
-const FULL_TEXTURE_FRAME: SpriteFrame = {
-  name: "sprite-animation",
-  u: 0,
-  v: 0,
-  uSize: 1,
-  vSize: 1,
-  durationMs: 0,
-  pivot: { x: 0.5, y: 0.5 },
-};
-
-/** Bind a Sprite Animation asset frame (full UVs, texture, size, pivot) onto the sprite quad. */
+/** Bind a Sprite Animation asset frame (texture, region, size, pivot) onto the sprite quad; a sheet cell shows its UVs, other frames the whole texture. */
 export function applySpriteAnimationAssetFrame(
   mesh: Mesh,
   payload: SpriteAnimationPayload,
@@ -83,8 +55,8 @@ export function applySpriteAnimationAssetFrame(
 ): void {
   const frame = spriteAnimationFrameAt(payload, normalisedTime);
   if (!frame) return;
-  applySpriteFrameUvs(mesh, FULL_TEXTURE_FRAME);
   options?.applyTexture?.(mesh, frame.textureGuid || null);
+  setSpriteQuadUvs(mesh, frame.uv);
   const ppu =
     options?.pixelsPerUnit && options.pixelsPerUnit > 0
       ? options.pixelsPerUnit
@@ -281,22 +253,21 @@ function findClipGroup(
   return undefined;
 }
 
+/** False when the layer names no loaded Sprite Animation: the quad keeps showing what it showed. */
 function applySpriteLayer(
   slot: SpriteAnimSlot,
   mesh: Mesh,
   layer: AnimClipLayer,
-): void {
+): boolean {
   const animation = layer.clipAssetGuid
     ? slot.spriteAnimations?.get(layer.clipAssetGuid)
     : undefined;
-  if (animation) {
-    applySpriteAnimationAssetFrame(mesh, animation, layer.normalisedTime, {
-      applyTexture: slot.applyTexture,
-      pixelsPerUnit: slot.payload.pixelsPerUnit,
-    });
-    return;
-  }
-  applySpriteAnimFrame(mesh, slot.payload, layer.clipName, layer.normalisedTime);
+  if (!animation) return false;
+  applySpriteAnimationAssetFrame(mesh, animation, layer.normalisedTime, {
+    applyTexture: slot.applyTexture,
+    pixelsPerUnit: slot.payload.pixelsPerUnit,
+  });
+  return true;
 }
 
 function applySpriteLayers(
@@ -306,7 +277,7 @@ function applySpriteLayers(
   secondary: AnimClipLayer | undefined,
 ): void {
   const slot = scene.getSpriteSlot?.(slotId);
-  if (!slot) {
+  if (!slot || !applySpriteLayer(slot, slot.mesh, primary)) {
     scene.onMissingClip?.({
       slotId,
       clipName: primary.clipName,
@@ -315,15 +286,12 @@ function applySpriteLayers(
     });
     return;
   }
-  applySpriteLayer(slot, slot.mesh, primary);
   applySpriteVisibility(slot.mesh, primary.weight);
   if (slot.overlayMesh) {
-    if (secondary) {
-      applySpriteLayer(slot, slot.overlayMesh, secondary);
-      applySpriteVisibility(slot.overlayMesh, secondary.weight);
-    } else {
-      applySpriteVisibility(slot.overlayMesh, 0);
-    }
+    applySpriteVisibility(
+      slot.overlayMesh,
+      secondary && applySpriteLayer(slot, slot.overlayMesh, secondary) ? secondary.weight : 0,
+    );
   }
 }
 

@@ -4,7 +4,9 @@ import {
   CopyIcon,
   CopyPlusIcon,
   FileInputIcon,
+  FilmIcon,
   FolderInputIcon,
+  Grid3x3Icon,
   ImageIcon,
   LinkIcon,
   PaintbrushIcon,
@@ -20,6 +22,7 @@ import {
   stripAssetFileSuffix,
   type AssetCopyOptions,
   type AssetRegistry,
+  type ImportResult,
   type IndexedAsset,
 } from "@haptic/assets";
 import type { ProjectDocument } from "@haptic/core";
@@ -29,13 +32,17 @@ import { createAssetThumbnailRevisionIndex } from "../lib/asset-thumbnail-revisi
 import type { useKeybindings } from "../context/keybind-context";
 import {
   buildMaterialInstanceAssetResult,
+  buildSpriteAnimationAssetResult,
+  buildTilesetAssetResult,
+  derivedAssetNameFor,
   guidsOutsideSelectedFolders,
   isFolderTreeRoot,
   isNewAssetNameTaken,
-  materialInstanceNameFor,
   newAssetFileName,
   parentFolderPath,
   rootSelectedFolderPaths,
+  spriteAnimationNameFor,
+  type CreatableAssetType,
 } from "../lib/content-browser-helpers";
 import { contentBrowserFolderOps } from "../lib/plugin-ui";
 import { copyText } from "../lib/diagnostic-info";
@@ -84,7 +91,12 @@ export interface ContentBrowserTileMenuDeps {
   requestDeleteSnapshot: (guids: string[], folderPaths: string[]) => void;
 }
 
-/** The asset tile context menu: Open, thumbnails, Material Instance, Duplicate, Rename, Move, Copy, References and Delete. */
+/** Selected assets in name order, as the grid lists them (`Run_2` before `Run_10`). */
+function byAssetName(a: IndexedAsset, b: IndexedAsset): number {
+  return a.header.name.localeCompare(b.header.name, undefined, { numeric: true, sensitivity: "base" });
+}
+
+/** The asset tile context menu: Open, thumbnails, Material Instance, Sprite Animation, Tileset, Duplicate, Rename, Move, Copy, References and Delete. */
 export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
   const {
 
@@ -116,6 +128,44 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
     setReferenceGuid,
     requestDeleteSnapshot,
   } = deps;
+  /**
+   * Writes a new `type` asset beside `source`, named `<base>` (or `<base>_N`
+   * when a `type` asset there has it), then opens it.
+   */
+  const createBeside = async (
+    source: IndexedAsset,
+    type: CreatableAssetType,
+    base: string,
+    build: (guid: string, name: string) => ImportResult,
+  ): Promise<void> => {
+    if (!assetRegistry) return;
+    const folder = parentFolderPath(source.path);
+    const browse = contentBrowserFolderOps(folder, browserRoots);
+    if (browse.readOnly) {
+      setOperationError(`${browse.pathPrefix} is read-only.`);
+      return;
+    }
+    const paths = assetRegistry.list().map((asset) => asset.path);
+    const name = derivedAssetNameFor(base, (candidate) => isNewAssetNameTaken(paths, folder, type, candidate));
+    const fileName = newAssetFileName(type, name);
+    if (!fileName) return;
+    setBusy(true);
+    setOperationError(null);
+    try {
+      const created = await assetRegistry.createAsset(
+        browse.rootId,
+        browse.relative ? `${browse.relative}/${fileName}` : fileName,
+        build(newAssetGuid(), name),
+      );
+      // The mounted registry indexed the new asset on write: no rescan.
+      noteAssetsCreated();
+      await openOrFocusDocument(created);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
   return [
     {
       id: "open" as const,
@@ -228,36 +278,48 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
       icon: <PaintbrushIcon />,
       onSelect: () => {
         if (busy) return;
-        void (async () => {
-          const guid = menuTargetGuidsRef.current[0];
-          const parent = guid ? assetRegistry?.getByGuid(guid) : undefined;
-          if (!assetRegistry || !parent) return;
-          // Beside its parent, so a Material and its instances stay together.
-          const folder = parentFolderPath(parent.path);
-          const browse = contentBrowserFolderOps(folder, browserRoots);
-          if (browse.readOnly) return;
-          const paths = assetRegistry.list().map((asset) => asset.path);
-          const name = materialInstanceNameFor(parent.header.name, (candidate) =>
-            isNewAssetNameTaken(paths, folder, "MaterialInstance", candidate));
-          const fileName = newAssetFileName("MaterialInstance", name);
-          if (!fileName) return;
-          setBusy(true);
-          setOperationError(null);
-          try {
-            const created = await assetRegistry.createAsset(
-              browse.rootId,
-              browse.relative ? `${browse.relative}/${fileName}` : fileName,
-              buildMaterialInstanceAssetResult(parent.header, newAssetGuid(), name),
-            );
-            // The mounted registry indexed the instance on write: no rescan.
-            noteAssetsCreated();
-            await openOrFocusDocument(created);
-          } catch (error) {
-            setOperationError(error instanceof Error ? error.message : String(error));
-          } finally {
-            setBusy(false);
-          }
-        })();
+        const guid = menuTargetGuidsRef.current[0];
+        const parent = guid ? assetRegistry?.getByGuid(guid) : undefined;
+        if (!parent) return;
+        // Beside its parent, so a Material and its instances stay together.
+        void createBeside(parent, "MaterialInstance", `${parent.header.name}_Instance`, (newGuid, name) =>
+          buildMaterialInstanceAssetResult(parent.header, newGuid, name));
+      },
+    },
+    {
+      id: "create-sprite-animation" as const,
+      label: "Create Sprite Animation",
+      icon: <FilmIcon />,
+      onSelect: () => {
+        if (busy || !assetRegistry) return;
+        const sources = menuTargetGuidsRef.current
+          .flatMap((guid) => {
+            const asset = assetRegistry.getByGuid(guid);
+            return asset && (asset.header.type === "Texture" || asset.header.type === "Sprite") ? [asset] : [];
+          })
+          .sort(byAssetName);
+        const first = sources[0];
+        if (!first) return;
+        // One frame per Texture or Sprite, in name order, beside the first.
+        void createBeside(first, "SpriteAnimation", spriteAnimationNameFor(first.header.name), (newGuid, name) =>
+          buildSpriteAnimationAssetResult(
+            sources.map((asset) => ({ guid: asset.header.guid, type: asset.header.type })),
+            newGuid,
+            name,
+          ));
+      },
+    },
+    {
+      id: "create-tileset" as const,
+      label: "Create Tileset",
+      icon: <Grid3x3Icon />,
+      onSelect: () => {
+        if (busy) return;
+        const guid = menuTargetGuidsRef.current[0];
+        const texture = guid ? assetRegistry?.getByGuid(guid) : undefined;
+        if (!texture || texture.header.type !== "Texture") return;
+        void createBeside(texture, "Tileset", texture.header.name, (newGuid, name) =>
+          buildTilesetAssetResult({ guid: texture.header.guid, payload: texture.header.payload }, newGuid, name));
       },
     },
     {

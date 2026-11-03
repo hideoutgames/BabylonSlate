@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  applyTexturePixelSizesToSpriteAnimation,
   createDefaultSpriteAnimationPayload,
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
   normalizeTilesetPayload,
+  resolveSpriteAnimation,
   setTile,
   type TilemapPayload,
 } from "@haptic/assets";
@@ -521,8 +521,8 @@ describe("PhysicsWorldSync sprite collision", () => {
 
     const sprite = createDefaultSpritePayload();
     sprite.pixelsPerUnit = 100;
-    sprite.frames[0]!.width = 100;
-    sprite.frames[0]!.height = 100;
+    sprite.width = 100;
+    sprite.height = 100;
     const animation = createDefaultSpriteAnimationPayload();
     animation.frames[0] = {
       textureGuid: "tex-walk",
@@ -659,10 +659,10 @@ describe("PhysicsWorldSync sprite collision", () => {
       pivot: { x: 0.5, y: 0.5 },
       collision: { x: 0, y: 0, width: 1, height: 1 },
     };
-    const sized = applyTexturePixelSizesToSpriteAnimation(
-      animation,
-      (guid) => (guid === "tex-walk" ? { width: 200, height: 50 } : null),
-    );
+    const sized = resolveSpriteAnimation(animation, {
+      sprite: () => null,
+      textureSize: (guid) => (guid === "tex-walk" ? { width: 200, height: 50 } : null),
+    });
 
     const backend = createSoftwarePhysicsBackend("2d", { x: 0, y: 0, z: 0 });
     const sync = new PhysicsWorldSync(backend);
@@ -722,9 +722,9 @@ describe("PhysicsWorldSync sprite collision", () => {
 
     const sprite = createDefaultSpritePayload();
     sprite.pixelsPerUnit = 100;
-    sprite.frames[0]!.width = 100;
-    sprite.frames[0]!.height = 100;
-    sprite.frames[0]!.collision = { x: 0, y: 0, width: 1, height: 1 };
+    sprite.width = 100;
+    sprite.height = 100;
+    sprite.collision = { x: 0, y: 0, width: 1, height: 1 };
     const animation = createDefaultSpriteAnimationPayload();
     animation.frames[0] = {
       textureGuid: "tex-walk",

@@ -4,40 +4,41 @@ import {
   Scene,
   VertexBuffer,
 } from "@babylonjs/core";
-import type { SpriteFrame } from "@haptic/assets";
-import { spriteFrameUvs } from "@haptic/assets";
+import { spriteWorldSize, type SpritePayload, type TileUv } from "@haptic/assets";
 import { markOwnerNotifiedGeometry } from "./geometry-revision";
 
 const spriteQuads = new WeakSet<Mesh>();
 export function isSpriteQuad(mesh: unknown): boolean { return mesh instanceof Mesh && spriteQuads.has(mesh); }
 
+/** The whole texture, corner by corner in the quad's vertex order (bottom-left first). */
+const FULL_TEXTURE_UVS = [0, 0, 1, 0, 1, 1, 0, 1];
+
 /**
- * XY-plane quad with the atlas frame baked into UVs (not BABYLON.Sprite).
- * Sized from frame pixels / pixelsPerUnit and offset so the frame pivot sits
- * at the mesh origin, the same origin `spriteCollisionToBox2d` uses.
+ * XY-plane quad showing a whole texture (not BABYLON.Sprite). Sized from the
+ * image's pixels / pixelsPerUnit and offset so the pivot sits at the mesh
+ * origin, the same origin `spriteCollisionToBox2d` uses.
  */
 export function createSpriteQuad(
   scene: Scene,
   name: string,
-  frame: SpriteFrame,
+  sprite: Pick<SpritePayload, "pivot" | "width" | "height">,
   pixelsPerUnit = 100,
 ): Mesh {
-  const width = (frame.width ?? 100) / pixelsPerUnit || 1;
-  const height = (frame.height ?? 100) / pixelsPerUnit || 1;
+  const { width, height } = spriteWorldSize({ pixelsPerUnit, width: sprite.width, height: sprite.height });
   const mesh = MeshBuilder.CreatePlane(name, { width, height, updatable: true }, scene);
   spriteQuads.add(mesh);
-  // Resizes and frame changes rewrite positions and UVs through notified updates only.
+  // Resizes rewrite positions through notified updates only.
   markOwnerNotifiedGeometry(mesh);
-  setSpriteQuadSize(mesh, width, height, frame.pivot);
-  applySpriteFrameUvs(mesh, frame);
+  setSpriteQuadSize(mesh, width, height, sprite.pivot);
+  mesh.setVerticesData(VertexBuffer.UVKind, FULL_TEXTURE_UVS, false);
   return mesh;
 }
 
-const appliedQuads = new WeakMap<Mesh, { positions: Float32Array; uvs: Float32Array; width?: number; height?: number; pivotX?: number; pivotY?: number; u0?: number; v0?: number; u1?: number; v1?: number }>();
+const appliedQuads = new WeakMap<Mesh, { positions: Float32Array; uvs: Float32Array; uvKey?: string; width?: number; height?: number; pivotX?: number; pivotY?: number }>();
 function quadState(mesh: Mesh) {
   let state = appliedQuads.get(mesh);
   if (!state) {
-    state = { positions: new Float32Array(12), uvs: new Float32Array(8) };
+    state = { positions: new Float32Array(12), uvs: new Float32Array(FULL_TEXTURE_UVS) };
     appliedQuads.set(mesh, state);
   }
   return state;
@@ -59,12 +60,14 @@ export function setSpriteQuadSize(mesh: Mesh, width: number, height: number, piv
   state.width = width; state.height = height; state.pivotX = pivot.x; state.pivotY = pivot.y;
 }
 
-export function applySpriteFrameUvs(mesh: Mesh, frame: SpriteFrame): void {
+/** Show one region of the texture (a sheet cell, GL v up), or the whole texture when `uv` is absent. */
+export function setSpriteQuadUvs(mesh: Mesh, uv?: TileUv | null): void {
   const state = quadState(mesh);
-  const { u0, v0, u1, v1 } = spriteFrameUvs(frame);
-  if (state.u0 === u0 && state.v0 === v0 && state.u1 === u1 && state.v1 === v1) return;
-  state.uvs.set([u0, v0, u1, v0, u1, v1, u0, v1]);
+  const key = uv ? `${uv.u0},${uv.v0},${uv.u1},${uv.v1}` : "full";
+  if (state.uvKey === key || (!state.uvKey && key === "full")) return;
+  if (uv) state.uvs.set([uv.u0, uv.v0, uv.u1, uv.v0, uv.u1, uv.v1, uv.u0, uv.v1]);
+  else state.uvs.set(FULL_TEXTURE_UVS);
   if (!mesh.getVertexBuffer(VertexBuffer.UVKind)?.isUpdatable()) mesh.markVerticesDataAsUpdatable(VertexBuffer.UVKind, true);
   mesh.updateVerticesData(VertexBuffer.UVKind, state.uvs, false, false);
-  state.u0 = u0; state.v0 = v0; state.u1 = u1; state.v1 = v1;
+  state.uvKey = key;
 }

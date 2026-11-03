@@ -18,7 +18,7 @@ import {
   type TilemapPayload,
 } from "./tilemap-payload";
 import { applyTilemapPaint, type TileCell, type TilemapPaintStroke } from "./tilemap-paint";
-import { paintTilemapTerrain, type TilemapTerrainBrush } from "./tilemap-terrain";
+import { paintTilemapTerrain, refreshTilemapTerrains, type TilemapTerrainBrush } from "./tilemap-terrain";
 
 const E = TERRAIN_E;
 const SE = TERRAIN_SE;
@@ -196,5 +196,31 @@ describe("applyTilemapPaint with a terrain", () => {
     expect(draw(strip)[4]).toBe(".[T]....");
     const erased = applyTilemapPaint(strip, { ...stroke("eraser", { x: 3, y: 1 }), cells: [{ x: 3, y: 1 }] }, undefined, TILESETS);
     expect(draw(erased)[4]).toBe(".[].....");
+  });
+
+  it("re-resolves the neighbours with the Eraser even without a terrain brush, but never a plain tile", () => {
+    const strip = applyTilemapPaint(emptyMap(), stroke("rect", { x: 1, y: 1 }, { x: 3, y: 1 }), undefined, TILESETS);
+    const withPlain = setTile(strip, "layer-1", 5, 1, FIRST_GID + 13);
+    const eraser: TilemapPaintStroke = { tool: "eraser", layerId: "layer-1", tileId: 0, start: { x: 3, y: 1 }, end: { x: 3, y: 1 }, cells: [{ x: 3, y: 1 }, { x: 4, y: 1 }] };
+    expect(draw(applyTilemapPaint(withPlain, eraser, undefined, TILESETS))[4]).toBe(".[]..x..");
+    // Without the Tilesets the Eraser only clears.
+    expect(draw(applyTilemapPaint(withPlain, eraser))[4]).toBe(".[T..x..");
+  });
+});
+
+describe("refreshTilemapTerrains", () => {
+  it("re-picks every terrain tile on every layer from its neighbours and leaves plain tiles and unknown terrains", () => {
+    let map = paint(emptyMap(), ISLAND);
+    map = setTile(map, "layer-1", 7, 0, FIRST_GID + 13);
+    map = { ...map, layers: [...map.layers, { ...map.layers[0]!, id: "layer-2", name: "Layer 2" }] };
+    // Before the fill tile existed the island's centre painted the closest tile; adding it to the Tileset changes nothing until a refresh.
+    const withoutFill = new Map([["ts", { ...TILESET, tiles: TILESET.tiles.map((tile) => (tile.id === 7 ? { id: 7, collision: "none" as const, flags: 0, animation: [] } : tile)) }]]);
+    const stale = refreshTilemapTerrains(map, withoutFill);
+    expect(draw(stale)).not.toEqual(draw(map));
+    const refreshed = refreshTilemapTerrains(stale, TILESETS);
+    expect(draw(refreshed)).toEqual(draw(map));
+    expect(getTile(refreshed, "layer-2", 4, 2)).toBe(getTile(map, "layer-1", 4, 2));
+    expect(getTile(refreshed, "layer-1", 7, 0)).toBe(FIRST_GID + 13);
+    expect(refreshTilemapTerrains(refreshed, TILESETS)).toBe(refreshed);
   });
 });

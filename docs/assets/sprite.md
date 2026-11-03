@@ -1,6 +1,6 @@
 # Sprite
 
-A 2D image built from a Texture: size, pivot and optional collision.
+A 2D image: one Texture with its pivot and collision box. To play several images in turn, use a [Sprite Animation](sprite-animation.md); its frames can be Sprites, which bring their pivot and collision box.
 
 ## Create
 
@@ -18,16 +18,15 @@ Double-tap a Sprite to open it.
 | Setting | Description |
 | --- | --- |
 | Texture | The image to show. |
-| Pixels Per Unit | Image pixels per world unit, which sets the sprite's size in the world. Default 100. |
+| Pixels Per Unit | Image pixels per world unit. The sprite's size in the world is its Texture's size divided by this. Default 100. |
 | Pivot | The point of the image that sits at the actor's position, as fractions of the image. 0.5, 0.5 is the centre and 0, 0 the top-left corner. |
-| Frame Duration | Length of the frame in milliseconds. Default 100. |
 | Collision | The collision box as fractions of the image: X, Y, W and H. The default covers the whole image. |
 
 ## Notes
 
 - Sprites sample their Texture with nearest-neighbour filtering, so pixel art stays sharp.
 - A [Collider](../components/collider.md) with the **Box 2D** shape takes its size and position from the Sprite's collision box and pivot.
-- To play several images in turn, use a [Sprite Animation](sprite-animation.md).
+- A Sprite always shows its whole Texture. Re-importing the Texture at another size resizes the sprite.
 
 ## Related
 

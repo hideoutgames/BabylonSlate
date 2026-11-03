@@ -14,6 +14,7 @@ import {
   PencilIcon,
   PipetteIcon,
   PlusIcon,
+  RefreshCwIcon,
   SquareIcon,
   StampIcon,
 } from "lucide-react";
@@ -57,6 +58,7 @@ import {
   resolveTypeVisual,
   assetRowIdentity,
   selectedPickerIdentity,
+  useAssetOpen,
   type PropertyRow,
 } from "@haptic/editor-kit";
 import {
@@ -75,10 +77,12 @@ import {
   DEFAULT_PAINT_CELL_SIZE,
   encodeTileGid,
   isTilemapPaintStrokeTool,
+  missingTerrainVariants,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   paintCanvasTileAt,
   pickTileId,
+  refreshTilemapTerrains,
   removeTilemapTileset,
   reorderTilemapLayers,
   resizeTilemap,
@@ -86,8 +90,11 @@ import {
   tilemapStrokeMergeKey,
   tilemapTerrainKey,
   tilemapTilesetGuids,
+  terrainFillMask,
+  terrainVariantMasks,
   tilePlaceholderHsl,
   tilesetTerrainById,
+  tilesetTileById,
   tilesetTileRect,
   type TilemapPaintTool,
   type TilemapLayer,
@@ -510,6 +517,27 @@ export function TilemapPalette({
   const assets = useRegistryPickerAssets();
   const needle = query.trim().toLowerCase();
   const selectedTerrain = editing?.selectedTerrain ?? null;
+  const assetOpen = useAssetOpen();
+  const tilesetName = (guid: string) => assets.find((asset) => asset.guid === guid)?.name ?? "Tileset";
+  /** Every autotile of the map's Tilesets, with the fill tile it shows and how many variants have a tile. */
+  const autotiles = tilemap.tilesets.flatMap((ref) => {
+    const tileset = payloads.get(ref.guid);
+    if (!tileset) return [];
+    const setMatches = !needle || tilesetName(ref.guid).toLowerCase().includes(needle);
+    return (tileset.terrains ?? [])
+      .filter((terrain) => setMatches || terrain.name.toLowerCase().includes(needle))
+      .map((terrain) => {
+        const total = terrainVariantMasks(terrain.style).length;
+        return {
+          ref,
+          tileset,
+          terrain,
+          fill: createTerrainResolver(tileset, terrain.id, ref.tileCount)?.(terrainFillMask(terrain.style)) ?? 0,
+          covered: total - missingTerrainVariants(tileset, terrain.id).length,
+          total,
+        };
+      });
+  });
 
   const addTilesetToLatest = useAddTileset(tilemap, loadPayloads, assets);
   const addTileset = async (guid: string | null) => {
@@ -572,6 +600,65 @@ export function TilemapPalette({
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {autotiles.length > 0 ? (
+          <section className="flex flex-col" data-testid="tilemap-palette-autotiles">
+            <h3 className="sticky top-0 z-10 bg-sidebar px-2 py-1.5 text-xs font-semibold">Autotiles</h3>
+            <div role="group" aria-label="Autotiles" className="flex flex-col gap-1 px-2 pb-3">
+              {autotiles.map(({ ref, tileset, terrain, fill, covered, total }) => {
+                const brush = { guid: ref.guid, terrainId: terrain.id };
+                const label = autotiles.some((entry) => entry.ref.guid !== ref.guid)
+                  ? `${terrain.name} · ${tilesetName(ref.guid)}`
+                  : terrain.name;
+                if (fill === 0) {
+                  return (
+                    <Button
+                      key={`${ref.guid}:${terrain.id}`}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-auto justify-start gap-2 border-dashed py-1 pl-1 text-left font-normal pointer-coarse:min-h-11"
+                      disabled={!assetOpen}
+                      onClick={() => assetOpen?.openAsset(ref.guid)}
+                      data-testid={`tilemap-palette-autotile-setup-${ref.guid}-${terrain.id}`}
+                    >
+                      <span aria-hidden className="size-7 shrink-0 rounded-sm border border-dashed border-border" />
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate">{label}</span>
+                        <span className="truncate text-xs text-muted-foreground">Set Up in Tileset</span>
+                      </span>
+                    </Button>
+                  );
+                }
+                const pressed = selectedTerrain !== null && tilemapTerrainKey(selectedTerrain) === tilemapTerrainKey(brush);
+                return (
+                  <Toggle
+                    key={`${ref.guid}:${terrain.id}`}
+                    variant="outline"
+                    size="sm"
+                    className="h-auto justify-start gap-2 py-1 pl-1 text-left pointer-coarse:min-h-11"
+                    pressed={pressed}
+                    onPressedChange={(next) => editing?.setSelectedTerrain(next ? brush : null)}
+                    data-testid={`tilemap-palette-terrain-${ref.guid}-${terrain.id}`}
+                  >
+                    <TileImage
+                      gid={encodeTileGid(ref.firstGid, fill)}
+                      localId={fill}
+                      tileset={tileset}
+                      atlas={atlases.get(ref.guid) ?? null}
+                      className="size-7 shrink-0 rounded-sm"
+                    />
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate">{label}</span>
+                      <span className="truncate text-xs font-normal text-muted-foreground tabular-nums">
+                        {covered} of {total}
+                      </span>
+                    </span>
+                  </Toggle>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
         {tilemap.tilesets.map((ref) => {
           const tileset = payloads.get(ref.guid);
           const name =
@@ -579,10 +666,7 @@ export function TilemapPalette({
           const nameMatches = !needle || name.toLowerCase().includes(needle);
           const tiles = tileset?.tiles ?? [];
           const visible = tiles.filter((tile) => nameMatches || `tile ${tile.id}`.includes(needle));
-          const terrains = (tileset?.terrains ?? []).filter(
-            (terrain) => nameMatches || terrain.name.toLowerCase().includes(needle),
-          );
-          if (visible.length === 0 && terrains.length === 0) return null;
+          if (visible.length === 0) return null;
           return (
             <section key={ref.guid} className="flex flex-col" data-testid={`tilemap-palette-group-${ref.guid}`}>
               <h3 className="sticky top-0 z-10 flex items-center gap-1.5 bg-sidebar px-2 py-1.5 text-xs font-semibold">
@@ -590,44 +674,6 @@ export function TilemapPalette({
                 <span className="min-w-0 flex-1 truncate">{name}</span>
                 <SectionCount value={visible.length} />
               </h3>
-              {tileset && terrains.length > 0 ? (
-                <div
-                  role="group"
-                  aria-label={`${name} Terrains`}
-                  className="flex flex-wrap gap-1 px-2 pb-2"
-                  data-testid={`tilemap-palette-terrains-${ref.guid}`}
-                >
-                  {terrains.map((terrain) => {
-                    const brush = { guid: ref.guid, terrainId: terrain.id };
-                    const pressed = selectedTerrain !== null
-                      && tilemapTerrainKey(selectedTerrain) === tilemapTerrainKey(brush);
-                    // How one painted cell on its own looks.
-                    const preview = createTerrainResolver(tileset, terrain.id, ref.tileCount)?.(0) ?? 0;
-                    return (
-                      <Toggle
-                        key={terrain.id}
-                        variant="outline"
-                        size="sm"
-                        className="max-w-full justify-start pl-1 pointer-coarse:min-h-11"
-                        pressed={pressed}
-                        disabled={preview === 0}
-                        title={preview === 0 ? "No tiles use this terrain yet." : undefined}
-                        onPressedChange={(next) => editing?.setSelectedTerrain(next ? brush : null)}
-                        data-testid={`tilemap-palette-terrain-${ref.guid}-${terrain.id}`}
-                      >
-                        <TileImage
-                          gid={encodeTileGid(ref.firstGid, preview)}
-                          localId={preview}
-                          tileset={tileset}
-                          atlas={atlases.get(ref.guid) ?? null}
-                          className="size-5 rounded-sm"
-                        />
-                        <span className="truncate">{terrain.name}</span>
-                      </Toggle>
-                    );
-                  })}
-                </div>
-              ) : null}
               <div className="grid grid-cols-[repeat(auto-fill,minmax(2.25rem,1fr))] gap-1 px-2 pb-3 pointer-coarse:grid-cols-[repeat(auto-fill,minmax(var(--touch-target,44px),1fr))]">
                 {visible.map((tile) => {
                   const gid = encodeTileGid(ref.firstGid, tile.id);
@@ -678,6 +724,12 @@ export function TilemapPaint({
   const [layerOpen, setLayerOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [tool, setTool] = useState<TilemapPaintTool>("move");
+  // Picking an autotile means painting it: leave Move or Picker for the Brush.
+  const [seenTerrain, setSeenTerrain] = useState(editing?.selectedTerrain ?? null);
+  if ((editing?.selectedTerrain ?? null) !== seenTerrain) {
+    setSeenTerrain(editing?.selectedTerrain ?? null);
+    if (editing?.selectedTerrain && (tool === "move" || tool === "picker")) setTool("brush");
+  }
   const [layerId, setLayerId] = useState(tilemap.layers[0]?.id ?? "layer-1");
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [cellSize, setCellSize] = useState(DEFAULT_PAINT_CELL_SIZE);
@@ -953,6 +1005,30 @@ export function TilemapPaint({
     setStrokePreview(painted);
   };
 
+  /** The Picker takes an autotile cell's autotile as the brush, any other cell's tile. */
+  const pickCell = (cell: { x: number; y: number }) => {
+    if (!layer) return;
+    const gid = pickTileId(tilemap, layer.id, cell.x, cell.y);
+    const identity = gid > 0 ? tilemapTileIdentity(tilemap, gid) : null;
+    const tileset = identity ? payloads.get(identity.guid) : undefined;
+    const terrainId = identity && tileset ? tilesetTileById(tileset, identity.localId)?.terrain?.id : undefined;
+    if (editing && identity && tileset && terrainId && tilesetTerrainById(tileset, terrainId)) {
+      editing.setSelectedTile(identity);
+      editing.setSelectedTerrain({ guid: identity.guid, terrainId });
+      return;
+    }
+    setSelectedGid(gid);
+  };
+
+  const hasAutotiles = tilemap.tilesets.some((ref) => (payloads.get(ref.guid)?.terrains?.length ?? 0) > 0);
+  /** Re-pick every autotile cell from its neighbours, as one undo step. */
+  const refreshAutotiles = () => {
+    const next = refreshTilemapTerrains(latestRef.current, payloads);
+    if (next === latestRef.current) return;
+    latestRef.current = next;
+    onChange(next as unknown as Record<string, unknown>);
+  };
+
   const addTilesetToLatest = useAddTileset(tilemap, loadPayloads, assets);
   const addTileset = async (guid: string | null) => {
     const result = await addTilesetToLatest(guid);
@@ -1067,7 +1143,7 @@ export function TilemapPaint({
           </Button>
         </SearchDropdown>
         <Separator orientation="vertical" className="my-1" />
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           {terrainBrush ? (
             <TileImage
               gid={terrainBrush.gid}
@@ -1105,6 +1181,25 @@ export function TilemapPaint({
                 : `GID ${selectedGid}`}
           </span>
         </div>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="pointer-coarse:min-h-11"
+                disabled={!hasAutotiles}
+                onClick={refreshAutotiles}
+                data-testid="tilemap-refresh-autotiles"
+              />
+            }
+          >
+            <RefreshCwIcon />
+            Refresh Autotiles
+          </TooltipTrigger>
+          <TooltipContent>Repaint autotile cells after their Tileset changed</TooltipContent>
+        </Tooltip>
       </ToolbarStrip>
       <div ref={hostRef} className="relative min-h-0 flex-1">
         <canvas
@@ -1245,9 +1340,7 @@ export function TilemapPaint({
                 tool === "picker" &&
                 layer
               ) {
-                setSelectedGid(
-                  pickTileId(tilemap, layer.id, pending.x, pending.y),
-                );
+                pickCell(pending);
               }
               finishStroke();
               pinchActiveRef.current = false;

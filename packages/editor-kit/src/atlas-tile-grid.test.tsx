@@ -322,6 +322,57 @@ describe("AtlasTileGrid", () => {
     ).toBe("true");
   });
 
+  it("paints autotile zones by drag with the first zone's value, and sends a 4 Sides corner to the nearer side", () => {
+    const on = new Set(["1:0", "1:1"]);
+    const edits: unknown[] = [];
+    const renderGrid = (style: "sides" | "blob") => render(
+      <AtlasTileGrid
+        tileset={twoTileSet()}
+        imageUrl={null}
+        selectedId={1}
+        onSelect={() => {}}
+        panZoom
+        tool="autotile"
+        autotile={{ style, zoneOn: (tileId, zone) => on.has(`${tileId}:${zone}`) }}
+        onAutotileZone={(edit) => edits.push(edit)}
+        data-testid="atlas"
+      />,
+    );
+    renderGrid("blob");
+    const zones = screen.getByTestId("atlas-zones-1");
+    expect(zones.getAttribute("data-member")).toBe("true");
+    expect(zones.querySelector('[data-zone="1"]')?.getAttribute("data-on")).toBe("true");
+    expect(screen.getByTestId("atlas-zones-2").getAttribute("data-member")).toBe("false");
+    const surface = screen.getByTestId("atlas-surface");
+    const cell = screen.getByTestId("atlas-cell-1");
+    cell.parentElement!.getBoundingClientRect = () => ({ left: 0, top: 0, width: 32, height: 16 }) as DOMRect;
+    act(() => {
+      // East of tile 1 is off, so the drag turns zones on: east, then tile 2's centre, never repeating a zone.
+      dispatchPointerEvent(cell, "pointerdown", { pointerId: 1, clientX: 14, clientY: 8 });
+      dispatchPointerEvent(surface, "pointermove", { pointerId: 1, clientX: 15, clientY: 8 });
+      dispatchPointerEvent(surface, "pointermove", { pointerId: 1, clientX: 24, clientY: 8 });
+      dispatchPointerEvent(surface, "pointerup", { pointerId: 1, clientX: 24, clientY: 8 });
+      // North of tile 1 is on, so this press turns it off in a new stroke.
+      dispatchPointerEvent(cell, "pointerdown", { pointerId: 1, clientX: 8, clientY: 1 });
+      dispatchPointerEvent(surface, "pointerup", { pointerId: 1, clientX: 8, clientY: 1 });
+    });
+    expect(edits).toEqual([
+      { tileId: 1, zone: 4, on: true, stroke: 1 },
+      { tileId: 2, zone: 0, on: true, stroke: 1 },
+      { tileId: 1, zone: 1, on: false, stroke: 2 },
+    ]);
+    cleanup();
+    edits.length = 0;
+    renderGrid("sides");
+    const sidesCell = screen.getByTestId("atlas-cell-1");
+    sidesCell.parentElement!.getBoundingClientRect = () => ({ left: 0, top: 0, width: 32, height: 16 }) as DOMRect;
+    act(() => {
+      dispatchPointerEvent(sidesCell, "pointerdown", { pointerId: 1, clientX: 1, clientY: 4 });
+    });
+    // The top-left corner press lies further from the centre across than down: west.
+    expect(edits).toEqual([{ tileId: 1, zone: 64, on: true, stroke: 1 }]);
+  });
+
   it("renders a cell for every atlas tile and selects on tap", () => {
     const onSelect = vi.fn();
     render(

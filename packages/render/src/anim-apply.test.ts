@@ -2,7 +2,6 @@ import { Animation, AnimationGroup, NullEngine, Scene, TransformNode, VertexBuff
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   applyAnimStateToScene,
-  applySpriteAnimFrame,
   applySpriteAnimationAssetFrame,
   onceMissingClip,
   resolvePlaySpriteSlot,
@@ -16,11 +15,7 @@ import {
   disposeSnapshotBinding,
 } from "./snapshot-apply";
 import { createSpriteQuad } from "./sprite-quad";
-import {
-  spriteFrameUvs,
-  type SpriteAnimationPayload,
-  type SpritePayload,
-} from "@haptic/assets";
+import { createDefaultSpriteAnimationSheet, type SpriteAnimationPayload, type SpritePayload } from "@haptic/assets";
 
 describe("seekGameplayAnimation", () => {
   it("pauses the group and seeks a normalised frame instead of auto-advancing", () => {
@@ -69,35 +64,14 @@ describe("seekGameplayAnimation", () => {
     expect(frames).toEqual([5]);
   });
 
-  it("bakes sprite clip UVs from animState instead of skipping sprite clips", () => {
+  it("reports a sprite clip that names no loaded Sprite Animation and leaves the quad as it is", () => {
     const payload: SpritePayload = {
-      textureGuid: null,
+      textureGuid: "hero-tex",
       pixelsPerUnit: 100,
-      frames: [
-        {
-          name: "a",
-          u: 0,
-          v: 0,
-          uSize: 0.5,
-          vSize: 1,
-          durationMs: 100,
-          pivot: { x: 0.5, y: 0.5 },
-          width: 16,
-          height: 16,
-        },
-        {
-          name: "b",
-          u: 0.5,
-          v: 0,
-          uSize: 0.5,
-          vSize: 1,
-          durationMs: 100,
-          pivot: { x: 0.5, y: 0.5 },
-          width: 16,
-          height: 16,
-        },
-      ],
-      clips: [{ name: "Idle", frames: ["a", "b"] }],
+      pivot: { x: 0.5, y: 0.5 },
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      width: 16,
+      height: 16,
     };
     const engine = new NullEngine({
       renderWidth: 64,
@@ -107,12 +81,20 @@ describe("seekGameplayAnimation", () => {
       lockstepMaxSteps: 1,
     });
     const scene = new Scene(engine);
-    const mesh = createSpriteQuad(scene, "hero", payload.frames[0]!);
+    const mesh = createSpriteQuad(scene, "hero", payload);
+    const overlay = createSpriteQuad(scene, "hero-blend", payload);
+    overlay.visibility = 0.5;
+    const before = [...(mesh.getVerticesData(VertexBuffer.PositionKind) ?? [])];
+    const missing: string[] = [];
+    const textures: string[] = [];
     applyAnimStateToScene(
       {
         getAnimationGroups: () => [],
         getSpriteSlot: (slotId) =>
-          slotId === 3 ? { mesh, payload } : undefined,
+          slotId === 3
+            ? { mesh, payload, overlayMesh: overlay, spriteAnimations: new Map(), applyTexture: (_target, guid) => { if (guid) textures.push(guid); } }
+            : undefined,
+        onMissingClip: (info) => missing.push(`${info.slotId}/${info.clipKind}/${info.clipAssetGuid ?? ""}`),
       },
       {
         type: "animState",
@@ -122,12 +104,12 @@ describe("seekGameplayAnimation", () => {
         blendWeights: { idle: 1 },
         clipName: "Idle",
         clipKind: "sprite",
+        clipAssetGuid: "hero-sprite",
       },
     );
-    const uvs = mesh.getVerticesData(VertexBuffer.UVKind) ?? [];
-    const expected = spriteFrameUvs(payload.frames[1]!);
-    expect(uvs[0]).toBeCloseTo(expected.u0);
-    expect(uvs[2]).toBeCloseTo(expected.u1);
+    expect(missing).toEqual(["3/sprite/hero-sprite"]);
+    expect(textures).toEqual([]);
+    expect([...(mesh.getVerticesData(VertexBuffer.PositionKind) ?? [])]).toEqual(before);
     scene.dispose();
     engine.dispose();
   });
@@ -136,23 +118,15 @@ describe("seekGameplayAnimation", () => {
     const sprite: SpritePayload = {
       textureGuid: "sprite-tex",
       pixelsPerUnit: 100,
-      frames: [
-        {
-          name: "a",
-          u: 0,
-          v: 0,
-          uSize: 1,
-          vSize: 1,
-          durationMs: 100,
-          pivot: { x: 0.5, y: 0.5 },
-          width: 100,
-          height: 100,
-        },
-      ],
-      clips: [{ name: "Idle", frames: ["a"] }],
+      pivot: { x: 0.5, y: 0.5 },
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      width: 100,
+      height: 100,
     };
     const animation: SpriteAnimationPayload = {
       frameDurationMs: 100,
+      source: "frames",
+      sheet: createDefaultSpriteAnimationSheet(),
       frames: [
         {
           textureGuid: "frame-a",
@@ -180,7 +154,7 @@ describe("seekGameplayAnimation", () => {
       lockstepMaxSteps: 1,
     });
     const scene = new Scene(engine);
-    const mesh = createSpriteQuad(scene, "hero", sprite.frames[0]!);
+    const mesh = createSpriteQuad(scene, "hero", sprite);
     const textures: string[] = [];
     applyAnimStateToScene(
       {
@@ -233,6 +207,8 @@ describe("seekGameplayAnimation", () => {
     };
     const animation: SpriteAnimationPayload = {
       frameDurationMs: 100,
+      source: "frames",
+      sheet: createDefaultSpriteAnimationSheet(),
       frames: [
         { ...frame, pivot: { x: 0.5, y: 0.5 } },
         { ...frame, pivot: { x: 0, y: 1 } },
@@ -240,17 +216,7 @@ describe("seekGameplayAnimation", () => {
     };
     const engine = new NullEngine();
     const scene = new Scene(engine);
-    const mesh = createSpriteQuad(scene, "hero", {
-      name: "a",
-      u: 0,
-      v: 0,
-      uSize: 1,
-      vSize: 1,
-      durationMs: 100,
-      pivot: { x: 0.5, y: 0.5 },
-      width: 100,
-      height: 100,
-    });
+    const mesh = createSpriteQuad(scene, "hero", { pivot: { x: 0.5, y: 0.5 }, width: 100, height: 100 });
     mesh.scaling.set(2, 2, 1);
     applySpriteAnimationAssetFrame(mesh, animation, 0);
     mesh.freezeWorldMatrix();
@@ -267,9 +233,39 @@ describe("seekGameplayAnimation", () => {
     engine.dispose();
   });
 
+  it("shows a sheet cell's UVs, then the whole texture again for a plain frame", () => {
+    const cell = {
+      textureGuid: "sheet",
+      durationMs: 100,
+      pivot: { x: 0.5, y: 0.5 },
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      width: 16,
+      height: 16,
+    };
+    const sheet: SpriteAnimationPayload = {
+      frameDurationMs: 100,
+      source: "sheet",
+      sheet: { ...createDefaultSpriteAnimationSheet(), textureGuid: "sheet" },
+      frames: [{ ...cell, cell: 2, uv: { u0: 0.5, v0: 0.5, u1: 1, v1: 1 } }],
+    };
+    const plain: SpriteAnimationPayload = { ...sheet, source: "frames", frames: [{ ...cell, textureGuid: "plain" }] };
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const mesh = createSpriteQuad(scene, "hero", { pivot: { x: 0.5, y: 0.5 }, width: 16, height: 16 });
+    applySpriteAnimationAssetFrame(mesh, sheet, 0);
+    // Bottom-left, bottom-right, top-right, top-left.
+    expect([...(mesh.getVerticesData(VertexBuffer.UVKind) ?? [])]).toEqual([0.5, 0.5, 1, 0.5, 1, 1, 0.5, 1]);
+    applySpriteAnimationAssetFrame(mesh, plain, 0);
+    expect([...(mesh.getVerticesData(VertexBuffer.UVKind) ?? [])]).toEqual([0, 0, 1, 0, 1, 1, 0, 1]);
+    scene.dispose();
+    engine.dispose();
+  });
+
   it("sizes the sprite quad from Sprite Animation texture pixels", () => {
     const animation: SpriteAnimationPayload = {
       frameDurationMs: 100,
+      source: "frames",
+      sheet: createDefaultSpriteAnimationSheet(),
       frames: [
         {
           textureGuid: "frame-a",
@@ -289,17 +285,7 @@ describe("seekGameplayAnimation", () => {
       lockstepMaxSteps: 1,
     });
     const scene = new Scene(engine);
-    const mesh = createSpriteQuad(scene, "hero", {
-      name: "a",
-      u: 0,
-      v: 0,
-      uSize: 1,
-      vSize: 1,
-      durationMs: 100,
-      pivot: { x: 0.5, y: 0.5 },
-      width: 100,
-      height: 100,
-    });
+    const mesh = createSpriteQuad(scene, "hero", { pivot: { x: 0.5, y: 0.5 }, width: 100, height: 100 });
     applySpriteAnimationAssetFrame(mesh, animation, 0, { pixelsPerUnit: 100 });
     mesh.refreshBoundingInfo();
     const size = mesh.getBoundingInfo().boundingBox.extendSize;
@@ -313,20 +299,10 @@ describe("seekGameplayAnimation", () => {
     const payload: SpritePayload = {
       textureGuid: null,
       pixelsPerUnit: 100,
-      frames: [
-        {
-          name: "a",
-          u: 0,
-          v: 0,
-          uSize: 1,
-          vSize: 1,
-          durationMs: 100,
-          pivot: { x: 0.5, y: 0.5 },
-          width: 16,
-          height: 16,
-        },
-      ],
-      clips: [{ name: "Idle", frames: ["a"] }],
+      pivot: { x: 0.5, y: 0.5 },
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      width: 16,
+      height: 16,
     };
     const engine = new NullEngine({
       renderWidth: 64,
@@ -623,39 +599,27 @@ describe("seekGameplayAnimation", () => {
     expect(reported).toEqual(["1/animation//Run", "1/animation/hero-model/Run", "2/animation//Run", "1/animation//Jump"]);
   });
 
-  it("crossfades two sprite layers onto the base mesh and overlay", () => {
-    const idlePayload: SpritePayload = {
-      textureGuid: null,
+  it("crossfades two Sprite Animation layers onto the base mesh and overlay, hiding the overlay when its clip is missing", () => {
+    const frame = (textureGuid: string) => ({
+      textureGuid,
+      durationMs: 100,
+      pivot: { x: 0.5, y: 0.5 },
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      width: 16,
+      height: 16,
+    });
+    const payload: SpritePayload = {
+      textureGuid: "hero-tex",
       pixelsPerUnit: 100,
-      frames: [
-        {
-          name: "idle",
-          u: 0,
-          v: 0,
-          uSize: 0.5,
-          vSize: 1,
-          durationMs: 100,
-          pivot: { x: 0.5, y: 0.5 },
-          width: 16,
-          height: 16,
-        },
-        {
-          name: "walk",
-          u: 0.5,
-          v: 0,
-          uSize: 0.5,
-          vSize: 1,
-          durationMs: 100,
-          pivot: { x: 0.5, y: 0.5 },
-          width: 16,
-          height: 16,
-        },
-      ],
-      clips: [
-        { name: "Idle", frames: ["idle"] },
-        { name: "Walk", frames: ["walk"] },
-      ],
+      pivot: { x: 0.5, y: 0.5 },
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      width: 16,
+      height: 16,
     };
+    const animations = new Map<string, SpriteAnimationPayload>([
+      ["idle-anim", { frameDurationMs: 100, source: "frames", sheet: createDefaultSpriteAnimationSheet(), frames: [frame("idle-tex")] }],
+      ["walk-anim", { frameDurationMs: 100, source: "frames", sheet: createDefaultSpriteAnimationSheet(), frames: [frame("walk-tex")] }],
+    ]);
     const engine = new NullEngine({
       renderWidth: 64,
       renderHeight: 64,
@@ -664,50 +628,48 @@ describe("seekGameplayAnimation", () => {
       lockstepMaxSteps: 1,
     });
     const scene = new Scene(engine);
-    const mesh = createSpriteQuad(scene, "hero", idlePayload.frames[0]!);
-    const overlay = createSpriteQuad(scene, "hero-blend", idlePayload.frames[0]!);
-    applyAnimStateToScene(
-      {
-        getAnimationGroups: () => [],
-        getSpriteSlot: (slotId) =>
-          slotId === 1
-            ? { mesh, payload: idlePayload, overlayMesh: overlay }
-            : undefined,
-      },
-      {
-        type: "animState",
-        slotId: 1,
-        stateId: "walk",
-        normalisedTime: 0,
-        blendWeights: { idle: 0.4, walk: 0.6 },
-        clipName: "Walk",
-        clipKind: "sprite",
-        layers: [
-          {
-            stateId: "idle",
-            clipAssetGuid: "hero-sprite",
-            clipName: "Idle",
-            clipKind: "sprite",
-            normalisedTime: 0,
-            weight: 0.4,
-          },
-          {
-            stateId: "walk",
-            clipAssetGuid: "hero-sprite",
-            clipName: "Walk",
-            clipKind: "sprite",
-            normalisedTime: 0,
-            weight: 0.6,
-          },
-        ],
-      },
-    );
-    const baseUvs = mesh.getVerticesData(VertexBuffer.UVKind) ?? [];
-    const overlayUvs = overlay.getVerticesData(VertexBuffer.UVKind) ?? [];
-    expect(baseUvs[0]).toBeCloseTo(spriteFrameUvs(idlePayload.frames[0]!).u0);
-    expect(overlayUvs[0]).toBeCloseTo(spriteFrameUvs(idlePayload.frames[1]!).u0);
+    const mesh = createSpriteQuad(scene, "hero", payload);
+    const overlay = createSpriteQuad(scene, "hero-blend", payload);
+    const bound = new Map<unknown, string>();
+    const host = {
+      getAnimationGroups: () => [],
+      getSpriteSlot: (slotId: number) =>
+        slotId === 1
+          ? {
+              mesh,
+              payload,
+              overlayMesh: overlay,
+              spriteAnimations: animations,
+              applyTexture: (target: unknown, guid: string | null | undefined) => { if (guid) bound.set(target, guid); },
+            }
+          : undefined,
+    };
+    const layer = (stateId: string, clipAssetGuid: string, weight: number) => ({
+      stateId,
+      clipAssetGuid,
+      clipName: "",
+      clipKind: "sprite" as const,
+      normalisedTime: 0,
+      weight,
+    });
+    const crossfade = (secondGuid: string) => applyAnimStateToScene(host, {
+      type: "animState",
+      slotId: 1,
+      stateId: "walk",
+      normalisedTime: 0,
+      blendWeights: { idle: 0.4, walk: 0.6 },
+      clipName: "",
+      clipKind: "sprite",
+      layers: [layer("idle", "idle-anim", 0.4), layer("walk", secondGuid, 0.6)],
+    });
+    crossfade("walk-anim");
+    expect(bound.get(mesh)).toBe("idle-tex");
+    expect(bound.get(overlay)).toBe("walk-tex");
     expect(mesh.visibility).toBeCloseTo(0.4);
     expect(overlay.visibility).toBeCloseTo(0.6);
+
+    crossfade("missing-anim");
+    expect(overlay.visibility).toBe(0);
     scene.dispose();
     engine.dispose();
   });
@@ -750,91 +712,15 @@ describe("AnimationGraph pose changes", () => {
   });
 });
 
-describe("applySpriteAnimFrame", () => {
-  let engine: NullEngine;
-  let scene: Scene;
-
-  beforeEach(() => {
-    engine = new NullEngine({
-      renderWidth: 64,
-      renderHeight: 64,
-      textureSize: 4,
-      deterministicLockstep: false,
-      lockstepMaxSteps: 1,
-    });
-    scene = new Scene(engine);
-  });
-
-  afterEach(() => {
-    scene.dispose();
-    engine.dispose();
-  });
-
-  it("bakes the clip frame UVs, size and pivot for the given normalised time", () => {
-    const payload: SpritePayload = {
-      textureGuid: null,
-      pixelsPerUnit: 100,
-      frames: [
-        {
-          name: "a",
-          u: 0,
-          v: 0,
-          uSize: 0.5,
-          vSize: 1,
-          durationMs: 100,
-          pivot: { x: 0.5, y: 0.5 },
-          width: 16,
-          height: 16,
-        },
-        {
-          name: "b",
-          u: 0.5,
-          v: 0,
-          uSize: 0.5,
-          vSize: 1,
-          durationMs: 100,
-          pivot: { x: 0, y: 1 },
-          width: 32,
-          height: 16,
-        },
-      ],
-      clips: [{ name: "Idle", frames: ["a", "b"] }],
-    };
-    const mesh = createSpriteQuad(scene, "hero", payload.frames[0]!);
-    applySpriteAnimFrame(mesh, payload, "Idle", 0.8);
-    const uvs = mesh.getVerticesData(VertexBuffer.UVKind) ?? [];
-    const expected = spriteFrameUvs(payload.frames[1]!);
-    expect(uvs[0]).toBeCloseTo(expected.u0);
-    expect(uvs[2]).toBeCloseTo(expected.u1);
-    // Frame b's bottom-left pivot sits on the actor origin, as its collider does.
-    mesh.refreshBoundingInfo();
-    const bounds = mesh.getBoundingInfo().boundingBox;
-    expect(bounds.minimum.x).toBeCloseTo(0);
-    expect(bounds.minimum.y).toBeCloseTo(0);
-    expect(bounds.maximum.x).toBeCloseTo(0.32);
-    expect(bounds.maximum.y).toBeCloseTo(0.16);
-  });
-});
-
 describe("sceneAnimHostFromBinding", () => {
   it("resolves overlay sprites and per-slot animation groups from the binding", () => {
     const payload: SpritePayload = {
       textureGuid: null,
       pixelsPerUnit: 100,
-      frames: [
-        {
-          name: "a",
-          u: 0,
-          v: 0,
-          uSize: 1,
-          vSize: 1,
-          durationMs: 100,
-          pivot: { x: 0.5, y: 0.5 },
-          width: 16,
-          height: 16,
-        },
-      ],
-      clips: [{ name: "Idle", frames: ["a"] }],
+      pivot: { x: 0.5, y: 0.5 },
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      width: 16,
+      height: 16,
     };
     const engine = new NullEngine({
       renderWidth: 64,
@@ -865,7 +751,7 @@ describe("sceneAnimHostFromBinding", () => {
         },
       ],
     });
-    const overlay = createSpriteQuad(scene, "hero-overlay", payload.frames[0]!);
+    const overlay = createSpriteQuad(scene, "hero-overlay", payload);
     binding.spriteOverlays = new Map([[0, overlay]]);
     const frames: number[] = [];
     binding.slotAnimationGroups = new Map([

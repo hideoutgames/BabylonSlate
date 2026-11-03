@@ -223,9 +223,9 @@ describe("runtime AnimationGraph evaluation", () => {
 
       const sprite = createDefaultSpritePayload();
       sprite.pixelsPerUnit = 100;
-      sprite.frames[0]!.width = 100;
-      sprite.frames[0]!.height = 100;
-      sprite.frames[0]!.collision = { x: 0, y: 0, width: 1, height: 1 };
+      sprite.width = 100;
+      sprite.height = 100;
+      sprite.collision = { x: 0, y: 0, width: 1, height: 1 };
       const animation = createDefaultSpriteAnimationPayload();
       animation.frames[0] = {
         textureGuid: "tex-walk",

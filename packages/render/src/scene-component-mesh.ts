@@ -82,17 +82,7 @@ function buildPrimitiveMesh(scene: Scene, name: string, meshKind: string | null 
     case "box":
       return MeshBuilder.CreateBox(name, { size: 1.5 }, scene);
     case "sprite":
-      return createSpriteQuad(scene, name, {
-        name: "idle",
-        u: 0,
-        v: 0,
-        uSize: 1,
-        vSize: 1,
-        durationMs: 100,
-        pivot: { x: 0.5, y: 0.5 },
-        width: 100,
-        height: 100,
-      });
+      return createSpriteQuad(scene, name, { pivot: { x: 0.5, y: 0.5 } });
     case "tilemap":
       return MeshBuilder.CreatePlane(name, { size: 1 }, scene);
     case "pivot":
@@ -166,9 +156,8 @@ export function createSpriteComponentMesh(
 ): Mesh {
   const spriteGuid = stringProp(component.properties.assetGuid);
   const payload = spriteGuid ? assets?.spritePayloads?.get(spriteGuid) : undefined;
-  const frame = payload?.frames[0];
-  const mesh = frame
-    ? createSpriteQuad(scene, name, frame, payload?.pixelsPerUnit ?? assets?.pixelsPerUnit)
+  const mesh = payload
+    ? createSpriteQuad(scene, name, payload, payload.pixelsPerUnit ?? assets?.pixelsPerUnit)
     : createPrimitiveMesh(scene, name, "sprite");
   applyAlbedoTexture(mesh, scene, payload?.textureGuid, assets);
   applyAuthoredComponentSorting(mesh, component, assets?.sortingLayers);

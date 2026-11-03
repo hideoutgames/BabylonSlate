@@ -12,8 +12,8 @@ import {
   type PropertyRow,
 } from "@haptic/editor-kit";
 import {
-  createDefaultSpritePayload,
   parseSpriteCollision,
+  parseSpritePayload,
   parseSpritePivot,
   type SpriteCollision,
   type SpritePayload,
@@ -84,24 +84,17 @@ export function SpritePreview({
   /** A collision drag passes one merge key so the whole drag is one undo step. */
   onChange?: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const sprite = normalizeSprite(payload);
+  const sprite = parseSpritePayload(payload);
   const preview = useTexturePreview(sprite.textureGuid);
   const { url } = preview;
-  const frame = sprite.frames[0];
   const [zoom, setZoom] = useState<PanZoomBase>("fit");
   const [showCollision, setShowCollision] = useState(true);
   const [textureSize, setTextureSize] = useState<{ width: number; height: number } | null>(null);
 
-  const u = frame?.u ?? 0;
-  const v = frame?.v ?? 0;
-  const uSize = Math.max(frame?.uSize ?? 1, 0.0001);
-  const vSize = Math.max(frame?.vSize ?? 1, 0.0001);
-  const pivotX = frame?.pivot.x ?? 0.5;
-  const pivotY = frame?.pivot.y ?? 0.5;
-  const collision = parseSpriteCollision(frame?.collision);
-  // The frame's own pixel size keeps its aspect ratio and lets collision snap to pixels.
+  const { pivot, collision } = sprite;
+  // The image's own pixel size keeps its aspect ratio and lets collision snap to pixels.
   const framePixels = url && textureSize
-    ? { width: Math.max(1, Math.round(textureSize.width * uSize)), height: Math.max(1, Math.round(textureSize.height * vSize)) }
+    ? { width: Math.max(1, textureSize.width), height: Math.max(1, textureSize.height) }
     : null;
   const panZoom = usePanZoomSurface({ content: framePixels, base: zoom, inset: FIT_INSET, enabled: url !== null });
   const view = panZoom.view;
@@ -109,11 +102,7 @@ export function SpritePreview({
 
   const writeCollision = (next: SpriteCollision) => {
     if (!onChange) return;
-    const frames = [...sprite.frames];
-    if (frames[0]) {
-      frames[0] = { ...frames[0], collision: next };
-    }
-    onChange({ ...sprite, frames }, "sprite:collision");
+    onChange({ ...sprite, collision: next }, "sprite:collision");
   };
 
   return (
@@ -201,16 +190,10 @@ export function SpritePreview({
                 onLoad={(event) => setTextureSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
                 alt=""
                 draggable={false}
-                className={cn("absolute max-w-none select-none", scale >= 2 && "[image-rendering:pixelated]")}
-                style={{
-                  width: `${100 / uSize}%`,
-                  height: `${100 / vSize}%`,
-                  left: `${(-u / uSize) * 100}%`,
-                  top: `${(-v / vSize) * 100}%`,
-                }}
+                className={cn("absolute inset-0 size-full max-w-none select-none", scale >= 2 && "[image-rendering:pixelated]")}
               />
             </div>
-            <SpritePivotMarker x={pivotX} y={pivotY} />
+            <SpritePivotMarker x={pivot.x} y={pivot.y} />
             {showCollision ? (
               <SpriteCollisionOverlay collision={collision} pixels={framePixels} onChange={writeCollision} />
             ) : null}
@@ -248,7 +231,7 @@ export function SpriteEditor({
   /** `mergeKey` groups one scrub's edits into one undo entry. */
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const sprite = normalizeSprite(payload);
+  const sprite = parseSpritePayload(payload);
   const [pickerOpen, setPickerOpen] = useState(false);
   /** Continuous field edit: one scrub on `field` is one undo step. */
   const edit = (next: SpritePayload, field: string) =>
@@ -262,7 +245,6 @@ export function SpriteEditor({
   }));
   const textureName = assets.find((asset) => asset.guid === sprite.textureGuid)
     ?.name;
-  const frame = sprite.frames[0];
   const rows: PropertyRow[] = [
     {
       id: "texture",
@@ -287,52 +269,18 @@ export function SpriteEditor({
       id: "pivot",
       kind: "vector3",
       label: "Pivot",
-      value: [frame?.pivot.x ?? 0.5, frame?.pivot.y ?? 0.5, 0],
+      value: [sprite.pivot.x, sprite.pivot.y, 0],
       axes: ["X", "Y"],
-      onChange: ([x, y]) => {
-        const frames = [...sprite.frames];
-        if (frames[0]) {
-          frames[0] = { ...frames[0], pivot: { x, y } };
-        }
-        edit({ ...sprite, frames }, "pivot");
-      },
-    },
-    {
-      id: "frame-duration",
-      kind: "number",
-      label: "Frame Duration",
-      unit: "ms",
-      value: frame?.durationMs ?? 100,
-      min: 1,
-      onChange: (durationMs) => {
-        const frames = [...sprite.frames];
-        if (frames[0]) {
-          frames[0] = { ...frames[0], durationMs };
-        }
-        edit({ ...sprite, frames }, "durationMs");
-      },
+      onChange: ([x, y]) => edit({ ...sprite, pivot: parseSpritePivot({ x, y }) }, "pivot"),
     },
     {
       id: "collision",
       kind: "vector3",
       label: "Collision",
-      value: [
-        parseSpriteCollision(frame?.collision).x,
-        parseSpriteCollision(frame?.collision).y,
-        parseSpriteCollision(frame?.collision).width,
-        parseSpriteCollision(frame?.collision).height,
-      ],
+      value: [sprite.collision.x, sprite.collision.y, sprite.collision.width, sprite.collision.height],
       axes: ["X", "Y", "W", "H"],
-      onChange: ([x, y, width, height]) => {
-        const frames = [...sprite.frames];
-        if (frames[0]) {
-          frames[0] = {
-            ...frames[0],
-            collision: parseSpriteCollision({ x, y, width, height }),
-          };
-        }
-        edit({ ...sprite, frames }, "collision");
-      },
+      onChange: ([x, y, width, height]) =>
+        edit({ ...sprite, collision: parseSpriteCollision({ x, y, width, height }) }, "collision"),
     },
   ];
   return (
@@ -351,31 +299,4 @@ export function SpriteEditor({
       />
     </div>
   );
-}
-
-function normalizeSprite(payload: Record<string, unknown>): SpritePayload {
-  const defaults = createDefaultSpritePayload();
-  const source = payload as Partial<SpritePayload>;
-  return {
-    textureGuid:
-      typeof source.textureGuid === "string" && source.textureGuid.length > 0
-        ? source.textureGuid
-        : source.textureGuid === null
-          ? null
-          : defaults.textureGuid,
-    pixelsPerUnit:
-      typeof source.pixelsPerUnit === "number" && Number.isFinite(source.pixelsPerUnit)
-        ? source.pixelsPerUnit
-        : defaults.pixelsPerUnit,
-    frames: Array.isArray(source.frames) && source.frames.length > 0
-      ? source.frames.map((frame) => ({
-          ...frame,
-          pivot: parseSpritePivot(frame.pivot),
-          collision: parseSpriteCollision(frame.collision),
-        }))
-      : defaults.frames,
-    clips: Array.isArray(source.clips) && source.clips.length > 0
-      ? source.clips
-      : defaults.clips,
-  };
 }

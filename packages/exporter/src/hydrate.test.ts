@@ -32,6 +32,51 @@ describe("packedContentFromGame", () => {
     expect(packedContentFromGame(game).spriteAnimationPayloads.get("walk-anim")?.frames[0]).toMatchObject({ width: 64, height: 32 });
   });
 
+  it("resolves Sprite frames from their Sprite and sheet cells from the sheet Texture's grid", () => {
+    const game = sources([
+      { guid: "hero-tex", type: "Texture", encoding: "bytes", width: 48, height: 96 },
+      { guid: "sheet-tex", type: "Texture", encoding: "bytes", width: 64, height: 32 },
+      { guid: "hero", type: "Sprite", encoding: "json" },
+      { guid: "walk-anim", type: "SpriteAnimation", encoding: "json" },
+      { guid: "run-anim", type: "SpriteAnimation", encoding: "json" },
+    ], {
+      hero: { textureGuid: "hero-tex", pivot: { x: 0.5, y: 1 }, collision: { x: 0.25, y: 0, width: 0.5, height: 1 } },
+      "walk-anim": { frames: [{ spriteGuid: "hero" }] },
+      "run-anim": { source: "sheet", sheet: { textureGuid: "sheet-tex", cellWidth: 32, cellHeight: 32 }, frames: [{ cell: 2 }] },
+    });
+    const content = packedContentFromGame(game);
+    expect(content.spriteAnimationPayloads.get("walk-anim")?.frames[0]).toMatchObject({
+      spriteGuid: "hero",
+      textureGuid: "hero-tex",
+      width: 48,
+      height: 96,
+      pivot: { x: 0.5, y: 1 },
+      collision: { x: 0.25, y: 0, width: 0.5, height: 1 },
+    });
+    expect(content.spriteAnimationPayloads.get("run-anim")?.frames[0]).toMatchObject({
+      textureGuid: "sheet-tex",
+      width: 32,
+      height: 32,
+      uv: { u0: 0.5 + 0.5 / 64, u1: 1 - 0.5 / 64 },
+    });
+  });
+
+  it("sizes each Sprite from its Texture's catalog size, which the packed player quad and collider use", () => {
+    const game = sources([
+      { guid: "hero-tex", type: "Texture", encoding: "bytes", width: 48, height: 96 },
+      { guid: "hero", type: "Sprite", encoding: "json" },
+    ], { hero: { textureGuid: "hero-tex", pixelsPerUnit: 32, pivot: { x: 0.5, y: 1 } } });
+    game.textureBytes.set("hero-tex", new Uint8Array([0xab, 0x4b, 0x54, 0x58]));
+    expect(packedContentFromGame(game).spritePayloads.get("hero")).toEqual({
+      textureGuid: "hero-tex",
+      pixelsPerUnit: 32,
+      pivot: { x: 0.5, y: 1 },
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      width: 48,
+      height: 96,
+    });
+  });
+
   it("names data type schemas after their catalog entries", () => {
     const game = sources([{ guid: "stats", type: "Structure", name: "Weapon Stats", encoding: "json" }],
       { stats: { fields: [{ name: "Power", typeId: "int" }] } });

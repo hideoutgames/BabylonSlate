@@ -10,8 +10,10 @@ import {
 } from "@haptic/anim-graph";
 import {
   materialParameterTextureAssetGuids,
-  applyTexturePixelSizesToSpriteAnimation,
-  hydrateSpriteAnimationPixelSizes,
+  applyTexturePixelSizeToSprite,
+  hydrateSpriteAnimations,
+  hydrateSpritePixelSizes,
+  parseSpritePayload,
   modelClipAnimationGuidsFromAnimations,
   normalizeAnimationPayload,
   retargetAnimationLoadsFromAnimations,
@@ -136,13 +138,6 @@ function texturePixelSizesFromManifest(
   return sizes;
 }
 
-function asSpritePayload(value: unknown): SpritePayload | null {
-  if (!value || typeof value !== "object") return null;
-  const record = value as { frames?: unknown; clips?: unknown };
-  if (!Array.isArray(record.frames) || !Array.isArray(record.clips)) return null;
-  return value as SpritePayload;
-}
-
 function asSpriteAnimationPayload(
   value: unknown,
 ): SpriteAnimationPayload | null {
@@ -223,8 +218,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       continue;
     }
     if (entry.type === "Sprite") {
-      const sprite = asSpritePayload(parsed);
-      if (sprite) spritePayloads.set(entry.guid, sprite);
+      if (parsed && typeof parsed === "object") spritePayloads.set(entry.guid, parseSpritePayload(parsed));
       continue;
     }
     if (entry.type === "SpriteAnimation" && parsed) {
@@ -322,11 +316,17 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
   // Authored Texture sizes from the catalog first; packed PNG headers fill the rest
   // (a KTX2 chunk has no PNG header).
   const texturePixelSizes = texturePixelSizesFromManifest(game.manifest.assets);
-  const sizedSpriteAnimations = hydrateSpriteAnimationPixelSizes(
-    new Map([...spriteAnimationPayloads].map(([guid, payload]) => [guid,
-      applyTexturePixelSizesToSpriteAnimation(payload, (textureGuid) => texturePixelSizes.get(textureGuid))])),
+  const sizedSprites = hydrateSpritePixelSizes(
+    new Map([...spritePayloads].map(([guid, payload]) => [guid,
+      applyTexturePixelSizeToSprite(payload, (textureGuid) => texturePixelSizes.get(textureGuid))])),
     game.textureBytes,
   );
+  // Sprite frames take their Sprite's Texture, size, pivot and collision; sheet cells their UVs.
+  const sizedSpriteAnimations = hydrateSpriteAnimations(spriteAnimationPayloads, {
+    sprites: sizedSprites,
+    textureSizes: texturePixelSizes,
+    textureBytes: game.textureBytes,
+  });
 
   const animations = [...animationPayloads].map(([guid, payload]) => ({ guid, payload }));
   const retargetAnimationLoads = retargetAnimationLoadsFromAnimations(animations);
@@ -360,7 +360,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     dataAssets,
     curveAssets,
     timelineClipAssets,
-    spritePayloads,
+    spritePayloads: sizedSprites,
     spriteAnimationPayloads: sizedSpriteAnimations,
     waterPayloads,
     tilemapPayloads,

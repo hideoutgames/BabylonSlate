@@ -28,7 +28,25 @@ import {
 import { cn } from "@haptic/ui/lib/utils";
 import { zoomViewAbout, type PanZoomLimits, type PanZoomView } from "./pan-zoom-model";
 
-export type AtlasTileGridTool = "move" | "select";
+export type AtlasTileGridTool = "move" | "select" | "autotile";
+
+/** Neighbour bits of the 3×3 zones around a tile, in reading order; the centre (0) is membership. */
+const ZONE_BITS: readonly number[] = [128, 1, 2, 64, 0, 4, 32, 16, 8];
+
+/** One zone the Autotile tool turns on or off; every edit of one drag shares `stroke`. */
+export interface AtlasAutotileZoneEdit {
+  tileId: number;
+  zone: number;
+  on: boolean;
+  stroke: number;
+}
+
+export interface AtlasAutotileOverlay {
+  /** `sides` hides the corner zones; a press in a corner then goes to the nearer side. */
+  style: "sides" | "blob";
+  /** Whether a tile's zone is on for the autotile being edited. */
+  zoneOn: (tileId: number, zone: number) => boolean;
+}
 
 export interface AtlasTileGridProps {
   tileset: TilesetPayload;
@@ -43,6 +61,9 @@ export interface AtlasTileGridProps {
   emptyAction?: ReactNode;
   panZoom?: boolean;
   tool?: AtlasTileGridTool;
+  /** The autotile the Autotile tool shows and edits; without it that tool does nothing. */
+  autotile?: AtlasAutotileOverlay;
+  onAutotileZone?: (edit: AtlasAutotileZoneEdit) => void;
   onImageSize?: (width: number, height: number) => void;
   "data-testid"?: string;
 }
@@ -80,7 +101,11 @@ function fitAtlasView(
   };
 }
 
-/** Clickable atlas with a pixel-aligned grid, collision overlay, and optional pinch zoom. */
+/**
+ * Clickable atlas with a pixel-aligned grid, collision overlay, and optional
+ * pinch zoom. The Autotile tool shows each tile's 3×3 autotile zones and
+ * turns them on or off by tap or drag.
+ */
 export function AtlasTileGrid({
   tileset,
   imageUrl,
@@ -93,6 +118,8 @@ export function AtlasTileGrid({
   emptyAction,
   panZoom = false,
   tool: toolProp,
+  autotile,
+  onAutotileZone,
   onImageSize,
   "data-testid": testId = "atlas-tile-grid",
 }: AtlasTileGridProps) {
@@ -132,6 +159,9 @@ export function AtlasTileGrid({
     startY: number;
     ids: number[] | null;
   } | null>(null);
+  /** The Autotile drag: whether it turns zones on, and the last zone it touched. */
+  const zoneDragRef = useRef<{ pointerId: number; on: boolean; stroke: number; last: string } | null>(null);
+  const zoneStrokeRef = useRef(0);
   const [selectionPreview, setSelectionPreview] = useState<{
     ids: number[];
     x: number;
@@ -197,6 +227,35 @@ export function AtlasTileGrid({
     });
   };
 
+  /** The tile and zone under the pointer, or null off the atlas. */
+  const zoneAtPointer = (event: ReactPointerEvent<HTMLDivElement>): { tileId: number; zone: number } | null => {
+    const tileId = tileAtPointer(event);
+    const bounds = imageRef.current?.getBoundingClientRect();
+    const cell = tileId > 0 ? tilesetTileRect(filled, tileId) : null;
+    if (!cell || !bounds || bounds.width <= 0 || bounds.height <= 0) return null;
+    const fx = (((event.clientX - bounds.left) / bounds.width) * filled.atlasWidth - cell.x) / cell.width;
+    const fy = (((event.clientY - bounds.top) / bounds.height) * filled.atlasHeight - cell.y) / cell.height;
+    const column = Math.min(2, Math.max(0, Math.floor(fx * 3)));
+    const row = Math.min(2, Math.max(0, Math.floor(fy * 3)));
+    if (autotile?.style === "sides" && column !== 1 && row !== 1) {
+      // 4 Sides has no corners: a corner press goes to the side it is nearer.
+      return Math.abs(fx - 0.5) > Math.abs(fy - 0.5)
+        ? { tileId, zone: ZONE_BITS[3 + column]! }
+        : { tileId, zone: ZONE_BITS[row * 3 + 1]! };
+    }
+    return { tileId, zone: ZONE_BITS[row * 3 + column]! };
+  };
+
+  const paintZone = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = zoneDragRef.current;
+    const hit = zoneAtPointer(event);
+    if (!drag || !hit) return;
+    const key = `${hit.tileId}:${hit.zone}`;
+    if (key === drag.last) return;
+    drag.last = key;
+    onAutotileZone?.({ ...hit, on: drag.on, stroke: drag.stroke });
+  };
+
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!panZoom && !(tool === "select" && onSelectionChange)) return;
     try {
@@ -213,6 +272,7 @@ export function AtlasTileGrid({
       panDragRef.current = null;
       tapRef.current = null;
       selectionDragRef.current = null;
+      zoneDragRef.current = null;
       setSelectionPreview(null);
       didPanRef.current = true;
       const points = [...pointersRef.current.values()];
@@ -237,6 +297,21 @@ export function AtlasTileGrid({
       y: event.clientY,
       tileId: tileAtPointer(event),
     };
+    if (tool === "autotile") {
+      const hit = autotile && onAutotileZone ? zoneAtPointer(event) : null;
+      if (!hit) return;
+      event.preventDefault();
+      // The first zone decides the drag: a zone that was off turns zones on.
+      zoneStrokeRef.current += 1;
+      zoneDragRef.current = {
+        pointerId: pointerIdOf(event),
+        on: !autotile!.zoneOn(hit.tileId, hit.zone),
+        stroke: zoneStrokeRef.current,
+        last: "",
+      };
+      paintZone(event);
+      return;
+    }
     if (tool === "move") {
       panDragRef.current = {
         pointerId: pointerIdOf(event),
@@ -309,6 +384,11 @@ export function AtlasTileGrid({
           (originY - pinchRef.current.panY) * scale +
           (midY - pinchRef.current.midY),
       });
+      return;
+    }
+    if (zoneDragRef.current?.pointerId === pointerId) {
+      event.preventDefault();
+      paintZone(event);
       return;
     }
     const selection = selectionDragRef.current;
@@ -411,6 +491,9 @@ export function AtlasTileGrid({
     if (panDragRef.current?.pointerId === pointerId) {
       panDragRef.current = null;
     }
+    if (zoneDragRef.current?.pointerId === pointerId) {
+      zoneDragRef.current = null;
+    }
     const selection = selectionDragRef.current;
     if (selection?.pointerId === pointerId) {
       selectionDragRef.current = null;
@@ -444,12 +527,14 @@ export function AtlasTileGrid({
     return () => surface.removeEventListener("wheel", listener);
   }, []);
 
+  const zoneOverlay = tool === "autotile" ? autotile : undefined;
   const tileButtons = useMemo(
     () =>
       filled.tiles.map((tile) => {
         const rect = tilesetTileRect(filled, tile.id);
         if (!rect) return null;
         const selected = highlightedIds.has(tile.id);
+        const member = zoneOverlay?.zoneOn(tile.id, 0) ?? false;
         return (
           <button
             key={tile.id}
@@ -505,10 +590,41 @@ export function AtlasTileGrid({
                 />
               </svg>
             ) : null}
+            {zoneOverlay ? (
+              <span
+                aria-hidden="true"
+                data-testid={`${testId}-zones-${tile.id}`}
+                data-member={member ? "true" : "false"}
+                className={cn(
+                  "pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 gap-[8%] p-[8%]",
+                  !member && "bg-background/60",
+                )}
+              >
+                {ZONE_BITS.map((bit) => {
+                  const corner = bit === 2 || bit === 8 || bit === 32 || bit === 128;
+                  const on = member && (bit === 0 || zoneOverlay.zoneOn(tile.id, bit));
+                  return (
+                    <span
+                      key={bit}
+                      data-zone={bit}
+                      data-on={on ? "true" : "false"}
+                      className={cn(
+                        "rounded-[calc(1px/var(--atlas-zoom,1))]",
+                        corner && zoneOverlay.style === "sides" && "invisible",
+                        // A member's zones that are off stay faintly visible as tap targets.
+                        member && !on && "bg-foreground/15",
+                        on && bit === 0 && "bg-ring",
+                        on && bit !== 0 && "bg-ring/45 shadow-[inset_0_0_0_calc(1px/var(--atlas-zoom,1))_var(--ring)]",
+                      )}
+                    />
+                  );
+                })}
+              </span>
+            ) : null}
           </button>
         );
       }),
-    [filled, highlightedIds, onSelect, testId],
+    [filled, highlightedIds, onSelect, testId, zoneOverlay],
   );
 
   return (

@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { useState } from "react";
 import {
@@ -14,6 +15,7 @@ import {
   TERRAIN_E,
   TERRAIN_N,
   TERRAIN_NE,
+  TERRAIN_S,
 } from "@haptic/assets";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TilesetEditingProvider } from "../context/tileset-editing-context";
@@ -171,7 +173,7 @@ describe("TilesetEditor", () => {
     }), expect.any(String));
   });
 
-  it("adds a terrain, sets it on the selected tiles and edits their neighbours together", async () => {
+  it("adds an autotile, marks its tiles on the atlas with the Autotile tool and lists the missing variants", async () => {
     const onChange = vi.fn();
     render(<TilesetHarness initial={twoTilePayload({ atlasWidth: 48, atlasHeight: 32 })} onChange={onChange} />);
     const last = () => normalizeTilesetPayload(onChange.mock.lastCall![0]);
@@ -182,51 +184,84 @@ describe("TilesetEditor", () => {
       fireEvent.click(item);
     };
     const masks = () => last().tiles.flatMap((tile) => (tile.terrain ? [[tile.id, tile.terrain.mask]] : []));
+    const surface = screen.getByTestId("tileset-preview-surface");
+    expect((screen.getByTestId("tileset-tool-autotile") as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.click(screen.getByTestId("tileset-terrains-add"));
-    expect(last().terrains).toEqual([{ id: "terrain-1", name: "Terrain", style: "sides" }]);
+    expect(last().terrains).toEqual([{ id: "terrain-1", name: "Autotile", style: "sides" }]);
+    // The next step is marking tiles, so the Preview switches to the Autotile tool.
+    expect(surface.getAttribute("data-tool")).toBe("autotile");
+    expect(screen.getByTestId("tileset-terrain-coverage").textContent).toContain("No tiles yet");
     await pick("property-terrain-style", "Blob (47)");
-    expect(last().terrains?.[0]?.style).toBe("blob");
 
-    // Select tiles 1 and 2 in the Preview, then put both in the terrain.
-    fireEvent.click(screen.getByTestId("tileset-tool-select"));
-    const surface = screen.getByTestId("tileset-preview-surface");
+    // Two screen pixels per atlas pixel: each 16 px tile is 32 px wide.
     const first = screen.getByTestId("tileset-preview-cell-1");
     first.parentElement!.getBoundingClientRect = () => ({ left: 0, top: 0, width: 96, height: 64 }) as DOMRect;
-    act(() => {
-      dispatchPointerEvent(first, "pointerdown", { pointerId: 1, clientX: 4, clientY: 4 });
-      dispatchPointerEvent(surface, "pointermove", { pointerId: 1, clientX: 36, clientY: 4 });
-      dispatchPointerEvent(surface, "pointerup", { pointerId: 1, clientX: 36, clientY: 4 });
+    const stroke = (points: Array<[number, number]>) => act(() => {
+      const [x, y] = points[0]!;
+      dispatchPointerEvent(first, "pointerdown", { pointerId: 1, clientX: x, clientY: y });
+      for (const [px, py] of points.slice(1)) dispatchPointerEvent(surface, "pointermove", { pointerId: 1, clientX: px, clientY: py });
+      const [ex, ey] = points.at(-1)!;
+      dispatchPointerEvent(surface, "pointerup", { pointerId: 1, clientX: ex, clientY: ey });
     });
-    await pick("property-tile-terrain", "Terrain");
-    expect(masks()).toEqual([[1, 0], [2, 0]]);
+    // One drag over tile 1's north, tile 2's north and tile 2's east marks both tiles.
+    stroke([[16, 4], [48, 4], [60, 16]]);
+    expect(masks()).toEqual([[1, TERRAIN_N], [2, TERRAIN_N | TERRAIN_E]]);
+    // A corner tap turns the corner on; turning a side off takes its corners along.
+    stroke([[62, 2]]);
+    expect(masks()).toEqual([[1, TERRAIN_N], [2, TERRAIN_N | TERRAIN_E | TERRAIN_NE]]);
+    expect(screen.getByTestId("tileset-terrain-coverage-count").textContent).toBe("2 of 47");
+    expect(screen.getByTestId("tileset-terrain-missing").children).toHaveLength(45);
+    stroke([[48, 4]]);
+    expect(masks()).toEqual([[1, TERRAIN_N], [2, TERRAIN_E]]);
 
-    // A corner needs both of its sides, and opening a side opens its corners.
-    const toggle = (label: string) => screen.getByTestId(`tileset-terrain-neighbour-${label}`);
-    expect((toggle("north-east") as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(toggle("north"));
-    fireEvent.click(toggle("east"));
-    fireEvent.click(toggle("north-east"));
-    expect(masks()).toEqual([[1, TERRAIN_N | TERRAIN_E | TERRAIN_NE], [2, TERRAIN_N | TERRAIN_E | TERRAIN_NE]]);
-    expect(screen.getByTestId("tileset-terrain-coverage").textContent).toBe(
-      "2 tiles cover 1 of 47 variants; the rest paint the closest tile.",
-    );
-    fireEvent.click(toggle("north"));
-    expect(masks()).toEqual([[1, TERRAIN_E], [2, TERRAIN_E]]);
-
-    // A 4 Sides terrain shows no corners.
     await pick("property-terrain-style", "4 Sides (16)");
-    expect(screen.queryByTestId("tileset-terrain-neighbour-north-east")).toBeNull();
-    expect(screen.getByTestId("tileset-terrain-coverage").textContent).toBe(
-      "2 tiles cover 1 of 16 variants; the rest paint the closest tile.",
-    );
+    expect(screen.getByTestId("tileset-terrain-coverage-count").textContent).toBe("2 of 16");
+    // The centre zone takes a tile out of the autotile.
+    stroke([[16, 16]]);
+    expect(masks()).toEqual([[2, TERRAIN_E]]);
 
-    // Removing the terrain takes its tiles out of it in the same edit.
+    // Removing the autotile takes its tiles out of it in the same edit.
     const edits = onChange.mock.calls.length;
     fireEvent.click(screen.getByTestId("tileset-terrains-0-remove"));
     expect(onChange.mock.calls.length).toBe(edits + 1);
     expect(last().terrains).toBeUndefined();
     expect(masks()).toEqual([]);
+  });
+
+  it("fills a 4 Sides block from its top-left tile with Fill From Layout", async () => {
+    const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:atlas");
+    const revokeUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    try {
+      const onChange = vi.fn();
+      const initial = twoTilePayload({
+        textureGuid: "tex-1", atlasWidth: 80, atlasHeight: 64,
+        terrains: [{ id: "grass", name: "Grass", style: "sides" }],
+      });
+      render(<TilesetHarness initial={initial} onChange={onChange} />);
+      const last = () => normalizeTilesetPayload(onChange.mock.lastCall![0]);
+      const fill = await screen.findByTestId("tileset-fill-from-layout");
+      await waitFor(() => expect((fill as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(fill);
+      const dialog = within(screen.getByTestId("tileset-layout-dialog"));
+      expect(dialog.getByTestId("tileset-layout-preview").children).toHaveLength(16);
+      // A 5 × 4 atlas: from tile 3 the 4 × 4 block runs past the right edge.
+      fireEvent.click(dialog.getByTestId("tileset-layout-atlas-cell-3"));
+      expect(dialog.getByTestId("tileset-layout-error")).toBeTruthy();
+      expect((dialog.getByTestId("tileset-layout-fill") as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(dialog.getByTestId("tileset-layout-atlas-cell-2"));
+      expect(dialog.getByTestId("tileset-layout-fill").textContent).toBe("Fill 16 Tiles");
+      fireEvent.click(dialog.getByTestId("tileset-layout-fill"));
+      const grass = last().tiles.flatMap((tile) => (tile.terrain ? [[tile.id, tile.terrain.mask]] : []));
+      // Tile 2 is the island's top-left (joins east and south); column 1 stays out of the block.
+      expect(grass[0]).toEqual([2, TERRAIN_E | TERRAIN_S]);
+      expect(grass.map(([id]) => id)).toEqual([2, 3, 4, 5, 7, 8, 9, 10, 12, 13, 14, 15, 17, 18, 19, 20]);
+      expect(screen.queryByTestId("tileset-layout-dialog")).toBeNull();
+      expect(screen.getByTestId("tileset-terrain-coverage-count").textContent).toBe("16 of 16");
+    } finally {
+      createUrl.mockRestore();
+      revokeUrl.mockRestore();
+    }
   });
 
   it("keeps atlas size fields read-only", () => {

@@ -50,7 +50,7 @@ import {
 } from "@haptic/shader-graph";
 import { createAppSettingsStore } from "@haptic/vfs";
 import { collectAreaEmissions } from "../lib/collect-area-emissions";
-import { collectGpuTextureBytes, texturePixelSizesFromHeaders } from "../lib/collect-gpu-texture-bytes";
+import { collectGpuTextureBytes, texturePixelSizeFromHeader, texturePixelSizesFromHeaders } from "../lib/collect-gpu-texture-bytes";
 import { materialDomainsFromAssets, registryClassParentLookup } from "../lib/content-browser-helpers";
 import { collectDataGraphAssets } from "../lib/data-graph";
 import { selectEditorUtilityGraphs } from "../lib/editor-utility-scripts";
@@ -624,6 +624,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     return playSpritePayloadsFromGuids(
       [...loaded.keys()],
       (guid) => loaded.get(guid) ?? null,
+      (textureGuid) => texturePixelSizeFromHeader(projectService.registry?.getByGuid(textureGuid)),
     );
   };
 

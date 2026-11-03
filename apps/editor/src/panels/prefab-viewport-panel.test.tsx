@@ -62,7 +62,8 @@ const {
       setOcclusionCulling: vi.fn(),
       setSelectedActors: vi.fn(),
       syncSelectionDebug: vi.fn(),
-      gizmos: { setTool: vi.fn(), setSpace: vi.fn(), setSnap: vi.fn(), setLinkedScale: vi.fn() },
+      setLinkedScaleActors: vi.fn(),
+      gizmos: { setTool: vi.fn(), setSpace: vi.fn(), setSnap: vi.fn() },
       grid: { setVisible: vi.fn() },
       setGridSettings: vi.fn(),
     },
@@ -324,7 +325,7 @@ describe("PrefabViewportPanel engine", () => {
     });
     createEngineMock.mockClear();
     dispose.mockClear();
-    handle.editor.gizmos.setLinkedScale.mockClear();
+    handle.editor.setLinkedScaleActors.mockClear();
     handle.loadScene.mockClear();
     handle.editor.setGridSettings.mockClear();
     handle.setMaterialDocuments.mockClear();
@@ -547,11 +548,11 @@ describe("PrefabViewportPanel engine", () => {
     prefabState.selectedIds = ["prefab-mesh"];
     act(() => receiveActiveAppSettingsUpdate({ linkedScaleKeys: ["class:Hero/component:prefab-mesh"] }));
     const { rerender } = render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
-    await waitFor(() => expect(handle.editor.gizmos.setLinkedScale).toHaveBeenLastCalledWith(true));
+    await waitFor(() => expect(handle.editor.setLinkedScaleActors).toHaveBeenLastCalledWith(["prefab-mesh"]));
 
     prefabState.selectedIds = [PREFAB_ROOT_ID];
     rerender(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
-    await waitFor(() => expect(handle.editor.gizmos.setLinkedScale).toHaveBeenLastCalledWith(false));
+    await waitFor(() => expect(handle.editor.setLinkedScaleActors).toHaveBeenLastCalledWith([]));
   });
 
   it("requests the overlay transform box for SceneLayerActor prefabs", () => {
