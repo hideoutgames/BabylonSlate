@@ -3,7 +3,7 @@ import {
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
 } from "@haptic/object-model";
-import { ENGINE_BASE_CLASSES } from "./content-browser-helpers";
+import { ENGINE_BASE_CLASSES } from "./class-asset-lookup";
 
 /** Engine class ids indexed as catalog hits: base classes, built-in BT nodes, SceneLayer and every engine component. */
 export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [

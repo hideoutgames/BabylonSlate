@@ -11,7 +11,7 @@ import {
 import type { AssetRegistry } from "@haptic/assets";
 import type { NavMeshGenerateInput } from "@haptic/navigation";
 import { createAppSettingsStore } from "@haptic/vfs";
-import { newAssetFileName } from "../lib/content-browser-helpers";
+import { newAssetFileName } from "../lib/class-asset-lookup";
 import type { ProjectService } from "./project-service";
 
 export type OwnedFolder = { handle: ProjectFolderHandle; createdHere: boolean };
