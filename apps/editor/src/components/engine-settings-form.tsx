@@ -392,6 +392,26 @@ export function EngineSettingsForm({
             />
           </Field>
         </SettingsSection>
+        <SettingsSection id="culling" title="Culling">
+          <Field orientation="horizontal" className="settings-field">
+            <FieldContent>
+              <FieldLabel htmlFor="setting-viewport-occlusion-culling">
+                Occlusion Culling
+              </FieldLabel>
+              <FieldDescription>
+                Skips objects hidden behind solid shapes in Scene viewports. Play and exported games follow the project setting.
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="setting-viewport-occlusion-culling"
+              data-testid="setting-viewport-occlusion-culling"
+              checked={settings.viewportOcclusionCulling}
+              onCheckedChange={(checked) =>
+                void onChange({ viewportOcclusionCulling: checked === true })
+              }
+            />
+          </Field>
+        </SettingsSection>
         <SettingsSection id="frameRate" title="Frame Rate">
           <Field className="settings-field">
             <FieldLabel htmlFor="setting-frame-cap">

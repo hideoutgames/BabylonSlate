@@ -236,6 +236,8 @@ export const engineSettingsSchema = z.object({
   /** Project and Engine Settings sub-categories collapsed on this device, as `scope:category:section`; the rest start open. */
   collapsedSettingsSections: z.array(z.string()).catch([]).default([]),
   postProcessingEnabled: z.boolean().default(true),
+  /** Scene viewports skip what solid shapes hide, as Play does with the project's Occlusion Culling on. */
+  viewportOcclusionCulling: z.boolean().default(true),
   editorTextureLodEnabled: z.boolean().default(false),
   editorTextureLodQuality: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;

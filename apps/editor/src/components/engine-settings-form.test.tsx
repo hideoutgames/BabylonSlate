@@ -210,6 +210,21 @@ describe("EngineSettingsForm assets", () => {
     fireEvent.click(getByTestId("setting-editor-texture-lod"));
     expect(onChange).toHaveBeenCalledWith({ editorTextureLodEnabled: true });
   });
+
+  it("shows viewport Occlusion Culling on by default and reports turning it off", () => {
+    const onChange = vi.fn();
+    const { getByTestId } = render(
+      <EngineSettingsForm
+        settings={defaultEngineSettings()}
+        onChange={onChange}
+        categoryId="viewport"
+      />,
+    );
+    const toggle = getByTestId("setting-viewport-occlusion-culling");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    expect(onChange).toHaveBeenCalledWith({ viewportOcclusionCulling: false });
+  });
 });
 
 describe("EngineSettingsForm focus", () => {

@@ -665,8 +665,8 @@ describe("breakdown verdicts", () => {
   it("checks each camera's savings against its own first baseline, and only steps that saved", () => {
     const rooms = (entry: FeatureTestBenchmarkSample): FeatureTestBenchmarkSample => ({ ...entry, view: "rooms" });
     const run = [
-      sample("baseline 1", 10), sample("occlusion on", 11), sample("baseline 2", 10),
-      rooms(sample("rooms baseline 1", 4)), rooms(sample("rooms occlusion on", 3)), rooms(sample("rooms baseline 2", 4)),
+      sample("baseline 1", 10), sample("occlusion off", 11), sample("baseline 2", 10),
+      rooms(sample("rooms baseline 1", 4)), rooms(sample("rooms occlusion off", 3)), rooms(sample("rooms baseline 2", 4)),
     ];
     expect(breakdownAdditivity("FT_Occlusion", run, "remove-one")).toEqual([
       { view: undefined, savingsMs: 0, baselineMs: 10, basis: "gpu", nonAdditive: false },

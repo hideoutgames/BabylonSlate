@@ -6,7 +6,7 @@ import { actor, meshComp, requireRef, SCENE_SAVE_ORDER, tf, type FeatureTestCont
  * content. A street-level city block (two rows of buildings along a street, each hiding a yard of crates and posts) and,
  * behind the block, an indoor building of rooms with doorways, each room holding crates and a present Model (whose
  * baked box occludes). The main camera stands in the street; `Rooms Camera` stands in a doorway (`possess "Rooms
- * Camera"`). The check runs `ft_occlusion`, since Occlusion Culling is off on every quality tier.
+ * Camera"`). The check runs `ft_occlusion`, so it culls even where the project turned Occlusion Culling off.
  */
 export const OCCLUSION_SCENE = "FT_Occlusion";
 const SCENES_FOLDER = "Scenes";

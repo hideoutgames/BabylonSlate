@@ -164,7 +164,7 @@ describe("formatFeatureTestCheckReport", () => {
 
   it("reports both passes of the preserveDrawingBuffer A/B under one header: tier, warm device, verdicts and the on/off comparison", () => {
     const restored = "preserveDrawingBuffer is stored as on again, as before the A/B; it applies when the editor next reloads or the project is reopened.";
-    const settings = (preserve: string) => ({ shadows: "medium 2048", "geometry.occlusion": "false", "presentation.preserve": preserve });
+    const settings = (preserve: string) => ({ shadows: "medium 2048", "geometry.occlusion": "true", "presentation.preserve": preserve });
     const sample = (label: string, busyMs: number | null, preserve: string, extra: Partial<FeatureTestBenchmarkSample> = {}): FeatureTestBenchmarkSample => ({
       label, baseline: label.includes("baseline"),
       frames: { frames: 100, durationMs: 3330, fps: 30, medianMs: 33.3, meanMs: 33.3, p95Ms: 34, maxMs: 40, stalls: 0, vsync: [0, 1, 0, 0] },
@@ -188,9 +188,8 @@ describe("formatFeatureTestCheckReport", () => {
       scenes: [
         scene("FT_World", 1, [sample("baseline 1", 20, "true"), sample("shadows off", 15, "true", { settings: { ...settings("true"), shadows: "off" } }), sample("baseline 2", 22, "true")]),
         scene("FT_Occlusion", 1, [
-          sample("rooms baseline 1", null, "true", rooms),
-          sample("rooms occlusion on", null, "true", { ...rooms, settings: { ...settings("true"), "geometry.occlusion": "true" },
-            occlusion: { tested: 480, culled: 212, triangles: 1520, ms: 0.42 } }),
+          sample("rooms baseline 1", null, "true", { ...rooms, occlusion: { tested: 480, culled: 212, triangles: 1520, ms: 0.42 } }),
+          sample("rooms occlusion off", null, "true", { ...rooms, settings: { ...settings("true"), "geometry.occlusion": "false" } }),
           sample("rooms baseline 2", null, "true", rooms),
         ]),
         // 4 against 18.5 and 2 against 19 save 31.5 ms of an 18 ms frame.
@@ -219,10 +218,11 @@ describe("formatFeatureTestCheckReport", () => {
       "  NON-ADDITIVE: step savings sum to 31.5 ms, past the first baseline's 18.0 ms gpu busy; the changes do not add up, so do not sum them",
       "  SATURATED: 100% of baseline frames lasted 4+ display intervals; the GPU is saturated, so a change is not that feature's own cost",
     ]);
-    // The rooms camera's step against its own baselines, with what it culled.
-    const occlusion = lines.find((line) => line.startsWith("    rooms occlusion on "))!;
+    // The rooms camera's step against its own baselines; the Medium baseline culls and says what.
+    const occlusion = lines.find((line) => line.startsWith("    rooms occlusion off "))!;
     expect(occlusion).toContain("+0.0ms +0%*");
-    expect(occlusion).toMatch(/575 {11}geometry\.occlusion=true · occlusion culled 212\/480 · 1520 tris · 0\.42 ms$/);
+    expect(occlusion).toMatch(/575 {11}geometry\.occlusion=false$/);
+    expect(lines.find((line) => line.startsWith("    rooms baseline 1 "))).toMatch(/occlusion culled 212\/480 · 1520 tris · 0\.42 ms$/);
   });
 
   it("states a warm device and the verdicts only when they apply", () => {
