@@ -58,12 +58,14 @@ describe("compiled module loading", () => {
   });
 
   it("exports a function once when it serves several entry points", async () => {
+    // Compiled entry points carry more than the loader reads (the event each one serves).
+    const entryPoints = [{ name: "probe", event: "onTick" }, { name: "probe", event: "probe" }];
     const module = await loadCompiledModule({
       source: "export function probe(ctx) { return ctx + 1; }",
-      entryPoints: [{ name: "probe", event: "onTick" }, { name: "probe", event: "probe" }],
+      entryPoints,
     }, "shared-fixture");
     expect(Object.keys(module)).toEqual(["probe"]);
-    expect(module.probe?.(1)).toBe(2);
+    expect((module.probe as (value: number) => number)(1)).toBe(2);
   });
 
   it("preserves strict module function semantics", async () => {
