@@ -23,7 +23,6 @@ import {
   remapPathAfterFolderMove,
   type ContentBrowserTreeRow,
 } from "../lib/content-browser-helpers";
-import { primeSoftKeyboard } from "@haptic/editor-kit";
 import { contentBrowserFolderOps, type ContentBrowserRoot } from "../lib/plugin-ui";
 import type { ContentBrowserGridItem, ContentBrowserTileHit } from "./content-browser-grid-tiles";
 import type { ContentBrowserNameDialog, NameEntry } from "./content-browser-name-dialog";
@@ -237,9 +236,6 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
    */
   const createFolder = useCallback(async (place: NewFolderPlace) => {
     if (!assetRegistry || busy || selectedRoot.readOnly) return;
-    // The name field focuses after the write, outside this tap: hold the
-    // on-screen keyboard open until it does.
-    primeSoftKeyboard();
     let name = NEW_FOLDER_NAME;
     for (let index = 1; isFolderNameTaken(existingFolderPaths, selectedFolderPath, name); index += 1) {
       name = `${NEW_FOLDER_NAME}_${index}`;
