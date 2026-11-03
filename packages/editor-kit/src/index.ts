@@ -245,6 +245,7 @@ export {
   TreeView,
   TREE_ROW_HEIGHT,
   TREE_SWIPE_ADD_PX,
+  isSidewaysDragOut,
   rangeSelectTreeIds,
   treeDropPlacement,
   type TreeDropPlacement,
