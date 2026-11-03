@@ -4,8 +4,8 @@ import {
 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
 import {
-  createDefaultRenderTargetCaptureProperties, createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeShadowSettings, normalizeWaterBody,
-  outlineBindings, type RenderTargetCaptureQuality,
+  createDefaultRenderTargetCaptureProperties, createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeShadowSettings,
+  normalizeWaterBody, outlineBindings, type RenderTargetCaptureQuality,
 } from "@haptic/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
@@ -111,6 +111,8 @@ it("keeps Fast on the lightweight capture pass: no forward view and no water sce
 
 it("renders Full Quality through the forward pipeline with its own scene copy, without disturbing the scene view", async () => {
   const { scene, camera, lake, pier, helper, view, captures, output } = host("fullQuality");
+  // The scene view mirrors the lake with a planar reflection; the capture must not draw one of its own.
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { reflections: "planar" } }) });
   /** Cameras `mesh` was drawn for. */
   const drawnFor = (mesh: Mesh) => {
     const cameras = new Set<string>();

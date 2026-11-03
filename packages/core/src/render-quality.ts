@@ -209,10 +209,12 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     resolution: { scale: 0.85, dynamic: true, minScale: 0.5, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 4, byteBudget: 384 * MIB },
     geometry: { autoLod: true, lodDistanceScale: 0.75, occlusionCulling: false },
+    // A budget phone draws water as a blended surface reflecting the sky: no scene copy, no mirror pass, the cheapest
+    // shading and two small FFT cascades.
     water: {
-      shadingDetail: "medium", meshDensity: 0.75, contactResolution: 256,
-      refraction: true, refractionScale: 0.5, reflections: "planar", reflectionSteps: 6,
-      planarScale: 0.25, fftSize: 128, fftCascades: 3,
+      shadingDetail: "low", meshDensity: 0.5, contactResolution: 256,
+      refraction: false, refractionScale: 0.5, reflections: "sky", reflectionSteps: 6,
+      planarScale: 0.25, fftSize: 64, fftCascades: 2,
     },
     postprocessing: { resolutionScale: 0.75, antiAliasing: "fxaa", ambientOcclusion: false, reflections: false, volumetricLighting: false },
   },
@@ -221,10 +223,12 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     resolution: { scale: 1, dynamic: true, minScale: 0.75, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 8, byteBudget: 768 * MIB },
     geometry: { autoLod: true, lodDistanceScale: 1.25, occlusionCulling: false },
+    // The A16 keeps refraction and screen-space object reflections, with no planar re-render of the scene for flat
+    // water, a half-resolution scene copy, a coarser mesh and a quarter of High's FFT texels.
     water: {
-      shadingDetail: "medium", meshDensity: 1, contactResolution: 512,
-      refraction: true, refractionScale: 0.75, reflections: "planar", reflectionSteps: 12,
-      planarScale: 0.5, fftSize: 256, fftCascades: 3,
+      shadingDetail: "medium", meshDensity: 0.75, contactResolution: 512,
+      refraction: true, refractionScale: 0.5, reflections: "screenSpace", reflectionSteps: 8,
+      planarScale: 0.5, fftSize: 128, fftCascades: 3,
     },
     postprocessing: { resolutionScale: 1, antiAliasing: "msaa4", ambientOcclusion: true, reflections: true, volumetricLighting: false },
   },

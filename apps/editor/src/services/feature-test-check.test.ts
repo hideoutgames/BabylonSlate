@@ -330,7 +330,7 @@ describe("runFeatureTestCheck", () => {
     const measured = report.scenes[0]!.play.benchmark.filter((sample) => !sample.warmup);
     expect(measured.filter((sample) => !sample.baseline).map((sample) => sample.label)).toEqual([
       "MSAA 2x", "MSAA 4x", "AA fxaa", "shadow filter high", "post-processing", "AO", "SSR", "water detail medium", "water detail high",
-      "water refraction", "planar water reflection", "captures", "resolution 1.0",
+      "water refraction", "screen-space water reflection", "planar water reflection", "captures", "resolution 1.0",
     ]);
     const base = FEATURE_TEST_BREAKDOWN_BASES["add-one"].commands;
     const commands = editor.commands;
@@ -339,8 +339,10 @@ describe("runFeatureTestCheck", () => {
     expect(commands.slice(0, 2 + base.length)).toEqual(["framecap", "framecap 60", ...base]);
     expect(commands.slice(at("quality postprocessing ambientOcclusion on") + 1, at("quality postprocessing reflections on") - 1))
       .toEqual(["gpubusy on", "quality reset", ...base, "gpubusy on", "quality reset", ...base]);
-    // Medium's values: water refraction at Medium's copy scale, planar reflection at Medium's planar scale.
-    expect(commands).toContain("quality water refractionScale 0.75");
+    // Medium's values: water refraction at Medium's copy scale, its screen-space march's steps, planar reflection at
+    // Medium's planar scale.
+    expect(commands).toContain("quality water refractionScale 0.5");
+    expect(commands).toContain("quality water reflectionSteps 8");
     expect(commands).toContain("quality water planarScale 0.5");
     // Play gets its post-processing and captures back.
     expect(commands.slice(-5)).toEqual(["gpubusy off", "quality reset", "postprocessing on", "rendertargets on", "framecap 30"]);
@@ -365,7 +367,7 @@ describe("runFeatureTestCheck", () => {
     const skipped = measured.filter((sample) => sample.skipped);
     expect(skipped.map((sample) => [sample.label, sample.skipped])).toEqual([
       ["shadows medium", "already shadows medium 2048, shadows.filter high"],
-      ["water detail medium", "already water.shadingDetail medium, water.fft 256x3"],
+      ["water detail medium", "already water.shadingDetail medium, water.fft 128x3"],
       ["volumetrics off", "already post.volumetricLighting false"],
     ]);
     expect(skipped.every((sample) => sample.frames === null)).toBe(true);
