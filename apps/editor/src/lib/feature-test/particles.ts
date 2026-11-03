@@ -8,6 +8,7 @@ import {
 import {
   createDefaultParticleGraphDocument,
   newParticleNodeProperties,
+  withParticleSpawnPreset,
   type ParticleGraphDocument,
 } from "@haptic/particle-graph";
 import { newAssetFileName, type CreatableAssetType } from "../content-browser-helpers";
@@ -16,6 +17,7 @@ import {
   actor,
   comp,
   instanceComponents,
+  meshComp,
   requireRef,
   tf,
   type FeatureTestClassRef,
@@ -41,11 +43,14 @@ export const FEATURE_TEST_PARTICLE_NAMES = {
   glowGraph: "FT_FxGlowGraph",
   /** A flipbook: Sprite Sheet and Animate Sprite Sheet over the generated 4 × 4 sheet. */
   sheetGraph: "FT_FxSheetGraph",
+  /** Mesh Shape, Noise, Normalized Lerp, Local Variable, Update Angle (Degrees) and Spawn Emitter. */
+  surfaceGraph: "FT_FxSurfaceSparksGraph",
   /** Mixes the Basic fountain emitter and the CPU Particle Graph in one System. */
   showcase: "FT_FxShowcase",
   sparks: "FT_FxSparks",
   smoke: "FT_FxSmoke",
   sheet: "FT_FxSheet",
+  surface: "FT_FxSurfaceSparks",
   /** Heavy GPU workload, placed only in `FT_Stress`. */
   stress: "FT_FxStress",
   /** A Once burst that `FT_FxFlashRelay` replays from Event On Particles Finished. */
@@ -113,12 +118,19 @@ export async function buildFeatureTestParticles(ctx: FeatureTestContext): Promis
     })
   ).guid;
   await saveSystem(ctx, NAMES.sheet, [sheetGraph], "world");
+  const flashEmitterGuid = await saveEmitter(ctx, NAMES.flashEmitter, flashEmitter(glow));
+  const surfaceGraph = (
+    await ctx.createAsset("ParticleGraph", FOLDER, NAMES.surfaceGraph, {
+      payload: payload(surfaceSparksGraph(NAMES.surfaceGraph, glow, flashEmitterGuid)),
+    })
+  ).guid;
+  await saveSystem(ctx, NAMES.surface, [surfaceGraph], "world");
 
   const showcase = await saveSystem(ctx, NAMES.showcase, [fountain, graph], "world");
   const sparkBursts = await saveSystem(ctx, NAMES.sparks, [sparks], "world");
   await saveSystem(ctx, NAMES.smoke, [smoke], "local");
   await saveSystem(ctx, NAMES.stress, [stress], "world");
-  const flash = await saveSystem(ctx, NAMES.flash, [await saveEmitter(ctx, NAMES.flashEmitter, flashEmitter(glow))], "world");
+  const flash = await saveSystem(ctx, NAMES.flash, [flashEmitterGuid], "world");
   flashRelays.set(ctx, await saveFlashRelay(ctx, flash));
   spawners.set(ctx, await saveSpawner(ctx, flash));
   glowPulses.set(ctx, await saveGlowPulse(ctx, showcase, sparkBursts));
@@ -282,6 +294,10 @@ export async function placeFeatureTestParticles(ctx: FeatureTestContext): Promis
   ctx.addActor(sparkBursts, { zone: "particles" });
   ctx.addActor(emitterActor("smoke", "Rising Smoke", system(NAMES.smoke), zone.at(7, 0.1, -2)), { zone: "particles" });
   ctx.addActor(emitterActor("sheet", "Sprite Sheet Flipbook", system(NAMES.sheet), zone.at(-7, 1.2, 4)), { zone: "particles" });
+  // Mesh Shape (Owner Mesh) spawns on this actor's own sphere.
+  const surface = emitterActor("surface", "Mesh Surface Sparks", system(NAMES.surface), zone.at(-3.5, 1, -2));
+  surface.components.unshift(meshComp("ft-fx-surface-mesh", "sphere"));
+  ctx.addActor(surface, { zone: "particles" });
   const relay = flashRelays.get(ctx);
   if (!relay) throw new Error("FeatureTest could not find the Flash Relay Class");
   ctx.addActor(actor("ft-fx-flash-relay", "Flash Relay", tf(zone.at(0, 1.5, 4)), instanceComponents("ft-fx-flash-relay", relay.components), {
@@ -556,7 +572,7 @@ function glowGraph(name: string, materialGuid: string): ParticleGraphDocument {
  * generated 4 × 4 sheet (Sprite Sheet, Random Start Cell) and stepping through all 16 cells at
  * 8 frames a second (Animate Sprite Sheet, Loop), drawn by the sheet Material.
  */
-function sheetFlipbookGraph(name: string, materialGuid: string): ParticleGraphDocument {
+export function sheetFlipbookGraph(name: string, materialGuid: string): ParticleGraphDocument {
   const graph = createDefaultParticleGraphDocument(name);
   graph.materialGuid = materialGuid;
   graph.settings = { capacity: 64, loop: "infinite", duration: 4, prewarm: 1, blendMode: "standard", billboard: "all" };
@@ -594,4 +610,62 @@ function sheetFlipbookGraph(name: string, materialGuid: string): ParticleGraphDo
     { id: "e-animate-color", sourceNodeId: "animate", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
   );
   return graph;
+}
+
+/**
+ * The Particle Graph authoring nodes on one emitter: particles spawn on the owning actor's sphere
+ * (Mesh Shape, Owner Mesh, along its normals), turn upward over their life (Normalized Lerp from
+ * their Direction to up, × 1.5 m/s in Update Direction), drift on the built-in Noise, keep one
+ * random size each (Random every read → Local Variable, Particle scope → Update Size), spin at
+ * 180°/s (Age × 180 → Update Angle (Degrees)) and, as each dies, play the flash (Spawn Emitter,
+ * On Death; Limit 4, Min Interval 0.25 s).
+ */
+export function surfaceSparksGraph(name: string, materialGuid: string, flashEmitterGuid: string): ParticleGraphDocument {
+  const graph = createDefaultParticleGraphDocument(name);
+  graph.materialGuid = materialGuid;
+  graph.settings = { capacity: 128, loop: "infinite", duration: 4, prewarm: 0, blendMode: "additive", billboard: "all" };
+  const shape = graph.nodes.find((entry) => entry.id === "shape");
+  const create = graph.nodes.find((entry) => entry.id === "create");
+  const output = graph.nodes.find((entry) => entry.id === "output");
+  if (!shape || !create || !output) throw new Error("FeatureTest Particle Graph is missing its default spine.");
+  shape.type = "shape.mesh";
+  shape.properties = { ...newParticleNodeProperties("shape.mesh"), source: "ownerMesh", useMeshNormals: true };
+  Object.assign(create.properties, { "default:emitPower": [1], "default:lifetime": [1.2] });
+  Object.assign(output.properties, { "default:emitRate": [24] });
+  const node = (id: string, type: string, x: number, y: number, properties: Record<string, unknown> = {}) =>
+    graph.nodes.push({ id, type, position: { x, y }, properties: { ...newParticleNodeProperties(type), ...properties } });
+  node("steer", "update.direction", 860, -200);
+  node("noise", "update.noise", 1100, -200, { "default:strength": [1.5, 1.5, 1.5] });
+  node("spin", "update.angleDegrees", 1500, -200);
+  node("size", "update.size", 1700, -200);
+  node("spawn", "trigger.spawn", 1900, -200, { emitterGuid: flashEmitterGuid, limit: 4, minInterval: 0.25 });
+  node("direction", "input.contextual.direction", 200, -500);
+  node("ageRatio", "input.contextual.normalizedAge", 200, -400);
+  node("upward", "math.nlerp", 450, -450, { "default:b": [0, 1, 0] });
+  node("speed", "math.multiply", 650, -450, { "default:b": [1.5] });
+  node("age", "input.contextual.age", 1100, -500);
+  node("spinRate", "math.multiply", 1300, -500, { "default:b": [180] });
+  node("sizeRandom", "random.range", 1300, -650, { valueType: "float", lock: "everyRead", "default:min": [0.06], "default:max": [0.2] });
+  node("keepSize", "utility.localVariable", 1500, -650, { scope: "particle" });
+  // Spine: Create → Mesh Shape → Update Direction → Noise → Apply Velocity → Update Angle (Degrees)
+  // → Update Size → Spawn Emitter → Update Color → Emitter Output.
+  graph.edges = graph.edges.filter((entry) => entry.id !== "e-shape-velocity" && entry.id !== "e-velocity-color");
+  const wire = (sourceNodeId: string, sourcePinId: string, targetNodeId: string, targetPinId: string) =>
+    graph.edges.push({ id: `e-${sourceNodeId}-${targetNodeId}-${targetPinId}`, sourceNodeId, sourcePinId, targetNodeId, targetPinId });
+  wire("shape", "out", "steer", "particle");
+  wire("steer", "out", "noise", "particle");
+  wire("noise", "out", "velocity", "particle");
+  wire("velocity", "out", "spin", "particle");
+  wire("spin", "out", "size", "particle");
+  wire("size", "out", "spawn", "particle");
+  wire("spawn", "out", "updateColor", "particle");
+  wire("direction", "out", "upward", "a");
+  wire("ageRatio", "out", "upward", "alpha");
+  wire("upward", "out", "speed", "a");
+  wire("speed", "out", "steer", "direction");
+  wire("age", "out", "spinRate", "a");
+  wire("spinRate", "out", "spin", "angle");
+  wire("sizeRandom", "out", "keepSize", "value");
+  wire("keepSize", "out", "size", "size");
+  return withParticleSpawnPreset(graph, "spawn", "death");
 }
