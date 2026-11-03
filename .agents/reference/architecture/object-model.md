@@ -80,7 +80,7 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 
 ## Script surface
 
-- `ENGINE_CLASS_SCRIPT_APIS` ([`engine-script-api.ts`](../../../packages/object-model/src/engine-script-api.ts)) is the Get/Set/Call/Add Event catalog: `variables`, `functions`, component-bound `events`, and Self lifecycle `nativeEvents` (which never feed `engineEventTypeClassIds`).
+- `ENGINE_CLASS_SCRIPT_APIS` ([`engine-script-api.ts`](../../../packages/object-model/src/engine-script-api.ts)) is the Get/Set/Call/Add Event catalog: `variables`, `functions`, component-bound `events`, and Self lifecycle `nativeEvents` (which never feed `engineEventTypeClassIds`). Nothing is exposed automatically from component properties: every `ENGINE_COMPONENT_DESCRIPTORS` class has a catalog entry or a reasoned exemption (`COMPONENTS_WITHOUT_SCRIPT_MEMBERS` in `engine-script-api.test.ts`), so a new component cannot ship without graph members unnoticed.
 - Overlay pointer events live only on `2DButtonComponent`; collision events on `ColliderComponent`. Animation Graph, Behaviour Tree, NavMesh, NavMesh Blocker and Blocking Volume are ref-only.
 - `dispatchInterface` returns pin defaults (fresh deep copy) when no handler exists, never `undefined`.
 - `ClassRegistry.reparent` rejects cycles, locked ids and depth overflow, and returns invalidated inherited members. `ensure` merges metadata but never rewrites `parentClassId`. `loadScripts` registers parents before children.

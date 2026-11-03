@@ -52,13 +52,15 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Vector 3](vector-3.md) | Returns a fixed Vector 3 that you set in the **Inspector**. |
 | [Vector 4](vector-4.md) | Outputs a fixed Vector 4 value set in the **Inspector**. |
 
-## Parameters
+## Parameter
 
 | Node | Description |
 | --- | --- |
 | [Color Parameter](color-parameter.md) | Outputs a named colour that can be changed at runtime or overridden per Material Instance. |
 | [Float Parameter](float-parameter.md) | Outputs a named Float that can be changed at runtime or overridden per Material Instance. |
 | [Texture Parameter](texture-parameter.md) | Outputs a named texture that can be changed at runtime or overridden per Material Instance. |
+| [Vector 2 Parameter](vector-2-parameter.md) | Outputs a named Vector 2 that can be changed at runtime or overridden per Material Instance. |
+| [Vector 3 Parameter](vector-3-parameter.md) | Outputs a named Vector 3 that can be changed at runtime or overridden per Material Instance. |
 
 ## Math
 

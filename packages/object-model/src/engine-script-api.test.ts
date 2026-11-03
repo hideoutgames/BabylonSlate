@@ -1,11 +1,45 @@
 import { describe, expect, it } from "vitest";
+import { ENGINE_COMPONENT_DESCRIPTORS } from "@haptic/core";
 import {
+  ENGINE_CLASS_SCRIPT_APIS,
   engineEventTypeClassIds,
   engineNativeEventsFor,
   engineScriptApiFor,
 } from "./engine-script-api";
 
+/**
+ * Engine components that graphs reach through dedicated nodes or editor modes instead of
+ * catalog members, each with the reason.
+ */
+const COMPONENTS_WITHOUT_SCRIPT_MEMBERS: Readonly<Record<string, string>> = {
+  SaveGameComponent: "Save Game nodes",
+  LandscapeComponent: "edited in the Landscape Scene mode",
+  FoliageComponent: "painted in the Foliage Scene mode",
+  AnimationGraphComponent: "Animation Graph nodes",
+  BehaviourTreeComponent: "Behaviour Tree nodes",
+  BlockingVolumeComponent: "no settings; its collision is the actor's scale",
+};
+
 describe("engine script API catalog", () => {
+  it("gives every engine component script members unless it is listed with a reason", () => {
+    const listed = new Set(ENGINE_CLASS_SCRIPT_APIS.map((api) => api.classId));
+    const missing = ENGINE_COMPONENT_DESCRIPTORS.map((descriptor) => descriptor.classId)
+      .filter((classId) => !listed.has(classId) && !Object.hasOwn(COMPONENTS_WITHOUT_SCRIPT_MEMBERS, classId));
+    expect(missing).toEqual([]);
+    // An exemption that gained members is stale.
+    expect(Object.keys(COMPONENTS_WITHOUT_SCRIPT_MEMBERS).filter((classId) => listed.has(classId))).toEqual([]);
+  });
+
+  it("exposes NavMesh bake settings read-only and Scene Streaming's Target Scene", () => {
+    const names = (classId: string) =>
+      engineScriptApiFor(classId)?.variables?.map((variable) => `${variable.name}${variable.getOnly ? " (get)" : ""}`);
+    expect(names("NavMeshComponent")).toContain("Walkable Radius (get)");
+    expect(names("NavMeshBlockerComponent")).toEqual(["Dynamic (get)", "Kind", "Area", "Cost"]);
+    expect(engineScriptApiFor("SceneStreamingComponent")?.variables).toEqual([
+      { name: "Target Scene", typeId: "asset", typeClassId: "Scene", propertyKey: "sceneGuid" },
+    ]);
+  });
+
   it("maps event types onto the classes that expose them", () => {
     const types = engineEventTypeClassIds();
     expect(types["flow.event.onClick"]).toEqual(["2DButtonComponent"]);

@@ -6,7 +6,9 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { Material } from "@babylonjs/core/Materials/material";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { MaterialParameterValue } from "@haptic/bridge";
+import { copyMaterialParameterValue } from "@haptic/core";
 import type { MaterialBuildPlan } from "@haptic/shader-graph";
 import type { BlockRealization } from "./material-block-registry";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
@@ -20,6 +22,10 @@ export function validMaterialParameterValue(
   switch (parameter.kind) {
     case "float":
       return Number.isFinite(parameter.value);
+    case "vec2":
+      return parameter.value.length === 2 && parameter.value.every(Number.isFinite);
+    case "vec3":
+      return parameter.value.length === 3 && parameter.value.every(Number.isFinite);
     case "color":
       return (
         parameter.value.length === 4 && parameter.value.every(Number.isFinite)
@@ -66,9 +72,7 @@ export function createMaterialParameterBindings(
       ]),
   );
   const textureObservers = new Map<string, () => void>();
-  const copy = (value: MaterialParameterValue): MaterialParameterValue => value.kind === "color"
-    ? { kind: "color", value: [...value.value] }
-    : { ...value };
+  const copy = copyMaterialParameterValue;
   const defaults = new Map<string, MaterialParameterValue>();
   for (const [name, operation] of parameters) {
     const block = realized.get(operation.id)?.blocks[0];
@@ -81,6 +85,10 @@ export function createMaterialParameterBindings(
         typeof operation.properties.textureGuid === "string" ? operation.properties.textureGuid : null });
     } else if (block instanceof InputBlock && operation.nodeType === "param.float") {
       defaults.set(name, { kind: "float", value: block.value as number });
+    } else if (block instanceof InputBlock && block.value instanceof Vector2) {
+      defaults.set(name, { kind: "vec2", value: [block.value.x, block.value.y] });
+    } else if (block instanceof InputBlock && block.value instanceof Vector3) {
+      defaults.set(name, { kind: "vec3", value: [block.value.x, block.value.y, block.value.z] });
     } else if (block instanceof InputBlock && block.value instanceof Color4) {
       const color = block.value;
       defaults.set(name, { kind: "color", value: [color.r, color.g, color.b, color.a] });
@@ -176,6 +184,20 @@ export function createMaterialParameterBindings(
       if (parameter.kind === "float") {
         if (current === parameter.value) { values.set(name, copy(parameter)); return true; }
         block.value = parameter.value;
+      } else if (parameter.kind === "vec2") {
+        const [x, y] = parameter.value;
+        if (current instanceof Vector2 && current.x === x && current.y === y) {
+          values.set(name, copy(parameter));
+          return true;
+        }
+        block.value = new Vector2(x, y);
+      } else if (parameter.kind === "vec3") {
+        const [x, y, z] = parameter.value;
+        if (current instanceof Vector3 && current.x === x && current.y === y && current.z === z) {
+          values.set(name, copy(parameter));
+          return true;
+        }
+        block.value = new Vector3(x, y, z);
       } else {
         const [r, g, b, a] = parameter.value;
         if (current instanceof Color4 && current.r === r && current.g === g && current.b === b && current.a === a) {

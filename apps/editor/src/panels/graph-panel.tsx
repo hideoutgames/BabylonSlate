@@ -107,6 +107,8 @@ import {
 import { claimFocusRouting, graphOwningNode } from "../lib/function-graph-focus";
 import { ClassParticleSystemsContext } from "../context/class-particle-systems-context";
 import { particleSystemGuidsOf } from "../lib/use-particle-system-parameters";
+import { meshMaterialGuidsOf } from "../lib/use-material-parameter-names";
+import { ClassMaterialsContext } from "../context/class-materials-context";
 
 const VALIDATION_DEBOUNCE_MS = 250;
 
@@ -782,6 +784,16 @@ export function GraphPanel(
     }
     return particleSystemGuidsOf({ components });
   }, [graphContent, otherClassGraphs, parentClass, parentOf]);
+  // Own and inherited mesh components' Materials, for the Material parameter nodes' Name lists.
+  const classMaterials = useMemo(() => {
+    const components = [...(graphContent?.components ?? [])];
+    const seen = new Set<string>();
+    for (let ancestor = parentClass; ancestor && !seen.has(ancestor); ancestor = parentOf(ancestor) ?? "") {
+      seen.add(ancestor);
+      components.push(...(otherClassGraphs[ancestor]?.components ?? []));
+    }
+    return meshMaterialGuidsOf({ components });
+  }, [graphContent, otherClassGraphs, parentClass, parentOf]);
 
   const showLibraryEmpty = functionLibraryShowsEventGraphEmpty({
     parentClass,
@@ -803,6 +815,7 @@ export function GraphPanel(
         </Empty>
       ) : (
         <ClassParticleSystemsContext.Provider value={classParticleSystems}>
+        <ClassMaterialsContext.Provider value={classMaterials}>
         <GraphPinDefaultHostContext.Provider value={isEditorGraphHost({ parentClass, parentOf, assetType: indexed?.header.type })}>
           <GraphEditor
             renderNodeBody={renderNodeBody}
@@ -855,6 +868,7 @@ export function GraphPanel(
             }}
           />
         </GraphPinDefaultHostContext.Provider>
+        </ClassMaterialsContext.Provider>
         </ClassParticleSystemsContext.Provider>
       )}
       <NamePromptDialog

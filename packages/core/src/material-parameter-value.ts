@@ -1,6 +1,8 @@
 /** Serializable override of one named Material Graph parameter. */
 export type MaterialParameterValue =
   | { kind: "float"; value: number }
+  | { kind: "vec2"; value: [number, number] }
+  | { kind: "vec3"; value: [number, number, number] }
   | { kind: "color"; value: [number, number, number, number] }
   | { kind: "texture"; textureAssetGuid: string | null };
 
@@ -18,6 +20,34 @@ export function normalizeMaterialInstanceOverrides(value: unknown): MaterialInst
   return Object.keys(parameters).length ? { materialGuid: source.materialGuid.trim(), parameters } : undefined;
 }
 
+/** A copy that shares no array with `value`. */
+export function copyMaterialParameterValue(value: MaterialParameterValue): MaterialParameterValue {
+  return value.kind === "texture" || value.kind === "float"
+    ? { ...value }
+    : ({ ...value, value: [...value.value] } as MaterialParameterValue);
+}
+
+/** Whether `value` is a valid value of its kind; a texture guid is not checked against assets. */
+export function isFiniteMaterialParameterValue(value: MaterialParameterValue): boolean {
+  switch (value.kind) {
+    case "float":
+      return typeof value.value === "number" && Number.isFinite(value.value);
+    case "vec2":
+      return finiteNumbers(value.value, 2);
+    case "vec3":
+      return finiteNumbers(value.value, 3);
+    case "color":
+      return finiteNumbers(value.value, 4);
+    case "texture":
+      return value.textureAssetGuid === null || typeof value.textureAssetGuid === "string";
+  }
+}
+
+function finiteNumbers(value: unknown, length: number): value is number[] {
+  return Array.isArray(value) && value.length === length &&
+    value.every((entry) => typeof entry === "number" && Number.isFinite(entry));
+}
+
 /** Copies valid persisted values; invalid overrides leave the material default intact. */
 export function normalizeMaterialParameterOverrides(value: unknown): Record<string, MaterialParameterValue> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -27,8 +57,11 @@ export function normalizeMaterialParameterOverrides(value: unknown): Record<stri
     const parameter = raw as Record<string, unknown>;
     if (parameter.kind === "float" && typeof parameter.value === "number" && Number.isFinite(parameter.value)) {
       entries.push([name, { kind: "float", value: parameter.value }]);
-    } else if (parameter.kind === "color" && Array.isArray(parameter.value) && parameter.value.length === 4 &&
-      [...parameter.value].every((channel) => typeof channel === "number" && Number.isFinite(channel))) {
+    } else if (parameter.kind === "vec2" && finiteNumbers(parameter.value, 2)) {
+      entries.push([name, { kind: "vec2", value: [...parameter.value] as [number, number] }]);
+    } else if (parameter.kind === "vec3" && finiteNumbers(parameter.value, 3)) {
+      entries.push([name, { kind: "vec3", value: [...parameter.value] as [number, number, number] }]);
+    } else if (parameter.kind === "color" && finiteNumbers(parameter.value, 4)) {
       entries.push([name, { kind: "color", value: [...parameter.value] as [number, number, number, number] }]);
     } else if (parameter.kind === "texture" && (parameter.textureAssetGuid === null ||
       (typeof parameter.textureAssetGuid === "string" && parameter.textureAssetGuid.trim()))) {

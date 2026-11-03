@@ -22,6 +22,7 @@ Choose **Place Actors > Navigation > NavMesh Blocker**. It is not in the **Add C
 - A static Unwalkable blocker is baked into the [NavMesh](nav-mesh.md), so bake again after you change it.
 - A Dynamic Unwalkable blocker cuts the mesh in Play. It needs a NavMesh baked with **Support Dynamic Obstacles**.
 - A Cost blocker applies in Play. Agents choose cheaper routes around it when they can.
+- Scripts can read **Dynamic** and read or set **Kind**, **Area** and **Cost**. A change applies in Play to a Dynamic blocker; a static one keeps what was baked.
 - The editor draws it as an amber dotted volume.
 
 ## Related

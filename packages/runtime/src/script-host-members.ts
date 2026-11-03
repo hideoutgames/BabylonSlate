@@ -203,12 +203,22 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
       const [x, y, z, w] = result?.kind === "color" ? result.value : [0, 0, 0, 1];
       return { found: result?.kind === "color", value: { x: x!, y: y!, z: z!, w: w! } };
     },
+    getMaterialVectorParameter: (material, name) => {
+      const result = host.materials.getMaterialParameter(material, name, "vec3")
+        ?? host.materials.getMaterialParameter(material, name, "vec2");
+      const vector = result?.kind === "vec2" || result?.kind === "vec3";
+      const [x = 0, y = 0, z = 0] = vector ? result.value : [];
+      return { found: vector, value: { x, y, z } };
+    },
     getMaterialTextureParameter: (material, name) => {
       const result = host.materials.getMaterialParameter(material, name, "texture");
       return { found: result?.kind === "texture", value: result?.kind === "texture" ? result.textureAssetGuid : null };
     },
     resetMaterialFloatParameter: (material, name) => host.materials.resetMaterialParameter(material, name, "float"),
     resetMaterialColorParameter: (material, name) => host.materials.resetMaterialParameter(material, name, "color"),
+    resetMaterialVectorParameter: (material, name) =>
+      host.materials.resetMaterialParameter(material, name, "vec3") ||
+      host.materials.resetMaterialParameter(material, name, "vec2"),
     resetMaterialTextureParameter: (material, name) => {
       const reset = host.materials.resetMaterialParameter(material, name, "texture");
       // The default texture needs no preload; one an earlier set acquired is released.
@@ -263,6 +273,15 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
         kind: "color",
         value: rgba,
       });
+    },
+    setMaterialVectorParameter: (material, name, value) => {
+      if (!value || typeof value !== "object") return;
+      const { x, y, z } = value;
+      if (![x, y, z].every((entry) => typeof entry === "number" && Number.isFinite(entry))) return;
+      // The parameter's declared width decides what it takes: a Vector 2 keeps X and Y.
+      const vec2 = !host.materials.getMaterialParameter(material, name, "vec3") &&
+        host.materials.getMaterialParameter(material, name, "vec2") !== null;
+      host.materials.setMaterialParameter(material, name, vec2 ? { kind: "vec2", value: [x, y] } : { kind: "vec3", value: [x, y, z] });
     },
     setMaterialTextureParameter: (material, name, value) => {
       if (value !== null && typeof value !== "string") return;

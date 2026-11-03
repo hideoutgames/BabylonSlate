@@ -3,6 +3,7 @@ import { normalizeMaterialParameterCatalog } from "@haptic/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
+  normalizeMaterialDocument,
 } from "./document";
 import { buildMaterialParameterCatalog } from "./material-parameter-catalog";
 
@@ -114,6 +115,26 @@ describe("worker Material parameter catalog", () => {
     expect(
       document.nodes.find((node) => node.id === "tint")!.properties.value,
     ).toEqual([0.1, 0.2, 0.3, 0.4]);
+  });
+
+  it("exposes Vector 2 and Vector 3 parameter defaults at their width", () => {
+    const document = createDefaultMaterialDocument("Surface");
+    document.nodes.push(
+      { id: "glow", type: "param.vec3", position: { x: 0, y: 0 }, properties: { name: "Glow", value: [0.1, 0.2, 0.3] } },
+      { id: "tiling", type: "param.vec2", position: { x: 0, y: 0 }, properties: { name: "Tiling", value: [2] } },
+      { id: "length", type: "vector.length", position: { x: 0, y: 0 }, properties: {} },
+    );
+    document.edges.push(
+      { id: "glow-out", sourceNodeId: "glow", sourcePinId: "out", targetNodeId: "output", targetPinId: "emissive" },
+      { id: "tiling-length", sourceNodeId: "tiling", sourcePinId: "out", targetNodeId: "length", targetPinId: "value" },
+      { id: "length-out", sourceNodeId: "length", sourcePinId: "out", targetNodeId: "output", targetPinId: "metallic" },
+    );
+    const catalog = buildMaterialParameterCatalog(new Map([["mat", normalizeMaterialDocument(document)]]));
+    expect(catalog.mat?.parameters).toEqual({
+      Glow: { kind: "vec3", value: [0.1, 0.2, 0.3] },
+      // The document pads a short value to its width.
+      Tiling: { kind: "vec2", value: [2, 0] },
+    });
   });
 
   it("preserves typed Float/Texture defaults and rejects malformed transport domains and values", () => {

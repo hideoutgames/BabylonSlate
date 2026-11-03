@@ -29,14 +29,14 @@ describe("material graph serialization", () => {
       expect.objectContaining({ id: "out", type: { kind: "vec3" }, typeLabel: "V3" }),
     ]));
   });
-  it("requires a new name when pasting a parameter while retaining the original name", () => {
+  it("gives a pasted parameter a free _N name while the original keeps its own", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({ id: "roughness", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Roughness", value: [0.4] } });
     const graph = materialGraphToSerialized(doc);
     graph.nodes.push({ ...graph.nodes.find((node) => node.id === "roughness")!, id: "roughness-copy" });
     const pasted = serializedToMaterialGraph(graph, doc);
     expect(pasted.nodes.find((node) => node.id === "roughness")?.properties.name).toBe("Roughness");
-    expect(pasted.nodes.find((node) => node.id === "roughness-copy")?.properties.name).toBe("");
+    expect(pasted.nodes.find((node) => node.id === "roughness-copy")?.properties.name).toBe("Roughness_1");
     expect(pasted.nodes.find((node) => node.id === "roughness-copy")?.properties.value).toEqual([0.4]);
   });
   it("exposes a Color Parameter RGBA value and an explicit RGB output", () => {

@@ -3,7 +3,11 @@ import type { MaterialDiagnostic } from "./validate";
 
 export function isMaterialParameterNode(type: string): boolean {
   return (
-    type === "param.float" || type === "param.color" || type === "param.texture"
+    type === "param.float" ||
+    type === "param.vec2" ||
+    type === "param.vec3" ||
+    type === "param.color" ||
+    type === "param.texture"
   );
 }
 
