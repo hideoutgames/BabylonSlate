@@ -289,6 +289,15 @@ test.describe("Particle Graph", () => {
     await expect(deleteNode).toBeEnabled();
     await deleteNode.click();
     await expect(meshShape).toHaveCount(0);
+    // Sprite Sheet and Animate Sprite Sheet join the spine after Noise: the preview builds the
+    // Material's particle effect with Babylon's animation sheet.
+    await addParticleGraphNode(page, "Sprite Sheet", "sprite.setup");
+    await expect(details.getByTestId("property-columns")).toBeVisible();
+    await addParticleGraphNode(page, "Animate Sprite Sheet", "update.basicSprite");
+    await connectHandles(page, '^="update.noise-"', "out", '^="sprite.setup-"', "particle");
+    await connectHandles(page, '^="sprite.setup-"', "out", '^="update.basicSprite-"', "particle");
+    await connectHandles(page, '^="update.basicSprite-"', "out", '="updateColor"', "particle");
+    await expect(particleGraphEditor(page).locator('.react-flow__edge[data-id*="update.basicSprite-"][data-id$=":updateColor:particle"]')).toHaveCount(1);
     await particleGraphEditor(page).locator('.react-flow__node[data-id="output"]').click();
     await expect(details.getByTestId("property-capacity")).toBeVisible();
     await expect(details.getByTestId("property-emitRate")).toHaveCount(0);

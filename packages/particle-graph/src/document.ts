@@ -222,6 +222,8 @@ export function newParticleNodeProperties(type: string): Record<string, unknown>
       return { source: "ownerMesh", modelGuid: null, useMeshNormals: true, useMeshColor: false };
     case "input.parameter":
       return { parameterId: "", valueType: "float" };
+    case "sprite.setup":
+      return { ...DEFAULT_SPRITE_SHEET };
     default:
       return {};
   }
@@ -293,8 +295,62 @@ export function normalizeParticleNodeProperties(
       next.useMeshNormals = next.useMeshNormals !== false;
       next.useMeshColor = next.useMeshColor === true;
       break;
+    case "sprite.setup":
+      Object.assign(next, particleSpriteSheetSettings(next));
+      break;
   }
   return next;
+}
+
+/** A Sprite Sheet node's settings: the cell grid, the cells particles use and how they animate. */
+export interface ParticleSpriteSheetSettings {
+  columns: number;
+  rows: number;
+  /** Cells are numbered from 0 at the top left, left to right, then row by row downwards. */
+  startCell: number;
+  /** At least Start Cell. */
+  endCell: number;
+  /** Cells per second of a particle's age for Animate Sprite Sheet; 0 holds the first cell. */
+  framesPerSecond: number;
+  loop: boolean;
+  /** Each particle is born on a random cell from Start Cell to End Cell. */
+  randomStartCell: boolean;
+}
+
+export const PARTICLE_SPRITE_SHEET_LIMITS = {
+  columns: { min: 1, max: 64 },
+  rows: { min: 1, max: 64 },
+  framesPerSecond: { min: 0, max: 240 },
+} as const;
+
+const DEFAULT_SPRITE_SHEET: ParticleSpriteSheetSettings = {
+  columns: 4,
+  rows: 4,
+  startCell: 0,
+  endCell: 15,
+  framesPerSecond: 30,
+  loop: true,
+  randomStartCell: false,
+};
+
+/** Normalized Sprite Sheet settings from a node's properties: whole cell counts and cells within the grid. */
+export function particleSpriteSheetSettings(properties: Readonly<Record<string, unknown>>): ParticleSpriteSheetSettings {
+  const whole = (value: unknown, fallback: number, min: number, max: number) =>
+    Math.min(max, Math.max(min, Math.round(asFinite(value, fallback))));
+  const { columns: columnLimits, rows: rowLimits, framesPerSecond: rateLimits } = PARTICLE_SPRITE_SHEET_LIMITS;
+  const columns = whole(properties.columns, DEFAULT_SPRITE_SHEET.columns, columnLimits.min, columnLimits.max);
+  const rows = whole(properties.rows, DEFAULT_SPRITE_SHEET.rows, rowLimits.min, rowLimits.max);
+  const last = columns * rows - 1;
+  const startCell = whole(properties.startCell, 0, 0, last);
+  return {
+    columns,
+    rows,
+    startCell,
+    endCell: whole(properties.endCell, last, startCell, last),
+    framesPerSecond: Math.min(rateLimits.max, Math.max(rateLimits.min, asFinite(properties.framesPerSecond, DEFAULT_SPRITE_SHEET.framesPerSecond))),
+    loop: properties.loop !== false,
+    randomStartCell: properties.randomStartCell === true,
+  };
 }
 
 function normalizeNodes(value: unknown): ParticleGraphNode[] {

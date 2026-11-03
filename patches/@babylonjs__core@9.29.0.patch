@@ -992,6 +992,32 @@ index 3d66a1233b00a9d792d58bb0b233cf8815e5a9de..e73a4da64e042d7c2f0a9f44b4777721
              }
          }
          else if (body.getPrestepType() == PhysicsPrestepType.ACTION) {
+diff --git a/Shaders/particles.vertex.js b/Shaders/particles.vertex.js
+index 7b31cf7b7346a75ef2454e19770130d44c4e1fcd..8b56520e694ce9537726ffdc3edda905a33c4f18 100644
+--- a/Shaders/particles.vertex.js
++++ b/Shaders/particles.vertex.js
+@@ -125,7 +125,7 @@ gl_Position=projection*view*vec4(vPositionW,1.0);
+ #endif
+ vColor=color;
+ #ifdef ANIMATESHEET
+-float rowOffset=floor(cellIndex*particlesInfos.z);float columnOffset=cellIndex-rowOffset/particlesInfos.z;vec2 uvScale=particlesInfos.xy;vec2 uvOffset=vec2(offset.x ,1.0-offset.y);vUV=(uvOffset+vec2(columnOffset,rowOffset))*uvScale;
++float rowOffset=floor(cellIndex*particlesInfos.z);float columnOffset=cellIndex-rowOffset/particlesInfos.z;vec2 uvScale=particlesInfos.xy;vec2 uvOffset=vec2(offset.x ,1.0-offset.y);vUV=(uvOffset+vec2(columnOffset,rowOffset))*uvScale;vUV.y=1.0-vUV.y;
+ #else
+ vUV=offset;
+ #endif
+diff --git a/ShadersWGSL/particles.vertex.js b/ShadersWGSL/particles.vertex.js
+index 8e91b98ffc2cbc95a50063dcd2baec0f18f74ef8..691e6ac3080a2f6c10989f0de63a00cb0afb9ae0 100644
+--- a/ShadersWGSL/particles.vertex.js
++++ b/ShadersWGSL/particles.vertex.js
+@@ -123,7 +123,7 @@ vertexOutputs.position=uniforms.projection*uniforms.view* vec4f(vPositionW,1.0);
+ #endif
+ vertexOutputs.vColor=vertexInputs.color;
+ #ifdef ANIMATESHEET
+-var rowOffset: f32=floor(vertexInputs.cellIndex*uniforms.particlesInfos.z);var columnOffset: f32=vertexInputs.cellIndex-rowOffset/uniforms.particlesInfos.z;var uvScale: vec2f=uniforms.particlesInfos.xy;var uvOffset: vec2f= vec2f(vertexInputs.offset.x ,1.0-vertexInputs.offset.y);vertexOutputs.vUV=(uvOffset+ vec2f(columnOffset,rowOffset))*uvScale;
++var rowOffset: f32=floor(vertexInputs.cellIndex*uniforms.particlesInfos.z);var columnOffset: f32=vertexInputs.cellIndex-rowOffset/uniforms.particlesInfos.z;var uvScale: vec2f=uniforms.particlesInfos.xy;var uvOffset: vec2f= vec2f(vertexInputs.offset.x ,1.0-vertexInputs.offset.y);vertexOutputs.vUV=(uvOffset+ vec2f(columnOffset,rowOffset))*uvScale;vertexOutputs.vUV.y=1.0-vertexOutputs.vUV.y;
+ #else
+ vertexOutputs.vUV=vertexInputs.offset;
+ #endif
 diff --git a/assetContainer.js b/assetContainer.js
 index 046984e478022e39c2405a1fa1d86c5326015e25..b516442421c03d91a13171478e349f6f821cf133 100644
 --- a/assetContainer.js

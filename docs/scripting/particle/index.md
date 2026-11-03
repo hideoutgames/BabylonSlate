@@ -25,8 +25,10 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | Node | Description |
 | --- | --- |
 | [Align Angle](align-angle.md) | Rotates each particle so its up direction follows its direction of travel on screen. |
+| [Animate Sprite Sheet](animate-sprite-sheet.md) | Steps each particle through the cells of the Sprite Sheet as it ages. |
 | [Apply Velocity](apply-velocity.md) | Moves every particle along its direction each frame. |
 | [Fade To Dead Color](fade-to-dead-color.md) | Blends each particle from its colour to its dead colour over its lifetime. |
+| [Sprite Sheet](sprite-sheet.md) | Draws each particle as one cell of a sprite sheet: a texture divided into a grid of equal frames. |
 | [Update Angle (Degrees)](update-angle-degrees.md) | Sets the rotation of every particle each frame, in degrees. |
 | [Update Angle (Radians)](update-angle.md) | Sets the rotation of every particle each frame, in radians. |
 | [Update Color](update-color.md) | Sets the colour of every particle each frame. |
@@ -34,6 +36,7 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | [Update Position](update-position.md) | Sets the position of every particle each frame. |
 | [Update Scale](update-scale.md) | Sets the width and height scale of every particle each frame. |
 | [Update Size](update-size.md) | Sets the size of every particle each frame. |
+| [Update Sprite Cell](update-sprite-cell.md) | Sets the Sprite Sheet cell of every particle each frame. |
 
 ## Forces
 

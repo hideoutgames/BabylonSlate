@@ -4,6 +4,7 @@ import {
   newParticleNodeProperties,
   normalizeParticleGraphDocument,
   particleGraphDependencies,
+  particleSpriteSheetSettings,
   setParticleNodeAngleUnit,
   setParticleNodeValueType,
   type ParticleGraphNode,
@@ -181,6 +182,21 @@ describe("particle graph document", () => {
     expect(setParticleNodeAngleUnit(create, "degrees").properties).toEqual({ angleUnit: "degrees" });
     const sphere: ParticleGraphNode = { id: "sphere", type: "shape.sphere", position: { x: 0, y: 0 }, properties: {} };
     expect(setParticleNodeAngleUnit(sphere, "degrees")).toBe(sphere);
+  });
+
+  it("keeps a Sprite Sheet's grid whole and its cells within it", () => {
+    expect(newParticleNodeProperties("sprite.setup")).toEqual({
+      columns: 4, rows: 4, startCell: 0, endCell: 15, framesPerSecond: 30, loop: true, randomStartCell: false,
+    });
+    const settings = (properties: Record<string, unknown>) => particleSpriteSheetSettings(properties);
+    expect(settings({ columns: 3.6, rows: 0, startCell: 9, endCell: 2, framesPerSecond: -5, loop: 0, randomStartCell: "yes" })).toEqual({
+      columns: 4, rows: 1, startCell: 3, endCell: 3, framesPerSecond: 0, loop: true, randomStartCell: false,
+    });
+    expect(settings({ columns: 500, rows: 2, endCell: Number.NaN, framesPerSecond: 1000, loop: false, randomStartCell: true })).toEqual({
+      columns: 64, rows: 2, startCell: 0, endCell: 127, framesPerSecond: 240, loop: false, randomStartCell: true,
+    });
+    const doc = normalizeParticleGraphDocument({ nodes: [{ id: "sheet", type: "sprite.setup", properties: { columns: 2, rows: 2, endCell: 40 } }] });
+    expect(doc.nodes.find((entry) => entry.id === "sheet")!.properties).toMatchObject({ columns: 2, rows: 2, startCell: 0, endCell: 3 });
   });
 
   it("gives Local Variable the Particle scope unless it is Loop", () => {

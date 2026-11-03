@@ -291,6 +291,7 @@ Contributor reference for Haptic's main-thread Babylon renderer: Engine ownershi
 | `Materials/Node/Blocks/transformBlock.pure.js` | `NONUNIFORMSCALING` is keyed on a NodeMaterial's first define preparation (false until the mesh is non-uniformly scaled), not appended when it first turns true: otherwise a mesh checked before its first world matrix (a load's warm-up or readiness probe) builds the same define set in another order and compiles a second, identical program |
 | `Misc/khronosTextureContainer2.js` | WebGPU Basis KTX2 off the 4×4 grid decodes to RGBA |
 | `Particles/gpuParticleSystem.pure.*` | `paused`: draw last buffers without simulating |
+| `Shaders/particles.vertex.js`, `ShadersWGSL/particles.vertex.js` | Animation sheet UVs flip V after Babylon's cell maths, so a Texture uploaded with invertY (Haptic's default) shows cell 0 at the top left and each cell upright |
 | `scene.pure.*` | `render(…, ignoreActions)` for render-only frames |
 
 - The unlit Material replaces `NodeMaterial._prepareDefinesForAttributes` on its instances: it pins NORMAL, TANGENT and UV2 to UV6 off and UV1 to texturing, so meshes of different vertex layouts share its program, and repeats Babylon's geometry-pass define preparation. Re-read the original when the pin moves.

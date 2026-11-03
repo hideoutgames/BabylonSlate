@@ -29,6 +29,7 @@ import {
   PARTICLE_GRAPH_LIMITS,
   PARTICLE_OUTPUT_NODE_TYPE,
   PARTICLE_RANDOM_LOCKS,
+  PARTICLE_SPRITE_SHEET_LIMITS,
   PARTICLE_UNSUPPORTED_V1_TYPES,
   PARTICLE_VALUE_TYPE_OPTIONS,
   clampParticlePinValue,
@@ -45,6 +46,7 @@ import {
   particlePaletteNodes,
   particlePinDefaultPropertyKey,
   particlePinsAreCompatible,
+  particleSpriteSheetSettings,
   resizeParticleValue,
   serializedToParticleGraph,
   setParticleNodeAngleUnit,
@@ -251,6 +253,83 @@ function nodePropertyRows(
         },
       );
       break;
+    case "sprite.setup": {
+      const sheet = particleSpriteSheetSettings(node.properties);
+      const last = sheet.columns * sheet.rows - 1;
+      // Each edit stores the normalized sheet, so the cells stay within a resized grid.
+      const setSheet = (patch: Record<string, unknown>, name: string) =>
+        setProperties({ ...particleSpriteSheetSettings({ ...sheet, ...patch }) }, field(name));
+      rows.push(
+        {
+          id: "columns",
+          kind: "number",
+          label: "Columns",
+          value: sheet.columns,
+          min: PARTICLE_SPRITE_SHEET_LIMITS.columns.min,
+          max: PARTICLE_SPRITE_SHEET_LIMITS.columns.max,
+          precision: 0,
+          onChange: (columns) => setSheet({ columns }, "columns"),
+        },
+        {
+          id: "rows",
+          kind: "number",
+          label: "Rows",
+          value: sheet.rows,
+          min: PARTICLE_SPRITE_SHEET_LIMITS.rows.min,
+          max: PARTICLE_SPRITE_SHEET_LIMITS.rows.max,
+          precision: 0,
+          onChange: (rows) => setSheet({ rows }, "rows"),
+        },
+        {
+          id: "startCell",
+          kind: "number",
+          label: "Start Cell",
+          value: sheet.startCell,
+          min: 0,
+          max: last,
+          precision: 0,
+          description: "Cells are numbered from 0 at the top left, left to right, then row by row downwards.",
+          onChange: (startCell) => setSheet({ startCell }, "startCell"),
+        },
+        {
+          id: "endCell",
+          kind: "number",
+          label: "End Cell",
+          value: sheet.endCell,
+          min: sheet.startCell,
+          max: last,
+          precision: 0,
+          onChange: (endCell) => setSheet({ endCell }, "endCell"),
+        },
+        {
+          id: "framesPerSecond",
+          kind: "number",
+          label: "Frames Per Second",
+          value: sheet.framesPerSecond,
+          min: PARTICLE_SPRITE_SHEET_LIMITS.framesPerSecond.min,
+          max: PARTICLE_SPRITE_SHEET_LIMITS.framesPerSecond.max,
+          description: "How fast Animate Sprite Sheet steps through the cells, over each particle's age. 0 holds the first cell.",
+          onChange: (framesPerSecond) => setSheet({ framesPerSecond }, "framesPerSecond"),
+        },
+        {
+          id: "loop",
+          kind: "boolean",
+          label: "Loop",
+          value: sheet.loop,
+          description: "After End Cell, Animate Sprite Sheet starts again at Start Cell. Off, it stays on End Cell.",
+          onChange: (loop) => setSheet({ loop }, "loop"),
+        },
+        {
+          id: "randomStartCell",
+          kind: "boolean",
+          label: "Random Start Cell",
+          value: sheet.randomStartCell,
+          description: "Each particle is born on a random cell from Start Cell to End Cell.",
+          onChange: (randomStartCell) => setSheet({ randomStartCell }, "randomStartCell"),
+        },
+      );
+      break;
+    }
     case "shape.mesh":
       rows.push(
         {

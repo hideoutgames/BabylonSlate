@@ -254,6 +254,26 @@ describe("particle graph validation", () => {
     expect(codes(sphere({}))).not.toContain("particle.shapeDirectionPair");
   });
 
+  it("warns about sprite cell updates without a Sprite Sheet and about an overridden Sprite Sheet", () => {
+    const spine = (nodes: Array<[string, string]>) => {
+      const ids = ["create", ...nodes.map(([id]) => id), "output"];
+      return build(
+        [["create", "particle.create"], ...nodes, ["move", "update.basicPosition"], ["output", "particle.output"]],
+        ids.slice(0, -1).map((id, index) => [id, "out", index === ids.length - 2 ? "move" : ids[index + 1]!, "particle"] as EdgeSpec)
+          .concat([["move", "out", "output", "particle"]]),
+      );
+    };
+    expect(diagnostics(spine([["animate", "update.basicSprite"], ["cell", "update.spriteCell"]]))).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "particle.spriteSheetMissing", nodeId: "animate", severity: "warning" }),
+      expect.objectContaining({ code: "particle.spriteSheetMissing", nodeId: "cell", severity: "warning" }),
+    ]));
+    const twice = diagnostics(spine([["first", "sprite.setup"], ["second", "sprite.setup"], ["animate", "update.basicSprite"]]));
+    expect(twice.filter((entry) => entry.code === "particle.multipleSpriteSheets")).toEqual([
+      expect.objectContaining({ nodeId: "first", severity: "warning" }),
+    ]);
+    expect(twice.map((entry) => entry.code)).not.toContain("particle.spriteSheetMissing");
+  });
+
   it("warns when a Mesh Shape reads a Model but none is picked", () => {
     const mesh = (properties: Record<string, unknown>) =>
       build(

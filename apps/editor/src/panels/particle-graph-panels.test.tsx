@@ -6,6 +6,7 @@ import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   createDefaultParticleGraphDocument,
+  newParticleNodeProperties,
   normalizeParticleGraphDocument,
   type ParticleGraphDocument,
 } from "@haptic/particle-graph";
@@ -282,6 +283,20 @@ describe("ParticleGraphDetails", () => {
     fireEvent.click(screen.getByTestId("search-item-model-statue"));
     expect(nodeOf(history.read(), "shape").properties.modelGuid).toBe("model-statue");
     expect(screen.getByTestId("property-modelGuid").textContent).toContain("Statue");
+  });
+
+  it("edits a Sprite Sheet's grid and keeps its cells within it", () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes.push({ id: "sheet", type: "sprite.setup", position: { x: 0, y: 0 }, properties: newParticleNodeProperties("sprite.setup") });
+    const history = renderDetails(doc, "sheet");
+    expect(screen.getByTestId("module-stage-node").textContent).toContain("Sprite Sheet");
+    expect(screen.getByText("Cells are numbered from 0 at the top left, left to right, then row by row downwards.")).toBeTruthy();
+    type("property-columns", "2");
+    expect(nodeOf(history.read(), "sheet").properties).toMatchObject({ columns: 2, rows: 4, startCell: 0, endCell: 7 });
+    type("property-startCell", "12");
+    expect(nodeOf(history.read(), "sheet").properties).toMatchObject({ startCell: 7, endCell: 7 });
+    type("property-framesPerSecond", "12");
+    expect(nodeOf(history.read(), "sheet").properties.framesPerSecond).toBe(12);
   });
 
   it("sets a Local Variable's Scope and explains it", async () => {
