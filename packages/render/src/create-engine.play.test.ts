@@ -52,6 +52,7 @@ import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_FIRST_FRAME_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import { SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS } from "./stall-deadline";
+import { installTimerClock } from "./virtual-clock-test-fixtures";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
@@ -1671,6 +1672,39 @@ describe("Play createEngine view", () => {
       handle.dispose();
       await frame;
       vi.useRealTimers();
+    }
+  });
+
+  // A view that reuses a closed view's linked programs (`effect-bridge.ts`) shows no compile progress, and on software
+  // GL their first use can hold the thread for longer than the whole first-frame budget.
+  it("does not charge the first-frame budget for a held thread", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    handle.setPaused(true);
+    const ready = vi.fn(() => false);
+    handle.scene.addIsReadyCheck({ isReady: ready });
+    markSceneReadinessDirty(handle.scene);
+    const clock = installTimerClock();
+    let state = "pending";
+    const frame = handle.presentFirstFrame().then(() => { state = "ready"; }, (error) => { state = "failed"; return error as Error; });
+    try {
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      await clock.run(1_000);
+      await clock.block(SCENE_FIRST_FRAME_TIMEOUT_MS + 1_000);
+      await clock.run(SCENE_FIRST_FRAME_TIMEOUT_MS - 2_000);
+      expect(state).toBe("pending");
+      ready.mockReturnValue(true);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      await frame;
+      expect(state).toBe("ready");
+    } finally {
+      handle.dispose();
+      await frame;
+      vi.useRealTimers();
+      vi.restoreAllMocks();
     }
   });
 

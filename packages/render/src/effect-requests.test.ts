@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine, type Effect } from "@babylonjs/core";
-import { collectEffectRequests } from "./effect-requests";
+import { NullEngine, Observable, type Effect } from "@babylonjs/core";
+import { collectEffectRequests, countEffectCompiles } from "./effect-requests";
 
 describe("Effect request collection", () => {
   const engines: NullEngine[] = [];
@@ -43,5 +43,52 @@ describe("Effect request collection", () => {
     })).toThrow("probe failed");
     engine.createEffect("after", [], [], [], "");
     expect([...into]).toEqual([made[0]]);
+  });
+});
+
+// A loading phase shows this count while its passes compile programs no warm-up unit counted.
+describe("Effect compile counting", () => {
+  const engines: NullEngine[] = [];
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const engine of engines.splice(0)) engine.dispose();
+  });
+  function compile(engine: NullEngine, defines: string): Effect {
+    return engine.createEffect(
+      { vertexSource: "void main(){gl_Position=vec4(0.0);}", fragmentSource: "void main(){gl_FragColor=vec4(1.0);}" },
+      { attributes: [], uniformsNames: [], samplers: [], defines, fallbacks: null, onCompiled: null, onError: null },
+      engine,
+    );
+  }
+
+  it("counts the programs compiled after it began, not cached ones, until stopped", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    compile(engine, "#define CACHED");
+    const counts: string[] = [];
+    const stop = countEffectCompiles(engine, ({ compiled, requested }) => counts.push(`${compiled}/${requested}`));
+    // A cache hit compiles nothing; a new variant links (at once on this Engine) and is counted once however often requested.
+    compile(engine, "#define CACHED");
+    compile(engine, "#define NEW_A");
+    compile(engine, "#define NEW_A");
+    compile(engine, "#define NEW_B");
+    stop();
+    compile(engine, "#define AFTER");
+    expect(counts).toEqual(["1/1", "2/2"]);
+  });
+
+  it("counts a program still linking once Babylon reports it compiled", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const counts: string[] = [];
+    const pending = { isReady: () => false, onCompileObservable: new Observable<Effect>() } as unknown as Effect;
+    // The Engine's own createEffect, which the counting wraps.
+    vi.spyOn(engine, "createEffect").mockReturnValueOnce(pending);
+    const stop = countEffectCompiles(engine, ({ compiled, requested }) => counts.push(`${compiled}/${requested}`));
+    engine.createEffect("linking", [], [], [], "");
+    expect(counts).toEqual(["0/1"]);
+    pending.onCompileObservable.notifyObservers(pending);
+    expect(counts).toEqual(["0/1", "1/1"]);
+    stop();
   });
 });

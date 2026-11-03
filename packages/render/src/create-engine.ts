@@ -51,6 +51,7 @@ import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets
 import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
 import { bridgeEngineEffects, releaseBridgedEffects } from "./effect-bridge";
+import { countEffectCompiles } from "./effect-requests";
 import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
@@ -224,7 +225,7 @@ import {
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
 import { findSceneShadowController } from "./shadow-controller";
-import { firstFrameCompletionMs } from "./stall-deadline";
+import { createHeldThreadTimer, firstFrameCompletionMs, type HeldThreadTimer } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 
 import { createEditorViewportTools } from "./editor-viewport-tools";
@@ -486,7 +487,8 @@ function initializeEngine(
     promise: Promise<void>;
     resolve: () => void;
     reject: (error: Error) => void;
-    timer: ReturnType<typeof setTimeout>;
+    /** The loading deadline: the first-frame budget, then the validated draw's completion budget. */
+    timer: HeldThreadTimer;
     ready: boolean;
     attempts: number;
     rendered: boolean;
@@ -535,7 +537,7 @@ function initializeEngine(
         releaseStaged();
       }
       pendingPresentations.delete(id);
-      clearTimeout(pending.timer);
+      pending.timer.cancel();
       pending.submission?.cancel();
       pending.reject(error);
     }
@@ -1889,7 +1891,7 @@ function initializeEngine(
   const finishPresentation = (key: string, pending: PendingPresentation) => {
     if (!pending.rendered || !pending.copied || pending.submission || pendingPresentations.get(key) !== pending) return;
     pendingPresentations.delete(key);
-    clearTimeout(pending.timer);
+    pending.timer.cancel();
     if (pending.owner) {
       const layer = layerLoads.get(pending.owner.layerId);
       if (layer?.loadId === pending.owner.layerLoadId) layer.ready = true;
@@ -2159,10 +2161,7 @@ function initializeEngine(
           // with no progress to observe, so each adds an allowance.
           if (!pending.completionStarted) {
             pending.completionStarted = true;
-            clearTimeout(pending.timer);
-            pending.timer = setTimeout(() => {
-              if (pendingPresentations.get(key) === pending) expirePresentation(key);
-            }, firstFrameCompletionMs(pending.pipelines));
+            pending.timer.restart(firstFrameCompletionMs(pending.pipelines));
           }
         }
         void submission.completed.then(() => {
@@ -3359,13 +3358,25 @@ function initializeEngine(
       settleSceneWater(scope.target, true);
       // Built-in water compiles the variant its pass draws when the graph below prepares: which one that is depends on
       // the view's plan, so a warm-up here would compile one nothing draws, and wait for its link.
-      await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh, onProgress);
+      let warmed = { done: 0, total: 0 };
+      await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh,
+        onProgress && ((count) => { warmed = count; onProgress(count); }));
       scope.assert();
-      if (!owner && options.playMode) await warmPlaySpawnables(scope.assert);
-      freezeLibraryMaterials();
-      outlineHost.refreshSettings();
-      if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
-      else await worldRenderer.prepare(scope.assert);
+      // The graph's own passes (shadow depth, geometry, reflection probes, outlines, screen effects) compile programs
+      // no warm-up unit counted, and on software GL they take longer than the warm-up: the count goes on through them.
+      const stopCounting = onProgress
+        ? countEffectCompiles(engine, ({ compiled, requested }) =>
+          onProgress({ done: warmed.done + compiled, total: warmed.total + requested }))
+        : null;
+      try {
+        if (!owner && options.playMode) await warmPlaySpawnables(scope.assert);
+        freezeLibraryMaterials();
+        outlineHost.refreshSettings();
+        if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
+        else await worldRenderer.prepare(scope.assert);
+      } finally {
+        stopCounting?.();
+      }
       scope.assert();
       // Play draws its starting state without view culling in the world presentation's loading frames, before the
       // first presented one, when the Scene holds a light, Play may spawn one, the spawn warm-up staged meshes, or a
@@ -3433,18 +3444,19 @@ function initializeEngine(
       // The first draws' readiness probes can still be linking (one at a time
       // where links are synchronous) or building on a parallel-compile driver,
       // which reports completion only; renew the budget while shaders progress.
+      // A first use of programs that are already linked (a closed view's Effects
+      // reused, `effect-bridge.ts`) shows no such progress, yet can hold the
+      // thread past the whole budget on software GL: held time is not charged.
       const compiles = new DriverCompileWatch(engine);
-      const expire = () => {
-        const waiting = pendingPresentations.get(key);
-        if (waiting && !waiting.completionStarted && compiles.renew()) waiting.timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
-        else expirePresentation(key);
-      };
-      const timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
+      const timer = createHeldThreadTimer(
+        SCENE_FIRST_FRAME_TIMEOUT_MS,
+        () => { if (pendingPresentations.get(key) === pending) expirePresentation(key); },
+        (now) => !pending.completionStarted && compiles.renew(now),
+      );
       const pending: PendingPresentation = { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false, pipelines: 0 };
       pending.restart = () => {
         if (pending.completionStarted || pendingPresentations.get(key) !== pending) return;
-        clearTimeout(pending.timer);
-        pending.timer = setTimeout(expire, SCENE_FIRST_FRAME_TIMEOUT_MS);
+        pending.timer.restart();
       };
       pendingPresentations.set(key, pending);
       return promise;

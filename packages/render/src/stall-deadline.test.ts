@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { createHeldThreadBudget, createHeldThreadTimer, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { installTimerClock } from "./virtual-clock-test-fixtures";
 
 afterEach(() => {
@@ -63,5 +63,52 @@ describe("createStallDeadline with a held-thread budget", () => {
     clock.hold(15_000);
     await clock.run(SCENE_SHADER_WARM_TIMEOUT_MS);
     expect(work.outcome()).toBe("stalled at material");
+  });
+});
+
+// A first frame whose programs are already linked shows no compile progress, and its first draw can hold the thread
+// for longer than the whole first-frame budget on software GL.
+describe("createHeldThreadTimer", () => {
+  const BOUND_MS = 20_000;
+
+  it("does not charge a hold that outlasts the bound, and expires after a whole bound the thread was free", async () => {
+    const clock = installTimerClock();
+    const expired = vi.fn();
+    createHeldThreadTimer(BOUND_MS, expired);
+    await clock.run(500);
+    // One synchronous call, past the bound's due time; the timer can only fire once it returns.
+    await clock.block(21_000);
+    await clock.run(BOUND_MS - 1_000);
+    expect(expired).not.toHaveBeenCalled();
+    await clock.run(1_500);
+    expect(expired).toHaveBeenCalledOnce();
+  });
+
+  it("charges time the thread was free, and stops crediting holds once its budget is spent", async () => {
+    const clock = installTimerClock();
+    const expired = vi.fn();
+    createHeldThreadTimer(BOUND_MS, expired, undefined, createHeldThreadBudget(5_000));
+    await clock.run(BOUND_MS - 2_000);
+    expect(expired).not.toHaveBeenCalled();
+    await clock.block(10_000);
+    // 5 s of the 10 s hold credited: the bound ran out 3 s before the thread was free again.
+    expect(expired).toHaveBeenCalledOnce();
+  });
+
+  it("asks renew when the bound runs out, and restarts with a fresh bound", async () => {
+    const clock = installTimerClock();
+    const expired = vi.fn();
+    const renew = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+    const timer = createHeldThreadTimer(BOUND_MS, expired, renew);
+    await clock.run(BOUND_MS + 300);
+    expect(renew).toHaveBeenCalledOnce();
+    expect(expired).not.toHaveBeenCalled();
+    await clock.run(BOUND_MS - 1_000);
+    timer.restart(5_000);
+    await clock.run(4_500);
+    expect(expired).not.toHaveBeenCalled();
+    await clock.run(1_000);
+    expect(expired).toHaveBeenCalledOnce();
+    timer.cancel();
   });
 });
