@@ -178,7 +178,8 @@ export async function placeFeatureTestParticles(ctx: FeatureTestContext): Promis
   );
   ctx.addActor(emitterActor("sparks", "Spark Bursts", system(NAMES.sparks), zone.at(0, 1.2, -2)), { zone: "particles" });
   ctx.addActor(emitterActor("smoke", "Rising Smoke", system(NAMES.smoke), zone.at(7, 0.1, -2)), { zone: "particles" });
-  const relay = requireRef(flashRelays.get(ctx), "the Flash Relay Class");
+  const relay = flashRelays.get(ctx);
+  if (!relay) throw new Error("FeatureTest could not find the Flash Relay Class");
   ctx.addActor(actor("ft-fx-flash-relay", "Flash Relay", tf(zone.at(0, 1.5, 4)), instanceComponents("ft-fx-flash-relay", relay.components), {
     classId: relay.ref.classId,
   }), { zone: "particles" });
