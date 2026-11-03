@@ -150,6 +150,7 @@ export interface PlayOverlayProps {
   loopCount?: number;
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
+  globalParameterCatalog?: import("@haptic/core").GlobalParameterCatalog;
   assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
@@ -295,6 +296,7 @@ function PlayOverlayView({
   loopCount,
   inputAssets,
   dataAssets,
+  globalParameterCatalog,
   assetCatalog,
   focusNavigation,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
@@ -761,6 +763,7 @@ function PlayOverlayView({
   const initialLoopCountRef = useRef(loopCount);
   const initialInputAssetsRef = useRef(inputAssets);
   const initialDataAssetsRef = useRef(dataAssets);
+  const initialGlobalParameterCatalogRef = useRef(globalParameterCatalog);
   const initialAssetCatalogRef = useRef(assetCatalog);
   const initialFocusNavigationRef = useRef(focusNavigation);
   const initialPlayPreviewRef = useRef(playPreview);
@@ -885,6 +888,7 @@ function PlayOverlayView({
           loopCount: initialLoopCountRef.current,
           inputAssets: initialInputAssetsRef.current,
           dataAssets: initialDataAssetsRef.current,
+          globalParameterCatalog: initialGlobalParameterCatalogRef.current,
           assetCatalog: initialAssetCatalogRef.current,
           focusNavigation: initialFocusNavigationRef.current,
           animGraphs: animGraphsRef.current,

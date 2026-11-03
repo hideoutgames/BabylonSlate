@@ -55,6 +55,7 @@ const JSON_TYPES = new Set<string>([
   "FloatCurve",
   "VectorCurve",
   "ColorCurve",
+  "GlobalParameterCollection",
   "ScriptInterface",
   "AudioMixer",
   "AudioChannel",

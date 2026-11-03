@@ -165,6 +165,35 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
       if (!(owner instanceof Scene || owner instanceof SceneLayer) || !host.canInvokeOwner(owner) || typeof entryId !== "string" || !entryId.trim()) return null;
       return services.getPostProcessEntry?.(owner, entryId.trim()) ?? null;
     },
+    setGlobalFloatParameter: (collection, name, value) => {
+      if (typeof value === "number" && Number.isFinite(value)) services.setGlobalParameter?.(collection, name, [value], ["float"]);
+    },
+    setGlobalVectorParameter: (collection, name, value) => {
+      const xyz = value && typeof value === "object" ? [value.x, value.y, value.z] : [];
+      if (xyz.length === 3 && xyz.every((entry) => typeof entry === "number" && Number.isFinite(entry))) {
+        services.setGlobalParameter?.(collection, name, xyz, ["vec2", "vec3"]);
+      }
+    },
+    setGlobalColorParameter: (collection, name, value) => {
+      const rgba = value && typeof value === "object" ? [value.x, value.y, value.z, value.w] : [];
+      if (rgba.length === 4 && rgba.every((entry) => typeof entry === "number" && Number.isFinite(entry))) {
+        services.setGlobalParameter?.(collection, name, rgba, ["color"]);
+      }
+    },
+    getGlobalFloatParameter: (collection, name) => {
+      const result = services.getGlobalParameter?.(collection, name, ["float"]) ?? { found: false, value: [] };
+      return { found: result.found, value: result.value[0] ?? 0 };
+    },
+    getGlobalVectorParameter: (collection, name) => {
+      const result = services.getGlobalParameter?.(collection, name, ["vec2", "vec3"]) ?? { found: false, value: [] };
+      const [x = 0, y = 0, z = 0] = result.value;
+      return { found: result.found, value: { x, y, z } };
+    },
+    getGlobalColorParameter: (collection, name) => {
+      const result = services.getGlobalParameter?.(collection, name, ["color"]) ?? { found: false, value: [] };
+      const [x = 0, y = 0, z = 0, w = 1] = result.value;
+      return { found: result.found, value: { x, y, z, w } };
+    },
     getMaterialFloatParameter: (material, name) => {
       const result = host.materials.getMaterialParameter(material, name, "float");
       return { found: result?.kind === "float", value: result?.kind === "float" ? result.value : 0 };

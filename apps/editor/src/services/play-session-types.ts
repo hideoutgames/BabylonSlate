@@ -294,6 +294,8 @@ export type PlaySessionOptions = {
   loopCount?: number;
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
+  /** Global Parameter Collection defaults for Set and Get Global Parameter. */
+  globalParameterCatalog?: import("@haptic/core").GlobalParameterCatalog;
   /** Packaged authored assets the Asset Registry nodes query, snapshotted when Play starts. */
   assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;

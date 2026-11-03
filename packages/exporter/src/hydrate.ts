@@ -1,5 +1,5 @@
-import type { CurveAssetCatalogEntry, DataAssetCatalogEntry, TimelineClipAssetCatalogEntry } from "@haptic/core";
-import { CURVE_ASSET_TYPES, curveKindForAssetType, isTimelineClipAssetType, normalizeCurveAssetPayload, timelineClipAssetCatalogEntry } from "@haptic/core";
+import type { CurveAssetCatalogEntry, DataAssetCatalogEntry, GlobalParameterCatalog, TimelineClipAssetCatalogEntry } from "@haptic/core";
+import { CURVE_ASSET_TYPES, GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE, curveKindForAssetType, normalizeGlobalParameterCollection, isTimelineClipAssetType, normalizeCurveAssetPayload, timelineClipAssetCatalogEntry } from "@haptic/core";
 import { normalizeWaterDefinition, type WaterDefinition } from "@haptic/core";
 import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@haptic/core";
 import {
@@ -68,7 +68,7 @@ const JSON_CONTENT_TYPES = new Set([
   "Material", "MaterialInstance", "MaterialFunction", "AudioMixer", "AudioChannel",
   "SoundAttenuation", "Animation", "Audio",
   "DataDefinition", "DataTree", "Structure", "Enum", "FloatCurve", "VectorCurve", "ColorCurve",
-  "TimelineClip2D", "TimelineClip3D",
+  "GlobalParameterCollection", "TimelineClip2D", "TimelineClip3D",
 ]);
 
 export type PackedAudioLibrary = {
@@ -83,6 +83,8 @@ export type PackedAudioLibrary = {
 export type PackedGameContent = {
   dataAssets: DataAssetCatalogEntry[];
   curveAssets: CurveAssetCatalogEntry[];
+  /** Every Global Parameter Collection's parameters by guid. */
+  globalParameterCatalog: GlobalParameterCatalog;
   timelineClipAssets: TimelineClipAssetCatalogEntry[];
   spritePayloads: Map<string, SpritePayload>;
   spriteAnimationPayloads: Map<string, SpriteAnimationPayload>;
@@ -166,6 +168,7 @@ export function gameComplexCollisionModelGuids(game: GameSourceContent): Set<str
 export function packedContentFromGame(game: GameSourceContent): PackedGameContent {
   const dataAssets: DataAssetCatalogEntry[] = [];
   const curveAssets: CurveAssetCatalogEntry[] = [];
+  const globalParameterCatalog: GlobalParameterCatalog = {};
   const timelineClipAssets: TimelineClipAssetCatalogEntry[] = [];
   const spritePayloads = new Map<string, SpritePayload>();
   const spriteAnimationPayloads = new Map<string, SpriteAnimationPayload>();
@@ -198,6 +201,10 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     const parsed = decoded ?? jsonFromBytes(bytes!);
     if (entry.type === "DataDefinition" || entry.type === "DataTree" || entry.type === "Structure" || entry.type === "Enum") {
       if (parsed) dataAssets.push({ guid: entry.guid, type: entry.type, name: entry.name ?? entry.guid, payload: parsed });
+      continue;
+    }
+    if (entry.type === GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE) {
+      if (parsed) globalParameterCatalog[entry.guid] = normalizeGlobalParameterCollection(parsed).parameters;
       continue;
     }
     const curveKind = curveKindForAssetType(entry.type);
@@ -360,6 +367,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
   return {
     dataAssets,
     curveAssets,
+    globalParameterCatalog,
     timelineClipAssets,
     spritePayloads: sizedSprites,
     spriteAnimationPayloads: sizedSpriteAnimations,
@@ -493,7 +501,7 @@ export function packedSourceControls(game: GameSourceContent, content = packedCo
     type: "loadSceneContent", assetGuids: [...game.payloads.keys(), ...(game.decodedPayloads?.keys() ?? [])],
     sceneLayers: [...game.sceneLayers].map(([guid, layer]) => ({ guid, layer })),
     sceneNavmeshBytes: Object.fromEntries(game.navmeshBytes),
-    dataAssets: content.dataAssets, curveAssets: content.curveAssets, timelineClipAssets: content.timelineClipAssets, audioAssetGuids: game.manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
+    dataAssets: content.dataAssets, curveAssets: content.curveAssets, globalParameterCatalog: content.globalParameterCatalog, timelineClipAssets: content.timelineClipAssets, audioAssetGuids: game.manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
     materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
     particleParameterCatalog: buildParticleParameterCatalog(content.particleLibrary),
     materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes, content.renderTargetTextures),
