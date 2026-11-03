@@ -78,6 +78,8 @@ export type FeatureTestMaterialKey =
   | "particle"
   /** Particle domain, additive. */
   | "particleAdditive"
+  /** Particle domain, samples the generated sprite sheet through the particle UV. */
+  | "particleSheet"
   /** Post-process domain. */
   | "postProcess"
   /** Landscape domain with paint layers. */
@@ -111,6 +113,8 @@ export interface FeatureTestAssets {
     skyboxNet: string;
     /** User-supplied CC0 LUT strip, or null when the slot is empty. */
     colorGradingLut: string | null;
+    /** 4 × 4 sprite sheet generated from numbers (`pixelArt`), for the Particle Graph Sprite Sheet. */
+    spriteSheet: string;
   };
   /** Holiday Pack Model guids by file stem. */
   models: Record<FeatureTestHolidayModel, string>;
@@ -329,6 +333,7 @@ function emptyAssets(): FeatureTestAssets {
       skyFaces: { px: null, nx: null, py: null, ny: null, pz: null, nz: null },
       skyboxNet: "",
       colorGradingLut: null,
+      spriteSheet: "",
     },
     models: {} as Record<FeatureTestHolidayModel, string>,
     doorAnimations: {},
