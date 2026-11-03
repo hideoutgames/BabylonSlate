@@ -22,6 +22,6 @@ Returns a parameter of the particle effects on an actor.
 
 ## Notes
 
-- Reads the first Particle component on the actor whose Particle System declares **Name**: the value set while playing, else the Particle System's default.
+- Reads the first Particle component on the actor whose Particle System declares **Name**: the value set while playing, else the component's override (its **Parameters** in the Inspector), else the Particle System's default.
 - **Found** is false, and **Value** is zero, when no Particle System on the actor declares **Name**.
 - The Particle component has a **Get Vector Parameter** function that reads only that component.

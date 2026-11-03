@@ -21,6 +21,6 @@ Drops the value a Set Particle Parameter node gave a parameter of the particle e
 
 ## Notes
 
-- Each Particle component whose Particle System declares **Name** goes back to the Particle System's default.
+- Each Particle component whose Particle System declares **Name** goes back to its override, else the Particle System's default.
 - **Success** is false when no Particle System on the actor declares **Name**.
 - The Particle component has a **Reset Parameter** function that resets only that component.

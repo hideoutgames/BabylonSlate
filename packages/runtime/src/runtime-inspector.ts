@@ -32,6 +32,12 @@ export interface RuntimeInspectorHost {
   applyProperty(target: Target, key: string, value: unknown): void;
   applyTransform(target: Target, transform: SerializedTransform, space?: "local" | "world"): void;
   applyMaterial(component: ActorComponent, name: string, value: import("@haptic/core").MaterialParameterValue): boolean;
+  /** A ParticleComponent's parameters: what its System declares, the current value, and a runtime set (Set Particle Parameter). */
+  particleParameters: {
+    declared(component: ActorComponent): readonly import("@haptic/core").ParticleParameterCatalogEntry[];
+    get(component: ActorComponent, name: string): number[] | null;
+    set(component: ActorComponent, name: string, value: readonly number[]): boolean;
+  };
 }
 
 /** No subscriptions or hot-path collection. `RuntimeInspectorService` invokes requests at a completed tick boundary. */
@@ -169,6 +175,9 @@ export class RuntimeInspector {
       if (material instanceof MaterialObject) for (const [name, value] of Object.entries(this.host.materials.describe(material) ?? {})) {
         values.set(`material:${name}`, { key: `material:${name}`, name, typeId: `material:${value.kind}`, capability: "live" });
       }
+      if (target.classId === "ParticleComponent") for (const entry of this.host.particleParameters.declared(target)) {
+        values.set(`particle:${entry.name}`, { key: `particle:${entry.name}`, name: entry.name, typeId: `particle:${entry.type}`, capability: "live" });
+      }
     }
     return [...values.values()];
   }
@@ -178,6 +187,10 @@ export class RuntimeInspector {
     if (target instanceof ActorComponent && descriptor.key.startsWith("material:")) {
       const material = target.getVariable("materialObject");
       return material instanceof MaterialObject ? this.host.materials.describe(material)?.[descriptor.key.slice(9)] : undefined;
+    }
+    if (target instanceof ActorComponent && descriptor.key.startsWith("particle:")) {
+      const value = this.host.particleParameters.get(target, descriptor.key.slice(9));
+      return value ? encodeParticleParameter(descriptor.typeId, value) : undefined;
     }
     return target.getVariable(descriptor.key);
   }
@@ -226,6 +239,14 @@ export class RuntimeInspector {
     let effective: unknown;
     if (action.kind === "setProperty") {
       const descriptor = this.descriptors(target).find(entry => entry.key === action.property);
+      if (descriptor && target instanceof ActorComponent && descriptor.key.startsWith("particle:")) {
+        const value = decodeParticleParameter(descriptor.typeId, action.value);
+        if (!value || !this.host.particleParameters.set(target, descriptor.key.slice(9), value)) throw new Error("The particle parameter or typed value is unavailable.");
+        effective = this.read(target, descriptor);
+        if (!sequences) { sequences = new Map(); this.sequences.set(target, sequences); }
+        sequences.set(key, action.sequence);
+        return { kind: "mutation", target: action.target, sequence: action.sequence, effectiveValue: this.encode(effective, budget, 0, true) };
+      }
       if (!descriptor || !["live", "rebuild"].includes(descriptor.capability) || descriptor.key.startsWith("material:")) throw new Error("This property is read-only or requires a new session.");
       const value = this.decode(action.value, descriptor);
       validateProperty(target, descriptor.key, value);
@@ -379,4 +400,22 @@ function validateProperty(target: Target, key: string, value: unknown): void {
     }
     if (target.classId === "NavAgentComponent" && ["radius", "height"].includes(key) && (typeof value !== "number" || value <= 0)) throw new Error("Navigation dimensions must be positive.");
   }
+}
+
+const PARTICLE_AXES = ["x", "y", "z", "w"] as const;
+const PARTICLE_WIDTHS: Readonly<Record<string, number>> = { "particle:vec2": 2, "particle:vec3": 3, "particle:color": 4 };
+
+/** A particle parameter as the Simulation Inspector edits it: a number, or X, Y(, Z) and Color X, Y, Z, W records. */
+function encodeParticleParameter(typeId: string, value: readonly number[]): unknown {
+  if (typeId === "particle:float") return value[0] ?? 0;
+  const width = PARTICLE_WIDTHS[typeId] ?? 3;
+  return Object.fromEntries(PARTICLE_AXES.slice(0, width).map((axis, index) => [axis, value[index] ?? (axis === "w" ? 1 : 0)]));
+}
+
+function decodeParticleParameter(typeId: string, value: RuntimeInspectorValue): number[] | null {
+  const finite = (component: unknown) => typeof component === "number" && Number.isFinite(component);
+  if (typeId === "particle:float") return finite(value) ? [value as number] : null;
+  if (!isRecord(value)) return null;
+  const axes = PARTICLE_AXES.slice(0, PARTICLE_WIDTHS[typeId] ?? 3).map((axis) => value[axis]);
+  return axes.every(finite) ? axes as number[] : null;
 }

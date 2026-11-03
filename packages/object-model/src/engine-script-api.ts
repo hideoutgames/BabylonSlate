@@ -331,7 +331,7 @@ const PARTICLE_PARAMETER_FUNCTIONS: EngineScriptFunction[] = [
       {
         name: `Get ${kind} Parameter`,
         runtime: `getParticle${kind}Parameter`,
-        description: "The parameter's value set at runtime, else the default. Found is false when the System does not declare it.",
+        description: "The parameter's value set at runtime, else the component's override, else the default. Found is false when the System does not declare it.",
         pins: [PARTICLE_PARAMETER_NAME, { name: "value", typeId, direction: "out" }, { name: "found", typeId: "bool", direction: "out" }],
       },
     ],
@@ -339,7 +339,7 @@ const PARTICLE_PARAMETER_FUNCTIONS: EngineScriptFunction[] = [
   {
     name: "Reset Parameter",
     runtime: "resetParticleParameter",
-    description: "Drops the runtime value, back to the default.",
+    description: "Drops the runtime value, back to the component's override or the default.",
     pins: [EXEC_IN, EXEC_OUT, PARTICLE_PARAMETER_NAME, { name: "success", typeId: "bool", direction: "out" }],
   },
 ];

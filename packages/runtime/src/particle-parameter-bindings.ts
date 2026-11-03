@@ -46,8 +46,8 @@ function targets(actor: Actor | undefined, componentId: string | undefined): Tar
  * name, resized to its type; a name no targeted System declares does nothing and warns once.
  * A reset goes back to the component's override, else the System or emitter default.
  */
-export function createParticleParameterBindings(deps: ParticleParameterDeps): Pick<ScriptHostServices,
-  "setParticleParameter" | "getParticleParameter" | "resetParticleParameter"> {
+export function createParticleParameterBindings(deps: ParticleParameterDeps): Required<Pick<ScriptHostServices,
+  "setParticleParameter" | "getParticleParameter" | "resetParticleParameter">> {
   const declaring = (actorGuid: string, name: string, componentId?: string) =>
     targets(deps.findActor(actorGuid), componentId).flatMap((target) => {
       const entry = deps.particles.parameter(target.systemGuid, name);

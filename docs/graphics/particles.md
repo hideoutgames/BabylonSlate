@@ -82,6 +82,8 @@ A parameter is a named value an emitter reads, such as an intensity or a tint, t
 
 Each Preview lists the parameters under **Preview Parameters**. Values set there play at once and are not saved.
 
+A [Particle](../components/particle.md) component lists its System's parameters under **Parameters** in the **Inspector**: a value edited there overrides the default for that actor. While you Simulate, the Inspector of the running Particle component edits the playing values; those changes are not saved.
+
 During Play, [Set Particle Float Parameter](../scripting/class/set-particle-float-parameter.md) and its Vector and Color versions change a parameter by name on every Particle component of an actor whose System declares it. [Reset Particle Parameter](../scripting/class/reset-particle-parameter.md) goes back to the default.
 
 ## Play particles from scripts

@@ -114,6 +114,11 @@ function RuntimePropertyField({ descriptor, target, store, materialGuid, assets 
       onPick: () => setPicker(true), onChange: next => send(wrap(next)) };
   } else if (descriptor.typeId === "material:color" && Array.isArray(value) && value.length === 4 && value.every(item => typeof item === "number")) {
     row = { ...base, kind: "color4", value: value as [number, number, number, number], onChange: next => sendColor(wrap(next)) };
+  } else if (descriptor.typeId === "particle:color" && value && typeof value === "object" && !Array.isArray(value)) {
+    // Particle colors travel as X, Y, Z, W records.
+    const color = value as Record<string, RuntimeInspectorValue>;
+    row = { ...base, kind: "color4", value: [Number(color.x), Number(color.y), Number(color.z), Number(color.w ?? 1)],
+      onChange: ([x, y, z, w]) => sendColor({ x, y, z, w }) };
   } else if (typeof value === "number") {
     row = { ...base, kind: "number", value, onChange: next => send(wrap(next), false), onCommit: next => send(wrap(next), true) };
   } else if (typeof value === "boolean") {
@@ -122,7 +127,7 @@ function RuntimePropertyField({ descriptor, target, store, materialGuid, assets 
     row = { ...base, kind: "text", value, readOnly: !writable, disabled: false,
       onChange: next => field.setDraft(wrap(next)), onCommit: next => send(wrap(next)) };
   } else {
-    const vector = value && typeof value === "object" && !Array.isArray(value) && ["vector", "vector2", "vector3", "quaternion", "rotator"].includes(descriptor.typeId) ? value : null;
+    const vector = value && typeof value === "object" && !Array.isArray(value) && ["vector", "vector2", "vector3", "quaternion", "rotator", "particle:vec2", "particle:vec3"].includes(descriptor.typeId) ? value : null;
     if (vector && typeof vector.x === "number" && typeof vector.y === "number") {
       const count = typeof vector.w === "number" ? 4 : typeof vector.z === "number" ? 3 : 2;
       const encode = (next: [number, number, number] | [number, number, number, number]) => Object.fromEntries(["x", "y", "z", "w"].slice(0, count).map((key, index) => [key, next[index]!])) as RuntimeInspectorValue;

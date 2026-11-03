@@ -8,6 +8,7 @@ import { CableWorldSync } from "./cable-sync";
 import type { RuntimeDriverOptions } from "./driver-types";
 import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import { MovementWorldSync } from "./movement";
+import { createParticleParameterBindings, particleComponentSystemGuid } from "./particle-parameter-bindings";
 import { RagdollWorldSync } from "./ragdoll-sync";
 import { RenderCommandEmitter } from "./render-command-emitter";
 import { RenderSlots } from "./render-slots";
@@ -167,6 +168,21 @@ export function createInspector(rt: RuntimeComposition, options: RuntimeDriverOp
     assetPreloads: () => rt.assetPreloads,
     refreshComponent: (component, propertyName) => rt.propertyWrites.refreshComponent(component, propertyName),
     setMaterialParameter: (material, name, value) => rt.propertyWrites.setMaterialParameter(material, name, value, true),
+    particleParameters: () => {
+      const bindings = createParticleParameterBindings({ particles: rt.particles, findActor: (actorGuid) => rt.world.findActor(actorGuid),
+        emit: (command) => rt.emit(command), warn: (message) => rt.reportLog(message, "warning", "Particles") });
+      return {
+        declared: (component) => {
+          const systemGuid = particleComponentSystemGuid(component);
+          return systemGuid ? rt.particles.parameters(systemGuid) : [];
+        },
+        get: (component, name) => {
+          const result = component.owner ? bindings.getParticleParameter(component.owner.guid, name, component.guid) : null;
+          return result?.found ? result.value : null;
+        },
+        set: (component, name, value) => !!component.owner && bindings.setParticleParameter(component.owner.guid, name, value, component.guid),
+      };
+    },
     publishSnapshot: () => rt.snapshots.publish(),
     emit: (command) => rt.emit(command),
   });

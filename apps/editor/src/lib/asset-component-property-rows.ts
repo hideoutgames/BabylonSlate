@@ -212,7 +212,8 @@ export function particlePropertyRows(
       actorId,
       component,
       update,
-      new Set(["particleSystemGuid", "playOnStart", "retrigger", "sortingLayer"]),
+      // Parameter Overrides has its own Parameters grid.
+      new Set(["particleSystemGuid", "playOnStart", "retrigger", "sortingLayer", "parameterOverrides"]),
     ),
   ];
 }

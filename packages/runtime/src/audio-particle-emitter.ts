@@ -2,6 +2,7 @@ import type { CommandMessage } from "@haptic/bridge";
 import { parseParticleRetrigger } from "@haptic/core";
 import type { Actor, ActorComponent } from "@haptic/object-model";
 import type { OwnerAdmission } from "./owner-admission";
+import { particleComponentOverrides } from "./particle-parameter-bindings";
 import type { ScriptHostServices } from "./script-host";
 
 interface AudioParticleEmitterHost {
@@ -97,6 +98,7 @@ export class AudioParticleEmitter {
             ? Math.round(orderInLayer)
             : 0,
         ...(retrigger === "restart" ? { retrigger } : {}),
+        ...particleOverridesField(component),
       });
       if (component.getVariable("playOnStart") !== false && !this.admission.canRun(actor)) {
         this.admission.run(actor, () => this.host.emit({ type: "setParticlePlaying", actorGuid: actor.guid,
@@ -182,4 +184,10 @@ export function createAudioHostBindings(deps: AudioHostDeps): Pick<ScriptHostSer
       });
     },
   };
+}
+
+/** `assignParticle.parameters` from the component's Parameter Overrides, omitted when it has none. */
+function particleOverridesField(component: ActorComponent): { parameters?: Record<string, number[]> } {
+  const overrides = particleComponentOverrides(component);
+  return Object.keys(overrides).length ? { parameters: overrides } : {};
 }
