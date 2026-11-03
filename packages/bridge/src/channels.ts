@@ -1097,6 +1097,11 @@ export type CommandMessage =
       generation?: number;
     }
   | { type: "sessionPaused"; paused: boolean; cause?: SessionPauseCause }
+  /**
+   * The session's simulation time dilation (`slomo`): render-side simulation that runs on its own
+   * clock (particles) runs at this rate. Sent when it changes, at session start and on trace restore.
+   */
+  | { type: "setSimulationTimeScale"; scale: number }
   | { type: "setScalability"; transaction: ScalabilityTransaction }
   | { type: "setLightsDebug"; enabled: boolean }
   /** Debug: the occlusion overlay (`showocclusion`) and frozen occlusion (`freezeocclusion`); an absent field stays as it is. */
