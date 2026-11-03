@@ -25,7 +25,7 @@ Double-tap a Tilemap to open it.
 | Stamp | Places a 2 × 2 block of the selected tile. |
 | Picker | Picks the tile you tap as the brush. |
 
-With an autotile selected, every tool paints the autotile and the cells around your stroke update to match. The **Eraser** always updates the autotile tiles around the cells it clears, and **Refresh Autotiles** repaints autotile cells after their Tileset changes. See [Paint with autotiles](../2d/tilemaps.md#paint-with-autotiles).
+With an autotile selected, every tool paints the autotile and the cells around your stroke update to match. The **Eraser** always updates the autotile tiles around the cells it clears. When a Tileset's autotiles change, the map's autotile cells update by themselves; the open Tilemap shows the update at once and saves it with your next edit. See [Paint with autotiles](../2d/tilemaps.md#paint-with-autotiles).
 
 Each stroke is one undo step. Two fingers pinch to zoom and drag to pan in any tool.
 
