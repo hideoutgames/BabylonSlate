@@ -407,7 +407,7 @@ export function TilesetAutotiles({
   const pieces = useMemo(() => (set ? autotilePieceTiles(tileset, set) : new Map<number, number[]>()), [set, tileset]);
   const covered = pieces.size;
   const total = terrainVariantMasks(style).length;
-  const resolve = useMemo(() => (autotile ? createTerrainResolver(tileset, autotile.id) : null), [autotile, tileset]);
+  const resolver = useMemo(() => (autotile ? createTerrainResolver(tileset, autotile.id) : null), [autotile, tileset]);
 
   // Slot and picked-tile choices belong to one autotile; another autotile starts on its first empty piece.
   const [slotChoice, setSlotChoice] = useState<{ autotileId: string; mask: number | null } | null>(null);
@@ -860,7 +860,7 @@ export function TilesetAutotiles({
                     if (mask === null) return [<span key={`empty-${at}`} aria-hidden className={SLOT} />];
                     const tiles = pieces.get(mask) ?? [];
                     const tileId = tiles[0] ?? null;
-                    const standIn = tileId === null ? resolve?.(mask) ?? null : null;
+                    const standIn = tileId === null ? resolver?.resolve(mask) ?? null : null;
                     const selected = selectedMask === mask;
                     const focusable = mask === (selectedMask ?? layout.masks.find((entry) => entry !== null));
                     return [

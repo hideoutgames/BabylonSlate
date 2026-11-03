@@ -38,9 +38,11 @@ export type ManagedRenderLease = {
 type Ledger = {
   limit: number;
   shadowBytes: number;
+  /** Of `shadowBytes`, those that raise the ceiling as much (`reserveManagedShadowBytes`'s `exempt`). */
+  shadowExemptBytes: number;
   resourceBytes: number;
   pendingBytes: number;
-  shadows: Map<object, number>;
+  shadows: Map<object, { bytes: number; exempt: number }>;
   resources: Map<object, ResourceEntry>;
 };
 const ledgers = new WeakMap<AbstractEngine, Ledger>();
@@ -54,6 +56,7 @@ function ledger(engine: AbstractEngine): Ledger {
     value = {
       limit: MANAGED_RENDER_BYTE_LIMIT,
       shadowBytes: 0,
+      shadowExemptBytes: 0,
       resourceBytes: 0,
       pendingBytes: 0,
       shadows: new Map(),
@@ -89,8 +92,10 @@ export function managedRenderReservations(engine: AbstractEngine) {
       categoryBytes[resource.categories.keys().next().value!] += resource.bytes;
   }
   return {
-    limit: value.limit,
+    // The ceiling in force: exempt shadow bytes raise it as much.
+    limit: value.limit + value.shadowExemptBytes,
     shadowBytes: value.shadowBytes,
+    shadowExemptBytes: value.shadowExemptBytes,
     categoryBytes,
     sharedBytes,
     resourceBytes: value.resourceBytes,
@@ -103,7 +108,7 @@ export function availableManagedRenderBytes(engine: AbstractEngine): number {
   const value = ledger(engine);
   return Math.max(
     0,
-    value.limit - value.shadowBytes - value.resourceBytes - value.pendingBytes,
+    value.limit + value.shadowExemptBytes - value.shadowBytes - value.resourceBytes - value.pendingBytes,
   );
 }
 
@@ -117,7 +122,7 @@ export function limitManagedRenderBytes(
     !Number.isSafeInteger(bytes) ||
     bytes < 0 ||
     bytes > value.limit ||
-    bytes < value.shadowBytes + value.resourceBytes + value.pendingBytes
+    bytes + value.shadowExemptBytes < value.shadowBytes + value.resourceBytes + value.pendingBytes
   )
     throw new Error(
       "Managed rendering limit must decrease without revoking live reservations.",
@@ -125,25 +130,33 @@ export function limitManagedRenderBytes(
   value.limit = bytes;
 }
 
-/** Existing shadow admission releases incompatible maps before replacing this cost. */
+/**
+ * Existing shadow admission releases incompatible maps before replacing this cost. `exempt` of the `bytes` raise the
+ * ceiling as much while reserved, taking no other allocation's room: a shadow atlas grown past its quality level's for
+ * an explicit Directional Map Size (`sunShadowAtlasEdge`).
+ */
 export function reserveManagedShadowBytes(
   engine: AbstractEngine,
   owner: object,
   bytes: number,
+  exempt = 0,
 ): void {
   const value = ledger(engine);
-  const previous = value.shadows.get(owner) ?? 0;
-  if (previous === bytes) return;
+  const previous = value.shadows.get(owner) ?? { bytes: 0, exempt: 0 };
+  if (previous.bytes === bytes && previous.exempt === exempt) return;
   if (
     !Number.isSafeInteger(bytes) ||
-    bytes < 0 ||
-    bytes - previous > availableManagedRenderBytes(engine)
+    !Number.isSafeInteger(exempt) ||
+    exempt < 0 ||
+    exempt > bytes ||
+    bytes - exempt - (previous.bytes - previous.exempt) > availableManagedRenderBytes(engine)
   )
     throw new Error(
       "Shadow allocation exceeds the shared managed rendering reservation.",
     );
-  value.shadowBytes += bytes - previous;
-  if (bytes) value.shadows.set(owner, bytes);
+  value.shadowBytes += bytes - previous.bytes;
+  value.shadowExemptBytes += exempt - previous.exempt;
+  if (bytes) value.shadows.set(owner, { bytes, exempt });
   else value.shadows.delete(owner);
 }
 

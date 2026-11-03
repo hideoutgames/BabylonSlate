@@ -3,6 +3,8 @@ import {
   createDefaultTilemapPayload,
   normalizeTilesetPayload,
   setTile,
+  TERRAIN_E,
+  TERRAIN_W,
 } from "@haptic/assets";
 import { createInProcessRuntime } from "./driver";
 
@@ -111,6 +113,48 @@ describe("tilemap chain colliders", () => {
       .filter((collider) => collider.id.startsWith("tilemap:"));
     // A chain per chunk would leave an edge at the border for bodies to catch on.
     expect(chains).toHaveLength(1);
+    runtime.stop();
+  });
+
+  it("collides with a map's autotile cells as its current Tileset resolves them", () => {
+    // A ground row saved as single pieces (tile 1) before the Tileset had a joined piece (tile 2).
+    const groundTileset = (solid: 1 | 2) => normalizeTilesetPayload({
+      atlasWidth: 32,
+      tileWidth: 16,
+      tileHeight: 16,
+      terrains: [{ id: "ground", name: "Ground", style: "sides" }],
+      tiles: [
+        { id: 1, collision: solid === 1 ? "full" : "none", terrain: { id: "ground", mask: 0 } },
+        { id: 2, collision: solid === 2 ? "full" : "none", terrain: { id: "ground", mask: TERRAIN_E | TERRAIN_W } },
+      ],
+    });
+    let tilemap = {
+      ...createDefaultTilemapPayload(),
+      tilesets: [{ guid: "tileset-1", firstGid: 1, tileCount: 2 }],
+      tileWidth: 16,
+      tileHeight: 16,
+      width: 4,
+      height: 1,
+    };
+    for (let x = 0; x < 4; x++) tilemap = setTile(tilemap, "layer-1", x, 0, 1);
+    const runtime = createInProcessRuntime({
+      seed: 4, maxActors: 8, preferSoftwarePhysics: true, physicsWorld: "2d", seedDemoActors: false,
+      pixelsPerUnit: 16, tilemaps: { "map-1": tilemap }, tilesets: { "tileset-1": groundTileset(2) },
+    });
+    const world = runtime.getWorld();
+    const ground = world.createActor({ guid: "ground", classId: "Actor" });
+    ground.attachComponent(world.createComponent({ classId: "TilemapComponent", assetGuid: "map-1", variables: { assetGuid: "map-1" } }));
+    world.spawnActorNow(ground);
+    const chains = () => runtime.getPhysicsSync()!.getBackend().listDebugColliders()
+      .filter((collider) => collider.id.startsWith("tilemap:"));
+    runtime.start();
+    runtime.tick();
+    // The row resolves to the solid joined piece, though the map stores the hollow single piece.
+    expect(chains()).toHaveLength(1);
+    // Content loaded later resolves the same way: the stored single piece is solid, the joined piece is not.
+    runtime.registerTileContent({ tilemaps: { "map-1": tilemap }, tilesets: { "tileset-1": groundTileset(1) }, pixelsPerUnit: 16 });
+    runtime.tick();
+    expect(chains()).toHaveLength(0);
     runtime.stop();
   });
 

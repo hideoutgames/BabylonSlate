@@ -236,15 +236,23 @@ describe("rendering quality sessions", () => {
     expect(resolveRenderingQuality({ quality: normalizeRenderingQuality({}) }, {}, qualityPresetPatch("low")).postprocessing.antiAliasing)
       .toBe("fxaa");
   });
-  it("switches occlusion culling from the console, off on every tier", () => {
+  it("switches occlusion culling from the console, on at every tier", () => {
     const session = new RenderingQualitySession();
-    expect(session.effective().geometry.occlusionCulling).toBe(false);
-    expect(session.execute("geometry", "occlusion", "on").success).toBe(true);
-    expect(session.effective().geometry).toMatchObject({ occlusionCulling: true, preset: "custom" });
+    expect(session.effective().geometry.occlusionCulling).toBe(true);
+    expect(session.execute("geometry", "occlusion", "off").success).toBe(true);
+    expect(session.effective().geometry).toMatchObject({ occlusionCulling: false, preset: "custom" });
     expect(session.execute("geometry", "occlusion", "maybe").success).toBe(false);
     session.execute("geometry", "reset");
-    expect(session.effective().geometry.occlusionCulling).toBe(false);
-    for (const level of ["low", "medium", "high", "ultra"] as const) expect(RENDER_QUALITY_PROFILES[level].geometry.occlusionCulling).toBe(false);
+    expect(session.effective().geometry.occlusionCulling).toBe(true);
+    for (const level of ["low", "medium", "high", "ultra"] as const) expect(RENDER_QUALITY_PROFILES[level].geometry.occlusionCulling).toBe(true);
+  });
+  it("loads a tier's geometry saved with occlusion culling off as that tier's current values", () => {
+    for (const level of ["low", "medium", "high", "ultra"] as const) {
+      const saved = { ...RENDER_QUALITY_PROFILES[level].geometry, occlusionCulling: false, profile: level, preset: level };
+      expect(normalizeRenderingQuality({ geometry: saved }).geometry).toMatchObject({ occlusionCulling: true, preset: level });
+    }
+    const custom = { ...RENDER_QUALITY_PROFILES.medium.geometry, occlusionCulling: false, profile: "medium", preset: "custom" } as const;
+    expect(normalizeRenderingQuality({ geometry: custom }).geometry).toMatchObject({ occlusionCulling: false, preset: "custom" });
   });
   it("detects legacy mismatched shadow settings without overwriting their values", () => {
     const settings = normalizeProjectSettings({

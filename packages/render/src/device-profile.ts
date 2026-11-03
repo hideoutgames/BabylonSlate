@@ -40,12 +40,14 @@ const DESKTOP: DeviceProfile = {
 /**
  * Phones and tablets: the desktop's shadow and light limits, so the quality level alone sizes their shadows and
  * lights. Only textures stay lower: WKWebView kills a page past its memory limit, and the texture cache is the
- * largest share a scene holds.
+ * largest share a scene holds. For the same reason the shadow atlas stops at 8192, every quality level's own edge:
+ * a Custom 8192 Directional Map Size's 16384 atlas (1 GiB) falls back to 4096 maps there.
  */
 const MOBILE: DeviceProfile = {
   ...DESKTOP,
   mobile: true,
   textureByteCeiling: 768 * MIB,
+  shadowAtlasCap: 8192,
 };
 
 /**

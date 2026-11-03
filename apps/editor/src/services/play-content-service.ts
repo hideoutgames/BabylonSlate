@@ -18,6 +18,7 @@ import {
   decodeSourceToRgba,
   mapBounded,
   normalizeModelPayload,
+  refreshStaleTilemaps,
   type IndexedAsset,
   type ModelPayload,
   type SpriteAnimationPayload,
@@ -728,13 +729,12 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     const loadedSets = await loadedInOrder([...new Set(tilesetGuidsFromTilemaps(tilemaps))]
       .flatMap((guid) => { const asset = tilesetsByGuid.get(guid); return asset ? [{ guid, asset }] : []; }),
     (asset) => loadPlayAssetContent("tileset", asset.path));
-    return {
-      tilemaps,
-      tilesets: playTilesetPayloadsFromGuids(
-        [...loadedSets.keys()],
-        (guid) => loadedSets.get(guid) ?? null,
-      ),
-    };
+    const tilesets = playTilesetPayloadsFromGuids(
+      [...loadedSets.keys()],
+      (guid) => loadedSets.get(guid) ?? null,
+    );
+    // The viewports and nav bake show each map as the current Tilesets resolve it.
+    return { tilemaps: refreshStaleTilemaps(tilemaps, tilesets), tilesets };
   };
 
   const collectPlayAreaEmissions = async (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs = false) => collectAreaEmissions({

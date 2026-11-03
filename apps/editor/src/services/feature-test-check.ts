@@ -17,7 +17,7 @@ export const FEATURE_TEST_CHECK_SCENES = [
 /** Console commands each scene runs in Play; the main scene exercises the full set. */
 export function featureTestCheckCommands(sceneName: string, mode: FeatureTestCheckMode): string[] {
   if (sceneName === "main" && mode === "full") return ["ft_stats", "ft_spawn 10", "ft_stats", "ft_stream", "ft_cel", "ft_pbr"];
-  // Occlusion Culling is off on every tier: the yardstick turns it on.
+  // Occlusion Culling is on at every tier; the yardstick turns it on in case the project turned it off.
   if (sceneName === "FT_Occlusion") return ["ft_stats", "ft_occlusion"];
   return ["ft_stats"];
 }
@@ -61,7 +61,7 @@ const MEDIUM = { ...RENDER_QUALITY_PROFILES.medium, shadows: SHADOW_PROFILES.med
 
 export const FEATURE_TEST_BREAKDOWN_BASES: Readonly<Record<FeatureTestBreakdownMethod, FeatureTestBreakdownBase>> = {
   "add-one": {
-    label: "low at resolution 0.5, without post-processing, anti-aliasing, water reflections, water refraction or captures; shadow filter low; water detail low",
+    label: "low at resolution 0.5, without post-processing, anti-aliasing, water reflections, water refraction, occlusion culling or captures; shadow filter low; water detail low",
     // Each feature a step turns on is off here by name, so the base does not depend on what the Low tier holds.
     commands: [
       "quality low",
@@ -70,6 +70,7 @@ export const FEATURE_TEST_BREAKDOWN_BASES: Readonly<Record<FeatureTestBreakdownM
       "quality water shadingDetail low",
       "quality water reflections sky",
       "quality water refraction off",
+      "quality geometry occlusion off",
       "quality postprocessing antialiasing off",
       "quality postprocessing ambientOcclusion off",
       "quality postprocessing reflections off",
@@ -213,16 +214,23 @@ export interface FeatureTestBreakdownPlan {
   exit?: readonly string[];
 }
 
-const OCCLUSION_ON: FeatureTestBreakdownStep = { label: "occlusion on", commands: ["quality geometry occlusion on"], fields: ["geometry.occlusion"] };
+const OCCLUSION_STEPS: Readonly<Record<FeatureTestBreakdownMethod, FeatureTestBreakdownStep>> = {
+  "add-one": { label: "occlusion on", commands: ["quality geometry occlusion on"], fields: ["geometry.occlusion"] },
+  "remove-one": { label: "occlusion off", commands: ["quality geometry occlusion off"], fields: ["geometry.occlusion"] },
+};
 
 /**
- * FT_Occlusion (`lib/feature-test/occlusion.ts`): Occlusion Culling on against its off baselines, from the street
- * (the scene's main camera, `Camera`) and from a doorway of the rooms (`Rooms Camera`), each possessed by name.
+ * FT_Occlusion (`lib/feature-test/occlusion.ts`): Occlusion Culling against baselines that hold the other value (off in
+ * the add-one base, on at Medium), from the street (the scene's main camera, `Camera`) and from a doorway of the rooms
+ * (`Rooms Camera`), each possessed by name.
  */
-const OCCLUSION_PLAN: FeatureTestBreakdownPlan = {
-  views: [{ steps: [OCCLUSION_ON] }, { name: "rooms", enter: ['possess "Rooms Camera"'], steps: [OCCLUSION_ON] }],
-  exit: ['possess "Camera"'],
-};
+function occlusionPlan(method: FeatureTestBreakdownMethod): FeatureTestBreakdownPlan {
+  const step = OCCLUSION_STEPS[method];
+  return {
+    views: [{ steps: [step] }, { name: "rooms", enter: ['possess "Rooms Camera"'], steps: [step] }],
+    exit: ['possess "Camera"'],
+  };
+}
 
 /**
  * A scene's Breakdown plan: FT_Occlusion measures occlusion culling from two cameras (on either method's base), every
@@ -231,7 +239,7 @@ const OCCLUSION_PLAN: FeatureTestBreakdownPlan = {
 export function featureTestBreakdownPlan(
   sceneName: string, method: FeatureTestBreakdownMethod = FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD,
 ): FeatureTestBreakdownPlan {
-  if (sceneName === "FT_Occlusion") return OCCLUSION_PLAN;
+  if (sceneName === "FT_Occlusion") return occlusionPlan(method);
   return { views: [{ steps: method === "add-one" ? FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS : FEATURE_TEST_BREAKDOWN_STEPS }] };
 }
 

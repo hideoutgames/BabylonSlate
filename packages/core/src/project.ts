@@ -897,6 +897,10 @@ export function createEmptyProject(
       customResolution: options?.render?.customResolution ?? true,
     },
   });
+  // A 2D project has few solid shapes to hide sprites behind, so Occlusion Culling would only cost CPU time.
+  const twoDSettings = options?.kind === "2d"
+    ? { ...settings, render: applyProjectQualityPatch(settings.render, { geometry: { occlusionCulling: false, preset: "custom" } }) }
+    : settings;
   return {
     metadata: {
       name,
@@ -904,7 +908,7 @@ export function createEmptyProject(
       createdAt: now,
       updatedAt: now,
     },
-    settings: options?.pixelArt ? pixelArtProjectSettings(settings) : settings,
+    settings: options?.pixelArt ? pixelArtProjectSettings(twoDSettings) : twoDSettings,
     scenes: [MAIN_SCENE_FILE],
     graphs: [MAIN_CLASS_FILE],
   };

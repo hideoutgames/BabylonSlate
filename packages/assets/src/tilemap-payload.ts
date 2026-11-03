@@ -6,6 +6,7 @@ import {
   tilesetAtlasRows,
   type TilesetPayload,
 } from "./tileset-payload";
+import { tilesetTerrainStamp } from "./tileset-terrain";
 
 export const DEFAULT_TILEMAP_CHUNK_SIZE = 32;
 export const DEFAULT_TILEMAP_WIDTH = 64;
@@ -32,6 +33,12 @@ export interface TilemapTilesetRef {
   guid: string;
   firstGid: number;
   tileCount: number;
+  /**
+   * The Tileset's `tilesetTerrainStamp` when this map's terrain cells were
+   * last resolved against it; omitted until then. A differing stamp makes
+   * `refreshStaleTilemapTerrains` re-resolve that Tileset's terrain cells.
+   */
+  terrainStamp?: string;
 }
 
 export interface TileGidHit {
@@ -250,7 +257,9 @@ export function addTilemapTileset(
   const reconciled = reconcileTilemapTilesets(map, knownTilesets ?? new Map());
   const count = Math.max(1, atlasTileCount(tileset));
   const firstGid = nextTilesetFirstGid(reconciled);
-  return { ...reconciled, tilesets: [...reconciled.tilesets, { guid, firstGid, tileCount: count }] };
+  // No cell uses the Tileset yet, so the map starts current with its terrains.
+  const ref = { guid, firstGid, tileCount: count, terrainStamp: tilesetTerrainStamp(tileset) };
+  return { ...reconciled, tilesets: [...reconciled.tilesets, ref] };
 }
 
 export function removeTilemapTileset(
@@ -315,11 +324,13 @@ function normalizeTilesetRefs(value: unknown): TilemapTilesetRef[] {
       const guid = stringOrNull(row.guid);
       if (!guid || seen.has(guid)) continue;
       seen.add(guid);
+      const terrainStamp = stringOrNull(row.terrainStamp);
       refs.push({
         guid,
         firstGid: positiveInt(row.firstGid, 1),
         // Every saved range reserves at least one tile; the next edit grows it to the atlas.
         tileCount: Math.max(1, positiveInt(row.tileCount, 1)),
+        ...(terrainStamp ? { terrainStamp } : {}),
       });
     }
   }

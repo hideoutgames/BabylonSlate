@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_COLLISION_PRESETS, DEFAULT_RENDER_PROJECT_SETTINGS } from "@haptic/core";
-import { createDefaultSpriteAnimationPayload } from "@haptic/assets";
+import { createDefaultSpriteAnimationPayload, getTile, TERRAIN_E, TERRAIN_W } from "@haptic/assets";
 import { packedContentFromGame, packedSourceControls } from "./hydrate";
 import { gameSourceSubset, type GameSourceContent } from "./source-content";
 import type { GameAssetIndexEntry } from "./types";
@@ -75,6 +75,28 @@ describe("packedContentFromGame", () => {
       width: 48,
       height: 96,
     });
+  });
+
+  it("packs each Tilemap with its autotile cells as its current Tileset resolves them", () => {
+    // A ledge saved as single pieces before the Tileset had its end and middle pieces.
+    const game = sources([
+      { guid: "ledges", type: "Tileset", encoding: "json" },
+      { guid: "level", type: "Tilemap", encoding: "json" },
+    ], {
+      ledges: {
+        atlasWidth: 64,
+        terrains: [{ id: "ledge", name: "Ledge", style: "sides" }],
+        tiles: [0, TERRAIN_E, TERRAIN_E | TERRAIN_W, TERRAIN_W].map((mask, at) => ({ id: at + 1, terrain: { id: "ledge", mask } })),
+      },
+      level: {
+        tilesets: [{ guid: "ledges", firstGid: 1, tileCount: 4 }],
+        width: 5,
+        height: 1,
+        layers: [{ id: "layer-1", chunks: [{ cx: 0, cy: 0, tiles: [0, 1, 1, 1] }] }],
+      },
+    });
+    const level = packedContentFromGame(game).tilemapPayloads.get("level")!;
+    expect([1, 2, 3].map((x) => getTile(level, "layer-1", x, 0))).toEqual([2, 3, 4]);
   });
 
   it("names data type schemas after their catalog entries", () => {

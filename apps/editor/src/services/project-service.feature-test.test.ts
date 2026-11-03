@@ -15,6 +15,7 @@ import {
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   parseSpriteAnimationPayload,
+  refreshStaleTilemapTerrains,
   TILESET_TERRAIN_STYLES,
   tilesetTerrainById,
   tilesetTileById,
@@ -144,7 +145,7 @@ describe("FeatureTest starter", () => {
       .toEqual([{ clipName: "open", durationMs: 1500, clipDurationMs: 1000 }]);
   });
 
-  it("paints a Tilemap with a terrain of every autotile style", async () => {
+  it("paints a Tilemap with a terrain of every autotile style, current with its Tilesets", async () => {
     const registry = reopened.registry!;
     const tilesets = new Map<string, TilesetPayload>();
     for (const asset of registry.list().filter((entry) => entry.header.type === "Tileset")) {
@@ -153,6 +154,8 @@ describe("FeatureTest starter", () => {
     const painted = new Set<string>();
     for (const asset of registry.list().filter((entry) => entry.header.type === "Tilemap")) {
       const map = normalizeTilemapPayload(await reopened.loadDocument("tilemap", asset.path));
+      // Loading never re-resolves the starter's terrain cells, so its hand-placed pieces stay.
+      expect(refreshStaleTilemapTerrains(map, tilesets), asset.path).toBe(map);
       for (const gid of new Set(map.layers.flatMap((layer) => layer.chunks.flatMap((chunk) => chunk.tiles)))) {
         const hit = decodeTileGid(map, gid, tilesets);
         const terrain = hit ? tilesetTileById(hit.tileset, hit.localId)?.terrain : undefined;

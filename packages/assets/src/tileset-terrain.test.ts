@@ -18,8 +18,15 @@ import {
   TERRAIN_SW,
   TERRAIN_W,
   terrainVariantMasks,
+  tilesetTerrainStamp,
 } from "./tileset-terrain";
-import { ensureTilesetTiles, normalizeTilesetPayload, type TilesetPayload, type TilesetTerrainStyle } from "./tileset-payload";
+import {
+  ensureTilesetTiles,
+  normalizeTilesetPayload,
+  setTilesetTerrains,
+  type TilesetPayload,
+  type TilesetTerrainStyle,
+} from "./tileset-payload";
 
 const N = TERRAIN_N;
 const NE = TERRAIN_NE;
@@ -30,9 +37,10 @@ const SW = TERRAIN_SW;
 const W = TERRAIN_W;
 const NW = TERRAIN_NW;
 
-/** One terrain whose tile `n` (1-based) joins `masks[n - 1]`. */
+/** One terrain whose tile `n` (1-based) joins `masks[n - 1]`, on a one-row atlas of exactly those tiles. */
 function terrainSheet(style: TilesetTerrainStyle, masks: readonly number[]): TilesetPayload {
   return normalizeTilesetPayload({
+    atlasWidth: 16 * masks.length,
     terrains: [{ id: "ground", name: "Ground", style }],
     tiles: masks.map((mask, at) => ({ id: at + 1, terrain: { id: "ground", mask } })),
   });
@@ -83,7 +91,7 @@ describe("terrain resolution", () => {
   for (const style of ["sides", "blob"] as const) {
     it(`picks the exact tile for every neighbourhood of a complete ${style} sheet`, () => {
       const variants = terrainVariantMasks(style);
-      const resolve = createTerrainResolver(terrainSheet(style, variants), "ground")!;
+      const { resolve } = createTerrainResolver(terrainSheet(style, variants), "ground")!;
       for (let mask = 0; mask <= TERRAIN_ALL; mask++) {
         expect(variants[resolve(mask) - 1], `mask ${mask}`).toBe(canonicalTerrainMask(style, mask));
       }
@@ -91,7 +99,7 @@ describe("terrain resolution", () => {
   }
 
   it("picks the closest tile of an incomplete blob sheet in the documented order", () => {
-    const resolve = createTerrainResolver(terrainSheet("blob", GRASS_MASKS), "ground")!;
+    const { resolve } = createTerrainResolver(terrainSheet("blob", GRASS_MASKS), "ground")!;
     const table: Array<[string, number, number]> = [
       ["exact: top row", E | SE | S | SW | W, GRASS.top],
       ["exact: inner corner", TERRAIN_ALL & ~NW, GRASS.notchNW],
@@ -113,17 +121,139 @@ describe("terrain resolution", () => {
 
   it("ignores corners for a 4-side terrain", () => {
     const ledge = terrainSheet("sides", [0, E, E | W, W]);
-    const resolve = createTerrainResolver(ledge, "ground")!;
+    const { resolve } = createTerrainResolver(ledge, "ground")!;
     expect(resolve(E | W | NE | SE | SW | NW)).toBe(3);
     // Stacked ledges have no vertical variants: the open single piece is closest.
     expect(resolve(N | S)).toBe(1);
   });
 
-  it("resolves nothing for a terrain without tiles in range", () => {
+  it("resolves nothing for a terrain without tiles in range, and never a tile past the atlas", () => {
     const sheet = terrainSheet("blob", GRASS_MASKS);
     expect(createTerrainResolver(sheet, "missing")).toBeNull();
     expect(createTerrainResolver(normalizeTilesetPayload({ ...sheet, tiles: [] }), "ground")).toBeNull();
-    expect(createTerrainResolver(sheet, "ground", GRASS.top)?.(TERRAIN_ALL)).toBe(GRASS.top);
+    expect(createTerrainResolver(sheet, "ground", GRASS.top)?.resolve(TERRAIN_ALL)).toBe(GRASS.top);
+    // The fill tile lies past a shrunk atlas: the closest tile inside it wins, as with `ensureTilesetTiles`.
+    const shrunk = { ...sheet, atlasWidth: 16 * GRASS.topRight };
+    expect(createTerrainResolver(shrunk, "ground")!.resolve(TERRAIN_ALL)).toBe(GRASS.top);
+    expect(createTerrainResolver(ensureTilesetTiles(shrunk), "ground")!.resolve(TERRAIN_ALL)).toBe(GRASS.top);
+  });
+});
+
+/**
+ * A 4 Sides Grass with a default set (1 single, 2 fill) and a set drawn
+ * against Dirt (3 open north, 4 fill); its set against Water has no tiles.
+ * Dirt has only a set drawn against Grass (5 single). Tile 6, past the
+ * 5-tile atlas, would be Grass's exact open-north piece.
+ */
+const BORDERED = normalizeTilesetPayload({
+  atlasWidth: 16 * 5,
+  terrains: [
+    { id: "grass", name: "Grass", style: "sides", borders: ["dirt", "water"] },
+    { id: "dirt", name: "Dirt", style: "sides", borders: ["grass"] },
+    { id: "water", name: "Water", style: "sides" },
+  ],
+  tiles: [
+    { id: 1, terrain: { id: "grass", mask: 0 } },
+    { id: 2, terrain: { id: "grass", mask: N | E | S | W } },
+    { id: 3, terrain: { id: "grass", mask: E | S | W, border: "dirt" } },
+    { id: 4, terrain: { id: "grass", mask: N | E | S | W, border: "dirt" } },
+    { id: 5, terrain: { id: "dirt", mask: 0, border: "grass" } },
+    { id: 6, terrain: { id: "grass", mask: E | S | W } },
+  ],
+});
+
+describe("tilesetTerrainStamp", () => {
+  it("depends only on what terrain resolution reads", () => {
+    const stamp = tilesetTerrainStamp(BORDERED);
+    // A copy decoded again, padded with empty tiles, renamed, reordered, with other tile data.
+    const same = normalizeTilesetPayload({
+      ...BORDERED,
+      terrains: [...BORDERED.terrains!].reverse().map((terrain) => ({ ...terrain, name: `${terrain.name} 2`, borders: [...(terrain.borders ?? [])].reverse() })),
+      tiles: [...BORDERED.tiles].reverse().map((tile) => ({ ...tile, collision: "full", flags: 3 })),
+    });
+    expect(tilesetTerrainStamp(same)).toBe(stamp);
+    expect(tilesetTerrainStamp(ensureTilesetTiles(BORDERED))).toBe(stamp);
+    // Tile 6 lies past the atlas, so its membership never counts.
+    const pastAtlas = { ...BORDERED, tiles: BORDERED.tiles.map((tile) => (tile.id === 6 ? { ...tile, terrain: { id: "grass", mask: 0 } } : tile)) };
+    expect(tilesetTerrainStamp(pastAtlas)).toBe(stamp);
+  });
+
+  it("changes with any terrain's style or borders and any member tile's set or mask", () => {
+    const retile = (id: number, terrain: TilesetPayload["tiles"][number]["terrain"]): TilesetPayload => ({
+      ...BORDERED,
+      tiles: BORDERED.tiles.map((tile) => (tile.id === id ? { ...tile, terrain } : tile)),
+    });
+    const changes = [
+      setTilesetTerrains(BORDERED, BORDERED.terrains!.map((terrain) => (terrain.id === "water" ? { ...terrain, style: "blob" as const } : terrain))),
+      setTilesetTerrains(BORDERED, BORDERED.terrains!.map((terrain) => (terrain.id === "grass" ? { ...terrain, borders: ["dirt"] } : terrain))),
+      retile(1, { id: "grass", mask: N }),
+      retile(1, { id: "grass", mask: 0, border: "dirt" }),
+      retile(1, { id: "dirt", mask: 0, border: "grass" }),
+      retile(1, undefined),
+    ];
+    const stamps = new Set([BORDERED, ...changes].map(tilesetTerrainStamp));
+    expect(stamps.size).toBe(changes.length + 1);
+  });
+
+  it("gives every Tileset without terrains the same stamp", () => {
+    const plain = normalizeTilesetPayload({ atlasWidth: 32, tiles: [{ id: 1, collision: "full" }] });
+    expect(tilesetTerrainStamp(plain)).toBe(tilesetTerrainStamp(normalizeTilesetPayload({})));
+    expect(tilesetTerrainStamp(plain)).not.toBe(tilesetTerrainStamp(terrainSheet("sides", [])));
+  });
+});
+
+describe("terrain border sets", () => {
+  it("lists only the border sets that have tiles", () => {
+    expect([...createTerrainResolver(BORDERED, "grass")!.borders]).toEqual(["dirt"]);
+    expect([...createTerrainResolver(BORDERED, "dirt")!.borders]).toEqual(["grass"]);
+    expect(createTerrainResolver(BORDERED, "water")).toBeNull();
+  });
+
+  it("picks only from the chosen set, then the default set, then every tile", () => {
+    const grass = createTerrainResolver(BORDERED, "grass")!;
+    expect(grass.resolve(E | S | W, "dirt")).toBe(3);
+    // The default set has no open-north piece: its fill draws no edge inside the terrain.
+    expect(grass.resolve(E | S | W)).toBe(2);
+    // A set wins even when the default set holds the exact tile.
+    expect(grass.resolve(0, "dirt")).toBe(3);
+    expect(grass.resolve(0)).toBe(1);
+    // The Water set has no tiles: the default set answers.
+    expect(grass.resolve(E | S | W, "water")).toBe(2);
+    // Dirt has no default set: every Dirt tile is a candidate.
+    expect(createTerrainResolver(BORDERED, "dirt")!.resolve(N | E | S | W)).toBe(5);
+  });
+
+  it("counts missing variants per set", () => {
+    const fill = N | E | S | W;
+    const openNorth = E | S | W;
+    expect(missingTerrainVariants(BORDERED, "grass")).toHaveLength(14);
+    expect(missingTerrainVariants(BORDERED, "grass")).not.toContain(fill);
+    expect(missingTerrainVariants(BORDERED, "grass")).toContain(openNorth);
+    expect(missingTerrainVariants(BORDERED, "grass", "dirt")).not.toContain(openNorth);
+    expect(missingTerrainVariants(BORDERED, "grass", "dirt")).toContain(0);
+    expect(missingTerrainVariants(BORDERED, "grass", "water")).toHaveLength(16);
+    expect(missingTerrainVariants(BORDERED, "dirt")).toHaveLength(16);
+    expect(missingTerrainVariants(BORDERED, "grass", "rock")).toEqual([]);
+  });
+
+  it("marks zones and fills layouts in one set at a time", () => {
+    const tile = BORDERED.tiles[0]!;
+    const moved = setAutotileZone(tile, "grass", N, true, "dirt");
+    expect(moved.terrain).toEqual({ id: "grass", mask: N, border: "dirt" });
+    expect(autotileZoneOn(moved, "grass", 0)).toBe(false);
+    expect(autotileZoneOn(moved, "grass", N, "dirt")).toBe(true);
+    // Turning a zone off in another set leaves the tile where it is.
+    expect(setAutotileZone(moved, "grass", 0, false)).toBe(moved);
+    expect(setAutotileZone(moved, "grass", N, true).terrain).toEqual({ id: "grass", mask: N });
+
+    const sheet = ensureTilesetTiles(normalizeTilesetPayload({
+      tileWidth: 16, tileHeight: 16, atlasWidth: 16 * 4, atlasHeight: 16 * 4,
+      terrains: [{ id: "ground", name: "Ground", style: "sides", borders: ["rock"] }, { id: "rock", name: "Rock", style: "sides" }],
+    }));
+    const filled = applyAutotileLayout(sheet, "ground", 1, "rock");
+    expect(filled.tiles[0]!.terrain).toEqual({ id: "ground", mask: E | S, border: "rock" });
+    expect(missingTerrainVariants(filled, "ground", "rock")).toEqual([]);
+    expect(applyAutotileLayout(sheet, "ground", 1, "lava")).toBe(sheet);
   });
 });
 

@@ -35,6 +35,8 @@ An autotile paints edges and corners for you. Instead of placing each left end, 
 
 Your sheet does not need every piece. Where one is missing, the autotile paints the closest tile it has, preferring a tile that draws no edge inside it. The [Tileset](../assets/tileset.md#autotiles) page has the details.
 
+Two autotiles of the same Tileset, such as grass and dirt, can meet through a transition: a set of pieces drawn against the other autotile. See [Transitions](../assets/tileset.md#transitions).
+
 ## Paint a Tilemap
 
 1. Choose **New Asset > 2D > Tilemap**, then double-tap it. **Paint** fills the centre, with **Palette** on the left and the **Inspector** on the right.
@@ -62,11 +64,11 @@ One finger paints. Two fingers pinch to zoom and drag to pan in any tool; the sc
 
 - An autotile with no tiles yet shows **Set Up in Tileset**, which opens its Tileset.
 - The **Picker** on an autotile cell picks the autotile, not the single tile.
-- Only tiles of the same autotile join. Single tiles and other autotiles count as empty.
+- Only tiles of the same autotile join. Single tiles count as empty, and so do other autotiles unless the Tileset has a [transition](../assets/tileset.md#transitions) between the two.
 - Beyond the edge of the map counts as the same autotile, so ground painted up to the edge carries on past it.
 - **Bucket** with an autotile fills the connected tiles of the autotile you tap, whatever their pieces.
-- Painting single tiles never changes the tiles around them, so you can place a special piece by hand.
-- Changing an autotile in its Tileset does not repaint existing maps by itself. Tap **Refresh Autotiles** in the **Paint** toolbar to repick every autotile cell on every layer; it is one undo step.
+- Painting single tiles never changes the tiles around them, so you can place a special piece by hand. It stays until one of its Tileset's autotiles changes.
+- Changing an autotile in its Tileset repicks the autotile cells of every map that uses it, on every layer. The open Tilemap shows the new pieces at once and saves them with your next edit; the viewport, Play and exported games show them too.
 
 ## Map and layer settings
 

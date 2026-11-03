@@ -377,7 +377,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
   - Whether the lights scene holds 60 fps at the device's light maximum with light culling is unmeasured.
   - FT_World is GPU-bound.
   - The main and stress scenes are CPU-bound by their draw counts, far past the Medium draw-call warning.
-- Occlusion culling (`quality.geometry.occlusionCulling`) stays off on every tier until an iPad A/B measures it, the editor viewport's toggle and its debug views land, and models occlude through the import-time inner-box bake.
+- Occlusion culling (`quality.geometry.occlusionCulling`) is on at every tier (André's call, 2026-11-03), ahead of an iPad A/B; Breakdown's FT_Occlusion steps measure it. Turn a tier off if the A/B shows it costs more than it saves there.
 - Fewer material variants, decided separately and measured on its own: texture presence and similar defines as always-bound defaults.
 - Environment quality: `.hdr` import converted to a cube at import (a low-dynamic-range sky lights flatly). Reflection probes capture after edits, at load or on demand, never per frame (each capture is six scene renders of CPU draw work); static actors of streamed scenes are not yet captured.
 

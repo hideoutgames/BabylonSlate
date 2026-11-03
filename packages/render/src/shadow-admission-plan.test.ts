@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DirectionalLight, NullEngine, PointLight, Scene, SpotLight, Vector3, type AbstractEngine } from "@babylonjs/core";
-import { normalizeShadowSettings, type ShadowProfile } from "@haptic/core";
+import { normalizeShadowSettings, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_TILE_CASCADES, type ShadowProfile } from "@haptic/core";
 import { planShadowAdmission, type ShadowAdmissionBudget } from "./shadow-admission-plan";
-import { SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge } from "./shadow-atlas";
+import { cascadeTileSizes, SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge, shadowAtlasEdgeLimit } from "./shadow-atlas";
 import type { ShadowEntry } from "./shadow-entry";
 
 const engines: NullEngine[] = [];
@@ -25,21 +25,23 @@ function entry(light: SpotLight | PointLight | DirectionalLight): ShadowEntry {
   };
 }
 
-/** Room for every map but the atlas's area. */
-const budget = (atlasEdge: number): ShadowAdmissionBudget => ({
-  bytes: 1024 ** 3, passes: 64, atlasEdge,
+/** Room for every map but the atlas's area: the level's `atlasEdge`, which a sun may grow up to `atlasEdgeLimit`. */
+const budget = (atlasEdge: number, atlasEdgeLimit = atlasEdge): ShadowAdmissionBudget => ({
+  bytes: 1024 ** 3, passes: 64, atlasEdge, atlasEdgeLimit,
 });
 
 function plan(
   lights: (SpotLight | PointLight | DirectionalLight)[], atlasEdge: number, localMapSize: number,
   sun: { mapSize: number; cascades: number; profile?: ShadowProfile } = { mapSize: 2048, cascades: 1 },
+  atlasEdgeLimit = atlasEdge, entries = new Map(lights.map((light) => [light, entry(light)])),
 ) {
-  const entries = new Map(lights.map((light) => [light, entry(light)]));
   return planShadowAdmission({
     entries, settings: normalizeShadowSettings({ ...sun, maxLocalLights: 8, localMapSize }), camera: null,
-    previousCamera: null, at: 0, budget: budget(atlasEdge), measure: () => 0,
+    previousCamera: null, at: 0, budget: budget(atlasEdge, atlasEdgeLimit), measure: () => 0,
   });
 }
+
+const MIB = 1024 ** 2;
 
 describe("Shadow admission into the shadow atlas", () => {
   it("sizes the atlas by the quality level's byte budget within the texture limit, on a phone too", () => {
@@ -48,6 +50,14 @@ describe("Shadow admission into the shadow atlas", () => {
     expect(shadowAtlasEdge({ getCaps: () => ({ maxTextureSize: 4096 }) } as unknown as AbstractEngine, "ultra")).toBe(4096);
     vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)", maxTouchPoints: 5 });
     expect((["low", "medium", "high", "ultra"] as const).map((profile) => shadowAtlasEdge(engine, profile))).toEqual([4096, 4096, 8192, 8192]);
+  });
+
+  it("lets a sun grow the atlas to 16384 within the texture limit, and to 8192 on a phone", () => {
+    const engine = (maxTextureSize: number) => ({ getCaps: () => ({ maxTextureSize }) }) as unknown as AbstractEngine;
+    expect([shadowAtlasEdgeLimit(engine(32768)), shadowAtlasEdgeLimit(engine(16384)), shadowAtlasEdgeLimit(engine(8192))])
+      .toEqual([16384, 16384, 8192]);
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)", maxTouchPoints: 5 });
+    expect(shadowAtlasEdgeLimit(engine(16384))).toBe(8192);
   });
 
   it("admits spot maps by the atlas's area and counts the atlas's bytes once", () => {
@@ -106,5 +116,72 @@ describe("Shadow admission into the shadow atlas", () => {
     expect(plan([spot], 1024, 2048).decisions.map(({ mapSize, reason }) => [mapSize, reason])).toEqual([
       [1024, "shadow map reduced by shadow atlas space"],
     ]);
+  });
+});
+
+describe("An 8192 Directional Map Size", () => {
+  // Per level: its cascades, its own atlas edge, the sun's tiles at 8192 in a 16384 atlas, and the bytes of that 1 GiB
+  // atlas past the level's own, which count against no other allocation.
+  const levels = [
+    ["low", 2, 4096, [8192, 8192], 960 * MIB],
+    ["medium", 3, 4096, [8192, 8192, 4096], 960 * MIB],
+    // Twice the map size would be the whole atlas: the first cascade keeps the map size.
+    ["high", 4, 8192, [8192, 8192, 8192, 4096], 768 * MIB],
+    ["ultra", 4, 8192, [8192, 8192, 4096, 4096], 768 * MIB],
+  ] as const;
+
+  it.each(levels)("grows the %s atlas to 16384 for the sun's %i cascades at 8192", (profile, cascades, levelEdge, tiles, exempt) => {
+    const sun = new DirectionalLight("sun", Vector3.Down(), scene());
+    const result = plan([sun], levelEdge, 2048, { mapSize: 8192, cascades, profile }, 16384);
+    expect(result.atlasEdge).toBe(16384);
+    expect(result.decisions.map(({ status, mapSize, reason }) => [status, mapSize, reason])).toEqual([["active", 8192, null]]);
+    expect(cascadeTileSizes(8192, cascades, SHADOW_HALF_TILE_CASCADES[profile], SHADOW_FIRST_CASCADE_SCALE[profile], result.atlasEdge))
+      .toEqual(tiles);
+    expect(result.admitted).toMatchObject({ bytes: 1024 * MIB, exempt });
+  });
+
+  // Low and Medium's atlas still grows to 8192 for 4096 cascades.
+  it.each(levels.map(([profile, cascades, levelEdge], index) => [profile, cascades, levelEdge, index < 2 ? 192 * MIB : 0] as const))(
+    "falls back to 4096 at %s where the device makes no 16384 atlas", (profile, cascades, levelEdge, exempt) => {
+      const sun = new DirectionalLight("sun", Vector3.Down(), scene());
+      const result = plan([sun], levelEdge, 2048, { mapSize: 8192, cascades, profile }, 8192);
+      expect(result.atlasEdge).toBe(8192);
+      expect(result.decisions.map(({ status, mapSize, reason }) => [status, mapSize, reason]))
+        .toEqual([["active", 4096, "shadow map reduced by shadow atlas space"]]);
+      expect(result.admitted).toMatchObject({ bytes: 256 * MIB, exempt });
+    });
+
+  it("grows the atlas only as far as the sun's tiles need, and not without a sun", () => {
+    const host = scene();
+    const sun = new DirectionalLight("sun", Vector3.Down(), host);
+    // High's Custom 4096 cascades fit its own 8192 atlas, the first at the map size; Low's grow its atlas to 8192.
+    const high = plan([sun], 8192, 2048, { mapSize: 4096, cascades: 4, profile: "high" }, 16384);
+    expect([high.atlasEdge, high.decisions[0]!.mapSize, high.admitted.exempt]).toEqual([8192, 4096, 0]);
+    const low = plan([sun], 4096, 512, { mapSize: 4096, cascades: 2, profile: "low" }, 16384);
+    expect([low.atlasEdge, low.decisions[0]!.mapSize, low.admitted.exempt]).toEqual([8192, 4096, 192 * MIB]);
+    // Local maps never grow it.
+    const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, host);
+    const local = plan([spot], 8192, 2048, { mapSize: 8192, cascades: 4, profile: "high" }, 16384);
+    expect([local.atlasEdge, local.admitted]).toEqual([8192, { bytes: 256 * MIB, passes: 1, exempt: 0 }]);
+  });
+
+  it("keeps the level's local lights beside the sun's 8192 cascades, halving the sun for point lights past their room", () => {
+    const host = scene();
+    const sun = new DirectionalLight("sun", Vector3.Down(), host);
+    const high = { mapSize: 8192, cascades: 4, profile: "high" } as const;
+    // High's cascades leave three 4096 quadrants: its four 2048 spot tiles fit.
+    const spots = [0, 1, 2, 3].map((index) => new SpotLight(`spot ${index}`, new Vector3(index, 4, 0), Vector3.Down(), 1, 2, host));
+    expect(plan([sun, ...spots], 8192, 2048, high, 16384).decisions.map(({ mapSize }) => mapSize)).toEqual([8192, 2048, 2048, 2048, 2048]);
+    // Four point lights' 24 faces (100.7 Mtexels) take the reserve: the sun halves to 4096, its first cascade at twice that.
+    const lamps = [0, 1, 2, 3].map((index) => new PointLight(`lamp ${index}`, new Vector3(index * 3, 2, 0), host));
+    const points = plan([sun, ...lamps], 8192, 2048, high, 16384);
+    expect([points.atlasEdge, ...points.decisions.map(({ mapSize }) => mapSize)]).toEqual([16384, 4096, 2048, 2048, 2048, 2048]);
+    expect(cascadeTileSizes(4096, 4, 1, 2, 16384)).toEqual([8192, 4096, 4096, 2048]);
+  });
+
+  it("halves the first cascade's scale while its tile would be wider than half the atlas, never below the map size", () => {
+    // High's own 2048 keeps twice the edge in its 8192 atlas; a 4096 there keeps the map size, as does any single cascade.
+    expect([cascadeTileSizes(2048, 4, 1, 2, 8192), cascadeTileSizes(4096, 4, 1, 2, 8192), cascadeTileSizes(8192, 1, 1, 2, 8192)])
+      .toEqual([[4096, 2048, 2048, 1024], [4096, 4096, 4096, 2048], [8192]]);
   });
 });

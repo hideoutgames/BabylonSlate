@@ -57,7 +57,10 @@ export type AllocationKey = {
   readonly atlasEdge: number;
   /** A sun's last cascades with half-edge tiles (`SHADOW_HALF_TILE_CASCADES`); 0 for any other map. */
   readonly halfTiles: number;
-  /** A sun's first cascade tile edge over its map size (`SHADOW_FIRST_CASCADE_SCALE`); 1 for any other map. */
+  /**
+   * A sun's first cascade tile edge over its map size as the level sets it (`SHADOW_FIRST_CASCADE_SCALE`; the clamp
+   * `cascadeTileSizes` applies follows from `mapSize` and `atlasEdge`); 1 for any other map.
+   */
   readonly firstTileScale: number;
 };
 

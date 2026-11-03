@@ -270,6 +270,9 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
       ["Hardware Scaling Level", "setting-hardware-scale"],
       ["Post-Processing", "setting-post-processing"],
     ]],
+    ["culling", "Culling", [
+      ["Occlusion Culling", "setting-viewport-occlusion-culling"],
+    ]],
     ["frameRate", "Frame Rate", [
       ["Viewport Frame Cap", "setting-frame-cap"],
       ["Camera Preview Frame Rate", "setting-camera-preview-frame-rate"],
