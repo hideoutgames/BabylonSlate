@@ -10,6 +10,7 @@ import {
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   BrushIcon,
+  ChevronDownIcon,
   EraserIcon,
   Grid3x3Icon,
   LayoutTemplateIcon,
@@ -99,6 +100,7 @@ import {
   ensureTilesetTiles,
   normalizeTilesetPayload,
   removeTileFromAutotile,
+  setTilesetTerrains,
   tilePlaceholderHsl,
   tilesetAtlasColumns,
   tilesetAtlasRows,
@@ -111,7 +113,7 @@ import {
   type TilesetPayload,
   type TilesetTerrain,
   type TilesetTerrainStyle,
-  type TilesetTile,
+  type AutotileSandboxTile,
 } from "@haptic/assets";
 import { useDocumentActions, useOpenDocument } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -265,6 +267,7 @@ export function TileSwatch({
     <span
       aria-hidden
       data-testid={testId}
+      data-tile-id={tileId}
       className={cn("block shrink-0 overflow-hidden rounded-md ring-1 ring-border", className)}
       style={{
         backgroundImage: "conic-gradient(var(--muted) 0.25turn, var(--background) 0.25turn 0.5turn, var(--muted) 0.5turn 0.75turn, var(--background) 0.75turn)",
@@ -310,10 +313,9 @@ export function TilesetAutotilesPanel(_props: IDockviewPanelProps) {
   );
 }
 
-function withoutTerrain(tile: TilesetTile): TilesetTile {
-  const next = { ...tile };
-  delete next.terrain;
-  return next;
+/** Identity of one piece set in the window's choices: the autotile and its border (empty for the default set). */
+function pieceSetKey(terrainId: string, border: string | undefined): string {
+  return `${terrainId}\u0000${border ?? ""}`;
 }
 
 function uniqueAutotileName(terrains: readonly TilesetTerrain[]): string {
@@ -400,29 +402,63 @@ export function TilesetAutotiles({
   const setSelectedAutotileId = editing?.setSelectedAutotileId ?? setLocalAutotileId;
   const autotile = terrains.find((terrain) => terrain.id === selectedAutotileId) ?? terrains[0] ?? null;
   const style = autotile?.style ?? "sides";
-  const set = useMemo<AutotilePieceSet | null>(() => (autotile ? { terrainId: autotile.id } : null), [autotile]);
+  const terrainName = (id: string) => terrains.find((terrain) => terrain.id === id)?.name ?? id;
+  // The set being edited: the autotile's default set, or one of its borders.
+  const [borderChoice, setBorderChoice] = useState<{ autotileId: string; border: string | null } | null>(null);
+  const declaredBorders = useMemo(() => autotile?.borders ?? [], [autotile]);
+  const border = autotile && borderChoice?.autotileId === autotile.id && borderChoice.border !== null
+    && declaredBorders.includes(borderChoice.border)
+    ? borderChoice.border
+    : undefined;
+  const set = useMemo<AutotilePieceSet | null>(
+    () => (autotile ? (border === undefined ? { terrainId: autotile.id } : { terrainId: autotile.id, border }) : null),
+    [autotile, border],
+  );
+  const setKey = autotile ? pieceSetKey(autotile.id, border) : "";
+  /** The set's part of a merge key. */
+  const setMergeKey = border ?? "default";
   const preview = useTexturePreview(tileset.textureGuid);
   const imageUrl = preview.url ?? null;
 
   const pieces = useMemo(() => (set ? autotilePieceTiles(tileset, set) : new Map<number, number[]>()), [set, tileset]);
   const covered = pieces.size;
+  const setTileCount = [...pieces.values()].reduce((count, ids) => count + ids.length, 0);
   const total = terrainVariantMasks(style).length;
   const resolver = useMemo(() => (autotile ? createTerrainResolver(tileset, autotile.id) : null), [autotile, tileset]);
 
-  // Slot and picked-tile choices belong to one autotile; another autotile starts on its first empty piece.
-  const [slotChoice, setSlotChoice] = useState<{ autotileId: string; mask: number | null } | null>(null);
-  const [pickChoice, setPickChoice] = useState<{ autotileId: string; tileId: number } | null>(null);
+  // Slot and picked-tile choices belong to one set; another set starts on its first empty piece.
+  const [slotChoice, setSlotChoice] = useState<{ setKey: string; mask: number | null } | null>(null);
+  const [pickChoice, setPickChoice] = useState<{ setKey: string; tileId: number } | null>(null);
   const selectedMask = autotile
-    ? slotChoice?.autotileId === autotile.id ? slotChoice.mask : nextEmptySlot(style, pieces, null)
+    ? slotChoice?.setKey === setKey ? slotChoice.mask : nextEmptySlot(style, pieces, null)
     : null;
-  const pickedTileId = autotile && pickChoice?.autotileId === autotile.id ? pickChoice.tileId : null;
+  const pickedTileId = autotile && pickChoice?.setKey === setKey ? pickChoice.tileId : null;
   const selectSlot = (mask: number | null) => {
-    if (autotile) setSlotChoice({ autotileId: autotile.id, mask });
+    if (autotile) setSlotChoice({ setKey, mask });
   };
-  const pickTile = (tileId: number | null) => setPickChoice(autotile && tileId !== null ? { autotileId: autotile.id, tileId } : null);
+  const pickTile = (tileId: number | null) => setPickChoice(autotile && tileId !== null ? { setKey, tileId } : null);
 
-  const [placement, setPlacement] = useState<{ autotileId: string; template: AutotileTemplate; anchor: number; refused: boolean } | null>(null);
-  const activePlacement = placement && placement.autotileId === autotile?.id ? placement : null;
+  const [placement, setPlacement] = useState<{ setKey: string; template: AutotileTemplate; anchor: number; refused: boolean } | null>(null);
+  const activePlacement = placement && placement.setKey === setKey ? placement : null;
+
+  // Test paint's map: the current set's sample until the user paints; picking an autotile or set seeds it again.
+  const [sandboxCells, setSandboxCells] = useState<ReadonlyMap<string, string> | null>(null);
+  const sampleCells = useMemo(
+    () => new Map(set ? autotileSandboxSample(style, set).map((cell) => [`${cell.x},${cell.y}`, cell.terrainId] as const) : []),
+    [set, style],
+  );
+  const testCells = sandboxCells ?? sampleCells;
+  const selectAutotile = (id: string) => {
+    setSelectedAutotileId(id);
+    setSandboxCells(null);
+    setPlacement(null);
+  };
+  const selectBorder = (next: string | null) => {
+    if (!autotile) return;
+    setBorderChoice({ autotileId: autotile.id, border: next });
+    setSandboxCells(null);
+    setPlacement(null);
+  };
   const placementResult = useMemo(
     () => (activePlacement && set ? applyAutotileTemplate(tileset, set, activePlacement.template, activePlacement.anchor) : null),
     [activePlacement, set, tileset],
@@ -435,6 +471,7 @@ export function TilesetAutotiles({
   const [renameOpen, setRenameOpen] = useState(false);
   const [layoutTarget, setLayoutTarget] = useState<TilesetTerrainStyle | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [removeBorderOpen, setRemoveBorderOpen] = useState(false);
 
   const commit = (next: TilesetPayload, mergeKey: string): boolean => {
     if (next === tileset) return false;
@@ -442,14 +479,12 @@ export function TilesetAutotiles({
     return true;
   };
 
-  /** Replace the autotile list; tiles of a removed autotile leave it in the same edit. */
+  /**
+   * Replace the autotile list. Tiles of a removed autotile or border, and
+   * other autotiles' borders into a removed autotile, go in the same edit.
+   */
   const commitTerrains = (next: TilesetTerrain[], mergeKey: string) => {
-    const kept = new Set(next.map((terrain) => terrain.id));
-    const tiles = tileset.tiles.map((tile) => (tile.terrain && !kept.has(tile.terrain.id) ? withoutTerrain(tile) : tile));
-    const nextTileset: TilesetPayload = { ...tileset, tiles, terrains: next };
-    // A Tileset without autotiles saves without the key.
-    if (next.length === 0) delete nextTileset.terrains;
-    commit(nextTileset, mergeKey);
+    commit(setTilesetTerrains(tileset, next), mergeKey);
   };
 
   const createAutotile = (name: string, nextStyle: TilesetTerrainStyle) => {
@@ -458,10 +493,9 @@ export function TilesetAutotiles({
     while (ids.has(`terrain-${index}`)) index += 1;
     const id = `terrain-${index}`;
     commitTerrains([...terrains, { id, name, style: nextStyle }], `tileset:autotile:${id}:create`);
-    setSelectedAutotileId(id);
+    selectAutotile(id);
     setSlotChoice(null);
     setPickChoice(null);
-    setPlacement(null);
   };
 
   const patchAutotile = (patch: Partial<TilesetTerrain>, mergeKey: string) => {
@@ -474,7 +508,14 @@ export function TilesetAutotiles({
     patchAutotile({ style: nextStyle }, `tileset:autotile:${autotile.id}:layout:${nextStyle}`);
     setSlotChoice(null);
     setPlacement(null);
+    setSandboxCells(null);
   };
+
+  /** Tiles that leave autotiles when this one is deleted: its own, and other autotiles' tiles drawn against it. */
+  const deletedTileCount = autotile
+    ? tileset.tiles.filter((tile) => tile.terrain && (tile.terrain.id === autotile.id || tile.terrain.border === autotile.id)).length
+    : 0;
+  const autotileTileCount = autotile ? tileset.tiles.filter((tile) => tile.terrain?.id === autotile.id).length : 0;
 
   const deleteAutotile = () => {
     if (!autotile) return;
@@ -483,25 +524,56 @@ export function TilesetAutotiles({
     commitTerrains(remaining, `tileset:autotile:${autotile.id}:delete`);
     setSelectedAutotileId(remaining[Math.min(index, remaining.length - 1)]?.id ?? null);
     setPlacement(null);
+    setSandboxCells(null);
+  };
+
+  /** Other autotiles this one has no border for yet. */
+  const borderCandidates = autotile
+    ? terrains.filter((terrain) => terrain.id !== autotile.id && !declaredBorders.includes(terrain.id))
+    : [];
+
+  const addBorder = (other: string) => {
+    if (!autotile || declaredBorders.includes(other)) return;
+    patchAutotile({ borders: [...declaredBorders, other] }, `tileset:autotile:${autotile.id}:border-add:${other}`);
+    selectBorder(other);
+  };
+
+  const removeBorder = () => {
+    if (!autotile || border === undefined) return;
+    patchAutotile(
+      { borders: declaredBorders.filter((entry) => entry !== border) },
+      `tileset:autotile:${autotile.id}:border-remove:${border}`,
+    );
+    selectBorder(null);
   };
 
   const assign = (mask: number, tileId: number) => {
     if (!autotile || !set) return;
     const next = assignAutotilePiece(tileset, set, mask, tileId);
-    commit(next, `tileset:autotile:${autotile.id}:piece:${mask}:${tileId}`);
-    setSlotChoice({ autotileId: autotile.id, mask: nextEmptySlot(style, autotilePieceTiles(next, set), mask) });
+    commit(next, `tileset:autotile:${autotile.id}:piece:${setMergeKey}:${mask}:${tileId}`);
+    setSlotChoice({ setKey, mask: nextEmptySlot(style, autotilePieceTiles(next, set), mask) });
     setPickChoice(null);
   };
 
   const clearPiece = (mask: number) => {
     if (!autotile || !set) return;
-    commit(clearAutotilePiece(tileset, set, mask), `tileset:autotile:${autotile.id}:clear:${mask}`);
+    commit(clearAutotilePiece(tileset, set, mask), `tileset:autotile:${autotile.id}:clear:${setMergeKey}:${mask}`);
     selectSlot(mask);
   };
 
   const removeTile = (tileId: number) => {
     if (!autotile || !set) return;
-    commit(removeTileFromAutotile(tileset, set, tileId), `tileset:autotile:${autotile.id}:remove:${tileId}`);
+    commit(removeTileFromAutotile(tileset, set, tileId), `tileset:autotile:${autotile.id}:remove:${setMergeKey}:${tileId}`);
+  };
+
+  /** Test paint's Pick: the cell's autotile, set and piece, keeping the test map as it is. */
+  const pickFromTestPaint = (cell: AutotileSandboxTile) => {
+    setSandboxCells(testCells);
+    setSelectedAutotileId(cell.terrainId);
+    setBorderChoice({ autotileId: cell.terrainId, border: cell.border ?? null });
+    setPlacement(null);
+    setPickChoice(null);
+    if (cell.want !== null) setSlotChoice({ setKey: pieceSetKey(cell.terrainId, cell.border), mask: cell.want });
   };
 
   const showOnSheet = (mask: number) => {
@@ -517,7 +589,7 @@ export function TilesetAutotiles({
     const candidates = [pickedTileId, selectedMask !== null ? pieces.get(selectedMask)?.[0] : undefined, 1];
     const anchor = candidates.find((tileId): tileId is number =>
       typeof tileId === "number" && autotileTemplatePlacement(tileset, template, tileId) !== null) ?? 1;
-    setPlacement({ autotileId: autotile.id, template, anchor, refused: false });
+    setPlacement({ setKey, template, anchor, refused: false });
     sheetRef.current?.scrollIntoView?.({ block: "nearest" });
   };
 
@@ -525,10 +597,10 @@ export function TilesetAutotiles({
     if (!autotile || !set || !activePlacement || !placementResult) return;
     commit(
       placementResult.next,
-      `tileset:autotile:${autotile.id}:template:${activePlacement.template.id}:${activePlacement.anchor}`,
+      `tileset:autotile:${autotile.id}:template:${setMergeKey}:${activePlacement.template.id}:${activePlacement.anchor}`,
     );
     setPlacement(null);
-    setSlotChoice({ autotileId: autotile.id, mask: nextEmptySlot(style, autotilePieceTiles(placementResult.next, set), null) });
+    setSlotChoice({ setKey, mask: nextEmptySlot(style, autotilePieceTiles(placementResult.next, set), null) });
   };
 
   const placedTileIds = useMemo(
@@ -710,7 +782,7 @@ export function TilesetAutotiles({
           <Select
             value={autotile.id}
             onValueChange={(value) => {
-              if (typeof value === "string") setSelectedAutotileId(value);
+              if (typeof value === "string" && value !== autotile.id) selectAutotile(value);
             }}
             items={terrains.map((terrain) => ({ value: terrain.id, label: terrain.name }))}
           >
@@ -733,6 +805,66 @@ export function TilesetAutotiles({
               </SelectGroup>
             </SelectContent>
           </Select>
+        ) : null}
+        {autotile ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={cn("max-w-48", TOUCH)}
+                  aria-label={`Border, ${border === undefined ? "No Border" : `Into ${terrainName(border)}`}`}
+                  data-testid="tileset-autotiles-border"
+                />
+              }
+            >
+              <span className="truncate">{border === undefined ? "No Border" : `Into ${terrainName(border)}`}</span>
+              <ChevronDownIcon data-icon="inline-end" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-48" data-testid="tileset-autotiles-border-menu">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Border</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={border ?? ""}
+                  onValueChange={(value) => {
+                    const next = typeof value === "string" && value !== "" ? value : null;
+                    if (next !== (border ?? null)) selectBorder(next);
+                  }}
+                >
+                  <DropdownMenuRadioItem value="" data-testid="tileset-autotiles-border-none">
+                    No Border
+                  </DropdownMenuRadioItem>
+                  {declaredBorders.map((id) => (
+                    <DropdownMenuRadioItem key={id} value={id} data-testid={`tileset-autotiles-border-${id}`}>
+                      Into {terrainName(id)}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Add Border</DropdownMenuLabel>
+                {borderCandidates.length > 0 ? (
+                  borderCandidates.map((terrain) => (
+                    <DropdownMenuItem
+                      key={terrain.id}
+                      onClick={() => addBorder(terrain.id)}
+                      data-testid={`tileset-autotiles-add-border-${terrain.id}`}
+                    >
+                      <PlusIcon />
+                      Into {terrain.name}
+                    </DropdownMenuItem>
+                  ))
+                ) : (
+                  <DropdownMenuItem disabled data-testid="tileset-autotiles-add-border-none">
+                    {terrains.length > 1 ? "Every Autotile Has A Border" : "Needs Another Autotile"}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : null}
         <Button
           type="button"
@@ -776,7 +908,7 @@ export function TilesetAutotiles({
                   onValueChange={(value) => {
                     const next = value as TilesetTerrainStyle;
                     if (next === autotile.style) return;
-                    if (covered > 0) setLayoutTarget(next);
+                    if (autotileTileCount > 0) setLayoutTarget(next);
                     else changeLayout(next);
                   }}
                 >
@@ -790,10 +922,23 @@ export function TilesetAutotiles({
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
+                {border !== undefined ? (
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => {
+                      if (setTileCount > 0) setRemoveBorderOpen(true);
+                      else removeBorder();
+                    }}
+                    data-testid="tileset-autotiles-remove-border"
+                  >
+                    <Trash2Icon />
+                    Remove Border
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem
                   variant="destructive"
                   onClick={() => {
-                    if (covered > 0) setDeleteOpen(true);
+                    if (deletedTileCount > 0) setDeleteOpen(true);
                     else deleteAutotile();
                   }}
                   data-testid="tileset-autotiles-delete"
@@ -820,7 +965,9 @@ export function TilesetAutotiles({
             data-testid="tileset-autotiles-board"
           >
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <h3 className="text-xs font-semibold">Pieces</h3>
+              <h3 className="text-xs font-semibold">
+                {border === undefined ? "Pieces" : `Pieces Into ${terrainName(border)}`}
+              </h3>
               <span className="text-xs text-muted-foreground tabular-nums" data-testid="tileset-autotiles-coverage">
                 {covered} of {total} Pieces
               </span>
@@ -838,7 +985,9 @@ export function TilesetAutotiles({
                 <EmptyHeader className="gap-1">
                   <EmptyTitle className="text-xs">No Pieces Yet</EmptyTitle>
                   <EmptyDescription className="text-xs">
-                    Fill the board from a template that matches your sheet, or pick a piece and tap its tile.
+                    {border === undefined
+                      ? "Fill the board from a template that matches your sheet, or pick a piece and tap its tile."
+                      : `Assign the pieces ${autotile.name} draws where it meets ${terrainName(border)}. Until it has some, painting uses the ordinary pieces.`}
                   </EmptyDescription>
                 </EmptyHeader>
               </Empty>
@@ -846,7 +995,7 @@ export function TilesetAutotiles({
             <div
               ref={boardRef}
               role="group"
-              aria-label={`${autotile.name} Pieces`}
+              aria-label={border === undefined ? `${autotile.name} Pieces` : `${autotile.name} Pieces Into ${terrainName(border)}`}
               className="flex gap-1.5 overflow-x-auto pb-1 touch-pan-x touch-pan-y"
               onPointerDownCapture={rememberMenuSlot}
               onContextMenuCapture={rememberMenuSlot}
@@ -860,7 +1009,7 @@ export function TilesetAutotiles({
                     if (mask === null) return [<span key={`empty-${at}`} aria-hidden className={SLOT} />];
                     const tiles = pieces.get(mask) ?? [];
                     const tileId = tiles[0] ?? null;
-                    const standIn = tileId === null ? resolver?.resolve(mask) ?? null : null;
+                    const standIn = tileId === null ? resolver?.resolve(mask, border) ?? null : null;
                     const selected = selectedMask === mask;
                     const focusable = mask === (selectedMask ?? layout.masks.find((entry) => entry !== null));
                     return [
@@ -1005,15 +1154,14 @@ export function TilesetAutotiles({
           </section>
 
           <AutotileTestPaint
-            key={`${autotile.id}:${style}`}
             tileset={tileset}
-            set={set}
-            style={style}
+            terrains={terrains}
+            cells={testCells}
+            defaultBrush={autotile.id}
             imageUrl={imageUrl}
-            onPick={(want) => {
-              pickTile(null);
-              selectSlot(want);
-            }}
+            onCellsChange={setSandboxCells}
+            onReset={() => setSandboxCells(null)}
+            onPick={pickFromTestPaint}
           />
         </div>
       ) : (
@@ -1064,7 +1212,10 @@ export function TilesetAutotiles({
           <AlertDialogContent data-testid="tileset-autotiles-layout-dialog">
             <AlertDialogHeader>
               <AlertDialogTitle>Change Layout to {STYLE_NAMES[layoutTarget]}</AlertDialogTitle>
-              <AlertDialogDescription>{layoutChangeMessage(tileset, set, layoutTarget)}</AlertDialogDescription>
+              <AlertDialogDescription>
+                {layoutChangeMessage(tileset, set, layoutTarget)}
+                {declaredBorders.length > 0 ? " Its borders keep their tiles too." : ""}
+              </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel size="sm">Cancel</AlertDialogCancel>
@@ -1091,7 +1242,8 @@ export function TilesetAutotiles({
               </AlertDialogMedia>
               <AlertDialogTitle>Delete {autotile.name}</AlertDialogTitle>
               <AlertDialogDescription>
-                Its tiles leave the autotile; Tilemaps keep the tiles already painted. You can undo this.
+                {deletedTileCount === 1 ? "1 tile leaves" : `${deletedTileCount} tiles leave`} the autotile and other
+                autotiles&apos; borders into it; Tilemaps keep the tiles already painted. You can undo this.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -1106,6 +1258,36 @@ export function TilesetAutotiles({
                 data-testid="tileset-autotiles-delete-confirm"
               >
                 Delete Autotile
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
+      {autotile && border !== undefined && removeBorderOpen ? (
+        <AlertDialog open onOpenChange={setRemoveBorderOpen}>
+          <AlertDialogContent data-testid="tileset-autotiles-remove-border-dialog">
+            <AlertDialogHeader>
+              <AlertDialogMedia className="bg-destructive/10 text-destructive">
+                <Trash2Icon />
+              </AlertDialogMedia>
+              <AlertDialogTitle>Remove Border Into {terrainName(border)}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {setTileCount === 1 ? "Its 1 tile leaves" : `Its ${setTileCount} tiles leave`} {autotile.name}. You can undo
+                this.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel size="sm">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  removeBorder();
+                  setRemoveBorderOpen(false);
+                }}
+                data-testid="tileset-autotiles-remove-border-confirm"
+              >
+                Remove Border
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -1237,36 +1419,43 @@ function cellsBetween(from: { x: number; y: number }, to: { x: number; y: number
 }
 
 /**
- * Test Paint: a small map painted with the autotile exactly as a Tilemap brush
- * would, prefilled with shapes that use most pieces. Local to the window and
- * never saved.
+ * Test Paint: a small map painted exactly as a Tilemap brush would, with any
+ * autotile of the Tileset, so both sides of a border can be tried. The window
+ * owns the map (`cells`: `x,y` → autotile id); it is never saved.
  */
 function AutotileTestPaint({
   tileset,
-  set,
-  style,
+  terrains,
+  cells,
+  defaultBrush,
   imageUrl,
+  onCellsChange,
+  onReset,
   onPick,
 }: {
   tileset: TilesetPayload;
-  set: AutotilePieceSet;
-  style: TilesetTerrainStyle;
+  terrains: readonly TilesetTerrain[];
+  cells: ReadonlyMap<string, string>;
+  /** The autotile Paint uses until another is chosen: the one the window edits. */
+  defaultBrush: string;
   imageUrl: string | null;
-  onPick: (want: number) => void;
+  onCellsChange: (cells: ReadonlyMap<string, string>) => void;
+  onReset: () => void;
+  onPick: (cell: AutotileSandboxTile) => void;
 }) {
-  const sample = useMemo(() => new Set(autotileSandboxSample(style).map(cellKey)), [style]);
-  const [cells, setCells] = useState<ReadonlySet<string>>(sample);
   const [tool, setTool] = useState<TestPaintTool>("paint");
+  const [brushChoice, setBrushChoice] = useState<string | null>(null);
+  const brush = brushChoice !== null && terrains.some((terrain) => terrain.id === brushChoice) ? brushChoice : defaultBrush;
   const tiles = useMemo(
-    () => autotileSandboxTiles(tileset, set, [...cells].map((key) => {
+    () => autotileSandboxTiles(tileset, [...cells].map(([key, terrainId]) => {
       const [x, y] = key.split(",").map(Number);
-      return { x: x!, y: y! };
+      return { x: x!, y: y!, terrainId };
     }), SANDBOX_SIZE),
-    [cells, set, tileset],
+    [cells, tileset],
   );
   const standIns = [...tiles.values()].filter((tile) => tile.standIn).length;
   const gridRef = useRef<HTMLDivElement>(null);
-  const strokeRef = useRef<{ pointerId: number; last: { x: number; y: number } } | null>(null);
+  const strokeRef = useRef<{ pointerId: number; last: { x: number; y: number }; cells: ReadonlyMap<string, string> } | null>(null);
 
   const cellAt = (event: ReactPointerEvent): { x: number; y: number } | null => {
     const rect = gridRef.current?.getBoundingClientRect();
@@ -1276,15 +1465,17 @@ function AutotileTestPaint({
     if (column < 0 || row < 0 || column >= SANDBOX_SIZE.width || row >= SANDBOX_SIZE.height) return null;
     return { x: column, y: SANDBOX_SIZE.height - 1 - row };
   };
-  const paint = (changes: Array<{ x: number; y: number }>) => {
-    setCells((current) => {
-      const next = new Set(current);
-      for (const cell of changes) {
-        if (tool === "paint") next.add(cellKey(cell));
-        else next.delete(cellKey(cell));
-      }
-      return next.size === current.size && [...next].every((key) => current.has(key)) ? current : next;
-    });
+  /** Paint or erase `changes` on top of `base`; reports and returns the new map, or `base` when nothing changed. */
+  const paint = (base: ReadonlyMap<string, string>, changes: Array<{ x: number; y: number }>) => {
+    const next = new Map(base);
+    for (const cell of changes) {
+      if (tool === "paint") next.set(cellKey(cell), brush);
+      else next.delete(cellKey(cell));
+    }
+    const changed = next.size !== base.size || [...next].some(([key, terrainId]) => base.get(key) !== terrainId);
+    if (!changed) return base;
+    onCellsChange(next);
+    return next;
   };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1294,7 +1485,7 @@ function AutotileTestPaint({
     event.preventDefault();
     if (tool === "pick") {
       const tile = tiles.get(cellKey(cell));
-      if (tile) onPick(tile.want);
+      if (tile) onPick(tile);
       return;
     }
     try {
@@ -1302,15 +1493,15 @@ function AutotileTestPaint({
     } catch {
       // Synthetic pointers (tests) have no active pointer to capture.
     }
-    strokeRef.current = { pointerId: event.pointerId, last: cell };
-    paint([cell]);
+    // A stroke builds on its own map, so moves that arrive before a re-render keep each other.
+    strokeRef.current = { pointerId: event.pointerId, last: cell, cells: paint(cells, [cell]) };
   };
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const stroke = strokeRef.current;
     if (!stroke || stroke.pointerId !== event.pointerId) return;
     const cell = cellAt(event);
     if (!cell || (cell.x === stroke.last.x && cell.y === stroke.last.y)) return;
-    paint(cellsBetween(stroke.last, cell));
+    stroke.cells = paint(stroke.cells, cellsBetween(stroke.last, cell));
     stroke.last = cell;
   };
   const endStroke = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1350,12 +1541,42 @@ function AutotileTestPaint({
             Pick
           </ToggleGroupItem>
         </ToggleGroup>
+        {terrains.length > 1 ? (
+          <Select
+            value={brush}
+            onValueChange={(value) => {
+              if (typeof value === "string") setBrushChoice(value);
+            }}
+            items={terrains.map((terrain) => ({ value: terrain.id, label: terrain.name }))}
+          >
+            <SelectTrigger
+              size="sm"
+              aria-label="Test Paint Autotile"
+              className="max-w-40 min-w-24 pointer-coarse:h-11"
+              data-testid="tileset-autotiles-test-brush"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {terrains.map((terrain) => (
+                  <SelectItem key={terrain.id} value={terrain.id} data-testid={`tileset-autotiles-test-brush-${terrain.id}`}>
+                    {terrain.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
           size="sm"
           className={cn("ml-auto", TOUCH)}
-          onClick={() => setCells(sample)}
+          onClick={() => {
+            setBrushChoice(null);
+            onReset();
+          }}
           data-testid="tileset-autotiles-test-reset"
         >
           <RotateCcwIcon data-icon="inline-start" />
@@ -1387,7 +1608,9 @@ function AutotileTestPaint({
                 key={`${x},${y}`}
                 className="relative min-w-0"
                 data-testid={`tileset-autotiles-test-cell-${x}-${y}`}
+                data-terrain={tile?.terrainId}
                 data-tile-id={tile?.tileId ?? 0}
+                data-border={tile?.border}
                 data-stand-in={tile?.standIn ? "true" : undefined}
               >
                 {tile && tile.tileId > 0 ? (
@@ -1402,7 +1625,7 @@ function AutotileTestPaint({
                   <span aria-hidden className="absolute inset-0 bg-muted-foreground/40" />
                 ) : null}
                 {tile?.standIn ? (
-                  <span aria-hidden className="pointer-events-none absolute inset-0 shadow-[inset_0_0_0_2px_var(--warning)]" />
+                  <span aria-hidden className="pointer-events-none absolute inset-px border border-dashed border-(--warning)" />
                 ) : null}
               </span>
             );

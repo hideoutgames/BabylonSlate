@@ -41,7 +41,7 @@ function sheet(
   columns: number,
   rows: number,
   terrains: TilesetTerrain[] = [],
-  members: Record<number, { id: string; mask: number }> = {},
+  members: Record<number, { id: string; mask: number; border?: string }> = {},
 ): Record<string, unknown> {
   const base = ensureTilesetTiles(normalizeTilesetPayload({
     atlasWidth: columns * 16,
@@ -98,6 +98,19 @@ const slot = (mask: number) => screen.getByTestId(`tileset-autotiles-slot-${mask
 const cell = (tileId: number) => screen.getByTestId(`tileset-autotiles-sheet-cell-${tileId}`);
 const pressed = (element: HTMLElement) => element.getAttribute("aria-pressed") === "true";
 
+/** Press the test map's cell at map coordinates (+Y up) on a 10 px grid. */
+function press(x: number, y: number, pointerId = 1) {
+  const map = screen.getByTestId("tileset-autotiles-test-map");
+  map.getBoundingClientRect = () => ({ left: 0, top: 0, width: 140, height: 90 }) as DOMRect;
+  const point = { pointerId, clientX: x * 10 + 5, clientY: (8 - y) * 10 + 5 };
+  act(() => dispatchPointerEvent(map, "pointerdown", point));
+  return {
+    to: (nx: number, ny: number) =>
+      act(() => dispatchPointerEvent(map, "pointermove", { pointerId, clientX: nx * 10 + 5, clientY: (8 - ny) * 10 + 5 })),
+    up: () => act(() => dispatchPointerEvent(map, "pointerup", point)),
+  };
+}
+
 describe("TilesetAutotiles", () => {
   it("creates an autotile with its Layout chosen up front and starts on its first piece", () => {
     const { onChange, last } = renderWindow(sheet(4, 4));
@@ -135,7 +148,7 @@ describe("TilesetAutotiles", () => {
     expect(pressed(slot(E | S))).toBe(true);
     fireEvent.click(cell(5));
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.lastCall![1]).toBe(`tileset:autotile:ground:piece:${E | S}:5`);
+    expect(onChange.mock.lastCall![1]).toBe(`tileset:autotile:ground:piece:default:${E | S}:5`);
     // 4 Sides pieces store their corners filled.
     expect(members()).toEqual([[5, "ground", E | S | SE], [16, "water", 0]]);
     expect(slot(E | S).getAttribute("data-tile-id")).toBe("5");
@@ -168,7 +181,7 @@ describe("TilesetAutotiles", () => {
     expect(pressed(cell(9))).toBe(true);
     expect(screen.getByTestId("tileset-autotiles-status").textContent).toBe("Tile 9: tap a piece to assign it.");
     fireEvent.click(slot(N));
-    expect(onChange).toHaveBeenCalledExactlyOnceWith(expect.anything(), `tileset:autotile:ground:piece:${N}:9`);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(expect.anything(), `tileset:autotile:ground:piece:default:${N}:9`);
     expect(members()).toEqual([[9, "ground", N]]);
     expect(pressed(cell(9))).toBe(false);
   });
@@ -177,7 +190,7 @@ describe("TilesetAutotiles", () => {
     const { onChange, members } = renderWindow(sheet(4, 4, [GROUND_SIDES], sidesBlock()));
     fireEvent.contextMenu(slot(E | S));
     fireEvent.click(screen.getByRole("menuitem", { name: "Clear Piece" }));
-    expect(onChange.mock.lastCall![1]).toBe(`tileset:autotile:ground:clear:${E | S}`);
+    expect(onChange.mock.lastCall![1]).toBe(`tileset:autotile:ground:clear:default:${E | S}`);
     expect(members().map(([id]) => id)).not.toContain(1);
     expect(pressed(slot(E | S))).toBe(true);
 
@@ -198,7 +211,7 @@ describe("TilesetAutotiles", () => {
 
     fireEvent.contextMenu(cell(3));
     fireEvent.click(screen.getByRole("menuitem", { name: "Remove From Autotile" }));
-    expect(onChange.mock.lastCall![1]).toBe("tileset:autotile:ground:remove:3");
+    expect(onChange.mock.lastCall![1]).toBe("tileset:autotile:ground:remove:default:3");
     expect(members().map(([id]) => id)).not.toContain(3);
     // A tile outside the autotile has nothing to remove.
     fireEvent.contextMenu(cell(3));
@@ -242,7 +255,7 @@ describe("TilesetAutotiles", () => {
     expect(onChange).not.toHaveBeenCalled();
 
     fireEvent.click(apply);
-    expect(onChange).toHaveBeenCalledExactlyOnceWith(expect.anything(), "tileset:autotile:ground:template:island:1");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(expect.anything(), "tileset:autotile:ground:template:default:island:1");
     expect(members()).toEqual([
       [1, "ground", E | S | SE], [2, "ground", E | S | W | SE | SW], [3, "ground", S | W | SW],
       [7, "ground", N | E | S | NE | SE], [8, "ground", TERRAIN_ALL], [9, "ground", N | S | W | NW | SW],
@@ -263,18 +276,6 @@ describe("TilesetAutotiles", () => {
   });
 
   describe("Test Paint", () => {
-    /** Press the map's cell at map coordinates (+Y up) with a 10 px grid. */
-    const press = (x: number, y: number, pointerId = 1) => {
-      const map = screen.getByTestId("tileset-autotiles-test-map");
-      map.getBoundingClientRect = () => ({ left: 0, top: 0, width: 140, height: 90 }) as DOMRect;
-      const point = { pointerId, clientX: x * 10 + 5, clientY: (8 - y) * 10 + 5 };
-      act(() => dispatchPointerEvent(map, "pointerdown", point));
-      return {
-        to: (nx: number, ny: number) =>
-          act(() => dispatchPointerEvent(map, "pointermove", { pointerId, clientX: nx * 10 + 5, clientY: (8 - ny) * 10 + 5 })),
-        up: () => act(() => dispatchPointerEvent(map, "pointerup", point)),
-      };
-    };
     const tileAt = (x: number, y: number) => screen.getByTestId(`tileset-autotiles-test-cell-${x}-${y}`).getAttribute("data-tile-id");
 
     it("paints the sample with the pieces a Tilemap brush picks, and paints, erases and resets", () => {
@@ -336,21 +337,130 @@ describe("TilesetAutotiles", () => {
     expect(screen.getByTestId("tileset-autotiles-coverage").textContent).toBe("16 of 47 Pieces");
   });
 
-  it("renames and deletes an autotile, taking its tiles out of it", () => {
-    const { onChange, last } = renderWindow(sheet(4, 4, [GROUND_SIDES], sidesBlock()));
+  it("renames and deletes an autotile, taking its tiles and other autotiles' borders into it", () => {
+    // Water has a border into Ground, drawn by tile 17.
+    const { onChange, last } = renderWindow(sheet(4, 5, [GROUND_SIDES, { ...WATER, borders: ["ground"] }], {
+      ...sidesBlock(),
+      17: { id: "water", mask: 0, border: "ground" },
+    }));
     fireEvent.click(screen.getByTestId("tileset-autotiles-actions"));
     fireEvent.click(screen.getByTestId("tileset-autotiles-rename"));
     const rename = within(screen.getByTestId("tileset-autotiles-rename-dialog"));
     fireEvent.change(rename.getByLabelText("Name"), { target: { value: "Ledge" } });
     fireEvent.click(rename.getByRole("button", { name: "Rename" }));
-    expect(last().terrains).toEqual([{ ...GROUND_SIDES, name: "Ledge" }]);
+    expect(last().terrains![0]).toEqual({ ...GROUND_SIDES, name: "Ledge" });
 
     fireEvent.click(screen.getByTestId("tileset-autotiles-actions"));
     fireEvent.click(screen.getByTestId("tileset-autotiles-delete"));
+    expect(screen.getByTestId("tileset-autotiles-delete-dialog").textContent).toContain("17 tiles leave");
     fireEvent.click(screen.getByTestId("tileset-autotiles-delete-confirm"));
     expect(onChange.mock.lastCall![1]).toBe("tileset:autotile:ground:delete");
-    expect(last().terrains).toBeUndefined();
+    expect(last().terrains).toEqual([WATER]);
     expect(last().tiles.some((tile) => tile.terrain)).toBe(false);
-    expect(screen.getByTestId("tileset-autotiles-empty")).toBeTruthy();
+    expect(screen.getByTestId("tileset-autotiles-select").textContent).toMatch(/^Water/);
+  });
+
+  describe("Borders", () => {
+    const openBorders = () => fireEvent.click(screen.getByTestId("tileset-autotiles-border"));
+    const borderLabel = () => screen.getByTestId("tileset-autotiles-border").textContent;
+    /** Ground's 4 Sides island drawn against Water, in rows 5-7 of a 4 × 9 sheet. */
+    const intoWaterIsland = (): Record<number, { id: string; mask: number; border: string }> => Object.fromEntries(
+      ([[17, E | S], [18, E | S | W], [19, S | W], [21, N | E | S], [22, N | E | S | W], [23, N | S | W], [25, N | E], [26, N | E | W], [27, N | W]] as const)
+        .map(([id, mask]) => [id, { id: "ground", mask, border: "water" }]),
+    );
+
+    it("adds a border, assigns and fills its pieces with their border, and removes it", () => {
+      const { onChange, last, members } = renderWindow(sheet(4, 9, [GROUND_SIDES, WATER], sidesBlock()));
+      expect(borderLabel()).toBe("No Border");
+      openBorders();
+      fireEvent.click(screen.getByTestId("tileset-autotiles-add-border-water"));
+      expect(onChange).toHaveBeenLastCalledWith(expect.anything(), "tileset:autotile:ground:border-add:water");
+      expect(last().terrains![0]).toEqual({ ...GROUND_SIDES, borders: ["water"] });
+      expect(borderLabel()).toBe("Into Water");
+      expect(screen.getByTestId("tileset-autotiles-coverage").textContent).toBe("0 of 16 Pieces");
+      // An empty border paints Ground's ordinary pieces, so those stand in for its slots.
+      expect(screen.getByTestId(`tileset-autotiles-slot-${E | S}-stand-in`).getAttribute("data-tile-id")).toBe("1");
+      // While the border is edited, the ordinary pieces count as used elsewhere.
+      expect(screen.getByTestId("tileset-autotiles-sheet-other-1")).toBeTruthy();
+
+      expect(pressed(slot(E | S))).toBe(true);
+      fireEvent.click(cell(17));
+      expect(onChange.mock.lastCall![1]).toBe(`tileset:autotile:ground:piece:water:${E | S}:17`);
+      expect(last().tiles[16]!.terrain).toEqual({ id: "ground", mask: E | S | SE, border: "water" });
+      expect(last().tiles[0]!.terrain).toEqual({ id: "ground", mask: E | S });
+
+      fireEvent.click(screen.getByTestId("tileset-autotiles-fill-template"));
+      fireEvent.click(screen.getByTestId("tileset-autotiles-template-island"));
+      fireEvent.click(cell(25));
+      // Tile 17 already draws the border's E | S piece, which the island takes over.
+      expect(screen.getByTestId("tileset-autotiles-placement-status").textContent).toBe("Replaces 1 Assignment");
+      fireEvent.click(screen.getByTestId("tileset-autotiles-placement-apply"));
+      expect(onChange.mock.lastCall![1]).toBe("tileset:autotile:ground:template:water:island:25");
+      expect(last().tiles.filter((tile) => tile.terrain?.border === "water").map((tile) => tile.id))
+        .toEqual([25, 26, 27, 29, 30, 31, 33, 34, 35]);
+      expect(screen.getByTestId("tileset-autotiles-coverage").textContent).toBe("9 of 16 Pieces");
+
+      fireEvent.click(screen.getByTestId("tileset-autotiles-actions"));
+      fireEvent.click(screen.getByTestId("tileset-autotiles-remove-border"));
+      expect(screen.getByTestId("tileset-autotiles-remove-border-dialog").textContent).toContain("Its 9 tiles leave Ground");
+      fireEvent.click(screen.getByTestId("tileset-autotiles-remove-border-confirm"));
+      expect(onChange.mock.lastCall![1]).toBe("tileset:autotile:ground:border-remove:water");
+      expect(last().terrains![0]).toEqual(GROUND_SIDES);
+      expect(members()).toHaveLength(16);
+      expect(last().tiles.some((tile) => tile.terrain?.border)).toBe(false);
+      expect(borderLabel()).toBe("No Border");
+    });
+
+    it("removes an empty border at once", () => {
+      const { onChange, last } = renderWindow(sheet(4, 4, [{ ...GROUND_SIDES, borders: ["water"] }, WATER], sidesBlock()));
+      openBorders();
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Into Water" }));
+      fireEvent.click(screen.getByTestId("tileset-autotiles-actions"));
+      fireEvent.click(screen.getByTestId("tileset-autotiles-remove-border"));
+      expect(screen.queryByTestId("tileset-autotiles-remove-border-dialog")).toBeNull();
+      expect(onChange).toHaveBeenCalledExactlyOnceWith(expect.anything(), "tileset:autotile:ground:border-remove:water");
+      expect(last().terrains![0]).toEqual(GROUND_SIDES);
+    });
+
+    it("test paints a transition with either autotile and picks into the cell's autotile and border", async () => {
+      renderWindow(sheet(4, 9, [{ ...GROUND_SIDES, borders: ["water"] }, WATER], {
+        ...sidesBlock(),
+        ...intoWaterIsland(),
+        33: { id: "water", mask: N | E | S | W },
+      }));
+      const testCell = (x: number, y: number) => screen.getByTestId(`tileset-autotiles-test-cell-${x}-${y}`);
+      // The ordinary sample has no Water.
+      expect(testCell(7, 6).getAttribute("data-terrain")).toBeNull();
+      openBorders();
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Into Water" }));
+      // The border sample: Ground's island top-left faces Water and draws from the border, Water runs under the seam.
+      expect(testCell(2, 6).dataset).toMatchObject({ terrain: "ground", tileId: "17", border: "water" });
+      expect(testCell(2, 6).getAttribute("data-stand-in")).toBeNull();
+      expect(testCell(7, 6).dataset).toMatchObject({ terrain: "water", tileId: "33" });
+      // The strip on its own draws its ordinary left end.
+      expect(testCell(1, 1).dataset).toMatchObject({ terrain: "ground", tileId: "13" });
+      expect(testCell(1, 1).getAttribute("data-border")).toBeNull();
+
+      fireEvent.click(screen.getByTestId("tileset-autotiles-test-brush"));
+      const water = await screen.findByRole("option", { name: "Water" });
+      fireEvent.pointerDown(water, { pointerType: "mouse" });
+      fireEvent.click(water);
+      press(6, 1).up();
+      expect(testCell(6, 1).getAttribute("data-terrain")).toBe("water");
+      // The strip's right end now faces Water, so it draws from the border.
+      expect(testCell(5, 1).getAttribute("data-border")).toBe("water");
+
+      fireEvent.click(screen.getByTestId("tileset-autotiles-test-pick-tool"));
+      press(7, 6).up();
+      expect(screen.getByTestId("tileset-autotiles-select").textContent).toMatch(/^Water/);
+      expect(pressed(slot(N | E | S | W))).toBe(true);
+      // Picking keeps the test map.
+      expect(testCell(6, 1).getAttribute("data-terrain")).toBe("water");
+      press(2, 6).up();
+      expect(screen.getByTestId("tileset-autotiles-select").textContent).toMatch(/^Ground/);
+      expect(borderLabel()).toBe("Into Water");
+      expect(pressed(slot(E | S))).toBe(true);
+      expect(testCell(6, 1).getAttribute("data-terrain")).toBe("water");
+    });
   });
 });

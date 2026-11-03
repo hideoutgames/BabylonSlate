@@ -42,8 +42,9 @@ const W = TERRAIN_W;
 const NW = TERRAIN_NW;
 
 const GROUND = { terrainId: "ground" };
+const INTO_WATER = { terrainId: "ground", border: "water" };
 
-/** A `columns` × `rows` sheet of 16 px tiles with a Ground autotile and a Water autotile. */
+/** A `columns` × `rows` sheet of 16 px tiles with a Ground autotile (with a border into Water) and a Water autotile. */
 function sheet(
   columns: number,
   rows: number,
@@ -55,7 +56,7 @@ function sheet(
     atlasHeight: rows * 16,
     tileWidth: 16,
     tileHeight: 16,
-    terrains: [{ id: "ground", name: "Ground", style }, { id: "water", name: "Water", style: "sides" }],
+    terrains: [{ id: "ground", name: "Ground", style, borders: ["water"] }, { id: "water", name: "Water", style: "sides" }],
   }));
   // Built after normalizing so test memberships may carry fields normalize does not know.
   return { ...base, tiles: base.tiles.map((tile) => (terrain[tile.id] ? { ...tile, terrain: terrain[tile.id] } : tile)) };
@@ -194,14 +195,20 @@ describe("assignAutotilePiece", () => {
     // A border piece of the same terrain is another set: assigning Ground's own E piece leaves it alone.
     const plain = assignAutotilePiece(tileset, GROUND, E, 3);
     expect(plain.tiles[1]!.terrain).toEqual({ id: "ground", mask: E, border: "water" });
-    const border = assignAutotilePiece(tileset, { terrainId: "ground", border: "water" }, W, 1);
+    const border = assignAutotilePiece(tileset, INTO_WATER, W, 1);
     expect(border.tiles[0]!.terrain).toEqual({ id: "ground", mask: W, note: "kept", border: "water" });
     expect(autotilePieceTiles(tileset, GROUND)).toEqual(new Map([[0, [1]]]));
+    expect(autotilePieceTiles(border, INTO_WATER)).toEqual(new Map([[W, [1]], [E, [2]]]));
+    // Back into the default set, the tile drops its border.
+    expect(assignAutotilePiece(border, GROUND, N, 1).tiles[0]!.terrain).toEqual({ id: "ground", mask: N, note: "kept" });
   });
 
-  it("ignores an unknown autotile or tile", () => {
+  it("ignores an unknown autotile, an undeclared border or an unknown tile", () => {
     const tileset = sheet(2, 1, "blob");
     expect(assignAutotilePiece(tileset, { terrainId: "lava" }, 0, 1)).toBe(tileset);
+    // Water declares no border, so it has no set drawn against Ground.
+    expect(assignAutotilePiece(tileset, { terrainId: "water", border: "ground" }, 0, 1)).toBe(tileset);
+    expect(applyAutotileTemplate(tileset, { terrainId: "water", border: "ground" }, template("sides", "single"), 1)!.next).toBe(tileset);
     expect(assignAutotilePiece(tileset, GROUND, 0, 9)).toBe(tileset);
   });
 });
@@ -273,11 +280,14 @@ describe("autotileLayoutChange", () => {
 });
 
 describe("test paint", () => {
+  const key = (cell: { x: number; y: number }) => `${cell.x},${cell.y}`;
+  const size = { width: AUTOTILE_SANDBOX_WIDTH, height: AUTOTILE_SANDBOX_HEIGHT };
+
   it("samples an island, strips and a single inside the map, with a hole for Blob", () => {
-    const sides = autotileSandboxSample("sides");
-    const blob = autotileSandboxSample("blob");
-    const key = (cell: { x: number; y: number }) => `${cell.x},${cell.y}`;
+    const sides = autotileSandboxSample("sides", GROUND);
+    const blob = autotileSandboxSample("blob", GROUND);
     expect(blob).toHaveLength(sides.length - 1);
+    expect(new Set(sides.map((cell) => cell.terrainId))).toEqual(new Set(["ground"]));
     // The hole sits in the island's middle: row 3 from the top, column 3.
     expect(sides.map(key)).toContain("3,5");
     expect(blob.map(key)).not.toContain("3,5");
@@ -289,17 +299,27 @@ describe("test paint", () => {
     }
   });
 
-  const size = { width: AUTOTILE_SANDBOX_WIDTH, height: AUTOTILE_SANDBOX_HEIGHT };
+  it("samples a border set as the autotile set in a field of its border autotile, with a strip on its own", () => {
+    const cells = new Map(autotileSandboxSample("sides", INTO_WATER).map((cell) => [key(cell), cell.terrainId]));
+    // Island top-left, the Water hole inside it, a Ground single in the Water and the lone Ground strip.
+    expect(cells.get("2,6")).toBe("ground");
+    expect(cells.get("4,5")).toBe("water");
+    expect(cells.get("10,5")).toBe("ground");
+    expect(cells.get("9,5")).toBe("water");
+    expect(cells.get("1,1")).toBe("ground");
+    expect(cells.get("1,2")).toBeUndefined();
+  });
 
   it.each([
     ["sides", "sides-block", 4, 4],
     ["blob", "blob-block", 12, 4],
   ] as const)("paints the %s sample with an exact piece in every cell once the full block is assigned", (style, id, columns, rows) => {
     const tileset = applyAutotileTemplate(sheet(columns, rows, style), GROUND, template(style, id), 1)!.next;
-    const tiles = autotileSandboxTiles(tileset, GROUND, autotileSandboxSample(style), size);
-    expect(tiles.size).toBe(autotileSandboxSample(style).length);
+    const tiles = autotileSandboxTiles(tileset, autotileSandboxSample(style, GROUND), size);
+    expect(tiles.size).toBe(autotileSandboxSample(style, GROUND).length);
     for (const tile of tiles.values()) {
       expect(tile.standIn).toBe(false);
+      expect(tile.border).toBeUndefined();
       expect(autotilePieceOfTile(tileset, GROUND, tile.tileId)).toBe(tile.want);
     }
     // 4 Sides' sample draws every one of its 16 pieces.
@@ -309,20 +329,45 @@ describe("test paint", () => {
   it("marks stand-ins and reports the piece each cell wanted", () => {
     // Only the Blob island: strips, the single and the hole's notches stand in.
     const tileset = applyAutotileTemplate(sheet(5, 4, "blob"), GROUND, template("blob", "island"), 1)!.next;
-    const tiles = autotileSandboxTiles(tileset, GROUND, autotileSandboxSample("blob"), size);
+    const tiles = autotileSandboxTiles(tileset, autotileSandboxSample("blob", GROUND), size);
     // The single at column 11, three rows from the top.
     expect(tiles.get("11,5")).toMatchObject({ want: 0, standIn: true });
     // Above-left of the hole: everything joins but the hole's diagonal.
     expect(tiles.get("2,6")).toMatchObject({ want: TERRAIN_ALL & ~SE, standIn: true });
     // The island's top-left corner has its exact piece: tile 1.
-    expect(tiles.get("1,7")).toEqual({ tileId: 1, want: E | S | SE, standIn: false });
+    expect(tiles.get("1,7")).toEqual({ terrainId: "ground", tileId: 1, want: E | S | SE, standIn: false });
   });
 
-  it("joins past the map edge and draws nothing for a terrain without tiles", () => {
+  /**
+   * A 4 × 9 sheet: Ground's 4 Sides block in rows 1-4, its island drawn
+   * against Water in rows 5-7 (tiles 17-19, 21-23, 25-27), and one Water tile.
+   */
+  function transitionSheet(): TilesetPayload {
+    let tileset = applyAutotileTemplate(sheet(4, 9, "sides"), GROUND, template("sides", "sides-block"), 1)!.next;
+    tileset = applyAutotileTemplate(tileset, INTO_WATER, template("sides", "island"), 17)!.next;
+    return assignAutotilePiece(tileset, { terrainId: "water" }, N | E | S | W, 33);
+  }
+
+  it("paints a transition as the Tilemap brush does: Ground draws the seam from its border set, Water runs under it", () => {
+    const tiles = autotileSandboxTiles(transitionSheet(), autotileSandboxSample("sides", INTO_WATER), size);
+    // The island's top-left faces Water on two sides: the border set's E | S piece, tile 17.
+    expect(tiles.get("2,6")).toEqual({ terrainId: "ground", tileId: 17, want: E | S, border: "water", standIn: false });
+    // The lone strip faces nothing: the ordinary left end, tile 13.
+    expect(tiles.get("1,1")).toEqual({ terrainId: "ground", tileId: 13, want: E, standIn: false });
+    // Water beside Ground joins toward it, because Ground's pieces draw the seam.
+    expect(tiles.get("7,6")).toEqual({ terrainId: "water", tileId: 33, want: N | E | S | W, standIn: false });
+    // The border set has no single, so the Ground single in the Water stands in from it.
+    const single = tiles.get("10,5")!;
+    expect(single).toMatchObject({ terrainId: "ground", want: 0, border: "water", standIn: true });
+    expect([17, 18, 19, 21, 22, 23, 25, 26, 27]).toContain(single.tileId);
+  });
+
+  it("joins past the map edge and draws nothing for an autotile without tiles", () => {
     const tileset = applyAutotileTemplate(sheet(4, 4, "sides"), GROUND, template("sides", "sides-block"), 1)!.next;
-    const corner = autotileSandboxTiles(tileset, GROUND, [{ x: 0, y: 0 }], size).get("0,0")!;
+    const corner = autotileSandboxTiles(tileset, [{ x: 0, y: 0, terrainId: "ground" }], size).get("0,0")!;
     expect(corner.want).toBe(S | W);
-    const empty = autotileSandboxTiles(sheet(4, 4, "sides"), GROUND, [{ x: 4, y: 4 }], size).get("4,4");
-    expect(empty).toEqual({ tileId: 0, want: 0, standIn: false });
+    const empty = autotileSandboxTiles(sheet(4, 4, "sides"), [{ x: 4, y: 4, terrainId: "ground" }], size).get("4,4");
+    expect(empty).toEqual({ terrainId: "ground", tileId: 0, want: null, standIn: false });
+    expect(autotileSandboxTiles(tileset, [{ x: 20, y: 4, terrainId: "ground" }], size).size).toBe(0);
   });
 });
