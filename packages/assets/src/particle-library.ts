@@ -6,6 +6,7 @@
 import {
   normalizeParticleGraphDocument,
   particleGraphCompileKey,
+  particleGraphMeshModels,
   particleGraphNoiseTextures,
   type ParticleGraphDocument,
 } from "@haptic/particle-graph";
@@ -91,6 +92,15 @@ export function particleLibraryNoiseTextureGuids(library: ParticleLibrary): stri
   const guids = new Set<string>();
   for (const entry of library.emitters.values()) {
     if (entry.kind === "graph") for (const guid of particleGraphNoiseTextures(entry.document.nodes)) guids.add(guid);
+  }
+  return [...guids].sort();
+}
+
+/** The Models the library's Particle Graph Mesh Shapes read, sorted and unique. */
+export function particleLibraryMeshModelGuids(library: ParticleLibrary): string[] {
+  const guids = new Set<string>();
+  for (const entry of library.emitters.values()) {
+    if (entry.kind === "graph") for (const guid of particleGraphMeshModels(entry.document.nodes)) guids.add(guid);
   }
   return [...guids].sort();
 }

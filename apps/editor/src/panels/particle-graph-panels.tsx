@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -25,6 +25,7 @@ import {
   PARTICLE_ANGLE_UNIT_OPTIONS,
   PARTICLE_CONDITION_TESTS,
   PARTICLE_LOCAL_VARIABLE_SCOPES,
+  PARTICLE_MESH_SHAPE_SOURCES,
   PARTICLE_GRAPH_LIMITS,
   PARTICLE_OUTPUT_NODE_TYPE,
   PARTICLE_RANDOM_LOCKS,
@@ -245,6 +246,37 @@ function nodePropertyRows(
           value: Number(node.properties.epsilon ?? 0),
           min: 0,
           onChange: (epsilon) => setProperties({ epsilon }, field("epsilon")),
+        },
+      );
+      break;
+    case "shape.mesh":
+      rows.push(
+        {
+          id: "source",
+          kind: "enum",
+          label: "Source",
+          value: node.properties.source === "model" ? "model" : "ownerMesh",
+          description: node.properties.source === "model"
+            ? undefined
+            : "The actor's first mesh, in its rest pose. Previews show a sphere.",
+          options: PARTICLE_MESH_SHAPE_SOURCES.map((option) => ({ value: option.id, label: option.label })),
+          onChange: (source) => setProperties({ source }),
+        },
+        {
+          id: "useMeshNormals",
+          kind: "boolean",
+          label: "Use Mesh Normals",
+          value: node.properties.useMeshNormals !== false,
+          description: "Particles move along the surface normal instead of between Direction 1 and Direction 2.",
+          onChange: (useMeshNormals) => setProperties({ useMeshNormals }),
+        },
+        {
+          id: "useMeshColor",
+          kind: "boolean",
+          label: "Use Mesh Color",
+          value: node.properties.useMeshColor === true,
+          description: "Particles take the mesh's vertex colour, where it has one.",
+          onChange: (useMeshColor) => setProperties({ useMeshColor }),
         },
       );
       break;
@@ -486,6 +518,7 @@ function ParticleNodeDetails({
       mergeKey,
     );
   const replaceNode = (next: ParticleGraphNode) => onChange(withNode(document, next));
+  const assets = useParticleNodeAssetPicker(node, setProperties);
   if (!definition) {
     return (
       <ModuleStack data-testid="particle-graph-node-details">
@@ -505,6 +538,17 @@ function ParticleNodeDetails({
     ...nodePropertyRows(node, setProperties, replaceNode),
     ...pinDefaultRows(document, node, setProperties),
   ];
+  if (node.type === "update.noise") {
+    rows.unshift(assets.row({ property: "textureGuid", label: "Texture", assetType: "Texture", placeholder: "Built-In Noise",
+      description: typeof node.properties.textureGuid === "string"
+        ? "Its red channel sets the push; each particle reads it at its own random point."
+        : "Without a Texture the built-in noise is used." }));
+  }
+  if (node.type === "shape.mesh" && node.properties.source === "model") {
+    rows.splice(rows.findIndex((row) => row.id === "source") + 1, 0, assets.row({ property: "modelGuid", label: "Model",
+      assetType: "Model", placeholder: "No Model",
+      description: "Particles spawn on the Model's triangles, placed at the emitter." }));
+  }
   return (
     <ModuleStack data-testid="particle-graph-node-details">
       <ModuleStage
@@ -515,8 +559,8 @@ function ParticleNodeDetails({
         {definition.description ? (
           <p className="px-2 py-1 text-xs text-muted-foreground">{definition.description}</p>
         ) : null}
-        {node.type === "update.noise" ? <NoiseTextureRow node={node} setProperties={setProperties} /> : null}
         {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
+        {assets.picker}
         {node.type === "gradient.sample" ? (
           <GradientStopsEditor node={node} setProperties={setProperties} />
         ) : null}
@@ -525,48 +569,52 @@ function ParticleNodeDetails({
   );
 }
 
-/** Noise **Texture**: a Texture asset whose pixels push the particles; None uses the built-in noise. */
-function NoiseTextureRow({
-  node,
-  setProperties,
-}: {
-  node: ParticleGraphNode;
-  setProperties: (patch: Record<string, unknown>) => void;
-}) {
+type ParticleNodeAssetType = "Texture" | "Model";
+
+/** Rows for a node's asset properties (Noise **Texture**, Mesh Shape **Model**) and their shared picker; None clears one. */
+function useParticleNodeAssetPicker(
+  node: ParticleGraphNode,
+  setProperties: (patch: Record<string, unknown>) => void,
+): {
+  row: (spec: { property: string; label: string; assetType: ParticleNodeAssetType; placeholder: string; description: string }) => PropertyRow;
+  picker: ReactNode;
+} {
   const { assetRegistry } = useRegistryState();
-  const [picking, setPicking] = useState(false);
-  const guid = typeof node.properties.textureGuid === "string" ? node.properties.textureGuid : null;
-  const assets = (assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Texture")
+  const [picking, setPicking] = useState<{ property: string; assetType: ParticleNodeAssetType } | null>(null);
+  const assetsOf = (assetType: ParticleNodeAssetType) => (assetRegistry?.list() ?? [])
+    .filter((asset) => asset.header.type === assetType)
     .map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }));
-  const texture = guid ? assets.find((asset) => asset.guid === guid) : undefined;
-  const row: PropertyRow = {
-    id: "textureGuid",
-    kind: "asset",
-    label: "Texture",
-    value: guid,
-    placeholder: "Built-In Noise",
-    description: guid ? "Its red channel sets the push; each particle reads it at its own random point." : "Without a Texture the built-in noise is used.",
-    onPick: () => setPicking(true),
-    onChange: (next) => setProperties({ textureGuid: next }),
-    ...assetRowIdentity(texture ? { name: texture.name, type: texture.type } : undefined),
-  };
-  return (
-    <>
-      <PropertyGrid rows={[row]} />
+  return {
+    row: ({ property, label, assetType, placeholder, description }) => {
+      const guid = typeof node.properties[property] === "string" ? (node.properties[property] as string) : null;
+      const selected = guid ? assetsOf(assetType).find((asset) => asset.guid === guid) : undefined;
+      return {
+        id: property,
+        kind: "asset",
+        label,
+        value: guid,
+        placeholder,
+        description,
+        onPick: () => setPicking({ property, assetType }),
+        onChange: (next) => setProperties({ [property]: next }),
+        ...assetRowIdentity(selected ? { name: selected.name, type: selected.type } : undefined),
+      };
+    },
+    picker: picking ? (
       <AssetPicker
-        open={picking}
-        onOpenChange={setPicking}
-        assets={assets}
-        allowedTypes={["Texture"]}
+        open
+        onOpenChange={(open) => { if (!open) setPicking(null); }}
+        assets={assetsOf(picking.assetType)}
+        allowedTypes={[picking.assetType]}
         allowNone
         onPick={(next) => {
-          setProperties({ textureGuid: next });
-          setPicking(false);
+          setProperties({ [picking.property]: next });
+          setPicking(null);
         }}
-        data-testid="particle-noise-texture-picker"
+        data-testid={`particle-node-${picking.property}-picker`}
       />
-    </>
-  );
+    ) : null,
+  };
 }
 
 /** Material and emitter settings; the Emitter Output shows the same rows. */

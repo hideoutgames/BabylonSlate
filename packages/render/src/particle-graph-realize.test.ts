@@ -343,6 +343,39 @@ describe("realizeParticleGraph", () => {
     expect(pushed.z).toBeCloseTo(6 / 60, 6);
   });
 
+  it("spawns Mesh Shape particles on the source's triangles, along the normal and in its colour, and at the emitter without one", () => {
+    // One triangle at height 2, facing up, coloured red.
+    const triangle = { positions: [0, 2, 0, 1, 2, 0, 0, 2, 1], indices: [0, 1, 2], normals: [0, 1, 0, 0, 1, 0, 0, 1, 0],
+      colors: [1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1] };
+    let geometry: typeof triangle | null = null;
+    const doc = withSpine([], [], []);
+    const shape = doc.nodes.find((entry) => entry.id === "shape")!;
+    shape.type = "shape.mesh";
+    shape.properties = { source: "ownerMesh", modelGuid: null, useMeshNormals: true, useMeshColor: true };
+    const { scene, emitter } = host();
+    const result = realizeParticleGraph(planOf(doc), { scene, name: "graph", emitter, space: "world",
+      meshShape: (properties) => { expect(properties.source).toBe("ownerMesh"); return { geometry: () => geometry }; } });
+    const { system } = built(result);
+    system.start(0);
+    step(system, 3);
+    // Without geometry, at the emitter.
+    const early = system.particles[0]!;
+    expect(early.position.length()).toBeLessThan(0.5);
+    geometry = triangle;
+    step(system, 10);
+    const late = system.particles.filter((particle) => particle.age < 0.1);
+    expect(late.length).toBeGreaterThan(0);
+    for (const particle of late) {
+      // The default graph's Update Color scales the Initial Color by a gradient.
+      expect(particle.initialColor.r).toBeCloseTo(1, 6);
+      expect(particle.initialColor.g).toBeCloseTo(0, 6);
+      expect(particle.direction.normalizeToNew().y).toBeCloseTo(1, 6);
+      expect(particle.position.x).toBeGreaterThanOrEqual(-1e-6);
+      expect(particle.position.z).toBeGreaterThanOrEqual(-1e-6);
+      expect(particle.position.x + particle.position.z).toBeLessThanOrEqual(1 + 0.5);
+    }
+  });
+
   it("emits fractional and computed Emit Rates", () => {
     const slow = createDefaultParticleGraphDocument();
     slow.nodes = slow.nodes.map((entry) => entry.id === "output" ? { ...entry, properties: { "default:emitRate": [0.5] } }

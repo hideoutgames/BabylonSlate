@@ -278,6 +278,17 @@ test.describe("Particle Graph", () => {
     await connectHandles(page, '="velocity"', "out", '^="update.noise-"', "particle");
     await connectHandles(page, '^="update.noise-"', "out", '="updateColor"', "particle");
     await expect(particleGraphEditor(page).locator('.react-flow__edge[data-id*="update.noise-"][data-id$=":updateColor:particle"]')).toHaveCount(1);
+    // A Mesh Shape reading a Model asks for one until it is picked; it is then deleted again.
+    const meshShape = await addParticleGraphNode(page, "Mesh Shape", "shape.mesh");
+    await expect(details.getByTestId("property-modelGuid")).toHaveCount(0);
+    await details.getByTestId("property-source").click();
+    await page.getByRole("option", { name: "Model", exact: true }).click();
+    await expect(details.getByTestId("property-modelGuid")).toContainText("No Model");
+    await expect(results.getByTestId("particle-graph-diagnostic-particle.meshShapeModel")).toBeVisible();
+    const deleteNode = particleGraphEditor(page).getByTestId("graph-delete");
+    await expect(deleteNode).toBeEnabled();
+    await deleteNode.click();
+    await expect(meshShape).toHaveCount(0);
     await particleGraphEditor(page).locator('.react-flow__node[data-id="output"]').click();
     await expect(details.getByTestId("property-capacity")).toBeVisible();
     await expect(details.getByTestId("property-emitRate")).toHaveCount(0);

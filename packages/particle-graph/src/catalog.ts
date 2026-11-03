@@ -108,6 +108,17 @@ export const PARTICLE_CONDITION_TESTS: readonly {
 
 export type ParticleRandomLock = "perParticle" | "everyRead";
 
+export type ParticleMeshShapeSource = "ownerMesh" | "model";
+
+/** Mesh Shape: the owning actor's first mesh with geometry, or a Model asset. */
+export const PARTICLE_MESH_SHAPE_SOURCES: readonly {
+  id: ParticleMeshShapeSource;
+  label: string;
+}[] = [
+  { id: "ownerMesh", label: "Owner Mesh" },
+  { id: "model", label: "Model" },
+];
+
 export type ParticleLocalVariableScope = "particle" | "loop";
 
 /** Local Variable: one value per particle (its first read in each life), or one per frame for every particle. */
@@ -143,7 +154,6 @@ export const PARTICLE_VALUE_TYPE_OPTIONS: readonly {
  * later version can enable it without renaming.
  */
 export const PARTICLE_UNSUPPORTED_V1_TYPES: Readonly<Record<string, string>> = {
-  "shape.mesh": "Mesh Shape",
   "shape.custom": "Custom Shape",
   "sprite.setup": "Sprite Sheet",
   "update.spriteCell": "Update Sprite Cell",
@@ -442,6 +452,15 @@ const SHAPE_NODES: ParticleNodeDefinition[] = [
       { id: "direction2", name: "Direction 2", type: VEC3, defaultValue: [0, 1, 0] },
     ],
     "Spawns at the emitter and moves between Direction 1 and Direction 2.",
+  ),
+  shapeNode(
+    "shape.mesh",
+    "Mesh Shape",
+    [
+      { id: "direction1", name: "Direction 1", type: VEC3, defaultValue: [0, 1, 0] },
+      { id: "direction2", name: "Direction 2", type: VEC3, defaultValue: [0, 1, 0] },
+    ],
+    "Spawns on the surface of a mesh: the actor's first mesh, or a Model. Particles move along the surface normal, or between Direction 1 and Direction 2.",
   ),
   shapeNode(
     "shape.box",

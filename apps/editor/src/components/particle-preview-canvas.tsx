@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AbstractEngine } from "@babylonjs/core";
 import {
+  cookComplexCollisionMesh,
+  normalizeModelPayload,
   particleEmitterMaterialGuid,
   particleLibraryCompileKey,
   particleLibraryMaterialGuids,
+  particleLibraryMeshModelGuids,
   particleLibraryNoiseTextureGuids,
   type IndexedAsset,
   type ParticleLibrary,
@@ -216,7 +219,7 @@ export function ParticlePreviewCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
-  const { collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocumentActions();
+  const { collectPlayMaterialLibrary, collectPlayTextureBytes, collectPlayModelBytes } = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const textureByGuid = useCallback(
     (guid: string) => assetRegistry?.getByGuid(guid),
@@ -265,6 +268,7 @@ export function ParticlePreviewCanvas({
   // A resolver knows only the Material documents collected at boot.
   const materialKey = particleLibraryMaterialGuids(library).sort().join(",");
   const noiseKey = particleLibraryNoiseTextureGuids(library).join(",");
+  const modelKey = particleLibraryMeshModelGuids(library).join(",");
 
   /**
    * Full-canvas state only when the run failed; skipped slots become a notice. A
@@ -393,6 +397,12 @@ export function ParticlePreviewCanvas({
         ? await collectPlayTextureBytes(new Map(), new Map(), textureGuids)
         : new Map<string, Uint8Array>();
       if (cancelled) return;
+      // Mesh Shapes with Source Model spawn on the Model's triangles.
+      const modelGuids = modelKey ? modelKey.split(",") : [];
+      const modelBytes = modelGuids.length && collectPlayModelBytes
+        ? await collectPlayModelBytes(null, [], new Set(modelGuids))
+        : new Map<string, Uint8Array>();
+      if (cancelled) return;
       const sources = installTextureBytes(bytes) ?? new Map();
       const cache = resourceCacheForEngine(engine);
       host = createParticlePreviewScene(engine, { skybox: showSkybox });
@@ -422,6 +432,11 @@ export function ParticlePreviewCanvas({
         acquireTexture: (guid) => {
           const data = sources.get(guid);
           return data ? acquireMaterialTexture(cache, guid, engine, data) : null;
+        },
+        acquireModelGeometry: (guid) => {
+          const data = modelBytes.get(guid);
+          const payload = textureByGuidRef.current?.(guid)?.header.payload;
+          return data ? Promise.resolve(cookComplexCollisionMesh(data, payload ? normalizeModelPayload(payload) : null)) : null;
         },
         statsScope: "local",
         onDiagnostic: (diagnostic) => {
@@ -473,6 +488,8 @@ export function ParticlePreviewCanvas({
     look,
     materialKey,
     noiseKey,
+    modelKey,
+    collectPlayModelBytes,
     showSkybox,
   ]);
 

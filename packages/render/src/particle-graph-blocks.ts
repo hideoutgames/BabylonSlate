@@ -66,6 +66,7 @@ import {
   type ParticleNumericType,
   type ParticleOperation,
 } from "@haptic/particle-graph";
+import { SlateMeshShapeBlock, type ParticleMeshShapeSource } from "./particle-mesh-shape";
 import { BUILTIN_PARTICLE_NOISE, type ParticleNoiseSource } from "./particle-noise";
 import { PARTICLE_BILLBOARD_MODES, PARTICLE_BLEND_MODES } from "./particle-render-modes";
 
@@ -225,6 +226,8 @@ export interface ParticleBlockAdapterContext {
   space: ParticleSpace;
   /** A Noise node's pixels for its Texture (null: the built-in noise). Defaults to the built-in noise. */
   noise?: (textureGuid: string | null) => ParticleNoiseSource;
+  /** A Mesh Shape's geometry for its properties (Source, Model). Without it Mesh Shape spawns at the emitter. */
+  meshShape?: (properties: Readonly<Record<string, unknown>>) => ParticleMeshShapeSource;
 }
 
 export type ParticleBlockAdapter = (context: ParticleBlockAdapterContext) => ParticleBlockRealization;
@@ -516,6 +519,13 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
   }),
   "force.gravity": gravityAdapter,
   "force.attractor": spine((name) => new UpdateAttractorBlock(name), (block) => ({ position: block.attractor, strength: block.strength })),
+  "shape.mesh": ({ name, operation, meshShape }) => {
+    const block = new SlateMeshShapeBlock(name);
+    block.useMeshNormals = operation.properties.useMeshNormals !== false;
+    block.useMeshColor = operation.properties.useMeshColor === true;
+    if (meshShape) block.source = meshShape(operation.properties);
+    return { blocks: [block], inputs: { particle: block.particle, direction1: block.direction1, direction2: block.direction2 }, outputs: { out: block.output } };
+  },
   "update.noise": ({ name, operation, noise }) => {
     const block = new SlateNoiseBlock(name);
     const textureGuid = typeof operation.properties.textureGuid === "string" && operation.properties.textureGuid ? operation.properties.textureGuid : null;

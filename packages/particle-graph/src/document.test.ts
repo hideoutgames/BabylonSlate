@@ -92,19 +92,32 @@ describe("particle graph document", () => {
     expect(lowerParticleGraphDocument(doc).ok).toBe(true);
   });
 
-  it("lists the Material and the Noise nodes' Textures as dependencies", () => {
+  it("lists the Material, the Noise nodes' Textures and the Mesh Shapes' Models as dependencies", () => {
     const doc = createDefaultParticleGraphDocument();
-    expect(particleGraphDependencies(doc)).toEqual({ materials: [], textures: [], all: [] });
+    expect(particleGraphDependencies(doc)).toEqual({ materials: [], textures: [], models: [], all: [] });
     const noise = (id: string, textureGuid: unknown): ParticleGraphNode =>
       ({ id, type: "update.noise", position: { x: 0, y: 0 }, properties: { textureGuid } });
+    const mesh = (id: string, source: string, modelGuid: unknown): ParticleGraphNode =>
+      ({ id, type: "shape.mesh", position: { x: 0, y: 0 }, properties: { source, modelGuid } });
     expect(particleGraphDependencies({ ...doc, materialGuid: "mat-1",
-      nodes: [...doc.nodes, noise("a", "tex-2"), noise("b", "tex-1"), noise("c", "tex-2"), noise("d", null)] })).toEqual({
+      nodes: [
+        ...doc.nodes,
+        noise("a", "tex-2"), noise("b", "tex-1"), noise("c", "tex-2"), noise("d", null),
+        mesh("m1", "model", "model-1"), mesh("m2", "ownerMesh", "model-2"), mesh("m3", "model", "model-1"),
+      ] })).toEqual({
       materials: ["mat-1"],
       textures: ["tex-1", "tex-2"],
-      all: ["mat-1", "tex-1", "tex-2"],
+      models: ["model-1"],
+      all: ["mat-1", "tex-1", "tex-2", "model-1"],
     });
-    const normalized = normalizeParticleGraphDocument({ nodes: [{ id: "n", type: "update.noise", properties: { textureGuid: "  " } }] });
+    const normalized = normalizeParticleGraphDocument({ nodes: [
+      { id: "n", type: "update.noise", properties: { textureGuid: "  " } },
+      { id: "m", type: "shape.mesh", properties: { source: "bogus", modelGuid: 4, useMeshColor: "yes" } },
+    ] });
     expect(normalized.nodes.find((entry) => entry.id === "n")!.properties.textureGuid).toBeNull();
+    expect(normalized.nodes.find((entry) => entry.id === "m")!.properties).toMatchObject({
+      source: "ownerMesh", modelGuid: null, useMeshNormals: true, useMeshColor: false,
+    });
   });
 
   it("resizes Gradient stops and Random bounds when the value type changes", () => {

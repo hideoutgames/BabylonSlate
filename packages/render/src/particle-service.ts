@@ -35,6 +35,7 @@ import {
 } from "@haptic/particle-graph";
 import type { ResourceLease } from "./resource-cache";
 import { BUILTIN_PARTICLE_NOISE, particleNoisePixelsFrom, type ParticleNoisePixels, type ParticleNoiseSource } from "./particle-noise";
+import { PREVIEW_OWNER_MESH, meshGeometryRelativeTo, type ParticleMeshGeometry, type ParticleMeshShapeSource } from "./particle-mesh-shape";
 import { createBasicEmissionDriver, createManualEmission, type BasicEmissionDriver, type ManualEmission } from "./particle-emission-driver";
 import { describeParticleThrow, realizeParticleGraph, type ParticleGraphCompileCode } from "./particle-graph-realize";
 import {
@@ -62,7 +63,8 @@ export type ParticleDiagnosticCode =
   | ParticleGraphCompileCode
   | "particle.apply_failed"
   | "particle.burst_not_playing"
-  | "particle.noise_texture_unavailable";
+  | "particle.noise_texture_unavailable"
+  | "particle.mesh_missing";
 /**
  * Slot-level problems carry the emitter guid; bundle-level ones the Particle System guid.
  * Particle Graph problems also carry the graph node (and pin) they are anchored to.
@@ -244,6 +246,9 @@ export class ParticleService {
   private readonly statsScope: "global" | "local";
   private readonly acquireMaterial?: (guid: string, owner: ParticleMaterialOwner) => ResourceLease<NodeMaterial> | null;
   private readonly acquireTexture?: (guid: string) => ResourceLease<BaseTexture> | null;
+  private readonly acquireModelGeometry?: (guid: string) => Promise<ParticleMeshGeometry | null> | null;
+  /** Mesh Shape Model geometry by guid, loaded once per service; null while it loads or when it failed. */
+  private readonly modelGeometries = new Map<string, { geometry: ParticleMeshGeometry | null }>();
   /** Noise Texture pixels by guid, read back once per service; null while the read-back runs. */
   private readonly noiseTextures = new Map<string, { pixels: ParticleNoisePixels | null; fallback: boolean; cancel: () => void }>();
   private readonly resolveEmitter?: (slotId: number) => AbstractMesh | null;
@@ -294,12 +299,15 @@ export class ParticleService {
     programsDrawn?: (system: IParticleSystem) => boolean;
     /** A Noise node's Texture, read back once; without it (or for a missing Texture) Noise uses the built-in noise. */
     acquireTexture?: (guid: string) => ResourceLease<BaseTexture> | null;
+    /** A Mesh Shape Model's triangles in model space (null: unavailable). */
+    acquireModelGeometry?: (guid: string) => Promise<ParticleMeshGeometry | null> | null;
   }) {
     this.scene = options.scene;
     this.gpuRequested = options.gpuSupported ?? true;
     this.statsScope = options.statsScope ?? "global";
     this.acquireMaterial = options.acquireMaterial;
     this.acquireTexture = options.acquireTexture;
+    this.acquireModelGeometry = options.acquireModelGeometry;
     this.resolveEmitter = options.resolveEmitter;
     this.sceneForSlot = options.sceneForSlot;
     this.onDiagnostic = options.onDiagnostic;
@@ -664,6 +672,61 @@ export class ParticleService {
     this.library = emptyLibrary();
     for (const texture of this.noiseTextures.values()) texture.cancel();
     this.noiseTextures.clear();
+    this.modelGeometries.clear();
+  }
+
+  /**
+   * A Mesh Shape's geometry. Model: the Model's triangles, loaded once per service. Owner Mesh:
+   * the owning actor's first mesh with vertices, found (at most once a frame) the first time it is
+   * there and kept in the emitter's space; previews, which have no actor, use a unit sphere.
+   * Without geometry particles spawn at the emitter; `particle.mesh_missing` reports a Model that
+   * cannot load at once, and an owner without a mesh after two seconds of frames.
+   */
+  private meshShapeSource(entry: LiveComponent, context: SlotContext, properties: Readonly<Record<string, unknown>>): ParticleMeshShapeSource {
+    if (properties.source === "model") {
+      const guid = typeof properties.modelGuid === "string" && properties.modelGuid ? properties.modelGuid : null;
+      if (!guid) return { geometry: () => null };
+      let record = this.modelGeometries.get(guid);
+      if (!record) {
+        const created: { geometry: ParticleMeshGeometry | null } = { geometry: null };
+        record = created;
+        this.modelGeometries.set(guid, created);
+        const missing = () => this.diagnose(entry, { code: "particle.mesh_missing", assetGuid: guid,
+          message: "Mesh Shape Model has no geometry to spawn on; particles spawn at the emitter." });
+        const pending = this.acquireModelGeometry?.(guid) ?? null;
+        if (!pending) missing();
+        else void pending.then((geometry) => {
+          if (geometry && geometry.indices.length >= 3) created.geometry = geometry;
+          else missing();
+        }, missing);
+      }
+      const loaded = record;
+      return { geometry: () => loaded.geometry };
+    }
+    if (!this.resolveEmitter) return PREVIEW_OWNER_MESH;
+    let geometry: ParticleMeshGeometry | null = null;
+    let lastFrame = -1;
+    let firstFrame = -1;
+    let reported = false;
+    return {
+      geometry: () => {
+        if (geometry) return geometry;
+        const frame = context.host.getFrameId();
+        if (frame === lastFrame) return null;
+        lastFrame = frame;
+        if (firstFrame < 0) firstFrame = frame;
+        const root = this.resolveEmitter?.(entry.command.slotId) ?? null;
+        const mesh = root ? [root, ...root.getChildMeshes(false)].find((candidate): candidate is Mesh =>
+          candidate instanceof Mesh && candidate !== context.node && !candidate.isDisposed() && candidate.getTotalVertices() > 0) : undefined;
+        if (mesh) geometry = meshGeometryRelativeTo(mesh, context.node);
+        if (!geometry && !reported && frame - firstFrame > 120) {
+          reported = true;
+          this.diagnose(entry, { code: "particle.mesh_missing", assetGuid: entry.command.particleSystemGuid ?? undefined,
+            message: "Mesh Shape found no mesh on its actor; particles spawn at the emitter." });
+        }
+        return geometry;
+      },
+    };
   }
 
   /**
@@ -967,7 +1030,8 @@ export class ParticleService {
   private createGraphSlot(entry: LiveComponent, context: SlotContext, slot: { index: number; guid: string },
     plan: ParticleBuildPlan, lease: ResourceLease<NodeMaterial>, materialGuid: string): CreatedSlot | null {
     const realized = realizeParticleGraph(plan, { scene: context.host, name: `particle:${entry.key}:${slot.index}`,
-      emitter: context.node, space: context.space, noise: (textureGuid) => this.noiseSource(entry, textureGuid) });
+      emitter: context.node, space: context.space, noise: (textureGuid) => this.noiseSource(entry, textureGuid),
+      meshShape: (properties) => this.meshShapeSource(entry, context, properties) });
     if (realized.ok === false) {
       for (const diagnostic of realized.diagnostics) this.diagnose(entry, { ...diagnostic, assetGuid: slot.guid });
       return null;

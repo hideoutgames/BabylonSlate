@@ -4,6 +4,7 @@ import {
   particleLibraryCompileKey,
   particleLibraryFromAssets,
   particleLibraryMaterialGuids,
+  particleLibraryMeshModelGuids,
   particleLibraryNoiseTextureGuids,
 } from "./particle-library";
 import {
@@ -107,5 +108,21 @@ describe("particle library graph entries", () => {
     const noisy = graph((doc) => doc.nodes.push({ id: "noise", type: "update.noise", position: { x: 0, y: 0 }, properties: { textureGuid: "tex-noise" } }));
     expect(particleAssetDependencies("ParticleGraph", noisy.payload as unknown as Record<string, unknown>)).toEqual(["mat-graph", "tex-noise"]);
     expect(particleLibraryNoiseTextureGuids(particleLibraryFromAssets([noisy]))).toEqual(["tex-noise"]);
+  });
+
+  it("indexes the Models its Mesh Shapes read", () => {
+    const meshy = graph((doc) => {
+      const shape = doc.nodes.find((node) => node.id === "shape")!;
+      shape.type = "shape.mesh";
+      shape.properties = { source: "model", modelGuid: "model-1" };
+    });
+    expect(particleAssetDependencies("ParticleGraph", meshy.payload as unknown as Record<string, unknown>)).toEqual(["mat-graph", "model-1"]);
+    expect(particleLibraryMeshModelGuids(particleLibraryFromAssets([meshy]))).toEqual(["model-1"]);
+    const owner = graph((doc) => {
+      const shape = doc.nodes.find((node) => node.id === "shape")!;
+      shape.type = "shape.mesh";
+      shape.properties = { source: "ownerMesh", modelGuid: "model-1" };
+    });
+    expect(particleLibraryMeshModelGuids(particleLibraryFromAssets([owner]))).toEqual([]);
   });
 });
