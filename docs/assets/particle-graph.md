@@ -47,7 +47,6 @@ Select a Parameter node to edit its parameter in the **Inspector**.
 
 - Copying, duplicating or pasting a Parameter node makes a new parameter with the same type and default, named like the original with **_1**, **_2** and so on when the name is taken.
 - Deleting or converting the node removes its parameter. Undo brings it back.
-- **Preview Parameters** under the Preview sets values for the preview only.
 
 ## Related
 
