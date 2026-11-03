@@ -27,35 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
-
-/** One parameter value as a PropertyGrid row of its type. `onChange` receives the value sized to `type`. */
-export function particleParameterValueRow(options: {
-  id: string;
-  label: string;
-  type: ParticleNumericType;
-  value: readonly number[];
-  defaultValue?: readonly number[];
-  description?: string;
-  onChange: (value: number[]) => void;
-}): PropertyRow {
-  const { id, label, type, description } = options;
-  const [x = 0, y = 0, z = 0, w = 1] = resizeParticleValue(options.value, type);
-  const fallback = options.defaultValue ? resizeParticleValue(options.defaultValue, type) : undefined;
-  const base = { id, label, ...(description ? { description } : {}) };
-  switch (type) {
-    case "float":
-      return { ...base, kind: "number", value: x, defaultValue: fallback?.[0], onChange: (next) => options.onChange([next]) };
-    case "vec2":
-      return { ...base, kind: "vector3", axes: ["X", "Y"], value: [x, y, 0],
-        defaultValue: fallback ? [fallback[0]!, fallback[1]!, 0] : undefined, onChange: (next) => options.onChange([next[0], next[1]]) };
-    case "vec3":
-      return { ...base, kind: "vector3", value: [x, y, z],
-        defaultValue: fallback ? [fallback[0]!, fallback[1]!, fallback[2]!] : undefined, onChange: (next) => options.onChange([...next]) };
-    case "color":
-      return { ...base, kind: "color4", value: [x, y, z, w],
-        defaultValue: fallback ? [fallback[0]!, fallback[1]!, fallback[2]!, fallback[3]!] : undefined, onChange: (next) => options.onChange([...next]) };
-  }
-}
+import { particleParameterValueRow } from "../lib/particle-parameter-rows";
 
 function uniqueName(taken: ReadonlySet<string>, base: string): string {
   if (!taken.has(base)) return base;
@@ -67,7 +39,7 @@ function newParameterId(): string {
 }
 
 /**
- * Graph Settings **Parameters**: add, rename, retype and delete a graph's parameters and edit
+ * Particle Graph Inspector **Parameters** (nothing or the Emitter Output selected): add, rename, retype and delete a graph's parameters and edit
  * their defaults. Retyping resizes the default and retypes the Parameter nodes. Deleting a
  * parameter that nodes use asks first and leaves those nodes in error.
  */

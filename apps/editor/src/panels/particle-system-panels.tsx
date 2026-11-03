@@ -39,7 +39,8 @@ import {
 } from "../lib/play-particles";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
-import { ParticlePreviewParameters, particleParameterValueRow } from "../components/particle-parameter-fields";
+import { ParticlePreviewParameters } from "../components/particle-parameter-fields";
+import { particleParameterValueRow } from "../lib/particle-parameter-rows";
 
 const EMITTER_TYPES: string[] = [...PARTICLE_EMITTER_ASSET_TYPES];
 

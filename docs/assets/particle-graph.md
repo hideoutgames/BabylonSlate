@@ -29,6 +29,20 @@ Double-tap the asset to open it. The window has **Graph**, **Preview**, **Inspec
 
 **Emit Rate** is set on the Emitter Output node.
 
+## Parameters
+
+Select **Emitter Output**, or nothing, and the **Inspector** lists the graph's parameters under **Parameters**. Tap **Add Parameter** to add one.
+
+| Setting | Description |
+| --- | --- |
+| Name | The name gameplay sets it by. Unique in the graph, up to 64 characters. |
+| Type | **Float**, **Vector 2**, **Vector 3** or **Color**. Changing it resizes the default and retypes the Parameter nodes that read it. |
+| Default | The value used when nothing sets it. |
+
+- In **Add Node**, each parameter has a **Parameter: Name** entry under **Parameters**. It places a [Parameter](../scripting/particle/parameter.md) node titled with the parameter's name. Selecting the node lets you switch it to another parameter.
+- Deleting a parameter that nodes read asks first. Those nodes stay and show an error until you delete them or pick another parameter.
+- **Preview Parameters** under the Preview sets values for the preview only.
+
 ## Related
 
 - [Particles](../graphics/particles.md)

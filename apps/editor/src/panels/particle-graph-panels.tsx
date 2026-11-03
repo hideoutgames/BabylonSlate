@@ -545,7 +545,7 @@ function ParticleNodeDetails({
         value: String(node.properties.parameterId ?? ""),
         description: parameters.some((parameter) => parameter.id === node.properties.parameterId)
           ? undefined
-          : "Pick a parameter, or add one in Graph Settings.",
+          : "Pick a parameter, or add one under Parameters with nothing selected.",
         options: parameters.map((parameter) => ({ value: parameter.id, label: parameter.name })),
         onChange: (parameterId) => {
           const parameter = parameters.find((entry) => entry.id === parameterId);

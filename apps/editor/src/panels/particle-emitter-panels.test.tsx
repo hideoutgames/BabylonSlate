@@ -254,4 +254,21 @@ describe("ParticleEmitterPreview", () => {
       normalizeParticleEmitterPayload(onChange.mock.calls.at(-1)![0]).render.materialGuid,
     ).toBe("mat-particle");
   });
+
+  it("lists the emitter's bound parameters once each under Preview Parameters", () => {
+    const payload = createDefaultParticleEmitterPayload();
+    payload.bindings = [
+      { target: "spawn.rateScale", parameterName: "Heat", defaultValue: [2] },
+      { target: "init.sizeScale", parameterName: "Heat", defaultValue: [3] },
+      { target: "init.colorTint", parameterName: "Tint", defaultValue: [1, 0, 0, 1] },
+    ];
+    render(<ParticleEmitterPreview payload={payload as unknown as Doc} onChange={() => {}} />);
+    const grid = screen.getByTestId("particle-preview-parameters");
+    expect(grid.textContent).toContain("Heat");
+    expect(grid.textContent).toContain("Tint");
+    expect((screen.getByTestId("property-preview-parameter-Heat") as HTMLInputElement).value).toBe("2");
+    cleanup();
+    render(<ParticleEmitterPreview payload={createDefaultParticleEmitterPayload() as unknown as Doc} onChange={() => {}} />);
+    expect(screen.queryByTestId("particle-preview-parameters")).toBeNull();
+  });
 });

@@ -35,6 +35,7 @@ import {
   convertScalarValueMode,
   createDefaultParticleShape,
   normalizeParticleEmitterPayload,
+  particleEmitterParameters,
   type ParticleBurst,
   type ParticleColorValue,
   type ParticleEmitterPayload,
@@ -68,7 +69,7 @@ import {
   type ParticleModuleId,
 } from "../lib/particle-value-modes";
 import { PREVIEW_SYSTEM_GUID, emitterPreviewLibrary } from "../lib/play-particles";
-import { ParticleBasicBindingsEditor } from "../components/particle-parameter-fields";
+import { ParticleBasicBindingsEditor, ParticlePreviewParameters } from "../components/particle-parameter-fields";
 import { Badge } from "@haptic/ui/components/badge";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
@@ -176,13 +177,22 @@ export function ParticleEmitterPreview({
 }) {
   const emitter = normalizeParticleEmitterPayload(payload);
   const [picking, setPicking] = useState(false);
+  const [previewValues, setPreviewValues] = useState<Record<string, number[]>>({});
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="particle-emitter-preview">
-      <ParticlePreviewCanvas
-        library={emitterPreviewLibrary({ kind: "basic", payload: emitter })}
-        systemGuid={PREVIEW_SYSTEM_GUID}
-        testId="particle-emitter-preview-canvas"
-        onPickMaterial={() => setPicking(true)}
+      <div className="min-h-0 flex-1">
+        <ParticlePreviewCanvas
+          library={emitterPreviewLibrary({ kind: "basic", payload: emitter })}
+          systemGuid={PREVIEW_SYSTEM_GUID}
+          testId="particle-emitter-preview-canvas"
+          onPickMaterial={() => setPicking(true)}
+          parameterValues={previewValues}
+        />
+      </div>
+      <ParticlePreviewParameters
+        parameters={particleEmitterParameters({ kind: "basic", payload: emitter })}
+        values={previewValues}
+        onChange={setPreviewValues}
       />
       <ParticleMaterialPicker
         open={picking}
