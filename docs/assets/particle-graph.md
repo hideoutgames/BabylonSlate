@@ -31,23 +31,22 @@ Double-tap the asset to open it. The window has **Graph**, **Preview**, **Inspec
 
 ## Parameters
 
-A parameter is a value gameplay can set while the emitter runs. Each one is read by [Parameter](../scripting/particle/parameter.md) nodes, titled with the parameter's name.
+A parameter is a value gameplay can set while the emitter runs. Each parameter has one [Parameter](../scripting/particle/parameter.md) node, titled with the parameter's name.
 
-- **Add Node** lists them under **Parameter**: **Float Parameter**, **Vector 2 Parameter**, **Vector 3 Parameter** and **Color Parameter** add a new parameter, and each existing parameter has an entry by its name that adds another node reading it.
+- **Add Node** lists **Float Parameter**, **Vector 2 Parameter**, **Vector 3 Parameter** and **Color Parameter** under **Parameter**. Each adds a node with a new parameter of that type.
 - Right-click a [Float](../scripting/particle/float.md), [Vector 2](../scripting/particle/vector-2.md), [Vector 3](../scripting/particle/vector-3.md) or [Color](../scripting/particle/color.md) node, or long-press it, and choose **Convert to Parameter**. The node becomes a Parameter node of a new parameter whose default is the constant's value. Its wires stay.
 - On a Parameter node, **Convert to Constant** does the reverse: the node becomes a constant holding the parameter's default.
 
-Select a Parameter node to edit its parameter in the **Inspector**. Every node that reads the parameter shares these settings.
+Select a Parameter node to edit its parameter in the **Inspector**.
 
 | Setting | Description |
 | --- | --- |
-| Parameter | The parameter the node reads. Pick another to switch it. |
-| Name | The name gameplay sets it by. Unique in the graph, up to 64 characters. |
-| Type | **Float**, **Vector 2**, **Vector 3** or **Color**. Changing it resizes the default and retypes every node that reads it. |
+| Name | The name gameplay sets it by, up to 64 characters. Names are unique in the graph: a name that is already taken gets **_1**, **_2** and so on. |
+| Type | **Float**, **Vector 2**, **Vector 3** or **Color**. Changing it resizes the default. |
 | Default | The value used when nothing sets it. |
 
-- A parameter is removed when its last node is deleted, converted or switched to another parameter. Undo brings it back.
-- Pasting a Parameter node into a graph without its parameter adds the parameter again, or reads the graph's parameter of the same name and type.
+- Copying, duplicating or pasting a Parameter node makes a new parameter with the same type and default, named like the original with **_1**, **_2** and so on when the name is taken.
+- Deleting or converting the node removes its parameter. Undo brings it back.
 - **Preview Parameters** under the Preview sets values for the preview only.
 
 ## Related

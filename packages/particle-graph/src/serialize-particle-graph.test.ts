@@ -156,33 +156,19 @@ describe("particle graph canvas adapter", () => {
     }
   });
 
-  it("lists new parameters by type, then one entry per parameter, under Parameter after Constants", () => {
-    const parameters = [
-      { id: "p-heat", name: "Heat", type: "float" as const, defaultValue: [1] },
-      { id: "p-tint", name: "Tint", type: "color" as const, defaultValue: [1, 1, 1, 1] },
-    ];
-    const palette = particlePaletteNodes(parameters);
+  it("lists one new-parameter entry per type under Parameter, after Constants", () => {
+    const palette = particlePaletteNodes();
     expect(palette.some((entry) => entry.id === "input.parameter")).toBe(false);
     const entries = palette.filter((entry) => entry.nodeType === "input.parameter");
-    expect(entries.map(({ id, title, nodeTitle, category }) => ({ id, title, nodeTitle, category }))).toEqual([
-      { id: "input.parameter:new:float", title: "Float Parameter", nodeTitle: undefined, category: "Parameter" },
-      { id: "input.parameter:new:vec2", title: "Vector 2 Parameter", nodeTitle: undefined, category: "Parameter" },
-      { id: "input.parameter:new:vec3", title: "Vector 3 Parameter", nodeTitle: undefined, category: "Parameter" },
-      { id: "input.parameter:new:color", title: "Color Parameter", nodeTitle: undefined, category: "Parameter" },
-      { id: "input.parameter:p-heat", title: "Heat", nodeTitle: "Heat", category: "Parameter" },
-      { id: "input.parameter:p-tint", title: "Tint", nodeTitle: "Tint", category: "Parameter" },
+    expect(entries.map(({ id, title, category }) => ({ id, title, category }))).toEqual([
+      { id: "input.parameter:new:float", title: "Float Parameter", category: "Parameter" },
+      { id: "input.parameter:new:vec2", title: "Vector 2 Parameter", category: "Parameter" },
+      { id: "input.parameter:new:vec3", title: "Vector 3 Parameter", category: "Parameter" },
+      { id: "input.parameter:new:color", title: "Color Parameter", category: "Parameter" },
     ]);
-    // A new-parameter entry has no parameter yet; the editor declares one when it is placed.
+    // No parameter yet; the editor declares one when it is placed.
     expect(entries[3]!.defaultData).toEqual({ parameterId: "", valueType: "color", __particleRole: "input" });
-    expect(entries[5]!.defaultData).toEqual({
-      parameterId: "p-tint",
-      valueType: "color",
-      __parameter: { name: "Tint", type: "color", defaultValue: [1, 1, 1, 1] },
-      __particleRole: "input",
-    });
-    expect(entries[5]!.pins.find((entry) => entry.id === "out")?.type.kind).toBe("color");
-    const categories = [...new Set(palette.map((entry) => entry.category))];
-    expect(categories.indexOf("Parameter")).toBe(categories.indexOf("Constants") + 1);
+    expect(entries[3]!.pins.find((entry) => entry.id === "out")?.type.kind).toBe("color");
     expect(palette.findIndex((entry) => entry.category === "Parameter"))
       .toBe(palette.map((entry) => entry.category).lastIndexOf("Constants") + 1);
   });

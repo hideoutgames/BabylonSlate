@@ -347,7 +347,7 @@ describe("ParticleGraphDetails", () => {
     expect(nodeOf(history.read(), "create").properties["default:angle"]).toEqual([45]);
   });
 
-  it("edits a Parameter node's parameter for every node that reads it", async () => {
+  it("edits a Parameter node's own parameter, keeping its name unique", async () => {
     const doc = createDefaultParticleGraphDocument("Embers");
     doc.parameters = [
       { id: "heat", name: "Heat", type: "float", defaultValue: [1] },
@@ -355,31 +355,29 @@ describe("ParticleGraphDetails", () => {
     ];
     doc.nodes.push(
       { id: "a", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "heat", valueType: "float" } },
-      { id: "b", type: "input.parameter", position: { x: 0, y: 100 }, properties: { parameterId: "heat", valueType: "float" } },
+      { id: "b", type: "input.parameter", position: { x: 0, y: 100 }, properties: { parameterId: "tint", valueType: "color" } },
     );
     const history = renderDetails(doc, "a");
-    // A name another parameter holds is refused; a fresh one is trimmed and kept.
+    // One node per parameter: no picker for another one.
+    expect(screen.queryByTestId("property-parameterId")).toBeNull();
+    // A taken name gets the first free suffix; a fresh one is trimmed and kept.
     type("property-parameterName", "Tint");
-    expect(history.read().parameters[0]!.name).toBe("Heat");
+    expect(history.read().parameters[0]!.name).toBe("Tint_1");
     type("property-parameterName", "  Glow ");
     expect(history.read().parameters[0]!.name).toBe("Glow");
     type("property-parameterDefault", "3");
     expect(history.read().parameters[0]!.defaultValue).toEqual([3]);
     await pickOption("property-parameterType", "Vector 2");
     expect(history.read().parameters[0]).toMatchObject({ type: "vec2", defaultValue: [3, 3] });
-    expect(["a", "b"].map((id) => nodeOf(history.read(), id).properties.valueType)).toEqual(["vec2", "vec2"]);
-    // Picking another parameter keeps the old one while another node reads it.
-    await pickOption("property-parameterId", "Tint");
-    expect(nodeOf(history.read(), "a").properties).toEqual({ parameterId: "tint", valueType: "color" });
-    expect(history.read().parameters.map((parameter) => parameter.id)).toEqual(["heat", "tint"]);
+    expect(nodeOf(history.read(), "a").properties.valueType).toBe("vec2");
   });
 
-  it("explains a Parameter node whose parameter is gone", () => {
+  it("explains a Parameter node whose parameter is missing", () => {
     const doc = createDefaultParticleGraphDocument("Embers");
     doc.nodes.push({ id: "lost", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "gone", valueType: "float" } });
     renderDetails(doc, "lost");
-    expect(screen.getByTestId("particle-graph-node-details").textContent).toContain(
-      "Its parameter is gone. Pick another, or convert the node to a Constant.",
+    expect(screen.getByTestId("particle-parameter-missing").textContent).toBe(
+      "Its parameter is missing. Convert the node to a Constant or delete it.",
     );
     expect(screen.queryByTestId("property-parameterName")).toBeNull();
   });
@@ -563,6 +561,23 @@ describe("Particle Graph document panels", () => {
     expect(back.parameters).toEqual([]);
     expect(nodeOf(back, "life")).toMatchObject({ type: "const.float", properties: { value: [2.5] } });
     expect(links(back)).toEqual(links(doc));
+  });
+
+  it("gives a duplicated Parameter node its own parameter", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.parameters = [{ id: "heat", name: "Heat", type: "float", defaultValue: [2] }];
+    doc.nodes.push({ id: "heat-node", type: "input.parameter", position: { x: 0, y: 400 }, properties: { parameterId: "heat", valueType: "float" } });
+    const { container } = renderPanels(doc, "canvas");
+    await waitFor(() => expect(container.querySelector('[data-id="heat-node"]')).not.toBeNull());
+    fireEvent.contextMenu(container.querySelector('[data-id="heat-node"]')!.firstElementChild!);
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Duplicate/ }));
+    const duplicated = normalizeParticleGraphDocument(store.applyAssetDocumentChange.mock.calls.at(-1)![1]);
+    expect(duplicated.parameters.map(({ name, type, defaultValue }) => ({ name, type, defaultValue }))).toEqual([
+      { name: "Heat", type: "float", defaultValue: [2] },
+      { name: "Heat_1", type: "float", defaultValue: [2] },
+    ]);
+    const readers = duplicated.nodes.filter((node) => node.type === "input.parameter");
+    expect(readers.map((node) => node.properties.parameterId)).toEqual(duplicated.parameters.map((parameter) => parameter.id));
   });
 
   it("declares a new parameter for an Add Node Parameter entry", async () => {
