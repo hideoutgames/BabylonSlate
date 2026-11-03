@@ -1,5 +1,3 @@
-import { parse } from "acorn";
-
 /** Function constructor wrapper (two lines), then the strict directive. */
 export const COMPILED_MODULE_LINE_OFFSET = 3;
 
@@ -10,34 +8,51 @@ export interface CompiledModuleExports {
 }
 
 /**
+ * What the loader reads from a compiled script. The entry point names are the
+ * module's complete export list (one function may serve several entry points):
+ * the compiler declares each export once, at the start of a line, as
+ * `export function <name>(` or `export async function <name>(`, and exports
+ * nothing else.
+ */
+export interface CompiledModuleSource {
+  source: string;
+  entryPoints: ReadonlyArray<{ name: string }>;
+}
+
+/** An exported function declaration starting a line (after any indentation); group 1 is its name. */
+const EXPORT_DECLARATION = /(?<=^[ \t]*)export(?= (?:async )?function ([A-Za-z_$][\w$]*)\()/gm;
+
+/**
  * Generated graphs export functions. The module shim keeps their functions
  * collectable when source ownership ends; dynamic-import module records remain
  * rooted in the browser realm even after their Blob URL is revoked.
  */
 export async function loadCompiledModule(
-  source: string,
+  module: CompiledModuleSource,
   label: string,
 ): Promise<CompiledModuleExports> {
-  return loadViaFunctionShim(source, label);
+  return loadViaFunctionShim(module, label);
 }
 
-function loadViaFunctionShim(source: string, label: string): CompiledModuleExports {
-  const program = parse(source, { ecmaVersion: "latest", sourceType: "module" });
-  const names: string[] = [];
-  const exportOffsets: number[] = [];
-  for (const statement of program.body) {
-    if (statement.type === "ExportNamedDeclaration" && statement.declaration?.type === "FunctionDeclaration") {
-      names.push(statement.declaration.id.name);
-      exportOffsets.push(statement.start);
-    } else if (statement.type === "ExportNamedDeclaration" || statement.type === "ExportDefaultDeclaration" ||
-      statement.type === "ExportAllDeclaration" || statement.type === "ImportDeclaration") {
-      throw new Error(`Script ${label}: generated modules must export function declarations.`);
-    }
+function loadViaFunctionShim({ source, entryPoints }: CompiledModuleSource, label: string): CompiledModuleExports {
+  const declarations = new Map<string, number[]>(entryPoints.map((point) => [point.name, []]));
+  const names = [...declarations.keys()];
+  // Only listed names are exports: a line-start lookalike with another name
+  // sits in authored text (a template or comment line) and stays as written.
+  for (const match of source.matchAll(EXPORT_DECLARATION)) {
+    declarations.get(match[1]!)?.push(match.index);
   }
-  // Blank just the parsed export tokens: strings, comments, templates, regexp
+  const exportOffsets: number[] = [];
+  for (const [name, offsets] of declarations) {
+    if (offsets.length !== 1) {
+      throw new Error(`Script ${label}: export ${name} must be declared once at the start of a line as an exported function (found ${offsets.length}).`);
+    }
+    exportOffsets.push(offsets[0]!);
+  }
+  // Blank just the export keywords: strings, comments, templates, regexp
   // bodies, line numbers and all declaration columns remain untouched.
   let body = source;
-  for (const start of exportOffsets.reverse()) body = `${body.slice(0, start)}      ${body.slice(start + 6)}`;
+  for (const start of exportOffsets.sort((a, b) => b - a)) body = `${body.slice(0, start)}      ${body.slice(start + 6)}`;
   const members = names.map((name) => `[${JSON.stringify(name)}]: ${name}`).join(",");
   // A final real directive supersedes previous source labels without rewriting
   // authored text that happens to contain a sourceURL-looking template line.

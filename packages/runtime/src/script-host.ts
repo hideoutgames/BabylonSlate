@@ -53,6 +53,12 @@ export function compiledScriptSourceLabel(script: Pick<CompiledScript, "assetGui
   return `${script.assetGuid}~${encodeURIComponent(script.classId)}`;
 }
 
+/** A loaded module is reused only when its source and export list are both unchanged. */
+function sameModule(a: Pick<CompiledScript, "source" | "entryPoints">, b: Pick<CompiledScript, "source" | "entryPoints">): boolean {
+  return a.source === b.source && a.entryPoints.length === b.entryPoints.length &&
+    a.entryPoints.every((point, index) => point.name === b.entryPoints[index]!.name);
+}
+
 /**
  * Loads compiled graph modules and binds their entry points to actor
  * lifecycle hooks. One host per runtime session.
@@ -191,8 +197,8 @@ export class ScriptHost {
     const prepared = new Map<string, LoadedScript[]>();
     for (const script of scripts) {
       const previous = existing.get(compiledScriptKey(script));
-      const exports = previous?.script.source === script.source
-        ? previous.exports : await loadCompiledModule(script.source, compiledScriptSourceLabel(script));
+      const exports = previous && sameModule(previous.script, script)
+        ? previous.exports : await loadCompiledModule(script, compiledScriptSourceLabel(script));
       if (generation !== this.sourceGeneration) throw new Error("Script preparation was superseded or disposed.");
       const entries = prepared.get(script.classId) ?? [];
       entries.push({ script, exports });

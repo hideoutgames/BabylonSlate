@@ -276,7 +276,7 @@ describe("Asset Registry nodes at runtime", () => {
         { id: "value", sourceNodeId: "query", sourcePinId: output, targetNodeId: "log", targetPinId: "message" },
       ],
     };
-    await (await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "a" }).source, `${typeId}-${output}`)).run!(context);
+    await (await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "a" }), `${typeId}-${output}`)).run!(context);
   };
 
   it("runs compiled queries against the host's catalog", async () => {

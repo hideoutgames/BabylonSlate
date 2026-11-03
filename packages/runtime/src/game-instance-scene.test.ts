@@ -781,7 +781,7 @@ describe("Game Instance native events and scene APIs", () => {
         'export function Greet() { return { text: "hello" }; }',
       ].join("\n"),
       anchors: [],
-      entryPoints: [{ name: "onInit", event: "onInit", isAsync: false }],
+      entryPoints: [{ name: "onInit", event: "onInit", isAsync: false }, { name: "Greet", isAsync: false }],
       variables: [{ name: "lives", type: "int", defaultValue: 3 }],
       implementedInterfaces: ["iface-greeter"],
       interfaceImplementations: [

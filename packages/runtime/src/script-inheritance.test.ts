@@ -30,7 +30,7 @@ function classScript(
   parentClassId: string,
   source: string,
   events: readonly string[] = [],
-  extra: Partial<CompiledScript> = {},
+  { functions = [], ...extra }: Partial<CompiledScript> & { functions?: readonly string[] } = {},
 ): CompiledScript {
   return {
     assetGuid: `${classId}-script`,
@@ -38,7 +38,10 @@ function classScript(
     parentClassId,
     source,
     anchors: [],
-    entryPoints: events.map((event) => ({ name: event, event, isAsync: false })),
+    entryPoints: [
+      ...events.map((event) => ({ name: event, event, isAsync: false })),
+      ...functions.map((name) => ({ name, isAsync: false })),
+    ],
     ...extra,
   };
 }
@@ -70,6 +73,7 @@ const parentScript = classScript("Parent", "Actor", `${trace}
   export function Greet(ctx) { return { text: "Parent.greet@" + ctx.self.classId }; }
   export function Name() { return { text: "Parent" }; }
 `, ["onBeginPlay", "onTick", "Ping"], {
+  functions: ["Greet", "Name"],
   implementedInterfaces: ["iface-greeter"],
   interfaceImplementations: [
     { interfaceGuid: "iface-greeter", method: "Greet", exportName: "Greet" },
@@ -80,7 +84,7 @@ const parentScript = classScript("Parent", "Actor", `${trace}
 /** Child : Parent only overrides the `Name` function. */
 const childScript = classScript("Child", "Parent", `
   export function Name() { return { text: "Child" }; }
-`);
+`, [], { functions: ["Name"] });
 
 /** Override : Parent replaces Begin Play and Ping without calling the parent. */
 const overrideScript = classScript("Override", "Parent", `

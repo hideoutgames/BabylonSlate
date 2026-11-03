@@ -41,7 +41,8 @@ function classScript(
   parentClassId: string,
   handlers: Record<string, Handler>,
   extra: {
-    functions?: string;
+    /** Hand-written exported functions, by export name, appended to the compiled module. */
+    functions?: Record<string, string>;
     variables?: CompiledScript["variables"];
     interfaces?: Pick<CompiledScript, "implementedInterfaces" | "interfaceImplementations">;
   } = {},
@@ -83,9 +84,9 @@ function classScript(
     assetGuid,
     classId,
     parentClassId,
-    source: `${compiled.source}\n${extra.functions ?? ""}`,
+    source: [compiled.source, ...Object.values(extra.functions ?? {})].join("\n"),
     anchors: compiled.anchors,
-    entryPoints: compiled.entryPoints,
+    entryPoints: [...compiled.entryPoints, ...Object.keys(extra.functions ?? {}).map((name) => ({ name, isAsync: false }))],
     ...(extra.variables ? { variables: extra.variables } : {}),
     ...extra.interfaces,
   };
@@ -124,7 +125,7 @@ function gameSubsystem(classId: string, tag: string, end: string, extra: Record<
     "flow.event.end": end,
     ...extra,
   }, {
-    functions: `export function Describe(ctx) { return { text: "${tag}#" + ctx.getVariable("slot") }; }`,
+    functions: { Describe: `export function Describe(ctx) { return { text: "${tag}#" + ctx.getVariable("slot") }; }` },
     variables: [{ name: "slot", type: "int", defaultValue: 3 }],
   });
 }
@@ -142,10 +143,10 @@ const weather = classScript("WeatherSubsystem", "SceneSubsystem", {
   "flow.event.sceneLayerAdded": 'log("weather:layerAdded:" + sceneLayer.guid);',
   "flow.event.sceneLayerRemoved": 'log("weather:layerRemoved:" + sceneLayer.guid);',
 }, {
-  functions: `export function Describe(ctx) {
+  functions: { Describe: `export function Describe(ctx) {
     const scene = ctx.getSceneReference();
     return { text: "weather@" + (scene && scene.getVariable("sceneName")) };
-  }`,
+  }` },
 });
 
 describe("Game Subsystems", () => {
@@ -221,7 +222,7 @@ describe("Game Subsystems", () => {
     await runtime.loadScripts([
       classScript("Enemy", "InventoryBase", {}),
       classScript("InventoryBase", "GameSubsystem", { "flow.event.init": 'log("init:" + ctx.self.classId);' }, {
-        functions: 'export function Describe(ctx) { return { text: "inventory@" + ctx.self.classId }; }',
+        functions: { Describe: 'export function Describe(ctx) { return { text: "inventory@" + ctx.self.classId }; }' },
       }),
       classScript("GameInstance", "GameInstance", {
         "flow.event.init": {
@@ -263,7 +264,7 @@ describe("Game Subsystems", () => {
     const take = scriptLog(commands);
     const describes = (classId: string, parentClassId: string, text: string) =>
       classScript(classId, parentClassId, {}, {
-        functions: `export function Describe() { return { text: "${text}" }; }`,
+        functions: { Describe: `export function Describe() { return { text: "${text}" }; }` },
         interfaces: {
           implementedInterfaces: ["iface-describe"],
           interfaceImplementations: [{ interfaceGuid: "iface-describe", method: "Describe", exportName: "Describe" }],
@@ -435,7 +436,7 @@ describe("Scene Subsystems", () => {
     });
     const take = scriptLog(commands);
     await runtime.loadScripts([
-      classScript("Alpha", "SceneSubsystem", {}, { functions: 'export function Ping(ctx) { return { text: "alpha-pong" }; }' }),
+      classScript("Alpha", "SceneSubsystem", {}, { functions: { Ping: 'export function Ping(ctx) { return { text: "alpha-pong" }; }' } }),
       // Beta Ends first (reverse class-id order), while Alpha is still live.
       classScript("Beta", "SceneSubsystem", {
         "flow.event.end": { gets: { alpha: "Alpha" }, body: 'log("beta:end:" + ctx.invokeFunction(alpha, "Ping", {}).text);' },

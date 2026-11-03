@@ -240,7 +240,7 @@ async function queryRuntime(layer: SerializedSceneLayer) {
   });
   await runtime.loadScripts([
     { assetGuid: "main-probe", classId: "MainProbe", parentClassId: "Actor", source: PROBE_SOURCE, anchors: [],
-      entryPoints: [{ name: "Probe", event: "Probe", isAsync: false }] },
+      entryPoints: [{ name: "Probe", event: "Probe", isAsync: false }, { name: "TurnLayerCamera", isAsync: false }] },
     { assetGuid: "layer-probe", classId: "LayerProbe", parentClassId: "SceneLayerActor", source: PROBE_SOURCE, anchors: [],
       entryPoints: [{ name: "Probe", event: "Probe", isAsync: false }, { name: "TurnLayerCamera", event: "TurnLayerCamera", isAsync: false }] },
   ]);
@@ -554,7 +554,7 @@ describe("SceneLayer runtime compositor", () => {
     await runtime.loadScripts([{
       assetGuid: "layer-script",
       classId: "LayerScript",
-      source: `let done = false; export function onTick(ctx) { if (done) return; done = true; ${onTick} }`,
+      source: `let done = false;\nexport function onTick(ctx) { if (done) return; done = true; ${onTick} }`,
       anchors: [],
       entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }],
     }]);
