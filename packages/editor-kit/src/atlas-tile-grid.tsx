@@ -1,13 +1,14 @@
 import {
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
-  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type Ref,
 } from "react";
 import { ImageIcon } from "lucide-react";
 import {
@@ -28,16 +29,26 @@ import {
 } from "@haptic/ui/components/empty";
 import { cn } from "@haptic/ui/lib/utils";
 import { zoomViewAbout, type PanZoomLimits, type PanZoomView } from "./pan-zoom-model";
-import { CONTEXT_MENU_LONG_PRESS_MS } from "./use-context-menu";
 
 export type AtlasTileGridTool = "move" | "select";
 
-/** A drag that moves something drawn on the sheet instead of panning it. */
+/**
+ * A mouse drag that carries a tile off the sheet (onto a drop target the host
+ * finds under the pointer) instead of panning. Touch and pen always pan.
+ */
 export interface AtlasTileDrag {
-  /** A press on `tileId`: return true to drag from it (a template drawn there) instead of panning. */
+  /** A left mouse press on `tileId`: return true to drag the tile once the pointer moves past the tap distance. */
   start: (tileId: number) => boolean;
-  /** Each further tile the dragging pointer enters. */
-  move: (tileId: number) => void;
+  /** Each move of the drag, in client pixels. */
+  move: (clientX: number, clientY: number) => void;
+  /** The release, in client pixels, or `null` when the drag is cancelled (a second pointer, a pointer cancel). */
+  end: (drop: { clientX: number; clientY: number } | null) => void;
+}
+
+/** Imperative view controls (`ref`). */
+export interface AtlasTileGridHandle {
+  /** Zoom about the surface's centre by `factor` (above 1 zooms in). */
+  zoomBy: (factor: number) => void;
 }
 
 export interface AtlasTileGridProps {
@@ -55,15 +66,14 @@ export interface AtlasTileGridProps {
   tool?: AtlasTileGridTool;
   /** Extra content inside each cell (badges, dimming); memoize it: a new function redraws every cell. */
   renderCellOverlay?: (tileId: number) => ReactNode;
-  /** Content over the atlas, positioned in atlas pixels (a template preview). */
+  /** Content over the atlas, positioned in atlas pixels (a block outline). */
   overlay?: ReactNode;
-  /** A right-click, or a touch or pen held still on a tile, opens its menu at the press; a hold never selects. */
-  onTileContextMenu?: (tileId: number, clientX: number, clientY: number) => void;
-  /** In Move, a one-pointer drag from a grabbed tile reports tiles instead of panning. */
+  /** In Move, a left mouse drag from a tile the host accepts carries it off the sheet instead of panning. */
   tileDrag?: AtlasTileDrag;
-  /** Centres the view on `tileId` whenever `token` changes, keeping the zoom. */
-  reveal?: { tileId: number; token: number };
+  /** The tile under a hovering mouse (0 off the atlas or when the mouse leaves); touch and pen never hover. */
+  onTileHover?: (tileId: number) => void;
   onImageSize?: (width: number, height: number) => void;
+  ref?: Ref<AtlasTileGridHandle>;
   "data-testid"?: string;
 }
 
@@ -102,8 +112,8 @@ function fitAtlasView(
 
 /**
  * Clickable atlas with a pixel-aligned grid, collision overlay, and optional
- * pinch zoom. Hosts can decorate cells, draw over the atlas, open a tile menu
- * and drag content across the sheet.
+ * pinch zoom. Hosts can decorate cells, draw over the atlas, follow the
+ * hovering mouse and drag tiles off the sheet.
  */
 export function AtlasTileGrid({
   tileset,
@@ -119,10 +129,10 @@ export function AtlasTileGrid({
   tool: toolProp,
   renderCellOverlay,
   overlay,
-  onTileContextMenu,
   tileDrag,
-  reveal,
+  onTileHover,
   onImageSize,
+  ref,
   "data-testid": testId = "atlas-tile-grid",
 }: AtlasTileGridProps) {
   const filled = useMemo(() => ensureTilesetTiles(tileset), [tileset]);
@@ -161,10 +171,10 @@ export function AtlasTileGrid({
     startY: number;
     ids: number[] | null;
   } | null>(null);
-  /** A `tileDrag` in progress and the last tile it reported. */
-  const tileDragRef = useRef<{ pointerId: number; lastTileId: number } | null>(null);
-  /** A touch or pen hold that opens the tile menu unless the press moves or ends first. */
-  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** A `tileDrag` press, and whether it has moved far enough to be a drag. */
+  const tileDragRef = useRef<{ pointerId: number; startX: number; startY: number; dragging: boolean } | null>(null);
+  /** The last tile reported to `onTileHover`. */
+  const hoverTileRef = useRef(0);
   const [selectionPreview, setSelectionPreview] = useState<{
     ids: number[];
     x: number;
@@ -230,15 +240,34 @@ export function AtlasTileGrid({
     });
   };
 
-  const clearHold = () => {
-    if (holdTimerRef.current !== null) clearTimeout(holdTimerRef.current);
-    holdTimerRef.current = null;
+  const reportHover = (tileId: number) => {
+    if (hoverTileRef.current === tileId) return;
+    hoverTileRef.current = tileId;
+    onTileHover?.(tileId);
   };
-  useEffect(() => clearHold, []);
+  // A host that starts listening again hears the tile under the mouse on its next move.
+  useEffect(() => {
+    if (!onTileHover) hoverTileRef.current = 0;
+  }, [onTileHover]);
+
+  /** Ends a tile drag; a press that never moved past the tap distance reports nothing. */
+  const endTileDrag = (drop: { clientX: number; clientY: number } | null) => {
+    const drag = tileDragRef.current;
+    tileDragRef.current = null;
+    if (drag?.dragging) tileDrag?.end(drop);
+  };
+
+  useImperativeHandle(ref, () => ({
+    zoomBy: (factor) => {
+      const surface = surfaceRef.current;
+      if (!surface) return;
+      const pivot = { x: surface.clientWidth / 2, y: surface.clientHeight / 2 };
+      userViewRef.current = true;
+      setView((current) => zoomViewAbout(current, factor, pivot, ZOOM_LIMITS));
+    },
+  }), []);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    // A right press belongs to the tile menu, never to a pan or a tap.
-    if (event.button === 2 && onTileContextMenu) return;
     if (!panZoom && !(tool === "select" && onSelectionChange)) return;
     try {
       event.currentTarget.setPointerCapture?.(pointerIdOf(event));
@@ -254,8 +283,7 @@ export function AtlasTileGrid({
       panDragRef.current = null;
       tapRef.current = null;
       selectionDragRef.current = null;
-      tileDragRef.current = null;
-      clearHold();
+      endTileDrag(null);
       setSelectionPreview(null);
       didPanRef.current = true;
       const points = [...pointersRef.current.values()];
@@ -281,27 +309,22 @@ export function AtlasTileGrid({
       tileId: tileAtPointer(event),
     };
     const pressedTileId = tapRef.current.tileId;
-    if (tool === "move" && tileDrag && pressedTileId > 0 && tileDrag.start(pressedTileId)) {
+    if (
+      tool === "move" &&
+      tileDrag &&
+      event.pointerType === "mouse" &&
+      event.button === 0 &&
+      pressedTileId > 0 &&
+      tileDrag.start(pressedTileId)
+    ) {
       event.preventDefault();
-      tileDragRef.current = { pointerId: pointerIdOf(event), lastTileId: pressedTileId };
+      tileDragRef.current = {
+        pointerId: pointerIdOf(event),
+        startX: event.clientX,
+        startY: event.clientY,
+        dragging: false,
+      };
       return;
-    }
-    if (onTileContextMenu && pressedTileId > 0 && event.pointerType !== "mouse") {
-      const pointerId = pointerIdOf(event);
-      const { clientX, clientY } = event;
-      clearHold();
-      holdTimerRef.current = setTimeout(() => {
-        holdTimerRef.current = null;
-        // Moving past the tap distance, a second finger or a release has already let go of the tap.
-        if (tapRef.current?.pointerId !== pointerId) return;
-        tapRef.current = null;
-        panDragRef.current = null;
-        selectionDragRef.current = null;
-        // The release's click belongs to the menu, not to the cell.
-        didPanRef.current = true;
-        setSelectionPreview(null);
-        onTileContextMenu(pressedTileId, clientX, clientY);
-      }, CONTEXT_MENU_LONG_PRESS_MS);
     }
     if (tool === "move") {
       panDragRef.current = {
@@ -328,7 +351,10 @@ export function AtlasTileGrid({
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const pointerId = pointerIdOf(event);
-    if (!pointersRef.current.has(pointerId)) return;
+    if (!pointersRef.current.has(pointerId)) {
+      if (onTileHover && event.pointerType === "mouse") reportHover(tileAtPointer(event));
+      return;
+    }
     pointersRef.current.set(pointerId, {
       x: event.clientX,
       y: event.clientY,
@@ -339,7 +365,6 @@ export function AtlasTileGrid({
       Math.hypot(event.clientX - tap.x, event.clientY - tap.y) >= TAP_SELECT_PX
     ) {
       tapRef.current = null;
-      clearHold();
     }
     if (pointersRef.current.size >= 2) {
       if (!panZoom) return;
@@ -381,14 +406,19 @@ export function AtlasTileGrid({
     const tileDragState = tileDragRef.current;
     if (tileDragState?.pointerId === pointerId) {
       event.preventDefault();
-      const tileId = tileAtPointer(event);
-      if (tileId > 0 && tileId !== tileDragState.lastTileId) {
-        tileDragState.lastTileId = tileId;
-        // The press stays a tap until the pointer leaves the tile it started on.
-        tapRef.current = null;
+      if (!tileDragState.dragging) {
+        // The press stays a tap until the pointer moves past the tap distance.
+        if (
+          Math.hypot(
+            event.clientX - tileDragState.startX,
+            event.clientY - tileDragState.startY,
+          ) < TAP_SELECT_PX
+        )
+          return;
+        tileDragState.dragging = true;
         didPanRef.current = true;
-        tileDrag?.move(tileId);
       }
+      tileDrag?.move(event.clientX, event.clientY);
       return;
     }
     const selection = selectionDragRef.current;
@@ -472,7 +502,6 @@ export function AtlasTileGrid({
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     const pointerId = pointerIdOf(event);
     pointersRef.current.delete(pointerId);
-    clearHold();
     const tap = tapRef.current;
     if (tap?.pointerId === pointerId) {
       tapRef.current = null;
@@ -493,7 +522,11 @@ export function AtlasTileGrid({
       panDragRef.current = null;
     }
     if (tileDragRef.current?.pointerId === pointerId) {
-      tileDragRef.current = null;
+      endTileDrag(
+        event.type === "pointercancel"
+          ? null
+          : { clientX: event.clientX, clientY: event.clientY },
+      );
     }
     const selection = selectionDragRef.current;
     if (selection?.pointerId === pointerId) {
@@ -527,47 +560,6 @@ export function AtlasTileGrid({
     surface.addEventListener("wheel", listener, { passive: false });
     return () => surface.removeEventListener("wheel", listener);
   }, []);
-
-  const revealToken = reveal?.token;
-  const revealTileId = reveal?.tileId;
-  useLayoutEffect(() => {
-    if (revealToken === undefined || revealTileId === undefined) return;
-    const surface = surfaceRef.current;
-    const rect = tilesetTileRect(filled, revealTileId);
-    if (!surface || !rect) return;
-    const width = surface.clientWidth;
-    const height = surface.clientHeight;
-    if (width <= 0 || height <= 0) return;
-    userViewRef.current = true;
-    setView((current) => ({
-      ...current,
-      x: width / 2 - (rect.x + rect.width / 2) * current.scale,
-      y: height / 2 - (rect.y + rect.height / 2) * current.scale,
-    }));
-    // Only a new token reveals again; tile edits keep the view.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revealToken]);
-
-  const onContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!onTileContextMenu) return;
-    event.preventDefault();
-    // A positioned press names the tile under it; a keyboard menu (or jsdom) has only its target cell.
-    const rect = imageRef.current?.getBoundingClientRect();
-    const atPoint = rect
-      ? atlasCellAt({
-          localX: event.clientX,
-          localY: event.clientY,
-          imageX: rect.left,
-          imageY: rect.top,
-          imageWidth: rect.width,
-          imageHeight: rect.height,
-          tileset: filled,
-        })
-      : 0;
-    const cell = event.target instanceof Element ? event.target.closest("[data-tile-id]") : null;
-    const tileId = atPoint > 0 ? atPoint : Number(cell?.getAttribute("data-tile-id") ?? 0);
-    if (tileId > 0) onTileContextMenu(tileId, event.clientX, event.clientY);
-  };
 
   const tileButtons = useMemo(
     () =>
@@ -660,7 +652,9 @@ export function AtlasTileGrid({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onContextMenu={onTileContextMenu ? onContextMenu : undefined}
+        onPointerLeave={(event) => {
+          if (onTileHover && event.pointerType === "mouse") reportHover(0);
+        }}
       >
         {!imageUrl ? (
           <Empty
