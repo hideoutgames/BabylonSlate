@@ -32,7 +32,7 @@ describe("RuntimeParticles", () => {
     expect(send(particles, { ...assign("a"), particleSystemGuid: null })).not.toHaveProperty("generation");
   });
 
-  it("ends playback on a current report, ignores one an earlier Play made stale, and runs the event only for finish and Stop", () => {
+  it("ends playback on a current report and ignores one an earlier Play made stale", () => {
     const particles = new RuntimeParticles();
     send(particles, assign("a"));
     send(particles, assign("b"));
@@ -44,8 +44,8 @@ describe("RuntimeParticles", () => {
     expect(particles.ended(ended("a", 3))).toBe(true);
     expect(particles.isPlaying("actor", "a")).toBe(false);
     expect(particles.isPlaying("actor")).toBe(true);
-    // A failure ends playback without the event.
-    expect(particles.ended(ended("b", 2, "failed"))).toBe(false);
+    // A failure ends playback too (the driver runs no event for it).
+    expect(particles.ended(ended("b", 2, "failed"))).toBe(true);
     expect(particles.isPlaying("actor")).toBe(false);
     // Stop ends Is Playing at once; the drain's report then runs the event.
     send(particles, playing(true, "a"));

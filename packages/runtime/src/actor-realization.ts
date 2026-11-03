@@ -1,5 +1,5 @@
 import type { CommandMessage } from "@haptic/bridge";
-import { createDefaultRenderTargetCaptureProperties, resolveActorDefaults, type Transform } from "@haptic/core";
+import { createDefaultRenderTargetCaptureProperties, resolveActorDefaults, type SerializedComponent, type Transform } from "@haptic/core";
 import { isInfiniteLoopError } from "@haptic/debugger";
 import {
   attachSerializedComponents,
@@ -125,6 +125,21 @@ export class ActorRealization {
   /** True while `remove` runs for this actor instance. */
   removing(actor: Actor): boolean {
     return this.removingActors.has(actor);
+  }
+
+  /**
+   * An engine-internal actor of the base Actor class holding `components` (Spawn Particles
+   * effects), realized at once so its handle is valid in the same frame. No script runs on it.
+   */
+  spawnEngine(options: { transform: Transform; components: readonly SerializedComponent[]; streamOwner?: EngineObject | null }): Actor | null {
+    if (this.host.stopped()) return null;
+    const streams = this.host.streams();
+    if (!streams.canSpawnFor(options.streamOwner)) return null;
+    const world = this.host.world();
+    const actor = world.createActor({ classId: "Actor", transform: options.transform, hooks: {} });
+    streams.adoptSpawned(options.streamOwner, actor);
+    attachSerializedComponents(world, actor, options.components, { freshIds: true });
+    return this.finishScripted(actor);
   }
 
   spawnScripted(options: ScriptedActorSpawn): Actor | null {

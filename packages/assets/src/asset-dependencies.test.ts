@@ -131,6 +131,16 @@ describe("typed asset dependencies", () => {
     expect(metadata.requiredDependencies).toEqual(["inventory-module", "item-schema", "items", "move", "unknown-items", "unknown-schema"]);
   });
 
+  it("ships a Particle System named only by a Spawn Particles node", () => {
+    for (const type of ["particles.spawnAtLocation", "particles.spawnAttached"]) {
+      const metadata = collectAssetDependencyMetadata("Class", {
+        nodes: [{ id: "spawn", type, data: { "default:system": "sparks-system" } }],
+        edges: [],
+      });
+      expect(metadata.dependencies, type).toEqual(["sparks-system"]);
+    }
+  });
+
   it("loads a curve asset read by Get Curve Object with its owner, through a literal or a variable", () => {
     const literal = collectAssetDependencyMetadata("Class", {
       nodes: [

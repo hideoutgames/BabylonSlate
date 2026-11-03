@@ -23,6 +23,8 @@ Select an actor, then choose **Add Component > Particles > Particle**. You can a
 - [Play Particles](../scripting/class/play-particles.md) and [Stop Particles](../scripting/class/stop-particles.md) start and stop every particle component on an actor, and [Is Particles Playing](../scripting/class/is-particles-playing.md) checks whether any of them plays. The component also has **Play**, **Stop** and **Is Playing** functions.
 - [Event On Particles Finished](../scripting/class/event-on-particles-finished.md) runs when the component stops playing: a Particle System that does not loop ran out, or **Stop** was called, and the last particles are gone.
 
+- For one-off effects that need no actor of their own, use [Spawn Particles At Location](../scripting/class/spawn-particles-at-location.md) or [Spawn Particles Attached](../scripting/class/spawn-particles-attached.md).
+
 ## Related
 
 - [Particles](../graphics/particles.md)

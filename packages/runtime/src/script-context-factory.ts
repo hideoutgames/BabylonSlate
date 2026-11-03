@@ -728,6 +728,11 @@ export function createScriptContext(
       const target = asActor(actor);
       return target ? services.isParticlesPlaying?.(target.guid) === true : false;
     };
+    context.spawnParticlesAtLocation = (system, location, rotation, scale, autoDestroy = true) =>
+      services.spawnParticleEffect?.({ systemGuid: String(system ?? ""), location, rotation, scale, autoDestroy: autoDestroy !== false }, self) ?? null;
+    context.spawnParticlesAttached = (system, attachTo, bone, locationOffset, rotationOffset, autoDestroy = true) =>
+      services.spawnParticleEffect?.({ systemGuid: String(system ?? ""), attachTo: attachTo ?? null, bone: String(bone ?? ""),
+        location: locationOffset, rotation: rotationOffset, autoDestroy: autoDestroy !== false }, self) ?? null;
     context.createSceneLayerAsync = async (assetGuid, zOrder) => {
       if (!services.createSceneLayerAsync) throw new Error("This host cannot prepare a cold SceneLayer");
       const layer = await services.createSceneLayerAsync(String(assetGuid ?? ""), Number(zOrder) || 0, self);

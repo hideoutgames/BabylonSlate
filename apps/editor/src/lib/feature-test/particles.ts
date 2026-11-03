@@ -46,6 +46,8 @@ export const FEATURE_TEST_PARTICLE_NAMES = {
   /** A Once burst that `FT_FxFlashRelay` replays from Event On Particles Finished. */
   flash: "FT_FxFlash",
   flashRelay: "FT_FxFlashRelay",
+  /** Spawns the flash with Spawn Particles At Location and Spawn Particles Attached. */
+  spawner: "FT_FxSpawner",
 } as const;
 
 const NAMES = FEATURE_TEST_PARTICLE_NAMES;
@@ -103,6 +105,43 @@ export async function buildFeatureTestParticles(ctx: FeatureTestContext): Promis
   await saveSystem(ctx, NAMES.stress, [stress], "world");
   const flash = await saveSystem(ctx, NAMES.flash, [await saveEmitter(ctx, NAMES.flashEmitter, flashEmitter(glow))], "world");
   flashRelays.set(ctx, await saveFlashRelay(ctx, flash));
+  spawners.set(ctx, await saveSpawner(ctx, flash));
+}
+
+const spawners = new WeakMap<FeatureTestContext, FeatureTestClassRef>();
+
+/**
+ * Fire-and-forget effects: Begin Play spawns the flash above the actor with Spawn Particles
+ * At Location and on the actor with Spawn Particles Attached, asserts both handles are valid,
+ * and Auto Destroy removes them once they finish.
+ */
+async function saveSpawner(ctx: FeatureTestContext, flash: string): Promise<FeatureTestClassRef> {
+  const graph = classGraph({
+    actorDefaults: { eventTick: "disabled" },
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, 0),
+      gNode("wait", "timers.delay", 240, 0, { "default:duration": 0.5 }),
+      gNode("self", "actor.getSelf", 240, 200),
+      gNode("where", "transform.getLocation", 480, 200),
+      gNode("at", "particles.spawnAtLocation", 480, 0, { "default:system": flash }),
+      gNode("check-at", "debug.assertIsValid", 740, 0, { "default:message": "Spawn Particles At Location returned no effect" }),
+      gNode("attached", "particles.spawnAttached", 1000, 0, { "default:system": flash, "default:locationOffset": { x: 0, y: 1, z: 0 } }),
+      gNode("check-attached", "debug.assertIsValid", 1260, 0, { "default:message": "Spawn Particles Attached returned no effect" }),
+    ],
+    edges: [
+      gExec("begin", "wait"),
+      gExec("wait", "at"),
+      gExec("at", "check-at"),
+      gExec("check-at", "attached"),
+      gExec("attached", "check-attached"),
+      gWire("self", "out", "where", "target"),
+      gWire("where", "out", "at", "location"),
+      gWire("at", "effect", "check-at", "object"),
+      gWire("self", "out", "attached", "attachTo"),
+      gWire("attached", "effect", "check-attached", "object"),
+    ],
+  });
+  return ctx.saveClass({ folder: FOLDER, name: NAMES.spawner, parentClass: "Actor", graph });
 }
 
 /** The Flash Relay Class, saved by `buildFeatureTestParticles` and placed by `placeFeatureTestParticles`. */
@@ -183,6 +222,10 @@ export async function placeFeatureTestParticles(ctx: FeatureTestContext): Promis
   ctx.addActor(actor("ft-fx-flash-relay", "Flash Relay", tf(zone.at(0, 1.5, 4)), instanceComponents("ft-fx-flash-relay", relay.components), {
     classId: relay.ref.classId,
   }), { zone: "particles" });
+
+  const spawner = spawners.get(ctx);
+  if (!spawner) throw new Error("FeatureTest could not find the Spawner Class");
+  ctx.addActor(actor("ft-fx-spawner", "Particle Spawner", tf(zone.at(-3, 1.5, 4)), [], { classId: spawner.classId }), { zone: "particles" });
 
   const stress = system(NAMES.stress);
   STRESS_GRID.forEach(([x, z], index) => {
