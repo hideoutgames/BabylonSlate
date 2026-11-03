@@ -109,6 +109,19 @@ export {
   type MaterialPreviewStatus,
 } from "./preview-state";
 export { isMaterialParameterNode, isPerInstanceParameter, materialParameterName, validateMaterialParameterNames } from "./parameters";
+export {
+  MATERIAL_PARAMETER_TYPES,
+  canConvertMaterialConstantToParameter,
+  canConvertMaterialParameterToConstant,
+  convertMaterialConstantToParameter,
+  convertMaterialParameterToConstant,
+  materialParameterValueType,
+  nameNewMaterialParameters,
+  renameMaterialParameter,
+  retypeMaterialParameter,
+  uniqueMaterialParameterName,
+  type MaterialParameterValueType,
+} from "./parameter-authoring";
 export { customGlslInterface, customGlslInterfaceError, customGlslFunctionBodyError, newCustomGlslProperties, type CustomGlslPin } from "./custom-glsl";
 export { materialGradientStops, type MaterialGradientStop } from "./gradient";
 export * from "./vector-mask";

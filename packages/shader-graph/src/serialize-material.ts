@@ -1,3 +1,4 @@
+import { nameNewMaterialParameters } from "./parameter-authoring";
 import type { SerializedGraph } from "@haptic/core";
 import {
   materialNodeDefinition,
@@ -157,17 +158,16 @@ export function serializedToMaterialGraph(
   previous?: MaterialDocument,
 ): MaterialDocument {
   const base = previous ?? normalizeMaterialDocument({});
+  const nodes = graph.nodes.map((node) => ({
+    id: node.id,
+    type: node.type,
+    position: node.position,
+    properties: propertiesFromNodeData(node.data),
+  }));
   return normalizeMaterialDocument({
     ...base,
-    nodes: graph.nodes.map((node) => ({
-      id: node.id,
-      type: node.type,
-      position: node.position,
-      properties: {
-        ...propertiesFromNodeData(node.data),
-        ...(previous && isMaterialParameterNode(node.type) && !previous.nodes.some((entry) => entry.id === node.id) ? { name: "" } : {}),
-      },
-    })),
+    // Added, pasted and duplicated parameters get a free name (`_N` when theirs is taken).
+    nodes: previous ? nameNewMaterialParameters(previous.nodes, nodes) : nodes,
     edges: graph.edges.map((edge) => ({
       id: edge.id,
       sourceNodeId: edge.source,
@@ -184,15 +184,12 @@ export function serializedToMaterialFunctionGraph(
 ): MaterialFunctionDocument {
   return {
     ...previous,
-    nodes: graph.nodes.map((node) => ({
+    nodes: nameNewMaterialParameters(previous.nodes, graph.nodes.map((node) => ({
       id: node.id,
       type: node.type,
       position: node.position,
-      properties: {
-        ...propertiesFromNodeData(node.data),
-        ...(isMaterialParameterNode(node.type) && !previous.nodes.some((entry) => entry.id === node.id) ? { name: "" } : {}),
-      },
-    })),
+      properties: propertiesFromNodeData(node.data),
+    }))),
     edges: graph.edges.flatMap((edge) =>
       edge.sourceHandle && edge.targetHandle
         ? [{
