@@ -223,7 +223,8 @@ export interface RuntimeDriver {
   ): RuntimeDiagnostic | null;
   /** Load compiled graph modules and register their source anchors. */
   loadScripts(scripts: readonly CompiledScript[]): Promise<void>;
-  replaceScriptSources(scripts: readonly CompiledScript[]): Promise<void>;
+  /** Replace the script union with `scripts` plus the held scripts `retain` names (by `compiledScriptKey`). */
+  replaceScriptSources(scripts: readonly CompiledScript[], retain?: readonly string[]): Promise<void>;
   /** Spawn an actor whose lifecycle hooks run its class's compiled graphs. */
   spawnScriptedActor(options: {
     classId: string;

@@ -7,7 +7,7 @@ import type {
   SerializedGraph,
 } from "@haptic/core";
 import { documentId } from "@haptic/core";
-import { derivedDataRoot, type AssetLoadState } from "@haptic/assets";
+import { derivedDataRoot, type AssetLoadScopeOptions, type AssetLoadState } from "@haptic/assets";
 import type { ExportArtifact } from "@haptic/exporter";
 import { requeueWithEditLock } from "../lib/document-lock-apply";
 import {
@@ -219,7 +219,7 @@ export function useProjectAssetActions({
   }, [documentService, projectService]);
 
   const createAssetLoadScope = useCallback(
-    (owner: string) => projectService.createAssetLoadScope(owner),
+    (owner: string, options?: AssetLoadScopeOptions) => projectService.createAssetLoadScope(owner, options),
     [projectService],
   );
 

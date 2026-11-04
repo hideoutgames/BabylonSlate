@@ -1,12 +1,13 @@
 import {
   createSceneSourceHost,
   applyRuntimeSourceControl,
+  compiledScriptKey,
   type AcquireRuntimeScene,
   type RuntimeDriver,
 } from "@haptic/runtime";
 import type { SerializedScene } from "@haptic/core";
 import type { EngineHandle } from "@haptic/render";
-import type { CommandMessage, ControlMessage } from "@haptic/bridge";
+import type { CommandMessage, ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
 import type { GameWorkerHost } from "./game-worker-host";
 import type {
   PlaySceneSourceLoader,
@@ -56,6 +57,41 @@ export interface PlaySourceTracker {
   dispose(): void;
 }
 
+/** Same module and metadata: the runtime keeps a held script that compares equal. */
+function sameScript(held: ScriptBundleEntry | undefined, next: ScriptBundleEntry): boolean {
+  return held === next || (held !== undefined && held.source === next.source &&
+    JSON.stringify({ ...held, source: "" }) === JSON.stringify({ ...next, source: "" }));
+}
+
+/**
+ * A replacing `loadScripts` reduced to the scripts the runtime does not hold, retaining the held ones that stay;
+ * null when the runtime already holds exactly this union. Anything else is sent as it is.
+ */
+function scriptDelta(held: ReadonlyMap<string, ScriptBundleEntry> | null,
+  control: Extract<ControlMessage, { type: "loadScripts" }>): Extract<ControlMessage, { type: "loadScripts" }> | null {
+  if (!held || !control.replace || control.retain || control.spawn?.length) return control;
+  const union = new Set(control.scripts.map(compiledScriptKey));
+  const changed = control.scripts.filter((script) => !sameScript(held.get(compiledScriptKey(script)), script));
+  if (!changed.length && [...held.keys()].every((key) => union.has(key))) return null;
+  const sent = new Set(changed.map(compiledScriptKey));
+  return { ...control, scripts: changed, retain: [...union].filter((key) => held.has(key) && !sent.has(key)) };
+}
+
+/** What the runtime holds once `control` is delivered. */
+function heldScriptsAfter(held: ReadonlyMap<string, ScriptBundleEntry> | null,
+  control: Extract<ControlMessage, { type: "loadScripts" }>): Map<string, ScriptBundleEntry> | null {
+  if (control.replace) {
+    if (control.retain && !held) return null;
+    const next = new Map(control.retain?.flatMap((key) => held?.has(key) ? [[key, held.get(key)!] as const] : []) ?? []);
+    for (const script of control.scripts) next.set(compiledScriptKey(script), script);
+    return next;
+  }
+  if (!held) return null;
+  const next = new Map(held);
+  for (const script of control.scripts) next.set(compiledScriptKey(script), script);
+  return next;
+}
+
 export function createPlaySourceTracker(ctx: PlaySourceTrackerContext): PlaySourceTracker {
   const { options, handle } = ctx;
   let releaseSessionSources: (() => void) | undefined;
@@ -69,18 +105,33 @@ export function createPlaySourceTracker(ctx: PlaySourceTrackerContext): PlaySour
   const sceneSourceOwners = new Map<string, number>();
   let nextSourceRequestId = 0;
   const sourceRequests = new Map<number, { resolve(): void; reject(error: Error): void }>();
-  const publishSourceControl = async (control: ControlMessage) => {
+  /**
+   * The script union the runtime holds, by `compiledScriptKey`: the boot scripts, then each union a
+   * `loadScripts` delivered. Null after a failed delivery, so the next one sends its whole union again.
+   */
+  let heldScripts: Map<string, ScriptBundleEntry> | null = new Map((options.scripts ?? []).map((script) => [compiledScriptKey(script), script]));
+  const publishSourceControl = async (requested: ControlMessage) => {
+    const control = requested.type === "loadScripts" ? scriptDelta(heldScripts, requested) : requested;
+    // The runtime holds exactly this union already.
+    if (!control) return;
     const worker = ctx.worker();
     const runtime = ctx.runtime();
-    if (worker && control.type === "loadScripts") {
-      const requestId = ++nextSourceRequestId;
-      await new Promise<void>((resolve, reject) => {
-        sourceRequests.set(requestId, { resolve, reject });
-        worker!.postControl({ ...control, requestId });
-      });
-    } else if (worker) worker.postControl(control);
-    else if (runtime && !await applyRuntimeSourceControl(runtime, control))
-      throw new Error(`Unsupported source preparation control: ${control.type}.`);
+    if (!worker && !runtime) return;
+    try {
+      if (worker && control.type === "loadScripts") {
+        const requestId = ++nextSourceRequestId;
+        await new Promise<void>((resolve, reject) => {
+          sourceRequests.set(requestId, { resolve, reject });
+          worker!.postControl({ ...control, requestId });
+        });
+      } else if (worker) worker.postControl(control);
+      else if (runtime && !await applyRuntimeSourceControl(runtime, control))
+        throw new Error(`Unsupported source preparation control: ${control.type}.`);
+    } catch (error) {
+      if (control.type === "loadScripts") heldScripts = null;
+      throw error;
+    }
+    if (requested.type === "loadScripts") heldScripts = heldScriptsAfter(heldScripts, requested);
   };
   // Runtime fallback for a Complex Collision Model the content scan missed. The
   // answer is always asynchronous, so it never re-enters the requesting tick.

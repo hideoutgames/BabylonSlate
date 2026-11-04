@@ -307,6 +307,11 @@ export type ControlMessage =
       scripts: ScriptBundleEntry[];
       /** Complete source union, including every surviving owner. */
       replace?: boolean;
+      /**
+       * With `replace`: keys (`compiledScriptKey`) of scripts the runtime already holds that stay in the
+       * union unchanged. `scripts` then carries only the new or changed ones.
+       */
+      retain?: string[];
       /** Request readiness only after evaluation and class registration finish. */
       requestId?: number;
       /** Explicit boot spawn requests. Omitted or empty only loads the classes. */

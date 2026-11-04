@@ -16,6 +16,7 @@ import type {
 import type {
   AssetLoadPriority,
   AssetLoadScope,
+  AssetLoadScopeOptions,
   AssetLoadState,
   AssetRegistry,
   ClassAssetReplacement,
@@ -309,8 +310,8 @@ export interface DocumentContextValue {
     next: Record<string, unknown>,
     mergeKey?: string,
   ) => Promise<boolean>;
-  /** Scene, runtime object, and explicit preload ownership. */
-  createAssetLoadScope: (owner: string) => AssetLoadScope;
+  /** Scene, runtime object, and explicit preload ownership; `keep` holds what it released past the short retention (Play). */
+  createAssetLoadScope: (owner: string, options?: AssetLoadScopeOptions) => AssetLoadScope;
   getAssetLoadState: (guid: string) => AssetLoadState;
   /** Font source / other binary chunks. */
   readAssetChunk: (path: string, chunkId: string, options?: { ownerDocumentId?: string; scope?: AssetLoadScope; signal?: AbortSignal; priority?: AssetLoadPriority }) => Promise<Uint8Array | null>;

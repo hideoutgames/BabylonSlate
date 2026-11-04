@@ -10,7 +10,7 @@ export type PlaySpawnEntry = {
 /** Minimal surface the Play boot sequence needs from `RuntimeDriver`. */
 export type PlayBootRuntime = {
   loadScripts(scripts: readonly CompiledScript[]): Promise<void>;
-  replaceScriptSources?(scripts: readonly CompiledScript[]): Promise<void>;
+  replaceScriptSources?(scripts: readonly CompiledScript[], retain?: readonly string[]): Promise<void>;
   realizePlayWorld(): void | Promise<void>;
   beginPlayLoading?(): boolean;
   finishPlayLoading?(): void;
@@ -54,10 +54,11 @@ export function createPlayBootCoordinator() {
       scripts: readonly CompiledScript[],
       spawn: readonly PlaySpawnEntry[],
       replace = false,
+      retain?: readonly string[],
     ) {
       const signal = cancellation.signal;
       pendingSpawn = [...spawn];
-      const ready = replace && runtime.replaceScriptSources ? runtime.replaceScriptSources(scripts) : runtime.loadScripts(scripts);
+      const ready = replace && runtime.replaceScriptSources ? runtime.replaceScriptSources(scripts, retain) : runtime.loadScripts(scripts);
       scriptsReady = ready.catch((error) => {
         if (!signal.aborted) runtime.reportError(error);
       });

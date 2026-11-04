@@ -5,7 +5,7 @@ import {
 } from "@haptic/core";
 import {
   isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
-  compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, DOCUMENT_CHUNK_ID, mapBounded,
+  compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, DOCUMENT_CHUNK_ID,
   normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry, type AssetSourceLocator,
   type IndexedAsset, type ModelPayload, type RegistryLoadedAsset,
@@ -90,6 +90,13 @@ export interface PlayAssetSourceHost {
   /** `stored`: the closure's stored documents preparation has read, by guid, for the compile to reuse. */
   compile: (required: ReadonlySet<string>, stored: ReadonlyMap<string, StoredPlayDocument>) =>
     Promise<{ bundles: ScriptBundleEntry[]; diagnostics: readonly Diagnostic[] }>;
+  /**
+   * The Play session's storage checks: each asset's revision as a closure walk last read it from storage.
+   * A later acquisition of the session trusts one while the registry still indexes that revision, so a slot
+   * reads storage only for assets new to the session or indexed anew since (a save, encode, bake or
+   * foreground rescan). A retry trusts none. Omitted, every walk reads every catalog from storage.
+   */
+  verifiedRevisions?: Map<string, string>;
 }
 
 /** A document as storage holds it: its asset type, schema version and payload. */
@@ -103,7 +110,7 @@ const assetFormats = createDefaultMigrationRegistry();
  * not open as a working document must be at its type's current version.
  */
 async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: readonly string[], signal: AbortSignal,
-  known?: ReadonlyMap<string, string>): Promise<Map<string, string>> {
+  known?: ReadonlyMap<string, string>, trust = false): Promise<Map<string, string>> {
   const { registry } = host;
   const revisions = new Map<string, string>();
   // Assets this preparation already resolved, with their dependencies, are not read again.
@@ -125,7 +132,9 @@ async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: reado
   const startRead = (guid: string): Promise<AssetSourceLocator> => {
     let read = reads.get(guid);
     if (!read) {
-      read = limit(() => {
+      // A catalog this session already read from storage, at the revision the registry still indexes, is not read again.
+      const verified = trust ? verifiedLocator(host, guid) : undefined;
+      read = verified ? Promise.resolve(verified) : limit(() => {
         walk.signal.throwIfAborted();
         return cancellableCatalogRead(registry.getAssetLocator(guid, { signal: walk.signal }), walk.signal);
       });
@@ -151,6 +160,7 @@ async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: reado
       if (!asset || asset.placeholder || asset.locator !== locator) throw new SourceRevisionChangedError(`Required asset changed while resolving: ${guid}`);
       if (!host.documentOverrides?.has(guid)) assetFormats.requireCurrent(asset.header.type, asset.header.version);
       revisions.set(guid, locator.revision);
+      host.verifiedRevisions?.set(guid, locator.revision);
       const dependencies = host.documentOverrides?.get(guid)?.requiredDependencies ?? registry.requiredDependenciesFor(guid, asset.header);
       pending.push(...dependencies);
       prefetch(dependencies);
@@ -162,7 +172,15 @@ async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: reado
   }
 }
 
-/** Concurrent catalog (locator) reads while resolving a closure or revalidating it. The loader's own cap covers payload reads only. */
+/** The registry's locator for an asset when it is still at the revision this session verified against storage. */
+function verifiedLocator(host: PlayAssetSourceHost, guid: string): AssetSourceLocator | undefined {
+  const revision = host.verifiedRevisions?.get(guid);
+  if (revision === undefined) return undefined;
+  const asset = host.registry.getByGuid(guid);
+  return asset && !asset.placeholder && asset.locator?.revision === revision ? asset.locator : undefined;
+}
+
+/** Concurrent catalog (locator) reads while resolving a closure. The loader's own cap covers payload reads only. */
 const CATALOG_READS = 8;
 /** Assets whose documents or chunks are requested at once: the one being processed plus the five after it. */
 const READ_AHEAD = 6;
@@ -251,7 +269,8 @@ export async function acquirePlayAssetSources(
 ) {
   for (let attempt = 1; ; attempt++) {
     options.signal.throwIfAborted();
-    try { return await acquirePlayAssetSourcesAttempt(host, roots, options); }
+    // A retry follows a source change: it reads every catalog from storage again, trusting no earlier check.
+    try { return await acquirePlayAssetSourcesAttempt(host, roots, options, attempt === 1); }
     catch (error) {
       options.signal.throwIfAborted();
       if (!isAssetSourceRevisionChanged(error)) throw error;
@@ -265,8 +284,9 @@ async function acquirePlayAssetSourcesAttempt(
   host: PlayAssetSourceHost,
   roots: readonly string[],
   options: PlayAssetSourceOptions,
+  trust: boolean,
 ) {
-  const catalogRevisions = await currentRequiredPlayAssets(host, roots, options.signal);
+  const catalogRevisions = await currentRequiredPlayAssets(host, roots, options.signal, undefined, trust);
   const required = new Set(catalogRevisions.keys());
   const scope = host.createScope(options.consumer);
   const project = host.project;
@@ -330,7 +350,7 @@ async function acquirePlayAssetSourcesAttempt(
       const modes = fontModes.get(guid) ?? new Set<string>();
       for (const chunk of chunks) modes.add(chunk);
       fontModes.set(guid, modes);
-      for (const [dependency, revision] of await currentRequiredPlayAssets(host, [guid], options.signal, catalogRevisions)) {
+      for (const [dependency, revision] of await currentRequiredPlayAssets(host, [guid], options.signal, catalogRevisions, trust)) {
         const previous = catalogRevisions.get(dependency);
         if (previous && previous !== revision) throw new SourceRevisionChangedError(`Asset ${dependency} changed while resolving font dependencies; retry`);
         catalogRevisions.set(dependency, revision);
@@ -516,7 +536,7 @@ async function acquirePlayAssetSourcesAttempt(
     // What the compile reads: the closure's compile inputs and embedded scripts, and the project-wide catalog
     // (which carries the working documents among its assets). Scene edits outside scripts keep the entry.
     const compiled = compileRoot ? await scope.acquire(compileRoot, {
-      key: `play-scripts:v2:${JSON.stringify([compileInputs, embeddedScripts, playCompileCatalog(host),
+      key: `play-scripts:v2:${JSON.stringify([compileInputs, embeddedScripts])}:${playCompileCatalogKey(host)}:${JSON.stringify([
         project.settings.tags, project.settings.infiniteLoopDetection, project.settings.loopCount,
         host.traceExecution === true])}`,
       estimate: { sourceBytes: 0, decodedBytes: Math.max(4096, compileInputBytes * 8), temporaryBytes: Math.max(4096, compileInputBytes * 4) },
@@ -561,14 +581,16 @@ async function acquirePlayAssetSourcesAttempt(
         // entries. A metadata cache entry must never prolong their residency.
         const value = packedContentFromGame({ ...game, navmeshBytes: new Map(), audioReverbBytes: new Map(), complexMeshes: new Map() });
         value.audioLibrary.sourceRevisions = new Map(audioRevisions);
-        // Bounded concurrent revalidation; the mismatch reported is the first in `revisions` order.
-        await mapBounded(revisions, CATALOG_READS, async ([guid, revision]) => {
-          const current = await host.registry.getAssetLocator(guid, { signal });
-          if (current.revision !== revision) throw new SourceRevisionChangedError(`Asset ${guid} (${current.path}) changed during runtime preparation; retry. Expected source revision ${revision}; found ${current.revision}`);
-        }, signal);
         return { value, sourceBytes: 0, decodedBytes: cpuBytes, dispose: () => releasePackedContent(value) };
       },
     }, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false }) : packedContentFromGame(game);
+    // Each asset was read, or its catalog checked against storage, at its revision during this acquisition (or
+    // earlier in the session, when trusted). The registry indexes every save, encode and bake, so one that landed
+    // since shows here without reading storage again; the first in `revisions` order is reported.
+    for (const [guid, revision] of revisions) {
+      const current = host.registry.getByGuid(guid)?.locator?.revision;
+      if (current !== revision) throw new SourceRevisionChangedError(`Asset ${guid} changed during runtime preparation; retry. Expected source revision ${revision}; found ${current ?? "none"}`);
+    }
     const content = copyContainers(cachedContent);
     content.audioLibrary = copyContainers(cachedContent.audioLibrary);
     content.particleLibrary = copyContainers(cachedContent.particleLibrary);
@@ -648,6 +670,18 @@ const COMPILE_INPUT_TYPES = new Set([...SCRIPT_ASSET_TYPES, "InputAction", "Inpu
 const COMPILE_CATALOG_TYPES = new Set([...COMPILE_INPUT_TYPES, "Material", "MaterialInstance", "Timeline", "TimelineClip2D", "TimelineClip3D"]);
 
 type EmbeddedScriptOwner = { script?: unknown; actors?: unknown; timelineClips?: unknown };
+
+const compileCatalogKeys = new WeakMap<PlayAssetSourceHost, { generation: number; key: string }>();
+
+/** `playCompileCatalog` as a cache key, built once per host while the registry's catalog stays unchanged. */
+function playCompileCatalogKey(host: PlayAssetSourceHost): string {
+  const { generation } = host.registry;
+  const memo = compileCatalogKeys.get(host);
+  if (memo && memo.generation === generation) return memo.key;
+  const key = JSON.stringify(playCompileCatalog(host));
+  if (typeof generation === "number") compileCatalogKeys.set(host, { generation, key });
+  return key;
+}
 
 /**
  * What the Play compile reads across the project: each catalog asset's identity and current revision
