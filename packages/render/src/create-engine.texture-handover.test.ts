@@ -168,6 +168,7 @@ describe("textures handed over between the editor's view and Play", () => {
     const play = playView(engine, ["spare"]);
     await play.prewarmSceneMaterials();
     const presented = play.presentFirstFrame();
+    presented.catch(() => {});
     expect(isDisposedGpuTexture(edited.spare!)).toBe(false);
     engine.onContextLostObservable.notifyObservers(engine);
     await expect(presented).rejects.toThrow("Rendering context was lost");
