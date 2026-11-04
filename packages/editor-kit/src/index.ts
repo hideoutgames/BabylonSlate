@@ -340,6 +340,7 @@ export {
 export {
   AtlasTileGrid,
   type AtlasTileDrag,
+  type AtlasTileGridHandle,
   type AtlasTileGridProps,
   type AtlasTileGridTool,
 } from "./atlas-tile-grid";
