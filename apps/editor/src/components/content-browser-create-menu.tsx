@@ -10,6 +10,7 @@ import {
   PackageIcon,
   PaintbrushIcon,
   PaletteIcon,
+  SaveIcon,
   SparklesIcon,
   TableIcon,
 } from "lucide-react";
@@ -84,6 +85,7 @@ export type ContentBrowserCreateItem = {
     | "create-child-class"
     | "create-data-definition"
     | "create-data-tree"
+    | "create-linked-save-game"
     | "create-render-target-texture";
   label: string;
   icon: ReactNode;
@@ -382,6 +384,19 @@ export function contentBrowserCreateMenuItems(deps: ContentBrowserCreateMenuDeps
         return [await createProjectAssetBeside(registry, definition, "DataTree", definition.header.name, {
           defaultDefinitionGuid: guid,
           dataTree: createDataTreeAsset(guid),
+          typeSchemas: typeSchemas(registry),
+        })];
+      }),
+    },
+    {
+      id: "create-linked-save-game",
+      label: "Create Linked Save Game",
+      icon: <SaveIcon />,
+      onSelect: () => run(async (registry) => {
+        const definition = targets("DataDefinition")[0];
+        if (!definition) return [];
+        return [await createProjectAssetBeside(registry, definition, "SaveGame", definition.header.name, {
+          saveGameDataDefinitionGuid: definition.header.guid,
           typeSchemas: typeSchemas(registry),
         })];
       }),

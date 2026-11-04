@@ -62,8 +62,12 @@ export function ProjectSaveGamesSettings() {
   const openDefinition = useOpenDocument(
     definitionAsset ? documentId({ kind: "save-game", path: definitionAsset.path }) : null,
   )?.content;
-  // A linked Save Game's fields come from its Data Definition.
+  // A linked Save Game's fields come from its Data Definition: rebuild when Data Definition content changes,
+  // not whenever the type catalog is recomputed.
   const schemas = useDataCatalog().schemas;
+  const schemasRef = useRef(schemas);
+  schemasRef.current = schemas;
+  const dataDefinitionsKey = JSON.stringify(schemas.dataDefinitions ?? {});
   const [pickerOpen, setPickerOpen] = useState(false);
   const [service, setService] = useState<SaveGameService | null>(null);
   const [saves, setSaves] = useState<SaveGameInfo[]>([]);
@@ -91,14 +95,14 @@ export function ProjectSaveGamesSettings() {
     if (!projectGuid || !definitionAsset || !settings) return;
     void (async () => {
       try {
-        const definition = requireSaveGameDefinition(openDefinition ?? await loadAssetDocument("save-game", definitionAsset.path), schemas);
+        const definition = requireSaveGameDefinition(openDefinition ?? await loadAssetDocument("save-game", definitionAsset.path), schemasRef.current);
         // Every call below names its profile and slot, so editing the defaults never rebuilds this service.
         const next = new SaveGameService({ projectId: projectGuid, definition, preview: true, storage: createSaveGameStorage() });
         if (!cancelled) setService(next);
       } catch (cause) { if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause)); }
     })();
     return () => { cancelled = true; };
-  }, [projectGuid, definitionAsset?.path, settings?.definitionGuid, registryEpoch, loadAssetDocument, openDefinition, schemas]); // eslint-disable-line react-hooks/exhaustive-deps -- depend on stable definition identity, not the settings object
+  }, [projectGuid, definitionAsset?.path, settings?.definitionGuid, registryEpoch, loadAssetDocument, openDefinition, dataDefinitionsKey]); // eslint-disable-line react-hooks/exhaustive-deps -- depend on stable definition identity, not the settings object
 
   const refresh = useCallback(async () => {
     if (!service) return;

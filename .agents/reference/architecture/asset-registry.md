@@ -42,7 +42,7 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 
 - `contentBrowserContextActions` offers a Create item only when every selected asset is a type it takes and no folder is selected (`createActionsForTypes`); **Create Child Class** also needs `isNewClassParentAllowed`.
 - Pure builders live in [`content-browser-create-actions.ts`](../../../apps/editor/src/lib/content-browser-create-actions.ts) (Sprite, Tilemap, Material grouping by map suffix, Prefab, components per asset, Particle System, Data Definition from a Structure, Render Target Texture) and [`new-asset-result.ts`](../../../apps/editor/src/lib/new-asset-result.ts) (Material Instance, Sprite Animation, Tileset). Each sets `dependencies[]` (and `atlasTextures` for atlas referrers) so the export closure holds before the first save.
-- Classes (Create Actor, Create Child Class) and Data assets go through `createProjectAsset`, New Asset's write path, so parent checks, Class id rules and Data validation stay identical; Create Actor passes `classComponents`.
+- Classes (Create Actor, Create Child Class), Data assets and Create Linked Save Game go through `createProjectAsset`, New Asset's write path, so parent checks, Class id rules and Data validation stay identical; Create Actor passes `classComponents`, and Create Linked Save Game passes `saveGameDataDefinitionGuid`, which also records the Data Definition as a header dependency.
 - Writes land beside the source (first selected in natural name order), named after it with `_N` on a same-type clash (`uniqueNewAssetName` for Classes, whose ids are project-wide). One result opens; several open none. Source documents come from open tabs first, else `readAssetDocument`.
 
 ## Dependency metadata

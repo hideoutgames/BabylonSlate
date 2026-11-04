@@ -16,7 +16,7 @@ Double-tap a Save Game to open it.
 
 ## Fields from a Data Definition
 
-To manage a Save Game's fields in one place, choose a **Data Definition** under **Advanced**. The Save Game then takes its fields, their types and their default values from that Data Definition, and every change you make there reaches the Save Game.
+To manage a Save Game's fields in one place, choose a **Data Definition** under **Advanced**, or right-click a Data Definition in the **Content Browser** and choose **Create Linked Save Game**. The Save Game then takes its fields, their types and their default values from that Data Definition, and every change you make there reaches the Save Game.
 
 - **Add Field**, **Name**, renaming and **Remove Field** are gone; **Type** and **Container** are read-only. The **Open** button at the top of **Fields**, named after the Data Definition, opens it to edit the fields.
 - You can still change a field's **Default Value** here. **Use Data Definition Default** goes back to the Data Definition's value.

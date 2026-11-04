@@ -47,6 +47,8 @@ export async function createProjectAsset(options: {
   typeSchemas?: TypeSchemas;
   dataDefinition?: DataDefinitionAsset;
   dataTree?: DataTreeAsset;
+  /** A new Save Game takes its fields from this Data Definition (Create Linked Save Game). */
+  saveGameDataDefinitionGuid?: string;
   classParentOf?: (id: string) => string | null | undefined;
   parentGraphs?: Record<string, SerializedGraph>;
   /** The mode of the open Scene; a new Prefab starts empty in 2D. */
@@ -60,6 +62,10 @@ export async function createProjectAsset(options: {
   const defaultDefinitionGuid = options.dataTree ? options.dataTree.defaultDefinitionGuid : options.defaultDefinitionGuid ?? null;
   const definition = defaultDefinitionGuid ? options.typeSchemas?.dataDefinitions?.[defaultDefinitionGuid] : undefined;
   if (type === "DataTree" && defaultDefinitionGuid && !definition) {
+    throw new Error("The selected Data Definition is unavailable. Choose an existing Data Definition.");
+  }
+  const linkedDefinition = type === "SaveGame" ? options.saveGameDataDefinitionGuid : undefined;
+  if (linkedDefinition && options.typeSchemas && !options.typeSchemas.dataDefinitions?.[linkedDefinition]) {
     throw new Error("The selected Data Definition is unavailable. Choose an existing Data Definition.");
   }
   const dataDefinition = options.dataDefinition;
@@ -98,11 +104,12 @@ export async function createProjectAsset(options: {
     defaultDefinitionGuid,
     dataDefinition,
     dataTree: options.dataTree,
+    saveGameDataDefinitionGuid: linkedDefinition,
     viewportMode: options.viewportMode,
     timelineAsset: options.timelineAsset,
     classComponents: type === "Class" ? options.classComponents : undefined,
   });
-  if (type === "DataDefinition" || type === "DataTree") {
+  if (type === "DataDefinition" || type === "DataTree" || linkedDefinition) {
     Object.assign(result, assetHeaderDependencyMetadata(type, result.payload, options.registry.list?.() ?? [], result.parentClass));
   }
   return options.registry.createAsset(

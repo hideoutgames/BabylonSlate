@@ -35,6 +35,7 @@ Double-tap a Data Definition to open it.
 
 - New entries start from the Definition's defaults, then keep their own values. When a Definition changes, an entry that uses it shows **Definition Changed** with **Review Changes**.
 - A Data Definition also works as a variable type, so scripts can build and break records with **Make** and **Break** nodes.
+- Right-click a Data Definition and choose **Create Data Tree** for a Data Tree that uses it, or **Create Linked Save Game** for a [Save Game](save-game.md#fields-from-a-data-definition) whose fields come from it. Field changes here reach the Save Game.
 
 ## Related
 
