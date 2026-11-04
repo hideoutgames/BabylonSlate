@@ -27,6 +27,7 @@ export const DEFAULT_PAINT_CELL_SIZE = 32;
 
 export type TilemapPaintTool =
   | "move"
+  | "select"
   | "brush"
   | "eraser"
   | "rect"
@@ -47,7 +48,7 @@ export interface TileCell {
 }
 
 export interface TilemapPaintStroke {
-  tool: Exclude<TilemapPaintTool, "picker" | "move">;
+  tool: Exclude<TilemapPaintTool, "picker" | "move" | "select">;
   layerId: string;
   tileId: number;
   start: TileCell;
@@ -65,7 +66,7 @@ export interface TilemapPaintStroke {
 export function isTilemapPaintStrokeTool(
   tool: TilemapPaintTool,
 ): tool is TilemapPaintStroke["tool"] {
-  return tool !== "move" && tool !== "picker";
+  return tool !== "move" && tool !== "picker" && tool !== "select";
 }
 
 /** Convert a Y-down canvas point into a +Y-up tile cell. */

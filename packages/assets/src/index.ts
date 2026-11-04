@@ -50,6 +50,7 @@ export * from "./tilemap-terrain";
 export * from "./tilemap-chunk";
 export * from "./tilemap-chains";
 export * from "./tilemap-paint";
+export * from "./tilemap-selection";
 export * from "./importers";
 export * from "./migrate-on-load";
 export * from "./migration";
