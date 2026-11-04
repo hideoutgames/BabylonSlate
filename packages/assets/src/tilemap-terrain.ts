@@ -321,6 +321,59 @@ export function paintTilemapTerrain(
 }
 
 /**
+ * Re-pick the variants of the terrain tiles around cells of `layerId` that an
+ * edit wrote with plain tiles (a selection moved, pasted, cut or deleted), as
+ * painting does (`resolveTerrainCell`): every written terrain cell and every
+ * terrain tile in the 8-neighbourhood of a written cell takes the variant its
+ * neighbours' terrains ask for; cells keep their terrain. `keep` names written
+ * cells whose neighbours all moved with them, so their surroundings did not
+ * change and they keep their tile (a hand-placed variant inside a moved block
+ * stays). Returns `map` itself when no variant changes, at once when none of
+ * the map's loaded Tilesets has terrains.
+ */
+export function resolveTilemapTerrainAround(
+  map: TilemapPayload,
+  options: {
+    layerId: string;
+    cells: Iterable<{ x: number; y: number }>;
+    keep?: (x: number, y: number) => boolean;
+    tilesets: ReadonlyMap<string, TilesetPayload>;
+  },
+): TilemapPayload {
+  const layer = map.layers.find((entry) => entry.id === options.layerId);
+  if (!layer || !map.tilesets.some((ref) => (options.tilesets.get(ref.guid)?.terrains?.length ?? 0) > 0)) return map;
+  const members = terrainMembers(map, options.tilesets);
+  const gidAt = layerReader(map, layer);
+  const memberAt = (x: number, y: number) => members.ofGid(gidAt(x, y));
+  const written = new Map<number, { x: number; y: number }>();
+  for (const cell of options.cells) {
+    if (tileInBounds(map, cell.x, cell.y)) written.set(tilemapCellKey(cell.x, cell.y), { x: cell.x, y: cell.y });
+  }
+  const resolve = new Map<number, { x: number; y: number; member: TerrainMember }>();
+  const consider = (x: number, y: number, key: number) => {
+    if (resolve.has(key) || !tileInBounds(map, x, y)) return;
+    const member = memberAt(x, y);
+    if (member) resolve.set(key, { x, y, member });
+  };
+  for (const [key, cell] of written) {
+    if (!options.keep?.(cell.x, cell.y)) consider(cell.x, cell.y, key);
+    for (const { dx, dy } of TERRAIN_NEIGHBOURS) {
+      const x = cell.x + dx;
+      const y = cell.y + dy;
+      const neighbourKey = tilemapCellKey(x, y);
+      // A written neighbour is resolved, or kept, as a written cell.
+      if (!written.has(neighbourKey)) consider(x, y, neighbourKey);
+    }
+  }
+  const writes: TileWrite[] = [];
+  for (const entry of resolve.values()) {
+    const id = resolveTerrainCell(map, entry.member, entry.x, entry.y, memberAt);
+    if (id !== gidAt(entry.x, entry.y)) writes.push({ x: entry.x, y: entry.y, id });
+  }
+  return writes.length > 0 ? setTiles(map, options.layerId, writes) : map;
+}
+
+/**
  * Bring a map's terrain cells up to date with its Tilesets. Each Tileset in
  * `tilesets` whose `tilesetTerrainStamp` differs from its ref's
  * `terrainStamp` (a ref without one is stale) has its terrain cells on every

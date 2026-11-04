@@ -118,6 +118,35 @@ async function pinchPaintCanvas(
   );
 }
 
+/**
+ * Touch pointer events on the Paint canvas at map cells (32 px cells unless
+ * zoomed; cell 0, 0 at the bottom-left of a bounded map's unpanned view), one
+ * event per step so React renders between them.
+ */
+async function touchPaintCanvas(
+  canvas: ReturnType<Page["getByTestId"]>,
+  steps: ReadonlyArray<readonly ["pointerdown" | "pointermove" | "pointerup", number, number, number]>,
+): Promise<void> {
+  const cell = Number(await canvas.getAttribute("data-cell-size"));
+  for (const [type, pointerId, x, y] of steps) {
+    await canvas.evaluate(
+      (node, event) => {
+        const box = node.getBoundingClientRect();
+        node.dispatchEvent(new PointerEvent(event.type, {
+          pointerId: event.pointerId,
+          pointerType: "touch",
+          isPrimary: event.pointerId === 1,
+          clientX: box.left + (event.x + 0.5) * event.cell,
+          clientY: box.bottom - (event.y + 0.5) * event.cell,
+          bubbles: true,
+          cancelable: true,
+        }));
+      },
+      { type, pointerId, x, y, cell },
+    );
+  }
+}
+
 /** A 2D project with a Tileset of the albedo fixture and an open Tilemap painting with its first tile. */
 async function openPaintableTilemap(page: Page, name: string): Promise<void> {
   await openTwoDProject(page);
@@ -179,6 +208,41 @@ test.describe("P10 tilemaps", () => {
     expect(await tileAt(page, -1, -1)).toBe(1);
   });
 
+
+  test("the Select tool moves painted tiles with one finger in one undo step, and a second finger cancels the drag", {
+    tag: IPAD_TEST_TAG,
+  }, async ({ page }) => {
+    test.setTimeout(120_000);
+    await openPaintableTilemap(page, "Moved");
+    const canvas = page.getByTestId("tilemap-paint-canvas");
+    await page.getByTestId("tilemap-tool-brush").click();
+    for (const x of [0, 1]) await touchPaintCanvas(canvas, [["pointerdown", 1, x, 0], ["pointerup", 1, x, 0]]);
+    await expect.poll(async () => tileAt(page, 1, 0)).toBe(1);
+
+    // One finger drags a rectangle over both tiles.
+    await page.getByTestId("tilemap-tool-select").click();
+    await expect(canvas).toHaveAttribute("data-tool", "select");
+    await touchPaintCanvas(canvas, [["pointerdown", 1, 0, 0], ["pointermove", 1, 1, 0], ["pointerup", 1, 1, 0]]);
+    await expect(page.getByTestId("tilemap-select-size")).toHaveText("2 × 1");
+
+    // A second finger landing mid-drag drops it: nothing moves.
+    await touchPaintCanvas(canvas, [["pointerdown", 1, 0, 0], ["pointermove", 1, 2, 2], ["pointerdown", 2, 6, 6], ["pointerup", 1, 2, 2], ["pointerup", 2, 6, 6]]);
+    expect(await tileAt(page, 0, 0)).toBe(1);
+    expect(await tileAt(page, 2, 2)).toBe(0);
+
+    // A drag from inside the selection moves its tiles when the finger lifts.
+    await touchPaintCanvas(canvas, [["pointerdown", 1, 0, 0], ["pointermove", 1, 1, 1], ["pointermove", 1, 3, 2], ["pointerup", 1, 3, 2]]);
+    await expect.poll(async () => tileAt(page, 3, 2)).toBe(1);
+    expect(await tileAt(page, 4, 2)).toBe(1);
+    expect(await tileAt(page, 0, 0)).toBe(0);
+    await expect(page.getByTestId("tilemap-select-size")).toHaveText("2 × 1");
+
+    // One undo step puts them back.
+    await page.getByTestId("undo-document").click();
+    await expect.poll(async () => tileAt(page, 0, 0)).toBe(1);
+    expect(await tileAt(page, 1, 0)).toBe(1);
+    expect(await tileAt(page, 3, 2)).toBe(0);
+  });
 
   // Sprite Animation frame playback is unit-covered (packages/render/src/anim-apply.test.ts).
   test("2D project paints tiles, binds a sprite and animation graph, and reports physics", {

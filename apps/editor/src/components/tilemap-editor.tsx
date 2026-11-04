@@ -8,13 +8,18 @@ import {
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
 } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { DEFAULT_SORTING_LAYERS } from "@haptic/core";
 import {
   BrushIcon,
+  CheckIcon,
   ChevronDownIcon,
+  ClipboardPasteIcon,
+  CopyIcon,
+  EllipsisIcon,
   EraserIcon,
   EyeIcon,
   EyeOffIcon,
@@ -25,8 +30,13 @@ import {
   PencilIcon,
   PipetteIcon,
   PlusIcon,
+  ScissorsIcon,
+  SquareDashedIcon,
+  SquareDashedMousePointerIcon,
   SquareIcon,
   StampIcon,
+  Trash2Icon,
+  XIcon,
 } from "lucide-react";
 import { Button } from "@haptic/ui/components/button";
 import { Separator } from "@haptic/ui/components/separator";
@@ -57,7 +67,9 @@ import {
 } from "@haptic/ui/components/empty";
 import {
   AssetPicker,
+  ContextMenuOverlay,
   NamedListEditor,
+  NestedMenu,
   PanelFrame,
   PropertyGrid,
   PropertySectionTitle,
@@ -69,8 +81,10 @@ import {
   assetRowIdentity,
   selectedPickerIdentity,
   useAssetOpen,
+  useContextMenu,
   useTouchUi,
   windowedSlice,
+  type ContextMenuItem,
   type PropertyRow,
 } from "@haptic/editor-kit";
 import {
@@ -112,6 +126,7 @@ import {
   tilesetTerrainById,
   tilesetTileById,
   tilesetTileRect,
+  type TilemapCellRect,
   type TilemapPaintTool,
   type TilemapLayer,
   type TilemapPayload,
@@ -146,6 +161,9 @@ import {
   placeholderCss,
   TilemapPaintRenderer,
 } from "../lib/tilemap-paint-renderer";
+import { useTilemapSelectTool } from "../lib/use-tilemap-select-tool";
+import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
+import { IconActionButton } from "./icon-action-button";
 
 /** The pivot marker's hit square for a finger or pen, in CSS pixels. */
 const PIVOT_TOUCH_TARGET = 44;
@@ -158,6 +176,7 @@ const TOOLS: Array<{
   icon: typeof PencilIcon;
 }> = [
   { id: "move", label: "Move", icon: HandIcon },
+  { id: "select", label: "Select", icon: SquareDashedMousePointerIcon },
   { id: "brush", label: "Brush", icon: PencilIcon },
   { id: "eraser", label: "Eraser", icon: EraserIcon },
   { id: "rect", label: "Rect", icon: SquareIcon },
@@ -318,9 +337,12 @@ export function TilemapDetails({
   const commitMap = (next: TilemapPayload, field?: string) => {
     if (next !== tilemap) commit(next, field);
   };
+  // Going back to a size moves tiles at negative cells within the map, and
+  // moves every tile around the actor unless the pivot is already 0, 0: ask first.
+  const boundedShift = tilemap.unbounded ? boundedTilemapShift(tilemap) : null;
+  const pivotOffCenter = tilemap.unbounded && (tilemap.pivot.x !== 0 || tilemap.pivot.y !== 0);
   const setUnbounded = (unbounded: boolean) => {
-    // Going back to a size moves tiles at negative cells: ask first.
-    if (!unbounded && boundedTilemapShift(tilemap)) setConfirmBounded(true);
+    if (!unbounded && (boundedShift || pivotOffCenter)) setConfirmBounded(true);
     else commitMap(setTilemapUnbounded(tilemap, unbounded));
   };
   const painted = tilemap.unbounded ? tilemapPaintedExtent(tilemap) : null;
@@ -545,8 +567,10 @@ export function TilemapDetails({
           <AlertDialogHeader>
             <AlertDialogTitle>Make Map Bounded?</AlertDialogTitle>
             <AlertDialogDescription>
-              Some tiles lie left of or below cell 0, 0. Every tile moves so the painted area
-              starts at cell 0, 0, and the map size becomes the painted area. You can undo this change.
+              {boundedShift
+                ? "Some tiles lie left of or below cell 0, 0. Every tile moves so the painted area starts at cell 0, 0, and the map size becomes the painted area."
+                : "The pivot is not at 0, 0. The tiles keep their places in the map but move relative to the actor, since a bounded map puts cell 0, 0 at the actor's position. The map size becomes the painted area."}
+              {" "}You can undo this change.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1168,6 +1192,20 @@ export function TilemapPaint({
   }, [selectedTerrain, payloads, tilemap.tilesets]);
   const [renderer] = useState(() => new TilemapPaintRenderer(createBrowserPaintSurface));
   useEffect(() => () => renderer.dispose(), [renderer]);
+  const select = useTilemapSelectTool({
+    tilemap,
+    latestRef,
+    paintLayerId: layer?.id ?? null,
+    tilesets: payloads,
+    onChange,
+    newId: newStrokeId,
+  });
+  const selecting = tool === "select";
+  /** Leaving the Select tool places a paste waiting there. */
+  const changeTool = (next: TilemapPaintTool) => {
+    if (tool === "select" && next !== "select") select.leave();
+    setTool(next);
+  };
 
   useLayoutEffect(() => {
     const host = hostRef.current;
@@ -1216,6 +1254,9 @@ export function TilemapPaint({
   }, [cssSize, unbounded]);
 
   const shape = strokePreview?.shape ?? null;
+  // The selection and its floating tiles show in the Select tool only.
+  const float = selecting ? select.float : null;
+  const selectionOutline = selecting ? select.outline : null;
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1234,8 +1275,10 @@ export function TilemapPaint({
       sortingLayers,
       preview: shape,
       pivot: pivotPreview,
+      float,
+      selection: selectionOutline,
     });
-  }, [atlases, cellSize, cssSize, pan, payloads, pivotPreview, renderer, shape, shown, sortingLayers]);
+  }, [atlases, cellSize, cssSize, float, pan, payloads, pivotPreview, renderer, selectionOutline, shape, shown, sortingLayers]);
 
   // React attaches wheel listeners as passive, which ignore preventDefault, so
   // the canvas keeps a native non-passive listener that runs the latest handler.
@@ -1355,10 +1398,11 @@ export function TilemapPaint({
 
   /**
    * Whether a pointer at a client point is on an unbounded map's pivot marker:
-   * its arms with a mouse, a 44 px square for a finger or pen.
+   * its arms with a mouse, a 44 px square for a finger or pen. The Select
+   * tool's gestures win over the marker, so it is never on it there.
    */
   const onPivotMarker = (clientX: number, clientY: number, pointerType: string) => {
-    if (!tilemap.unbounded) return false;
+    if (!tilemap.unbounded || selecting) return false;
     const local = canvasPoint(clientX, clientY);
     if (!local) return false;
     const view = viewRef.current;
@@ -1415,12 +1459,101 @@ export function TilemapPaint({
     setPivotPreview(next);
   };
 
-  /** A hovering mouse shows the move cursor over the pivot marker; written only when it changes. */
+  /**
+   * A hovering mouse shows the move cursor over the pivot marker, and in the
+   * Select tool over what a press would drag; written only when it changes.
+   */
   const pivotHoverRef = useRef(false);
   const showPivotHover = (canvas: HTMLCanvasElement, hovering: boolean) => {
     if (pivotHoverRef.current === hovering) return;
     pivotHoverRef.current = hovering;
     canvas.style.cursor = hovering ? "move" : "";
+  };
+
+  /** The canvas's focus target and the Select tool's keys and menu. */
+  const rootRef = useRef<HTMLDivElement>(null);
+  /** The cell under a hovering mouse, where a keyboard Paste lands. */
+  const pointerCellRef = useRef<{ x: number; y: number } | null>(null);
+  /** Where the latest press on the canvas was, for the menu a hold or right-click opens there. */
+  const menuPointRef = useRef<{ x: number; y: number } | null>(null);
+  const keybinds = useKeybindings();
+
+  /** The cell at the middle of the canvas. */
+  const centerCell = () => {
+    const canvas = canvasRef.current;
+    const rect = canvas?.getBoundingClientRect();
+    return cellAt((rect?.left ?? 0) + (rect?.width || cssSize.width) / 2, (rect?.top ?? 0) + (rect?.height || cssSize.height) / 2)
+      ?? { x: 0, y: 0 };
+  };
+  /** Keys go to the canvas after a toolbar action, so arrows nudge and Escape deselects. */
+  const focusCanvas = () => canvasRef.current?.focus({ preventScroll: true });
+  /** **Paste** in the Select tool, at `at` (a menu's press), the hovering mouse or the middle of the view. */
+  const pasteAt = (at?: { x: number; y: number }) => {
+    if (!select.paste(at ?? pointerCellRef.current ?? centerCell())) return;
+    if (tool !== "select") setTool("select");
+  };
+  const selectAll = () => {
+    if (tool !== "select") changeTool("select");
+    select.selectAll();
+  };
+
+  const paintKeys = { focusWithinRef: rootRef };
+  const selectionKeys = { ...paintKeys, enabled: () => selecting && select.hasSelection };
+  useKeybindCommand("edit.selectAll", selectAll, paintKeys);
+  useKeybindCommand("edit.copy", select.copy, selectionKeys);
+  useKeybindCommand("edit.cut", select.cut, selectionKeys);
+  useKeybindCommand("edit.delete", select.remove, selectionKeys);
+  useKeybindCommand("edit.paste", () => pasteAt(), { ...paintKeys, enabled: () => select.canPaste });
+
+  /** The Select tool's actions, for the selection as it is now; Paste lands at `at`, else the middle of the view. */
+  const selectActionItems = (at?: { x: number; y: number }): ContextMenuItem[] => {
+    const current = select.current();
+    if (current.paste) {
+      return [
+        { id: "place", label: "Place", icon: <CheckIcon />, shortcut: "Enter", testId: "tilemap-select-menu-place", onSelect: select.place },
+        { id: "cancel-paste", label: "Cancel Paste", icon: <XIcon />, shortcut: "Escape", testId: "tilemap-select-menu-cancel-paste", onSelect: select.cancelPaste },
+      ];
+    }
+    const selected = current.rect !== null;
+    return [
+      { id: "cut", label: "Cut", icon: <ScissorsIcon />, shortcut: keybinds.get("edit.cut")?.[0], disabled: !selected, testId: "tilemap-select-menu-cut", onSelect: select.cut },
+      { id: "copy", label: "Copy", icon: <CopyIcon />, shortcut: keybinds.get("edit.copy")?.[0], disabled: !selected, testId: "tilemap-select-menu-copy", onSelect: select.copy },
+      { id: "paste", label: "Paste", icon: <ClipboardPasteIcon />, shortcut: keybinds.get("edit.paste")?.[0], disabled: !select.canPaste, testId: "tilemap-select-menu-paste", onSelect: () => pasteAt(at ?? centerCell()) },
+      { id: "delete", label: "Delete", icon: <Trash2Icon />, shortcut: keybinds.get("edit.delete")?.[0], variant: "destructive", disabled: !selected, testId: "tilemap-select-menu-delete", onSelect: select.remove },
+      { type: "separator", id: "select-separator" },
+      { id: "select-all", label: "Select All", icon: <SquareDashedIcon />, shortcut: keybinds.get("edit.selectAll")?.[0], testId: "tilemap-select-menu-select-all", onSelect: select.selectAll },
+      { id: "deselect", label: "Deselect", icon: <XIcon />, shortcut: "Escape", disabled: !selected, testId: "tilemap-select-menu-deselect", onSelect: select.deselect },
+    ];
+  };
+  /** The menu a hold or right-click opens; a press outside the selection selects its cell first, as one on an unselected item does. */
+  const selectMenu = useContextMenu({
+    enabled: selecting,
+    items: () => {
+      select.cancelGesture();
+      const point = menuPointRef.current;
+      const cell = point ? cellAt(point.x, point.y) : null;
+      if (cell) select.selectCell(cell);
+      return selectActionItems(cell ?? undefined);
+    },
+  });
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const touchUi = useTouchUi();
+
+  /** The Select tool's keys on the focused canvas: arrows nudge (Shift: 8 cells), Escape clears, Enter places a paste. */
+  const onCanvasKeyDown = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
+    if (!selecting || event.altKey || event.ctrlKey || event.metaKey) return;
+    const step = event.shiftKey ? 8 : 1;
+    const arrows: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+    const arrow = arrows[event.key];
+    if (arrow) {
+      event.preventDefault();
+      select.nudge(arrow[0], arrow[1], event.repeat);
+    } else if (event.key === "Escape") {
+      if (select.escape()) event.preventDefault();
+    } else if (event.key === "Enter" && select.state.paste) {
+      event.preventDefault();
+      select.place();
+    }
   };
 
   const addTilesetToLatest = useAddTileset(tilemap, loadPayloads, assets);
@@ -1478,7 +1611,7 @@ export function TilemapPaint({
 
   const layerHidden = layer ? !layer.visible : false;
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden" data-testid="tilemap-editor">
+    <div ref={rootRef} className="flex h-full min-h-0 flex-1 flex-col overflow-hidden" data-testid="tilemap-editor">
       <ToolbarStrip className="shrink-0 gap-2 py-1" data-testid="tilemap-paint-toolbar">
         <ToggleGroup
           variant="outline"
@@ -1487,7 +1620,7 @@ export function TilemapPaint({
           value={[tool]}
           onValueChange={(value) => {
             const next = value[0] as TilemapPaintTool | undefined;
-            if (next) setTool(next);
+            if (next) changeTool(next);
           }}
           aria-label="Tilemap paint tool"
           data-testid="tilemap-paint-tools"
@@ -1544,8 +1677,114 @@ export function TilemapPaint({
           </span>
         ) : null}
         <Separator orientation="vertical" className="my-1" />
+        {selecting ? (
+          <div className="flex shrink-0 items-center gap-1" data-testid="tilemap-select-options">
+            {select.state.paste ? (
+              // Icons, so the toolbar keeps its width (and the canvas its size) while a paste waits.
+              <>
+                <IconActionButton
+                  type="button"
+                  label="Place"
+                  shortcut="Enter"
+                  className="pointer-coarse:size-11"
+                  data-testid="tilemap-select-place"
+                  onClick={() => {
+                    select.place();
+                    focusCanvas();
+                  }}
+                >
+                  <CheckIcon />
+                </IconActionButton>
+                <IconActionButton
+                  type="button"
+                  label="Cancel Paste"
+                  shortcut="Escape"
+                  className="pointer-coarse:size-11"
+                  data-testid="tilemap-select-cancel-paste"
+                  onClick={() => {
+                    select.cancelPaste();
+                    focusCanvas();
+                  }}
+                >
+                  <XIcon />
+                </IconActionButton>
+              </>
+            ) : (
+              <IconActionButton
+                type="button"
+                label="Select All"
+                shortcut={keybinds.get("edit.selectAll")?.[0]}
+                className="pointer-coarse:size-11"
+                data-testid="tilemap-select-all"
+                onClick={() => {
+                  select.selectAll();
+                  focusCanvas();
+                }}
+              >
+                <SquareDashedIcon />
+              </IconActionButton>
+            )}
+            <Toggle
+              variant="outline"
+              size="sm"
+              className="pointer-coarse:min-h-11"
+              pressed={select.allLayers}
+              onPressedChange={select.setAllLayers}
+              data-testid="tilemap-select-all-layers"
+            >
+              <LayersIcon />
+              All Layers
+            </Toggle>
+            {touchUi ? (
+              // The touch layout keeps its 44 px actions to one menu, so a phone's toolbar stays two rows.
+              <NestedMenu
+                open={actionsOpen}
+                onOpenChange={setActionsOpen}
+                items={actionsOpen ? selectActionItems() : []}
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label="Selection Actions"
+                    title="Selection Actions"
+                    className="pointer-coarse:size-11"
+                    data-testid="tilemap-select-actions"
+                  >
+                    <EllipsisIcon />
+                  </Button>
+                }
+              />
+            ) : (
+              ([
+                { id: "cut", label: "Cut", command: "edit.cut", icon: ScissorsIcon, disabled: !select.hasSelection, run: select.cut },
+                { id: "copy", label: "Copy", command: "edit.copy", icon: CopyIcon, disabled: !select.hasSelection, run: select.copy },
+                { id: "paste", label: "Paste", command: "edit.paste", icon: ClipboardPasteIcon, disabled: !select.canPaste, run: () => pasteAt(centerCell()) },
+                { id: "delete", label: "Delete", command: "edit.delete", icon: Trash2Icon, disabled: !select.hasSelection, run: select.remove },
+              ] as const).map((action) => {
+                const Icon = action.icon;
+                return (
+                  <IconActionButton
+                    key={action.id}
+                    type="button"
+                    label={action.label}
+                    shortcut={keybinds.get(action.command)?.[0]}
+                    disabled={action.disabled}
+                    data-testid={`tilemap-select-${action.id}`}
+                    onClick={() => {
+                      action.run();
+                      focusCanvas();
+                    }}
+                  >
+                    <Icon />
+                  </IconActionButton>
+                );
+              })
+            )}
+          </div>
+        ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          {terrainBrush ? (
+          {selecting ? null : terrainBrush ? (
             <TileSprite
               gid={terrainBrush.gid}
               localId={terrainBrush.localId}
@@ -1565,29 +1804,34 @@ export function TilemapPaint({
               testId="tilemap-selected-tile"
             />
           )}
-          <span
-            className="truncate text-xs text-muted-foreground"
-            data-testid="tilemap-selected-label"
-          >
-            {terrainBrush
-              ? `${
-                  assets.find((asset) => asset.guid === terrainBrush.brush.guid)?.name ??
-                  "Tileset"
-                } · ${terrainBrush.terrain.name}`
-              : decoded
+          {selecting ? null : (
+            <span
+              className="truncate text-xs text-muted-foreground"
+              data-testid="tilemap-selected-label"
+            >
+              {terrainBrush
                 ? `${
-                    assets.find((asset) => asset.guid === decoded.guid)?.name ??
+                    assets.find((asset) => asset.guid === terrainBrush.brush.guid)?.name ??
                     "Tileset"
-                  } · Tile ${localTileId}`
-                : `GID ${selectedGid}`}
-          </span>
-          <HoverCellReadout store={hoverStore} />
+                  } · ${terrainBrush.terrain.name}`
+                : decoded
+                  ? `${
+                      assets.find((asset) => asset.guid === decoded.guid)?.name ??
+                      "Tileset"
+                    } · Tile ${localTileId}`
+                  : `GID ${selectedGid}`}
+            </span>
+          )}
+          {/* The Select tool reads the cell out over the canvas, beside the selection's size. */}
+          {selecting ? null : <HoverCellReadout store={hoverStore} />}
         </div>
       </ToolbarStrip>
       <div ref={hostRef} className="relative min-h-0 flex-1">
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 size-full touch-none bg-background"
+          tabIndex={0}
+          aria-label="Paint Canvas"
+          className="absolute inset-0 size-full touch-none bg-background outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
           data-testid="tilemap-paint-canvas"
           data-tool={tool}
           data-tile={String(localTileId)}
@@ -1598,8 +1842,13 @@ export function TilemapPaint({
           data-pan-x={String(pan.x)}
           data-pan-y={String(pan.y)}
           data-paint-source={atlases.size > 0 ? "atlas" : "hsl"}
+          onKeyDown={onCanvasKeyDown}
+          onContextMenu={selectMenu.bind.onContextMenu}
           onPointerDown={(event) => {
             event.preventDefault();
+            selectMenu.bind.onPointerDown(event);
+            // A press gives the canvas the keys, which preventing the default would not.
+            event.currentTarget.focus({ preventScroll: true });
             const pointerId = pointerIdOf(event);
             try {
               event.currentTarget.setPointerCapture?.(pointerId);
@@ -1610,8 +1859,10 @@ export function TilemapPaint({
               x: event.clientX,
               y: event.clientY,
             });
+            menuPointRef.current = { x: event.clientX, y: event.clientY };
             if (pointersRef.current.size >= 2) {
               cancelStroke();
+              select.cancelGesture();
               cancelPivotDrag();
               panDragRef.current = null;
               pendingPickerRef.current = null;
@@ -1632,7 +1883,16 @@ export function TilemapPaint({
               return;
             }
             pinchActiveRef.current = false;
-            // The pivot marker takes the press in every tool, so dragging it never paints or pans.
+            if (selecting) {
+              // A right-click is the menu's; the primary press selects, drags the selection or a paste.
+              if (event.pointerType === "mouse" && event.button !== 0) return;
+              const cell = cellAt(event.clientX, event.clientY);
+              if (!cell) return;
+              hoverStore.set(cell, tilemap);
+              select.press(pointerId, cell);
+              return;
+            }
+            // The pivot marker takes the press in every other tool, so dragging it never paints or pans.
             const pressed = cellAt(event.clientX, event.clientY);
             if (pressed && onPivotMarker(event.clientX, event.clientY, event.pointerType)) {
               followPivotRef.current = false;
@@ -1665,14 +1925,19 @@ export function TilemapPaint({
             startStroke(cell);
           }}
           onPointerMove={(event) => {
+            selectMenu.bind.onPointerMove(event);
             const pointerId = pointerIdOf(event);
             const tracked = pointersRef.current.get(pointerId);
+            if (event.pointerType === "mouse") pointerCellRef.current = cellAt(event.clientX, event.clientY);
             if (!tracked) {
               // A hovering mouse reads out the cell under it.
               if (event.pointerType === "mouse") {
                 const cell = cellAt(event.clientX, event.clientY);
                 if (cell) hoverStore.set(cell, tilemap);
-                showPivotHover(event.currentTarget, onPivotMarker(event.clientX, event.clientY, "mouse"));
+                showPivotHover(
+                  event.currentTarget,
+                  selecting ? cell !== null && select.grabs(cell) : onPivotMarker(event.clientX, event.clientY, "mouse"),
+                );
               }
               return;
             }
@@ -1708,6 +1973,13 @@ export function TilemapPaint({
               return;
             }
             if (pinchActiveRef.current) return;
+            if (selecting) {
+              const cell = cellAt(event.clientX, event.clientY);
+              if (!cell) return;
+              hoverStore.set(cell, tilemap);
+              select.move(pointerId, cell);
+              return;
+            }
             if (pivotDragRef.current?.pointerId === pointerId) {
               movePivotDrag(event.clientX, event.clientY);
               return;
@@ -1738,12 +2010,17 @@ export function TilemapPaint({
           }}
           onPointerLeave={(event) => {
             if (event.pointerType === "mouse" && !pointersRef.current.size) hoverStore.set(null, tilemap);
-            if (event.pointerType === "mouse") showPivotHover(event.currentTarget, false);
+            if (event.pointerType === "mouse") {
+              showPivotHover(event.currentTarget, false);
+              pointerCellRef.current = null;
+            }
           }}
           onPointerUp={(event) => {
+            selectMenu.bind.onPointerUp(event);
             const pointerId = pointerIdOf(event);
             if (viewFrameRef.current !== null) flushView();
             pointersRef.current.delete(pointerId);
+            select.release(pointerId);
             if (pivotDragRef.current?.pointerId === pointerId) finishPivotDrag();
             // A finger reads out its cell only while it is down.
             if (event.pointerType !== "mouse" && pointersRef.current.size === 0) hoverStore.set(null, tilemap);
@@ -1767,9 +2044,12 @@ export function TilemapPaint({
             }
           }}
           onPointerCancel={(event) => {
+            selectMenu.bind.onPointerCancel(event);
             const pointerId = pointerIdOf(event);
             if (viewFrameRef.current !== null) flushView();
             pointersRef.current.delete(pointerId);
+            // A drag whose release never arrived still lands, as a stroke does.
+            select.release(pointerId);
             if (pivotDragRef.current?.pointerId === pointerId) cancelPivotDrag();
             if (event.pointerType !== "mouse" && pointersRef.current.size === 0) hoverStore.set(null, tilemap);
             if (panDragRef.current?.pointerId === pointerId) {
@@ -1783,6 +2063,8 @@ export function TilemapPaint({
             }
           }}
         />
+        {selecting ? <SelectReadout store={hoverStore} outline={select.outline} lost={select.lost} /> : null}
+        <ContextMenuOverlay menu={selectMenu.menu} onClose={selectMenu.closeMenu} contentTestId="tilemap-select-menu" />
       </div>
     </div>
   );
@@ -1814,17 +2096,38 @@ class HoverCellStore {
   }
 }
 
-function HoverCellReadout({ store }: { store: HoverCellStore }) {
+function HoverCellReadout({ store, className = "ml-auto shrink-0 text-xs text-muted-foreground tabular-nums" }: { store: HoverCellStore; className?: string }) {
   const cell = useSyncExternalStore(store.subscribe, store.getSnapshot);
   if (!cell) return null;
   return (
-    <span
-      className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
-      data-testid="tilemap-paint-hover-cell"
-      aria-label={`Cell ${cell.x}, ${cell.y}`}
-    >
+    <span className={className} data-testid="tilemap-paint-hover-cell" aria-label={`Cell ${cell.x}, ${cell.y}`}>
       {cell.x}, {cell.y}
     </span>
+  );
+}
+
+/**
+ * The Select tool's readout over the canvas: the selection's size (or how many
+ * floating tiles its edge would cut off) and the cell under the pointer. It sits
+ * over the canvas, not in the toolbar, so its changing text never re-wraps the
+ * toolbar and resizes the canvas mid-drag.
+ */
+function SelectReadout({ store, outline, lost }: { store: HoverCellStore; outline: TilemapCellRect | null; lost: number }) {
+  const cell = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  if (!outline && !cell) return null;
+  return (
+    <div className="toolbar-island pointer-events-none absolute top-2 left-2" data-testid="tilemap-select-readout">
+      {outline && lost > 0 ? (
+        <span className="toolbar-island-readout text-destructive!" data-testid="tilemap-select-cut-off">
+          {lost} {lost === 1 ? "Tile Will Be" : "Tiles Will Be"} Cut Off
+        </span>
+      ) : outline ? (
+        <span className="toolbar-island-readout" data-testid="tilemap-select-size">
+          {outline.maxX - outline.minX + 1} × {outline.maxY - outline.minY + 1}
+        </span>
+      ) : null}
+      <HoverCellReadout store={store} className="toolbar-island-readout" />
+    </div>
   );
 }
 

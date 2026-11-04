@@ -585,12 +585,19 @@ function editedChunks(
   existing: (key: number) => TilemapChunk | undefined,
 ): Map<number, TilemapChunk> {
   const edited = new Map<number, TilemapChunk>();
+  // Large writes (a moved selection) run here per cell, so the chunk and index are worked out without allocating.
+  let last: TilemapChunk | undefined;
   for (const write of writes) {
     if (!tileInBounds(map, write.x, write.y)) continue;
     const id = Number.isInteger(write.id) && write.id > 0 ? write.id : 0;
-    const { cx, cy, lx, ly } = chunkCoordForTile(write.x, write.y, size);
+    const cx = Math.floor(write.x / size);
+    const cy = Math.floor(write.y / size);
+    const index = localIndex(write.x - cx * size, write.y - cy * size, size);
+    if (last && last.cx === cx && last.cy === cy) {
+      last.tiles[index] = id;
+      continue;
+    }
     const key = tilemapCellKey(cx, cy);
-    const index = localIndex(lx, ly, size);
     let chunk = edited.get(key);
     if (!chunk) {
       const current = existing(key);
@@ -598,6 +605,7 @@ function editedChunks(
       chunk = { cx, cy, tiles: current ? [...current.tiles] : emptyChunkTiles(size) };
       edited.set(key, chunk);
     }
+    last = chunk;
     chunk.tiles[index] = id;
   }
   return edited;

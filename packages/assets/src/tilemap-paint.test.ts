@@ -160,8 +160,9 @@ describe("applyPointerPan", () => {
 });
 
 describe("isTilemapPaintStrokeTool", () => {
-  it("does not treat move as a paint stroke", () => {
+  it("does not treat move, select or picker as a paint stroke", () => {
     expect(isTilemapPaintStrokeTool("move")).toBe(false);
+    expect(isTilemapPaintStrokeTool("select")).toBe(false);
     expect(isTilemapPaintStrokeTool("picker")).toBe(false);
     expect(isTilemapPaintStrokeTool("brush")).toBe(true);
   });

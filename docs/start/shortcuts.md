@@ -70,8 +70,10 @@ The mode shortcuts switch the active Scene between its Design, Landscape, Foliag
 
 | Command | Shortcut |
 | --- | --- |
+| Cut | <kbd>Mod</kbd>+<kbd>X</kbd> |
 | Copy | <kbd>Mod</kbd>+<kbd>C</kbd> |
 | Paste | <kbd>Mod</kbd>+<kbd>V</kbd> |
+| Select All | <kbd>Mod</kbd>+<kbd>A</kbd> |
 | Duplicate | <kbd>Mod</kbd>+<kbd>D</kbd> |
 | Rename | <kbd>F2</kbd> |
 | Delete | <kbd>Delete</kbd> or <kbd>Backspace</kbd> |
@@ -80,6 +82,8 @@ The mode shortcuts switch the active Scene between its Design, Landscape, Foliag
 | Place Actors | <kbd>Alt</kbd>+<kbd>A</kbd> |
 
 Duplicate, Rename, Delete, Search Panel and New Folder act on the panel that has keyboard focus, the **Outliner** or the **Content Browser**. Place Actors needs the Outliner to have focus. Copy and Paste copy actors when the Outliner has focus, and copy Class members when the **Class** window has focus ([Select, copy and paste members](../scripting/classes.md#select-copy-and-paste-members)). In a graph, Copy, Paste, Duplicate and Delete act on the selected nodes; see [When shortcuts work](#when-shortcuts-work).
+
+When a Tilemap's **Paint** window has focus, Select All and Paste switch to its **Select** tool, and Cut, Copy and Delete act on the tiles it selected ([Select and move tiles](../assets/tilemap.md#select-and-move-tiles)). There, the arrow keys also move the selected tiles, holding one down included, and <kbd>Enter</kbd> and <kbd>Esc</kbd> place or cancel a paste; these keys cannot be rebound.
 
 ### Timeline
 
@@ -104,7 +108,7 @@ Set Key, Previous Key and Next Key act in the [Timeline](../scenes/timeline.md#k
 
 - Shortcuts are off while Play runs and while a dialog is open.
 - In a text field, only Save All, Search Project, Engine Settings and Search Panel work; other keys type as usual.
-- Holding a key repeats only Undo and Redo.
+- Holding a key repeats only Undo and Redo, and the arrow keys in Tilemap **Paint**.
 - Commands whose button is hidden or unavailable do nothing.
 - In a graph, Copy, Paste, Duplicate and Delete act on the graph you last tapped or focused, and your shortcuts for them apply. Delete removes the selected nodes and wires. Duplicate copies and pastes the selected nodes in one step without changing what Copy last stored, and keeps the browser's bookmark shortcut from opening. Pasted events stay unique: custom events are renamed and an event the graph already has is left out ([Copy and duplicate events](../scripting/events.md#copy-and-duplicate-events)). Protected nodes stay, and a graph that hides **Copy** and **Paste** in its toolbar has no shortcut for them. Keys typed in a text field, a menu or a dialog work as usual.
 

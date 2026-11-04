@@ -18,10 +18,12 @@ import {
   type TilemapPayload,
   type TilesetPayload,
 } from "@haptic/assets";
-import { AssetOpenProvider } from "@haptic/editor-kit";
+import { AssetOpenProvider, setTouchUi } from "@haptic/editor-kit";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
-import { PIVOT_MARKER_STROKE } from "../lib/tilemap-paint-renderer";
+import { KeybindProvider } from "../context/keybind-context";
+import { CUT_OFF_FILL, PIVOT_MARKER_STROKE, SELECTION_STROKE } from "../lib/tilemap-paint-renderer";
+import { tilemapClipboard } from "../lib/tilemap-clipboard";
 import {
   TilemapDetails,
   TilemapPaint,
@@ -142,6 +144,7 @@ function TilemapHarness({
 
 afterEach(() => {
   cleanup();
+  tilemapClipboard.write(null);
   documentApi.openDocuments = [];
   loadAssetDocument.mockReset();
   readAssetChunk.mockClear();
@@ -189,7 +192,7 @@ function recordingContext(canvas: HTMLCanvasElement) {
   return ctx;
 }
 
-const CANVAS_OPS = ["setTransform", "clearRect", "fillRect", "drawImage", "beginPath", "moveTo", "lineTo", "stroke", "save", "restore", "clip", "rect", "strokeRect"] as const;
+const CANVAS_OPS = ["setTransform", "clearRect", "fillRect", "drawImage", "beginPath", "moveTo", "lineTo", "stroke", "save", "restore", "clip", "rect", "strokeRect", "setLineDash"] as const;
 /** Every canvas's calls since its latest frame (Paint) or redraw (a chunk bitmap). */
 const canvasCalls = new Map<HTMLCanvasElement, Array<{ op: string; args: unknown[]; fill: string; stroke: string }>>();
 
@@ -352,7 +355,7 @@ describe("TilemapDetails", () => {
     expect(next.tilesets.map((ref) => ref.guid)).toEqual(["ts-ground", "ts-props"]);
   });
 
-  it("turns a map Unbounded with a Pivot, its Painted Area and Center Pivot, and back only after asking when tiles move", async () => {
+  it("turns a map Unbounded with a Pivot, its Painted Area and Center Pivot, and back at once when nothing moves", async () => {
     const onChange = vi.fn();
     function DetailsHarness() {
       const [payload, setPayload] = useState<Record<string, unknown>>(
@@ -381,8 +384,13 @@ describe("TilemapDetails", () => {
     fireEvent.blur(screen.getByTestId("property-pivot-x"));
     expect(latest().pivot).toEqual({ x: -3.5, y: 2.5 });
     expect(onChange.mock.lastCall![1]).toBe("tilemap:pivot");
+    fireEvent.change(screen.getByTestId("property-pivot-x"), { target: { value: "0" } });
+    fireEvent.blur(screen.getByTestId("property-pivot-x"));
+    fireEvent.change(screen.getByTestId("property-pivot-y"), { target: { value: "0" } });
+    fireEvent.blur(screen.getByTestId("property-pivot-y"));
+    expect(latest().pivot).toEqual({ x: 0, y: 0 });
 
-    // Back to a size with every tile at x ≥ 0, y ≥ 0: no question, the size covers them.
+    // Back to a size with every tile at x ≥ 0, y ≥ 0 and the pivot at 0, 0: nothing moves, so no question.
     const edits = onChange.mock.calls.length;
     fireEvent.click(screen.getByTestId("property-unbounded"));
     expect(onChange).toHaveBeenCalledTimes(edits + 1);
@@ -406,6 +414,22 @@ describe("TilemapDetails", () => {
     expect(bounded).toMatchObject({ width: 1, height: 1 });
     expect(bounded).not.toHaveProperty("unbounded");
     expect(getTile(bounded, "layer-1", 0, 0)).toBe(1);
+  });
+
+  it("asks before making a map bounded whose pivot is off 0, 0, as its tiles move around the actor, then keeps their cells", async () => {
+    const onChange = vi.fn();
+    const initial = setTile({ ...mapWithGround(), unbounded: true, pivot: { x: 2, y: 1.5 } }, "layer-1", 3, 1, 1);
+    render(<TilemapDetails payload={initial as unknown as Record<string, unknown>} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("property-unbounded"));
+    const dialog = await screen.findByTestId("tilemap-bounded-dialog");
+    expect(dialog.textContent).toContain("The tiles keep their places in the map but move relative to the actor");
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Make Bounded" }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const bounded = normalizeTilemapPayload(onChange.mock.lastCall![0]);
+    expect(bounded).toMatchObject({ width: 4, height: 2 });
+    expect(bounded).not.toHaveProperty("pivot");
+    expect(getTile(bounded, "layer-1", 3, 1)).toBe(1);
   });
 });
 
@@ -1380,6 +1404,313 @@ describe("Tilemap editor views", () => {
       while (restore.length) restore.pop()!();
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("Tilemap Select tool", () => {
+  /**
+   * The Tilemap panels with the editor's keybinds and an undo stack that
+   * records each edit as the document service does, so a test can count undo
+   * steps and step back.
+   */
+  function SelectHarness({ initial, onChange }: { initial: TilemapPayload; onChange: (next: Record<string, unknown>, mergeKey?: string) => void }) {
+    const [doc, setDoc] = useState(initial as unknown as Record<string, unknown>);
+    const [stack] = useState(() => new DocumentEditStack<Record<string, unknown>>({ maxEntries: 50, maxBytes: 10_000_000 }));
+    return (
+      <KeybindProvider>
+        <button disabled={!stack.canUndo} onClick={() => setDoc(stack.undo(doc)!.doc)}>Undo Test Edit</button>
+        <output data-testid="undo-depth">{stack.undoDepth}</output>
+        <TilemapDocument payload={doc} onChange={(next, mergeKey) => {
+          const delta = diffTilemapDocument(doc, next);
+          if (delta === "unchanged") return;
+          const command = delta === "unsupported" ? new SetAssetDocumentCommand(doc, next, mergeKey) : new PatchTilemapDocumentCommand(delta, mergeKey);
+          setDoc(stack.apply(doc, command).doc);
+          onChange(next, mergeKey);
+        }} />
+      </KeybindProvider>
+    );
+  }
+
+  /** Tiles 1 and 2 at cells 0, 0 and 1, 0 of layer-1, and tile 2 at 1, 1 of layer-2. */
+  function twoLayerMap(): TilemapPayload {
+    const map = mapWithGround();
+    map.layers.push({ ...map.layers[0]!, id: "layer-2", name: "Props", chunks: [] });
+    return setTile(setTile(setTile(map, "layer-1", 0, 0, 1), "layer-1", 1, 0, 2), "layer-2", 1, 1, 2);
+  }
+
+  async function openSelect(initial: TilemapPayload) {
+    const onChange = vi.fn();
+    render(<SelectHarness initial={initial} onChange={onChange} />);
+    await screen.findByTestId("tilemap-palette-tile-2");
+    fireEvent.click(screen.getByTestId("tilemap-tool-select"));
+    const canvas = screen.getByTestId("tilemap-paint-canvas") as HTMLCanvasElement;
+    expect(canvas.dataset.tool).toBe("select");
+    /** A pointer at the centre of cell x, y (32 px cells, the map's cell 0, 0 at the canvas's bottom-left). */
+    const pointer = (type: "pointerdown" | "pointermove" | "pointerup", x: number, y: number, init: { pointerId?: number; pointerType?: "touch" | "mouse"; button?: number } = {}) =>
+      act(() => dispatchPointerEvent(canvas, type, { pointerId: 1, clientX: x * 32 + 16, clientY: 240 - y * 32, ...init }));
+    const drag = (from: [number, number], ...to: Array<[number, number]>) => {
+      pointer("pointerdown", ...from);
+      for (const cell of to) pointer("pointermove", ...cell);
+      pointer("pointerup", ...(to.at(-1) ?? from));
+    };
+    const key = (init: { key: string; code?: string; shiftKey?: boolean; ctrlKey?: boolean; repeat?: boolean }) =>
+      act(() => {
+        fireEvent.keyDown(canvas, { code: init.key, ...init });
+      });
+    const latest = () => normalizeTilemapPayload(onChange.mock.lastCall![0]);
+    const undoDepth = () => Number(screen.getByTestId("undo-depth").textContent);
+    return { onChange, canvas, pointer, drag, key, latest, undoDepth };
+  }
+
+  /** The dashed selection outline of the latest frame, as `strokeRect` arguments. */
+  const outlineOf = (canvas: HTMLCanvasElement) =>
+    (canvasCalls.get(canvas) ?? []).filter((call) => call.op === "strokeRect" && call.stroke === SELECTION_STROKE).at(-1)?.args;
+  /** The outline of cells minX..maxX × minY..maxY on the 256 px canvas at 32 px a cell. */
+  const outlineAt = (minX: number, minY: number, maxX: number, maxY: number) =>
+    [minX * 32 + 1, 256 - (maxY + 1) * 32 + 1, (maxX - minX + 1) * 32 - 2, (maxY - minY + 1) * 32 - 2];
+  const size = () => screen.queryByTestId("tilemap-select-size")?.textContent ?? null;
+
+  it("selects a dragged rectangle or a tapped cell and clears it with a tap outside or Escape, editing nothing", async () => {
+    const { canvas, drag, key, onChange } = await openSelect(twoLayerMap());
+    drag([0, 0], [1, 0], [2, 1]);
+    expect(size()).toBe("3 × 2");
+    await waitFor(() => expect(outlineOf(canvas)).toEqual(outlineAt(0, 0, 2, 1)));
+    // A tap outside the selection clears it; then a tap selects its own cell.
+    drag([5, 5]);
+    expect(size()).toBeNull();
+    await waitFor(() => expect(outlineOf(canvas)).toBeUndefined());
+    drag([4, 0]);
+    expect(size()).toBe("1 × 1");
+    // A drag that leaves the map selects only cells in it.
+    drag([5, 1], [9, -2]);
+    expect(size()).toBe("5 × 2");
+    key({ key: "Escape" });
+    expect(size()).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+    // A hovering mouse's cell reads out over the canvas with the selection's size, not in the toolbar.
+    act(() => dispatchPointerEvent(canvas, "pointermove", { pointerType: "mouse", clientX: 3 * 32 + 16, clientY: 240 - 2 * 32 }));
+    expect(within(screen.getByTestId("tilemap-select-readout")).getByTestId("tilemap-paint-hover-cell").textContent).toBe("3, 2");
+    expect(within(screen.getByTestId("tilemap-paint-toolbar")).queryByTestId("tilemap-paint-hover-cell")).toBeNull();
+  });
+
+  it("lifts a dragged selection without an edit and moves its tiles in one undo step on release", async () => {
+    const { canvas, drag, pointer, latest, onChange, undoDepth } = await openSelect(twoLayerMap());
+    drag([0, 0], [1, 0]);
+    pointer("pointerdown", 0, 0);
+    pointer("pointermove", 1, 1);
+    pointer("pointermove", 3, 2);
+    // The lifted tiles leave their cells empty and float 3 cells right and 2 up, from the bitmap the map already has.
+    await waitFor(() => expect(outlineOf(canvas)).toEqual(outlineAt(3, 2, 4, 2)));
+    const calls = canvasCalls.get(canvas)!;
+    expect(calls.some((call) => call.op === "clip" && call.args[0] === "evenodd")).toBe(true);
+    expect(calls.filter((call) => call.op === "drawImage").map((call) => (call.args as number[]).slice(5, 7))).toContainEqual([96, 256 - 64 - 1024]);
+    expect(onChange).not.toHaveBeenCalled();
+    pointer("pointerup", 3, 2);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.lastCall![1]).toMatch(/^tilemap-select:move:/);
+    expect([[0, 0], [1, 0], [3, 2], [4, 2]].map(([x, y]) => getTile(latest(), "layer-1", x!, y!))).toEqual([0, 0, 1, 2]);
+    // Only the paint layer moved; the selection followed its tiles.
+    expect(getTile(latest(), "layer-2", 1, 1)).toBe(2);
+    expect(size()).toBe("2 × 1");
+    expect(undoDepth()).toBe(1);
+    fireEvent.click(screen.getByRole("button", { name: "Undo Test Edit" }));
+    await waitFor(() => expect(paintedCells()).toEqual(["0,224,32,32", "32,224,32,32", "32,192,32,32"]));
+  });
+
+  it("moves every layer's tiles together with All Layers, and a second finger drops a drag without an edit", async () => {
+    const { drag, pointer, latest, onChange } = await openSelect(twoLayerMap());
+    fireEvent.click(screen.getByTestId("tilemap-select-all-layers"));
+    expect(screen.getByTestId("tilemap-select-all-layers").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByTestId("tilemap-select-all"));
+    expect(size()).toBe("2 × 2");
+    // A second finger lands mid-drag: the tiles drop back and the two fingers pinch.
+    pointer("pointerdown", 0, 0);
+    pointer("pointermove", 2, 0);
+    pointer("pointerdown", 6, 6, { pointerId: 2 });
+    pointer("pointerup", 2, 0);
+    pointer("pointerup", 6, 6, { pointerId: 2 });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(size()).toBe("2 × 2");
+    drag([1, 1], [3, 3]);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect([getTile(latest(), "layer-1", 2, 2), getTile(latest(), "layer-1", 3, 2), getTile(latest(), "layer-2", 3, 3), getTile(latest(), "layer-2", 1, 1)]).toEqual([1, 2, 2, 0]);
+  });
+
+  it("nudges the selection with the arrow keys, 8 cells with Shift, one undo step per key-repeat burst", async () => {
+    const map = { ...twoLayerMap(), width: 20, height: 20 };
+    const { drag, key, latest, onChange, undoDepth } = await openSelect(map);
+    drag([0, 0], [1, 0]);
+    key({ key: "ArrowRight" });
+    key({ key: "ArrowRight", repeat: true });
+    key({ key: "ArrowUp", repeat: true });
+    expect(onChange).toHaveBeenCalledTimes(3);
+    expect(new Set(onChange.mock.calls.map((call) => call[1])).size).toBe(1);
+    expect(undoDepth()).toBe(1);
+    expect([getTile(latest(), "layer-1", 2, 1), getTile(latest(), "layer-1", 3, 1)]).toEqual([1, 2]);
+    // A new press starts a new step.
+    key({ key: "ArrowRight", shiftKey: true });
+    expect(undoDepth()).toBe(2);
+    expect([getTile(latest(), "layer-1", 10, 1), getTile(latest(), "layer-1", 11, 1)]).toEqual([1, 2]);
+    fireEvent.click(screen.getByRole("button", { name: "Undo Test Edit" }));
+    expect(undoDepth()).toBe(1);
+  });
+
+  it("selects all, copies, cuts, pastes and deletes with the keys and the toolbar, and places a paste where it is dragged", async () => {
+    const map = { ...twoLayerMap(), width: 6, height: 6 };
+    const { canvas, drag, key, latest, onChange } = await openSelect(map);
+    act(() => canvas.focus());
+    key({ key: "a", code: "KeyA", ctrlKey: true });
+    // The paint layer's painted cells.
+    expect(size()).toBe("2 × 1");
+    key({ key: "c", code: "KeyC", ctrlKey: true });
+    expect(onChange).not.toHaveBeenCalled();
+    // Paste floats the copy in the middle of the view, cell 4, 4 of the 256 px canvas, until it is placed.
+    fireEvent.click(screen.getByTestId("tilemap-select-paste"));
+    expect(screen.getByTestId("tilemap-select-place")).toBeTruthy();
+    await waitFor(() => expect(outlineOf(canvas)).toEqual(outlineAt(3, 4, 4, 4)));
+    // Dragging it two cells right puts one tile past the 6-cell map's right edge.
+    drag([3, 4], [5, 4]);
+    expect(screen.getByTestId("tilemap-select-cut-off").textContent).toBe("1 Tile Will Be Cut Off");
+    await waitFor(() => expect((canvasCalls.get(canvas) ?? []).some((call) => call.op === "fillRect" && call.fill === CUT_OFF_FILL)).toBe(true));
+    expect(onChange).not.toHaveBeenCalled();
+    // A tap places it.
+    drag([2, 2]);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.lastCall![1]).toMatch(/^tilemap-select:paste:/);
+    expect(getTile(latest(), "layer-1", 5, 4)).toBe(1);
+    expect(size()).toBe("1 × 1");
+    // Cut takes the placed tile; Escape cancels a paste.
+    key({ key: "x", code: "KeyX", ctrlKey: true });
+    expect(getTile(latest(), "layer-1", 5, 4)).toBe(0);
+    expect(onChange.mock.lastCall![1]).toMatch(/^tilemap-select:cut:/);
+    key({ key: "v", code: "KeyV", ctrlKey: true });
+    key({ key: "Escape" });
+    expect(screen.queryByTestId("tilemap-select-place")).toBeNull();
+    expect(onChange).toHaveBeenCalledTimes(2);
+    // Delete erases the selection in one edit.
+    drag([0, 0], [1, 0]);
+    key({ key: "Delete", code: "Delete" });
+    expect(onChange).toHaveBeenCalledTimes(3);
+    expect(onChange.mock.lastCall![1]).toMatch(/^tilemap-select:delete:/);
+    expect([getTile(latest(), "layer-1", 0, 0), getTile(latest(), "layer-1", 1, 0), getTile(latest(), "layer-2", 1, 1)]).toEqual([0, 0, 2]);
+  });
+
+  it("opens Cut, Copy, Paste, Delete, Select All and Deselect on a right-click, selecting the cell outside the selection first", async () => {
+    const { canvas, drag, pointer, latest, onChange } = await openSelect(twoLayerMap());
+    drag([4, 4], [5, 4]);
+    const menuAt = (x: number, y: number) => {
+      pointer("pointerdown", x, y, { pointerType: "mouse", button: 2 });
+      act(() => {
+        fireEvent.contextMenu(canvas, { clientX: x * 32 + 16, clientY: 240 - y * 32 });
+      });
+      pointer("pointerup", x, y, { pointerType: "mouse", button: 2 });
+      return screen.getByTestId("tilemap-select-menu");
+    };
+    const menu = menuAt(1, 0);
+    const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+    expect(items.map((item) => [item.getAttribute("data-testid"), item.disabled])).toEqual([
+      ["tilemap-select-menu-cut", false],
+      ["tilemap-select-menu-copy", false],
+      ["tilemap-select-menu-paste", true],
+      ["tilemap-select-menu-delete", false],
+      ["tilemap-select-menu-select-all", false],
+      ["tilemap-select-menu-deselect", false],
+    ]);
+    expect(size()).toBe("1 × 1");
+    fireEvent.click(screen.getByTestId("tilemap-select-menu-copy"));
+    expect(onChange).not.toHaveBeenCalled();
+    // A hold on another cell selects it; Paste lands centred on it, waiting to be placed.
+    menuAt(3, 2);
+    fireEvent.click(screen.getByTestId("tilemap-select-menu-paste"));
+    menuAt(3, 2);
+    expect(screen.getByTestId("tilemap-select-menu-place")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("tilemap-select-menu-place"));
+    expect(getTile(latest(), "layer-1", 3, 2)).toBe(2);
+    menuAt(3, 2);
+    fireEvent.click(screen.getByTestId("tilemap-select-menu-deselect"));
+    expect(size()).toBeNull();
+    menuAt(7, 7);
+    fireEvent.click(screen.getByTestId("tilemap-select-menu-select-all"));
+    expect(size()).toBe("4 × 3");
+  });
+
+  it("folds Cut, Copy, Paste and Delete into one Selection Actions menu in the touch layout", async () => {
+    setTouchUi(true);
+    try {
+      const { drag, latest, onChange } = await openSelect(twoLayerMap());
+      expect(screen.queryByTestId("tilemap-select-cut")).toBeNull();
+      drag([0, 0], [1, 0]);
+      const choose = async (id: string) => {
+        fireEvent.click(screen.getByTestId("tilemap-select-actions"));
+        fireEvent.click(await screen.findByTestId(`tilemap-select-menu-${id}`));
+      };
+      await choose("copy");
+      // Paste lands in the middle of the view, waiting; Place writes it.
+      await choose("paste");
+      fireEvent.click(screen.getByTestId("tilemap-select-place"));
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect([getTile(latest(), "layer-1", 3, 4), getTile(latest(), "layer-1", 4, 4)]).toEqual([1, 2]);
+      await choose("delete");
+      expect([getTile(latest(), "layer-1", 3, 4), getTile(latest(), "layer-1", 4, 4)]).toEqual([0, 0]);
+    } finally {
+      setTouchUi(false);
+    }
+  });
+
+  it("opens the menu on a one-finger hold inside the selection, which keeps it and drops the drag the press began", async () => {
+    const { drag, pointer, onChange } = await openSelect(twoLayerMap());
+    drag([0, 0], [1, 0]);
+    vi.useFakeTimers();
+    try {
+      pointer("pointerdown", 0, 0);
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(screen.getByTestId("tilemap-select-menu")).toBeTruthy();
+      expect((screen.getByTestId("tilemap-select-menu-cut") as HTMLButtonElement).disabled).toBe(false);
+      // The finger moving on and lifting moves nothing.
+      pointer("pointermove", 3, 3);
+      pointer("pointerup", 3, 3);
+      expect(size()).toBe("2 × 1");
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-picks autotile pieces around a moved selection, as painting does", async () => {
+    // Ledge pieces by local id: 1 single, 2 left end, 3 middle, 4 right end.
+    loadAssetDocument.mockImplementation(async (_kind: string, path: string) =>
+      path === GROUND_PATH
+        ? ensureTilesetTiles(normalizeTilesetPayload({
+            textureGuid: "tex-1", atlasWidth: 64, atlasHeight: 16, tileWidth: 16, tileHeight: 16,
+            terrains: [{ id: "ledge", name: "Ledge", style: "sides" }],
+            tiles: [0, TERRAIN_E, TERRAIN_E | TERRAIN_W, TERRAIN_W].map((mask, at) => ({ id: at + 1, terrain: { id: "ledge", mask } })),
+          }))
+        : null,
+    );
+    let map: TilemapPayload = { ...createDefaultTilemapPayload(), tilesets: [{ guid: "ts-ground", firstGid: 1, tileCount: 4 }] };
+    // Clear of the map's edge, which a ledge would join.
+    for (const [x, gid] of [[1, 2], [2, 3], [3, 3], [4, 4]] as const) map = setTile(map, "layer-1", x, 1, gid);
+    const { drag, latest } = await openSelect(map);
+    drag([3, 1], [4, 1]);
+    drag([3, 1], [5, 1]);
+    // The ledge ends where the block left it, and the moved block starts its own.
+    expect([1, 2, 3, 4, 5, 6].map((x) => getTile(latest(), "layer-1", x, 1))).toEqual([2, 4, 0, 0, 2, 4]);
+  });
+
+  it("keeps the pivot marker for the other tools: in Select a press on it selects", async () => {
+    const map = setTile({ ...mapWithGround(), unbounded: true, pivot: { x: 1, y: 1 } }, "layer-1", -2, -1, 2);
+    const { canvas, onChange } = await openSelect(map);
+    const marker = () => (canvasCalls.get(canvas) ?? []).filter((call) => call.op === "strokeRect" && call.stroke === PIVOT_MARKER_STROKE).at(-1)?.args;
+    await waitFor(() => expect(marker()).toEqual([122, 122, 12, 12]));
+    // Map point 1, 1 is canvas point 128, 128: a drag from it draws a selection, the pivot stays.
+    for (const [type, x, y] of [["pointerdown", 128, 128], ["pointermove", 176, 128], ["pointermove", 192, 96], ["pointerup", 192, 96]] as const) {
+      act(() => dispatchPointerEvent(canvas, type, { pointerId: 1, clientX: x, clientY: y }));
+    }
+    expect(onChange).not.toHaveBeenCalled();
+    expect(size()).toBe("3 × 2");
+    expect(marker()).toEqual([122, 122, 12, 12]);
   });
 });
 

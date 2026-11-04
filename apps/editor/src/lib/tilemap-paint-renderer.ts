@@ -1,10 +1,13 @@
 import {
   decodeTileGid,
+  offsetTilemapCellRect,
   orderedTilemapLayers,
   paintCanvasPoint,
   tilePlaceholderHsl,
+  tilemapCellBounds,
   tilemapCellKey,
   tilesetTileRect,
+  type TilemapCellRect,
   type TilemapChunk,
   type TilemapPayload,
   type TilemapTilesetRef,
@@ -93,6 +96,29 @@ export interface TilemapPaintFrame {
   preview?: { minX: number; minY: number; maxX: number; maxY: number } | null;
   /** An unbounded map's pivot (tile units) to mark over everything, while a drag moves it. */
   pivot?: { x: number; y: number } | null;
+  /** Tiles lifted off the map (a selection dragged, a paste waiting to be placed), drawn where they will land. */
+  float?: TilemapPaintFloat | null;
+  /** The selected cells, outlined with dashes above the tiles and the grid. */
+  selection?: TilemapCellRect | null;
+}
+
+/**
+ * Tiles drawn away from their cells without editing the map: per layer, the
+ * chunks that hold them (in their own cells), the cells of those chunks that
+ * float and where they show. A move floats the map's own chunks, so it
+ * composites the bitmaps the map already has at an offset and redraws no
+ * tile; a paste floats chunks the map does not hold (`detached`), which get
+ * bitmaps of their own while it shows.
+ */
+export interface TilemapPaintFloat {
+  layers: ReadonlyMap<string, readonly TilemapChunk[]>;
+  /** The floating cells, in the chunks' cells. */
+  rect: TilemapCellRect;
+  /** Whole cells from the chunks' cells to the map's. */
+  offset: { x: number; y: number };
+  /** Map cells drawn empty on the floating layers: where a moved block was lifted from. */
+  hole: TilemapCellRect | null;
+  detached: boolean;
 }
 
 /**
@@ -154,32 +180,71 @@ export class TilemapPaintRenderer {
     const { cell, source } = cellPixels(tilemap, frame.payloads, size);
     // A bitmap smaller than the tiles would show them coarser than the atlas once a cell needs more pixels.
     const direct = cell < source && cellSize * dpr > cell;
+    const float = frame.float ?? null;
+    /** Draw one chunk with its bottom-left cell `x`, `y` cells from the map's origin. */
+    const drawChunk = (layerKey: string, chunk: TilemapChunk, part: ChunkPart | null, x: number, y: number) => {
+      const left = x * cellSize + pan.x;
+      const bottom = cssHeight - y * cellSize - pan.y;
+      if (!part || left + chunkPixels < 0 || left > cssWidth || bottom < 0 || bottom - chunkPixels > cssHeight) return;
+      if (direct) {
+        stats.direct += drawCellsInView(ctx, chunk, part, size, table, { left, bottom, cellSize, cssWidth, cssHeight });
+        return;
+      }
+      const bitmap = this.bitmapFor(layerKey, chunk, part, size, cell, table, stats);
+      // The bitmap holds the chunk's in-map columns and rows, from its bottom-left.
+      const width = bitmap.columns * bitmap.cell;
+      const height = bitmap.rows * bitmap.cell;
+      ctx.drawImage(
+        bitmap.surface,
+        0, bitmap.surface.height - height, width, height,
+        left, bottom - bitmap.rows * cellSize, bitmap.columns * cellSize, bitmap.rows * cellSize,
+      );
+      stats.composited += 1;
+    };
     for (const layer of orderedTilemapLayers(tilemap, frame.sortingLayers)) {
       if (!layer.visible) continue;
-      for (const chunk of layer.chunks) {
-        const left = chunk.cx * chunkPixels + pan.x;
-        const bottom = cssHeight - chunk.cy * chunkPixels - pan.y;
-        if (left + chunkPixels < 0 || left > cssWidth || bottom < 0 || bottom - chunkPixels > cssHeight) continue;
-        if (direct) {
-          stats.direct += drawCellsInView(ctx, chunk, tilemap, size, table, { left, bottom, cellSize, cssWidth, cssHeight });
-          continue;
-        }
-        const bitmap = this.bitmapFor(layer.id, chunk, tilemap, size, cell, table, stats);
-        if (!bitmap) continue;
-        // The bitmap holds the chunk's in-map columns and rows, from its bottom-left.
-        const width = bitmap.columns * bitmap.cell;
-        const height = bitmap.rows * bitmap.cell;
-        ctx.drawImage(
-          bitmap.surface,
-          0, bitmap.surface.height - height, width, height,
-          left, bottom - bitmap.rows * cellSize, bitmap.columns * cellSize, bitmap.rows * cellSize,
-        );
-        stats.composited += 1;
+      const floating = float?.layers.get(layer.id);
+      // A lifted block leaves its cells empty on its layers; what lies under it on other layers still shows.
+      const hole = floating && float!.hole ? cellsOnCanvas(frame, float!.hole) : null;
+      if (hole) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, cssWidth, cssHeight);
+        ctx.rect(hole.left, hole.top, hole.width, hole.height);
+        ctx.clip("evenodd");
       }
+      for (const chunk of layer.chunks) {
+        drawChunk(layer.id, chunk, chunkPartInMap(chunk, tilemap, size), chunk.cx * size, chunk.cy * size);
+      }
+      if (hole) ctx.restore();
+      if (!floating) continue;
+      // The floating tiles of this layer draw in its place among the layers, clipped to the block.
+      const { rect, offset, detached } = float!;
+      const dest = cellsOnCanvas(frame, offsetTilemapCellRect(rect, offset.x, offset.y));
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(dest.left, dest.top, dest.width, dest.height);
+      ctx.clip();
+      for (const chunk of floating) {
+        const x = chunk.cx * size;
+        const y = chunk.cy * size;
+        if (x > rect.maxX || x + size - 1 < rect.minX || y > rect.maxY || y + size - 1 < rect.minY) continue;
+        drawChunk(
+          detached ? `${DETACHED_LAYER}${layer.id}` : layer.id,
+          chunk,
+          detached ? WHOLE_CHUNK(size) : chunkPartInMap(chunk, tilemap, size),
+          x + offset.x,
+          y + offset.y,
+        );
+      }
+      ctx.restore();
     }
+    if (float) drawCutOff(ctx, frame, float);
     if (frame.preview) drawPreview(ctx, frame);
     drawGrid(ctx, frame);
+    if (frame.selection) drawSelection(ctx, frame, frame.selection);
     if (tilemap.unbounded) drawPivotMarker(ctx, frame, frame.pivot ?? tilemap.pivot);
+    this.dropDetached();
     this.evict();
     return stats;
   }
@@ -208,20 +273,30 @@ export class TilemapPaintRenderer {
     return (this.table = new GidTable(refs, payloads, atlases));
   }
 
+  /** Bitmaps of floating chunks the map does not hold, once the latest frame no longer shows them. */
+  private dropDetached(): void {
+    for (const [key, layer] of this.bitmaps) {
+      if (!key.startsWith(DETACHED_LAYER)) continue;
+      let shown = false;
+      for (const bitmap of layer.values()) shown ||= bitmap.used === this.frame;
+      if (shown) continue;
+      for (const bitmap of layer.values()) this.bytes -= surfaceBytes(bitmap.surface);
+      this.bitmaps.delete(key);
+    }
+  }
+
   private bitmapFor(
-    layerId: string,
+    layerKey: string,
     chunk: TilemapChunk,
-    tilemap: TilemapPayload,
+    part: ChunkPart,
     size: number,
     cell: number,
     table: GidTable,
     stats: TilemapPaintStats,
-  ): ChunkBitmap | null {
-    const part = chunkPartInMap(chunk, tilemap, size);
-    if (!part) return null;
+  ): ChunkBitmap {
     const { columns, rows } = part;
-    let layer = this.bitmaps.get(layerId);
-    if (!layer) this.bitmaps.set(layerId, (layer = new Map()));
+    let layer = this.bitmaps.get(layerKey);
+    if (!layer) this.bitmaps.set(layerKey, (layer = new Map()));
     const key = tilemapCellKey(chunk.cx, chunk.cy);
     let bitmap = layer.get(key);
     if (
@@ -269,13 +344,24 @@ function surfaceBytes(surface: PaintSurface): number {
   return surface.width * surface.height * 4;
 }
 
+/** The columns and rows of a chunk a bitmap holds, from its bottom-left. */
+interface ChunkPart {
+  columns: number;
+  rows: number;
+}
+
+/** Bitmap layer keys of floating chunks the map does not hold (a paste), apart from every map layer's. */
+const DETACHED_LAYER = "\u0000float:";
+
+const WHOLE_CHUNK = (size: number): ChunkPart => ({ columns: size, rows: size });
+
 /**
  * The columns and rows of a chunk inside the map, from its bottom-left: all of
  * it on an unbounded map (negative chunks included), the part inside `width` ×
  * `height` on a bounded one, `null` when none of it is.
  */
-function chunkPartInMap(chunk: TilemapChunk, tilemap: TilemapPayload, size: number): { columns: number; rows: number } | null {
-  if (tilemap.unbounded) return { columns: size, rows: size };
+function chunkPartInMap(chunk: TilemapChunk, tilemap: TilemapPayload, size: number): ChunkPart | null {
+  if (tilemap.unbounded) return WHOLE_CHUNK(size);
   if (chunk.cx < 0 || chunk.cy < 0) return null;
   const columns = Math.min(size, tilemap.width - chunk.cx * size);
   const rows = Math.min(size, tilemap.height - chunk.cy * size);
@@ -305,15 +391,13 @@ function cellPixels(tilemap: TilemapPayload, payloads: ReadonlyMap<string, Tiles
 function drawCellsInView(
   ctx: CanvasRenderingContext2D,
   chunk: TilemapChunk,
-  tilemap: TilemapPayload,
+  part: ChunkPart,
   size: number,
   table: GidTable,
   view: { left: number; bottom: number; cellSize: number; cssWidth: number; cssHeight: number },
 ): number {
   const { left, bottom, cellSize, cssWidth, cssHeight } = view;
   // Only the chunk's columns and rows inside the map, and of those only the ones on the canvas.
-  const part = chunkPartInMap(chunk, tilemap, size);
-  if (!part) return 0;
   const { columns, rows } = part;
   const firstColumn = Math.max(0, Math.floor(-left / cellSize));
   const lastColumn = Math.min(columns - 1, Math.floor((cssWidth - left) / cellSize));
@@ -382,6 +466,61 @@ function drawPreview(ctx: CanvasRenderingContext2D, frame: TilemapPaintFrame): v
   ctx.strokeStyle = "oklch(0.75 0.17 60)";
   ctx.lineWidth = 2;
   ctx.strokeRect(left + 1, top + 1, width - 2, height - 2);
+}
+
+/** A cell rect's canvas rectangle, in CSS pixels from the canvas's top-left. */
+function cellsOnCanvas(frame: TilemapPaintFrame, rect: TilemapCellRect): { left: number; top: number; width: number; height: number } {
+  const { cellSize, pan, cssHeight } = frame;
+  return {
+    left: rect.minX * cellSize + pan.x,
+    top: cssHeight - (rect.maxY + 1) * cellSize - pan.y,
+    width: (rect.maxX - rect.minX + 1) * cellSize,
+    height: (rect.maxY - rect.minY + 1) * cellSize,
+  };
+}
+
+/** The selection outline's colour: the editor's `--selection` orange, as the viewport outline. */
+export const SELECTION_STROKE = "#ff8000";
+/** Over floating cells past the map's edge, which placing them cuts off: the canvas dimmed, then the dark theme's `--destructive`. */
+export const CUT_OFF_DIM = "oklch(0.2 0 0 / 0.55)";
+export const CUT_OFF_FILL = "oklch(0.704 0.191 22.216 / 0.4)";
+
+/**
+ * Dim and tint the floating block's cells that lie past the map's edge (a
+ * bounded map's size, an unbounded map's cell limit): placing it there cuts them off.
+ */
+function drawCutOff(ctx: CanvasRenderingContext2D, frame: TilemapPaintFrame, float: TilemapPaintFloat): void {
+  const dest = offsetTilemapCellRect(float.rect, float.offset.x, float.offset.y);
+  const box = tilemapCellBounds(frame.tilemap);
+  const inMinX = Math.max(dest.minX, box.minX);
+  const inMaxX = Math.min(dest.maxX, box.maxX);
+  const strips: TilemapCellRect[] = [];
+  if (dest.minX < box.minX) strips.push({ ...dest, maxX: Math.min(dest.maxX, box.minX - 1) });
+  if (dest.maxX > box.maxX) strips.push({ ...dest, minX: Math.max(dest.minX, box.maxX + 1) });
+  if (inMinX <= inMaxX) {
+    if (dest.minY < box.minY) strips.push({ minX: inMinX, maxX: inMaxX, minY: dest.minY, maxY: Math.min(dest.maxY, box.minY - 1) });
+    if (dest.maxY > box.maxY) strips.push({ minX: inMinX, maxX: inMaxX, minY: Math.max(dest.minY, box.maxY + 1), maxY: dest.maxY });
+  }
+  for (const strip of strips) {
+    const { left, top, width, height } = cellsOnCanvas(frame, strip);
+    ctx.fillStyle = CUT_OFF_DIM;
+    ctx.fillRect(left, top, width, height);
+    ctx.fillStyle = CUT_OFF_FILL;
+    ctx.fillRect(left, top, width, height);
+  }
+}
+
+/** The selected cells: orange dashes over a dark halo, so the outline reads on any tile. */
+function drawSelection(ctx: CanvasRenderingContext2D, frame: TilemapPaintFrame, rect: TilemapCellRect): void {
+  const { left, top, width, height } = cellsOnCanvas(frame, rect);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "oklch(0.15 0 0 / 0.85)";
+  ctx.setLineDash([]);
+  ctx.strokeRect(left + 1, top + 1, width - 2, height - 2);
+  ctx.strokeStyle = SELECTION_STROKE;
+  ctx.setLineDash([6, 4]);
+  ctx.strokeRect(left + 1, top + 1, width - 2, height - 2);
+  ctx.setLineDash([]);
 }
 
 const GRID_STROKE = "oklch(0.4 0 0 / 0.4)";
