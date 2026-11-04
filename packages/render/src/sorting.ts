@@ -4,6 +4,7 @@ import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { setMeshRenderingGroup } from "./instance-pool";
 import { sortPooledLeaf } from "./pooled-visuals";
+import { tilemapLayerMeshes } from "./tilemap-chunk-parent";
 import { sortingLayerSortKey } from "@haptic/core";
 
 /**
@@ -74,8 +75,9 @@ export function applyComponentSorting(
   groupId = root.name,
 ): void {
   const primary = resolveSortingLayer(layers, layer, order);
-  for (const mesh of [root, ...root.getChildMeshes(true).filter((child) =>
-    child.metadata?.tilemapLayer || child.name === `${root.name}-blend`,
+  // Tilemap chunks hang under the root, or under an unbounded map's pivot node.
+  for (const mesh of [root, ...tilemapLayerMeshes(root), ...root.getChildMeshes(true).filter((child) =>
+    !child.metadata?.tilemapLayer && child.name === `${root.name}-blend`,
   )]) {
     applySortingToMesh(mesh, primary);
     const internal = mesh.metadata?.tilemapLayer as

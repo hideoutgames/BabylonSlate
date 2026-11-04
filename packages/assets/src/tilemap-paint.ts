@@ -4,10 +4,14 @@ import {
   getTile,
   localIndex,
   setTiles,
+  snapTilemapPivot,
   tileInBounds,
   tilemapCellKey,
+  tilemapLayerPaintedExtent,
+  type TilemapCellRect,
   type TilemapChunkIndex,
   type TilemapPayload,
+  type TilemapPivot,
   type TileWrite,
 } from "./tilemap-payload";
 import {
@@ -79,6 +83,38 @@ export function paintCanvasTileAt(options: {
     y: Math.floor(
       (options.canvasHeight - options.localY - options.panY) / size,
     ),
+  };
+}
+
+/** The Y-down canvas point of a +Y-up map point (tile units): where Paint draws the pivot. */
+export function paintCanvasPoint(options: {
+  x: number;
+  y: number;
+  canvasHeight: number;
+  panX: number;
+  panY: number;
+  cellSize: number;
+}): { x: number; y: number } {
+  const size = options.cellSize > 0 ? options.cellSize : 16;
+  return {
+    x: options.x * size + options.panX,
+    y: options.canvasHeight - options.y * size - options.panY,
+  };
+}
+
+/** The map point under a Y-down canvas point, snapped to half cells (`snapTilemapPivot`): where a pivot drag puts the pivot. */
+export function paintCanvasPivotAt(options: {
+  localX: number;
+  localY: number;
+  canvasHeight: number;
+  panX: number;
+  panY: number;
+  cellSize: number;
+}): TilemapPivot {
+  const size = options.cellSize > 0 ? options.cellSize : 16;
+  return {
+    x: snapTilemapPivot((options.localX - options.panX) / size),
+    y: snapTilemapPivot((options.canvasHeight - options.localY - options.panY) / size),
   };
 }
 
@@ -291,7 +327,7 @@ function applyTerrainStroke(
       const sourceKey = keyOf(source);
       if (sourceKey === tilemapTerrainKey(terrain)) return map;
       const same = sourceKey === null ? (gid: number) => gid === source : (gid: number) => keyOf(gid) === sourceKey;
-      return paint(floodCells(map, stroke.start, tileAt, same));
+      return paint(floodCells(map, stroke.layerId, stroke.start, tileAt, same));
     }
   }
 }
@@ -353,26 +389,58 @@ function floodFill(
   const tileAt = layerTileReader(map, layerId);
   const source = tileAt(start.x, start.y);
   if (source === tileId) return map;
-  return paintCells(map, layerId, floodCells(map, start, tileAt, (gid) => gid === source), tileId, index);
+  return paintCells(map, layerId, floodCells(map, layerId, start, tileAt, (gid) => gid === source), tileId, index);
+}
+
+/**
+ * How far Bucket reaches past an unbounded layer's painted cells: an unbounded
+ * map has no edge to stop a fill of empty cells.
+ */
+export const TILEMAP_BUCKET_MARGIN = 16;
+
+/**
+ * The cells a Bucket started at `start` on `layerId` may fill: a bounded map's
+ * cells; on an unbounded map, the box around the layer's painted cells and
+ * `start`, grown by `TILEMAP_BUCKET_MARGIN` on every side (an empty layer:
+ * the box around `start`).
+ */
+export function tilemapBucketBounds(map: TilemapPayload, layerId: string, start: TileCell): TilemapCellRect | null {
+  if (!tileInBounds(map, start.x, start.y)) return null;
+  if (!map.unbounded) return { minX: 0, minY: 0, maxX: map.width - 1, maxY: map.height - 1 };
+  const layer = map.layers.find((entry) => entry.id === layerId);
+  const painted = layer ? tilemapLayerPaintedExtent(layer, map.chunkSize) : null;
+  const margin = TILEMAP_BUCKET_MARGIN;
+  return {
+    minX: Math.min(start.x, painted?.minX ?? start.x) - margin,
+    minY: Math.min(start.y, painted?.minY ?? start.y) - margin,
+    maxX: Math.max(start.x, painted?.maxX ?? start.x) + margin,
+    maxY: Math.max(start.y, painted?.maxY ?? start.y) + margin,
+  };
 }
 
 /**
  * Cells connected to `start` (4-way) whose tile satisfies `same`, inside the
- * map: a fill on empty cells reaches the map edge, not just painted chunks.
+ * Bucket's bounds (`tilemapBucketBounds`): a fill on empty cells reaches the
+ * map edge (an unbounded map's margin around its painted cells), not just painted chunks.
  */
 function floodCells(
   map: TilemapPayload,
+  layerId: string,
   start: TileCell,
   tileAt: (x: number, y: number) => number,
   same: (gid: number) => boolean,
 ): TileCell[] {
-  if (!tileInBounds(map, start.x, start.y)) return [];
+  const bounds = tilemapBucketBounds(map, layerId, start);
+  if (!bounds) return [];
+  const inside = (cell: TileCell) =>
+    cell.x >= bounds.minX && cell.x <= bounds.maxX && cell.y >= bounds.minY && cell.y <= bounds.maxY &&
+    tileInBounds(map, cell.x, cell.y);
   const seen = new Set<number>();
   const queue: TileCell[] = [start];
   const cells: TileCell[] = [];
   while (queue.length > 0) {
     const cell = queue.pop()!;
-    if (!tileInBounds(map, cell.x, cell.y)) continue;
+    if (!inside(cell)) continue;
     const key = tilemapCellKey(cell.x, cell.y);
     if (seen.has(key)) continue;
     seen.add(key);

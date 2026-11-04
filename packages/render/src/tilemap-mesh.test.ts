@@ -4,6 +4,7 @@ import {
   createDefaultTilemapPayload,
   normalizeTilesetPayload,
   setTile,
+  type TilemapPayload,
 } from "@haptic/assets";
 import { createTilemapMeshes, updateSceneTilemapAnimations, updateSceneTilemapParallax } from "./tilemap-mesh";
 
@@ -149,6 +150,34 @@ describe("createTilemapMeshes", () => {
     const world = child!.getAbsolutePosition();
     expect(world.x - root.position.x).toBeCloseTo(5, 6);
     expect(world.y - root.position.y).toBeCloseTo(3, 6);
+  });
+
+  it("sits an unbounded map's pivot on the root, negative chunks included, with parallax and sorting still applied", () => {
+    const tileset = normalizeTilesetPayload({ atlasWidth: 16, atlasHeight: 16, tileWidth: 16, tileHeight: 16 });
+    let tilemap: TilemapPayload = { ...createDefaultTilemapPayload(), chunkSize: 2, unbounded: true, pivot: { x: -1.5, y: 2 } };
+    tilemap = {
+      ...tilemap,
+      layers: tilemap.layers.map((layer) => ({ ...layer, sortingLayer: "Foreground", parallax: { x: 0.5, y: 1 } })),
+    };
+    // Cell (-3, 1): chunk (-2, 0).
+    tilemap = setTile(tilemap, "layer-1", -3, 1, 1);
+    const root = createTilemapMeshes(scene, "actor-0", tilemap, tileset, 2, 3);
+    root.position.set(10, 20, 0);
+    const chunk = root.getChildMeshes().find((mesh) => mesh.name === "actor-0:layer-1:-2:0")!;
+    expect(chunk).toBeTruthy();
+    // Sorted as a layer of the map, though it hangs under the pivot node.
+    expect(chunk.metadata.sortingGroupId).toBe("actor-0");
+    expect(chunk.metadata.sortingLayerKey).toBeGreaterThan(0);
+    const bounds = () => {
+      chunk.computeWorldMatrix(true);
+      const { minimumWorld: min, maximumWorld: max } = chunk.getBoundingInfo().boundingBox;
+      return [min.x, min.y, max.x, max.y].map((value) => Math.round(value * 1000) / 1000);
+    };
+    // Cell -3..-2 × 1..2 less the pivot (-1.5, 2), times the 2 × 3 tile, from the root at (10, 20).
+    expect(bounds()).toEqual([10 - 3, 20 - 3, 10 - 1, 20]);
+    // Parallax writes the chunk's own offset, on top of the pivot.
+    updateSceneTilemapParallax(scene, { x: 8, y: 0 });
+    expect(bounds()).toEqual([10 - 3 + 4, 20 - 3, 10 - 1 + 4, 20]);
   });
 
   it("skips hidden layers", () => {

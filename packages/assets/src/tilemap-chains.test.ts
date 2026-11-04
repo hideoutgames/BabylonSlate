@@ -186,4 +186,26 @@ describe("tilemapCollisionChains", () => {
     const ys = chains[0]!.points.map((point) => point.y);
     expect([Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]).toEqual([0, 2, 0, 0.5]);
   });
+
+  it("places an unbounded map's chains around its pivot, negative chunks included", () => {
+    const tiles = emptyChunkTiles(2);
+    // Cell (-2, -2) is solid; cell (-1, -2) carries a custom chain.
+    tiles[0] = 1;
+    tiles[1] = 3;
+    const map = normalizeTilemapPayload({
+      unbounded: true,
+      pivot: { x: -1.5, y: 0.5 },
+      tileWidth: 1,
+      tileHeight: 1,
+      chunkSize: 2,
+      layers: [{ id: "ground", name: "Ground", collision: true, chunks: [{ cx: -1, cy: -1, tiles }] }],
+    });
+    const chains = tilemapCollisionChains(map, fullTileset(), 2, 2);
+    expect(chains).toHaveLength(2);
+    // The solid cell spans x -2..-1, y -2..-1 in tile units; less the pivot, times the 2-unit tile.
+    const xs = chains[0]!.points.map((point) => point.x);
+    const ys = chains[0]!.points.map((point) => point.y);
+    expect([Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]).toEqual([-1, 1, -5, -3]);
+    expect(chains[1]).toEqual({ loop: false, points: [{ x: 1, y: -5 }, { x: 3, y: -5 }, { x: 3, y: -3 }] });
+  });
 });

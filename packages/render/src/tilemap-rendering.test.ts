@@ -1,7 +1,7 @@
-import { Color3, HemisphericLight, Mesh, StandardMaterial, Vector3, VertexBuffer, type NodeMaterial } from "@babylonjs/core";
+import { Color3, HemisphericLight, Mesh, StandardMaterial, Vector3, VertexBuffer, type AbstractMesh, type NodeMaterial } from "@babylonjs/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createMeshComponent } from "@haptic/core";
-import { createDefaultSpritePayload, createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
+import { createDefaultSpritePayload, createDefaultTilemapPayload, normalizeTilesetPayload, setTile, type TilemapPayload } from "@haptic/assets";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
@@ -297,6 +297,37 @@ describe("tilemap rendering", () => {
     expect(sync.meshForActor(actor.id)).not.toBe(root);
     expect(sync.meshForActor(actor.id)!.getChildMeshes()).toHaveLength(0);
     expect(sync.meshForActor(box.id)).toBe(boxRoot);
+    sync.dispose();
+  });
+
+  it("patches an unbounded map's negative chunks under its pivot, and rebuilds the actor's visual when the pivot moves", async () => {
+    const { assets, actor, tilemap } = content();
+    const map: TilemapPayload = setTile({ ...tilemap, unbounded: true, pivot: { x: 0, y: 0 } }, "layer-1", -1, 0, 1);
+    const sync = new EditorSceneSync(handle.scene);
+    sync.setMeshAssets({ ...assets, pixelsPerUnit: 16, tilemaps: new Map([["tilemap", map]]), payloadRevisions: new Map([["tilemap", "saved:1"]]) });
+    sync.apply({ ...createDefaultScene(), actors: [actor] });
+    const root = sync.meshForActor(actor.id)!;
+    const chunkAt = (cx: number) => sync.meshForActor(actor.id)!.getChildMeshes().find((mesh) => mesh.name.endsWith(`:layer-1:${cx}:0`))!;
+    const worldMinX = (mesh: AbstractMesh) => {
+      mesh.computeWorldMatrix(true);
+      return Math.round(mesh.getBoundingInfo().boundingBox.minimumWorld.x * 1000) / 1000;
+    };
+    const negative = chunkAt(-1);
+    expect(worldMinX(negative)).toBe(-1);
+    const kept = chunkAt(0);
+
+    // A cell in the negative chunk rebuilds that chunk only, under the pivot node.
+    sync.setLiveTilemap("tilemap", setTile(map, "layer-1", -2, 0, 2), "open:1");
+    expect(sync.meshForActor(actor.id)).toBe(root);
+    expect(negative.isDisposed()).toBe(true);
+    expect(chunkAt(-1).parent?.name).toMatch(/:pivot$/);
+    expect(chunkAt(0)).toBe(kept);
+
+    // A pivot change moves every chunk: this actor's visual rebuilds, its tiles one cell to the left.
+    sync.setLiveTilemap("tilemap", { ...setTile(map, "layer-1", -2, 0, 2), pivot: { x: 1, y: 0 } }, "open:2");
+    await sync.whenEditorModelsReady();
+    expect(sync.meshForActor(actor.id)).not.toBe(root);
+    expect(worldMinX(chunkAt(-1))).toBe(-3);
     sync.dispose();
   });
 

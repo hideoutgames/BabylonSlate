@@ -3,6 +3,7 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Node } from "@babylonjs/core/node";
 import { Scene } from "@babylonjs/core/scene";
 import {
@@ -21,6 +22,7 @@ import {
 import { DEFAULT_SORTING_LAYERS } from "@haptic/core";
 import { markOwnerNotifiedGeometry } from "./geometry-revision";
 import { applyComponentSorting } from "./sorting";
+import { setTilemapPivotNode, tilemapChunkParent } from "./tilemap-chunk-parent";
 
 type AnimatedChunk = {
   mesh: Mesh;
@@ -61,7 +63,13 @@ export function isTilemapChunkMesh(mesh: AbstractMesh): boolean {
   return Object.prototype.hasOwnProperty.call(mesh.metadata ?? {}, "tilemapTextureGuid");
 }
 
-/** Build a parent mesh plus one child draw per non-empty chunk atlas (and an `:anim` sibling). */
+/**
+ * Build a parent mesh plus one child draw per non-empty chunk atlas (and an
+ * `:anim` sibling). Chunk geometry stays in map space (cell (0, 0) at the
+ * origin); an unbounded map hangs its chunks under a `<name>:pivot` node moved
+ * by −pivot × tile size, so its pivot sits on the root. Layer parallax writes
+ * each chunk's own position, so it never undoes the pivot.
+ */
 export function createTilemapMeshes(
   scene: Scene,
   name: string,
@@ -71,6 +79,12 @@ export function createTilemapMeshes(
   worldTileHeight: number,
 ): Mesh {
   const root = new Mesh(name, scene);
+  if (tilemap.unbounded) {
+    const pivot = new TransformNode(`${name}:pivot`, scene);
+    pivot.parent = root;
+    pivot.position.set(-tilemap.pivot.x * worldTileWidth, -tilemap.pivot.y * worldTileHeight, 0);
+    setTilemapPivotNode(root, pivot);
+  }
   const build = chunkBuilder(scene, root, tilemap, tilesets, worldTileWidth, worldTileHeight);
   for (const [ordinal, layer] of tilemap.layers.entries()) {
     if (!layer.visible) continue;
@@ -81,10 +95,10 @@ export function createTilemapMeshes(
 }
 
 /**
- * Builds one chunk's draws under `root`, in one pass over its tiles
- * (`tilemapChunkDraws`): a static draw per atlas named
- * `<root>:<layer>:<cx>:<cy>` (`:a1`, `:a2` … for later atlases) and an
- * `:anim` sibling for its animated tiles. Returns the meshes made.
+ * Builds one chunk's draws under `root` (its pivot node, for an unbounded
+ * map), in one pass over its tiles (`tilemapChunkDraws`): a static draw per
+ * atlas named `<root>:<layer>:<cx>:<cy>` (`:a1`, `:a2` … for later atlases)
+ * and an `:anim` sibling for its animated tiles. Returns the meshes made.
  */
 function chunkBuilder(
   scene: Scene,
@@ -94,6 +108,7 @@ function chunkBuilder(
   worldTileWidth: number,
   worldTileHeight: number,
 ): (layer: TilemapLayer, ordinal: number, chunk: TilemapChunk) => Mesh[] {
+  const parent = tilemapChunkParent(root);
   const atlasMap = asTilesetMap(tilemap, tilesets);
   const legacyTileset = !isTilesetMap(tilesets) && tilemapTilesetGuids(tilemap).length === 0
     ? [...atlasMap.entries()][0]!
@@ -117,7 +132,7 @@ function chunkBuilder(
       placeholderColors: (tileset) => !tileset.textureGuid,
     })) {
       const suffix = (draw.atlasIndex === 0 ? "" : `:a${draw.atlasIndex}`) + (draw.kind === "animated" ? ":anim" : "");
-      const mesh = appendChunkMesh(scene, root, `${root.name}:${layer.id}:${chunk.cx}:${chunk.cy}${suffix}`, draw.data, layer.parallax, sorting);
+      const mesh = appendChunkMesh(scene, parent, `${root.name}:${layer.id}:${chunk.cx}:${chunk.cy}${suffix}`, draw.data, layer.parallax, sorting);
       if (!mesh) continue;
       mesh.metadata = {
         ...(mesh.metadata ?? {}),
@@ -164,7 +179,8 @@ function layerDrawKey(layer: TilemapLayer): string {
  * keeps its meshes. Returns the meshes made (empty when no chunk changed), or
  * `null` when `next` changes what every chunk draws with (tile size, chunk
  * size, the Tileset list, the layer list or a layer's visibility, sorting or
- * parallax), which the caller rebuilds whole.
+ * parallax) or where they sit (`unbounded`, the pivot), which the caller
+ * rebuilds whole.
  */
 export function patchTilemapMeshes(
   scene: Scene,
@@ -178,6 +194,8 @@ export function patchTilemapMeshes(
   if (
     previous.tileWidth !== next.tileWidth || previous.tileHeight !== next.tileHeight ||
     previous.chunkSize !== next.chunkSize || previous.layers.length !== next.layers.length ||
+    Boolean(previous.unbounded) !== Boolean(next.unbounded) ||
+    previous.pivot?.x !== next.pivot?.x || previous.pivot?.y !== next.pivot?.y ||
     (previous.tilesets !== next.tilesets && tilesetRangesKey(previous) !== tilesetRangesKey(next)) ||
     previous.layers.some((layer, at) => layer !== next.layers[at] && layerDrawKey(layer) !== layerDrawKey(next.layers[at]!))
   ) return null;
@@ -198,7 +216,7 @@ export function patchTilemapMeshes(
     for (const chunk of old.values()) changed.add(chunkMeshKey(layer.id, chunk.cx, chunk.cy));
   });
   if (changed.size === 0) return [];
-  for (const mesh of root.getChildMeshes(true)) {
+  for (const mesh of tilemapChunkParent(root).getChildMeshes(true)) {
     if (changed.has(mesh.metadata?.tilemapChunk as string)) mesh.dispose();
   }
   const build = chunkBuilder(scene, root, next, tilesets, worldTileWidth, worldTileHeight);
@@ -268,7 +286,7 @@ export function updateSceneTilemapParallax(
 
 function appendChunkMesh(
   scene: Scene,
-  root: Mesh,
+  parent: Mesh | TransformNode,
   name: string,
   data: TilemapChunkVertexData,
   parallax: { x: number; y: number },
@@ -312,7 +330,7 @@ function appendChunkMesh(
     chunks.add(mesh);
     mesh.onDisposeObservable.addOnce(() => chunks.delete(mesh));
   }
-  mesh.parent = root;
+  mesh.parent = parent;
   mesh.metadata = { ...(mesh.metadata ?? {}), tilemapParallax: parallax, tilemapLayer: sorting };
   return mesh;
 }

@@ -3,6 +3,7 @@ import {
   spriteAnimationFrameAt,
   spriteCollisionToBox2d,
   tilemapLayerChains,
+  tilemapPivot,
   tilemapTilesetGuids,
   type SpriteAnimationPayload,
   type SpritePayload,
@@ -307,6 +308,7 @@ export class SpriteTileColliders {
       if (!layer.collision) continue;
       // One outline per layer: solid tiles merge across chunk borders, so no
       // chain edge sits at a border for a body to catch on.
+      // In Tilemap-local space with the map's pivot at the origin, as the chunk meshes draw it.
       const chains = tilemapLayerChains({
         chunks: layer.chunks,
         chunkSize: tilemap.chunkSize,
@@ -314,6 +316,7 @@ export class SpriteTileColliders {
         worldTileWidth,
         worldTileHeight,
         resolveGid,
+        pivot: tilemapPivot(tilemap),
       });
       for (const chain of chains) {
         if (chain.points.length < 2) continue;
