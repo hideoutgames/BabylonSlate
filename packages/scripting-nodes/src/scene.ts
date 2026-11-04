@@ -3,10 +3,12 @@ import {
   type NodeDefinition,
   EXEC,
   assetRef,
+  objectRef,
 } from "@haptic/scripting";
 
 const SCENE_ASSET = assetRef("Scene");
 const MATERIAL_ASSET = assetRef("Material");
+const MATERIAL_OBJECT = objectRef("MaterialObject");
 
 export const sceneNodes: NodeDefinition[] = [
   {
@@ -25,15 +27,16 @@ export const sceneNodes: NodeDefinition[] = [
   {
     id: "scene.registerPostProcess",
     title: "Register Scene Post-Processing",
-    description: "Adds a post-process Material after the current Scene's post-process passes.",
+    description: "Adds a post-process Material after the current Scene's post-process passes and returns the new pass's Material Object.",
     category: "scene",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
       pin("material", "Material", "in", MATERIAL_ASSET),
+      pin("pass", "Pass", "out", MATERIAL_OBJECT),
     ],
     codegen: (ctx) => {
-      ctx.emit(`ctx.registerScenePostProcess(${ctx.input("material")});`);
+      ctx.emit(`${ctx.output("pass")} = ctx.registerScenePostProcess(${ctx.input("material")});`);
     },
   },
   {

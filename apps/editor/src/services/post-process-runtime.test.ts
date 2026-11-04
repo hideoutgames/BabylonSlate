@@ -39,21 +39,8 @@ class Canvas extends EventTarget {
   }
 }
 
-it("applies compiled gameplay entry reads, setters and resets through Play load metadata and the real renderer", async () => {
-  // Real FrameGraph ownership; only absent NullEngine driver calls are adapted.
-  const engine = adaptNullEngineFrameGraph(new NullEngine());
-  Object.assign(engine.getCaps(), {
-    maxTextureSize: 4096, maxDrawBuffers: 4, drawBuffersExtension: true,
-    textureFloatRender: true, textureHalfFloatRender: true,
-  });
-  // Drive complete native frames explicitly, including the visible canvas copy.
-  engine.customAnimationFrameRequester = {
-    requestAnimationFrame: () => 0,
-    cancelAnimationFrame: () => {},
-  };
-  vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(
-    new Canvas() as unknown as HTMLCanvasElement,
-  );
+/** A post-process Material that multiplies the scene colour by its Gain parameter (0.5). */
+function gainMaterial() {
   const material = createDefaultMaterialDocument("Gain", "postProcess");
   material.nodes.push(
     {
@@ -95,6 +82,25 @@ it("applies compiled gameplay entry reads, setters and resets through Play load 
       targetPinId: "color",
     },
   );
+  return material;
+}
+
+it("applies compiled gameplay entry reads, setters and resets through Play load metadata and the real renderer", async () => {
+  // Real FrameGraph ownership; only absent NullEngine driver calls are adapted.
+  const engine = adaptNullEngineFrameGraph(new NullEngine());
+  Object.assign(engine.getCaps(), {
+    maxTextureSize: 4096, maxDrawBuffers: 4, drawBuffersExtension: true,
+    textureFloatRender: true, textureHalfFloatRender: true,
+  });
+  // Drive complete native frames explicitly, including the visible canvas copy.
+  engine.customAnimationFrameRequester = {
+    requestAnimationFrame: () => 0,
+    cancelAnimationFrame: () => {},
+  };
+  vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(
+    new Canvas() as unknown as HTMLCanvasElement,
+  );
+  const material = gainMaterial();
   const materials = new Map([["post", material]]);
   const scene = createDefaultScene();
   scene.actors = [createActor("hero", "Hero", { classId: "Hero" })];
@@ -247,7 +253,7 @@ it("applies compiled gameplay entry reads, setters and resets through Play load 
   }
 });
 
-it("runs the passes Register and Unregister Scene Post-Processing leave on the Scene, through the real renderer", async () => {
+it("runs the passes Register and Unregister Scene Post-Processing leave on the Scene, and the parameters set through the Pass output, through the real renderer", async () => {
   const engine = adaptNullEngineFrameGraph(new NullEngine());
   Object.assign(engine.getCaps(), {
     maxTextureSize: 4096, maxDrawBuffers: 4, drawBuffersExtension: true,
@@ -257,7 +263,7 @@ it("runs the passes Register and Unregister Scene Post-Processing leave on the S
   vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(new Canvas() as unknown as HTMLCanvasElement);
   const materials = new Map([
     ["tint", createDefaultMaterialDocument("Tint", "postProcess")],
-    ["grain", createDefaultMaterialDocument("Grain", "postProcess")],
+    ["gain", gainMaterial()],
   ]);
   const scene = createDefaultScene();
   scene.actors = [createActor("hero", "Hero", { classId: "Hero" })];
@@ -269,32 +275,35 @@ it("runs the passes Register and Unregister Scene Post-Processing leave on the S
   const load = playLoadControl({
     sceneAssetGuid: "world", scene, materialParameterCatalog: buildMaterialParameterCatalog(materials), materialTextureAssetGuids: [],
   });
+  const commands: CommandMessage[] = [];
   const runtime = createInProcessRuntime({
     ...runtimeOptionsFromLoadControl(load),
     preferSoftwarePhysics: true,
     cooperativeSceneLoading: false,
     deferSceneLoadingPaint: false,
     onCommand: (command) => {
+      commands.push(command);
       if (isPlayEngineCommandType(command.type)) handle.applyCommand(command);
     },
   });
   try {
     const registry = createDefaultNodeRegistry();
-    const steps = [
-      ["tint", "scene.registerPostProcess"],
-      ["grain", "scene.registerPostProcess"],
-      ["tint", "scene.unregisterPostProcess"],
-    ] as const;
+    const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode =>
+      ({ id, typeId, properties, position: { x: 0, y: 0 }, pins: registry.get(typeId)!.pins(properties) });
+    // Register Tint and Gain, set the Gain pass's parameter through its Pass output, then remove Tint.
     const nodes: GraphNode[] = [
-      { id: "begin", typeId: "flow.event.beginPlay", properties: {}, position: { x: 0, y: 0 }, pins: registry.get("flow.event.beginPlay")!.pins({}) },
-      ...steps.map(([material, typeId], index): GraphNode => {
-        const properties = { "default:material": material };
-        return { id: `step-${index}`, typeId, properties, position: { x: 0, y: 0 }, pins: registry.get(typeId)!.pins(properties) };
-      }),
+      node("begin", "flow.event.beginPlay"),
+      node("tint", "scene.registerPostProcess", { "default:material": "tint" }),
+      node("gain", "scene.registerPostProcess", { "default:material": "gain" }),
+      node("set", "material.setFloatParameter", { "default:name": "Gain", "default:value": 0.9 }),
+      node("remove", "scene.unregisterPostProcess", { "default:material": "tint" }),
     ];
-    const edges = nodes.slice(1).map((target, index) => ({
-      id: `e${index}`, sourceNodeId: nodes[index]!.id, sourcePinId: "execOut", targetNodeId: target.id, targetPinId: "execIn",
-    }));
+    const edges = [
+      ...nodes.slice(1).map((target, index) => ({
+        id: `e${index}`, sourceNodeId: nodes[index]!.id, sourcePinId: "execOut", targetNodeId: target.id, targetPinId: "execIn",
+      })),
+      { id: "pass", sourceNodeId: "gain", sourcePinId: "pass", targetNodeId: "set", targetPinId: "material" },
+    ];
     const graph = compileGraph({ id: "gameplay", kind: "event", nodes, edges }, { assetGuid: "hero", registry });
     await runtime.loadScripts([{ ...graph, assetGuid: "hero", classId: "Hero", parentClassId: "Actor" }]);
     runtime.realizePlayWorld();
@@ -311,14 +320,16 @@ it("runs the passes Register and Unregister Scene Post-Processing leave on the S
     expect(handle.postProcessPassCount()).toBe(0);
     // Begin Play runs once the Scene's models are ready.
     runtime.notifySceneModelsReady("world", 1);
-    expect(runtime.getWorld().currentScene?.postProcessStack.map((entry) => entry.materialGuid)).toEqual(["grain"]);
+    expect(runtime.getWorld().currentScene?.postProcessStack.map((entry) => entry.materialGuid)).toEqual(["gain"]);
     // The coordinator materializes a replaced stack's passes on its next preparation.
     await handle.prewarmSceneMaterials();
     expect(handle.postProcessPassCount()).toBe(1);
-    const passMaterials = handle.scene.materials
-      .filter((candidate) => candidate instanceof NodeMaterial && candidate.name.startsWith("material:"))
-      .map((candidate) => candidate.name);
-    expect(passMaterials).toEqual(["material:grain"]);
+    const passes = handle.scene.materials
+      .filter((candidate): candidate is NodeMaterial => candidate instanceof NodeMaterial && candidate.name.startsWith("material:"));
+    expect(passes.map((candidate) => candidate.name)).toEqual(["material:gain"]);
+    // The Pass output's parameter write reached the pass it registered.
+    expect((passes[0]!.getBlockByName("gain") as InputBlock).value).toBe(0.9);
+    expect(commands.filter((command) => command.type === "diagnostic" || (command.type === "log" && command.severity === "error"))).toEqual([]);
   } finally {
     runtime.stop();
     handle.dispose();

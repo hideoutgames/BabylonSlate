@@ -24,7 +24,7 @@ it("adds and removes passes on the current Scene and sends its stack to the rend
     runtime.realizePlayWorld();
     const scene = runtime.getWorld().currentScene!;
     const stacks = () => commands.flatMap((command) => command.type === "scenePostProcess" ? [command.postProcessStack] : []);
-    runtime.registerScenePostProcess(" vignette ");
+    expect(runtime.registerScenePostProcess(" vignette ")).toEqual({ owner: scene, entryId: expect.any(String) });
     expect(scene.postProcessStack).toEqual([
       { id: "bloom-pass", materialGuid: "bloom", enabled: true, scalable: true },
       { id: expect.any(String), materialGuid: "vignette", enabled: true },

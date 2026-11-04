@@ -685,7 +685,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Is Scene Loaded](is-scene-loaded.md) | Returns true once all actors and render resources of a streamed Scene are ready. |
 | [Load Scene Async](load-scene-async.md) | Starts loading a Scene Streaming Actor's Scene while the game keeps running. |
 | [Load Scene Blocking](load-scene-blocking.md) | Loads a Scene Streaming Actor's Scene and waits until it is ready, pausing the game. |
-| [Register Scene Post-Processing](register-scene-post-processing.md) | Adds a post-process Material after the current Scene's post-process passes. |
+| [Register Scene Post-Processing](register-scene-post-processing.md) | Adds a post-process Material after the current Scene's post-process passes and returns the new pass's Material Object. |
 | [Unload Scene Async](unload-scene-async.md) | Starts unloading a Scene Streaming Actor's Scene while the game keeps running. |
 | [Unload Scene Blocking](unload-scene-blocking.md) | Unloads a Scene Streaming Actor's Scene and waits until it is gone, pausing the game. |
 | [Unregister Scene Post-Processing](unregister-scene-post-processing.md) | Removes the first of the current Scene's post-process passes that uses a Material. |
@@ -701,7 +701,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Scene Layer Camera Location](get-scene-layer-camera-location.md) | Returns the point of a Scene Layer at the centre of its camera's view. |
 | [Get Scene Layer Camera Rotation](get-scene-layer-camera-rotation.md) | Returns the angle of a Scene Layer's camera, in degrees. |
 | [Get Scene Layer Camera Zoom](get-scene-layer-camera-zoom.md) | Returns the zoom of a Scene Layer's camera. |
-| [Register Scene Layer Post-Processing](register-scene-layer-post-processing.md) | Adds a post-process Material to the effects applied to a Scene Layer. |
+| [Register Scene Layer Post-Processing](register-scene-layer-post-processing.md) | Adds a post-process Material to the effects applied to a Scene Layer and returns the new pass's Material Object. |
 | [Remove Scene Layer](remove-scene-layer.md) | Removes a Scene Layer and all of its actors. |
 | [Set Scene Layer Camera Location](set-scene-layer-camera-location.md) | Moves a Scene Layer's camera so the view is centred on a point of the layer. |
 | [Set Scene Layer Camera Rotation](set-scene-layer-camera-rotation.md) | Turns a Scene Layer's camera around the centre of its view. |

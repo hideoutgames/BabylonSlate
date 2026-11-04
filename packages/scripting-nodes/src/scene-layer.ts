@@ -130,10 +130,11 @@ export const sceneLayerNodes: NodeDefinition[] = [
       pin("execOut", "then", "out", EXEC),
       subject(pin("layer", "Layer", "in", LAYER)),
       pin("material", "Material", "in", MATERIAL_ASSET),
+      pin("pass", "Pass", "out", objectRef("MaterialObject")),
     ],
     codegen: (ctx) => {
       ctx.emit(
-        `ctx.registerSceneLayerPostProcess(${ctx.input("layer")}, ${ctx.input("material")});`,
+        `${ctx.output("pass")} = ctx.registerSceneLayerPostProcess(${ctx.input("layer")}, ${ctx.input("material")});`,
       );
     },
   },

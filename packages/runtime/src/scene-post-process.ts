@@ -13,16 +13,24 @@ function emitStack(host: ScenePostProcessHost, scene: Scene): void {
   host.emit({ type: "scenePostProcess", postProcessStack: scene.postProcessStack.map((entry) => ({ ...entry })) });
 }
 
+/** A pass a Register node added: its owner and Entry ID, for Get Post Process Entry's Material Object. */
+export interface RegisteredPostProcess<Owner> {
+  owner: Owner;
+  entryId: string;
+}
+
 /**
  * Register Scene Post-Processing: a new pass for `materialGuid` after the
  * current Scene's passes, with its own Entry ID. Lasts until the Scene changes.
  */
-export function registerScenePostProcess(host: ScenePostProcessHost, materialGuid: string): void {
+export function registerScenePostProcess(host: ScenePostProcessHost, materialGuid: string): RegisteredPostProcess<Scene> | null {
   const scene = host.world().currentScene;
   const guid = String(materialGuid ?? "").trim();
-  if (!scene || scene.destroyed || !guid) return;
-  scene.postProcessStack.push({ id: newGuid(), materialGuid: guid, enabled: true });
+  if (!scene || scene.destroyed || !guid) return null;
+  const entryId = newGuid();
+  scene.postProcessStack.push({ id: entryId, materialGuid: guid, enabled: true });
   emitStack(host, scene);
+  return { owner: scene, entryId };
 }
 
 /** Unregister Scene Post-Processing: removes the first pass that uses `materialGuid`; a missing one is logged. */

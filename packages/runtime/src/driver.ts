@@ -40,6 +40,7 @@ import {
   createDebugInspectSnapshot,
   type Actor,
   type EngineObject,
+  type Scene,
   SceneLayer,
   TIMELINE_CLASS_ID,
   TIMELINE_CLIP_CLASS_ID,
@@ -118,7 +119,7 @@ import { indexSceneLibrary, registerSceneAssetClasses } from "./scene-library";
 import type { RuntimeNavigation } from "./runtime-navigation";
 import type { SceneStreams } from "./scene-streams";
 import type { SceneLayers } from "./scene-layers";
-import { registerScenePostProcess, unregisterScenePostProcess, type ScenePostProcessHost } from "./scene-post-process";
+import { registerScenePostProcess, unregisterScenePostProcess, type RegisteredPostProcess, type ScenePostProcessHost } from "./scene-post-process";
 import type { SceneRealizer } from "./scene-realizer";
 import type { OwnerAdmission } from "./owner-admission";
 import type { AnimGraphRuntime } from "./anim-graph-runtime";
@@ -671,8 +672,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.layers.clearAll();
   }
 
-  registerScenePostProcess(materialGuid: string): void {
-    registerScenePostProcess(this.scenePostProcessHost, materialGuid);
+  registerScenePostProcess(materialGuid: string): RegisteredPostProcess<Scene> | null {
+    return registerScenePostProcess(this.scenePostProcessHost, materialGuid);
   }
 
   unregisterScenePostProcess(materialGuid: string): void {

@@ -97,30 +97,47 @@ describe("scene-layer nodes", () => {
     },
   );
 
-  it("registers and unregisters the current Scene's post-process Material", () => {
+  it.each([
+    ["scene.registerPostProcess", "registerScenePostProcess"],
+    ["scene-layer.registerPostProcess", "registerSceneLayerPostProcess"],
+  ] as const)("hands %s's new pass to the next node as its Material Object", (typeId, method) => {
+    const layered = method === "registerSceneLayerPostProcess";
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "reg", "scene.registerPostProcess", { "default:material": "night" }),
+        node(registry, "layer", "scene-layer.getOwningSceneLayer"),
+        node(registry, "reg", typeId, { "default:material": "night" }),
+        node(registry, "set", "material.setFloatParameter", { "default:name": "Darkness", "default:value": 0.6 }),
         node(registry, "unreg", "scene.unregisterPostProcess", { "default:material": "day" }),
       ],
       edges: [
         { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "reg", targetPinId: "execIn" },
-        { id: "e2", sourceNodeId: "reg", sourcePinId: "execOut", targetNodeId: "unreg", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "reg", sourcePinId: "execOut", targetNodeId: "set", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "reg", sourcePinId: "pass", targetNodeId: "set", targetPinId: "material" },
+        { id: "e4", sourceNodeId: "set", sourcePinId: "execOut", targetNodeId: "unreg", targetPinId: "execIn" },
+        ...(layered ? [{ id: "e5", sourceNodeId: "layer", sourcePinId: "out", targetNodeId: "reg", targetPinId: "layer" }] : []),
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     const body = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
     const onBeginPlay = new Function(`${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => unknown;
-    const calls: string[] = [];
+    const pass = { guid: "pass-material" };
+    const calls: unknown[][] = [];
     void onBeginPlay({
-      registerScenePostProcess: (guid: string) => calls.push(`register ${guid}`),
-      unregisterScenePostProcess: (guid: string) => calls.push(`unregister ${guid}`),
+      [method]: (...args: unknown[]) => { calls.push(["register", ...args]); return pass; },
+      setMaterialFloatParameter: (...args: unknown[]) => calls.push(["set", ...args]),
+      unregisterScenePostProcess: (guid: string) => calls.push(["unregister", guid]),
+      self: { guid: "hero" },
+      getOwningSceneLayer: () => "hud",
     });
-    expect(calls).toEqual(["register night", "unregister day"]);
+    expect(calls).toEqual([
+      ["register", ...(layered ? ["hud"] : []), "night"],
+      ["set", pass, "Darkness", 0.6],
+      ["unregister", "day"],
+    ]);
   });
 
   it("accepts a postProcess material on Register Scene Layer Post-processing", () => {

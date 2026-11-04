@@ -43,7 +43,8 @@ import type {
 import type { RegisteredCommand, TraceFrame, TracePayload } from "@haptic/debugger";
 import type { InputBindingControls, RawInputEvent, ResolvedInputTick } from "@haptic/input";
 import type { NavObstacleKind, NavPoint } from "@haptic/navigation";
-import type { Actor, EngineObject, DebugInspectSnapshot, SceneLayer, World } from "@haptic/object-model";
+import type { Actor, EngineObject, DebugInspectSnapshot, Scene, SceneLayer, World } from "@haptic/object-model";
+import type { RegisteredPostProcess } from "./scene-post-process";
 import type { PhysicsWorldKind } from "@haptic/physics";
 import type { RuntimeDiagnostic, SessionDiagnosticAggregator } from "./diagnostics";
 import type { LogSeverity } from "./log-ring";
@@ -269,7 +270,7 @@ export interface RuntimeDriver {
   removeSceneLayer(layerGuid: string): void;
   clearSceneLayers(): void;
   /** Register Scene Post-Processing on the current Scene. */
-  registerScenePostProcess(materialGuid: string): void;
+  registerScenePostProcess(materialGuid: string): RegisteredPostProcess<Scene> | null;
   /** Unregister Scene Post-Processing on the current Scene. */
   unregisterScenePostProcess(materialGuid: string): void;
   registerSceneLayerPostProcess(layerGuid: string, materialGuid: string): void;

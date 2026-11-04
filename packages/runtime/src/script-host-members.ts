@@ -483,12 +483,9 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     clearFocusTarget: (target) => { services.clearFocusTarget?.(target); },
     registerSceneLayerPostProcess: (layer, materialGuid) => {
       const guid = sceneLayerGuidOf(layer);
-      if (guid) {
-        services.registerSceneLayerPostProcess?.(
-          guid,
-          String(materialGuid ?? ""),
-        );
-      }
+      const registered = guid ? services.registerSceneLayerPostProcess?.(guid, String(materialGuid ?? "")) : null;
+      // The same Material Object Get Post Process Entry returns for the new pass.
+      return registered ? services.getPostProcessEntry?.(registered.owner, registered.entryId) ?? null : null;
     },
     unregisterSceneLayerPostProcess: (layer, materialGuid) => {
       const guid = sceneLayerGuidOf(layer);
@@ -500,7 +497,8 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
       }
     },
     registerScenePostProcess: (materialGuid) => {
-      services.registerScenePostProcess?.(String(materialGuid ?? ""));
+      const registered = services.registerScenePostProcess?.(String(materialGuid ?? ""));
+      return registered ? services.getPostProcessEntry?.(registered.owner, registered.entryId) ?? null : null;
     },
     unregisterScenePostProcess: (materialGuid) => {
       services.unregisterScenePostProcess?.(String(materialGuid ?? ""));
