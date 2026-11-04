@@ -221,6 +221,25 @@ export class WaterWorld {
   /** Water Blend Distance (project setting): bodies this close blend, for the step and script queries alike. */
   private blendDistance = DEFAULT_WATER_BLEND_DISTANCE;
   get hasBodies(): boolean { return this.stepState.bodies.length > 0; }
+  /** The world structure last scanned for water surface components, and whether it held any. */
+  private surfaceIndex: WorldComponentIndex | null = null;
+  private surfacesPresent = false;
+
+  /**
+   * Whether `world` owns a water surface component, enabled or not. Play draws water at the time the step publishes,
+   * also where the step does not evaluate water (a 2D world has no buoyancy). The answer follows the world structure.
+   */
+  hasSurfaces(world: World): boolean {
+    const index = worldComponentIndex(world);
+    if (index !== this.surfaceIndex) {
+      this.surfaceIndex = index;
+      this.surfacesPresent = false;
+      for (const classId of index.classIds()) {
+        if (waterKindForClass(classId) !== null) { this.surfacesPresent = true; break; }
+      }
+    }
+    return this.surfacesPresent;
+  }
 
   /** `worldOf` names the world whose actor list `actors` is, so evaluations over it can use the world's component index. */
   constructor(worldOf: (actors: readonly Actor[]) => World | null = () => null) {
