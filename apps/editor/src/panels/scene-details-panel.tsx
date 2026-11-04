@@ -150,8 +150,10 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   >(() => new Set());
   const [renamingComponentKey, setRenamingComponentKey] = useState<string | null>(null);
   const needle = propertyQuery.trim().toLowerCase();
+  // Both sides humanized, so a label typed as shown (`Screen-Space Shadows`) finds itself.
+  const humanizedNeedle = needle ? humanizePropertyLabel(needle).toLowerCase() : "";
   const matches = (label: string) =>
-    !needle || humanizePropertyLabel(label).toLowerCase().includes(needle);
+    !needle || humanizePropertyLabel(label).toLowerCase().includes(humanizedNeedle);
   const overrideOpen = (id: string) => needle
     ? !filterCollapsedOverrides.has(id)
     : expandedOverrides.has(id);

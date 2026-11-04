@@ -22,6 +22,7 @@ import {
 } from "@haptic/core";
 import { AssetCreateProvider } from "@haptic/editor-kit";
 import { SceneDetailsPanel } from "./scene-details-panel";
+import { RENDERING_SETTINGS_SECTIONS } from "../components/rendering-settings-sections";
 import { AppSettingsProvider } from "../context/app-settings-context";
 import { MemoryAppSettingsStore } from "@haptic/vfs";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
@@ -644,6 +645,19 @@ describe("SceneDetailsPanel authoring", () => {
     view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(scene().settings.shadowOverrides).toEqual({});
     expect(screen.getByLabelText("Shadow Distance")).toHaveProperty("value", "350");
+  });
+
+  it("shows the overridable Project Settings → Rendering sections in their Project Settings order, found by their labels as shown", () => {
+    harness.render.mode = "cel";
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const titles = RENDERING_SETTINGS_SECTIONS.filter((section) => section.scene).map((section) => section.title);
+    const shown = screen.getAllByRole("button").map((button) => button.textContent?.trim() ?? "").filter((title) => titles.includes(title));
+    expect(shown).toEqual(titles);
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), { target: { value: "Screen-Space Shadows" } });
+    expect(screen.getByRole("button", { name: "Shadows" }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByLabelText("Screen-Space Shadows")).toBeTruthy();
+    // A status line names the project value as its control shows it.
+    expect(screen.getByText("Project Setting: PCF.")).toBeTruthy();
   });
 
   it("overrides Post Processing fields for the Scene and resets them to the live project effects", () => {

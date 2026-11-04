@@ -1,9 +1,5 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "../components/shadow-settings-fields";
-import { EnvironmentLightingFields, ENVIRONMENT_LIGHTING_SEARCH_TEXT } from "../components/environment-lighting-fields";
-import { CelShadingFields } from "../components/cel-shading-fields";
-import { RenderEffectsFields, RENDER_EFFECTS_SEARCH_TEXT } from "../components/render-effects-fields";
-import { sceneEffectsScope } from "../components/render-effects-scope";
+import { RENDERING_SETTINGS_SECTIONS, type RenderingSceneContext } from "../components/rendering-settings-sections";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -19,14 +15,11 @@ import {
   type PropertyRow,
 } from "@haptic/editor-kit";
 import {
-  normalizeCelShadingSettings,
   normalizeRenderEffectsOverrides,
-  normalizeRenderEffectsSettings,
   normalizeScenePostProcessStack,
   resolveRenderEffectsSettings,
   newGuid,
   type ProjectDocument,
-  type RenderEffectsOverrides,
   type SerializedScene,
 } from "@haptic/core";
 import { HashIcon } from "lucide-react";
@@ -112,9 +105,9 @@ export interface SceneDetailsSettingsProps {
 
 /**
  * The Inspector with no actor selected: Scene Settings, Post-Process Passes,
- * Environment Lighting, Shadows, Post Processing, CEL Shading and Scene
- * Layers, then their pickers. Hook-free, so the Inspector's state survives a
- * selection change.
+ * the overrides of each Project Settings → Rendering section a Scene can
+ * override (`RENDERING_SETTINGS_SECTIONS`) and Scene Layers, then their
+ * pickers. Hook-free, so the Inspector's state survives a selection change.
  */
 export function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
   const {
@@ -191,22 +184,45 @@ export function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
     overlay ? overlaySettingsRows : settingsRows.filter((row) => !ENVIRONMENT_ROW_IDS.has(row.id)),
     "Scene Settings",
   );
-  const celEnabled = !overlay && projectDocument?.settings.render.mode === "cel";
   const showPostProcess = matches("Post-Process Passes Material Entry ID Enabled Scalable Resolution");
-  const showShadows = !overlay && matches(SHADOW_SETTINGS_SEARCH_TEXT);
-  const showEnvironment = !overlay && matches(ENVIRONMENT_LIGHTING_SEARCH_TEXT);
-  const showEffects = !overlay && matches(RENDER_EFFECTS_SEARCH_TEXT);
-  const projectEffects = normalizeRenderEffectsSettings(projectDocument?.settings.render.effects);
+  const projectRender = projectDocument?.settings.render;
   const effectsOverrides = scene.settings.effectsOverrides ?? {};
-  const effectsScope = sceneEffectsScope(
-    projectEffects,
-    resolveRenderEffectsSettings(projectEffects, effectsOverrides),
-    effectsOverrides,
-    (next: RenderEffectsOverrides) =>
-      mutate({ ...scene, settings: { ...scene.settings, effectsOverrides: normalizeRenderEffectsOverrides(next) } }),
-  );
+  const setEffectsLut = (lutTextureGuid: string | null) =>
+    mutate({ ...scene, settings: { ...scene.settings, effectsOverrides: normalizeRenderEffectsOverrides({
+      ...effectsOverrides, colorGrading: { ...effectsOverrides.colorGrading, lutTextureGuid },
+    }) } });
   const assetName = (guid: string | null) => (guid ? pickerAssets.find((entry) => entry.guid === guid)?.name ?? "Missing Asset" : "None");
-  const showCel = celEnabled && matches("Post Processing CEL Shading Shadow Bands Threshold Strength Specular Light Color Influence Mixing Strongest Additive Blend Outlines Outline Color Width Distance Fade Start End");
+  // The Project Settings → Rendering sections a Scene overrides, in their order there; none in a Scene Layer.
+  const overrideSections = overlay ? [] : RENDERING_SETTINGS_SECTIONS.filter((section) =>
+    section.scene && section.available?.(projectRender) !== false && matches(`${section.title} ${section.scene.searchText}`));
+  const overrideContext: RenderingSceneContext = {
+    render: projectRender,
+    settings: scene.settings,
+    setSettings: (settings) => mutate({ ...scene, settings }),
+    environmentRows: <PropertyGrid rows={settingsRows.filter((row) => ENVIRONMENT_ROW_IDS.has(row.id))} />,
+    lutName: assetName,
+    lutControl: (control) => {
+      const guid = resolveRenderEffectsSettings(projectRender?.effects, effectsOverrides).colorGrading.lutTextureGuid;
+      const asset = guid ? pickerAssets.find((entry) => entry.guid === guid) : undefined;
+      return (
+        <AssetPickerControl value={guid}>
+          <Button
+            type="button"
+            id={control.id}
+            variant="outline"
+            size="sm"
+            className="w-full min-w-0 justify-start pointer-coarse:min-h-11"
+            aria-describedby={control.describedBy}
+            disabled={control.disabled}
+            data-testid={control.id}
+            onClick={() => setEffectsLutPickOpen(true)}
+          >
+            {selectedPickerIdentity(assetRowIdentity(asset))}
+          </Button>
+        </AssetPickerControl>
+      );
+    },
+  };
   const showSceneLayers = !overlay && matches("Scene Layers Z-Order Enabled");
   return (
     <>
@@ -279,66 +295,13 @@ export function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
           />
         </div>
       ) : null}
-      {showEnvironment ? (
-        <div className="px-2 pb-3">
-          <DisclosureSection title="Environment Lighting" open={overrideOpen("environment")} onOpenChange={(open) => setOverrideOpen("environment", open)}>
-            <EnvironmentLightingFields hideTitle cel={celEnabled} project={projectDocument?.settings.render.environmentLighting} overrides={scene.settings.environmentLighting ?? {}} onChange={(environmentLighting) => mutate({ ...scene, settings: { ...scene.settings, environmentLighting } })}>
-              <PropertyGrid rows={settingsRows.filter((row) => ENVIRONMENT_ROW_IDS.has(row.id))} />
-            </EnvironmentLightingFields>
+      {overrideSections.map((section) => (
+        <div key={section.id} className="px-2 pb-3">
+          <DisclosureSection title={section.title} open={overrideOpen(section.id)} onOpenChange={(open) => setOverrideOpen(section.id, open)}>
+            {section.scene!.render(overrideContext)}
           </DisclosureSection>
         </div>
-      ) : null}
-      {showShadows ? (
-        <div className="px-2 pb-3">
-          <DisclosureSection title="Shadows" open={overrideOpen("shadows")} onOpenChange={(open) => setOverrideOpen("shadows", open)}>
-            <ShadowSettingsFields hideTitle project={projectDocument?.settings.render.shadows} overrides={scene.settings.shadowOverrides ?? {}} onChange={(shadowOverrides) => mutate({ ...scene, settings: { ...scene.settings, shadowOverrides } })} />
-          </DisclosureSection>
-        </div>
-      ) : null}
-      {showEffects ? (
-        <div className="px-2 pb-3">
-          <DisclosureSection title="Post Processing" open={overrideOpen("postProcessing")} onOpenChange={(open) => setOverrideOpen("postProcessing", open)}>
-            <RenderEffectsFields
-              hideTitle
-              scope={effectsScope}
-              lutName={assetName}
-              lutControl={(control) => {
-                const guid = effectsScope.value.colorGrading.lutTextureGuid;
-                const asset = guid ? pickerAssets.find((entry) => entry.guid === guid) : undefined;
-                return (
-                  <AssetPickerControl value={guid}>
-                    <Button
-                      type="button"
-                      id={control.id}
-                      variant="outline"
-                      size="sm"
-                      className="w-full min-w-0 justify-start pointer-coarse:min-h-11"
-                      aria-describedby={control.describedBy}
-                      disabled={control.disabled}
-                      data-testid={control.id}
-                      onClick={() => setEffectsLutPickOpen(true)}
-                    >
-                      {selectedPickerIdentity(assetRowIdentity(asset))}
-                    </Button>
-                  </AssetPickerControl>
-                );
-              }}
-            />
-          </DisclosureSection>
-        </div>
-      ) : null}
-      {showCel ? (
-        <div className="px-2 pb-3">
-          <DisclosureSection title="CEL Shading" open={overrideOpen("cel")} onOpenChange={(open) => setOverrideOpen("cel", open)}>
-          <CelShadingFields
-            hideTitle
-            project={normalizeCelShadingSettings(projectDocument?.settings.render.cel)}
-            overrides={scene.settings.celShading ?? {}}
-            onChange={(celShading) => mutate({ ...scene, settings: { ...scene.settings, celShading } })}
-          />
-          </DisclosureSection>
-        </div>
-      ) : null}
+      ))}
       {showSceneLayers ? (
         <div className="px-2 pb-3">
           <EntryListEditor
@@ -410,7 +373,7 @@ export function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
           />
         </div>
       ) : null}
-      {!visibleSettingsRows.length && !showPostProcess && !showShadows && !showEnvironment && !showEffects && !showCel && !showSceneLayers
+      {!visibleSettingsRows.length && !showPostProcess && overrideSections.length === 0 && !showSceneLayers
         ? noMatchingProperties
         : null}
       <AssetPicker
@@ -437,7 +400,7 @@ export function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
         title="Pick LUT Texture"
         allowNone
         onPick={(lutTextureGuid) => {
-          effectsScope.set([["colorGrading", "lutTextureGuid"], lutTextureGuid]);
+          setEffectsLut(lutTextureGuid);
           setEffectsLutPickOpen(false);
         }}
         data-testid="scene-effects-lut-picker"

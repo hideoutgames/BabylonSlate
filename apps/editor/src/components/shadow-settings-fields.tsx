@@ -165,9 +165,12 @@ export function ShadowSettingsFields({
             key in SHADOW_LIMITS
               ? SHADOW_LIMITS[key as keyof typeof SHADOW_LIMITS]
               : [0, 2048];
-          // Live state stays visible: the project value behind a scene row and the current Auto budget.
+          // Live state stays visible: the project value behind a scene row, as its control shows it, and the current Auto budget.
+          const projectValue = defaults[key];
+          const shown = choices ? choices[String(projectValue)] ?? String(projectValue)
+            : typeof projectValue === "boolean" ? (projectValue ? "On" : "Off") : String(projectValue);
           const status = [
-            scene ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${String(defaults[key])}.` : "",
+            scene ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${shown}.` : "",
             key === "localLightMode" && effective.localLightMode === "auto"
               ? `Current Auto Budget: ${SHADOW_CAPACITY_PROFILES[effective.profile].autoLocalLights} local shadow lights.`
               : "",
