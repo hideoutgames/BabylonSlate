@@ -65,4 +65,14 @@ describe("navBakeTilemapChains", () => {
     expect(corners(navBakeTilemapChains({ actors: [actor] }, TILEMAPS, TILESETS, 16))).toEqual([[[0, -4], [0, -2], [1, -4], [1, -2]]]);
     expect(navBakeTilemapChains({ actors: [actor] }, bare, TILESETS, 16)).toEqual([]);
   });
+
+  it("bakes an unbounded map's walls around its pivot, at negative cells too", () => {
+    const tiles = emptyChunkTiles(2);
+    // Cell (-1, -2), at the top-right of chunk (-1, -1).
+    tiles[1] = 1;
+    const map = normalizeTilemapPayload({ ...oneTileMap(), unbounded: true, pivot: { x: 0.5, y: -0.5 }, layers: [{ id: "ground", collision: true, chunks: [{ cx: -1, cy: -1, tiles }] }] });
+    const scene = { actors: [tilemapActor("island", transform([10, 5, 0]))] };
+    // Cell -1..0 × -2..-1 less the pivot, from the actor at 10, 5.
+    expect(corners(navBakeTilemapChains(scene, new Map([["map", map]]), TILESETS, 16))).toEqual([[[8.5, 3.5], [8.5, 4.5], [9.5, 3.5], [9.5, 4.5]]]);
+  });
 });

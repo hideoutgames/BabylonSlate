@@ -21,6 +21,7 @@ import {
 import { AssetOpenProvider } from "@haptic/editor-kit";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
+import { PIVOT_MARKER_STROKE } from "../lib/tilemap-paint-renderer";
 import {
   TilemapDetails,
   TilemapPaint,
@@ -349,6 +350,62 @@ describe("TilemapDetails", () => {
     const next = onChange.mock.calls.at(-1)?.[0] as TilemapPayload;
     expect(next.width).toBe(8);
     expect(next.tilesets.map((ref) => ref.guid)).toEqual(["ts-ground", "ts-props"]);
+  });
+
+  it("turns a map Unbounded with a Pivot, its Painted Area and Center Pivot, and back only after asking when tiles move", async () => {
+    const onChange = vi.fn();
+    function DetailsHarness() {
+      const [payload, setPayload] = useState<Record<string, unknown>>(
+        setTile(setTile(mapWithGround(), "layer-1", 2, 1, 1), "layer-1", 5, 3, 1) as unknown as Record<string, unknown>,
+      );
+      return <TilemapDetails payload={payload} onChange={(next, mergeKey) => { setPayload(next); onChange(next, mergeKey); }} />;
+    }
+    render(<DetailsHarness />);
+    const latest = () => normalizeTilemapPayload(onChange.mock.lastCall![0]);
+    expect(screen.getByTestId("property-mapWidth")).toBeTruthy();
+    expect(screen.queryByTestId("property-vector3-pivot")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("property-unbounded"));
+    expect(latest()).toMatchObject({ unbounded: true, pivot: { x: 0, y: 0 } });
+    expect(getTile(latest(), "layer-1", 5, 3)).toBe(1);
+    // The size rows give way to the pivot and the painted cells' size.
+    expect(screen.queryByTestId("property-mapWidth")).toBeNull();
+    expect(screen.queryByTestId("property-mapHeight")).toBeNull();
+    expect(screen.getByTestId("property-vector3-pivot")).toBeTruthy();
+    expect(screen.getByTestId("property-paintedArea").textContent).toBe("4 × 3");
+
+    // Cells 2..5 × 1..3 centre on map point 4, 2.5.
+    fireEvent.click(screen.getByTestId("tilemap-center-pivot"));
+    expect(latest().pivot).toEqual({ x: 4, y: 2.5 });
+    fireEvent.change(screen.getByTestId("property-pivot-x"), { target: { value: "-3.3" } });
+    fireEvent.blur(screen.getByTestId("property-pivot-x"));
+    expect(latest().pivot).toEqual({ x: -3.5, y: 2.5 });
+    expect(onChange.mock.lastCall![1]).toBe("tilemap:pivot");
+
+    // Back to a size with every tile at x ≥ 0, y ≥ 0: no question, the size covers them.
+    const edits = onChange.mock.calls.length;
+    fireEvent.click(screen.getByTestId("property-unbounded"));
+    expect(onChange).toHaveBeenCalledTimes(edits + 1);
+    expect(latest()).toMatchObject({ width: 6, height: 4 });
+    expect(latest()).not.toHaveProperty("pivot");
+  });
+
+  it("asks before making an unbounded map with tiles at negative cells bounded, then moves them in one edit", async () => {
+    const onChange = vi.fn();
+    const initial = setTile({ ...mapWithGround(), unbounded: true, pivot: { x: 0, y: 0 } }, "layer-1", -2, 1, 1);
+    render(<TilemapDetails payload={initial as unknown as Record<string, unknown>} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("property-unbounded"));
+    expect(await screen.findByTestId("tilemap-bounded-dialog")).toBeTruthy();
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("property-unbounded"));
+    fireEvent.click(await screen.findByRole("button", { name: "Make Bounded" }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const bounded = normalizeTilemapPayload(onChange.mock.lastCall![0]);
+    expect(bounded).toMatchObject({ width: 1, height: 1 });
+    expect(bounded).not.toHaveProperty("unbounded");
+    expect(getTile(bounded, "layer-1", 0, 0)).toBe(1);
   });
 });
 
@@ -1136,6 +1193,73 @@ describe("Tilemap editor views", () => {
     expect(screen.getByTestId("tilemap-paint-hover-cell").textContent).toBe("1, 0");
     touch("pointerup");
     expect(screen.queryByTestId("tilemap-paint-hover-cell")).toBeNull();
+  });
+
+  /** An unbounded map with its pivot at map point 1, 1 and a tile at cell -2, -1. */
+  function unboundedMap(): TilemapPayload {
+    return setTile({ ...mapWithGround(), unbounded: true, pivot: { x: 1, y: 1 } }, "layer-1", -2, -1, 2);
+  }
+
+  it("opens an unbounded map centred on its pivot, draws its negative chunks and paints and reads out any cell", async () => {
+    const onChange = vi.fn();
+    render(<TilemapHarness initial={unboundedMap() as unknown as Record<string, unknown>} onChange={onChange} />);
+    await screen.findByTestId("tilemap-palette-tile-2");
+    const canvas = screen.getByTestId("tilemap-paint-canvas");
+    // The 256 px canvas puts map point 1, 1 at its centre, at 32 px a cell.
+    expect([canvas.getAttribute("data-pan-x"), canvas.getAttribute("data-pan-y")]).toEqual(["96", "96"]);
+    await waitFor(() => expect(paintedCells()).toEqual(["32,160,32,32"]));
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    for (const type of ["pointerdown", "pointerup"] as const) dispatchPointerEvent(canvas, type, { pointerId: 1, clientX: 16, clientY: 240 });
+    expect(getTile(normalizeTilemapPayload(onChange.mock.lastCall![0]), "layer-1", -3, -3)).toBe(1);
+    act(() => dispatchPointerEvent(canvas, "pointermove", { pointerType: "mouse", clientX: 16, clientY: 240 }));
+    expect(screen.getByTestId("tilemap-paint-hover-cell").textContent).toBe("-3, -3");
+  });
+
+  it("drags the pivot marker in one edit that paints nothing, and a press on it that lifts in place paints", async () => {
+    const onChange = vi.fn();
+    render(<TilemapHarness initial={unboundedMap() as unknown as Record<string, unknown>} onChange={onChange} />);
+    await screen.findByTestId("tilemap-palette-tile-2");
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    const canvas = screen.getByTestId("tilemap-paint-canvas") as HTMLCanvasElement;
+    const pointer = (type: "pointerdown" | "pointermove" | "pointerup", x: number, y: number, pointerId = 1) =>
+      act(() => dispatchPointerEvent(canvas, type, { pointerId, clientX: x, clientY: y }));
+    const marker = () => (canvasCalls.get(canvas) ?? [])
+      .filter((call) => call.op === "strokeRect" && call.stroke === PIVOT_MARKER_STROKE).at(-1)?.args;
+    // Map point 1, 1 is canvas point 128, 128; a finger 20 px off still takes the marker.
+    await waitFor(() => expect(marker()).toEqual([122, 122, 12, 12]));
+    pointer("pointerdown", 148, 128);
+    pointer("pointermove", 176, 128);
+    pointer("pointermove", 192, 96);
+    // The marker follows to map point 3, 2, and nothing is edited before the finger lifts.
+    await waitFor(() => expect(marker()).toEqual([186, 90, 12, 12]));
+    expect(onChange).not.toHaveBeenCalled();
+    pointer("pointerup", 192, 96);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.lastCall![1]).toMatch(/^tilemap:pivot-drag:/);
+    const moved = normalizeTilemapPayload(onChange.mock.lastCall![0]);
+    expect(moved.pivot).toEqual({ x: 3, y: 2 });
+    expect(moved.layers).toEqual(unboundedMap().layers);
+
+    // A mouse finds the marker only on its arms.
+    const hover = (x: number) => act(() => dispatchPointerEvent(canvas, "pointermove", { pointerType: "mouse", clientX: x, clientY: 96 }));
+    hover(192 + 10);
+    expect(canvas.style.cursor).toBe("move");
+    hover(192 + 20);
+    expect(canvas.style.cursor).toBe("");
+
+    // A press on the marker that lifts in place is a Brush press on the cell under it.
+    pointer("pointerdown", 192, 96, 2);
+    pointer("pointerup", 192, 96, 2);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(getTile(normalizeTilemapPayload(onChange.mock.lastCall![0]), "layer-1", 3, 2)).toBe(1);
+
+    // A second finger drops a drag without an edit.
+    pointer("pointerdown", 192, 96, 3);
+    pointer("pointermove", 230, 60, 3);
+    pointer("pointerdown", 40, 40, 4);
+    pointer("pointerup", 230, 60, 3);
+    pointer("pointerup", 40, 40, 4);
+    expect(onChange).toHaveBeenCalledTimes(2);
   });
 
   it("paints the layer picked in the Inspector, and says when that layer is hidden", async () => {

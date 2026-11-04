@@ -16,6 +16,7 @@ import {
   normalizeTilesetPayload,
   parseSpriteAnimationPayload,
   refreshStaleTilemapTerrains,
+  tilemapPaintedExtent,
   TILESET_TERRAIN_STYLES,
   tilesetTerrainById,
   tilesetTileById,
@@ -164,6 +165,21 @@ describe("FeatureTest starter", () => {
       }
     }
     expect(TILESET_TERRAIN_STYLES.filter((style) => !painted.has(style))).toEqual([]);
+  });
+
+  it("places an unbounded Tilemap with a pivot and tiles at negative cells in a scene", async () => {
+    const registry = reopened.registry!;
+    const unbounded = new Set<string>();
+    for (const asset of registry.list().filter((entry) => entry.header.type === "Tilemap")) {
+      const map = normalizeTilemapPayload(await reopened.loadDocument("tilemap", asset.path));
+      const extent = tilemapPaintedExtent(map);
+      if (map.unbounded && (map.pivot.x !== 0 || map.pivot.y !== 0) && extent && (extent.minX < 0 || extent.minY < 0)) {
+        unbounded.add(asset.header.guid);
+      }
+    }
+    const placed = (await sceneDocuments()).flatMap((scene) => scene.actors.flatMap((actor) => actor.components))
+      .filter((component) => component.classId === "TilemapComponent" && unbounded.has(String(component.properties.assetGuid)));
+    expect(placed.length).toBeGreaterThan(0);
   });
 
   it("plays Sprite Animations from Sprite frames and from a sheet's cells", async () => {

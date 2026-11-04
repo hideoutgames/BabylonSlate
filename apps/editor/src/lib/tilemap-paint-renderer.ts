@@ -1,6 +1,7 @@
 import {
   decodeTileGid,
   orderedTilemapLayers,
+  paintCanvasPoint,
   tilePlaceholderHsl,
   tilemapCellKey,
   tilesetTileRect,
@@ -90,6 +91,8 @@ export interface TilemapPaintFrame {
   sortingLayers: readonly string[];
   /** Cells a shape stroke will paint, outlined over the map until it is released. */
   preview?: { minX: number; minY: number; maxX: number; maxY: number } | null;
+  /** An unbounded map's pivot (tile units) to mark over everything, while a drag moves it. */
+  pivot?: { x: number; y: number } | null;
 }
 
 /**
@@ -176,6 +179,7 @@ export class TilemapPaintRenderer {
     }
     if (frame.preview) drawPreview(ctx, frame);
     drawGrid(ctx, frame);
+    if (tilemap.unbounded) drawPivotMarker(ctx, frame, frame.pivot ?? tilemap.pivot);
     this.evict();
     return stats;
   }
@@ -213,9 +217,9 @@ export class TilemapPaintRenderer {
     table: GidTable,
     stats: TilemapPaintStats,
   ): ChunkBitmap | null {
-    const columns = Math.min(size, tilemap.width - chunk.cx * size);
-    const rows = Math.min(size, tilemap.height - chunk.cy * size);
-    if (columns <= 0 || rows <= 0 || chunk.cx < 0 || chunk.cy < 0) return null;
+    const part = chunkPartInMap(chunk, tilemap, size);
+    if (!part) return null;
+    const { columns, rows } = part;
     let layer = this.bitmaps.get(layerId);
     if (!layer) this.bitmaps.set(layerId, (layer = new Map()));
     const key = tilemapCellKey(chunk.cx, chunk.cy);
@@ -266,6 +270,19 @@ function surfaceBytes(surface: PaintSurface): number {
 }
 
 /**
+ * The columns and rows of a chunk inside the map, from its bottom-left: all of
+ * it on an unbounded map (negative chunks included), the part inside `width` ×
+ * `height` on a bounded one, `null` when none of it is.
+ */
+function chunkPartInMap(chunk: TilemapChunk, tilemap: TilemapPayload, size: number): { columns: number; rows: number } | null {
+  if (tilemap.unbounded) return { columns: size, rows: size };
+  if (chunk.cx < 0 || chunk.cy < 0) return null;
+  const columns = Math.min(size, tilemap.width - chunk.cx * size);
+  const rows = Math.min(size, tilemap.height - chunk.cy * size);
+  return columns > 0 && rows > 0 ? { columns, rows } : null;
+}
+
+/**
  * `source`: the largest tile side of the map's Tilesets (the map's tile size
  * while none is loaded). `cell`: bitmap pixels per cell, `source` within the
  * bitmap size limits.
@@ -294,10 +311,10 @@ function drawCellsInView(
   view: { left: number; bottom: number; cellSize: number; cssWidth: number; cssHeight: number },
 ): number {
   const { left, bottom, cellSize, cssWidth, cssHeight } = view;
-  if (chunk.cx < 0 || chunk.cy < 0) return 0;
   // Only the chunk's columns and rows inside the map, and of those only the ones on the canvas.
-  const columns = Math.min(size, tilemap.width - chunk.cx * size);
-  const rows = Math.min(size, tilemap.height - chunk.cy * size);
+  const part = chunkPartInMap(chunk, tilemap, size);
+  if (!part) return 0;
+  const { columns, rows } = part;
   const firstColumn = Math.max(0, Math.floor(-left / cellSize));
   const lastColumn = Math.min(columns - 1, Math.floor((cssWidth - left) / cellSize));
   const firstRow = Math.max(0, Math.floor((bottom - cssHeight) / cellSize));
@@ -349,11 +366,12 @@ function renderChunk(bitmap: ChunkBitmap, tiles: readonly number[], size: number
 function drawPreview(ctx: CanvasRenderingContext2D, frame: TilemapPaintFrame): void {
   const preview = frame.preview!;
   const { tilemap, cellSize, pan, cssHeight } = frame;
-  // Only the part inside the map paints.
-  const minX = Math.max(0, preview.minX);
-  const minY = Math.max(0, preview.minY);
-  const maxX = Math.min(tilemap.width - 1, preview.maxX);
-  const maxY = Math.min(tilemap.height - 1, preview.maxY);
+  // Only the part inside a bounded map paints; an unbounded map paints it all.
+  const bounded = !tilemap.unbounded;
+  const minX = bounded ? Math.max(0, preview.minX) : preview.minX;
+  const minY = bounded ? Math.max(0, preview.minY) : preview.minY;
+  const maxX = bounded ? Math.min(tilemap.width - 1, preview.maxX) : preview.maxX;
+  const maxY = bounded ? Math.min(tilemap.height - 1, preview.maxY) : preview.maxY;
   if (maxX < minX || maxY < minY) return;
   const left = minX * cellSize + pan.x;
   const top = cssHeight - (maxY + 1) * cellSize - pan.y;
@@ -366,8 +384,14 @@ function drawPreview(ctx: CanvasRenderingContext2D, frame: TilemapPaintFrame): v
   ctx.strokeRect(left + 1, top + 1, width - 2, height - 2);
 }
 
+const GRID_STROKE = "oklch(0.4 0 0 / 0.4)";
+
 function drawGrid(ctx: CanvasRenderingContext2D, frame: TilemapPaintFrame): void {
   const { cssWidth, cssHeight, tilemap, pan, cellSize } = frame;
+  if (tilemap.unbounded) {
+    drawEndlessGrid(ctx, frame);
+    return;
+  }
   const mapW = Math.max(1, tilemap.width);
   const mapH = Math.max(1, tilemap.height);
   const mapLeft = pan.x;
@@ -390,7 +414,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, frame: TilemapPaintFrame): void
   ctx.beginPath();
   ctx.rect(mapLeft, mapTop, mapPixelW, mapPixelH);
   ctx.clip();
-  ctx.strokeStyle = "oklch(0.4 0 0 / 0.4)";
+  ctx.strokeStyle = GRID_STROKE;
   ctx.lineWidth = 1;
   if (firstColumn <= lastColumn) {
     ctx.beginPath();
@@ -414,6 +438,61 @@ function drawGrid(ctx: CanvasRenderingContext2D, frame: TilemapPaintFrame): void
   ctx.strokeStyle = "oklch(0.92 0 0)";
   ctx.lineWidth = 2;
   ctx.strokeRect(mapLeft + 0.5, mapTop + 0.5, mapPixelW, mapPixelH);
+}
+
+/** An unbounded map's grid: every cell line in view, with no map border or clip. */
+function drawEndlessGrid(ctx: CanvasRenderingContext2D, frame: TilemapPaintFrame): void {
+  const { cssWidth, cssHeight, pan, cellSize } = frame;
+  const originBottom = cssHeight - pan.y;
+  const firstColumn = Math.floor(-pan.x / cellSize);
+  const lastColumn = Math.ceil((cssWidth - pan.x) / cellSize);
+  const firstRow = Math.floor((originBottom - cssHeight) / cellSize);
+  const lastRow = Math.ceil(originBottom / cellSize);
+  ctx.strokeStyle = GRID_STROKE;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let gx = firstColumn; gx <= lastColumn; gx++) {
+    const x = pan.x + gx * cellSize;
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, cssHeight);
+  }
+  ctx.stroke();
+  ctx.beginPath();
+  for (let gy = firstRow; gy <= lastRow; gy++) {
+    const y = originBottom - gy * cellSize;
+    ctx.moveTo(0, y);
+    ctx.lineTo(cssWidth, y);
+  }
+  ctx.stroke();
+}
+
+/** Half the length of the pivot marker's arms, in CSS pixels. */
+export const PIVOT_MARKER_ARM = 12;
+/** The pivot marker's colour: apart from the grey grid and the orange shape outline. */
+export const PIVOT_MARKER_STROKE = "oklch(0.78 0.15 210)";
+
+/**
+ * The pivot of an unbounded map, over the tiles, the grid and any shape
+ * outline: a crosshair with a ring, drawn on a dark halo so it reads on any tile.
+ */
+function drawPivotMarker(ctx: CanvasRenderingContext2D, frame: TilemapPaintFrame, pivot: { x: number; y: number }): void {
+  const point = paintCanvasPoint({ x: pivot.x, y: pivot.y, canvasHeight: frame.cssHeight, panX: frame.pan.x, panY: frame.pan.y, cellSize: frame.cellSize });
+  const arm = PIVOT_MARKER_ARM;
+  const path = () => {
+    ctx.beginPath();
+    ctx.moveTo(point.x - arm, point.y);
+    ctx.lineTo(point.x + arm, point.y);
+    ctx.moveTo(point.x, point.y - arm);
+    ctx.lineTo(point.x, point.y + arm);
+    ctx.stroke();
+    ctx.strokeRect(point.x - arm / 2, point.y - arm / 2, arm, arm);
+  };
+  ctx.strokeStyle = "oklch(0.15 0 0 / 0.85)";
+  ctx.lineWidth = 4;
+  path();
+  ctx.strokeStyle = PIVOT_MARKER_STROKE;
+  ctx.lineWidth = 2;
+  path();
 }
 
 /** A bitmap for the browser: an `OffscreenCanvas` where there is one, else a detached canvas element. */
