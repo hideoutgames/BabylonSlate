@@ -464,3 +464,34 @@ it("previews curve fields in the grid", () => {
   render(<TreeViewFixture />);
   expect(screen.getByTestId("data-curve-cell").getAttribute("title")).toBe("2 Keys");
 });
+
+it("discards retained values, including one whose name blocks applying a changed Definition", async () => {
+  // A duplicate whose Definition changed: its values belong to another Definition that also had a Damage field.
+  tree().entries[0] = { id: "sword", parentId: null, name: "Sword", values: { Damage: 3, Title: "Old" }, schema: [{ id: "old-damage", name: "Damage", typeId: "float" }, { id: "title", name: "Title", typeId: "string" }] };
+  const view = render(<TreeViewFixture />);
+  fireEvent.click(screen.getByTestId("data-tree-entry-sword"));
+  // The conflict leaves no field change to review and every value locked: discarding is the way out.
+  expect(screen.queryByRole("button", { name: "Review Changes" })).toBeNull();
+  expect((screen.getByLabelText("Damage") as HTMLInputElement).disabled).toBe(true);
+  const notice = screen.getByTestId("data-retained-values");
+  expect(within(notice).getByText(/2 stored values are no longer in the Definition/)).toBeTruthy();
+  fireEvent.click(within(notice).getByRole("button", { name: "Discard Retained Values" }));
+  expect(within(await screen.findByRole("alertdialog")).getByText("Title")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+  await waitFor(() => expect(tree().entries[0]).toMatchObject({ values: { Damage: 10 }, schema: [{ id: "damage", name: "Damage", typeId: "float" }] }));
+  view.rerender(<TreeViewFixture />);
+  expect(screen.queryByTestId("data-retained-values")).toBeNull();
+  expect((screen.getByLabelText("Damage") as HTMLInputElement).disabled).toBe(false);
+  expect(captured.validation).toEqual([]);
+});
+
+it("discards retained values from Review Changes while applying the Definition's field changes", async () => {
+  configureEntries(fields, [{ id: "sword", name: "Sword", values: { Damage: 25, Retired: "keep" } }]);
+  state.assets[0]!.header.payload = { kind: "dataDefinition", fields: [{ id: "damage", name: "Power", typeId: "float", defaultValue: 100 }] };
+  render(<TreeViewFixture />);
+  fireEvent.click(screen.getByTestId("data-tree-entry-sword"));
+  fireEvent.click(screen.getByRole("button", { name: "Review Changes" }));
+  fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Discard Retained Values" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+  await waitFor(() => expect(tree().entries[0]?.values).toEqual({ Power: 25 }));
+});

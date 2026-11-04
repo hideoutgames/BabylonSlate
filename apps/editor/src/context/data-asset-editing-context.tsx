@@ -239,12 +239,13 @@ function useDataTreeState() {
     }
     return { ...current, entries: current.entries.map((entry) => changed.get(entry.id) ?? entry) };
   }, options.mergeKey);
-  const applyDefinition = (id: string) => changeTree((current, currentIndex) => {
+  /** Applies the entry's Definition; `discardRetained` also drops the values of fields it no longer has. */
+  const applyDefinition = (id: string, options: { discardRetained?: boolean } = {}) => changeTree((current, currentIndex) => {
     const entry = currentIndex.byId.get(id);
     const guid = currentIndex.effectiveDefinitionById.get(id) ?? null;
     const definition = guid ? definitions.get(guid) : undefined;
     if (!entry || !definition) throw new Error("This entry or its Definition is no longer available.");
-    const migration = reconcileDataEntry(entry, guid, definition.fields, schemas);
+    const migration = reconcileDataEntry(entry, guid, definition.fields, schemas, { discardRetained: options.discardRetained === true });
     const conflict = dataEntryStructuralIssue(migration);
     if (conflict) throw new Error(conflict.message);
     if (JSON.stringify(migration.entry) === JSON.stringify(entry)) return current;

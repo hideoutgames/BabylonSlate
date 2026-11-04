@@ -32,6 +32,7 @@ Double-tap a Data Tree to open it.
 - Scripts find entries by their name path from the root, such as `Weapons/Swords/Iron Sword`. Paths are case-sensitive. Renaming or moving an entry changes its path.
 - New entries start from the Definition's defaults, then keep their own values.
 - When a Definition changes, an entry shows **Definition Changed**. Choose **Review Changes** to update its fields.
+- Values of fields that are no longer in an entry's Definition are kept for recovery, and **Values** shows **Retained Values**. **Discard Retained Values** removes them and applies the Definition's other field changes. Undo restores them. Discard them when a new field reuses a retained value's name, which otherwise blocks applying the Definition.
 
 ## Related
 
