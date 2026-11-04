@@ -538,12 +538,23 @@ function initializeEngine(
   };
   const frameOwners = new Map<string, PendingPresentation>();
   const presentationKey = (owner?: SceneLayerLoadIdentity) => owner ? `layer:${owner.layerId}` : "world";
-  const cancelPresentation = (error: Error, key?: string) => {
+  /** Set by `handOverTextures`: disposal holds what this view leases for the Engine's next world view. */
+  let handOverTexturesOnDispose = false;
+  /** Ends the texture handover this view claimed (`claimTextureHandover`), flushing what it left unleased. */
+  let endClaimedTextureHandover: (() => void) | null = null;
+  const endTextureHandover = () => {
+    const end = endClaimedTextureHandover;
+    endClaimedTextureHandover = null;
+    end?.();
+  };
+  /** A superseded world load's successor still leases what a claimed handover holds. */
+  const cancelPresentation = (error: Error, key?: string, superseded = false) => {
     for (const [id, pending] of pendingPresentations) {
       if (key !== undefined && id !== key) continue;
       if (id === "world") {
         endStartingDraw();
         releaseStaged();
+        if (!superseded) endTextureHandover();
       }
       pendingPresentations.delete(id);
       pending.timer.cancel();
@@ -892,6 +903,16 @@ function initializeEngine(
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
   binding.fontMsdfJson = options.fontMsdfJson;
   binding.fontMsdfPng = installTextureBytes(options.fontMsdfPng);
+  // The world view that follows a released one on this Engine (Play after the editor's, the editor's after Play's)
+  // claims the textures it held as soon as it installs its texture sources: at construction when its options carry
+  // them, else at its first asset install. What it does not name is flushed before it allocates anything.
+  let textureHandoverClaimable = !ownsEngine && !presentRtt && !options.previewLighting && (options.editor === true || options.playMode === true);
+  const claimTextureHandover = () => {
+    if (!textureHandoverClaimable) return;
+    textureHandoverClaimable = false;
+    endClaimedTextureHandover = sharedCache.claimHandover([binding.textureBytes, binding.fontMsdfPng]);
+  };
+  if (options.textureBytes) claimTextureHandover();
   binding.fontCssStack = options.fontCssStack;
   binding.fontCssStackByGuid = options.fontCssStackByGuid;
   const fontRegistry = new FontRegistry();
@@ -1446,6 +1467,7 @@ function initializeEngine(
       if (typeof assets.pixelsPerUnit === "number") {
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
+      claimTextureHandover();
       return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng };
   };
   const installMaterialDocuments = (
@@ -1525,7 +1547,7 @@ function initializeEngine(
     const hold = () => generation === loadGeneration;
     instanceCompileHold = hold;
     worldRenderer.invalidate();
-    cancelPresentation(new Error("Scene loading was superseded."), "world");
+    cancelPresentation(new Error("Scene loading was superseded."), "world", true);
     if (load.materialDocuments) installMaterialDocuments(load.materialDocuments, load.materialFunctions);
     const assets = load.assets ? installMeshAssets(load.assets) : undefined;
     applySceneDocumentRenderSettings(sceneData);
@@ -1592,7 +1614,7 @@ function initializeEngine(
     loadGeneration += 1;
     frameReportFeed.cancel("The scene changed before frame capture completed.");
     worldRenderer.invalidate();
-    cancelPresentation(new Error("Scene loading was superseded."), "world");
+    cancelPresentation(new Error("Scene loading was superseded."), "world", true);
     applySceneDocumentRenderSettings(sceneData);
     const nextPostProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
@@ -1924,6 +1946,8 @@ function initializeEngine(
       firstDraws?.resume();
       // Presented: what it draws holds its own Effects, so the closed view's that nothing uses can go.
       releaseBridgedEffects(engine);
+      // Likewise its textures: the handed-over ones it did not lease are flushed.
+      endTextureHandover();
     }
     pending.resolve();
   };
@@ -2455,6 +2479,11 @@ function initializeEngine(
       // The Engine's next view (Play after the editor's, the editor's after Play) draws mostly these Effects.
       if (!ownsEngine) bridgeEngineEffects(engine);
       stopKeepingEffects?.();
+      // And, once released, the textures this view leases now (`handOverTextures`). A handover it claimed and has not
+      // ended joins that hold; without one, it ends here.
+      const handedOverTextures = handOverTexturesOnDispose && !ownsEngine ? resourceCache.leasedKeys() : undefined;
+      if (handedOverTextures) endClaimedTextureHandover = null;
+      else endTextureHandover();
       resetJoysticks();
       runtimeTransformTools?.dispose();
       runtimeTransformTools = null;
@@ -2557,7 +2586,7 @@ function initializeEngine(
         releaseInitialSources();
         scene.dispose();
         rttPresent?.dispose();
-        cacheBinding.dispose();
+        cacheBinding.dispose(handedOverTextures);
       };
       if (!ownsEngine) {
         // Pending native work may still borrow Scene, library and cache
@@ -2600,6 +2629,7 @@ function initializeEngine(
       }
     },
     whenReleased: () => releasedHandle ?? Promise.resolve(),
+    handOverTextures: () => { handOverTexturesOnDispose = true; },
     resize,
     setSize,
     loadScene,
@@ -2799,12 +2829,13 @@ function initializeEngine(
         // A presented load's starting-state draw ends here: the next level keeps none of its Effects.
         endStartingDraw();
         releaseStaged();
-        cancelPresentation(new Error("Scene loading was superseded."), "world");
+        cancelPresentation(new Error("Scene loading was superseded."), "world", true);
       }
-      // A failed load never reaches the warm-up that ends its hold.
+      // A failed load never reaches the warm-up that ends its hold, or the first frame that ends a texture handover.
       if (command.type === "sceneLoadFailed" && command.sceneLoadId === worldLoadId) {
         instanceCompileHold = null;
         releaseStaged();
+        endTextureHandover();
       }
       if (command.type === "sceneLayerLoading") {
         const previous = layerLoads.get(command.layerId);

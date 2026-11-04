@@ -258,6 +258,35 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().assetRegistry?.getByGuid(asset.header.guid)?.path).toBe("assets/Champion.class.hasset");
   });
 
+  it("queues thumbnails for a saved Tileset and the Tilemaps that draw it, keyed by their saved revisions", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const tileset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Tileset", name: "Ground" }));
+    for (const [guid, dependencies] of [["level-map", [tileset.header.guid]], ["other-map", []]] as const) {
+      await registry.createAsset("project", `${guid}.tilemap.hasset`, {
+        guid, type: "Tilemap", name: guid, version: 1, dependencies: [...dependencies], payload: {}, chunks: [],
+      });
+    }
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument({ kind: "tileset", path: tileset.path, label: "Ground" }));
+    const id = documentId({ kind: "tileset", path: tileset.path });
+    const content = documents().openDocuments.find((doc) => doc.id === id)!.content as Record<string, unknown>;
+    await act(() => actions.applyAssetDocumentChange(id, { ...content, margin: 1 }));
+    const jobs = vi.fn();
+    const unsubscribe = subscribeModelThumbnailJobs(jobs);
+    try {
+      expect(await act(() => actions.saveAll())).toBe(true);
+      await waitFor(() => expect(jobs.mock.calls.flat(1).flat().length).toBeGreaterThan(0));
+    } finally { unsubscribe(); }
+    const queued = (jobs.mock.calls.flat(1).flat() as Array<{ guid: string; type: string; cacheKey: string; projectGuid: string }>)
+      .map(({ guid, type, cacheKey, projectGuid }) => ({ guid, type, revision: cacheKey.startsWith(`${guid}.preview-v1.`), projectGuid }))
+      .sort((a, b) => a.guid.localeCompare(b.guid));
+    expect(queued).toEqual([
+      { guid: "level-map", type: "Tilemap", revision: true, projectGuid: documents().projectGuid },
+      { guid: tileset.header.guid, type: "Tileset", revision: true, projectGuid: documents().projectGuid },
+    ].sort((a, b) => a.guid.localeCompare(b.guid)));
+  });
+
   it("retitles an open Material's tab and payload name when its asset is renamed", async () => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;

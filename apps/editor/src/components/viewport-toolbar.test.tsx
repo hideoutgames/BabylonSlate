@@ -221,6 +221,29 @@ describe("ViewportToolbar", () => {
     expect(grid.querySelector('[data-slot="shortcut-keys"]')?.textContent).toBe("J");
   });
 
+  it("cycles Move, Rotate and Scale on Space, but leaves Space to a focused toolbar button", () => {
+    const view = render(<KeybindProvider><TooltipProvider>
+      <ViewportToolbar />
+    </TooltipProvider></KeybindProvider>);
+    const space = { key: " ", code: "Space" };
+    for (const [current, next] of [["translate", "rotate"], ["rotate", "scale"], ["scale", "translate"]] as const) {
+      harness.gizmoTool = current;
+      view.rerender(<KeybindProvider><TooltipProvider><ViewportToolbar /></TooltipProvider></KeybindProvider>);
+      harness.setGizmoTool.mockClear();
+      fireEvent.keyDown(document.body, space);
+      expect(harness.setGizmoTool).toHaveBeenCalledExactlyOnceWith(next);
+    }
+    // Move is current, so a cycle would pick Rotate; Space on the focused Scale button presses Scale instead.
+    harness.gizmoTool = "translate";
+    view.rerender(<KeybindProvider><TooltipProvider><ViewportToolbar /></TooltipProvider></KeybindProvider>);
+    harness.setGizmoTool.mockClear();
+    const scale = screen.getByRole("button", { name: "Scale" });
+    scale.focus();
+    fireEvent.keyDown(scale, space);
+    fireEvent.keyUp(scale, space);
+    expect(harness.setGizmoTool).not.toHaveBeenCalledWith("rotate");
+  });
+
   it("keeps unavailable viewport actions disabled when their keys are pressed", () => {
     const drop = vi.fn();
     const view = render(<KeybindProvider><TooltipProvider>

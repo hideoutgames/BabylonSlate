@@ -48,6 +48,7 @@ const COMMAND_LIST = [
   { id: "viewport.translate", label: "Move Tool", category: "Viewport", defaultChords: ["1"] },
   { id: "viewport.rotate", label: "Rotate Tool", category: "Viewport", defaultChords: ["2"] },
   { id: "viewport.scale", label: "Scale Tool", category: "Viewport", defaultChords: ["3"] },
+  { id: "viewport.cycleTool", label: "Cycle Transform Tool", category: "Viewport", defaultChords: ["Space"] },
   { id: "viewport.frameSelection", label: "Frame Selection", category: "Viewport", defaultChords: ["F"] },
   { id: "viewport.toggleSnap", label: "Toggle Snap Grid", category: "Viewport", defaultChords: ["G"] },
   { id: "viewport.toggleGrid", label: "Toggle Grid", category: "Viewport", defaultChords: ["Shift+G"] },

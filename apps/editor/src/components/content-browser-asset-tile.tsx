@@ -46,6 +46,15 @@ export interface ContentBrowserAssetTileProps {
   onRenameDone?: (name: string | null) => void;
 }
 
+/** Thumbnails drawn over a checkerboard wherever they are transparent. */
+const CHECKERED_THUMBNAIL_TYPES: ReadonlySet<string> = new Set(["Texture", "Tileset", "Tilemap"]);
+/** Thumbnails shown whole (letterboxed onto the checkerboard) rather than cropped to the square. */
+const WHOLE_THUMBNAIL_TYPES: ReadonlySet<string> = new Set(["Tileset", "Tilemap"]);
+const CHECKERBOARD = {
+  backgroundImage: "conic-gradient(var(--muted) 0.25turn, var(--background) 0.25turn 0.5turn, var(--muted) 0.5turn 0.75turn, var(--background) 0.75turn)",
+  backgroundSize: "12px 12px",
+};
+
 export function ContentBrowserAssetTile({
   asset,
   selected,
@@ -115,11 +124,8 @@ export function ContentBrowserAssetTile({
                 src={thumbnailUrl}
                 alt=""
                 data-testid={`content-item-thumb-${asset.header.guid}`}
-                className="size-full object-cover"
-                style={asset.header.type === "Texture" ? {
-                  backgroundImage: "conic-gradient(var(--muted) 0.25turn, var(--background) 0.25turn 0.5turn, var(--muted) 0.5turn 0.75turn, var(--background) 0.75turn)",
-                  backgroundSize: "12px 12px",
-                } : undefined}
+                className={cn("size-full", WHOLE_THUMBNAIL_TYPES.has(asset.header.type) ? "object-contain" : "object-cover")}
+                style={CHECKERED_THUMBNAIL_TYPES.has(asset.header.type) ? CHECKERBOARD : undefined}
               />
             ) : (
               <TypeVisualIcon

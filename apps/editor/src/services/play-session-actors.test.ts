@@ -137,6 +137,7 @@ describe.each(["worker", "in-process"] as const)(
         setSourceLibraries() {},
         setCommandSourceLoader() {},
         setSceneStreamingPaused: options.onSceneStreamingPaused ?? (() => {}),
+        handOverTextures() {},
         dispose() {},
         whenReleased: () => Promise.resolve(),
       } as unknown as ReturnType<typeof createEngine>);

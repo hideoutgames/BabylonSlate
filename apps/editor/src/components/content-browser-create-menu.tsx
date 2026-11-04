@@ -62,6 +62,8 @@ export interface ContentBrowserCreateMenuDeps {
   setBusy: (busy: boolean) => void;
   setOperationError: (error: string | null) => void;
   noteAssetsCreated: () => void;
+  /** Draws the thumbnails of what was created that draw without the Engine (Tilesets). */
+  queueCreatedThumbnails: (guids: readonly string[]) => void;
   openOrFocusDocument: (asset: IndexedAsset) => Promise<void>;
   classParentOf: (id: string) => string | null;
   /** Open tabs' unsaved content wins over saved documents (Tilesets, Structures) and Class graphs. */
@@ -109,6 +111,7 @@ export function contentBrowserCreateMenuItems(deps: ContentBrowserCreateMenuDeps
     setBusy,
     setOperationError,
     noteAssetsCreated,
+    queueCreatedThumbnails,
     openOrFocusDocument,
     classParentOf,
     getOpenDocuments,
@@ -206,7 +209,10 @@ export function contentBrowserCreateMenuItems(deps: ContentBrowserCreateMenuDeps
         setOperationError(error instanceof Error ? error.message : String(error));
       } finally {
         // The mounted registry indexed each new asset on write: no rescan.
-        if (created.length > 0) noteAssetsCreated();
+        if (created.length > 0) {
+          noteAssetsCreated();
+          queueCreatedThumbnails(created.map((asset) => asset.header.guid));
+        }
         setBusy(false);
       }
     })();

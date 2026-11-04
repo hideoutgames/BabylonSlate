@@ -34,7 +34,9 @@ export function createAssetThumbnailRevisionIndex(
     if (revisions.has(guid)) return revisions.get(guid)!;
     const asset = byGuid.get(guid);
     const type = asset?.header.type;
-    if (!asset || (type !== "Material" && !(
+    // Pixels Per Unit changes only an actor Class's capture.
+    const unscaled = type === "Material" || type === "Tileset" || type === "Tilemap";
+    if (!asset || (!unscaled && !(
       type === "Class" && classDocumentShowsPrefab(asset.header.parentClass, parentOf)
     ))) {
       return remember(guid, null);
@@ -69,7 +71,7 @@ export function createAssetThumbnailRevisionIndex(
       }
     }
     entries.sort(([a], [b]) => a.localeCompare(b));
-    const value = stableStringify(type === "Material" ? entries : { pixelsPerUnit, assets: entries });
+    const value = stableStringify(unscaled ? entries : { pixelsPerUnit, assets: entries });
     return remember(guid, value);
   }
 
