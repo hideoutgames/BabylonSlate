@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import {
   areaEmissionTextureGuids,
   renderEffectsAssetGuids,
@@ -44,6 +44,7 @@ import {
   waitForSceneLoadingPaint,
   type SceneViewportLoadPhase,
 } from "../lib/scene-viewport-load";
+import { useLiveTilemapEdits } from "./use-live-tilemap-edits";
 
 /** The Scene viewport's loading dialog and failure state. */
 export interface ViewportSceneLoadState {
@@ -160,6 +161,9 @@ export function useViewportSceneLoad({
     ? assetRegistry?.getByPath?.(scenePath)?.header.guid
     : undefined;
 
+  // Open Tilemap edits reach the viewport as they are made; a Tilemap closed with unsaved edits loads its saved map again.
+  const [discardedTilemaps, setDiscardedTilemaps] = useState(0);
+  useLiveTilemapEdits({ scene, engineRef, onDiscarded: () => setDiscardedTilemaps((count) => count + 1) });
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
   const effectsAssetGuidsKey = JSON.stringify(renderEffectsAssetGuids(projectDocument?.settings.render.effects));
   // Depends on the registry alone, so Scene edits do not rebuild it.
@@ -175,9 +179,11 @@ export function useViewportSceneLoad({
       effectsAssetGuidsKey,
       projectDocument?.settings.twoD,
       projectDocument?.settings.fonts,
+      discardedTilemaps,
     ]);
   }, [
     assetRegistry,
+    discardedTilemaps,
     registryEpoch,
     scene,
     textureLodKey,

@@ -465,13 +465,14 @@ export function refreshAlbedoTextures(
 /** A chunk of an atlas without an image draws its tiles' placeholder colours, from its vertex colours. */
 const TILEMAP_PLACEHOLDER: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: false, role: "world", imageProcessing: "atlas" };
 
-/** Bind each tilemap chunk child to the atlas stored on `metadata.tilemapTextureGuid`. */
+/** Bind each tilemap chunk child (or just `children`) to the atlas stored on `metadata.tilemapTextureGuid`. */
 export function applyTilemapAlbedoTextures(
   mesh: Mesh,
   scene: Scene,
   assets?: MeshAssetContext,
+  children: readonly AbstractMesh[] = mesh.getChildMeshes(),
 ): void {
-  for (const child of mesh.getChildMeshes()) {
+  for (const child of children) {
     const guid = child.metadata?.tilemapTextureGuid as string | null | undefined;
     if (!guid) {
       // Without an atlas image Babylon's lit default material would draw the

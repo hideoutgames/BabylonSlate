@@ -55,6 +55,8 @@ import { applyEditorBillboardFromActor } from "./editor-billboard";
 import { isColliderVisualMesh, isColliderVisualTree } from "./collider-visual";
 import { visualMeshes } from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
+import { patchTilemapComponentMesh } from "./scene-component-mesh";
+import { normalizeTilemapPayload, refreshStaleTilemapTerrains, type TilemapPayload } from "@haptic/assets";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { refreshText2DMaterials, text2DBitmapBytes } from "./text2d-mesh";
 import { pruneEditorCables } from "./cable-mesh";
@@ -136,6 +138,17 @@ export class EditorSceneSync {
   private readonly payloadFingerprints = new PayloadFingerprints();
   /** `meshAssetFingerprintWithoutModels(this.assets)`, kept with the assets. */
   private lastAssetContentFingerprint = meshAssetFingerprintWithoutModels(undefined);
+  /**
+   * Open Tilemap documents shown as edited (`setLiveTilemap`), by guid: their
+   * working content and the revision it carries. An install takes them over
+   * a collected payload of another revision, so a collection that ran during
+   * an edit never shows the map as it was.
+   */
+  private readonly liveTilemaps = new Map<string, { content: unknown; revision?: string }>();
+  /** A live edit changed `assets` since the fingerprints were taken; the next install takes them again first. */
+  private fingerprintsStale = false;
+  /** Live edits that arrived during a realization, applied once it completes. */
+  private liveTilemapsOwed = new Set<string>();
   private lastModelSlotKey = "";
   private assetsNeedRebuild = false;
   private lastScene: SerializedScene | null = null;
@@ -217,12 +230,18 @@ export class EditorSceneSync {
   }
 
   private installAssets(assets: MeshAssetContext | undefined): { rebuild: boolean; reapply: boolean } {
-    if (assets) assets = {
+    if (assets) assets = this.withLiveTilemaps({
       ...assets,
       modelSources: installModelSources(assets),
       textureBytes: installTextureBytes(assets.textureBytes),
       fontMsdfPng: installTextureBytes(assets.fontMsdfPng),
-    };
+    });
+    if (this.fingerprintsStale) {
+      // What the viewport shows since live edits, so an install of the same content changes nothing.
+      this.fingerprintsStale = false;
+      this.lastAssetContentFingerprint = meshAssetFingerprintWithoutModels(this.assets, this.payloadFingerprints);
+      this.lastAssetFingerprint = meshAssetFingerprint(this.assets, this.lastAssetContentFingerprint);
+    }
     // Serialize the tilemap, tileset and water payloads once per install, and
     // not at all when the host reports their revisions unchanged.
     const contentFingerprint = meshAssetFingerprintWithoutModels(assets, this.payloadFingerprints);
@@ -241,6 +260,100 @@ export class EditorSceneSync {
     this.lastAssetContentFingerprint = contentFingerprint;
     this.lastModelSlotKey = slotKey;
     return { rebuild, reapply };
+  }
+
+  /**
+   * Show an open Tilemap document's working content (or stop, with `null`),
+   * without a Scene rebuild: each actor drawing that Tilemap rebuilds only
+   * the chunk meshes whose cells changed, and only an edit to what every chunk
+   * draws with (tile size, chunk size, Tilesets, layers) rebuilds that actor's
+   * visual. `revision` names the content as the host's payload revisions do,
+   * so the next install of the same content is no change. A Tilemap no actor
+   * of the installed assets draws waits for an install. Play, Simulate and
+   * Preview Build never come here.
+   */
+  setLiveTilemap(guid: string, content: unknown | null, revision?: string): void {
+    if (this.disposed) return;
+    if (content === null) {
+      this.liveTilemaps.delete(guid);
+      this.liveTilemapsOwed.delete(guid);
+      return;
+    }
+    this.liveTilemaps.set(guid, { content, revision });
+    if (this.applyingScene || this.pendingApply) {
+      this.liveTilemapsOwed.add(guid);
+      return;
+    }
+    this.applyLiveTilemap(guid);
+  }
+
+  /** `assets` with each live Tilemap's content over a collected payload of another revision. */
+  private withLiveTilemaps(assets: MeshAssetContext): MeshAssetContext {
+    if (this.liveTilemaps.size === 0 || !assets.tilemaps) return assets;
+    let tilemaps: Map<string, TilemapPayload> | null = null;
+    let revisions: Map<string, string> | null = null;
+    for (const [guid, live] of this.liveTilemaps) {
+      if (!assets.tilemaps.has(guid) || (live.revision !== undefined && assets.payloadRevisions?.get(guid) === live.revision)) continue;
+      tilemaps ??= new Map(assets.tilemaps);
+      revisions ??= new Map(assets.payloadRevisions ?? []);
+      tilemaps.set(guid, this.liveTilemapPayload(live.content, assets));
+      if (live.revision === undefined) revisions.delete(guid);
+      else revisions.set(guid, live.revision);
+    }
+    return tilemaps ? { ...assets, tilemaps, payloadRevisions: revisions! } : assets;
+  }
+
+  /** A Tilemap document's content as an install would hold it: normalized, and current with the installed Tilesets. */
+  private liveTilemapPayload(content: unknown, assets: MeshAssetContext): TilemapPayload {
+    return refreshStaleTilemapTerrains(normalizeTilemapPayload(content), assets.tilesets ?? new Map());
+  }
+
+  private applyLiveTilemap(guid: string): void {
+    const live = this.liveTilemaps.get(guid);
+    const assets = this.assets;
+    const previous = assets?.tilemaps?.get(guid);
+    if (!live || !assets || !previous) return;
+    const next = this.liveTilemapPayload(live.content, assets);
+    if (next === previous) return;
+    const tilemaps = new Map(assets.tilemaps);
+    tilemaps.set(guid, next);
+    const payloadRevisions = new Map(assets.payloadRevisions ?? []);
+    if (live.revision === undefined) payloadRevisions.delete(guid);
+    else payloadRevisions.set(guid, live.revision);
+    this.assets = { ...assets, tilemaps, payloadRevisions };
+    this.fingerprintsStale = true;
+    const scene = this.lastScene;
+    if (!scene) return;
+    let rebuilt = false;
+    let patched = false;
+    for (const actor of scene.actors) {
+      const components = actor.components.filter(
+        (component) => component.classId === "TilemapComponent" && component.properties.assetGuid === guid,
+      );
+      const root = components.length > 0 ? this.meshes.get(actor.id) : undefined;
+      if (!root || root.isDisposed()) continue;
+      const parts = [root, ...root.getChildMeshes(false)];
+      const ok = components.every((component) => {
+        const mesh = parts.find((part) => part.metadata?.tilemapAssetGuid === guid &&
+          (part === root || part.name === editorComponentMeshName(actor.id, component.id)));
+        return mesh instanceof Mesh && patchTilemapComponentMesh(mesh, component, previous, next, this.assets!);
+      });
+      if (!ok) {
+        // This actor's visual is rebuilt whole by the pass below; no other actor is retired.
+        this.meshKinds.delete(actor.id);
+        rebuilt = true;
+        continue;
+      }
+      patched = true;
+      for (const mesh of [root, ...visualMeshesOfActorRoot(root)]) if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
+      this.prepareActorVisual(actor, root);
+      freezeStaticActorWorldMatrix(root);
+    }
+    if (rebuilt) this.apply(scene);
+    else if (patched) {
+      this.onAfterApply?.();
+      this.scheduler?.invalidate("asset");
+    }
   }
 
   setGameCameraPreview(enabled: boolean, restoreCamera?: Camera | null): void {
@@ -410,6 +523,7 @@ export class EditorSceneSync {
         this.applyingScene = null;
         this.materialRefreshGeneration = null;
         this.owedMaterialRefresh = undefined;
+        this.flushOwedLiveTilemaps();
       }
     }
   }
@@ -610,6 +724,18 @@ export class EditorSceneSync {
     this.applyingScene = null;
     this.materialsRefreshable = true;
     this.scheduler?.invalidate("asset");
+    this.flushOwedLiveTilemaps();
+  }
+
+  /** Live edits that arrived while a realization ran land on it once it is done; a realization still running keeps them. */
+  private flushOwedLiveTilemaps(): void {
+    if (this.liveTilemapsOwed.size === 0) return;
+    queueMicrotask(() => {
+      if (this.disposed || this.applyingScene || this.pendingApply) return;
+      const owed = [...this.liveTilemapsOwed];
+      this.liveTilemapsOwed.clear();
+      for (const guid of owed) this.applyLiveTilemap(guid);
+    });
   }
 
   /**

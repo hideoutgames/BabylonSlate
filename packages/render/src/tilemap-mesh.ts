@@ -6,11 +6,15 @@ import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import type { Node } from "@babylonjs/core/node";
 import { Scene } from "@babylonjs/core/scene";
 import {
-  tilemapChunkVertexData,
+  tilemapChunkDraws,
   decodeTileGid,
+  tilemapCellKey,
   tilemapTilesetGuids,
   tilesetAnimationFrame,
   tilesetTileUv,
+  type TilemapChunk,
+  type TilemapChunkVertexData,
+  type TilemapLayer,
   type TilemapPayload,
   type TilesetPayload,
 } from "@haptic/assets";
@@ -22,7 +26,7 @@ type AnimatedChunk = {
   mesh: Mesh;
   /** Typed so an upload does not convert the whole array each frame change. */
   uvs: Float32Array;
-  tiles: ReturnType<typeof tilemapChunkVertexData>["animatedTiles"];
+  tiles: TilemapChunkVertexData["animatedTiles"];
   frames: number[];
 };
 const animatedChunks = new WeakMap<Scene, Set<AnimatedChunk>>();
@@ -66,83 +70,127 @@ export function createTilemapMeshes(
   worldTileWidth: number,
   worldTileHeight: number,
 ): Mesh {
-  const atlasMap = asTilesetMap(tilemap, tilesets);
-  const resolveGid = (gid: number) => {
-    const hit = decodeTileGid(tilemap, gid, atlasMap);
-    if (hit) return hit;
-    if (!isTilesetMap(tilesets) && tilemapTilesetGuids(tilemap).length === 0) {
-      const [guid, tileset] = [...atlasMap.entries()][0]!;
-      return { guid, localId: gid, tileset };
-    }
-    return null;
-  };
   const root = new Mesh(name, scene);
+  const build = chunkBuilder(scene, root, tilemap, tilesets, worldTileWidth, worldTileHeight);
   for (const [ordinal, layer] of tilemap.layers.entries()) {
     if (!layer.visible) continue;
-    const sorting = { name: layer.sortingLayer, order: layer.orderInLayer, ordinal };
-    for (const chunk of layer.chunks) {
-      const atlasGuids = chunkAtlasGuids(chunk.tiles, resolveGid, atlasMap);
-      atlasGuids.forEach((guid, atlasIndex) => {
-        const tileset = atlasMap.get(guid);
-        if (!tileset) return;
-        const suffix = atlasIndex === 0 ? "" : `:a${atlasIndex}`;
-        const staticMesh = appendChunkMesh(
-          scene,
-          root,
-          `${name}:${layer.id}:${chunk.cx}:${chunk.cy}${suffix}`,
-          tilemapChunkVertexData({
-            tiles: chunk.tiles,
-            chunkSize: tilemap.chunkSize,
-            chunkX: chunk.cx,
-            chunkY: chunk.cy,
-            tileset,
-            worldTileWidth,
-            worldTileHeight,
-            kind: "static",
-            resolveGid,
-            atlasGuid: guid,
-            placeholderColors: !tileset.textureGuid,
-          }),
-          layer.parallax,
-          sorting,
-        );
-        const animMesh = appendChunkMesh(
-          scene,
-          root,
-          `${name}:${layer.id}:${chunk.cx}:${chunk.cy}${suffix}:anim`,
-          tilemapChunkVertexData({
-            tiles: chunk.tiles,
-            chunkSize: tilemap.chunkSize,
-            chunkX: chunk.cx,
-            chunkY: chunk.cy,
-            tileset,
-            worldTileWidth,
-            worldTileHeight,
-            kind: "animated",
-            resolveGid,
-            atlasGuid: guid,
-            placeholderColors: !tileset.textureGuid,
-          }),
-          layer.parallax,
-          sorting,
-        );
-        if (staticMesh) {
-          staticMesh.metadata = {
-            ...(staticMesh.metadata ?? {}),
-            tilemapTextureGuid: tileset.textureGuid,
-          };
-        }
-        if (animMesh) {
-          animMesh.metadata = {
-            ...(animMesh.metadata ?? {}),
-            tilemapTextureGuid: tileset.textureGuid,
-          };
-        }
-      });
-    }
+    for (const chunk of layer.chunks) build(layer, ordinal, chunk);
   }
   applyComponentSorting(root, DEFAULT_SORTING_LAYERS);
   return root;
+}
+
+/**
+ * Builds one chunk's draws under `root`, in one pass over its tiles
+ * (`tilemapChunkDraws`): a static draw per atlas named
+ * `<root>:<layer>:<cx>:<cy>` (`:a1`, `:a2` … for later atlases) and an
+ * `:anim` sibling for its animated tiles. Returns the meshes made.
+ */
+function chunkBuilder(
+  scene: Scene,
+  root: Mesh,
+  tilemap: TilemapPayload,
+  tilesets: TilesetPayload | ReadonlyMap<string, TilesetPayload>,
+  worldTileWidth: number,
+  worldTileHeight: number,
+): (layer: TilemapLayer, ordinal: number, chunk: TilemapChunk) => Mesh[] {
+  const atlasMap = asTilesetMap(tilemap, tilesets);
+  const legacyTileset = !isTilesetMap(tilesets) && tilemapTilesetGuids(tilemap).length === 0
+    ? [...atlasMap.entries()][0]!
+    : null;
+  const resolveGid = (gid: number) => {
+    const hit = decodeTileGid(tilemap, gid, atlasMap);
+    if (hit) return hit;
+    return legacyTileset ? { guid: legacyTileset[0], localId: gid, tileset: legacyTileset[1] } : null;
+  };
+  return (layer, ordinal, chunk) => {
+    const sorting = { name: layer.sortingLayer, order: layer.orderInLayer, ordinal };
+    const meshes: Mesh[] = [];
+    for (const draw of tilemapChunkDraws({
+      tiles: chunk.tiles,
+      chunkSize: tilemap.chunkSize,
+      chunkX: chunk.cx,
+      chunkY: chunk.cy,
+      worldTileWidth,
+      worldTileHeight,
+      resolveGid,
+      placeholderColors: (tileset) => !tileset.textureGuid,
+    })) {
+      const suffix = (draw.atlasIndex === 0 ? "" : `:a${draw.atlasIndex}`) + (draw.kind === "animated" ? ":anim" : "");
+      const mesh = appendChunkMesh(scene, root, `${root.name}:${layer.id}:${chunk.cx}:${chunk.cy}${suffix}`, draw.data, layer.parallax, sorting);
+      if (!mesh) continue;
+      mesh.metadata = {
+        ...(mesh.metadata ?? {}),
+        tilemapTextureGuid: draw.tileset.textureGuid,
+        tilemapChunk: chunkMeshKey(layer.id, chunk.cx, chunk.cy),
+      };
+      meshes.push(mesh);
+    }
+    return meshes;
+  };
+}
+
+/** The chunk a chunk mesh draws, as `metadata.tilemapChunk` holds it. */
+function chunkMeshKey(layerId: string, cx: number, cy: number): string {
+  return `${layerId}\u0000${tilemapCellKey(cx, cy)}`;
+}
+
+/** The GID ranges a map's Tileset list decodes with (its terrain stamps do not change a cell's tile). */
+function tilesetRangesKey(map: TilemapPayload): string {
+  return JSON.stringify(map.tilesets.map((ref) => [ref.guid, ref.firstGid, ref.tileCount]));
+}
+
+/** Layer settings that place or show its chunk meshes, compared when an edit is patched in. */
+function layerDrawKey(layer: TilemapLayer): string {
+  return JSON.stringify([layer.id, layer.visible, layer.sortingLayer, layer.orderInLayer, layer.parallax.x, layer.parallax.y]);
+}
+
+/**
+ * Bring a Tilemap's chunk meshes under `root` (built by `createTilemapMeshes`
+ * from `previous`) up to `next`, rebuilding only the chunks whose `tiles`
+ * changed: a chunk whose array is the same object keeps its meshes. Returns
+ * the meshes made (empty when no chunk changed), or `null` when `next`
+ * changes what every chunk draws with (tile size, chunk size, the Tileset
+ * list, the layer list or a layer's visibility, sorting or parallax), which
+ * the caller rebuilds whole.
+ */
+export function patchTilemapMeshes(
+  scene: Scene,
+  root: Mesh,
+  previous: TilemapPayload,
+  next: TilemapPayload,
+  tilesets: ReadonlyMap<string, TilesetPayload>,
+  worldTileWidth: number,
+  worldTileHeight: number,
+): Mesh[] | null {
+  if (
+    previous.tileWidth !== next.tileWidth || previous.tileHeight !== next.tileHeight ||
+    previous.chunkSize !== next.chunkSize || previous.layers.length !== next.layers.length ||
+    (previous.tilesets !== next.tilesets && tilesetRangesKey(previous) !== tilesetRangesKey(next)) ||
+    previous.layers.some((layer, at) => layer !== next.layers[at] && layerDrawKey(layer) !== layerDrawKey(next.layers[at]!))
+  ) return null;
+  const changed = new Set<string>();
+  const rebuild: Array<{ layer: TilemapLayer; ordinal: number; chunk: TilemapChunk }> = [];
+  next.layers.forEach((layer, ordinal) => {
+    const before = previous.layers[ordinal]!;
+    if (before === layer || before.chunks === layer.chunks) return;
+    const old = new Map(before.chunks.map((chunk) => [tilemapCellKey(chunk.cx, chunk.cy), chunk]));
+    for (const chunk of layer.chunks) {
+      const key = tilemapCellKey(chunk.cx, chunk.cy);
+      const was = old.get(key);
+      old.delete(key);
+      if (was && was.tiles === chunk.tiles) continue;
+      changed.add(chunkMeshKey(layer.id, chunk.cx, chunk.cy));
+      if (layer.visible) rebuild.push({ layer, ordinal, chunk });
+    }
+    for (const chunk of old.values()) changed.add(chunkMeshKey(layer.id, chunk.cx, chunk.cy));
+  });
+  if (changed.size === 0) return [];
+  for (const mesh of root.getChildMeshes(true)) {
+    if (changed.has(mesh.metadata?.tilemapChunk as string)) mesh.dispose();
+  }
+  const build = chunkBuilder(scene, root, next, tilesets, worldTileWidth, worldTileHeight);
+  return rebuild.flatMap(({ layer, ordinal, chunk }) => build(layer, ordinal, chunk));
 }
 
 function asTilesetMap(
@@ -161,26 +209,6 @@ function isTilesetMap(
     typeof (value as ReadonlyMap<string, TilesetPayload>).get === "function" &&
     !Array.isArray((value as TilesetPayload).tiles)
   );
-}
-
-function chunkAtlasGuids(
-  tiles: readonly number[],
-  resolveGid: (gid: number) => { guid: string } | null,
-  atlasMap: ReadonlyMap<string, TilesetPayload>,
-): string[] {
-  const guids: string[] = [];
-  const seen = new Set<string>();
-  const add = (guid: string) => {
-    if (!guid || seen.has(guid) || !atlasMap.has(guid)) return;
-    seen.add(guid);
-    guids.push(guid);
-  };
-  for (const gid of tiles) {
-    if (gid <= 0) continue;
-    const hit = resolveGid(gid);
-    if (hit) add(hit.guid);
-  }
-  return guids;
 }
 
 export function worldTileSize(
@@ -230,7 +258,7 @@ function appendChunkMesh(
   scene: Scene,
   root: Mesh,
   name: string,
-  data: ReturnType<typeof tilemapChunkVertexData>,
+  data: TilemapChunkVertexData,
   parallax: { x: number; y: number },
   sorting: { name: string; order: number; ordinal: number },
 ): Mesh | null {
@@ -240,12 +268,14 @@ function appendChunkMesh(
   vertexData.positions = data.positions;
   vertexData.uvs = data.uvs;
   vertexData.indices = data.indices;
-  const normals: number[] = [];
-  VertexData.ComputeNormals(data.positions, data.indices, normals);
+  // Every quad lies in the XY plane facing -Z: the normal ComputeNormals gives it, without computing it.
+  const normals = new Float32Array(data.positions.length);
+  for (let at = 2; at < normals.length; at += 3) normals[at] = -1;
   vertexData.normals = normals;
   // Atlases without an image draw per-tile placeholder colours.
   if (data.colors) vertexData.colors = data.colors;
-  vertexData.applyToMesh(mesh, true);
+  // Only animated tiles rewrite a buffer (their UVs); static chunks upload once.
+  vertexData.applyToMesh(mesh, data.animatedTiles.length > 0);
   // Animated tiles rewrite their UVs through notified updates only.
   markOwnerNotifiedGeometry(mesh);
   if (data.animatedTiles.length > 0) {

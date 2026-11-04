@@ -15,6 +15,7 @@ import {
   parseSpringArmProperties, SPRING_ARM_COMPONENT_CLASS_ID, supportsOverlayVisualStyle, waterKindForClass,
   type SerializedActor, type SerializedComponent,
 } from "@haptic/core";
+import type { TilemapPayload } from "@haptic/assets";
 import { parseColliderProperties } from "@haptic/physics";
 import { createCableMesh } from "./cable-mesh";
 import { createColliderVisualMesh } from "./collider-visual";
@@ -53,7 +54,7 @@ import { createEditorSpringArmMesh } from "./spring-arm";
 import { createSpriteQuad } from "./sprite-quad";
 import { createText2DMesh } from "./text2d-mesh";
 import { createText3DMesh } from "./text3d-mesh";
-import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
+import { createTilemapMeshes, patchTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 import { createUIControl2DMesh } from "./ui-controls2d-mesh";
 import { createWaterMesh } from "./water-mesh";
 import { builtInWaterMaterial } from "./water-template";
@@ -189,9 +190,36 @@ export function createTilemapComponentMesh(
     );
     applyTilemapAlbedoTextures(mesh, scene, assets);
     applyAuthoredComponentSorting(mesh, component, assets?.sortingLayers);
+    // Live edits of this Tilemap find their chunk meshes by it (`patchTilemapComponentMesh`).
+    mesh.metadata = { ...(mesh.metadata ?? {}), tilemapAssetGuid: mapGuid };
     return mesh;
   }
   return createPrimitiveMesh(scene, name, "tilemap");
+}
+
+/**
+ * Patch a Tilemap component mesh built from `previous` to show `next`: only
+ * the chunks whose cells changed are rebuilt, bound to their atlas and sorted
+ * as the component sorts. Returns false, changing nothing, when `next` needs
+ * the whole mesh rebuilt (`patchTilemapMeshes`).
+ */
+export function patchTilemapComponentMesh(
+  mesh: Mesh,
+  component: SerializedComponent,
+  previous: TilemapPayload,
+  next: TilemapPayload,
+  assets: MeshAssetContext,
+): boolean {
+  const tilesets = assets.tilesets;
+  if (!tilesets || tilesets.size === 0 || mesh.metadata?.tilemapAssetGuid !== stringProp(component.properties.assetGuid)) return false;
+  const size = worldTileSize(next, assets.pixelsPerUnit ?? 100);
+  const made = patchTilemapMeshes(mesh.getScene(), mesh, previous, next, tilesets, size.width, size.height);
+  if (!made) return false;
+  if (made.length > 0) {
+    applyTilemapAlbedoTextures(mesh, mesh.getScene(), assets, made);
+    applyAuthoredComponentSorting(mesh, component, assets.sortingLayers);
+  }
+  return true;
 }
 
 /** Build a Babylon mesh for one visual component. */
