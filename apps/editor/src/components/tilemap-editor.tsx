@@ -19,6 +19,7 @@ import {
   ChevronDownIcon,
   ClipboardPasteIcon,
   CopyIcon,
+  EllipsisIcon,
   EraserIcon,
   EyeIcon,
   EyeOffIcon,
@@ -68,6 +69,7 @@ import {
   AssetPicker,
   ContextMenuOverlay,
   NamedListEditor,
+  NestedMenu,
   PanelFrame,
   PropertyGrid,
   PropertySectionTitle,
@@ -1502,12 +1504,8 @@ export function TilemapPaint({
   useKeybindCommand("edit.delete", select.remove, selectionKeys);
   useKeybindCommand("edit.paste", () => pasteAt(), { ...paintKeys, enabled: () => select.canPaste });
 
-  /** The Select tool's menu; a press outside the selection selects its cell first, as a tap on an unselected item does. */
-  const selectMenuItems = (): ContextMenuItem[] => {
-    select.cancelGesture();
-    const point = menuPointRef.current;
-    const cell = point ? cellAt(point.x, point.y) : null;
-    if (cell) select.selectCell(cell);
+  /** The Select tool's actions, for the selection as it is now; Paste lands at `at`, else the middle of the view. */
+  const selectActionItems = (at?: { x: number; y: number }): ContextMenuItem[] => {
     const current = select.current();
     if (current.paste) {
       return [
@@ -1519,14 +1517,26 @@ export function TilemapPaint({
     return [
       { id: "cut", label: "Cut", icon: <ScissorsIcon />, shortcut: keybinds.get("edit.cut")?.[0], disabled: !selected, testId: "tilemap-select-menu-cut", onSelect: select.cut },
       { id: "copy", label: "Copy", icon: <CopyIcon />, shortcut: keybinds.get("edit.copy")?.[0], disabled: !selected, testId: "tilemap-select-menu-copy", onSelect: select.copy },
-      { id: "paste", label: "Paste", icon: <ClipboardPasteIcon />, shortcut: keybinds.get("edit.paste")?.[0], disabled: !select.canPaste, testId: "tilemap-select-menu-paste", onSelect: () => pasteAt(cell ?? undefined) },
+      { id: "paste", label: "Paste", icon: <ClipboardPasteIcon />, shortcut: keybinds.get("edit.paste")?.[0], disabled: !select.canPaste, testId: "tilemap-select-menu-paste", onSelect: () => pasteAt(at ?? centerCell()) },
       { id: "delete", label: "Delete", icon: <Trash2Icon />, shortcut: keybinds.get("edit.delete")?.[0], variant: "destructive", disabled: !selected, testId: "tilemap-select-menu-delete", onSelect: select.remove },
       { type: "separator", id: "select-separator" },
       { id: "select-all", label: "Select All", icon: <SquareDashedIcon />, shortcut: keybinds.get("edit.selectAll")?.[0], testId: "tilemap-select-menu-select-all", onSelect: select.selectAll },
       { id: "deselect", label: "Deselect", icon: <XIcon />, shortcut: "Escape", disabled: !selected, testId: "tilemap-select-menu-deselect", onSelect: select.deselect },
     ];
   };
-  const selectMenu = useContextMenu({ items: selectMenuItems, enabled: selecting });
+  /** The menu a hold or right-click opens; a press outside the selection selects its cell first, as one on an unselected item does. */
+  const selectMenu = useContextMenu({
+    enabled: selecting,
+    items: () => {
+      select.cancelGesture();
+      const point = menuPointRef.current;
+      const cell = point ? cellAt(point.x, point.y) : null;
+      if (cell) select.selectCell(cell);
+      return selectActionItems(cell ?? undefined);
+    },
+  });
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const touchUi = useTouchUi();
 
   /** The Select tool's keys on the focused canvas: arrows nudge (Shift: 8 cells), Escape clears, Enter places a paste. */
   const onCanvasKeyDown = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
@@ -1666,68 +1676,86 @@ export function TilemapPaint({
           </span>
         ) : null}
         <Separator orientation="vertical" className="my-1" />
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          {selecting ? (
-            <div className="flex min-w-0 flex-wrap items-center gap-1" data-testid="tilemap-select-options">
-              {select.state.paste ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="pointer-coarse:min-h-11"
-                    data-testid="tilemap-select-place"
-                    onClick={() => {
-                      select.place();
-                      focusCanvas();
-                    }}
-                  >
-                    <CheckIcon />
-                    Place
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="pointer-coarse:min-h-11"
-                    data-testid="tilemap-select-cancel-paste"
-                    onClick={() => {
-                      select.cancelPaste();
-                      focusCanvas();
-                    }}
-                  >
-                    <XIcon />
-                    Cancel
-                  </Button>
-                </>
-              ) : (
-                <Button
+        {selecting ? (
+          <div className="flex shrink-0 items-center gap-1" data-testid="tilemap-select-options">
+            {select.state.paste ? (
+              // Icons, so the toolbar keeps its width (and the canvas its size) while a paste waits.
+              <>
+                <IconActionButton
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  className="pointer-coarse:min-h-11"
-                  data-testid="tilemap-select-all"
+                  label="Place"
+                  shortcut="Enter"
+                  className="pointer-coarse:size-11"
+                  data-testid="tilemap-select-place"
                   onClick={() => {
-                    select.selectAll();
+                    select.place();
                     focusCanvas();
                   }}
                 >
-                  <SquareDashedIcon />
-                  Select All
-                </Button>
-              )}
-              <Toggle
-                variant="outline"
-                size="sm"
-                className="pointer-coarse:min-h-11"
-                pressed={select.allLayers}
-                onPressedChange={select.setAllLayers}
-                data-testid="tilemap-select-all-layers"
+                  <CheckIcon />
+                </IconActionButton>
+                <IconActionButton
+                  type="button"
+                  label="Cancel Paste"
+                  shortcut="Escape"
+                  className="pointer-coarse:size-11"
+                  data-testid="tilemap-select-cancel-paste"
+                  onClick={() => {
+                    select.cancelPaste();
+                    focusCanvas();
+                  }}
+                >
+                  <XIcon />
+                </IconActionButton>
+              </>
+            ) : (
+              <IconActionButton
+                type="button"
+                label="Select All"
+                shortcut={keybinds.get("edit.selectAll")?.[0]}
+                className="pointer-coarse:size-11"
+                data-testid="tilemap-select-all"
+                onClick={() => {
+                  select.selectAll();
+                  focusCanvas();
+                }}
               >
-                <LayersIcon />
-                All Layers
-              </Toggle>
-              {([
+                <SquareDashedIcon />
+              </IconActionButton>
+            )}
+            <Toggle
+              variant="outline"
+              size="sm"
+              className="pointer-coarse:min-h-11"
+              pressed={select.allLayers}
+              onPressedChange={select.setAllLayers}
+              data-testid="tilemap-select-all-layers"
+            >
+              <LayersIcon />
+              All Layers
+            </Toggle>
+            {touchUi ? (
+              // The touch layout keeps its 44 px actions to one menu, so a phone's toolbar stays two rows.
+              <NestedMenu
+                open={actionsOpen}
+                onOpenChange={setActionsOpen}
+                items={actionsOpen ? selectActionItems() : []}
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label="Selection Actions"
+                    title="Selection Actions"
+                    className="pointer-coarse:size-11"
+                    data-testid="tilemap-select-actions"
+                  >
+                    <EllipsisIcon />
+                  </Button>
+                }
+              />
+            ) : (
+              ([
                 { id: "cut", label: "Cut", command: "edit.cut", icon: ScissorsIcon, disabled: !select.hasSelection, run: select.cut },
                 { id: "copy", label: "Copy", command: "edit.copy", icon: CopyIcon, disabled: !select.hasSelection, run: select.copy },
                 { id: "paste", label: "Paste", command: "edit.paste", icon: ClipboardPasteIcon, disabled: !select.canPaste, run: () => pasteAt(centerCell()) },
@@ -1741,7 +1769,6 @@ export function TilemapPaint({
                     label={action.label}
                     shortcut={keybinds.get(action.command)?.[0]}
                     disabled={action.disabled}
-                    className="pointer-coarse:size-11"
                     data-testid={`tilemap-select-${action.id}`}
                     onClick={() => {
                       action.run();
@@ -1751,18 +1778,12 @@ export function TilemapPaint({
                     <Icon />
                   </IconActionButton>
                 );
-              })}
-              {select.lost > 0 ? (
-                <span className="shrink-0 text-xs text-destructive tabular-nums" data-testid="tilemap-select-cut-off">
-                  {select.lost} {select.lost === 1 ? "Tile Will Be" : "Tiles Will Be"} Cut Off
-                </span>
-              ) : select.outline ? (
-                <span className="shrink-0 text-xs text-muted-foreground tabular-nums" data-testid="tilemap-select-size">
-                  {select.outline.maxX - select.outline.minX + 1} × {select.outline.maxY - select.outline.minY + 1}
-                </span>
-              ) : null}
-            </div>
-          ) : terrainBrush ? (
+              })
+            )}
+          </div>
+        ) : null}
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {selecting ? null : terrainBrush ? (
             <TileSprite
               gid={terrainBrush.gid}
               localId={terrainBrush.localId}
@@ -2040,6 +2061,20 @@ export function TilemapPaint({
             }
           }}
         />
+        {selecting && select.outline ? (
+          // Over the canvas, not in the toolbar, so its text never re-wraps the toolbar and resizes the canvas mid-drag.
+          <div className="toolbar-island pointer-events-none absolute top-2 left-2" role="status" data-testid="tilemap-select-readout">
+            {select.lost > 0 ? (
+              <span className="toolbar-island-readout text-destructive!" data-testid="tilemap-select-cut-off">
+                {select.lost} {select.lost === 1 ? "Tile Will Be" : "Tiles Will Be"} Cut Off
+              </span>
+            ) : (
+              <span className="toolbar-island-readout" data-testid="tilemap-select-size">
+                {select.outline.maxX - select.outline.minX + 1} × {select.outline.maxY - select.outline.minY + 1}
+              </span>
+            )}
+          </div>
+        ) : null}
         <ContextMenuOverlay menu={selectMenu.menu} onClose={selectMenu.closeMenu} contentTestId="tilemap-select-menu" />
       </div>
     </div>

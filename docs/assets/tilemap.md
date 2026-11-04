@@ -34,20 +34,20 @@ Each stroke is one undo step. Two fingers pinch to zoom and drag to pan in any t
 
 Pick **Select** in the **Paint** toolbar to work with tiles you have already placed.
 
-- **Select**: drag across cells to select a rectangle, or tap one cell. A dashed orange outline marks the selection, and the toolbar shows its size. Tap outside it, or press <kbd>Esc</kbd>, to clear it.
+- **Select**: drag across cells to select a rectangle, or tap one cell. A dashed orange outline marks the selection, and the top-left corner of **Paint** shows its size. Tap outside it, or press <kbd>Esc</kbd>, to clear it.
 - **All Layers**: when on, the selection covers every layer, hidden ones included, so a group of tiles moves together and each layer keeps its own tiles. When off, only the paint layer.
 - **Select All**: selects the area of every painted tile on the paint layer, or on every layer with **All Layers** on.
 - **Move**: drag from inside the selection. The tiles lift off the map and follow your finger cell by cell, and their old cells show empty until you let go. Each drag is one undo step.
 - **Nudge**: the arrow keys move the selection one cell, <kbd>Shift</kbd> and an arrow key eight cells. Holding a key down is one undo step.
-- **Cut**, **Copy**, **Paste**, **Delete**: in the toolbar, or long-press or right-click the map for a menu with these, **Select All** and **Deselect**. A long-press or right-click outside the selection selects that cell first.
+- **Cut**, **Copy**, **Paste**, **Delete**: buttons in the toolbar (with touch, in its **Selection Actions** menu), or long-press or right-click the map for a menu with these, **Select All** and **Deselect**. A long-press or right-click outside the selection selects that cell first.
 
 Moved and pasted tiles replace the tiles where they land. Empty cells inside the selection never erase anything.
 
-**Paste** puts the copied tiles in the middle of the view, or where you opened the menu, floating over the map. Drag them into place, then tap, press <kbd>Enter</kbd> or choose **Place** to write them; <kbd>Esc</kbd> or **Cancel** drops them. A copy of one layer pastes into the paint layer; a copy made with **All Layers** pastes into the same layers. Copied tiles stay available while the editor is open, so you can paste them into another Tilemap too; tiles of a Tileset that map does not use are left out.
+**Paste** puts the copied tiles in the middle of the view, or where you opened the menu, floating over the map. Drag them into place, then tap, press <kbd>Enter</kbd> or choose **Place** to write them; <kbd>Esc</kbd> or **Cancel Paste** drops them. A copy of one layer pastes into the paint layer; a copy made with **All Layers** pastes into the same layers. Copied tiles stay available while the editor is open, so you can paste them into another Tilemap too; tiles of a Tileset that map does not use are left out.
 
 Autotile tiles around the cells you move, cut, paste or delete update as they do when you paint, so edges stay correct. A moved tile whose neighbours all moved with it keeps its piece, including one you placed by hand.
 
-On a map with a size, tiles moved or pasted past its edge are cut off: while you drag, those cells show tinted red and the toolbar says how many tiles will be cut off. An unbounded map has no edge.
+On a map with a size, tiles moved or pasted past its edge are cut off: while you drag, those cells show tinted red and the corner of **Paint** says how many tiles will be cut off. An unbounded map has no edge.
 
 ### Make room after a resize
 

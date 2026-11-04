@@ -18,7 +18,7 @@ import {
   type TilemapPayload,
   type TilesetPayload,
 } from "@haptic/assets";
-import { AssetOpenProvider } from "@haptic/editor-kit";
+import { AssetOpenProvider, setTouchUi } from "@haptic/editor-kit";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import { KeybindProvider } from "../context/keybind-context";
@@ -1628,6 +1628,29 @@ describe("Tilemap Select tool", () => {
     menuAt(7, 7);
     fireEvent.click(screen.getByTestId("tilemap-select-menu-select-all"));
     expect(size()).toBe("4 × 3");
+  });
+
+  it("folds Cut, Copy, Paste and Delete into one Selection Actions menu in the touch layout", async () => {
+    setTouchUi(true);
+    try {
+      const { drag, latest, onChange } = await openSelect(twoLayerMap());
+      expect(screen.queryByTestId("tilemap-select-cut")).toBeNull();
+      drag([0, 0], [1, 0]);
+      const choose = async (id: string) => {
+        fireEvent.click(screen.getByTestId("tilemap-select-actions"));
+        fireEvent.click(await screen.findByTestId(`tilemap-select-menu-${id}`));
+      };
+      await choose("copy");
+      // Paste lands in the middle of the view, waiting; Place writes it.
+      await choose("paste");
+      fireEvent.click(screen.getByTestId("tilemap-select-place"));
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect([getTile(latest(), "layer-1", 3, 4), getTile(latest(), "layer-1", 4, 4)]).toEqual([1, 2]);
+      await choose("delete");
+      expect([getTile(latest(), "layer-1", 3, 4), getTile(latest(), "layer-1", 4, 4)]).toEqual([0, 0]);
+    } finally {
+      setTouchUi(false);
+    }
   });
 
   it("opens the menu on a one-finger hold inside the selection, which keeps it and drops the drag the press began", async () => {
