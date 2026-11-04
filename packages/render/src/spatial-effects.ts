@@ -203,8 +203,8 @@ function storedFragment(fragment: string, wgsl: boolean): string {
  * A stage's Effect, drawn from the shader store under its fragment source's key (`storedFragment`). Babylon builds an
  * inline source's Effect with its constructor, outside the Engine's Effect cache and without uniform buffers, so each
  * graph build linked every stage again and two stages of the same code (the occlusion blurs) linked twice; from the
- * store, stages of one source and defines share one cached Effect (Babylon reports its compile failure to the first of
- * them only).
+ * store, stages of one source and defines share one cached Effect. Babylon calls the `onError` of the Effect's first
+ * creator only, so each stage also hears its failure from the Effect itself, until the Effect compiles.
  */
 export function customWrapper(
   scene: Scene,
@@ -216,7 +216,7 @@ export function customWrapper(
   uniformBuffers: string[] = [],
 ): EffectWrapper {
   const wgsl = scene.getEngine().isWebGPU;
-  return new EffectWrapper({
+  const wrapper = new EffectWrapper({
     name,
     engine: scene.getEngine(),
     useAsPostProcess: true,
@@ -230,6 +230,19 @@ export function customWrapper(
     uniformBuffers,
     onError: failure?.for(name),
   });
+  const effect = wrapper.effect;
+  if (failure && effect && !effect.isReady()) {
+    const report = failure.for(name);
+    const failed = () => Boolean(effect.getCompilationError()) && effect.allFallbacksProcessed();
+    if (failed()) report(effect, effect.getCompilationError());
+    else {
+      const observer = effect.onErrorObservable.add(() => {
+        if (failed()) report(effect, effect.getCompilationError());
+      });
+      effect.onCompileObservable.addOnce(() => effect.onErrorObservable.remove(observer));
+    }
+  }
+  return wrapper;
 }
 
 /** Spatial stages and their uniform contracts for the FrameGraph. */

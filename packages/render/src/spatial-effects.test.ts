@@ -1,5 +1,6 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { Camera, FreeCamera, NullEngine, Scene, ShaderStore, Vector3 } from "@babylonjs/core";
+import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";
 import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
 import { EffectCompileFailure } from "./effect-compile-failure";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
@@ -70,6 +71,33 @@ it("links each stage's program once: a chain built again draws the same Effects,
   }
   // The two blur directions differ only in a uniform.
   expect(effect(first, "Scene Ambient Occlusion Blur Y")).toBe(effect(first, "Scene Ambient Occlusion Blur X"));
+});
+
+it("reports a shared stage's failure to every chain that draws it, not only to the first", async () => {
+  vi.useFakeTimers();
+  try {
+    const chain = spatialChain({ volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true } });
+    // NullEngine has no driver: only a parallel-compile driver's pending query is modelled, and the link then fails.
+    let linkFails = false;
+    const prepare = chain.engine._preparePipelineContextAsync.bind(chain.engine);
+    vi.spyOn(chain.engine, "_preparePipelineContextAsync").mockImplementation((...args) => {
+      (args[0] as WebGLPipelineContext).isParallelCompiled = true;
+      return prepare(...args);
+    });
+    vi.spyOn(chain.engine, "_isRenderingStateCompiled").mockImplementation(() => {
+      if (linkFails) throw new Error("link failed");
+      return false;
+    });
+    const first = new EffectCompileFailure(), rebuilt = new EffectCompileFailure();
+    chain.build(first);
+    chain.build(rebuilt);
+    linkFails = true;
+    await vi.advanceTimersByTimeAsync(32);
+    expect(first.message).toContain("Scene Volumetric Lighting failed to compile");
+    expect(rebuilt.message).toContain("Scene Volumetric Lighting failed to compile");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("reports a failed volumetric march as the chain's compile failure", () => {
