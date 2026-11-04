@@ -34,10 +34,9 @@ describe("resolveTypeVisual", () => {
     for (const assetType of ["SpriteAnimation", "Animation"]) expect(resolveTypeVisual({ assetType }).icon).not.toBe(timeline.icon);
   });
 
-  it("colours Textures apart from the 2D assets made from them", () => {
-    const texture = resolveTypeVisual({ assetType: "Texture" }).colorVar;
-    expect(texture).toBe("var(--asset-texture)");
-    for (const assetType of ["RenderTarget", "RenderTargetTexture"]) expect(resolveTypeVisual({ assetType }).colorVar).toBe(texture);
+  it("colours Textures with Class's blue, apart from render targets and the 2D assets made from them", () => {
+    expect(resolveTypeVisual({ assetType: "Texture" }).colorVar).toBe(resolveTypeVisual({ assetType: "Class" }).colorVar);
+    for (const assetType of ["RenderTarget", "RenderTargetTexture"]) expect(resolveTypeVisual({ assetType }).colorVar).toBe("var(--asset-render-target)");
     for (const assetType of ["Sprite", "Tileset", "Tilemap"]) expect(resolveTypeVisual({ assetType }).colorVar).toBe("var(--asset-sprite)");
   });
 
