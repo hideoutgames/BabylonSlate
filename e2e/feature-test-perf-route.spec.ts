@@ -293,8 +293,10 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   const consoleProblems: string[] = [];
   page.on("console", (message) => {
     if (message.type() !== "error" && message.type() !== "warning") return;
+    // SwiftShader's read-back performance notes say nothing about a failure.
+    if (message.text().includes("GL Driver Message")) return;
     consoleProblems.push(`${message.type()}: ${message.text().slice(0, 500)}`);
-    if (consoleProblems.length > 40) consoleProblems.shift();
+    if (consoleProblems.length > 60) consoleProblems.shift();
   });
   await recordLongTasks(page);
   await recordProgramLinks(page);
@@ -322,21 +324,25 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
     }
     await page.getByTestId("viewport-canvas").screenshot({ path: testInfo.outputPath(`${scene}-viewport.png`) });
     const plays = [];
-    for (let index = 0; index < PLAYS; index += 1) {
-      if (index > 0) {
-        await waitForSceneView(page);
-        await page.waitForTimeout(SETTLE_MS);
-      }
-      try {
+    let step = "";
+    try {
+      for (let index = 0; index < PLAYS; index += 1) {
+        if (index > 0) {
+          step = `the editor's reload before Play ${index + 1}`;
+          await waitForSceneView(page);
+          await page.waitForTimeout(SETTLE_MS);
+        }
+        step = `Play ${index + 1}`;
         plays.push(await measurePlay(page, cdp));
-      } catch (error) {
-        console.log(`[feature-test-perf] ${scene} Play ${index + 1} failed; last console problems:\n${consoleProblems.join("\n")}`);
-        throw error;
       }
+      // The next scene opens over the editor's reloaded view.
+      step = "the editor's reload after the last Play";
+      await waitForSceneView(page);
+    } catch (error) {
+      console.log(`[feature-test-perf] ${scene}: ${step} failed; last console problems:\n${consoleProblems.join("\n")}`);
+      throw error;
     }
     scenes[scene] = { sceneReadyMs, loadRetries, viewport, play: plays[0], ...(PLAYS > 1 ? { repeatPlays: plays.slice(1) } : {}) };
-    // The next scene opens over the editor's reloaded view.
-    await waitForSceneView(page);
   }
 
   const reopenToInteractiveMs = REOPEN ? await reopenFeatureTestProject(page) : null;
