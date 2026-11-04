@@ -359,7 +359,7 @@ it("hot rebuilds without retaining old apply callbacks and ignores queued update
   ).toHaveLength(0);
 });
 
-it("compiles a pass's update after a retired pass of the same Material build removed their shared source", async () => {
+it("keeps a Material build's shader source while a newer pass compiles from it, and removes it with the last pass", async () => {
   const { engine, graph } = host([gainDocument()]);
   await graph.buildAsync();
   const retired = engine.postProcesses[0] as OwnedPostProcess;
@@ -370,17 +370,20 @@ it("compiles a pass's update after a retired pass of the same Material build rem
   material.createEffectForPostProcess(pass);
   const effect = pass.getEffect();
   const { vertex, fragment } = effect.name as { vertex: string; fragment: string };
-  retired.dispose();
-  await retired.whenReleased();
-  expect(ShaderStore.ShadersStore[`${fragment}PixelShader`]).toBeUndefined();
-  // Babylon's apply handler updates the pass a tick after registering the source, which the retired pass removed.
+  // Babylon reads a new Effect's sources once its shader imports load, a tick or more after the pass registered them
+  // (here, a define change), and the older pass retires meanwhile.
   pass.updateEffect(`${effect.defines}\n#define NEXT_DEFINES`, effect.getUniformNames(), effect.getSamplers(),
     undefined, undefined, undefined, vertex, fragment);
   const updated = pass.getEffect();
   expect(updated).not.toBe(effect);
+  retired.dispose();
+  await retired.whenReleased();
   await vi.waitFor(() => expect(updated.isReady() || Boolean(updated.getCompilationError())).toBe(true));
   expect(updated.getCompilationError()).toBeFalsy();
   expect(updated.isReady()).toBe(true);
+  pass.dispose();
+  await pass.whenReleased();
+  expect(ShaderStore.ShadersStore[`${fragment}PixelShader`]).toBeUndefined();
 });
 
 it("disposal during deferred graph compilation cannot attach a late pass", async () => {

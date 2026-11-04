@@ -17,6 +17,22 @@ function guardDisposedEffectPolling(effect: Effect): void {
 }
 
 /**
+ * The live passes that registered each shader source, by store and key. Every graph build gives a Material's passes
+ * the same names, and Babylon reads a new Effect's sources from the store only after its shader imports load (a tick
+ * or more after the pass registered them), so a source goes with the last pass holding it, not with the first to
+ * retire: otherwise a newer pass's Effect fetched its sources as a URL and failed to compile.
+ */
+const sourceHolders = new WeakMap<Record<string, string>, Map<string, Set<OwnedPostProcess>>>();
+
+function holdersOf(store: Record<string, string>, key: string): Set<OwnedPostProcess> {
+  let byKey = sourceHolders.get(store);
+  if (!byKey) sourceHolders.set(store, (byKey = new Map()));
+  let holders = byKey.get(key);
+  if (!holders) byKey.set(key, (holders = new Set()));
+  return holders;
+}
+
+/**
  * Native camera or graph pass with explicit authored shader/effect ownership.
  * Authored factories use blockCompilation:true, then createEffectForPostProcess.
  * Logical detachment is synchronous; whenDisposed reports bounded CPU/native
@@ -52,13 +68,9 @@ export class OwnedPostProcess extends PostProcess {
       const key = name + suffix;
       const store = ShaderStore.GetShadersStore(this.shaderLanguage);
       const source = store[key];
-      if (typeof source === "string") this.shaderSources?.set(key, source);
-      else {
-        // Each graph build gives a Material's passes the same names. Babylon registers the source as a pass applies
-        // and updates it a tick later, and a retired pass of the same build removes the names it registered
-        // (`finishSources`) meanwhile: restore this pass's own source, or its Effect would fetch it as a URL.
-        const known = this.shaderSources?.get(key);
-        if (known !== undefined) store[key] = known;
+      if (typeof source === "string" && this.shaderSources) {
+        this.shaderSources.set(key, source);
+        holdersOf(store, key).add(this);
       }
     }
     const previous = this.getEffect();
@@ -110,7 +122,14 @@ export class OwnedPostProcess extends PostProcess {
     this.track(retireOwnedEffect(this.getEffect() ?? null, () => super.dispose(attachedCamera ?? undefined)));
     const finishSources = () => {
       const store = ShaderStore.GetShadersStore(this.shaderLanguage);
-      for (const [key, source] of this.shaderSources) if (store[key] === source) delete store[key];
+      for (const [key, source] of this.shaderSources) {
+        const holders = holdersOf(store, key);
+        holders.delete(this);
+        // Another live pass of the same Material build still compiles from it.
+        if (holders.size > 0) continue;
+        sourceHolders.get(store)?.delete(key);
+        if (store[key] === source) delete store[key];
+      }
       this.shaderSources.clear();
       this.released = true;
       this.resolveReleased();
