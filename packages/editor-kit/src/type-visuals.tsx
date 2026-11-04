@@ -74,6 +74,7 @@ export type AssetVisualFamily =
   | "scene"
   | "graph"
   | "texture"
+  | "sprite"
   | "material"
   | "model"
   | "audio"
@@ -409,9 +410,9 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   BehaviourTree: "class",
   Blackboard: "struct",
   SaveGame: "struct",
-  Sprite: "texture",
-  Tileset: "texture",
-  Tilemap: "texture",
+  Sprite: "sprite",
+  Tileset: "sprite",
+  Tilemap: "sprite",
   Class: "class",
   Prefab: "model",
   Enum: "scriptType",
@@ -430,6 +431,7 @@ const COLOR_BY_FAMILY: Record<AssetVisualFamily, string> = {
   scene: assetColorVar("scene"),
   graph: assetColorVar("graph"),
   texture: assetColorVar("texture"),
+  sprite: assetColorVar("sprite"),
   material: assetColorVar("material"),
   model: assetColorVar("model"),
   audio: assetColorVar("audio"),
