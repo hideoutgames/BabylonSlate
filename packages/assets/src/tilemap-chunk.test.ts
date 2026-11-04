@@ -6,7 +6,7 @@ import {
   readGolden,
   writeGolden,
 } from "@haptic/test-kit";
-import { tilemapChunkVertexData, tilePlaceholderHsl } from "./tilemap-chunk";
+import { tilemapChunkDraws, tilemapChunkVertexData, tilePlaceholderHsl } from "./tilemap-chunk";
 import { emptyChunkTiles } from "./tilemap-payload";
 import { normalizeTilesetPayload } from "./tileset-payload";
 
@@ -211,5 +211,46 @@ describe("tilemapChunkVertexData", () => {
     expect(decoDraw.positions).toEqual([
       1, 0, 0, 2, 0, 0, 2, 1, 0, 1, 1, 0,
     ]);
+  });
+});
+
+describe("tilemapChunkDraws", () => {
+  it("builds every atlas's static and animated draw of a chunk in one pass, as the per-draw builder does", () => {
+    const ground = normalizeTilesetPayload({
+      textureGuid: "ground-texture",
+      atlasWidth: 32,
+      atlasHeight: 16,
+      tileWidth: 16,
+      tileHeight: 16,
+      tiles: [{ id: 2, animation: [1, 2] }],
+    });
+    const deco = normalizeTilesetPayload({ atlasWidth: 16, atlasHeight: 16, tileWidth: 16, tileHeight: 16 });
+    const tiles = emptyChunkTiles(3);
+    // Deco first, then ground static, a ground animated tile, a GID no atlas owns.
+    Object.assign(tiles, { 0: 3, 1: 1, 4: 2, 5: 1, 7: 9 });
+    const resolveGid = (gid: number) => {
+      if (gid === 3) return { tileset: deco, localId: 1, guid: "deco" };
+      if (gid === 1 || gid === 2) return { tileset: ground, localId: gid, guid: "ground" };
+      return null;
+    };
+    const options = { tiles, chunkSize: 3, chunkX: 1, chunkY: -1, worldTileWidth: 0.5, worldTileHeight: 0.25, resolveGid };
+    const draws = tilemapChunkDraws({ ...options, placeholderColors: (tileset) => !tileset.textureGuid });
+    expect(draws.map((draw) => [draw.guid, draw.atlasIndex, draw.kind])).toEqual([
+      ["deco", 0, "static"],
+      ["ground", 1, "static"],
+      ["ground", 1, "animated"],
+    ]);
+    for (const draw of draws) {
+      expect(draw.data).toEqual(tilemapChunkVertexData({
+        ...options,
+        tileset: draw.tileset,
+        kind: draw.kind,
+        atlasGuid: draw.guid,
+        placeholderColors: !draw.tileset.textureGuid,
+      }));
+    }
+    expect(draws[0]!.data.colors).toHaveLength(16);
+    expect(draws[1]!.data.colors).toBeUndefined();
+    expect(draws[2]!.data.animatedTiles.map((tile) => tile.tile.id)).toEqual([2]);
   });
 });

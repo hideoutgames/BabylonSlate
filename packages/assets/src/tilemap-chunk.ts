@@ -32,6 +32,93 @@ function tilePlaceholderRgb(gid: number): [number, number, number] {
 
 export type TilemapChunkDrawKind = "static" | "animated";
 
+/** One draw of a chunk: the tiles of one atlas, static or animated (`tilemapChunkDraws`). */
+export interface TilemapChunkDraw {
+  guid: string;
+  /** The atlas's place among the chunk's atlases, in the order their first tile appears. */
+  atlasIndex: number;
+  tileset: TilesetPayload;
+  kind: TilemapChunkDrawKind;
+  data: TilemapChunkVertexData;
+}
+
+/**
+ * Every draw of one chunk in a single pass over its tiles: per atlas in the
+ * order its first tile appears, the static draw, then the animated one; draws
+ * without tiles are left out. Each draw holds exactly what
+ * `tilemapChunkVertexData` builds for that atlas and kind.
+ */
+export function tilemapChunkDraws(options: {
+  tiles: readonly number[];
+  chunkSize: number;
+  chunkX: number;
+  chunkY: number;
+  worldTileWidth: number;
+  worldTileHeight: number;
+  resolveGid: (gid: number) => { tileset: TilesetPayload; localId: number; guid: string } | null;
+  /** Emit placeholder colours for an atlas without an image (`tilePlaceholderHsl`). */
+  placeholderColors?: (tileset: TilesetPayload) => boolean;
+}): TilemapChunkDraw[] {
+  const { tiles, chunkSize, chunkX, chunkY, worldTileWidth, worldTileHeight, resolveGid, placeholderColors } = options;
+  const atlases = new Map<string, { index: number; tileset: TilesetPayload; static: TilemapChunkDraw | null; animated: TilemapChunkDraw | null; colors: boolean }>();
+  const order: string[] = [];
+  const originX = chunkX * chunkSize;
+  const originY = chunkY * chunkSize;
+  for (let ly = 0; ly < chunkSize; ly++) {
+    for (let lx = 0; lx < chunkSize; lx++) {
+      const tileId = tiles[ly * chunkSize + lx] ?? 0;
+      if (tileId <= 0) continue;
+      const resolved = resolveGid(tileId);
+      if (!resolved) continue;
+      let atlas = atlases.get(resolved.guid);
+      if (!atlas) {
+        atlas = { index: order.length, tileset: resolved.tileset, static: null, animated: null, colors: placeholderColors?.(resolved.tileset) ?? false };
+        atlases.set(resolved.guid, atlas);
+        order.push(resolved.guid);
+      }
+      const meta = tilesetTileById(resolved.tileset, resolved.localId);
+      const animated = (meta?.animation.length ?? 0) > 0;
+      const uv = tilesetTileUv(resolved.tileset, meta ? tilesetAnimationFrame(resolved.tileset, meta, 0) : resolved.localId);
+      if (!uv) continue;
+      const kind: TilemapChunkDrawKind = animated ? "animated" : "static";
+      let draw = atlas[kind];
+      if (!draw) {
+        draw = {
+          guid: resolved.guid,
+          atlasIndex: atlas.index,
+          tileset: resolved.tileset,
+          kind,
+          data: atlas.colors
+            ? { positions: [], uvs: [], indices: [], animatedTiles: [], colors: [] }
+            : { positions: [], uvs: [], indices: [], animatedTiles: [] },
+        };
+        atlas[kind] = draw;
+      }
+      const data = draw.data;
+      const x0 = (originX + lx) * worldTileWidth;
+      const y0 = (originY + ly) * worldTileHeight;
+      const x1 = (originX + lx + 1) * worldTileWidth;
+      const y1 = (originY + ly + 1) * worldTileHeight;
+      const base = data.positions.length / 3;
+      data.positions.push(x0, y0, 0, x1, y0, 0, x1, y1, 0, x0, y1, 0);
+      if (animated && meta) data.animatedTiles.push({ uvOffset: data.uvs.length, tile: meta, tileset: resolved.tileset });
+      data.uvs.push(uv.u0, uv.v0, uv.u1, uv.v0, uv.u1, uv.v1, uv.u0, uv.v1);
+      if (data.colors) {
+        const [r, g, b] = tilePlaceholderRgb(tileId);
+        for (let corner = 0; corner < 4; corner++) data.colors.push(r, g, b, 1);
+      }
+      data.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
+  const draws: TilemapChunkDraw[] = [];
+  for (const guid of order) {
+    const atlas = atlases.get(guid)!;
+    if (atlas.static) draws.push(atlas.static);
+    if (atlas.animated) draws.push(atlas.animated);
+  }
+  return draws;
+}
+
 export function tilemapChunkVertexData(options: {
   tiles: readonly number[];
   chunkSize: number;

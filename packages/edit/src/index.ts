@@ -104,6 +104,13 @@ export {
   createSetAssetDocumentCommandFromJson,
 } from "./commands/asset-document";
 export {
+  PatchTilemapDocumentCommand,
+  createPatchTilemapDocumentCommandFromJson,
+  diffTilemapDocument,
+  type TilemapChunkPatch,
+  type TilemapDocumentDelta,
+} from "./commands/tilemap-document";
+export {
   replayJournalLines,
   resolveJournalLines,
   type JournalReplayResult,

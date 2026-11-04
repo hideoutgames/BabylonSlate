@@ -229,7 +229,7 @@ describe("applyTilemapPaint", () => {
     expect(getTile(next, "layer-1", 1, 0)).toBe(1);
   });
 
-  it("keeps storage sparse when erasing, so a later bucket fill stays put", () => {
+  it("keeps storage sparse when erasing", () => {
     const map = mapWithTiles([[0, 0, 1]], 4);
     const erase = (cells: Array<{ x: number; y: number }>) => (from: typeof map) =>
       applyTilemapPaint(from, { tool: "eraser", layerId: "layer-1", tileId: 1, start: cells[0]!, end: cells[0]!, cells });
@@ -237,12 +237,6 @@ describe("applyTilemapPaint", () => {
     expect(erase([{ x: 9, y: 9 }])(map)).toBe(map);
     // Erasing a chunk's last tile drops the chunk.
     expect(erase([{ x: 0, y: 0 }])(map).layers[0]!.chunks).toEqual([]);
-    const bucket = applyTilemapPaint(erase([{ x: 9, y: 9 }])(map), {
-      tool: "bucket", layerId: "layer-1", tileId: 5, start: { x: 1, y: 1 }, end: { x: 1, y: 1 },
-    });
-    expect(getTile(bucket, "layer-1", 3, 3)).toBe(5);
-    expect(getTile(bucket, "layer-1", 9, 9)).toBe(0);
-    expect(bucket.layers[0]!.chunks).toHaveLength(1);
   });
 
   it("fills an inclusive rectangle from start to end", () => {
@@ -281,22 +275,26 @@ describe("applyTilemapPaint", () => {
     expect(getTile(next, "layer-1", 2, 0)).toBe(3);
   });
 
-  it("keeps a bucket fill inside the AABB of existing chunks", () => {
-    const next = applyTilemapPaint(
-      mapWithTiles([[3, 3, 5]], 4),
-      {
-        tool: "bucket",
-        layerId: "layer-1",
-        tileId: 9,
-        start: { x: 0, y: 0 },
-        end: { x: 0, y: 0 },
-      },
-    );
-    expect(getTile(next, "layer-1", 0, 0)).toBe(9);
-    expect(getTile(next, "layer-1", 3, 2)).toBe(9);
-    expect(getTile(next, "layer-1", 3, 3)).toBe(5);
-    expect(getTile(next, "layer-1", 4, 0)).toBe(0);
-    expect(getTile(next, "layer-1", 0, 4)).toBe(0);
+  it("fills the connected empty region up to the map edge, around painted tiles", () => {
+    const bucket = (map: ReturnType<typeof mapWithTiles>, x: number, y: number) =>
+      applyTilemapPaint(map, { tool: "bucket", layerId: "layer-1", tileId: 9, start: { x, y }, end: { x, y } });
+    // A 6 × 4 map with a wall at x = 2 that leaves a gap at the top row.
+    let map = { ...mapWithTiles([[2, 0, 5], [2, 1, 5], [2, 2, 5]], 4), width: 6, height: 4 };
+    const filled = bucket(map, 0, 0);
+    expect([0, 1, 3, 4, 5].map((x) => getTile(filled, "layer-1", x, 0))).toEqual([9, 9, 9, 9, 9]);
+    expect(getTile(filled, "layer-1", 5, 3)).toBe(9);
+    expect(getTile(filled, "layer-1", 2, 1)).toBe(5);
+    expect(getTile(filled, "layer-1", 6, 0)).toBe(0);
+    // Closing the gap keeps the fill on its own side.
+    map = { ...mapWithTiles([[2, 0, 5], [2, 1, 5], [2, 2, 5], [2, 3, 5]], 4), width: 6, height: 4 };
+    const left = bucket(map, 0, 0);
+    expect(getTile(left, "layer-1", 1, 3)).toBe(9);
+    expect(getTile(left, "layer-1", 3, 0)).toBe(0);
+    // An empty layer fills the whole map; a start outside it changes nothing.
+    const empty = { ...createDefaultTilemapPayload(), width: 3, height: 2 };
+    const whole = bucket(empty, 1, 1);
+    expect([0, 1, 2].flatMap((x) => [0, 1].map((y) => getTile(whole, "layer-1", x, y)))).toEqual([9, 9, 9, 9, 9, 9]);
+    expect(bucket(empty, 5, 0)).toBe(empty);
   });
 
   it("stamps a bottom-left origin pattern", () => {

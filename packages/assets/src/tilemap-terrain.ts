@@ -2,8 +2,8 @@
 
 import { tilesetTerrainById, tilesetTileById, type TilesetPayload, type TilesetTerrainStyle } from "./tileset-payload";
 import {
+  cachedTerrainResolver,
   canonicalTerrainMask,
-  createTerrainResolver,
   TERRAIN_NEIGHBOURS,
   TERRAIN_SIDES,
   tilesetTerrainStamp,
@@ -16,9 +16,11 @@ import {
   localIndex,
   setTiles,
   tileInBounds,
+  tilemapCellKey,
   type TilemapChunkIndex,
   type TilemapLayer,
   type TilemapPayload,
+  type TilemapTilesetRef,
   type TileWrite,
 } from "./tilemap-payload";
 
@@ -43,11 +45,33 @@ export function tilemapTerrainKey(brush: TilemapTerrainBrush): string {
   return `${brush.guid}\u0000${brush.terrainId}`;
 }
 
+type TerrainMembers = {
+  ofSet: (brush: TilemapTerrainBrush) => TerrainMember | null;
+  ofGid: (gid: number) => TerrainMember | null;
+};
+
+/**
+ * Members by the map's Tileset list and the loaded Tilesets: both are replaced
+ * on edit, never changed in place, and decide every answer, so the lookups (and
+ * the GIDs they already decoded) carry over from one stroke to the next.
+ */
+const membersCache = new WeakMap<readonly TilemapTilesetRef[], WeakMap<ReadonlyMap<string, TilesetPayload>, TerrainMembers>>();
+
 /**
  * Terrain lookups for one map and its loaded Tilesets: which terrain a GID
  * belongs to, and the resolver that picks a terrain's variant.
  */
-function terrainMembers(map: TilemapPayload, tilesets: ReadonlyMap<string, TilesetPayload>) {
+function terrainMembers(map: TilemapPayload, tilesets: ReadonlyMap<string, TilesetPayload>): TerrainMembers {
+  let byTilesets = membersCache.get(map.tilesets);
+  if (!byTilesets) membersCache.set(map.tilesets, (byTilesets = new WeakMap()));
+  let members = byTilesets.get(tilesets);
+  if (!members) byTilesets.set(tilesets, (members = buildTerrainMembers(map.tilesets, tilesets)));
+  return members;
+}
+
+function buildTerrainMembers(refs: readonly TilemapTilesetRef[], tilesets: ReadonlyMap<string, TilesetPayload>): TerrainMembers {
+  // Decoding a GID reads only the Tileset list.
+  const map = { tilesets: refs } as TilemapPayload;
   const bySet = new Map<string, TerrainMember | null>();
   const byGid = new Map<number, TerrainMember | null>();
   const ofSet = (brush: TilemapTerrainBrush): TerrainMember | null => {
@@ -55,10 +79,10 @@ function terrainMembers(map: TilemapPayload, tilesets: ReadonlyMap<string, Tiles
     let member = bySet.get(key);
     if (member !== undefined) return member;
     member = null;
-    const ref = map.tilesets.find((entry) => entry.guid === brush.guid);
+    const ref = refs.find((entry) => entry.guid === brush.guid);
     const tileset = tilesets.get(brush.guid);
     const terrain = tileset ? tilesetTerrainById(tileset, brush.terrainId) : null;
-    const resolver = ref && tileset ? createTerrainResolver(tileset, brush.terrainId, ref.tileCount) : null;
+    const resolver = ref && tileset ? cachedTerrainResolver(tileset, brush.terrainId, ref.tileCount) : null;
     if (ref && terrain && resolver) {
       member = { key, guid: brush.guid, terrainId: brush.terrainId, style: terrain.style, firstGid: ref.firstGid, resolver };
     }
@@ -96,23 +120,23 @@ function layerReader(
 ): (x: number, y: number) => number {
   const size = Math.max(1, map.chunkSize);
   const positions = index?.positionsOf(layer.chunks);
-  let chunkTiles: (key: string) => readonly number[] | undefined;
+  let chunkTiles: (key: number) => readonly number[] | undefined;
   if (positions) {
     chunkTiles = (key) => {
       const at = positions.get(key);
       return at === undefined ? undefined : layer.chunks[at]!.tiles;
     };
   } else {
-    const chunks = new Map<string, readonly number[]>();
+    const chunks = new Map<number, readonly number[]>();
     for (const chunk of layer.chunks) {
-      const key = `${chunk.cx},${chunk.cy}`;
+      const key = tilemapCellKey(chunk.cx, chunk.cy);
       if (!chunks.has(key)) chunks.set(key, chunk.tiles);
     }
     chunkTiles = (key) => chunks.get(key);
   }
   return (x, y) => {
     const { cx, cy, lx, ly } = chunkCoordForTile(x, y, size);
-    return chunkTiles(`${cx},${cy}`)?.[localIndex(lx, ly, size)] ?? 0;
+    return chunkTiles(tilemapCellKey(cx, cy))?.[localIndex(lx, ly, size)] ?? 0;
   };
 }
 
@@ -260,26 +284,25 @@ export function paintTilemapTerrain(
   const members = terrainMembers(base, options.tilesets);
   const brush = options.terrain ? members.ofSet(options.terrain) : null;
   if (options.terrain && !brush) return map;
-  const targets = new Map<string, { x: number; y: number }>();
+  // Cells by `tilemapCellKey`, so a large shape builds no strings.
+  const targets = new Map<number, { x: number; y: number }>();
   for (const cell of options.cells) {
-    if (tileInBounds(base, cell.x, cell.y)) targets.set(`${cell.x},${cell.y}`, { x: cell.x, y: cell.y });
+    if (tileInBounds(base, cell.x, cell.y)) targets.set(tilemapCellKey(cell.x, cell.y), { x: cell.x, y: cell.y });
   }
   if (targets.size === 0) return map;
   const gidAt = layerReader(base, layer, options.index);
-  const memberAt = (x: number, y: number): TerrainMember | null => {
-    const key = `${x},${y}`;
-    return targets.has(key) ? brush : members.ofGid(gidAt(x, y));
-  };
+  const memberAt = (x: number, y: number): TerrainMember | null =>
+    targets.has(tilemapCellKey(x, y)) ? brush : members.ofGid(gidAt(x, y));
 
   // Painted cells take the brush terrain; terrain tiles around any written cell
   // keep their own terrain and only change variant.
-  const resolve = new Map<string, { x: number; y: number; member: TerrainMember }>();
+  const resolve = new Map<number, { x: number; y: number; member: TerrainMember }>();
   for (const [key, cell] of targets) {
-    if (brush) resolve.set(key, { ...cell, member: brush });
+    if (brush) resolve.set(key, { x: cell.x, y: cell.y, member: brush });
     for (const { dx, dy } of TERRAIN_NEIGHBOURS) {
       const x = cell.x + dx;
       const y = cell.y + dy;
-      const neighbourKey = `${x},${y}`;
+      const neighbourKey = tilemapCellKey(x, y);
       if (targets.has(neighbourKey) || resolve.has(neighbourKey) || !tileInBounds(base, x, y)) continue;
       const member = members.ofGid(gidAt(x, y));
       if (member) resolve.set(neighbourKey, { x, y, member });

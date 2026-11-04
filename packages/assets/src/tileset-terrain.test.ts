@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AUTOTILE_LAYOUTS,
+  cachedTerrainResolver,
   canonicalTerrainMask,
   createTerrainResolver,
   missingTerrainVariants,
@@ -156,6 +157,23 @@ const BORDERED = normalizeTilesetPayload({
     { id: 5, terrain: { id: "dirt", mask: 0, border: "grass" } },
     { id: 6, terrain: { id: "grass", mask: E | S | W } },
   ],
+});
+
+describe("cachedTerrainResolver", () => {
+  it("shares one resolver per Tileset payload, terrain and member limit, and builds a new one for an edited payload", () => {
+    const sheet = terrainSheet("sides", [0, E, E | W, W]);
+    const shared = cachedTerrainResolver(sheet, "ground");
+    expect(cachedTerrainResolver(sheet, "ground")).toBe(shared);
+    expect(shared!.resolve(E | W)).toBe(3);
+    // A map range that ends before the middle piece resolves without it.
+    const limited = cachedTerrainResolver(sheet, "ground", 2);
+    expect(limited).not.toBe(shared);
+    expect(limited!.resolve(E | W)).toBe(2);
+    expect(cachedTerrainResolver(sheet, "missing")).toBeNull();
+    // An edit replaces the payload object, so its terrains resolve afresh.
+    const edited = terrainSheet("sides", [0, E, W, E | W]);
+    expect(cachedTerrainResolver(edited, "ground")!.resolve(E | W)).toBe(4);
+  });
 });
 
 describe("tilesetTerrainStamp", () => {

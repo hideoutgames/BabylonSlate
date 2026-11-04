@@ -185,6 +185,27 @@ export function createTerrainResolver(
   };
 }
 
+/** Resolvers by payload object, then by terrain and member limit: payloads are replaced on edit, never changed in place. */
+const resolverCache = new WeakMap<TilesetPayload, Map<string, TerrainResolver | null>>();
+
+/**
+ * `createTerrainResolver`, built once per Tileset payload object, terrain and
+ * `maxTileId`, so strokes, previews and the Palette share one resolver (and its
+ * per-mask cache) for as long as the Tileset is unchanged.
+ */
+export function cachedTerrainResolver(
+  tileset: TilesetPayload,
+  terrainId: string,
+  maxTileId = Number.POSITIVE_INFINITY,
+): TerrainResolver | null {
+  let byTerrain = resolverCache.get(tileset);
+  if (!byTerrain) resolverCache.set(tileset, (byTerrain = new Map()));
+  const key = `${terrainId}\u0000${maxTileId}`;
+  let resolver = byTerrain.get(key);
+  if (resolver === undefined) byTerrain.set(key, (resolver = createTerrainResolver(tileset, terrainId, maxTileId)));
+  return resolver;
+}
+
 function compareScores(a: readonly number[], b: readonly number[]): number {
   for (let at = 0; at < a.length; at++) {
     const delta = a[at]! - b[at]!;
