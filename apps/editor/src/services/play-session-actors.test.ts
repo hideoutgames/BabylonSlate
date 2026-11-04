@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene } from "@haptic/core";
+import { createDefaultAnimGraph } from "@haptic/anim-graph";
+import { createDefaultBehaviourTree } from "@haptic/behaviour-tree";
 import type { CommandMessage, ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
 import {
   applyRuntimeSourceControl,
@@ -212,7 +214,8 @@ describe.each(["worker", "in-process"] as const)(
               const { requestId } = control;
               if (requestId !== undefined) void ready.then(() => onCommand({ type: "assetSourcesReady", requestId, success: true }));
             }
-            if (control.type === "loadModels") void applyRuntimeSourceControl(runtime, control);
+            if (["loadModels", "loadSceneContent", "loadAnimGraphs", "loadBehaviourTrees"].includes(control.type))
+              void applyRuntimeSourceControl(runtime, control);
             if (control.type === "play") void boot.play(runtime).catch(failBoot);
             if (control.type === "sceneLoadingPainted")
               runtime.notifySceneLoadingPainted(control.sceneAssetGuid, control.sceneLoadId);
@@ -517,6 +520,69 @@ describe.each(["worker", "in-process"] as const)(
       expect(registeredModels).toEqual([["crate"]]);
       const classes = runtime.getWorld().classRegistry;
       expect(["main", "Loader", "Extra"].every((classId) => classes.has(classId))).toBe(true);
+    });
+
+    it("sends an Animation Graph and Behaviour Tree again after a scene content change dropped them", async () => {
+      // Each tick reports the loader's Animation Graph state, and asks for the slot `slot` names.
+      const loader: ScriptBundleEntry = {
+        assetGuid: "loader", classId: "Loader", parentClassId: "Actor", anchors: [],
+        source: 'export function onBeginPlay(ctx) { ctx.requestAssetLoad(["u1"]); }\n' +
+          "export function onTick(ctx) {\n" +
+          '  const state = ctx.getAnimGraphCurrentState(ctx.getComponent(ctx.self, "AnimationGraphComponent"));\n' +
+          '  ctx.setVariable("animState", state ? state.id : null);\n' +
+          '  const slot = ctx.getVariable("slot");\n' +
+          '  if (slot) { ctx.setVariable("slot", null); ctx.requestAssetLoad([slot]); }\n' +
+          "}",
+        entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }, { name: "onTick", event: "onTick", isAsync: false }],
+      };
+      const graph = { guid: "g1", document: createDefaultAnimGraph() };
+      const tree = { guid: "bt1", document: createDefaultBehaviourTree() };
+      // As `packedSourceControls` builds them: a union without Animation Graphs or Behaviour Trees has no control for them.
+      const holding = (): ControlMessage[] => [
+        { type: "loadSceneContent", assetGuids: ["g1", "bt1"] },
+        { type: "loadAnimGraphs", graphs: [graph] },
+        { type: "loadBehaviourTrees", trees: [tree], blackboards: [] },
+      ];
+      const without = (): ControlMessage[] => [{ type: "loadSceneContent", assetGuids: [] }];
+      let union = holding;
+      const trees: string[] = [];
+      const ready: string[] = [];
+      const runtime = await play({
+        actors: [createActor("loader", "Loader", { classId: "Loader", components: [
+          { id: "anim", classId: "AnimationGraphComponent", properties: { graphGuid: "g1" } },
+        ] })],
+        scripts: [loader],
+        acquireAssetSources: vi.fn(async (guids: string[]) => ({ sources: {} as never, release() {}, required: new Set(guids) })),
+        getSourceControls: () => union(),
+        onRuntime: (created) => {
+          const registerTree = created.registerBehaviourTree.bind(created);
+          vi.spyOn(created, "registerBehaviourTree").mockImplementation((guid, document) => {
+            trees.push(guid);
+            registerTree(guid, document);
+          });
+          const notify = created.notifyAssetPreloadResult.bind(created);
+          vi.spyOn(created, "notifyAssetPreloadResult").mockImplementation((result) => {
+            if (result.success && result.progress === 1) ready.push(result.preloadId);
+            notify(result);
+          });
+        },
+      });
+      const actor = runtime.getWorld().findActor("loader")!;
+      /** The loader's Animation Graph state once slot `count`, its `guid`, has prepared. */
+      const stateAfterSlot = async (count: number, guid?: string) => {
+        if (guid) { actor.setVariable("slot", guid); runtime.tick(); }
+        await vi.waitFor(() => expect(ready).toHaveLength(count));
+        runtime.tick();
+        return actor.getVariable("animState");
+      };
+      expect(await stateAfterSlot(1)).toBe("idle");
+      union = without;
+      expect(await stateAfterSlot(2, "u2")).toBeNull();
+      // Equal to the first union's controls: the runtime dropped them in between, so they are sent again.
+      union = holding;
+      const state = await stateAfterSlot(3, "u3");
+      expect(trees).toEqual(["bt1", "bt1"]);
+      expect(state).toBe("idle");
     });
 
     it("pauses render game time while a blocking asset load holds the simulation", async () => {

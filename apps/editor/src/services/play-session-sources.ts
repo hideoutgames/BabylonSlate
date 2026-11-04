@@ -59,11 +59,22 @@ export interface PlaySourceTracker {
 
 /**
  * The source union's content controls. Each runtime handler replaces what the previous one of its type
- * registered, so one equal to the last applied changes nothing.
+ * registered, so one equal to the last applied changes nothing, except where a `loadSceneContent` pruned it since.
  */
 const SOURCE_CONTENT_CONTROLS: ReadonlySet<ControlMessage["type"]> = new Set([
   "loadSceneContent", "loadModels", "loadSprites", "loadTilemaps", "loadWater", "loadAnimGraphs", "loadBehaviourTrees",
 ]);
+
+/**
+ * What a content control registers that a `loadSceneContent` drops when its `assetGuids` leave it out: the
+ * runtime's Animation Graphs, Behaviour Trees and Blackboards (`registerSceneContent` retains only those it names).
+ * A union without any omits these controls, so nothing else would tell the tracker they are gone.
+ */
+function sceneContentPrunable(control: ControlMessage): readonly string[] {
+  if (control.type === "loadAnimGraphs") return control.graphs.map((entry) => entry.guid);
+  if (control.type === "loadBehaviourTrees") return [...control.trees, ...control.blackboards ?? []].map((entry) => entry.guid);
+  return [];
+}
 
 /** Structural equality of plain control data that stops at shared references; binary data compares by identity. */
 function sameContent(a: unknown, b: unknown): boolean {
@@ -141,6 +152,13 @@ export function createPlaySourceTracker(ctx: PlaySourceTrackerContext): PlaySour
     const worker = ctx.worker();
     const runtime = ctx.runtime();
     if (!worker && !runtime) return;
+    if (control.type === "loadSceneContent") {
+      // Whatever this delivery prunes must be sent again, whichever order the batch posts it in.
+      const retained = new Set(control.assetGuids);
+      for (const [type, applied] of appliedContent) {
+        if (sceneContentPrunable(applied).some((guid) => !retained.has(guid))) appliedContent.delete(type);
+      }
+    }
     try {
       if (worker && control.type === "loadScripts") {
         const requestId = ++nextSourceRequestId;
