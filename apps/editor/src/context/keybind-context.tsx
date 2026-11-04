@@ -59,6 +59,18 @@ function blockedTarget(target: EventTarget | null): boolean {
   );
 }
 
+/**
+ * Controls that a plain Space or Enter activates (buttons, links, checkboxes,
+ * switches, tabs): those keys stay theirs, so a shortcut bound to them never
+ * steals a focused control's activation.
+ */
+const ACTIVATES_ON_KEY =
+  'button, a[href], input, summary, [role="button"], [role="link"], [role="checkbox"], [role="switch"], [role="radio"], [role="tab"], [role="menuitem"], [role="option"], [role="slider"], [role="spinbutton"], [role="treeitem"]';
+
+function activatedByKey(target: EventTarget | null, chord: KeyChord): boolean {
+  return (chord === "Space" || chord === "Enter") && target instanceof Element && target.closest(ACTIVATES_ON_KEY) !== null;
+}
+
 function modalOpen(): boolean {
   return typeof document !== "undefined" && document.querySelector(MODAL_SELECTOR) !== null;
 }
@@ -128,7 +140,7 @@ export function KeybindProvider({
       const allowed = (command: EditorCommandDefinition, chord: KeyChord) => {
         if (event.repeat && !command.repeat) return false;
         if (typing) return Boolean(command.allowInTextInput) && chordHasCommandModifier(chord);
-        return !blockedTarget(event.target);
+        return !blockedTarget(event.target) && !activatedByKey(event.target, chord);
       };
       for (const chord of candidates) {
         for (const [commandId, chords] of state.current.bindings) {
