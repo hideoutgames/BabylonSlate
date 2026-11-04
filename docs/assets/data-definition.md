@@ -39,6 +39,7 @@ Double-tap a Data Definition to open it.
 ## Related
 
 - [Data Definitions and Data Trees](../scripting/data.md)
+- [Save Game](save-game.md): can take its fields from a Data Definition
 - [Data Tree](data-tree.md)
 - [Structure](structure.md)
 - [Read Data Entry](../scripting/class/read-data-entry.md)

@@ -144,6 +144,31 @@ const savedSpeedField = (speedMode: string) =>
   ({ fieldId: "saved-speed", fieldName: "SavedSpeed", typeId: "enum", typeClassId: speedMode });
 
 /**
+ * `FT_DataProgressFields`: the default Save Game's fields, one of each type a save can hold. The Save Probe stores
+ * and reads Visits, the range, the curve, the Tag and the Enum member; the rest keep their defaults through
+ * every Save Game and Load Game.
+ */
+function progressFieldDefinitions(speedMode: string): DataDefinitionField[] {
+  return [
+    { id: VISITS_FIELD.fieldId, name: VISITS_FIELD.fieldName, typeId: "int", defaultValue: 0 },
+    { id: "best-score", name: "BestScore", typeId: "float", defaultValue: 0 },
+    { id: SAVED_RANGE_FIELD.fieldId, name: SAVED_RANGE_FIELD.fieldName, typeId: "struct", typeClassId: SAVED_RANGE_FIELD.typeClassId },
+    { id: SAVED_CURVE_FIELD.fieldId, name: SAVED_CURVE_FIELD.fieldName, typeId: "struct", typeClassId: SAVED_CURVE_FIELD.typeClassId },
+    { id: SAVED_TAG_FIELD.fieldId, name: SAVED_TAG_FIELD.fieldName, typeId: "tag", defaultValue: 0 },
+    { id: "saved-speed", name: "SavedSpeed", typeId: "enum", typeClassId: speedMode, defaultValue: SPEED_MODES[0] },
+    { id: "saved-tags", name: "SavedTags", typeId: "struct", typeClassId: "engine:TagContainer" },
+    { id: "saved-aim", name: "SavedAim", typeId: "vec2", defaultValue: { x: 0, y: 1 } },
+    { id: "saved-weights", name: "SavedWeights", typeId: "vec4", defaultValue: { x: 1, y: 0, z: 0, w: 0 } },
+    { id: "saved-facing", name: "SavedFacing", typeId: "rotator", defaultValue: { pitch: 0, yaw: 90, roll: 0 } },
+    { id: "saved-spin", name: "SavedSpin", typeId: "quat", defaultValue: { x: 0, y: 0, z: 0, w: 1 } },
+    { id: "saved-tint", name: "SavedTint", typeId: "color", container: "array", defaultValue: [{ x: 1, y: 0.5, z: 0, w: 1 }] },
+    { id: "saved-checkpoint", name: "SavedCheckpoint", typeId: "transform" },
+    { id: "saved-class", name: "SavedClass", typeId: "class" },
+    { id: "saved-best-times", name: "SavedBestTimes", typeId: "float", container: "map", keyTypeId: "string", defaultValue: [{ key: "Forest", value: 61.5 }] },
+  ];
+}
+
+/**
  * `FT_GlobalParams`: one parameter of each type. The Data Probe sets and reads Wind Strength;
  * Materials and Particle Graphs read the others.
  */
@@ -224,28 +249,12 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
   const describable = await ctx.createAsset("ScriptInterface", TYPES_FOLDER, "FT_ScriptDescribable", {
     payload: (payload) => ({ ...payload, methods: [{ name: DESCRIBE_METHOD, pins: DESCRIBE_PINS }] }),
   });
+  // The default Save Game takes its fields from this Data Definition and overrides one default.
+  const progressFields = await saveDocumentGuid(ctx, "data-definition", DATA_FOLDER, newAssetFileName("DataDefinition", "FT_DataProgressFields"),
+    { ...createDataDefinitionAsset(progressFieldDefinitions(speedMode.guid)) });
   const progress = await ctx.createAsset("SaveGame", DATA_FOLDER, "FT_DataProgress", {
     payload: (payload) => ({
-      ...validateSaveGameDefinition({
-        ...payload,
-        fields: [
-          { id: VISITS_FIELD.fieldId, name: VISITS_FIELD.fieldName, type: "int", defaultValue: 0 },
-          { id: "best-score", name: "BestScore", type: "float", defaultValue: 0 },
-          { id: SAVED_RANGE_FIELD.fieldId, name: SAVED_RANGE_FIELD.fieldName, type: "struct", structId: SAVED_RANGE_FIELD.typeClassId, defaultValue: { Min: 0, Max: 1 } },
-          { id: SAVED_CURVE_FIELD.fieldId, name: SAVED_CURVE_FIELD.fieldName, type: "struct", structId: SAVED_CURVE_FIELD.typeClassId, defaultValue: { Keys: [], Before: "constant", After: "constant" } },
-          { id: SAVED_TAG_FIELD.fieldId, name: SAVED_TAG_FIELD.fieldName, type: "tag", defaultValue: 0 },
-          { id: "saved-speed", name: "SavedSpeed", type: "enum", enumId: speedMode.guid, defaultValue: SPEED_MODES[0] },
-          // The remaining value types keep their defaults through every Save Game and Load Game.
-          { id: "saved-tags", name: "SavedTags", type: "struct", structId: "engine:TagContainer", defaultValue: { Tags: [] } },
-          { id: "saved-aim", name: "SavedAim", type: "vector2", defaultValue: { x: 0, y: 1 } },
-          { id: "saved-weights", name: "SavedWeights", type: "vector4", defaultValue: { x: 1, y: 0, z: 0, w: 0 } },
-          { id: "saved-tint", name: "SavedTint", type: "color", container: "array", defaultValue: [{ x: 1, y: 0.5, z: 0, w: 1 }] },
-          { id: "saved-checkpoint", name: "SavedCheckpoint", type: "transform", defaultValue: {
-            position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
-          } },
-          { id: "saved-class", name: "SavedClass", type: "class", defaultValue: null },
-        ],
-      }),
+      ...validateSaveGameDefinition({ ...payload, fields: [], dataDefinitionId: progressFields, defaults: { "saved-aim": { x: 1, y: 0 } } }),
     }),
   });
   ctx.patchSettings((settings) => ({
