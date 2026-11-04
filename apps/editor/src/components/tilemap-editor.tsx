@@ -75,8 +75,10 @@ import {
   PropertySectionTitle,
   SearchDropdown,
   SearchInput,
+  ShortcutKeys,
   ToolbarStrip,
   TypeVisualIcon,
+  ariaKeyShortcuts,
   resolveTypeVisual,
   assetRowIdentity,
   selectedPickerIdentity,
@@ -163,6 +165,7 @@ import {
 } from "../lib/tilemap-paint-renderer";
 import { useTilemapSelectTool } from "../lib/use-tilemap-select-tool";
 import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
+import type { EditorCommandId } from "../lib/editor-keybinds";
 import { IconActionButton } from "./icon-action-button";
 
 /** The pivot marker's hit square for a finger or pen, in CSS pixels. */
@@ -174,15 +177,16 @@ const TOOLS: Array<{
   id: TilemapPaintTool;
   label: string;
   icon: typeof PencilIcon;
+  command: EditorCommandId;
 }> = [
-  { id: "move", label: "Move", icon: HandIcon },
-  { id: "select", label: "Select", icon: SquareDashedMousePointerIcon },
-  { id: "brush", label: "Brush", icon: PencilIcon },
-  { id: "eraser", label: "Eraser", icon: EraserIcon },
-  { id: "rect", label: "Rect", icon: SquareIcon },
-  { id: "bucket", label: "Bucket", icon: PaintBucketIcon },
-  { id: "stamp", label: "Stamp", icon: StampIcon },
-  { id: "picker", label: "Picker", icon: PipetteIcon },
+  { id: "move", label: "Move", icon: HandIcon, command: "tilemapPaint.move" },
+  { id: "select", label: "Select", icon: SquareDashedMousePointerIcon, command: "tilemapPaint.select" },
+  { id: "brush", label: "Brush", icon: PencilIcon, command: "tilemapPaint.brush" },
+  { id: "eraser", label: "Eraser", icon: EraserIcon, command: "tilemapPaint.eraser" },
+  { id: "rect", label: "Rect", icon: SquareIcon, command: "tilemapPaint.rect" },
+  { id: "bucket", label: "Bucket", icon: PaintBucketIcon, command: "tilemapPaint.bucket" },
+  { id: "stamp", label: "Stamp", icon: StampIcon, command: "tilemapPaint.stamp" },
+  { id: "picker", label: "Picker", icon: PipetteIcon, command: "tilemapPaint.picker" },
 ];
 
 const EMPTY_TILESETS_COPY = "Add a Tileset to start painting.";
@@ -1498,6 +1502,15 @@ export function TilemapPaint({
   };
 
   const paintKeys = { focusWithinRef: rootRef };
+  // Single keys pick the tools while the panel has focus, never while typing.
+  useKeybindCommand("tilemapPaint.move", () => changeTool("move"), paintKeys);
+  useKeybindCommand("tilemapPaint.select", () => changeTool("select"), paintKeys);
+  useKeybindCommand("tilemapPaint.brush", () => changeTool("brush"), paintKeys);
+  useKeybindCommand("tilemapPaint.eraser", () => changeTool("eraser"), paintKeys);
+  useKeybindCommand("tilemapPaint.rect", () => changeTool("rect"), paintKeys);
+  useKeybindCommand("tilemapPaint.bucket", () => changeTool("bucket"), paintKeys);
+  useKeybindCommand("tilemapPaint.stamp", () => changeTool("stamp"), paintKeys);
+  useKeybindCommand("tilemapPaint.picker", () => changeTool("picker"), paintKeys);
   const selectionKeys = { ...paintKeys, enabled: () => selecting && select.hasSelection };
   useKeybindCommand("edit.selectAll", selectAll, paintKeys);
   useKeybindCommand("edit.copy", select.copy, selectionKeys);
@@ -1627,18 +1640,23 @@ export function TilemapPaint({
         >
           {TOOLS.map((entry) => {
             const Icon = entry.icon;
+            const chord = keybinds.get(entry.command)?.[0];
             return (
               <Tooltip key={entry.id}>
               <TooltipTrigger render={<ToggleGroupItem
                 value={entry.id}
                 aria-label={entry.label}
+                aria-keyshortcuts={chord ? ariaKeyShortcuts(chord) : undefined}
                 className={TOOL_ITEM}
                 data-testid={`tilemap-tool-${entry.id}`}
               >
                 <Icon />
                 {entry.id === "move" ? <span>{entry.label}</span> : null}
               </ToggleGroupItem>} />
-              <TooltipContent>{entry.label}</TooltipContent>
+              <TooltipContent>
+                {entry.label}
+                <ShortcutKeys chord={chord} decorative className="pointer-coarse:hidden" />
+              </TooltipContent>
               </Tooltip>
             );
           })}

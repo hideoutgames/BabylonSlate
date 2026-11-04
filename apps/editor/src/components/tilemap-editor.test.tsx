@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { useState } from "react";
 import { diffTilemapDocument, DocumentEditStack, PatchTilemapDocumentCommand, SetAssetDocumentCommand } from "@haptic/edit";
 import {
+  copyTilemapCells,
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
   ensureTilesetTiles,
@@ -19,9 +20,11 @@ import {
   type TilesetPayload,
 } from "@haptic/assets";
 import { AssetOpenProvider, setTouchUi } from "@haptic/editor-kit";
+import { defaultEngineSettings, MemoryAppSettingsStore, type EngineSettings } from "@haptic/vfs";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import { KeybindProvider } from "../context/keybind-context";
+import { AppSettingsProvider } from "../context/app-settings-context";
 import { CUT_OFF_FILL, PIVOT_MARKER_STROKE, SELECTION_STROKE } from "../lib/tilemap-paint-renderer";
 import { tilemapClipboard } from "../lib/tilemap-clipboard";
 import {
@@ -1699,6 +1702,22 @@ describe("Tilemap Select tool", () => {
     expect([1, 2, 3, 4, 5, 6].map((x) => getTile(latest(), "layer-1", x, 1))).toEqual([2, 4, 0, 0, 2, 4]);
   });
 
+  it("leaves hidden layers out of All Layers: Select All, a move and Delete keep their tiles where they are", async () => {
+    const map = twoLayerMap();
+    map.layers[1] = { ...map.layers[1]!, visible: false };
+    const { drag, key, latest } = await openSelect(map);
+    fireEvent.click(screen.getByTestId("tilemap-select-all-layers"));
+    fireEvent.click(screen.getByTestId("tilemap-select-all"));
+    // The paint layer's two tiles; the hidden layer's tile at 1, 1 is not part of it.
+    expect(size()).toBe("2 × 1");
+    drag([0, 0], [0, 2]);
+    expect([getTile(latest(), "layer-1", 0, 2), getTile(latest(), "layer-1", 1, 2), getTile(latest(), "layer-2", 1, 1)]).toEqual([1, 2, 2]);
+    // A selection over the hidden tile erases only the visible ones.
+    drag([0, 1], [1, 2]);
+    key({ key: "Delete", code: "Delete" });
+    expect([getTile(latest(), "layer-1", 0, 2), getTile(latest(), "layer-1", 1, 2), getTile(latest(), "layer-2", 1, 1)]).toEqual([0, 0, 2]);
+  });
+
   it("keeps the pivot marker for the other tools: in Select a press on it selects", async () => {
     const map = setTile({ ...mapWithGround(), unbounded: true, pivot: { x: 1, y: 1 } }, "layer-1", -2, -1, 2);
     const { canvas, onChange } = await openSelect(map);
@@ -1711,6 +1730,83 @@ describe("Tilemap Select tool", () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(size()).toBe("3 × 2");
     expect(marker()).toEqual([122, 122, 12, 12]);
+  });
+});
+
+describe("Tilemap Paint tool keys", () => {
+  /** The Tilemap panels with the editor's keybinds, saved `keybinds` overrides and a button outside them. */
+  async function openPaint(keybinds: EngineSettings["keybinds"] = {}) {
+    const store = new MemoryAppSettingsStore();
+    await store.save({ ...defaultEngineSettings(), keybinds });
+    const onChange = vi.fn();
+    render(
+      <AppSettingsProvider store={store}>
+        <KeybindProvider>
+          <button type="button">Outside</button>
+          <TilemapHarness initial={mapWithGround() as unknown as Record<string, unknown>} onChange={onChange} />
+        </KeybindProvider>
+      </AppSettingsProvider>,
+    );
+    await screen.findByTestId("tilemap-palette-tile-2");
+    const canvas = screen.getByTestId("tilemap-paint-canvas") as HTMLCanvasElement;
+    const press = (target: Element, init: { key: string; code: string; ctrlKey?: boolean }) =>
+      act(() => {
+        fireEvent.keyDown(target, init);
+      });
+    const letter = (target: Element, key: string) => press(target, { key: key.toLowerCase(), code: `Key${key}` });
+    return { canvas, onChange, press, letter };
+  }
+
+  it("picks each tool with its key while Paint has focus, and names the key on its button", async () => {
+    const { canvas, letter } = await openPaint();
+    act(() => canvas.focus());
+    for (const [key, tool] of [["B", "brush"], ["E", "eraser"], ["R", "rect"], ["G", "bucket"], ["T", "stamp"], ["I", "picker"], ["S", "select"], ["M", "move"]] as const) {
+      letter(canvas, key);
+      expect(canvas.dataset.tool).toBe(tool);
+      expect(screen.getByTestId(`tilemap-tool-${tool}`).getAttribute("aria-keyshortcuts")).toBe(key);
+    }
+    // The toolbar is part of Paint too.
+    const rect = screen.getByTestId("tilemap-tool-rect");
+    act(() => rect.focus());
+    letter(rect, "B");
+    expect(canvas.dataset.tool).toBe("brush");
+  });
+
+  it("ignores the keys while typing in a field or with focus outside Paint", async () => {
+    const { canvas, letter } = await openPaint();
+    const search = screen.getByLabelText("Search Tiles");
+    act(() => search.focus());
+    letter(search, "B");
+    const outside = screen.getByRole("button", { name: "Outside" });
+    act(() => outside.focus());
+    letter(outside, "B");
+    expect(canvas.dataset.tool).toBe("move");
+    act(() => canvas.focus());
+    letter(canvas, "B");
+    expect(canvas.dataset.tool).toBe("brush");
+  });
+
+  it("follows a rebinding: the new key picks the tool and its old key no longer does", async () => {
+    const { canvas, letter } = await openPaint({ "tilemapPaint.brush": ["P"] });
+    await waitFor(() => expect(screen.getByTestId("tilemap-tool-brush").getAttribute("aria-keyshortcuts")).toBe("P"));
+    act(() => canvas.focus());
+    letter(canvas, "B");
+    expect(canvas.dataset.tool).toBe("move");
+    letter(canvas, "P");
+    expect(canvas.dataset.tool).toBe("brush");
+  });
+
+  it("leaves Select through a key as its button does, placing a waiting paste", async () => {
+    const { canvas, onChange, press, letter } = await openPaint();
+    act(() => tilemapClipboard.write(copyTilemapCells(setTile(mapWithGround(), "layer-1", 0, 0, 2), { minX: 0, minY: 0, maxX: 0, maxY: 0 }, "layer-1")));
+    act(() => canvas.focus());
+    press(canvas, { key: "v", code: "KeyV", ctrlKey: true });
+    expect(canvas.dataset.tool).toBe("select");
+    expect(onChange).not.toHaveBeenCalled();
+    letter(canvas, "M");
+    expect(canvas.dataset.tool).toBe("move");
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.lastCall![1]).toMatch(/^tilemap-select:paste:/);
   });
 });
 

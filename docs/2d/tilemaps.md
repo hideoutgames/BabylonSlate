@@ -44,23 +44,23 @@ Two autotiles of the same Tileset, such as grass and dirt, can meet through a tr
 3. Tap a tile in the **Palette**. Use **Search Tiles** to filter long lists.
 4. Pick a tool in the **Paint** toolbar, choose the layer in the **Paint Layer** picker, and paint. The picker and the layer selected in the **Inspector** are the same layer; when it is hidden, the toolbar shows **Layer Hidden**.
 
-| Tool | Effect |
-| --- | --- |
-| Move | Pans the map. The default tool. |
-| Select | Selects placed tiles to move, cut, copy, paste or delete them. |
-| Brush, Eraser | Paint or erase tiles under your finger. |
-| Rect | Fills the rectangle you drag. An outline shows it until you lift your finger. |
-| Bucket | Fills the connected area of matching tiles, up to the edge of the map. On an unbounded map, up to 16 cells past the layer's painted tiles. |
-| Stamp | Places a 2 × 2 block of the selected tile. |
-| Picker | Picks the tile you tap as the brush. |
+| Tool | Key | Effect |
+| --- | --- | --- |
+| Move | <kbd>M</kbd> | Pans the map. The default tool. |
+| Select | <kbd>S</kbd> | Selects placed tiles to move, cut, copy, paste or delete them. |
+| Brush, Eraser | <kbd>B</kbd>, <kbd>E</kbd> | Paint or erase tiles under your finger. |
+| Rect | <kbd>R</kbd> | Fills the rectangle you drag. An outline shows it until you lift your finger. |
+| Bucket | <kbd>G</kbd> | Fills the connected area of matching tiles, up to the edge of the map. On an unbounded map, up to 16 cells past the layer's painted tiles. |
+| Stamp | <kbd>T</kbd> | Places a 2 × 2 block of the selected tile. |
+| Picker | <kbd>I</kbd> | Picks the tile you tap as the brush. |
 
-One finger paints. Two fingers pinch to zoom and drag to pan in any tool; the scroll wheel zooms. Each stroke is one undo step. With a mouse, the toolbar shows the column and row of the cell under the pointer (with **Select**, the top-left corner of **Paint** does).
+One finger paints. Two fingers pinch to zoom and drag to pan in any tool; the scroll wheel zooms. Each stroke is one undo step. With a mouse, the toolbar shows the column and row of the cell under the pointer (with **Select**, the top-left corner of **Paint** does). With a keyboard, a tool's key picks it once you have tapped or clicked the map; you can change the keys in [Keyboard shortcuts](../start/shortcuts.md#tilemap-paint).
 
 ## Move painted tiles
 
 Use **Select** to move tiles you have already painted, for example after making a map larger:
 
-1. In **Paint**, pick **Select**. Drag across cells to select them, or tap **Select All**. Turn on **All Layers** to move the tiles of every layer together.
+1. In **Paint**, pick **Select**. Drag across cells to select them, or tap **Select All**. Turn on **All Layers** to move the tiles of every visible layer together; hidden layers stay where they are.
 2. Drag from inside the selection to move it, or nudge it with the arrow keys (<kbd>Shift</kbd> moves eight cells). Each drag is one undo step.
 3. Long-press or right-click for **Cut**, **Copy**, **Paste** and **Delete**. A paste floats until you drag it into place and tap.
 

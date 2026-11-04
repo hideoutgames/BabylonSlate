@@ -16,15 +16,17 @@ Double-tap a Tilemap to open it.
 - **Palette**: the autotiles of the map's Tilesets, then their tiles. Tap a tile to paint with it, or an autotile to paint with that autotile; **Search Tiles** filters long lists.
 - **Inspector**: **Tilesets**, **Map**, **Layers** and the selected layer.
 
-| Tool | Effect |
-| --- | --- |
-| Move | Pans the map. The default tool. |
-| Select | Selects placed tiles to move, cut, copy, paste or delete them. See [Select and move tiles](#select-and-move-tiles). |
-| Brush, Eraser | Paint or erase tiles under your finger. |
-| Rect | Fills the rectangle you drag. An outline shows it until you lift your finger. |
-| Bucket | Fills the connected area of matching tiles, up to the edge of the map. On an unbounded map, up to 16 cells past the layer's painted tiles. |
-| Stamp | Places a 2 × 2 block of the selected tile. |
-| Picker | Picks the tile you tap as the brush. |
+| Tool | Key | Effect |
+| --- | --- | --- |
+| Move | <kbd>M</kbd> | Pans the map. The default tool. |
+| Select | <kbd>S</kbd> | Selects placed tiles to move, cut, copy, paste or delete them. See [Select and move tiles](#select-and-move-tiles). |
+| Brush, Eraser | <kbd>B</kbd>, <kbd>E</kbd> | Paint or erase tiles under your finger. |
+| Rect | <kbd>R</kbd> | Fills the rectangle you drag. An outline shows it until you lift your finger. |
+| Bucket | <kbd>G</kbd> | Fills the connected area of matching tiles, up to the edge of the map. On an unbounded map, up to 16 cells past the layer's painted tiles. |
+| Stamp | <kbd>T</kbd> | Places a 2 × 2 block of the selected tile. |
+| Picker | <kbd>I</kbd> | Picks the tile you tap as the brush. |
+
+With a keyboard, a tool's key picks it while **Paint** has keyboard focus: tap or click the map first. The keys do nothing while you type in a field. Each tool's tooltip shows its key; change them in **Engine Settings > Keybinds** under **Tilemap Paint** ([Keyboard shortcuts](../start/shortcuts.md#tilemap-paint)).
 
 With an autotile selected, every tool paints the autotile and the cells around your stroke update to match. The **Eraser** always updates the autotile tiles around the cells it clears. When a Tileset's autotiles change, the map's autotile cells update by themselves; the open Tilemap shows the update at once and saves it with your next edit. See [Paint with autotiles](../2d/tilemaps.md#paint-with-autotiles).
 
@@ -35,26 +37,26 @@ Each stroke is one undo step. Two fingers pinch to zoom and drag to pan in any t
 Pick **Select** in the **Paint** toolbar to work with tiles you have already placed.
 
 - **Select**: drag across cells to select a rectangle, or tap one cell. A dashed orange outline marks the selection, and the top-left corner of **Paint** shows its size. Tap outside it, or press <kbd>Esc</kbd>, to clear it.
-- **All Layers**: when on, the selection covers every layer, hidden ones included, so a group of tiles moves together and each layer keeps its own tiles. When off, only the paint layer.
-- **Select All**: selects the area of every painted tile on the paint layer, or on every layer with **All Layers** on.
+- **All Layers**: when on, the selection covers every visible layer, so a group of tiles moves together and each layer keeps its own tiles. Hidden layers are left out: their tiles are not selected, moved, cut, copied or deleted, a paste writes nothing into them, and they stay where they are. When off, only the paint layer, even when it is hidden.
+- **Select All**: selects the area of every painted tile on the paint layer, or on every visible layer with **All Layers** on.
 - **Move**: drag from inside the selection. The tiles lift off the map and follow your finger cell by cell, and their old cells show empty until you let go. Each drag is one undo step.
 - **Nudge**: the arrow keys move the selection one cell, <kbd>Shift</kbd> and an arrow key eight cells. Holding a key down is one undo step.
 - **Cut**, **Copy**, **Paste**, **Delete**: buttons in the toolbar (with touch, in its **Selection Actions** menu), or long-press or right-click the map for a menu with these, **Select All** and **Deselect**. A long-press or right-click outside the selection selects that cell first.
 
 Moved and pasted tiles replace the tiles where they land. Empty cells inside the selection never erase anything.
 
-**Paste** puts the copied tiles in the middle of the view, or where you opened the menu, floating over the map. Drag them into place, then tap, press <kbd>Enter</kbd> or choose **Place** to write them; <kbd>Esc</kbd> or **Cancel Paste** drops them. A copy of one layer pastes into the paint layer; a copy made with **All Layers** pastes into the same layers. Copied tiles stay available while the editor is open, so you can paste them into another Tilemap too; tiles of a Tileset that map does not use are left out.
+**Paste** puts the copied tiles in the middle of the view, or where you opened the menu, floating over the map. Drag them into place, then tap, press <kbd>Enter</kbd> or choose **Place** to write them; <kbd>Esc</kbd> or **Cancel Paste** drops them. Picking another tool places them first. A paste you have not placed is dropped when **Paint** closes, for example when you close the Tilemap; the copied tiles stay available to paste again. A copy of one layer pastes into the paint layer; a copy made with **All Layers** pastes into the same layers, except those that are hidden. Copied tiles stay available while the editor is open, so you can paste them into another Tilemap too; tiles of a Tileset that map does not use are left out.
 
 Autotile tiles around the cells you move, cut, paste or delete update as they do when you paint, so edges stay correct. A moved tile whose neighbours all moved with it keeps its piece, including one you placed by hand.
 
-On a map with a size, tiles moved or pasted past its edge are cut off: while you drag, those cells show tinted red and the corner of **Paint** says how many tiles will be cut off. An unbounded map has no edge.
+On a map with a size, tiles moved or pasted past its edge are cut off: while you drag, those cells show tinted red and the corner of **Paint** says how many tiles will be cut off, counting only the layers they land on (not hidden ones with **All Layers**). An unbounded map has no edge.
 
 ### Make room after a resize
 
 To grow a map in one direction and move what you painted:
 
 1. Set **Map Width** and **Map Height** in the **Inspector**. The map grows to the right and up from cell 0, 0.
-2. Pick **Select**, turn on **All Layers** and tap **Select All**.
+2. Pick **Select**, turn on **All Layers** and tap **Select All**. Show any hidden layer first, or its tiles stay where they are.
 3. Drag the selection, or nudge it with the arrow keys (<kbd>Shift</kbd> moves eight cells), to where you want it.
 
 | Shortcut | Effect |

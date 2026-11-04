@@ -40,12 +40,13 @@ function ModalDialog({ open = true, modal }: { open?: boolean; modal?: boolean }
   );
 }
 
-function FocusScoped({ run }: { run: () => void }) {
+function FocusScoped({ id = "edit.delete", run }: { id?: EditorCommandId; run: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  useKeybindCommand("edit.delete", run, { focusWithinRef: ref });
+  useKeybindCommand(id, run, { focusWithinRef: ref });
   return (
     <div ref={ref}>
       <button type="button">Row</button>
+      <input aria-label="Name" />
     </div>
   );
 }
@@ -330,6 +331,24 @@ describe("KeybindProvider", () => {
     row.focus();
     fireEvent.keyDown(row, { key: "Delete", code: "Delete" });
     expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a single-key shortcut to the text field it is typed in, inside its focused surface too", () => {
+    const brush = vi.fn();
+    const { getByRole } = render(
+      <KeybindProvider>
+        <FocusScoped id="tilemapPaint.brush" run={brush} />
+      </KeybindProvider>,
+    );
+    const name = getByRole("textbox", { name: "Name" });
+    name.focus();
+    // Not prevented, so the letter types.
+    expect(fireEvent.keyDown(name, { key: "b", code: "KeyB" })).toBe(true);
+    expect(brush).not.toHaveBeenCalled();
+    const row = getByRole("button", { name: "Row" });
+    row.focus();
+    fireEvent.keyDown(row, { key: "b", code: "KeyB" });
+    expect(brush).toHaveBeenCalledTimes(1);
   });
 
   it("hands graph canvases the Copy, Paste, Duplicate, Delete and Toggle Breakpoint chords, customized or not", async () => {

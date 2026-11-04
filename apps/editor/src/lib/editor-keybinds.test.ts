@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  EDITOR_COMMANDS,
   keybindConflicts,
   resolveKeybinds,
   withKeybindOverride,
@@ -40,5 +41,28 @@ describe("keybindConflicts", () => {
     const bindings = resolveKeybinds();
     expect(keybindConflicts(bindings, "edit.rename", "mod+z")).toEqual(["editor.undo"]);
     expect(keybindConflicts(bindings, "editor.undo", "Mod+Z")).toEqual([]);
+  });
+
+  it("gives no default chord a clash with a command that acts beside it", () => {
+    const bindings = resolveKeybinds();
+    for (const command of EDITOR_COMMANDS) {
+      for (const chord of command.defaultChords) {
+        expect(keybindConflicts(bindings, command.id, chord), `${command.id} ${chord}`).toEqual([]);
+      }
+    }
+  });
+
+  it("lets Tilemap Paint tools share keys with commands that never act in a Tilemap, and no others", () => {
+    const bindings = resolveKeybinds();
+    // Bucket Tool and Toggle Snap Grid both default to G: a Tilemap document has no viewport.
+    expect(keybindConflicts(bindings, "tilemapPaint.bucket", "G")).toEqual([]);
+    expect(keybindConflicts(bindings, "viewport.toggleSnap", "G")).toEqual([]);
+    expect(keybindConflicts(bindings, "timeline.setKey", "B")).toEqual([]);
+    expect(keybindConflicts(bindings, "browser.newAsset", "B")).toEqual([]);
+    // Global and Editing commands, and the other tools, act in Paint too.
+    expect(keybindConflicts(bindings, "tilemapPaint.brush", "Mod+S")).toEqual(["editor.saveAll"]);
+    expect(keybindConflicts(bindings, "tilemapPaint.brush", "Delete")).toEqual(["edit.delete"]);
+    expect(keybindConflicts(bindings, "tilemapPaint.brush", "E")).toEqual(["tilemapPaint.eraser"]);
+    expect(keybindConflicts(bindings, "edit.rename", "S")).toEqual(["tilemapPaint.select"]);
   });
 });
