@@ -12,7 +12,7 @@ Or select one or more Tilesets, right-click one and choose **Create Tilemap**: t
 
 Double-tap a Tilemap to open it.
 
-- **Paint**: the map. Pick a tool in the toolbar and choose the layer in the **Paint Layer** picker, the same layer the **Inspector** shows under **Selected Layer**. A hidden layer shows **Layer Hidden** in the toolbar. With a mouse, the toolbar shows the cell under the pointer.
+- **Paint**: the map. Pick a tool in the toolbar and choose the layer in the **Paint Layer** picker, the same layer the **Inspector** shows under **Selected Layer**. A hidden layer shows **Layer Hidden** in the toolbar. With a mouse, the toolbar shows the cell under the pointer; with **Select**, the top-left corner of **Paint** shows it.
 - **Palette**: the autotiles of the map's Tilesets, then their tiles. Tap a tile to paint with it, or an autotile to paint with that autotile; **Search Tiles** filters long lists.
 - **Inspector**: **Tilesets**, **Map**, **Layers** and the selected layer.
 

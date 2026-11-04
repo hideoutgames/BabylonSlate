@@ -126,6 +126,7 @@ import {
   tilesetTerrainById,
   tilesetTileById,
   tilesetTileRect,
+  type TilemapCellRect,
   type TilemapPaintTool,
   type TilemapLayer,
   type TilemapPayload,
@@ -1821,7 +1822,8 @@ export function TilemapPaint({
                   : `GID ${selectedGid}`}
             </span>
           )}
-          <HoverCellReadout store={hoverStore} />
+          {/* The Select tool reads the cell out over the canvas, beside the selection's size. */}
+          {selecting ? null : <HoverCellReadout store={hoverStore} />}
         </div>
       </ToolbarStrip>
       <div ref={hostRef} className="relative min-h-0 flex-1">
@@ -2061,20 +2063,7 @@ export function TilemapPaint({
             }
           }}
         />
-        {selecting && select.outline ? (
-          // Over the canvas, not in the toolbar, so its text never re-wraps the toolbar and resizes the canvas mid-drag.
-          <div className="toolbar-island pointer-events-none absolute top-2 left-2" role="status" data-testid="tilemap-select-readout">
-            {select.lost > 0 ? (
-              <span className="toolbar-island-readout text-destructive!" data-testid="tilemap-select-cut-off">
-                {select.lost} {select.lost === 1 ? "Tile Will Be" : "Tiles Will Be"} Cut Off
-              </span>
-            ) : (
-              <span className="toolbar-island-readout" data-testid="tilemap-select-size">
-                {select.outline.maxX - select.outline.minX + 1} × {select.outline.maxY - select.outline.minY + 1}
-              </span>
-            )}
-          </div>
-        ) : null}
+        {selecting ? <SelectReadout store={hoverStore} outline={select.outline} lost={select.lost} /> : null}
         <ContextMenuOverlay menu={selectMenu.menu} onClose={selectMenu.closeMenu} contentTestId="tilemap-select-menu" />
       </div>
     </div>
@@ -2107,17 +2096,38 @@ class HoverCellStore {
   }
 }
 
-function HoverCellReadout({ store }: { store: HoverCellStore }) {
+function HoverCellReadout({ store, className = "ml-auto shrink-0 text-xs text-muted-foreground tabular-nums" }: { store: HoverCellStore; className?: string }) {
   const cell = useSyncExternalStore(store.subscribe, store.getSnapshot);
   if (!cell) return null;
   return (
-    <span
-      className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
-      data-testid="tilemap-paint-hover-cell"
-      aria-label={`Cell ${cell.x}, ${cell.y}`}
-    >
+    <span className={className} data-testid="tilemap-paint-hover-cell" aria-label={`Cell ${cell.x}, ${cell.y}`}>
       {cell.x}, {cell.y}
     </span>
+  );
+}
+
+/**
+ * The Select tool's readout over the canvas: the selection's size (or how many
+ * floating tiles its edge would cut off) and the cell under the pointer. It sits
+ * over the canvas, not in the toolbar, so its changing text never re-wraps the
+ * toolbar and resizes the canvas mid-drag.
+ */
+function SelectReadout({ store, outline, lost }: { store: HoverCellStore; outline: TilemapCellRect | null; lost: number }) {
+  const cell = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  if (!outline && !cell) return null;
+  return (
+    <div className="toolbar-island pointer-events-none absolute top-2 left-2" data-testid="tilemap-select-readout">
+      {outline && lost > 0 ? (
+        <span className="toolbar-island-readout text-destructive!" data-testid="tilemap-select-cut-off">
+          {lost} {lost === 1 ? "Tile Will Be" : "Tiles Will Be"} Cut Off
+        </span>
+      ) : outline ? (
+        <span className="toolbar-island-readout" data-testid="tilemap-select-size">
+          {outline.maxX - outline.minX + 1} × {outline.maxY - outline.minY + 1}
+        </span>
+      ) : null}
+      <HoverCellReadout store={store} className="toolbar-island-readout" />
+    </div>
   );
 }
 

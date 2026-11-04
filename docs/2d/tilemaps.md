@@ -54,7 +54,7 @@ Two autotiles of the same Tileset, such as grass and dirt, can meet through a tr
 | Stamp | Places a 2 × 2 block of the selected tile. |
 | Picker | Picks the tile you tap as the brush. |
 
-One finger paints. Two fingers pinch to zoom and drag to pan in any tool; the scroll wheel zooms. Each stroke is one undo step. With a mouse, the toolbar shows the column and row of the cell under the pointer.
+One finger paints. Two fingers pinch to zoom and drag to pan in any tool; the scroll wheel zooms. Each stroke is one undo step. With a mouse, the toolbar shows the column and row of the cell under the pointer (with **Select**, the top-left corner of **Paint** does).
 
 ## Move painted tiles
 

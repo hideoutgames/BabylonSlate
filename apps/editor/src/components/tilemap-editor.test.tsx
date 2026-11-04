@@ -1487,6 +1487,10 @@ describe("Tilemap Select tool", () => {
     key({ key: "Escape" });
     expect(size()).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
+    // A hovering mouse's cell reads out over the canvas with the selection's size, not in the toolbar.
+    act(() => dispatchPointerEvent(canvas, "pointermove", { pointerType: "mouse", clientX: 3 * 32 + 16, clientY: 240 - 2 * 32 }));
+    expect(within(screen.getByTestId("tilemap-select-readout")).getByTestId("tilemap-paint-hover-cell").textContent).toBe("3, 2");
+    expect(within(screen.getByTestId("tilemap-paint-toolbar")).queryByTestId("tilemap-paint-hover-cell")).toBeNull();
   });
 
   it("lifts a dragged selection without an edit and moves its tiles in one undo step on release", async () => {
