@@ -7,16 +7,24 @@ import {
   setTile,
   type TilemapPayload,
 } from "@haptic/assets";
-import { placeholderCss, TilemapPaintRenderer, type PaintSurface, type TilemapPaintFrame } from "./tilemap-paint-renderer";
+import {
+  CUT_OFF_FILL,
+  placeholderCss,
+  SELECTION_STROKE,
+  TilemapPaintRenderer,
+  type PaintSurface,
+  type TilemapPaintFloat,
+  type TilemapPaintFrame,
+} from "./tilemap-paint-renderer";
 
-type Call = { op: string; args: unknown[]; fill: unknown };
+type Call = { op: string; args: unknown[]; fill: unknown; stroke?: unknown };
 
-/** A context that records its calls with the fill they used. */
+/** A context that records its calls with the fill and stroke they used. */
 function recordingContext() {
   const calls: Call[] = [];
   const ctx: Record<string, unknown> = { fillStyle: "", strokeStyle: "", lineWidth: 1, imageSmoothingEnabled: true };
-  for (const op of ["setTransform", "clearRect", "fillRect", "drawImage", "beginPath", "moveTo", "lineTo", "stroke", "save", "restore", "clip", "rect", "strokeRect"]) {
-    ctx[op] = (...args: unknown[]) => calls.push({ op, args, fill: ctx.fillStyle });
+  for (const op of ["setTransform", "clearRect", "fillRect", "drawImage", "beginPath", "moveTo", "lineTo", "stroke", "save", "restore", "clip", "rect", "strokeRect", "setLineDash"]) {
+    ctx[op] = (...args: unknown[]) => calls.push({ op, args, fill: ctx.fillStyle, stroke: ctx.strokeStyle });
   }
   return { ctx: ctx as unknown as CanvasRenderingContext2D, calls };
 }
@@ -168,6 +176,62 @@ describe("TilemapPaintRenderer", () => {
     ]);
     // Just past the bitmaps' 32 px, the atlas is drawn too.
     expect(renderer.draw(recordingContext().ctx, frame(map, { ...loaded, dpr: 2, cellSize: 17 }))).toMatchObject({ composited: 0, direct: 2 });
+  });
+
+  it("floats a dragged selection of the whole dense map from the bitmaps it already has, redrawing no tile", () => {
+    const { create } = surfaces();
+    const renderer = new TilemapPaintRenderer(create);
+    const map = denseMap();
+    expect(renderer.draw(recordingContext().ctx, frame(map))).toMatchObject({ composited: 12, rendered: 12 });
+    // Select All on every layer, dragged 3 cells right and 2 up.
+    const all = { minX: 0, minY: 0, maxX: 255, maxY: 255 };
+    const lifted = (offset: { x: number; y: number }): TilemapPaintFloat => ({
+      layers: new Map(map.layers.map((layer) => [layer.id, layer.chunks])),
+      rect: all,
+      offset,
+      hole: all,
+      detached: false,
+    });
+    const { ctx, calls } = recordingContext();
+    const stats = renderer.draw(ctx, frame(map, { float: lifted({ x: 3, y: 2 }) }));
+    // Each layer's cells are left empty under the lifted block, and its floating tiles drawn over the destination;
+    // the grid then clips to the map as always.
+    expect(stats).toEqual({ composited: 24, rendered: 0, direct: 0 });
+    expect(calls.filter((call) => call.op === "clip").map((call) => call.args)).toEqual([["evenodd"], [], ["evenodd"], [], ["evenodd"], [], []]);
+    // Chunk 0, 0 floats 48 px right and 32 px up: its 512 px bitmap's top at 600 - 32 - 512.
+    expect(calls.filter((call) => call.op === "drawImage").map((call) => call.args.slice(5))).toContainEqual([48, 56, 512, 512]);
+    // Following the drag composites the same bitmaps at the next offset.
+    expect(renderer.draw(recordingContext().ctx, frame(map, { float: lifted({ x: 4, y: 2 }) }))).toMatchObject({ rendered: 0 });
+  });
+
+  it("draws a paste from bitmaps of its own, tints its cells past a bounded map's edge and outlines the selection with dashes", () => {
+    const { create } = surfaces();
+    const renderer = new TilemapPaintRenderer(create);
+    const map: TilemapPayload = { ...createDefaultTilemapPayload(), width: 40, height: 20 };
+    renderer.draw(recordingContext().ctx, frame(map));
+    const tiles = Array<number>(32 * 32).fill(0);
+    tiles[0] = 1;
+    tiles[3] = 1;
+    // A 4 × 2 paste with its bottom-left at cell 38, 0: columns 40 and 41 lie past the map's right edge.
+    const pasted: TilemapPaintFloat = {
+      layers: new Map([["layer-1", [{ cx: 0, cy: 0, tiles }]]]),
+      rect: { minX: 0, minY: 0, maxX: 3, maxY: 1 },
+      offset: { x: 38, y: 0 },
+      hole: null,
+      detached: true,
+    };
+    const { ctx, calls } = recordingContext();
+    expect(renderer.draw(ctx, frame(map, { float: pasted, selection: { minX: 38, minY: 0, maxX: 41, maxY: 1 } }))).toMatchObject({ composited: 1, rendered: 1 });
+    expect(renderer.bitmapCount).toBe(1);
+    expect(calls.filter((call) => call.fill === CUT_OFF_FILL && call.op === "fillRect").map((call) => call.args)).toEqual([[640, 568, 32, 32]]);
+    // No hole: a paste leaves the map's cells as they are.
+    expect(calls.some((call) => call.op === "clip" && call.args[0] === "evenodd")).toBe(false);
+    const outline = calls.findIndex((call) => call.op === "strokeRect" && call.stroke === SELECTION_STROKE);
+    expect(calls[outline]!.args).toEqual([38 * 16 + 1, 568 + 1, 64 - 2, 32 - 2]);
+    expect(calls[outline - 1]).toMatchObject({ op: "setLineDash", args: [[6, 4]] });
+    // Once the paste is gone, so are its bitmaps.
+    renderer.draw(recordingContext().ctx, frame(map));
+    expect(renderer.bitmapCount).toBe(0);
   });
 
   it("drops the bitmaps the latest frame did not draw once they pass its memory budget", () => {
