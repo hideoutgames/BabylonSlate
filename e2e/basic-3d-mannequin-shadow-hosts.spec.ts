@@ -81,15 +81,20 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
     }
     const canvas = host === "play" ? page.getByTestId("play-canvas") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas");
     await expect.poll(async () => (await diagnostics(canvas, host))?.models.filter(mesh => geometry.some(part => part.name === mesh.name)).length, { timeout: 30_000 }).toBe(6);
-    const dilation = async (value: 0 | 1) => {
+    const run = async (...commands: string[]) => {
       if (host === "play") await page.getByTestId("play-console-open").click();
       else await page.getByRole("button", { name: "Console", exact: true }).click();
-      await page.getByTestId("debug-console-input").fill(`slomo ${value}`);
-      await page.getByTestId("debug-console-submit").click();
-      await expect(page.getByTestId("debug-console-transcript")).toContainText(`slomo ${value}`);
+      for (const command of commands) {
+        await page.getByTestId("debug-console-input").fill(command);
+        await page.getByTestId("debug-console-submit").click();
+        await expect(page.getByTestId("debug-console-transcript")).toContainText(command);
+      }
       await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
     };
-    await dilation(0);
+    // Captures need frames the host presented, not GPU pacing: under the default frames-in-flight limit each frame
+    // after a settings change waits for the ones before it to finish, which software GL holds for tens of seconds on
+    // a slow runner while it compiles the new pipelines at first draw.
+    await run("framesinflight off", "slomo 0");
     const initial = (await diagnostics(canvas, host))!;
     for (const mode of ["pbr", "cel"] as const) {
       const render: RenderShadingSettings = { gpuBackend: "webgl2", mode, shadows: initial.requestedShadows, quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }) };
@@ -134,7 +139,7 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
       expect(posedMannequin(geometry, frozen)).toEqual(pose);
     }
     const before = posedMannequin(geometry, (await diagnostics(canvas, host))!);
-    await dilation(1);
+    await run("slomo 1");
     await expect.poll(async () => posedMannequin(geometry, (await diagnostics(canvas, host))!), { timeout: 15_000 }).not.toEqual(before);
     await page.getByTestId(host === "play" ? "play-overlay-close" : "preview-build-close").click();
     // Closing a session on software GL holds the page's thread with synchronous work: failed attempts saw the overlay still mounted after 5 s with only two polls answered.
