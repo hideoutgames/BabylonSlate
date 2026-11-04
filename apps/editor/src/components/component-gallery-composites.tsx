@@ -534,7 +534,7 @@ export function GalleryComposites() {
           <TypeColorMark colorVar={PIN_COLOR_VAR.float} label="Float" />
           <TypeColorMark colorVar={PIN_COLOR_VAR.vector} label="Vector" />
           <TypeColorMark colorVar={PIN_COLOR_VAR.object} label="Object" />
-          <TypeColorMark colorVar={ASSET_COLOR_VAR.texture} label="Texture" />
+          <TypeColorMark colorVar={ASSET_COLOR_VAR.renderTarget} label="Render Target" />
           <TypeColorMark colorVar={ASSET_COLOR_VAR.class} label="Class" />
           <TypeColorMark colorVar={ASSET_COLOR_VAR.folder} label="Folder" />
         </div>
