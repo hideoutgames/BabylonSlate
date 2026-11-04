@@ -2274,7 +2274,7 @@ function initializeEngine(
         // What the player sees, read in the task that presented it: the Engine canvas while this view presents
         // directly, else the view canvas holding the copy.
         const shown = registeredView && viewPresentedDirectly(engine, registeredView) ? engine.getRenderingCanvas() : canvas;
-        let sample: PresentedImageSample | null = null;
+        let sample: PresentedImageSample | null;
         try { sample = shown ? samplePresentedImage(shown) : null; } catch { sample = null; }
         answerPresentedImageRequests(sample);
       }
