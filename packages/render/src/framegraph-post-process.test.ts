@@ -69,6 +69,13 @@ function gainDocument() {
   return doc;
 }
 
+/** The Gain pass with an Add in place of its Multiply: the same parameters, other code. */
+function offsetDocument() {
+  const document = gainDocument();
+  document.nodes = document.nodes.map((node) => node.id === "multiply" ? { ...node, type: "math.add" } : node);
+  return document;
+}
+
 function textureDocument() {
   const document = gainDocument();
   document.nodes = document.nodes.map((node) =>
@@ -432,7 +439,9 @@ it.each(["replace", "update", "dispose", "deadline", "compile-error", "engine-di
         expect(shared._refCount).toBe(2);
       }
 
-      if (action === "replace") await task.replaceDocument(gainDocument());
+      // Other code, so the replacement compiles a program of its own: an identical one would adopt the retiring
+      // pass's program (`shareNamedProgram`) and keep it.
+      if (action === "replace") await task.replaceDocument(offsetDocument());
       else if (action === "update") {
         const name = retiring.name as { vertex: string; fragment: string };
         retiringPass.updateEffect(`${retiring.defines}\n#define OWNED_REPLACEMENT`, retiring.getUniformNames(),

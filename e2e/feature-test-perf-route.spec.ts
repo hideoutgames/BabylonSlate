@@ -25,8 +25,13 @@ import {
  *      HAPTIC_PERF_QUALITY (low|medium|high|ultra, applied with the Play console),
  *      HAPTIC_PERF_FRAMECAP (Play console `framecap`), HAPTIC_PERF_VIEWPORT_CAP (Engine Settings),
  *      HAPTIC_PERF_COMMANDS (further Play console commands after the quality, separated by `;`),
+ *      HAPTIC_PERF_PLAYS (default 1: Plays per scene, each after the editor's view is ready again),
  *      HAPTIC_PERF_REOPEN (default 1: also time reload + reopen), HAPTIC_PERF_LABEL,
  *      HAPTIC_PERF_OUT (absolute path that also receives the JSON report).
+ *
+ * Each Play also reports the WebGL programs linked from its click to its close (`programs`), keyed by their
+ * shader sources: how many, how many while it loaded, how many distinct sources, and how many of those the
+ * page had linked before that Play started (a repeat Play that keeps its programs links almost none of them).
  */
 const ENABLED = process.env.HAPTIC_PERF_FEATURE_TEST === "1";
 const number = (name: string, fallback: number, min = 0) => {
@@ -41,6 +46,7 @@ const QUALITY = process.env.HAPTIC_PERF_QUALITY ?? null;
 const FRAMECAP = process.env.HAPTIC_PERF_FRAMECAP ?? null;
 const COMMANDS = (process.env.HAPTIC_PERF_COMMANDS ?? "").split(";").map((command) => command.trim()).filter(Boolean);
 const REOPEN = process.env.HAPTIC_PERF_REOPEN !== "0";
+const PLAYS = number("HAPTIC_PERF_PLAYS", 1, 1);
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
   .map((scene) => scene.trim())
@@ -68,6 +74,54 @@ async function recordLongTasks(page: Page): Promise<void> {
       /* Not supported: counts stay empty. */
     }
   });
+}
+
+/**
+ * Record every WebGL program link with a hash of its shader sources, before the editor boots. Babylon's
+ * `SHADER_NAME` line names the Effect (a NodeMaterial's build id), not the code, so it is left out.
+ */
+async function recordProgramLinks(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const links: Array<[number, string]> = [];
+    (globalThis as unknown as { __ftProgramLinks: Array<[number, string]> }).__ftProgramLinks = links;
+    const SHADER_NAME = /^\s*(?:\/\/)?\s*#define\s+SHADER_NAME\b[^\n]*\n?/gm;
+    const hash = (source: string) => {
+      const text = source.replace(SHADER_NAME, "");
+      let h = 0x811c9dc5;
+      for (let index = 0; index < text.length; index++) h = Math.imul(h ^ text.charCodeAt(index), 0x01000193);
+      return `${(h >>> 0).toString(36)}-${text.length}`;
+    };
+    for (const context of [globalThis.WebGL2RenderingContext, globalThis.WebGLRenderingContext]) {
+      if (!context) continue;
+      const link = context.prototype.linkProgram;
+      context.prototype.linkProgram = function (this: WebGL2RenderingContext, program: WebGLProgram) {
+        try {
+          const sources = (this.getAttachedShaders(program) ?? []).map((shader) => this.getShaderSource(shader) ?? "");
+          links.push([performance.now(), hash(sources.join("\u0000"))]);
+        } catch {
+          /* A lost context: the link is not counted. */
+        }
+        return link.call(this, program);
+      };
+    }
+  });
+}
+
+/** The programs linked from `since` to `until`, and how many of their sources the page linked before `since`. */
+async function programLinks(page: Page, since: number, loadedAt: number, until: number) {
+  return page.evaluate(([from, loaded, to]) => {
+    const links = (globalThis as unknown as { __ftProgramLinks?: Array<[number, string]> }).__ftProgramLinks ?? [];
+    const earlier = new Set(links.filter(([at]) => at < from!).map(([, key]) => key));
+    const window = links.filter(([at]) => at >= from! && at <= to!);
+    const distinct = new Set(window.map(([, key]) => key));
+    return {
+      linked: window.length,
+      duringLoad: window.filter(([at]) => at < loaded!).length,
+      afterLoad: window.filter(([at]) => at >= loaded!).length,
+      distinct: distinct.size,
+      linkedEarlier: [...distinct].filter((key) => earlier.has(key)).length,
+    };
+  }, [since, loadedAt, until]);
 }
 
 async function longTasksSince(page: Page, since: number) {
@@ -183,9 +237,11 @@ async function runConsoleCommand(page: Page, command: string): Promise<void> {
 
 async function measurePlay(page: Page, cdp: CDPSession) {
   const started = Date.now();
+  const linksSince = await pageNow(page);
   await clickPlayAndWaitForOverlay(page);
   await expect(page.getByTestId("play-blocked-dialog")).toHaveCount(0);
   await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({ timeout: 180_000 });
+  const loadedAt = await pageNow(page);
   await expect(page.getByTestId("play-canvas")).toBeVisible({ timeout: 60_000 });
   await expect
     .poll(
@@ -213,19 +269,28 @@ async function measurePlay(page: Page, cdp: CDPSession) {
   const liveObjects = await page.evaluate(
     () => (globalThis as unknown as PlayHost).__hapticPlayTest?.liveObjectCounts() ?? null,
   );
+  const programs = await programLinks(page, linksSince, loadedAt, await pageNow(page));
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 60_000 });
   await expect(page.getByTestId("preview-session-report")).toHaveCount(0);
-  return { playBootMs, spawnableWarm, windows, liveObjects };
+  return { playBootMs, spawnableWarm, programs, windows, liveObjects };
+}
+
+/** After Play closes, the editor's scene view loads again. */
+async function waitForSceneView(page: Page): Promise<void> {
+  const panel = page.getByTestId("viewport-panel");
+  await expect(panel).toHaveAttribute("data-scene-ready", "true", { timeout: 180_000 });
+  await expect(panel).toHaveAttribute("aria-busy", "false", { timeout: 180_000 });
 }
 
 test.skip(!ENABLED, "FeatureTest performance route; set HAPTIC_PERF_FEATURE_TEST=1 to run it.");
 
 test("FeatureTest performance route", async ({ page }, testInfo) => {
-  test.setTimeout(20 * 60_000 + SCENES.length * (SAMPLES * SAMPLE_MS * 2 + WARMUP_MS + SETTLE_MS));
+  test.setTimeout(20 * 60_000 + SCENES.length * PLAYS * (SAMPLES * SAMPLE_MS * 2 + WARMUP_MS + SETTLE_MS + 5 * 60_000));
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await recordLongTasks(page);
+  await recordProgramLinks(page);
   await seedEngineSettings(page, (settings) => {
     settings.debuggerDefaults.overlayConsole = true;
     if (process.env.HAPTIC_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("HAPTIC_PERF_VIEWPORT_CAP", 60, 10);
@@ -249,7 +314,17 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
       viewport.push({ ...result, mainThreadBusy: busy });
     }
     await page.getByTestId("viewport-canvas").screenshot({ path: testInfo.outputPath(`${scene}-viewport.png`) });
-    scenes[scene] = { sceneReadyMs, loadRetries, viewport, play: await measurePlay(page, cdp) };
+    const plays = [];
+    for (let index = 0; index < PLAYS; index += 1) {
+      if (index > 0) {
+        await waitForSceneView(page);
+        await page.waitForTimeout(SETTLE_MS);
+      }
+      plays.push(await measurePlay(page, cdp));
+    }
+    scenes[scene] = { sceneReadyMs, loadRetries, viewport, play: plays[0], ...(PLAYS > 1 ? { repeatPlays: plays.slice(1) } : {}) };
+    // The next scene opens over the editor's reloaded view.
+    await waitForSceneView(page);
   }
 
   const reopenToInteractiveMs = REOPEN ? await reopenFeatureTestProject(page) : null;
@@ -261,7 +336,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
     browserVersion: page.context().browser()?.version() ?? null,
     viewportCss: page.viewportSize(),
     adapter,
-    env: { SCENES, SAMPLE_MS, SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP },
+    env: { SCENES, SAMPLE_MS, SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, PLAYS },
     phases: { createToInteractiveMs, bootAndCreateLongTasks, encodeWaitMs, reopenToInteractiveMs },
     scenes,
     pageErrors,

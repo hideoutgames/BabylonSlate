@@ -13,7 +13,7 @@ type NativeParticleBinder = (
   onCompiled?: (effect: Effect) => void, onError?: (effect: Effect, errors: string) => void,
   effect?: Effect, defines?: unknown, joined?: string,
 ) => void;
-type ParticleMaterialInternals = { _createEffectForParticles: NativeParticleBinder };
+type ParticleMaterialInternals = { _createEffectForParticles: NativeParticleBinder; _checkInternals(effect: Effect): void };
 type Binding = { effect: Effect; observer: Observer<Effect>; wrapper: DrawWrapper };
 const adapted = new WeakSet<NodeMaterial>();
 const boundMaterials = new WeakMap<IParticleSystem, NodeMaterial>();
@@ -33,13 +33,14 @@ export function prepareNodeMaterialParticleBindings(material: NodeMaterial): voi
   if (adapted.has(material)) return;
   const native = material as unknown as ParticleMaterialInternals;
   const original = native._createEffectForParticles;
-  if (typeof original !== "function" || original.length !== 6) {
+  if (typeof original !== "function" || original.length !== 6 || typeof native._checkInternals !== "function") {
     throw new Error("Unsupported Babylon particle material binding layout.");
   }
   const priorDescriptor = Object.getOwnPropertyDescriptor(material, "_createEffectForParticles");
   const systems = new Map<IParticleSystem, {
     bindings: Map<number, Binding>;
     disposeObserver: Observer<IParticleSystem> | null;
+    drawObserver: Observer<Effect | null> | null;
   }>();
   const releaseSystem = (system: IParticleSystem) => {
     const owned = systems.get(system);
@@ -53,6 +54,7 @@ export function prepareNodeMaterialParticleBindings(material: NodeMaterial): voi
       wrapper.dispose();
     }
     system.onDisposeObservable.remove(owned.disposeObserver);
+    system.onBeforeDrawParticlesObservable.remove(owned.drawObserver);
   };
   const bind: NativeParticleBinder = function(system, blend, onCompiled, onError, effect, defines, joined) {
     // Material defines and vertex streams depend on the lazily allocated
@@ -61,7 +63,16 @@ export function prepareNodeMaterialParticleBindings(material: NodeMaterial): voi
     if (system instanceof GPUParticleSystem && !effect) system._recreateUpdateEffect();
     let owned = systems.get(system);
     if (!owned) {
-      owned = { bindings: new Map(), disposeObserver: system.onDisposeObservable.addOnce(() => releaseSystem(system)) };
+      owned = {
+        bindings: new Map(),
+        disposeObserver: system.onDisposeObservable.addOnce(() => releaseSystem(system)),
+        // Emitters' instances of one Material share an Effect (`shareNamedProgram`), and every binding observer on
+        // it runs when it is enabled, the last one's values winning, and none when the previous draw used it too.
+        // Each draw binds its own system's Material last, right before it draws.
+        drawObserver: system.onBeforeDrawParticlesObservable.add((drawn) => {
+          if (drawn && boundMaterials.get(system) === material) native._checkInternals(drawn);
+        }),
+      };
       systems.set(system, owned);
     }
     const previous = owned.bindings.get(blend);

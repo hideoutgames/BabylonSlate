@@ -1057,6 +1057,8 @@ export function compileMaterialPlan(
   // mode may reuse a byte-identical program compiled for another material.
   if (material.mode === NodeMaterialModes.Material && plan.cost.customBlocks === 0) {
     shareCompiledProgram(material, JSON.stringify([options.name, options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]));
+  } else if (plan.cost.customBlocks === 0) {
+    shareNamedProgram(material, JSON.stringify([options.name, material.mode, material.shaderLanguage]));
   }
   try {
     if (plan.operations.some((operation) => operation.nodeType === "input.environmentSample")) {
@@ -1322,6 +1324,46 @@ export function shareCompiledProgram(material: NodeMaterial, key: string): void 
     const known = registry.get(key);
     if (known?.users.delete(material) && known.users.size === 0) registry.delete(key);
   });
+}
+
+/** Build ids of particle and post-process programs by key and generated code, for the Engine's life. */
+const namedPrograms = new WeakMap<AbstractEngine, Map<string, Map<string, number>>>();
+
+/**
+ * Particle and post-process NodeMaterials name their Effect after the material and its build id
+ * (`name + buildId + "_" + blendMode`, `name + buildId`), and the Engine's Effect cache keys on that name, so every
+ * build compiles its own program even when its code is the same, as it is for each emitter's instance of one
+ * particle Material and each pass of one post-process Material. After the first build, adopt the id an earlier
+ * build under the same key and byte-identical code took, so they share one Effect. Ids outlive their materials:
+ * a later Play's emitters then name the Effect the last one kept (`keepPlayEffects`). A link failure the compiler
+ * reports drops its id, so a later build compiles its own.
+ */
+export function shareNamedProgram(material: NodeMaterial, key: string): void {
+  const engine = material.getScene().getEngine();
+  let byKey = namedPrograms.get(engine);
+  if (!byKey) namedPrograms.set(engine, (byKey = new Map()));
+  let programs = byKey.get(key);
+  if (!programs) byKey.set(key, (programs = new Map()));
+  const registry = programs;
+  let shaders: string | undefined;
+  sharedProgramForgetters.set(material, () => {
+    if (shaders !== undefined && registry.get(shaders) === material.buildId) registry.delete(shaders);
+  });
+  let adopted: number | undefined;
+  let firstBuild = true;
+  material.onBuildObservable.add(() => {
+    if (adopted !== undefined && material.buildId === adopted) material.buildId = freshBuildId();
+    adopted = undefined;
+    if (!firstBuild) {
+      shaders = undefined;
+      return;
+    }
+    firstBuild = false;
+    shaders = material.compiledShaders;
+    const known = registry.get(shaders);
+    if (known !== undefined) material.buildId = adopted = known;
+    else registry.set(shaders, material.buildId);
+  }, undefined, true);
 }
 
 /** Drop ResourceCache textures so NodeMaterial.dispose cannot free engine-owned GPU wrappers. */
