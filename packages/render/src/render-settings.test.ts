@@ -316,3 +316,21 @@ it("tells listeners of each render-mode change once, after the plan is current, 
   updateSceneRenderingSettings(scene, { mode: "pbr", cel: normalizeCelShadingSettings({}), effects });
   expect(seen).toEqual([["cel", true], ["pbr", true]]);
 });
+
+it("renders a Scene's Post Processing overrides over the project effects, below the session's", () => {
+  const scene = fixture();
+  const project = { effects: { ...DEFAULT_RENDER_EFFECTS, vignette: { ...DEFAULT_RENDER_EFFECTS.vignette, enabled: true } } };
+  updateSceneRenderingSettings(scene, project, undefined, undefined, undefined, { bloom: { enabled: true }, vignette: { weight: 3 } });
+  const state = sceneRenderingSettings(scene);
+  expect(state.effects.bloom.enabled).toBe(true);
+  expect(state.effects.vignette).toMatchObject({ enabled: true, weight: 3 });
+  expect(state.effectsPlan?.bloom).toBeTruthy();
+  state.runtimeOverrides = { effects: { bloom: { enabled: false } } };
+  updateSceneRenderingSettings(scene);
+  expect(state.effects.bloom.enabled).toBe(false);
+  expect(state.effects.vignette.weight).toBe(3);
+  // The next Scene without overrides follows the project again.
+  state.runtimeOverrides = {};
+  updateSceneRenderingSettings(scene, undefined, undefined, undefined, undefined, {});
+  expect(state.effects).toEqual(project.effects);
+});

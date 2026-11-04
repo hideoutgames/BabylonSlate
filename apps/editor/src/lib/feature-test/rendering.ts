@@ -1002,6 +1002,9 @@ async function addLightsScene(ctx: FeatureTestContext): Promise<void> {
   for (const component of scene.actors.find((entry) => entry.id === DEFAULT_SCENE_SUN_ACTOR_ID)?.components ?? []) {
     if (component.classId === "LightComponent") component.properties = { ...component.properties, intensity: 0.4 };
   }
+  // Post Processing overrides: a brighter exposure and a stronger vignette than the project's. Both are uniforms of
+  // passes the project already runs, so the workload's cost is unchanged.
+  scene.settings.effectsOverrides = { exposure: 1.25, vignette: { weight: 1.2 } };
   const centerZ = ((LIGHT_GRID_ROWS - 1) * LIGHT_GRID_SPACING) / 2;
   const width = LIGHT_GRID_COLUMNS * LIGHT_GRID_SPACING + 8;
   const depth = LIGHT_GRID_ROWS * LIGHT_GRID_SPACING + 8;

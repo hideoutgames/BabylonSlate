@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_RENDER_EFFECTS,
+  normalizeRenderEffectsOverrides,
   normalizeRenderEffectsSettings,
   renderEffectsAssetGuids,
+  resolveRenderEffectsSettings,
 } from "./render-effects";
 import { normalizeProjectSettings } from "./project";
+import { normalizeSceneSettings } from "./scene";
 
 describe("render effects settings", () => {
   it("normalizes missing and invalid input to the display-identical defaults", () => {
@@ -144,4 +147,49 @@ it("bounds spatial GPU work and preserves authored settings while disabled", () 
   expect(value.ambientOcclusion).toEqual({ ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, samples: 32, resolutionScale: 1, radius: 0.05, maxDistance: 20 });
   expect(value.reflections).toEqual({ ...DEFAULT_RENDER_EFFECTS.reflections, maxSteps: 128, resolutionScale: 0.25, strength: 0 });
   expect(value.volumetricLighting).toEqual({ ...DEFAULT_RENDER_EFFECTS.volumetricLighting, maxLights: 4, steps: 16, density: 0.1, anisotropy: 0.9, maxDistance: 0.1 });
+});
+
+describe("Scene Post Processing overrides", () => {
+  it("keeps only the leaves the project block accepts, clamped as there", () => {
+    expect(normalizeRenderEffectsOverrides({
+      colorPipeline: { version: 2, mode: "sceneLinear" },
+      toneMapping: "filmic",
+      exposure: 500,
+      contrast: Number.NaN,
+      bloom: { enabled: true, kernel: 10.6, glow: 1 },
+      vignette: { color: [2, 0.5, -1], weight: "heavy" },
+      whiteBalance: { enabled: 1 },
+      colorGrading: { lutTextureGuid: " lut " },
+      upscaling: {},
+      sharpen: true,
+    })).toEqual({
+      colorPipeline: { mode: "sceneLinear" },
+      exposure: 100,
+      bloom: { enabled: true, kernel: 11 },
+      vignette: { color: [1, 0.5, 0] },
+      colorGrading: { lutTextureGuid: "lut" },
+    });
+    // No LUT is a choice a Scene can make; a blank one is not a Texture.
+    expect(normalizeRenderEffectsOverrides({ colorGrading: { lutTextureGuid: null } })).toEqual({ colorGrading: { lutTextureGuid: null } });
+    expect(normalizeRenderEffectsOverrides({ colorGrading: { lutTextureGuid: "  " } })).toEqual({});
+    expect(normalizeRenderEffectsOverrides("bloom")).toEqual({});
+  });
+
+  it("replaces only the overridden leaves of the project effects", () => {
+    const project = { ...DEFAULT_RENDER_EFFECTS, bloom: { ...DEFAULT_RENDER_EFFECTS.bloom, enabled: true, weight: 0.4 }, exposure: 2 };
+    const resolved = resolveRenderEffectsSettings(project, { bloom: { threshold: 0.5 }, vignette: { enabled: true }, contrast: 3 });
+    expect(resolved.bloom).toEqual({ ...project.bloom, threshold: 0.5 });
+    expect(resolved.vignette).toEqual({ ...DEFAULT_RENDER_EFFECTS.vignette, enabled: true });
+    expect(resolved.exposure).toBe(2);
+    expect(resolved.contrast).toBe(3);
+    expect(resolved.colorPipeline).toEqual({ version: 1, mode: "legacyDisplay" });
+    expect(resolveRenderEffectsSettings(project, undefined)).toEqual(normalizeRenderEffectsSettings(project));
+  });
+
+  it("stores a Scene's overrides sparse, through a save and reload", () => {
+    const settings = normalizeSceneSettings({ effectsOverrides: { bloom: { enabled: true }, exposure: "2" } });
+    expect(settings.effectsOverrides).toEqual({ bloom: { enabled: true } });
+    expect(normalizeSceneSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
+    expect(normalizeSceneSettings({}).effectsOverrides).toEqual({});
+  });
 });

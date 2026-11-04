@@ -132,6 +132,17 @@ describe("runtime scalability session", () => {
     expect(settings.requested.render.cel?.shadowBands).toBe(7);
     expect(settings.requested.render.environmentLighting?.enabled).toBe(false);
   });
+  it("reports a Scene's Post Processing overrides, with session patches above them", () => {
+    const { settings } = session();
+    settings.setScene({ effectsOverrides: { bloom: { enabled: true, weight: 0.5 }, exposure: 2 } });
+    expect(settings.requested.render.effects?.bloom).toMatchObject({ enabled: true, weight: 0.5, threshold: 0.9 });
+    expect(settings.request({ kind: "patch", render: { effects: { exposure: 3 } } }).status).toBe("rebuildPending");
+    expect(settings.requested.render.effects?.exposure).toBe(3);
+    // The session keeps its own fields; unoverridden ones follow the next Scene.
+    settings.setScene({});
+    expect(settings.requested.render.effects?.exposure).toBe(3);
+    expect(settings.requested.render.effects?.bloom.enabled).toBe(false);
+  });
   it("returns detached data and retains the previous confirmed settings after a failed rebuild", () => {
     const { settings } = session();
     settings.acknowledge({ revision: 0, status: "applied", message: "Ready", effective: settings.requested });

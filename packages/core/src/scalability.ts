@@ -3,6 +3,7 @@ import { RenderingQualitySession, qualityPresetPatch, qualitySettingPatch, QUALI
 import type { ShadowOverrides } from "./shadows";
 import { normalizeCelShadingOverrides, normalizeCelShadingSettings, type CelShadingOverrides } from "./cel-shading";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
+import { normalizeRenderEffectsOverrides, type RenderEffectsOverrides } from "./render-effects";
 import type { ResolvedRenderingPipeline } from "./rendering-pipeline";
 
 export type RenderSettingsPatch<T = RenderProjectSettings> = {
@@ -11,7 +12,12 @@ export type RenderSettingsPatch<T = RenderProjectSettings> = {
 };
 export type ScalabilityStatus = "applied" | "clamped" | "unsupported" | "rebuildPending" | "restartRequired" | "failed";
 export type RenderingApplicationPolicy = "live" | "rebuild" | "restart" | "authoring";
-export interface ScalabilitySceneDefaults { shadowOverrides?: ShadowOverrides; celShading?: CelShadingOverrides; environmentLighting?: EnvironmentLightingOverrides }
+export interface ScalabilitySceneDefaults {
+  shadowOverrides?: ShadowOverrides;
+  celShading?: CelShadingOverrides;
+  environmentLighting?: EnvironmentLightingOverrides;
+  effectsOverrides?: RenderEffectsOverrides;
+}
 export interface RuntimeRenderingSettings { render: RenderProjectSettings; frameCap: number }
 export interface ScalabilityResult { revision: number; status: ScalabilityStatus; message: string }
 export interface ScalabilityTransaction {
@@ -145,7 +151,11 @@ export class ScalabilitySession {
   }
   get requested(): RuntimeRenderingSettings {
     const { shadows, ...quality } = this.quality.effective();
-    const inherited = mergeRenderSettings(this.project.render, { cel: normalizeCelShadingOverrides(this.scene.celShading), environmentLighting: normalizeEnvironmentLightingOverrides(this.scene.environmentLighting) });
+    const inherited = mergeRenderSettings(this.project.render, {
+      cel: normalizeCelShadingOverrides(this.scene.celShading),
+      environmentLighting: normalizeEnvironmentLightingOverrides(this.scene.environmentLighting),
+      effects: normalizeRenderEffectsOverrides(this.scene.effectsOverrides),
+    });
     const render = mergeRenderSettings(inherited, this.visualOverrides);
     return { render: { ...render, cel: normalizeCelShadingSettings(render.cel), shadows, quality },
       frameCap: this.frameCapOverride ?? this.project.frameCap };

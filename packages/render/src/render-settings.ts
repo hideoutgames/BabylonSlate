@@ -22,6 +22,8 @@ import {
   type EnvironmentLightingSettings,
   type EnvironmentLightingOverrides,
   normalizeRenderEffectsSettings,
+  resolveRenderEffectsSettings,
+  type RenderEffectsOverrides,
   type RenderEffectsSettings,
   WATER_QUALITY_FIELDS,
   type WaterQuality,
@@ -84,6 +86,8 @@ type SceneRendering = {
   shadowOverrides: ShadowOverrides;
   environmentLighting: EnvironmentLightingSettings;
   environmentOverrides: EnvironmentLightingOverrides;
+  /** The Scene document's Post Processing overrides of the project effects. */
+  effectsOverrides: RenderEffectsOverrides;
   effects: RenderEffectsSettings;
   /** Session post-processing toggle; off also restores per-material display. */
   effectsEnabled: boolean;
@@ -163,6 +167,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       shadowOverrides: {},
       environmentLighting: normalizeEnvironmentLightingSettings(undefined),
       environmentOverrides: {},
+      effectsOverrides: {},
       effects,
       effectsEnabled: true,
       fogVolumesPresent: false,
@@ -205,12 +210,14 @@ export function updateSceneRenderingSettings(
   overrides?: CelShadingOverrides,
   shadowOverrides?: ShadowOverrides,
   environmentOverrides?: EnvironmentLightingOverrides,
+  effectsOverrides?: RenderEffectsOverrides,
 ): void {
   const state = sceneRenderingSettings(scene);
   if (project !== undefined) state.project = project;
   if (overrides !== undefined) state.overrides = overrides;
   if (shadowOverrides !== undefined) state.shadowOverrides = shadowOverrides;
   if (environmentOverrides !== undefined) state.environmentOverrides = environmentOverrides;
+  if (effectsOverrides !== undefined) state.effectsOverrides = effectsOverrides;
   const resolved = mergeRenderSettings(state.project, state.runtimeOverrides);
   state.environmentLighting = resolveEnvironmentLightingSettings(resolveEnvironmentLightingSettings(state.project.environmentLighting, state.environmentOverrides), state.runtimeOverrides.environmentLighting);
   const quality = resolveSceneRenderingQuality(scene);
@@ -233,7 +240,11 @@ export function updateSceneRenderingSettings(
     ...normalizeCelShadingOverrides(state.overrides),
     ...normalizeCelShadingOverrides(state.runtimeOverrides.cel),
   });
-  state.effects = normalizeRenderEffectsSettings(resolved.effects);
+  // Project, then the Scene's Post Processing overrides, then the session's.
+  state.effects = resolveRenderEffectsSettings(
+    resolveRenderEffectsSettings(state.project.effects, state.effectsOverrides),
+    state.runtimeOverrides.effects,
+  );
   state.mode = mode;
   // A newly requested LUT publishes asynchronously and replans once ready.
   state.colorGrading.sync(

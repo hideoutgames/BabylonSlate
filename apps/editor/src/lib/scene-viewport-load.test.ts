@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { normalizeCelShadingSettings, normalizeShadowSettings, normalizeEnvironmentLightingSettings } from "@haptic/core";
+import { normalizeCelShadingSettings, normalizeShadowSettings, normalizeEnvironmentLightingSettings, normalizeRenderEffectsSettings } from "@haptic/core";
 import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
@@ -48,6 +48,16 @@ it("reloads effective shadow changes in PBR and CEL and restores inherited value
     expect(sceneViewportRenderSettingsKey(project, {}, { distance: 80 })).not.toBe(initial);
     expect(sceneViewportRenderSettingsKey(project, {}, {})).toBe(initial);
   }
+});
+
+it("applies a Scene's Post Processing overrides as project effect changes, and restores inherited values", () => {
+  const project = { effects: normalizeRenderEffectsSettings({ bloom: { enabled: true } }) };
+  const initial = sceneViewportRenderSettingsKey(project);
+  expect(sceneViewportRenderSettingsKey(project, {}, {}, {}, null, { bloom: { enabled: true } })).toBe(initial);
+  const overridden = sceneViewportRenderSettingsKey(project, {}, {}, {}, null, { bloom: { enabled: false }, exposure: 2 });
+  expect(overridden).not.toBe(initial);
+  expect(sceneViewportRenderSettings(overridden).effects).toMatchObject({ bloom: { enabled: false }, exposure: 2 });
+  expect(sceneViewportRenderSettingsKey(project, {}, {}, {}, null, {})).toBe(initial);
 });
 
 describe("isSceneViewportRemountLoad", () => {
