@@ -145,6 +145,35 @@ describe("DocumentEditingService", () => {
     expect(historyCleared).toEqual([id, id]);
   });
 
+  it("records a Tilemap edit as the chunks it changed, undoes it back to clean and ignores a commit that changes nothing", async () => {
+    const { documents, editSession, editing, open, journaled } = createEditing();
+    const ref: DocumentRef = { kind: "tilemap", path: "assets/Level.tilemap.hasset", label: "Level" };
+    const chunk = (cx: number, gid: number) => ({ cx, cy: 0, tiles: Array<number>(16).fill(gid) });
+    const id = await open(ref, {
+      tilesets: [], tileWidth: 16, tileHeight: 16, width: 8, height: 4, chunkSize: 4,
+      layers: [{ id: "layer-1", name: "Ground", visible: true, collision: true, sortingLayer: "Default", orderInLayer: 0, parallax: { x: 1, y: 1 }, chunks: [chunk(0, 1), chunk(1, 2)] }],
+    });
+    const saved = documents.getDocument(id)!.content as { layers: Array<{ chunks: unknown[] }> };
+    const layer = saved.layers[0]!;
+    const painted = { ...saved, layers: [{ ...layer, chunks: [layer.chunks[0], chunk(1, 3)] }] };
+
+    expect(await editing.applyAssetDocumentChange(id, painted, "tilemap-stroke:1")).toBe(true);
+    const content = documents.getDocument(id)!.content as typeof saved;
+    expect(content).toEqual(painted);
+    // The untouched chunk is shared with the saved document, not cloned.
+    expect(content.layers[0]!.chunks[0]).toBe(layer.chunks[0]);
+    expect(editSession.getStack(id).historyBytes).toBeLessThan(400);
+    expect(await journaled()).toEqual([{ docId: id, type: "asset.patchTilemap" }]);
+    // A commit equal to the document, as the panels send after a refresh, adds nothing.
+    expect(await editing.applyAssetDocumentChange(id, { ...content })).toBe(false);
+
+    editing.stepHistory("undo", id);
+    expect(documents.getDocument(id)!.content).toEqual(saved);
+    expect(documents.getDocument(id)!.dirty).toBe(false);
+    editing.stepHistory("redo", id);
+    expect(documents.getDocument(id)!.content).toEqual(painted);
+  });
+
   it.each([
     {
       kind: "graph" as const,
