@@ -21,7 +21,7 @@ describe("formatFeatureTestCheckReport", () => {
         name: "main", path: "assets/main.scene.hasset", passed: false,
         problems: ["Play did not finish loading in 120 s (stuck at Loading Models 45%)."],
         editor: { status: "ready", ms: 4200, phase: null, frames: { frames: 180, durationMs: 3000, fps: 60, p95Ms: 18, maxMs: 40, stalls: 0 }, error: null, gpu: null },
-        play: { status: "timeout", ms: 120_000, phase: "Loading Models 45%", frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [], benchmark: [],
+        play: { status: "timeout", ms: 120_000, phase: "Loading Models 45%", frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [], benchmark: [],
           logs: [{ severity: "error", message: "Material FT_Glass failed to compile" }] },
         session: { diagnostics: [], droppedDiagnostics: 0, runtimeMode: "worker", textures: { before: 55, after: 55, leak: false, quarantined: false } },
       }, {
@@ -29,6 +29,7 @@ describe("formatFeatureTestCheckReport", () => {
         editor: { status: "ready", ms: 900, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 3000, phase: null, frames: { frames: 300, durationMs: 5000, fps: 60, p95Ms: 17, maxMs: 25, stalls: 0 }, runtimeFps: 60,
           snapshot: { drawCalls: 42, meshes: 80, textures: 30, accountedBytes: 8 * 1048576, rendering },
+          presentation: { frames: { drawn: 280, held: 4, skipped: 16 }, contextLosses: 0, imageBlack: [0, 0.031, null] },
           firstDraws: { draws: 7, loadCompiled: 5, frames: 4, stalls: 2, mostInFrame: 3, worstFrameMs: 180.4, longFrames: 6, longest: [
             { ms: 240.2, engineMs: 31.5, firstDraws: 0, compiles: 0 }, { ms: 180.4, engineMs: 170.1, firstDraws: 3, compiles: 1 },
             { ms: 150, engineMs: 140, firstDraws: 1, compiles: 2 }, { ms: 130, engineMs: 20, firstDraws: 0, compiles: 0 },
@@ -51,6 +52,7 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  > ft_stats: ok in 1.2 s · FeatureTest score 0, spinners 4, spawned 0");
     expect(lines).toContain("  First draws after load: 7 (5 compiled by the load) in 4 frames · 2 over 100 ms · worst 180 ms · most 3 in a frame");
     expect(lines).toContain("  Long frames after load: 6 over 100 ms · longest 240 ms (engine 32 ms, 0 first draws, 0 compiles), 180 ms (engine 170 ms, 3 first draws, 1 compile), 150 ms (engine 140 ms, 1 first draw, 2 compiles), 130 ms (engine 20 ms, 0 first draws, 0 compiles)");
+    expect(lines).toContain("  Presentation: drawn 280 · held 4 · skipped 16 (frames in flight) · context losses 0 · image near-black 0%, 3%, no frame");
     expect(lines).toContain("  TypeError: x is undefined");
   });
 
@@ -62,7 +64,7 @@ describe("formatFeatureTestCheckReport", () => {
     const scene = (name: string, benchmark: FeatureTestBenchmarkSample[]): FeatureTestCheckSceneResult => ({
       name, path: `assets/${name}.scene.hasset`, passed: true, problems: [],
       editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
-      play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [], benchmark, logs: [] },
+      play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [], benchmark, logs: [] },
       session: null,
     });
     const report: FeatureTestCheckReport = {
@@ -98,7 +100,7 @@ describe("formatFeatureTestCheckReport", () => {
       scenes: [{
         name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset", passed: true, problems: [],
         editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
-        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [],
+        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [],
           benchmark: [
             sample("baseline 1", 38),
             sample("water reflections sky", 30, { settings: { ...settings, "water.reflections": "sky" } }),
@@ -142,7 +144,7 @@ describe("formatFeatureTestCheckReport", () => {
       scenes: [{
         name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset", passed: true, problems: [],
         editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
-        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [],
+        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [],
           benchmark: [
             sample("warm-up 1", 26, { baseline: false, warmup: true }),
             sample("baseline 1", 20),
@@ -178,7 +180,7 @@ describe("formatFeatureTestCheckReport", () => {
     const scene = (name: string, pass: number, benchmark: FeatureTestBenchmarkSample[]): FeatureTestCheckSceneResult => ({
       name, path: `assets/FeatureTest/Scenes/${name}.scene.hasset`, pass, passed: true, problems: [],
       editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
-      play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [], benchmark, logs: [] },
+      play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [], benchmark, logs: [] },
       session: null,
     });
     const rooms = { view: "rooms" };
@@ -254,7 +256,7 @@ describe("formatFeatureTestCheckReport", () => {
       scenes: [{
         name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset", passed: true, problems: [],
         editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
-        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [],
+        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [],
           benchmark: [
             sample("warm-up 1", 20, { baseline: false, warmup: true }),
             sample("warm-up 2", 12.5, { baseline: false, warmup: true }),
@@ -302,7 +304,7 @@ describe("formatFeatureTestCheckReport", () => {
         editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null,
           snapshot: { drawCalls: 605, meshes: 80, textures: 30, accountedBytes: 0, rendering: null },
-          counters: { draws: { median: 575, min: 544, max: 605, samples: 10 }, cpuMs: null, gpuMs: null }, firstDraws: null, commands: [],
+          counters: { draws: { median: 575, min: 544, max: 605, samples: 10 }, cpuMs: null, gpuMs: null }, presentation: null, firstDraws: null, commands: [],
           benchmark: [{
             label: "baseline", frames: { frames: 100, durationMs: 4000, fps: 25, medianMs: 40, p95Ms: 46, maxMs: 50, stalls: 0 },
             runtimeFps: null, cpuMs: 14.2, gpuMs: null, drawCalls: 575, draws: { median: 575, min: 544, max: 605, samples: 10 },
@@ -326,7 +328,7 @@ describe("formatFeatureTestCheckReport", () => {
         editor: { status: "failed", ms: 15_300, phase: "Presenting First Frame", frames: null,
           error: ["Error: The scene did not present a frame before the loading deadline. Ready: true; draws: 3; rendered: true; GPU pending: true; copied: false."],
           gpu: { api: "webgpu", vendor: "apple", renderer: "apple-a16", version: null } },
-        play: { status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [], benchmark: [], logs: [] },
+        play: { status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [], benchmark: [], logs: [] },
         session: null,
       }],
     };

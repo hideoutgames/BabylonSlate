@@ -20,6 +20,7 @@ test.use({ deviceScaleFactor: 2 });
 
 type PlayTest = {
   rendering(): ReturnType<EngineHandle["renderDiagnostics"]> | null;
+  presentedImage(): ReturnType<EngineHandle["samplePresentedImage"]>;
   scalability(): ReturnType<EngineHandle["scalabilityStatus"]>;
 };
 
@@ -50,6 +51,19 @@ const rowEdges = (page: Page) => page.getByTestId("play-canvas").evaluate((node:
   for (let x = 1; x < red.length; x += 1) if ((red[x - 1]! < 128) !== (red[x]! < 128)) edges.push(x);
   const profiles = edges.map((x) => red.slice(Math.max(0, x - 6), x + 6));
   return { edges, profiles };
+});
+
+/** The share of the Play canvas's pixels that are near-black, read at full size (`summarizePresentedPixels`'s rule). */
+const nearBlackShare = (page: Page) => page.getByTestId("play-canvas").evaluate((node: HTMLCanvasElement) => {
+  const copy = document.createElement("canvas");
+  copy.width = node.width; copy.height = node.height;
+  const context = copy.getContext("2d")!;
+  context.drawImage(node, 0, 0);
+  const data = context.getImageData(0, 0, copy.width, copy.height).data;
+  let black = 0;
+  for (let offset = 0; offset < data.length; offset += 4)
+    if ((Math.max(data[offset]!, data[offset + 1]!, data[offset + 2]!) * data[offset + 3]!) / 255 <= 12) black += 1;
+  return black / (data.length / 4);
 });
 
 for (const backend of ["webgl2", "webgpu"] as const) {
@@ -124,6 +138,14 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(high.ratio).toBe(2);
     expect(high.canvas).toEqual([Math.floor(high.css[0]! * 2), Math.floor(high.css[1]! * 2)]);
     const highEdges = await settledEdges();
+    // The Feature Test Check's sample of the presented image sees the white panel over the black world as this
+    // full-size read does. A read of a cleared drawing buffer, or of the world without its Scene Layers, is all black.
+    const sampled = await page.evaluate(() => (window as unknown as { __hapticPlayTest: PlayTest }).__hapticPlayTest.presentedImage());
+    const read = await nearBlackShare(page);
+    expect(read).toBeGreaterThan(0.5);
+    expect(read).toBeLessThan(0.99);
+    expect(sampled).not.toBeNull();
+    expect(Math.abs(sampled!.blackShare - read)).toBeLessThan(0.06);
 
     await command("quality low");
     await expect.poll(async () => (await sizes(page)).profile, { timeout: 30_000 }).toBe("low");

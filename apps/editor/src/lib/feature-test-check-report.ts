@@ -23,6 +23,7 @@ import {
   type FeatureTestCheckSceneResult,
   type CounterStats,
   type FrameStats,
+  type PlayPresentation,
 } from "../services/feature-test-check";
 import { clipText, formatDiagnosticEnvironment, type DiagnosticEnvironment } from "./diagnostic-info";
 
@@ -76,6 +77,16 @@ function breakdownVerdicts(
   };
 }
 
+/** Frames drawn, held and skipped while sampled, context losses, and each image sample's near-black share. */
+function presentationText(presentation: PlayPresentation): string {
+  const frames = presentation.frames;
+  const counts = frames
+    ? `drawn ${frames.drawn} · held ${frames.held} · skipped ${frames.skipped} (frames in flight)`
+    : "no frame counts";
+  const images = presentation.imageBlack.map((share) => share === null ? "no frame" : `${Math.round(share * 100)}%`).join(", ");
+  return `${counts} · context losses ${presentation.contextLosses} · image near-black ${images || "not sampled"}`;
+}
+
 function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheckReport): string[] {
   const mode = report.mode;
   const lines = [`[${scene.passed ? "PASS" : "FAIL"}] ${scene.name}`];
@@ -97,6 +108,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       lines.push(`  Render: draws ${counters?.draws ? rangeText(counters.draws, 0) : snap.drawCalls} · meshes ${snap.meshes} · textures ${snap.textures} · memory ${Math.round(snap.accountedBytes / 1048576)} MB${r ? ` · cpu ${cpu} · gpu ${gpu} · ${r.width}x${r.height} @${r.scalingLevel.toFixed(2)}` : ""}`);
       if (r?.qualityLimits.length) lines.push(`  Quality limits: ${clip(r.qualityLimits.join("; "))}`);
     }
+    if (play.presentation) lines.push(`  Presentation: ${presentationText(play.presentation)}`);
     const first = play.firstDraws;
     if (first) {
       lines.push(`  First draws after load: ${first.draws} (${first.loadCompiled} compiled by the load) in ${first.frames} frame${first.frames === 1 ? "" : "s"} · ${first.stalls} over 100 ms · worst ${first.worstFrameMs.toFixed(0)} ms · most ${first.mostInFrame} in a frame`);

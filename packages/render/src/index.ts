@@ -114,6 +114,7 @@ export * from "./convert-obj-to-glb";
 export * from "./convert-stl-to-glb";
 export * from "./node-rig";
 export type { RenderDiagnostics } from "./render-diagnostics";
+export type { PresentedImageSample } from "./presented-image";
 export { activeRenderFrameCapture } from "./render-frame-report";
 export { parseRenderFrameReport, serializeRenderFrameReport } from "./render-frame-report-file";
 export type { RenderFrameReport, RenderFrameReportDraft, RenderFrameStage, RenderFrameTaskDescription, RenderFrameResource } from "./render-frame-report";

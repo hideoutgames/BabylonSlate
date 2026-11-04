@@ -8,7 +8,7 @@ const report: FeatureTestCheckReport = {
   scenes: [{
     name: "main", path: "assets/main.scene.hasset", passed: false, problems: [],
     editor: { status: "ready", ms: 4200, phase: null, frames: null, error: null, gpu: null },
-    play: { status: "loaded", ms: 9000, phase: null, frames: null, runtimeFps: 60, snapshot: null, firstDraws: null, commands: [], logs: [],
+    play: { status: "loaded", ms: 9000, phase: null, frames: null, runtimeFps: 60, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
       benchmark: [{ label: "low", frames: { frames: 300, durationMs: 5000, fps: 60, p95Ms: 17, maxMs: 20, stalls: 0 }, runtimeFps: 60,
         cpuMs: 4, gpuMs: null, drawCalls: 100, resolution: "1180x820@1.00", failed: [] }] },
     session: null,
