@@ -197,7 +197,7 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
             const asset = assetRegistry?.getByGuid(guid);
             if (!asset) return false;
             const type = asset.header.type;
-            return type === "Model" || type === "Animation" || type === "Material" ||
+            return type === "Model" || type === "Animation" || type === "Material" || type === "Tileset" || type === "Tilemap" ||
               (type === "Class" && classDocumentShowsPrefab(asset.header.parentClass, classParentOf));
           }),
           singleAssetType:

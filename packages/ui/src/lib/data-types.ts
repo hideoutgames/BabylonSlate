@@ -118,6 +118,7 @@ export type AssetColorFamily =
   | "scene"
   | "graph"
   | "texture"
+  | "sprite"
   | "material"
   | "model"
   | "audio"
@@ -133,6 +134,7 @@ export const ASSET_COLOR_VAR: Record<AssetColorFamily, string> = {
   scene: "var(--asset-scene)",
   graph: "var(--asset-graph)",
   texture: "var(--asset-texture)",
+  sprite: "var(--asset-sprite)",
   material: "var(--asset-material)",
   model: "var(--asset-model)",
   audio: "var(--asset-audio)",

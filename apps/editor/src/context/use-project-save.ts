@@ -28,6 +28,7 @@ import {
   recordSaveAllTrace,
 } from "../lib/dirty-trace";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
+import { tileThumbnailJobs } from "../lib/tile-asset-thumbnails";
 import type { DocumentService } from "../services/document-service";
 import type { PlayContentService } from "../services/play-content-service";
 import type { ProjectService } from "../services/project-service";
@@ -216,6 +217,15 @@ export function useProjectSave({
             ];
           }),
         );
+        // Saved Tilesets and Tilemaps draw again, and so do those showing a saved Texture or Tileset.
+        const registry = projectService.registry;
+        if (guid && registry) {
+          const savedGuids = dirtyDocs.flatMap((doc) => projectService.guidForPath(doc.ref.path) ?? []);
+          void tileThumbnailJobs(registry.list(), savedGuids, guid, document.settings.twoD.pixelsPerUnit)
+            .then(enqueueModelThumbnailJobs)
+            // A thumbnail that cannot be queued keeps the type icon.
+            .catch(() => undefined);
+        }
         projectSaveState.current.complete(projectSave);
         setAutoSaveStatus(null);
         flushSync(() => {

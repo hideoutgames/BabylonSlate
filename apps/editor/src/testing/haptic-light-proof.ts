@@ -144,7 +144,7 @@ const lightColor = (light: Light): Rgb => {
  * The linear colour the block draws at P (normal N, seen from `eye`) for a non-metal with F0 = 0 (MATTE), lit by the
  * enabled punctual lights and the fill, without environment: per light its colour times intensity, the inverse-square
  * falloff windowed to zero at the range and a spot's glTF cone (full inside its inner angle, zero past its outer, the
- * cosine's linear step squared between); the fill mixes ground to sky by the wrapped N.L.
+ * cosine's linear step squared between); the fill mixes ground to sky by the wrapped N.L, with no highlight.
  */
 function directLight(P: Vector3, N: Vector3, eye: Vector3, baseColor: readonly number[], roughness: number, lights: Light[]): Rgb {
   const V = eye.subtract(P).normalize();
@@ -160,7 +160,6 @@ function directLight(P: Vector3, N: Vector3, eye: Vector3, baseColor: readonly n
       const sky = lightColor(light);
       const ground = light.groundColor.scale(light.intensity);
       add(diffuse, [ground.r + (sky[0] - ground.r) * NdotL, ground.g + (sky[1] - ground.g) * NdotL, ground.b + (sky[2] - ground.b) * NdotL], 1);
-      add(glossy, sky, specular(0, N, V, L, NdotL, NdotV, roughness));
     } else if (light instanceof DirectionalLight) {
       const L = light.direction.scale(-1).normalize();
       const NdotL = saturateEps(Vector3.Dot(N, L));
@@ -466,6 +465,12 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       furnace[name] = await draw();
     }
 
+    // The fill alone on a rough white metal, without environment: a metal has no diffuse and the fill no highlight.
+    restore(metal);
+    scene.iblIntensity = 0;
+    for (const light of [sun, ...spots, ...points]) setAuthoredLightEnabled(light, false);
+    const fillOnMetal = await draw();
+
     // The rect light alone, without environment: MATTE over BLACK by the diffuse colour times the form factor; a
     // mirror shows the panel's own radiance where the reflected ray meets it and nothing elsewhere; a white emission
     // draws as the flat light, and a mirror shows a gradient emission's colours where its rays meet them.
@@ -563,6 +568,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       { name: "sun and fill", apply: () => local.forEach((light) => setAuthoredLightEnabled(light, false)) },
       { name: "sun only", apply: () => [fill, ...local].forEach((light) => setAuthoredLightEnabled(light, false)) },
       { name: "fill only", apply: () => [sun, ...local].forEach((light) => setAuthoredLightEnabled(light, false)) },
+      { name: "fill only, no highlights", cel: { specularEnabled: false }, apply: () => [sun, ...local].forEach((light) => setAuthoredLightEnabled(light, false)) },
       // A low threshold puts the environment's light in the lit band, which shows its hue and so the cube's rotation.
       { name: "environment only", cel: { shadowThreshold: 0.2 }, apply: () => lights.forEach((light) => setAuthoredLightEnabled(light, false)) },
       { name: "rotated environment", cel: { shadowThreshold: 0.2 }, apply: () => { lights.forEach((light) => setAuthoredLightEnabled(light, false)); sky.rotationY = 1.1; } },
@@ -688,7 +694,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
         toneMapping: imageProcessing.toneMappingEnabled, exposure: imageProcessing.exposure, contrast: imageProcessing.contrast,
         exactSrgb: engine.useExactSrgbConversions,
       },
-      analytic, mirrors, faceColors: FACE_COLORS, furnace, uniformGrey: UNIFORM_GREY, rect,
+      analytic, mirrors, faceColors: FACE_COLORS, furnace, uniformGrey: UNIFORM_GREY, fillOnMetal, rect,
       captures, steps: pbr.steps, hapticEffects: pbr.effects.length, lightDefines,
       celCaptures, celSteps: cel.steps, celEffects, shadow,
     };
