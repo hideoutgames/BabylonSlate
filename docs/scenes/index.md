@@ -58,7 +58,7 @@ Tap empty space in the viewport, or clear the selection, to show **Scene Setting
 | Snap Step, Tile Size, Tile Subdivisions | Grid Snap, Grid Size, and how many subdivisions each grid cell has. |
 | 2D Camera Width, 2D Camera Height | Size of the orange guide frame drawn in 2D. Default 16 × 9. |
 
-Below the settings are **Post Processing** passes, **Environment Lighting**, **Shadows** and, in the CEL render mode, **CEL Shading** overrides for this scene, and the **Scene Layers** that appear with it. See [Post-Processing](../graphics/post-processing.md), [Shadows](../graphics/shadows.md) and [Scene Layers](scene-layers.md).
+Below the settings are the scene's **Post-Process Passes**, its **Environment Lighting**, **Shadows**, **Post Processing** and, in the CEL render mode, **CEL Shading** overrides, and the **Scene Layers** that appear with it. See [Post-Processing](../graphics/post-processing.md), [Shadows](../graphics/shadows.md) and [Scene Layers](scene-layers.md).
 
 ::: tip
 Changing **Viewport** to 2D does not change **Physics World**. Set both for a 2D game.

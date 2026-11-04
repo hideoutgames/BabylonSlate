@@ -4,6 +4,7 @@ import { normalizeFoliageGroups, parseFoliageProperties, type FoliageGroup } fro
 import { normalizeMaterialInstanceOverrides, normalizeMaterialParameterOverrides, type MaterialInstanceOverrides, type MaterialParameterValue } from "./material-parameter-value";
 import { normalizeShadowOverrides } from "./shadows";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
+import { normalizeRenderEffectsOverrides, type RenderEffectsOverrides } from "./render-effects";
 import { parseSplineProperties, SPLINE_COMPONENT_CLASS_ID } from "./spline-component";
 import { normalizeSceneStreamingProperties } from "./scene-streaming";
 import type { SerializedGraph } from "./project";
@@ -147,6 +148,8 @@ export interface SceneSettings {
   shadowOverrides?: import("./shadows").ShadowOverrides;
   /** Absent CEL fields inherit from Project Settings. Inactive in PBR mode. */
   celShading?: import("./cel-shading").CelShadingOverrides;
+  /** Post Processing (`render.effects`) fields this Scene sets; absent ones inherit from Project Settings. */
+  effectsOverrides?: RenderEffectsOverrides;
   /** Clear colour as [r, g, b] in 0..1. */
   environmentColor: [number, number, number];
   fogEnabled: boolean;
@@ -272,6 +275,7 @@ export function createDefaultSceneSettings(
   return {
     celShading: {},
     shadowOverrides: {},
+    effectsOverrides: {},
     environmentColor: [0.06, 0.07, 0.09],
     fogEnabled: false,
     fogMode: "linear",
@@ -643,6 +647,7 @@ export function normalizeSceneSettings(
   return {
     celShading: normalizeCelShadingOverrides(source.celShading),
     shadowOverrides: normalizeShadowOverrides(source.shadowOverrides),
+    effectsOverrides: normalizeRenderEffectsOverrides(source.effectsOverrides),
     environmentColor: asNumberTuple3(
       source.environmentColor,
       defaults.environmentColor,

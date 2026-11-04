@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedComponent, SerializedScene, ShadowSettings } from "@haptic/core";
+import type { RenderEffectsSettings, SerializedComponent, SerializedScene, ShadowSettings } from "@haptic/core";
 import {
   createActor,
   createDefaultScene,
@@ -15,6 +15,7 @@ import {
   eulerDegreesToQuaternion,
   identitySerializedTransform,
   normalizeScene,
+  normalizeRenderEffectsSettings,
   normalizeShadowSettings,
   quaternionToEulerDegrees,
   sceneLayerToEditorScene,
@@ -49,7 +50,12 @@ const harness = vi.hoisted(() => ({
   createdAssets: [] as Array<{ header: Record<string, unknown>; path: string }>,
   documentKind: "scene" as "scene" | "scene-layer",
   documentId: "scene:assets/Main.scene.hasset",
-  render: { mode: "pbr" as "pbr" | "cel", cel: { shadowBands: 4 }, shadows: undefined as ShadowSettings | undefined },
+  render: {
+    mode: "pbr" as "pbr" | "cel",
+    cel: { shadowBands: 4 },
+    shadows: undefined as ShadowSettings | undefined,
+    effects: undefined as RenderEffectsSettings | undefined,
+  },
   applySceneChange: vi.fn<
     (id: string, scene: SerializedScene) => Promise<boolean>
   >(async () => true),
@@ -183,6 +189,7 @@ beforeEach(() => {
   harness.documentId = "scene:assets/Main.scene.hasset";
   harness.render.mode = "pbr";
   harness.render.shadows = undefined;
+  harness.render.effects = undefined;
   harness.scene = createDefaultScene();
   harness.prefabComponents = [];
   harness.createdAssets = [];
@@ -637,6 +644,38 @@ describe("SceneDetailsPanel authoring", () => {
     view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(scene().settings.shadowOverrides).toEqual({});
     expect(screen.getByLabelText("Shadow Distance")).toHaveProperty("value", "350");
+  });
+
+  it("overrides Post Processing fields for the Scene and resets them to the live project effects", () => {
+    harness.render.effects = normalizeRenderEffectsSettings({ bloom: { enabled: true, weight: 0.4 } });
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const section = () => screen.getByRole("button", { name: "Post Processing" });
+    expect(section().getAttribute("aria-expanded")).toBe("false");
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), { target: { value: "bloom weight" } });
+    expect(section().getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByLabelText("Bloom Weight")).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "Override Bloom Weight" }));
+    harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(scene().settings.effectsOverrides).toEqual({ bloom: { weight: 0.4 } });
+    harness.render.effects = normalizeRenderEffectsSettings({ bloom: { enabled: true, weight: 0.8 } });
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByLabelText("Bloom Weight")).toHaveProperty("value", "0.4");
+    expect(screen.getByText("Scene Override · Project: 0.8.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Reset Bloom Weight" }));
+    harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(scene().settings.effectsOverrides).toEqual({});
+    expect(screen.getByLabelText("Bloom Weight")).toHaveProperty("value", "0.8");
+    // Turning an effect off for the Scene hides its settings, whatever the project says.
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), { target: { value: "bloom" } });
+    fireEvent.click(screen.getByRole("button", { name: "Override Bloom" }));
+    harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByRole("switch", { name: "Bloom" }));
+    harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(scene().settings.effectsOverrides).toEqual({ bloom: { enabled: false } });
+    expect(screen.queryByLabelText("Bloom Weight")).toBeNull();
   });
 
   it("filters properties and reveals matching collapsed component fields", () => {

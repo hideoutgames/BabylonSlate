@@ -200,6 +200,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   const [constraintTargetPick, setConstraintTargetPick] = useState<{ actorId: string; componentId: string } | null>(null);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
   const [envTexturePickOpen, setEnvTexturePickOpen] = useState(false);
+  const [effectsLutPickOpen, setEffectsLutPickOpen] = useState(false);
   const [postProcessPick, setPostProcessPick] = useState<"add" | { id: string } | null>(
     null,
   );
@@ -421,6 +422,8 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
           noMatchingProperties={noMatchingProperties}
           envTexturePickOpen={envTexturePickOpen}
           setEnvTexturePickOpen={setEnvTexturePickOpen}
+          effectsLutPickOpen={effectsLutPickOpen}
+          setEffectsLutPickOpen={setEffectsLutPickOpen}
           cameraPickerOpen={cameraPickerOpen}
           setCameraPickerOpen={setCameraPickerOpen}
           postProcessPick={postProcessPick}

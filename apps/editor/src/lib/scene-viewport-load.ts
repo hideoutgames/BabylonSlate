@@ -9,6 +9,8 @@ import {
   normalizeEnvironmentLightingSettings,
   type EnvironmentLightingOverrides,
   type EnvironmentLightingSettings,
+  resolveRenderEffectsSettings,
+  type RenderEffectsOverrides,
 } from "@haptic/core";
 import { holdEncodeQueuePause } from "../services/encode-queue-pause";
 
@@ -19,11 +21,14 @@ export function sceneViewportRenderSettingsKey(
   shadowOverrides?: ShadowOverrides,
   environmentOverrides?: EnvironmentLightingOverrides,
   environmentSource: string | null = null,
+  effectsOverrides?: RenderEffectsOverrides,
 ): string {
   return JSON.stringify({
     ...project,
     ...resolveRenderingPipeline(project).requested,
     mode: project.mode ?? "pbr",
+    // The Scene's Post Processing overrides change the plan as the project's effects do.
+    effects: resolveRenderEffectsSettings(project.effects, effectsOverrides),
     environmentLighting: {
       enabled: resolveEnvironmentLightingSettings(
         project.environmentLighting,

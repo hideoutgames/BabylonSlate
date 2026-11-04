@@ -1503,9 +1503,10 @@ function initializeEngine(
       "retargetAnimationLoads", "navmeshBytes", "audioReverbBytes", "audioBytes", "spawnableLights"] as const) delete options[key];
   };
 
-  /** A scene document's cel shading and shadow overrides, without project settings. */
+  /** A scene document's cel shading, shadow and Post Processing overrides, without project settings. */
   const applySceneDocumentRenderSettings = (sceneData: SerializedScene) =>
-    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
+    setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {},
+      sceneData.settings.effectsOverrides ?? {});
   const loadSceneAsync = async (sceneData: SerializedScene, load: EditorSceneLoadOptions) => {
     load.signal.throwIfAborted();
     assertCurrent(loadGeneration);
