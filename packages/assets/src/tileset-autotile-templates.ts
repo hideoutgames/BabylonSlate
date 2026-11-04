@@ -410,14 +410,10 @@ export interface AutotilePreviewTile {
 /** Map-local Tileset guid of the preview map. */
 const PREVIEW_TILESET = "autotile-preview";
 const PREVIEW_LAYER = "preview";
-/** Empty cells painted around the preview, so shapes at its edge draw their edges. */
-const PREVIEW_MARGIN = 1;
-
 /**
  * Paint `cells` through `paintTilemapTerrain`, one batch per autotile (each
  * batch re-resolves its neighbours, so any order gives the same map), on a map
- * one empty cell larger than `size` on every side: map edges join, and the
- * preview's edges must not.
+ * of exactly `size`: as on a Tilemap, terrain at the preview's edge joins past it.
  */
 function paintPreview(
   tileset: TilesetPayload,
@@ -426,14 +422,13 @@ function paintPreview(
 ): { map: TilemapPayload; tilesets: Map<string, TilesetPayload> } {
   const byTerrain = new Map<string, Array<{ x: number; y: number }>>();
   for (const cell of cells) {
-    const at = { x: cell.x + PREVIEW_MARGIN, y: cell.y + PREVIEW_MARGIN };
+    const at = { x: cell.x, y: cell.y };
     const group = byTerrain.get(cell.terrainId);
     if (group) group.push(at);
     else byTerrain.set(cell.terrainId, [at]);
   }
   const tilesets = new Map([[PREVIEW_TILESET, tileset]]);
-  const width = size.width + 2 * PREVIEW_MARGIN;
-  const height = size.height + 2 * PREVIEW_MARGIN;
+  const { width, height } = size;
   let map: TilemapPayload = {
     tilesets: [{ guid: PREVIEW_TILESET, firstGid: 1, tileCount: tileset.tiles.reduce((most, tile) => Math.max(most, tile.id), 0) }],
     tileWidth: tileset.tileWidth,
@@ -511,8 +506,8 @@ export function autotilePreviewTiles(
   const tiles = new Map(tileset.tiles.map((tile) => [tile.id, tile]));
   const result = new Map<string, AutotilePreviewTile>();
   for (const [key, cell] of painted) {
-    const tileId = getTile(drawn.map, PREVIEW_LAYER, cell.x + PREVIEW_MARGIN, cell.y + PREVIEW_MARGIN);
-    const piece = pieceAt(cell.x + PREVIEW_MARGIN, cell.y + PREVIEW_MARGIN);
+    const tileId = getTile(drawn.map, PREVIEW_LAYER, cell.x, cell.y);
+    const piece = pieceAt(cell.x, cell.y);
     const terrain = piece ? tilesetTerrainById(tileset, piece.terrainId) : null;
     const membership = tiles.get(tileId)?.terrain;
     const exact = Boolean(

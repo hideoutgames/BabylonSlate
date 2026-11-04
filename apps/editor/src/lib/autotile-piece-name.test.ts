@@ -24,32 +24,32 @@ const NW = TERRAIN_NW;
 
 describe("autotilePieceName", () => {
   it.each([
-    [E | S | SE, "Top-left corner"],
-    [E | S | W | SE | SW, "Top edge"],
-    [S | W | SW, "Top-right corner"],
-    [N | E | NE, "Bottom-left corner"],
-    [N | E | S | NE | SE, "Left edge"],
+    [E | S | SE, "Top-Left Corner"],
+    [E | S | W | SE | SW, "Top Edge"],
+    [S | W | SW, "Top-Right Corner"],
+    [N | E | NE, "Bottom-Left Corner"],
+    [N | E | S | NE | SE, "Left Edge"],
     [TERRAIN_ALL, "Fill"],
-    [E | W, "Row middle"],
-    [N | S, "Column middle"],
-    [E, "Left end"],
-    [W, "Right end"],
-    [S, "Top end"],
-    [N, "Bottom end"],
+    [E | W, "Row Middle"],
+    [N | S, "Column Middle"],
+    [E, "Left End"],
+    [W, "Right End"],
+    [S, "Top End"],
+    [N, "Bottom End"],
     [0, "Single"],
-    [TERRAIN_ALL & ~SE, "Inner corner, bottom right"],
-    [TERRAIN_ALL & ~NW, "Inner corner, top left"],
-    [TERRAIN_ALL & ~NE & ~SW, "Notches top right, bottom left"],
-    [E | S | W | SW, "Top edge, notch bottom right"],
-    [N | E | S, "Left edge, notch top right and bottom right"],
+    [TERRAIN_ALL & ~SE, "Inner Corner, Bottom Right"],
+    [TERRAIN_ALL & ~NW, "Inner Corner, Top Left"],
+    [TERRAIN_ALL & ~NE & ~SW, "Notches Top Right, Bottom Left"],
+    [E | S | W | SW, "Top Edge, Notch Bottom Right"],
+    [N | E | S, "Left Edge, Notch Top Right and Bottom Right"],
   ] as const)("names the Blob piece %i %s", (mask, name) => {
     expect(autotilePieceName(mask, "blob")).toBe(name);
   });
 
   it("never names notches for 4 Sides, whose pieces have no corners", () => {
     expect(autotilePieceName(N | E | S | W, "sides")).toBe("Fill");
-    expect(autotilePieceName(N | E | S, "sides")).toBe("Left edge");
-    expect(autotilePieceName(E | S, "sides")).toBe("Top-left corner");
+    expect(autotilePieceName(N | E | S, "sides")).toBe("Left Edge");
+    expect(autotilePieceName(E | S, "sides")).toBe("Top-Left Corner");
   });
 
   it("gives every piece of each style its own name", () => {

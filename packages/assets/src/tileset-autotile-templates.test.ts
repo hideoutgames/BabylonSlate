@@ -316,12 +316,12 @@ describe("preview", () => {
     },
   );
 
-  it("treats the cells around the preview as empty, so shapes at its edge draw their edges", () => {
+  it("joins terrain past the preview's edge, as a Tilemap does at its own", () => {
     const tiles = autotilePreviewTiles(standardSheet("blob"), GROUND, autotilePreviewSample("blob", GROUND), size);
-    // The bottom strip and the single lie on the preview's bottom row.
-    expect(tiles.get(key(1, 0))!.want).toBe(E);
-    expect(tiles.get(key(3, 0))!.want).toBe(E | W);
-    expect(tiles.get(key(9, 0))!.want).toBe(0);
+    // The bottom strip and the single lie on the preview's bottom row: they continue below it.
+    expect(tiles.get(key(1, 0))!.want).toBe(E | S | SE);
+    expect(tiles.get(key(3, 0))!.want).toBe(E | S | W | SE | SW);
+    expect(tiles.get(key(9, 0))!.want).toBe(S);
     // Around the hole: the island's top edge above it is a row middle, below-right is a single inner corner.
     expect(tiles.get(key(3, 5))!.want).toBe(E | W);
     expect(tiles.get(key(4, 3))!.want).toBe(TERRAIN_ALL & ~NW);
@@ -365,8 +365,8 @@ describe("preview", () => {
     expect(tiles.get(key(4, 3))).toEqual({ terrainId: "ground", tileId: 6, want: N | E | S | W, standIn: false });
     // Water beside Ground joins toward it, because Ground's pieces draw the seam.
     expect(tiles.get(key(1, 5))).toEqual({ terrainId: "water", tileId: 33, want: N | E | S | W, standIn: false });
-    // At the preview's edge Water draws its own edge, which it has no tile for.
-    expect(tiles.get(key(0, 6))).toMatchObject({ terrainId: "water", tileId: 33, want: E | S, standIn: true });
+    // At the preview's corner Water continues past both edges, as on a Tilemap: its own fill.
+    expect(tiles.get(key(0, 6))).toEqual({ terrainId: "water", tileId: 33, want: N | E | S | W, standIn: false });
   });
 
   it("wants an empty border set's pieces where the autotile faces its border, while drawing the ordinary ones", () => {

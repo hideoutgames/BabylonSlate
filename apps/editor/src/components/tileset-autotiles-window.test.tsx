@@ -184,7 +184,7 @@ describe("TilesetAutotiles", () => {
     fireEvent.click(row("ground-water"));
     expect(current(row("ground-water"))).toBe(true);
     expect(current(row("ground"))).toBe(false);
-    expect(text("tileset-autotiles-pieces-title")).toBe("Ground · Next to Water");
+    expect(text("tileset-autotiles-pieces-title")).toBe("Ground · Next To Water");
     // A border set has no Layout of its own.
     expect(queryId("tileset-autotiles-layout-blob")).toBeNull();
     expect(slot(E | S).dataset.tileId).toBe("17");
@@ -251,8 +251,8 @@ describe("TilesetAutotiles", () => {
   it("assigns a tapped sheet tile to the selected piece and moves on to the next empty one", () => {
     const { onChange, members, mergeKey } = renderWindow(sheet(4, 4, [GROUND_SIDES, WATER], { 16: { id: "water", mask: 0 } }));
     expect(pressed(slot(E | S))).toBe(true);
-    expect(text("tileset-autotiles-selected-name")).toBe("Top-left corner");
-    expect(text("tileset-autotiles-sheet-hint")).toBe("Click a tile for Top-left corner, or drag one onto any piece.");
+    expect(text("tileset-autotiles-selected-name")).toBe("Top-Left Corner");
+    expect(text("tileset-autotiles-sheet-hint")).toBe("Click a tile for Top-Left Corner, or drag one onto any piece.");
     fireEvent.click(cell(5));
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(mergeKey()).toBe(`tileset:autotile:ground:piece:default:${E | S}:5`);
@@ -472,16 +472,17 @@ describe("TilesetAutotiles", () => {
 
     it("highlights every cell that wants the selected piece, before the piece has a tile too", () => {
       renderWindow(sheet(4, 4, [GROUND_BLOB]));
-      expect(text("tileset-autotiles-selected-name")).toBe("Top-left corner");
+      expect(text("tileset-autotiles-selected-name")).toBe("Top-Left Corner");
       expect(text("tileset-autotiles-selected-tile")).toBe("No tile");
-      expect(pickedCells()).toEqual(["1,5"]);
-      expect(text("tileset-autotiles-selected-where")).toBe("1 cell in the preview");
+      // The island's top-left, and the bottom strip's left end, which continues past the preview's bottom edge.
+      expect(pickedCells().sort()).toEqual(["1,0", "1,5"]);
+      expect(text("tileset-autotiles-selected-where")).toBe("2 cells in the preview");
       fireEvent.click(slot(N | E | NE));
       expect(pickedCells().sort()).toEqual(["1,3", "2,2"]);
       expect(text("tileset-autotiles-selected-where")).toBe("2 cells in the preview");
       fireEvent.click(byId("tileset-autotiles-more-toggle"));
       fireEvent.click(slot(NESW));
-      expect(text("tileset-autotiles-selected-name")).toBe("Notches top right, bottom right, bottom left, top left");
+      expect(text("tileset-autotiles-selected-name")).toBe("Notches Top Right, Bottom Right, Bottom Left, Top Left");
       expect(pickedCells()).toEqual([]);
       expect(text("tileset-autotiles-selected-where")).toBe("Not in the preview");
     });
@@ -506,12 +507,12 @@ describe("TilesetAutotiles", () => {
       fireEvent.click(screen.getByRole("menuitem", { name: "Select Piece" }));
       expect(current(row("ground-water"))).toBe(true);
       expect(pressed(slot(E | S))).toBe(true);
-      // Water at the preview's top-left corner wants Water's own E | S piece.
+      // Water at the preview's top-left corner continues past both edges: Water's own fill.
       fireEvent.contextMenu(previewCell(0, 6));
       fireEvent.click(screen.getByRole("menuitem", { name: "Select Piece" }));
       expect(current(row("water"))).toBe(true);
       expect(text("tileset-autotiles-pieces-title")).toBe("Water");
-      expect(pressed(slot(E | S))).toBe(true);
+      expect(pressed(slot(NESW))).toBe(true);
     });
   });
 
@@ -520,7 +521,7 @@ describe("TilesetAutotiles", () => {
       ...sidesBlock(),
       17: { id: "water", mask: 0, border: "ground" },
     }));
-    expect(row("water-ground").textContent).toBe("Next to Ground");
+    expect(row("water-ground").textContent).toBe("Next To Ground");
     fireEvent.click(byId("tileset-autotiles-actions-ground"));
     fireEvent.click(byId("tileset-autotiles-rename"));
     const input = byId("tileset-autotiles-rename-ground");
@@ -528,7 +529,7 @@ describe("TilesetAutotiles", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     expect(mergeKey()).toBe("tileset:autotile:ground:name");
     expect(last().terrains![0]).toEqual({ ...GROUND_SIDES, name: "Ledge" });
-    expect(row("water-ground").textContent).toBe("Next to Ledge");
+    expect(row("water-ground").textContent).toBe("Next To Ledge");
 
     fireEvent.click(byId("tileset-autotiles-actions-ground"));
     fireEvent.click(byId("tileset-autotiles-delete"));
