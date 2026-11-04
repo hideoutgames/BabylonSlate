@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AssetOpenProvider } from "@haptic/editor-kit";
+import { tapAtlasTile } from "../../../../packages/editor-kit/src/test-support/atlas-tile-grid";
 import {
   AssetRegistry,
   createDefaultSpriteAnimationPayload,
@@ -190,7 +191,7 @@ describe("SpriteAnimation editor", () => {
     expect(image.style.height).toBe("200%");
     fireEvent.click(screen.getByTestId("sprite-animation-view-sheet"));
     expect(screen.getByTestId("sprite-animation-sheet-cell-6").getAttribute("data-selected")).toBe("true");
-    fireEvent.click(screen.getByTestId("sprite-animation-sheet-cell-3"));
+    tapAtlasTile("sprite-animation-sheet", 3);
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ frames: [expect.objectContaining({ cell: 3 })] }));
   });
 

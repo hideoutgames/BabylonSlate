@@ -17,6 +17,7 @@ import {
   type TilesetTerrain,
 } from "@haptic/assets";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { tapAtlasTile } from "../../../../packages/editor-kit/src/test-support/atlas-tile-grid";
 import { TilesetEditingProvider } from "../context/tileset-editing-context";
 import { TilesetAutotiles } from "./tileset-autotiles-window";
 
@@ -117,7 +118,12 @@ const byId = (id: string) => screen.getByTestId(id);
 const queryId = (id: string) => screen.queryByTestId(id);
 const slot = (mask: number) => byId(`tileset-autotiles-slot-${mask}`);
 const slotClear = (mask: number) => queryId(`tileset-autotiles-slot-${mask}-clear`);
-const cell = (tileId: number) => byId(`tileset-autotiles-sheet-cell-${tileId}`);
+/** Tap a sheet tile; a mouse press, as the block tests click. */
+const tapSheet = (tileId: number, pointerType: "mouse" | "touch" = "touch") =>
+  tapAtlasTile("tileset-autotiles-sheet", tileId, { width: 16, height: 16 }, { pointerType, button: 0 });
+/** The sheet's tiles drawn with a mark: `dot` for the edited set's, `dim` for other sets'. */
+const sheetMarked = (mark: "dot" | "dim", tileId: number) =>
+  (byId("tileset-autotiles-sheet-canvas").dataset[mark === "dot" ? "dotTiles" : "dimTiles"] ?? "").split(",").includes(String(tileId));
 const row = (id: string) => byId(`tileset-autotiles-row-${id}`);
 const previewCell = (x: number, y: number) => byId(`tileset-autotiles-preview-cell-${x}-${y}`);
 const pressed = (element: HTMLElement) => element.getAttribute("aria-pressed") === "true";
@@ -138,7 +144,7 @@ function hover(target: Element, pointerType: "mouse" | "touch", leave = false) {
 
 /** Lays the sheet's atlas out at 1 client pixel per atlas pixel from (0, 0), so pointer positions name tiles. */
 function layOutSheet(columns: number, rows: number) {
-  cell(1).parentElement!.getBoundingClientRect = () => ({ left: 0, top: 0, width: columns * 16, height: rows * 16 }) as DOMRect;
+  byId("tileset-autotiles-sheet-image").getBoundingClientRect = () => ({ left: 0, top: 0, width: columns * 16, height: rows * 16 }) as DOMRect;
 }
 
 describe("TilesetAutotiles", () => {
@@ -191,8 +197,8 @@ describe("TilesetAutotiles", () => {
     expect(text("tileset-autotiles-group-pieces-count")).toBe("9 of 16");
     // Its first empty piece is selected; the default set's tiles count as used elsewhere.
     expect(pressed(slot(S))).toBe(true);
-    expect(queryId("tileset-autotiles-sheet-other-1")).toBeTruthy();
-    expect(queryId("tileset-autotiles-sheet-piece-17")).toBeTruthy();
+    expect(sheetMarked("dim", 1)).toBe(true);
+    expect(sheetMarked("dot", 17)).toBe(true);
 
     fireEvent.click(row("water"));
     expect(text("tileset-autotiles-pieces-title")).toBe("Water");
@@ -218,7 +224,7 @@ describe("TilesetAutotiles", () => {
 
     fireEvent.click(byId("tileset-autotiles-actions-ground"));
     fireEvent.click(byId("tileset-autotiles-add-border-water"));
-    fireEvent.click(cell(17));
+    tapSheet(17);
     expect(mergeKey()).toBe(`tileset:autotile:ground:piece:water:${E | S}:17`);
     expect(last().tiles[16]!.terrain).toEqual({ id: "ground", mask: E | S | SE, border: "water" });
     fireEvent.click(byId("tileset-autotiles-remove-border-ground-water"));
@@ -253,27 +259,27 @@ describe("TilesetAutotiles", () => {
     expect(pressed(slot(E | S))).toBe(true);
     expect(text("tileset-autotiles-selected-name")).toBe("Top-left corner");
     expect(text("tileset-autotiles-sheet-hint")).toBe("Click a tile for Top-left corner, or drag one onto any piece.");
-    fireEvent.click(cell(5));
+    tapSheet(5);
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(mergeKey()).toBe(`tileset:autotile:ground:piece:default:${E | S}:5`);
     // 4 Sides pieces store their corners filled.
     expect(members()).toEqual([[5, "ground", E | S | SE], [16, "water", 0]]);
     expect(slot(E | S).dataset.tileId).toBe("5");
-    expect(queryId("tileset-autotiles-sheet-piece-5")).toBeTruthy();
+    expect(sheetMarked("dot", 5)).toBe(true);
     expect(pressed(slot(E | S | W))).toBe(true);
     expect(text("tileset-autotiles-group-pieces-count")).toBe("1 of 16");
 
     // Another autotile's tile is dimmed; assigning it moves it over.
-    expect(queryId("tileset-autotiles-sheet-other-16")).toBeTruthy();
-    fireEvent.click(cell(16));
+    expect(sheetMarked("dim", 16)).toBe(true);
+    tapSheet(16);
     expect(members()).toEqual([[5, "ground", E | S | SE], [16, "ground", E | S | W | SE | SW]]);
     expect(pressed(slot(S | W))).toBe(true);
 
     // One tile per piece: a new tile for E | S takes the piece from tile 5. The selected piece's tile is ringed on the sheet.
     fireEvent.click(slot(E | S));
-    expect(pressed(cell(5))).toBe(true);
+    expect(pressed(byId("tileset-autotiles-sheet-cell-5"))).toBe(true);
     expect(text("tileset-autotiles-selected-tile")).toBe("Tile 5");
-    fireEvent.click(cell(8));
+    tapSheet(8);
     expect(members()).toEqual([[8, "ground", E | S | SE], [16, "ground", E | S | W | SE | SW]]);
     expect(onChange).toHaveBeenCalledTimes(3);
   });
@@ -287,7 +293,7 @@ describe("TilesetAutotiles", () => {
     try {
       const mouse = { pointerType: "mouse" as const, button: 0, pointerId: 1 };
       // Tile 9: column 0, row 2.
-      act(() => dispatchPointerEvent(cell(9), "pointerdown", { ...mouse, clientX: 8, clientY: 40 }));
+      act(() => dispatchPointerEvent(surface, "pointerdown", { ...mouse, clientX: 8, clientY: 40 }));
       act(() => dispatchPointerEvent(surface, "pointermove", { ...mouse, clientX: 300, clientY: 300 }));
       expect(byId("tileset-autotiles-drag-tile").dataset.tileId).toBe("9");
       expect(slot(N).dataset.dropTarget).toBe("true");
@@ -370,7 +376,7 @@ describe("TilesetAutotiles", () => {
       expect(text("tileset-autotiles-block-outline")).toBe("Main · 16 pieces");
       act(() => dispatchPointerEvent(surface, "pointermove", { pointerType: "mouse", clientX: 168, clientY: 8 }));
       expect(text("tileset-autotiles-block-outline")).toBe("Main · 8 pieces");
-      fireEvent.click(cell(1));
+      tapSheet(1, "mouse");
       expect(onChange).toHaveBeenCalledTimes(1);
       expect(mergeKey()).toBe("tileset:autotile:ground:block:default:main:1");
       expect(text("tileset-autotiles-group-main-count")).toBe("16 of 16");
@@ -379,7 +385,7 @@ describe("TilesetAutotiles", () => {
 
       fireEvent.click(byId("tileset-autotiles-block-more-corners"));
       expect(text("tileset-autotiles-sheet-hint")).toBe("Click the top-left tile of a 8 × 4 block.Esc");
-      fireEvent.click(cell(5));
+      tapSheet(5, "mouse");
       expect(onChange).toHaveBeenCalledTimes(2);
       expect(mergeKey()).toBe("tileset:autotile:ground:block:default:more-corners:5");
       expect(text("tileset-autotiles-group-inner-corners-count")).toBe("4 of 4");
@@ -397,7 +403,7 @@ describe("TilesetAutotiles", () => {
       fireEvent.click(button);
       expect(pressed(button)).toBe(false);
       fireEvent.click(button);
-      fireEvent.click(cell(5));
+      tapSheet(5);
       expect(onChange).toHaveBeenCalledTimes(1);
       expect(members()).toEqual([
         [5, "ground", TERRAIN_ALL & ~SE], [6, "ground", TERRAIN_ALL & ~SW],

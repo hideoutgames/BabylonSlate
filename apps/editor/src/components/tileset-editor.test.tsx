@@ -14,6 +14,7 @@ import {
   normalizeTilesetPayload,
 } from "@haptic/assets";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { tapAtlasTile } from "../../../../packages/editor-kit/src/test-support/atlas-tile-grid";
 import { TilesetEditingProvider } from "../context/tileset-editing-context";
 import { TilesetAutotiles } from "./tileset-autotiles-window";
 import { TilesetEditor, TilesetPreview } from "./tileset-editor";
@@ -137,7 +138,9 @@ describe("TilesetEditor", () => {
         tiles: expect.arrayContaining([expect.objectContaining({ id: 8 })]),
       }),
     );
-    expect(screen.getByTestId("tileset-preview-cell-8")).toBeTruthy();
+    // The rebuilt grid has 8 tiles of 8 px: the last one can be picked.
+    tapAtlasTile("tileset-preview", 8, { width: 8, height: 8 });
+    expect(screen.getByTestId("tileset-selected-label").textContent).toBe("Tile 8");
   });
 
   it("authors per-tile collision, flags, and animation", async () => {
@@ -236,11 +239,10 @@ describe("TilesetPreview", () => {
     );
     fireEvent.click(screen.getByTestId("tileset-tool-select"));
     const surface = screen.getByTestId("tileset-preview-surface");
-    const first = screen.getByTestId("tileset-preview-cell-1");
-    first.parentElement!.getBoundingClientRect = () =>
+    screen.getByTestId("tileset-preview-image").getBoundingClientRect = () =>
       ({ left: 0, top: 0, width: 96, height: 64 }) as DOMRect;
     act(() => {
-      dispatchPointerEvent(first, "pointerdown", {
+      dispatchPointerEvent(surface, "pointerdown", {
         pointerId: 1,
         clientX: 4,
         clientY: 4,
@@ -256,17 +258,10 @@ describe("TilesetPreview", () => {
         clientY: 52,
       });
     });
-    fireEvent.click(screen.getByTestId("tileset-preview-cell-5"));
-    for (const id of [1, 2, 4, 5]) {
-      expect(
-        screen
-          .getByTestId(`tileset-preview-cell-${id}`)
-          .getAttribute("aria-pressed"),
-      ).toBe("true");
-    }
-    expect(
-      screen.getByTestId("tileset-preview-cell-3").getAttribute("aria-pressed"),
-    ).toBe("false");
+    // The click a drag leaves on the focus cell does not replace the selection.
+    fireEvent.click(screen.getByTestId("tileset-preview-cell-1"));
+    expect(screen.getByTestId("tileset-selected-label").textContent).toBe("4 Tiles");
+    expect(screen.getByTestId("tileset-preview-cell-1").getAttribute("aria-pressed")).toBe("true");
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("tileset-collision-full"));
     fireEvent.click(screen.getByTestId("property-flags-bit-0"));
@@ -292,7 +287,7 @@ describe("TilesetPreview", () => {
     ).toEqual([1, 2, 4, 5]);
   });
 
-  it("renders a clickable cell for every atlas tile on a 32×16 sheet", () => {
+  it("selects either tile of a 32×16 sheet and moves the focus cell to it", () => {
     render(
       <TilesetEditingProvider>
         <TilesetPreview
@@ -300,9 +295,10 @@ describe("TilesetPreview", () => {
         />
       </TilesetEditingProvider>,
     );
-    expect(screen.getByTestId("tileset-preview")).toBeTruthy();
-    expect(screen.getByTestId("tileset-preview-cell-1")).toBeTruthy();
-    expect(screen.getByTestId("tileset-preview-cell-2")).toBeTruthy();
+    expect(screen.getByTestId("tileset-preview-cell-1").getAttribute("aria-pressed")).toBe("true");
+    tapAtlasTile("tileset-preview", 2);
+    expect(screen.queryByTestId("tileset-preview-cell-1")).toBeNull();
+    expect(screen.getByTestId("tileset-preview-cell-2").getAttribute("aria-pressed")).toBe("true");
   });
 
   it("defaults to Move and pans the atlas with one finger", async () => {
@@ -357,7 +353,7 @@ describe("TilesetPreview", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getByTestId("tileset-preview-cell-2"));
+    tapAtlasTile("tileset-preview", 2);
     expect(screen.getByTestId("tileset-selected-label").textContent).toContain(
       "2",
     );
@@ -379,10 +375,10 @@ describe("TilesetPreview", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getByTestId("tileset-preview-cell-1"));
+    tapAtlasTile("tileset-preview", 1);
     fireEvent.click(screen.getByTestId("tileset-collision-full"));
     fireEvent.click(screen.getByTestId("tileset-paint-collision"));
-    fireEvent.click(screen.getByTestId("tileset-preview-cell-2"));
+    tapAtlasTile("tileset-preview", 2);
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         tiles: expect.arrayContaining([
@@ -410,11 +406,11 @@ describe("TilesetPreview", () => {
       );
     }
     render(<Harness />);
-    fireEvent.click(screen.getByTestId("tileset-preview-cell-1"));
+    tapAtlasTile("tileset-preview", 1);
     fireEvent.click(screen.getByTestId("tileset-collision-full"));
     fireEvent.click(screen.getByTestId("tileset-paint-collision"));
     onChange.mockClear();
-    fireEvent.click(screen.getByTestId("tileset-autotiles-sheet-cell-3"));
+    tapAtlasTile("tileset-autotiles-sheet", 3);
     expect(onChange).toHaveBeenCalledTimes(1);
     const tile = normalizeTilesetPayload(onChange.mock.lastCall![0]).tiles.find((entry) => entry.id === 3);
     expect(tile).toMatchObject({ collision: "none", terrain: { id: "ground" } });
