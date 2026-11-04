@@ -108,6 +108,12 @@ const fields: {
   },
 ];
 
+/** Every row label, option and hint, for the Scene Inspector's property filter. */
+export const CEL_SHADING_SEARCH_TEXT = [
+  ...fields.flatMap(({ label, hint }) => (hint ? [label, hint] : [label])),
+  ...Object.values(lightMixingLabels),
+].join(" ");
+
 type Props = {
   project: CelShadingSettings;
   /** Omit for project authoring; an empty object means scene inheritance. */

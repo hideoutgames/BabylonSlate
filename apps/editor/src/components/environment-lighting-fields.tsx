@@ -86,8 +86,10 @@ export function EnvironmentLightingFields({
           const id = `${scene ? "scene" : "project"}-environment-${key}`;
           const overridden = scene && Object.hasOwn(overrides, key);
           const disabled = scene && !overridden;
-          // A scene row shows the project value it inherits or overrides.
-          const status = scene ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${String(defaults[key])}.` : "";
+          // A scene row shows the project value it inherits or overrides, as its control shows it.
+          const projectValue = defaults[key];
+          const shown = typeof projectValue === "boolean" ? (projectValue ? "On" : "Off") : String(projectValue);
+          const status = scene ? `${overridden ? "Scene Override · Project" : "Project Setting"}: ${shown}.` : "";
           const describedBy = status ? `${id}-description ${id}-status` : `${id}-description`;
           return (
             <Field
