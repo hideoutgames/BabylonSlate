@@ -92,7 +92,7 @@ Create a folder with **Folder** in the **New Asset** menu, **New Folder** in the
 
 While **Duplicate** or **Copy to Folder…** runs, a progress window shows the item being copied and how many files are done. Choose **Cancel** to stop; the copies made so far are removed, so the content is left as it was.
 
-A Tileset's thumbnail shows its sheet, and a Tilemap's shows the tiles its visible layers paint. Both are drawn again when you save them or a Texture or Tileset they show, and **Create Tileset** draws the new Tileset's. A Tileset without a Texture and a Tilemap with nothing painted keep the type icon.
+A Tileset's thumbnail shows its whole sheet, and a Tilemap's shows all the tiles its visible layers paint, over a checkerboard where nothing is drawn. Both are drawn again when you save them or a Texture or Tileset they show, and **Create Tileset** draws the new Tileset's. A Tileset without a Texture and a Tilemap with nothing painted keep the type icon.
 
 A heavy asset can take a long time to draw on a slow device. A thumbnail that takes too long keeps the asset's type icon, and Haptic may try once more, with more time, when nothing else is waiting. Choose **Generate Thumbnail** to draw it again at any time.
 
