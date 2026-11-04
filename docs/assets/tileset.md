@@ -84,7 +84,7 @@ Each change is one undo step.
 
 ### Preview
 
-**Preview** is a small map painted exactly as a Tilemap brush paints it, starting with shapes that use most of the pieces. Tap a cell to paint it or erase it; the cells around it update. **Reset** brings back the starting shapes. The map is never saved.
+**Preview** is a small map painted exactly as a Tilemap brush paints it, starting with shapes that use most of the pieces. Tap a cell to paint it or erase it; the cells around it update. As at a Tilemap's edge, ground painted up to the preview's edge continues past it, so no edge is drawn there. **Reset** brings back the starting shapes. The map is never saved.
 
 - The cells that use the selected piece are highlighted, even while the piece has no tile, so you can see where it goes.
 - A cell with an amber dot has no tile for its piece and uses the closest one instead. The line beside **Preview** says how many cells do.
@@ -98,7 +98,7 @@ Maps painted with an autotile follow your changes to it by themselves. Every Til
 
 A transition joins two autotiles of the same Tileset, such as grass meeting dirt. Without one, an autotile treats a different autotile next to it as empty and draws its edge there. With one, the autotile has a second set of pieces drawn next to the other autotile: their open sides show the other autotile instead of nothing.
 
-To add one, open the **⋯** menu of an autotile and choose the other autotile under **Add Next To**. The set appears under the autotile as **Next to** followed by the other autotile's name; select it to assign its pieces as you would the ordinary ones. Its preview shows the autotile inside a field of the other one, and a tap switches a cell between the two. The **×** on the set's row removes it with its tiles; you can undo it.
+To add one, open the **⋯** menu of an autotile and choose the other autotile under **Add Next To**. The set appears under the autotile as **Next To** followed by the other autotile's name; select it to assign its pieces as you would the ordinary ones. Its preview shows the autotile inside a field of the other one, and a tap switches a cell between the two. The **×** on the set's row removes it with its tiles; you can undo it.
 
 - When each autotile has pieces drawn next to the other, each draws its own half of the seam.
 - When only one of them has pieces drawn next to the other, that one draws the whole seam, and the other continues under it as if the seam were more of itself.

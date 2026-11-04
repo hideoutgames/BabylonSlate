@@ -855,10 +855,10 @@ export function TilesetAutotiles({
                           testId={`tileset-autotiles-row-${terrain.id}-${otherId}`}
                         >
                           <AutotileSwatch tileset={tileset} terrain={other} imageUrl={imageUrl} />
-                          <span className="min-w-0 flex-1 truncate text-left">Next to {other.name}</span>
+                          <span className="min-w-0 flex-1 truncate text-left">Next To {other.name}</span>
                         </RowButton>
                         <IconActionButton
-                          label={`Remove Next to ${other.name}`}
+                          label={`Remove Next To ${other.name}`}
                           variant="ghost"
                           size="touch-icon"
                           className={cn("shrink-0 text-muted-foreground", !(childSelected || hoverRow === rowKey) && "invisible")}
@@ -885,7 +885,7 @@ export function TilesetAutotiles({
             title={
               <span data-testid="tileset-autotiles-pieces-title">
                 {autotile.name}
-                {border !== undefined ? <span className="font-medium text-muted-foreground"> · Next to {terrainName(border)}</span> : null}
+                {border !== undefined ? <span className="font-medium text-muted-foreground"> · Next To {terrainName(border)}</span> : null}
               </span>
             }
           >
@@ -1289,7 +1289,7 @@ export function TilesetAutotiles({
                 <Trash2Icon />
               </AlertDialogMedia>
               <AlertDialogTitle>
-                Remove {terrainName(removeBorderTarget.terrainId)} Next to {terrainName(removeBorderTarget.border)}
+                Remove {terrainName(removeBorderTarget.terrainId)} Next To {terrainName(removeBorderTarget.border)}
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {borderTileCount(removeBorderTarget) === 1 ? "Its 1 tile leaves" : `Its ${borderTileCount(removeBorderTarget)} tiles leave`}{" "}
