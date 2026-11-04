@@ -315,17 +315,17 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
 
   const scenes: Record<string, unknown> = {};
   for (const scene of SCENES) {
-    const { readyMs: sceneReadyMs, loadRetries } = await openFeatureTestScene(page, scene);
-    await page.waitForTimeout(SETTLE_MS);
-    const viewport = [];
-    for (let index = 0; index < SAMPLES; index += 1) {
-      const { result, busy } = await busyFraction(cdp, () => measureViewport(page, SAMPLE_MS));
-      viewport.push({ ...result, mainThreadBusy: busy });
-    }
-    await page.getByTestId("viewport-canvas").screenshot({ path: testInfo.outputPath(`${scene}-viewport.png`) });
-    const plays = [];
-    let step = "";
+    let step = "opening it";
     try {
+      const { readyMs: sceneReadyMs, loadRetries } = await openFeatureTestScene(page, scene);
+      await page.waitForTimeout(SETTLE_MS);
+      const viewport = [];
+      for (let index = 0; index < SAMPLES; index += 1) {
+        const { result, busy } = await busyFraction(cdp, () => measureViewport(page, SAMPLE_MS));
+        viewport.push({ ...result, mainThreadBusy: busy });
+      }
+      await page.getByTestId("viewport-canvas").screenshot({ path: testInfo.outputPath(`${scene}-viewport.png`) });
+      const plays = [];
       for (let index = 0; index < PLAYS; index += 1) {
         if (index > 0) {
           step = `the editor's reload before Play ${index + 1}`;
@@ -338,11 +338,11 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
       // The next scene opens over the editor's reloaded view.
       step = "the editor's reload after the last Play";
       await waitForSceneView(page);
+      scenes[scene] = { sceneReadyMs, loadRetries, viewport, play: plays[0], ...(PLAYS > 1 ? { repeatPlays: plays.slice(1) } : {}) };
     } catch (error) {
       console.log(`[feature-test-perf] ${scene}: ${step} failed; last console problems:\n${consoleProblems.join("\n")}`);
       throw error;
     }
-    scenes[scene] = { sceneReadyMs, loadRetries, viewport, play: plays[0], ...(PLAYS > 1 ? { repeatPlays: plays.slice(1) } : {}) };
   }
 
   const reopenToInteractiveMs = REOPEN ? await reopenFeatureTestProject(page) : null;
