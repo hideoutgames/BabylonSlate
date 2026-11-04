@@ -93,8 +93,8 @@ it("reports a shared stage's failure to every chain that draws it, not only to t
     chain.build(rebuilt);
     linkFails = true;
     await vi.advanceTimersByTimeAsync(32);
-    expect(first.message).toContain("Scene Volumetric Lighting failed to compile");
-    expect(rebuilt.message).toContain("Scene Volumetric Lighting failed to compile");
+    expect(first.message ?? "").toContain("Scene Volumetric Lighting failed to compile");
+    expect(rebuilt.message ?? "").toContain("Scene Volumetric Lighting failed to compile");
   } finally {
     vi.useRealTimers();
   }

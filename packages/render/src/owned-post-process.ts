@@ -50,8 +50,16 @@ export class OwnedPostProcess extends PostProcess {
       // this NodeMaterial. Only its generated names are ours to remove.
       if (!name || name === "postprocess") continue;
       const key = name + suffix;
-      const source = ShaderStore.GetShadersStore(this.shaderLanguage)[key];
+      const store = ShaderStore.GetShadersStore(this.shaderLanguage);
+      const source = store[key];
       if (typeof source === "string") this.shaderSources?.set(key, source);
+      else {
+        // Each graph build gives a Material's passes the same names. Babylon registers the source as a pass applies
+        // and updates it a tick later, and a retired pass of the same build removes the names it registered
+        // (`finishSources`) meanwhile: restore this pass's own source, or its Effect would fetch it as a URL.
+        const known = this.shaderSources?.get(key);
+        if (known !== undefined) store[key] = known;
+      }
     }
     const previous = this.getEffect();
     const references = previous?._refCount;

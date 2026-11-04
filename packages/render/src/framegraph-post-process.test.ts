@@ -7,7 +7,9 @@ import {
   InputBlock,
   NodeMaterial,
   Effect,
+  ShaderStore,
 } from "@babylonjs/core";
+import { OwnedPostProcess } from "./owned-post-process";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
@@ -355,6 +357,30 @@ it("hot rebuilds without retaining old apply callbacks and ignores queued update
   expect(
     scene.materials.filter((entry) => entry instanceof NodeMaterial),
   ).toHaveLength(0);
+});
+
+it("compiles a pass's update after a retired pass of the same Material build removed their shared source", async () => {
+  const { engine, graph } = host([gainDocument()]);
+  await graph.buildAsync();
+  const retired = engine.postProcesses[0] as OwnedPostProcess;
+  const material = retired.nodeMaterialSource!;
+  // The next graph build's pass of the same Material: Babylon names its source after the Material's build too.
+  const pass = new OwnedPostProcess("next build", "", { engine, blockCompilation: true, shaderLanguage: material.shaderLanguage });
+  dispose.push(() => pass.dispose());
+  material.createEffectForPostProcess(pass);
+  const effect = pass.getEffect();
+  const { vertex, fragment } = effect.name as { vertex: string; fragment: string };
+  retired.dispose();
+  await retired.whenReleased();
+  expect(ShaderStore.ShadersStore[`${fragment}PixelShader`]).toBeUndefined();
+  // Babylon's apply handler updates the pass a tick after registering the source, which the retired pass removed.
+  pass.updateEffect(`${effect.defines}\n#define NEXT_DEFINES`, effect.getUniformNames(), effect.getSamplers(),
+    undefined, undefined, undefined, vertex, fragment);
+  const updated = pass.getEffect();
+  expect(updated).not.toBe(effect);
+  await vi.waitFor(() => expect(updated.isReady() || Boolean(updated.getCompilationError())).toBe(true));
+  expect(updated.getCompilationError()).toBeFalsy();
+  expect(updated.isReady()).toBe(true);
 });
 
 it("disposal during deferred graph compilation cannot attach a late pass", async () => {
