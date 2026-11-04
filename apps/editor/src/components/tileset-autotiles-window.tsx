@@ -696,7 +696,6 @@ export function TilesetAutotiles({
           "grid min-h-full grid-cols-1",
           "@2xl/autotiles:h-full @2xl/autotiles:grid-cols-[minmax(9rem,12.5rem)_minmax(15rem,19.5rem)_minmax(15rem,1fr)]",
         )}
-        data-testid="tileset-autotiles-columns"
       >
         <section
           aria-label="Autotiles"
@@ -891,10 +890,7 @@ export function TilesetAutotiles({
               </>
             ) : null}
           </ColumnHeader>
-          <div
-            className="flex flex-col gap-3.5 p-3 @2xl/autotiles:min-h-0 @2xl/autotiles:flex-1 @2xl/autotiles:overflow-y-auto"
-            data-testid="tileset-autotiles-pieces-scroll"
-          >
+          <div className="flex flex-col gap-3.5 p-3 @2xl/autotiles:min-h-0 @2xl/autotiles:flex-1 @2xl/autotiles:overflow-y-auto">
             {selectedMask !== null && selectedName !== null ? (
               <div
                 className="flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-muted px-2.5 py-1 text-xs"
@@ -1019,10 +1015,7 @@ export function TilesetAutotiles({
         </section>
 
         {/* The sheet with the preview pinned below it, so a tile given to a piece shows in the preview at once. */}
-        <div
-          className="flex min-w-0 flex-col @2xl/autotiles:min-h-0 @2xl/autotiles:overflow-y-auto"
-          data-testid="tileset-autotiles-sheet-column"
-        >
+        <div className="flex min-w-0 flex-col @2xl/autotiles:min-h-0 @2xl/autotiles:overflow-y-auto">
           <section
             aria-label="Sheet"
             className="flex h-[24rem] min-h-0 min-w-0 flex-col @2xl/autotiles:h-auto @2xl/autotiles:min-h-48 @2xl/autotiles:flex-1"
@@ -1097,11 +1090,7 @@ export function TilesetAutotiles({
             />
           </section>
 
-            <section
-              aria-label="Preview"
-              className="flex shrink-0 flex-col gap-2 border-t border-border p-3"
-              data-testid="tileset-autotiles-preview"
-            >
+            <section aria-label="Preview" className="flex shrink-0 flex-col gap-2 border-t border-border p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-xs font-semibold">Preview</h3>
                 <span
