@@ -70,6 +70,7 @@ import { managedRenderReservations } from "./managed-render-resources";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
 import * as waterMesh from "./water-mesh";
 import { builtInWaterMaterial } from "./water-template";
+import { countEffectCompiles } from "./effect-requests";
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
 
@@ -751,14 +752,15 @@ describe("Play createEngine view", () => {
     const clock = frozenClock();
     const holds: boolean[] = [];
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, onPipelineHold: (held) => holds.push(held) });
-    handles.push(handle);
     const effects = (engine as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
     const state = { ready: true, linked: true, error: "" };
     const effect = { isReady: () => state.linked, getCompilationError: () => state.error, getEngine: () => engine } as unknown as Effect;
     const create = engine.createEffect.bind(engine) as unknown as (...args: unknown[]) => Effect;
+    // The driver boundary, under the Engine's own `createEffect` wrappers (Play installs them as it is created).
     vi.spyOn(engine, "createEffect").mockImplementation(((name: unknown, ...rest: unknown[]) =>
       name === "lit-variant" ? effect : create(name, ...rest)) as unknown as typeof engine.createEffect);
+    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, onPipelineHold: (held) => holds.push(held) });
+    handles.push(handle);
     let requested = false;
     handle.scene.addIsReadyCheck({ isReady: () => {
       if (!state.ready && !requested) {
@@ -4639,6 +4641,55 @@ describe("Play createEngine view", () => {
     handle.dispose();
     expect(unRegisterView).not.toHaveBeenCalled();
   });
+
+  it("compiles nothing in a repeat Play that the first Play compiled, across Stop and the editor's reload", async () => {
+    const engine = sharedEngine();
+    const materialDocuments = new Map([["sparks", createDefaultMaterialDocument("Sparks", "particle")]]);
+    const particleLibrary = {
+      emitters: new Map([["emitter", { kind: "basic" as const, payload: normalizeParticleEmitterPayload({ render: { materialGuid: "sparks" } }) }]]),
+      systems: new Map([["system", { ...createDefaultParticleSystemPayload(), emitterGuids: ["emitter"] }]]),
+    };
+    const present = async (handle: ReturnType<typeof createEngine>) => {
+      await handle.prewarmSceneMaterials();
+      const presented = handle.presentFirstFrame();
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      await presented;
+    };
+    /** The programs `run` compiles: Effects the Engine returns that its cache did not hold. */
+    const compiledBy = async (run: () => Promise<void>) => {
+      let compiled = 0;
+      const stop = countEffectCompiles(engine, ({ requested }) => { compiled = requested; });
+      await run();
+      stop();
+      return compiled;
+    };
+    const editorView = async () => {
+      const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+      await present(editor);
+      return editor;
+    };
+    /** Play with a particle emitter the editor's view does not draw, its program named by its Material's build. */
+    const play = async () => {
+      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, materialDocuments, particleLibrary });
+      handle.applyCommand({ type: "spawn", slotId: 1, actorGuid: "sparks", classId: "Actor" });
+      handle.applyCommand({ type: "assignParticle", slotId: 1, actorGuid: "sparks", componentId: "particle", particleSystemGuid: "system" });
+      try {
+        const wrappers = () => Object.values((handle.scene.particleSystems[0] as unknown as { _customWrappers?: Record<number, { effect: Effect | null }> })?._customWrappers ?? {});
+        await vi.waitFor(() => expect(wrappers().some((wrapper) => wrapper?.effect)).toBe(true), { timeout: 10_000 });
+      } finally {
+        handle.dispose();
+      }
+      await handle.whenReleased();
+    };
+    (await editorView()).dispose();
+    expect(await compiledBy(play)).toBeGreaterThan(0);
+    // The editor's view reloads and presents, which ends the closed Play's bridge.
+    const editor = await editorView();
+    handles.push(editor);
+    editor.dispose();
+    expect(await compiledBy(play)).toBe(0);
+  }, 30_000);
 
   it("uses one Engine for editor viewport, Prefab rtt, and Play overlay", () => {
     const engine = sharedEngine();

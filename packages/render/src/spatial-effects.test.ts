@@ -1,5 +1,6 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { Camera, FreeCamera, NullEngine, Scene, ShaderStore, Vector3 } from "@babylonjs/core";
+import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";
 import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
 import { EffectCompileFailure } from "./effect-compile-failure";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
@@ -12,6 +13,11 @@ afterEach(() => { while (disposers.length) disposers.pop()!(); });
 function stagesFor(
   effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, failure?: EffectCompileFailure, mode = Camera.PERSPECTIVE_CAMERA,
 ): SpatialStage[] {
+  return spatialChain(effects, mode).build(failure);
+}
+
+/** A Scene planning `effects`, whose `build` creates the chain's stages as each graph build does. */
+function spatialChain(effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, mode = Camera.PERSPECTIVE_CAMERA) {
   const engine = new NullEngine();
   // The spatial chain needs four float targets and depth sampling.
   Object.assign(engine.getCaps(), {
@@ -25,9 +31,15 @@ function stagesFor(
   updateSceneRenderingSettings(scene, {
     mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, ...effects }, quality: normalizeRenderingQuality(qualityPresetPatch("high")),
   });
-  const stages = createSpatialStages(scene, camera, sceneRenderingSettings(scene).effectsPlan!, 64, 64, failure);
-  disposers.push(() => { for (const stage of stages) stage.wrapper.dispose(); scene.dispose(); engine.dispose(); });
-  return stages;
+  disposers.push(() => { scene.dispose(); engine.dispose(); });
+  return {
+    engine,
+    build: (failure?: EffectCompileFailure) => {
+      const stages = createSpatialStages(scene, camera, sceneRenderingSettings(scene).effectsPlan!, 64, 64, failure);
+      disposers.push(() => { for (const stage of stages) stage.wrapper.dispose(); });
+      return stages;
+    },
+  };
 }
 
 const named = (stages: SpatialStage[], name: string) => stages.findIndex((stage) => stage.wrapper.name === name);
@@ -42,6 +54,50 @@ it("composes reflections onto the occlusion-composed color they traced, not the 
   expect(occlusion).toBeGreaterThanOrEqual(0);
   expect(reflections).toBeGreaterThan(occlusion);
   expect(stages[named(stages, "Scene Reflections Compose")]!.mainInput).toBe(reflections);
+});
+
+it("links each stage's program once: a chain built again draws the same Effects, and stages of one code share one", () => {
+  const chain = spatialChain({
+    ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
+    volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true },
+  });
+  const first = chain.build();
+  // A load builds its view's graph more than once; each build creates the chain's stages again.
+  const again = chain.build();
+  const effect = (stages: SpatialStage[], name: string) => stages[named(stages, name)]!.wrapper.effect;
+  for (const name of ["Scene Ambient Occlusion", "Scene Ambient Occlusion Blur X", "Scene Ambient Occlusion Compose",
+    "Scene Volumetric Lighting", "Scene Volumetric Compose"]) {
+    expect(effect(again, name)).toBe(effect(first, name));
+  }
+  // The two blur directions differ only in a uniform.
+  expect(effect(first, "Scene Ambient Occlusion Blur Y")).toBe(effect(first, "Scene Ambient Occlusion Blur X"));
+});
+
+it("reports a shared stage's failure to every chain that draws it, not only to the first", async () => {
+  vi.useFakeTimers();
+  try {
+    const chain = spatialChain({ volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true } });
+    // NullEngine has no driver: only a parallel-compile driver's pending query is modelled, and the link then fails.
+    let linkFails = false;
+    const prepare = chain.engine._preparePipelineContextAsync.bind(chain.engine);
+    vi.spyOn(chain.engine, "_preparePipelineContextAsync").mockImplementation((...args) => {
+      (args[0] as WebGLPipelineContext).isParallelCompiled = true;
+      return prepare(...args);
+    });
+    vi.spyOn(chain.engine, "_isRenderingStateCompiled").mockImplementation(() => {
+      if (linkFails) throw new Error("link failed");
+      return false;
+    });
+    const first = new EffectCompileFailure(), rebuilt = new EffectCompileFailure();
+    chain.build(first);
+    chain.build(rebuilt);
+    linkFails = true;
+    await vi.advanceTimersByTimeAsync(32);
+    expect(first.message ?? "").toContain("Scene Volumetric Lighting failed to compile");
+    expect(rebuilt.message ?? "").toContain("Scene Volumetric Lighting failed to compile");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("reports a failed volumetric march as the chain's compile failure", () => {

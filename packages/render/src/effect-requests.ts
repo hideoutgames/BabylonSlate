@@ -6,7 +6,7 @@ type EffectEngine = { createEffect(...args: unknown[]): Effect };
 type Requests = {
   /** The sets the open `collectEffectRequests` calls fill, innermost last. */
   open: Set<Effect>[];
-  /** `countEffectCompiles` listeners, told of every Effect the Engine returns. */
+  /** `watchEngineEffects` listeners, told of every Effect the Engine returns. */
   watchers: Set<(effect: Effect) => void>;
 };
 
@@ -52,6 +52,17 @@ export function collectEffectRequests<T>(engine: AbstractEngine, into: Set<Effec
   }
 }
 
+/** Tells `watch` of every Effect the Engine's `createEffect` returns, a cached one included, until the returned stop. */
+export function watchEngineEffects(engine: AbstractEngine, watch: (effect: Effect) => void): () => void {
+  const { watchers } = requestsFor(engine);
+  // A listener of its own: one function passed twice still stops each watch separately.
+  const listener = (effect: Effect) => watch(effect);
+  watchers.add(listener);
+  return () => {
+    watchers.delete(listener);
+  };
+}
+
 /**
  * Counts the programs the Engine compiles until the returned stop is called: each Effect `createEffect` returns that
  * was not in the Engine's cache when counting began, and how many of them have compiled (at once where links are
@@ -74,10 +85,9 @@ export function countEffectCompiles(
     else effect.onCompileObservable.addOnce(() => { compiled += 1; report(); });
     report();
   };
-  const { watchers } = requestsFor(engine);
-  watchers.add(watch);
+  const stop = watchEngineEffects(engine, watch);
   return () => {
     stopped = true;
-    watchers.delete(watch);
+    stop();
   };
 }

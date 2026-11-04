@@ -158,7 +158,7 @@ HAPTIC_PERF_FEATURE_TEST=1 pnpm run test:e2e e2e/feature-test-perf-route.spec.ts
   --config playwright.perf.config.ts --project perf-software
 ```
 
-It creates FeatureTest through the real Create dialog, waits for background texture encodes, then for each scene in `HAPTIC_PERF_SCENES` records editor viewport frames, overlay Play frames, tick rate, draw calls, main-thread busy time and long tasks, and times create, scene ready, Play boot and reopen; each scene's Play entry also carries the load's spawnable warm-up report (`spawnableWarm`). A scene that shows **Scene Loading Failed** is retried once and counted as `loadRetries`; a second failure fails the run. The JSON report is attached to the test, written to `test-results/perf-route/`, and also to `HAPTIC_PERF_OUT` when set.
+It creates FeatureTest through the real Create dialog, waits for background texture encodes, then for each scene in `HAPTIC_PERF_SCENES` records editor viewport frames, overlay Play frames, tick rate, draw calls, main-thread busy time and long tasks, and times create, scene ready, Play boot and reopen; each scene's Play entry also carries the load's spawnable warm-up report (`spawnableWarm`) and the WebGL programs linked from Play's click to its close (`programs`: linked, while loading and after, distinct sources with Babylon's `SHADER_NAME` line left out, and how many of those the page linked before that Play). With `HAPTIC_PERF_PLAYS` above 1, each further Play (`repeatPlays`) starts once the editor's view has reloaded and settled. A scene that shows **Scene Loading Failed** is retried once and counted as `loadRetries`; a second failure fails the run. The JSON report is attached to the test, written to `test-results/perf-route/`, and also to `HAPTIC_PERF_OUT` when set.
 
 | Env | Default | Effect |
 | --- | --- | --- |
@@ -167,6 +167,7 @@ It creates FeatureTest through the real Create dialog, waits for background text
 | `HAPTIC_PERF_WARMUP_MS` / `HAPTIC_PERF_SETTLE_MS` | 10000 / 5000 | Play warm-up and editor settle |
 | `HAPTIC_PERF_QUALITY` / `HAPTIC_PERF_FRAMECAP` | project defaults | Play console `quality` (then `quality resolution reset`, so resolution stays fixed) and `framecap` |
 | `HAPTIC_PERF_VIEWPORT_CAP` | Engine Settings (60) | Editor viewport frame cap |
+| `HAPTIC_PERF_PLAYS` | 1 | Plays per scene (2 compares a repeat Play's program links with the first's) |
 | `HAPTIC_PERF_REOPEN` | 1 | `0` skips the reload-and-reopen timing |
 | `HAPTIC_PERF_LABEL` / `HAPTIC_PERF_OUT` | none | Free-text label; extra report path that survives the next run |
 

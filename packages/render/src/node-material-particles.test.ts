@@ -1,7 +1,8 @@
-import { DrawWrapper, ParticleSystem } from "@babylonjs/core";
+import { DrawWrapper, ParticleSystem, type Effect, type Scene } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createTestEngine } from "./create-null-engine";
+import { keepPlayEffects } from "./effect-bridge";
 import { MaterialLibrary, materialUnavailable } from "./material-library";
 import { bindParticleMaterial } from "./particle-system-factory";
 
@@ -80,6 +81,48 @@ describe("compiled particle effect bindings", () => {
     expect(() => effect.onBindObservable.notifyObservers(effect)).not.toThrow();
     library.dispose();
     await vi.waitFor(() => expect(effect.onBindObservable.hasObservers()).toBe(false));
+  });
+
+  /** An emitter's own instance of the particle Material, as `acquireParticleMaterial` takes it, bound to a system. */
+  async function emitter(scene: Scene, library: MaterialLibrary, instanceKey: string) {
+    const compiled = library.acquire(scene, "particle", createDefaultMaterialDocument("Particle", "particle"), { instanceKey });
+    if (materialUnavailable(compiled)) throw new Error("Particle fixture must compile");
+    const system = new ParticleSystem(instanceKey, 16, scene);
+    void bindParticleMaterial(system, compiled.material);
+    await compiled.ready;
+    await vi.waitFor(() => expect(system.getCustomEffect(ParticleSystem.BLENDMODE_ONEONE)).toBeTruthy());
+    return { system, material: compiled.material, effect: system.getCustomEffect(ParticleSystem.BLENDMODE_ONEONE)! };
+  }
+
+  it("shares one program between emitters' instances of a Material, and draws each with its own instance", async () => {
+    const { scene, library } = await host();
+    const first = await emitter(scene, library, "first"), second = await emitter(scene, library, "second");
+    expect(second.material).not.toBe(first.material);
+    expect(second.effect).toBe(first.effect);
+    // Enabling the shared Effect runs every system's binding observer, the last one's values winning: each draw
+    // binds its own system's Material right before it draws.
+    type Bindings = { _checkInternals(effect: Effect): void };
+    const firstBinds = vi.spyOn(first.material as unknown as Bindings, "_checkInternals");
+    const secondBinds = vi.spyOn(second.material as unknown as Bindings, "_checkInternals");
+    first.system.onBeforeDrawParticlesObservable.notifyObservers(first.effect);
+    expect(firstBinds).toHaveBeenCalledWith(first.effect);
+    expect(secondBinds).not.toHaveBeenCalled();
+  });
+
+  it("names a later emitter's program after an earlier one of the same code, so the program Play kept serves it", async () => {
+    const { engine, scene, library } = await host();
+    const stop = keepPlayEffects(engine);
+    cleanup.push(stop);
+    const first = await emitter(scene, library, "first");
+    first.system.dispose(false);
+    library.release(scene, "particle", { instanceKey: "first" });
+    await vi.waitFor(() => expect(first.effect.onBindObservable.hasObservers()).toBe(false));
+    // The system's draw wrapper lets its Effect go at a frame's end.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    engine.endFrame();
+    // The next session's emitter compiles a new instance of the same Material.
+    const later = await emitter(scene, library, "later");
+    expect(later.effect).toBe(first.effect);
   });
 
   it("removes compiler probe bindings before a live system reuses their effect", async () => {

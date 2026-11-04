@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { Constants, CubeTexture, NullEngine, Viewport } from "@babylonjs/core";
+import { keepPlayEffects } from "./effect-bridge";
 import { readEnvironmentBaseRadiance } from "./environment-base-radiance";
 
 afterEach(() => vi.restoreAllMocks());
@@ -63,6 +64,21 @@ it("restores the owning Engine before deferred readback and releases temporary s
     expect(source.isReady()).toBe(true);
     previous.dispose();
   } finally {
+    source.dispose();
+    engine.dispose();
+  }
+});
+
+it("reads again with its program from the Engine's cache, whose cache hit calls no compile callback", async () => {
+  const { engine, source } = fixture();
+  // Play keeps the first read's program, so the next read's request returns it from the cache.
+  const stop = keepPlayEffects(engine);
+  try {
+    vi.spyOn(engine, "_readTexturePixels").mockImplementation(() => Promise.resolve(new Float32Array(32 * 32 * 4)));
+    expect(await readEnvironmentBaseRadiance(source, () => true)).toMatchObject({ size: 32, linear: true });
+    expect(await readEnvironmentBaseRadiance(source, () => true)).toMatchObject({ size: 32, linear: true });
+  } finally {
+    stop();
     source.dispose();
     engine.dispose();
   }

@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { NullEngine, type Effect } from "@babylonjs/core";
-import { bridgeEngineEffects, EFFECT_BRIDGE_MS, releaseBridgedEffects } from "./effect-bridge";
+import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";
+import { bridgeEngineEffects, EFFECT_BRIDGE_MS, keepPlayEffects, keptEffectCount, releaseBridgedEffects } from "./effect-bridge";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -47,4 +48,106 @@ it("ends a bridge no view presents after its time bound, and a later bridge take
   expect(effect._refCount).toBe(1);
   vi.advanceTimersByTime(EFFECT_BRIDGE_MS);
   expect(effect.isDisposed).toBe(true);
+});
+
+it("keeps a Play view's programs past its close and the editor's next presentation, so the next Play compiles none", () => {
+  const engine = new NullEngine();
+  engines.push(engine);
+  const stop = keepPlayEffects(engine);
+  const lit = compile(engine, "#define LIT");
+  // A program the load released and asked for again (a graph rebuilt during the load) is the same one.
+  lit.dispose();
+  expect(compile(engine, "#define LIT")).toBe(lit);
+  const sky = compile(engine, "#define SKY");
+  stop();
+  // Play closes: the bridge holds every Effect, then the editor's reloaded view presents without these.
+  bridgeEngineEffects(engine);
+  lit.dispose();
+  sky.dispose();
+  releaseBridgedEffects(engine);
+  expect(lit.isDisposed).toBe(false);
+  expect(sky.isDisposed).toBe(false);
+  // The next Play finds both in the Engine's cache.
+  expect(compile(engine, "#define LIT")).toBe(lit);
+  expect(compile(engine, "#define SKY")).toBe(sky);
+  // Effects returned once the keep has stopped are not kept.
+  const preview = compile(engine, "#define PREVIEW");
+  preview.dispose();
+  expect(preview.isDisposed).toBe(true);
+});
+
+it("keeps at most its budget of programs, releasing the least recently returned first", () => {
+  const engine = new NullEngine();
+  engines.push(engine);
+  const stop = keepPlayEffects(engine, 2);
+  const first = compile(engine, "#define FIRST");
+  const second = compile(engine, "#define SECOND");
+  first.dispose();
+  second.dispose();
+  // Returned again: now the most recent.
+  compile(engine, "#define FIRST").dispose();
+  const third = compile(engine, "#define THIRD");
+  third.dispose();
+  stop();
+  expect(second.isDisposed).toBe(true);
+  expect(first.isDisposed).toBe(false);
+  expect(third.isDisposed).toBe(false);
+  expect(keptEffectCount(engine)).toBe(2);
+});
+
+it("keeps a program once it has compiled, and lets one its owner abandoned while compiling go", async () => {
+  vi.useFakeTimers();
+  const engine = new NullEngine();
+  engines.push(engine);
+  // NullEngine has no driver: only its pending-completion query is modelled, as on iPad WebKit or D3D11.
+  let linked = false;
+  const prepare = engine._preparePipelineContextAsync.bind(engine);
+  vi.spyOn(engine, "_preparePipelineContextAsync").mockImplementation((...args) => {
+    (args[0] as WebGLPipelineContext).isParallelCompiled = true;
+    return prepare(...args);
+  });
+  vi.spyOn(engine, "_isRenderingStateCompiled").mockImplementation((pipeline) => {
+    if (!linked) return false;
+    const native = pipeline as WebGLPipelineContext;
+    native.onCompiled?.();
+    native.onCompiled = undefined;
+    return true;
+  });
+  const stop = keepPlayEffects(engine);
+  const drawn = compile(engine, "#define DRAWN");
+  const abandoned = compile(engine, "#define ABANDONED");
+  expect(abandoned.isReady()).toBe(false);
+  // A pass retired while its program still links (a graph rebuilt during the load): nothing else wants it.
+  abandoned.dispose();
+  expect(abandoned.isDisposed).toBe(true);
+  linked = true;
+  await vi.advanceTimersByTimeAsync(32);
+  expect(drawn.isReady()).toBe(true);
+  drawn.dispose();
+  expect(drawn.isDisposed).toBe(false);
+  expect(keptEffectCount(engine)).toBe(1);
+  stop();
+});
+
+it("lets the kept programs go with a lost context, and forgets their creators' compile callbacks once Play stops", () => {
+  const engine = new NullEngine();
+  engines.push(engine);
+  const stop = keepPlayEffects(engine);
+  const created = engine.createEffect(
+    { vertexSource: "void main(){gl_Position=vec4(0.0);}", fragmentSource: "void main(){gl_FragColor=vec4(0.5);}" },
+    { attributes: [], uniformsNames: [], samplers: [], defines: "", fallbacks: null, onCompiled: () => {}, onError: () => {} },
+    engine,
+  );
+  const held = compile(engine, "#define HELD");
+  stop();
+  // The closed Play's callbacks (its Materials, its Scene) are no longer reachable from the kept Effect.
+  expect(created.onCompiled).toBeNull();
+  expect(created.onError).toBeNull();
+  created.dispose();
+  expect(created.isDisposed).toBe(false);
+  engine.onContextLostObservable.notifyObservers(engine);
+  // A restore would relink every Effect left in the cache: only the one its owner still holds stays.
+  expect(created.isDisposed).toBe(true);
+  expect(held.isDisposed).toBe(false);
+  expect(keptEffectCount(engine)).toBe(0);
 });

@@ -52,7 +52,7 @@ import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
-import { bridgeEngineEffects, releaseBridgedEffects } from "./effect-bridge";
+import { bridgeEngineEffects, keepPlayEffects, releaseBridgedEffects } from "./effect-bridge";
 import { countEffectCompiles } from "./effect-requests";
 import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
@@ -442,6 +442,9 @@ function initializeEngine(
   trackFirstDraws(engine);
   const firstDraws = options.playMode ? openFirstDrawStats(engine) : null;
   onRollback(() => firstDraws?.close());
+  // Play's programs outlive it on the editor's Engine, so the next Play, and this load's own rebuilds, link them once.
+  const stopKeepingEffects = options.playMode && !ownsEngine ? keepPlayEffects(engine) : null;
+  onRollback(() => stopKeepingEffects?.(true));
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     mainThread: mainThreadDecoding,
     ...ktx2Runtime,
@@ -2477,6 +2480,7 @@ function initializeEngine(
       if (disposed) return;
       // The Engine's next view (Play after the editor's, the editor's after Play) draws mostly these Effects.
       if (!ownsEngine) bridgeEngineEffects(engine);
+      stopKeepingEffects?.();
       // And, once released, the textures this view leases now (`handOverTextures`). A handover it claimed and has not
       // ended joins that hold; without one, it ends here.
       const handedOverTextures = handOverTexturesOnDispose && !ownsEngine ? resourceCache.leasedKeys() : undefined;

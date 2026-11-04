@@ -1057,6 +1057,8 @@ export function compileMaterialPlan(
   // mode may reuse a byte-identical program compiled for another material.
   if (material.mode === NodeMaterialModes.Material && plan.cost.customBlocks === 0) {
     shareCompiledProgram(material, JSON.stringify([options.name, options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]));
+  } else if (material.mode === NodeMaterialModes.Particle && plan.cost.customBlocks === 0) {
+    shareParticleProgram(material, JSON.stringify([options.name, material.shaderLanguage]));
   }
   try {
     if (plan.operations.some((operation) => operation.nodeType === "input.environmentSample")) {
@@ -1322,6 +1324,47 @@ export function shareCompiledProgram(material: NodeMaterial, key: string): void 
     const known = registry.get(key);
     if (known?.users.delete(material) && known.users.size === 0) registry.delete(key);
   });
+}
+
+/** Build ids of particle programs by key and generated code, for the Engine's life. */
+const particlePrograms = new WeakMap<AbstractEngine, Map<string, Map<string, number>>>();
+
+/**
+ * A particle NodeMaterial names its Effect after the material and its build id (`name + buildId + "_" +
+ * blendMode`), and the Engine's Effect cache keys on that name, so every build compiles its own program even when
+ * its code is the same, as it is for each emitter's instance of one particle Material. After the first build, adopt
+ * the id an earlier build under the same key and byte-identical code took, so they share one Effect. Ids outlive
+ * their materials: a later Play's emitters then name the Effect the last one kept (`keepPlayEffects`). Particle
+ * Materials never rebuild, and every particle Effect is created right after its source is registered. Post-process
+ * Materials do not share: Babylon creates a pass's Effect a tick after registering its source, and a pass's cleanup
+ * (`OwnedPostProcess`) or a rebuild deletes the sources by that name, which another Material's pass would still read.
+ */
+export function shareParticleProgram(material: NodeMaterial, key: string): void {
+  const engine = material.getScene().getEngine();
+  let byKey = particlePrograms.get(engine);
+  if (!byKey) particlePrograms.set(engine, (byKey = new Map()));
+  let programs = byKey.get(key);
+  if (!programs) byKey.set(key, (programs = new Map()));
+  const registry = programs;
+  let shaders: string | undefined;
+  sharedProgramForgetters.set(material, () => {
+    if (shaders !== undefined && registry.get(shaders) === material.buildId) registry.delete(shaders);
+  });
+  let adopted: number | undefined;
+  let firstBuild = true;
+  material.onBuildObservable.add(() => {
+    if (adopted !== undefined && material.buildId === adopted) material.buildId = freshBuildId();
+    adopted = undefined;
+    if (!firstBuild) {
+      shaders = undefined;
+      return;
+    }
+    firstBuild = false;
+    shaders = material.compiledShaders;
+    const known = registry.get(shaders);
+    if (known !== undefined) material.buildId = adopted = known;
+    else registry.set(shaders, material.buildId);
+  }, undefined, true);
 }
 
 /** Drop ResourceCache textures so NodeMaterial.dispose cannot free engine-owned GPU wrappers. */
