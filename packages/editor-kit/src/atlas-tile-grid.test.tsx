@@ -267,6 +267,18 @@ describe("AtlasTileGrid", () => {
     },
   );
 
+  it("selects a tapped tile on a sheet without pan, zoom or rectangle selection", () => {
+    const onSelect = vi.fn();
+    render(<AtlasTileGrid tileset={twoTileSet()} imageUrl="blob:atlas" selectedId={1} onSelect={onSelect} data-testid="atlas" />);
+    placeImage("atlas", { left: 0, top: 0, width: 32, height: 16 });
+    const surface = screen.getByTestId("atlas-surface");
+    act(() => {
+      dispatchPointerEvent(surface, "pointerdown", { pointerId: 1, clientX: 24, clientY: 8 });
+      dispatchPointerEvent(surface, "pointerup", { pointerId: 1, clientX: 24, clientY: 8 });
+    });
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(2);
+  });
+
   it.each([false, true])(
     "selects an atlas rectangle at display scale, reversed=%s",
     (reverse) => {

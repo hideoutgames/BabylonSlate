@@ -377,11 +377,13 @@ export function AtlasTileGrid({
   }), []);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!panZoom && !(tool === "select" && onSelectionChange)) return;
-    try {
-      event.currentTarget.setPointerCapture?.(pointerIdOf(event));
-    } catch {
-      // Synthetic PointerEvents (Playwright / jsdom) have no active pointer.
+    // Every sheet selects a tapped tile; only a sheet that pans, zooms or drags a selection keeps the pointer.
+    if (panZoom || (tool === "select" && onSelectionChange)) {
+      try {
+        event.currentTarget.setPointerCapture?.(pointerIdOf(event));
+      } catch {
+        // Synthetic PointerEvents (Playwright / jsdom) have no active pointer.
+      }
     }
     pointersRef.current.set(pointerIdOf(event), {
       x: event.clientX,
@@ -436,6 +438,7 @@ export function AtlasTileGrid({
       return;
     }
     if (tool === "move") {
+      if (!panZoom) return;
       panDragRef.current = {
         pointerId: pointerIdOf(event),
         startX: event.clientX,
