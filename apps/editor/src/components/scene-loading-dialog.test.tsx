@@ -48,6 +48,16 @@ describe("SceneLoadingDialog", () => {
     expect(screen.getByRole("dialog").textContent).not.toContain("(");
   });
 
+  it("updates the phase text in place, with no fade, as the shader count moves", () => {
+    const { rerender } = render(<SceneLoadingDialog open progress={70} phase="Compiling Shaders" count={{ done: 2, total: 8 }} />);
+    const label = screen.getByText("Compiling Shaders (2/8)");
+    expect(label.querySelector("[class*='animate-in']")).toBeNull();
+    expect(label.className).not.toContain("animate-in");
+    rerender(<SceneLoadingDialog open progress={72} phase="Compiling Shaders" count={{ done: 3, total: 8 }} />);
+    // The same element, not a remount that replays an entry animation.
+    expect(screen.getByText("Compiling Shaders (3/8)")).toBe(label);
+  });
+
   it("offers Copy Details while a scene is still loading", () => {
     render(<SceneLoadingDialog open progress={45} phase="Loading Models" onStop={() => {}} onCopyDetails={() => "details"} />);
     expect(screen.getByRole("button", { name: "Copy Details" })).toBeTruthy();
