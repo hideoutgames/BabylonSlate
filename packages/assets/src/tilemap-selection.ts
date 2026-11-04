@@ -90,17 +90,30 @@ export function tilemapSelectionExtent(map: TilemapPayload, layerId: string | nu
 class ChunkBuilder {
   private readonly chunks = new Map<number, TilemapChunk>();
   private readonly size: number;
+  /** The chunk the latest write went to: writes along a row mostly stay in it. */
+  private last: TilemapChunk | null = null;
 
   constructor(size: number) {
     this.size = size;
   }
 
   set(x: number, y: number, gid: number): void {
-    const { cx, cy, lx, ly } = chunkCoordForTile(x, y, this.size);
-    const key = tilemapCellKey(cx, cy);
-    let chunk = this.chunks.get(key);
-    if (!chunk) this.chunks.set(key, (chunk = { cx, cy, tiles: emptyChunkTiles(this.size) }));
-    chunk.tiles[localIndex(lx, ly, this.size)] = gid;
+    const size = this.size;
+    const cx = Math.floor(x / size);
+    const cy = Math.floor(y / size);
+    let chunk = this.last;
+    if (!chunk || chunk.cx !== cx || chunk.cy !== cy) {
+      const key = tilemapCellKey(cx, cy);
+      chunk = this.chunks.get(key) ?? null;
+      if (!chunk) this.chunks.set(key, (chunk = { cx, cy, tiles: emptyChunkTiles(size) }));
+      this.last = chunk;
+    }
+    chunk.tiles[(y - cy * size) * size + (x - cx * size)] = gid;
+  }
+
+  /** Take a whole chunk of the block as it is (its array is never changed in place). */
+  share(cx: number, cy: number, tiles: number[]): void {
+    this.chunks.set(tilemapCellKey(cx, cy), { cx, cy, tiles });
   }
 
   /** The chunks, bottom row first, left to right. */
@@ -142,6 +155,8 @@ export function copyTilemapCells(map: TilemapPayload, rect: TilemapCellRect, lay
   const size = Math.max(1, map.chunkSize);
   const width = rect.maxX - rect.minX + 1;
   const height = rect.maxY - rect.minY + 1;
+  // A rect on the chunk grid takes the chunks it holds whole as they are.
+  const aligned = rect.minX % size === 0 && rect.minY % size === 0;
   const layers = scopedLayers(map, layerId).map((layer): TilemapClipLayer => {
     const builder = new ChunkBuilder(size);
     for (const chunk of layer.chunks) {
@@ -152,6 +167,10 @@ export function copyTilemapCells(map: TilemapPayload, rect: TilemapCellRect, lay
       const minY = Math.max(rect.minY, y0);
       const maxY = Math.min(rect.maxY, y0 + size - 1);
       if (minX > maxX || minY > maxY) continue;
+      if (aligned && minX === x0 && minY === y0 && maxX === x0 + size - 1 && maxY === y0 + size - 1) {
+        builder.share((x0 - rect.minX) / size, (y0 - rect.minY) / size, chunk.tiles);
+        continue;
+      }
       for (let y = minY; y <= maxY; y++) {
         const row = (y - y0) * size - x0;
         for (let x = minX; x <= maxX; x++) {

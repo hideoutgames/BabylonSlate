@@ -84,6 +84,14 @@ describe("copyTilemapCells", () => {
     const all = copyTilemapCells(map, { minX: 3, minY: 3, maxX: 5, maxY: 4 }, null);
     expect([all.allLayers, all.layers.map((layer) => layer.layerId), tilemapClipTileCount(all)]).toEqual([true, ["a", "b"], 5]);
   });
+
+  it("takes whole chunks of a rect on the chunk grid as they are, without reading their cells", () => {
+    const map = paint(twoLayerMap(), "a", ["1234", "5678", "1234", "5678"], 4, 3);
+    const source = map.layers[0]!.chunks.find((chunk) => chunk.cx === 1 && chunk.cy === 0)!;
+    const clip = copyTilemapCells(map, { minX: 4, minY: 0, maxX: 11, maxY: 5 }, "a");
+    expect(clip.layers[0]!.chunks.map((chunk) => [chunk.cx, chunk.cy, chunk.tiles === source.tiles])).toEqual([[0, 0, true]]);
+    expect(tilemapClipTileCount(clip)).toBe(16);
+  });
 });
 
 describe("moveTilemapCells", () => {
