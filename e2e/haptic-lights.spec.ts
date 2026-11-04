@@ -138,6 +138,10 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // 8-bit rounding of two captures, divided by a difference of about 0.2 (measured: 0.988 to 1.026).
     expect(irradiance.filter((ratio) => Math.abs(ratio - 1) > 0.05)).toEqual([]);
 
+    // The fill is a sky with no point to reflect, so a metal (no diffuse) under it alone, without environment, is black
+    // everywhere; a highlight from the fill's direction sat under the camera and followed it.
+    expect(everySurface.filter((pixel) => Math.max(...channels(result.fillOnMetal, pixel)) > 0), "fill on metal").toEqual([]);
+
     // The rect light alone. A non-metal over a black one: its diffuse colour times the rect's form factor (the LTC with
     // the identity transform), where the form factor is large enough for 8-bit differences to resolve.
     const rect = result.rect;

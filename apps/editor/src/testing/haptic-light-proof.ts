@@ -465,6 +465,12 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
       furnace[name] = await draw();
     }
 
+    // The fill alone on a rough white metal, without environment: a metal has no diffuse and the fill no highlight.
+    restore(metal);
+    scene.iblIntensity = 0;
+    for (const light of [sun, ...spots, ...points]) setAuthoredLightEnabled(light, false);
+    const fillOnMetal = await draw();
+
     // The rect light alone, without environment: MATTE over BLACK by the diffuse colour times the form factor; a
     // mirror shows the panel's own radiance where the reflected ray meets it and nothing elsewhere; a white emission
     // draws as the flat light, and a mirror shows a gradient emission's colours where its rays meet them.
@@ -688,7 +694,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
         toneMapping: imageProcessing.toneMappingEnabled, exposure: imageProcessing.exposure, contrast: imageProcessing.contrast,
         exactSrgb: engine.useExactSrgbConversions,
       },
-      analytic, mirrors, faceColors: FACE_COLORS, furnace, uniformGrey: UNIFORM_GREY, rect,
+      analytic, mirrors, faceColors: FACE_COLORS, furnace, uniformGrey: UNIFORM_GREY, fillOnMetal, rect,
       captures, steps: pbr.steps, hapticEffects: pbr.effects.length, lightDefines,
       celCaptures, celSteps: cel.steps, celEffects, shadow,
     };
