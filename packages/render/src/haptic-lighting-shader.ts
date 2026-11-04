@@ -662,11 +662,11 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
   // Before any branch: the sun's receiver plane reads them.
   vec3 dPdx = dFdx(P);
   vec3 dPdy = dFdy(P);
+  // The fill is a sky and a ground, with no point to reflect: diffuse only. A highlight from its direction would sit
+  // where the surface faces between it and the camera, under the camera on a floor, and follow it.
   if (hapticFillDirection.w > 0.0) {
-    vec3 L = normalize(hapticFillDirection.xyz);
-    float NdotL = hapticSaturateEps(dot(N, L) * 0.5 + 0.5);
+    float NdotL = hapticSaturateEps(dot(N, normalize(hapticFillDirection.xyz)) * 0.5 + 0.5);
     diffuse += mix(hapticFillGround.rgb, hapticFillSky.rgb, NdotL);
-    specular += hapticSpecular(surface, N, V, L, NdotL, surface.roughness) * hapticFillSky.rgb;
   }
   for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.directional}; i++) {
     if (i >= int(hapticCounts.x)) break;
@@ -762,10 +762,10 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
   vec3 dPdy = dFdy(P);
   hapticCelLight result = hapticCelLight(vec3(0.0), vec3(0.0), 0.0);
   if (hapticFillDirection.w > 0.0) {
-    // The fill bands its wrapped N.L before mixing ground and sky, so it adds no smooth hue gradient.
-    vec3 L = normalize(hapticFillDirection.xyz);
-    float band = slateCelBand(dot(N, L) * 0.5 + 0.5);
-    hapticCelAdd(result, mix(hapticFillGround.rgb, hapticFillSky.rgb, band), hapticCelHighlight(N, V, L, band, hapticFillSky.rgb));
+    // The fill bands its wrapped N.L before mixing ground and sky, so it adds no smooth hue gradient. It has no
+    // highlight, as on the PBR path.
+    float band = slateCelBand(dot(N, normalize(hapticFillDirection.xyz)) * 0.5 + 0.5);
+    hapticCelAdd(result, mix(hapticFillGround.rgb, hapticFillSky.rgb, band), vec3(0.0));
   }
   for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.directional}; i++) {
     if (i >= int(hapticCounts.x)) break;
@@ -1113,11 +1113,10 @@ fn hapticDirectLights(surface: hapticSurface, P: vec3f, N: vec3f, V: vec3f, diff
   // Before any branch: derivatives need uniform control flow, and the sun's receiver plane reads them.
   let dPdx = dpdx(P);
   let dPdy = dpdy(P);
+  // The fill is diffuse only, as in the GLSL twin.
   if (HapticLights.hapticFillDirection.w > 0.0) {
-    let L = normalize(HapticLights.hapticFillDirection.xyz);
-    let NdotL = hapticSaturateEps(dot(N, L) * 0.5 + 0.5);
+    let NdotL = hapticSaturateEps(dot(N, normalize(HapticLights.hapticFillDirection.xyz)) * 0.5 + 0.5);
     *diffuse += mix(HapticLights.hapticFillGround.rgb, HapticLights.hapticFillSky.rgb, NdotL);
-    *specular += hapticSpecular(surface, N, V, L, NdotL, surface.roughness) * HapticLights.hapticFillSky.rgb;
   }
   for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.directional}; i++) {
     if (i >= i32(HapticLights.hapticCounts.x)) { break; }
@@ -1209,9 +1208,8 @@ fn hapticCelLighting(P: vec3f, N: vec3f, V: vec3f, base: vec3f, environmentInflu
   let dPdy = dpdy(P);
   var result = hapticCelLight(vec3f(0.0), vec3f(0.0), 0.0);
   if (HapticLights.hapticFillDirection.w > 0.0) {
-    let L = normalize(HapticLights.hapticFillDirection.xyz);
-    let band = slateCelBand(dot(N, L) * 0.5 + 0.5);
-    hapticCelAdd(&result, mix(HapticLights.hapticFillGround.rgb, HapticLights.hapticFillSky.rgb, band), hapticCelHighlight(N, V, L, band, HapticLights.hapticFillSky.rgb));
+    let band = slateCelBand(dot(N, normalize(HapticLights.hapticFillDirection.xyz)) * 0.5 + 0.5);
+    hapticCelAdd(&result, mix(HapticLights.hapticFillGround.rgb, HapticLights.hapticFillSky.rgb, band), vec3f(0.0));
   }
   for (var i: i32 = 0; i < ${HAPTIC_LIGHT_MAXIMUM.directional}; i++) {
     if (i >= i32(HapticLights.hapticCounts.x)) { break; }
