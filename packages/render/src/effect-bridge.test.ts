@@ -95,7 +95,7 @@ it("keeps at most its budget of programs, releasing the least recently returned 
   expect(keptEffectCount(engine)).toBe(2);
 });
 
-it("lets a program it stops keeping go only once a parallel-compile driver has finished linking it", async () => {
+it("keeps a program once it has compiled, and lets one its owner abandoned while compiling go", async () => {
   vi.useFakeTimers();
   const engine = new NullEngine();
   engines.push(engine);
@@ -113,25 +113,19 @@ it("lets a program it stops keeping go only once a parallel-compile driver has f
     native.onCompiled = undefined;
     return true;
   });
-  const deleted = new Set<unknown>();
-  const deletePipeline = engine._deletePipelineContext.bind(engine);
-  vi.spyOn(engine, "_deletePipelineContext").mockImplementation((pipeline) => {
-    deleted.add(pipeline);
-    deletePipeline(pipeline);
-  });
-  const stop = keepPlayEffects(engine, 1);
-  const compiling = compile(engine, "#define COMPILING");
-  const pipeline = compiling.getPipelineContext();
-  expect(compiling.isReady()).toBe(false);
-  compiling.dispose();
-  // Out of the budget while it still links: Babylon keeps polling its program.
-  compile(engine, "#define NEXT").dispose();
-  expect(compiling.isDisposed).toBe(false);
-  expect(deleted.has(pipeline)).toBe(false);
+  const stop = keepPlayEffects(engine);
+  const drawn = compile(engine, "#define DRAWN");
+  const abandoned = compile(engine, "#define ABANDONED");
+  expect(abandoned.isReady()).toBe(false);
+  // A pass retired while its program still links (a graph rebuilt during the load): nothing else wants it.
+  abandoned.dispose();
+  expect(abandoned.isDisposed).toBe(true);
   linked = true;
   await vi.advanceTimersByTimeAsync(32);
-  expect(compiling.isDisposed).toBe(true);
-  expect(deleted.has(pipeline)).toBe(true);
+  expect(drawn.isReady()).toBe(true);
+  drawn.dispose();
+  expect(drawn.isDisposed).toBe(false);
+  expect(keptEffectCount(engine)).toBe(1);
   stop();
 });
 

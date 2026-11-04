@@ -66,6 +66,8 @@ function release(bridge: Bridge): void {
 type Keep = {
   engine: AbstractEngine;
   effects: Set<Effect>;
+  /** Effects returned while they compile, kept once they have. */
+  compiling: WeakSet<Effect>;
   budget: number;
   observers: { disposed: Observer<AbstractEngine>; lost: Observer<AbstractEngine> } | null;
 };
@@ -76,94 +78,95 @@ const failed = (effect: Effect) => Boolean(effect.getCompilationError()) && effe
 function keepFor(engine: AbstractEngine): Keep {
   const existing = keeps.get(engine);
   if (existing) return existing;
-  const keep: Keep = { engine, effects: new Set(), budget: PLAY_EFFECT_KEEP_BUDGET, observers: null };
+  const keep: Keep = { engine, effects: new Set(), compiling: new WeakSet(), budget: PLAY_EFFECT_KEEP_BUDGET, observers: null };
   keeps.set(engine, keep);
   return keep;
 }
 
-/** Releases the keep's reference; `immediate` with the Engine or its context gone, when no compile will settle. */
-function drop(keep: Keep, effect: Effect, immediate = false): void {
+function drop(keep: Keep, effect: Effect): void {
   if (!keep.effects.delete(effect)) return;
   // An Effect its owner disposed for good (`dispose(true)`) holds no reference of ours any more.
-  if (!effect.isDisposed) {
-    if (immediate || effect.isReady() || failed(effect)) effect.dispose();
-    else {
-      // A parallel-compile driver's program is polled after its last release deletes it
-      // (`owned-effect-retirement.ts`): let a compiling one go once Babylon has settled it.
-      const settled = () => queueMicrotask(() => effect.dispose());
-      effect.onCompileObservable.addOnce(settled);
-      effect.onErrorObservable.add(() => {
-        if (effect.allFallbacksProcessed()) settled();
-      });
-    }
-  }
+  if (!effect.isDisposed) effect.dispose();
   if (keep.effects.size > 0 || !keep.observers) return;
   keep.engine.onDisposeObservable.remove(keep.observers.disposed);
   keep.engine.onContextLostObservable.remove(keep.observers.lost);
   keep.observers = null;
 }
 
-/** Retains `effect`, or marks it the most recently used; true when the keep took a new reference. */
-function take(keep: Keep, effect: Effect): boolean {
-  if (!(effect instanceof Effect) || effect.isDisposed || failed(effect)) return false;
-  if (keep.effects.delete(effect)) {
-    keep.effects.add(effect);
-    return false;
-  }
+/** Takes one reference on a compiled `effect`. */
+function retain(keep: Keep, effect: Effect): void {
   effect._refCount += 1;
   keep.effects.add(effect);
   const { engine } = keep;
   keep.observers ??= {
-    disposed: engine.onDisposeObservable.addOnce(() => releaseKept(keep, true)),
+    disposed: engine.onDisposeObservable.addOnce(() => releaseKept(keep)),
     // A WebGL2 restore relinks every Effect left in the cache: let the kept ones go with the lost context.
-    lost: engine.onContextLostObservable.add(() => releaseKept(keep, true)),
+    lost: engine.onContextLostObservable.add(() => releaseKept(keep)),
   };
-  // A program that cannot link is not kept: a later requester would get the failed Effect from the cache without
-  // its error. Released after Babylon's error handling returns, as the owner's own release is.
-  if (!effect.isReady()) {
-    effect.onErrorObservable.add(() => {
-      if (effect.allFallbacksProcessed()) queueMicrotask(() => drop(keep, effect));
-    });
-  }
   for (const oldest of keep.effects) {
     if (keep.effects.size <= keep.budget) break;
     drop(keep, oldest);
   }
-  return true;
+}
+
+/** One `keepPlayEffects` call: the Effects it took, and whether it has stopped or discarded them. */
+type Session = { taken: Set<Effect>; stopped: boolean; discarded: boolean };
+
+/**
+ * Retains `effect` once it has compiled, or marks a kept one the most recently used. Only a compiled program is kept:
+ * one its owners let go while it still compiles is abandoned (Babylon then skips preparing it), and holding it would
+ * have Babylon finish it for nobody, from shader sources its owner may have removed (a post-process pass's), or keep a
+ * program that cannot link, which a later requester would get from the cache without its error.
+ */
+function take(keep: Keep, effect: Effect, session: Session): void {
+  if (!(effect instanceof Effect) || effect.isDisposed || failed(effect)) return;
+  if (keep.effects.delete(effect)) {
+    keep.effects.add(effect);
+    return;
+  }
+  if (effect.isReady()) {
+    retain(keep, effect);
+    session.taken.add(effect);
+    return;
+  }
+  if (keep.compiling.has(effect)) return;
+  keep.compiling.add(effect);
+  // Babylon notifies the observable after its creator's `onCompiled`.
+  effect.onCompileObservable.addOnce(() => {
+    keep.compiling.delete(effect);
+    if (session.discarded || effect.isDisposed || keep.effects.has(effect)) return;
+    retain(keep, effect);
+    session.taken.add(effect);
+    if (session.stopped) forgetCreator(effect);
+  });
 }
 
 /**
  * Keeps every Effect `engine` returns from now until the returned stop (a Play view's life), and past it: Play's
  * programs then survive Stop and the editor's reload, so the next Play finds those it draws again in the Engine's
  * Effect cache, and a load that releases a program and asks for it again (a graph rebuilt during the load, an
- * environment filter run twice) links it once. One reference each, at most `PLAY_EFFECT_KEEP_BUDGET` Effects
- * (`budget`), the least recently returned released first; a program that fails to link is never kept. The keep goes
- * with the Engine and with a lost context. Stopping clears a settled Effect's compile callbacks, which belong to
- * whoever first created it, so a kept Effect holds no closed Play's Scene. Stopping with `discard` (a view whose
- * construction failed) instead releases the Effects this call took, leaving the keep as it found it.
+ * environment filter run twice) links it once. One reference each, taken once the program has compiled (`take`), at
+ * most `PLAY_EFFECT_KEEP_BUDGET` Effects (`budget`), the least recently returned released first. The keep goes with
+ * the Engine and with a lost context. Stopping clears a kept Effect's compile callbacks, which belong to whoever first
+ * created it, so a kept Effect holds no closed Play's Scene. Stopping with `discard` (a view whose construction
+ * failed) instead releases the Effects this call took, leaving the keep as it found it.
  */
 export function keepPlayEffects(engine: AbstractEngine, budget = PLAY_EFFECT_KEEP_BUDGET): (discard?: boolean) => void {
   if (engine.isDisposed) return () => {};
   const keep = keepFor(engine);
   keep.budget = budget;
-  const taken = new Set<Effect>();
-  const stopWatching = watchEngineEffects(engine, (effect) => {
-    if (take(keep, effect)) taken.add(effect);
-  });
-  let stopped = false;
+  const session: Session = { taken: new Set(), stopped: false, discarded: false };
+  const stopWatching = watchEngineEffects(engine, (effect) => take(keep, effect, session));
   return (discard = false) => {
-    if (stopped) return;
-    stopped = true;
+    if (session.stopped) return;
+    session.stopped = true;
     stopWatching();
     if (discard) {
-      for (const effect of taken) drop(keep, effect);
+      session.discarded = true;
+      for (const effect of session.taken) drop(keep, effect);
       return;
     }
-    for (const effect of keep.effects) {
-      if (effect.isReady()) forgetCreator(effect);
-      // Babylon calls `onCompiled` before it notifies the observable.
-      else if (!failed(effect)) effect.onCompileObservable.addOnce(() => forgetCreator(effect));
-    }
+    for (const effect of keep.effects) forgetCreator(effect);
   };
 }
 
@@ -178,8 +181,8 @@ export function releaseKeptEffects(engine: AbstractEngine): void {
   if (keep) releaseKept(keep);
 }
 
-function releaseKept(keep: Keep, immediate = false): void {
-  for (const effect of [...keep.effects]) drop(keep, effect, immediate);
+function releaseKept(keep: Keep): void {
+  for (const effect of [...keep.effects]) drop(keep, effect);
 }
 
 /** How many Effects `engine` keeps for Play. */
