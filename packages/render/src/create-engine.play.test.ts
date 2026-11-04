@@ -58,6 +58,8 @@ import { isSceneGameTimePaused } from "./scene-game-time";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
+import * as gpuBusyProbe from "./gpu-busy-probe";
+import { engineFrameBackpressure } from "./frame-backpressure";
 import * as snapshotApply from "./snapshot-apply";
 import * as presentation from "./presented-frame";
 import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
@@ -669,6 +671,35 @@ describe("Play createEngine view", () => {
     handles.push({ dispose: () => spy.mockRestore() });
     return { advance: (ms: number) => { now += ms; } };
   }
+
+  it("presents a load's first frame while earlier frames fill the GPU queue, and holds steady frames behind it", async () => {
+    // GPU markers that never finish: frames queued before the load (software GL compiling their pipelines) keep the
+    // Engine at its frames-in-flight limit. Before the fix the load's frame waited behind them until its deadline.
+    const markers = vi.spyOn(gpuBusyProbe, "engineFrameMarkers").mockReturnValue((submitted) => ({ submitted, done: () => false, dispose: () => {} }));
+    handles.push({ dispose: () => markers.mockRestore() });
+    const engine = sharedEngine();
+    const gate = engineFrameBackpressure(engine);
+    for (let queued = 0; queued < 2; queued++) { gate.admit(); gate.frameEnd(); }
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    await handle.prewarmSceneMaterials();
+    const frame = () => {
+      handle.scheduler.invalidate("manual");
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    const presented = handle.presentFirstFrame();
+    frame();
+    await presented;
+    expect(handle.renderDiagnostics().presentation.drawn).toBe(1);
+    expect(gate.stats()).toEqual({ mode: 2, inFlight: 3, skipped: 0 });
+    // A loaded view's steady frames still wait for the queue.
+    frame();
+    expect(handle.renderDiagnostics().presentation.drawn).toBe(1);
+    expect(gate.stats()).toEqual({ mode: 2, inFlight: 3, skipped: 1 });
+  });
 
   it("pauses Play's game time but keeps drawing while the world view holds for render pipelines", async () => {
     const engine = sharedEngine();

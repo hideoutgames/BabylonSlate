@@ -52,6 +52,19 @@ describe("frame backpressure", () => {
     expect(gate.stats()).toEqual({ mode: "off", inFlight: 0, skipped: 1 });
   });
 
+  it("renders a loading owner's presentation frame past the limit, and counts it in flight for the frames after it", () => {
+    const { gate, queue, run } = gpu();
+    expect([run(), run(), run()]).toEqual([true, true, false]);
+    expect(gate.admit(true)).toBe(true);
+    gate.frameEnd();
+    expect(gate.stats()).toEqual({ mode: 2, inFlight: 3, skipped: 1 });
+    // Steady frames wait until fewer than two frames remain queued, the loading frame among them.
+    queue[0]!.finished = true;
+    expect(run()).toBe(false);
+    queue[1]!.finished = true;
+    expect(run()).toBe(true);
+  });
+
   it("submits nothing for a frame no view rendered, and renders every frame without a marker source", () => {
     const { gate, queue } = gpu();
     gate.frameEnd();
