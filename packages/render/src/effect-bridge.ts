@@ -81,9 +81,22 @@ function keepFor(engine: AbstractEngine): Keep {
   return keep;
 }
 
-function drop(keep: Keep, effect: Effect): void {
+/** Releases the keep's reference; `immediate` with the Engine or its context gone, when no compile will settle. */
+function drop(keep: Keep, effect: Effect, immediate = false): void {
   if (!keep.effects.delete(effect)) return;
-  if (!effect.isDisposed) effect.dispose();
+  // An Effect its owner disposed for good (`dispose(true)`) holds no reference of ours any more.
+  if (!effect.isDisposed) {
+    if (immediate || effect.isReady() || failed(effect)) effect.dispose();
+    else {
+      // A parallel-compile driver's program is polled after its last release deletes it
+      // (`owned-effect-retirement.ts`): let a compiling one go once Babylon has settled it.
+      const settled = () => queueMicrotask(() => effect.dispose());
+      effect.onCompileObservable.addOnce(settled);
+      effect.onErrorObservable.add(() => {
+        if (effect.allFallbacksProcessed()) settled();
+      });
+    }
+  }
   if (keep.effects.size > 0 || !keep.observers) return;
   keep.engine.onDisposeObservable.remove(keep.observers.disposed);
   keep.engine.onContextLostObservable.remove(keep.observers.lost);
@@ -101,9 +114,9 @@ function take(keep: Keep, effect: Effect): boolean {
   keep.effects.add(effect);
   const { engine } = keep;
   keep.observers ??= {
-    disposed: engine.onDisposeObservable.addOnce(() => releaseKeptEffects(engine)),
+    disposed: engine.onDisposeObservable.addOnce(() => releaseKept(keep, true)),
     // A WebGL2 restore relinks every Effect left in the cache: let the kept ones go with the lost context.
-    lost: engine.onContextLostObservable.add(() => releaseKeptEffects(engine)),
+    lost: engine.onContextLostObservable.add(() => releaseKept(keep, true)),
   };
   // A program that cannot link is not kept: a later requester would get the failed Effect from the cache without
   // its error. Released after Babylon's error handling returns, as the owner's own release is.
@@ -162,8 +175,11 @@ function forgetCreator(effect: Effect): void {
 /** Ends `engine`'s keep: Effects nothing else holds are released. */
 export function releaseKeptEffects(engine: AbstractEngine): void {
   const keep = keeps.get(engine);
-  if (!keep) return;
-  for (const effect of [...keep.effects]) drop(keep, effect);
+  if (keep) releaseKept(keep);
+}
+
+function releaseKept(keep: Keep, immediate = false): void {
+  for (const effect of [...keep.effects]) drop(keep, effect, immediate);
 }
 
 /** How many Effects `engine` keeps for Play. */

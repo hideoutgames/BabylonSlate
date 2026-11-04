@@ -289,6 +289,13 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   test.setTimeout(20 * 60_000 + SCENES.length * PLAYS * (SAMPLES * SAMPLE_MS * 2 + WARMUP_MS + SETTLE_MS + 5 * 60_000));
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
+  // A failed load reports itself on the console, not as a page error: keep the last ones for the failure message.
+  const consoleProblems: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() !== "error" && message.type() !== "warning") return;
+    consoleProblems.push(`${message.type()}: ${message.text().slice(0, 500)}`);
+    if (consoleProblems.length > 40) consoleProblems.shift();
+  });
   await recordLongTasks(page);
   await recordProgramLinks(page);
   await seedEngineSettings(page, (settings) => {
@@ -320,7 +327,12 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
         await waitForSceneView(page);
         await page.waitForTimeout(SETTLE_MS);
       }
-      plays.push(await measurePlay(page, cdp));
+      try {
+        plays.push(await measurePlay(page, cdp));
+      } catch (error) {
+        console.log(`[feature-test-perf] ${scene} Play ${index + 1} failed; last console problems:\n${consoleProblems.join("\n")}`);
+        throw error;
+      }
     }
     scenes[scene] = { sceneReadyMs, loadRetries, viewport, play: plays[0], ...(PLAYS > 1 ? { repeatPlays: plays.slice(1) } : {}) };
     // The next scene opens over the editor's reloaded view.
@@ -340,6 +352,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
     phases: { createToInteractiveMs, bootAndCreateLongTasks, encodeWaitMs, reopenToInteractiveMs },
     scenes,
     pageErrors,
+    consoleProblems,
   };
   const body = JSON.stringify(report, null, 2);
   writeFileSync(testInfo.outputPath("feature-test-perf.json"), body);

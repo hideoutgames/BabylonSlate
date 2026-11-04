@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { NullEngine, type Effect } from "@babylonjs/core";
+import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";
 import { bridgeEngineEffects, EFFECT_BRIDGE_MS, keepPlayEffects, keptEffectCount, releaseBridgedEffects } from "./effect-bridge";
 
 const engines: NullEngine[] = [];
@@ -92,6 +93,46 @@ it("keeps at most its budget of programs, releasing the least recently returned 
   expect(first.isDisposed).toBe(false);
   expect(third.isDisposed).toBe(false);
   expect(keptEffectCount(engine)).toBe(2);
+});
+
+it("lets a program it stops keeping go only once a parallel-compile driver has finished linking it", async () => {
+  vi.useFakeTimers();
+  const engine = new NullEngine();
+  engines.push(engine);
+  // NullEngine has no driver: only its pending-completion query is modelled, as on iPad WebKit or D3D11.
+  let linked = false;
+  const prepare = engine._preparePipelineContextAsync.bind(engine);
+  vi.spyOn(engine, "_preparePipelineContextAsync").mockImplementation((...args) => {
+    (args[0] as WebGLPipelineContext).isParallelCompiled = true;
+    return prepare(...args);
+  });
+  vi.spyOn(engine, "_isRenderingStateCompiled").mockImplementation((pipeline) => {
+    if (!linked) return false;
+    const native = pipeline as WebGLPipelineContext;
+    native.onCompiled?.();
+    native.onCompiled = undefined;
+    return true;
+  });
+  const deleted = new Set<unknown>();
+  const deletePipeline = engine._deletePipelineContext.bind(engine);
+  vi.spyOn(engine, "_deletePipelineContext").mockImplementation((pipeline) => {
+    deleted.add(pipeline);
+    deletePipeline(pipeline);
+  });
+  const stop = keepPlayEffects(engine, 1);
+  const compiling = compile(engine, "#define COMPILING");
+  const pipeline = compiling.getPipelineContext();
+  expect(compiling.isReady()).toBe(false);
+  compiling.dispose();
+  // Out of the budget while it still links: Babylon keeps polling its program.
+  compile(engine, "#define NEXT").dispose();
+  expect(compiling.isDisposed).toBe(false);
+  expect(deleted.has(pipeline)).toBe(false);
+  linked = true;
+  await vi.advanceTimersByTimeAsync(32);
+  expect(compiling.isDisposed).toBe(true);
+  expect(deleted.has(pipeline)).toBe(true);
+  stop();
 });
 
 it("lets the kept programs go with a lost context, and forgets their creators' compile callbacks once Play stops", () => {
