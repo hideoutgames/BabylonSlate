@@ -1203,6 +1203,8 @@ export type CommandMessage =
       layerId: string;
       postProcessStack: ScenePostProcessEntry[];
     }
+  /** The current Scene's post-process passes after Register or Unregister Scene Post-Processing. */
+  | { type: "scenePostProcess"; postProcessStack: ScenePostProcessEntry[] }
   /** A Scene Layer instance's camera moved, turned or zoomed (scripts only; every layer is created with the default camera). */
   | { type: "sceneLayerCamera"; layerId: string; camera: SceneLayerCamera };
 

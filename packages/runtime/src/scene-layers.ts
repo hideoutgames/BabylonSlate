@@ -1,5 +1,6 @@
 import type { CommandMessage } from "@haptic/bridge";
 import { newGuid, normalizeSceneLayer, remapSceneStreamingReferences, updateSceneLayerCamera, type SceneLayerCamera, type SerializedActor, type SerializedSceneLayer } from "@haptic/core";
+import type { RegisteredPostProcess } from "./scene-post-process";
 import { hydrateScenePropertyReferences, sceneLayerAssetClassId, type Actor, type EngineObject, type LifecycleHooks, type SceneLayer, type World } from "@haptic/object-model";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { OwnerAdmission } from "./owner-admission";
@@ -328,12 +329,15 @@ export class SceneLayers implements RuntimeSubsystem {
     this.host.emit({ type: "sceneLayerClear" });
   }
 
-  registerPostProcess(layerGuid: string, materialGuid: string): void {
+  /** A new pass after the layer's passes; its owner and Entry ID name its Material Object. */
+  registerPostProcess(layerGuid: string, materialGuid: string): RegisteredPostProcess<SceneLayer> | null {
     const layer = this.host.world().findSceneLayer(layerGuid);
     const guid = String(materialGuid ?? "").trim();
-    if (!layer || !guid) return;
-    layer.postProcessStack.push({ id: newGuid(), materialGuid: guid, enabled: true });
+    if (!layer || !guid) return null;
+    const entryId = newGuid();
+    layer.postProcessStack.push({ id: entryId, materialGuid: guid, enabled: true });
     this.emitPostProcess(layer);
+    return { owner: layer, entryId };
   }
 
   unregisterPostProcess(layerGuid: string, materialGuid: string): void {
@@ -542,7 +546,7 @@ export function createSceneLayerHostBindings(deps: SceneLayerHostDeps): Pick<Scr
     createSceneLayerAsync: (assetGuid, zOrder, owner) => layers.createAsync(assetGuid, zOrder, owner),
     removeSceneLayer: (layerGuid) => { layers.remove(layerGuid); },
     clearSceneLayers: () => { layers.clearAll(); },
-    registerSceneLayerPostProcess: (layerGuid, materialGuid) => { layers.registerPostProcess(layerGuid, materialGuid); },
+    registerSceneLayerPostProcess: (layerGuid, materialGuid) => layers.registerPostProcess(layerGuid, materialGuid),
     unregisterSceneLayerPostProcess: (layerGuid, materialGuid) => { layers.unregisterPostProcess(layerGuid, materialGuid); },
     getSceneLayerCamera: (layerGuid) => layers.camera(layerGuid),
     setSceneLayerCamera: (layerGuid, changes) => { layers.setCamera(layerGuid, changes); },

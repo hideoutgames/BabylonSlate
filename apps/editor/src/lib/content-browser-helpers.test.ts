@@ -2273,7 +2273,7 @@ describe("content-browser-helpers", () => {
     ).toEqual({ bloom: "postProcess" });
   });
 
-  it("filters Inspector pin pickers to postProcess Materials on SceneLayer PP nodes", () => {
+  it("filters Inspector pin pickers to postProcess Materials on Scene and SceneLayer PP nodes", () => {
     const bloom = asset({
       guid: "bloom",
       type: "Material",
@@ -2292,11 +2292,11 @@ describe("content-browser-helpers", () => {
       { guid: "bloom", name: "Bloom", type: "Material", path: bloom.path },
       { guid: "albedo", name: "Albedo", type: "Material", path: albedo.path },
     ];
-    expect(
-      filterInspectorPinPickerAssets(picker, [bloom, albedo], [], {
-        nodeType: "scene-layer.registerPostProcess",
-      }).map((entry) => entry.guid),
-    ).toEqual(["bloom"]);
+    for (const nodeType of ["scene-layer.registerPostProcess", "scene.registerPostProcess", "scene.unregisterPostProcess"]) {
+      expect(
+        filterInspectorPinPickerAssets(picker, [bloom, albedo], [], { nodeType }).map((entry) => entry.guid),
+      ).toEqual(["bloom"]);
+    }
     expect(
       filterInspectorPinPickerAssets(picker, [bloom, albedo], [], {
         nodeType: "audio.play",

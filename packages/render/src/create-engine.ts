@@ -2826,6 +2826,12 @@ function initializeEngine(
         syncPlayComposition();
         scheduler.invalidate("snapshot");
       }
+      if (command.type === "scenePostProcess") {
+        // Passes that stay keep their identity, so their parameter writes stay applied.
+        postProcessStack = normalizePostProcessStack(command.postProcessStack);
+        rebuildPostProcessStack();
+        scheduler.invalidate("asset");
+      }
       if (command.type === "sceneLayerPostProcess") {
         sceneLayerCompositor?.setPostProcess(
           command.layerId,

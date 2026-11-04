@@ -45,6 +45,7 @@ import type { RuntimeAssetCatalog } from "./asset-catalog";
 import type { RuntimeDataApi } from "./data-catalog";
 import type { LogSeverity } from "./log-ring";
 import type { TweenRequest } from "./tween-runtime";
+import type { RegisteredPostProcess } from "./scene-post-process";
 
 export type AnimGraphControl = {
   getVariable(name: string): unknown;
@@ -254,11 +255,15 @@ export interface ScriptHostServices {
   registerSceneLayerPostProcess?(
     layerGuid: string,
     materialGuid: string,
-  ): void;
+  ): RegisteredPostProcess<SceneLayer> | null;
   unregisterSceneLayerPostProcess?(
     layerGuid: string,
     materialGuid: string,
   ): void;
+  /** Register Scene Post-Processing on the current Scene. */
+  registerScenePostProcess?(materialGuid: string): RegisteredPostProcess<Scene> | null;
+  /** Unregister Scene Post-Processing on the current Scene. */
+  unregisterScenePostProcess?(materialGuid: string): void;
   /** A live Scene Layer instance's camera; null once the layer is gone. */
   getSceneLayerCamera?(layerGuid: string): SceneLayerCamera | null;
   /** Change any of a layer camera's centre, roll and zoom; values that are not finite numbers keep the current ones. */

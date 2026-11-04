@@ -500,14 +500,18 @@ export interface ScriptContext {
   clearSceneLayers(): void;
   setFocusTarget(target: unknown): boolean;
   clearFocusTarget(target: unknown): void;
+  /** The new pass's Material Object, or null when nothing was registered. */
   registerSceneLayerPostProcess(
     layer: EngineObject | string | null | undefined,
     materialGuid: string,
-  ): void;
+  ): PostProcessMaterialObject | null;
   unregisterSceneLayerPostProcess(
     layer: EngineObject | string | null | undefined,
     materialGuid: string,
   ): void;
+  /** The new pass's Material Object, or null when nothing was registered. */
+  registerScenePostProcess(materialGuid: string): PostProcessMaterialObject | null;
+  unregisterScenePostProcess(materialGuid: string): void;
   setSceneLayerCameraLocation(layer: EngineObject | string | null | undefined, location: unknown): void;
   addSceneLayerCameraOffset(layer: EngineObject | string | null | undefined, delta: unknown): void;
   getSceneLayerCameraLocation(layer: EngineObject | string | null | undefined): { x: number; y: number };
@@ -662,6 +666,7 @@ export type HostContextKey =
   | "setAnimGraphVariable" | "getAnimGraphCurrentState" | "jumpAnimGraphState" | "setChannelVolume"
   | "setGlobalVolume" | "changeScene" | "createSceneLayer" | "removeSceneLayer" | "clearSceneLayers"
   | "setFocusTarget" | "clearFocusTarget" | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"
+  | "registerScenePostProcess" | "unregisterScenePostProcess"
   | "setSceneLayerCameraLocation" | "addSceneLayerCameraOffset" | "getSceneLayerCameraLocation" | "setSceneLayerCameraRotation"
   | "getSceneLayerCameraRotation" | "setSceneLayerCameraZoom" | "getSceneLayerCameraZoom" | "getOwningSceneLayer"
   | "getScalability" | "requestScalability" | "possessCamera" | "getRenderTargetMode"
