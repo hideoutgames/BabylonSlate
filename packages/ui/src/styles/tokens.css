@@ -217,8 +217,7 @@
     --node-title-foreground: oklch(0.98 0.01 250);
     --asset-scene: oklch(0.58 0.16 95);
     --asset-graph: oklch(0.54 0.16 195);
-    /* Near-neutral, apart from the hue wheel: graphite here, silver in the dark scheme; darker than --muted-foreground. */
-    --asset-texture: oklch(0.40 0.015 250);
+    --asset-render-target: oklch(0.56 0.19 20);
     --asset-sprite: oklch(0.56 0.18 335);
     --asset-material: oklch(0.64 0.16 145);
     --asset-model: oklch(0.58 0.16 45);
@@ -344,8 +343,7 @@
     --node-title-foreground: oklch(0.98 0.01 250);
     --asset-scene: oklch(0.72 0.16 95);
     --asset-graph: oklch(0.68 0.16 195);
-    /* Near-neutral silver, lighter than --muted-foreground. */
-    --asset-texture: oklch(0.84 0.012 250);
+    --asset-render-target: oklch(0.68 0.17 20);
     --asset-sprite: oklch(0.70 0.16 335);
     --asset-material: oklch(0.76 0.16 145);
     --asset-model: oklch(0.72 0.16 45);

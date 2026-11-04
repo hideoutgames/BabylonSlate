@@ -74,6 +74,7 @@ export type AssetVisualFamily =
   | "scene"
   | "graph"
   | "texture"
+  | "renderTarget"
   | "sprite"
   | "material"
   | "model"
@@ -381,8 +382,8 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   SceneLayer: "scene",
   Graph: "graph",
   Texture: "texture",
-  RenderTarget: "texture",
-  RenderTargetTexture: "texture",
+  RenderTarget: "renderTarget",
+  RenderTargetTexture: "renderTarget",
   Material: "material",
   MaterialInstance: "material",
   MaterialFunction: "material",
@@ -430,7 +431,9 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
 const COLOR_BY_FAMILY: Record<AssetVisualFamily, string> = {
   scene: assetColorVar("scene"),
   graph: assetColorVar("graph"),
-  texture: assetColorVar("texture"),
+  // Textures share the blue Class assets show.
+  texture: assetColorVar("animation"),
+  renderTarget: assetColorVar("renderTarget"),
   sprite: assetColorVar("sprite"),
   material: assetColorVar("material"),
   model: assetColorVar("model"),
