@@ -125,6 +125,7 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
                 const { tilemaps, tilesets } =
                   await collectPlayTilemapContent(scene);
                 extras.tilemapChains = navBakeTilemapChains(
+                  scene,
                   tilemaps,
                   tilesets,
                   projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
