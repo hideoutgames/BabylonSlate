@@ -9,7 +9,7 @@ Paint 2D levels from a grid of tiles. A **Tileset** slices an image into tiles a
 3. Tap **Pick Texture** in the **Preview**, or set **Texture** in the **Inspector**. **Atlas Width** and **Atlas Height** fill in from the image.
 4. Set **Tile Width** and **Tile Height** in pixels (default 16), then tap **Confirm Tile Size**. Set **Margin** (border around the sheet) and **Spacing** (gap between tiles) if your sheet has them.
 
-Tiles are numbered from 1, starting at the top-left of the image. In the **Preview**, **Move** pans with one finger and **Select** drags a box to select several tiles. Pinch or scroll to zoom in either tool.
+Tiles are numbered from 1, starting at the top-left of the image. In the **Preview**, **Move** pans with one finger and **Select** drags a box to select several tiles. Pinch or scroll to zoom in either tool. With a keyboard, Tab to the sheet, move between tiles with the arrow keys (Home and End go to the ends of a row) and press Enter or Space to select one.
 
 ## Tile settings
 
@@ -42,18 +42,20 @@ Two autotiles of the same Tileset, such as grass and dirt, can meet through a tr
 1. Choose **New Asset > 2D > Tilemap**, then double-tap it. **Paint** fills the centre, with **Palette** on the left and the **Inspector** on the right.
 2. Under **Tilesets** in the **Inspector**, tap **Add Tileset**. A map can use several Tilesets.
 3. Tap a tile in the **Palette**. Use **Search Tiles** to filter long lists.
-4. Pick a tool in the **Paint** toolbar, choose the layer in the **Paint Layer** picker, and paint.
+4. Pick a tool in the **Paint** toolbar, choose the layer in the **Paint Layer** picker, and paint. The picker and the layer selected in the **Inspector** are the same layer; when it is hidden, the toolbar shows **Layer Hidden**.
 
 | Tool | Effect |
 | --- | --- |
 | Move | Pans the map. The default tool. |
 | Brush, Eraser | Paint or erase tiles under your finger. |
-| Rect | Fills the rectangle you drag. |
-| Bucket | Fills the connected area of matching tiles. |
+| Rect | Fills the rectangle you drag. An outline shows it until you lift your finger. |
+| Bucket | Fills the connected area of matching tiles, up to the edge of the map. |
 | Stamp | Places a 2 × 2 block of the selected tile. |
 | Picker | Picks the tile you tap as the brush. |
 
-One finger paints. Two fingers pinch to zoom and drag to pan in any tool; the scroll wheel zooms. Each stroke is one undo step.
+One finger paints. Two fingers pinch to zoom and drag to pan in any tool; the scroll wheel zooms. Each stroke is one undo step. With a mouse, the toolbar shows the column and row of the cell under the pointer.
+
+Your edits show in the Scene viewport as you make them, without saving first.
 
 ## Paint with autotiles
 
@@ -76,7 +78,7 @@ One finger paints. Two fingers pinch to zoom and drag to pan in any tool; the sc
 | --- | --- |
 | Map Width, Map Height | Map size in tiles. Default 64 × 64. Shrinking the map removes tiles outside it. |
 | Tile Width, Tile Height | Cell size in pixels (default 16). World size is this divided by **Pixels Per Unit**. Usually the same as the Tileset's tile size. |
-| Chunk Size | Tiles per side of each internal block. Default 32. |
+| Chunk Size | Tiles per side of each internal block. Default 32. Changing it keeps every tile in its cell. |
 
 **Layers** lists the map's layers. Tap **Add Layer** to add one, tap a layer to edit it, and use its eye button to hide or show it. Under **Selected Layer**:
 
@@ -100,7 +102,7 @@ Each layer with **Collision** on becomes solid ground from its Full and Chain ti
 
 ## Things to know
 
-- **Bucket** spreads only through the part of the layer that already has tiles. On an empty layer it fills one cell.
+- **Bucket** stops at the edge of the map. On an empty layer it fills the whole map.
 - Removing a Tileset from a map erases its tiles from every layer. The editor asks first, and you can undo it.
 - Animated tiles play in Play, Simulate and Preview Build, and pause when the game pauses. The editor viewport shows each animated tile's first frame.
 - Parallax applies only in Play, not in the editor viewport.

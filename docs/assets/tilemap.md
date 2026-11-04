@@ -12,7 +12,7 @@ Or select one or more Tilesets, right-click one and choose **Create Tilemap**: t
 
 Double-tap a Tilemap to open it.
 
-- **Paint**: the map. Pick a tool in the toolbar and choose the layer in the **Paint Layer** picker.
+- **Paint**: the map. Pick a tool in the toolbar and choose the layer in the **Paint Layer** picker, the same layer the **Inspector** shows under **Selected Layer**. A hidden layer shows **Layer Hidden** in the toolbar. With a mouse, the toolbar shows the cell under the pointer.
 - **Palette**: the autotiles of the map's Tilesets, then their tiles. Tap a tile to paint with it, or an autotile to paint with that autotile; **Search Tiles** filters long lists.
 - **Inspector**: **Tilesets**, **Map**, **Layers** and the selected layer.
 
@@ -20,14 +20,14 @@ Double-tap a Tilemap to open it.
 | --- | --- |
 | Move | Pans the map. The default tool. |
 | Brush, Eraser | Paint or erase tiles under your finger. |
-| Rect | Fills the rectangle you drag. |
-| Bucket | Fills the connected area of matching tiles. |
+| Rect | Fills the rectangle you drag. An outline shows it until you lift your finger. |
+| Bucket | Fills the connected area of matching tiles, up to the edge of the map. |
 | Stamp | Places a 2 × 2 block of the selected tile. |
 | Picker | Picks the tile you tap as the brush. |
 
 With an autotile selected, every tool paints the autotile and the cells around your stroke update to match. The **Eraser** always updates the autotile tiles around the cells it clears. When a Tileset's autotiles change, the map's autotile cells update by themselves; the open Tilemap shows the update at once and saves it with your next edit. See [Paint with autotiles](../2d/tilemaps.md#paint-with-autotiles).
 
-Each stroke is one undo step. Two fingers pinch to zoom and drag to pan in any tool.
+Each stroke is one undo step. Two fingers pinch to zoom and drag to pan in any tool. Edits show in the Scene viewport as you make them.
 
 ## Settings
 
@@ -36,7 +36,7 @@ Each stroke is one undo step. Two fingers pinch to zoom and drag to pan in any t
 | Tilesets | The Tilesets the map can use. **Add Tileset** adds one. Removing a Tileset erases its tiles from every layer; the editor asks first. |
 | Map Width, Map Height | Map size in tiles. Default 64 × 64. Shrinking the map removes tiles outside it. |
 | Tile Width, Tile Height | Cell size in pixels. Default 16. Usually the same as the Tileset's tile size. |
-| Chunk Size | Tiles per side of each internal block. Default 32. |
+| Chunk Size | Tiles per side of each internal block. Default 32. Changing it keeps every tile in its cell. |
 
 **Layers** lists the layers. **Add Layer** adds one, and the eye button hides or shows a layer. Under **Selected Layer**:
 

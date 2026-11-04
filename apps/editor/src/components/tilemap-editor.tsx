@@ -70,7 +70,7 @@ import {
   selectedPickerIdentity,
   useAssetOpen,
   useTouchUi,
-  WINDOWED_SLICE_OVERSCAN,
+  windowedSlice,
   type PropertyRow,
 } from "@haptic/editor-kit";
 import {
@@ -853,15 +853,13 @@ const PaletteGroup = memo(function PaletteGroup({
   const columns = inner > 0 ? Math.max(1, Math.floor((inner + PALETTE_GAP) / (minCell + PALETTE_GAP))) : 0;
   const rows = columns > 0 ? Math.ceil(tiles.length / columns) : 1;
   const rowHeight = columns > 0 ? (inner - PALETTE_GAP * (columns - 1)) / columns + PALETTE_GAP : 0;
-  let first = 0;
-  let last = tiles.length;
-  if (columns > 0 && scroll.height > 0) {
-    const firstRow = Math.max(0, Math.floor((scroll.scrollTop - layout.top) / rowHeight) - WINDOWED_SLICE_OVERSCAN);
-    const lastRow = Math.min(rows, Math.ceil((scroll.scrollTop + scroll.height - layout.top) / rowHeight) + WINDOWED_SLICE_OVERSCAN);
-    first = Math.min(tiles.length, firstRow * columns);
-    last = Math.max(first, Math.min(tiles.length, lastRow * columns));
-  }
   const windowed = columns > 0 && scroll.height > 0;
+  // Rows in view of the scroll container, measured from this grid's top.
+  const slice = windowed
+    ? windowedSlice({ itemCount: rows, rowHeight, scrollTop: scroll.scrollTop - layout.top, viewportHeight: scroll.height })
+    : { firstIndex: 0, lastIndex: rows };
+  const first = windowed ? Math.min(tiles.length, slice.firstIndex * columns) : 0;
+  const last = windowed ? Math.max(first, Math.min(tiles.length, slice.lastIndex * columns)) : tiles.length;
   const gridStyle: CSSProperties | undefined = columns > 0
     ? {
         gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
