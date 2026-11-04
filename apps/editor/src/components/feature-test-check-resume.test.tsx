@@ -26,7 +26,7 @@ const first: FeatureTestCheckReport = {
   scenes: [{
     name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset", pass: 1, passed: true, problems: [],
     editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
-    play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [], logs: [],
+    play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
       benchmark: [{ label: "baseline 1", baseline: true, frames: null, runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null,
         failed: [], settings: { "presentation.preserve": "true" } }] },
     session: null,

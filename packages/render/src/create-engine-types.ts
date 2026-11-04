@@ -15,6 +15,7 @@ import type { SceneSourceAssets } from "./scene-source-assets";
 import type { nativePreparationForEngine, NativePreparationLimits, NativePreparationPriority } from "./native-preparation";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { RenderDiagnostics } from "./render-diagnostics";
+import type { PresentedImageSample } from "./presented-image";
 import type { RenderPerformanceSample } from "./render-performance";
 import type { Scene } from "@babylonjs/core/scene";
 import type {
@@ -146,6 +147,12 @@ export interface EngineHandle {
   observePerformance: (onFrame: (sample: RenderPerformanceSample) => void) => () => void;
   /** Explicit unpaired engine-wide GPU queries; unavailable backends explain why. */
   observeGpuTiming: (onSample: (sample: EngineGpuTimingSample) => void, onError?: (error: unknown) => void) => EngineGpuTimingObservation;
+  /**
+   * The next presented frame (not a loading or held one) as the player sees it, downsampled (`presented-image.ts`): the
+   * Engine canvas while this view presents directly, else the view canvas. Null after a context loss or disposal, and
+   * where the canvas cannot be read.
+   */
+  samplePresentedImage: () => Promise<PresentedImageSample | null>;
   /** Explicit next coherent game presentation; rejects concurrent profiling. */
   captureFrame: () => Promise<RenderFrameReport>;
   cancelFrameCapture: (reason?: string) => void;

@@ -1,4 +1,4 @@
-import type { RenderDiagnostics } from "@haptic/render";
+import type { PresentedImageSample, RenderDiagnostics } from "@haptic/render";
 import type { PlaySessionResult } from "./play-session";
 
 /** Read-only view of the running Play session for in-app diagnostics. */
@@ -15,6 +15,8 @@ export interface PlayProbe {
     accountedBytes: number;
     rendering: RenderDiagnostics | null;
   };
+  /** The next presented frame as the player sees it, downsampled; null when it cannot be read or Play stopped. */
+  samplePresentedImage(): Promise<PresentedImageSample | null>;
   /** Error and warning lines the session logged, oldest first. */
   problemLogs(): Array<{ severity: string; message: string }>;
   executeConsoleCommand(line: string): Promise<{ success: boolean; output: string }>;

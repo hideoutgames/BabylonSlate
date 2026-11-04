@@ -541,6 +541,19 @@ export interface CounterStats {
   samples: number;
 }
 
+/** What the Play view presented while it was measured. */
+export interface PlayPresentation {
+  /**
+   * Frames the view drew, held (kept its last image, waiting for shaders or settings) and skipped (`framesinflight`)
+   * while its frames were sampled; null where the view reports no counts.
+   */
+  frames: { drawn: number; held: number; skipped: number } | null;
+  /** Graphics context losses since Play started. */
+  contextLosses: number;
+  /** Each image sample's near-black share (`PresentedImageSample.blackShare`), oldest first; null where no frame was presented to sample. */
+  imageBlack: Array<number | null>;
+}
+
 /** Play's per-frame counters while it was sampled. */
 export interface PlayCounters {
   draws: CounterStats | null;
@@ -594,6 +607,8 @@ export interface FeatureTestCheckSceneResult {
     snapshot: ReturnType<PlayProbe["snapshot"]> | null;
     /** Play's per-frame counters while it was sampled; absent in reports saved before they were recorded. */
     counters?: PlayCounters | null;
+    /** What Play presented while it was measured: frames drawn, held and skipped, context losses and image samples. */
+    presentation: PlayPresentation | null;
     /** Shaders first drawn after the scene presented, read when its commands finished (WebGL2 only). */
     firstDraws: NonNullable<RenderDiagnostics["firstDraws"]> | null;
     commands: FeatureTestCheckCommandResult[];
@@ -818,7 +833,10 @@ function emptySceneResult(scene: { name: string; path: string }): FeatureTestChe
   return {
     name: scene.name, path: scene.path,
     editor: { status: "not-opened", ms: 0, phase: null, frames: null, error: null, gpu: null },
-    play: { status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [], benchmark: [], logs: [] },
+    play: {
+      status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null,
+      commands: [], benchmark: [], logs: [],
+    },
     session: null, passed: false, problems: [],
   };
 }
@@ -885,11 +903,14 @@ async function checkScene(
   if (loaded === "loaded" && play) {
     result.play.status = "loaded";
     deps.onProgress?.(`${scene.name}: measuring Play`);
+    const before = presentationCounts(play);
     const sampled = await sampleWithCounters(play, deps.sampleFrames(limits.playSampleMs, signal), deps, signal);
     result.play.frames = sampled.frames;
     result.play.counters = { draws: sampled.draws, cpuMs: sampled.cpu, gpuMs: sampled.gpu };
     result.play.runtimeFps = play.runtimeFps();
     result.play.snapshot = play.snapshot();
+    result.play.presentation = await samplePresentation(play, before, deps, signal);
+    result.problems.push(...presentationProblems(result.play.presentation));
     const run = (line: string) => runCommand(play, line, deps, signal, limits);
     if (mode === "benchmark" || mode === "breakdown") {
       await benchmarkProfiles(scene.name, mode, method, play, run, deps, signal, limits, result.play.benchmark);
@@ -956,6 +977,61 @@ async function runCommand(
   return outcome === "timeout"
     ? { line, success: false, output: `No reply in ${seconds(limits.commandMs)}`, ms }
     : { line, success: outcome.success, output: outcome.output, ms };
+}
+
+/** Image samples per scene, `PRESENTED_IMAGE_SPACING_MS` apart, after Play's frames are measured. */
+const PRESENTED_IMAGE_SAMPLES = 3;
+const PRESENTED_IMAGE_SPACING_MS = 1_000;
+/** Most one image sample waits for a presented frame. */
+const PRESENTED_IMAGE_WAIT_MS = 5_000;
+/**
+ * An image sample is black when at least this share of it is near-black. Every Feature Test scene shows a lit sky or
+ * backdrop, which samples none; a black world under main's HUD still leaves most of the image black.
+ */
+export const BLACK_IMAGE_SHARE = 0.6;
+
+function presentationCounts(play: PlayProbe): { drawn: number; held: number; skipped: number; contextLosses: number } | null {
+  const rendering = play.snapshot().rendering;
+  const presentation = rendering?.presentation;
+  return presentation ? {
+    drawn: presentation.drawn, held: presentation.held, skipped: rendering.frameBackpressure?.skipped ?? 0,
+    contextLosses: presentation.contextLosses,
+  } : null;
+}
+
+/** The frames presented since `before`, then `PRESENTED_IMAGE_SAMPLES` samples of the image the player sees. */
+async function samplePresentation(
+  play: PlayProbe, before: ReturnType<typeof presentationCounts>, deps: FeatureTestCheckDeps, signal: AbortSignal,
+): Promise<PlayPresentation> {
+  const after = presentationCounts(play);
+  const imageBlack: Array<number | null> = [];
+  for (let index = 0; index < PRESENTED_IMAGE_SAMPLES; index += 1) {
+    if (index) await deps.sleep(PRESENTED_IMAGE_SPACING_MS, signal);
+    const sample = await timeout(play.samplePresentedImage(), PRESENTED_IMAGE_WAIT_MS, deps, signal);
+    imageBlack.push(sample === "timeout" || sample === null ? null : sample.blackShare);
+  }
+  const last = presentationCounts(play) ?? after;
+  return {
+    frames: before && after
+      ? { drawn: after.drawn - before.drawn, held: after.held - before.held, skipped: after.skipped - before.skipped }
+      : null,
+    contextLosses: last?.contextLosses ?? 0,
+    imageBlack,
+  };
+}
+
+/** A lost graphics context, an image black in most samples, or no presented frame to sample fails the scene. */
+function presentationProblems(presentation: PlayPresentation): string[] {
+  const problems: string[] = [];
+  const losses = presentation.contextLosses;
+  if (losses) problems.push(`The graphics context was lost ${losses === 1 ? "once" : `${losses} times`} during Play.`);
+  const samples = presentation.imageBlack;
+  const black = samples.filter((share) => share !== null && share >= BLACK_IMAGE_SHARE).length;
+  if (black * 2 > samples.length) problems.push(`Play image was black in ${black} of ${samples.length} samples.`);
+  else if (samples.length && samples.every((share) => share === null)) {
+    problems.push(`Play presented no frame to sample in ${seconds(PRESENTED_IMAGE_WAIT_MS)}.`);
+  }
+  return problems;
 }
 
 /** Polls of new draws without a held one before a recompiling profile samples (one second at POLL_MS). */

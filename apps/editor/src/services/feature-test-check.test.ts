@@ -19,6 +19,8 @@ type SceneBehavior = {
   play?: "loads" | "stuck";
   commands?: Record<string, { success: boolean; output: string }>;
   diagnostics?: SessionReportEntry[];
+  /** Each Play image sample's near-black share, in order; null answers with no sample. Unlisted samples are not black. */
+  image?: Array<number | null>;
 };
 
 function diagnostic(severity: "error" | "warning", message: string): SessionReportEntry {
@@ -30,7 +32,7 @@ function fakeEditor(
   scenes: Record<string, SceneBehavior>,
   onSleep?: (now: number) => void,
   /** The Play view's presentation counts at a time, after the given commands. */
-  presentation?: (now: number, commands: readonly string[]) => { drawn: number; held: number },
+  presentation?: (now: number, commands: readonly string[]) => { drawn: number; held: number; contextLosses?: number; skipped?: number },
 ) {
   let now = 0;
   let active: string | null = null;
@@ -56,6 +58,7 @@ function fakeEditor(
       playScene = active;
       started.push(playScene!);
       const scene = behavior(playScene);
+      let images = 0;
       play = {
         loadingPhase: () => scene.play === "stuck" ? { phase: "Loading Models", progress: 45 } : null,
         tickIndex: () => 12,
@@ -64,13 +67,21 @@ function fakeEditor(
           drawCalls: 10, meshes: 20, textures: 5, accountedBytes: 0,
           rendering: presentation
             ? ({
-              presentation: presentation(now, commands), cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1,
+              ...(({ skipped, ...counts }) => ({
+                presentation: { contextLosses: 0, ...counts }, frameBackpressure: { mode: 2, inFlight: 0, skipped: skipped ?? 0 },
+              }))(presentation(now, commands)),
+              cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1,
               pipeline: { effective: { gpuBackend: "webgl2" } },
               // One shader first drawn per command run so far.
               firstDraws: { draws: commands.length, loadCompiled: 0, frames: commands.length, stalls: 0, mostInFrame: 1, worstFrameMs: 20, longFrames: 0, longest: [] },
             } as unknown as RenderDiagnostics)
             : null,
         }),
+        samplePresentedImage: async () => {
+          const share = scene.image ? scene.image[images] : 0;
+          images += 1;
+          return share === null ? null : { blackShare: share ?? 0, meanLevel: 120, width: 64, height: 36 };
+        },
         problemLogs: () => [],
         executeConsoleCommand: async (line) => {
           commands.push(line);
@@ -177,6 +188,38 @@ describe("runFeatureTestCheck", () => {
     expect(report.scenes.map((entry) => [entry.name, entry.passed])).toEqual([["command", false], ["error", false], ["warning", true]]);
     expect(report.scenes[0].problems).toEqual(["Command ft_stats failed: Unknown command."]);
     expect(report.scenes[1].session?.diagnostics).toHaveLength(1);
+  });
+
+  it("fails a scene whose Play image is black in most samples or never presented, but not for one black sample", async () => {
+    const editor = fakeEditor({
+      "assets/black.scene.hasset": { image: [0.97, 0.6, 0.1] },
+      "assets/flicker.scene.hasset": { image: [0.97, 0.59, 0] },
+      "assets/frozen.scene.hasset": { image: [null, null, null] },
+    });
+    const report = await runFeatureTestCheck({
+      mode: "quick", scenes: [scene("black"), scene("flicker"), scene("frozen")], deps: editor.deps, signal: new AbortController().signal,
+    });
+    expect(report.scenes.map((entry) => [entry.name, entry.passed])).toEqual([["black", false], ["flicker", true], ["frozen", false]]);
+    expect(report.scenes[0].problems).toEqual(["Play image was black in 2 of 3 samples."]);
+    expect(report.scenes[1].play.presentation?.imageBlack).toEqual([0.97, 0.59, 0]);
+    expect(report.scenes[2].problems).toEqual(["Play presented no frame to sample in 5 s."]);
+  });
+
+  it("fails a scene whose graphics context was lost, and records the frames presented while Play was sampled", async () => {
+    // The view drew 60 more frames, held 2 and skipped 5 between the start of Play's frame sample and its end.
+    let samples = 0;
+    const editor = fakeEditor({}, undefined, () => samples < 2
+      ? { drawn: 40, held: 1, skipped: 3, contextLosses: 1 }
+      : { drawn: 100, held: 3, skipped: 8, contextLosses: 1 });
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      // The editor viewport's sample, then Play's.
+      sampleFrames: (ms, signal) => { samples += 1; return editor.deps.sampleFrames(ms, signal); },
+    };
+    const report = await runFeatureTestCheck({ mode: "quick", scenes: [scene("main")], deps, signal: new AbortController().signal });
+    expect(report.scenes[0].passed).toBe(false);
+    expect(report.scenes[0].problems).toEqual(["The graphics context was lost once during Play."]);
+    expect(report.scenes[0].play.presentation).toEqual({ frames: { drawn: 60, held: 2, skipped: 5 }, contextLosses: 1, imageBlack: [0, 0, 0] });
   });
 
   it("reports a scene the editor never opened without starting Play", async () => {

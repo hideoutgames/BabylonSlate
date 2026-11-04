@@ -29,7 +29,7 @@ function scene(pass: number, preserve: string): FeatureTestCheckSceneResult {
   return {
     name: "FT_World", path: SCENES[0]!.path, pass, passed: true, problems: [],
     editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
-    play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, firstDraws: null, commands: [], logs: [],
+    play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
       benchmark: [baseline(preserve)] },
     session: null,
   };

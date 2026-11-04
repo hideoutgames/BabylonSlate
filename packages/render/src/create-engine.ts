@@ -39,6 +39,7 @@ import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
 import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { submitPresentedFrame } from "./presented-frame";
+import { samplePresentedImage, type PresentedImageSample } from "./presented-image";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { setSceneBindsPreviousEffects } from "./variant-swaps";
 import { SceneOutlineHost, isOutlineOnlySceneEdit } from "./scene-outline-host";
@@ -635,6 +636,11 @@ function initializeEngine(
   };
   /** `presentationStats.attempted` when the current view step began. */
   let attemptedAtStep = 0;
+  /** `samplePresentedImage` callers waiting for the next presented frame. */
+  const presentedImageRequests: Array<(sample: PresentedImageSample | null) => void> = [];
+  const answerPresentedImageRequests = (sample: PresentedImageSample | null) => {
+    for (const resolve of presentedImageRequests.splice(0)) resolve(sample);
+  };
   /** Rendered-loop passes of preparation timing left; each `renderDiagnostics()` read renews it so a closed HUD stops the timing. */
   let framePhaseLeaseFrames = 0;
   const performanceFeed = new RenderPerformanceFeed();
@@ -2264,6 +2270,14 @@ function initializeEngine(
     snapshotAdmitted = false;
     if (!registeredView && !rttPresent && frameCopyReady) acknowledgeFrameCopy();
     if (framePresented) {
+      if (presentedImageRequests.length) {
+        // What the player sees, read in the task that presented it: the Engine canvas while this view presents
+        // directly, else the view canvas holding the copy.
+        const shown = registeredView && viewPresentedDirectly(engine, registeredView) ? engine.getRenderingCanvas() : canvas;
+        let sample: PresentedImageSample | null;
+        try { sample = shown ? samplePresentedImage(shown) : null; } catch { sample = null; }
+        answerPresentedImageRequests(sample);
+      }
       if (runtimeScalability && !worldLoading) {
         // A stored preparation failure rethrows until the coordinator's retry
         // succeeds. It must not escape endFrame and stop the shared Engine loop.
@@ -2326,6 +2340,7 @@ function initializeEngine(
     runtimeMaterialEdits.cancelAll();
     frameReportFeed.cancel("The graphics context was lost before frame capture completed.");
     presentationStats.contextLosses += 1;
+    answerPresentedImageRequests(null);
     loadGeneration += 1;
     cancelPresentation(contextLostError());
     engineCommandBus.dispatch({ type: "log", message: "WebGL context lost" });
@@ -2447,6 +2462,7 @@ function initializeEngine(
       rendererGpuLease?.release();
       rendererGpuLease = null;
       frameReportFeed.cancel("The game view was disposed.");
+      answerPresentedImageRequests(null);
       pendingPerformanceReceipt = null;
       pendingFrameReportReceipt = null;
       commandSources.dispose();
@@ -3077,6 +3093,9 @@ function initializeEngine(
       gpuObservers.add(release);
       return { ...observation, release };
     },
+    samplePresentedImage: () => disposed || contextLost
+      ? Promise.resolve(null)
+      : new Promise<PresentedImageSample | null>((resolve) => { presentedImageRequests.push(resolve); }),
     captureFrame: () => {
       if (disposed || contextLost) return Promise.reject(new Error("The game view is unavailable."));
       if (performanceFeed.active) return Promise.reject(new Error("Stop performance recording before capturing a frame."));
