@@ -3200,6 +3200,9 @@ function initializeEngine(
       // After any mesh rebuild, so a resized target re-parents to live meshes.
       debugOverlay?.refreshRenderTargets();
     },
+    setLiveTilemap: (guid, content, revision) => {
+      editorSync?.setLiveTilemap(guid, content, revision);
+    },
     replaceTextureBytes: (textureBytes) => {
       const current = binding.textureBytes;
       if (!current) return [];

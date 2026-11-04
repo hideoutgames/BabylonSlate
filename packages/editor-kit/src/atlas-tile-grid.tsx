@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type Ref,
@@ -15,8 +16,8 @@ import {
   applyPointerPan,
   atlasCellAt,
   ensureTilesetTiles,
+  tilesetAtlasColumns,
   tilesetTileRect,
-  type TilesetCollision,
   type TilesetPayload,
 } from "@haptic/assets";
 import {
@@ -29,6 +30,16 @@ import {
 } from "@haptic/ui/components/empty";
 import { cn } from "@haptic/ui/lib/utils";
 import { zoomViewAbout, type PanZoomLimits, type PanZoomView } from "./pan-zoom-model";
+import {
+  atlasTileAt,
+  atlasTileCell,
+  atlasTilesInRect,
+  drawAtlasTileGrid,
+  type AtlasGridColors,
+  type AtlasTileMark,
+} from "./atlas-tile-grid-canvas";
+
+export type { AtlasTileMark } from "./atlas-tile-grid-canvas";
 
 export type AtlasTileGridTool = "move" | "select";
 
@@ -64,8 +75,8 @@ export interface AtlasTileGridProps {
   emptyAction?: ReactNode;
   panZoom?: boolean;
   tool?: AtlasTileGridTool;
-  /** Extra content inside each cell (badges, dimming); memoize it: a new function redraws every cell. */
-  renderCellOverlay?: (tileId: number) => ReactNode;
+  /** Marks drawn on tiles (a corner dot, dimming); keep the same map while the marks are the same. */
+  cellMarks?: ReadonlyMap<number, AtlasTileMark>;
   /** Content over the atlas, positioned in atlas pixels (a block outline). */
   overlay?: ReactNode;
   /** In Move, a left mouse drag from a tile the host accepts carries it off the sheet instead of panning. */
@@ -81,6 +92,7 @@ const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 8;
 const ZOOM_LIMITS: PanZoomLimits = { minScale: MIN_ZOOM, maxScale: MAX_ZOOM };
 const TAP_SELECT_PX = 8;
+const NO_MARKS: ReadonlyMap<number, AtlasTileMark> = new Map();
 
 function fitAtlasView(
   surfaceWidth: number,
@@ -110,10 +122,58 @@ function fitAtlasView(
   };
 }
 
+/** Theme colours the canvas draws with, read when it draws so a theme switch shows on the next draw. */
+function gridColors(element: Element): AtlasGridColors {
+  const style = getComputedStyle(element);
+  const read = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
+  return {
+    foreground: read("--foreground", "#fafafa"),
+    background: read("--background", "#0a0a0a"),
+    primary: read("--primary", "#3b82f6"),
+    selected: read("--graph-state-selected", "#f59e0b"),
+  };
+}
+
+const HATCH_TILE = 11;
+/** The hatch's repeating tile, drawn once. */
+let hatchTile: HTMLCanvasElement | null = null;
+
+/** The Full collision hatch: diagonal stripes in atlas pixels, so they scale with the atlas. */
+function hatchPattern(ctx: CanvasRenderingContext2D, scale: number, x: number, y: number): CanvasPattern | null {
+  if (typeof document === "undefined" || typeof ctx.createPattern !== "function") return null;
+  if (!hatchTile) {
+    // 11 px across at 45° is a stripe every ~8 px, ~4 px wide, as the stylesheet hatch was.
+    const tile = document.createElement("canvas");
+    tile.width = HATCH_TILE;
+    tile.height = HATCH_TILE;
+    const paint = tile.getContext("2d");
+    if (!paint) return null;
+    paint.fillStyle = "oklch(0.65 0.12 250 / 0.4)";
+    paint.beginPath();
+    // One stripe through the tile and its wrap-around copies, so it repeats seamlessly.
+    for (const offset of [-HATCH_TILE, 0, HATCH_TILE]) {
+      paint.moveTo(offset, 0);
+      paint.lineTo(offset + HATCH_TILE / 2, 0);
+      paint.lineTo(offset + HATCH_TILE * 1.5, HATCH_TILE);
+      paint.lineTo(offset + HATCH_TILE, HATCH_TILE);
+      paint.closePath();
+    }
+    paint.fill();
+    hatchTile = tile;
+  }
+  const pattern = ctx.createPattern(hatchTile, "repeat");
+  if (pattern && typeof DOMMatrix === "function" && typeof pattern.setTransform === "function") {
+    pattern.setTransform(new DOMMatrix([scale, 0, 0, scale, x, y]));
+  }
+  return pattern;
+}
+
 /**
  * Clickable atlas with a pixel-aligned grid, collision overlay, and optional
- * pinch zoom. Hosts can decorate cells, draw over the atlas, follow the
- * hovering mouse and drag tiles off the sheet.
+ * pinch zoom. The grid, selection, collision and host marks draw on one canvas
+ * over the image, only for the cells in view; taps hit-test by column and row;
+ * one roving cell button carries keyboard focus. Hosts can mark tiles, draw
+ * over the atlas, follow the hovering mouse and drag tiles off the sheet.
  */
 export function AtlasTileGrid({
   tileset,
@@ -127,7 +187,7 @@ export function AtlasTileGrid({
   emptyAction,
   panZoom = false,
   tool: toolProp,
-  renderCellOverlay,
+  cellMarks = NO_MARKS,
   overlay,
   tileDrag,
   onTileHover,
@@ -139,6 +199,7 @@ export function AtlasTileGrid({
   const tool = toolProp ?? (panZoom ? "move" : "select");
   const surfaceRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef({
     panX: 0,
@@ -174,7 +235,9 @@ export function AtlasTileGrid({
   /** A `tileDrag` press, and whether it has moved far enough to be a drag. */
   const tileDragRef = useRef<{ pointerId: number; startX: number; startY: number; dragging: boolean } | null>(null);
   /** The last tile reported to `onTileHover`. */
-  const hoverTileRef = useRef(0);
+  const reportedTileRef = useRef(0);
+  /** The tile under a hovering mouse, drawn highlighted. */
+  const [hoverTile, setHoverTile] = useState(0);
   const [selectionPreview, setSelectionPreview] = useState<{
     ids: number[];
     x: number;
@@ -191,18 +254,32 @@ export function AtlasTileGrid({
   const zoom = view.scale;
   // Set once the user pans or zooms; a later surface resize keeps their view.
   const userViewRef = useRef(false);
+  const [surfaceSize, setSurfaceSize] = useState({ width: 0, height: 0 });
+  // The tile the roving cell stands on: keyboard focus moves it, a tap or the selection sets it.
+  const [focusChoice, setFocusChoice] = useState<number | null>(null);
+  // A new selection from the host brings the focus cell to it; an emptied one leaves it where it is.
+  const leadSelected = selectedIds !== undefined ? selectedIds[0] ?? 0 : selectedId;
+  const [seenLead, setSeenLead] = useState(leadSelected);
+  if (leadSelected !== seenLead) {
+    setSeenLead(leadSelected);
+    if (leadSelected > 0) setFocusChoice(null);
+  }
+  const tileCount = filled.tiles.length;
+  const focusedId = focusChoice !== null && focusChoice >= 1 && focusChoice <= tileCount
+    ? focusChoice
+    : Math.min(Math.max(1, selectedIds?.[0] ?? selectedId), Math.max(1, tileCount));
 
   useLayoutEffect(() => {
-    if (!panZoom) return;
     const surface = surfaceRef.current;
     if (!surface) return;
-    userViewRef.current = false;
+    if (panZoom) userViewRef.current = false;
     let previousWidth = 0;
     let previousHeight = 0;
     const fit = () => {
       const width = surface.clientWidth;
       const height = surface.clientHeight;
-      if (width <= 0 || height <= 0 || userViewRef.current) return;
+      setSurfaceSize((current) => (current.width === width && current.height === height ? current : { width, height }));
+      if (!panZoom || width <= 0 || height <= 0 || userViewRef.current) return;
       if (width === previousWidth && height === previousHeight) return;
       previousWidth = width;
       previousHeight = height;
@@ -215,10 +292,40 @@ export function AtlasTileGrid({
       setView({ scale: next.zoom, x: next.panX, y: next.panY });
     };
     fit();
+    if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(fit);
     observer.observe(surface);
     return () => observer.disconnect();
   }, [filled.atlasHeight, filled.atlasWidth, imageUrl, panZoom]);
+
+  // Draw after every change of what the canvas shows; a frame draws only the cells in view.
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    const surface = surfaceRef.current;
+    if (!canvas || !surface) return;
+    // Without pan and zoom the canvas covers the atlas box at its own size.
+    const { width, height } = panZoom ? surfaceSize : { width: filled.atlasWidth, height: filled.atlasHeight };
+    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const pixelWidth = Math.max(1, Math.floor(width * dpr));
+    const pixelHeight = Math.max(1, Math.floor(height * dpr));
+    if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+    if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx || width <= 0 || height <= 0) return;
+    const mapping = panZoom ? view : { scale: 1, x: 0, y: 0 };
+    drawAtlasTileGrid(ctx, {
+      tileset: filled,
+      view: mapping,
+      width,
+      height,
+      dpr,
+      selected: highlightedIds,
+      marks: cellMarks,
+      hover: hoverTile,
+      colors: gridColors(surface),
+      hatch: hatchPattern(ctx, mapping.scale, mapping.x, mapping.y),
+    });
+  }, [cellMarks, filled, highlightedIds, hoverTile, panZoom, surfaceSize, view]);
 
   const pointerIdOf = (event: ReactPointerEvent<HTMLDivElement>) => {
     const native = event.nativeEvent as { pointerId?: number };
@@ -241,14 +348,16 @@ export function AtlasTileGrid({
   };
 
   const reportHover = (tileId: number) => {
-    if (hoverTileRef.current === tileId) return;
-    hoverTileRef.current = tileId;
-    onTileHover?.(tileId);
+    setHoverTile(tileId);
+    // A host that starts listening again hears the tile under the mouse on its next move.
+    if (!onTileHover) {
+      reportedTileRef.current = 0;
+      return;
+    }
+    if (reportedTileRef.current === tileId) return;
+    reportedTileRef.current = tileId;
+    onTileHover(tileId);
   };
-  // A host that starts listening again hears the tile under the mouse on its next move.
-  useEffect(() => {
-    if (!onTileHover) hoverTileRef.current = 0;
-  }, [onTileHover]);
 
   /** Ends a tile drag; a press that never moved past the tap distance reports nothing. */
   const endTileDrag = (drop: { clientX: number; clientY: number } | null) => {
@@ -268,11 +377,13 @@ export function AtlasTileGrid({
   }), []);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!panZoom && !(tool === "select" && onSelectionChange)) return;
-    try {
-      event.currentTarget.setPointerCapture?.(pointerIdOf(event));
-    } catch {
-      // Synthetic PointerEvents (Playwright / jsdom) have no active pointer.
+    // Every sheet selects a tapped tile; only a sheet that pans, zooms or drags a selection keeps the pointer.
+    if (panZoom || (tool === "select" && onSelectionChange)) {
+      try {
+        event.currentTarget.setPointerCapture?.(pointerIdOf(event));
+      } catch {
+        // Synthetic PointerEvents (Playwright / jsdom) have no active pointer.
+      }
     }
     pointersRef.current.set(pointerIdOf(event), {
       x: event.clientX,
@@ -327,6 +438,7 @@ export function AtlasTileGrid({
       return;
     }
     if (tool === "move") {
+      if (!panZoom) return;
       panDragRef.current = {
         pointerId: pointerIdOf(event),
         startX: event.clientX,
@@ -352,7 +464,7 @@ export function AtlasTileGrid({
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const pointerId = pointerIdOf(event);
     if (!pointersRef.current.has(pointerId)) {
-      if (onTileHover && event.pointerType === "mouse") reportHover(tileAtPointer(event));
+      if (event.pointerType === "mouse") reportHover(tileAtPointer(event));
       return;
     }
     pointersRef.current.set(pointerId, {
@@ -443,20 +555,10 @@ export function AtlasTileGrid({
       const y = Math.min(selection.startY, endY);
       const right = Math.max(selection.startX, endX);
       const bottom = Math.max(selection.startY, endY);
-      const ids = filled.tiles
-        .filter((tile) => {
-          const cell = tilesetTileRect(filled, tile.id);
-          return (
-            cell &&
-            cell.x <= right &&
-            cell.x + cell.width >= x &&
-            cell.y <= bottom &&
-            cell.y + cell.height >= y
-          );
-        })
-        .map((tile) => tile.id);
+      // The covered columns and rows name the tiles; no tile is visited to find them.
+      const ids = atlasTilesInRect(filled, { x, y, right, bottom });
       // Keep the same array while the covered tiles stay the same, so moving
-      // inside them redraws the rectangle without rebuilding every tile.
+      // inside them redraws only the rectangle.
       const previous = selection.ids;
       const unchanged =
         previous?.length === ids.length &&
@@ -512,9 +614,9 @@ export function AtlasTileGrid({
           TAP_SELECT_PX &&
         tileAtPointer(event) === tap.tileId
       ) {
+        setFocusChoice(tap.tileId);
         onSelect(tap.tileId);
-        // Capture retargets the browser click to the surface; some hosts still
-        // deliver it to the cell, so consume either path after selecting once.
+        // A tap on the focus cell is followed by its click; consume it after selecting once.
         didPanRef.current = true;
       }
     }
@@ -561,73 +663,109 @@ export function AtlasTileGrid({
     return () => surface.removeEventListener("wheel", listener);
   }, []);
 
-  const tileButtons = useMemo(
-    () =>
-      filled.tiles.map((tile) => {
-        const rect = tilesetTileRect(filled, tile.id);
-        if (!rect) return null;
-        const selected = highlightedIds.has(tile.id);
-        return (
-          <button
-            key={tile.id}
-            type="button"
-            data-testid={`${testId}-cell-${tile.id}`}
-            data-tile-id={tile.id}
-            data-selected={selected ? "true" : "false"}
-            data-collision={collisionAttr(tile.collision)}
-            className={cn(
-              "absolute box-border border-solid border-foreground/25 outline-none [border-width:calc(1px/var(--atlas-zoom,1))] hover:bg-foreground/10 focus-visible:z-10 focus-visible:shadow-[inset_0_0_0_calc(2px/var(--atlas-zoom,1))_var(--ring)]",
-              selected
-                ? "z-10 border-transparent shadow-[inset_0_0_0_calc(2px/var(--atlas-zoom,1))_var(--graph-state-selected),0_0_0_calc(1px/var(--atlas-zoom,1))_var(--background)]"
-                : null,
-              tile.collision === "full"
-                ? "bg-primary/20 [background-image:repeating-linear-gradient(45deg,transparent,transparent_4px,oklch(0.65_0.12_250/0.4)_4px,oklch(0.65_0.12_250/0.4)_8px)]"
-                : null,
-            )}
-            style={{
-              left: `${(rect.x / filled.atlasWidth) * 100}%`,
-              top: `${(rect.y / filled.atlasHeight) * 100}%`,
-              width: `${(rect.width / filled.atlasWidth) * 100}%`,
-              height: `${(rect.height / filled.atlasHeight) * 100}%`,
-            }}
-            aria-label={`Tile ${tile.id}`}
-            aria-pressed={selected}
-            onKeyDown={() => {
-              didPanRef.current = false;
-            }}
-            onClick={(event) => {
-              event.stopPropagation();
-              if (didPanRef.current) {
-                event.preventDefault();
-                return;
-              }
-              onSelect(tile.id);
-            }}
-          >
-            {tile.collision &&
-            typeof tile.collision === "object" &&
-            tile.collision.points.length > 1 ? (
-              <svg
-                className="pointer-events-none absolute inset-0 size-full text-primary"
-                viewBox="0 0 1 1"
-                preserveAspectRatio="none"
-                aria-hidden="true"
-              >
-                <polyline
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="0.06"
-                  points={tile.collision.points
-                    .map((point) => `${point.x},${1 - point.y}`)
-                    .join(" ")}
-                />
-              </svg>
-            ) : null}
-            {renderCellOverlay?.(tile.id)}
-          </button>
+  /** Arrow keys move the focus cell a column or a row (Home / End to the row's ends); the view follows it. */
+  const onCellKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    didPanRef.current = false;
+    const cell = atlasTileCell(filled, focusedId);
+    if (!cell) return;
+    const columns = tilesetAtlasColumns(filled);
+    const steps: Record<string, [number, number]> = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+    };
+    let next = 0;
+    if (event.key in steps) {
+      const [dx, dy] = steps[event.key]!;
+      next = atlasTileAt(filled, cell.column + dx, cell.row + dy);
+    } else if (event.key === "Home") next = atlasTileAt(filled, 0, cell.row);
+    else if (event.key === "End") next = atlasTileAt(filled, columns - 1, cell.row);
+    else return;
+    event.preventDefault();
+    if (next <= 0) return;
+    setFocusChoice(next);
+    if (panZoom) setView((current) => viewShowing(current, filled, next, surfaceSize));
+  };
+
+  const focusRect = tilesetTileRect(filled, focusedId);
+  const focusSelected = highlightedIds.has(focusedId);
+  const dotTiles: number[] = [];
+  const dimTiles: number[] = [];
+  for (const [id, mark] of cellMarks) (mark === "dot" ? dotTiles : dimTiles).push(id);
+  const layerStyle: CSSProperties = {
+    width: Math.max(1, filled.atlasWidth),
+    height: Math.max(1, filled.atlasHeight),
+    transform: panZoom ? `translate(${view.x}px, ${view.y}px) scale(${zoom})` : undefined,
+    transformOrigin: "0 0",
+  };
+  const image = imageUrl ? (
+    <img
+      src={imageUrl}
+      alt=""
+      className="absolute inset-0 size-full object-contain"
+      style={{ imageRendering: "pixelated" }}
+      onLoad={(event) => {
+        onImageSize?.(
+          event.currentTarget.naturalWidth,
+          event.currentTarget.naturalHeight,
         );
-      }),
-    [filled, highlightedIds, onSelect, renderCellOverlay, testId],
+      }}
+    />
+  ) : null;
+  const canvas = (
+    <canvas
+      ref={canvasRef}
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 size-full"
+      data-testid={`${testId}-canvas`}
+      data-dot-tiles={dotTiles.length ? dotTiles.sort((a, b) => a - b).join(",") : undefined}
+      data-dim-tiles={dimTiles.length ? dimTiles.sort((a, b) => a - b).join(",") : undefined}
+    />
+  );
+  // Host content, the drag rectangle and the focus cell share the atlas's pixel space.
+  const overlays = (
+    <>
+      {overlay}
+      {selectionPreview ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute border border-primary bg-primary/10"
+          style={{
+            left: selectionPreview.x,
+            top: selectionPreview.y,
+            width: selectionPreview.width,
+            height: selectionPreview.height,
+          }}
+        />
+      ) : null}
+      {focusRect ? (
+        <button
+          type="button"
+          data-testid={`${testId}-cell-${focusedId}`}
+          data-tile-id={focusedId}
+          data-selected={focusSelected ? "true" : "false"}
+          className="pointer-events-auto absolute outline-none focus-visible:shadow-[inset_0_0_0_calc(2px/var(--atlas-zoom,1))_var(--ring)]"
+          style={{
+            left: focusRect.x,
+            top: focusRect.y,
+            width: focusRect.width,
+            height: focusRect.height,
+          }}
+          aria-label={`Tile ${focusedId}`}
+          aria-pressed={focusSelected}
+          onKeyDown={onCellKeyDown}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (didPanRef.current) {
+              event.preventDefault();
+              return;
+            }
+            onSelect(focusedId);
+          }}
+        />
+      ) : null}
+    </>
   );
 
   return (
@@ -653,7 +791,7 @@ export function AtlasTileGrid({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onPointerLeave={(event) => {
-          if (onTileHover && event.pointerType === "mouse") reportHover(0);
+          if (event.pointerType === "mouse") reportHover(0);
         }}
       >
         {!imageUrl ? (
@@ -673,57 +811,45 @@ export function AtlasTileGrid({
             {emptyAction ? <EmptyContent>{emptyAction}</EmptyContent> : null}
           </Empty>
         ) : null}
-        <div
-          ref={imageRef}
-          className={cn(
-            panZoom ? "absolute left-0 top-0" : "relative shrink-0",
-          )}
-          style={
-            {
-              width: Math.max(1, filled.atlasWidth),
-              height: Math.max(1, filled.atlasHeight),
-              transform: `translate(${view.x}px, ${view.y}px) scale(${zoom})`,
-              transformOrigin: "0 0",
-              "--atlas-zoom": panZoom ? zoom : 1,
-            } as CSSProperties
-          }
-        >
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt=""
-              className="absolute inset-0 size-full object-contain"
-              style={{ imageRendering: "pixelated" }}
-              onLoad={(event) => {
-                onImageSize?.(
-                  event.currentTarget.naturalWidth,
-                  event.currentTarget.naturalHeight,
-                );
-              }}
-            />
-          ) : null}
-          {tileButtons}
-          {overlay}
-          {selectionPreview ? (
+        {panZoom ? (
+          <>
+            <div ref={imageRef} className="absolute left-0 top-0" style={layerStyle} data-testid={`${testId}-image`}>
+              {image}
+            </div>
+            {canvas}
             <div
-              aria-hidden="true"
-              className="pointer-events-none absolute border border-primary bg-primary/10"
-              style={{
-                left: selectionPreview.x,
-                top: selectionPreview.y,
-                width: selectionPreview.width,
-                height: selectionPreview.height,
-              }}
-            />
-          ) : null}
-        </div>
+              className="pointer-events-none absolute left-0 top-0"
+              style={{ ...layerStyle, "--atlas-zoom": zoom } as CSSProperties}
+            >
+              {overlays}
+            </div>
+          </>
+        ) : (
+          <div
+            ref={imageRef}
+            className="relative shrink-0"
+            style={{ ...layerStyle, "--atlas-zoom": 1 } as CSSProperties}
+            data-testid={`${testId}-image`}
+          >
+            {image}
+            {canvas}
+            {overlays}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function collisionAttr(value: TilesetCollision): string {
-  if (value === "full") return "full";
-  if (value && typeof value === "object") return "chain";
-  return "none";
+/** `view` moved the least so tile `tileId` is wholly on the surface. */
+function viewShowing(view: PanZoomView, tileset: TilesetPayload, tileId: number, surface: { width: number; height: number }): PanZoomView {
+  const rect = tilesetTileRect(tileset, tileId);
+  if (!rect || surface.width <= 0 || surface.height <= 0) return view;
+  const left = view.x + rect.x * view.scale;
+  const top = view.y + rect.y * view.scale;
+  const right = left + rect.width * view.scale;
+  const bottom = top + rect.height * view.scale;
+  const dx = left < 0 ? -left : right > surface.width ? surface.width - right : 0;
+  const dy = top < 0 ? -top : bottom > surface.height ? surface.height - bottom : 0;
+  return dx === 0 && dy === 0 ? view : { ...view, x: view.x + dx, y: view.y + dy };
 }

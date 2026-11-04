@@ -9,6 +9,7 @@ import {
   AssetPickerControl,
   AtlasTileGrid,
   type AtlasTileGridHandle,
+  type AtlasTileMark,
   BindingCodePicker,
   ClassPicker,
   SceneComponentPicker,
@@ -101,9 +102,8 @@ const GALLERY_DELEGATE_SIGNATURES = [
 ];
 
 /** Dims tile 2, as the Autotiles sheet dims tiles of other autotiles. */
-function galleryAtlasCellOverlay(tileId: number) {
-  return tileId === 2 ? <span aria-hidden className="pointer-events-none absolute inset-0 bg-background/60" /> : null;
-}
+/** The gallery atlas dims its second tile, as the Autotiles sheet dims tiles of other sets. */
+const GALLERY_ATLAS_MARKS: ReadonlyMap<number, AtlasTileMark> = new Map([[2, "dim"]]);
 
 export function GalleryComposites() {
   const [position, setPosition] = useState<[number, number, number]>([0, 1, 0]);
@@ -472,7 +472,7 @@ export function GalleryComposites() {
               onSelect={setAtlasTileId}
               panZoom
               onTileHover={setAtlasHoverId}
-              renderCellOverlay={galleryAtlasCellOverlay}
+              cellMarks={GALLERY_ATLAS_MARKS}
               data-testid="gallery-atlas"
             />
           </div>

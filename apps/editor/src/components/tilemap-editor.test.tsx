@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
-import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
+import { diffTilemapDocument, DocumentEditStack, PatchTilemapDocumentCommand, SetAssetDocumentCommand } from "@haptic/edit";
 import {
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
@@ -166,26 +166,56 @@ beforeEach(() => {
   });
   HTMLElement.prototype.setPointerCapture = vi.fn();
   HTMLElement.prototype.releasePointerCapture = vi.fn();
-  HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
-    setTransform: vi.fn(),
-    clearRect: vi.fn(),
-    fillRect: vi.fn(),
-    drawImage: vi.fn(),
-    beginPath: vi.fn(),
-    moveTo: vi.fn(),
-    lineTo: vi.fn(),
-    stroke: vi.fn(),
-    save: vi.fn(),
-    restore: vi.fn(),
-    clip: vi.fn(),
-    rect: vi.fn(),
-    strokeRect: vi.fn(),
-    fillStyle: "",
-    strokeStyle: "",
-    lineWidth: 1,
-    imageSmoothingEnabled: true,
-  })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+  canvasCalls.clear();
+  HTMLCanvasElement.prototype.getContext = vi.fn(function (this: HTMLCanvasElement) {
+    return recordingContext(this);
+  }) as unknown as typeof HTMLCanvasElement.prototype.getContext;
 });
+
+/** A 2D context that records every call on `canvas`, with the styles it drew in. */
+function recordingContext(canvas: HTMLCanvasElement) {
+  let calls = canvasCalls.get(canvas);
+  if (!calls) canvasCalls.set(canvas, (calls = []));
+  const ctx: Record<string, unknown> = { fillStyle: "", strokeStyle: "", lineWidth: 1, imageSmoothingEnabled: true };
+  for (const op of CANVAS_OPS) {
+    ctx[op] = (...args: unknown[]) => {
+      // The Paint canvas starts each frame with its transform; a chunk bitmap starts each redraw by clearing.
+      const paint = canvas.dataset.testid === "tilemap-paint-canvas";
+      if (paint ? op === "setTransform" : op === "clearRect") calls!.length = 0;
+      calls!.push({ op, args, fill: String(ctx.fillStyle), stroke: String(ctx.strokeStyle) });
+    };
+  }
+  return ctx;
+}
+
+const CANVAS_OPS = ["setTransform", "clearRect", "fillRect", "drawImage", "beginPath", "moveTo", "lineTo", "stroke", "save", "restore", "clip", "rect", "strokeRect"] as const;
+/** Every canvas's calls since its latest frame (Paint) or redraw (a chunk bitmap). */
+const canvasCalls = new Map<HTMLCanvasElement, Array<{ op: string; args: unknown[]; fill: string; stroke: string }>>();
+
+/**
+ * The tiles the Paint canvas shows in its latest frame, as `fill x,y,w,h` in
+ * canvas pixels: each chunk bitmap it composited, with the tiles that bitmap
+ * was drawn with, in drawing order.
+ */
+function paintedTiles(): string[] {
+  const canvas = screen.getByTestId("tilemap-paint-canvas") as HTMLCanvasElement;
+  const tiles: string[] = [];
+  for (const call of canvasCalls.get(canvas) ?? []) {
+    if (call.op !== "drawImage") continue;
+    const [source, sx, sy, sw, sh, dx, dy, dw, dh] = call.args as [HTMLCanvasElement, ...number[]];
+    for (const fill of canvasCalls.get(source) ?? []) {
+      if (fill.op !== "fillRect") continue;
+      const [fx, fy, fw, fh] = fill.args as number[];
+      const scaleX = dw! / sw!;
+      const scaleY = dh! / sh!;
+      tiles.push(`${fill.fill} ${dx! + (fx! - sx!) * scaleX},${dy! + (fy! - sy!) * scaleY},${fw! * scaleX},${fh! * scaleY}`);
+    }
+  }
+  return tiles;
+}
+
+/** Positions of the tiles in the latest frame, without their colour. */
+const paintedCells = () => paintedTiles().map((tile) => tile.slice(tile.lastIndexOf(" ") + 1));
 
 describe("TilemapDetails", () => {
   it("cancels removal or confirms one edit erasing the tileset and its painted cells", async () => {
@@ -213,20 +243,14 @@ describe("TilemapDetails", () => {
     const onChange = vi.fn();
     render(<TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={onChange} />);
     await waitFor(() => screen.getByTestId("tilemap-palette-tile-2"));
-    const canvasContext = () => {
-      const results = vi.mocked(HTMLCanvasElement.prototype.getContext).mock.results;
-      return results.at(-1)?.value as unknown as { fillRect: ReturnType<typeof vi.fn> };
-    };
-    expect(canvasContext().fillRect).toHaveBeenCalledWith(0, 224, 32, 32);
-    expect(canvasContext().fillRect).toHaveBeenCalledWith(32, 224, 32, 32);
+    expect(paintedCells()).toEqual(["0,224,32,32", "32,224,32,32"]);
     fireEvent.click(screen.getByRole("button", { name: "Hide Props Layer" }));
     const hidden = onChange.mock.calls.at(-1)?.[0] as TilemapPayload;
     expect(hidden.layers.map((layer) => layer.visible)).toEqual([true, false]);
     expect(hidden.layers[1]?.chunks).toEqual(initial.layers[1]?.chunks);
-    expect(canvasContext().fillRect).toHaveBeenCalledWith(0, 224, 32, 32);
-    expect(canvasContext().fillRect).not.toHaveBeenCalledWith(32, 224, 32, 32);
+    expect(paintedCells()).toEqual(["0,224,32,32"]);
     fireEvent.click(screen.getByRole("button", { name: "Show Props Layer" }));
-    expect(canvasContext().fillRect).toHaveBeenCalledWith(32, 224, 32, 32);
+    expect(paintedCells()).toEqual(["0,224,32,32", "32,224,32,32"]);
   });
 
   it("exposes map width and height next to tile size", () => {
@@ -486,18 +510,12 @@ describe("TilemapPaint", () => {
     }));
     loadAssetDocument.mockImplementation(async (_kind: string, path: string) => (path === GROUND_PATH ? ground : null));
     // Each cell drawn as its placeholder colour and canvas position.
-    const fills: string[] = [];
-    const createContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = vi.fn(function (this: HTMLCanvasElement) {
-      const ctx = (createContext as () => unknown).call(this) as { fillStyle: string; fillRect: (x: number, y: number) => void };
-      ctx.fillRect = (x, y) => fills.push(`${ctx.fillStyle} ${x},${y}`);
-      return ctx;
-    }) as unknown as typeof HTMLCanvasElement.prototype.getContext;
     const fillOf = (gid: number) => {
       const { h, s, l } = tilePlaceholderHsl(gid);
       return `hsl(${h} ${s}% ${l}%)`;
     };
-    const lastFillAt = (x: number, y: number) => fills.filter((fill) => fill.endsWith(` ${x},${y}`)).at(-1);
+    const lastFillAt = (x: number, y: number) =>
+      paintedTiles().filter((tile) => tile.endsWith(` ${x},${y},32,32`)).at(-1)?.replace(",32,32", "");
     const onChange = vi.fn();
     const openAsset = vi.fn();
     // A ledge whose right end was painted as a single piece before the Tileset gained its end tile.
@@ -589,10 +607,7 @@ describe("TilemapPaint", () => {
     const previous = documentApi.projectDocument.settings.twoD.sortingLayers;
     documentApi.projectDocument.settings.twoD.sortingLayers = ["Default", "Decals", "Props"];
     const view = render(<TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={() => {}} />);
-    const tileXs = () => {
-      const ctx = vi.mocked(HTMLCanvasElement.prototype.getContext).mock.results.at(-1)!.value as unknown as { fillRect: ReturnType<typeof vi.fn> };
-      return ctx.fillRect.mock.calls.filter((args) => args[2] === 32).map((args) => args[0]);
-    };
+    const tileXs = () => paintedCells().map((cell) => Number(cell.split(",")[0]));
     try {
       await screen.findByTestId("tilemap-palette-tile-2");
       expect(tileXs()).toEqual([32, 0]);
@@ -636,7 +651,13 @@ describe("TilemapPaint", () => {
         <button disabled={!stack.canRedo} onClick={() => setDoc(stack.redo(doc)!.doc)}>Redo Test Edit</button>
         <output data-testid="stored-tilemap">{JSON.stringify(doc)}</output>
         <TilemapDocument payload={doc} onChange={(next, mergeKey) => {
-          setDoc(stack.apply(doc, new SetAssetDocumentCommand(doc, next, mergeKey)).doc);
+          // As the document service records a Tilemap edit: its delta.
+          const delta = diffTilemapDocument(doc, next);
+          if (delta === "unchanged") return;
+          const command = delta === "unsupported"
+            ? new SetAssetDocumentCommand(doc, next, mergeKey)
+            : new PatchTilemapDocumentCommand(delta, mergeKey);
+          setDoc(stack.apply(doc, command).doc);
           onChange(next);
         }} />
       </>;
@@ -1058,6 +1079,183 @@ describe("Tilemap Tileset loading", () => {
       ["tileset", PROPS_PATH],
       ["tileset", GROUND_PATH],
     ]);
+  });
+});
+
+describe("Tilemap editor views", () => {
+  /** A two-layer map with tiles on the second layer. */
+  function twoLayerMap(): TilemapPayload {
+    const payload = mapWithGround();
+    payload.layers.push({ ...payload.layers[0]!, id: "layer-2", name: "Props", chunks: [] });
+    return setTile(payload, "layer-2", 1, 0, 2);
+  }
+
+  it("previews a Rect as an outline without editing the map, then paints it in one edit on release", async () => {
+    const onChange = vi.fn();
+    render(<TilemapHarness initial={mapWithGround() as unknown as Record<string, unknown>} onChange={onChange} />);
+    await screen.findByTestId("tilemap-palette-tile-2");
+    fireEvent.click(screen.getByTestId("tilemap-tool-rect"));
+    const canvas = screen.getByTestId("tilemap-paint-canvas") as HTMLCanvasElement;
+    const pointer = (type: "pointerdown" | "pointermove" | "pointerup", x: number, y: number) =>
+      act(() => dispatchPointerEvent(canvas, type, { pointerId: 1, clientX: x * 32 + 16, clientY: 240 - y * 32 }));
+    pointer("pointerdown", 0, 0);
+    pointer("pointermove", 3, 2);
+    pointer("pointermove", 3, 2);
+    // The shape outline, in the selection orange, over the map.
+    const outline = () => (canvasCalls.get(canvas) ?? []).find((call) => call.op === "strokeRect" && call.stroke === "oklch(0.75 0.17 60)");
+    // Cells 0-3 × 0-2: 128 × 96 px from the canvas's bottom-left, inset by the 2 px outline.
+    await waitFor(() => expect(outline()?.args).toEqual([1, 256 - 96 + 1, 126, 94]));
+    expect(paintedTiles()).toEqual([]);
+    expect(onChange).not.toHaveBeenCalled();
+    pointer("pointerup", 3, 2);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const painted = normalizeTilemapPayload(onChange.mock.lastCall![0]);
+    expect([0, 1, 2].map((y) => [0, 1, 2, 3, 4].map((x) => getTile(painted, "layer-1", x, y)))).toEqual([
+      [1, 1, 1, 1, 0], [1, 1, 1, 1, 0], [1, 1, 1, 1, 0],
+    ]);
+    await waitFor(() => expect(outline()).toBeUndefined());
+  });
+
+  it("reads out the map cell under a hovering mouse and nothing outside the map", async () => {
+    render(<TilemapHarness initial={{ ...mapWithGround(), width: 5, height: 5 } as unknown as Record<string, unknown>} onChange={() => {}} />);
+    await screen.findByTestId("tilemap-palette-tile-2");
+    const canvas = screen.getByTestId("tilemap-paint-canvas");
+    const hover = (x: number, y: number) =>
+      act(() => dispatchPointerEvent(canvas, "pointermove", { pointerType: "mouse", clientX: x, clientY: y }));
+    expect(screen.queryByTestId("tilemap-paint-hover-cell")).toBeNull();
+    hover(3 * 32 + 16, 256 - 2 * 32 - 16);
+    expect(screen.getByTestId("tilemap-paint-hover-cell").textContent).toBe("3, 2");
+    expect(screen.getByTestId("tilemap-paint-hover-cell").getAttribute("aria-label")).toBe("Cell 3, 2");
+    hover(7 * 32 + 16, 240);
+    expect(screen.queryByTestId("tilemap-paint-hover-cell")).toBeNull();
+    // A painting finger reads out its cell until it lifts.
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    const touch = (type: "pointerdown" | "pointerup") =>
+      act(() => dispatchPointerEvent(canvas, type, { pointerId: 2, pointerType: "touch", clientX: 32 + 16, clientY: 240 }));
+    touch("pointerdown");
+    expect(screen.getByTestId("tilemap-paint-hover-cell").textContent).toBe("1, 0");
+    touch("pointerup");
+    expect(screen.queryByTestId("tilemap-paint-hover-cell")).toBeNull();
+  });
+
+  it("paints the layer picked in the Inspector, and says when that layer is hidden", async () => {
+    const onChange = vi.fn();
+    render(<TilemapHarness initial={twoLayerMap() as unknown as Record<string, unknown>} onChange={onChange} />);
+    await screen.findByTestId("tilemap-palette-tile-2");
+    const paintLayer = () => screen.getByTestId("tilemap-paint-layer");
+    expect(paintLayer().getAttribute("aria-label")).toBe("Paint Layer: Ground");
+    fireEvent.click(screen.getByTestId("tilemap-layer-layer-2"));
+    expect(paintLayer().getAttribute("aria-label")).toBe("Paint Layer: Props");
+    expect((screen.getByTestId("property-layer-name") as HTMLInputElement).value).toBe("Props");
+    expect(screen.queryByTestId("tilemap-paint-layer-hidden")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Hide Props Layer" }));
+    expect(paintLayer().getAttribute("aria-label")).toBe("Paint Layer: Props (Hidden)");
+    expect(screen.getByTestId("tilemap-paint-layer-hidden").textContent).toBe("Layer Hidden");
+    // A stroke still writes the layer it names.
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    const canvas = screen.getByTestId("tilemap-paint-canvas");
+    for (const type of ["pointerdown", "pointerup"] as const) dispatchPointerEvent(canvas, type, { pointerId: 1, clientX: 16, clientY: 240 });
+    const painted = normalizeTilemapPayload(onChange.mock.lastCall![0]);
+    expect(getTile(painted, "layer-2", 0, 0)).toBe(1);
+    expect(getTile(painted, "layer-1", 0, 0)).toBe(0);
+  });
+
+  it("re-cuts the painted cells on a new Chunk Size without moving them", () => {
+    let initial: TilemapPayload = { ...mapWithGround(), chunkSize: 4 };
+    for (const [x, y, gid] of [[0, 0, 1], [5, 1, 2], [9, 7, 1]] as const) initial = setTile(initial, "layer-1", x, y, gid);
+    const onChange = vi.fn();
+    render(<TilemapDetails payload={initial as unknown as Record<string, unknown>} onChange={onChange} />);
+    fireEvent.change(screen.getByTestId("property-chunkSize"), { target: { value: "3" } });
+    fireEvent.blur(screen.getByTestId("property-chunkSize"));
+    const next = normalizeTilemapPayload(onChange.mock.lastCall![0]);
+    expect(onChange.mock.lastCall![1]).toBe("tilemap:chunkSize");
+    expect(next.chunkSize).toBe(3);
+    expect(next.layers[0]!.chunks.every((chunk) => chunk.tiles.length === 9)).toBe(true);
+    expect([[0, 0], [5, 1], [9, 7], [1, 1]].map(([x, y]) => getTile(next, "layer-1", x!, y!))).toEqual([1, 2, 1, 0]);
+  });
+
+  it("decodes each atlas once for the Palette and Paint, and draws Palette tiles from it", async () => {
+    const createUrl = vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:ground-atlas");
+    const images: Array<{ onload: (() => void) | null; src: string }> = [];
+    vi.stubGlobal("Image", class {
+      onload: (() => void) | null = null;
+      naturalWidth = 32;
+      naturalHeight = 16;
+      #src = "";
+      constructor() {
+        images.push(this);
+      }
+      get src() {
+        return this.#src;
+      }
+      set src(value: string) {
+        this.#src = value;
+        queueMicrotask(() => this.onload?.());
+      }
+    });
+    try {
+      render(<TilemapHarness initial={mapWithGround() as unknown as Record<string, unknown>} onChange={() => {}} />);
+      const canvas = await screen.findByTestId("tilemap-paint-canvas");
+      await waitFor(() => expect(canvas.getAttribute("data-paint-source")).toBe("atlas"));
+      expect(readAssetChunk).toHaveBeenCalledTimes(1);
+      expect(images).toHaveLength(1);
+      // Tile 2 is the right half of the 32 × 16 atlas.
+      const sprite = screen.getByTestId("tilemap-palette-tile-2").querySelector("[data-tile-sprite]") as HTMLElement;
+      expect(sprite.style.backgroundImage).toContain("blob:ground-atlas");
+      expect(sprite.style.backgroundSize).toBe("200% 100%");
+      expect(sprite.style.backgroundPosition).toBe("100% 0%");
+    } finally {
+      createUrl.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("mounts only the Palette tiles in view of a large sheet, and follows the scroll", async () => {
+    loadAssetDocument.mockImplementation(async (_kind: string, path: string) =>
+      path === GROUND_PATH ? ensureTilesetTiles({ ...createDefaultTilesetPayload(), atlasWidth: 2048, atlasHeight: 2048 }) : null,
+    );
+    const restore: Array<() => void> = [];
+    const stub = (key: "clientWidth" | "clientHeight" | "offsetTop", value: (testId: string | null) => number) => {
+      const previous = Object.getOwnPropertyDescriptor(HTMLElement.prototype, key);
+      Object.defineProperty(HTMLElement.prototype, key, {
+        configurable: true,
+        get(this: HTMLElement) {
+          return value(this.getAttribute("data-testid"));
+        },
+      });
+      restore.push(() => {
+        if (previous) Object.defineProperty(HTMLElement.prototype, key, previous);
+        else Reflect.deleteProperty(HTMLElement.prototype, key);
+      });
+    };
+    stub("clientWidth", (id) => (id === "tilemap-palette-grid-ts-ground" ? 400 : 0));
+    stub("clientHeight", (id) => (id === "tilemap-palette-scroll" ? 200 : 0));
+    stub("offsetTop", (id) => (id === "tilemap-palette-grid-ts-ground" ? 60 : 0));
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    try {
+      const map = { ...createDefaultTilemapPayload(), tilesets: [{ guid: "ts-ground", firstGid: 1, tileCount: 16384 }] };
+      render(<TilemapHarness initial={map as unknown as Record<string, unknown>} onChange={() => {}} />);
+      await screen.findByTestId("tilemap-palette-tile-1");
+      const mounted = () => screen.getAllByTestId(/^tilemap-palette-tile-\d+$/).map((tile) => Number(tile.dataset.gid));
+      // 9 columns of 36 px fit 384 px; 200 px of view shows 4 rows, and 4 more each way are kept.
+      expect(mounted().length).toBeLessThanOrEqual(9 * 8);
+      expect(mounted()[0]).toBe(1);
+      const scroller = screen.getByTestId("tilemap-palette-scroll");
+      scroller.scrollTop = 60 + 1000 * ((384 - 8 * 4) / 9 + 4);
+      act(() => {
+        fireEvent.scroll(scroller);
+      });
+      expect(mounted()).toContain(1000 * 9 + 1);
+      expect(mounted()).not.toContain(1);
+      expect(mounted().length).toBeLessThanOrEqual(9 * 14);
+      expect(screen.getByTestId("tilemap-palette-group-ts-ground").textContent).toContain("16384");
+    } finally {
+      while (restore.length) restore.pop()!();
+      vi.unstubAllGlobals();
+    }
   });
 });
 

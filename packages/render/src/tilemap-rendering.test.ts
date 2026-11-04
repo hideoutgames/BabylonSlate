@@ -248,6 +248,71 @@ describe("tilemap rendering", () => {
     borrowed.release();
   });
 
+  it("shows a live Tilemap edit by rebuilding only its changed chunk meshes, and an install of the same content changes nothing", async () => {
+    const { assets, actor, tilemap } = content();
+    // Chunk 0, 0 and chunk 1, 0 (chunk size 2) both have a tile.
+    const map = setTile(tilemap, "layer-1", 2, 0, 1);
+    const box = createActor("box", "Box", { components: [createMeshComponent("mesh", "box")] });
+    const installed: MeshAssetContext = { ...assets, tilemaps: new Map([["tilemap", map]]), payloadRevisions: new Map([["tilemap", "saved:1"]]) };
+    const sync = new EditorSceneSync(handle.scene);
+    sync.setMeshAssets(installed);
+    sync.apply({ ...createDefaultScene(), actors: [actor, box] });
+    const root = sync.meshForActor(actor.id)!;
+    const boxRoot = sync.meshForActor(box.id)!;
+    const chunkMesh = (cx: number) => root.getChildMeshes().find((mesh) => mesh.name.endsWith(`:layer-1:${cx}:0`))!;
+    const first = chunkMesh(0);
+    const second = chunkMesh(1);
+
+    const painted = setTile(map, "layer-1", 1, 0, 2);
+    sync.setLiveTilemap("tilemap", painted, "open:1");
+    expect(sync.meshForActor(actor.id)).toBe(root);
+    expect(sync.meshForActor(box.id)).toBe(boxRoot);
+    expect(first.isDisposed()).toBe(true);
+    expect(chunkMesh(1)).toBe(second);
+    expect(chunkMesh(0).getTotalVertices()).toBe(8);
+    expect(isUnlitMaterial(chunkMesh(0).material)).toBe(true);
+    expect(unlitBinding(chunkMesh(0)).texture).toBeTruthy();
+
+    // A Tilemap tab opened after the Scene read the file holds equal cells in other arrays: no chunk rebuilds.
+    const patched = chunkMesh(0);
+    sync.setLiveTilemap("tilemap", structuredClone(painted), "open:copy");
+    expect(chunkMesh(0)).toBe(patched);
+    expect(chunkMesh(1)).toBe(second);
+    sync.setLiveTilemap("tilemap", painted, "open:1");
+
+    // A save collects the same content under the same revision: nothing rebuilds.
+    expect(sync.setMeshAssets({ ...installed, tilemaps: new Map([["tilemap", structuredClone(painted)]]), payloadRevisions: new Map([["tilemap", "open:1"]]) })).toBe(false);
+    expect(sync.meshForActor(actor.id)).toBe(root);
+    expect(chunkMesh(1)).toBe(second);
+
+    // A collection that ran during a later edit carries the older map; the live edit stays shown.
+    const later = setTile(painted, "layer-1", 3, 0, 2);
+    sync.setLiveTilemap("tilemap", later, "open:2");
+    expect(sync.setMeshAssets({ ...installed, tilemaps: new Map([["tilemap", painted]]), payloadRevisions: new Map() })).toBe(false);
+    expect(chunkMesh(1).getTotalVertices()).toBe(8);
+
+    // Hiding a layer changes what every chunk draws with: only this actor's visual rebuilds.
+    sync.setLiveTilemap("tilemap", { ...later, layers: later.layers.map((layer) => ({ ...layer, visible: false })) }, "open:3");
+    await sync.whenEditorModelsReady();
+    expect(sync.meshForActor(actor.id)).not.toBe(root);
+    expect(sync.meshForActor(actor.id)!.getChildMeshes()).toHaveLength(0);
+    expect(sync.meshForActor(box.id)).toBe(boxRoot);
+    sync.dispose();
+  });
+
+  it("gives chunk quads their constant normal and keeps static chunk buffers static", () => {
+    const { assets, actor, tilemap, tileset } = content();
+    const animated = normalizeTilesetPayload({ ...tileset, tiles: [{ id: 2, animation: [1, 2] }] });
+    assets.tilesets = new Map([["tileset", animated]]);
+    assets.tilemaps = new Map([["tilemap", setTile(tilemap, "layer-1", 1, 0, 2)]]);
+    const root = createActorMesh(handle.scene, actor, assets);
+    const [still, moving] = [root.getChildMeshes().find((mesh) => !mesh.name.endsWith(":anim"))!, root.getChildMeshes().find((mesh) => mesh.name.endsWith(":anim"))!];
+    expect([...still.getVerticesData(VertexBuffer.NormalKind)!]).toEqual([0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1]);
+    expect(still.getVertexBuffer(VertexBuffer.PositionKind)!.isUpdatable()).toBe(false);
+    expect(moving.getVertexBuffer(VertexBuffer.UVKind)!.isUpdatable()).toBe(true);
+    root.dispose();
+  });
+
   it("refreshes atlas UVs after a tileset grid edit and reuses equivalent payloads", async () => {
     const { assets, actor, tileset, tilemap } = content();
     const sync = new EditorSceneSync(handle.scene);

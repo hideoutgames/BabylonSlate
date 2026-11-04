@@ -76,7 +76,9 @@ test.describe("Tileset Autotiles window on touch", () => {
     // Touch-layout pieces keep a 44 px target.
     expect((await slot(S | W).boundingBox())!.height).toBeGreaterThanOrEqual(44);
 
-    await page.getByTestId("tileset-autotiles-sheet-cell-6").tap();
+    // The sheet draws its tiles on a canvas: tap tile 6 (column 1, row 1 of the 4 × 4 sheet) where it is shown.
+    const sheet = (await page.getByTestId("tileset-autotiles-sheet-image").boundingBox())!;
+    await page.touchscreen.tap(sheet.x + sheet.width * (1.5 / 4), sheet.y + sheet.height * (1.5 / 4));
     await expect(slot(S | W)).toHaveAttribute("data-tile-id", "6");
     // The selection moves on to the next empty piece.
     await expect(slot(S)).toHaveAttribute("aria-pressed", "true");

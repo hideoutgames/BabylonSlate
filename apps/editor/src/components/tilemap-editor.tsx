@@ -1,4 +1,15 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type RefObject,
+} from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { DEFAULT_SORTING_LAYERS } from "@haptic/core";
 import {
@@ -58,6 +69,8 @@ import {
   assetRowIdentity,
   selectedPickerIdentity,
   useAssetOpen,
+  useTouchUi,
+  windowedSlice,
   type PropertyRow,
 } from "@haptic/editor-kit";
 import {
@@ -67,12 +80,9 @@ import {
   tilemapTileIdentity,
   applyPinchView,
   applyPointerPan,
-  applyTilemapPaint,
   applyWheelZoom,
-  cellsAlongSegment,
-  createTerrainResolver,
+  cachedTerrainResolver,
   decodeTileGid,
-  orderedTilemapLayers,
   DEFAULT_PAINT_CELL_SIZE,
   encodeTileGid,
   isTilemapPaintStrokeTool,
@@ -81,25 +91,26 @@ import {
   normalizeTilesetPayload,
   paintCanvasTileAt,
   pickTileId,
+  rechunkTilemap,
   refreshStaleTilemapTerrains,
   removeTilemapTileset,
   reorderTilemapLayers,
   resizeTilemap,
-  TilemapChunkIndex,
   tilemapStrokeMergeKey,
   tilemapTerrainKey,
   tilemapTilesetGuids,
   terrainFillMask,
   terrainVariantMasks,
-  tilePlaceholderHsl,
+  tileInBounds,
   tilesetTerrainById,
   tilesetTileById,
   tilesetTileRect,
   type TilemapPaintTool,
   type TilemapLayer,
   type TilemapPayload,
-  type TilemapTerrainBrush,
+  type TilemapTilesetRef,
   type TilesetPayload,
+  type TilesetTile,
 } from "@haptic/assets";
 import {
   useDocumentActions,
@@ -109,13 +120,24 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
-import { useOptionalTilemapEditing } from "../context/tilemap-editing-context";
+import {
+  useOptionalTilemapSelection,
+  useOptionalTilemapSession,
+  type TilemapTileSelection,
+} from "../context/tilemap-editing-context";
 import {
   TilesetPayloadLoader,
   loadTilesetPayloads,
   resolveTilesetSources,
   sameTilesetSources,
 } from "../context/tilemap-tileset-payloads";
+import { TilesetAtlasLoader } from "../context/tilemap-tileset-atlases";
+import { TilemapStroke, type TilemapStrokeShape } from "../lib/tilemap-stroke";
+import {
+  createBrowserPaintSurface,
+  placeholderCss,
+  TilemapPaintRenderer,
+} from "../lib/tilemap-paint-renderer";
 
 const TOOLS: Array<{
   id: TilemapPaintTool;
@@ -134,59 +156,100 @@ const TOOLS: Array<{
 const EMPTY_TILESETS_COPY = "Add a Tileset to start painting.";
 const TILESET_VISUAL = resolveTypeVisual({ assetType: "Tileset" });
 const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
+/** The content of a tab whose document has not loaded; one object, so it normalizes once. */
+const NO_PAYLOAD: Record<string, unknown> = {};
 
-export function TilemapPaintPanel(_props: IDockviewPanelProps) {
-  void _props;
+/** One Tilemap document panel: its payload and an edit callback that keeps its identity across renders. */
+function useTilemapPanelDocument() {
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange } = useDocumentActions();
   const doc = useOpenDocument(documentId);
-  const payload = (doc?.content ?? {}) as Record<string, unknown>;
+  const payload = (doc?.content ?? NO_PAYLOAD) as Record<string, unknown>;
+  const onChange = useCallback((next: Record<string, unknown>, mergeKey?: string) => {
+    void applyAssetDocumentChange(documentId, next, mergeKey);
+  }, [applyAssetDocumentChange, documentId]);
+  return { payload, onChange };
+}
+
+export function TilemapPaintPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const { payload, onChange } = useTilemapPanelDocument();
   return (
     <PanelFrame data-testid="tilemap-paint-panel">
-      <TilemapPaint
-        payload={payload}
-        onChange={(next, mergeKey) => {
-          void applyAssetDocumentChange(documentId, next, mergeKey);
-        }}
-      />
+      <TilemapPaint payload={payload} onChange={onChange} />
     </PanelFrame>
   );
 }
 
 export function TilemapPalettePanel(_props: IDockviewPanelProps) {
   void _props;
-  const { documentId } = useDocumentWorkspace();
-  const { applyAssetDocumentChange } = useDocumentActions();
-  const doc = useOpenDocument(documentId);
-  const payload = (doc?.content ?? {}) as Record<string, unknown>;
+  const { payload, onChange } = useTilemapPanelDocument();
   return (
     <PanelFrame data-testid="tilemap-palette-panel">
-      <TilemapPalette
-        payload={payload}
-        onChange={(next) => {
-          void applyAssetDocumentChange(documentId, next);
-        }}
-      />
+      <TilemapPalette payload={payload} onChange={onChange} />
     </PanelFrame>
   );
 }
 
 export function TilemapDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { documentId } = useDocumentWorkspace();
-  const { applyAssetDocumentChange } = useDocumentActions();
-  const doc = useOpenDocument(documentId);
-  const payload = (doc?.content ?? {}) as Record<string, unknown>;
+  const { payload, onChange } = useTilemapPanelDocument();
   return (
     <PanelFrame data-testid="tilemap-details-panel">
-      <TilemapDetails
-        payload={payload}
-        onChange={(next, mergeKey) => {
-          void applyAssetDocumentChange(documentId, next, mergeKey);
-        }}
-      />
+      <TilemapDetails payload={payload} onChange={onChange} />
     </PanelFrame>
   );
+}
+
+/** Normalized maps by stored payload object, shared by every panel of every Tilemap document. */
+const normalizedTilemaps = new WeakMap<object, TilemapPayload>();
+/** Working maps by normalized map and loaded Tileset payloads (`workingTilemap`). */
+const workingTilemaps = new WeakMap<TilemapPayload, WeakMap<ReadonlyMap<string, TilesetPayload>, TilemapPayload>>();
+
+/**
+ * The stored map, normalized once per payload object: the Details, Palette and
+ * Paint panels of a document read the same object, and an edit's untouched
+ * chunks keep their identity through it.
+ */
+function normalizedTilemap(payload: Record<string, unknown>): TilemapPayload {
+  let map = normalizedTilemaps.get(payload);
+  if (!map) normalizedTilemaps.set(payload, (map = normalizeTilemapPayload(payload)));
+  return map;
+}
+
+/**
+ * The map the Tilemap panels show and edit: the stored map with its Tileset
+ * ranges grown to the loaded atlases and the terrain cells of every changed
+ * Tileset re-resolved. Panels build each edit on it, so the next authored edit
+ * stores both, and undoes with them. Built once per map and Tileset payloads.
+ */
+function workingTilemap(authored: TilemapPayload, payloads: ReadonlyMap<string, TilesetPayload>): TilemapPayload {
+  let byPayloads = workingTilemaps.get(authored);
+  if (!byPayloads) workingTilemaps.set(authored, (byPayloads = new WeakMap()));
+  let map = byPayloads.get(payloads);
+  if (!map) byPayloads.set(payloads, (map = refreshStaleTilemapTerrains(reconcileTilemapTilesets(authored, payloads), payloads)));
+  return map;
+}
+
+/** One panel's view of a Tilemap document: its working map, the Tilesets it references and a loader for them. */
+function useTilemapDocument(payload: Record<string, unknown>) {
+  const authored = normalizedTilemap(payload);
+  const { payloads, loadPayloads } = useLoadedTilesets(authored);
+  const tilemap = workingTilemap(authored, payloads);
+  return { tilemap, payloads, loadPayloads };
+}
+
+/**
+ * The layer Paint writes and the Inspector edits: shared through the document's
+ * editing session, so picking it in either is the same pick.
+ */
+function usePaintLayer(tilemap: TilemapPayload) {
+  const session = useOptionalTilemapSession();
+  const [localLayerId, setLocalLayerId] = useState<string | null>(null);
+  const layerId = session ? session.layerId : localLayerId;
+  const setLayerId = session?.setLayerId ?? setLocalLayerId;
+  const layer = tilemap.layers.find((entry) => entry.id === layerId) ?? tilemap.layers[0];
+  return { layer, setLayerId };
 }
 
 export function TilemapDetails({
@@ -196,15 +259,11 @@ export function TilemapDetails({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const authored = useMemo(() => normalizeTilemapPayload(payload), [payload]);
-  const { payloads, loadPayloads } = useLoadedTilesets(authored);
-  const tilemap = useMemo(() => workingTilemap(authored, payloads), [authored, payloads]);
+  const { tilemap, loadPayloads } = useTilemapDocument(payload);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [removeGuid, setRemoveGuid] = useState<string | null>(null);
-  const [selectedLayerId, setSelectedLayerId] = useState(
-    tilemap.layers[0]?.id ?? "layer-1",
-  );
-  const editing = useOptionalTilemapEditing();
+  const { layer, setLayerId } = usePaintLayer(tilemap);
+  const session = useOptionalTilemapSession();
   const { projectDocument } = useProjectState();
   const assets = useRegistryPickerAssets();
   const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? [
@@ -213,9 +272,6 @@ export function TilemapDetails({
     "Foreground",
     "UI",
   ];
-  const layer =
-    tilemap.layers.find((entry) => entry.id === selectedLayerId) ??
-    tilemap.layers[0];
 
   /** `field` marks a continuous edit whose scrub is one undo step. */
   const commit = (next: TilemapPayload, field?: string) => {
@@ -238,8 +294,8 @@ export function TilemapDetails({
   const addTileset = async (guid: string | null) => {
     const result = await addTilesetToLatest(guid);
     if (!result) return;
-    if (result.added && editing && result.base.tilesets.length === 0) {
-      editing.setSelectedTile({ guid: result.added.guid, localId: 1 });
+    if (result.added && session && result.base.tilesets.length === 0) {
+      session.setSelectedTile({ guid: result.added.guid, localId: 1 });
     }
     commit(result.next);
   };
@@ -280,7 +336,9 @@ export function TilemapDetails({
       kind: "number",
       label: "Chunk Size",
       value: tilemap.chunkSize,
-      onChange: (value) => commit({ ...tilemap, chunkSize: value }, "chunkSize"),
+      min: 1,
+      // Every painted cell keeps its place on the new chunk grid.
+      onChange: (value) => commit(rechunkTilemap(tilemap, value), "chunkSize"),
     },
   ];
   const layerRows: PropertyRow[] = [];
@@ -405,7 +463,7 @@ export function TilemapDetails({
                 if (!removeGuid) return;
                 const next = removeTilemapTileset(tilemap, removeGuid);
                 commit(next);
-                editing?.setSelectedTile(null);
+                session?.setSelectedTile(null);
                 setRemoveGuid(null);
               }}
             >
@@ -427,14 +485,14 @@ export function TilemapDetails({
         onAdd={() => {
           const next = addTilemapLayer(tilemap);
           const added = next.layers[next.layers.length - 1];
-          if (added) setSelectedLayerId(added.id);
+          if (added) setLayerId(added.id);
           commit(next);
         }}
         onChange={(ids) => {
           const next = reorderTilemapLayers(tilemap, ids);
           commit(next);
-          if (!next.layers.some((entry) => entry.id === selectedLayerId)) {
-            setSelectedLayerId(next.layers[0]?.id ?? "layer-1");
+          if (layer && !next.layers.some((entry) => entry.id === layer.id)) {
+            setLayerId(next.layers[0]?.id ?? "layer-1");
           }
         }}
         renderItem={({ value }) => {
@@ -454,7 +512,7 @@ export function TilemapDetails({
                   !entry.visible && "text-muted-foreground",
                 )}
                 data-testid={`tilemap-layer-${value}`}
-                onClick={() => setSelectedLayerId(value)}
+                onClick={() => setLayerId(value)}
               >
                 <LayersIcon className="text-muted-foreground" />
                 <span className="truncate">{entry.name}</span>
@@ -499,6 +557,17 @@ export function TilemapDetails({
   );
 }
 
+/** One autotile row of the Palette: its fill tile and how many of its variants have a tile. */
+interface PaletteAutotile {
+  ref: TilemapTilesetRef;
+  tileset: TilesetPayload;
+  terrainId: string;
+  name: string;
+  fill: number;
+  covered: number;
+  total: number;
+}
+
 export function TilemapPalette({
   payload,
   onChange,
@@ -506,43 +575,51 @@ export function TilemapPalette({
   payload: Record<string, unknown>;
   onChange?: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const authored = useMemo(() => normalizeTilemapPayload(payload), [payload]);
-  const { payloads, loadPayloads } = useLoadedTilesets(authored);
-  const tilemap = useMemo(() => workingTilemap(authored, payloads), [authored, payloads]);
-  const editing = useOptionalTilemapEditing();
+  const { tilemap, payloads, loadPayloads } = useTilemapDocument(payload);
+  const session = useOptionalTilemapSession();
+  const selection = useOptionalTilemapSelection();
   const [query, setQuery] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const atlases = useTilesetAtlases(payloads);
   const assets = useRegistryPickerAssets();
   const needle = query.trim().toLowerCase();
-  const selectedTerrain = editing?.selectedTerrain ?? null;
+  const selectedTerrain = selection?.selectedTerrain ?? null;
   const assetOpen = useAssetOpen();
-  const tilesetName = (guid: string) => assets.find((asset) => asset.guid === guid)?.name ?? "Tileset";
-  /** Every autotile of the map's Tilesets, with the fill tile it shows and how many variants have a tile. */
-  const autotiles = tilemap.tilesets.flatMap((ref) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scroll = useScrollWindow(scrollRef);
+  const tilesetName = useCallback(
+    (guid: string) => assets.find((asset) => asset.guid === guid)?.name ?? "Tileset",
+    [assets],
+  );
+  // Resolvers and coverage only change with the Tilesets, not per render or per pick.
+  const allAutotiles = useMemo(() => tilemap.tilesets.flatMap((ref): PaletteAutotile[] => {
     const tileset = payloads.get(ref.guid);
     if (!tileset) return [];
-    const setMatches = !needle || tilesetName(ref.guid).toLowerCase().includes(needle);
-    return (tileset.terrains ?? [])
-      .filter((terrain) => setMatches || terrain.name.toLowerCase().includes(needle))
-      .map((terrain) => {
-        const total = terrainVariantMasks(terrain.style).length;
-        return {
-          ref,
-          tileset,
-          terrain,
-          fill: createTerrainResolver(tileset, terrain.id, ref.tileCount)?.resolve(terrainFillMask(terrain.style)) ?? 0,
-          covered: total - missingTerrainVariants(tileset, terrain.id).length,
-          total,
-        };
-      });
-  });
+    return (tileset.terrains ?? []).map((terrain) => {
+      const total = terrainVariantMasks(terrain.style).length;
+      return {
+        ref,
+        tileset,
+        terrainId: terrain.id,
+        name: terrain.name,
+        fill: cachedTerrainResolver(tileset, terrain.id, ref.tileCount)?.resolve(terrainFillMask(terrain.style)) ?? 0,
+        covered: total - missingTerrainVariants(tileset, terrain.id).length,
+        total,
+      };
+    });
+  }), [payloads, tilemap.tilesets]);
+  const autotiles = needle
+    ? allAutotiles.filter((entry) => tilesetName(entry.ref.guid).toLowerCase().includes(needle) || entry.name.toLowerCase().includes(needle))
+    : allAutotiles;
+  const selectedGid = selectedTerrain ? -1 : selectedTileGid(tilemap, selection?.selectedTile ?? null);
+  const selectTile = session?.setSelectedTile;
+  const onSelectTile = useCallback((guid: string, localId: number) => selectTile?.({ guid, localId }), [selectTile]);
 
   const addTilesetToLatest = useAddTileset(tilemap, loadPayloads, assets);
   const addTileset = async (guid: string | null) => {
     const result = await addTilesetToLatest(guid);
     if (!result) return;
-    if (result.added) editing?.setSelectedTile({ guid: result.added.guid, localId: 1 });
+    if (result.added) session?.setSelectedTile({ guid: result.added.guid, localId: 1 });
     onChange?.(result.next as unknown as Record<string, unknown>);
   };
 
@@ -587,6 +664,7 @@ export function TilemapPalette({
     );
   }
 
+  const severalTilesets = new Set(allAutotiles.map((entry) => entry.ref.guid)).size > 1;
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="tilemap-palette">
       <div className="flex shrink-0 border-b border-border p-2">
@@ -598,27 +676,30 @@ export function TilemapPalette({
           data-testid="tilemap-palette-search"
         />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        className="relative min-h-0 flex-1 overflow-y-auto"
+        onScroll={scroll.onScroll}
+        data-testid="tilemap-palette-scroll"
+      >
         {autotiles.length > 0 ? (
           <section className="flex flex-col" data-testid="tilemap-palette-autotiles">
             <h3 className="sticky top-0 z-10 bg-sidebar px-2 py-1.5 text-xs font-semibold">Autotiles</h3>
             <div role="group" aria-label="Autotiles" className="flex flex-col gap-1 px-2 pb-3">
-              {autotiles.map(({ ref, tileset, terrain, fill, covered, total }) => {
-                const brush = { guid: ref.guid, terrainId: terrain.id };
-                const label = autotiles.some((entry) => entry.ref.guid !== ref.guid)
-                  ? `${terrain.name} · ${tilesetName(ref.guid)}`
-                  : terrain.name;
+              {autotiles.map(({ ref, tileset, terrainId, name, fill, covered, total }) => {
+                const brush = { guid: ref.guid, terrainId };
+                const label = severalTilesets ? `${name} · ${tilesetName(ref.guid)}` : name;
                 if (fill === 0) {
                   return (
                     <Button
-                      key={`${ref.guid}:${terrain.id}`}
+                      key={`${ref.guid}:${terrainId}`}
                       type="button"
                       variant="outline"
                       size="sm"
                       className="h-auto justify-start gap-2 border-dashed py-1 pl-1 text-left font-normal pointer-coarse:min-h-11"
                       disabled={!assetOpen}
                       onClick={() => assetOpen?.openAsset(ref.guid)}
-                      data-testid={`tilemap-palette-autotile-setup-${ref.guid}-${terrain.id}`}
+                      data-testid={`tilemap-palette-autotile-setup-${ref.guid}-${terrainId}`}
                     >
                       <span aria-hidden className="size-7 shrink-0 rounded-sm border border-dashed border-border" />
                       <span className="flex min-w-0 flex-col">
@@ -631,15 +712,15 @@ export function TilemapPalette({
                 const pressed = selectedTerrain !== null && tilemapTerrainKey(selectedTerrain) === tilemapTerrainKey(brush);
                 return (
                   <Toggle
-                    key={`${ref.guid}:${terrain.id}`}
+                    key={`${ref.guid}:${terrainId}`}
                     variant="outline"
                     size="sm"
                     className="h-auto justify-start gap-2 py-1 pl-1 text-left pointer-coarse:min-h-11"
                     pressed={pressed}
-                    onPressedChange={(next) => editing?.setSelectedTerrain(next ? brush : null)}
-                    data-testid={`tilemap-palette-terrain-${ref.guid}-${terrain.id}`}
+                    onPressedChange={(next) => session?.setSelectedTerrain(next ? brush : null)}
+                    data-testid={`tilemap-palette-terrain-${ref.guid}-${terrainId}`}
                   >
-                    <TileImage
+                    <TileSprite
                       gid={encodeTileGid(ref.firstGid, fill)}
                       localId={fill}
                       tileset={tileset}
@@ -660,43 +741,192 @@ export function TilemapPalette({
         ) : null}
         {tilemap.tilesets.map((ref) => {
           const tileset = payloads.get(ref.guid);
-          const name =
-            assets.find((asset) => asset.guid === ref.guid)?.name ?? "Tileset";
-          const nameMatches = !needle || name.toLowerCase().includes(needle);
-          const tiles = tileset?.tiles ?? [];
-          const visible = tiles.filter((tile) => nameMatches || `tile ${tile.id}`.includes(needle));
-          if (visible.length === 0) return null;
+          if (!tileset) return null;
+          const name = tilesetName(ref.guid);
           return (
-            <section key={ref.guid} className="flex flex-col" data-testid={`tilemap-palette-group-${ref.guid}`}>
-              <h3 className="sticky top-0 z-10 flex items-center gap-1.5 bg-sidebar px-2 py-1.5 text-xs font-semibold">
-                <TypeVisualIcon visual={TILESET_VISUAL} />
-                <span className="min-w-0 flex-1 truncate">{name}</span>
-                <SectionCount value={visible.length} />
-              </h3>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(2.25rem,1fr))] gap-1 px-2 pb-3 pointer-coarse:grid-cols-[repeat(auto-fill,minmax(var(--touch-target,44px),1fr))]">
-                {visible.map((tile) => {
-                  const gid = encodeTileGid(ref.firstGid, tile.id);
-                  return (
-                    <TileThumb
-                      key={gid}
-                      gid={gid}
-                      localId={tile.id}
-                      tileset={tileset}
-                      atlas={atlases.get(ref.guid) ?? null}
-                      selected={!selectedTerrain && selectedTileGid(tilemap, editing?.selectedTile ?? null) === gid}
-                      onSelect={() => editing?.setSelectedTile({ guid: ref.guid, localId: tile.id })}
-                      testId={`tilemap-palette-tile-${gid}`}
-                    />
-                  );
-                })}
-              </div>
-            </section>
+            <PaletteGroup
+              key={ref.guid}
+              tilesetRef={ref}
+              tileset={tileset}
+              name={name}
+              needle={needle}
+              atlas={atlases.get(ref.guid) ?? null}
+              selectedGid={selectedGid}
+              onSelectTile={onSelectTile}
+              scroll={scroll.view}
+            />
           );
         })}
       </div>
     </div>
   );
 }
+
+/** The scroll position and height of a scroll container, read once per scroll frame and on resize. */
+function useScrollWindow(ref: RefObject<HTMLDivElement | null>) {
+  const [view, setView] = useState({ scrollTop: 0, height: 0 });
+  const frameRef = useRef<number | null>(null);
+  const read = useCallback(() => {
+    const element = ref.current;
+    if (!element) return;
+    const next = { scrollTop: element.scrollTop, height: element.clientHeight };
+    setView((current) => (current.scrollTop === next.scrollTop && current.height === next.height ? current : next));
+  }, [ref]);
+  useLayoutEffect(() => {
+    read();
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(read);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [read, ref]);
+  useEffect(() => () => {
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+  }, []);
+  const onScroll = useCallback(() => {
+    if (typeof requestAnimationFrame !== "function") {
+      read();
+      return;
+    }
+    if (frameRef.current !== null) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null;
+      read();
+    });
+  }, [read]);
+  return { view, onScroll };
+}
+
+/** Gap between Palette tiles and the group's side padding, in CSS pixels (Tailwind `gap-1`, `px-2`). */
+const PALETTE_GAP = 4;
+const PALETTE_PADDING = 8;
+
+/**
+ * One Tileset's tiles in the Palette. Only the rows in view (plus a few) are
+ * mounted, each tile drawing its cell from the one decoded atlas image, so a
+ * large sheet costs the tiles on screen, not one element and canvas per tile.
+ */
+const PaletteGroup = memo(function PaletteGroup({
+  tilesetRef,
+  tileset,
+  name,
+  needle,
+  atlas,
+  selectedGid,
+  onSelectTile,
+  scroll,
+}: {
+  tilesetRef: TilemapTilesetRef;
+  tileset: TilesetPayload;
+  name: string;
+  needle: string;
+  atlas: HTMLImageElement | null;
+  selectedGid: number;
+  onSelectTile: (guid: string, localId: number) => void;
+  scroll: { scrollTop: number; height: number };
+}) {
+  const touch = useTouchUi();
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [layout, setLayout] = useState({ width: 0, top: 0 });
+  const nameMatches = !needle || name.toLowerCase().includes(needle);
+  const tiles = useMemo(
+    () => (nameMatches ? tileset.tiles : tileset.tiles.filter((tile) => `tile ${tile.id}`.includes(needle))),
+    [nameMatches, needle, tileset.tiles],
+  );
+  const shown = tiles.length > 0;
+  const measure = useCallback(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const next = { width: grid.clientWidth, top: grid.offsetTop };
+    setLayout((current) => (current.width === next.width && current.top === next.top ? current : next));
+  }, []);
+  // The grid's top moves with what is above it (autotiles, earlier groups), so it is read after every render.
+  useLayoutEffect(measure);
+  useLayoutEffect(() => {
+    const grid = gridRef.current;
+    if (!shown || !grid || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [measure, shown]);
+  if (!shown) return null;
+  // Columns as `auto-fill` would lay them out, so rows have a known height to window by.
+  const minCell = touch ? 44 : 36;
+  const inner = Math.max(0, layout.width - 2 * PALETTE_PADDING);
+  const columns = inner > 0 ? Math.max(1, Math.floor((inner + PALETTE_GAP) / (minCell + PALETTE_GAP))) : 0;
+  const rows = columns > 0 ? Math.ceil(tiles.length / columns) : 1;
+  const rowHeight = columns > 0 ? (inner - PALETTE_GAP * (columns - 1)) / columns + PALETTE_GAP : 0;
+  const windowed = columns > 0 && scroll.height > 0;
+  // Rows in view of the scroll container, measured from this grid's top.
+  const slice = windowed
+    ? windowedSlice({ itemCount: rows, rowHeight, scrollTop: scroll.scrollTop - layout.top, viewportHeight: scroll.height })
+    : { firstIndex: 0, lastIndex: rows };
+  const first = windowed ? Math.min(tiles.length, slice.firstIndex * columns) : 0;
+  const last = windowed ? Math.max(first, Math.min(tiles.length, slice.lastIndex * columns)) : tiles.length;
+  const gridStyle: CSSProperties | undefined = columns > 0
+    ? {
+        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+        paddingTop: windowed ? (first / columns) * rowHeight : undefined,
+        height: windowed ? rows * rowHeight - PALETTE_GAP + 12 : undefined,
+      }
+    : undefined;
+  return (
+    <section className="flex flex-col" data-testid={`tilemap-palette-group-${tilesetRef.guid}`}>
+      <h3 className="sticky top-0 z-10 flex items-center gap-1.5 bg-sidebar px-2 py-1.5 text-xs font-semibold">
+        <TypeVisualIcon visual={TILESET_VISUAL} />
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+        <SectionCount value={tiles.length} />
+      </h3>
+      <div
+        ref={gridRef}
+        className="grid grid-cols-[repeat(auto-fill,minmax(2.25rem,1fr))] content-start gap-1 px-2 pb-3 pointer-coarse:grid-cols-[repeat(auto-fill,minmax(var(--touch-target,44px),1fr))]"
+        style={gridStyle}
+        data-testid={`tilemap-palette-grid-${tilesetRef.guid}`}
+      >
+        {tiles.slice(first, last).map((tile) => (
+          <PaletteTile
+            key={tile.id}
+            tile={tile}
+            tilesetRef={tilesetRef}
+            tileset={tileset}
+            atlas={atlas}
+            selected={selectedGid === encodeTileGid(tilesetRef.firstGid, tile.id)}
+            onSelectTile={onSelectTile}
+          />
+        ))}
+      </div>
+    </section>
+  );
+});
+
+const PaletteTile = memo(function PaletteTile({
+  tile,
+  tilesetRef,
+  tileset,
+  atlas,
+  selected,
+  onSelectTile,
+}: {
+  tile: TilesetTile;
+  tilesetRef: TilemapTilesetRef;
+  tileset: TilesetPayload;
+  atlas: HTMLImageElement | null;
+  selected: boolean;
+  onSelectTile: (guid: string, localId: number) => void;
+}) {
+  const gid = encodeTileGid(tilesetRef.firstGid, tile.id);
+  return (
+    <TileThumb
+      gid={gid}
+      localId={tile.id}
+      tileset={tileset}
+      atlas={atlas}
+      selected={selected}
+      onSelect={() => onSelectTile(tilesetRef.guid, tile.id)}
+      testId={`tilemap-palette-tile-${gid}`}
+    />
+  );
+});
 
 export function TilemapPaint({
   payload,
@@ -705,31 +935,31 @@ export function TilemapPaint({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const authored = useMemo(() => normalizeTilemapPayload(payload), [payload]);
-  const { payloads, loadPayloads } = useLoadedTilesets(authored);
-  const tilemap = useMemo(() => workingTilemap(authored, payloads), [authored, payloads]);
+  const { tilemap, payloads, loadPayloads } = useTilemapDocument(payload);
   const latestRef = useRef(tilemap);
   useEffect(() => {
     latestRef.current = tilemap;
   }, [tilemap]);
-  const editing = useOptionalTilemapEditing();
-  const [localTile, setLocalTile] = useState<{ guid: string; localId: number } | null>(null);
-  const selectedGid = selectedTileGid(tilemap, editing ? editing.selectedTile : localTile);
+  const session = useOptionalTilemapSession();
+  const selection = useOptionalTilemapSelection();
+  const [localTile, setLocalTile] = useState<TilemapTileSelection>(null);
+  const selectedTerrain = selection?.selectedTerrain ?? null;
+  const selectedGid = selectedTileGid(tilemap, session ? selection?.selectedTile ?? null : localTile);
   const setSelectedGid = (gid: number) => {
     const tile = gid === 0 ? { guid: "", localId: 0 } : tilemapTileIdentity(tilemap, gid);
-    if (editing) editing.setSelectedTile(tile);
+    if (session) session.setSelectedTile(tile);
     else setLocalTile(tile);
   };
   const [layerOpen, setLayerOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [tool, setTool] = useState<TilemapPaintTool>("move");
   // Picking an autotile means painting it: leave Move or Picker for the Brush.
-  const [seenTerrain, setSeenTerrain] = useState(editing?.selectedTerrain ?? null);
-  if ((editing?.selectedTerrain ?? null) !== seenTerrain) {
-    setSeenTerrain(editing?.selectedTerrain ?? null);
-    if (editing?.selectedTerrain && (tool === "move" || tool === "picker")) setTool("brush");
+  const [seenTerrain, setSeenTerrain] = useState(selectedTerrain);
+  if (selectedTerrain !== seenTerrain) {
+    setSeenTerrain(selectedTerrain);
+    if (selectedTerrain && (tool === "move" || tool === "picker")) setTool("brush");
   }
-  const [layerId, setLayerId] = useState(tilemap.layers[0]?.id ?? "layer-1");
+  const { layer, setLayerId } = usePaintLayer(tilemap);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [cellSize, setCellSize] = useState(DEFAULT_PAINT_CELL_SIZE);
   const [cssSize, setCssSize] = useState({ width: 256, height: 256 });
@@ -751,28 +981,12 @@ export function TilemapPaint({
     lastY: number;
   } | null>(null);
   const pinchActiveRef = useRef(false);
-  const strokeRef = useRef<{
-    id: string;
-    base: TilemapPayload;
-    /** `base` with the stroke so far; shown locally and committed on release. */
-    painted: TilemapPayload;
-    gid: number;
-    /** Terrain painted instead of `gid`; terrain strokes resolve variants with `tilesets`. */
-    terrain: TilemapTerrainBrush | undefined;
-    tilesets: ReadonlyMap<string, TilesetPayload>;
-    start: { x: number; y: number };
-    last: { x: number; y: number };
-    cells: Array<{ x: number; y: number }>;
-    seen: Set<string>;
-    /** Chunk lookups reused across moves; brush and eraser add to `painted`. */
-    paintedChunks: TilemapChunkIndex;
-    /** Shape tools re-derive from `base` on every move. */
-    baseChunks: TilemapChunkIndex;
-  } | null>(null);
+  const strokeRef = useRef<{ id: string; stroke: TilemapStroke } | null>(null);
+  const [hoverStore] = useState(() => new HoverCellStore());
   // The stroke in progress draws from local state, so only this canvas
-  // re-renders per cell; the document receives one edit when it ends.
-  const [strokePreview, setStrokePreview] = useState<TilemapPayload | null>(null);
-  const shown = strokePreview ?? tilemap;
+  // re-renders per frame; the document receives one edit when it ends.
+  const [strokePreview, setStrokePreview] = useState<{ map: TilemapPayload; shape: TilemapStrokeShape | null } | null>(null);
+  const shown = strokePreview?.map ?? tilemap;
   // Gestures move the view here per pointer event; the state that draws it
   // follows once per animation frame, or at once on release or wheel.
   const viewRef = useRef({ pan, cellSize });
@@ -797,15 +1011,38 @@ export function TilemapPaint({
       flushView();
     });
   };
+  // Pointer moves of a stroke land in the stroke at once and show once per frame.
+  const strokeFrameRef = useRef<number | null>(null);
+  const showStroke = () => {
+    if (strokeFrameRef.current !== null) {
+      cancelAnimationFrame(strokeFrameRef.current);
+      strokeFrameRef.current = null;
+    }
+    const active = strokeRef.current?.stroke;
+    if (!active) return;
+    const painted = active.flush();
+    latestRef.current = painted;
+    setStrokePreview({ map: painted, shape: active.shape });
+  };
+  const scheduleStroke = () => {
+    if (strokeFrameRef.current !== null) return;
+    if (typeof requestAnimationFrame !== "function") {
+      showStroke();
+      return;
+    }
+    strokeFrameRef.current = requestAnimationFrame(() => {
+      strokeFrameRef.current = null;
+      showStroke();
+    });
+  };
   useEffect(
     () => () => {
       if (viewFrameRef.current !== null) cancelAnimationFrame(viewFrameRef.current);
+      if (strokeFrameRef.current !== null) cancelAnimationFrame(strokeFrameRef.current);
     },
     [],
   );
   const atlases = useTilesetAtlases(payloads);
-  const layer =
-    tilemap.layers.find((entry) => entry.id === layerId) ?? tilemap.layers[0];
   const assets = useRegistryPickerAssets();
   const { projectDocument } = useProjectState();
   const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
@@ -813,14 +1050,16 @@ export function TilemapPaint({
   const localTileId = decoded?.localId ?? selectedGid;
   // A terrain brush paints only while its Tileset is on the map and has tiles for it.
   const terrainBrush = useMemo(() => {
-    const brush = editing?.selectedTerrain;
+    const brush = selectedTerrain;
     const ref = brush ? tilemap.tilesets.find((entry) => entry.guid === brush.guid) : undefined;
     const tileset = brush ? payloads.get(brush.guid) : undefined;
     const terrain = brush && tileset ? tilesetTerrainById(tileset, brush.terrainId) : null;
-    const preview = brush && tileset && ref ? createTerrainResolver(tileset, brush.terrainId, ref.tileCount)?.resolve(0) : 0;
+    const preview = brush && tileset && ref ? cachedTerrainResolver(tileset, brush.terrainId, ref.tileCount)?.resolve(0) : 0;
     if (!brush || !ref || !tileset || !terrain || !preview) return null;
     return { brush, terrain, tileset, gid: encodeTileGid(ref.firstGid, preview), localId: preview };
-  }, [editing?.selectedTerrain, payloads, tilemap.tilesets]);
+  }, [selectedTerrain, payloads, tilemap.tilesets]);
+  const [renderer] = useState(() => new TilemapPaintRenderer(createBrowserPaintSurface));
+  useEffect(() => () => renderer.dispose(), [renderer]);
 
   useLayoutEffect(() => {
     const host = hostRef.current;
@@ -848,25 +1087,26 @@ export function TilemapPaint({
     return () => observer.disconnect();
   }, [tilemap.tilesets.length]);
 
+  const shape = strokePreview?.shape ?? null;
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-    drawTilemapCanvas(
-      ctx,
-      cssSize.width,
-      cssSize.height,
+    renderer.draw(ctx, {
+      cssWidth: cssSize.width,
+      cssHeight: cssSize.height,
       dpr,
-      shown,
+      tilemap: shown,
       pan,
       cellSize,
       payloads,
       atlases,
       sortingLayers,
-    );
-  }, [atlases, cellSize, cssSize, pan, payloads, shown, sortingLayers]);
+      preview: shape,
+    });
+  }, [atlases, cellSize, cssSize, pan, payloads, renderer, shape, shown, sortingLayers]);
 
   // React attaches wheel listeners as passive, which ignore preventDefault, so
   // the canvas keeps a native non-passive listener that runs the latest handler.
@@ -913,95 +1153,51 @@ export function TilemapPaint({
 
   /** Commit the stroke in progress as one document edit, if it changed anything. */
   const finishStroke = () => {
-    const stroke = strokeRef.current;
+    const active = strokeRef.current;
     strokeRef.current = null;
+    if (strokeFrameRef.current !== null) {
+      cancelAnimationFrame(strokeFrameRef.current);
+      strokeFrameRef.current = null;
+    }
     setStrokePreview(null);
-    if (!stroke || stroke.painted === stroke.base) return;
+    if (!active) return;
+    const painted = active.stroke.finish();
+    latestRef.current = painted;
+    if (painted === active.stroke.base) return;
     onChange(
-      stroke.painted as unknown as Record<string, unknown>,
-      tilemapStrokeMergeKey(stroke.id),
+      painted as unknown as Record<string, unknown>,
+      tilemapStrokeMergeKey(active.id),
     );
   };
 
   /** Drop the stroke in progress without editing the document. */
   const cancelStroke = () => {
-    const stroke = strokeRef.current;
-    if (!stroke) return;
+    const active = strokeRef.current;
+    if (!active) return;
     strokeRef.current = null;
-    latestRef.current = stroke.base;
+    if (strokeFrameRef.current !== null) {
+      cancelAnimationFrame(strokeFrameRef.current);
+      strokeFrameRef.current = null;
+    }
+    latestRef.current = active.stroke.base;
     setStrokePreview(null);
   };
 
-  const paintAt = (
-    cell: { x: number; y: number },
-    pointerType: "down" | "move",
-  ) => {
+  const startStroke = (cell: { x: number; y: number }) => {
     if (!layer || !isTilemapPaintStrokeTool(tool)) return;
     if (!terrainBrush && tool !== "eraser" && (selectedGid < 0 || (selectedGid > 0 && !decoded))) return;
-    if (pointerType === "down") {
-      // A stroke whose release never arrived (lost capture) still lands.
-      finishStroke();
-      strokeRef.current = {
-        id: newStrokeId(),
-        base: latestRef.current,
-        painted: latestRef.current,
-        gid: selectedGid,
-        terrain: terrainBrush?.brush,
-        tilesets: payloads,
-        start: cell,
-        last: cell,
-        cells: [cell],
-        seen: new Set([`${cell.x},${cell.y}`]),
-        paintedChunks: new TilemapChunkIndex(true),
-        baseChunks: new TilemapChunkIndex(),
-      };
-    }
-    const stroke = strokeRef.current;
-    if (!stroke) return;
-    // Brush and eraser cells only add up, so apply just the new ones to the
-    // stroke so far; shape tools re-derive from the stroke's base.
-    let painted: TilemapPayload;
-    if (tool === "brush" || tool === "eraser") {
-      const fresh =
-        pointerType === "down" ? [cell] : [];
-      for (const entry of cellsAlongSegment(stroke.last, cell)) {
-        const key = `${entry.x},${entry.y}`;
-        if (stroke.seen.has(key)) continue;
-        stroke.seen.add(key);
-        stroke.cells.push(entry);
-        fresh.push(entry);
-      }
-      stroke.last = cell;
-      if (fresh.length === 0) return;
-      painted = applyTilemapPaint(stroke.painted, {
-        tool,
-        layerId: layer.id,
-        tileId: stroke.gid,
-        start: stroke.start,
-        end: stroke.last,
-        cells: fresh,
-        terrain: stroke.terrain,
-      }, stroke.paintedChunks, stroke.tilesets);
-    } else {
-      stroke.last = cell;
-      if ((tool === "bucket" || tool === "stamp") && pointerType !== "down") return;
-      painted = applyTilemapPaint(stroke.base, {
-        tool,
-        layerId: layer.id,
-        tileId: stroke.gid,
-        start: stroke.start,
-        end: stroke.last,
-        cells: stroke.cells,
-        stamp:
-          tool === "stamp"
-            ? { width: 2, height: 2, tiles: [stroke.gid, stroke.gid, stroke.gid, stroke.gid] }
-            : undefined,
-        terrain: stroke.terrain,
-      }, stroke.baseChunks, stroke.tilesets);
-    }
-    stroke.painted = painted;
-    latestRef.current = painted;
-    setStrokePreview(painted);
+    // A stroke whose release never arrived (lost capture) still lands.
+    finishStroke();
+    const stroke = new TilemapStroke(latestRef.current, {
+      tool,
+      layerId: layer.id,
+      gid: selectedGid,
+      terrain: terrainBrush?.brush,
+      tilesets: payloads,
+      start: cell,
+    });
+    strokeRef.current = { id: newStrokeId(), stroke };
+    scheduleStroke();
   };
 
   /** The Picker takes an autotile cell's autotile as the brush, any other cell's tile. */
@@ -1011,9 +1207,9 @@ export function TilemapPaint({
     const identity = gid > 0 ? tilemapTileIdentity(tilemap, gid) : null;
     const tileset = identity ? payloads.get(identity.guid) : undefined;
     const terrainId = identity && tileset ? tilesetTileById(tileset, identity.localId)?.terrain?.id : undefined;
-    if (editing && identity && tileset && terrainId && tilesetTerrainById(tileset, terrainId)) {
-      editing.setSelectedTile(identity);
-      editing.setSelectedTerrain({ guid: identity.guid, terrainId });
+    if (session && identity && tileset && terrainId && tilesetTerrainById(tileset, terrainId)) {
+      session.setSelectedTile(identity);
+      session.setSelectedTerrain({ guid: identity.guid, terrainId });
       return;
     }
     setSelectedGid(gid);
@@ -1025,7 +1221,7 @@ export function TilemapPaint({
     if (!result) return;
     if (result.added) {
       const tile = { guid: result.added.guid, localId: 1 };
-      if (editing) editing.setSelectedTile(tile);
+      if (session) session.setSelectedTile(tile);
       else setLocalTile(tile);
     }
     onChange(result.next as unknown as Record<string, unknown>);
@@ -1072,6 +1268,7 @@ export function TilemapPaint({
     );
   }
 
+  const layerHidden = layer ? !layer.visible : false;
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden" data-testid="tilemap-editor">
       <ToolbarStrip className="shrink-0 gap-2 py-1" data-testid="tilemap-paint-toolbar">
@@ -1123,19 +1320,25 @@ export function TilemapPaint({
             type="button"
             variant="outline"
             size="sm"
-            aria-label={`Paint Layer: ${layer?.name ?? "Layer"}`}
-            className="max-w-48 pointer-coarse:min-h-11"
+            aria-label={`Paint Layer: ${layer?.name ?? "Layer"}${layerHidden ? " (Hidden)" : ""}`}
+            className={cn("max-w-48 pointer-coarse:min-h-11", layerHidden && "text-muted-foreground")}
             data-testid="tilemap-paint-layer"
+            data-hidden={layerHidden ? "true" : undefined}
           >
-            <LayersIcon />
+            {layerHidden ? <EyeOffIcon /> : <LayersIcon />}
             <span className="truncate">{layer?.name ?? "Layer"}</span>
             <ChevronDownIcon className="text-muted-foreground" />
           </Button>
         </SearchDropdown>
+        {layerHidden ? (
+          <span className="shrink-0 text-xs text-muted-foreground" data-testid="tilemap-paint-layer-hidden">
+            Layer Hidden
+          </span>
+        ) : null}
         <Separator orientation="vertical" className="my-1" />
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {terrainBrush ? (
-            <TileImage
+            <TileSprite
               gid={terrainBrush.gid}
               localId={terrainBrush.localId}
               tileset={terrainBrush.tileset}
@@ -1170,6 +1373,7 @@ export function TilemapPaint({
                   } · Tile ${localTileId}`
                 : `GID ${selectedGid}`}
           </span>
+          <HoverCellReadout store={hoverStore} />
         </div>
       </ToolbarStrip>
       <div ref={hostRef} className="relative min-h-0 flex-1">
@@ -1229,17 +1433,25 @@ export function TilemapPaint({
             }
             const cell = cellAt(event.clientX, event.clientY);
             if (!cell || !layer) return;
+            hoverStore.set(cell, tilemap);
             if (tool === "picker") {
               // Defer until pointerup so a second-finger pinch keeps the palette GID.
               pendingPickerRef.current = cell;
               return;
             }
-            paintAt(cell, "down");
+            startStroke(cell);
           }}
           onPointerMove={(event) => {
             const pointerId = pointerIdOf(event);
             const tracked = pointersRef.current.get(pointerId);
-            if (!tracked) return;
+            if (!tracked) {
+              // A hovering mouse reads out the cell under it.
+              if (event.pointerType === "mouse") {
+                const cell = cellAt(event.clientX, event.clientY);
+                if (cell) hoverStore.set(cell, tilemap);
+              }
+              return;
+            }
             pointersRef.current.set(pointerId, {
               x: event.clientX,
               y: event.clientY,
@@ -1292,12 +1504,19 @@ export function TilemapPaint({
             }
             const cell = cellAt(event.clientX, event.clientY);
             if (!cell) return;
-            paintAt(cell, "move");
+            hoverStore.set(cell, tilemap);
+            // A move inside the stroke's last cell changes nothing.
+            if (strokeRef.current?.stroke.moveTo(cell)) scheduleStroke();
+          }}
+          onPointerLeave={(event) => {
+            if (event.pointerType === "mouse" && !pointersRef.current.size) hoverStore.set(null, tilemap);
           }}
           onPointerUp={(event) => {
             const pointerId = pointerIdOf(event);
             if (viewFrameRef.current !== null) flushView();
             pointersRef.current.delete(pointerId);
+            // A finger reads out its cell only while it is down.
+            if (event.pointerType !== "mouse" && pointersRef.current.size === 0) hoverStore.set(null, tilemap);
             if (panDragRef.current?.pointerId === pointerId) {
               panDragRef.current = null;
             }
@@ -1321,6 +1540,7 @@ export function TilemapPaint({
             const pointerId = pointerIdOf(event);
             if (viewFrameRef.current !== null) flushView();
             pointersRef.current.delete(pointerId);
+            if (event.pointerType !== "mouse" && pointersRef.current.size === 0) hoverStore.set(null, tilemap);
             if (panDragRef.current?.pointerId === pointerId) {
               panDragRef.current = null;
             }
@@ -1337,10 +1557,44 @@ export function TilemapPaint({
   );
 }
 
-/** Stand-in fill for a tile whose Tileset has no atlas image; chunk meshes draw the same colour. */
-function placeholderCss(gid: number): string {
-  const { h, s, l } = tilePlaceholderHsl(gid);
-  return `hsl(${h} ${s}% ${l}%)`;
+/**
+ * The map cell under the pointer, kept outside React state so a hovering
+ * mouse re-renders only its readout, once per cell it enters.
+ */
+class HoverCellStore {
+  private cell: { x: number; y: number } | null = null;
+  private readonly listeners = new Set<() => void>();
+
+  readonly subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  readonly getSnapshot = () => this.cell;
+
+  /** `cell` when it is inside `map`, else nothing. */
+  set(cell: { x: number; y: number } | null, map: TilemapPayload): void {
+    const next = cell && tileInBounds(map, cell.x, cell.y) ? cell : null;
+    if (next?.x === this.cell?.x && next?.y === this.cell?.y) return;
+    this.cell = next ? { x: next.x, y: next.y } : null;
+    for (const listener of [...this.listeners]) listener();
+  }
+}
+
+function HoverCellReadout({ store }: { store: HoverCellStore }) {
+  const cell = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  if (!cell) return null;
+  return (
+    <span
+      className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums"
+      data-testid="tilemap-paint-hover-cell"
+      aria-label={`Cell ${cell.x}, ${cell.y}`}
+    >
+      {cell.x}, {cell.y}
+    </span>
+  );
 }
 
 function TileThumb({
@@ -1377,13 +1631,17 @@ function TileThumb({
       aria-pressed={selected}
       onClick={() => onSelect(gid)}
     >
-      <TileImage gid={gid} localId={localId} tileset={tileset} atlas={atlas} className="size-full" />
+      <TileSprite gid={gid} localId={localId} tileset={tileset} atlas={atlas} className="size-full" />
     </button>
   );
 }
 
-/** One atlas cell drawn pixelated, or its placeholder colour while the atlas is missing. */
-function TileImage({
+/**
+ * One atlas cell drawn pixelated from the shared decoded atlas image as a CSS
+ * sprite (percentages, so it fills any size), or its placeholder colour while
+ * the atlas is missing. No canvas or copy of the image per tile.
+ */
+function TileSprite({
   gid,
   localId,
   tileset,
@@ -1396,58 +1654,28 @@ function TileImage({
   atlas: HTMLImageElement | null;
   className?: string;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.imageSmoothingEnabled = false;
-    const rect = tileset ? tilesetTileRect(tileset, localId) : null;
-    if (atlas && rect && atlas.naturalWidth > 0) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(
-        atlas,
-        rect.x,
-        rect.y,
-        rect.width,
-        rect.height,
-        0,
-        0,
-        canvas.width,
-        canvas.height,
-      );
-    } else {
-      ctx.fillStyle = localId <= 0 ? "oklch(0.25 0 0)" : placeholderCss(gid);
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-  }, [atlas, gid, localId, tileset]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      aria-hidden
-      width={tileset?.tileWidth ?? 16}
-      height={tileset?.tileHeight ?? 16}
-      className={cn("shrink-0", className)}
-      style={{ imageRendering: "pixelated" }}
-    />
-  );
-}
-
-/**
- * The map the Tilemap panels show and edit: the stored map with its Tileset
- * ranges grown to the loaded atlases and the terrain cells of every changed
- * Tileset re-resolved. Panels build each edit on it, so the next authored edit
- * stores both, and undoes with them.
- */
-function workingTilemap(authored: TilemapPayload, payloads: ReadonlyMap<string, TilesetPayload>): TilemapPayload {
-  return refreshStaleTilemapTerrains(reconcileTilemapTilesets(authored, payloads), payloads);
+  const rect = tileset ? tilesetTileRect(tileset, localId) : null;
+  let style: CSSProperties;
+  if (atlas && rect && tileset && atlas.naturalWidth > 0) {
+    const width = atlas.naturalWidth;
+    const height = atlas.naturalHeight || tileset.atlasHeight;
+    const percent = (offset: number, cell: number, size: number) => (size > cell ? `${(offset / (size - cell)) * 100}%` : "0%");
+    style = {
+      backgroundImage: `url(${atlas.src})`,
+      backgroundRepeat: "no-repeat",
+      backgroundSize: `${(width / rect.width) * 100}% ${(height / rect.height) * 100}%`,
+      backgroundPosition: `${percent(rect.x, rect.width, width)} ${percent(rect.y, rect.height, height)}`,
+      imageRendering: "pixelated",
+    };
+  } else {
+    style = { backgroundColor: localId <= 0 ? "oklch(0.25 0 0)" : placeholderCss(gid) };
+  }
+  return <span aria-hidden className={cn("block shrink-0", className)} style={style} data-tile-sprite={localId} />;
 }
 
 function selectedTileGid(
   tilemap: TilemapPayload,
-  selected: { guid: string; localId: number } | null,
+  selected: TilemapTileSelection,
 ): number {
   if (!selected) return tilemap.tilesets[0]?.firstGid ?? 0;
   if (selected.localId === 0) return 0;
@@ -1482,7 +1710,7 @@ function useLoadedTilesets(
   const { loadAssetDocument } = useDocumentActions();
   const { assetRegistry } = useRegistryState();
   const tilesetDocuments = useOpenDocumentsOfKinds(TILESET_KINDS);
-  const sharedLoader = useOptionalTilemapEditing()?.tilesetLoader;
+  const sharedLoader = useOptionalTilemapSession()?.tilesetLoader;
   const [ownLoader] = useState(() => new TilesetPayloadLoader());
   const loader = sharedLoader ?? ownLoader;
   const resolved = resolveTilesetSources(
@@ -1532,175 +1760,28 @@ function useAddTileset(
   };
 }
 
+/**
+ * Decoded atlas images of the loaded Tilesets, by Tileset guid. A Tilemap
+ * document's Palette and Paint share its provider's loader, so each Texture is
+ * read and decoded once; a panel rendered without one keeps its own.
+ */
 function useTilesetAtlases(
   payloads: ReadonlyMap<string, TilesetPayload>,
 ): ReadonlyMap<string, HTMLImageElement> {
   const { readAssetChunk } = useDocumentActions();
-  const { assetRegistry } = useRegistryState();
-  const [images, setImages] = useState<ReadonlyMap<string, HTMLImageElement>>(
-    new Map(),
-  );
-  const key = [...payloads.entries()]
-    .map(([guid, tileset]) => `${guid}:${tileset.textureGuid ?? ""}`)
-    .join(",");
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const shared = useOptionalTilemapSession()?.atlasLoader;
+  const [own] = useState(() => new TilesetAtlasLoader());
+  const loader = shared ?? own;
   useEffect(() => {
-    let cancelled = false;
-    const objectUrls: string[] = [];
-    void (async () => {
-      const next = new Map<string, HTMLImageElement>();
-      for (const [guid, tileset] of payloads) {
-        const texture = tileset.textureGuid
-          ? assetRegistry?.getByGuid(tileset.textureGuid)
-          : undefined;
-        if (!texture || !readAssetChunk) continue;
-        const bytes = await readAssetChunk(texture.path, "pixels");
-        // Cleanup may have run during the read; a URL made now would leak.
-        if (cancelled) return;
-        if (!bytes || bytes.byteLength === 0) continue;
-        const objectUrl = URL.createObjectURL(
-          new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "image/png" }),
-        );
-        objectUrls.push(objectUrl);
-        const image = new Image();
-        image.onload = () => {
-          if (cancelled) return;
-          next.set(guid, image);
-          setImages(new Map(next));
-        };
-        image.src = objectUrl;
-      }
-    })();
-    return () => {
-      cancelled = true;
-      for (const url of objectUrls) URL.revokeObjectURL(url);
-    };
-    // payloads is keyed by `key`; listing entries would retrigger every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- key captures texture identity
-  }, [assetRegistry, key, readAssetChunk]);
-  return images;
-}
-
-function drawTilemapCanvas(
-  ctx: CanvasRenderingContext2D,
-  cssWidth: number,
-  cssHeight: number,
-  dpr: number,
-  tilemap: TilemapPayload,
-  pan: { x: number; y: number },
-  cellSize: number,
-  payloads: ReadonlyMap<string, TilesetPayload>,
-  atlases: ReadonlyMap<string, HTMLImageElement>,
-  sortingLayers: readonly string[],
-): void {
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, cssWidth, cssHeight);
-  ctx.fillStyle = "oklch(0.2 0 0)";
-  ctx.fillRect(0, 0, cssWidth, cssHeight);
-  ctx.imageSmoothingEnabled = false;
-  for (const layer of orderedTilemapLayers(tilemap, sortingLayers)) {
-    if (!layer.visible) continue;
-    const size = tilemap.chunkSize;
-    const chunkPixels = size * cellSize;
-    for (const chunk of layer.chunks) {
-      const chunkLeft = chunk.cx * chunkPixels + pan.x;
-      const chunkBottom = cssHeight - chunk.cy * chunkPixels - pan.y;
-      if (
-        chunkLeft + chunkPixels < 0 ||
-        chunkLeft > cssWidth ||
-        chunkBottom < 0 ||
-        chunkBottom - chunkPixels > cssHeight
-      ) {
-        continue;
-      }
-      for (let ly = 0; ly < size; ly++) {
-        for (let lx = 0; lx < size; lx++) {
-          const gid = chunk.tiles[ly * size + lx] ?? 0;
-          if (gid <= 0) continue;
-          const gx = chunk.cx * size + lx;
-          const gy = chunk.cy * size + ly;
-          if (gx < 0 || gy < 0 || gx >= tilemap.width || gy >= tilemap.height) {
-            continue;
-          }
-          const screenX = gx * cellSize + pan.x;
-          const screenY = cssHeight - (gy + 1) * cellSize - pan.y;
-          if (
-            screenX + cellSize < 0 ||
-            screenY + cellSize < 0 ||
-            screenX > cssWidth ||
-            screenY > cssHeight
-          ) {
-            continue;
-          }
-          const hit = decodeTileGid(tilemap, gid, payloads);
-          const atlas = hit ? atlases.get(hit.guid) ?? null : null;
-          const rect =
-            hit && atlas ? tilesetTileRect(hit.tileset, hit.localId) : null;
-          if (atlas && rect && atlas.naturalWidth > 0) {
-            ctx.drawImage(
-              atlas,
-              rect.x,
-              rect.y,
-              rect.width,
-              rect.height,
-              screenX,
-              screenY,
-              cellSize,
-              cellSize,
-            );
-          } else {
-            ctx.fillStyle = placeholderCss(gid);
-            ctx.fillRect(screenX, screenY, cellSize, cellSize);
-          }
-        }
-      }
-    }
-  }
-  const mapW = Math.max(1, tilemap.width);
-  const mapH = Math.max(1, tilemap.height);
-  const mapLeft = pan.x;
-  const mapBottom = cssHeight - pan.y;
-  const mapPixelW = mapW * cellSize;
-  const mapPixelH = mapH * cellSize;
-  const mapTop = mapBottom - mapPixelH;
-  const mapRight = mapLeft + mapPixelW;
-  // Only grid lines inside the viewport are submitted, each set as one path,
-  // so a large map costs no more to redraw than the visible part of it.
-  const firstColumn = Math.max(0, Math.floor(-mapLeft / cellSize));
-  const lastColumn = Math.min(mapW, Math.ceil((cssWidth - mapLeft) / cellSize));
-  const firstRow = Math.max(0, Math.floor((mapBottom - cssHeight) / cellSize));
-  const lastRow = Math.min(mapH, Math.ceil(mapBottom / cellSize));
-  const lineTop = Math.max(mapTop, 0);
-  const lineBottom = Math.min(mapBottom, cssHeight);
-  const lineLeft = Math.max(mapLeft, 0);
-  const lineRight = Math.min(mapRight, cssWidth);
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(mapLeft, mapTop, mapPixelW, mapPixelH);
-  ctx.clip();
-  ctx.strokeStyle = "oklch(0.4 0 0 / 0.4)";
-  ctx.lineWidth = 1;
-  if (firstColumn <= lastColumn) {
-    ctx.beginPath();
-    for (let gx = firstColumn; gx <= lastColumn; gx++) {
-      const x = mapLeft + gx * cellSize;
-      ctx.moveTo(x, lineTop);
-      ctx.lineTo(x, lineBottom);
-    }
-    ctx.stroke();
-  }
-  if (firstRow <= lastRow) {
-    ctx.beginPath();
-    for (let gy = firstRow; gy <= lastRow; gy++) {
-      const y = mapBottom - gy * cellSize;
-      ctx.moveTo(lineLeft, y);
-      ctx.lineTo(lineRight, y);
-    }
-    ctx.stroke();
-  }
-  ctx.restore();
-  ctx.strokeStyle = "oklch(0.92 0 0)";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(mapLeft + 0.5, mapTop + 0.5, mapPixelW, mapPixelH);
+    if (shared) return;
+    return () => own.dispose();
+  }, [own, shared]);
+  useEffect(() => {
+    void registryEpoch;
+    loader.request(payloads, assetRegistry, readAssetChunk);
+  }, [assetRegistry, loader, payloads, readAssetChunk, registryEpoch]);
+  return useSyncExternalStore(loader.subscribe, loader.getSnapshot);
 }
 
 function pointerIdOf(event: { pointerId?: number; nativeEvent?: { pointerId?: number } }): number {

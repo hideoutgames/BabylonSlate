@@ -194,6 +194,13 @@ export interface EngineHandle {
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
   /**
+   * Editor viewports: show an open Tilemap document's working content as it is
+   * edited (`null` stops), rebuilding only the changed chunk meshes of the
+   * actors that draw it; `revision` is the content's payload revision, so the
+   * next `setMeshAssets` of the same content changes nothing. Play does not use it.
+   */
+  setLiveTilemap: (guid: string, content: unknown | null, revision?: string) => void;
+  /**
    * Swap the stored encoding (PNG to KTX2) of Textures already installed with
    * `setMeshAssets`, when their pixels, sampler and settings are unchanged.
    * Editor meshes and Materials stay alive; a guid whose installed bytes are

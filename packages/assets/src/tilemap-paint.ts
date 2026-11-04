@@ -4,6 +4,8 @@ import {
   getTile,
   localIndex,
   setTiles,
+  tileInBounds,
+  tilemapCellKey,
   type TilemapChunkIndex,
   type TilemapPayload,
   type TileWrite,
@@ -289,7 +291,7 @@ function applyTerrainStroke(
       const sourceKey = keyOf(source);
       if (sourceKey === tilemapTerrainKey(terrain)) return map;
       const same = sourceKey === null ? (gid: number) => gid === source : (gid: number) => keyOf(gid) === sourceKey;
-      return paint(floodCells(map, stroke.layerId, stroke.start, tileAt, same));
+      return paint(floodCells(map, stroke.start, tileAt, same));
     }
   }
 }
@@ -351,34 +353,29 @@ function floodFill(
   const tileAt = layerTileReader(map, layerId);
   const source = tileAt(start.x, start.y);
   if (source === tileId) return map;
-  return paintCells(map, layerId, floodCells(map, layerId, start, tileAt, (gid) => gid === source), tileId, index);
+  return paintCells(map, layerId, floodCells(map, start, tileAt, (gid) => gid === source), tileId, index);
 }
 
-/** Cells connected to `start` whose tile satisfies `same`, within the layer's painted extent. */
+/**
+ * Cells connected to `start` (4-way) whose tile satisfies `same`, inside the
+ * map: a fill on empty cells reaches the map edge, not just painted chunks.
+ */
 function floodCells(
   map: TilemapPayload,
-  layerId: string,
   start: TileCell,
   tileAt: (x: number, y: number) => number,
   same: (gid: number) => boolean,
 ): TileCell[] {
-  const bounds = fillBounds(map, layerId, start);
-  const seen = new Set<string>();
+  if (!tileInBounds(map, start.x, start.y)) return [];
+  const seen = new Set<number>();
   const queue: TileCell[] = [start];
   const cells: TileCell[] = [];
   while (queue.length > 0) {
     const cell = queue.pop()!;
-    const key = `${cell.x},${cell.y}`;
+    if (!tileInBounds(map, cell.x, cell.y)) continue;
+    const key = tilemapCellKey(cell.x, cell.y);
     if (seen.has(key)) continue;
     seen.add(key);
-    if (
-      cell.x < bounds.minX ||
-      cell.x > bounds.maxX ||
-      cell.y < bounds.minY ||
-      cell.y > bounds.maxY
-    ) {
-      continue;
-    }
     if (!same(tileAt(cell.x, cell.y))) continue;
     cells.push(cell);
     queue.push(
@@ -397,35 +394,15 @@ function layerTileReader(
   layerId: string,
 ): (x: number, y: number) => number {
   const size = Math.max(1, map.chunkSize);
-  const chunks = new Map<string, readonly number[]>();
+  const chunks = new Map<number, readonly number[]>();
   for (const chunk of map.layers.find((entry) => entry.id === layerId)?.chunks ?? []) {
-    const key = `${chunk.cx},${chunk.cy}`;
+    const key = tilemapCellKey(chunk.cx, chunk.cy);
     if (!chunks.has(key)) chunks.set(key, chunk.tiles);
   }
   return (x, y) => {
     const { cx, cy, lx, ly } = chunkCoordForTile(x, y, size);
-    return chunks.get(`${cx},${cy}`)?.[localIndex(lx, ly, size)] ?? 0;
+    return chunks.get(tilemapCellKey(cx, cy))?.[localIndex(lx, ly, size)] ?? 0;
   };
-}
-
-function fillBounds(
-  map: TilemapPayload,
-  layerId: string,
-  start: TileCell,
-): { minX: number; maxX: number; minY: number; maxY: number } {
-  const layer = map.layers.find((entry) => entry.id === layerId);
-  const size = Math.max(1, map.chunkSize);
-  let minX = start.x;
-  let maxX = start.x;
-  let minY = start.y;
-  let maxY = start.y;
-  for (const chunk of layer?.chunks ?? []) {
-    minX = Math.min(minX, chunk.cx * size);
-    maxX = Math.max(maxX, chunk.cx * size + size - 1);
-    minY = Math.min(minY, chunk.cy * size);
-    maxY = Math.max(maxY, chunk.cy * size + size - 1);
-  }
-  return { minX, maxX, minY, maxY };
 }
 
 /** Stroke merge key so one undo restores the whole pointer gesture. */

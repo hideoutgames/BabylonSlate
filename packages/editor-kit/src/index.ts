@@ -343,6 +343,7 @@ export {
   type AtlasTileGridHandle,
   type AtlasTileGridProps,
   type AtlasTileGridTool,
+  type AtlasTileMark,
 } from "./atlas-tile-grid";
 export {
   centeredView,

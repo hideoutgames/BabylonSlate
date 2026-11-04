@@ -11,12 +11,14 @@ import {
   getTile,
   localIndex,
   normalizeTilemapPayload,
+  rechunkTilemap,
   removeTilemapTileset,
   reorderTilemapLayers,
   resizeTilemap,
   setTile,
   setTiles,
   TilemapChunkIndex,
+  tilemapCellKey,
   tilemapTilesetGuids,
   type TilemapPayload,
 } from "./tilemap-payload";
@@ -116,6 +118,60 @@ describe("tilemap payload", () => {
     map = resizeTilemap(map, 0, -3);
     expect(map.width).toBe(1);
     expect(map.height).toBe(1);
+  });
+
+  it("returns a normalized payload as itself and keeps every untouched layer, chunk and tiles array", () => {
+    let map = setTile(setTile(createDefaultTilemapPayload(), "layer-1", 0, 0, 3), "layer-1", 40, 0, 4);
+    map = addTilemapLayer(map, "Props");
+    const normalized = normalizeTilemapPayload(map);
+    expect(normalized).toBe(map);
+    // A painted cell copies its chunk only; the rest of the map keeps its identity.
+    const painted = setTile(normalized, "layer-1", 1, 0, 5);
+    const again = normalizeTilemapPayload(painted);
+    expect(again).toBe(painted);
+    expect(again.layers[1]).toBe(map.layers[1]);
+    expect(again.layers[0]!.chunks[1]).toBe(map.layers[0]!.chunks[1]);
+    expect(again.layers[0]!.chunks[0]!.tiles).not.toBe(map.layers[0]!.chunks[0]!.tiles);
+    // Anything the stored form does not hold exactly is rebuilt.
+    const short = { ...map, layers: [{ ...map.layers[0]!, chunks: [{ cx: 0, cy: 0, tiles: [3] }] }] };
+    const fixed = normalizeTilemapPayload(short);
+    expect(fixed).not.toBe(short);
+    expect(fixed.layers[0]!.chunks[0]!.tiles).toHaveLength(32 * 32);
+    const extra = normalizeTilemapPayload({ ...map, stale: true });
+    expect(extra).not.toHaveProperty("stale");
+    expect(extra.layers).toBe(map.layers);
+  });
+
+  it("re-cuts every layer on a new chunk size without moving or losing a cell", () => {
+    let map: TilemapPayload = { ...createDefaultTilemapPayload(), chunkSize: 4, width: 10, height: 10 };
+    map = addTilemapLayer(map, "Props");
+    for (const [layer, x, y, gid] of [
+      ["layer-1", 0, 0, 1], ["layer-1", 3, 3, 2], ["layer-1", 4, 0, 3], ["layer-1", 9, 9, 4], ["layer-2", 5, 6, 5],
+    ] as const) map = setTile(map, layer, x, y, gid);
+    const rechunked = rechunkTilemap(map, 3);
+    expect(rechunked.chunkSize).toBe(3);
+    expect(rechunked.layers.map((layer) => layer.chunks.map((chunk) => [chunk.cx, chunk.cy]))).toEqual([
+      [[0, 0], [1, 0], [1, 1], [3, 3]],
+      [[1, 2]],
+    ]);
+    for (const chunk of rechunked.layers.flatMap((layer) => layer.chunks)) expect(chunk.tiles).toHaveLength(9);
+    const cells = (target: TilemapPayload) => [
+      getTile(target, "layer-1", 0, 0), getTile(target, "layer-1", 3, 3), getTile(target, "layer-1", 4, 0),
+      getTile(target, "layer-1", 9, 9), getTile(target, "layer-2", 5, 6), getTile(target, "layer-1", 1, 1),
+    ];
+    expect(cells(rechunked)).toEqual([1, 2, 3, 4, 5, 0]);
+    expect(cells(rechunkTilemap(rechunked, 32))).toEqual([1, 2, 3, 4, 5, 0]);
+    expect(rechunkTilemap(map, 4)).toBe(map);
+    // The new size is a whole number of at least 1, as normalizing would store it.
+    expect(rechunkTilemap(map, 0).chunkSize).toBe(1);
+    expect(cells(rechunkTilemap(map, 0))).toEqual([1, 2, 3, 4, 5, 0]);
+  });
+
+  it("keys cells by number, negative coordinates included", () => {
+    const keys = new Set<number>();
+    for (const x of [-3, -1, 0, 1, 1000]) for (const y of [-2, 0, 7, 999]) keys.add(tilemapCellKey(x, y));
+    expect(keys.size).toBe(20);
+    expect(tilemapCellKey(-1, 0)).not.toBe(tilemapCellKey(0, -1));
   });
 
   it("normalizes missing layers and clamps chunk size", () => {

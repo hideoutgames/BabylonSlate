@@ -11,6 +11,8 @@ import { discardSealedJournal, readSealedJournalLines, unsealJournal } from "@ha
 import {
   commandToJournalPayload,
   diffGraphCommands,
+  diffTilemapDocument,
+  PatchTilemapDocumentCommand,
   planSceneChange,
   replayJournalLines,
   resolveJournalLines,
@@ -210,10 +212,21 @@ export class DocumentEditingService {
       return false;
     }
     const previous = doc.content as Record<string, unknown>;
-    if (!shouldApplyAssetDocumentChange(previous, next)) {
-      return false;
+    let command: EditCommand<Record<string, unknown>>;
+    if (doc.ref.kind === "tilemap") {
+      // Tilemap payloads are never changed in place: a delta found by identity
+      // records only the chunks the edit touched, with nothing cloned.
+      const delta = diffTilemapDocument(previous, next);
+      if (delta === "unchanged") return false;
+      command = delta === "unsupported"
+        ? new SetAssetDocumentCommand(previous, next, mergeKey)
+        : new PatchTilemapDocumentCommand(delta, mergeKey);
+    } else {
+      if (!shouldApplyAssetDocumentChange(previous, next)) {
+        return false;
+      }
+      command = new SetAssetDocumentCommand(previous, next, mergeKey);
     }
-    const command = new SetAssetDocumentCommand(previous, next, mergeKey);
     const result = this.editSession.apply(id, previous, command);
     this.documents.updateAssetDocument(id, result.doc);
     this.reportHistoryOutcome(id, result);

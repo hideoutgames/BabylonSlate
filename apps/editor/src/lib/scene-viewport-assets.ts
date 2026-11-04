@@ -118,10 +118,15 @@ export function viewportPayloadRevisions(
         revisions.set(header.guid, `saved:${identityOf(payload)}:${identityOf(chunks)}`);
       }
     } else if (content && typeof content === "object") {
-      revisions.set(header.guid, `open:${identityOf(content)}`);
+      revisions.set(header.guid, openDocumentPayloadRevision(content));
     }
   }
   return revisions;
+}
+
+/** The payload revision `viewportPayloadRevisions` gives an open tab's document. */
+export function openDocumentPayloadRevision(content: object): string {
+  return `open:${identityOf(content)}`;
 }
 
 /**

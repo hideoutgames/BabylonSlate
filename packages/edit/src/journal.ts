@@ -52,6 +52,7 @@ import {
 import {
   createSetAssetDocumentCommandFromJson,
 } from "./commands/asset-document";
+import { createPatchTilemapDocumentCommandFromJson } from "./commands/tilemap-document";
 import { createReplaceSceneCommandFromJson } from "./commands/replace-scene";
 import { createSetActorSuppressedComponentsCommandFromJson, createSetComponentMaterialInstanceCommandFromJson } from "./commands/scene-instance";
 import {
@@ -508,6 +509,7 @@ export function registerAssetDocumentCommandRevivers(): void {
     "asset.setDocument",
     createSetAssetDocumentCommandFromJson,
   );
+  registerCommandReviver("asset.patchTilemap", createPatchTilemapDocumentCommandFromJson);
 }
 
 registerGraphCommandRevivers();

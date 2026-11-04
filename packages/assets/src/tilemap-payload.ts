@@ -294,6 +294,14 @@ function nextTilesetFirstGid(
   return next;
 }
 
+/**
+ * A valid Tilemap payload from any stored value. Parts of `value` that are
+ * already in normalized form are kept as the same objects (a layer, a chunk,
+ * its `tiles` array, the Tileset list), and an already normalized payload is
+ * returned as itself, so normalizing the editor's working map again costs one
+ * read of its cells and keeps every identity that caches and deltas key on.
+ * Payloads are never changed in place, so sharing them is safe.
+ */
 export function normalizeTilemapPayload(value: unknown): TilemapPayload {
   const source =
     value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -302,39 +310,81 @@ export function normalizeTilemapPayload(value: unknown): TilemapPayload {
   const tilesets = normalizeTilesetRefs(source.tilesets);
   const resolvedLayers =
     layers.length > 0 ? layers : createDefaultTilemapPayload().layers;
-  const extent = occupiedTileExtent(resolvedLayers, chunkSize);
-  return {
-    tilesets,
-    tileWidth: positiveInt(source.tileWidth, 16),
-    tileHeight: positiveInt(source.tileHeight, 16),
-    width: normalizeMapSize(source.width, extent.width),
-    height: normalizeMapSize(source.height, extent.height),
-    chunkSize,
-    layers: resolvedLayers,
-  };
+  const storedWidth = storedMapSize(source.width);
+  const storedHeight = storedMapSize(source.height);
+  // Only a payload without a stored size reads its painted extent.
+  const extent = storedWidth !== null && storedHeight !== null
+    ? null
+    : occupiedTileExtent(resolvedLayers, chunkSize);
+  const width = storedWidth ?? Math.max(DEFAULT_TILEMAP_WIDTH, extent!.width);
+  const height = storedHeight ?? Math.max(DEFAULT_TILEMAP_HEIGHT, extent!.height);
+  const tileWidth = positiveInt(source.tileWidth, 16);
+  const tileHeight = positiveInt(source.tileHeight, 16);
+  if (
+    hasExactKeys(source, TILEMAP_KEYS) &&
+    tilesets === source.tilesets &&
+    resolvedLayers === source.layers &&
+    tileWidth === source.tileWidth &&
+    tileHeight === source.tileHeight &&
+    width === source.width &&
+    height === source.height &&
+    chunkSize === source.chunkSize
+  ) {
+    return source as unknown as TilemapPayload;
+  }
+  return { tilesets, tileWidth, tileHeight, width, height, chunkSize, layers: resolvedLayers };
+}
+
+const TILEMAP_KEYS = ["tilesets", "tileWidth", "tileHeight", "width", "height", "chunkSize", "layers"] as const;
+const LAYER_KEYS = ["id", "name", "visible", "collision", "sortingLayer", "orderInLayer", "parallax", "chunks"] as const;
+const CHUNK_KEYS = ["cx", "cy", "tiles"] as const;
+
+/** `value` has exactly these own keys, so keeping it adds and drops nothing. */
+function hasExactKeys(value: object, keys: readonly string[]): boolean {
+  const own = Object.keys(value);
+  return own.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+/** A stored map size, or `null` when the payload has none (it then follows the painted extent). */
+function storedMapSize(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
 }
 
 function normalizeTilesetRefs(value: unknown): TilemapTilesetRef[] {
   const refs: TilemapTilesetRef[] = [];
   const seen = new Set<string>();
+  let kept = Array.isArray(value);
   if (Array.isArray(value)) {
     for (const entry of value) {
-      if (!entry || typeof entry !== "object") continue;
+      if (!entry || typeof entry !== "object") {
+        kept = false;
+        continue;
+      }
       const row = entry as Record<string, unknown>;
       const guid = stringOrNull(row.guid);
-      if (!guid || seen.has(guid)) continue;
+      if (!guid || seen.has(guid)) {
+        kept = false;
+        continue;
+      }
       seen.add(guid);
       const terrainStamp = stringOrNull(row.terrainStamp);
-      refs.push({
+      const ref: TilemapTilesetRef = {
         guid,
         firstGid: positiveInt(row.firstGid, 1),
         // Every saved range reserves at least one tile; the next edit grows it to the atlas.
         tileCount: Math.max(1, positiveInt(row.tileCount, 1)),
         ...(terrainStamp ? { terrainStamp } : {}),
-      });
+      };
+      const same = ref.firstGid === row.firstGid && ref.tileCount === row.tileCount &&
+        hasExactKeys(row, terrainStamp ? ["guid", "firstGid", "tileCount", "terrainStamp"] : ["guid", "firstGid", "tileCount"]);
+      if (same) refs.push(row as unknown as TilemapTilesetRef);
+      else {
+        kept = false;
+        refs.push(ref);
+      }
     }
   }
-  return refs;
+  return kept ? (value as TilemapTilesetRef[]) : refs;
 }
 
 /** Local tile index: `(0,0)` is the bottom-left of the chunk, +Y up. */
@@ -403,7 +453,7 @@ export interface TileWrite {
  */
 export class TilemapChunkIndex {
   private chunks: readonly TilemapChunk[] | null = null;
-  private positions = new Map<string, number>();
+  private positions = new Map<number, number>();
   private unique = true;
   private readonly advance: boolean;
 
@@ -411,12 +461,12 @@ export class TilemapChunkIndex {
     this.advance = advance;
   }
 
-  /** Chunk positions by `cx,cy` key, or `null` when two chunks share a key. */
-  positionsOf(chunks: readonly TilemapChunk[]): ReadonlyMap<string, number> | null {
+  /** Chunk positions by `tilemapCellKey(cx, cy)`, or `null` when two chunks share a key. */
+  positionsOf(chunks: readonly TilemapChunk[]): ReadonlyMap<number, number> | null {
     if (this.chunks !== chunks) {
-      const positions = new Map<string, number>();
+      const positions = new Map<number, number>();
       for (let at = 0; at < chunks.length; at++) {
-        positions.set(`${chunks[at]!.cx},${chunks[at]!.cy}`, at);
+        positions.set(tilemapCellKey(chunks[at]!.cx, chunks[at]!.cy), at);
       }
       this.chunks = chunks;
       this.positions = positions;
@@ -429,7 +479,7 @@ export class TilemapChunkIndex {
   followAppend(next: readonly TilemapChunk[], added: readonly TilemapChunk[]): void {
     if (!this.advance) return;
     for (let i = 0; i < added.length; i++) {
-      this.positions.set(`${added[i]!.cx},${added[i]!.cy}`, next.length - added.length + i);
+      this.positions.set(tilemapCellKey(added[i]!.cx, added[i]!.cy), next.length - added.length + i);
     }
     this.chunks = next;
   }
@@ -439,19 +489,19 @@ function isOccupied(chunk: TilemapChunk): boolean {
   return chunk.tiles.some((gid) => gid > 0);
 }
 
-/** Chunks changed by `writes`, as copies, keyed by `cx,cy` in the order they first changed. */
+/** Chunks changed by `writes`, as copies, keyed by `tilemapCellKey(cx, cy)` in the order they first changed. */
 function editedChunks(
   map: TilemapPayload,
   size: number,
   writes: Iterable<TileWrite>,
-  existing: (key: string) => TilemapChunk | undefined,
-): Map<string, TilemapChunk> {
-  const edited = new Map<string, TilemapChunk>();
+  existing: (key: number) => TilemapChunk | undefined,
+): Map<number, TilemapChunk> {
+  const edited = new Map<number, TilemapChunk>();
   for (const write of writes) {
     if (!tileInBounds(map, write.x, write.y)) continue;
     const id = Number.isInteger(write.id) && write.id > 0 ? write.id : 0;
     const { cx, cy, lx, ly } = chunkCoordForTile(write.x, write.y, size);
-    const key = `${cx},${cy}`;
+    const key = tilemapCellKey(cx, cy);
     const index = localIndex(lx, ly, size);
     let chunk = edited.get(key);
     if (!chunk) {
@@ -509,12 +559,12 @@ export function setTiles(
     if (dropped.size === 0) index.followAppend(kept, added);
     return withLayerChunks(map, layerIndex, layer, kept);
   }
-  const existing = new Map(layer.chunks.map((chunk) => [`${chunk.cx},${chunk.cy}`, chunk]));
+  const existing = new Map(layer.chunks.map((chunk) => [tilemapCellKey(chunk.cx, chunk.cy), chunk]));
   const edited = editedChunks(map, size, writes, (key) => existing.get(key));
   if (edited.size === 0) return map;
   const chunks: TilemapChunk[] = [];
   for (const chunk of layer.chunks) {
-    const key = `${chunk.cx},${chunk.cy}`;
+    const key = tilemapCellKey(chunk.cx, chunk.cy);
     const next = edited.get(key);
     if (!next) {
       chunks.push(chunk);
@@ -540,7 +590,8 @@ function withLayerChunks(
 
 function normalizeLayers(value: unknown, chunkSize: number): TilemapLayer[] {
   if (!Array.isArray(value)) return [];
-  return value.map((entry, index) => {
+  let kept = true;
+  const layers = value.map((entry, index) => {
     const row =
       entry && typeof entry === "object"
         ? (entry as Record<string, unknown>)
@@ -553,7 +604,7 @@ function normalizeLayers(value: unknown, chunkSize: number): TilemapLayer[] {
       row.parallax && typeof row.parallax === "object"
         ? (row.parallax as { x?: number; y?: number })
         : {};
-    return {
+    const layer: TilemapLayer = {
       id,
       name: typeof row.name === "string" && row.name.trim() !== "" ? row.name : id,
       visible: row.visible !== false,
@@ -571,28 +622,111 @@ function normalizeLayers(value: unknown, chunkSize: number): TilemapLayer[] {
       },
       chunks: normalizeChunks(row.chunks, chunkSize),
     };
+    const same =
+      hasExactKeys(row, LAYER_KEYS) &&
+      layer.id === row.id &&
+      layer.name === row.name &&
+      layer.visible === row.visible &&
+      layer.collision === row.collision &&
+      layer.sortingLayer === row.sortingLayer &&
+      layer.orderInLayer === row.orderInLayer &&
+      layer.chunks === row.chunks &&
+      hasExactKeys(parallax, ["x", "y"]) &&
+      layer.parallax.x === parallax.x &&
+      layer.parallax.y === parallax.y;
+    if (same) return row as unknown as TilemapLayer;
+    kept = false;
+    return layer;
   });
+  return kept ? (value as TilemapLayer[]) : layers;
+}
+
+/** Whether `tiles` already holds what normalizing it would: `length` numbers, none NaN or -0. */
+function isNormalizedTiles(tiles: unknown, length: number): tiles is number[] {
+  if (!Array.isArray(tiles) || tiles.length !== length) return false;
+  for (let i = 0; i < length; i++) {
+    const n: unknown = tiles[i];
+    if (typeof n !== "number" || Number.isNaN(n) || Object.is(n, -0)) return false;
+  }
+  return true;
 }
 
 function normalizeChunks(value: unknown, chunkSize: number): TilemapChunk[] {
   if (!Array.isArray(value)) return [];
   const length = chunkSize * chunkSize;
-  return value.map((entry) => {
+  let kept = true;
+  const chunks = value.map((entry) => {
     const row =
       entry && typeof entry === "object"
         ? (entry as Record<string, unknown>)
         : {};
-    const raw = Array.isArray(row.tiles) ? row.tiles.map((n) => Number(n) || 0) : [];
-    const tiles = emptyChunkTiles(chunkSize);
-    for (let i = 0; i < Math.min(length, raw.length); i++) {
-      tiles[i] = raw[i]!;
+    const cx = Number.isFinite(Number(row.cx)) ? Math.floor(Number(row.cx)) : 0;
+    const cy = Number.isFinite(Number(row.cy)) ? Math.floor(Number(row.cy)) : 0;
+    let tiles: number[];
+    if (isNormalizedTiles(row.tiles, length)) {
+      tiles = row.tiles;
+    } else {
+      const raw = Array.isArray(row.tiles) ? row.tiles.map((n) => Number(n) || 0) : [];
+      tiles = emptyChunkTiles(chunkSize);
+      for (let i = 0; i < Math.min(length, raw.length); i++) {
+        tiles[i] = raw[i]!;
+      }
     }
-    return {
-      cx: Number.isFinite(Number(row.cx)) ? Math.floor(Number(row.cx)) : 0,
-      cy: Number.isFinite(Number(row.cy)) ? Math.floor(Number(row.cy)) : 0,
-      tiles,
-    };
+    if (tiles === row.tiles && cx === row.cx && cy === row.cy && hasExactKeys(row, CHUNK_KEYS)) {
+      return row as unknown as TilemapChunk;
+    }
+    kept = false;
+    return { cx, cy, tiles };
   });
+  return kept ? (value as TilemapChunk[]) : chunks;
+}
+
+/**
+ * The same cells in chunks of `chunkSize`, every layer re-cut on the new grid
+ * so each tile keeps its map cell (a Chunk Size edit). Nothing is clipped,
+ * empty chunks are dropped, and new chunks list bottom row first, left to
+ * right. Returns `map` itself when the size does not change.
+ */
+export function rechunkTilemap(map: TilemapPayload, chunkSize: number): TilemapPayload {
+  const size = Math.max(1, Math.floor(chunkSize) || 1);
+  const from = Math.max(1, map.chunkSize);
+  if (size === from) return map;
+  const layers = map.layers.map((layer) => {
+    const byKey = new Map<number, TilemapChunk>();
+    for (const chunk of layer.chunks) {
+      for (let at = 0; at < chunk.tiles.length; at++) {
+        const gid = chunk.tiles[at]!;
+        if (!gid) continue;
+        const x = chunk.cx * from + (at % from);
+        const y = chunk.cy * from + Math.floor(at / from);
+        const { cx, cy, lx, ly } = chunkCoordForTile(x, y, size);
+        const key = tilemapCellKey(cx, cy);
+        let target = byKey.get(key);
+        if (!target) {
+          target = { cx, cy, tiles: emptyChunkTiles(size) };
+          byKey.set(key, target);
+        }
+        target.tiles[localIndex(lx, ly, size)] = gid;
+      }
+    }
+    const chunks = [...byKey.values()].sort((a, b) => a.cy - b.cy || a.cx - b.cx);
+    return { ...layer, chunks };
+  });
+  return { ...map, chunkSize: size, layers };
+}
+
+/** Largest |coordinate| `tilemapCellKey` keeps distinct. */
+const CELL_KEY_OFFSET = 2 ** 20;
+const CELL_KEY_STRIDE = 2 ** 21;
+
+/**
+ * A number naming one cell (or chunk) coordinate pair, for maps and sets that
+ * key cells without building strings. Distinct for coordinates in
+ * (-2^20, 2^20) on both axes, negative ones included, so it never depends on
+ * the map's width or height.
+ */
+export function tilemapCellKey(x: number, y: number): number {
+  return (y + CELL_KEY_OFFSET) * CELL_KEY_STRIDE + (x + CELL_KEY_OFFSET);
 }
 
 export function resizeTilemap(
@@ -607,6 +741,11 @@ export function resizeTilemap(
   const layers = map.layers.map((layer) => {
     const chunks: TilemapChunk[] = [];
     for (const chunk of layer.chunks) {
+      // A chunk wholly inside the new size keeps its object.
+      if (chunk.cx >= 0 && chunk.cy >= 0 && (chunk.cx + 1) * size <= nextWidth && (chunk.cy + 1) * size <= nextHeight && isOccupied(chunk)) {
+        chunks.push(chunk);
+        continue;
+      }
       const tiles = [...chunk.tiles];
       let occupied = false;
       for (let i = 0; i < length; i++) {
@@ -646,13 +785,6 @@ function occupiedTileExtent(
     }
   }
   return { width: maxX + 1, height: maxY + 1 };
-}
-
-function normalizeMapSize(value: unknown, occupied: number): number {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return Math.floor(value);
-  }
-  return Math.max(DEFAULT_TILEMAP_WIDTH, occupied);
 }
 
 function posMod(n: number, d: number): number {

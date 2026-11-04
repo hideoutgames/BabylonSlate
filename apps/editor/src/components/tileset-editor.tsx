@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   BrushIcon,
@@ -105,10 +105,9 @@ export function TilesetPreview({
   const [localSelectedIds, setLocalSelectedIds] = useState([
     tileset.tiles[0]?.id ?? 1,
   ]);
-  const selectedIds = currentTileSelection(
-    tileset,
-    editing?.selectedTileIds ?? localSelectedIds,
-  );
+  const chosenIds = editing?.selectedTileIds ?? localSelectedIds;
+  // The same array while the selection is the same, so the sheet keeps its drawing.
+  const selectedIds = useMemo(() => currentTileSelection(tileset, chosenIds), [chosenIds, tileset]);
   const selectedId = selectedIds[0] ?? 1;
   const [localTool, setLocalTool] = useState<AtlasTileGridTool>("move");
   const previewTool = editing?.previewTool ?? localTool;
@@ -141,6 +140,47 @@ export function TilesetPreview({
   };
 
   const collisionValue = collisionEnum(selected?.collision);
+
+  // The sheet keeps one set of handlers, so a render of this panel does not redraw it.
+  const onSelectRef = useRef<(id: number) => void>(() => {});
+  const onSelectionRef = useRef<(ids: number[]) => void>(() => {});
+  const onImageSizeRef = useRef<(width: number, height: number) => void>(() => {});
+  useLayoutEffect(() => {
+    onSelectRef.current = (id) => {
+      if (editing) editing.setSelectedTileId(id);
+      else setLocalSelectedIds([id]);
+      if (editing?.paintCollision && selected) {
+        patchTiles([id], { collision: selected.collision }, "tileset:paintCollision");
+      }
+    };
+    onSelectionRef.current = (ids) => {
+      if (editing) editing.setSelectedTileIds(ids);
+      else setLocalSelectedIds(ids);
+      if (editing?.paintCollision && selected) {
+        // The selection grows on every pointer move of a paint drag.
+        patchTiles(ids, { collision: selected.collision }, "tileset:paintCollision");
+      }
+    };
+    onImageSizeRef.current = (width, height) => {
+      if (
+        width <= 0 ||
+        height <= 0 ||
+        (width === tileset.atlasWidth && height === tileset.atlasHeight)
+      ) {
+        return;
+      }
+      commit(
+        ensureTilesetTiles({
+          ...tileset,
+          atlasWidth: width,
+          atlasHeight: height,
+        }),
+      );
+    };
+  });
+  const onSheetSelect = useCallback((id: number) => onSelectRef.current(id), []);
+  const onSheetSelection = useCallback((ids: number[]) => onSelectionRef.current(ids), []);
+  const onSheetImageSize = useCallback((width: number, height: number) => onImageSizeRef.current(width, height), []);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden" onErrorCapture={preview.fail}>
@@ -236,37 +276,9 @@ export function TilesetPreview({
           </Button>
         ) : undefined}
         data-testid="tileset-preview"
-        onSelect={(id) => {
-          if (editing) editing.setSelectedTileId(id);
-          else setLocalSelectedIds([id]);
-          if (editing?.paintCollision && selected) {
-            patchTiles([id], { collision: selected.collision }, "tileset:paintCollision");
-          }
-        }}
-        onSelectionChange={(ids) => {
-          if (editing) editing.setSelectedTileIds(ids);
-          else setLocalSelectedIds(ids);
-          if (editing?.paintCollision && selected) {
-            // The selection grows on every pointer move of a paint drag.
-            patchTiles(ids, { collision: selected.collision }, "tileset:paintCollision");
-          }
-        }}
-        onImageSize={(width, height) => {
-          if (
-            width <= 0 ||
-            height <= 0 ||
-            (width === tileset.atlasWidth && height === tileset.atlasHeight)
-          ) {
-            return;
-          }
-          commit(
-            ensureTilesetTiles({
-              ...tileset,
-              atlasWidth: width,
-              atlasHeight: height,
-            }),
-          );
-        }}
+        onSelect={onSheetSelect}
+        onSelectionChange={onSheetSelection}
+        onImageSize={onSheetImageSize}
       />
       {preview.status === "failed" ? <TexturePreviewStatus preview={preview} /> : null}
       <AssetPicker
@@ -606,14 +618,18 @@ function parseChainPoints(value: string): Array<{ x: number; y: number }> {
     .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
 }
 
+/** Picker rows for every indexed asset, rebuilt when the registry changes rather than per render. */
 function useAssetOptions() {
-  const { assetRegistry } = useRegistryState();
-  return (assetRegistry?.list() ?? []).map((asset) => ({
-    guid: asset.header.guid,
-    name: asset.header.name,
-    type: asset.header.type,
-    path: asset.path,
-  }));
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  return useMemo(() => {
+    void registryEpoch;
+    return (assetRegistry?.list() ?? []).map((asset) => ({
+      guid: asset.header.guid,
+      name: asset.header.name,
+      type: asset.header.type,
+      path: asset.path,
+    }));
+  }, [assetRegistry, registryEpoch]);
 }
 
 function tileGridLabel(tileset: TilesetPayload, tileId: number): string {

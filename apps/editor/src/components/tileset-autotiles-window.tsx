@@ -29,6 +29,7 @@ import {
   useContextMenu,
   type AtlasTileDrag,
   type AtlasTileGridHandle,
+  type AtlasTileMark,
   type ContextMenuItem,
 } from "@haptic/editor-kit";
 import {
@@ -569,35 +570,11 @@ export function TilesetAutotiles({
 
   // Sheet marks: the edited set's tiles carry a dot, tiles of other sets are dimmed.
   const sheetMarks = useMemo(() => {
-    const own = new Set<number>();
-    for (const ids of pieces.values()) for (const tileId of ids) own.add(tileId);
-    const others = new Set(tileset.tiles.flatMap((tile) => (tile.terrain && !own.has(tile.id) ? [tile.id] : [])));
-    return { own, others };
+    const marks = new Map<number, AtlasTileMark>();
+    for (const ids of pieces.values()) for (const tileId of ids) marks.set(tileId, "dot");
+    for (const tile of tileset.tiles) if (tile.terrain && !marks.has(tile.id)) marks.set(tile.id, "dim");
+    return marks;
   }, [pieces, tileset]);
-  const renderCellOverlay = useCallback(
-    (tileId: number) => {
-      if (sheetMarks.own.has(tileId)) {
-        return (
-          <span
-            aria-hidden
-            data-testid={`tileset-autotiles-sheet-piece-${tileId}`}
-            className="pointer-events-none absolute bottom-[7%] left-[7%] size-[18%] rounded-full bg-(--graph-state-selected) shadow-[0_0_0_calc(1px/var(--atlas-zoom,1))_var(--background)]"
-          />
-        );
-      }
-      if (sheetMarks.others.has(tileId)) {
-        return (
-          <span
-            aria-hidden
-            data-testid={`tileset-autotiles-sheet-other-${tileId}`}
-            className="pointer-events-none absolute inset-0 bg-background/60"
-          />
-        );
-      }
-      return null;
-    },
-    [sheetMarks],
-  );
   const selectedTileId = selectedMask !== null ? pieces.get(selectedMask)?.[0] ?? null : null;
   // Stable while the highlight is unchanged, so the sheet's cells are not rebuilt on every window render.
   const highlightedTileIds = useMemo(
@@ -1186,7 +1163,7 @@ export function TilesetAutotiles({
             onSelect={onStableSheetTap}
             panZoom
             tool="move"
-            renderCellOverlay={renderCellOverlay}
+            cellMarks={sheetMarks}
             overlay={blockOutline}
             tileDrag={tileDrag}
             onTileHover={blockGroup ? setBlockAnchor : undefined}
