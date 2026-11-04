@@ -4,13 +4,20 @@ import {
 } from "@haptic/scripting";
 import { subject } from "./self-pin";
 
-/** Stable field ids are authored in nodes; display names may change freely. */
+/** Save field types named differently from their pin types. */
+const SAVE_FIELD_PIN_TYPE_IDS: Readonly<Record<string, string>> = { vector2: "vec2", vector3: "vec3", vector4: "vec4" };
+
+/**
+ * Stable field ids are authored in nodes; display names may change freely. `typeClassId` names a Structure
+ * field's Structure or an Enum field's Enum.
+ */
 export function saveFieldPinType(properties: Record<string, unknown>): PinType {
   if (typeof properties.typeId !== "string") return BOXED_WILDCARD;
-  const type = String(properties.typeId ?? "string");
+  const type = properties.typeId;
+  const typeClassId = typeof properties.typeClassId === "string" ? properties.typeClassId : "";
   const base = type === "actor" ? objectRef("Actor") : type === "asset" ? assetRef("")
-    : type === "struct" ? structRef(typeof properties.typeClassId === "string" ? properties.typeClassId : "")
-    : pinTypeForMember(type === "vector3" ? "vec3" : type);
+    : type === "struct" || type === "enum" ? pinTypeForMember(type, typeClassId)
+    : pinTypeForMember(SAVE_FIELD_PIN_TYPE_IDS[type] ?? type);
   return properties.array === true ? arrayOf(base) : base;
 }
 

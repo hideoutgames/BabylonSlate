@@ -25,6 +25,18 @@ describe("Save Game graph execution", () => {
       .toEqual({ kind: "array", element: { kind: "structRef", guid: "engine:IntRange" } });
   });
 
+  it.each([
+    [{ typeId: "enum", typeClassId: "difficulty-enum" }, { kind: "enumRef", guid: "difficulty-enum" }],
+    [{ typeId: "tag" }, { kind: "tag" }],
+    [{ typeId: "vector2" }, { kind: "vec2" }],
+    [{ typeId: "vector4" }, { kind: "vec4" }],
+    [{ typeId: "color" }, { kind: "color" }],
+    [{ typeId: "transform" }, { kind: "transform" }],
+  ])("types a %o Save field's value pin as its pin type", (properties, type) => {
+    expect(node("get", "saveGame.getField", { fieldId: "field", fieldName: "Field", ...properties }).pins.find((entry) => entry.id === "value")?.type)
+      .toEqual(type);
+  });
+
   it.each(["newGame", "saveGame", "loadGame", "listSaves", "deleteSave"])("%s waits and takes exactly the matching completion branch", async (method) => {
     const run = compile([
       node("entry", "flow.entry"), node("save", `saveGame.${method}`),
