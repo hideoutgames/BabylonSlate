@@ -92,6 +92,23 @@ describe("saved asset thumbnail revisions", () => {
     expect(await restored.cacheKey("material")).not.toBe(await missing.cacheKey("material"));
   });
 
+  it("draws a Tilemap again after its Tileset or that Tileset's Texture changes, but not for Pixels Per Unit", async () => {
+    const map = asset("map", "Tilemap", { dependencies: ["tileset"], chunks: documentChunk("map") });
+    const tileset = asset("tileset", "Tileset", { dependencies: ["texture"], chunks: documentChunk("tileset-before") });
+    const texture = asset("texture", "Texture", { chunks: documentChunk("texture-before") });
+    const original = createAssetThumbnailRevisionIndex([map, tileset, texture], 100);
+    const key = await original.cacheKey("map");
+    expect(key).not.toBeNull();
+    expect(await createAssetThumbnailRevisionIndex([map, tileset, texture], 200).cacheKey("map")).toBe(key);
+    for (const assets of [
+      [map, asset("tileset", "Tileset", { ...tileset.header, chunks: documentChunk("tileset-after") }), texture],
+      [map, tileset, asset("texture", "Texture", { chunks: documentChunk("texture-after") })],
+    ]) {
+      expect(await createAssetThumbnailRevisionIndex(assets, 100).cacheKey("map")).not.toBe(key);
+    }
+    expect(await original.cacheKey("tileset")).not.toBeNull();
+  });
+
   it("captures actor classes while leaving ordinary classes as icons", async () => {
     const revisions = createAssetThumbnailRevisionIndex([
       asset("actor", "Class", { parentClass: "Actor" }),

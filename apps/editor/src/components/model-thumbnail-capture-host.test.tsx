@@ -96,6 +96,13 @@ vi.mock("@haptic/render", () => ({
   SCENE_CAPTURE_RETRY_CEILING_MS: retryCeilingMs,
 }));
 
+const generateTileAssetThumbnail = vi.fn<(options: { asset: unknown; sortingLayers?: readonly string[] }) => Promise<Uint8Array | null>>(
+  async () => new Uint8Array([137, 80, 78, 71]),
+);
+vi.mock("../lib/tile-asset-thumbnails", () => ({
+  generateTileAssetThumbnail: (options: { asset: unknown; sortingLayers?: readonly string[] }) => generateTileAssetThumbnail(options),
+}));
+
 vi.mock("../lib/asset-thumbnail-input", () => ({
   prepareAssetThumbnailInput: (input: unknown) => prepareAssetThumbnailInput(input),
   prepareThumbnailMaterialSources: (options: unknown, guids: Iterable<string>) => prepareThumbnailMaterialSources(options, guids),
@@ -140,6 +147,7 @@ afterEach(() => {
   thumbnailsEnabled = true;
   captureAssetThumbnailPng.mockReset().mockResolvedValue(captured());
   prepareAssetThumbnailInput.mockClear();
+  generateTileAssetThumbnail.mockReset().mockResolvedValue(new Uint8Array([137, 80, 78, 71]));
   sharedEngine.engine = { id: "shared-engine" };
   sharedEngine.generation = 1;
 });
@@ -154,6 +162,25 @@ describe("ModelThumbnailCaptureHost", () => {
     expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(1);
     expect(captureModelThumbnailPng).not.toHaveBeenCalled();
     expect(scopes[0]!.dispose).toHaveBeenCalledOnce();
+  });
+
+  it.each(["Tileset", "Tilemap"] as const)("draws a saved %s without the shared Engine, and writes nothing when there is nothing to draw", async (type) => {
+    sharedEngine.engine = null;
+    sharedEngine.generation = 0;
+    assets.set("tiles", { path: "assets/tiles.hasset", header: { type, payload: {} } });
+    assets.set("empty", { path: "assets/empty.hasset", header: { type, payload: {} } });
+    generateTileAssetThumbnail.mockImplementation(async ({ asset }) =>
+      asset === assets.get("tiles") ? new Uint8Array([137, 80, 78, 71]) : null);
+    render(<ModelThumbnailCaptureHost />);
+    enqueueModelThumbnailJobs([
+      { guid: "empty", path: "assets/empty.hasset", type, payload: {}, cacheKey: "empty.revision-1", projectGuid },
+      { guid: "tiles", path: "assets/tiles.hasset", type, payload: {}, cacheKey: "tiles.revision-1", projectGuid },
+    ]);
+    await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("tiles", expect.any(Uint8Array), { cacheKey: "tiles.revision-1", projectGuid: "project-a" }));
+    expect(writeAssetThumbnail).toHaveBeenCalledOnce();
+    expect(generateTileAssetThumbnail).toHaveBeenCalledTimes(2);
+    expect(captureAssetThumbnailPng).not.toHaveBeenCalled();
+    expect(captureModelThumbnailPng).not.toHaveBeenCalled();
   });
 
   it("keeps a backfill job until the shared Engine is registered", async () => {

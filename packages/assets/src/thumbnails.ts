@@ -95,7 +95,7 @@ export function thumbnailMime(bytes: Uint8Array): string {
 
 export function isThumbnailableAssetType(type: string): boolean {
   return type === "Texture" || type === "Model" || type === "Animation" ||
-    type === "Material" || type === "Class";
+    type === "Material" || type === "Class" || type === "Tileset" || type === "Tilemap";
 }
 
 /**

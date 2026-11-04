@@ -36,6 +36,7 @@ import type { ContentBrowserCopyProgress } from "./content-browser-copy-progress
 import type { ImportProgress } from "./import-progress-dialog";
 import type { ContentBrowserTileHit } from "./content-browser-grid-tiles";
 import { contentBrowserCreateMenuItems } from "./content-browser-create-menu";
+import { isTileThumbnailType, tileThumbnailJobs } from "../lib/tile-asset-thumbnails";
 import type { OpenDocument } from "../services/document-service";
 
 /** One item of a Copy to Folder or Duplicate; `run` returns how to remove its copy. */
@@ -145,7 +146,7 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
             const asset = assetRegistry.getByGuid(guid);
             if (!asset) continue;
             const type = asset.header.type;
-            if (type !== "Model" && type !== "Animation" && type !== "Material" && type !== "Class") continue;
+            if (type !== "Model" && type !== "Animation" && type !== "Material" && type !== "Class" && !isTileThumbnailType(type)) continue;
             jobs.push({
               guid, path: asset.path, type, payload: asset.header.payload,
               projectGuid, cacheKey: await revisions.cacheKey(guid) ?? guid,
@@ -230,6 +231,13 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
       setBusy,
       setOperationError,
       noteAssetsCreated,
+      queueCreatedThumbnails: (guids) => {
+        if (!assetRegistry || !projectGuid || !thumbnailsEnabled) return;
+        void tileThumbnailJobs(assetRegistry.list(), guids, projectGuid, projectDocument?.settings.twoD?.pixelsPerUnit)
+          .then(enqueueModelThumbnailJobs)
+          // A thumbnail that cannot be queued keeps the type icon.
+          .catch(() => undefined);
+      },
       openOrFocusDocument,
       classParentOf,
       getOpenDocuments,
