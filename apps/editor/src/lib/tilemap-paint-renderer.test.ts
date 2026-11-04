@@ -72,16 +72,16 @@ describe("TilemapPaintRenderer", () => {
     const renderer = new TilemapPaintRenderer(create);
     const map = denseMap();
     // 800 × 600 at 16 px a cell shows 2 × 2 chunks of 512 px, on each of 3 layers.
-    expect(renderer.draw(recordingContext().ctx, frame(map))).toEqual({ composited: 12, rendered: 12 });
+    expect(renderer.draw(recordingContext().ctx, frame(map))).toEqual({ composited: 12, rendered: 12, direct: 0 });
     // A pan within the same chunks composites them again and draws no tile.
-    expect(renderer.draw(recordingContext().ctx, frame(map, { pan: { x: -100, y: -40 } }))).toEqual({ composited: 12, rendered: 0 });
+    expect(renderer.draw(recordingContext().ctx, frame(map, { pan: { x: -100, y: -40 } }))).toEqual({ composited: 12, rendered: 0, direct: 0 });
     // A pan onto a new column of chunks draws only those.
-    expect(renderer.draw(recordingContext().ctx, frame(map, { pan: { x: -600, y: 0 } }))).toEqual({ composited: 12, rendered: 6 });
+    expect(renderer.draw(recordingContext().ctx, frame(map, { pan: { x: -600, y: 0 } }))).toEqual({ composited: 12, rendered: 6, direct: 0 });
     // A painted cell replaces one chunk of one layer.
     const painted = setTile(map, "layer-2", 40, 5, 2);
-    expect(renderer.draw(recordingContext().ctx, frame(painted, { pan: { x: -600, y: 0 } }))).toEqual({ composited: 12, rendered: 1 });
+    expect(renderer.draw(recordingContext().ctx, frame(painted, { pan: { x: -600, y: 0 } }))).toEqual({ composited: 12, rendered: 1, direct: 0 });
     // A zoom keeps every bitmap: one chunk per layer fills the view at 32 px a cell.
-    expect(renderer.draw(recordingContext().ctx, frame(painted, { cellSize: 32 }))).toEqual({ composited: 3, rendered: 0 });
+    expect(renderer.draw(recordingContext().ctx, frame(painted, { cellSize: 32 }))).toEqual({ composited: 3, rendered: 0, direct: 0 });
   });
 
   it("leaves hidden layers, chunks out of view and cells outside the map off the canvas", () => {
@@ -90,7 +90,7 @@ describe("TilemapPaintRenderer", () => {
     let map = denseMap();
     map = { ...map, width: 40, height: 20, layers: map.layers.map((layer, at) => ({ ...layer, visible: at !== 1 })) };
     const { ctx, calls } = recordingContext();
-    expect(renderer.draw(ctx, frame(map))).toEqual({ composited: 4, rendered: 4 });
+    expect(renderer.draw(ctx, frame(map))).toEqual({ composited: 4, rendered: 4, direct: 0 });
     // Chunk 1, 0 holds 8 of its 32 columns inside the map, and its bitmap only those.
     const partial = calls.filter((call) => call.op === "drawImage")[1]!.args.slice(1);
     expect(partial).toEqual([0, 512 - 20 * 16, 8 * 16, 20 * 16, 512, 600 - 20 * 16, 8 * 16, 20 * 16]);
@@ -109,6 +109,34 @@ describe("TilemapPaintRenderer", () => {
     // GID 4 is the atlas's bottom-right cell; GID 9 belongs to no Tileset.
     expect(bitmap.find((call) => call.op === "drawImage")!.args).toEqual([atlas, 16, 16, 16, 16, 0, 512 - 16, 16, 16]);
     expect(bitmap.find((call) => call.op === "fillRect")).toMatchObject({ args: [16, 512 - 16, 16, 16], fill: placeholderCss(9) });
+  });
+
+  it("draws large tiles straight from the atlas at full source resolution once a cell needs more pixels than its bitmap holds", () => {
+    const { create } = surfaces();
+    const renderer = new TilemapPaintRenderer(create);
+    // 128 px tiles: a chunk bitmap holds 32 px of each.
+    const tileset = ensureTilesetTiles(normalizeTilesetPayload({ textureGuid: "tex", atlasWidth: 256, atlasHeight: 256, tileWidth: 128, tileHeight: 128 }));
+    const atlas = { naturalWidth: 256, naturalHeight: 256 } as HTMLImageElement;
+    let map: TilemapPayload = { ...createDefaultTilemapPayload(), width: 128, tileWidth: 128, tileHeight: 128, tilesets: [{ guid: "ts", firstGid: 1, tileCount: 4 }] };
+    // Two tiles at the bottom-left, and one in a chunk out of view at every zoom below.
+    map = setTile(setTile(setTile(map, "layer-1", 0, 0, 4), "layer-1", 1, 0, 2), "layer-1", 100, 10, 3);
+    const loaded = { payloads: new Map([["ts", tileset]]), atlases: new Map([["ts", atlas]]) };
+    const drawImages = (calls: Call[]) => calls.filter((call) => call.op === "drawImage").map((call) => call.args);
+
+    // 16 CSS px at DPR 2 is 32 device pixels a cell: the bitmaps are sharp enough.
+    const zoomedOut = recordingContext();
+    expect(renderer.draw(zoomedOut.ctx, frame(map, { ...loaded, dpr: 2 }))).toMatchObject({ direct: 0, rendered: 1 });
+    expect(drawImages(zoomedOut.calls).every(([source]) => source !== atlas)).toBe(true);
+
+    // 64 CSS px at DPR 2 is 128 device pixels a cell: each tile in view comes from its whole 128 px atlas cell.
+    const zoomedIn = recordingContext();
+    expect(renderer.draw(zoomedIn.ctx, frame(map, { ...loaded, dpr: 2, cellSize: 64 }))).toEqual({ composited: 0, rendered: 0, direct: 2 });
+    expect(drawImages(zoomedIn.calls)).toEqual([
+      [atlas, 128, 128, 128, 128, 0, 600 - 64, 64, 64],
+      [atlas, 128, 0, 128, 128, 64, 600 - 64, 64, 64],
+    ]);
+    // Just past the bitmaps' 32 px, the atlas is drawn too.
+    expect(renderer.draw(recordingContext().ctx, frame(map, { ...loaded, dpr: 2, cellSize: 17 }))).toMatchObject({ composited: 0, direct: 2 });
   });
 
   it("drops the bitmaps the latest frame did not draw once they pass its memory budget", () => {

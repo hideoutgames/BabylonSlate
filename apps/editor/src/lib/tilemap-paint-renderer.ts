@@ -92,10 +92,14 @@ export interface TilemapPaintFrame {
   preview?: { minX: number; minY: number; maxX: number; maxY: number } | null;
 }
 
-/** What a frame cost: chunk bitmaps composited, and chunk bitmaps (re)drawn tile by tile. */
+/**
+ * What a frame cost: chunk bitmaps composited, chunk bitmaps (re)drawn tile by
+ * tile, and tiles drawn straight from their atlas (a zoom past the bitmaps' resolution).
+ */
 export interface TilemapPaintStats {
   composited: number;
   rendered: number;
+  direct: number;
 }
 
 /** Largest chunk bitmap side; big chunks draw fewer bitmap pixels per cell. */
@@ -112,6 +116,11 @@ const DEFAULT_BUDGET_BYTES = 192 * 1024 * 1024;
  * a stroke redraws only the chunks whose cells changed. Only chunks in view are
  * drawn; bitmaps not drawn in the latest frame are dropped, oldest first, while
  * all of them together pass `budgetBytes`.
+ *
+ * A bitmap holds at most `MAX_CELL_PIXELS` per cell. When the Tilesets' tiles
+ * have more pixels than that and a cell on screen needs more device pixels than
+ * its bitmap holds, the frame draws the cells in view straight from their atlas
+ * instead, as large as they show, so Paint is never coarser than the atlas.
  */
 export class TilemapPaintRenderer {
   private readonly bitmaps = new Map<string, Map<number, ChunkBitmap>>();
@@ -129,7 +138,7 @@ export class TilemapPaintRenderer {
 
   draw(ctx: CanvasRenderingContext2D, frame: TilemapPaintFrame): TilemapPaintStats {
     const { cssWidth, cssHeight, dpr, tilemap, pan, cellSize } = frame;
-    const stats: TilemapPaintStats = { composited: 0, rendered: 0 };
+    const stats: TilemapPaintStats = { composited: 0, rendered: 0, direct: 0 };
     this.frame += 1;
     const table = this.tableFor(tilemap.tilesets, frame.payloads, frame.atlases);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -139,13 +148,19 @@ export class TilemapPaintRenderer {
     ctx.imageSmoothingEnabled = false;
     const size = Math.max(1, tilemap.chunkSize);
     const chunkPixels = size * cellSize;
-    const cell = bitmapCellPixels(tilemap, frame.payloads, size);
+    const { cell, source } = cellPixels(tilemap, frame.payloads, size);
+    // A bitmap smaller than the tiles would show them coarser than the atlas once a cell needs more pixels.
+    const direct = cell < source && cellSize * dpr > cell;
     for (const layer of orderedTilemapLayers(tilemap, frame.sortingLayers)) {
       if (!layer.visible) continue;
       for (const chunk of layer.chunks) {
         const left = chunk.cx * chunkPixels + pan.x;
         const bottom = cssHeight - chunk.cy * chunkPixels - pan.y;
         if (left + chunkPixels < 0 || left > cssWidth || bottom < 0 || bottom - chunkPixels > cssHeight) continue;
+        if (direct) {
+          stats.direct += drawCellsInView(ctx, chunk, tilemap, size, table, { left, bottom, cellSize, cssWidth, cssHeight });
+          continue;
+        }
         const bitmap = this.bitmapFor(layer.id, chunk, tilemap, size, cell, table, stats);
         if (!bitmap) continue;
         // The bitmap holds the chunk's in-map columns and rows, from its bottom-left.
@@ -250,15 +265,61 @@ function surfaceBytes(surface: PaintSurface): number {
   return surface.width * surface.height * 4;
 }
 
-/** Bitmap pixels per cell: the largest tile side of the map's Tilesets, within the bitmap size limits. */
-function bitmapCellPixels(tilemap: TilemapPayload, payloads: ReadonlyMap<string, TilesetPayload>, size: number): number {
+/**
+ * `source`: the largest tile side of the map's Tilesets (the map's tile size
+ * while none is loaded). `cell`: bitmap pixels per cell, `source` within the
+ * bitmap size limits.
+ */
+function cellPixels(tilemap: TilemapPayload, payloads: ReadonlyMap<string, TilesetPayload>, size: number): { cell: number; source: number } {
   let tile = 1;
   for (const ref of tilemap.tilesets) {
     const payload = payloads.get(ref.guid);
     if (payload) tile = Math.max(tile, payload.tileWidth, payload.tileHeight);
   }
   if (tile <= 1) tile = Math.max(tilemap.tileWidth, tilemap.tileHeight);
-  return Math.max(1, Math.min(tile, MAX_CELL_PIXELS, Math.floor(MAX_SURFACE_SIDE / size)));
+  return { source: tile, cell: Math.max(1, Math.min(tile, MAX_CELL_PIXELS, Math.floor(MAX_SURFACE_SIDE / size))) };
+}
+
+/**
+ * Draw a chunk's cells that are in view straight from their atlas (or their
+ * placeholder colour), each `cellSize` across, as the bitmaps would place
+ * them. Returns how many tiles it drew.
+ */
+function drawCellsInView(
+  ctx: CanvasRenderingContext2D,
+  chunk: TilemapChunk,
+  tilemap: TilemapPayload,
+  size: number,
+  table: GidTable,
+  view: { left: number; bottom: number; cellSize: number; cssWidth: number; cssHeight: number },
+): number {
+  const { left, bottom, cellSize, cssWidth, cssHeight } = view;
+  if (chunk.cx < 0 || chunk.cy < 0) return 0;
+  // Only the chunk's columns and rows inside the map, and of those only the ones on the canvas.
+  const columns = Math.min(size, tilemap.width - chunk.cx * size);
+  const rows = Math.min(size, tilemap.height - chunk.cy * size);
+  const firstColumn = Math.max(0, Math.floor(-left / cellSize));
+  const lastColumn = Math.min(columns - 1, Math.floor((cssWidth - left) / cellSize));
+  const firstRow = Math.max(0, Math.floor((bottom - cssHeight) / cellSize));
+  const lastRow = Math.min(rows - 1, Math.ceil(bottom / cellSize) - 1);
+  let drawn = 0;
+  for (let ly = firstRow; ly <= lastRow; ly++) {
+    for (let lx = firstColumn; lx <= lastColumn; lx++) {
+      const gid = chunk.tiles[ly * size + lx] ?? 0;
+      if (gid <= 0) continue;
+      const draw = table.get(gid);
+      const x = left + lx * cellSize;
+      const y = bottom - (ly + 1) * cellSize;
+      if (draw.image) {
+        ctx.drawImage(draw.image, draw.sx, draw.sy, draw.sw, draw.sh, x, y, cellSize, cellSize);
+      } else {
+        ctx.fillStyle = draw.color;
+        ctx.fillRect(x, y, cellSize, cellSize);
+      }
+      drawn += 1;
+    }
+  }
+  return drawn;
 }
 
 function renderChunk(bitmap: ChunkBitmap, tiles: readonly number[], size: number, table: GidTable): void {
