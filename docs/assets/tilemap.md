@@ -107,6 +107,7 @@ A bounded map has a size: cell 0, 0 is its bottom-left corner, it sits at the ac
 
 - Layers with **Collision** on become solid ground from their Full and Chain tiles. No Rigid Body or Collider is needed. Use a Scene whose **Physics World** is **2D (Rapier)**.
 - The Tilemap component's own **Sorting Layer** and **Order In Layer** place the whole map among other sprites.
+- In the Content Browser, a Tilemap's thumbnail shows the tiles its visible layers paint. Saving the map, or a Tileset or Texture it uses, draws it again.
 
 ## Related
 
