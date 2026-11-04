@@ -185,6 +185,45 @@ describe("retargetTilemapClip", () => {
   });
 });
 
+describe("selections of every layer with a hidden layer", () => {
+  /** Layer "a" holds 1 2 along the bottom row; layer "b" holds 3 at 0, 1 and 4 at 2, 0, and is hidden in `hidden`. */
+  const maps = () => {
+    let map = paint(twoLayerMap(), "a", ["12"], 0, 0);
+    map = paint(map, "b", ["3..", "..4"], 0, 1);
+    const hidden: TilemapPayload = { ...map, layers: map.layers.map((layer) => (layer.id === "b" ? { ...layer, visible: false } : layer)) };
+    return { map, hidden };
+  };
+  const rect = { minX: 0, minY: 0, maxX: 2, maxY: 1 };
+
+  it("selects, copies, moves and deletes the visible layers only, leaving the hidden layer's tiles where they are", () => {
+    const { hidden } = maps();
+    expect(tilemapSelectionExtent(hidden, null)).toEqual({ minX: 0, minY: 0, maxX: 1, maxY: 0 });
+    const clip = copyTilemapCells(hidden, rect, null);
+    expect([clip.allLayers, clip.layers.map((layer) => layer.layerId), tilemapClipTileCount(clip)]).toEqual([true, ["a"], 2]);
+    const moved = moveTilemapCells(hidden, rect, null, { x: 3, y: 2 });
+    expect(draw(moved, "a", { width: 6, top: 2 })).toEqual(["...12.", "......", "......"]);
+    expect(moved.layers[1]).toBe(hidden.layers[1]);
+    const erased = eraseTilemapCells(hidden, rect, null);
+    expect([draw(erased, "a", { width: 3, top: 0 }), erased.layers[1]]).toEqual([["..."], hidden.layers[1]]);
+    // One layer still acts on a hidden paint layer.
+    expect(tilemapClipTileCount(copyTilemapCells(hidden, rect, "b"))).toBe(2);
+  });
+
+  it("pastes a clip of every layer into the visible layers only, and counts only their tiles as cut off", () => {
+    const { map, hidden } = maps();
+    // Copied while both layers show.
+    const both = copyTilemapCells(map, rect, null);
+    expect(retargetTilemapClip(both, hidden, "a").layers.map((layer) => layer.layerId)).toEqual(["a"]);
+    // A layer hidden while the paste waits keeps its tiles; its tile past the right edge no longer counts.
+    const placed = placeTilemapClip(hidden, both, { x: 10, y: 0 });
+    expect([getTile(placed, "a", 10, 0), getTile(placed, "a", 11, 0), placed.layers[1]]).toEqual([1, 2, hidden.layers[1]]);
+    expect([tilemapClipLostTiles(map, both, { x: 10, y: 0 }), tilemapClipLostTiles(hidden, both, { x: 10, y: 0 })]).toEqual([1, 0]);
+    // A one-layer clip still pastes into a hidden paint layer.
+    const one = retargetTilemapClip(copyTilemapCells(map, rect, "a"), hidden, "b");
+    expect(getTile(placeTilemapClip(hidden, one, { x: 5, y: 3 }), "b", 5, 3)).toBe(1);
+  });
+});
+
 describe("selection edits on autotiles", () => {
   // Ledge (4 Sides) pieces by local id: 1 single, 2 left end, 3 middle, 4 right end.
   const LEDGE = ensureTilesetTiles(normalizeTilesetPayload({

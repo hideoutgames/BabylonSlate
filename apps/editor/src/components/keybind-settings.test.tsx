@@ -89,6 +89,25 @@ describe("KeybindSettings", () => {
     );
   });
 
+  it("lists the Tilemap Paint tools in their own section, rebinds them, and warns only for keys shared where they act", () => {
+    const onKeybinds = vi.fn();
+    const view = render(<Harness onKeybinds={onKeybinds} />);
+    const section = view.getByTestId("settings-section-tilemapPaint");
+    expect(section.textContent).toContain("Tilemap Paint");
+    const rows = [...section.querySelectorAll('[data-testid^="keybind-row-"]')];
+    expect(rows.map((row) => row.querySelector('[data-slot="field-label"]')?.textContent)).toEqual([
+      "Move Tool", "Select Tool", "Brush Tool", "Eraser Tool", "Rect Tool", "Bucket Tool", "Stamp Tool", "Picker Tool",
+    ]);
+    // G is Bucket Tool's and Toggle Snap Grid's, which never act together.
+    expect(view.getByTestId("keybind-record-tilemapPaint.bucket").textContent).toContain("G");
+    expect(view.queryByTestId("keybind-conflict-tilemapPaint.bucket")).toBeNull();
+    expect(view.queryByTestId("keybind-conflict-viewport.toggleSnap")).toBeNull();
+    fireEvent.click(view.getByTestId("keybind-record-tilemapPaint.brush"));
+    fireEvent.keyDown(window, { key: "e", code: "KeyE" });
+    expect(onKeybinds).toHaveBeenLastCalledWith({ "tilemapPaint.brush": ["E"] });
+    expect(view.getByTestId("keybind-conflict-tilemapPaint.brush").textContent).toContain("Eraser Tool");
+  });
+
   it("warns when a chord begins another command's two-step shortcut", () => {
     const view = render(
       <Harness

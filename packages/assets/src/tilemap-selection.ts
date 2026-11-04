@@ -40,7 +40,7 @@ export interface TilemapClip {
   layers: TilemapClipLayer[];
   /** The Tileset ranges the GIDs were copied under (`retargetTilemapClip` re-numbers them for another map). */
   tilesets: readonly TilemapTilesetRef[];
-  /** Copied from every layer, so it pastes into the same layers; otherwise from one, pasted into the paint layer. */
+  /** Copied from every visible layer, so it pastes into the same layers; otherwise from one, pasted into the paint layer. */
   allLayers: boolean;
 }
 
@@ -65,14 +65,29 @@ export function offsetTilemapCellRect(rect: TilemapCellRect, dx: number, dy: num
   return { minX: rect.minX + dx, minY: rect.minY + dy, maxX: rect.maxX + dx, maxY: rect.maxY + dy };
 }
 
-/** The layers a selection acts on: the one named, or every layer for `null`. */
+/**
+ * The layers a selection acts on: the one named, or for `null` (**All
+ * Layers**) every visible layer; hidden layers keep their tiles where they are.
+ */
 function scopedLayers(map: TilemapPayload, layerId: string | null) {
-  return layerId === null ? map.layers : map.layers.filter((layer) => layer.id === layerId);
+  return layerId === null ? map.layers.filter((layer) => layer.visible) : map.layers.filter((layer) => layer.id === layerId);
 }
 
 /**
- * **Select All**: the cells the tiles of one layer cover (every layer for
- * `null`), inside the map; `null` when they have none.
+ * The clip layers a placement on `map` writes: those naming a layer it has,
+ * and for a clip of every layer only its visible ones (one may be hidden while
+ * a paste waits).
+ */
+function placedClipLayers(map: TilemapPayload, clip: TilemapClip): TilemapClipLayer[] {
+  return clip.layers.filter((layer) => {
+    const target = map.layers.find((entry) => entry.id === layer.layerId);
+    return target !== undefined && (!clip.allLayers || target.visible);
+  });
+}
+
+/**
+ * **Select All**: the cells the tiles of one layer cover (every visible
+ * layer for `null`), inside the map; `null` when they have none.
  */
 export function tilemapSelectionExtent(map: TilemapPayload, layerId: string | null): TilemapCellRect | null {
   let extent: TilemapCellRect | null = null;
@@ -147,8 +162,8 @@ function clipLayerReader(layer: TilemapClipLayer, size: number): (x: number, y: 
 }
 
 /**
- * **Copy**: the tiles of `rect` on one layer (every layer for `null`), as a
- * clip whose cell (0, 0) is the rect's bottom-left. Reads only the chunks the
+ * **Copy**: the tiles of `rect` on one layer (every visible layer for `null`),
+ * as a clip whose cell (0, 0) is the rect's bottom-left. Reads only the chunks the
  * rect touches, so its cost follows the painted cells, not the rect's area.
  */
 export function copyTilemapCells(map: TilemapPayload, rect: TilemapCellRect, layerId: string | null): TilemapClip {
@@ -207,14 +222,15 @@ function chunkTileCount(tiles: readonly number[]): number {
 /**
  * How many of a clip's tiles a placement with its bottom-left at `origin`
  * would lose past the map's edge (a bounded map's size, an unbounded map's
- * ±`TILEMAP_CELL_LIMIT`). Whole chunks inside or outside count at once, so a
- * drag reads only the chunks the edge crosses.
+ * ±`TILEMAP_CELL_LIMIT`), over the layers it writes (`placeTilemapClip`).
+ * Whole chunks inside or outside count at once, so a drag reads only the
+ * chunks the edge crosses.
  */
 export function tilemapClipLostTiles(map: TilemapPayload, clip: TilemapClip, origin: { x: number; y: number }): number {
   const box = tilemapCellBounds(map);
   const size = clip.chunkSize;
   let lost = 0;
-  for (const layer of clip.layers) {
+  for (const layer of placedClipLayers(map, clip)) {
     for (const chunk of layer.chunks) {
       const left = origin.x + chunk.cx * size;
       const bottom = origin.y + chunk.cy * size;
@@ -240,14 +256,14 @@ export function tilemapClipLostTiles(map: TilemapPayload, clip: TilemapClip, ori
  * A clip ready to paste into `map`: GIDs re-numbered from the Tilesets they
  * were copied under to the map's (by Tileset; tiles of a Tileset the map does
  * not use are left out), chunks re-cut on the map's chunk size, and layers
- * named for the map: a clip of every layer keeps the layers the map has, one
- * of a single layer goes to `paintLayerId`. Returns `clip` itself when nothing changes.
+ * named for the map: a clip of every layer keeps the visible layers the map
+ * has, one of a single layer goes to `paintLayerId`. Returns `clip` itself
+ * when nothing changes.
  */
 export function retargetTilemapClip(clip: TilemapClip, map: TilemapPayload, paintLayerId: string): TilemapClip {
-  const ids = new Set(map.layers.map((layer) => layer.id));
   const layers = clip.allLayers
-    ? clip.layers.filter((layer) => ids.has(layer.layerId))
-    : clip.layers.slice(0, 1).filter(() => ids.has(paintLayerId)).map((layer) => (layer.layerId === paintLayerId ? layer : { ...layer, layerId: paintLayerId }));
+    ? placedClipLayers(map, clip)
+    : clip.layers.slice(0, 1).filter(() => map.layers.some((layer) => layer.id === paintLayerId)).map((layer) => (layer.layerId === paintLayerId ? layer : { ...layer, layerId: paintLayerId }));
   const remap = gidRemap(clip.tilesets, map.tilesets);
   const size = Math.max(1, map.chunkSize);
   const sameLayers = layers.length === clip.layers.length && layers.every((layer, at) => layer === clip.layers[at]);
@@ -306,10 +322,11 @@ function surroundedInClip(map: TilemapPayload, read: (x: number, y: number) => n
 /**
  * Write a clip's non-empty cells with its bottom-left at `origin`, each clip
  * layer into the map layer it names (`retargetTilemapClip`), over what is
- * there; empty clip cells leave the map as it is, and cells past the map's
- * edge are cut off. With `tilesets`, the autotile tiles around the written
- * cells re-pick their variants (`resolveTilemapTerrainAround`). Returns `map`
- * itself when nothing changes.
+ * there; a clip of every layer skips layers hidden on the map. Empty clip
+ * cells leave the map as it is, and cells past the map's edge are cut off.
+ * With `tilesets`, the autotile tiles around the written cells re-pick their
+ * variants (`resolveTilemapTerrainAround`). Returns `map` itself when nothing
+ * changes.
  */
 export function placeTilemapClip(
   map: TilemapPayload,
@@ -319,8 +336,7 @@ export function placeTilemapClip(
 ): TilemapPayload {
   const base = tilesets ? refreshStaleTilemapTerrains(map, tilesets) : map;
   let next = base;
-  for (const layer of clip.layers) {
-    if (!base.layers.some((entry) => entry.id === layer.layerId)) continue;
+  for (const layer of placedClipLayers(base, clip)) {
     const writes: TileWrite[] = [];
     forEachClipTile(layer, clip.chunkSize, (x, y, gid) => writes.push({ x: origin.x + x, y: origin.y + y, id: gid }));
     if (writes.length === 0) continue;
@@ -334,7 +350,7 @@ export function placeTilemapClip(
 }
 
 /**
- * **Delete**: empty the cells of `rect` on one layer (every layer for
+ * **Delete**: empty the cells of `rect` on one layer (every visible layer for
  * `null`). With `tilesets`, the autotile tiles around them re-pick their
  * variants. Returns `map` itself when the rect holds no tile.
  */
@@ -358,8 +374,8 @@ export function eraseTilemapCells(
 }
 
 /**
- * **Move**: the tiles of `rect` on one layer (every layer for `null`, each
- * keeping its own tiles) moved by `offset` whole cells, in one edit. Moved
+ * **Move**: the tiles of `rect` on one layer (every visible layer for `null`,
+ * each keeping its own tiles) moved by `offset` whole cells, in one edit. Moved
  * tiles overwrite what lies at the destination; empty cells of the rect erase
  * nothing there. Tiles moved past the map's edge are cut off. With
  * `tilesets`, the autotile tiles around the vacated cells and around the

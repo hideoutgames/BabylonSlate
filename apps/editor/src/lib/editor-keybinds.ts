@@ -1,6 +1,14 @@
 import { chordStartsWith, normalizeChord, type KeyChord } from "@haptic/editor-kit";
 
-export type EditorCommandCategory = "General" | "Documents" | "Play" | "Viewport" | "Editing" | "Timeline" | "Content Browser";
+export type EditorCommandCategory =
+  | "General"
+  | "Documents"
+  | "Play"
+  | "Viewport"
+  | "Editing"
+  | "Timeline"
+  | "Content Browser"
+  | "Tilemap Paint";
 
 export interface EditorCommandDefinition {
   id: EditorCommandId;
@@ -71,6 +79,14 @@ const COMMAND_LIST = [
   { id: "browser.newAsset", label: "New Asset", category: "Content Browser", defaultChords: ["Alt+N"] },
   { id: "browser.import", label: "Import Assets", category: "Content Browser", defaultChords: ["Alt+I"] },
   { id: "browser.references", label: "Show References", category: "Content Browser", defaultChords: ["Alt+R"] },
+  { id: "tilemapPaint.move", label: "Move Tool", category: "Tilemap Paint", defaultChords: ["M"] },
+  { id: "tilemapPaint.select", label: "Select Tool", category: "Tilemap Paint", defaultChords: ["S"] },
+  { id: "tilemapPaint.brush", label: "Brush Tool", category: "Tilemap Paint", defaultChords: ["B"] },
+  { id: "tilemapPaint.eraser", label: "Eraser Tool", category: "Tilemap Paint", defaultChords: ["E"] },
+  { id: "tilemapPaint.rect", label: "Rect Tool", category: "Tilemap Paint", defaultChords: ["R"] },
+  { id: "tilemapPaint.bucket", label: "Bucket Tool", category: "Tilemap Paint", defaultChords: ["G"] },
+  { id: "tilemapPaint.stamp", label: "Stamp Tool", category: "Tilemap Paint", defaultChords: ["T"] },
+  { id: "tilemapPaint.picker", label: "Picker Tool", category: "Tilemap Paint", defaultChords: ["I"] },
 ] as const;
 
 export type EditorCommandId = (typeof COMMAND_LIST)[number]["id"];
@@ -85,7 +101,22 @@ export const EDITOR_COMMAND_CATEGORIES: readonly EditorCommandCategory[] = [
   "Editing",
   "Timeline",
   "Content Browser",
+  "Tilemap Paint",
 ];
+
+/**
+ * Categories whose commands never act together, so they may share a chord
+ * (Bucket Tool and Toggle Snap Grid both default to G): Tilemap Paint acts
+ * only while a Tilemap's Paint window has focus, and a Tilemap document has
+ * no viewport, Timeline or Content Browser (one document shows at a time).
+ */
+const SEPARATE_CATEGORIES: ReadonlyMap<EditorCommandCategory, ReadonlySet<EditorCommandCategory>> = new Map([
+  ["Tilemap Paint", new Set<EditorCommandCategory>(["Viewport", "Timeline", "Content Browser"])],
+]);
+
+function actTogether(a: EditorCommandCategory | undefined, b: EditorCommandCategory | undefined): boolean {
+  return !a || !b || !(SEPARATE_CATEGORIES.get(a)?.has(b) || SEPARATE_CATEGORIES.get(b)?.has(a));
+}
 
 const COMMANDS_BY_ID = new Map<string, EditorCommandDefinition>(
   EDITOR_COMMANDS.map((command) => [command.id, command]),
@@ -116,9 +147,10 @@ export function resolveKeybinds(overrides: KeybindOverrides = {}): ResolvedKeybi
 }
 
 /**
- * Other commands already using `chord`, so the settings UI can warn. A chord
- * that begins another command's multi-step shortcut also conflicts: the
- * multi-step shortcut waits for its next step and the shorter one never runs.
+ * Other commands already using `chord` where this one acts, so the settings
+ * UI can warn. A chord that begins another command's multi-step shortcut also
+ * conflicts: the multi-step shortcut waits for its next step and the shorter
+ * one never runs. Commands that never act together never conflict.
  */
 export function keybindConflicts(
   bindings: ResolvedKeybinds,
@@ -127,10 +159,12 @@ export function keybindConflicts(
 ): EditorCommandId[] {
   const target = normalizeChord(chord);
   if (!target) return [];
+  const category = editorCommand(commandId)?.category;
   const overlaps = (other: KeyChord) =>
     other === target || chordStartsWith(other, target) || chordStartsWith(target, other);
   return [...bindings]
-    .filter(([id, chords]) => id !== commandId && chords.some(overlaps))
+    .filter(([id, chords]) =>
+      id !== commandId && actTogether(category, editorCommand(id)?.category) && chords.some(overlaps))
     .map(([id]) => id);
 }
 

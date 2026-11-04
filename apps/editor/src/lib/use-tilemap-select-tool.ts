@@ -29,7 +29,10 @@ export interface TilemapSelectState {
   rect: TilemapCellRect | null;
   /** The selected tiles while a drag moves them: they show `offset` cells away; the map is unchanged until release. */
   lift: { rect: TilemapCellRect; layerId: string | null; clip: TilemapClip; offset: TileCell } | null;
-  /** Pasted tiles waiting to be placed, ready for this map (`retargetTilemapClip`), with their bottom-left cell at `origin`. */
+  /**
+   * Pasted tiles waiting to be placed, ready for this map (`retargetTilemapClip`), with their
+   * bottom-left cell at `origin`. Panel state: closing Paint drops it unplaced.
+   */
   paste: { clip: TilemapClip; origin: TileCell } | null;
 }
 
@@ -49,7 +52,7 @@ export interface TilemapSelectToolOptions {
   tilemap: TilemapPayload;
   /** The latest map, which an edit builds on and then moves to. */
   latestRef: RefObject<TilemapPayload>;
-  /** The paint layer: the Select tool's layer unless All Layers is on, and where a one-layer paste goes. */
+  /** The paint layer: the Select tool's layer unless All Layers (every visible layer) is on, and where a one-layer paste goes. */
   paintLayerId: string | null;
   tilesets: ReadonlyMap<string, TilesetPayload>;
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
@@ -85,7 +88,7 @@ export function useTilemapSelectTool({ tilemap, latestRef, paintLayerId, tileset
   const gestureRef = useRef<SelectGesture | null>(null);
   const nudgeIdRef = useRef<string | null>(null);
   const clip = useSyncExternalStore(tilemapClipboard.subscribe, tilemapClipboard.read);
-  /** The layers the tool acts on: the paint layer, or every layer (`null`). */
+  /** The layers the tool acts on: the paint layer, or every visible layer (`null`). */
   const scope = (): string | null => (allLayers ? null : paintLayerId);
 
   /** Commit `next` as one edit, when it changes the map. */
@@ -194,7 +197,7 @@ export function useTilemapSelectTool({ tilemap, latestRef, paintLayerId, tileset
     if (rect) setState({ ...current, rect });
   };
 
-  /** **Select All**: the painted cells of the paint layer, or of every layer with All Layers on. */
+  /** **Select All**: the painted cells of the paint layer, or of every visible layer with All Layers on. */
   const selectAll = () => {
     cancelGesture();
     place();
@@ -288,7 +291,8 @@ export function useTilemapSelectTool({ tilemap, latestRef, paintLayerId, tileset
     if (state.lift) {
       const { rect, layerId, offset } = state.lift;
       const layers = new Map<string, readonly TilemapChunk[]>();
-      for (const layer of tilemap.layers) if (layerId === null || layer.id === layerId) layers.set(layer.id, layer.chunks);
+      // All Layers lifts the visible layers only, as `copyTilemapCells` copies them.
+      for (const layer of tilemap.layers) if (layerId === null ? layer.visible : layer.id === layerId) layers.set(layer.id, layer.chunks);
       return { layers, rect, offset, hole: rect, detached: false };
     }
     if (state.paste) {
