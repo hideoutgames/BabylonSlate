@@ -176,6 +176,12 @@ describe("FeatureTest starter", () => {
     expect({ spriteFrames: spriteFrames.length > 0, sheets: sheets.length > 0 }).toEqual({ spriteFrames: true, sheets: true });
   });
 
+  it("overrides the project's Post Processing in a Scene", async () => {
+    const overridden = (await sceneDocuments()).filter((scene) =>
+      "viewportMode" in scene && Object.keys(scene.settings.effectsOverrides ?? {}).length > 0);
+    expect(overridden.map((scene) => scene.name)).toContain("FT_Lights");
+  });
+
   it("opens every scene without rewriting its Class and Prefab instances", async () => {
     const documents = new DocumentService();
     const editing = new DocumentEditingService({

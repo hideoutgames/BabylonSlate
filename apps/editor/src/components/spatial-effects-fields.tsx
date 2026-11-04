@@ -1,277 +1,129 @@
-import { LabelHint, NumberField } from "@haptic/editor-kit";
-import {
-  RENDER_EFFECTS_LIMITS,
-  type RenderEffectsSettings,
-} from "@haptic/core";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  FieldLegend,
-  FieldSet,
-} from "@haptic/ui/components/field";
+import { NumberField } from "@haptic/editor-kit";
+import { RENDER_EFFECTS_LIMITS } from "@haptic/core";
+import { FieldGroup, FieldLegend, FieldSet } from "@haptic/ui/components/field";
 import { Switch } from "@haptic/ui/components/switch";
+import { EffectRow } from "./render-effects-rows";
+import { readEffect, type EffectsPath, type EffectsScope } from "./render-effects-scope";
 
-type Props = {
-  value: RenderEffectsSettings;
-  onChange(value: RenderEffectsSettings): void;
-};
+const hints = {
+  ambientOcclusion: "Darkens creases and contact points between visible PBR surfaces. Runs where Post Processing quality allows it (Medium and above by default).",
+  occlusionRadius: "Distance searched around each surface point, in scene units.",
+  occlusionDistance: "Occlusion fades out toward this distance from the camera, in scene units.",
+  spatialScale: "Multiplies Post Processing Resolution Scale, with a quarter-resolution minimum.",
+  reflections: "Reflects visible scene objects on lit metal and smooth surfaces, in PBR and CEL. Runs where Post Processing quality allows it (High and above by default).",
+  volumetric: "Fog lit by directional, point and spot lights; enable light shadows for occluded beams. Runs where Post Processing quality allows it (High and above by default); Fog Volumes always render and share the controls below.",
+  volumetricDensity: "Fog thickness per scene unit at and below Fog Height. Zero removes scene-wide haze; Fog Volumes still contribute.",
+  volumetricHeight: "World height below which scene-wide fog is at full density.",
+  volumetricHeightFalloff: "How fast fog thins above Fog Height, per scene unit. Zero keeps it the same at every height.",
+  volumetricIntensity: "Brightness of scattered light. Zero removes light beams but keeps fog darkening.",
+  volumetricDistance: "Maximum distance sampled from the camera, in scene units. Scene surfaces stop the fog ray earlier.",
+  volumetricAnisotropy: "Zero scatters evenly. Positive values strengthen beams when looking toward a light; negative values favor the opposite view.",
+  volumetricLights: "Hemispheric fill and area lights never contribute.",
+} as const;
 
-export function SpatialEffectsFields({ value, onChange }: Props) {
-  const occlusion = value.ambientOcclusion,
-    reflection = value.reflections,
-    volume = value.volumetricLighting;
-  const patchOcclusion = (patch: Partial<typeof occlusion>) =>
-    onChange({ ...value, ambientOcclusion: { ...occlusion, ...patch } });
-  const patchReflection = (patch: Partial<typeof reflection>) =>
-    onChange({ ...value, reflections: { ...reflection, ...patch } });
-  const patchVolume = (patch: Partial<typeof volume>) =>
-    onChange({ ...value, volumetricLighting: { ...volume, ...patch } });
+/** Every row label and hint, for the Inspector's property filter. */
+export const SPATIAL_EFFECTS_SEARCH_TEXT = [
+  "Ambient Occlusion", "Occlusion Radius", "Occlusion Strength", "Occlusion Distance", "Occlusion Resolution Scale", "Occlusion Samples",
+  "Real-Time Reflections", "Reflection Resolution Scale", "Reflection Steps", "Reflection Distance", "Reflection Thickness",
+  "Reflection Strength", "Volumetric Fog", "Scene-Wide Fog", "Scene-Wide Fog Density", "Fog Height", "Fog Height Falloff",
+  "Volumetric Intensity", "Volumetric Distance", "Scattering Anisotropy", "Volumetric Resolution Scale", "Volumetric Steps",
+  "Volumetric Light Limit",
+  ...Object.values(hints),
+].join(" ");
+
+export function SpatialEffectsFields({ scope }: { scope: EffectsScope }) {
+  const value = scope.value;
   const number = (
-    label: string,
+    path: EffectsPath,
     suffix: string,
-    current: number,
+    label: string,
     limits: readonly [number, number],
-    change: (v: number) => void,
     step = 0.01,
     hint?: string,
-  ) => {
-    const id = `project-effects-${suffix}`;
-    const fieldLabel = <FieldLabel htmlFor={id}>{label}</FieldLabel>;
-    return (
-      <Field key={id} className="settings-field">
-        {hint ? <LabelHint hint={hint}>{fieldLabel}</LabelHint> : fieldLabel}
+  ) => (
+    <EffectRow key={suffix} scope={scope} path={path} suffix={suffix} label={label} hint={hint}>
+      {(control) => (
         <NumberField
-          id={id}
-          data-testid={id}
-          value={current}
+          id={control.id}
+          data-testid={control.id}
+          value={Number(readEffect(value, path))}
           min={limits[0]}
           max={limits[1]}
           step={step}
-          onChange={change}
-          aria-describedby={hint ? `${id}-description` : undefined}
+          disabled={control.disabled}
+          onChange={(next) => scope.set([path, next])}
+          aria-describedby={control.describedBy}
         />
-        {hint ? (
-          <FieldDescription id={`${id}-description`} className="sr-only">
-            {hint}
-          </FieldDescription>
-        ) : null}
-      </Field>
-    );
-  };
+      )}
+    </EffectRow>
+  );
+  const toggle = (path: EffectsPath, suffix: string, label: string, hint: string) => (
+    <EffectRow scope={scope} path={path} suffix={suffix} label={label} hint={hint} toggle>
+      {(control) => (
+        <Switch
+          id={control.id}
+          data-testid={control.id}
+          aria-describedby={control.describedBy}
+          checked={readEffect(value, path) === true}
+          disabled={control.disabled}
+          onCheckedChange={(enabled) => scope.set([path, enabled === true])}
+        />
+      )}
+    </EffectRow>
+  );
   return (
     <FieldGroup className="gap-2">
-      <Field orientation="horizontal" className="settings-field">
-        <LabelHint hint="Darkens creases and contact points between visible PBR surfaces. Runs where Post Processing quality allows it (Medium and above by default).">
-          <FieldLabel htmlFor="project-effects-ambient-occlusion">
-            Ambient Occlusion
-          </FieldLabel>
-        </LabelHint>
-        <Switch
-          id="project-effects-ambient-occlusion"
-          data-testid="project-effects-ambient-occlusion"
-          checked={occlusion.enabled}
-          onCheckedChange={(enabled) => patchOcclusion({ enabled })}
-        />
-      </Field>
-      {occlusion.enabled ? (
+      {toggle(["ambientOcclusion", "enabled"], "ambient-occlusion", "Ambient Occlusion", hints.ambientOcclusion)}
+      {value.ambientOcclusion.enabled ? (
         <>
-          {number(
-            "Occlusion Radius",
-            "occlusion-radius",
-            occlusion.radius,
-            RENDER_EFFECTS_LIMITS.ambientOcclusionRadius,
-            (radius) => patchOcclusion({ radius }),
-            0.05,
-            "Distance searched around each surface point, in scene units.",
-          )}
-          {number(
-            "Occlusion Strength",
-            "occlusion-strength",
-            occlusion.strength,
-            RENDER_EFFECTS_LIMITS.ambientOcclusionStrength,
-            (strength) => patchOcclusion({ strength }),
-          )}
-          {number(
-            "Occlusion Distance",
-            "occlusion-distance",
-            occlusion.maxDistance,
-            RENDER_EFFECTS_LIMITS.ambientOcclusionDistance,
-            (maxDistance) => patchOcclusion({ maxDistance }),
-            1,
-            "Occlusion fades out toward this distance from the camera, in scene units.",
-          )}
-          {number(
-            "Occlusion Resolution Scale",
-            "occlusion-scale",
-            occlusion.resolutionScale,
-            RENDER_EFFECTS_LIMITS.spatialResolutionScale,
-            (resolutionScale) => patchOcclusion({ resolutionScale }),
-            0.25,
-            "Multiplies Post Processing Resolution Scale, with a quarter-resolution minimum.",
-          )}
-          {number(
-            "Occlusion Samples",
-            "occlusion-samples",
-            occlusion.samples,
-            RENDER_EFFECTS_LIMITS.ambientOcclusionSamples,
-            (samples) => patchOcclusion({ samples }),
-            1,
-          )}
+          {number(["ambientOcclusion", "radius"], "occlusion-radius", "Occlusion Radius",
+            RENDER_EFFECTS_LIMITS.ambientOcclusionRadius, 0.05, hints.occlusionRadius)}
+          {number(["ambientOcclusion", "strength"], "occlusion-strength", "Occlusion Strength",
+            RENDER_EFFECTS_LIMITS.ambientOcclusionStrength)}
+          {number(["ambientOcclusion", "maxDistance"], "occlusion-distance", "Occlusion Distance",
+            RENDER_EFFECTS_LIMITS.ambientOcclusionDistance, 1, hints.occlusionDistance)}
+          {number(["ambientOcclusion", "resolutionScale"], "occlusion-scale", "Occlusion Resolution Scale",
+            RENDER_EFFECTS_LIMITS.spatialResolutionScale, 0.25, hints.spatialScale)}
+          {number(["ambientOcclusion", "samples"], "occlusion-samples", "Occlusion Samples",
+            RENDER_EFFECTS_LIMITS.ambientOcclusionSamples, 1)}
         </>
       ) : null}
-      <Field orientation="horizontal" className="settings-field">
-        <LabelHint hint="Reflects visible scene objects on lit metal and smooth surfaces, in PBR and CEL. Runs where Post Processing quality allows it (High and above by default).">
-          <FieldLabel htmlFor="project-effects-reflections">
-            Real-Time Reflections
-          </FieldLabel>
-        </LabelHint>
-        <Switch
-          id="project-effects-reflections"
-          data-testid="project-effects-reflections"
-          checked={reflection.enabled}
-          onCheckedChange={(enabled) => patchReflection({ enabled })}
-        />
-      </Field>
-      {reflection.enabled ? (
+      {toggle(["reflections", "enabled"], "reflections", "Real-Time Reflections", hints.reflections)}
+      {value.reflections.enabled ? (
         <>
-          {number(
-            "Reflection Resolution Scale",
-            "reflection-scale",
-            reflection.resolutionScale,
-            RENDER_EFFECTS_LIMITS.spatialResolutionScale,
-            (resolutionScale) => patchReflection({ resolutionScale }),
-            0.25,
-          )}
-          {number(
-            "Reflection Steps",
-            "reflection-steps",
-            reflection.maxSteps,
-            RENDER_EFFECTS_LIMITS.reflectionSteps,
-            (maxSteps) => patchReflection({ maxSteps }),
-            1,
-          )}
-          {number(
-            "Reflection Distance",
-            "reflection-distance",
-            reflection.maxDistance,
-            RENDER_EFFECTS_LIMITS.reflectionDistance,
-            (maxDistance) => patchReflection({ maxDistance }),
-            1,
-          )}
-          {number(
-            "Reflection Thickness",
-            "reflection-thickness",
-            reflection.thickness,
-            RENDER_EFFECTS_LIMITS.reflectionThickness,
-            (thickness) => patchReflection({ thickness }),
-          )}
-          {number(
-            "Reflection Strength",
-            "reflection-strength",
-            reflection.strength,
-            RENDER_EFFECTS_LIMITS.reflectionStrength,
-            (strength) => patchReflection({ strength }),
-          )}
+          {number(["reflections", "resolutionScale"], "reflection-scale", "Reflection Resolution Scale",
+            RENDER_EFFECTS_LIMITS.spatialResolutionScale, 0.25)}
+          {number(["reflections", "maxSteps"], "reflection-steps", "Reflection Steps", RENDER_EFFECTS_LIMITS.reflectionSteps, 1)}
+          {number(["reflections", "maxDistance"], "reflection-distance", "Reflection Distance", RENDER_EFFECTS_LIMITS.reflectionDistance, 1)}
+          {number(["reflections", "thickness"], "reflection-thickness", "Reflection Thickness", RENDER_EFFECTS_LIMITS.reflectionThickness)}
+          {number(["reflections", "strength"], "reflection-strength", "Reflection Strength", RENDER_EFFECTS_LIMITS.reflectionStrength)}
         </>
       ) : null}
       <FieldSet className="gap-2">
         <FieldLegend>Volumetric Fog</FieldLegend>
         <FieldGroup className="gap-2">
-          <Field orientation="horizontal" className="settings-field">
-            <LabelHint hint="Fog lit by directional, point and spot lights; enable light shadows for occluded beams. Runs where Post Processing quality allows it (High and above by default); Fog Volumes always render and share the controls below.">
-              <FieldLabel htmlFor="project-effects-volumetric">
-                Scene-Wide Fog
-              </FieldLabel>
-            </LabelHint>
-            <Switch
-              id="project-effects-volumetric"
-              data-testid="project-effects-volumetric"
-              checked={volume.enabled}
-              onCheckedChange={(enabled) => patchVolume({ enabled })}
-            />
-          </Field>
-          {volume.enabled ? number(
-            "Scene-Wide Fog Density",
-            "volumetric-density",
-            volume.density,
-            RENDER_EFFECTS_LIMITS.volumetricDensity,
-            (density) => patchVolume({ density }),
-            0.001,
-            "Fog thickness per scene unit at and below Fog Height. Zero removes scene-wide haze; Fog Volumes still contribute.",
+          {toggle(["volumetricLighting", "enabled"], "volumetric", "Scene-Wide Fog", hints.volumetric)}
+          {value.volumetricLighting.enabled ? (
+            <>
+              {number(["volumetricLighting", "density"], "volumetric-density", "Scene-Wide Fog Density",
+                RENDER_EFFECTS_LIMITS.volumetricDensity, 0.001, hints.volumetricDensity)}
+              {number(["volumetricLighting", "height"], "volumetric-height", "Fog Height",
+                RENDER_EFFECTS_LIMITS.volumetricHeight, 0.5, hints.volumetricHeight)}
+              {number(["volumetricLighting", "heightFalloff"], "volumetric-height-falloff", "Fog Height Falloff",
+                RENDER_EFFECTS_LIMITS.volumetricHeightFalloff, 0.01, hints.volumetricHeightFalloff)}
+            </>
           ) : null}
-          {volume.enabled ? number(
-            "Fog Height",
-            "volumetric-height",
-            volume.height,
-            RENDER_EFFECTS_LIMITS.volumetricHeight,
-            (height) => patchVolume({ height }),
-            0.5,
-            "World height below which scene-wide fog is at full density.",
-          ) : null}
-          {volume.enabled ? number(
-            "Fog Height Falloff",
-            "volumetric-height-falloff",
-            volume.heightFalloff,
-            RENDER_EFFECTS_LIMITS.volumetricHeightFalloff,
-            (heightFalloff) => patchVolume({ heightFalloff }),
-            0.01,
-            "How fast fog thins above Fog Height, per scene unit. Zero keeps it the same at every height.",
-          ) : null}
-          {number(
-            "Volumetric Intensity",
-            "volumetric-intensity",
-            volume.intensity,
-            RENDER_EFFECTS_LIMITS.volumetricIntensity,
-            (intensity) => patchVolume({ intensity }),
-            0.01,
-            "Brightness of scattered light. Zero removes light beams but keeps fog darkening.",
-          )}
-          {number(
-            "Volumetric Distance",
-            "volumetric-distance",
-            volume.maxDistance,
-            RENDER_EFFECTS_LIMITS.volumetricDistance,
-            (maxDistance) => patchVolume({ maxDistance }),
-            1,
-            "Maximum distance sampled from the camera, in scene units. Scene surfaces stop the fog ray earlier.",
-          )}
-          {number(
-            "Scattering Anisotropy",
-            "volumetric-anisotropy",
-            volume.anisotropy,
-            RENDER_EFFECTS_LIMITS.volumetricAnisotropy,
-            (anisotropy) => patchVolume({ anisotropy }),
-            0.01,
-            "Zero scatters evenly. Positive values strengthen beams when looking toward a light; negative values favor the opposite view.",
-          )}
-          {number(
-            "Volumetric Resolution Scale",
-            "volumetric-scale",
-            volume.resolutionScale,
-            RENDER_EFFECTS_LIMITS.spatialResolutionScale,
-            (resolutionScale) => patchVolume({ resolutionScale }),
-            0.25,
-            "Multiplies Post Processing Resolution Scale, with a quarter-resolution minimum.",
-          )}
-          {number(
-            "Volumetric Steps",
-            "volumetric-steps",
-            volume.steps,
-            RENDER_EFFECTS_LIMITS.volumetricSteps,
-            (steps) => patchVolume({ steps }),
-            1,
-          )}
-          {number(
-            "Volumetric Light Limit",
-            "volumetric-lights",
-            volume.maxLights,
-            RENDER_EFFECTS_LIMITS.volumetricLights,
-            (maxLights) => patchVolume({ maxLights }),
-            1,
-            "Hemispheric fill and area lights never contribute.",
-          )}
+          {number(["volumetricLighting", "intensity"], "volumetric-intensity", "Volumetric Intensity",
+            RENDER_EFFECTS_LIMITS.volumetricIntensity, 0.01, hints.volumetricIntensity)}
+          {number(["volumetricLighting", "maxDistance"], "volumetric-distance", "Volumetric Distance",
+            RENDER_EFFECTS_LIMITS.volumetricDistance, 1, hints.volumetricDistance)}
+          {number(["volumetricLighting", "anisotropy"], "volumetric-anisotropy", "Scattering Anisotropy",
+            RENDER_EFFECTS_LIMITS.volumetricAnisotropy, 0.01, hints.volumetricAnisotropy)}
+          {number(["volumetricLighting", "resolutionScale"], "volumetric-scale", "Volumetric Resolution Scale",
+            RENDER_EFFECTS_LIMITS.spatialResolutionScale, 0.25, hints.spatialScale)}
+          {number(["volumetricLighting", "steps"], "volumetric-steps", "Volumetric Steps", RENDER_EFFECTS_LIMITS.volumetricSteps, 1)}
+          {number(["volumetricLighting", "maxLights"], "volumetric-lights", "Volumetric Light Limit",
+            RENDER_EFFECTS_LIMITS.volumetricLights, 1, hints.volumetricLights)}
         </FieldGroup>
       </FieldSet>
     </FieldGroup>

@@ -105,12 +105,8 @@ export function ProgressDialogStatus({
             aria-current="step"
             className="min-w-0 flex-1 truncate text-xs font-normal text-muted-foreground"
           >
-            <span
-              key={typeof phase === "string" ? phase : undefined}
-              className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-0.5 motion-safe:duration-200"
-            >
-              {phase}
-            </span>
+            {/* Updates in place: frequent phase changes (shader counts) must not flash. */}
+            {phase}
           </ProgressLabel>
           {action}
         </div>

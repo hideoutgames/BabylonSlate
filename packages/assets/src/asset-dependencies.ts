@@ -451,6 +451,9 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     const settings = row(payload.settings);
     // A Texture kept while the scene lights from its Skybox (or nothing) ships nowhere.
     add(settings.environmentTextureGuid, settings.environmentSource !== "none" && settings.environmentSource !== "skybox");
+    // A Post Processing override's LUT ships unless the Scene turns Color Grading off.
+    const grading = row(row(settings.effectsOverrides).colorGrading);
+    add(grading.lutTextureGuid, grading.enabled !== false);
     for (const pass of rows(settings.postProcessStack)) { add(pass.materialGuid, pass.enabled !== false); materialParameters(pass.parameters, pass.enabled !== false); }
     for (const layer of rows(settings.sceneLayers)) add(layer.assetGuid, layer.enabled !== false);
     for (const group of rows(settings.foliageGroups)) for (const model of rows(group.models)) { add(model.modelGuid, false); add(model.materialGuid, false); }

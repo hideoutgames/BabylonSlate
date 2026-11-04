@@ -85,6 +85,7 @@ export const PROJECT_RENDER_SETTING_OWNERS = {
 export const SCENE_RENDER_SETTING_OWNERS = {
   shadowOverrides: "shadows",
   celShading: "independent",
+  effectsOverrides: "independent",
   environmentColor: "independent",
   fogEnabled: "independent",
   fogMode: "independent",

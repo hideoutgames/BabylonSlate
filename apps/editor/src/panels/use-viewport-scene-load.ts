@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, ty
 import {
   areaEmissionTextureGuids,
   renderEffectsAssetGuids,
+  resolveRenderEffectsSettings,
   type EnvironmentLightingSettings,
   type SerializedScene,
 } from "@haptic/core";
@@ -165,7 +166,10 @@ export function useViewportSceneLoad({
   const [discardedTilemaps, setDiscardedTilemaps] = useState(0);
   useLiveTilemapEdits({ scene, engineRef, onDiscarded: () => setDiscardedTilemaps((count) => count + 1) });
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
-  const effectsAssetGuidsKey = JSON.stringify(renderEffectsAssetGuids(projectDocument?.settings.render.effects));
+  // The LUT the project's Color Grading or the Scene's Post Processing override names.
+  const effectsAssetGuidsKey = JSON.stringify(renderEffectsAssetGuids(
+    resolveRenderEffectsSettings(projectDocument?.settings.render.effects, scene?.settings.effectsOverrides),
+  ));
   // Depends on the registry alone, so Scene edits do not rebuild it.
   const materialLibraryKey = useMemo(() => {
     void registryEpoch;

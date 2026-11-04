@@ -271,6 +271,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     scene?.settings.shadowOverrides,
     scene?.settings.environmentLighting,
     scene?.settings.environmentSource === "skybox" ? "skybox" : scene ? sceneEnvironmentTextureGuid(scene.settings) : null,
+    scene?.settings.effectsOverrides,
   );
   const environmentSettingsKey = JSON.stringify(projectDocument?.settings.render.environmentLighting ?? {});
   const environmentSettingsRef = useRef(projectDocument?.settings.render.environmentLighting);

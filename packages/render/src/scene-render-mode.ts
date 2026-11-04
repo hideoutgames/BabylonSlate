@@ -1,5 +1,5 @@
 import type { Scene } from "@babylonjs/core/scene";
-import type { CelShadingOverrides, ShadowOverrides } from "@haptic/core";
+import type { CelShadingOverrides, RenderEffectsOverrides, ShadowOverrides } from "@haptic/core";
 import {
   updateSceneRenderingSettings,
   type RenderShadingSettings,
@@ -16,8 +16,9 @@ export function setSceneRenderSettings(
   project?: RenderShadingSettings,
   overrides?: CelShadingOverrides,
   shadowOverrides?: ShadowOverrides,
+  effectsOverrides?: RenderEffectsOverrides,
 ): void {
-  updateSceneRenderingSettings(scene, project, overrides, shadowOverrides);
+  updateSceneRenderingSettings(scene, project, overrides, shadowOverrides, undefined, effectsOverrides);
   syncEnvironmentLighting(scene);
   syncSceneLighting(scene);
 }

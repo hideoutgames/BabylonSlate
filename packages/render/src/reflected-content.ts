@@ -329,6 +329,7 @@ export class ReflectedContent {
     state.value(settings.overrides);
     state.value(settings.shadowOverrides);
     state.value(settings.environmentOverrides);
+    state.value(settings.effectsOverrides);
     state.value(settings.runtimeOverrides);
     state.value(settings.qualityOverrides);
     state.value(settings.localQualityOverrides);
