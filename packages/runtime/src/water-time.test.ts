@@ -59,6 +59,31 @@ describe("Water simulation time", () => {
     } finally { runtime.stop(); }
   });
 
+  it("publishes the render clock in a 2D project, whose physics step evaluates no water, and nothing without water", () => {
+    // A 2D world has no buoyancy, so its step never samples the water; Play still draws Global Water at this clock.
+    const run = (actors: SerializedActor[]) => {
+      const sent: Array<{ seconds: number; frameId: number }> = [];
+      const runtime = createInProcessRuntime({
+        seed: 1, dt: 0.1, seedDemoActors: false, preferSoftwarePhysics: true, physicsWorld: "2d",
+        onCommand: (command) => { if (command.type === "waterTime") sent.push(command); },
+        playScene: { name: "Level", viewportMode: "2d", settings: createDefaultSceneSettings("2d"), folders: [], actors },
+      });
+      runtime.realizePlayWorld();
+      runtime.start();
+      const snapshot = new Float32Array(snapshotFloatCount(runtime.snapshotCapacity));
+      try {
+        for (let tick = 0; tick < 3; tick++) runtime.tick();
+        expect(runtime.copySnapshot(snapshot)).toBe(true);
+        return { sent, frameId: readSnapshotHeader(snapshot).frameId };
+      } finally { runtime.stop(); }
+    };
+    const global = createActor("water", "Global Water", { components: [{ id: "surface", classId: "GlobalWaterVolumeComponent", properties: {} }] });
+    const withWater = run([global]);
+    expect(withWater.sent.map((entry) => entry.seconds)).toEqual([0, 0.1, 0.2].map((seconds) => expect.closeTo(seconds, 12)));
+    expect(withWater.sent.at(-1)!.frameId).toBe(withWater.frameId);
+    expect(run([createActor("plain", "Plain")]).sent).toEqual([]);
+  });
+
   it("floats a hull at slomo 0.5 as it floats at the same step without dilation", async () => {
     // Both sessions simulate 1 s before the hull appears, then step it 120 times by 1/120 s: one with a 1/60 s step
     // slowed to half, one with a 1/120 s step. Only the water clock could tell them apart.
