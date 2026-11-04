@@ -7,6 +7,7 @@ import {
   writeSnapshotHeader,
 } from "@haptic/bridge";
 import { createDefaultScene } from "@haptic/core";
+import { bindResourceCacheToHandle, encodePngRgba, releaseResourceCacheForEngine, resourceCacheForEngine } from "@haptic/render";
 import {
   applyPlayFpsSample,
   applyWorkerPlayStats,
@@ -111,6 +112,19 @@ describe("texturesRetainedAfterPlay", () => {
     play.dispose();
     expect(engine.scenes).not.toContain(play);
     expect(texturesRetainedAfterPlay(engine, before, new Set([play]))).toEqual([gameTexture]);
+  });
+
+  it("leaves out a texture the cache holds unleased for the editor's view that reloads after Play, not one still leased", () => {
+    const engine = sharedEngine();
+    const before = new Set(engine.getLoadedTexturesCache());
+    const cache = resourceCacheForEngine(engine);
+    try {
+      const play = bindResourceCacheToHandle(cache);
+      play.cache.acquireTexture("albedo", engine, encodePngRgba(2, 2, new Uint8Array(16).fill(1)));
+      const stillLeased = cache.acquireTexture("pending-upload", engine, encodePngRgba(2, 2, new Uint8Array(16).fill(2)));
+      play.dispose(play.cache.leasedKeys());
+      expect(texturesRetainedAfterPlay(engine, before, new Set())).toEqual([stillLeased.resource.getInternalTexture()]);
+    } finally { releaseResourceCacheForEngine(engine); }
   });
 
   it("does not let a Play Scene that is still alive excuse what it holds", () => {

@@ -82,6 +82,14 @@ export interface EngineHandle {
    * owners are quarantined.
    */
   whenReleased: () => Promise<void>;
+  /**
+   * Hand this view's textures over to the Engine's next world view: once `dispose()` has released them, the
+   * ResourceCache holds what the view leased instead of flushing it. The next world view keeps what its texture
+   * sources name and flushes the rest before it allocates, then flushes what it left unleased at its first presented
+   * frame (`ResourceCache.claimHandover`). For a transition that loads another world view at once (Play starting or
+   * stopping); a view on its own Engine hands nothing over.
+   */
+  handOverTextures: () => void;
   resize: () => void;
   setSize: (width: number, height: number) => void;
   loadScene: (

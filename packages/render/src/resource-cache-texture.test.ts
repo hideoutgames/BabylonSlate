@@ -9,6 +9,7 @@ import {
   ResourceCache,
   resourceCacheForEngine,
   releaseResourceCacheForEngine,
+  TEXTURE_HANDOVER_CLAIM_MS,
 } from "./resource-cache";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { installTextureBytes } from "./mesh-assets";
@@ -965,5 +966,49 @@ describe("describeEngineTexture", () => {
       // Released but not evicted: the entry still holds the native texture.
       expect(describeEngineTexture(engine, owned).resourceCache).toEqual({ assetGuid: "asset-a", leases: 0 });
     } finally { releaseResourceCacheForEngine(engine); engine.dispose(); }
+  });
+});
+
+describe("texture handover to the Engine's next world view", () => {
+  const face = (value: number) => encodeRgbaPng(2, 2, new Uint8Array(16).fill(value));
+
+  it("keeps a released view's textures through other owners' flushes until no view claims them in time", () => {
+    vi.useFakeTimers();
+    const engine = textureEngine();
+    const cache = new ResourceCache();
+    try {
+      const editor = bindResourceCacheToHandle(cache);
+      const texture = editor.cache.acquireTexture("albedo", engine, face(1)).resource;
+      editor.dispose(editor.cache.leasedKeys());
+      // A preview closing meanwhile flushes what nothing holds, not the handover.
+      const preview = bindResourceCacheToHandle(cache);
+      const other = preview.cache.acquireTexture("preview", engine, face(2)).resource;
+      preview.dispose();
+      expect(isDisposedGpuTexture(other)).toBe(true);
+      expect(isDisposedGpuTexture(texture)).toBe(false);
+      vi.advanceTimersByTime(TEXTURE_HANDOVER_CLAIM_MS - 1);
+      expect(isDisposedGpuTexture(texture)).toBe(false);
+      vi.advanceTimersByTime(1);
+      expect(isDisposedGpuTexture(texture)).toBe(true);
+      expect(cache.claimHandover([new Map([["albedo", face(1)]])])).toBeNull();
+    } finally { cache.dispose(); engine.dispose(); vi.useRealTimers(); }
+  });
+
+  it.each([
+    ["names every face it was built from", 6, false],
+    ["leaves a face out", 5, true],
+  ])("keeps a six-face cube only when the next view %s", (_case, named, released) => {
+    const engine = textureEngine();
+    const cache = new ResourceCache();
+    const scene = new Scene(engine);
+    try {
+      const editor = bindResourceCacheToHandle(cache);
+      const faces = [1, 2, 3, 4, 5, 6].map((value) => [`face-${value}`, face(value)] as const);
+      const urls = faces.map(([guid, bytes]) => editor.cache.acquireBlobUrl(guid, bytes).resource);
+      const cube = editor.cache.acquireCubeTextureFromImages("skybox", scene, urls).resource;
+      editor.dispose(editor.cache.leasedKeys());
+      cache.claimHandover([new Map(faces.slice(0, named))]);
+      expect(isDisposedGpuTexture(cube)).toBe(released);
+    } finally { scene.dispose(); cache.dispose(); engine.dispose(); }
   });
 });

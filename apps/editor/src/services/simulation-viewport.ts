@@ -4,8 +4,11 @@ import type { PlaySceneDocument } from "./play-physics";
 export interface SimulationViewport {
   readonly documentId: string;
   readonly host: HTMLElement;
-  /** Saves camera state and releases the authoring Scene through its owner. */
-  suspend(): Promise<void>;
+  /**
+   * Saves camera state and releases the authoring Scene through its owner. `handOverTextures` holds its textures for
+   * the world view that loads next on the Engine (Play's), which takes over the ones it shares.
+   */
+  suspend(options?: { handOverTextures?: boolean }): Promise<void>;
   /** Reconstructs from the protected authoring document after actual game release. */
   restore(): void;
 }

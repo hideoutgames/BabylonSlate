@@ -217,7 +217,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     return registerSimulationViewport({
       documentId,
       host,
-      async suspend() {
+      async suspend(options) {
         simulationDetachedRef.current = true;
         blockingLoadRef.current?.abort();
         loadTransitionRef.current += 1;
@@ -225,6 +225,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         // and holding background captures, over the whole Simulation.
         setSceneLoad((current) => current.open ? { open: false, progress: 0, phase: "Preparing Scene" } : current);
         const handle = engineRef.current;
+        if (options?.handOverTextures) handle?.handOverTextures();
         releaseEngineRef.current?.();
         if (handle) await handle.whenReleased();
       },

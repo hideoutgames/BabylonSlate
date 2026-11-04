@@ -54,10 +54,24 @@ interface CacheEntry {
   textures: Map<string, BaseTexture>;
   samplingBytes?: Map<string, number>;
   samplingDisposers?: Map<string, () => void>;
+  /** A six-face cube's face URLs: blob URLs of other entries, or engine data. */
+  faceUrls?: readonly string[];
+}
+
+/** Entries a released world view leased, held past flushes for the Engine's next world view. */
+interface TextureHandover {
+  keys: Set<string>;
+  claimed: boolean;
+  generation: number;
+  timer: ReturnType<typeof setTimeout>;
 }
 
 // Match the existing owner-scoped readiness deadline; no upload may pin forever.
 const TEXTURE_PREPARATION_TIMEOUT_MS = 30_000;
+/** How long a texture handover waits for the Engine's next world view to claim it. */
+export const TEXTURE_HANDOVER_CLAIM_MS = 10_000;
+/** Longest a claimed handover keeps what its view has not leased, for a view that never presents. */
+export const TEXTURE_HANDOVER_MS = 120_000;
 
 /**
  * Six-face cubemap bound to the Engine, not a Scene. Scene.dispose must not
@@ -302,6 +316,12 @@ export interface EngineTextureDescription {
   resourceCache: { assetGuid: string; leases: number } | null;
 }
 
+/** The native textures `engine`'s ResourceCache holds, with no lease on them, for the Engine's next world view. */
+export function texturesHeldForHandover(engine: AbstractEngine): ReadonlySet<InternalTexture> {
+  const cache = caches.get(engine);
+  return cache ? ResourceCache.heldTextures(cache) : new Set();
+}
+
 /** Names a native texture the Engine still caches, and says whether the Engine's ResourceCache owns it. */
 export function describeEngineTexture(engine: AbstractEngine, texture: InternalTexture): EngineTextureDescription {
   const cache = caches.get(engine);
@@ -335,6 +355,8 @@ export class ResourceCache {
   private readonly urlKeys = new Map<string, string>();
   private clock = 0;
   private totalBytes = 0;
+  private handover: TextureHandover | null = null;
+  private handoverGeneration = 0;
 
   constructor(options: ResourceCacheOptions = {}) {
     this.ceiling = options.byteCeiling ?? TEXTURE_BYTE_CEILING;
@@ -408,6 +430,76 @@ export class ResourceCache {
       return { assetGuid: entry.assetGuid, leases };
     }
     return null;
+  }
+
+  /** The native textures of the held entries no lease holds; static to keep the per-handle owner surface unchanged. */
+  static heldTextures(cache: ResourceCache): Set<InternalTexture> {
+    const textures = new Set<InternalTexture>();
+    for (const key of cache.handover?.keys ?? []) {
+      const entry = cache.entries.get(key);
+      if (!entry || !cache.isUnreferenced(entry)) continue;
+      for (const wrapper of entry.textures.values()) {
+        const native = wrapper.getInternalTexture();
+        if (native) textures.add(native);
+      }
+    }
+    return textures;
+  }
+
+  /**
+   * Hold `keys`, the entries a released world view leased, past flushes for the Engine's next world view, merged into
+   * whatever is held already (a hold that view claimed and has not ended included). They stay accounted, and an LRU
+   * trim may still evict them. `claimHandover` keeps those that view names; a hold nothing claims is flushed after
+   * `TEXTURE_HANDOVER_CLAIM_MS`.
+   */
+  holdForHandover(keys: Iterable<string>): void {
+    const held = this.handover?.keys ?? new Set<string>();
+    if (this.handover) clearTimeout(this.handover.timer);
+    for (const key of keys) if (this.entries.has(key)) held.add(key);
+    if (held.size === 0) { this.handover = null; return; }
+    const generation = ++this.handoverGeneration;
+    this.handover = { keys: held, claimed: false, generation,
+      timer: setTimeout(() => this.endHandover(generation), TEXTURE_HANDOVER_CLAIM_MS) };
+  }
+
+  /**
+   * The Engine's next world view claims the hold with its texture sources (asset guid to installed bytes). A held entry
+   * of other content, and a six-face cube built from one, is flushed now, before that view allocates anything; the view
+   * leases the rest as its load asks for them and calls the returned function once it has presented, failed or been
+   * disposed, which flushes what it left unleased. Null when nothing is held or the hold is claimed already.
+   */
+  claimHandover(sources: Iterable<ReadonlyMap<string, Uint8Array | Blob> | undefined>): (() => void) | null {
+    const handover = this.handover;
+    if (!handover || handover.claimed) return null;
+    const named = new Set<string>();
+    for (const source of sources) for (const [guid, bytes] of source ?? []) named.add(`${guid}\0${contentKey(bytes)}`);
+    const wanted = (entry: CacheEntry) => entry.faceUrls
+      ? entry.faceUrls.every((url) => !url.startsWith("blob:") || named.has(this.urlKeys.get(url) ?? ""))
+      : named.has(entry.key);
+    for (const key of [...handover.keys]) {
+      const entry = this.entries.get(key);
+      if (entry && wanted(entry)) continue;
+      handover.keys.delete(key);
+      if (entry) this.flushEntry(entry, "handover");
+    }
+    clearTimeout(handover.timer);
+    if (handover.keys.size === 0) { this.handover = null; return null; }
+    handover.claimed = true;
+    const generation = handover.generation;
+    handover.timer = setTimeout(() => this.endHandover(generation), TEXTURE_HANDOVER_MS);
+    return () => this.endHandover(generation);
+  }
+
+  /** Ends hold `generation`: flushes its entries no lease holds, and the samplings no lease holds in the others. */
+  private endHandover(generation: number): void {
+    const handover = this.handover;
+    if (!handover || handover.generation !== generation) return;
+    this.handover = null;
+    clearTimeout(handover.timer);
+    for (const key of handover.keys) {
+      const entry = this.entries.get(key);
+      if (entry) this.flushEntry(entry, "handover");
+    }
   }
 
   resourceStats() {
@@ -717,7 +809,7 @@ export class ResourceCache {
     }
     const entry: CacheEntry = existing ?? {
       assetGuid, key: variantKey, blobUrl: "", extraBlobUrls: [], bytes: 0,
-      refCount: 0, lastUsed: ++this.clock, textures: new Map(),
+      refCount: 0, lastUsed: ++this.clock, textures: new Map(), faceUrls: files,
     };
     this.entries.set(variantKey, entry);
     entry.refCount++;
@@ -924,21 +1016,26 @@ export class ResourceCache {
   }
 
   flushUnreferenced(): void {
-    for (const entry of [...this.entries.values()]) {
-      if (this.isUnreferenced(entry)) {
-        this.evictEntry(entry.key, "flush");
-      } else if (entry.refCount > 0) {
-        // A sampling whose last lease went while its entry was unreferenced stays pinned once another lease holds the
-        // entry again; flush it like an unreferenced entry. Six-face cube wrappers record no sampling.
-        for (const [sampling, texture] of [...entry.textures])
-          if (this.textureSamplings.get(texture) === sampling && !entry.samplingLeases?.get(sampling)) this.retireSampling(entry, sampling);
-      }
+    for (const entry of [...this.entries.values()])
+      // A held entry waits for the Engine's next world view, which ends the hold.
+      if (!this.handover?.keys.has(entry.key)) this.flushEntry(entry, "flush");
+  }
+
+  private flushEntry(entry: CacheEntry, reason: string): void {
+    if (this.isUnreferenced(entry)) {
+      this.evictEntry(entry.key, reason);
+    } else if (entry.refCount > 0) {
+      // A sampling whose last lease went while its entry was unreferenced stays pinned once another lease holds the
+      // entry again; flush it like an unreferenced entry. Six-face cube wrappers record no sampling.
+      for (const [sampling, texture] of [...entry.textures])
+        if (this.textureSamplings.get(texture) === sampling && !entry.samplingLeases?.get(sampling)) this.retireSampling(entry, sampling);
     }
   }
 
   private evictEntry(assetGuid: string, reason: string): void {
     const entry = this.entries.get(this.resourceKey(assetGuid));
     if (!entry) return;
+    this.handover?.keys.delete(entry.key);
     this.totalBytes -= entry.bytes;
     this.entries.delete(entry.key);
     this.blobs.delete(entry.key);
@@ -951,6 +1048,8 @@ export class ResourceCache {
   }
 
   dispose(): void {
+    if (this.handover) clearTimeout(this.handover.timer);
+    this.handover = null;
     for (const guid of [...this.entries.keys()]) {
       this.evictEntry(guid, "dispose");
     }
@@ -965,8 +1064,8 @@ export interface ResourceLease<T> {
   release(): void;
 }
 
-/** The public ResourceCache surface a per-view owner forwards; raw accounting stays on the cache. */
-export type TextureResources = Omit<ResourceCache, "account" | "releaseAccounting">;
+/** The public ResourceCache surface a per-view owner forwards; raw accounting and the Engine's handover stay on the cache. */
+export type TextureResources = Omit<ResourceCache, "account" | "releaseAccounting" | "holdForHandover" | "claimHandover">;
 
 /** A view retains only its currently outstanding leases, never acquisition history. */
 export class ResourceCacheOwner implements TextureResources {
@@ -1000,21 +1099,29 @@ export class ResourceCacheOwner implements TextureResources {
   resourceStats() { return this.inner.resourceStats(); }
   evictToCeiling() { this.inner.evictToCeiling(); }
   flushUnreferenced() { this.inner.flushUnreferenced(); }
-  dispose() {
+  /** The cache entries this owner's outstanding leases hold. */
+  leasedKeys(): string[] {
+    const keys = new Set([...this.leases].map((lease) => this.inner.resourceKey(lease.resource as string | BaseTexture)));
+    keys.delete("");
+    return [...keys];
+  }
+  /** Releases every lease and flushes what nothing holds; `handOver` (entry keys) is held for the Engine's next world view instead. */
+  dispose(handOver?: Iterable<string>) {
     if (this.disposed) return;
     this.disposed = true;
     for (const lease of [...this.leases]) lease.release();
     this.inner.setClientBudget(this, null);
+    if (handOver) this.inner.holdForHandover(handOver);
     this.inner.flushUnreferenced();
   }
 }
 
 export function bindResourceCacheToHandle(inner: ResourceCache): {
   cache: ResourceCacheOwner;
-  dispose: () => void;
+  dispose: (handOver?: Iterable<string>) => void;
 } {
   const cache = new ResourceCacheOwner(inner);
-  return { cache, dispose: () => cache.dispose() };
+  return { cache, dispose: (handOver) => cache.dispose(handOver) };
 }
 
 /** Sprite / tilemap albedo: nearest, no mips, invertY (Babylon 2D; a KTX2 flips V on its wrapper instead). */
