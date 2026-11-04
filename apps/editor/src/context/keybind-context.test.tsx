@@ -333,6 +333,31 @@ describe("KeybindProvider", () => {
     expect(remove).toHaveBeenCalledTimes(1);
   });
 
+  it("leaves Space and Enter to a focused button or checkbox, and runs the Space shortcut elsewhere", () => {
+    const cycle = vi.fn();
+    const { getByRole } = render(
+      <KeybindProvider>
+        <Command id="viewport.cycleTool" run={cycle} />
+        <button type="button">Plain</button>
+        <input type="checkbox" aria-label="Check" />
+        <div tabIndex={0} data-testid="surface" />
+      </KeybindProvider>,
+    );
+    const space = { key: " ", code: "Space" };
+    const plain = getByRole("button", { name: "Plain" });
+    plain.focus();
+    // Not prevented, so the browser presses the button on key up.
+    expect(fireEvent.keyDown(plain, space)).toBe(true);
+    const check = getByRole("checkbox", { name: "Check" });
+    check.focus();
+    expect(fireEvent.keyDown(check, space)).toBe(true);
+    expect(cycle).not.toHaveBeenCalled();
+    const surface = screen.getByTestId("surface");
+    surface.focus();
+    expect(fireEvent.keyDown(surface, space)).toBe(false);
+    expect(cycle).toHaveBeenCalledTimes(1);
+  });
+
   it("leaves a single-key shortcut to the text field it is typed in, inside its focused surface too", () => {
     const brush = vi.fn();
     const { getByRole } = render(

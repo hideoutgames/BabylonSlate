@@ -151,6 +151,11 @@ export function ViewportToolbar({
   useKeybindCommand("viewport.translate", () => setGizmoTool("translate"), gizmoKeys);
   useKeybindCommand("viewport.rotate", () => setGizmoTool("rotate"), gizmoKeys);
   useKeybindCommand("viewport.scale", () => setGizmoTool("scale"), gizmoKeys);
+  // Move → Rotate → Scale → Move; any other tool starts the cycle at Move.
+  useKeybindCommand("viewport.cycleTool", () => {
+    const at = TOOLS.findIndex((tool) => tool.id === gizmoTool);
+    setGizmoTool(TOOLS[(at + 1) % TOOLS.length]!.id);
+  }, gizmoKeys);
 
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)

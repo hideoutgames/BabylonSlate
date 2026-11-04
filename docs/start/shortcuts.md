@@ -2,7 +2,7 @@
 
 With a keyboard attached, editor commands have shortcuts. You can change any of them.
 
-<kbd>Mod</kbd> is Command on Apple devices, including an iPad with a keyboard, and Ctrl elsewhere. <kbd>Alt</kbd> is Option on Apple keyboards. Menus and tooltips show each command's current shortcut.
+<kbd>Mod</kbd> is Command on Apple devices, including an iPad with a keyboard, and Ctrl elsewhere. <kbd>Alt</kbd> is Option on Apple keyboards. Menus and tooltips show each command's current shortcut. A shortcut on <kbd>Space</kbd> or <kbd>Enter</kbd> does nothing while a button, checkbox or other control has keyboard focus: the key presses that control instead.
 
 ## Default shortcuts
 
@@ -47,6 +47,7 @@ With a keyboard attached, editor commands have shortcuts. You can change any of 
 | Move Tool | <kbd>1</kbd> |
 | Rotate Tool | <kbd>2</kbd> |
 | Scale Tool | <kbd>3</kbd> |
+| Cycle Transform Tool | <kbd>Space</kbd> |
 | Frame Selection | <kbd>F</kbd> |
 | Toggle Snap Grid | <kbd>G</kbd> |
 | Toggle Grid | <kbd>Shift</kbd>+<kbd>G</kbd> |
