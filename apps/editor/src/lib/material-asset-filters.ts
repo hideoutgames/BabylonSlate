@@ -6,6 +6,7 @@
 import { isMaterialTextureAssetType } from "@haptic/core";
 import { isEnvironmentTexturePayload } from "@haptic/assets";
 import { normalizeMaterialInstanceDocument, parseMaterialDomain } from "@haptic/shader-graph";
+import { POST_PROCESS_MATERIAL_NODE_IDS } from "@haptic/scripting-nodes";
 
 /** Header payload fields Content Browser / pickers can read without loading the document. */
 export function materialHeaderMeta(
@@ -131,12 +132,7 @@ export function filterInspectorPinPickerAssets<
   }>,
   options: { nodeType: string },
 ): T[] {
-  if (
-    options.nodeType !== "scene-layer.registerPostProcess" &&
-    options.nodeType !== "scene-layer.unregisterPostProcess"
-  ) {
-    return [...assets];
-  }
+  if (!POST_PROCESS_MATERIAL_NODE_IDS.has(options.nodeType)) return [...assets];
   return assets.filter((entry) => {
     const match = indexed.find((asset) => asset.header.guid === entry.guid);
     return match ? isPostProcessMaterialForPicker(match, openDocuments) : false;

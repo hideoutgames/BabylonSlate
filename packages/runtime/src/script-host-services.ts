@@ -259,6 +259,10 @@ export interface ScriptHostServices {
     layerGuid: string,
     materialGuid: string,
   ): void;
+  /** Register Scene Post-Processing on the current Scene. */
+  registerScenePostProcess?(materialGuid: string): void;
+  /** Unregister Scene Post-Processing on the current Scene. */
+  unregisterScenePostProcess?(materialGuid: string): void;
   /** A live Scene Layer instance's camera; null once the layer is gone. */
   getSceneLayerCamera?(layerGuid: string): SceneLayerCamera | null;
   /** Change any of a layer camera's centre, roll and zoom; values that are not finite numbers keep the current ones. */

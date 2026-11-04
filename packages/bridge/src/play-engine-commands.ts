@@ -77,6 +77,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "sceneLayerClear",
   "sceneLayerLayout",
   "sceneLayerPostProcess",
+  "scenePostProcess",
   "sceneLayerCamera",
 ] as const satisfies readonly CommandMessage["type"][];
 

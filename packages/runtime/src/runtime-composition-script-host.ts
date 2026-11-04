@@ -23,6 +23,7 @@ import { createTimingHostBindings } from "./runtime-host-timing";
 import { flushPainters, flushTextAppear, timelineOwners } from "./runtime-tick-phases";
 import { createSceneLayerOverlayHostBindings } from "./scene-layer-overlay";
 import { createSceneLayerHostBindings } from "./scene-layers";
+import { createScenePostProcessHostBindings } from "./scene-post-process";
 import { createSceneStreamHostBindings } from "./scene-streams";
 import { ScriptHost } from "./script-host";
 
@@ -195,6 +196,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
       rt.sceneRealizer.change(scene);
     },
     ...createSceneLayerHostBindings({ layers: rt.layers }),
+    ...createScenePostProcessHostBindings({ world: () => rt.world, emit, frameId }),
     ...createSceneLayerOverlayHostBindings({ overlay: rt.overlay }),
   });
 }

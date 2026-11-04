@@ -246,3 +246,82 @@ it("applies compiled gameplay entry reads, setters and resets through Play load 
     engine.dispose();
   }
 });
+
+it("runs the passes Register and Unregister Scene Post-Processing leave on the Scene, through the real renderer", async () => {
+  const engine = adaptNullEngineFrameGraph(new NullEngine());
+  Object.assign(engine.getCaps(), {
+    maxTextureSize: 4096, maxDrawBuffers: 4, drawBuffersExtension: true,
+    textureFloatRender: true, textureHalfFloatRender: true,
+  });
+  engine.customAnimationFrameRequester = { requestAnimationFrame: () => 0, cancelAnimationFrame: () => {} };
+  vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(new Canvas() as unknown as HTMLCanvasElement);
+  const materials = new Map([
+    ["tint", createDefaultMaterialDocument("Tint", "postProcess")],
+    ["grain", createDefaultMaterialDocument("Grain", "postProcess")],
+  ]);
+  const scene = createDefaultScene();
+  scene.actors = [createActor("hero", "Hero", { classId: "Hero" })];
+  const canvas = new Canvas();
+  const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+    sharedEngine: engine, playMode: true, materialDocuments: materials, postProcessStack: [],
+  });
+  handle.setPaused(true);
+  const load = playLoadControl({
+    sceneAssetGuid: "world", scene, materialParameterCatalog: buildMaterialParameterCatalog(materials), materialTextureAssetGuids: [],
+  });
+  const runtime = createInProcessRuntime({
+    ...runtimeOptionsFromLoadControl(load),
+    preferSoftwarePhysics: true,
+    cooperativeSceneLoading: false,
+    deferSceneLoadingPaint: false,
+    onCommand: (command) => {
+      if (isPlayEngineCommandType(command.type)) handle.applyCommand(command);
+    },
+  });
+  try {
+    const registry = createDefaultNodeRegistry();
+    const steps = [
+      ["tint", "scene.registerPostProcess"],
+      ["grain", "scene.registerPostProcess"],
+      ["tint", "scene.unregisterPostProcess"],
+    ] as const;
+    const nodes: GraphNode[] = [
+      { id: "begin", typeId: "flow.event.beginPlay", properties: {}, position: { x: 0, y: 0 }, pins: registry.get("flow.event.beginPlay")!.pins({}) },
+      ...steps.map(([material, typeId], index): GraphNode => {
+        const properties = { "default:material": material };
+        return { id: `step-${index}`, typeId, properties, position: { x: 0, y: 0 }, pins: registry.get(typeId)!.pins(properties) };
+      }),
+    ];
+    const edges = nodes.slice(1).map((target, index) => ({
+      id: `e${index}`, sourceNodeId: nodes[index]!.id, sourcePinId: "execOut", targetNodeId: target.id, targetPinId: "execIn",
+    }));
+    const graph = compileGraph({ id: "gameplay", kind: "event", nodes, edges }, { assetGuid: "hero", registry });
+    await runtime.loadScripts([{ ...graph, assetGuid: "hero", classId: "Hero", parentClassId: "Actor" }]);
+    runtime.realizePlayWorld();
+    handle.resize();
+    await handle.prewarmSceneMaterials();
+    const presentation = handle.presentFirstFrame();
+    await vi.waitFor(() => {
+      engine.beginFrame();
+      engine._renderViews();
+      engine.endFrame();
+      expect(canvas.drawImage).toHaveBeenCalledOnce();
+    });
+    await presentation;
+    expect(handle.postProcessPassCount()).toBe(0);
+    // Begin Play runs once the Scene's models are ready.
+    runtime.notifySceneModelsReady("world", 1);
+    expect(runtime.getWorld().currentScene?.postProcessStack.map((entry) => entry.materialGuid)).toEqual(["grain"]);
+    // The coordinator materializes a replaced stack's passes on its next preparation.
+    await handle.prewarmSceneMaterials();
+    expect(handle.postProcessPassCount()).toBe(1);
+    const passMaterials = handle.scene.materials
+      .filter((candidate) => candidate instanceof NodeMaterial && candidate.name.startsWith("material:"))
+      .map((candidate) => candidate.name);
+    expect(passMaterials).toEqual(["material:grain"]);
+  } finally {
+    runtime.stop();
+    handle.dispose();
+    engine.dispose();
+  }
+});

@@ -508,6 +508,8 @@ export interface ScriptContext {
     layer: EngineObject | string | null | undefined,
     materialGuid: string,
   ): void;
+  registerScenePostProcess(materialGuid: string): void;
+  unregisterScenePostProcess(materialGuid: string): void;
   setSceneLayerCameraLocation(layer: EngineObject | string | null | undefined, location: unknown): void;
   addSceneLayerCameraOffset(layer: EngineObject | string | null | undefined, delta: unknown): void;
   getSceneLayerCameraLocation(layer: EngineObject | string | null | undefined): { x: number; y: number };
@@ -662,6 +664,7 @@ export type HostContextKey =
   | "setAnimGraphVariable" | "getAnimGraphCurrentState" | "jumpAnimGraphState" | "setChannelVolume"
   | "setGlobalVolume" | "changeScene" | "createSceneLayer" | "removeSceneLayer" | "clearSceneLayers"
   | "setFocusTarget" | "clearFocusTarget" | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"
+  | "registerScenePostProcess" | "unregisterScenePostProcess"
   | "setSceneLayerCameraLocation" | "addSceneLayerCameraOffset" | "getSceneLayerCameraLocation" | "setSceneLayerCameraRotation"
   | "getSceneLayerCameraRotation" | "setSceneLayerCameraZoom" | "getSceneLayerCameraZoom" | "getOwningSceneLayer"
   | "getScalability" | "requestScalability" | "possessCamera" | "getRenderTargetMode"

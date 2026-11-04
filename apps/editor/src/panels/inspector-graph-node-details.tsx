@@ -15,7 +15,7 @@ import {
   type DelegateSignatureEntry,
   type PinListRow,
 } from "@haptic/editor-kit";
-import { OUTPUT_DELEGATE_PIN_ID, isDispatcherNodeType, isTimelineProxyPickerNode } from "@haptic/scripting-nodes";
+import { OUTPUT_DELEGATE_PIN_ID, POST_PROCESS_MATERIAL_NODE_IDS, isDispatcherNodeType, isTimelineProxyPickerNode } from "@haptic/scripting-nodes";
 import {
   Field,
   FieldError,
@@ -658,8 +658,7 @@ export function GraphNodeDetails({
         }
         allowedTypes={assetPinPick?.allowedTypes}
         createOptions={
-          selectedNode.type === "scene-layer.registerPostProcess" ||
-          selectedNode.type === "scene-layer.unregisterPostProcess"
+          POST_PROCESS_MATERIAL_NODE_IDS.has(selectedNode.type)
             ? { materialDomain: "postProcess" }
             : assetPinPick
               ? dataGraphAssetCreateOptions(selectedNode.type, assetPinPick.pinId, selectedNode.data)

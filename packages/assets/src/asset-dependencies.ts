@@ -95,6 +95,8 @@ const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
   "audio.setChannelVolume": "channel",
   "scene.change": "scene",
   "scene-layer.create": "asset",
+  "scene.registerPostProcess": "material",
+  "scene.unregisterPostProcess": "material",
   "scene-layer.registerPostProcess": "material",
   "scene-layer.unregisterPostProcess": "material",
   "material.setMaterialInstance": "instance",

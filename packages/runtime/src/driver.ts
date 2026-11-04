@@ -118,6 +118,7 @@ import { indexSceneLibrary, registerSceneAssetClasses } from "./scene-library";
 import type { RuntimeNavigation } from "./runtime-navigation";
 import type { SceneStreams } from "./scene-streams";
 import type { SceneLayers } from "./scene-layers";
+import { registerScenePostProcess, unregisterScenePostProcess, type ScenePostProcessHost } from "./scene-post-process";
 import type { SceneRealizer } from "./scene-realizer";
 import type { OwnerAdmission } from "./owner-admission";
 import type { AnimGraphRuntime } from "./anim-graph-runtime";
@@ -668,6 +669,18 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
 
   clearSceneLayers(): void {
     this.layers.clearAll();
+  }
+
+  registerScenePostProcess(materialGuid: string): void {
+    registerScenePostProcess(this.scenePostProcessHost, materialGuid);
+  }
+
+  unregisterScenePostProcess(materialGuid: string): void {
+    unregisterScenePostProcess(this.scenePostProcessHost, materialGuid);
+  }
+
+  private get scenePostProcessHost(): ScenePostProcessHost {
+    return { world: () => this.world, emit: (command) => this.emit(command), frameId: () => this.frameId };
   }
 
   registerSceneLayerPostProcess(layerGuid: string, materialGuid: string): void {

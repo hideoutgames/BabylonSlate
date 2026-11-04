@@ -19,7 +19,10 @@ import { selfActorPin, subject } from "./self-pin";
 const LAYER = objectRef("SceneLayer");
 const SCENE_LAYER_ASSET = assetRef("SceneLayer");
 const MATERIAL_ASSET = assetRef("Material");
-const POST_PROCESS_NODE_IDS = new Set([
+/** Nodes whose Material pin takes a post-process Material: the Scene's and a Scene Layer's Register and Unregister. */
+export const POST_PROCESS_MATERIAL_NODE_IDS: ReadonlySet<string> = new Set([
+  "scene.registerPostProcess",
+  "scene.unregisterPostProcess",
   "scene-layer.registerPostProcess",
   "scene-layer.unregisterPostProcess",
 ]);
@@ -43,7 +46,7 @@ function validatePostProcessDomain(
   for (const graph of graphs) {
     const wired = new Set(graph.edges.map((edge) => `${edge.targetNodeId}\t${edge.targetPinId}`));
     for (const node of graph.nodes) {
-      if (!POST_PROCESS_NODE_IDS.has(node.typeId) || wired.has(`${node.id}\tmaterial`)) continue;
+      if (!POST_PROCESS_MATERIAL_NODE_IDS.has(node.typeId) || wired.has(`${node.id}\tmaterial`)) continue;
       const guid = materialGuidFromNode(node);
       if (!guid) continue;
       const domain = domains[guid];
@@ -51,7 +54,7 @@ function validatePostProcessDomain(
       out.push(
         diagnostic({
           code: "scene-layer.postProcessDomain",
-          message: `SceneLayer post-process requires a postProcess Material (got ${domain})`,
+          message: `Post-processing requires a postProcess Material (got ${domain})`,
           assetGuid: ctx.assetGuid,
           graphId: graph.id,
           nodeId: node.id,

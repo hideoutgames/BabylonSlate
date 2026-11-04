@@ -24,3 +24,4 @@ Adds a post-process Material to the effects applied to a Scene Layer.
 
 - The Material must use the Post Process domain. Any other Material is reported as an error when the graph is checked.
 - The effect is added after the layer's existing ones.
+- To add a pass to the current Scene instead, use [Register Scene Post-Processing](register-scene-post-processing.md).

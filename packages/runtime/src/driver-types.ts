@@ -268,6 +268,10 @@ export interface RuntimeDriver {
   ): SceneLayer | null;
   removeSceneLayer(layerGuid: string): void;
   clearSceneLayers(): void;
+  /** Register Scene Post-Processing on the current Scene. */
+  registerScenePostProcess(materialGuid: string): void;
+  /** Unregister Scene Post-Processing on the current Scene. */
+  unregisterScenePostProcess(materialGuid: string): void;
   registerSceneLayerPostProcess(layerGuid: string, materialGuid: string): void;
   unregisterSceneLayerPostProcess(
     layerGuid: string,

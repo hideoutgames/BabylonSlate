@@ -499,6 +499,12 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
         );
       }
     },
+    registerScenePostProcess: (materialGuid) => {
+      services.registerScenePostProcess?.(String(materialGuid ?? ""));
+    },
+    unregisterScenePostProcess: (materialGuid) => {
+      services.unregisterScenePostProcess?.(String(materialGuid ?? ""));
+    },
     setSceneLayerCameraLocation: (layer, location) => {
       setLayerCamera(layer, { x: vector2(location)?.x, y: vector2(location)?.y });
     },

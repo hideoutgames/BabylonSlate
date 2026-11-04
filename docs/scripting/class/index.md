@@ -685,8 +685,10 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Is Scene Loaded](is-scene-loaded.md) | Returns true once all actors and render resources of a streamed Scene are ready. |
 | [Load Scene Async](load-scene-async.md) | Starts loading a Scene Streaming Actor's Scene while the game keeps running. |
 | [Load Scene Blocking](load-scene-blocking.md) | Loads a Scene Streaming Actor's Scene and waits until it is ready, pausing the game. |
+| [Register Scene Post-Processing](register-scene-post-processing.md) | Adds a post-process Material after the current Scene's post-process passes. |
 | [Unload Scene Async](unload-scene-async.md) | Starts unloading a Scene Streaming Actor's Scene while the game keeps running. |
 | [Unload Scene Blocking](unload-scene-blocking.md) | Unloads a Scene Streaming Actor's Scene and waits until it is gone, pausing the game. |
+| [Unregister Scene Post-Processing](unregister-scene-post-processing.md) | Removes the first of the current Scene's post-process passes that uses a Material. |
 
 ## Scene Layer
 

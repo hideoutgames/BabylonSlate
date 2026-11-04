@@ -71,28 +71,56 @@ describe("scene-layer nodes", () => {
     expect(finished).toBe(true);
   });
 
-  it("errors when a SceneLayer post-process pin is not a postProcess material", () => {
+  it.each(["scene-layer.registerPostProcess", "scene-layer.unregisterPostProcess", "scene.registerPostProcess", "scene.unregisterPostProcess"])(
+    "errors when %s's Material pin is not a postProcess material",
+    (typeId) => {
+      const registry = createDefaultNodeRegistry();
+      const graph: LogicGraph = {
+        id: "g",
+        kind: "event",
+        nodes: [
+          node(registry, "begin", "flow.event.beginPlay"),
+          node(registry, "reg", typeId, {
+            "default:material": "bloom",
+          }),
+        ],
+        edges: [
+          { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "reg", targetPinId: "execIn" },
+        ],
+      };
+      const diagnostics = validateGraphs([graph], {
+        assetGuid: "a",
+        materialDomains: { bloom: "surface" },
+      });
+      expect(diagnostics.filter((entry) => entry.code === "scene-layer.postProcessDomain").map((entry) => entry.message))
+        .toEqual(["Post-processing requires a postProcess Material (got surface)"]);
+    },
+  );
+
+  it("registers and unregisters the current Scene's post-process Material", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "reg", "scene-layer.registerPostProcess", {
-          "default:material": "bloom",
-        }),
+        node(registry, "reg", "scene.registerPostProcess", { "default:material": "night" }),
+        node(registry, "unreg", "scene.unregisterPostProcess", { "default:material": "day" }),
       ],
       edges: [
         { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "reg", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "reg", sourcePinId: "execOut", targetNodeId: "unreg", targetPinId: "execIn" },
       ],
     };
-    const diagnostics = validateGraphs([graph], {
-      assetGuid: "a",
-      materialDomains: { bloom: "surface" },
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const body = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const onBeginPlay = new Function(`${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => unknown;
+    const calls: string[] = [];
+    void onBeginPlay({
+      registerScenePostProcess: (guid: string) => calls.push(`register ${guid}`),
+      unregisterScenePostProcess: (guid: string) => calls.push(`unregister ${guid}`),
     });
-    expect(diagnostics.some((entry) => entry.code === "scene-layer.postProcessDomain")).toBe(
-      true,
-    );
+    expect(calls).toEqual(["register night", "unregister day"]);
   });
 
   it("accepts a postProcess material on Register Scene Layer Post-processing", () => {

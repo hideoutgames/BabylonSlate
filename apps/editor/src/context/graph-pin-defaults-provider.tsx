@@ -8,7 +8,7 @@ import {
   PinDefaultEditorContext, type PinDefaultEditorRenderer, type PinDefaultEditorRequest,
 } from "@haptic/graph-ui";
 import { pinDefaultPropertyKey, type PinType } from "@haptic/scripting";
-import { CREATE_OBJECT_NODE_ID } from "@haptic/scripting-nodes";
+import { CREATE_OBJECT_NODE_ID, POST_PROCESS_MATERIAL_NODE_IDS } from "@haptic/scripting-nodes";
 import { useRegistryState } from "./document-context";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import { classParentLookup, filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
@@ -102,7 +102,7 @@ export function GraphPinDefaultEditor({ request, catalogs, editorGraph: hostEdit
   const assets = useMemo(() => activePick?.kind === "asset"
     ? filterInspectorPinPickerAssets(catalogs.pickerAssets, catalogs.assets, catalogs.materialDocuments, { nodeType: request.nodeType ?? "" }) : [],
   [activePick, catalogs.pickerAssets, catalogs.assets, catalogs.materialDocuments, request.nodeType]);
-  const postProcess = request.nodeType === "scene-layer.registerPostProcess" || request.nodeType === "scene-layer.unregisterPostProcess";
+  const postProcess = POST_PROCESS_MATERIAL_NODE_IDS.has(request.nodeType ?? "");
 
   if (pathOptions) return <div className="min-w-24 max-w-(--graph-pin-default-max-width)">
     <DataTreeEntryField {...pathOptions} value={typeof value === "string" ? value : ""} onChange={onChange}
