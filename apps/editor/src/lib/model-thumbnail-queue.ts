@@ -2,7 +2,7 @@ export type ModelThumbnailJob = {
   guid: string;
   path: string;
   payload: Record<string, unknown>;
-  type?: "Model" | "Animation" | "Material" | "Class";
+  type?: "Model" | "Animation" | "Material" | "Class" | "Tileset" | "Tilemap";
   onlyIfMissing?: boolean;
   /** Saved asset identity captured when generation was requested. */
   cacheKey?: string;
