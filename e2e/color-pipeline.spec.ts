@@ -288,7 +288,8 @@ test("editor viewport applies project bloom through Post Processing settings", a
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("project-settings").click();
   await page.getByTestId("settings-modal-category-rendering").click();
-  const postProcessing = page.getByRole("button", { name: "Post Processing", exact: true });
+  // The Scene Inspector has its own Post Processing overrides section.
+  const postProcessing = page.getByTestId("settings-modal").getByRole("button", { name: "Post Processing", exact: true });
   // Sub-categories start open; a collapse remembered on this device is reopened.
   if ((await postProcessing.getAttribute("aria-expanded")) !== "true") await postProcessing.click();
   await page.getByTestId("project-effects-bloom").click();

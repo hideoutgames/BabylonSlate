@@ -14,6 +14,6 @@ Sets the colour of each pixel in a post-process pass.
 
 ## Notes
 
-- Add the material as a pass under **Post Processing** in the scene's **Inspector** to run it.
+- Add the material as a pass under **Post-Process Passes** in the scene's **Inspector** to run it.
 - Unconnected, it writes opaque black. Connect [**Scene Color**](scene-color.md) to keep the original image.
 - Only in Post Process materials.

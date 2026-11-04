@@ -35,6 +35,7 @@ import { CelShadingFields } from "./cel-shading-fields";
 import { EnvironmentLightingFields } from "./environment-lighting-fields";
 import { PlayPreviewSettingsFields } from "./play-preview-settings-fields";
 import { RenderEffectsFields } from "./render-effects-fields";
+import { projectEffectsScope } from "./render-effects-scope";
 import { RenderPipelineFields } from "./render-pipeline-fields";
 import { RenderQualityFields } from "./render-quality-fields";
 import { ShadowSettingsFields } from "./shadow-settings-fields";
@@ -95,30 +96,29 @@ export function ProjectRenderingSettings({
         <SettingsSection id="postProcessing" title="Post Processing">
           <RenderEffectsFields
             hideTitle
-            project={normalizeRenderEffectsSettings(projectDocument.settings.render.effects)}
-            onChange={(effects) => updateProjectSettings({ render: { ...projectDocument.settings.render, effects: normalizeRenderEffectsSettings(effects) } })}
-            lutControl={
-              <AssetPickerControl value={normalizeRenderEffectsSettings(projectDocument.settings.render.effects).colorGrading.lutTextureGuid}>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
-                  onClick={() => setLutPickerOpen(true)}
-                  data-testid="project-effects-lut"
-                  id="project-effects-lut"
-                >
-                  {selectedPickerIdentity(
-                    assetRowIdentity(
-                      (() => {
-                        const guid = normalizeRenderEffectsSettings(projectDocument.settings.render.effects).colorGrading.lutTextureGuid;
-                        const asset = guid ? assetRegistry?.getByGuid(guid) : undefined;
-                        return asset ? { name: asset.header.name, type: asset.header.type } : undefined;
-                      })(),
-                    ),
-                  )}
-                </Button>
-              </AssetPickerControl>
-            }
+            scope={projectEffectsScope(
+              normalizeRenderEffectsSettings(projectDocument.settings.render.effects),
+              (effects) => updateProjectSettings({ render: { ...projectDocument.settings.render, effects: normalizeRenderEffectsSettings(effects) } }),
+            )}
+            lutControl={(control) => {
+              const guid = normalizeRenderEffectsSettings(projectDocument.settings.render.effects).colorGrading.lutTextureGuid;
+              const asset = guid ? assetRegistry?.getByGuid(guid) : undefined;
+              return (
+                <AssetPickerControl value={guid}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
+                    onClick={() => setLutPickerOpen(true)}
+                    data-testid={control.id}
+                    id={control.id}
+                    disabled={control.disabled}
+                  >
+                    {selectedPickerIdentity(assetRowIdentity(asset ? { name: asset.header.name, type: asset.header.type } : undefined))}
+                  </Button>
+                </AssetPickerControl>
+              );
+            }}
           />
         </SettingsSection>
         {projectDocument.settings.render.mode === "cel" ? (

@@ -1,16 +1,12 @@
-import {
-  RENDER_EFFECTS_LIMITS,
-  type RenderEffectsSettings,
-} from "@haptic/core";
+import { RENDER_EFFECTS_LIMITS } from "@haptic/core";
 import type { ReactNode } from "react";
-import { ColorField, LabelHint, NumberField } from "@haptic/editor-kit";
+import { ColorField, NumberField, colorToHex } from "@haptic/editor-kit";
 import { Switch } from "@haptic/ui/components/switch";
-import { SpatialEffectsFields } from "./spatial-effects-fields";
+import { SpatialEffectsFields, SPATIAL_EFFECTS_SEARCH_TEXT } from "./spatial-effects-fields";
+import { EffectRow } from "./render-effects-rows";
+import { readEffect as readValue, type EffectsPath, type EffectsScope } from "./render-effects-scope";
 import {
-  Field,
-  FieldDescription,
   FieldGroup,
-  FieldLabel,
   FieldLegend,
   FieldSet,
 } from "@haptic/ui/components/field";
@@ -54,337 +50,173 @@ const hints = {
 } as const;
 
 type Props = {
-  project: RenderEffectsSettings;
-  onChange: (value: RenderEffectsSettings) => void;
+  scope: EffectsScope;
   hideTitle?: boolean;
-  /** Texture picker control for the grading LUT, owned by the host dialog. */
-  lutControl?: ReactNode;
+  /** Texture picker control for the grading LUT, owned by the host. */
+  lutControl?: (control: { id: string; disabled: boolean; describedBy?: string }) => ReactNode;
+  /** The Scene status line's name for a LUT Texture. */
+  lutName?: (guid: string | null) => string;
 };
 
-/** Project Settings → Rendering post-processing group: the color pipeline
- * stage plus the effect chain (bloom, vignette, grading, anti-aliasing). */
-export function RenderEffectsFields({ project, onChange, hideTitle = false, lutControl }: Props) {
-  const patch = (value: Partial<RenderEffectsSettings>) =>
-    onChange({ ...project, ...value });
-  const patchVignette = (value: Partial<RenderEffectsSettings["vignette"]>) =>
-    patch({ vignette: { ...project.vignette, ...value } });
-  const patchBloom = (value: Partial<RenderEffectsSettings["bloom"]>) =>
-    patch({ bloom: { ...project.bloom, ...value } });
-  const patchWhiteBalance = (value: Partial<RenderEffectsSettings["whiteBalance"]>) =>
-    patch({ whiteBalance: { ...project.whiteBalance, ...value } });
-  const patchUpscaling = (value: Partial<RenderEffectsSettings["upscaling"]>) =>
-    patch({ upscaling: { ...project.upscaling, ...value } });
+const labelled = (labels: Record<string, string>) => (value: unknown) => labels[String(value)] ?? String(value);
+
+/** Every row label and hint, for the Inspector's property filter. */
+export const RENDER_EFFECTS_SEARCH_TEXT = [
+  "Post Processing", "Color Pipeline", ...Object.values(pipelineLabels), "Tone Mapping", ...Object.values(toneMappingLabels),
+  "Exposure", "Contrast", "White Balance", "Temperature (K)", "Tint",
+  "Bloom", "Bloom Threshold", "Bloom Weight", "Bloom Kernel", "Bloom Scale",
+  "Vignette", "Vignette Weight", "Vignette Color", "Color Grading", "LUT Texture",
+  "FSR Upscaling", "Render Scale", "Sharpness",
+  ...Object.values(hints),
+  SPATIAL_EFFECTS_SEARCH_TEXT,
+].join(" ");
+
+/** The Post Processing group: the color pipeline stage plus the effect chain
+ * (bloom, vignette, grading, upscaling and the spatial effects), in Project
+ * Settings or as a Scene's overrides. */
+export function RenderEffectsFields({ scope, hideTitle = false, lutControl, lutName = (guid) => guid ?? "None" }: Props) {
+  const value = scope.value;
+  const sceneLinear = value.colorPipeline.mode === "sceneLinear";
+  const number = (
+    path: EffectsPath,
+    suffix: string,
+    label: string,
+    limits: readonly [number, number],
+    step: number,
+    options: { hint?: string; dependent?: boolean; disabled?: boolean } = {},
+  ) => (
+    <EffectRow scope={scope} path={path} suffix={suffix} label={label} hint={options.hint} dependent={options.dependent} disabled={options.disabled}>
+      {(control) => (
+        <NumberField
+          id={control.id}
+          aria-describedby={control.describedBy}
+          data-testid={control.id}
+          value={Number(readValue(value, path))}
+          min={limits[0]}
+          max={limits[1]}
+          step={step}
+          disabled={control.disabled}
+          onChange={(next) => scope.set([path, next])}
+        />
+      )}
+    </EffectRow>
+  );
+  const toggle = (path: EffectsPath, suffix: string, label: string, hint?: string, disabled = false) => (
+    <EffectRow scope={scope} path={path} suffix={suffix} label={label} hint={hint} toggle disabled={disabled}>
+      {(control) => (
+        <Switch
+          id={control.id}
+          aria-describedby={control.describedBy}
+          data-testid={control.id}
+          checked={readValue(value, path) === true}
+          disabled={control.disabled}
+          onCheckedChange={(checked) => scope.set([path, checked === true])}
+        />
+      )}
+    </EffectRow>
+  );
   return (
-    <FieldSet data-testid="project-render-effects">
+    <FieldSet data-testid={scope.scene ? "scene-render-effects" : "project-render-effects"}>
       <FieldLegend className={hideTitle ? "sr-only" : undefined}>Post Processing</FieldLegend>
       <FieldGroup className="gap-2">
-        <SpatialEffectsFields value={project} onChange={onChange} />
-        <Field className="settings-field">
-          <LabelHint hint={hints.pipeline}>
-            <FieldLabel htmlFor="project-effects-pipeline">Color Pipeline</FieldLabel>
-          </LabelHint>
-          <Select
-            value={project.colorPipeline.mode}
-            onValueChange={(mode) => {
-              if (mode !== "legacyDisplay" && mode !== "sceneLinear") return;
-              // Scene Linear without tone mapping clips its highlights: switching to it picks Neutral.
-              patch({
-                colorPipeline: { version: 1, mode },
-                ...(mode === "sceneLinear" && project.toneMapping === "none" ? { toneMapping: "neutral" as const } : {}),
-              });
-            }}
-          >
-            <SelectTrigger id="project-effects-pipeline" aria-describedby="project-effects-pipeline-description" data-testid="project-effects-pipeline">
-              <SelectValue>{pipelineLabels[project.colorPipeline.mode]}</SelectValue>
-            </SelectTrigger>
-            <SelectContent><SelectGroup>
-              {Object.entries(pipelineLabels).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </SelectGroup></SelectContent>
-          </Select>
-          <FieldDescription id="project-effects-pipeline-description" className="sr-only">{hints.pipeline}</FieldDescription>
-        </Field>
-        <Field className="settings-field">
-          <LabelHint hint={hints.toneMapping}>
-            <FieldLabel htmlFor="project-effects-tone-mapping">Tone Mapping</FieldLabel>
-          </LabelHint>
-          <Select
-            value={project.toneMapping}
-            disabled={project.colorPipeline.mode !== "sceneLinear"}
-            onValueChange={(toneMapping) => {
-              if (toneMapping && toneMapping in toneMappingLabels)
-                patch({ toneMapping: toneMapping as RenderEffectsSettings["toneMapping"] });
-            }}
-          >
-            <SelectTrigger id="project-effects-tone-mapping" aria-describedby="project-effects-tone-mapping-description" data-testid="project-effects-tone-mapping">
-              <SelectValue>{toneMappingLabels[project.toneMapping]}</SelectValue>
-            </SelectTrigger>
-            <SelectContent><SelectGroup>
-              {Object.entries(toneMappingLabels).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </SelectGroup></SelectContent>
-          </Select>
-          <FieldDescription id="project-effects-tone-mapping-description" className="sr-only">{hints.toneMapping}</FieldDescription>
-        </Field>
-        <Field className="settings-field">
-          <LabelHint hint={hints.exposure}>
-            <FieldLabel htmlFor="project-effects-exposure">Exposure</FieldLabel>
-          </LabelHint>
-          <NumberField
-            id="project-effects-exposure"
-            aria-describedby="project-effects-exposure-description"
-            data-testid="project-effects-exposure"
-            value={project.exposure}
-            min={RENDER_EFFECTS_LIMITS.exposure[0]}
-            max={RENDER_EFFECTS_LIMITS.exposure[1]}
-            step={0.01}
-            disabled={project.colorPipeline.mode !== "sceneLinear"}
-            onChange={(exposure) => patch({ exposure })}
-          />
-          <FieldDescription id="project-effects-exposure-description" className="sr-only">{hints.exposure}</FieldDescription>
-        </Field>
-        <Field className="settings-field">
-          <LabelHint hint={hints.contrast}>
-            <FieldLabel htmlFor="project-effects-contrast">Contrast</FieldLabel>
-          </LabelHint>
-          <NumberField
-            id="project-effects-contrast"
-            aria-describedby="project-effects-contrast-description"
-            data-testid="project-effects-contrast"
-            value={project.contrast}
-            min={RENDER_EFFECTS_LIMITS.contrast[0]}
-            max={RENDER_EFFECTS_LIMITS.contrast[1]}
-            step={0.01}
-            disabled={project.colorPipeline.mode !== "sceneLinear"}
-            onChange={(contrast) => patch({ contrast })}
-          />
-          <FieldDescription id="project-effects-contrast-description" className="sr-only">{hints.contrast}</FieldDescription>
-        </Field>
-        <Field orientation="horizontal" className="settings-field">
-          <LabelHint hint={hints.whiteBalance}>
-            <FieldLabel htmlFor="project-effects-white-balance">White Balance</FieldLabel>
-          </LabelHint>
-          <Switch
-            id="project-effects-white-balance"
-            aria-describedby="project-effects-white-balance-description"
-            data-testid="project-effects-white-balance"
-            checked={project.whiteBalance.enabled}
-            disabled={project.colorPipeline.mode !== "sceneLinear"}
-            onCheckedChange={(enabled) => patchWhiteBalance({ enabled: enabled === true })}
-          />
-          <FieldDescription id="project-effects-white-balance-description" className="sr-only">{hints.whiteBalance}</FieldDescription>
-        </Field>
-        {project.whiteBalance.enabled ? (
+        <SpatialEffectsFields scope={scope} />
+        <EffectRow scope={scope} path={["colorPipeline", "mode"]} suffix="pipeline" label="Color Pipeline" hint={hints.pipeline} display={labelled(pipelineLabels)}>
+          {(control) => (
+            <Select
+              value={value.colorPipeline.mode}
+              disabled={control.disabled}
+              onValueChange={(mode) => {
+                if (mode !== "legacyDisplay" && mode !== "sceneLinear") return;
+                // Scene Linear without tone mapping clips its highlights: switching to it picks Neutral.
+                scope.set(
+                  [["colorPipeline", "mode"], mode],
+                  ...(mode === "sceneLinear" && value.toneMapping === "none" ? [[["toneMapping"], "neutral"] as const] : []),
+                );
+              }}
+            >
+              <SelectTrigger id={control.id} aria-describedby={control.describedBy} data-testid={control.id}>
+                <SelectValue>{pipelineLabels[value.colorPipeline.mode]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent><SelectGroup>
+                {Object.entries(pipelineLabels).map(([mode, label]) => (
+                  <SelectItem key={mode} value={mode}>{label}</SelectItem>
+                ))}
+              </SelectGroup></SelectContent>
+            </Select>
+          )}
+        </EffectRow>
+        <EffectRow scope={scope} path={["toneMapping"]} suffix="tone-mapping" label="Tone Mapping" hint={hints.toneMapping} disabled={!sceneLinear} display={labelled(toneMappingLabels)}>
+          {(control) => (
+            <Select
+              value={value.toneMapping}
+              disabled={control.disabled}
+              onValueChange={(toneMapping) => {
+                if (toneMapping && toneMapping in toneMappingLabels) scope.set([["toneMapping"], toneMapping]);
+              }}
+            >
+              <SelectTrigger id={control.id} aria-describedby={control.describedBy} data-testid={control.id}>
+                <SelectValue>{toneMappingLabels[value.toneMapping]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent><SelectGroup>
+                {Object.entries(toneMappingLabels).map(([mode, label]) => (
+                  <SelectItem key={mode} value={mode}>{label}</SelectItem>
+                ))}
+              </SelectGroup></SelectContent>
+            </Select>
+          )}
+        </EffectRow>
+        {number(["exposure"], "exposure", "Exposure", RENDER_EFFECTS_LIMITS.exposure, 0.01, { hint: hints.exposure, disabled: !sceneLinear })}
+        {number(["contrast"], "contrast", "Contrast", RENDER_EFFECTS_LIMITS.contrast, 0.01, { hint: hints.contrast, disabled: !sceneLinear })}
+        {toggle(["whiteBalance", "enabled"], "white-balance", "White Balance", hints.whiteBalance, !sceneLinear)}
+        {value.whiteBalance.enabled ? (
           <>
-            <Field className="settings-field settings-field-dependent">
-              <LabelHint hint={hints.temperature}>
-                <FieldLabel htmlFor="project-effects-white-balance-temperature">Temperature (K)</FieldLabel>
-              </LabelHint>
-              <NumberField
-                id="project-effects-white-balance-temperature"
-                aria-describedby="project-effects-white-balance-temperature-description"
-                data-testid="project-effects-white-balance-temperature"
-                value={project.whiteBalance.temperature}
-                min={RENDER_EFFECTS_LIMITS.whiteBalanceTemperature[0]}
-                max={RENDER_EFFECTS_LIMITS.whiteBalanceTemperature[1]}
-                step={50}
-                disabled={project.colorPipeline.mode !== "sceneLinear"}
-                onChange={(temperature) => patchWhiteBalance({ temperature })}
-              />
-              <FieldDescription id="project-effects-white-balance-temperature-description" className="sr-only">{hints.temperature}</FieldDescription>
-            </Field>
-            <Field className="settings-field settings-field-dependent">
-              <LabelHint hint={hints.tint}>
-                <FieldLabel htmlFor="project-effects-white-balance-tint">Tint</FieldLabel>
-              </LabelHint>
-              <NumberField
-                id="project-effects-white-balance-tint"
-                aria-describedby="project-effects-white-balance-tint-description"
-                data-testid="project-effects-white-balance-tint"
-                value={project.whiteBalance.tint}
-                min={RENDER_EFFECTS_LIMITS.whiteBalanceTint[0]}
-                max={RENDER_EFFECTS_LIMITS.whiteBalanceTint[1]}
-                step={1}
-                disabled={project.colorPipeline.mode !== "sceneLinear"}
-                onChange={(tint) => patchWhiteBalance({ tint })}
-              />
-              <FieldDescription id="project-effects-white-balance-tint-description" className="sr-only">{hints.tint}</FieldDescription>
-            </Field>
+            {number(["whiteBalance", "temperature"], "white-balance-temperature", "Temperature (K)", RENDER_EFFECTS_LIMITS.whiteBalanceTemperature, 50,
+              { hint: hints.temperature, dependent: true, disabled: !sceneLinear })}
+            {number(["whiteBalance", "tint"], "white-balance-tint", "Tint", RENDER_EFFECTS_LIMITS.whiteBalanceTint, 1,
+              { hint: hints.tint, dependent: true, disabled: !sceneLinear })}
           </>
         ) : null}
-        <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="project-effects-bloom">Bloom</FieldLabel>
-          <Switch
-            id="project-effects-bloom"
-            data-testid="project-effects-bloom"
-            checked={project.bloom.enabled}
-            onCheckedChange={(enabled) => patchBloom({ enabled: enabled === true })}
-          />
-        </Field>
-        {project.bloom.enabled ? (
+        {toggle(["bloom", "enabled"], "bloom", "Bloom")}
+        {value.bloom.enabled ? (
           <>
-            <Field className="settings-field settings-field-dependent">
-              <FieldLabel htmlFor="project-effects-bloom-threshold">Bloom Threshold</FieldLabel>
-              <NumberField
-                id="project-effects-bloom-threshold"
-                data-testid="project-effects-bloom-threshold"
-                value={project.bloom.threshold}
-                min={RENDER_EFFECTS_LIMITS.bloomThreshold[0]}
-                max={RENDER_EFFECTS_LIMITS.bloomThreshold[1]}
-                step={0.01}
-                onChange={(threshold) => patchBloom({ threshold })}
-              />
-            </Field>
-            <Field className="settings-field settings-field-dependent">
-              <FieldLabel htmlFor="project-effects-bloom-weight">Bloom Weight</FieldLabel>
-              <NumberField
-                id="project-effects-bloom-weight"
-                data-testid="project-effects-bloom-weight"
-                value={project.bloom.weight}
-                min={RENDER_EFFECTS_LIMITS.bloomWeight[0]}
-                max={RENDER_EFFECTS_LIMITS.bloomWeight[1]}
-                step={0.01}
-                onChange={(weight) => patchBloom({ weight })}
-              />
-            </Field>
-            <Field className="settings-field settings-field-dependent">
-              <FieldLabel htmlFor="project-effects-bloom-kernel">Bloom Kernel</FieldLabel>
-              <NumberField
-                id="project-effects-bloom-kernel"
-                data-testid="project-effects-bloom-kernel"
-                value={project.bloom.kernel}
-                min={RENDER_EFFECTS_LIMITS.bloomKernel[0]}
-                max={RENDER_EFFECTS_LIMITS.bloomKernel[1]}
-                step={1}
-                onChange={(kernel) => patchBloom({ kernel })}
-              />
-            </Field>
-            <Field className="settings-field settings-field-dependent">
-              <LabelHint hint={hints.bloomScale}>
-                <FieldLabel htmlFor="project-effects-bloom-scale">Bloom Scale</FieldLabel>
-              </LabelHint>
-              <NumberField
-                id="project-effects-bloom-scale"
-                aria-describedby="project-effects-bloom-scale-description"
-                data-testid="project-effects-bloom-scale"
-                value={project.bloom.scale}
-                min={RENDER_EFFECTS_LIMITS.bloomScale[0]}
-                max={RENDER_EFFECTS_LIMITS.bloomScale[1]}
-                step={0.05}
-                onChange={(scale) => patchBloom({ scale })}
-              />
-              <FieldDescription id="project-effects-bloom-scale-description" className="sr-only">{hints.bloomScale}</FieldDescription>
-            </Field>
+            {number(["bloom", "threshold"], "bloom-threshold", "Bloom Threshold", RENDER_EFFECTS_LIMITS.bloomThreshold, 0.01, { dependent: true })}
+            {number(["bloom", "weight"], "bloom-weight", "Bloom Weight", RENDER_EFFECTS_LIMITS.bloomWeight, 0.01, { dependent: true })}
+            {number(["bloom", "kernel"], "bloom-kernel", "Bloom Kernel", RENDER_EFFECTS_LIMITS.bloomKernel, 1, { dependent: true })}
+            {number(["bloom", "scale"], "bloom-scale", "Bloom Scale", RENDER_EFFECTS_LIMITS.bloomScale, 0.05, { hint: hints.bloomScale, dependent: true })}
           </>
         ) : null}
-        <Field orientation="horizontal" className="settings-field">
-          <LabelHint hint={hints.vignette}>
-            <FieldLabel htmlFor="project-effects-vignette">Vignette</FieldLabel>
-          </LabelHint>
-          <Switch
-            id="project-effects-vignette"
-            aria-describedby="project-effects-vignette-description"
-            data-testid="project-effects-vignette"
-            checked={project.vignette.enabled}
-            onCheckedChange={(enabled) => patchVignette({ enabled: enabled === true })}
-          />
-          <FieldDescription id="project-effects-vignette-description" className="sr-only">{hints.vignette}</FieldDescription>
-        </Field>
-        {project.vignette.enabled ? (
+        {toggle(["vignette", "enabled"], "vignette", "Vignette", hints.vignette)}
+        {value.vignette.enabled ? (
           <>
-            <Field className="settings-field settings-field-dependent">
-              <FieldLabel htmlFor="project-effects-vignette-weight">Vignette Weight</FieldLabel>
-              <NumberField
-                id="project-effects-vignette-weight"
-                data-testid="project-effects-vignette-weight"
-                value={project.vignette.weight}
-                min={RENDER_EFFECTS_LIMITS.vignetteWeight[0]}
-                max={RENDER_EFFECTS_LIMITS.vignetteWeight[1]}
-                step={0.01}
-                onChange={(weight) => patchVignette({ weight })}
-              />
-            </Field>
-            <Field className="settings-field settings-field-dependent">
-              <FieldLabel htmlFor="project-effects-vignette-color">Vignette Color</FieldLabel>
-              <ColorField
-                id="project-effects-vignette-color"
-                data-testid="project-effects-vignette-color"
-                value={project.vignette.color}
-                onChange={(color) => patchVignette({ color })}
-              />
-            </Field>
+            {number(["vignette", "weight"], "vignette-weight", "Vignette Weight", RENDER_EFFECTS_LIMITS.vignetteWeight, 0.01, { dependent: true })}
+            <EffectRow scope={scope} path={["vignette", "color"]} suffix="vignette-color" label="Vignette Color" dependent
+              display={(color) => colorToHex(color as [number, number, number])}>
+              {(control) => (
+                <ColorField
+                  id={control.id}
+                  data-testid={control.id}
+                  value={value.vignette.color}
+                  disabled={control.disabled}
+                  onChange={(color) => scope.set([["vignette", "color"], color])}
+                />
+              )}
+            </EffectRow>
           </>
         ) : null}
-        <Field orientation="horizontal" className="settings-field">
-          <LabelHint hint={hints.colorGrading}>
-            <FieldLabel htmlFor="project-effects-color-grading">Color Grading</FieldLabel>
-          </LabelHint>
-          <Switch
-            id="project-effects-color-grading"
-            aria-describedby="project-effects-color-grading-description"
-            data-testid="project-effects-color-grading"
-            checked={project.colorGrading.enabled}
-            onCheckedChange={(enabled) => patch({ colorGrading: { ...project.colorGrading, enabled: enabled === true } })}
-          />
-          <FieldDescription id="project-effects-color-grading-description" className="sr-only">{hints.colorGrading}</FieldDescription>
-        </Field>
-        {project.colorGrading.enabled ? (
-          <Field className="settings-field settings-field-dependent">
-            <LabelHint hint={hints.lut}>
-              <FieldLabel htmlFor="project-effects-lut">LUT Texture</FieldLabel>
-            </LabelHint>
-            {lutControl}
-          </Field>
+        {toggle(["colorGrading", "enabled"], "color-grading", "Color Grading", hints.colorGrading)}
+        {value.colorGrading.enabled ? (
+          <EffectRow scope={scope} path={["colorGrading", "lutTextureGuid"]} suffix="lut" label="LUT Texture" hint={hints.lut} dependent
+            display={(guid) => lutName(typeof guid === "string" ? guid : null)}>
+            {(control) => lutControl?.(control)}
+          </EffectRow>
         ) : null}
-        <Field orientation="horizontal" className="settings-field">
-          <LabelHint hint={hints.upscaling}>
-            <FieldLabel htmlFor="project-effects-upscaling">FSR Upscaling</FieldLabel>
-          </LabelHint>
-          <Switch
-            id="project-effects-upscaling"
-            aria-describedby="project-effects-upscaling-description"
-            data-testid="project-effects-upscaling"
-            checked={project.upscaling.enabled}
-            onCheckedChange={(enabled) => patchUpscaling({ enabled: enabled === true })}
-          />
-          <FieldDescription id="project-effects-upscaling-description" className="sr-only">{hints.upscaling}</FieldDescription>
-        </Field>
-        {project.upscaling.enabled ? (
+        {toggle(["upscaling", "enabled"], "upscaling", "FSR Upscaling", hints.upscaling)}
+        {value.upscaling.enabled ? (
           <>
-            <Field className="settings-field settings-field-dependent">
-              <LabelHint hint={hints.renderScale}>
-                <FieldLabel htmlFor="project-effects-upscaling-scale">Render Scale</FieldLabel>
-              </LabelHint>
-              <NumberField
-                id="project-effects-upscaling-scale"
-                aria-describedby="project-effects-upscaling-scale-description"
-                data-testid="project-effects-upscaling-scale"
-                value={project.upscaling.renderScale}
-                min={RENDER_EFFECTS_LIMITS.upscalingRenderScale[0]}
-                max={RENDER_EFFECTS_LIMITS.upscalingRenderScale[1]}
-                step={0.01}
-                onChange={(renderScale) => patchUpscaling({ renderScale })}
-              />
-              <FieldDescription id="project-effects-upscaling-scale-description" className="sr-only">{hints.renderScale}</FieldDescription>
-            </Field>
-            <Field className="settings-field settings-field-dependent">
-              <LabelHint hint={hints.sharpness}>
-                <FieldLabel htmlFor="project-effects-upscaling-sharpness">Sharpness</FieldLabel>
-              </LabelHint>
-              <NumberField
-                id="project-effects-upscaling-sharpness"
-                aria-describedby="project-effects-upscaling-sharpness-description"
-                data-testid="project-effects-upscaling-sharpness"
-                value={project.upscaling.sharpness}
-                min={RENDER_EFFECTS_LIMITS.upscalingSharpness[0]}
-                max={RENDER_EFFECTS_LIMITS.upscalingSharpness[1]}
-                step={0.05}
-                onChange={(sharpness) => patchUpscaling({ sharpness })}
-              />
-              <FieldDescription id="project-effects-upscaling-sharpness-description" className="sr-only">{hints.sharpness}</FieldDescription>
-            </Field>
+            {number(["upscaling", "renderScale"], "upscaling-scale", "Render Scale", RENDER_EFFECTS_LIMITS.upscalingRenderScale, 0.01,
+              { hint: hints.renderScale, dependent: true })}
+            {number(["upscaling", "sharpness"], "upscaling-sharpness", "Sharpness", RENDER_EFFECTS_LIMITS.upscalingSharpness, 0.05,
+              { hint: hints.sharpness, dependent: true })}
           </>
         ) : null}
       </FieldGroup>

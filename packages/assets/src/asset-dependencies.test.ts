@@ -42,6 +42,16 @@ describe("typed asset dependencies", () => {
     expect(metadata.requiredDependencies).toEqual([]);
   });
 
+  it("requires a Scene's Post Processing LUT unless the Scene turns Color Grading off", () => {
+    const lut = (colorGrading: Record<string, unknown>) =>
+      collectAssetDependencyMetadata("Scene", { settings: { effectsOverrides: { colorGrading } }, actors: [] });
+    expect(lut({ lutTextureGuid: "warm" }).requiredDependencies).toEqual(["warm"]);
+    expect(lut({ enabled: true, lutTextureGuid: "warm" }).requiredDependencies).toEqual(["warm"]);
+    const off = lut({ enabled: false, lutTextureGuid: "warm" });
+    expect(off.dependencies).toEqual(["warm"]);
+    expect(off.requiredDependencies).toEqual([]);
+  });
+
   it("keeps saved scene-owned material textures in the required source closure without loading stale overrides", async () => {
     const bytes = await encodeAssetDocument({ type: "Scene", guid: "scene", name: "Scene", version: 1, payload: {
       actors: [{ classId: "engine:Actor", suppressedComponentSourceIds: ["removed-component"], components: [

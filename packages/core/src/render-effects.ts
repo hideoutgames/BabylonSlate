@@ -320,6 +320,68 @@ export function normalizeRenderEffectsSettings(
   };
 }
 
+/**
+ * A Scene's sparse overrides of the project effects: each present leaf
+ * replaces the project value, and every absent one follows the project.
+ */
+export type RenderEffectsOverrides = {
+  [K in Exclude<keyof RenderEffectsSettings, "colorPipeline">]?: RenderEffectsSettings[K] extends string | number | boolean
+    ? RenderEffectsSettings[K]
+    : Partial<RenderEffectsSettings[K]>;
+} & { colorPipeline?: { mode?: ColorPipelineMode } };
+
+function isGroup(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Whether `authored` is a value the project block keeps for a field whose default is `fallback`. */
+function acceptsLeaf(authored: unknown, fallback: unknown, normalized: unknown): boolean {
+  if (Array.isArray(fallback)) {
+    return Array.isArray(authored) && authored.length === fallback.length &&
+      authored.every((entry) => typeof entry === "number" && Number.isFinite(entry));
+  }
+  // The LUT Texture: a Texture, or null for none.
+  if (fallback === null) return authored === null || (typeof authored === "string" && normalized !== null);
+  if (typeof fallback === "number") return typeof authored === "number" && Number.isFinite(authored);
+  if (typeof fallback === "boolean") return typeof authored === "boolean";
+  // Enums: only a declared value survives normalization unchanged.
+  return typeof fallback === "string" && authored === normalized;
+}
+
+/** Keeps each authored leaf the project block would accept, normalized (clamped) as it would be there; the rest inherit. */
+export function normalizeRenderEffectsOverrides(value: unknown): RenderEffectsOverrides {
+  const source = object(value);
+  const normalized = normalizeRenderEffectsSettings(source) as unknown as Record<string, unknown>;
+  const defaults = DEFAULT_RENDER_EFFECTS as unknown as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const [key, authored] of Object.entries(source)) {
+    if (!Object.hasOwn(defaults, key)) continue;
+    const fallback = defaults[key];
+    if (!isGroup(fallback)) {
+      if (acceptsLeaf(authored, fallback, normalized[key])) result[key] = normalized[key];
+      continue;
+    }
+    const resolved = normalized[key] as Record<string, unknown>;
+    const group: Record<string, unknown> = {};
+    for (const [leaf, leafValue] of Object.entries(object(authored))) {
+      // The pipeline's stage contract version is not a choice.
+      if (leaf === "version" || !Object.hasOwn(fallback, leaf)) continue;
+      if (acceptsLeaf(leafValue, fallback[leaf], resolved[leaf])) group[leaf] = resolved[leaf];
+    }
+    if (Object.keys(group).length > 0) result[key] = group;
+  }
+  return result as RenderEffectsOverrides;
+}
+
+/** The project effects with a Scene's (or a session's) overrides applied leaf by leaf. */
+export function resolveRenderEffectsSettings(project: unknown, overrides?: unknown): RenderEffectsSettings {
+  const resolved = normalizeRenderEffectsSettings(project) as unknown as Record<string, unknown>;
+  for (const [key, value] of Object.entries(normalizeRenderEffectsOverrides(overrides))) {
+    resolved[key] = isGroup(value) ? { ...(resolved[key] as Record<string, unknown>), ...value } : value;
+  }
+  return resolved as unknown as RenderEffectsSettings;
+}
+
 /** Project assets the effects block references; exports and Play must load them. */
 export function renderEffectsAssetGuids(effects: RenderEffectsSettings | undefined): string[] {
   const guid = effects?.colorGrading.enabled ? effects.colorGrading.lutTextureGuid : null;

@@ -1,6 +1,6 @@
 # Post-Processing
 
-Post-processing changes the rendered image after the scene is drawn: colour, glow, anti-aliasing, ambient occlusion and reflections. Project-wide effects live in Project Settings; each scene can add its own passes built from post-process Materials.
+Post-processing changes the rendered image after the scene is drawn: colour, glow, anti-aliasing, ambient occlusion and reflections. Project-wide effects live in Project Settings; each scene can override them and add its own passes built from post-process Materials.
 
 ## Project effects
 
@@ -19,6 +19,16 @@ Open **Project Settings > Rendering > Post Processing**. Every effect is off in 
 Ambient occlusion, reflections and volumetric fog draw a depth pass of the scene. [Screen-Space Shadows](shadows.md#screen-space-shadows) use the same pass, or add it when none of these is on.
 
 For **Color Grading**, use a horizontal strip of square slices, such as 256×16 or 1024×32. Open the Texture and set **Usage** to **Color Grading LUT** so it stays uncompressed.
+
+## Scene overrides
+
+A scene can change any project effect for itself, such as turning off Volumetric Fog indoors or raising Exposure at night.
+
+1. Open the scene and clear the selection so the **Inspector** shows the scene's settings.
+2. Expand **Post Processing**. Each field shows the project value it follows.
+3. Choose **Override** on a field to change it for this scene only. **Reset To Project** follows the project again.
+
+Fields you do not override keep following Project Settings, so later project changes still reach the scene. A scene that turns an effect on or off hides or shows that effect's settings, whatever the project says. Scripts that change effects for the session apply on top of the scene's overrides.
 
 ## Color Pipeline
 
@@ -69,7 +79,7 @@ Add your own full-screen effects to a scene with post-process Materials.
 
 1. Create a [Material](../assets/material.md) and set its **Domain** to **Post Process**. Read the rendered image with [Scene Color](../scripting/material/scene-color.md), [Scene Depth](../scripting/material/scene-depth.md) or [Scene Normal](../scripting/material/scene-normal.md), and finish at [Post Process Output](../scripting/material/post-process-output.md).
 2. Open the scene and clear the selection so the **Inspector** shows the scene's settings.
-3. Under **Post Processing**, choose **Add Pass** and pick the Material or a Material Instance of it.
+3. Under **Post-Process Passes**, choose **Add Pass** and pick the Material or a Material Instance of it.
 4. Use **Enabled** to switch a pass off, and **Scalable** to let quality settings lower its resolution.
 
 Passes run from top to bottom. If a pass needs a buffer the device cannot provide, only that pass is skipped.
