@@ -1128,6 +1128,14 @@ describe("Tilemap editor views", () => {
     expect(screen.getByTestId("tilemap-paint-hover-cell").getAttribute("aria-label")).toBe("Cell 3, 2");
     hover(7 * 32 + 16, 240);
     expect(screen.queryByTestId("tilemap-paint-hover-cell")).toBeNull();
+    // A painting finger reads out its cell until it lifts.
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    const touch = (type: "pointerdown" | "pointerup") =>
+      act(() => dispatchPointerEvent(canvas, type, { pointerId: 2, pointerType: "touch", clientX: 32 + 16, clientY: 240 }));
+    touch("pointerdown");
+    expect(screen.getByTestId("tilemap-paint-hover-cell").textContent).toBe("1, 0");
+    touch("pointerup");
+    expect(screen.queryByTestId("tilemap-paint-hover-cell")).toBeNull();
   });
 
   it("paints the layer picked in the Inspector, and says when that layer is hidden", async () => {

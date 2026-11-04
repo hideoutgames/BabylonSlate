@@ -828,25 +828,28 @@ const PaletteGroup = memo(function PaletteGroup({
   const touch = useTouchUi();
   const gridRef = useRef<HTMLDivElement>(null);
   const [layout, setLayout] = useState({ width: 0, top: 0 });
-  useLayoutEffect(() => {
-    const grid = gridRef.current;
-    if (!grid) return;
-    const measure = () => {
-      const next = { width: grid.clientWidth, top: grid.offsetTop };
-      setLayout((current) => (current.width === next.width && current.top === next.top ? current : next));
-    };
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(grid);
-    return () => observer.disconnect();
-  });
   const nameMatches = !needle || name.toLowerCase().includes(needle);
   const tiles = useMemo(
     () => (nameMatches ? tileset.tiles : tileset.tiles.filter((tile) => `tile ${tile.id}`.includes(needle))),
     [nameMatches, needle, tileset.tiles],
   );
-  if (tiles.length === 0) return null;
+  const shown = tiles.length > 0;
+  const measure = useCallback(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const next = { width: grid.clientWidth, top: grid.offsetTop };
+    setLayout((current) => (current.width === next.width && current.top === next.top ? current : next));
+  }, []);
+  // The grid's top moves with what is above it (autotiles, earlier groups), so it is read after every render.
+  useLayoutEffect(measure);
+  useLayoutEffect(() => {
+    const grid = gridRef.current;
+    if (!shown || !grid || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [measure, shown]);
+  if (!shown) return null;
   // Columns as `auto-fill` would lay them out, so rows have a known height to window by.
   const minCell = touch ? 44 : 36;
   const inner = Math.max(0, layout.width - 2 * PALETTE_PADDING);
@@ -1512,6 +1515,8 @@ export function TilemapPaint({
             const pointerId = pointerIdOf(event);
             if (viewFrameRef.current !== null) flushView();
             pointersRef.current.delete(pointerId);
+            // A finger reads out its cell only while it is down.
+            if (event.pointerType !== "mouse" && pointersRef.current.size === 0) hoverStore.set(null, tilemap);
             if (panDragRef.current?.pointerId === pointerId) {
               panDragRef.current = null;
             }
@@ -1535,6 +1540,7 @@ export function TilemapPaint({
             const pointerId = pointerIdOf(event);
             if (viewFrameRef.current !== null) flushView();
             pointersRef.current.delete(pointerId);
+            if (event.pointerType !== "mouse" && pointersRef.current.size === 0) hoverStore.set(null, tilemap);
             if (panDragRef.current?.pointerId === pointerId) {
               panDragRef.current = null;
             }
