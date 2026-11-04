@@ -31,11 +31,13 @@ async function settings(canvas: Locator, host: Host, value: RenderShadingSetting
     return [state?.surfaceMode, state?.requestedShadows.enabled];
   }, { timeout: 30_000 }).toEqual([value.mode, value.shadows!.enabled]);
   const frame = await presented(canvas, host);
-  await expect.poll(() => presented(canvas, host), { timeout: 30_000 }).toBeGreaterThan(frame + 2);
+  // Each frame waits for the GPU to finish the frames before it (frames-in-flight), and software GL compiles the new
+  // pipelines at their first draw: on a slow runner the frames after a mode change took longer than 30 s.
+  await expect.poll(() => presented(canvas, host), { timeout: 90_000 }).toBeGreaterThan(frame + 2);
 }
 
 test("Basic 3D mannequin preserves real materials, contacts and animation in Play and packed player", async ({ page }, testInfo) => {
-  test.setTimeout(240_000);
+  test.setTimeout(300_000);
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => {
@@ -81,20 +83,15 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
     }
     const canvas = host === "play" ? page.getByTestId("play-canvas") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas");
     await expect.poll(async () => (await diagnostics(canvas, host))?.models.filter(mesh => geometry.some(part => part.name === mesh.name)).length, { timeout: 30_000 }).toBe(6);
-    const run = async (...commands: string[]) => {
+    const dilation = async (value: 0 | 1) => {
       if (host === "play") await page.getByTestId("play-console-open").click();
       else await page.getByRole("button", { name: "Console", exact: true }).click();
-      for (const command of commands) {
-        await page.getByTestId("debug-console-input").fill(command);
-        await page.getByTestId("debug-console-submit").click();
-        await expect(page.getByTestId("debug-console-transcript")).toContainText(command);
-      }
+      await page.getByTestId("debug-console-input").fill(`slomo ${value}`);
+      await page.getByTestId("debug-console-submit").click();
+      await expect(page.getByTestId("debug-console-transcript")).toContainText(`slomo ${value}`);
       await page.getByTestId("debug-console").getByRole("button", { name: "Close", exact: true }).click();
     };
-    // Captures need frames the host presented, not GPU pacing: under the default frames-in-flight limit each frame
-    // after a settings change waits for the ones before it to finish, which software GL holds for tens of seconds on
-    // a slow runner while it compiles the new pipelines at first draw.
-    await run("framesinflight off", "slomo 0");
+    await dilation(0);
     const initial = (await diagnostics(canvas, host))!;
     for (const mode of ["pbr", "cel"] as const) {
       const render: RenderShadingSettings = { gpuBackend: "webgl2", mode, shadows: initial.requestedShadows, quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }) };
@@ -139,7 +136,7 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
       expect(posedMannequin(geometry, frozen)).toEqual(pose);
     }
     const before = posedMannequin(geometry, (await diagnostics(canvas, host))!);
-    await run("slomo 1");
+    await dilation(1);
     await expect.poll(async () => posedMannequin(geometry, (await diagnostics(canvas, host))!), { timeout: 15_000 }).not.toEqual(before);
     await page.getByTestId(host === "play" ? "play-overlay-close" : "preview-build-close").click();
     // Closing a session on software GL holds the page's thread with synchronous work: failed attempts saw the overlay still mounted after 5 s with only two polls answered.
