@@ -104,10 +104,25 @@ Set Key, Previous Key and Next Key act in the [Timeline](../scenes/timeline.md#k
 | Import Assets | <kbd>Alt</kbd>+<kbd>I</kbd> |
 | Show References | <kbd>Alt</kbd>+<kbd>R</kbd> |
 
+### Tilemap Paint
+
+| Command | Shortcut |
+| --- | --- |
+| Move Tool | <kbd>M</kbd> |
+| Select Tool | <kbd>S</kbd> |
+| Brush Tool | <kbd>B</kbd> |
+| Eraser Tool | <kbd>E</kbd> |
+| Rect Tool | <kbd>R</kbd> |
+| Bucket Tool | <kbd>G</kbd> |
+| Stamp Tool | <kbd>T</kbd> |
+| Picker Tool | <kbd>I</kbd> |
+
+These pick a tool in a Tilemap's [Paint](../assets/tilemap.md#editor) window while it has keyboard focus: tap or click the map first. They never act anywhere else, so <kbd>G</kbd> still toggles the snap grid in a Scene viewport and <kbd>S</kbd> still moves its camera.
+
 ## When shortcuts work
 
 - Shortcuts are off while Play runs and while a dialog is open.
-- In a text field, only Save All, Search Project, Engine Settings and Search Panel work; other keys type as usual.
+- In a text field, only Save All, Search Project, Engine Settings and Search Panel work; other keys, the Tilemap Paint tool keys included, type as usual.
 - Holding a key repeats only Undo and Redo, and the arrow keys in Tilemap **Paint**.
 - Commands whose button is hidden or unavailable do nothing.
 - In a graph, Copy, Paste, Duplicate and Delete act on the graph you last tapped or focused, and your shortcuts for them apply. Delete removes the selected nodes and wires. Duplicate copies and pastes the selected nodes in one step without changing what Copy last stored, and keeps the browser's bookmark shortcut from opening. Pasted events stay unique: custom events are renamed and an event the graph already has is left out ([Copy and duplicate events](../scripting/events.md#copy-and-duplicate-events)). Protected nodes stay, and a graph that hides **Copy** and **Paste** in its toolbar has no shortcut for them. Keys typed in a text field, a menu or a dialog work as usual.
@@ -118,6 +133,6 @@ Set Key, Previous Key and Next Key act in the [Timeline](../scenes/timeline.md#k
 2. Select the shortcut next to a command, then press the new keys. For a two-step shortcut, press the second keys straight after the first. <kbd>Esc</kbd> cancels.
 3. Use **Unassign** to remove a shortcut or **Reset to Default** to restore one. **Reset All** restores every shortcut.
 
-If a shortcut is already in use, or is the first step of another command's two-step shortcut, the row warns "Also used by" and names the other command. Viewport commands also warn when you choose W, A, S or D. Searching Engine Settings finds commands by name.
+If a shortcut is already in use where the command works, or is the first step of another command's two-step shortcut, the row warns "Also used by" and names the other command. Tilemap Paint commands share keys with Viewport, Timeline and Content Browser commands without a warning, since those never work in a Tilemap. Viewport commands also warn when you choose W, A, S or D. Searching Engine Settings finds commands by name.
 
 Shortcuts are stored with Engine Settings on this device, not in the project.
