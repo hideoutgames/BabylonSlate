@@ -298,6 +298,10 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
     consoleProblems.push(`${message.type()}: ${message.text().slice(0, 500)}`);
     if (consoleProblems.length > 60) consoleProblems.shift();
   });
+  // Babylon fetches a shader it does not find in its shader store: the shader name is in the URL.
+  page.on("request", (request) => {
+    if (/\.fx(?:$|\?)/.test(request.url())) consoleProblems.push(`shader fetched: ${request.url()}`);
+  });
   await recordLongTasks(page);
   await recordProgramLinks(page);
   await seedEngineSettings(page, (settings) => {
