@@ -150,16 +150,24 @@ export async function readEnvironmentBaseRadiance(
   let target: RenderTargetWrapper | undefined;
   const reads: Promise<ArrayBufferView | null>[] = [];
   try {
-    await new Promise<void>((resolve, reject) =>
-      effect.updateEffect(
-        null,
-        null,
-        null,
-        undefined,
-        () => resolve(),
-        (_effect, error) => reject(new Error(error)),
-      ),
-    );
+    effect.updateEffect();
+    // Waits on the Effect itself: Babylon calls the `onCompiled` and `onError` a request passes only for the Effect it
+    // creates, never for one its cache returns (an Effect the Play keep holds, or one a concurrent read compiled).
+    const compiled = effect.effect;
+    await new Promise<void>((resolve, reject) => {
+      const failed = () => compiled.getCompilationError() && compiled.allFallbacksProcessed();
+      if (failed()) {
+        reject(new Error(compiled.getCompilationError()));
+        return;
+      }
+      const error = compiled.onErrorObservable.add(() => {
+        if (failed()) reject(new Error(compiled.getCompilationError()));
+      });
+      compiled.executeWhenCompiled(() => {
+        compiled.onErrorObservable.remove(error);
+        resolve();
+      });
+    });
     if (!current()) return null;
     withDrawingState(engine, () => {
       renderer = new EffectRenderer(engine);

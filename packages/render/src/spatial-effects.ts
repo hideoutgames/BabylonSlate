@@ -8,8 +8,9 @@ import type { Scene } from "@babylonjs/core/scene";
 import { ThinSSRPostProcess } from "@babylonjs/core/PostProcesses/thinSSRPostProcess";
 import { ThinSSRBlurPostProcess } from "@babylonjs/core/PostProcesses/thinSSRBlurPostProcess";
 import { ThinSSRBlurCombinerPostProcess } from "@babylonjs/core/PostProcesses/thinSSRBlurCombinerPostProcess";
-import { postprocessVertexShader } from "@babylonjs/core/Shaders/postprocess.vertex";
-import { postprocessVertexShaderWGSL } from "@babylonjs/core/ShadersWGSL/postprocess.vertex";
+// The stages' vertex shader, from the shader store.
+import "@babylonjs/core/Shaders/postprocess.vertex";
+import "@babylonjs/core/ShadersWGSL/postprocess.vertex";
 import type { SceneEffectsPlan } from "./scene-effects";
 import {
   sceneRenderingSettings,
@@ -199,9 +200,11 @@ function storedFragment(fragment: string, wgsl: boolean): string {
 }
 
 /**
- * A stage's Effect from its inline fragment source. Babylon builds an inline source's Effect with a constructor that
- * takes no uniform buffers, so a fragment that reads one (the light block's) is drawn from the shader store instead,
- * where stages of the same source share one Effect (Babylon reports its compile failure to the first of them only).
+ * A stage's Effect, drawn from the shader store under its fragment source's key (`storedFragment`). Babylon builds an
+ * inline source's Effect with its constructor, outside the Engine's Effect cache and without uniform buffers, so each
+ * graph build linked every stage again and two stages of the same code (the occlusion blurs) linked twice; from the
+ * store, stages of one source and defines share one cached Effect (Babylon reports its compile failure to the first of
+ * them only).
  */
 export function customWrapper(
   scene: Scene,
@@ -213,16 +216,15 @@ export function customWrapper(
   uniformBuffers: string[] = [],
 ): EffectWrapper {
   const wgsl = scene.getEngine().isWebGPU;
-  const stored = uniformBuffers.length > 0;
   return new EffectWrapper({
     name,
     engine: scene.getEngine(),
     useAsPostProcess: true,
     shaderLanguage: wgsl ? 1 : 0,
-    useShaderStore: stored,
-    // The store's own post-process vertex shader, or its source.
-    vertexShader: stored ? undefined : (wgsl ? postprocessVertexShaderWGSL : postprocessVertexShader).shader,
-    fragmentShader: stored ? storedFragment(fragment, wgsl) : fragment,
+    useShaderStore: true,
+    // The store's own post-process vertex shader.
+    vertexShader: undefined,
+    fragmentShader: storedFragment(fragment, wgsl),
     uniforms,
     samplers,
     uniformBuffers,
