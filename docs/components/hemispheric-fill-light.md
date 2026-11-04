@@ -19,6 +19,7 @@ Select an actor, then choose **Add Component > Rendering > Hemispheric Fill Ligh
 
 - World scenes only.
 - Fill light lifts areas that direct lights do not reach. For lighting from a sky image, use [environment lighting](../graphics/lighting.md#environment-lighting).
+- It lights without highlights in PBR and CEL. Glossy and metallic surfaces reflect the sky through [environment lighting](../graphics/lighting.md#environment-lighting) instead.
 - One fill light lights a scene at a time: with several on, the others add nothing. The fill does not count toward the local light budget.
 - Fill lights do not light volumetric fog.
 

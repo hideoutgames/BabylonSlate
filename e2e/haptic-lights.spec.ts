@@ -193,6 +193,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     for (const pose of ["fill only", "environment only", "additive", "blend", "wide highlights", "no highlights", "rect light", "all lights"])
       expect(cel.get(pose), pose).not.toEqual(cel.get("sun and fill"));
     expect(cel.get("rotated environment")).not.toEqual(cel.get("environment only"));
+    // The fill is a sky with no point to reflect: it gives no highlight anywhere, so turning highlights off changes
+    // nothing under it (a highlight from its direction sat under the camera and followed it).
+    expect(cel.get("fill only"), "fill only").toEqual(cel.get("fill only, no highlights"));
     // One CEL program per Material: CEL ignores the cube's format and box.
     expect(result.celEffects).toBe(3);
     expect(result.celSteps).toEqual(LIGHT_STEPS);

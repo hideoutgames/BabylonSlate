@@ -102,7 +102,7 @@ When **Render Mode** is **CEL**, **Project Settings > Rendering > CEL Shading** 
 | **Shadow Bands** | 3 | Number of light and shade levels, 2 to 8. |
 | **Shadow Threshold** | 0.5 | Higher values extend the shaded region. |
 | **Shadow Strength** | 0.65 | Darkness of the deepest shade and cast shadows. |
-| **Specular**, **Specular Strength**, **Specular Size** | On, 0.2, 0.2 | Stylised highlights. Strength 0 also turns them off. |
+| **Specular**, **Specular Strength**, **Specular Size** | On, 0.2, 0.2 | Stylised highlights from point, spot, directional and area lights; a Hemispheric Fill Light gives none. Strength 0 also turns them off. |
 | **Light Color Influence** | 1 | How much light colour tints surfaces. 0 uses neutral light. |
 | **Light Mixing** | Strongest Light | **Strongest Light** keeps the dominant light's colour, **Additive** sums lights, **Blend** mixes colours at the strongest light's brightness. |
 | **Outlines**, **Outline Color**, **Outline Width** | On, near black, 1 px | Silhouette outlines on eligible geometry. |
