@@ -464,13 +464,17 @@ export function DataTreeValuesPanel(_props: IDockviewPanelProps) {
   const migration = entry ? state.entryInfo.get(entry.id)?.migration : null;
   const issues = entry ? state.entryInfo.get(entry.id)?.issues ?? [] : [];
   const [review, setReview] = useState(false);
+  const [discard, setDiscard] = useState(false);
   const [definitionPicker, setDefinitionPicker] = useState(false);
   const fieldsRef = useRef<HTMLDivElement>(null);
   const recursive = issues.some((issue) => issue.code === "recursive-schema");
   const defaults = useMemo(() => definition && !recursive ? createDataEntryForDefinition(definition.guid, definition.fields, catalog.schemas).values : {}, [definition, catalog.schemas, recursive]);
   const editable = !readOnly && !requiresApply(migration) && !migrationBlocked(migration);
   const changed = Boolean(migration?.changes.some((change) => change.kind !== "removed"));
-  useEffect(() => { setReview(false); }, [selectedEntryId]);
+  // Stored values of fields the Definition no longer has: kept for recovery until discarded.
+  const retained = migration?.changes.filter((change) => change.kind === "removed").map((change) => change.path) ?? [];
+  const discardRetained = () => { void actions.run(() => state.applyDefinition(entry!.id, { discardRetained: true })); setReview(false); setDiscard(false); };
+  useEffect(() => { setReview(false); setDiscard(false); }, [selectedEntryId]);
   useEffect(() => {
     if (!focusRequest || focusRequest.entryId !== selectedEntryId) return;
     const fields = Array.from(fieldsRef.current?.querySelectorAll<HTMLElement>("[data-data-field]") ?? []);
@@ -499,9 +503,10 @@ export function DataTreeValuesPanel(_props: IDockviewPanelProps) {
         </div>
         <p className="text-xs text-muted-foreground">{definitionSource(state, entry)}</p>
       </div>
-      {actions.error || changed || recursive ? <div className="flex flex-col gap-2 px-2 pb-2">
+      {actions.error || changed || retained.length || recursive ? <div className="flex flex-col gap-2 px-2 pb-2">
         <OperationError message={actions.error} />
         {changed ? <Alert><AlertTitle>Definition Changed</AlertTitle><AlertDescription>{requiresApply(migration) ? "Review the field changes before editing this entry." : "Edit or reset changed values to match the Definition."}<Button size="sm" variant="outline" className={TOUCH_ACTION} disabled={readOnly} onClick={() => setReview(true)}>Review Changes</Button></AlertDescription></Alert> : null}
+        {retained.length ? <Alert data-testid="data-retained-values"><AlertTitle>Retained Values</AlertTitle><AlertDescription>{retained.length === 1 ? "1 stored value is" : `${retained.length} stored values are`} no longer in the Definition and kept for recovery.<Button size="sm" variant="outline" className={TOUCH_ACTION} disabled={readOnly || actions.busy} onClick={() => setDiscard(true)}>Discard Retained Values</Button></AlertDescription></Alert> : null}
         {recursive ? <Alert variant="destructive"><AlertTitle>Recursive Definition</AlertTitle><AlertDescription>Remove the circular record reference before editing these values.</AlertDescription></Alert> : null}
       </div> : null}
       <PropertySectionTitle aside={issues.length ? <span className="font-normal text-destructive">{issues.length} {issues.length === 1 ? "Issue" : "Issues"}</span> : fieldCount ? <span className="font-normal tabular-nums text-muted-foreground">{fieldCount}</span> : null}>Values</PropertySectionTitle>
@@ -511,7 +516,11 @@ export function DataTreeValuesPanel(_props: IDockviewPanelProps) {
     <AlertDialog open={review} onOpenChange={setReview}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Update Entry Fields</AlertDialogTitle><AlertDialogDescription>Apply the current Data Definition to this entry. Removed fields remain stored for recovery. Values belong to this entry; changing them does not change its children. Undo restores the previous values.</AlertDialogDescription></AlertDialogHeader>
       <ul className="max-h-64 overflow-y-auto rounded-md border border-border bg-muted/30 p-2 text-sm">{migration?.changes.map((change, position) => <li key={position} className="py-1">{humanizePropertyLabel(change.kind)}: {change.previousPath ? `${change.previousPath} → ` : ""}{change.path}</li>)}</ul>
       {migrationBlocked(migration) ? <Alert variant="destructive"><AlertTitle>Resolve Definition Conflicts</AlertTitle><AlertDescription>{migration?.issues.filter((issue) => issue.severity === "error").map((issue) => issue.message).join(" ")}</AlertDescription></Alert> : null}
-      <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction disabled={readOnly || migrationBlocked(migration)} onClick={() => { void actions.run(() => state.applyDefinition(entry.id)); setReview(false); }}>Apply Changes</AlertDialogAction></AlertDialogFooter>
+      <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel>{retained.length ? <AlertDialogAction variant="outline" disabled={readOnly} onClick={() => { setReview(false); setDiscard(true); }}>Discard Retained Values</AlertDialogAction> : null}<AlertDialogAction disabled={readOnly || migrationBlocked(migration)} onClick={() => { void actions.run(() => state.applyDefinition(entry.id)); setReview(false); }}>Apply Changes</AlertDialogAction></AlertDialogFooter>
+    </AlertDialogContent></AlertDialog>
+    <AlertDialog open={discard} onOpenChange={setDiscard}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Discard Retained Values</AlertDialogTitle><AlertDialogDescription>Remove the stored values of fields that are no longer in the Data Definition, and apply its field changes to this entry. Undo restores them.</AlertDialogDescription></AlertDialogHeader>
+      <ul className="max-h-64 overflow-y-auto rounded-md border border-border bg-muted/30 p-2 text-sm">{retained.map((path) => <li key={path} className="py-1">{path}</li>)}</ul>
+      <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={readOnly} onClick={discardRetained}>Discard</AlertDialogAction></AlertDialogFooter>
     </AlertDialogContent></AlertDialog>
     {actions.dialogs}
   </PanelFrame>;
