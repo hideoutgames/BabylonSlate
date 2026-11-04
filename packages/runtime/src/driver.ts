@@ -808,13 +808,13 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     return this.updateScriptSources(scripts, false);
   }
 
-  replaceScriptSources(scripts: readonly CompiledScript[]): Promise<void> {
-    return this.updateScriptSources(scripts, true);
+  replaceScriptSources(scripts: readonly CompiledScript[], retain?: readonly string[]): Promise<void> {
+    return this.updateScriptSources(scripts, true, retain);
   }
 
-  private async updateScriptSources(scripts: readonly CompiledScript[], replace: boolean): Promise<void> {
+  private async updateScriptSources(scripts: readonly CompiledScript[], replace: boolean, retain?: readonly string[]): Promise<void> {
     try {
-      await this.scriptRuntime.updateSources(scripts, replace);
+      await this.scriptRuntime.updateSources(scripts, replace, retain);
     } finally {
       // Which classes handle Hit and Overlap events, and so need contact reporting, may have changed.
       this.physics.scriptsChanged();

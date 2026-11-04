@@ -326,7 +326,7 @@ function handleControl(msg: ControlMessage): void {
     }
     case "loadScripts": {
       const rt = ensureRuntime();
-      void boot.queueScripts(rt, msg.scripts, msg.spawn ?? [], msg.replace).then(() => {
+      void boot.queueScripts(rt, msg.scripts, msg.spawn ?? [], msg.replace, msg.retain).then(() => {
         if (msg.requestId !== undefined) onCommand({ type: "assetSourcesReady", requestId: msg.requestId,
           success: runtime === rt, ...(runtime !== rt ? { error: "Runtime changed during script preparation." } : {}) });
       }, (error: unknown) => {

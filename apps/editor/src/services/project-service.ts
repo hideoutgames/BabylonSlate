@@ -51,6 +51,7 @@ import {
   registryAssetRepresentation,
   type AssetLoadingService,
   type AssetLoadScope,
+  type AssetLoadScopeOptions,
   type AssetLoadPriority,
   type RegistryLoadedAsset,
   AccountedPayloadLoader,
@@ -959,8 +960,8 @@ export class ProjectService {
     return this.sourceLoading;
   }
 
-  createAssetLoadScope(owner: string): AssetLoadScope {
-    return this.assetLoadingService.createScope(owner);
+  createAssetLoadScope(owner: string, options?: AssetLoadScopeOptions): AssetLoadScope {
+    return this.assetLoadingService.createScope(owner, options);
   }
 
   /**

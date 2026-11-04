@@ -827,11 +827,15 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         if (openScene?.content) {
           preloadPrewarmedGameWorkerPhysics(playPhysicsFromOpenDocuments([openScene], openScene.id).physicsWorld, editorHavokWasmUrl());
         }
+        const { createAssetLoadScope } = playRequestInputsRef.current.documents;
         const sourceHost: PlayAssetSourceHost = {
           registry: assetRegistry,
           documentOverrides: playDocumentOverrides(assetRegistry, sourceDocuments),
           project: projectDocument,
-          createScope: playRequestInputsRef.current.documents.createAssetLoadScope,
+          // What a session released stays cached by revision, so the next Play reads only what changed.
+          createScope: (owner) => createAssetLoadScope(owner, { keep: true }),
+          // Each session checks storage once per asset; its later slot acquisitions trust those checks.
+          verifiedRevisions: new Map(),
           // Editor Play and Simulation compile with the breakpoint check and the graph debugger's probes,
           // each a null check per node while nothing is set or followed. Preview Build and exports compile neither.
           traceExecution: true,

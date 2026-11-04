@@ -111,17 +111,19 @@ export class ScriptRuntime {
 
   /**
    * Load (`replace` false) or replace script sources, serialized after any
-   * earlier update. A replacement keeps the sources of classes still live.
+   * earlier update. A replacement keeps the sources of classes still live and
+   * those `retain` names (by `compiledScriptKey`), so a host sends only what changed.
    */
-  updateSources(scripts: readonly CompiledScript[], replace: boolean): Promise<void> {
+  updateSources(scripts: readonly CompiledScript[], replace: boolean, retain: readonly string[] = []): Promise<void> {
     const work = this.scriptSourceWork.catch(() => {}).then(async () => {
       if (this.host.stopped()) throw new Error("The runtime stopped during script preparation.");
       const world = this.host.world();
       const requested = new Map(scripts.map((script) => [compiledScriptKey(script), script]));
+      const retained = new Set(retain);
       const liveClasses = new Set(this.liveScriptOwners()
         .flatMap((owner) => world.classRegistry.ancestry(owner.classId)));
-      for (const script of this.scriptSources.values())
-        if ((!replace || liveClasses.has(script.classId)) && !requested.has(compiledScriptKey(script))) requested.set(compiledScriptKey(script), script);
+      for (const [key, script] of this.scriptSources)
+        if ((!replace || retained.has(key) || liveClasses.has(script.classId)) && !requested.has(key)) requested.set(key, script);
       const ordered = parentFirstScriptOrder([...requested.values()], (classId) => world.classRegistry.has(classId));
       await this.host.scriptHost().replaceScripts(ordered);
       if (this.host.stopped()) throw new Error("The runtime stopped during script preparation.");

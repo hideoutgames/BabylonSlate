@@ -39,6 +39,12 @@ export interface AssetLoadingBudgets {
   temporaryBytes: number;
   concurrency: number;
   retentionMs: number;
+  /**
+   * Bytes (source plus decoded) that entries released by keeping scopes may hold
+   * past `retentionMs`. Kept entries are unowned: a load that needs room evicts
+   * them like any other, least recently released first, and so does going over this cap.
+   */
+  keptBytes: number;
 }
 
 export interface AssetLoadingServiceOptions {
@@ -48,8 +54,8 @@ export interface AssetLoadingServiceOptions {
   /**
    * The catalog identity the host currently holds, without refreshing storage.
    * When provided, consistency checks after a request's initial resolution use
-   * it; the initial resolution and each representation's own load still read
-   * storage, so a warm entry is never returned for a changed source.
+   * it; the initial resolution still reads storage (unless the caller passes
+   * `refresh: false`), so a warm entry is never returned for a changed source.
    */
   current?: (id: string) => Pick<AssetCatalogRecord, "revision" | "rootId"> | undefined;
   representation: (asset: AssetCatalogRecord) => AssetRepresentation;
@@ -64,10 +70,18 @@ export interface AssetAcquireOptions {
   dependencies?: "required" | "none";
   /**
    * `false` resolves from the host's current catalog snapshot. Only a caller
-   * that has just refreshed these catalogs, and validates storage again before
+   * that has just refreshed these catalogs, and checks the catalog again before
    * publishing what it prepared, may skip the refresh.
    */
   refresh?: boolean;
+}
+
+export interface AssetLoadScopeOptions {
+  /**
+   * Entries this scope releases stay cached past `retentionMs` (within
+   * `keptBytes`), so a later consumer of the same revisions reads nothing.
+   */
+  keep?: boolean;
 }
 
 export interface AssetPreloadOptions extends AssetAcquireOptions {
@@ -126,6 +140,8 @@ export interface AssetLoadingSnapshot {
     owners: string[];
     sourceBytes: number;
     decodedBytes: number;
+    /** Released by a keeping scope: exempt from the retention timer. */
+    kept: boolean;
     error?: string;
   }>;
 }
@@ -134,6 +150,7 @@ interface Acquisition {
   owner: string;
   entries: Set<CacheEntry>;
   controller: AbortController;
+  keep: boolean;
 }
 
 interface CacheEntry {
@@ -156,6 +173,13 @@ interface CacheEntry {
   reject?: (error: unknown) => void;
   /** Cache keys only: this readiness record must not retain dependency values. */
   preparedDependencies?: string[];
+  /** A keeping scope released it: the retention timer leaves it until a load needs room or `keptBytes` overflows. */
+  kept?: boolean;
+}
+
+/** An unowned, settled entry a keeping scope released, which only pressure or `keptBytes` evicts. */
+function isKeptIdle(entry: CacheEntry): boolean {
+  return entry.kept === true && entry.state === "ready" && entry.owners.size === 0;
 }
 
 interface RootRequestState {
@@ -176,6 +200,7 @@ const DEFAULT_BUDGETS: AssetLoadingBudgets = {
   temporaryBytes: 64 * MiB,
   concurrency: 4,
   retentionMs: 1_000,
+  keptBytes: 96 * MiB,
 };
 
 function byteCount(value: number): number {
@@ -222,9 +247,9 @@ export class AssetLoadingService {
     this.now = options.now ?? Date.now;
   }
 
-  createScope(owner: string): AssetLoadScope {
+  createScope(owner: string, options: AssetLoadScopeOptions = {}): AssetLoadScope {
     if (this.disposed) throw new Error("Asset loading session is disposed");
-    const scope = new AssetLoadScope(this, owner);
+    const scope = new AssetLoadScope(this, owner, options.keep === true);
     this.scopes.add(scope);
     return scope;
   }
@@ -276,16 +301,16 @@ export class AssetLoadingService {
         assetId: entry.asset.id, rootId: entry.asset.rootId, revision: entry.asset.revision,
         representation: entry.representation.key, state: entry.state,
         owners: [...new Set([...entry.owners].map((owner) => owner.owner))],
-        sourceBytes: entry.sourceBytes, decodedBytes: entry.decodedBytes, error: entry.error?.message,
+        sourceBytes: entry.sourceBytes, decodedBytes: entry.decodedBytes, kept: entry.kept === true, error: entry.error?.message,
       })),
     };
   }
 
-  /** Eviction never touches an owned entry, including during replacement loads. */
+  /** Eviction never touches an owned entry, including during replacement loads. `force` also drops kept entries. */
   trim(options: { force?: boolean } = {}): void {
     const before = this.now() - this.budgets.retentionMs;
     for (const entry of [...this.entries.values()].sort((a, b) => a.lastUsed - b.lastUsed)) {
-      if (entry.owners.size === 0 && entry.state !== "loading" && (options.force || entry.lastUsed <= before)) {
+      if (entry.owners.size === 0 && entry.state !== "loading" && (options.force || (!isKeptIdle(entry) && entry.lastUsed <= before))) {
         this.evict(entry);
       }
     }
@@ -374,13 +399,14 @@ export class AssetLoadingService {
     }
   }
 
-  /** @internal */
-  release(ticket: Acquisition): void {
+  /** @internal `trimKept: false` when the caller releases several tickets and trims once after. */
+  release(ticket: Acquisition, trimKept = true): void {
     this.forgetRootRequest(ticket);
     ticket.controller.abort();
     for (const entry of ticket.entries) {
       entry.owners.delete(ticket);
       entry.lastUsed = this.now();
+      if (ticket.keep) entry.kept = true;
       if (entry.owners.size === 0 && entry.state === "loading") {
         entry.controller.abort();
         this.fail(entry, this.error("cancelled", entry.asset.id, ticket.owner, "final consumer released"));
@@ -390,8 +416,20 @@ export class AssetLoadingService {
       }
     }
     ticket.entries.clear();
+    if (ticket.keep && trimKept) this.trimKept();
     this.scheduleTrim();
     this.pump();
+  }
+
+  /** @internal Evict the least recently released kept entries until they fit `keptBytes`. */
+  trimKept(): void {
+    const kept = [...this.entries.values()].filter(isKeptIdle).sort((a, b) => a.lastUsed - b.lastUsed);
+    let bytes = kept.reduce((total, entry) => total + entry.sourceBytes + entry.decodedBytes, 0);
+    for (const entry of kept) {
+      if (bytes <= this.budgets.keptBytes) break;
+      bytes -= entry.sourceBytes + entry.decodedBytes;
+      this.evict(entry);
+    }
   }
 
   /** @internal */
@@ -402,7 +440,7 @@ export class AssetLoadingService {
     this.trimTimer = setTimeout(() => {
       this.trimTimer = undefined;
       this.trim();
-      if (this.rootFailures.size || [...this.entries.values()].some((entry) => !entry.owners.size)) this.scheduleTrim();
+      if (this.rootFailures.size || [...this.entries.values()].some((entry) => !entry.owners.size && !isKeptIdle(entry))) this.scheduleTrim();
     }, Math.max(1, this.budgets.retentionMs));
     // A cache grace period should not keep command-line consumers alive.
     (this.trimTimer as unknown as { unref?: () => void }).unref?.();
@@ -431,8 +469,12 @@ export class AssetLoadingService {
       created.promise = new Promise((resolve, reject) => { created.resolve = resolve; created.reject = reject; });
       // Retention of later dependencies can throw before Promise.all is installed.
       void created.promise.catch(() => undefined);
-      this.entries.set(key, created);
       const sameAsset = this.entriesByAsset.get(asset.id);
+      // A kept entry of a revision this load replaces can never be asked for again.
+      for (const previous of [...sameAsset ?? []]) {
+        if (isKeptIdle(previous) && (previous.asset.revision !== asset.revision || previous.asset.rootId !== asset.rootId)) this.evict(previous);
+      }
+      this.entries.set(key, created);
       if (sameAsset) sameAsset.add(created);
       else this.entriesByAsset.set(asset.id, new Set([created]));
       this.queue.push(created);
@@ -583,14 +625,16 @@ export class AssetLoadingService {
 export class AssetLoadScope {
   private readonly service: AssetLoadingService;
   readonly owner: string;
+  private readonly keep: boolean;
   private readonly acquisitions = new Set<Acquisition>();
   private readonly preloads = new Set<AssetLoadScope>();
   private readonly replacements = new Map<string, { assetId: string; key: string; pending: boolean; ticket?: Acquisition }>();
   private disposed = false;
 
-  constructor(service: AssetLoadingService, owner: string) {
+  constructor(service: AssetLoadingService, owner: string, keep = false) {
     this.service = service;
     this.owner = owner;
+    this.keep = keep;
   }
 
   async acquire<T = unknown>(assetId: string, representation?: AssetRepresentation<T>, options: AssetAcquireOptions = {}): Promise<T> {
@@ -640,7 +684,7 @@ export class AssetLoadScope {
 
   private async acquireTicket<T>(assetId: string, representation: AssetRepresentation<T> | undefined, options: AssetAcquireOptions): Promise<{ value: T; ticket: Acquisition }> {
     if (this.disposed) throw new AssetLoadError("cancelled", assetId, this.owner, "scope is disposed");
-    const ticket: Acquisition = { owner: this.owner, entries: new Set(), controller: new AbortController() };
+    const ticket: Acquisition = { owner: this.owner, entries: new Set(), controller: new AbortController(), keep: this.keep };
     this.acquisitions.add(ticket);
     const abort = () => this.service.release(ticket);
     options.signal?.addEventListener("abort", abort, { once: true });
@@ -661,7 +705,7 @@ export class AssetLoadScope {
     const ids = [...new Set(assetIds)];
     let completed = 0;
     options.onProgress?.({ completed, total: ids.length });
-    const preload = this.service.createScope(`${this.owner} (preload)`);
+    const preload = this.service.createScope(`${this.owner} (preload)`, { keep: this.keep });
     this.preloads.add(preload);
     try {
       await Promise.all(ids.map(async (id) => {
@@ -681,8 +725,9 @@ export class AssetLoadScope {
     for (const preload of this.preloads) preload.dispose();
     this.preloads.clear();
     this.replacements.clear();
-    for (const acquisition of this.acquisitions) this.service.release(acquisition);
+    for (const acquisition of this.acquisitions) this.service.release(acquisition, false);
     this.acquisitions.clear();
+    if (this.keep) this.service.trimKept();
     this.service.releaseScope(this);
   }
 }

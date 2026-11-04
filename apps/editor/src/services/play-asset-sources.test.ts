@@ -7,7 +7,7 @@ import {
   AssetFormatVersionError, AssetRegistry, buildBoxGlbFixture, createDefaultMigrationRegistry, createRegistryAssetLoadingService, encodeHasset,
   FONT_FACETYPE_CHUNK_ID, MATERIAL_PAYLOAD_VERSION, projectContentRoot, type ChunkInput,
 } from "@haptic/assets";
-import { acquirePlayAssetSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets } from "./play-asset-sources";
+import { acquirePlayAssetSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
 import type { OpenDocument } from "./document-service";
 
 const formats = createDefaultMigrationRegistry();
@@ -102,7 +102,9 @@ async function sceneSaveDuringCompilationFixture() {
     },
     compile: vi.fn(async () => ({ bundles: [], diagnostics: [] })),
   };
-  return { storage, registry, loading, scopes, host, writeScene };
+  // An editor save writes the file, then indexes it.
+  const saveScene = async (name: string, reverb: number) => { await writeScene(name, reverb); await registry.reindexPath("assets/scene.hasset"); };
+  return { storage, registry, loading, scopes, host, saveScene };
 }
 
 describe("Play source ownership", () => {
@@ -171,7 +173,7 @@ describe("Play source ownership", () => {
   it("retries a scene snapshot when a background reverb save completes during compilation", async () => {
     const fixture = await sceneSaveDuringCompilationFixture();
     fixture.host.compile.mockImplementationOnce(async () => {
-      await fixture.writeScene("Fresh scene", 2);
+      await fixture.saveScene("Fresh scene", 2);
       return { bundles: [], diagnostics: [] };
     });
     const prepared = await acquirePlayAssetSources(fixture.host, ["scene"], { consumer: "Play Scene", signal: new AbortController().signal });
@@ -215,7 +217,7 @@ describe("Play source ownership", () => {
     let writes = 0;
     fixture.host.compile.mockImplementation(async () => {
       if (mode === "decode failure") throw new SyntaxError("Invalid graph encoding");
-      await fixture.writeScene(`Saved ${++writes}`, writes + 1);
+      await fixture.saveScene(`Saved ${++writes}`, writes + 1);
       if (mode === "cancelled save") controller.abort();
       return { bundles: [], diagnostics: [] };
     });
@@ -743,6 +745,88 @@ describe("Play source ownership", () => {
     expect(controls()).toEqual(emptyPlaySourceControls());
     for (const set of sets) set.release();
     loading.dispose();
+  });
+});
+
+/** A Scene requiring a Class, a Model with one source chunk and a Material whose payload is its document chunk. */
+async function preparedSetFixture() {
+  const storage = new MemoryStorageAdapter();
+  await storage.pickProjectFolder();
+  await storage.mkdir("assets");
+  const write = async (guid: string, type: string, payload: Record<string, unknown>, chunks: ChunkInput[], required: string[] = []) =>
+    storage.writeBinary(`assets/${guid}.hasset`, await encodeHasset({
+      header: { guid, name: guid, type, version: currentFormat(type), engineVersion: "0.0.0", mode: "thin", payload,
+        dependencies: required, requiredDependencies: required, dependencyMetadataVersion: 1, requiredVariableNames: [] },
+      chunks,
+    }));
+  const model = buildBoxGlbFixture();
+  await write("scene", "Scene", { name: "Scene", actors: [] }, [], ["script", "model", "material"]);
+  await write("script", "Class", { nodes: [], edges: [] }, []);
+  await write("model", "Model", {}, [{ id: "source", kind: "model", mime: "model/gltf-binary", data: model }]);
+  const writeMaterial = (name: string) => write("material", "Material", {}, [{
+    id: "document", kind: "document", mime: "application/json", data: new TextEncoder().encode(JSON.stringify({ name, nodes: [], edges: [] })),
+  }]);
+  await writeMaterial("Stone");
+  const registry = new AssetRegistry(storage);
+  await registry.mountRoot(projectContentRoot());
+  // No retention window: whatever is not kept is gone at the next trim.
+  const loading = createRegistryAssetLoadingService(registry, { projectId: "prepared", budgets: { retentionMs: 0 } });
+  const compile = vi.fn(async () => ({
+    bundles: [{ assetGuid: "script", classId: "Script", source: "export function start() {}", anchors: [], entryPoints: [] }], diagnostics: [],
+  }));
+  /** One Play session's host over the project's loader, as editor Play builds it. */
+  const session = (): PlayAssetSourceHost => ({
+    registry, project: createEmptyProject("Prepared"), compile, verifiedRevisions: new Map(),
+    createScope: (owner) => loading.createScope(owner, { keep: true }),
+  });
+  /** Payload chunks read since `from` (a payload loader request id), by path. */
+  const payloadReadsSince = (from: number) => registry.payloadLoader.snapshot().recentRequests
+    .filter((request) => request.id > from).map((request) => request.path);
+  return { storage, registry, loading, model, session, writeMaterial, payloadReadsSince };
+}
+
+describe("Play prepared sets", () => {
+  const options = (consumer: string) => ({ consumer, signal: new AbortController().signal });
+
+  it("serves a slot from what its session prepared without reading storage, and reads an asset saved since", async () => {
+    const fixture = await preparedSetFixture();
+    const host = fixture.session();
+    const startup = await acquirePlayAssetSources(host, ["scene"], options("Play Scene"));
+    const before = fixture.storage.getReadMetrics();
+    const slot = await acquirePlayAssetSources(host, ["script", "model", "material"], options("Spawn Actor"));
+    expect(fixture.storage.getReadMetrics()).toEqual(before);
+    expect(slot.game.modelBytes.get("model")).toEqual(fixture.model);
+    expect(slot.content.materialDocuments.get("material")?.name).toBe("Stone");
+    expect(slot.game.scripts.map((script) => script.classId)).toEqual(["Script"]);
+    // An editor save during the session indexes a new revision: the next slot reads that asset, and only that one.
+    await fixture.writeMaterial("Granite");
+    await fixture.registry.reindexPath("assets/material.hasset");
+    const requests = fixture.registry.payloadLoader.snapshot().requests;
+    const later = await acquirePlayAssetSources(host, ["model", "material"], options("Scene Layer"));
+    expect(later.content.materialDocuments.get("material")?.name).toBe("Granite");
+    expect(fixture.payloadReadsSince(requests)).toEqual(["assets/material.hasset"]);
+    startup.release(); slot.release(); later.release();
+    fixture.loading.dispose();
+  });
+
+  it("keeps a stopped session's sources, so the next Play reads only the asset that changed, at its new revision", async () => {
+    const fixture = await preparedSetFixture();
+    const first = await acquirePlayAssetSources(fixture.session(), ["scene"], options("Play Scene"));
+    expect(first.content.materialDocuments.get("material")?.name).toBe("Stone");
+    first.release();
+    // Stop, then longer than the retention window passes.
+    fixture.loading.trim();
+    // Changed outside the editor, before any rescan: the next session still checks each catalog against storage.
+    await fixture.writeMaterial("Granite");
+    const requests = fixture.registry.payloadLoader.snapshot().requests;
+    const second = await acquirePlayAssetSources(fixture.session(), ["scene"], options("Play Scene"));
+    expect(second.content.materialDocuments.get("material")?.name).toBe("Granite");
+    expect(second.game.modelBytes.get("model")).toEqual(fixture.model);
+    expect(fixture.payloadReadsSince(requests)).toEqual(["assets/material.hasset"]);
+    second.release();
+    fixture.loading.trim({ force: true });
+    expect(fixture.loading.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, entries: [] });
+    fixture.loading.dispose();
   });
 });
 

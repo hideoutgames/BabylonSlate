@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene } from "@haptic/core";
-import type { CommandMessage, ScriptBundleEntry } from "@haptic/bridge";
+import { createDefaultAnimGraph } from "@haptic/anim-graph";
+import { createDefaultBehaviourTree } from "@haptic/behaviour-tree";
+import type { CommandMessage, ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
 import {
+  applyRuntimeSourceControl,
+  compiledScriptKey,
   createInProcessRuntime,
   createPlayBootCoordinator,
   createRuntimeFromLoad,
@@ -77,6 +81,8 @@ describe.each(["worker", "in-process"] as const)(
         captureFrame?: () => Promise<unknown>;
         onGameTimePaused?: (paused: boolean) => void;
         acquireAssetSources?: Parameters<typeof startPlaySession>[0]["acquireAssetSources"];
+        /** The merged source controls the session publishes after each acquisition and release. */
+        getSourceControls?: () => ControlMessage[];
         acquireSceneSources?: (sources: unknown, options: { prepare?: boolean; priority?: string }) => Promise<() => void>;
         onSceneStreamingPaused?: (paused: boolean) => void;
         /** Collects the host's animation-frame callbacks instead of dropping them. */
@@ -204,8 +210,13 @@ describe.each(["worker", "in-process"] as const)(
             // tasks that arrive after the session has started.
             if (control.type === "load")
               runtime = createRuntimeFromLoad(control, (command) => onCommand(command));
-            if (control.type === "loadScripts")
-              boot.queueScripts(runtime, control.scripts, control.spawn ?? []);
+            if (control.type === "loadScripts") {
+              const ready = boot.queueScripts(runtime, control.scripts, control.spawn ?? [], control.replace, control.retain);
+              const { requestId } = control;
+              if (requestId !== undefined) void ready.then(() => onCommand({ type: "assetSourcesReady", requestId, success: true }));
+            }
+            if (["loadModels", "loadSceneContent", "loadAnimGraphs", "loadBehaviourTrees"].includes(control.type))
+              void applyRuntimeSourceControl(runtime, control);
             if (control.type === "play") void boot.play(runtime).catch(failBoot);
             if (control.type === "sceneLoadingPainted")
               runtime.notifySceneLoadingPainted(control.sceneAssetGuid, control.sceneLoadId);
@@ -240,6 +251,7 @@ describe.each(["worker", "in-process"] as const)(
         onSessionEnded: options.onSessionEnded,
         onRuntimeLog: options.onRuntimeLog,
         acquireAssetSources: options.acquireAssetSources,
+        getSourceControls: options.getSourceControls,
         acquireSceneSources: options.sceneSources,
         audioReverbByScene: options.audioReverbByScene,
       });
@@ -454,6 +466,125 @@ describe.each(["worker", "in-process"] as const)(
         await vi.waitFor(() => expect(acquireSceneSources).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ prepare: true, priority: scheduled })));
       },
     );
+
+    it("hands the runtime only the scripts and source content a slot changes", async () => {
+      const entry = (classId: string, source: string, events: string[]): ScriptBundleEntry => ({
+        assetGuid: classId.toLowerCase(), classId, parentClassId: "Actor", anchors: [], source,
+        entryPoints: events.map((event) => ({ name: event, event, isAsync: false })),
+      });
+      // Begin Play asks for one slot; a tick after `more` is set asks for another.
+      const loader = entry("Loader", 'export function onBeginPlay(ctx) { ctx.requestAssetLoad(["held"]); }\n' +
+        'export function onTick(ctx) { if (ctx.getVariable("more") === true) { ctx.setVariable("more", false); ctx.requestAssetLoad(["new"]); } }',
+      ["onBeginPlay", "onTick"]);
+      const extra = entry("Extra", "export function onBeginPlay(ctx) {}", ["onBeginPlay"]);
+      let union = [mainScript, loader];
+      // Both slots' unions hold the same Model, as separately merged controls.
+      const crate = { meshes: [] };
+      const replaced: Array<{ classIds: string[]; retain?: readonly string[] }> = [];
+      const registeredModels: string[][] = [];
+      const ready: string[] = [];
+      const runtime = await play({
+        actors: [createActor("loader", "Loader", { classId: "Loader" })],
+        scripts: [loader],
+        acquireAssetSources: vi.fn(async (guids: string[]) => ({ sources: {} as never, release() {}, required: new Set(guids) })),
+        getSourceControls: () => [
+          { type: "loadScripts", scripts: [...union], spawn: [], replace: true },
+          { type: "loadModels", models: [{ guid: "crate", document: crate }], complexMeshes: [] },
+        ],
+        onRuntime: (created) => {
+          const registerModels = created.registerModelContent.bind(created);
+          vi.spyOn(created, "registerModelContent").mockImplementation((content) => {
+            registeredModels.push([...(content.models instanceof Map ? content.models.keys() : Object.keys(content.models))]);
+            registerModels(content);
+          });
+          const replace = created.replaceScriptSources.bind(created);
+          vi.spyOn(created, "replaceScriptSources").mockImplementation((scripts, retain) => {
+            replaced.push({ classIds: scripts.map((script) => script.classId), retain });
+            return replace(scripts, retain);
+          });
+          const notify = created.notifyAssetPreloadResult.bind(created);
+          vi.spyOn(created, "notifyAssetPreloadResult").mockImplementation((result) => {
+            if (result.success && result.progress === 1) ready.push(result.preloadId);
+            notify(result);
+          });
+        },
+      });
+      await vi.waitFor(() => expect(ready).toHaveLength(1));
+      // The boot loaded exactly this union.
+      expect(replaced).toEqual([]);
+      union = [mainScript, loader, extra];
+      runtime.getWorld().findActor("loader")!.setVariable("more", true);
+      runtime.tick();
+      await vi.waitFor(() => expect(ready).toHaveLength(2));
+      expect(replaced).toEqual([{ classIds: ["Extra"], retain: [compiledScriptKey(mainScript), compiledScriptKey(loader)] }]);
+      // The first slot applied the Model; the second's equal content was not sent again.
+      expect(registeredModels).toEqual([["crate"]]);
+      const classes = runtime.getWorld().classRegistry;
+      expect(["main", "Loader", "Extra"].every((classId) => classes.has(classId))).toBe(true);
+    });
+
+    it("sends an Animation Graph and Behaviour Tree again after a scene content change dropped them", async () => {
+      // Each tick reports the loader's Animation Graph state, and asks for the slot `slot` names.
+      const loader: ScriptBundleEntry = {
+        assetGuid: "loader", classId: "Loader", parentClassId: "Actor", anchors: [],
+        source: 'export function onBeginPlay(ctx) { ctx.requestAssetLoad(["u1"]); }\n' +
+          "export function onTick(ctx) {\n" +
+          '  const state = ctx.getAnimGraphCurrentState(ctx.getComponent(ctx.self, "AnimationGraphComponent"));\n' +
+          '  ctx.setVariable("animState", state ? state.id : null);\n' +
+          '  const slot = ctx.getVariable("slot");\n' +
+          '  if (slot) { ctx.setVariable("slot", null); ctx.requestAssetLoad([slot]); }\n' +
+          "}",
+        entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }, { name: "onTick", event: "onTick", isAsync: false }],
+      };
+      const graph = { guid: "g1", document: createDefaultAnimGraph() };
+      const tree = { guid: "bt1", document: createDefaultBehaviourTree() };
+      // As `packedSourceControls` builds them: a union without Animation Graphs or Behaviour Trees has no control for them.
+      const holding = (): ControlMessage[] => [
+        { type: "loadSceneContent", assetGuids: ["g1", "bt1"] },
+        { type: "loadAnimGraphs", graphs: [graph] },
+        { type: "loadBehaviourTrees", trees: [tree], blackboards: [] },
+      ];
+      const without = (): ControlMessage[] => [{ type: "loadSceneContent", assetGuids: [] }];
+      let union = holding;
+      const trees: string[] = [];
+      const ready: string[] = [];
+      const runtime = await play({
+        actors: [createActor("loader", "Loader", { classId: "Loader", components: [
+          { id: "anim", classId: "AnimationGraphComponent", properties: { graphGuid: "g1" } },
+        ] })],
+        scripts: [loader],
+        acquireAssetSources: vi.fn(async (guids: string[]) => ({ sources: {} as never, release() {}, required: new Set(guids) })),
+        getSourceControls: () => union(),
+        onRuntime: (created) => {
+          const registerTree = created.registerBehaviourTree.bind(created);
+          vi.spyOn(created, "registerBehaviourTree").mockImplementation((guid, document) => {
+            trees.push(guid);
+            registerTree(guid, document);
+          });
+          const notify = created.notifyAssetPreloadResult.bind(created);
+          vi.spyOn(created, "notifyAssetPreloadResult").mockImplementation((result) => {
+            if (result.success && result.progress === 1) ready.push(result.preloadId);
+            notify(result);
+          });
+        },
+      });
+      const actor = runtime.getWorld().findActor("loader")!;
+      /** The loader's Animation Graph state once slot `count`, its `guid`, has prepared. */
+      const stateAfterSlot = async (count: number, guid?: string) => {
+        if (guid) { actor.setVariable("slot", guid); runtime.tick(); }
+        await vi.waitFor(() => expect(ready).toHaveLength(count));
+        runtime.tick();
+        return actor.getVariable("animState");
+      };
+      expect(await stateAfterSlot(1)).toBe("idle");
+      union = without;
+      expect(await stateAfterSlot(2, "u2")).toBeNull();
+      // Equal to the first union's controls: the runtime dropped them in between, so they are sent again.
+      union = holding;
+      const state = await stateAfterSlot(3, "u3");
+      expect(trees).toEqual(["bt1", "bt1"]);
+      expect(state).toBe("idle");
+    });
 
     it("pauses render game time while a blocking asset load holds the simulation", async () => {
       let finish!: () => void;

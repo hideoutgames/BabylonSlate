@@ -101,6 +101,15 @@ async function registryRecord(
   };
 }
 
+/** The registry's locator for the record's revision; a reindex since the record was resolved fails the load as stale. */
+function indexedLocator(registry: AssetRegistry, record: RegistryRecord): AssetSourceLocator {
+  const locator = registry.getByGuid(record.id)?.locator;
+  if (!locator || locator.revision !== record.revision) {
+    throw new SourceRevisionChangedError(`Asset ${record.id} changed after resolving its catalog entry; retry the current revision`);
+  }
+  return locator;
+}
+
 function representationForRecord(
   registry: AssetRegistry,
   record: RegistryRecord,
@@ -119,11 +128,12 @@ function representationForRecord(
         throw new SourceRevisionChangedError(`Asset ${record.id} changed after estimating its source bytes`);
       }
       const chunks = new Map<string, Uint8Array>();
-      // Resolved once: every chunk read validates storage against this locator afterwards.
+      // The record resolved this revision, so its reads start from the indexed locator without resolving it
+      // from storage again: every chunk read checks storage against it afterwards.
       let locator: AssetSourceLocator | undefined;
       for (const chunkId of record.chunkIds) {
         signal.throwIfAborted();
-        locator ??= await registry.getAssetLocator(record.id, { signal });
+        locator ??= indexedLocator(registry, record);
         chunks.set(chunkId, await registry.readLocatedChunk(record.id, chunkId, locator, record.revision, { signal }));
       }
       signal.throwIfAborted();

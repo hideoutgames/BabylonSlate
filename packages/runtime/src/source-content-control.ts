@@ -10,7 +10,7 @@ export async function applyRuntimeSourceControl(runtime: RuntimeDriver, control:
   switch (control.type) {
     case "loadSceneContent": runtime.registerSceneContent(control); return true;
     case "loadScripts":
-      if (control.replace) await runtime.replaceScriptSources(control.scripts);
+      if (control.replace) await runtime.replaceScriptSources(control.scripts, control.retain);
       else await runtime.loadScripts(control.scripts);
       for (const entry of control.spawn ?? []) runtime.spawnScriptedActor(entry);
       return true;

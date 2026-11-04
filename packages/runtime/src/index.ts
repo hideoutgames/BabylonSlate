@@ -47,6 +47,7 @@ export {
 export { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
 export {
   ScriptHost,
+  compiledScriptKey,
   type CompiledScript,
   type ScriptContext,
   type ScriptHostServices,

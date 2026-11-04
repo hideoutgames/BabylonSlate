@@ -322,6 +322,61 @@ describe("project asset loading", () => {
     service.dispose();
   });
 
+  it("keeps a keeping scope's released entries past the retention window until a load needs their room", async () => {
+    let time = 0;
+    const loaded: string[] = [];
+    const disposed: string[] = [];
+    const { service } = setup([catalog("kept"), catalog("plain"), catalog("next")], async (asset) => {
+      loaded.push(asset.id);
+      return { value: asset.id, dispose: () => { disposed.push(asset.id); } };
+    }, { now: () => time, budgets: { sourceBytes: 8, decodedBytes: 16, retentionMs: 1_000 } });
+    const play = service.createScope("Play", { keep: true });
+    await play.acquire("kept");
+    play.dispose();
+    const editor = service.createScope("editor");
+    await editor.acquire("plain");
+    editor.dispose();
+    time = 5_000;
+    service.trim();
+    expect(disposed).toEqual(["plain"]);
+    const again = service.createScope("Play again", { keep: true });
+    expect(await again.acquire("kept")).toBe("kept");
+    again.dispose();
+    expect(loaded).toEqual(["kept", "plain"]);
+    // Two entries fill the source budget: a load that needs the room evicts the kept one.
+    const first = service.createScope("first");
+    await first.acquire("plain");
+    await first.acquire("next");
+    expect(disposed).toEqual(["plain", "kept"]);
+    first.dispose();
+    service.dispose();
+  });
+
+  it("bounds kept entries by bytes, least recently released first, and drops a kept revision a newer load replaces", async () => {
+    let time = 0;
+    const disposed: string[] = [];
+    const { service, assets } = setup([catalog("older"), catalog("newer"), catalog("edited")], async (asset) => ({
+      value: `${asset.id}@${asset.revision}`, dispose: () => { disposed.push(`${asset.id}@${asset.revision}`); },
+    }), { now: () => time, budgets: { keptBytes: 24 } });
+    for (const id of ["older", "newer", "edited"]) {
+      time += 10;
+      const scope = service.createScope(`Play ${id}`, { keep: true });
+      await scope.acquire(id);
+      scope.dispose();
+    }
+    // Each entry holds 4 source and 8 decoded bytes: three overflow the cap of 24.
+    expect(disposed).toEqual(["older@1"]);
+    expect(service.snapshot().entries.map((entry) => [entry.assetId, entry.kept])).toEqual([["newer", true], ["edited", true]]);
+    assets.set("edited", { ...catalog("edited"), revision: "2" });
+    const scope = service.createScope("Play edited", { keep: true });
+    expect(await scope.acquire("edited")).toBe("edited@2");
+    expect(disposed).toEqual(["older@1", "edited@1"]);
+    scope.dispose();
+    service.trim({ force: true });
+    expect(service.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, entries: [] });
+    service.dispose();
+  });
+
   it("releases a partially completed preload group when another asset fails", async () => {
     const { service } = setup([catalog("okay"), catalog("bad")], async (asset) => {
       if (asset.id === "bad") throw new Error("Missing payload");
