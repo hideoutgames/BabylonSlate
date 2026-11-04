@@ -693,11 +693,11 @@ describe("Play createEngine view", () => {
     const presented = handle.presentFirstFrame();
     frame();
     await presented;
-    expect(handle.renderDiagnostics().presentation.drawn).toBe(1);
+    expect(handle.renderDiagnostics().presentation!.drawn).toBe(1);
     expect(gate.stats()).toEqual({ mode: 2, inFlight: 3, skipped: 0 });
     // A loaded view's steady frames still wait for the queue.
     frame();
-    expect(handle.renderDiagnostics().presentation.drawn).toBe(1);
+    expect(handle.renderDiagnostics().presentation!.drawn).toBe(1);
     expect(gate.stats()).toEqual({ mode: 2, inFlight: 3, skipped: 1 });
   });
 
