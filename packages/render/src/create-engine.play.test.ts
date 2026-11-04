@@ -4613,7 +4613,11 @@ describe("Play createEngine view", () => {
 
   it("compiles nothing in a repeat Play that the first Play compiled, across Stop and the editor's reload", async () => {
     const engine = sharedEngine();
-    const materialDocuments = new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]);
+    const materialDocuments = new Map([["sparks", createDefaultMaterialDocument("Sparks", "particle")]]);
+    const particleLibrary = {
+      emitters: new Map([["emitter", { kind: "basic" as const, payload: normalizeParticleEmitterPayload({ render: { materialGuid: "sparks" } }) }]]),
+      systems: new Map([["system", { ...createDefaultParticleSystemPayload(), emitterGuids: ["emitter"] }]]),
+    };
     const present = async (handle: ReturnType<typeof createEngine>) => {
       await handle.prewarmSceneMaterials();
       const presented = handle.presentFirstFrame();
@@ -4634,13 +4638,17 @@ describe("Play createEngine view", () => {
       await present(editor);
       return editor;
     };
-    /** Play with a post-process the editor's view does not draw, its program named by its Material's build. */
+    /** Play with a particle emitter the editor's view does not draw, its program named by its Material's build. */
     const play = async () => {
-      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, materialDocuments });
-      handle.setPostProcessStack([{ id: "pass", materialGuid: "pp", enabled: true }]);
-      await present(handle);
-      expect(handle.postProcessPassCount()).toBe(1);
-      handle.dispose();
+      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, materialDocuments, particleLibrary });
+      handle.applyCommand({ type: "spawn", slotId: 1, actorGuid: "sparks", classId: "Actor" });
+      handle.applyCommand({ type: "assignParticle", slotId: 1, actorGuid: "sparks", componentId: "particle", particleSystemGuid: "system" });
+      try {
+        const wrappers = () => Object.values((handle.scene.particleSystems[0] as unknown as { _customWrappers?: Record<number, { effect: Effect | null }> })?._customWrappers ?? {});
+        await vi.waitFor(() => expect(wrappers().some((wrapper) => wrapper?.effect)).toBe(true), { timeout: 10_000 });
+      } finally {
+        handle.dispose();
+      }
       await handle.whenReleased();
     };
     (await editorView()).dispose();
@@ -4650,7 +4658,7 @@ describe("Play createEngine view", () => {
     handles.push(editor);
     editor.dispose();
     expect(await compiledBy(play)).toBe(0);
-  });
+  }, 30_000);
 
   it("uses one Engine for editor viewport, Prefab rtt, and Play overlay", () => {
     const engine = sharedEngine();

@@ -66,7 +66,7 @@ export function prepareNodeMaterialParticleBindings(material: NodeMaterial): voi
       owned = {
         bindings: new Map(),
         disposeObserver: system.onDisposeObservable.addOnce(() => releaseSystem(system)),
-        // Emitters' instances of one Material share an Effect (`shareNamedProgram`), and every binding observer on
+        // Emitters' instances of one Material share an Effect (`shareParticleProgram`), and every binding observer on
         // it runs when it is enabled, the last one's values winning, and none when the previous draw used it too.
         // Each draw binds its own system's Material last, right before it draws.
         drawObserver: system.onBeforeDrawParticlesObservable.add((drawn) => {
