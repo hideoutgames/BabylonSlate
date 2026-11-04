@@ -87,12 +87,22 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
   const unavailable = async <T>(): Promise<SaveGameResult<T>> => ({ ok: false, error: {
     code: "unavailable", message: "Select a default Save Game in Project Settings before using saves.",
   } });
-  const readField = (value: SaveGameValue, type?: string, array?: boolean): unknown => {
-    if (array && Array.isArray(value)) return value.map((entry) => readField(entry, type));
+  // Map fields are saved as `{ key, value }` entries and read as a Map; Actor values are saved as persistent IDs.
+  const readField = (value: SaveGameValue, type?: string, container?: string): unknown => {
+    if (container === "array" && Array.isArray(value)) return value.map((entry) => readField(entry, type));
+    if (container === "map" && Array.isArray(value)) {
+      return new Map(value.map((entry) => {
+        const pair = entry as { key: SaveGameValue; value: SaveGameValue };
+        return [pair.key, readField(pair.value, type)];
+      }));
+    }
     return type === "actor" && typeof value === "string" ? (services.resolveSaveActor?.(value) ?? services.findActor?.(value) ?? null) : value;
   };
-  const writeField = (value: unknown, type?: string, array?: boolean): SaveGameValue => {
-    if (array && Array.isArray(value)) return value.map((entry) => writeField(entry, type));
+  const writeField = (value: unknown, type?: string, container?: string): SaveGameValue => {
+    if (container === "array" && Array.isArray(value)) return value.map((entry) => writeField(entry, type));
+    if (container === "map" && value instanceof Map) {
+      return [...value].map(([key, entry]) => ({ key: cloneSaveGameValue(key), value: writeField(entry, type) }));
+    }
     return cloneSaveGameValue(type === "actor" && value instanceof Actor ? services.getSaveActorId?.(value) ?? value.guid : value);
   };
   const layerCamera = (layer: EngineObject | string | null | undefined): SceneLayerCamera => {
@@ -116,8 +126,8 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
   };
   const members: HostContextMembers = {
     getSaveData: <TData extends object>() => requireSaveGameService(services).getSaveData() as TData,
-    getSaveField: (id, type, array) => readField(requireSaveGameService(services).getField(id), type, array),
-    setSaveField: (id, value, type, array) => requireSaveGameService(services).setField(id, writeField(value, type, array)),
+    getSaveField: (id, type, container) => readField(requireSaveGameService(services).getField(id), type, container),
+    setSaveField: (id, value, type, container) => requireSaveGameService(services).setField(id, writeField(value, type, container)),
     newGame: () => services.saveGame?.newGame() ?? unavailable(),
     saveGame: (options) => services.saveGame?.saveGame(options) ?? unavailable(),
     loadGame: (options) => services.saveGame?.loadGame(options) ?? unavailable(),

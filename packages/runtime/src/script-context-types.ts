@@ -64,8 +64,9 @@ export type ScreenProjection = {
 
 export interface ScriptContext {
   getSaveData<TData extends object = Record<string, SaveGameValue>>(): TData;
-  getSaveField(fieldId: string, type?: string, array?: boolean): unknown;
-  setSaveField(fieldId: string, value: unknown, type?: string, array?: boolean): void;
+  /** `container` is the field's `"array"` or `"map"`; a Map field reads as a `Map` and is written from one. */
+  getSaveField(fieldId: string, type?: string, container?: string): unknown;
+  setSaveField(fieldId: string, value: unknown, type?: string, container?: string): void;
   newGame(): Promise<SaveGameResult<Record<string, SaveGameValue>>>;
   saveGame(options?: SaveGameOptions): Promise<SaveGameResult<SaveGameInfo>>;
   loadGame(options?: SaveGameOptions): Promise<SaveGameResult<SaveGameInfo>>;
@@ -73,8 +74,8 @@ export interface ScriptContext {
   deleteSave(options?: SaveGameOptions): Promise<SaveGameResult<void>>;
   registerSaveActor(actor: EngineObject | null, persistentId?: string): void;
   registerSaveMigration(fromVersion: number, migrate: SaveGameMigration | string): void;
-  getSaveMigrationField(fieldId: string, type?: string, array?: boolean): unknown;
-  setSaveMigrationField(fieldId: string, value: unknown, type?: string, array?: boolean): void;
+  getSaveMigrationField(fieldId: string, type?: string, container?: string): unknown;
+  setSaveMigrationField(fieldId: string, value: unknown, type?: string, container?: string): void;
   data: RuntimeDataApi;
   /** Cold data reads prepare their owner-scoped source before returning copied values. */
   readDataEntryAsync(tree: string, path: string, definitionGuid?: string): Promise<Record<string, unknown> | null>;

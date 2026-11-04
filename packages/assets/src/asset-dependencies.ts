@@ -498,8 +498,26 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
       addClass(entry.classId); instanceProperties(entry.classId, row(entry.properties));
     }
   } else if (assetType === "Blackboard") for (const key of rows(payload.keys)) typeValue(key.type, key.defaultValue);
-  else if (assetType === "SaveGame") for (const field of rows(payload.fields)) {
-    if (field.type === "asset") addMany(Array.isArray(field.defaultValue) ? field.defaultValue : [field.defaultValue], false);
+  else if (assetType === "SaveGame") {
+    // Asset and Class values sit in single values, Array items, and Map keys and values.
+    const savedReferences = (type: unknown, keyType: unknown, container: unknown, value: unknown) => {
+      const entries = container === "map" ? rows(value) : undefined;
+      const values = entries ? entries.map(entry => entry.value) : container === "array" && Array.isArray(value) ? value : [value];
+      for (const [kind, list] of [[type, values], [keyType, entries?.map(entry => entry.key) ?? []]] as const) {
+        if (kind === "asset") addMany(list, false);
+        else if (kind === "class") for (const id of list) addClass(id, false);
+      }
+    };
+    for (const field of rows(payload.fields)) savedReferences(field.type, field.keyType, field.container, field.defaultValue);
+    // A linked Save Game's fields and defaults come from its Data Definition; overrides take that field's type.
+    if (typeof payload.dataDefinitionId === "string") {
+      add(payload.dataDefinitionId);
+      const overrides = row(payload.defaults);
+      for (const declared of context.definitionFields?.(payload.dataDefinitionId) ?? []) {
+        const field = row(declared);
+        if (typeof field.id === "string" && Object.hasOwn(overrides, field.id)) savedReferences(field.typeId, field.keyTypeId, field.container, overrides[field.id]);
+      }
+    }
   }
   else if (assetType === "ScriptInterface") for (const method of rows(payload.methods)) for (const pin of rows(method.pins)) typeValue(memberType(pin), undefined, false);
   else if (assetType === "PluginSettings") for (const dependency of rows(payload.pluginDependencies)) add(dependency.guid);

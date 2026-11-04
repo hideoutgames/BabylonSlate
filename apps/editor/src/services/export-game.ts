@@ -1,4 +1,4 @@
-import { validateSaveGameDefinition, type SaveGameConfiguration } from "@haptic/core";
+import type { SaveGameConfiguration } from "@haptic/core";
 import { subsystemBaseClassIdOf } from "@haptic/object-model";
 import { dataTypeSchemas } from "@haptic/scripting";
 import type { DataAssetCatalogEntry } from "@haptic/core";
@@ -55,6 +55,7 @@ import {
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
 import { embeddedScriptHost } from "../lib/embedded-script";
+import { requireSaveGameDefinition } from "../lib/save-game-catalog";
 
 export { MISSING_STARTUP_SCENE_MESSAGE };
 
@@ -601,7 +602,7 @@ export async function collectAndExportGame(
     try {
       saveGame = {
         projectId: params.projectId,
-        definition: validateSaveGameDefinition(params.payloadByGuid?.(params.saveGameSettings.definitionGuid)),
+        definition: requireSaveGameDefinition(params.payloadByGuid?.(params.saveGameSettings.definitionGuid), typeSchemas),
         defaultSlot: params.saveGameSettings.defaultSlot,
         defaultProfile: params.saveGameSettings.defaultProfile,
         preview: params.previewBuild === true,

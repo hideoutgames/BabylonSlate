@@ -17,7 +17,7 @@ const definition: SaveGameDefinition = {
   fields: [
     { id: "coins-id", name: "coins", type: "int", defaultValue: 0 },
     { id: "spawn-id", name: "spawn", type: "vector3", defaultValue: { x: 0, y: 1, z: 0 } },
-    { id: "items-id", name: "items", type: "asset", array: true, defaultValue: [] },
+    { id: "items-id", name: "items", type: "asset", container: "array", defaultValue: [] },
   ],
 };
 
@@ -329,7 +329,7 @@ describe("SaveGameService schema upgrades and portability", () => {
     const storage = new FaultStorage();
     const manyFields: SaveGameDefinition = {
       id: "large-game", schemaVersion: 1,
-      fields: ["left", "right"].map((name) => ({ id: name, name, type: "int", array: true, defaultValue: [] })),
+      fields: ["left", "right"].map((name) => ({ id: name, name, type: "int", container: "array", defaultValue: [] })),
     };
     const service = make(storage, { definition: manyFields });
     await service.saveGame();
@@ -462,7 +462,7 @@ describe("SaveGameService schema upgrades and portability", () => {
       id: "typed", schemaVersion: 1,
       fields: [
         { id: "health", name: "Hit Points", type: "int", defaultValue: 100 },
-        { id: "targets", name: "targets", type: "actor", array: true, defaultValue: [null] },
+        { id: "targets", name: "targets", type: "actor", container: "array", defaultValue: [null] },
         { id: "ready", name: "ready", type: "bool", defaultValue: true },
       ],
     };
@@ -470,6 +470,44 @@ describe("SaveGameService schema upgrades and portability", () => {
     expect(generateSaveGameTypes(authored)).toContain('"Hit Points": number;');
     expect(generateSaveGameTypes(authored)).toContain('"targets": Array<string | null>;');
     expect(() => generateSaveGameTypes(authored, "unsafe; type X")).toThrow(SaveGameError);
+  });
+
+  it("saves Map fields as entries with unique typed keys, and Rotator and Quaternion values", async () => {
+    const typed: SaveGameDefinition = {
+      id: "maps", schemaVersion: 1,
+      fields: [
+        { id: "best-id", name: "BestTimes", type: "float", container: "map", keyType: "string", defaultValue: [{ key: "Forest", value: 61.5 }] },
+        { id: "rank-id", name: "Ranks", type: "int", container: "map", keyType: "enum", keyEnumId: "difficulty-enum", defaultValue: [] },
+        { id: "facing-id", name: "Facing", type: "rotator", defaultValue: { pitch: 0, yaw: 90, roll: 0 } },
+        { id: "spin-id", name: "Spin", type: "quat", defaultValue: { x: 0, y: 0, z: 0, w: 1 } },
+      ],
+    };
+    const storage = new FaultStorage();
+    const service = new SaveGameService({ projectId: "sample-project", definition: typed, storage });
+    service.setField("best-id", [{ key: "Forest", value: 58 }, { key: "Cave", value: 70.25 }]);
+    expect(await service.saveGame()).toMatchObject({ ok: true });
+    const reloaded = new SaveGameService({ projectId: "sample-project", definition: typed, storage });
+    expect(await reloaded.loadGame()).toMatchObject({ ok: true });
+    expect(reloaded.getField("best-id")).toEqual([{ key: "Forest", value: 58 }, { key: "Cave", value: 70.25 }]);
+    const invalid: Array<[string, SaveGameValue]> = [
+      ["best-id", [{ key: "Forest", value: 1 }, { key: "Forest", value: 2 }]], ["best-id", [{ key: 3, value: 1 }]],
+      ["best-id", [{ key: "Forest" }]], ["best-id", { Forest: 1 }], ["facing-id", { x: 0, y: 0, z: 0 }], ["spin-id", { x: 0, y: 0, z: 0 }],
+    ];
+    for (const [id, value] of invalid) expect(() => service.setField(id, value), `${id} = ${JSON.stringify(value)}`).toThrow(SaveGameError);
+    const field = typed.fields[0]!;
+    expect(() => validateSaveGameDefinition({ ...typed, fields: [{ ...field, keyType: undefined }] })).toThrow("needs a Map key type");
+    expect(() => validateSaveGameDefinition({ ...typed, fields: [{ ...field, keyType: "actor" }] })).toThrow("needs a Map key type");
+    expect(() => validateSaveGameDefinition({ ...typed, fields: [{ ...field, keyType: "enum" }] })).toThrow("needs a key Enum");
+    const types = generateSaveGameTypes(typed);
+    expect(types).toContain('"BestTimes": Array<{ key: string; value: number }>;');
+    expect(types).toContain('"Facing": { pitch: number; yaw: number; roll: number };');
+  });
+
+  it("keeps a Data Definition link and default overrides keyed by field ID", () => {
+    const linked = validateSaveGameDefinition({ id: "linked", schemaVersion: 1, fields: [], dataDefinitionId: "progress-fields", defaults: { "coins-id": 10 } });
+    expect(linked).toEqual({ id: "linked", schemaVersion: 1, fields: [], dataDefinitionId: "progress-fields", defaults: { "coins-id": 10 } });
+    expect(() => validateSaveGameDefinition({ ...linked, dataDefinitionId: "" })).toThrow(SaveGameError);
+    expect(() => validateSaveGameDefinition({ ...linked, defaults: JSON.parse('{"__proto__": 1}') })).toThrow(SaveGameError);
   });
 
   it("saves Tag, Enum, vector, Color, Transform and Class fields and rejects values of another shape", async () => {
@@ -481,7 +519,7 @@ describe("SaveGameService schema upgrades and portability", () => {
         { id: "difficulty-id", name: "Difficulty", type: "enum", enumId: "difficulty-enum", defaultValue: "Normal" },
         { id: "cursor-id", name: "Cursor", type: "vector2", defaultValue: { x: 0, y: 0 } },
         { id: "weights-id", name: "Weights", type: "vector4", defaultValue: { x: 0, y: 0, z: 0, w: 0 } },
-        { id: "tint-id", name: "Tint", type: "color", array: true, defaultValue: [] },
+        { id: "tint-id", name: "Tint", type: "color", container: "array", defaultValue: [] },
         { id: "spawn-id", name: "Spawn", type: "transform", defaultValue: transform },
         { id: "hero-id", name: "Hero", type: "class", defaultValue: null },
       ],

@@ -141,10 +141,16 @@ export function createScriptContext(
         service.registerMigration(fromVersion, (snapshot) => host.invokeSaveMigration(self, migrate, snapshot));
       }
     };
-    // Actor identities remain IDs here: staged actors do not exist yet.
-    context.getSaveMigrationField = (id) => migrationData().fields[id] ?? null;
-    context.setSaveMigrationField = (id, value) => {
-      const fields = cloneSaveGameValue({ [id]: value }) as Record<string, SaveGameValue>;
+    // Actor identities remain IDs here: staged actors do not exist yet. Map fields read as a Map, as in gameplay.
+    context.getSaveMigrationField = (id, _type, container) => {
+      const value = migrationData().fields[id] ?? null;
+      return container === "map" && Array.isArray(value)
+        ? new Map(value.map((entry) => [(entry as { key: SaveGameValue }).key, (entry as { value: SaveGameValue }).value]))
+        : value;
+    };
+    context.setSaveMigrationField = (id, value, _type, container) => {
+      const stored = container === "map" && value instanceof Map ? [...value].map(([key, entry]) => ({ key, value: entry })) : value;
+      const fields = cloneSaveGameValue({ [id]: stored }) as Record<string, SaveGameValue>;
       Object.assign(migrationData().fields, fields);
     };
     context.data = services.data ?? EMPTY_DATA;

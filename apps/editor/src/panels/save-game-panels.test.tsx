@@ -182,10 +182,10 @@ describe("Save Game authoring", () => {
   });
 
   it("reorders array defaults without changing values or the field identity", () => {
-    harness.definition.fields[0] = { id: "score-id", name: "Milestones", type: "int", array: true, defaultValue: [10, 20] };
+    harness.definition.fields[0] = { id: "score-id", name: "Milestones", type: "int", container: "array", defaultValue: [10, 20] };
     render(editor());
     fireEvent.click(screen.getByTestId("save-game-field-defaults-1-move-up"));
-    expect(harness.definition.fields[0]).toEqual({ id: "score-id", name: "Milestones", type: "int", array: true, defaultValue: [20, 10] });
+    expect(harness.definition.fields[0]).toEqual({ id: "score-id", name: "Milestones", type: "int", container: "array", defaultValue: [20, 10] });
   });
 
   it("reports damaged definitions without substituting empty defaults", () => {

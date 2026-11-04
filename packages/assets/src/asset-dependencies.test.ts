@@ -253,6 +253,22 @@ describe("typed asset dependencies", () => {
     expect(metadata.requiredDependencies).toEqual(["appearance", "items", "quality", "weapon"]);
   });
 
+  it("requires a Save Game's Data Definition and reaches Asset values in Maps and in its default overrides", () => {
+    const own = collectAssetDependencyMetadata("SaveGame", { id: "progress", schemaVersion: 1, fields: [
+      { id: "skins", name: "Skins", type: "asset", container: "map", keyType: "string", defaultValue: [{ key: "hero", value: "hero-skin" }] },
+    ] });
+    expect(own.dependencies).toEqual(["hero-skin"]);
+    const linked = collectAssetDependencyMetadata("SaveGame", {
+      id: "progress", schemaVersion: 1, fields: [], dataDefinitionId: "progress-fields",
+      defaults: { "banner-id": "banner-texture", "title-id": "not-an-asset" },
+    }, { definitionFields: (guid) => guid === "progress-fields" ? [
+      { id: "banner-id", name: "Banner", typeId: "asset" },
+      { id: "title-id", name: "Title", typeId: "string" },
+    ] : undefined });
+    expect(linked.dependencies).toEqual(["banner-texture", "progress-fields"]);
+    expect(linked.requiredDependencies).toEqual(["progress-fields"]);
+  });
+
   it("preserves required variable roles through inherited actor overrides without loading unrelated data variables", () => {
     const members = [
       { kind: "variable" as const, id: "inventory", name: "Inventory", propertyKey: "inventory", typeId: "asset", typeClassId: "DataTree", defaultValue: "default-tree" },

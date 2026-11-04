@@ -2,6 +2,7 @@ import {
   SaveGameError,
   cloneSaveGameValue,
   createSaveGameData,
+  describeSaveGameFieldType,
   isSaveGameRecord,
   validateSaveGameDefinition,
   validateSaveGameFieldValue,
@@ -265,7 +266,7 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
   private restoreFields(fields: Record<string, SaveGameValue>): Record<string, SaveGameValue> {
     return Object.fromEntries(this.definition.fields.map((field) => {
       try { return [field.name, validateSaveGameFieldValue(field, Object.hasOwn(fields, field.id) ? fields[field.id] : field.defaultValue)]; }
-      catch { throw new SaveGameError("incompatible", `Saved field “${field.name}” needs a schema migration to ${field.type}${field.array ? "[]" : ""}.`); }
+      catch { throw new SaveGameError("incompatible", `Saved field “${field.name}” needs a schema migration to ${describeSaveGameFieldType(field)}.`); }
     }));
   }
 

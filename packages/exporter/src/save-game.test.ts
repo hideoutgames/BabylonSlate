@@ -24,6 +24,20 @@ describe("Save Game export contract", () => {
     expect(result.ok && result.value.guids).toEqual(["save", "scene", "skin"]);
   });
 
+  it("includes the Data Definition a linked Save Game takes its fields from", () => {
+    const result = collectExportReachability({
+      startupSceneGuid: "scene", saveGameDefinitionGuid: "save", pluginEnabledGuids: new Set(),
+      parentOf: () => null, sceneByGuid: () => null, graphByGuid: () => null,
+      payloadByGuid: (guid) => guid === "save" ? { id: "progress", schemaVersion: 1, fields: [], dataDefinitionId: "fields" } : null,
+      assets: [
+        { guid: "scene", type: "Scene", name: "Start", dependencies: [], rootId: "project" },
+        { guid: "save", type: "SaveGame", name: "Progress", dependencies: [], rootId: "project" },
+        { guid: "fields", type: "DataDefinition", name: "ProgressFields", dependencies: [], rootId: "project" },
+      ],
+    });
+    expect(result.ok && result.value.guids).toEqual(["fields", "save", "scene"]);
+  });
+
   it("retains stable identity, schema and save defaults in the player", async () => {
     const result = await exportGame({
       bundleDebugger: false, startupSceneGuid: "scene", scripts: [], assets: [],

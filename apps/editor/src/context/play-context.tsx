@@ -2,6 +2,7 @@ import { DiagnosticResultsProvider, useDiagnosticResultsStore } from "./diagnost
 import { createPortal } from "react-dom";
 import { SimulationInspectionProvider } from "./simulation-inspection-context";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
+import { projectTypeSchemas, requireSaveGameDefinition } from "../lib/save-game-catalog";
 import { createSaveGameStorage, isTestModeEnabled } from "@haptic/vfs";
 import { acquirePlayAssetSources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
 import {
@@ -441,7 +442,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     const current = playRequestInputsRef.current.documents;
     const asset = current.assetRegistry?.getByGuid(guid);
     if (!asset) throw new Error("The default Save Game definition is missing.");
-    return current.loadAssetDocument("save-game", asset.path);
+    const stored = await current.loadAssetDocument("save-game", asset.path);
+    return requireSaveGameDefinition(stored, projectTypeSchemas(current.assetRegistry?.list() ?? [], current.getOpenDocuments()));
   }, []);
 
   useEffect(

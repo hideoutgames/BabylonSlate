@@ -1,5 +1,5 @@
 import {
-  arrayOf, objectRef, assetRef, BOXED_WILDCARD, BOOL, EXEC, INT, STRING,
+  arrayOf, mapOf, objectRef, assetRef, BOXED_WILDCARD, BOOL, EXEC, INT, STRING,
   pin, pinTypeForMember, structRef, type NodeDefinition, type PinType,
 } from "@haptic/scripting";
 import { subject } from "./self-pin";
@@ -7,18 +7,23 @@ import { subject } from "./self-pin";
 /** Save field types named differently from their pin types. */
 const SAVE_FIELD_PIN_TYPE_IDS: Readonly<Record<string, string>> = { vector2: "vec2", vector3: "vec3", vector4: "vec4" };
 
+function savePinType(type: string, typeClassId: unknown): PinType {
+  if (type === "actor") return objectRef("Actor");
+  if (type === "asset") return assetRef("");
+  if (type === "struct" || type === "enum") return pinTypeForMember(type, typeof typeClassId === "string" ? typeClassId : "");
+  return pinTypeForMember(SAVE_FIELD_PIN_TYPE_IDS[type] ?? type);
+}
+
 /**
  * Stable field ids are authored in nodes; display names may change freely. `typeClassId` names a Structure
- * field's Structure or an Enum field's Enum.
+ * field's Structure or an Enum field's Enum; a Map field's key uses `keyTypeId` and `keyTypeClassId` the same way.
  */
 export function saveFieldPinType(properties: Record<string, unknown>): PinType {
   if (typeof properties.typeId !== "string") return BOXED_WILDCARD;
-  const type = properties.typeId;
-  const typeClassId = typeof properties.typeClassId === "string" ? properties.typeClassId : "";
-  const base = type === "actor" ? objectRef("Actor") : type === "asset" ? assetRef("")
-    : type === "struct" || type === "enum" ? pinTypeForMember(type, typeClassId)
-    : pinTypeForMember(SAVE_FIELD_PIN_TYPE_IDS[type] ?? type);
-  return properties.array === true ? arrayOf(base) : base;
+  const base = savePinType(properties.typeId, properties.typeClassId);
+  if (properties.container === "array") return arrayOf(base);
+  if (properties.container === "map") return mapOf(savePinType(typeof properties.keyTypeId === "string" ? properties.keyTypeId : "string", properties.keyTypeClassId), base);
+  return base;
 }
 
 const INFO = structRef("engine:SaveGameInfo");
@@ -70,9 +75,9 @@ function fieldNode(write: boolean, migration = false): NodeDefinition {
     codegen: (ctx) => {
       const id = ctx.node.properties.fieldId ? JSON.stringify(ctx.node.properties.fieldId) : ctx.input("fieldId");
       const type = JSON.stringify(String(ctx.node.properties.typeId ?? "string"));
-      const array = ctx.node.properties.array === true;
-      if (write) ctx.emit(`ctx.${method}(${id}, ${ctx.input("value")}, ${type}, ${array});`);
-      else return { value: `ctx.${method}(${id}, ${type}, ${array})` };
+      const container = JSON.stringify(ctx.node.properties.container === "array" || ctx.node.properties.container === "map" ? ctx.node.properties.container : "single");
+      if (write) ctx.emit(`ctx.${method}(${id}, ${ctx.input("value")}, ${type}, ${container});`);
+      else return { value: `ctx.${method}(${id}, ${type}, ${container})` };
     },
   };
 }

@@ -134,14 +134,14 @@ const SPIN_CONFIG_FIELDS = [
 ];
 
 /** Save Game field node data (permanent field id, display name, type). */
-const VISITS_FIELD = { fieldId: "visits", fieldName: "Visits", typeId: "int", array: false };
+const VISITS_FIELD = { fieldId: "visits", fieldName: "Visits", typeId: "int" };
 /** Structure Save Fields: a range and a curve, stored as plain records. */
-const SAVED_RANGE_FIELD = { fieldId: "saved-range", fieldName: "SavedRange", typeId: "struct", array: false, typeClassId: "engine:IntRange" };
-const SAVED_CURVE_FIELD = { fieldId: "saved-curve", fieldName: "SavedCurve", typeId: "struct", array: false, typeClassId: "engine:FloatCurve" };
+const SAVED_RANGE_FIELD = { fieldId: "saved-range", fieldName: "SavedRange", typeId: "struct", typeClassId: "engine:IntRange" };
+const SAVED_CURVE_FIELD = { fieldId: "saved-curve", fieldName: "SavedCurve", typeId: "struct", typeClassId: "engine:FloatCurve" };
 /** A Tag and an Enum Save Field the Save Probe stores and reads back. */
-const SAVED_TAG_FIELD = { fieldId: "saved-tag", fieldName: "SavedTag", typeId: "tag", array: false };
+const SAVED_TAG_FIELD = { fieldId: "saved-tag", fieldName: "SavedTag", typeId: "tag" };
 const savedSpeedField = (speedMode: string) =>
-  ({ fieldId: "saved-speed", fieldName: "SavedSpeed", typeId: "enum", array: false, typeClassId: speedMode });
+  ({ fieldId: "saved-speed", fieldName: "SavedSpeed", typeId: "enum", typeClassId: speedMode });
 
 /**
  * `FT_GlobalParams`: one parameter of each type. The Data Probe sets and reads Wind Strength;
@@ -239,7 +239,7 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
           { id: "saved-tags", name: "SavedTags", type: "struct", structId: "engine:TagContainer", defaultValue: { Tags: [] } },
           { id: "saved-aim", name: "SavedAim", type: "vector2", defaultValue: { x: 0, y: 1 } },
           { id: "saved-weights", name: "SavedWeights", type: "vector4", defaultValue: { x: 1, y: 0, z: 0, w: 0 } },
-          { id: "saved-tint", name: "SavedTint", type: "color", array: true, defaultValue: [{ x: 1, y: 0.5, z: 0, w: 1 }] },
+          { id: "saved-tint", name: "SavedTint", type: "color", container: "array", defaultValue: [{ x: 1, y: 0.5, z: 0, w: 1 }] },
           { id: "saved-checkpoint", name: "SavedCheckpoint", type: "transform", defaultValue: {
             position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
           } },

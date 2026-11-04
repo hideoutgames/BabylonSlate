@@ -10,6 +10,7 @@ import { createPlayContentService } from "../services/play-content-service";
 import { playLoadControl, playPhysicsFromSceneSettings } from "../services/play-physics";
 import type { ProjectService } from "../services/project-service";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
+import { projectTypeSchemas, requireSaveGameDefinition } from "../lib/save-game-catalog";
 
 /*
  * Runs a project's scene headlessly, as editor Play does without a renderer: the same compile,
@@ -86,7 +87,7 @@ export async function runProjectScene(options: {
       saveGame: await prepareSaveGameConfiguration({
         projectId: project.guid,
         settings: document.settings.saveGame,
-        loadDefinition: (guid) => project.loadDocument("save-game", registry.getByGuid(guid)!.path),
+        loadDefinition: async (guid) => requireSaveGameDefinition(await project.loadDocument("save-game", registry.getByGuid(guid)!.path), projectTypeSchemas(registry.list(), [])),
         storage: createSessionSaveStorage(emptySaveStorage),
       }),
       inputAssets: await playContent.collectPlayInputAssets(prepared.required, prepared.game.decodedPayloads),
