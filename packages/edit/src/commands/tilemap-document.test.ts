@@ -148,6 +148,37 @@ describe("PatchTilemapDocumentCommand", () => {
     expect(JSON.stringify(cleared.invert().apply(doc(emptied)))).toBe(JSON.stringify(map));
   });
 
+  it("records a switch to unbounded with a pivot and a negative chunk, and undoes it to the sized map", () => {
+    const map: TilemapFixture = {
+      tilesets: [{ guid: "ground", firstGid: 1, tileCount: 4 }],
+      width: 64,
+      height: 64,
+      chunkSize: SIZE,
+      layers: [{ id: "layer-1", name: "Ground", visible: true, chunks: [chunk(0, 0, 0, { 0: 1 })] }],
+    };
+    const { width: _width, height: _height, ...rest } = map;
+    void _width;
+    void _height;
+    const unbounded = {
+      ...rest,
+      unbounded: true,
+      pivot: { x: -1.5, y: 2 },
+      layers: [{ ...map.layers[0]!, chunks: [...map.layers[0]!.chunks, chunk(-2, -1, 0, { 7: 3 })] }],
+    } as unknown as TilemapFixture;
+    const command = patch(map, unbounded);
+    expect([...command.delta.fields!.keys].sort()).toEqual(["height", "pivot", "unbounded", "width"]);
+    expect(command.delta.chunks.map(({ cx, cy, from }) => [cx, cy, from])).toEqual([[-2, -1, null]]);
+    const applied = command.apply(doc(map));
+    expect(applied).toEqual(unbounded);
+    expect(applied).not.toHaveProperty("width");
+    const reverted = command.invert().apply(applied);
+    expect(reverted).toEqual(map);
+    expect(reverted).not.toHaveProperty("pivot");
+    // A pivot move is a field change only.
+    const moved = patch(unbounded, { ...unbounded, pivot: { x: 0, y: 0.5 } } as unknown as TilemapFixture);
+    expect(moved.delta).toEqual({ fields: { keys: ["pivot"], from: { pivot: { x: -1.5, y: 2 } }, to: { pivot: { x: 0, y: 0.5 } } }, chunks: [] });
+  });
+
   it("finds unchanged documents by identity and value, and leaves documents it cannot read whole", () => {
     const map = denseMap();
     expect(diffTilemapDocument(doc(map), doc(map))).toBe("unchanged");

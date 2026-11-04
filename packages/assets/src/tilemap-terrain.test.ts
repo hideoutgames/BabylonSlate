@@ -65,12 +65,17 @@ function emptyMap(chunkSize = 32): TilemapPayload {
   };
 }
 
-/** Rows top to bottom, one legend character per cell. */
-function draw(map: TilemapPayload): string[] {
+/**
+ * Rows top to bottom, one legend character per cell: the 8 × 6 cells from
+ * `origin` (a bounded map's size from cell 0, 0 when omitted).
+ */
+function draw(map: TilemapPayload, origin = { x: 0, y: 0 }): string[] {
   const rows: string[] = [];
-  for (let y = map.height - 1; y >= 0; y--) {
+  const width = map.width ?? 8;
+  const height = map.height ?? 6;
+  for (let y = origin.y + height - 1; y >= origin.y; y--) {
     let row = "";
-    for (let x = 0; x < map.width; x++) {
+    for (let x = origin.x; x < origin.x + width; x++) {
       const gid = getTile(map, "layer-1", x, y);
       row += gid === 0 ? "." : (LEGEND[gid - FIRST_GID + 1] ?? "?");
     }
@@ -111,6 +116,23 @@ describe("paintTilemapTerrain", () => {
       "........",
       // Outside the map joins, so ground on the bottom edge runs on below it.
       "TR......",
+    ]);
+  });
+
+  it("resolves at negative cells of an unbounded map, where nothing lies outside to join", () => {
+    const unbounded: TilemapPayload = { ...emptyMap(2), unbounded: true, pivot: { x: 0, y: 0 } };
+    const origin = { x: -5, y: -7 };
+    const shifted = ISLAND.map((cell) => ({ x: cell.x + origin.x, y: cell.y + origin.y }));
+    const painted = paint(unbounded, shifted);
+    expect(painted.layers[0]!.chunks.every((chunk) => chunk.cx < 0 && chunk.cy < 0)).toBe(true);
+    expect(draw(painted, origin)).toEqual([
+      "........",
+      "...LR...",
+      "..Lp#...",
+      "..###...",
+      "........",
+      // The ground strip's neighbours below and to the left are empty cells.
+      "[]......",
     ]);
   });
 
@@ -295,7 +317,7 @@ function transitionAt(map: TilemapPayload, x: number, y: number): string {
 }
 
 function transitionRow(map: TilemapPayload, y = 0): string[] {
-  return Array.from({ length: map.width }, (_, x) => transitionAt(map, x, y));
+  return Array.from({ length: map.width ?? 0 }, (_, x) => transitionAt(map, x, y));
 }
 
 describe("terrain transitions", () => {

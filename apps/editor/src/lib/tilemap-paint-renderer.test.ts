@@ -97,6 +97,37 @@ describe("TilemapPaintRenderer", () => {
     expect(made[1]!.calls.filter((call) => call.op === "fillRect")).toHaveLength(8 * 20);
   });
 
+  it("draws an unbounded map's negative chunks whole over an endless grid, with the pivot marked above them", () => {
+    const { create, made } = surfaces();
+    const renderer = new TilemapPaintRenderer(create);
+    let map: TilemapPayload = { ...createDefaultTilemapPayload(), chunkSize: 4, unbounded: true, pivot: { x: -0.5, y: 1 } };
+    // Cells (-1, -1) and (-4, 3): chunks (-1, -1) and (-1, 0).
+    map = setTile(setTile(map, "layer-1", -1, -1, 1), "layer-1", -4, 3, 1);
+    const { ctx, calls } = recordingContext();
+    // Map point 0, 0 at the canvas centre.
+    expect(renderer.draw(ctx, frame(map, { pan: { x: 400, y: 300 } }))).toEqual({ composited: 2, rendered: 2, direct: 0 });
+    // Whole chunks, 4 × 16 px, left of and below the pan origin.
+    expect(calls.filter((call) => call.op === "drawImage").map((call) => call.args.slice(5))).toEqual([
+      [400 - 64, 300, 64, 64],
+      [400 - 64, 300 - 64, 64, 64],
+    ]);
+    expect(made.map((bitmap) => bitmap.calls.filter((call) => call.op === "fillRect").length)).toEqual([1, 1]);
+    // No map border and no clip: grid lines cross the whole canvas.
+    expect(calls.some((call) => call.op === "clip")).toBe(false);
+    expect(calls).toContainEqual(expect.objectContaining({ op: "moveTo", args: [0, 300] }));
+    // The only outlines are the marker's square around map point (-0.5, 1), halo then colour, drawn last.
+    const marks = calls.filter((call) => call.op === "strokeRect").map((call) => call.args);
+    expect(marks).toEqual([[392 - 6, 284 - 6, 12, 12], [392 - 6, 284 - 6, 12, 12]]);
+    expect(calls.at(-1)!.op).toBe("strokeRect");
+    // A drag shows its pivot instead; a bounded map has no marker.
+    const dragged = recordingContext();
+    renderer.draw(dragged.ctx, frame(map, { pan: { x: 400, y: 300 }, pivot: { x: 2, y: 0 } }));
+    expect(dragged.calls.at(-1)!.args).toEqual([432 - 6, 300 - 6, 12, 12]);
+    const bounded = recordingContext();
+    renderer.draw(bounded.ctx, frame(setTile(createDefaultTilemapPayload(), "layer-1", 0, 0, 1)));
+    expect(bounded.calls.filter((call) => call.op === "strokeRect")).toHaveLength(1);
+  });
+
   it("draws a tile from its atlas cell, or its placeholder colour while the atlas is missing", () => {
     const { create, made } = surfaces();
     const renderer = new TilemapPaintRenderer(create);

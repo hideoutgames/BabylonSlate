@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultTilemapPayload, getTile, setTile } from "./tilemap-payload";
+import { createDefaultTilemapPayload, getTile, setTile, type TilemapPayload } from "./tilemap-payload";
 import {
   applyPinchView,
   applyPointerPan,
@@ -9,8 +9,11 @@ import {
   isTilemapPaintStrokeTool,
   MAX_PAINT_CELL_SIZE,
   MIN_PAINT_CELL_SIZE,
+  paintCanvasPivotAt,
+  paintCanvasPoint,
   paintCanvasTileAt,
   pickTileId,
+  tilemapBucketBounds,
   tilemapStrokeMergeKey,
 } from "./tilemap-paint";
 
@@ -63,6 +66,18 @@ describe("paintCanvasTileAt", () => {
         cellSize: 32,
       }),
     ).toEqual({ x: 1, y: 1 });
+  });
+});
+
+describe("paintCanvasPoint and paintCanvasPivotAt", () => {
+  const view = { canvasHeight: 256, panX: 100, panY: 40, cellSize: 20 };
+
+  it("places a map point on the canvas and reads it back on half cells", () => {
+    // Map point (-1.5, 2): 30 px left of the pan origin, 40 px above it.
+    expect(paintCanvasPoint({ ...view, x: -1.5, y: 2 })).toEqual({ x: 70, y: 256 - 40 - 40 });
+    expect(paintCanvasPivotAt({ ...view, localX: 70, localY: 176 })).toEqual({ x: -1.5, y: 2 });
+    // A point between half cells goes to the nearest one.
+    expect(paintCanvasPivotAt({ ...view, localX: 104, localY: 256 - 40 - 13 })).toEqual({ x: 0, y: 0.5 });
   });
 });
 
@@ -295,6 +310,28 @@ describe("applyTilemapPaint", () => {
     const whole = bucket(empty, 1, 1);
     expect([0, 1, 2].flatMap((x) => [0, 1].map((y) => getTile(whole, "layer-1", x, y)))).toEqual([9, 9, 9, 9, 9, 9]);
     expect(bucket(empty, 5, 0)).toBe(empty);
+  });
+
+  it("fills an unbounded layer's empty cells up to 16 cells past its painted tiles and the start", () => {
+    const bucket = (map: TilemapPayload, x: number, y: number) =>
+      applyTilemapPaint(map, { tool: "bucket", layerId: "layer-1", tileId: 9, start: { x, y }, end: { x, y } });
+    const painted = (map: TilemapPayload) => map.layers[0]!.chunks.flatMap((chunk) => chunk.tiles).filter((gid) => gid === 9).length;
+    const open: TilemapPayload = { ...mapWithTiles([]), unbounded: true, pivot: { x: 0, y: 0 } };
+    // An empty layer: the 33 × 33 box around the start cell, negative cells included.
+    const alone = bucket(open, -2, 3);
+    expect(painted(alone)).toBe(33 * 33);
+    expect(tilemapBucketBounds(open, "layer-1", { x: -2, y: 3 })).toEqual({ minX: -18, minY: -13, maxX: 14, maxY: 19 });
+    expect([getTile(alone, "layer-1", -18, -13), getTile(alone, "layer-1", 14, 19)]).toEqual([9, 9]);
+    expect([getTile(alone, "layer-1", -19, 3), getTile(alone, "layer-1", -2, 20)]).toEqual([0, 0]);
+    // A painted layer: its extent and the start, grown by the margin, around a painted wall.
+    const walled = setTile(setTile(open, "layer-1", -10, 0, 5), "layer-1", 10, 5, 5);
+    expect(tilemapBucketBounds(walled, "layer-1", { x: 0, y: 0 })).toEqual({ minX: -26, minY: -16, maxX: 26, maxY: 21 });
+    const filled = bucket(walled, 0, 0);
+    expect(painted(filled)).toBe(53 * 38 - 2);
+    expect([getTile(filled, "layer-1", -10, 0), getTile(filled, "layer-1", -27, 0)]).toEqual([5, 0]);
+    // A bounded map still stops at its own edge.
+    const bounded = { ...mapWithTiles([]), width: 3, height: 2 };
+    expect(tilemapBucketBounds(bounded, "layer-1", { x: 1, y: 1 })).toEqual({ minX: 0, minY: 0, maxX: 2, maxY: 1 });
   });
 
   it("stamps a bottom-left origin pattern", () => {

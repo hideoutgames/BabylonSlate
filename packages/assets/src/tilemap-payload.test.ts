@@ -20,6 +20,15 @@ import {
   TilemapChunkIndex,
   tilemapCellKey,
   tilemapTilesetGuids,
+  boundedTilemapShift,
+  centerTilemapPivot,
+  setTilemapPivot,
+  setTilemapUnbounded,
+  TILEMAP_CELL_LIMIT,
+  tileInBounds,
+  tilemapPaintedExtent,
+  tilemapPivot,
+  translateTilemap,
   type TilemapPayload,
 } from "./tilemap-payload";
 
@@ -412,5 +421,131 @@ describe("setTiles with a chunk index", () => {
     expect(setTiles(map, "layer-1", write, new TilemapChunkIndex(true))).toEqual(
       setTiles(map, "layer-1", write),
     );
+  });
+});
+
+describe("unbounded tilemaps", () => {
+  /** An unbounded map of 4-tile chunks with `cells` painted on its first layer. */
+  function unbounded(cells: Array<[number, number, number]> = [], pivot = { x: 0, y: 0 }): TilemapPayload {
+    const base: TilemapPayload = { ...createDefaultTilemapPayload(), chunkSize: 4, unbounded: true, pivot };
+    return setTiles(normalizeTilemapPayload(base), "layer-1", cells.map(([x, y, id]) => ({ x, y, id })));
+  }
+  const chunkKeys = (map: TilemapPayload) => map.layers[0]!.chunks.map((chunk) => [chunk.cx, chunk.cy]);
+
+  it("stores the flag and a half-cell pivot instead of a size, and keeps its normalized form as itself", () => {
+    const stored = normalizeTilemapPayload({ ...createDefaultTilemapPayload(), unbounded: true, pivot: { x: 1.3, y: -0.2 } });
+    expect(stored).toMatchObject({ unbounded: true, pivot: { x: 1.5, y: 0 } });
+    expect(Object.is(stored.pivot!.y, -0)).toBe(false);
+    expect(stored).not.toHaveProperty("width");
+    expect(stored).not.toHaveProperty("height");
+    expect(normalizeTilemapPayload(stored)).toBe(stored);
+    // A missing or malformed pivot is (0, 0).
+    expect(normalizeTilemapPayload({ unbounded: true }).pivot).toEqual({ x: 0, y: 0 });
+    expect(normalizeTilemapPayload({ unbounded: true, pivot: { x: "2", y: Number.NaN } }).pivot).toEqual({ x: 0, y: 0 });
+    // Bounded maps have no pivot and stay as they were stored.
+    const bounded = normalizeTilemapPayload({ ...createDefaultTilemapPayload(), unbounded: false, pivot: { x: 3, y: 3 } });
+    expect(bounded).not.toHaveProperty("unbounded");
+    expect(bounded).not.toHaveProperty("pivot");
+    expect(bounded).toMatchObject({ width: 64, height: 64 });
+    expect(tilemapPivot(bounded)).toEqual({ x: 0, y: 0 });
+  });
+
+  it("keeps negative chunks and merges a chunk listed twice, later painted cells on top", () => {
+    const tiles = (entries: Array<[number, number]>) => {
+      const out = emptyChunkTiles(2);
+      for (const [at, gid] of entries) out[at] = gid;
+      return out;
+    };
+    const lone = { cx: 3, cy: 0, tiles: tiles([[0, 9]]) };
+    const map = normalizeTilemapPayload({
+      unbounded: true,
+      chunkSize: 2,
+      layers: [{
+        id: "layer-1",
+        chunks: [
+          { cx: -2, cy: -1, tiles: tiles([[0, 1], [1, 2]]) },
+          lone,
+          { cx: -2, cy: -1, tiles: tiles([[1, 5], [3, 6]]) },
+        ],
+      }],
+    });
+    expect(chunkKeys(map)).toEqual([[-2, -1], [3, 0]]);
+    expect([[-4, -2], [-3, -2], [-3, -1], [-4, -1]].map(([x, y]) => getTile(map, "layer-1", x!, y!))).toEqual([1, 5, 6, 0]);
+    expect(map.layers[0]!.chunks[1]).toBe(lone);
+  });
+
+  it("writes cells at any coordinate, negative ones and ones past a stored size included", () => {
+    const map = unbounded([[-1, -1, 3], [-37, 5, 4], [200, -90, 5]]);
+    expect([[-1, -1], [-37, 5], [200, -90]].map(([x, y]) => getTile(map, "layer-1", x!, y!))).toEqual([3, 4, 5]);
+    expect(chunkKeys(map)).toEqual([[-1, -1], [-10, 1], [50, -23]]);
+    // Only cells past the limit that keeps cell keys distinct are outside.
+    expect(tileInBounds(map, -TILEMAP_CELL_LIMIT, TILEMAP_CELL_LIMIT)).toBe(true);
+    expect(setTile(map, "layer-1", TILEMAP_CELL_LIMIT + 1, 0, 7)).toBe(map);
+    // A size the map still carries clips nothing.
+    const sized = { ...map, width: 2, height: 2 };
+    expect(getTile(setTile(sized, "layer-1", 10, 10, 8), "layer-1", 10, 10)).toBe(8);
+  });
+
+  it("reads the painted extent across negative chunks, and nothing on an empty map", () => {
+    expect(tilemapPaintedExtent(unbounded())).toBeNull();
+    const map = addTilemapLayer(unbounded([[-5, 2, 1], [3, -7, 1]]));
+    const both = setTile(map, "layer-2", 9, 0, 2);
+    expect(tilemapPaintedExtent(map)).toEqual({ minX: -5, minY: -7, maxX: 3, maxY: 2 });
+    expect(tilemapPaintedExtent(both)).toEqual({ minX: -5, minY: -7, maxX: 9, maxY: 2 });
+  });
+
+  it("switches to unbounded keeping every cell, the layers and the bounded origin", () => {
+    const bounded = setTile(setTile({ ...createDefaultTilemapPayload(), chunkSize: 4 }, "layer-1", 0, 0, 1), "layer-1", 9, 3, 2);
+    const switched = setTilemapUnbounded(bounded, true);
+    expect(switched).toMatchObject({ unbounded: true, pivot: { x: 0, y: 0 } });
+    expect(switched).not.toHaveProperty("width");
+    expect(switched.layers).toBe(bounded.layers);
+    expect(normalizeTilemapPayload(switched)).toBe(switched);
+    expect(setTilemapUnbounded(switched, true)).toBe(switched);
+    expect(setTilemapUnbounded(bounded, false)).toBe(bounded);
+  });
+
+  it("switches back to bounded, moving the tiles only when some lie at negative cells", () => {
+    // Every tile at x ≥ 0, y ≥ 0: nothing moves and the size covers them.
+    const positive = unbounded([[2, 1, 1], [6, 4, 2]], { x: 3, y: 2 });
+    expect(boundedTilemapShift(positive)).toBeNull();
+    const kept = setTilemapUnbounded(positive, false);
+    expect(kept).toMatchObject({ width: 7, height: 5 });
+    expect(kept).not.toHaveProperty("unbounded");
+    expect(kept).not.toHaveProperty("pivot");
+    expect(kept.layers).toBe(positive.layers);
+    // A tile at a negative cell: the painted extent moves to start at cell 0, 0.
+    const negative = unbounded([[-3, 1, 1], [2, -2, 2], [4, 0, 3]]);
+    expect(boundedTilemapShift(negative)).toEqual({ x: 3, y: 2 });
+    const moved = setTilemapUnbounded(negative, false);
+    expect(moved).toMatchObject({ width: 8, height: 4 });
+    expect([[0, 3], [5, 0], [7, 2]].map(([x, y]) => getTile(moved, "layer-1", x!, y!))).toEqual([1, 2, 3]);
+    expect(tilemapPaintedExtent(moved)).toEqual({ minX: 0, minY: 0, maxX: 7, maxY: 3 });
+    expect(moved.layers[0]!.chunks.every((chunk) => chunk.cx >= 0 && chunk.cy >= 0)).toBe(true);
+    // Nothing painted: the default size.
+    expect(setTilemapUnbounded(unbounded(), false)).toMatchObject({ width: 64, height: 64 });
+  });
+
+  it("translates every layer by whole cells without clipping", () => {
+    const map = addTilemapLayer(unbounded([[0, 0, 1]]));
+    const both = setTile(map, "layer-2", -1, 2, 2);
+    const moved = translateTilemap(both, -6, 3);
+    expect(getTile(moved, "layer-1", -6, 3)).toBe(1);
+    expect(getTile(moved, "layer-2", -7, 5)).toBe(2);
+    expect(getTile(moved, "layer-1", 0, 0)).toBe(0);
+    expect(translateTilemap(both, 0, 0)).toBe(both);
+  });
+
+  it("moves the pivot on half cells only, and centres it on the painted extent", () => {
+    const map = unbounded([[-3, -1, 1], [2, 4, 1]]);
+    expect(setTilemapPivot(map, { x: 2.26, y: -1.74 }).pivot).toEqual({ x: 2.5, y: -1.5 });
+    expect(setTilemapPivot(map, { x: 0.1, y: -0.1 })).toBe(map);
+    const bounded = createDefaultTilemapPayload();
+    expect(setTilemapPivot(bounded, { x: 4, y: 4 })).toBe(bounded);
+    // Cells -3..2 × -1..4 span x -3..3 and y -1..5 in tile units.
+    expect(centerTilemapPivot(map).pivot).toEqual({ x: 0, y: 2 });
+    expect(centerTilemapPivot(unbounded([[0, 0, 1], [1, 0, 1]])).pivot).toEqual({ x: 1, y: 0.5 });
+    const empty = unbounded([], { x: 4, y: 4 });
+    expect(centerTilemapPivot(empty)).toBe(empty);
   });
 });

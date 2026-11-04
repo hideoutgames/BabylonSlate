@@ -1,8 +1,10 @@
 import { tilesetTileById, type TilesetPayload } from "./tileset-payload";
 import {
   decodeTileGid,
+  tilemapPivot,
   tilemapTilesetGuids,
   type TilemapPayload,
+  type TilemapPivot,
 } from "./tilemap-payload";
 
 export interface TilemapChain {
@@ -24,10 +26,12 @@ interface ChainChunk {
 
 /**
  * Merge a layer's solid tiles across all its chunks into Rapier chain
- * polylines in world space. Shared edges cancel, across chunk borders too, so
- * a floor that spans a border has no edge there for a body to catch on;
- * collinear outer edges collapse so a solid rectangle is one four-point loop
- * rather than a box per tile.
+ * polylines in the Tilemap's local space. Shared edges cancel, across chunk
+ * borders too, so a floor that spans a border has no edge there for a body to
+ * catch on; collinear outer edges collapse so a solid rectangle is one
+ * four-point loop rather than a box per tile. Map point `pivot` (tile units,
+ * default (0, 0); an unbounded map's `tilemapPivot`) lands on the origin, as
+ * the chunk meshes place it.
  */
 export function tilemapLayerChains(options: {
   chunks: readonly ChainChunk[];
@@ -36,8 +40,11 @@ export function tilemapLayerChains(options: {
   worldTileWidth: number;
   worldTileHeight: number;
   resolveGid?: GidResolver;
+  pivot?: Readonly<TilemapPivot>;
 }): TilemapChain[] {
   const { chunks, chunkSize, tileset, worldTileWidth, worldTileHeight, resolveGid } = options;
+  const pivotX = options.pivot?.x ?? 0;
+  const pivotY = options.pivot?.y ?? 0;
   const unitEdges: Array<[Point, Point]> = [];
   const custom: TilemapChain[] = [];
 
@@ -72,8 +79,8 @@ export function tilemapLayerChains(options: {
           custom.push({
             loop: false,
             points: def.collision.points.map((point) => ({
-              x: (gx + point.x) * worldTileWidth,
-              y: (gy + point.y) * worldTileHeight,
+              x: (gx + point.x - pivotX) * worldTileWidth,
+              y: (gy + point.y - pivotY) * worldTileHeight,
             })),
           });
         }
@@ -84,14 +91,17 @@ export function tilemapLayerChains(options: {
   const outlines = outlineChains(unitEdges).map((chain) => ({
     ...chain,
     points: chain.points.map((point) => ({
-      x: point.x * worldTileWidth,
-      y: point.y * worldTileHeight,
+      x: (point.x - pivotX) * worldTileWidth,
+      y: (point.y - pivotY) * worldTileHeight,
     })),
   }));
   return [...outlines, ...custom.filter((c) => c.points.length >= 2)];
 }
 
-/** Collision-layer chains for a tilemap, merged per layer (nav bake / Rapier). */
+/**
+ * Collision-layer chains for a tilemap, merged per layer, in the Tilemap's
+ * local space with its pivot at the origin (nav bake, editor Drop).
+ */
 export function tilemapCollisionChains(
   map: TilemapPayload,
   tileset: TilesetPayload | ReadonlyMap<string, TilesetPayload>,
@@ -122,6 +132,7 @@ export function tilemapCollisionChains(
         worldTileWidth,
         worldTileHeight,
         resolveGid,
+        pivot: tilemapPivot(map),
       }),
     );
   }

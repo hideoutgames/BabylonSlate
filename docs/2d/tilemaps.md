@@ -49,7 +49,7 @@ Two autotiles of the same Tileset, such as grass and dirt, can meet through a tr
 | Move | Pans the map. The default tool. |
 | Brush, Eraser | Paint or erase tiles under your finger. |
 | Rect | Fills the rectangle you drag. An outline shows it until you lift your finger. |
-| Bucket | Fills the connected area of matching tiles, up to the edge of the map. |
+| Bucket | Fills the connected area of matching tiles, up to the edge of the map. On an unbounded map, up to 16 cells past the layer's painted tiles. |
 | Stamp | Places a 2 × 2 block of the selected tile. |
 | Picker | Picks the tile you tap as the brush. |
 
@@ -67,7 +67,7 @@ Your edits show in the Scene viewport as you make them, without saving first.
 - An autotile with no tiles yet shows **Set Up in Tileset**, which opens its Tileset.
 - The **Picker** on an autotile cell picks the autotile, not the single tile.
 - Only tiles of the same autotile join. Single tiles count as empty, and so do other autotiles unless the Tileset has a [transition](../assets/tileset.md#transitions) between the two.
-- Beyond the edge of the map counts as the same autotile, so ground painted up to the edge carries on past it.
+- Beyond the edge of the map counts as the same autotile, so ground painted up to the edge carries on past it. An unbounded map has no edge: its outermost autotile tiles draw their edges.
 - **Bucket** with an autotile fills the connected tiles of the autotile you tap, whatever their pieces.
 - Painting single tiles never changes the tiles around them, so you can place a special piece by hand. It stays until one of its Tileset's autotiles changes.
 - Changing an autotile in its Tileset repicks the autotile cells of every map that uses it, on every layer. The open Tilemap shows the new pieces at once and saves them with your next edit; the viewport, Play and exported games show them too.
@@ -76,7 +76,10 @@ Your edits show in the Scene viewport as you make them, without saving first.
 
 | Setting | Description |
 | --- | --- |
-| Map Width, Map Height | Map size in tiles. Default 64 × 64. Shrinking the map removes tiles outside it. |
+| Unbounded | Removes the map's size, so you can paint in every direction. Default off. See [Unbounded tilemaps](#unbounded-tilemaps). |
+| Map Width, Map Height | Map size in tiles. Default 64 × 64. Shrinking the map removes tiles outside it. Bounded maps only. |
+| Pivot | The point of the map, in tiles, that sits at the actor's position. Moves in half-tile steps. Default 0, 0. **Center Pivot** moves it to the middle of the painted tiles. Unbounded maps only. |
+| Painted Area | How many columns and rows the painted tiles cover. Unbounded maps only. |
 | Tile Width, Tile Height | Cell size in pixels (default 16). World size is this divided by **Pixels Per Unit**. Usually the same as the Tileset's tile size. |
 | Chunk Size | Tiles per side of each internal block. Default 32. Changing it keeps every tile in its cell. |
 
@@ -90,9 +93,21 @@ Your edits show in the Scene viewport as you make them, without saving first.
 | Sorting Layer, Order In Layer | Draw order of this layer within the map. |
 | Parallax | How far the layer moves with the camera in Play. 1 stays fixed to the world, 0 follows the camera, values between scroll more slowly. Default 1, 1. |
 
+## Unbounded tilemaps
+
+A new map has a fixed size. Turn on **Unbounded** under **Map** in the **Inspector** for a map you can grow in every direction: you paint left of and below cell 0, 0 as freely as anywhere else, and the map is exactly as large as its painted tiles. The selection outline, framing the actor in the viewport and collision all follow the furthest tiles.
+
+An unbounded map has a **Pivot**, the point of the map that sits at the actor's position:
+
+1. **Paint** opens with the pivot in the middle of the view, drawn as a crosshair over the tiles. Paint around it in any direction.
+2. Drag the crosshair to move the pivot, in half-tile steps. Each drag is one undo step and paints nothing; a tap on it paints as usual.
+3. Or set **Pivot** in the **Inspector**, or tap **Center Pivot** to put it in the middle of the painted tiles. **Painted Area** shows how many columns and rows they cover.
+
+Moving the pivot moves the tiles around the actor; it never changes which cell a tile is in. Turning **Unbounded** on keeps every tile where it is in the scene, with the pivot at 0, 0. Turning it off gives the map the size of its painted tiles; when some lie left of or below cell 0, 0, the editor asks first and then moves every tile so the painted area starts at cell 0, 0. You can undo either change.
+
 ## Place a tilemap
 
-In **Place Actors**, choose **Rendering > Tilemap** and set **Asset** on its Tilemap component, or pick your Tilemap under **Content > Project**. Cell 0, 0 sits at the actor's position, and the map extends right and up. Tilemaps work in scenes and in Scene Layers.
+In **Place Actors**, choose **Rendering > Tilemap** and set **Asset** on its Tilemap component, or pick your Tilemap under **Content > Project**. Cell 0, 0 sits at the actor's position, and the map extends right and up; an unbounded map puts its **Pivot** there instead. Tilemaps work in scenes and in Scene Layers.
 
 The [Tilemap](../components/tilemap.md) component's **Sorting Layer** and **Order In Layer** place the whole map among other sprites; the map's own layers sort inside it.
 
@@ -102,7 +117,7 @@ Each layer with **Collision** on becomes solid ground from its Full and Chain ti
 
 ## Things to know
 
-- **Bucket** stops at the edge of the map. On an empty layer it fills the whole map.
+- **Bucket** stops at the edge of the map. On an empty layer it fills the whole map. On an unbounded map it stops 16 cells past the layer's painted tiles and the cell you tap.
 - Removing a Tileset from a map erases its tiles from every layer. The editor asks first, and you can undo it.
 - Animated tiles play in Play, Simulate and Preview Build, and pause when the game pauses. The editor viewport shows each animated tile's first frame.
 - Parallax applies only in Play, not in the editor viewport.

@@ -1,6 +1,7 @@
 import {
   addTilemapTileset,
   applyTilemapPaint,
+  centerTilemapPivot,
   createDefaultSpriteAnimationSheet,
   createDefaultTilemapPayload,
   createTilemapLayer,
@@ -10,6 +11,7 @@ import {
   localIndex,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
+  setTilemapUnbounded,
   spriteAnimationDurationMs,
   TERRAIN_ALL,
   TERRAIN_E,
@@ -81,6 +83,7 @@ export const FEATURE_TEST_TWO_D_NAMES = {
   tiles: "FT_2DTiles",
   decorTiles: "FT_2DDecorTiles",
   worldMap: "FT_2DWorldMap",
+  skyIsland: "FT_2DSkyIsland",
 } as const;
 
 /** Custom sorting layer between Default and Foreground (world rendering group). */
@@ -210,8 +213,8 @@ export async function buildFeatureTestTwoD(ctx: FeatureTestContext): Promise<voi
   const sprites = await buildSprites(ctx);
   const graph = await buildRobotGraph(ctx, sprites);
   const torchGraph = await buildTorchGraph(ctx);
-  const tilemap = await buildTilemap(ctx);
-  const scene = buildScene(ctx, { sprites, graph, torchGraph, tilemap });
+  const { tilemap, skyIsland } = await buildTilemap(ctx);
+  const scene = buildScene(ctx, { sprites, graph, torchGraph, tilemap, skyIsland });
   await ctx.addSceneDocument({
     kind: "scene",
     folder: "Scenes",
@@ -483,9 +486,10 @@ const CLOUDS: ReadonlyArray<readonly [number, number]> = [
  * torch tiles, both on the 13 × 12 Kenney sheet) and the Tilemap: Backdrop
  * (Background, parallax 0.5, no collision), Ground (collision) and Decor
  * (Foreground, second Tileset) layers painted chunk by chunk, then terrain
- * brush strokes for the ledge and a backdrop island.
+ * brush strokes for the ledge and a backdrop island; and the unbounded Sky
+ * Island map (`buildSkyIsland`).
  */
-async function buildTilemap(ctx: FeatureTestContext): Promise<string> {
+async function buildTilemap(ctx: FeatureTestContext): Promise<{ tilemap: string; skyIsland: string }> {
   const tileset = terrainTileset(ctx);
   const tilesGuid = (await ctx.createAsset("Tileset", FOLDER, NAMES.tiles, { payload: payload(tileset) })).guid;
   const decorTileset = decorAtlasTileset(ctx);
@@ -602,8 +606,41 @@ async function buildTilemap(ctx: FeatureTestContext): Promise<string> {
   terrainStroke("ground", "ledge", "brush", { x: 2, y: 4 }, { x: 4, y: 4 });
   terrainStroke("backdrop", "grass", "rect", { x: 3, y: 5 }, { x: 5, y: 6 });
   terrainStroke("backdrop", "grass", "brush", { x: 4, y: 7 }, { x: 5, y: 7 });
-  return (
+  const tilemap = (
     await ctx.createAsset("Tilemap", FOLDER, NAMES.worldMap, { payload: payload(normalizeTilemapPayload(map)) })
+  ).guid;
+  return { tilemap, skyIsland: await buildSkyIsland(ctx, tilesGuid, tileset) };
+}
+
+/**
+ * `FT_2DSkyIsland`: an unbounded Tilemap of cells at columns -2..0, rows
+ * -1..0 (four chunks, three at negative chunk coordinates), painted with one Grass rect
+ * stroke (an unbounded map has no outside to join, so every edge resolves
+ * open), its pivot moved by **Center Pivot** to the painted centre, map point
+ * (-0.5, 0). Collision on: a static body nothing falls onto.
+ */
+async function buildSkyIsland(ctx: FeatureTestContext, tilesGuid: string, tileset: TilesetPayload): Promise<string> {
+  const known = new Map([[tilesGuid, tileset]]);
+  let island: TilemapPayload = setTilemapUnbounded({
+    ...createDefaultTilemapPayload(),
+    tileWidth: TILE_PX,
+    tileHeight: TILE_PX,
+    chunkSize: CHUNK,
+    layers: [{ ...createTilemapLayer("island", "Island"), collision: true }],
+  }, true);
+  island = addTilemapTileset(island, tilesGuid, tileset, known);
+  island = applyTilemapPaint(
+    island,
+    { tool: "rect", layerId: "island", tileId: 0, start: { x: -2, y: -1 }, end: { x: 0, y: 0 }, terrain: { guid: tilesGuid, terrainId: "grass" } },
+    undefined,
+    known,
+  );
+  island = centerTilemapPivot(island);
+  if (!island.unbounded || island.layers[0]!.chunks.length !== 4) {
+    throw new Error("FeatureTest Sky Island lost its negative chunks.");
+  }
+  return (
+    await ctx.createAsset("Tilemap", FOLDER, NAMES.skyIsland, { payload: payload(normalizeTilemapPayload(island)) })
   ).guid;
 }
 
@@ -831,7 +868,7 @@ function tileBottomY(row: number): number {
  */
 function buildScene(
   ctx: FeatureTestContext,
-  refs: { sprites: SpriteGuids; graph: string; torchGraph: string; tilemap: string },
+  refs: { sprites: SpriteGuids; graph: string; torchGraph: string; tilemap: string; skyIsland: string },
 ): SerializedScene {
   const scene = createDefaultScene("2d");
   scene.name = FEATURE_TEST_TWO_D_SCENE_NAME;
@@ -867,6 +904,11 @@ function buildScene(
   add("world", "ft-2d-tilemap", "World Tilemap", [MAP_ORIGIN[0], MAP_ORIGIN[1], 0], [
     comp("ft-2d-tilemap-map", "TilemapComponent", { assetGuid: refs.tilemap, sortingLayer: "Background", orderInLayer: 0 }),
   ]);
+  // The unbounded island's pivot (its painted centre) sits on the actor: half-size, above the
+  // pool, between the falling body columns at -1.2 and 2, so nothing lands on it.
+  add("world", "ft-2d-sky-island", "Sky Island", [0.4, 3.4, 0], [
+    comp("ft-2d-sky-island-map", "TilemapComponent", { assetGuid: refs.skyIsland, sortingLayer: "Background", orderInLayer: 1 }),
+  ], 0.5);
   // Floats over the crates, right of the ledge; robots sliding off the ledge end up in it.
   add("world", "ft-2d-funnel", "Chain Funnel", [tileCenterX(6), -1.2, 0], [
     rigidBody("ft-2d-funnel-body", "static"),

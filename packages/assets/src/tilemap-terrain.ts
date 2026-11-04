@@ -170,7 +170,8 @@ function mostFacedBorder(faced: ReadonlyArray<string | null>, directions: readon
  * What a cell of `member` at (x, y) wants from its 8 neighbours' terrains
  * (`memberAt`; never their variants, so a painted cell changes only itself and
  * its 8 neighbours): the joined bits and the set. Per direction: outside the
- * map or the same terrain joins; another terrain U of the same Tileset is open
+ * map (a bounded map's edge; an unbounded map has no outside, so its
+ * neighbours are cells like any other) or the same terrain joins; another terrain U of the same Tileset is open
  * facing U when this terrain has a border set for U, else joins when U has a
  * border set for this terrain (U's pieces draw the seam), else is open facing
  * nothing; anything else is open facing nothing. The set is the border faced
@@ -262,8 +263,9 @@ export function tilemapTerrainCellPieces(
  * Paint `cells` with a terrain, or erase them when `terrain` is `null`, then
  * pick the variant of every painted cell and of every terrain tile around them
  * from its 8 neighbours (`resolveTerrainCell`), read across chunk borders and
- * empty chunks. Cells outside the map always join, so terrain runs on past the
- * map edge, and are never written. A map stale for one of `tilesets` is
+ * empty chunks. Cells outside a bounded map always join, so terrain runs on
+ * past the map edge, and are never written; an unbounded map has no outside,
+ * so empty neighbours stay open. A map stale for one of `tilesets` is
  * refreshed first (`refreshStaleTilemapTerrains`), so the result is current
  * with every loaded Tileset. Returns `map` itself when the stroke changes no
  * cell, and nothing changes when the terrain has no tiles.

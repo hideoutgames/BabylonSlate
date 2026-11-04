@@ -18,6 +18,7 @@ Select an actor, then choose **Add Component > Rendering > Tilemap**. You can al
 ## Notes
 
 - Works in world scenes and in Scene Layers.
+- The actor's position is cell 0, 0's bottom-left corner, and the map extends right and up. An [unbounded](../assets/tilemap.md#unbounded-maps) Tilemap puts its **Pivot** at the actor's position instead, and its bounds are its painted tiles.
 - The Sorting Layer and Order In Layer apply to the whole tilemap. Inside it, the asset's own layers keep their order.
 - Sorting Layers are listed back to front in **Project Settings > Game > Sorting Layers**. Layers further down the list draw in front.
 - In Play the tilemap becomes a static body, so it needs no Rigid Body. Only tiles whose **Tile Collision** is **Full** or **Chain** in the [Tileset](../assets/tileset.md), on layers that have **Collision** turned on in the Tilemap asset, collide. Tiles left on **None** stay passable.

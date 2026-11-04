@@ -47,16 +47,54 @@ export interface TileGidHit {
   tileset: TilesetPayload;
 }
 
-export interface TilemapPayload {
+/** A point of a map in tile units, +Y up: cell (x, y) spans x..x+1, y..y+1. */
+export interface TilemapPivot {
+  x: number;
+  y: number;
+}
+
+interface TilemapPayloadFields {
   tilesets: TilemapTilesetRef[];
   tileWidth: number;
   tileHeight: number;
-  /** Map size in tiles, +Y up, origin bottom-left. Storage stays sparse chunks. */
-  width: number;
-  height: number;
   chunkSize: number;
   layers: TilemapLayer[];
 }
+
+/**
+ * A map of a fixed size: cells 0 ≤ x < `width`, 0 ≤ y < `height` (+Y up), the
+ * bottom-left corner of cell (0, 0) at the actor's origin. Storage stays sparse chunks.
+ */
+export interface BoundedTilemapPayload extends TilemapPayloadFields {
+  unbounded?: undefined;
+  width: number;
+  height: number;
+  pivot?: undefined;
+}
+
+/**
+ * A map with no size: cells at any integer coordinates (within
+ * `TILEMAP_CELL_LIMIT`), negative ones included. `pivot` is the map point at
+ * the actor's origin, in tile units snapped to half cells. A `width` or
+ * `height` it carries means nothing, and normalizing drops it.
+ */
+export interface UnboundedTilemapPayload extends TilemapPayloadFields {
+  unbounded: true;
+  pivot: TilemapPivot;
+  width?: number;
+  height?: number;
+}
+
+export type TilemapPayload = BoundedTilemapPayload | UnboundedTilemapPayload;
+
+/**
+ * Largest |cell coordinate| of an unbounded map: `tilemapCellKey` keeps cells
+ * distinct below 2^20, so writes past it are dropped as outside the map.
+ */
+export const TILEMAP_CELL_LIMIT = 2 ** 20 - 1;
+
+/** The map point at the actor's origin of every bounded map: the bottom-left corner of cell (0, 0). */
+const BOUNDED_PIVOT: Readonly<TilemapPivot> = Object.freeze({ x: 0, y: 0 });
 
 export function emptyChunkTiles(chunkSize: number): number[] {
   const size = Math.max(1, chunkSize);
@@ -310,16 +348,32 @@ export function normalizeTilemapPayload(value: unknown): TilemapPayload {
   const tilesets = normalizeTilesetRefs(source.tilesets);
   const resolvedLayers =
     layers.length > 0 ? layers : createDefaultTilemapPayload().layers;
+  const tileWidth = positiveInt(source.tileWidth, 16);
+  const tileHeight = positiveInt(source.tileHeight, 16);
+  if (source.unbounded === true) {
+    // An unbounded map has no size: a stored `width`/`height` is dropped.
+    const pivot = normalizePivot(source.pivot);
+    if (
+      hasExactKeys(source, UNBOUNDED_TILEMAP_KEYS) &&
+      tilesets === source.tilesets &&
+      resolvedLayers === source.layers &&
+      tileWidth === source.tileWidth &&
+      tileHeight === source.tileHeight &&
+      chunkSize === source.chunkSize &&
+      pivot === source.pivot
+    ) {
+      return source as unknown as UnboundedTilemapPayload;
+    }
+    return { tilesets, tileWidth, tileHeight, unbounded: true, pivot, chunkSize, layers: resolvedLayers };
+  }
   const storedWidth = storedMapSize(source.width);
   const storedHeight = storedMapSize(source.height);
   // Only a payload without a stored size reads its painted extent.
   const extent = storedWidth !== null && storedHeight !== null
     ? null
-    : occupiedTileExtent(resolvedLayers, chunkSize);
-  const width = storedWidth ?? Math.max(DEFAULT_TILEMAP_WIDTH, extent!.width);
-  const height = storedHeight ?? Math.max(DEFAULT_TILEMAP_HEIGHT, extent!.height);
-  const tileWidth = positiveInt(source.tileWidth, 16);
-  const tileHeight = positiveInt(source.tileHeight, 16);
+    : tilemapPaintedExtent({ layers: resolvedLayers, chunkSize });
+  const width = storedWidth ?? Math.max(DEFAULT_TILEMAP_WIDTH, extent ? extent.maxX + 1 : 0);
+  const height = storedHeight ?? Math.max(DEFAULT_TILEMAP_HEIGHT, extent ? extent.maxY + 1 : 0);
   if (
     hasExactKeys(source, TILEMAP_KEYS) &&
     tilesets === source.tilesets &&
@@ -330,12 +384,13 @@ export function normalizeTilemapPayload(value: unknown): TilemapPayload {
     height === source.height &&
     chunkSize === source.chunkSize
   ) {
-    return source as unknown as TilemapPayload;
+    return source as unknown as BoundedTilemapPayload;
   }
   return { tilesets, tileWidth, tileHeight, width, height, chunkSize, layers: resolvedLayers };
 }
 
 const TILEMAP_KEYS = ["tilesets", "tileWidth", "tileHeight", "width", "height", "chunkSize", "layers"] as const;
+const UNBOUNDED_TILEMAP_KEYS = ["tilesets", "tileWidth", "tileHeight", "unbounded", "pivot", "chunkSize", "layers"] as const;
 const LAYER_KEYS = ["id", "name", "visible", "collision", "sortingLayer", "orderInLayer", "parallax", "chunks"] as const;
 const CHUNK_KEYS = ["cx", "cy", "tiles"] as const;
 
@@ -348,6 +403,28 @@ function hasExactKeys(value: object, keys: readonly string[]): boolean {
 /** A stored map size, or `null` when the payload has none (it then follows the painted extent). */
 function storedMapSize(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+}
+
+/**
+ * A pivot coordinate snapped to the nearest half cell (a cell corner, edge
+ * middle or centre), within `TILEMAP_CELL_LIMIT`; anything else is 0.
+ */
+export function snapTilemapPivot(value: unknown): number {
+  const number = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const snapped = Math.round(Math.min(TILEMAP_CELL_LIMIT, Math.max(-TILEMAP_CELL_LIMIT, number)) * 2) / 2;
+  // `Math.round(-0.2)` is -0; a stored pivot never carries it.
+  return snapped === 0 ? 0 : snapped;
+}
+
+/** A stored pivot, kept as the same object when it already holds snapped `x` and `y` only. */
+function normalizePivot(value: unknown): TilemapPivot {
+  const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const x = snapTilemapPivot(row.x);
+  const y = snapTilemapPivot(row.y);
+  if (x === row.x && y === row.y && !Object.is(row.x, -0) && !Object.is(row.y, -0) && hasExactKeys(row, ["x", "y"])) {
+    return row as unknown as TilemapPivot;
+  }
+  return { x, y };
 }
 
 function normalizeTilesetRefs(value: unknown): TilemapTilesetRef[] {
@@ -405,12 +482,23 @@ export function chunkCoordForTile(
   return { cx, cy, lx, ly };
 }
 
+/**
+ * Whether cell (gx, gy) is part of the map: inside `width` × `height` from
+ * cell (0, 0) for a bounded map; any cell within `TILEMAP_CELL_LIMIT` on both
+ * axes for an unbounded one, negative coordinates included.
+ */
 export function tileInBounds(
-  map: Pick<TilemapPayload, "width" | "height">,
+  map: Pick<BoundedTilemapPayload, "unbounded" | "width" | "height"> | Pick<UnboundedTilemapPayload, "unbounded">,
   gx: number,
   gy: number,
 ): boolean {
+  if (map.unbounded) return Math.abs(gx) <= TILEMAP_CELL_LIMIT && Math.abs(gy) <= TILEMAP_CELL_LIMIT;
   return gx >= 0 && gy >= 0 && gx < map.width && gy < map.height;
+}
+
+/** The map point at the actor's origin: an unbounded map's `pivot`, (0, 0) for a bounded map. */
+export function tilemapPivot(map: Pick<BoundedTilemapPayload, "unbounded" | "pivot"> | Pick<UnboundedTilemapPayload, "unbounded" | "pivot">): Readonly<TilemapPivot> {
+  return map.unbounded ? map.pivot : BOUNDED_PIVOT;
 }
 
 export function getTile(
@@ -516,8 +604,9 @@ function editedChunks(
 }
 
 /**
- * Write many cells, copying each touched chunk once. Cells outside the map are
- * skipped. Storage stays sparse: erasing never allocates a chunk, and a chunk
+ * Write many cells, copying each touched chunk once. Cells outside the map
+ * (`tileInBounds`) are skipped: a bounded map clips at its size, an unbounded
+ * one writes any cell, negative ones included. Storage stays sparse: erasing never allocates a chunk, and a chunk
  * left with no tiles is dropped. Returns `map` itself when nothing changed.
  *
  * A `TilemapChunkIndex` shared by the calls of one stroke keeps each call's
@@ -678,7 +767,45 @@ function normalizeChunks(value: unknown, chunkSize: number): TilemapChunk[] {
     kept = false;
     return { cx, cy, tiles };
   });
+  const merged = mergeDuplicateChunks(chunks, length);
+  if (merged !== chunks) return merged;
   return kept ? (value as TilemapChunk[]) : chunks;
+}
+
+/**
+ * One chunk per (cx, cy), negative coordinates included: a chunk listed again
+ * folds into the first one with that key, its non-empty cells written over the
+ * earlier ones (the later chunk draws on top). Returns `chunks` itself when every key is unique.
+ */
+function mergeDuplicateChunks(chunks: TilemapChunk[], length: number): TilemapChunk[] {
+  const counts = new Map<number, number>();
+  for (const chunk of chunks) {
+    const key = tilemapCellKey(chunk.cx, chunk.cy);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  if (counts.size === chunks.length) return chunks;
+  const merged: TilemapChunk[] = [];
+  const byKey = new Map<number, TilemapChunk>();
+  for (const chunk of chunks) {
+    const key = tilemapCellKey(chunk.cx, chunk.cy);
+    // A chunk listed once keeps its object.
+    if (counts.get(key) === 1) {
+      merged.push(chunk);
+      continue;
+    }
+    const target = byKey.get(key);
+    if (!target) {
+      const copy = { cx: chunk.cx, cy: chunk.cy, tiles: [...chunk.tiles] };
+      byKey.set(key, copy);
+      merged.push(copy);
+      continue;
+    }
+    for (let i = 0; i < length; i++) {
+      const gid = chunk.tiles[i]!;
+      if (gid > 0) target.tiles[i] = gid;
+    }
+  }
+  return merged;
 }
 
 /**
@@ -689,16 +816,24 @@ function normalizeChunks(value: unknown, chunkSize: number): TilemapChunk[] {
  */
 export function rechunkTilemap(map: TilemapPayload, chunkSize: number): TilemapPayload {
   const size = Math.max(1, Math.floor(chunkSize) || 1);
+  if (size === Math.max(1, map.chunkSize)) return map;
+  return { ...map, chunkSize: size, layers: recutLayers(map, size, 0, 0) };
+}
+
+/**
+ * Every layer's cells moved by (`dx`, `dy`) whole cells and cut into chunks of
+ * `size`, bottom row first, left to right; empty chunks are dropped.
+ */
+function recutLayers(map: TilemapPayload, size: number, dx: number, dy: number): TilemapLayer[] {
   const from = Math.max(1, map.chunkSize);
-  if (size === from) return map;
-  const layers = map.layers.map((layer) => {
+  return map.layers.map((layer) => {
     const byKey = new Map<number, TilemapChunk>();
     for (const chunk of layer.chunks) {
       for (let at = 0; at < chunk.tiles.length; at++) {
         const gid = chunk.tiles[at]!;
         if (!gid) continue;
-        const x = chunk.cx * from + (at % from);
-        const y = chunk.cy * from + Math.floor(at / from);
+        const x = chunk.cx * from + (at % from) + dx;
+        const y = chunk.cy * from + Math.floor(at / from) + dy;
         const { cx, cy, lx, ly } = chunkCoordForTile(x, y, size);
         const key = tilemapCellKey(cx, cy);
         let target = byKey.get(key);
@@ -712,7 +847,6 @@ export function rechunkTilemap(map: TilemapPayload, chunkSize: number): TilemapP
     const chunks = [...byKey.values()].sort((a, b) => a.cy - b.cy || a.cx - b.cx);
     return { ...layer, chunks };
   });
-  return { ...map, chunkSize: size, layers };
 }
 
 /** Largest |coordinate| `tilemapCellKey` keeps distinct. */
@@ -729,11 +863,16 @@ export function tilemapCellKey(x: number, y: number): number {
   return (y + CELL_KEY_OFFSET) * CELL_KEY_STRIDE + (x + CELL_KEY_OFFSET);
 }
 
+/**
+ * A bounded map at a new size, clearing the tiles outside it; a chunk wholly
+ * inside keeps its object. An unbounded map has no size and is returned as it is.
+ */
 export function resizeTilemap(
   map: TilemapPayload,
   width: number,
   height: number,
 ): TilemapPayload {
+  if (map.unbounded) return map;
   const nextWidth = Math.max(1, Math.floor(width) || 1);
   const nextHeight = Math.max(1, Math.floor(height) || 1);
   const size = Math.max(1, map.chunkSize);
@@ -765,26 +904,161 @@ export function resizeTilemap(
   return { ...map, width: nextWidth, height: nextHeight, layers };
 }
 
-function occupiedTileExtent(
-  layers: readonly TilemapLayer[],
-  chunkSize: number,
-): { width: number; height: number } {
-  const size = Math.max(1, chunkSize);
-  let maxX = -1;
-  let maxY = -1;
-  for (const layer of layers) {
-    for (const chunk of layer.chunks) {
-      for (let ly = 0; ly < size; ly++) {
-        for (let lx = 0; lx < size; lx++) {
-          const id = chunk.tiles[localIndex(lx, ly, size)] ?? 0;
-          if (id <= 0) continue;
-          maxX = Math.max(maxX, chunk.cx * size + lx);
-          maxY = Math.max(maxY, chunk.cy * size + ly);
-        }
-      }
+/** Inclusive cell bounds: the cells minX..maxX × minY..maxY. */
+export interface TilemapCellRect {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/** Painted cells of one chunk's `tiles`, local to the chunk, by array (arrays are never changed in place). */
+const chunkExtents = new WeakMap<readonly number[], { size: number; rect: TilemapCellRect | null }>();
+
+function chunkLocalExtent(tiles: readonly number[], size: number): TilemapCellRect | null {
+  const cached = chunkExtents.get(tiles);
+  if (cached && cached.size === size) return cached.rect;
+  let rect: TilemapCellRect | null = null;
+  const length = Math.min(tiles.length, size * size);
+  for (let at = 0; at < length; at++) {
+    if (!(tiles[at]! > 0)) continue;
+    const lx = at % size;
+    const ly = Math.floor(at / size);
+    if (!rect) rect = { minX: lx, minY: ly, maxX: lx, maxY: ly };
+    else {
+      if (lx < rect.minX) rect.minX = lx;
+      if (lx > rect.maxX) rect.maxX = lx;
+      if (ly < rect.minY) rect.minY = ly;
+      if (ly > rect.maxY) rect.maxY = ly;
     }
   }
-  return { width: maxX + 1, height: maxY + 1 };
+  chunkExtents.set(tiles, { size, rect });
+  return rect;
+}
+
+function unionCellRect(a: TilemapCellRect | null, b: TilemapCellRect): TilemapCellRect {
+  if (!a) return { ...b };
+  return {
+    minX: Math.min(a.minX, b.minX),
+    minY: Math.min(a.minY, b.minY),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxY: Math.max(a.maxY, b.maxY),
+  };
+}
+
+/**
+ * The cells a layer's tiles cover, negative coordinates included, or `null`
+ * when it has none. Each chunk's part is cached on its `tiles` array, so after
+ * an edit only the chunks it replaced are read again.
+ */
+export function tilemapLayerPaintedExtent(
+  layer: Pick<TilemapLayer, "chunks">,
+  chunkSize: number,
+): TilemapCellRect | null {
+  const size = Math.max(1, chunkSize);
+  let extent: TilemapCellRect | null = null;
+  for (const chunk of layer.chunks) {
+    const local = chunkLocalExtent(chunk.tiles, size);
+    if (!local) continue;
+    const x = chunk.cx * size;
+    const y = chunk.cy * size;
+    extent = unionCellRect(extent, { minX: x + local.minX, minY: y + local.minY, maxX: x + local.maxX, maxY: y + local.maxY });
+  }
+  return extent;
+}
+
+/** The cells every layer's tiles cover together (`tilemapLayerPaintedExtent`), or `null` on an empty map. */
+export function tilemapPaintedExtent(map: { layers: readonly Pick<TilemapLayer, "chunks">[]; chunkSize: number }): TilemapCellRect | null {
+  let extent: TilemapCellRect | null = null;
+  for (const layer of map.layers) {
+    const part = tilemapLayerPaintedExtent(layer, map.chunkSize);
+    if (part) extent = unionCellRect(extent, part);
+  }
+  return extent;
+}
+
+/**
+ * The same tiles moved by (`dx`, `dy`) whole cells on every layer, re-cut on
+ * the map's chunk grid. Nothing is clipped; returns `map` itself for (0, 0).
+ */
+export function translateTilemap(map: TilemapPayload, dx: number, dy: number): TilemapPayload {
+  const x = Math.trunc(dx) || 0;
+  const y = Math.trunc(dy) || 0;
+  if (x === 0 && y === 0) return map;
+  return { ...map, layers: recutLayers(map, Math.max(1, map.chunkSize), x, y) };
+}
+
+/**
+ * How far making an unbounded map bounded moves its tiles: when any tile lies
+ * left of column 0 or below row 0, the move that puts the painted extent's
+ * bottom-left at cell (0, 0); otherwise (and for a bounded map) `null`.
+ */
+export function boundedTilemapShift(map: TilemapPayload): { x: number; y: number } | null {
+  if (!map.unbounded) return null;
+  const extent = tilemapPaintedExtent(map);
+  if (!extent || (extent.minX >= 0 && extent.minY >= 0)) return null;
+  return { x: -extent.minX, y: -extent.minY };
+}
+
+/**
+ * Switch a map between bounded and unbounded, as one edit.
+ *
+ * - To unbounded: every tile keeps its cell and the pivot is (0, 0), the
+ *   bounded origin, so nothing moves in the world; the size is dropped.
+ * - To bounded: tiles move by `boundedTilemapShift` when some lie at negative
+ *   cells, and the size becomes the painted extent from cell (0, 0) (64 × 64
+ *   when nothing is painted); the pivot is dropped.
+ *
+ * Returns `map` itself when it already is what was asked.
+ */
+export function setTilemapUnbounded(map: TilemapPayload, unbounded: boolean): TilemapPayload {
+  const { tilesets, tileWidth, tileHeight, chunkSize } = map;
+  if (unbounded) {
+    if (map.unbounded) return map;
+    return { tilesets, tileWidth, tileHeight, unbounded: true, pivot: { x: 0, y: 0 }, chunkSize, layers: map.layers };
+  }
+  if (!map.unbounded) return map;
+  const shift = boundedTilemapShift(map);
+  const moved = shift ? translateTilemap(map, shift.x, shift.y) : map;
+  const extent = tilemapPaintedExtent(moved);
+  return {
+    tilesets,
+    tileWidth,
+    tileHeight,
+    width: extent ? extent.maxX + 1 : DEFAULT_TILEMAP_WIDTH,
+    height: extent ? extent.maxY + 1 : DEFAULT_TILEMAP_HEIGHT,
+    chunkSize,
+    layers: moved.layers,
+  };
+}
+
+/**
+ * An unbounded map with its pivot at `pivot`, snapped to half cells
+ * (`snapTilemapPivot`). Tile coordinates never change, only where the tiles
+ * sit around the actor. Returns `map` itself for a bounded map or an unchanged pivot.
+ */
+export function setTilemapPivot(map: TilemapPayload, pivot: { x: number; y: number }): TilemapPayload {
+  if (!map.unbounded) return map;
+  const x = snapTilemapPivot(pivot.x);
+  const y = snapTilemapPivot(pivot.y);
+  if (x === map.pivot.x && y === map.pivot.y) return map;
+  return { ...map, pivot: { x, y } };
+}
+
+/** The centre of a map's painted extent in tile units (always on a half cell), or `null` when nothing is painted. */
+export function tilemapPaintedCenter(map: { layers: readonly Pick<TilemapLayer, "chunks">[]; chunkSize: number }): TilemapPivot | null {
+  const extent = tilemapPaintedExtent(map);
+  if (!extent) return null;
+  return {
+    x: snapTilemapPivot((extent.minX + extent.maxX + 1) / 2),
+    y: snapTilemapPivot((extent.minY + extent.maxY + 1) / 2),
+  };
+}
+
+/** **Center Pivot**: an unbounded map's pivot moved to its painted centre (`tilemapPaintedCenter`); `map` itself otherwise. */
+export function centerTilemapPivot(map: TilemapPayload): TilemapPayload {
+  const center = map.unbounded ? tilemapPaintedCenter(map) : null;
+  return center ? setTilemapPivot(map, center) : map;
 }
 
 function posMod(n: number, d: number): number {

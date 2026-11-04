@@ -62,6 +62,7 @@ import {
   createTilemapComponentMesh,
 } from "./scene-component-mesh";
 import { attachMeshCollisionDashes } from "./mesh-collision-dashes";
+import { tilemapLayerMeshes } from "./tilemap-chunk-parent";
 
 // Classification, fingerprints, the per-component mesh factory and collision dashes live in their own modules; this
 // stays their stable import path.
@@ -522,7 +523,7 @@ export function applyActorComponentSorting(root: Mesh, actor: SerializedActor, l
     if (!target) continue;
     applyAuthoredComponentSorting(target, component, layers);
     const groupId = `${actor.id}|${component.id}`;
-    for (const mesh of [target, ...target.getChildMeshes(true).filter((child) => child.metadata?.tilemapLayer)]) {
+    for (const mesh of [target, ...tilemapLayerMeshes(target)]) {
       mesh.metadata = { ...(mesh.metadata ?? {}), sortingGroupId: groupId };
     }
   }

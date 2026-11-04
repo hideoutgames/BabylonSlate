@@ -81,7 +81,9 @@ import {
   applyPinchView,
   applyPointerPan,
   applyWheelZoom,
+  boundedTilemapShift,
   cachedTerrainResolver,
+  centerTilemapPivot,
   decodeTileGid,
   DEFAULT_PAINT_CELL_SIZE,
   encodeTileGid,
@@ -89,6 +91,8 @@ import {
   missingTerrainVariants,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
+  paintCanvasPivotAt,
+  paintCanvasPoint,
   paintCanvasTileAt,
   pickTileId,
   rechunkTilemap,
@@ -96,6 +100,9 @@ import {
   removeTilemapTileset,
   reorderTilemapLayers,
   resizeTilemap,
+  setTilemapPivot,
+  setTilemapUnbounded,
+  tilemapPaintedExtent,
   tilemapStrokeMergeKey,
   tilemapTerrainKey,
   tilemapTilesetGuids,
@@ -135,9 +142,15 @@ import { TilesetAtlasLoader } from "../context/tilemap-tileset-atlases";
 import { TilemapStroke, type TilemapStrokeShape } from "../lib/tilemap-stroke";
 import {
   createBrowserPaintSurface,
+  PIVOT_MARKER_ARM,
   placeholderCss,
   TilemapPaintRenderer,
 } from "../lib/tilemap-paint-renderer";
+
+/** The pivot marker's hit square for a finger or pen, in CSS pixels. */
+const PIVOT_TOUCH_TARGET = 44;
+/** How far a press on the pivot marker moves, in CSS pixels, before it drags the pivot. */
+const PIVOT_DRAG_SLOP = 4;
 
 const TOOLS: Array<{
   id: TilemapPaintTool;
@@ -262,6 +275,7 @@ export function TilemapDetails({
   const { tilemap, loadPayloads } = useTilemapDocument(payload);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [removeGuid, setRemoveGuid] = useState<string | null>(null);
+  const [confirmBounded, setConfirmBounded] = useState(false);
   const { layer, setLayerId } = usePaintLayer(tilemap);
   const session = useOptionalTilemapSession();
   const { projectDocument } = useProjectState();
@@ -300,23 +314,75 @@ export function TilemapDetails({
     commit(result.next);
   };
 
+  /** An edit of the map's own fields; one that changes nothing commits nothing. */
+  const commitMap = (next: TilemapPayload, field?: string) => {
+    if (next !== tilemap) commit(next, field);
+  };
+  const setUnbounded = (unbounded: boolean) => {
+    // Going back to a size moves tiles at negative cells: ask first.
+    if (!unbounded && boundedTilemapShift(tilemap)) setConfirmBounded(true);
+    else commitMap(setTilemapUnbounded(tilemap, unbounded));
+  };
+  const painted = tilemap.unbounded ? tilemapPaintedExtent(tilemap) : null;
+  const sizeRows: PropertyRow[] = tilemap.unbounded
+    ? [
+        {
+          id: "pivot",
+          kind: "vector3",
+          label: "Pivot",
+          value: [tilemap.pivot.x, tilemap.pivot.y, 0],
+          axes: ["X", "Y"],
+          description: "The map point, in tiles, that sits at the actor's origin.",
+          labelAccessory: (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="pointer-coarse:min-h-11"
+              disabled={!painted}
+              data-testid="tilemap-center-pivot"
+              onClick={() => commitMap(centerTilemapPivot(tilemap))}
+            >
+              Center Pivot
+            </Button>
+          ),
+          onChange: ([x, y]) => commitMap(setTilemapPivot(tilemap, { x, y }), "pivot"),
+        },
+        {
+          id: "paintedArea",
+          kind: "info",
+          label: "Painted Area",
+          value: painted ? `${painted.maxX - painted.minX + 1} × ${painted.maxY - painted.minY + 1}` : "None",
+        },
+      ]
+    : [
+        {
+          id: "mapWidth",
+          kind: "number",
+          label: "Map Width",
+          value: tilemap.width,
+          min: 1,
+          onChange: (value) => commit(resizeTilemap(tilemap, value, tilemap.height), "width"),
+        },
+        {
+          id: "mapHeight",
+          kind: "number",
+          label: "Map Height",
+          value: tilemap.height,
+          min: 1,
+          onChange: (value) => commit(resizeTilemap(tilemap, tilemap.width, value), "height"),
+        },
+      ];
   const mapRows: PropertyRow[] = [
     {
-      id: "mapWidth",
-      kind: "number",
-      label: "Map Width",
-      value: tilemap.width,
-      min: 1,
-      onChange: (value) => commit(resizeTilemap(tilemap, value, tilemap.height), "width"),
+      id: "unbounded",
+      kind: "boolean",
+      label: "Unbounded",
+      value: tilemap.unbounded === true,
+      description: "No fixed size: paint in every direction, and the map spans the tiles you paint.",
+      onChange: setUnbounded,
     },
-    {
-      id: "mapHeight",
-      kind: "number",
-      label: "Map Height",
-      value: tilemap.height,
-      min: 1,
-      onChange: (value) => commit(resizeTilemap(tilemap, tilemap.width, value), "height"),
-    },
+    ...sizeRows,
     {
       id: "tileWidth",
       kind: "number",
@@ -474,6 +540,29 @@ export function TilemapDetails({
       </AlertDialog>
       </div>
       <PropertyGrid title="Map" rows={mapRows} />
+      <AlertDialog open={confirmBounded} onOpenChange={setConfirmBounded}>
+        <AlertDialogContent data-testid="tilemap-bounded-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Make Map Bounded?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Some tiles lie left of or below cell 0, 0. Every tile moves so the painted area
+              starts at cell 0, 0, and the map size becomes the painted area. You can undo this change.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel size="sm">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              size="sm"
+              onClick={() => {
+                commitMap(setTilemapUnbounded(tilemap, false));
+                setConfirmBounded(false);
+              }}
+            >
+              Make Bounded
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <PropertySectionTitle aside={<SectionCount value={tilemap.layers.length} />}>
         Layers
       </PropertySectionTitle>
@@ -981,6 +1070,22 @@ export function TilemapPaint({
     lastY: number;
   } | null>(null);
   const pinchActiveRef = useRef(false);
+  /**
+   * A press on an unbounded map's pivot marker: it drags the pivot once it
+   * moves past `PIVOT_DRAG_SLOP`, and acts as a press of the tool when it
+   * lifts in place.
+   */
+  const pivotDragRef = useRef<{
+    pointerId: number;
+    id: string;
+    startX: number;
+    startY: number;
+    cell: { x: number; y: number };
+    moved: boolean;
+  } | null>(null);
+  // The pivot a drag shows until it is released and commits once.
+  const [pivotPreview, setPivotPreview] = useState<{ x: number; y: number } | null>(null);
+  const pivotPreviewRef = useRef<{ x: number; y: number } | null>(null);
   const strokeRef = useRef<{ id: string; stroke: TilemapStroke } | null>(null);
   const [hoverStore] = useState(() => new HoverCellStore());
   // The stroke in progress draws from local state, so only this canvas
@@ -991,6 +1096,8 @@ export function TilemapPaint({
   // follows once per animation frame, or at once on release or wheel.
   const viewRef = useRef({ pan, cellSize });
   const viewFrameRef = useRef<number | null>(null);
+  /** An unbounded map's view stays centred on its pivot until the user moves it or the marker. */
+  const followPivotRef = useRef(false);
   const flushView = () => {
     if (viewFrameRef.current !== null) {
       cancelAnimationFrame(viewFrameRef.current);
@@ -1001,6 +1108,7 @@ export function TilemapPaint({
   };
   const moveView = (next: { pan: { x: number; y: number }; cellSize: number }) => {
     viewRef.current = next;
+    followPivotRef.current = false;
     if (viewFrameRef.current !== null) return;
     if (typeof requestAnimationFrame !== "function") {
       flushView();
@@ -1087,6 +1195,26 @@ export function TilemapPaint({
     return () => observer.disconnect();
   }, [tilemap.tilesets.length]);
 
+  // An unbounded map opens (or turns unbounded) with its pivot at the centre
+  // of the view, and keeps it there through resizes until the user moves the view.
+  const unbounded = tilemap.unbounded === true;
+  const pivot = tilemap.unbounded ? tilemap.pivot : null;
+  const pivotRef = useRef(pivot);
+  useLayoutEffect(() => {
+    pivotRef.current = pivot;
+  }, [pivot]);
+  useLayoutEffect(() => {
+    followPivotRef.current = unbounded;
+  }, [unbounded]);
+  useLayoutEffect(() => {
+    const target = pivotRef.current;
+    if (!followPivotRef.current || !target) return;
+    const cell = viewRef.current.cellSize;
+    const next = { x: cssSize.width / 2 - target.x * cell, y: cssSize.height / 2 - target.y * cell };
+    viewRef.current = { pan: next, cellSize: cell };
+    setPan(next);
+  }, [cssSize, unbounded]);
+
   const shape = strokePreview?.shape ?? null;
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1105,8 +1233,9 @@ export function TilemapPaint({
       atlases,
       sortingLayers,
       preview: shape,
+      pivot: pivotPreview,
     });
-  }, [atlases, cellSize, cssSize, pan, payloads, renderer, shape, shown, sortingLayers]);
+  }, [atlases, cellSize, cssSize, pan, payloads, pivotPreview, renderer, shape, shown, sortingLayers]);
 
   // React attaches wheel listeners as passive, which ignore preventDefault, so
   // the canvas keeps a native non-passive listener that runs the latest handler.
@@ -1126,6 +1255,7 @@ export function TilemapPaint({
       deltaY: event.deltaY,
     });
     viewRef.current = { pan: { x: view.panX, y: view.panY }, cellSize: view.cellSize };
+    followPivotRef.current = false;
     flushView();
   };
   useEffect(() => {
@@ -1213,6 +1343,84 @@ export function TilemapPaint({
       return;
     }
     setSelectedGid(gid);
+  };
+
+  /** A client point on the canvas, in CSS pixels from its top-left, with the canvas height. */
+  const canvasPoint = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top, height: rect.height || cssSize.height };
+  };
+
+  /**
+   * Whether a pointer at a client point is on an unbounded map's pivot marker:
+   * its arms with a mouse, a 44 px square for a finger or pen.
+   */
+  const onPivotMarker = (clientX: number, clientY: number, pointerType: string) => {
+    if (!tilemap.unbounded) return false;
+    const local = canvasPoint(clientX, clientY);
+    if (!local) return false;
+    const view = viewRef.current;
+    const marker = paintCanvasPoint({
+      x: tilemap.pivot.x, y: tilemap.pivot.y, canvasHeight: local.height, panX: view.pan.x, panY: view.pan.y, cellSize: view.cellSize,
+    });
+    const reach = pointerType === "mouse" ? PIVOT_MARKER_ARM : PIVOT_TOUCH_TARGET / 2;
+    return Math.abs(local.x - marker.x) <= reach && Math.abs(local.y - marker.y) <= reach;
+  };
+
+  const cancelPivotDrag = () => {
+    pivotDragRef.current = null;
+    pivotPreviewRef.current = null;
+    setPivotPreview(null);
+  };
+
+  /**
+   * Release a press on the pivot marker: a drag commits the pivot it reached
+   * as one edit; a press that never moved acts as a press of the tool there.
+   */
+  const finishPivotDrag = () => {
+    const drag = pivotDragRef.current;
+    const moved = pivotPreviewRef.current;
+    cancelPivotDrag();
+    if (!drag) return;
+    if (!drag.moved) {
+      if (tool === "picker") pickCell(drag.cell);
+      else if (isTilemapPaintStrokeTool(tool)) {
+        startStroke(drag.cell);
+        finishStroke();
+      }
+      return;
+    }
+    if (!moved) return;
+    const next = setTilemapPivot(tilemap, moved);
+    if (next !== tilemap) onChange(next as unknown as Record<string, unknown>, `tilemap:pivot-drag:${drag.id}`);
+  };
+
+  /** Follow a pivot drag: past the slop, the pivot goes to the half cell under the pointer. */
+  const movePivotDrag = (clientX: number, clientY: number) => {
+    const drag = pivotDragRef.current;
+    if (!drag || !tilemap.unbounded) return;
+    if (!drag.moved && Math.hypot(clientX - drag.startX, clientY - drag.startY) < PIVOT_DRAG_SLOP) return;
+    drag.moved = true;
+    const local = canvasPoint(clientX, clientY);
+    if (!local) return;
+    const view = viewRef.current;
+    const next = paintCanvasPivotAt({
+      localX: local.x, localY: local.y, canvasHeight: local.height, panX: view.pan.x, panY: view.pan.y, cellSize: view.cellSize,
+    });
+    const current = pivotPreviewRef.current ?? tilemap.pivot;
+    if (next.x === current.x && next.y === current.y) return;
+    pivotPreviewRef.current = next;
+    setPivotPreview(next);
+  };
+
+  /** A hovering mouse shows the move cursor over the pivot marker; written only when it changes. */
+  const pivotHoverRef = useRef(false);
+  const showPivotHover = (canvas: HTMLCanvasElement, hovering: boolean) => {
+    if (pivotHoverRef.current === hovering) return;
+    pivotHoverRef.current = hovering;
+    canvas.style.cursor = hovering ? "move" : "";
   };
 
   const addTilesetToLatest = useAddTileset(tilemap, loadPayloads, assets);
@@ -1404,6 +1612,7 @@ export function TilemapPaint({
             });
             if (pointersRef.current.size >= 2) {
               cancelStroke();
+              cancelPivotDrag();
               panDragRef.current = null;
               pendingPickerRef.current = null;
               pinchActiveRef.current = true;
@@ -1423,6 +1632,20 @@ export function TilemapPaint({
               return;
             }
             pinchActiveRef.current = false;
+            // The pivot marker takes the press in every tool, so dragging it never paints or pans.
+            const pressed = cellAt(event.clientX, event.clientY);
+            if (pressed && onPivotMarker(event.clientX, event.clientY, event.pointerType)) {
+              followPivotRef.current = false;
+              pivotDragRef.current = {
+                pointerId,
+                id: newStrokeId(),
+                startX: event.clientX,
+                startY: event.clientY,
+                cell: pressed,
+                moved: false,
+              };
+              return;
+            }
             if (tool === "move") {
               panDragRef.current = {
                 pointerId,
@@ -1449,6 +1672,7 @@ export function TilemapPaint({
               if (event.pointerType === "mouse") {
                 const cell = cellAt(event.clientX, event.clientY);
                 if (cell) hoverStore.set(cell, tilemap);
+                showPivotHover(event.currentTarget, onPivotMarker(event.clientX, event.clientY, "mouse"));
               }
               return;
             }
@@ -1484,6 +1708,10 @@ export function TilemapPaint({
               return;
             }
             if (pinchActiveRef.current) return;
+            if (pivotDragRef.current?.pointerId === pointerId) {
+              movePivotDrag(event.clientX, event.clientY);
+              return;
+            }
             const drag = panDragRef.current;
             if (drag && drag.pointerId === pointerId) {
               const dx = event.clientX - drag.lastX;
@@ -1510,11 +1738,13 @@ export function TilemapPaint({
           }}
           onPointerLeave={(event) => {
             if (event.pointerType === "mouse" && !pointersRef.current.size) hoverStore.set(null, tilemap);
+            if (event.pointerType === "mouse") showPivotHover(event.currentTarget, false);
           }}
           onPointerUp={(event) => {
             const pointerId = pointerIdOf(event);
             if (viewFrameRef.current !== null) flushView();
             pointersRef.current.delete(pointerId);
+            if (pivotDragRef.current?.pointerId === pointerId) finishPivotDrag();
             // A finger reads out its cell only while it is down.
             if (event.pointerType !== "mouse" && pointersRef.current.size === 0) hoverStore.set(null, tilemap);
             if (panDragRef.current?.pointerId === pointerId) {
@@ -1540,6 +1770,7 @@ export function TilemapPaint({
             const pointerId = pointerIdOf(event);
             if (viewFrameRef.current !== null) flushView();
             pointersRef.current.delete(pointerId);
+            if (pivotDragRef.current?.pointerId === pointerId) cancelPivotDrag();
             if (event.pointerType !== "mouse" && pointersRef.current.size === 0) hoverStore.set(null, tilemap);
             if (panDragRef.current?.pointerId === pointerId) {
               panDragRef.current = null;
