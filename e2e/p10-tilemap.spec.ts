@@ -118,7 +118,68 @@ async function pinchPaintCanvas(
   );
 }
 
+/** A 2D project with a Tileset of the albedo fixture and an open Tilemap painting with its first tile. */
+async function openPaintableTilemap(page: Page, name: string): Promise<void> {
+  await openTwoDProject(page);
+  await showContentBrowser(page);
+  await page
+    .getByTestId("content-browser-import-input")
+    .setInputFiles([path.join(process.cwd(), "e2e/fixtures/albedo.png")]);
+  await expect(page.locator('[data-asset-path="assets/albedo.hasset"]')).toBeVisible({ timeout: 15_000 });
+  await createAsset(page, "Tileset", "Ground");
+  await page.locator('[data-asset-path="assets/Ground.tileset.hasset"]').dblclick();
+  await expect(page.getByTestId("tileset-editor")).toBeVisible();
+  await page.getByTestId("property-texture").click();
+  await page.getByTestId(`search-item-${await guidForPath(page, "assets/albedo.hasset")}`).click();
+  await expect(page.getByTestId("property-texture-open")).toBeVisible();
+  await saveAllIfEnabled(page);
+  await page.locator('[data-testid="document-tab"][data-document-kind="tileset"]').getByTestId("document-tab-close").click();
+  await createAsset(page, "Tilemap", name);
+  await page.locator(`[data-asset-path="assets/${name}.tilemap.hasset"]`).dblclick();
+  await expect(page.getByTestId("tilemap-details")).toBeVisible();
+  await page.getByTestId("tilemap-tilesets-add").click();
+  await page.getByTestId(`search-item-${await guidForPath(page, "assets/Ground.tileset.hasset")}`).click();
+  await page.getByTestId("tilemap-palette-tile-1").click();
+}
+
 test.describe("P10 tilemaps", () => {
+  test("an unbounded Tilemap opens on its pivot, paints left of and below it, and moves the pivot with one drag", async ({ page }) => {
+    test.setTimeout(120_000);
+    await openPaintableTilemap(page, "Island");
+    await page.getByTestId("property-unbounded").click();
+    await expect(page.getByTestId("property-vector3-pivot")).toBeVisible();
+    await expect(page.getByTestId("property-mapWidth")).toHaveCount(0);
+    await expect(page.getByTestId("property-paintedArea")).toHaveText("None");
+
+    // The view puts the pivot, map point 0, 0, at the centre of the laid-out canvas.
+    const canvas = page.getByTestId("tilemap-paint-canvas");
+    const box = (await canvas.boundingBox())!;
+    const cell = Number(await canvas.getAttribute("data-cell-size"));
+    await expect.poll(async () => Number(await canvas.getAttribute("data-pan-x"))).toBeCloseTo(box.width / 2, 0);
+    await expect.poll(async () => Number(await canvas.getAttribute("data-pan-y"))).toBeCloseTo(box.height / 2, 0);
+
+    // Cell -1, -1 lies left of and below the pivot.
+    await page.getByTestId("tilemap-tool-brush").click();
+    await canvas.click({ position: { x: box.width / 2 - cell / 2, y: box.height / 2 + cell / 2 } });
+    await expect.poll(async () => tileAt(page, -1, -1)).toBe(1);
+    await expect(page.getByTestId("property-paintedArea")).toHaveText("1 × 1");
+
+    // A mouse drag from the marker two cells right moves the pivot without painting, in one undo step.
+    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await page.mouse.move(centre.x, centre.y);
+    await page.mouse.down();
+    await page.mouse.move(centre.x + cell, centre.y, { steps: 4 });
+    await page.mouse.move(centre.x + 2 * cell, centre.y, { steps: 4 });
+    await page.mouse.up();
+    await expect(page.getByTestId("property-pivot-x")).toHaveValue("2");
+    expect(await tileAt(page, 0, 0)).toBe(0);
+    expect(await tileAt(page, 1, 0)).toBe(0);
+    await page.getByTestId("undo-document").click();
+    await expect(page.getByTestId("property-pivot-x")).toHaveValue("0");
+    expect(await tileAt(page, -1, -1)).toBe(1);
+  });
+
+
   // Sprite Animation frame playback is unit-covered (packages/render/src/anim-apply.test.ts).
   test("2D project paints tiles, binds a sprite and animation graph, and reports physics", {
     tag: IPAD_TEST_TAG,
