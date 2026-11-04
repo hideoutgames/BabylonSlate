@@ -34,6 +34,13 @@ describe("resolveTypeVisual", () => {
     for (const assetType of ["SpriteAnimation", "Animation"]) expect(resolveTypeVisual({ assetType }).icon).not.toBe(timeline.icon);
   });
 
+  it("colours Textures apart from the 2D assets made from them", () => {
+    const texture = resolveTypeVisual({ assetType: "Texture" }).colorVar;
+    expect(texture).toBe("var(--asset-texture)");
+    for (const assetType of ["RenderTarget", "RenderTargetTexture"]) expect(resolveTypeVisual({ assetType }).colorVar).toBe(texture);
+    for (const assetType of ["Sprite", "Tileset", "Tilemap"]) expect(resolveTypeVisual({ assetType }).colorVar).toBe("var(--asset-sprite)");
+  });
+
   it("recognizes Material Object references as objects with the material glyph", () => {
     expect(walkAncestry("MaterialObject", engineParentOf)).toEqual(["MaterialObject", "Object"]);
     const visual = resolveTypeVisual({ classId: "MaterialObject" });
