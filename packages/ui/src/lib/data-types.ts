@@ -117,7 +117,7 @@ export function basicParticleStageRole(stage: BasicParticleStage): NodeRole {
 export type AssetColorFamily =
   | "scene"
   | "graph"
-  | "texture"
+  | "renderTarget"
   | "sprite"
   | "material"
   | "model"
@@ -133,7 +133,7 @@ export type AssetColorFamily =
 export const ASSET_COLOR_VAR: Record<AssetColorFamily, string> = {
   scene: "var(--asset-scene)",
   graph: "var(--asset-graph)",
-  texture: "var(--asset-texture)",
+  renderTarget: "var(--asset-render-target)",
   sprite: "var(--asset-sprite)",
   material: "var(--asset-material)",
   model: "var(--asset-model)",

@@ -83,7 +83,7 @@ const DEFAULT_COLORS = {
   "pin-particle": "#6cfcd0",
   "asset-scene": "#c4a200",
   "asset-graph": "#00b5b7",
-  "asset-texture": "#c5cbd2",
+  "asset-render-target": "#ef656b",
   "asset-sprite": "#d974c5",
   "asset-material": "#68cb6e",
   "asset-model": "#f47f46",
@@ -224,7 +224,7 @@ export const THEME_COLOR_GROUPS: ThemeColorGroup[] = [
     colors: [
       color("asset-scene", "Scene"),
       color("asset-graph", "Graph"),
-      color("asset-texture", "Texture"),
+      color("asset-render-target", "Render Target"),
       color("asset-sprite", "Sprite"),
       color("asset-material", "Material"),
       color("asset-model", "Model"),
@@ -317,8 +317,6 @@ const HAPTIC_WHITE_COLORS: ThemeColors = {
       (key) => [key, mix(DEFAULT_COLORS[key], "#000000", 0.18)],
     ),
   ),
-  // Silver would fade into the light chrome: graphite, darker than the muted text unknown types use.
-  "asset-texture": "#424850",
 };
 
 /** The few colors a ported theme supplies; everything else is derived from them. */
@@ -426,8 +424,7 @@ function paletteColors(palette: ThemePalette): ThemeColors {
     "pin-particle": pin(mix(cyan, green, 0.4)),
     "asset-scene": pin(yellow),
     "asset-graph": pin(cyan),
-    // Near-neutral: silver in dark themes, graphite in light ones, nearer the text colour than unknown types' muted grey.
-    "asset-texture": mix(palette.foreground, palette.mutedForeground, 0.3),
+    "asset-render-target": pin(red),
     "asset-sprite": pin(pink),
     "asset-material": pin(green),
     "asset-model": pin(orange),
