@@ -273,6 +273,13 @@ describe("tilemap rendering", () => {
     expect(isUnlitMaterial(chunkMesh(0).material)).toBe(true);
     expect(unlitBinding(chunkMesh(0)).texture).toBeTruthy();
 
+    // A Tilemap tab opened after the Scene read the file holds equal cells in other arrays: no chunk rebuilds.
+    const patched = chunkMesh(0);
+    sync.setLiveTilemap("tilemap", structuredClone(painted), "open:copy");
+    expect(chunkMesh(0)).toBe(patched);
+    expect(chunkMesh(1)).toBe(second);
+    sync.setLiveTilemap("tilemap", painted, "open:1");
+
     // A save collects the same content under the same revision: nothing rebuilds.
     expect(sync.setMeshAssets({ ...installed, tilemaps: new Map([["tilemap", structuredClone(painted)]]), payloadRevisions: new Map([["tilemap", "open:1"]]) })).toBe(false);
     expect(sync.meshForActor(actor.id)).toBe(root);

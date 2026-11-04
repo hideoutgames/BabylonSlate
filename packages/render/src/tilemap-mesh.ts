@@ -135,6 +135,18 @@ function chunkMeshKey(layerId: string, cx: number, cy: number): string {
   return `${layerId}\u0000${tilemapCellKey(cx, cy)}`;
 }
 
+/**
+ * Whether two chunks hold the same cells: the same array, or (a map read
+ * separately, such as a Tilemap tab opened after the Scene collected the
+ * saved file) an equal one, so its meshes are kept.
+ */
+function sameTiles(a: readonly number[], b: readonly number[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let at = 0; at < a.length; at++) if (a[at] !== b[at]) return false;
+  return true;
+}
+
 /** The GID ranges a map's Tileset list decodes with (its terrain stamps do not change a cell's tile). */
 function tilesetRangesKey(map: TilemapPayload): string {
   return JSON.stringify(map.tilesets.map((ref) => [ref.guid, ref.firstGid, ref.tileCount]));
@@ -148,11 +160,11 @@ function layerDrawKey(layer: TilemapLayer): string {
 /**
  * Bring a Tilemap's chunk meshes under `root` (built by `createTilemapMeshes`
  * from `previous`) up to `next`, rebuilding only the chunks whose `tiles`
- * changed: a chunk whose array is the same object keeps its meshes. Returns
- * the meshes made (empty when no chunk changed), or `null` when `next`
- * changes what every chunk draws with (tile size, chunk size, the Tileset
- * list, the layer list or a layer's visibility, sorting or parallax), which
- * the caller rebuilds whole.
+ * changed: a chunk whose array is the same object, or holds the same cells,
+ * keeps its meshes. Returns the meshes made (empty when no chunk changed), or
+ * `null` when `next` changes what every chunk draws with (tile size, chunk
+ * size, the Tileset list, the layer list or a layer's visibility, sorting or
+ * parallax), which the caller rebuilds whole.
  */
 export function patchTilemapMeshes(
   scene: Scene,
@@ -179,7 +191,7 @@ export function patchTilemapMeshes(
       const key = tilemapCellKey(chunk.cx, chunk.cy);
       const was = old.get(key);
       old.delete(key);
-      if (was && was.tiles === chunk.tiles) continue;
+      if (was && sameTiles(was.tiles, chunk.tiles)) continue;
       changed.add(chunkMeshKey(layer.id, chunk.cx, chunk.cy));
       if (layer.visible) rebuild.push({ layer, ordinal, chunk });
     }
