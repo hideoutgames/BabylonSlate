@@ -47,6 +47,7 @@ Two autotiles of the same Tileset, such as grass and dirt, can meet through a tr
 | Tool | Effect |
 | --- | --- |
 | Move | Pans the map. The default tool. |
+| Select | Selects placed tiles to move, cut, copy, paste or delete them. |
 | Brush, Eraser | Paint or erase tiles under your finger. |
 | Rect | Fills the rectangle you drag. An outline shows it until you lift your finger. |
 | Bucket | Fills the connected area of matching tiles, up to the edge of the map. On an unbounded map, up to 16 cells past the layer's painted tiles. |
@@ -54,6 +55,16 @@ Two autotiles of the same Tileset, such as grass and dirt, can meet through a tr
 | Picker | Picks the tile you tap as the brush. |
 
 One finger paints. Two fingers pinch to zoom and drag to pan in any tool; the scroll wheel zooms. Each stroke is one undo step. With a mouse, the toolbar shows the column and row of the cell under the pointer.
+
+## Move painted tiles
+
+Use **Select** to move tiles you have already painted, for example after making a map larger:
+
+1. In **Paint**, pick **Select**. Drag across cells to select them, or tap **Select All**. Turn on **All Layers** to move the tiles of every layer together.
+2. Drag from inside the selection to move it, or nudge it with the arrow keys (<kbd>Shift</kbd> moves eight cells). Each drag is one undo step.
+3. Long-press or right-click for **Cut**, **Copy**, **Paste** and **Delete**. A paste floats until you drag it into place and tap.
+
+Moved tiles replace what is where they land, and autotile edges around them update. On a map with a size, tiles moved past the edge are cut off. See [Select and move tiles](../assets/tilemap.md#select-and-move-tiles) for every option and shortcut.
 
 Your edits show in the Scene viewport as you make them, without saving first.
 
@@ -100,10 +111,10 @@ A new map has a fixed size. Turn on **Unbounded** under **Map** in the **Inspect
 An unbounded map has a **Pivot**, the point of the map that sits at the actor's position:
 
 1. **Paint** opens with the pivot in the middle of the view, drawn as a crosshair over the tiles. Paint around it in any direction.
-2. Drag the crosshair to move the pivot, in half-tile steps. Each drag is one undo step and paints nothing; a tap on it paints as usual.
+2. Drag the crosshair to move the pivot, in half-tile steps. Each drag is one undo step and paints nothing; a tap on it paints as usual. With **Select**, a drag there selects tiles instead.
 3. Or set **Pivot** in the **Inspector**, or tap **Center Pivot** to put it in the middle of the painted tiles. **Painted Area** shows how many columns and rows they cover.
 
-Moving the pivot moves the tiles around the actor; it never changes which cell a tile is in. Turning **Unbounded** on keeps every tile where it is in the scene, with the pivot at 0, 0. Turning it off gives the map the size of its painted tiles; when some lie left of or below cell 0, 0, the editor asks first and then moves every tile so the painted area starts at cell 0, 0. You can undo either change.
+Moving the pivot moves the tiles around the actor; it never changes which cell a tile is in. Turning **Unbounded** on keeps every tile where it is in the scene, with the pivot at 0, 0. Turning it off gives the map the size of its painted tiles; when some lie left of or below cell 0, 0, the editor asks first and then moves every tile so the painted area starts at cell 0, 0. It also asks when the pivot is not at 0, 0: the tiles keep their cells, but cell 0, 0 goes to the actor's position, so they move in the scene. You can undo either change.
 
 ## Place a tilemap
 

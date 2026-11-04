@@ -19,6 +19,7 @@ Double-tap a Tilemap to open it.
 | Tool | Effect |
 | --- | --- |
 | Move | Pans the map. The default tool. |
+| Select | Selects placed tiles to move, cut, copy, paste or delete them. See [Select and move tiles](#select-and-move-tiles). |
 | Brush, Eraser | Paint or erase tiles under your finger. |
 | Rect | Fills the rectangle you drag. An outline shows it until you lift your finger. |
 | Bucket | Fills the connected area of matching tiles, up to the edge of the map. On an unbounded map, up to 16 cells past the layer's painted tiles. |
@@ -28,6 +29,45 @@ Double-tap a Tilemap to open it.
 With an autotile selected, every tool paints the autotile and the cells around your stroke update to match. The **Eraser** always updates the autotile tiles around the cells it clears. When a Tileset's autotiles change, the map's autotile cells update by themselves; the open Tilemap shows the update at once and saves it with your next edit. See [Paint with autotiles](../2d/tilemaps.md#paint-with-autotiles).
 
 Each stroke is one undo step. Two fingers pinch to zoom and drag to pan in any tool. Edits show in the Scene viewport as you make them.
+
+## Select and move tiles
+
+Pick **Select** in the **Paint** toolbar to work with tiles you have already placed.
+
+- **Select**: drag across cells to select a rectangle, or tap one cell. A dashed orange outline marks the selection, and the toolbar shows its size. Tap outside it, or press <kbd>Esc</kbd>, to clear it.
+- **All Layers**: when on, the selection covers every layer, hidden ones included, so a group of tiles moves together and each layer keeps its own tiles. When off, only the paint layer.
+- **Select All**: selects the area of every painted tile on the paint layer, or on every layer with **All Layers** on.
+- **Move**: drag from inside the selection. The tiles lift off the map and follow your finger cell by cell, and their old cells show empty until you let go. Each drag is one undo step.
+- **Nudge**: the arrow keys move the selection one cell, <kbd>Shift</kbd> and an arrow key eight cells. Holding a key down is one undo step.
+- **Cut**, **Copy**, **Paste**, **Delete**: in the toolbar, or long-press or right-click the map for a menu with these, **Select All** and **Deselect**. A long-press or right-click outside the selection selects that cell first.
+
+Moved and pasted tiles replace the tiles where they land. Empty cells inside the selection never erase anything.
+
+**Paste** puts the copied tiles in the middle of the view, or where you opened the menu, floating over the map. Drag them into place, then tap, press <kbd>Enter</kbd> or choose **Place** to write them; <kbd>Esc</kbd> or **Cancel** drops them. A copy of one layer pastes into the paint layer; a copy made with **All Layers** pastes into the same layers. Copied tiles stay available while the editor is open, so you can paste them into another Tilemap too; tiles of a Tileset that map does not use are left out.
+
+Autotile tiles around the cells you move, cut, paste or delete update as they do when you paint, so edges stay correct. A moved tile whose neighbours all moved with it keeps its piece, including one you placed by hand.
+
+On a map with a size, tiles moved or pasted past its edge are cut off: while you drag, those cells show tinted red and the toolbar says how many tiles will be cut off. An unbounded map has no edge.
+
+### Make room after a resize
+
+To grow a map in one direction and move what you painted:
+
+1. Set **Map Width** and **Map Height** in the **Inspector**. The map grows to the right and up from cell 0, 0.
+2. Pick **Select**, turn on **All Layers** and tap **Select All**.
+3. Drag the selection, or nudge it with the arrow keys (<kbd>Shift</kbd> moves eight cells), to where you want it.
+
+| Shortcut | Effect |
+| --- | --- |
+| <kbd>Mod</kbd>+<kbd>A</kbd> | Select All; from another tool, switches to **Select** |
+| <kbd>Mod</kbd>+<kbd>X</kbd>, <kbd>Mod</kbd>+<kbd>C</kbd> | Cut, Copy |
+| <kbd>Mod</kbd>+<kbd>V</kbd> | Paste; from another tool, switches to **Select** |
+| <kbd>Delete</kbd> or <kbd>Backspace</kbd> | Delete |
+| Arrow keys | Nudge one cell; with <kbd>Shift</kbd>, eight |
+| <kbd>Enter</kbd> | Place a paste |
+| <kbd>Esc</kbd> | Cancel a paste, or clear the selection |
+
+The shortcuts work while **Paint** has keyboard focus: tap or click the map first. See [Keyboard shortcuts](../start/shortcuts.md).
 
 ## Settings
 
@@ -55,10 +95,10 @@ Each stroke is one undo step. Two fingers pinch to zoom and drag to pan in any t
 
 A bounded map has a size: cell 0, 0 is its bottom-left corner, it sits at the actor's position, and the map extends right and up. Turn on **Unbounded** for a map with no size. You paint in every direction, including left of and below cell 0, 0, and the map is as large as its painted tiles: the selection outline, framing the actor in the viewport and collision follow the furthest tiles.
 
-- The **Pivot** is the point of the map that sits at the actor's position. **Paint** opens with the pivot in the middle of the view and shows it as a crosshair over the tiles. Drag the crosshair to move the pivot; each drag is one undo step. A tap on it still paints.
+- The **Pivot** is the point of the map that sits at the actor's position. **Paint** opens with the pivot in the middle of the view and shows it as a crosshair over the tiles. Drag the crosshair to move the pivot; each drag is one undo step. A tap on it still paints. With **Select**, a drag on the crosshair selects tiles instead.
 - Moving the pivot moves the tiles around the actor; it never changes which cell a tile is in.
 - Turning **Unbounded** on keeps every tile in place, and the pivot starts at 0, 0, so nothing moves in the scene.
-- Turning it off sets the map size to the painted tiles. When some tiles lie left of or below cell 0, 0, the editor asks first, then moves every tile so the painted area starts at cell 0, 0. You can undo either change.
+- Turning it off sets the map size to the painted tiles. When some tiles lie left of or below cell 0, 0, the editor asks first, then moves every tile so the painted area starts at cell 0, 0. When the pivot is not at 0, 0, it also asks: the tiles keep their cells, but cell 0, 0 moves to the actor's position, so the tiles move in the scene. You can undo either change.
 - Autotiles at the edge of an unbounded map draw their edge: beyond the painted tiles there are only empty cells.
 
 ## Notes
