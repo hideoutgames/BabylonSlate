@@ -1,8 +1,8 @@
 /**
  * Autotile authoring helpers for the Tileset Autotiles window (Babylon-free):
- * piece sets (default and border sets), one-tile-per-piece assignment, sheet
- * templates and their placement, Layout change summaries and the test-paint
- * sandbox.
+ * piece sets (default and border sets), one-tile-per-piece assignment, the
+ * window's piece groups and the sheet blocks they assign from, Layout change
+ * summaries and the preview map.
  */
 
 import {
@@ -19,6 +19,7 @@ import {
   TERRAIN_SW,
   TERRAIN_W,
   terrainVariantMasks,
+  type AutotileLayout,
 } from "./tileset-terrain";
 import {
   tilesetAtlasColumns,
@@ -89,6 +90,11 @@ function withoutTerrain(tile: TilesetTile): TilesetTile {
   return next;
 }
 
+/** Tiles of the atlas grid; a tile past it never draws. */
+function atlasTileCount(tileset: TilesetPayload): number {
+  return tilesetAtlasColumns(tileset) * tilesetAtlasRows(tileset);
+}
+
 /**
  * The set's tiles by canonical mask, each list in tile id order: painting
  * uses the first tile of a mask, so any later one is unused.
@@ -105,14 +111,6 @@ export function autotilePieceTiles(tileset: TilesetPayload, set: AutotilePieceSe
     else pieces.set(mask, [tile.id]);
   }
   return pieces;
-}
-
-/** The canonical piece a tile draws in the set, or `null` outside it. */
-export function autotilePieceOfTile(tileset: TilesetPayload, set: AutotilePieceSet, tileId: number): number | null {
-  const terrain = tilesetTerrainById(tileset, set.terrainId);
-  const tile = tileset.tiles.find((entry) => entry.id === tileId);
-  if (!terrain || !tile?.terrain || !autotilePieceSetHas(set, tile.terrain)) return null;
-  return canonicalTerrainMask(terrain.style, tile.terrain.mask);
 }
 
 /**
@@ -161,81 +159,104 @@ export function clearAutotilePiece(tileset: TilesetPayload, set: AutotilePieceSe
   return changed ? { ...tileset, tiles } : tileset;
 }
 
-/** Take one tile out of the set. Returns `tileset` itself when the tile is not one of its pieces. */
-export function removeTileFromAutotile(tileset: TilesetPayload, set: AutotilePieceSet, tileId: number): TilesetPayload {
-  let changed = false;
-  const tiles = tileset.tiles.map((tile) => {
-    if (tile.id !== tileId || !autotilePieceSetHas(set, tile.terrain)) return tile;
-    changed = true;
-    return withoutTerrain(tile);
-  });
-  return changed ? { ...tileset, tiles } : tileset;
-}
-
 /**
- * A block of pieces laid out as the art usually draws it: one canonical mask
- * per cell, row-major from the block's top-left (row 0 is the top of the
- * sheet, which is north); `null` cells are left alone.
+ * Pieces laid out as a sheet draws them: one canonical mask per cell,
+ * row-major from the block's top-left (row 0 is the top of the sheet, which is
+ * north); `null` cells are left alone.
  */
-export interface AutotileTemplate {
-  id: string;
-  title: string;
+export interface AutotileBlock {
   columns: number;
   rows: number;
   masks: ReadonlyArray<number | null>;
 }
 
-const N = TERRAIN_N;
-const E = TERRAIN_E;
-const S = TERRAIN_S;
-const W = TERRAIN_W;
-
-const SIDES_ISLAND: readonly number[] = [E | S, E | S | W, S | W, N | E | S, N | E | S | W, N | S | W, N | E, N | E | W, N | W];
-const HORIZONTAL_STRIP: readonly number[] = [E, E | W, W];
-const VERTICAL_STRIP: readonly number[] = [S, N | S, N];
-
-/** Shared sub-blocks; Blob reads each cell with its corners filled where both sides join. */
-function subBlocks(style: TilesetTerrainStyle): AutotileTemplate[] {
-  const read = (mask: number) => canonicalTerrainMask(style, withFilledCorners(mask));
-  return [
-    { id: "island", title: "Island (3 × 3)", columns: 3, rows: 3, masks: SIDES_ISLAND.map(read) },
-    { id: "horizontal-strip", title: "Horizontal Strip (3 × 1)", columns: 3, rows: 1, masks: HORIZONTAL_STRIP.map(read) },
-    { id: "vertical-strip", title: "Vertical Strip (1 × 3)", columns: 1, rows: 3, masks: VERTICAL_STRIP.map(read) },
-    { id: "single", title: "Single (1 × 1)", columns: 1, rows: 1, masks: [0] },
-  ];
+/** One group of pieces on the Autotiles window's board. */
+export interface AutotilePieceGroup {
+  id: "pieces" | "main" | "inner-corners" | "more-corners";
+  title: string;
+  /** Columns of the group's board; an optional group wraps to the board's width instead. */
+  columns: number;
+  /** The group's pieces in board order. */
+  masks: readonly number[];
+  /** Starts collapsed and does not count toward a ready autotile. */
+  optional: boolean;
+  /** The block the group assigns from the sheet, from the tile tapped as its top-left. */
+  block: AutotileBlock;
 }
 
-/** Templates per style: the standard full block first, then the sub-blocks art often draws on its own. */
-export const AUTOTILE_TEMPLATES: Readonly<Record<TilesetTerrainStyle, readonly AutotileTemplate[]>> = {
+/** `count` columns of a standard layout, from column `from`. */
+function layoutColumns(layout: AutotileLayout, from: number, count: number): AutotileBlock {
+  const masks: Array<number | null> = [];
+  for (let row = 0; row < layout.rows; row++) {
+    for (let column = from; column < from + count; column++) masks.push(layout.masks[row * layout.columns + column] ?? null);
+  }
+  return { columns: count, rows: layout.rows, masks };
+}
+
+function blockPieces(block: AutotileBlock): number[] {
+  return block.masks.filter((mask): mask is number => mask !== null);
+}
+
+/** The Blob island with filled corners: the standard Blob block's first four columns. */
+const BLOB_MAIN = layoutColumns(AUTOTILE_LAYOUTS.blob, 0, 4);
+/** The standard Blob block's other eight columns: the 31 notched pieces in ascending mask order. */
+const BLOB_NOTCHED = layoutColumns(AUTOTILE_LAYOUTS.blob, 4, 8);
+/** Four inner corners around a one-tile hole, each notch toward the block's centre. */
+const BLOB_INNER_CORNERS: AutotileBlock = {
+  columns: 2,
+  rows: 2,
+  masks: [TERRAIN_ALL & ~TERRAIN_SE, TERRAIN_ALL & ~TERRAIN_SW, TERRAIN_ALL & ~TERRAIN_NE, TERRAIN_ALL & ~TERRAIN_NW],
+};
+const BLOB_MORE_CORNERS = terrainVariantMasks("blob").filter(
+  (mask) => !blockPieces(BLOB_MAIN).includes(mask) && !blockPieces(BLOB_INNER_CORNERS).includes(mask),
+);
+
+/**
+ * The board's groups per style. 4 Sides has one: its standard 4 × 4 block.
+ * Blob has Main (the island with filled corners, the standard block's first
+ * four columns), Inner Corners (the hole arrangement) and the optional More
+ * Corners (the other 27), whose block is the standard block's other eight
+ * columns, so a standard 12 × 4 sheet is Main then More Corners.
+ */
+export const AUTOTILE_PIECE_GROUPS: Readonly<Record<TilesetTerrainStyle, readonly AutotilePieceGroup[]>> = {
   sides: [
-    { id: "sides-block", title: "4 Sides Block (4 × 4)", ...AUTOTILE_LAYOUTS.sides },
-    ...subBlocks("sides"),
+    {
+      id: "pieces",
+      title: "Pieces",
+      columns: AUTOTILE_LAYOUTS.sides.columns,
+      masks: blockPieces(AUTOTILE_LAYOUTS.sides),
+      optional: false,
+      block: AUTOTILE_LAYOUTS.sides,
+    },
   ],
   blob: [
-    { id: "blob-block", title: "Blob Block (12 × 4)", ...AUTOTILE_LAYOUTS.blob },
-    ...subBlocks("blob"),
+    { id: "main", title: "Main", columns: BLOB_MAIN.columns, masks: blockPieces(BLOB_MAIN), optional: false, block: BLOB_MAIN },
     {
-      // Four notches meeting at the block's centre, around a one-tile hole.
-      id: "inner-corners-hole",
-      title: "Inner Corners, Hole (2 × 2)",
-      columns: 2,
-      rows: 2,
-      masks: [TERRAIN_ALL & ~TERRAIN_SE, TERRAIN_ALL & ~TERRAIN_SW, TERRAIN_ALL & ~TERRAIN_NE, TERRAIN_ALL & ~TERRAIN_NW],
+      id: "inner-corners",
+      title: "Inner Corners",
+      columns: BLOB_INNER_CORNERS.columns,
+      masks: blockPieces(BLOB_INNER_CORNERS),
+      optional: false,
+      block: BLOB_INNER_CORNERS,
     },
-    {
-      // Each notch points away from the block's centre, at the corner it sits in.
-      id: "inner-corners-outward",
-      title: "Inner Corners, Outward (2 × 2)",
-      columns: 2,
-      rows: 2,
-      masks: [TERRAIN_ALL & ~TERRAIN_NW, TERRAIN_ALL & ~TERRAIN_NE, TERRAIN_ALL & ~TERRAIN_SW, TERRAIN_ALL & ~TERRAIN_SE],
-    },
+    { id: "more-corners", title: "More Corners", columns: 9, masks: BLOB_MORE_CORNERS, optional: true, block: BLOB_NOTCHED },
   ],
 };
 
-/** Whether the template fits on the sheet at all. */
-export function autotileTemplateFits(tileset: TilesetPayload, template: AutotileTemplate): boolean {
-  return template.columns <= tilesetAtlasColumns(tileset) && template.rows <= tilesetAtlasRows(tileset);
+/**
+ * Whether the terrain's default set has a tile for every piece of its
+ * style's required (not optional) groups: every 4 Sides piece, or Blob's Main
+ * and Inner Corners. Tiles past the atlas do not count.
+ */
+export function autotileReady(tileset: TilesetPayload, terrainId: string): boolean {
+  const terrain = tilesetTerrainById(tileset, terrainId);
+  if (!terrain) return false;
+  const limit = atlasTileCount(tileset);
+  const drawn = new Set(
+    tileset.tiles.flatMap((tile) =>
+      tile.id <= limit && autotilePieceSetHas({ terrainId }, tile.terrain) ? [canonicalTerrainMask(terrain.style, tile.terrain!.mask)] : []),
+  );
+  return AUTOTILE_PIECE_GROUPS[terrain.style].every((group) => group.optional || group.masks.every((mask) => drawn.has(mask)));
 }
 
 /** The atlas tile `columns` right and `rows` down from `tileId`, or `null` off the sheet. */
@@ -250,48 +271,39 @@ export function offsetAtlasTile(tileset: TilesetPayload, tileId: number, columns
 }
 
 /**
- * The atlas tile under each template cell with the template's top-left on
- * `anchorTileId`, or `null` when the block runs past the sheet.
+ * The sheet tile under each cell of `block` with its top-left on
+ * `anchorTileId`, row by row; cells past the sheet's right or bottom edge are
+ * left out, so a block near the edge places only the part that fits. Empty
+ * when the anchor is off the sheet.
  */
-export function autotileTemplatePlacement(
+export function autotileBlockPlacement(
   tileset: TilesetPayload,
-  template: AutotileTemplate,
+  block: AutotileBlock,
   anchorTileId: number,
-): Array<{ tileId: number; mask: number | null }> | null {
-  if (offsetAtlasTile(tileset, anchorTileId, template.columns - 1, template.rows - 1) === null) return null;
-  return template.masks.map((mask, at) => ({
-    tileId: offsetAtlasTile(tileset, anchorTileId, at % template.columns, Math.floor(at / template.columns))!,
-    mask,
-  }));
+): Array<{ tileId: number; mask: number | null }> {
+  if (offsetAtlasTile(tileset, anchorTileId, 0, 0) === null) return [];
+  return block.masks.flatMap((mask, at) => {
+    const tileId = offsetAtlasTile(tileset, anchorTileId, at % block.columns, Math.floor(at / block.columns));
+    return tileId === null ? [] : [{ tileId, mask }];
+  });
 }
 
 /**
- * Assign every placed template cell its piece, as `assignAutotilePiece` would
- * one by one. `pieces` counts the cells assigned; `replaced` counts existing
- * memberships (of this set or another autotile) the edit changes or removes.
- * `null` when the block runs past the sheet.
+ * Assign every placed piece of the block (`autotileBlockPlacement`) as
+ * `assignAutotilePiece` would one by one. Returns `tileset` itself when
+ * nothing changes.
  */
-export function applyAutotileTemplate(
+export function applyAutotileBlock(
   tileset: TilesetPayload,
   set: AutotilePieceSet,
-  template: AutotileTemplate,
+  block: AutotileBlock,
   anchorTileId: number,
-): { next: TilesetPayload; pieces: number; replaced: number } | null {
-  const placement = autotileTemplatePlacement(tileset, template, anchorTileId);
-  if (!placement || !tilesetTerrainById(tileset, set.terrainId)) return null;
+): TilesetPayload {
   let next = tileset;
-  let pieces = 0;
-  for (const cell of placement) {
-    if (cell.mask === null) continue;
-    pieces += 1;
-    next = assignAutotilePiece(next, set, cell.mask, cell.tileId);
+  for (const cell of autotileBlockPlacement(tileset, block, anchorTileId)) {
+    if (cell.mask !== null) next = assignAutotilePiece(next, set, cell.mask, cell.tileId);
   }
-  const after = new Map(next.tiles.map((tile) => [tile.id, tile]));
-  let replaced = 0;
-  for (const tile of tileset.tiles) {
-    if (tile.terrain && after.get(tile.id)?.terrain !== tile.terrain) replaced += 1;
-  }
-  return { next, pieces, replaced };
+  return next;
 }
 
 /**
@@ -318,86 +330,76 @@ export function autotileLayoutChange(
   };
 }
 
-/** Size of the Autotiles window's test-paint map, in tiles. */
-export const AUTOTILE_SANDBOX_WIDTH = 14;
-export const AUTOTILE_SANDBOX_HEIGHT = 9;
+/** Size of the Autotiles window's preview map, in tiles. */
+export const AUTOTILE_PREVIEW_WIDTH = 12;
+export const AUTOTILE_PREVIEW_HEIGHT = 7;
 
-/** A test-paint cell painted with an autotile, in map coordinates (+Y up, row 0 at the bottom). */
-export interface AutotileSandboxCell {
+/** A preview cell painted with an autotile, in map coordinates (+Y up, row 0 at the bottom). */
+export interface AutotilePreviewCell {
   x: number;
   y: number;
   terrainId: string;
 }
 
 /**
- * Sample shapes for test paint, top row first: an island (with a one-tile
- * hole for Blob, which draws its inner corners), a vertical strip, a single
- * and a horizontal strip. 4 Sides draws every one of its 16 pieces.
+ * Starting shapes per style, top row first (`#` is the autotile): for Blob an
+ * island with a hole, a ragged bottom edge, a vertical strip, a horizontal
+ * strip and a single; for 4 Sides horizontal strips of several lengths.
  */
-const SANDBOX_SAMPLE: Record<TilesetTerrainStyle, readonly string[]> = {
-  sides: [
-    "..............",
-    ".AAAAA........",
-    ".AAAAA..A.....",
-    ".AAAAA..A..A..",
-    ".AAAAA..A.....",
-    ".AAAAA..A.....",
-    "..............",
-    ".AAAAAAAAAAAA.",
-    "..............",
-  ],
+const PREVIEW_SAMPLE: Record<TilesetTerrainStyle, readonly string[]> = {
   blob: [
-    "..............",
-    ".AAAAA........",
-    ".AAAAA..A.....",
-    ".AA.AA..A..A..",
-    ".AAAAA..A.....",
-    ".AAAAA..A.....",
-    "..............",
-    ".AAAAAAAAAAAA.",
-    "..............",
+    "............",
+    ".#######....",
+    ".##.####..#.",
+    ".#######..#.",
+    "..####....#.",
+    "............",
+    ".#####...#..",
+  ],
+  sides: [
+    "............",
+    "..######....",
+    "............",
+    ".......####.",
+    "............",
+    "...##....#..",
+    "............",
   ],
 };
 
-/**
- * The border sample: the autotile (A) as an island with a hole and as a
- * single, set in a field of its border autotile (B), so every A cell facing B
- * draws from the border set and B continues under the seam; and a strip of A
- * on its own, which draws its ordinary pieces.
- */
-const SANDBOX_BORDER_SAMPLE: readonly string[] = [
-  "..............",
-  ".BBBBBBBBBBBB.",
-  ".BAAAAABBBBBB.",
-  ".BAABAABBBABB.",
-  ".BAAAAABBBBBB.",
-  ".BBBBBBBBBBBB.",
-  "..............",
-  ".AAAAA........",
-  "..............",
+/** A border set's starting shape: the autotile (`#`) inside a field of its border autotile (`D`). */
+const PREVIEW_BORDER_SAMPLE: readonly string[] = [
+  "DDDDDDDDDDDD",
+  "DD#####DDDDD",
+  "D#######DDDD",
+  "D########DDD",
+  "DD######DDDD",
+  "DDD###DDDDDD",
+  "DDDDDDDDDDDD",
 ];
 
 /**
- * The starting test-paint map for a set: for the default set, shapes that use
- * most of the style's pieces; for a border set, the autotile beside its border
- * autotile.
+ * The starting preview map for a set: for the default set, shapes that use
+ * most of the style's pieces; for a border set, the autotile inside a field of
+ * its border autotile.
  */
-export function autotileSandboxSample(style: TilesetTerrainStyle, set: AutotilePieceSet): AutotileSandboxCell[] {
-  const rows = set.border === undefined ? SANDBOX_SAMPLE[style] : SANDBOX_BORDER_SAMPLE;
+export function autotilePreviewSample(style: TilesetTerrainStyle, set: AutotilePieceSet): AutotilePreviewCell[] {
+  const rows = set.border === undefined ? PREVIEW_SAMPLE[style] : PREVIEW_BORDER_SAMPLE;
   return rows.flatMap((row, top) =>
     [...row].flatMap((cell, x) => {
-      const terrainId = cell === "A" ? set.terrainId : cell === "B" ? set.border : undefined;
+      const terrainId = cell === "#" ? set.terrainId : cell === "D" ? set.border : undefined;
       return terrainId === undefined ? [] : [{ x, y: rows.length - 1 - top, terrainId }];
     }),
   );
 }
 
 /**
- * One painted test-paint cell: its autotile, the tile painting picks (0 when
- * that autotile has no tiles), the piece and set it wants (`want` is `null`
- * without a tile), and whether the tile only stands in for that piece.
+ * One painted preview cell: its autotile, the tile painting picks (0 when that
+ * autotile has no tiles), the piece and set it wants (`want` is `null` when
+ * the Tileset has no such autotile), and whether it shows something other than
+ * that exact piece of that set.
  */
-export interface AutotileSandboxTile {
+export interface AutotilePreviewTile {
   terrainId: string;
   tileId: number;
   want: number | null;
@@ -405,53 +407,112 @@ export interface AutotileSandboxTile {
   standIn: boolean;
 }
 
-/** Map-local Tileset guid of the test-paint map. */
-const SANDBOX_TILESET = "autotile-sandbox";
-const SANDBOX_LAYER = "sandbox";
+/** Map-local Tileset guid of the preview map. */
+const PREVIEW_TILESET = "autotile-preview";
+const PREVIEW_LAYER = "preview";
+/** Empty cells painted around the preview, so shapes at its edge draw their edges. */
+const PREVIEW_MARGIN = 1;
 
 /**
- * Paint `cells` on an in-memory map of `width` × `height` through
- * `paintTilemapTerrain`, one batch per autotile in first-seen order, so every
- * cell gets the tile a Tilemap brush would paint there, transitions included
- * (each batch re-resolves the cells around it, so any order gives the same
- * map). Keyed `x,y`; cells past the map are ignored. Each cell reports the
- * piece it wants (`tilemapTerrainCellPieces`) and stands in when its tile is
- * not that piece of that set.
+ * Paint `cells` through `paintTilemapTerrain`, one batch per autotile (each
+ * batch re-resolves its neighbours, so any order gives the same map), on a map
+ * one empty cell larger than `size` on every side: map edges join, and the
+ * preview's edges must not.
  */
-export function autotileSandboxTiles(
+function paintPreview(
   tileset: TilesetPayload,
-  cells: Iterable<AutotileSandboxCell>,
+  cells: readonly AutotilePreviewCell[],
   size: { width: number; height: number },
-): Map<string, AutotileSandboxTile> {
-  const painted = new Map<string, AutotileSandboxCell>();
+): { map: TilemapPayload; tilesets: Map<string, TilesetPayload> } {
+  const byTerrain = new Map<string, Array<{ x: number; y: number }>>();
+  for (const cell of cells) {
+    const at = { x: cell.x + PREVIEW_MARGIN, y: cell.y + PREVIEW_MARGIN };
+    const group = byTerrain.get(cell.terrainId);
+    if (group) group.push(at);
+    else byTerrain.set(cell.terrainId, [at]);
+  }
+  const tilesets = new Map([[PREVIEW_TILESET, tileset]]);
+  const width = size.width + 2 * PREVIEW_MARGIN;
+  const height = size.height + 2 * PREVIEW_MARGIN;
+  let map: TilemapPayload = {
+    tilesets: [{ guid: PREVIEW_TILESET, firstGid: 1, tileCount: tileset.tiles.reduce((most, tile) => Math.max(most, tile.id), 0) }],
+    tileWidth: tileset.tileWidth,
+    tileHeight: tileset.tileHeight,
+    width,
+    height,
+    chunkSize: Math.max(width, height),
+    layers: [createTilemapLayer(PREVIEW_LAYER, "Preview")],
+  };
+  for (const [terrainId, group] of byTerrain) {
+    map = paintTilemapTerrain(map, { layerId: PREVIEW_LAYER, cells: group, terrain: { guid: PREVIEW_TILESET, terrainId }, tilesets });
+  }
+  return { map, tilesets };
+}
+
+/**
+ * `tileset` with a stand-in tile, in rows added below the atlas, for each
+ * autotile with no tiles and for `set` when it has none, so the preview can
+ * say which piece every cell wants before its set has art: an empty autotile
+ * would otherwise paint nothing, and an empty border set would leave its cells
+ * on the default set. `tileset` itself when none is needed.
+ */
+function previewWantTileset(tileset: TilesetPayload, set: AutotilePieceSet): TilesetPayload {
+  const atlas = atlasTileCount(tileset);
+  const stride = tileset.tileHeight + tileset.spacing;
+  if (stride <= 0) return tileset;
+  const tiles = tileset.tiles.filter((tile) => tile.id <= atlas);
+  const probes: TilesetTileTerrain[] = [];
+  for (const terrain of tileset.terrains ?? []) {
+    const declared = new Set(terrain.borders ?? []);
+    const hasTile = tiles.some((tile) =>
+      tile.terrain?.id === terrain.id && (tile.terrain.border === undefined || declared.has(tile.terrain.border)));
+    if (!hasTile) probes.push({ id: terrain.id, mask: TERRAIN_ALL });
+  }
+  if (set.border !== undefined && pieceSetExists(tileset, set) && !tiles.some((tile) => autotilePieceSetHas(set, tile.terrain))) {
+    probes.push({ id: set.terrainId, mask: TERRAIN_ALL, border: set.border });
+  }
+  if (probes.length === 0) return tileset;
+  const rows = Math.ceil(probes.length / tilesetAtlasColumns(tileset));
+  return {
+    ...tileset,
+    atlasHeight: tileset.atlasHeight + rows * stride,
+    tiles: [
+      ...tiles,
+      ...probes.map((terrain, at): TilesetTile => ({ id: atlas + at + 1, collision: "none", flags: 0, animation: [], terrain })),
+    ],
+  };
+}
+
+/**
+ * Paint the preview map of `size` exactly as a Tilemap brush paints it
+ * (`paintTilemapTerrain`, transitions included) and report each painted cell,
+ * keyed `x,y`; cells past the preview are ignored, and the cells around it
+ * count as empty, so shapes at its edge draw their edges. A cell's tile comes from the
+ * Tileset as it is. The piece it wants (`tilemapTerrainCellPieces`) is read as
+ * if every autotile had a tile and `set` had at least one, so cells show where
+ * a piece goes before it has art; a cell stands in when its tile is not that
+ * piece of that set, or it has no tile.
+ */
+export function autotilePreviewTiles(
+  tileset: TilesetPayload,
+  set: AutotilePieceSet,
+  cells: Iterable<AutotilePreviewCell>,
+  size: { width: number; height: number },
+): Map<string, AutotilePreviewTile> {
+  const painted = new Map<string, AutotilePreviewCell>();
   for (const cell of cells) {
     if (cell.x >= 0 && cell.y >= 0 && cell.x < size.width && cell.y < size.height) painted.set(`${cell.x},${cell.y}`, cell);
   }
-  const byTerrain = new Map<string, AutotileSandboxCell[]>();
-  for (const cell of painted.values()) {
-    const group = byTerrain.get(cell.terrainId);
-    if (group) group.push(cell);
-    else byTerrain.set(cell.terrainId, [cell]);
-  }
-  const tilesets = new Map([[SANDBOX_TILESET, tileset]]);
-  let map: TilemapPayload = {
-    tilesets: [{ guid: SANDBOX_TILESET, firstGid: 1, tileCount: tileset.tiles.reduce((most, tile) => Math.max(most, tile.id), 0) }],
-    tileWidth: tileset.tileWidth,
-    tileHeight: tileset.tileHeight,
-    width: size.width,
-    height: size.height,
-    chunkSize: Math.max(size.width, size.height, 1),
-    layers: [createTilemapLayer(SANDBOX_LAYER, "Test Paint")],
-  };
-  for (const [terrainId, group] of byTerrain) {
-    map = paintTilemapTerrain(map, { layerId: SANDBOX_LAYER, cells: group, terrain: { guid: SANDBOX_TILESET, terrainId }, tilesets });
-  }
-  const pieceAt = tilemapTerrainCellPieces(map, SANDBOX_LAYER, tilesets);
+  const list = [...painted.values()];
+  const drawn = paintPreview(tileset, list, size);
+  const wantTileset = previewWantTileset(tileset, set);
+  const wanted = wantTileset === tileset ? drawn : paintPreview(wantTileset, list, size);
+  const pieceAt = tilemapTerrainCellPieces(wanted.map, PREVIEW_LAYER, wanted.tilesets);
   const tiles = new Map(tileset.tiles.map((tile) => [tile.id, tile]));
-  const result = new Map<string, AutotileSandboxTile>();
+  const result = new Map<string, AutotilePreviewTile>();
   for (const [key, cell] of painted) {
-    const tileId = getTile(map, SANDBOX_LAYER, cell.x, cell.y);
-    const piece = tileId > 0 ? pieceAt(cell.x, cell.y) : null;
+    const tileId = getTile(drawn.map, PREVIEW_LAYER, cell.x + PREVIEW_MARGIN, cell.y + PREVIEW_MARGIN);
+    const piece = pieceAt(cell.x + PREVIEW_MARGIN, cell.y + PREVIEW_MARGIN);
     const terrain = piece ? tilesetTerrainById(tileset, piece.terrainId) : null;
     const membership = tiles.get(tileId)?.terrain;
     const exact = Boolean(
@@ -459,7 +520,7 @@ export function autotileSandboxTiles(
         && autotilePieceSetHas({ terrainId: piece.terrainId, border: piece.border }, membership)
         && canonicalTerrainMask(terrain.style, membership.mask) === piece.mask,
     );
-    const entry: AutotileSandboxTile = { terrainId: cell.terrainId, tileId, want: piece?.mask ?? null, standIn: tileId > 0 && !exact };
+    const entry: AutotilePreviewTile = { terrainId: cell.terrainId, tileId, want: piece?.mask ?? null, standIn: piece !== null && !exact };
     if (piece?.border !== undefined) entry.border = piece.border;
     result.set(key, entry);
   }

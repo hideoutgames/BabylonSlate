@@ -29,9 +29,9 @@ Turn on **Paint Collision** in the **Preview** toolbar to copy the current tile'
 
 An autotile paints edges and corners for you. Instead of placing each left end, top and corner piece by hand, you paint with the autotile and every cell takes the tile that matches its neighbours.
 
-1. Open the Tileset's **Autotiles** window (a tab beside the **Preview**, or **Edit Autotiles** in the **Inspector**), tap **New Autotile** and choose its **Layout**: **4 Sides** (16 pieces) follows the four side neighbours; **Blob** (47 pieces) also follows corners and gives inner corners.
-2. Tap **Fill From Template…** and place a template over the part of the sheet that matches it, or tap a piece on the **Pieces** board and then its tile on the sheet.
-3. The board shows how many pieces have a tile, and **Test Paint** shows the result, outlining cells that use a stand-in for a missing piece.
+1. Open the Tileset's **Autotiles** window (a tab beside the **Preview**, or **Edit Autotiles** in the **Inspector**), tap **+** beside **Autotiles** and name the new autotile. Choose its **Layout**: **4 Sides** (16 pieces) follows the four side neighbours; **Blob** (47 pieces) also follows corners and gives inner corners.
+2. Tap a piece, then its tile on the sheet; the next empty piece is selected for you. Where the sheet draws a whole group in the usual arrangement, tap the group's block button and then the block's top-left tile.
+3. Each group shows how many pieces have a tile, and **Preview** shows the result: tap its cells to try shapes. Cells that use a nearby piece for a missing one carry an amber dot.
 
 Your sheet does not need every piece. Where one is missing, the autotile paints the closest tile it has, preferring a tile that draws no edge inside it. The [Tileset](../assets/tileset.md#autotiles) page has the details.
 

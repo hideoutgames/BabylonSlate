@@ -12,8 +12,8 @@ import {
   ensureTilesetTiles,
   normalizeTilesetPayload,
 } from "@haptic/assets";
-import { AtlasTileGrid } from "./atlas-tile-grid";
-import { CONTEXT_MENU_LONG_PRESS_MS } from "./use-context-menu";
+import { createRef } from "react";
+import { AtlasTileGrid, type AtlasTileGridHandle } from "./atlas-tile-grid";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 
 afterEach(() => {
@@ -345,66 +345,8 @@ describe("AtlasTileGrid", () => {
     expect(screen.getByTestId("ghost").parentElement).toBe(screen.getByTestId("atlas-cell-1").parentElement);
   });
 
-  it("opens a tile's menu on right-click or a still touch hold, and neither selects", () => {
-    vi.useFakeTimers();
-    try {
-      const onSelect = vi.fn();
-      const onMenu = vi.fn();
-      render(
-        <AtlasTileGrid
-          tileset={twoTileSet()}
-          imageUrl="blob:atlas"
-          selectedId={1}
-          onSelect={onSelect}
-          panZoom
-          onTileContextMenu={onMenu}
-          data-testid="atlas"
-        />,
-      );
-      const surface = screen.getByTestId("atlas-surface");
-      const cell = screen.getByTestId("atlas-cell-2");
-      cell.parentElement!.getBoundingClientRect = () => ({ left: 0, top: 0, width: 32, height: 16 }) as DOMRect;
-      fireEvent.contextMenu(cell, { clientX: 24, clientY: 8 });
-      expect(onMenu).toHaveBeenLastCalledWith(2, 24, 8);
-      act(() => {
-        dispatchPointerEvent(cell, "pointerdown", { pointerId: 2, pointerType: "mouse", button: 2, clientX: 24, clientY: 8 });
-        dispatchPointerEvent(surface, "pointerup", { pointerId: 2, pointerType: "mouse", button: 2, clientX: 24, clientY: 8 });
-      });
-      expect(onSelect).not.toHaveBeenCalled();
-
-      act(() => {
-        dispatchPointerEvent(cell, "pointerdown", { pointerId: 3, clientX: 20, clientY: 8 });
-        vi.advanceTimersByTime(CONTEXT_MENU_LONG_PRESS_MS);
-      });
-      expect(onMenu).toHaveBeenLastCalledWith(2, 20, 8);
-      act(() => dispatchPointerEvent(surface, "pointerup", { pointerId: 3, clientX: 20, clientY: 8 }));
-      fireEvent.click(cell);
-      expect(onSelect).not.toHaveBeenCalled();
-
-      // A press that moves past the tap distance pans and opens nothing.
-      onMenu.mockClear();
-      act(() => {
-        dispatchPointerEvent(cell, "pointerdown", { pointerId: 4, clientX: 20, clientY: 8 });
-        dispatchPointerEvent(surface, "pointermove", { pointerId: 4, clientX: 40, clientY: 8 });
-        vi.advanceTimersByTime(CONTEXT_MENU_LONG_PRESS_MS);
-        dispatchPointerEvent(surface, "pointerup", { pointerId: 4, clientX: 40, clientY: 8 });
-      });
-      expect(onMenu).not.toHaveBeenCalled();
-      // A quick tap still selects.
-      act(() => {
-        dispatchPointerEvent(cell, "pointerdown", { pointerId: 5, clientX: 20, clientY: 8 });
-        dispatchPointerEvent(surface, "pointerup", { pointerId: 5, clientX: 20, clientY: 8 });
-        vi.advanceTimersByTime(CONTEXT_MENU_LONG_PRESS_MS);
-      });
-      expect(onSelect).toHaveBeenCalledExactlyOnceWith(2);
-      expect(onMenu).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("drags from a grabbed tile instead of panning, and pans from any other", () => {
-    const drags: Array<[string, number]> = [];
+  it("drags a tile off the sheet with the mouse instead of panning, and pans from touch or empty surface", () => {
+    const calls: Array<[string, ...unknown[]]> = [];
     const onSelect = vi.fn();
     render(
       <AtlasTileGrid
@@ -415,10 +357,11 @@ describe("AtlasTileGrid", () => {
         panZoom
         tileDrag={{
           start: (tileId) => {
-            drags.push(["start", tileId]);
+            calls.push(["start", tileId]);
             return tileId === 1;
           },
-          move: (tileId) => drags.push(["move", tileId]),
+          move: (x, y) => calls.push(["move", x, y]),
+          end: (drop) => calls.push(["end", drop]),
         }}
         data-testid="atlas"
       />,
@@ -426,34 +369,93 @@ describe("AtlasTileGrid", () => {
     const surface = screen.getByTestId("atlas-surface");
     const cell = screen.getByTestId("atlas-cell-1");
     cell.parentElement!.getBoundingClientRect = () => ({ left: 0, top: 0, width: 32, height: 16 }) as DOMRect;
+    const mouse = { pointerType: "mouse" as const, button: 0 };
     act(() => {
-      dispatchPointerEvent(cell, "pointerdown", { pointerId: 1, clientX: 4, clientY: 8 });
-      // Still on tile 1: nothing to report.
-      dispatchPointerEvent(surface, "pointermove", { pointerId: 1, clientX: 14, clientY: 8 });
-      dispatchPointerEvent(surface, "pointermove", { pointerId: 1, clientX: 20, clientY: 8 });
-      dispatchPointerEvent(surface, "pointermove", { pointerId: 1, clientX: 28, clientY: 8 });
-      dispatchPointerEvent(surface, "pointerup", { pointerId: 1, clientX: 28, clientY: 8 });
+      dispatchPointerEvent(cell, "pointerdown", { ...mouse, pointerId: 1, clientX: 4, clientY: 8 });
+      // Inside the tap distance the press is still a tap.
+      dispatchPointerEvent(surface, "pointermove", { ...mouse, pointerId: 1, clientX: 8, clientY: 8 });
+      dispatchPointerEvent(surface, "pointermove", { ...mouse, pointerId: 1, clientX: 60, clientY: 40 });
+      dispatchPointerEvent(surface, "pointerup", { ...mouse, pointerId: 1, clientX: 70, clientY: 50 });
     });
-    expect(drags).toEqual([["start", 1], ["move", 2]]);
+    expect(calls).toEqual([["start", 1], ["move", 60, 40], ["end", { clientX: 70, clientY: 50 }]]);
     expect(surface.getAttribute("data-pan-x")).toBe("0");
+    fireEvent.click(cell);
     expect(onSelect).not.toHaveBeenCalled();
-    // A tap on the grabbed tile is still a tap.
+
+    // A click on the draggable tile is still a click.
+    calls.length = 0;
     act(() => {
-      dispatchPointerEvent(cell, "pointerdown", { pointerId: 2, clientX: 4, clientY: 8 });
-      dispatchPointerEvent(surface, "pointerup", { pointerId: 2, clientX: 4, clientY: 8 });
+      dispatchPointerEvent(cell, "pointerdown", { ...mouse, pointerId: 2, clientX: 4, clientY: 8 });
+      dispatchPointerEvent(surface, "pointerup", { ...mouse, pointerId: 2, clientX: 4, clientY: 8 });
     });
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(1);
-    drags.length = 0;
+    expect(calls).toEqual([["start", 1]]);
+
+    // A second finger cancels a drag in progress.
+    calls.length = 0;
     act(() => {
-      dispatchPointerEvent(screen.getByTestId("atlas-cell-2"), "pointerdown", { pointerId: 3, clientX: 20, clientY: 8 });
-      dispatchPointerEvent(surface, "pointermove", { pointerId: 3, clientX: 60, clientY: 8 });
-      dispatchPointerEvent(surface, "pointerup", { pointerId: 3, clientX: 60, clientY: 8 });
+      dispatchPointerEvent(cell, "pointerdown", { ...mouse, pointerId: 3, clientX: 4, clientY: 8 });
+      dispatchPointerEvent(surface, "pointermove", { ...mouse, pointerId: 3, clientX: 40, clientY: 8 });
+      dispatchPointerEvent(surface, "pointerdown", { pointerId: 4, clientX: 20, clientY: 8 });
     });
+    expect(calls.at(-1)).toEqual(["end", null]);
+    act(() => {
+      dispatchPointerEvent(surface, "pointerup", { pointerId: 4, clientX: 20, clientY: 8 });
+      dispatchPointerEvent(surface, "pointerup", { ...mouse, pointerId: 3, clientX: 40, clientY: 8 });
+    });
+
+    // Touch never drags a tile: it pans, as does a mouse press on a tile the host declines.
+    calls.length = 0;
+    act(() => {
+      dispatchPointerEvent(cell, "pointerdown", { pointerId: 5, clientX: 4, clientY: 8 });
+      dispatchPointerEvent(surface, "pointermove", { pointerId: 5, clientX: 44, clientY: 8 });
+      dispatchPointerEvent(surface, "pointerup", { pointerId: 5, clientX: 44, clientY: 8 });
+    });
+    expect(calls).toEqual([]);
     expect(surface.getAttribute("data-pan-x")).toBe("40");
-    expect(drags).toEqual([["start", 2]]);
+    act(() => {
+      dispatchPointerEvent(screen.getByTestId("atlas-cell-2"), "pointerdown", { ...mouse, pointerId: 6, clientX: 20, clientY: 8 });
+      dispatchPointerEvent(surface, "pointermove", { ...mouse, pointerId: 6, clientX: 40, clientY: 8 });
+      dispatchPointerEvent(surface, "pointerup", { ...mouse, pointerId: 6, clientX: 40, clientY: 8 });
+    });
+    expect(calls).toEqual([["start", 2]]);
+    expect(surface.getAttribute("data-pan-x")).toBe("60");
   });
 
-  it("centres the view on a revealed tile once per token, keeping the zoom", () => {
+  it("reports the tile under a hovering mouse, never under touch", () => {
+    const onTileHover = vi.fn();
+    render(
+      <AtlasTileGrid
+        tileset={twoTileSet()}
+        imageUrl="blob:atlas"
+        selectedId={1}
+        onSelect={() => {}}
+        panZoom
+        onTileHover={onTileHover}
+        data-testid="atlas"
+      />,
+    );
+    const surface = screen.getByTestId("atlas-surface");
+    screen.getByTestId("atlas-cell-1").parentElement!.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 32, height: 16 }) as DOMRect;
+    act(() => {
+      dispatchPointerEvent(surface, "pointermove", { pointerType: "mouse", clientX: 4, clientY: 8 });
+      dispatchPointerEvent(surface, "pointermove", { pointerType: "mouse", clientX: 6, clientY: 8 });
+      dispatchPointerEvent(surface, "pointermove", { pointerType: "mouse", clientX: 20, clientY: 8 });
+      dispatchPointerEvent(surface, "pointermove", { pointerType: "touch", clientX: 4, clientY: 8 });
+    });
+    // Each tile is reported once, however often the mouse moves inside it.
+    expect(onTileHover.mock.calls).toEqual([[1], [2]]);
+    // React derives pointer leave from a pointerout whose next target is outside.
+    const leave = new MouseEvent("pointerout", { bubbles: true, relatedTarget: document.body });
+    Object.defineProperty(leave, "pointerType", { value: "mouse" });
+    act(() => {
+      surface.dispatchEvent(leave);
+    });
+    expect(onTileHover).toHaveBeenLastCalledWith(0);
+  });
+
+  it("zooms about the surface centre through its handle", () => {
     const restore = (["clientWidth", "clientHeight"] as const).map(
       (key) => [key, Object.getOwnPropertyDescriptor(HTMLElement.prototype, key)] as const,
     );
@@ -466,30 +468,29 @@ describe("AtlasTileGrid", () => {
       });
     }
     try {
-      const grid = (reveal?: { tileId: number; token: number }) => (
+      const handle = createRef<AtlasTileGridHandle>();
+      render(
         <AtlasTileGrid
+          ref={handle}
           tileset={twoTileSet()}
           imageUrl="blob:atlas"
           selectedId={1}
           onSelect={() => {}}
           panZoom
-          reveal={reveal}
           data-testid="atlas"
-        />
+        />,
       );
-      const { rerender } = render(grid());
       const surface = screen.getByTestId("atlas-surface");
-      // Fit: 0.92 × min(100 / 32, 100 / 16) = 2.875.
+      // Fit: 0.92 × min(100 / 32, 100 / 16) = 2.875, centred.
+      const fitPanX = (100 - 32 * 2.875) / 2;
       expect(Number(surface.getAttribute("data-zoom"))).toBeCloseTo(2.875);
-      rerender(grid({ tileId: 2, token: 1 }));
-      // Tile 2's centre (24, 8) lands on the surface centre (50, 50).
-      expect(Number(surface.getAttribute("data-pan-x"))).toBeCloseTo(50 - 24 * 2.875);
-      expect(Number(surface.getAttribute("data-pan-y"))).toBeCloseTo(50 - 8 * 2.875);
+      act(() => handle.current!.zoomBy(2));
+      expect(Number(surface.getAttribute("data-zoom"))).toBeCloseTo(5.75);
+      // The centre (50, 50) keeps the atlas point it showed.
+      expect(Number(surface.getAttribute("data-pan-x"))).toBeCloseTo(50 - (50 - fitPanX) * 2);
+      act(() => handle.current!.zoomBy(0.5));
       expect(Number(surface.getAttribute("data-zoom"))).toBeCloseTo(2.875);
-      rerender(grid({ tileId: 1, token: 1 }));
-      expect(Number(surface.getAttribute("data-pan-x"))).toBeCloseTo(50 - 24 * 2.875);
-      rerender(grid({ tileId: 1, token: 2 }));
-      expect(Number(surface.getAttribute("data-pan-x"))).toBeCloseTo(50 - 8 * 2.875);
+      expect(Number(surface.getAttribute("data-pan-x"))).toBeCloseTo(fitPanX);
     } finally {
       for (const [key, descriptor] of restore) {
         if (descriptor) Object.defineProperty(HTMLElement.prototype, key, descriptor);
