@@ -2,7 +2,9 @@ import { newGuid, type Result } from "./guid-result";
 
 /** Save data deliberately contains gameplay values, never Babylon scene objects. */
 export type SaveGameValue = null | boolean | number | string | SaveGameValue[] | { [key: string]: SaveGameValue };
-export type SaveGameFieldType = "bool" | "int" | "float" | "string" | "vector3" | "actor" | "asset" | "struct";
+export type SaveGameFieldType =
+  | "bool" | "int" | "float" | "string" | "tag" | "enum" | "vector2" | "vector3" | "vector4" | "color" | "transform"
+  | "actor" | "class" | "asset" | "struct";
 export interface SaveGameField {
   /** Persisted identity. Keep this ID when renaming the field. */
   id: string;
@@ -15,6 +17,8 @@ export interface SaveGameField {
    * are plain records of its fields; the editor offers only Structures that hold no object references.
    */
   structId?: string;
+  /** `enum` fields: the Enum asset's id. Values are member names. */
+  enumId?: string;
 }
 export interface SaveGameDefinition {
   id: string;
@@ -85,7 +89,10 @@ export interface SaveGameServiceOptions<TData extends object = Record<string, Sa
 }
 
 const forbiddenKeys = new Set(["__proto__", "prototype", "constructor"]);
-const fieldTypes = new Set(["bool", "int", "float", "string", "vector3", "actor", "asset", "struct"]);
+const fieldTypes = new Set<string>([
+  "bool", "int", "float", "string", "tag", "enum", "vector2", "vector3", "vector4", "color", "transform", "actor", "class", "asset", "struct",
+] satisfies SaveGameFieldType[]);
+const MAX_TAG = 0xffff_ffff;
 const MAX_JSON_NODES = 250_000;
 
 export function isSaveGameRecord(value: unknown): value is Record<string, unknown> {
@@ -136,16 +143,30 @@ export function validateSaveGameValue(value: unknown): asserts value is SaveGame
   walkSaveGameValue(value, false);
 }
 
+/** A plain record holding exactly these keys, each a finite number. */
+function isNumberRecord(value: unknown, keys: readonly string[]): boolean {
+  if (!isSaveGameRecord(value) || Object.keys(value).length !== keys.length) return false;
+  return keys.every((key) => typeof value[key] === "number" && Number.isFinite(value[key]));
+}
+
 export function validateSaveGameFieldValue(field: SaveGameField, value: unknown): SaveGameValue {
   const scalar = (entry: unknown): boolean => {
     switch (field.type) {
       case "bool": return typeof entry === "boolean";
       case "int": return typeof entry === "number" && Number.isSafeInteger(entry);
       case "float": return typeof entry === "number" && Number.isFinite(entry);
-      case "string": return typeof entry === "string";
+      case "tag": return typeof entry === "number" && Number.isInteger(entry) && entry >= 0 && entry <= MAX_TAG;
+      case "string":
+      case "enum": return typeof entry === "string";
       case "actor":
+      case "class":
       case "asset": return entry === null || (typeof entry === "string" && entry.length > 0);
-      case "vector3": return isSaveGameRecord(entry) && Object.keys(entry).length === 3 && [entry.x, entry.y, entry.z].every((axis) => typeof axis === "number" && Number.isFinite(axis));
+      case "vector2": return isNumberRecord(entry, ["x", "y"]);
+      case "vector3": return isNumberRecord(entry, ["x", "y", "z"]);
+      case "vector4":
+      case "color": return isNumberRecord(entry, ["x", "y", "z", "w"]);
+      case "transform": return isSaveGameRecord(entry) && Object.keys(entry).length === 3 && isNumberRecord(entry.position, ["x", "y", "z"]) &&
+        isNumberRecord(entry.rotation, ["x", "y", "z", "w"]) && isNumberRecord(entry.scale, ["x", "y", "z"]);
       case "struct": return isSaveGameRecord(entry);
     }
   };
@@ -172,6 +193,9 @@ export function validateSaveGameDefinition(input: unknown): SaveGameDefinition {
     if (entry.type === "struct" && (typeof entry.structId !== "string" || !entry.structId || entry.structId.length > 256)) {
       throw new SaveGameError("invalid", `Save field “${entry.name}” needs a Structure.`);
     }
+    if (entry.type === "enum" && (typeof entry.enumId !== "string" || !entry.enumId || entry.enumId.length > 256)) {
+      throw new SaveGameError("invalid", `Save field “${entry.name}” needs an Enum.`);
+    }
     if (ids.has(entry.id) || names.has(entry.name)) throw new SaveGameError("invalid", "Save Game field IDs and names must be unique.");
     ids.add(entry.id);
     names.add(entry.name);
@@ -179,6 +203,7 @@ export function validateSaveGameDefinition(input: unknown): SaveGameDefinition {
       id: entry.id, name: entry.name, type: entry.type as SaveGameFieldType, defaultValue: entry.defaultValue as SaveGameValue,
       ...(entry.array === undefined ? {} : { array: entry.array }),
       ...(entry.type === "struct" ? { structId: entry.structId as string } : {}),
+      ...(entry.type === "enum" ? { enumId: entry.enumId as string } : {}),
     };
     field.defaultValue = validateSaveGameFieldValue(field, entry.defaultValue);
     return field;
@@ -193,7 +218,14 @@ export function createSaveGameData(definition: SaveGameDefinition): Record<strin
 /** Quotes names so authoring spaces, punctuation and renames remain valid TS. */
 export function generateSaveGameTypes(definition: SaveGameDefinition, typeName = "SaveData"): string {
   if (!/^[A-Za-z_$][\w$]*$/.test(typeName)) throw new SaveGameError("invalid", "The generated type name must be a TypeScript identifier.");
-  const types: Record<SaveGameFieldType, string> = { bool: "boolean", int: "number", float: "number", string: "string", vector3: "{ x: number; y: number; z: number }", actor: "string | null", asset: "string | null", struct: "Record<string, unknown>" };
+  const vector3 = "{ x: number; y: number; z: number }";
+  const vector4 = "{ x: number; y: number; z: number; w: number }";
+  const types: Record<SaveGameFieldType, string> = {
+    bool: "boolean", int: "number", float: "number", string: "string", tag: "number", enum: "string",
+    vector2: "{ x: number; y: number }", vector3, vector4, color: vector4,
+    transform: `{ position: ${vector3}; rotation: ${vector4}; scale: ${vector3} }`,
+    actor: "string | null", class: "string | null", asset: "string | null", struct: "Record<string, unknown>",
+  };
   const fields = validateSaveGameDefinition(definition).fields.map((field) => {
     const type = types[field.type];
     return `  ${JSON.stringify(field.name)}: ${field.array ? `Array<${type}>` : type};`;

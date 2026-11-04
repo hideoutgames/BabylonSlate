@@ -6,6 +6,7 @@ import {
   generateSaveGameTypes,
   validateSaveGameDefinition,
   type SaveGameDefinition,
+  type SaveGameValue,
   type SaveGameStorage,
   type SaveGameServiceOptions,
 } from "./save-game";
@@ -469,5 +470,48 @@ describe("SaveGameService schema upgrades and portability", () => {
     expect(generateSaveGameTypes(authored)).toContain('"Hit Points": number;');
     expect(generateSaveGameTypes(authored)).toContain('"targets": Array<string | null>;');
     expect(() => generateSaveGameTypes(authored, "unsafe; type X")).toThrow(SaveGameError);
+  });
+
+  it("saves Tag, Enum, vector, Color, Transform and Class fields and rejects values of another shape", async () => {
+    const transform = { position: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } };
+    const typed: SaveGameDefinition = {
+      id: "typed-values", schemaVersion: 1,
+      fields: [
+        { id: "state-id", name: "State", type: "tag", defaultValue: 0 },
+        { id: "difficulty-id", name: "Difficulty", type: "enum", enumId: "difficulty-enum", defaultValue: "Normal" },
+        { id: "cursor-id", name: "Cursor", type: "vector2", defaultValue: { x: 0, y: 0 } },
+        { id: "weights-id", name: "Weights", type: "vector4", defaultValue: { x: 0, y: 0, z: 0, w: 0 } },
+        { id: "tint-id", name: "Tint", type: "color", array: true, defaultValue: [] },
+        { id: "spawn-id", name: "Spawn", type: "transform", defaultValue: transform },
+        { id: "hero-id", name: "Hero", type: "class", defaultValue: null },
+      ],
+    };
+    const storage = new FaultStorage();
+    const service = new SaveGameService({ projectId: "sample-project", definition: typed, storage });
+    service.setField("state-id", 0xffff_ffff);
+    service.setField("difficulty-id", "Hard");
+    service.setField("tint-id", [{ x: 1, y: 0.5, z: 0, w: 1 }]);
+    service.setField("spawn-id", { ...transform, position: { x: 4, y: 5, z: 6 } });
+    service.setField("hero-id", "knight-class");
+    expect(await service.saveGame()).toMatchObject({ ok: true });
+    const reloaded = new SaveGameService({ projectId: "sample-project", definition: typed, storage });
+    expect(await reloaded.loadGame()).toMatchObject({ ok: true });
+    expect(reloaded.getSaveData()).toMatchObject({
+      State: 0xffff_ffff, Difficulty: "Hard", Tint: [{ x: 1, y: 0.5, z: 0, w: 1 }],
+      Spawn: { position: { x: 4, y: 5, z: 6 } }, Hero: "knight-class",
+    });
+    const invalid: Array<[string, SaveGameValue]> = [
+      ["state-id", -1], ["state-id", 0x1_0000_0000], ["state-id", 1.5], ["difficulty-id", 2],
+      ["cursor-id", { x: 0, y: 0, z: 0 }], ["weights-id", { x: 0, y: 0, z: 0 }], ["tint-id", [{ x: 1, y: 1, z: 1, w: Infinity }]],
+      ["spawn-id", { ...transform, rotation: { x: 0, y: 0, z: 0 } }], ["spawn-id", { position: transform.position }], ["hero-id", ""],
+    ];
+    for (const [id, value] of invalid) expect(() => service.setField(id, value), `${id} = ${JSON.stringify(value)}`).toThrow(SaveGameError);
+    expect(() => validateSaveGameDefinition({ ...typed, fields: [{ id: "x", name: "x", type: "enum", defaultValue: "" }] })).toThrow("needs an Enum");
+    const types = generateSaveGameTypes(typed);
+    expect(types).toContain('"State": number;');
+    expect(types).toContain('"Difficulty": string;');
+    expect(types).toContain('"Tint": Array<{ x: number; y: number; z: number; w: number }>;');
+    expect(types).toContain('"Spawn": { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number; w: number }; scale: { x: number; y: number; z: number } };');
+    expect(types).toContain('"Hero": string | null;');
   });
 });

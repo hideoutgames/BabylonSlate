@@ -10,7 +10,8 @@ In the **Content Browser**, choose **New Asset > Scripting > Save Game**.
 
 Double-tap a Save Game to open it.
 
-- **Fields**: the list of fields. **Add Field** asks for a name; **Search Fields** filters a long list.
+- **Fields**: the list of fields. **Add Field** opens a list of field types; pick one to add a field named **NewField** (then **NewField_1**, and so on) with its name ready to type. **Search Fields** filters a long list.
+- To rename a field, double-tap its name in **Fields**, or select it and press **F2**. Type the new name, then press **Enter** or tap elsewhere; **Escape** keeps the old name.
 - **Inspector**: settings for the selected field, then **Save Setup** and **Advanced** for the whole asset.
 
 ## Settings
@@ -18,8 +19,9 @@ Double-tap a Save Game to open it.
 | Setting | Description |
 | --- | --- |
 | Name | The field's name. Renaming keeps the value already saved. |
-| Type | **Boolean**, **Integer**, **Float**, **String**, **Vector 3**, **Actor Reference**, **Asset Reference** or **Structure**. |
+| Type | **Boolean**, **Integer**, **Float**, **String**, **Tag**, **TagContainer**, **Enum**, **Vector 2**, **Vector 3**, **Vector 4**, **Color**, **Transform**, **Actor Reference**, **Class Reference**, **Asset Reference** or **Structure**. |
 | Structure | For a **Structure** field, the Structure it holds, such as **Int Range** or **Float Curve**. Only Structures without object references can be saved, nested Structures included. |
+| Enum | For an **Enum** field, the Enum it holds. The field saves the member's name. |
 | Container | **Single** or **Array**. |
 | Default Value | The value for new games, and when an existing save lacks the field. For an Array, **Add Item** adds entries. |
 | Remove Field | Deletes the selected field. |
@@ -28,7 +30,7 @@ Double-tap a Save Game to open it.
 
 | Setting | Description |
 | --- | --- |
-| Use As Project Default | Makes this the project's active Save Game. The button then reads **Project Default**. |
+| Use As Project Default | Makes this the project's active Save Game and adds its fields to NodeGraphs. The button then reads **Project Default**. |
 | Default Slot | The slot used when a node names none. Shown once this is the project default. |
 | Default Profile | Keeps each player's saves together. Shown once this is the project default. |
 

@@ -2,8 +2,10 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SaveGameDefinition } from "@haptic/core";
+import { ENGINE_ENUMS } from "@haptic/scripting";
 import { SaveGameFieldsPanel, SaveGameDefinitionPanel } from "./save-game-panels";
 import { SaveGameEditingProvider } from "../context/save-game-editing-context";
+import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 
 // Base UI forwards native checkbox/switch activation through PointerEvent.
 if (typeof window.PointerEvent === "undefined") {
@@ -58,36 +60,94 @@ describe("Save Game authoring", () => {
     expect(screen.queryByRole("textbox", { name: "Field ID" })).toBeNull();
   });
 
-  it("validates names before adding and selects a new field for typed defaults", async () => {
+  it("adds a field of the picked type under a free NewField name and renames it inline", async () => {
     const view = render(editor());
-    fireEvent.click(screen.getByRole("button", { name: "Add Field" }));
-    fireEvent.change(screen.getByLabelText("Field Name"), { target: { value: "Score" } });
-    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
-    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("save-game-add-field"));
+    fireEvent.click(await screen.findByTestId("search-item-tag"));
+    await waitFor(() => expect(harness.definition.fields).toHaveLength(2));
+    const added = harness.definition.fields[1]!;
+    expect(harness.definition.fields[0]).toEqual({ id: "score-id", name: "Score", type: "int", defaultValue: 5 });
+    expect(added).toMatchObject({ name: "NewField", type: "tag", defaultValue: 0 });
+    expect(added.id).not.toBe("score-id");
+    view.rerender(editor());
+    // The new row opens in rename with its name selected, and the Inspector shows the new field.
+    const input = await screen.findByTestId(`tree-rename-${added.id}`) as HTMLInputElement;
+    expect(document.activeElement).toBe(input);
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, "NewField".length]);
+    expect(screen.getByTestId(`property-name-${added.id}`)).toHaveProperty("value", "NewField");
+    fireEvent.change(input, { target: { value: "Rank" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(harness.definition.fields[1]).toEqual({ ...added, name: "Rank" }));
+    view.rerender(editor());
+    fireEvent.click(screen.getByTestId("save-game-add-field"));
+    fireEvent.click(await screen.findByTestId("search-item-vec2"));
+    await waitFor(() => expect(harness.definition.fields).toHaveLength(3));
+    fireEvent.click(screen.getByTestId("save-game-add-field"));
+    fireEvent.click(await screen.findByTestId("search-item-color"));
+    await waitFor(() => expect(harness.definition.fields).toHaveLength(4));
+    expect(harness.definition.fields.slice(2)).toMatchObject([
+      { name: "NewField", type: "vector2", defaultValue: { x: 0, y: 0 } },
+      { name: "NewField_1", type: "color", defaultValue: { x: 0, y: 0, z: 0, w: 0 } },
+    ]);
+  });
+
+  it("renames a field on a double tap of its name and keeps the name when another field has it", async () => {
+    harness.definition.fields.push({ id: "level-id", name: "Level", type: "int", defaultValue: 1 });
+    const view = render(editor());
+    const label = screen.getByText("Level");
+    for (let tap = 0; tap < 2; tap++) {
+      dispatchPointerEvent(label, "pointerdown", { clientX: 10, clientY: 10 });
+      dispatchPointerEvent(label, "pointerup", { clientX: 10, clientY: 10 });
+    }
+    const input = await screen.findByTestId("tree-rename-level-id");
+    fireEvent.change(input, { target: { value: "Score" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByText("A field with this name already exists.")).toBeTruthy();
     expect(harness.apply).not.toHaveBeenCalled();
-    fireEvent.change(screen.getByLabelText("Field Name"), { target: { value: "Coins" } });
-    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
-    await waitFor(() => expect(harness.apply).toHaveBeenCalled());
-    const added = harness.apply.mock.calls.at(-1)![1];
-    expect(added.fields[0]).toEqual({ id: "score-id", name: "Score", type: "int", defaultValue: 5 });
-    expect(added.fields[1]).toMatchObject({ name: "Coins", type: "int", defaultValue: 0 });
-    expect(added.fields[1]!.id).not.toBe("score-id");
     view.rerender(editor());
-    expect(screen.getByTestId(`property-name-${added.fields[1]!.id}`)).toHaveProperty("value", "Coins");
-    fireEvent.click(screen.getByTestId("save-game-field-type"));
-    fireEvent.click(await screen.findByTestId("search-item-vec3"));
-    await waitFor(() => expect(harness.definition.fields[1]).toMatchObject({ type: "vector3", defaultValue: { x: 0, y: 0, z: 0 } }));
+    // Clicking elsewhere commits a valid name.
+    fireEvent.keyDown(screen.getByRole("tree", { name: "Save Fields" }), { key: "F2" });
+    fireEvent.change(await screen.findByTestId("tree-rename-level-id"), { target: { value: "Stage" } });
+    fireEvent.pointerDown(document.body);
+    fireEvent.blur(screen.getByTestId("tree-rename-level-id"));
+    await waitFor(() => expect(harness.definition.fields[1]).toEqual({ id: "level-id", name: "Stage", type: "int", defaultValue: 1 }));
+    expect(screen.queryByText("A field with this name already exists.")).toBeNull();
+  });
+
+  it("changes the type and container of a field with a typed starting value", async () => {
+    const view = render(editor());
+    const pick = async (type: string) => {
+      view.rerender(editor());
+      fireEvent.click(screen.getByTestId("save-game-field-type"));
+      fireEvent.click(await screen.findByTestId(`search-item-${type}`));
+    };
+    await pick("vec3");
+    await waitFor(() => expect(harness.definition.fields[0]).toMatchObject({ id: "score-id", type: "vector3", defaultValue: { x: 0, y: 0, z: 0 } }));
+    await pick("transform");
+    await waitFor(() => expect(harness.definition.fields[0]).toMatchObject({ type: "transform", defaultValue: {
+      position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+    } }));
     view.rerender(editor());
-    fireEvent.click(screen.getByTestId("save-game-field-type"));
-    fireEvent.click(await screen.findByTestId("search-item-string"));
-    await waitFor(() => expect(harness.definition.fields[1]).toMatchObject({ type: "string", defaultValue: "" }));
+    fireEvent.change(screen.getByTestId("property-default-score-id-Default Value-scale-z"), { target: { value: "2" } });
+    expect(harness.definition.fields[0]!.defaultValue).toMatchObject({ scale: { x: 1, y: 1, z: 2 } });
+    await pick("tagContainer");
+    await waitFor(() => expect(harness.definition.fields[0]).toEqual({ id: "score-id", name: "Score", type: "struct", structId: "engine:TagContainer", defaultValue: { Tags: [] } }));
+    view.rerender(editor());
+    expect(screen.getByTestId("save-game-field-type").textContent).toContain("TagContainer");
+    await pick("enum");
+    await waitFor(() => expect(harness.definition.fields[0]).toMatchObject({ type: "enum" }));
+    const field = harness.definition.fields[0]!;
+    expect(field.structId).toBeUndefined();
+    expect(field.defaultValue).toBe(ENGINE_ENUMS.find((entry) => entry.id === field.enumId)?.members[0]?.name);
+    await pick("string");
+    await waitFor(() => expect(harness.definition.fields[0]).toMatchObject({ type: "string", defaultValue: "" }));
+    expect(harness.definition.fields[0]!.enumId).toBeUndefined();
     view.rerender(editor());
     fireEvent.click(screen.getByRole("button", { name: "Array" }));
-    await waitFor(() => expect(harness.definition.fields[1]).toMatchObject({ array: true, type: "string", defaultValue: [] }));
+    await waitFor(() => expect(harness.definition.fields[0]).toMatchObject({ array: true, type: "string", defaultValue: [] }));
     view.rerender(editor());
     fireEvent.click(screen.getByRole("button", { name: "Add Item" }));
-    expect(harness.definition.fields[1]).toMatchObject({ defaultValue: [""] });
-    expect(harness.definition.fields[0]).toEqual({ id: "score-id", name: "Score", type: "int", defaultValue: 5 });
+    expect(harness.definition.fields[0]).toMatchObject({ defaultValue: [""] });
   });
 
   it("turns a field into a Structure field with that Structure's defaults", async () => {
@@ -138,14 +198,10 @@ describe("Save Game authoring", () => {
 
   it("sets up the project without replacing profile and slot preferences", () => {
     const view = render(editor());
-    const notDefault = /Choose this as the project default/;
-    expect(screen.getByText(notDefault)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Use As Project Default" }));
     expect(harness.settings).toHaveBeenCalledWith({ saveGame: { definitionGuid: "definition", defaultProfile: "player", defaultSlot: "checkpoint", wipeOnPlay: false } });
     harness.defaultGuid = "definition";
     view.rerender(editor());
-    // Its fields reach NodeGraphs now, so the requirement is no longer shown.
-    expect(screen.queryByText(notDefault)).toBeNull();
     fireEvent.change(screen.getByRole("textbox", { name: "Default Slot" }), { target: { value: "autosave" } });
     expect(harness.settings).toHaveBeenLastCalledWith({ saveGame: { definitionGuid: "definition", defaultProfile: "player", defaultSlot: "autosave", wipeOnPlay: false } });
     fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
