@@ -76,7 +76,7 @@ function recordCanvas() {
       };
     }
     return ctx as unknown as CanvasRenderingContext2D;
-  } as typeof HTMLCanvasElement.prototype.getContext;
+  } as unknown as typeof HTMLCanvasElement.prototype.getContext;
   restorers.push(() => {
     HTMLCanvasElement.prototype.getContext = original;
   });
@@ -195,7 +195,7 @@ describe("AtlasTileGrid", () => {
     const { rerender } = render(grid());
     const rings = () => drawn(screen.getByTestId(`${testId}-canvas`))
       .filter((call) => call.op === "strokeRect" && call.stroke === "#f59e0b")
-      .map((call) => call.args[0]);
+      .map((call) => call.args[0] as number);
     // Fit: 0.92 × min(64 / 32, 32 / 16) = 1.84, centred: tile 1 starts at 2.56, tile 2 at 32.
     expect(rings().map(Math.round)).toEqual([4]);
     selectedId = 2;
