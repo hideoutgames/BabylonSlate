@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
-import { createDefaultTilesetPayload } from "../packages/assets/src/tileset-payload";
+import { AUTOTILE_PIECE_GROUPS } from "../packages/assets/src/tileset-autotile-templates";
+import { createDefaultTilesetPayload, type TilesetTerrainStyle } from "../packages/assets/src/tileset-payload";
 import { openMinimalTestProject } from "./minimal-project";
 import { enableTouchLayout, openAssetFromBrowser } from "./open-test-project";
 
@@ -28,8 +29,8 @@ async function greyPng(page: Page, size: number): Promise<Uint8Array> {
   return new Uint8Array(bytes);
 }
 
-/** A 4 × 4 sheet of 16 px tiles with one 4 Sides autotile and no pieces yet. */
-async function autotileProject(page: Page): Promise<Map<string, Uint8Array>> {
+/** A 4 × 4 sheet of 16 px tiles with one autotile (4 Sides unless `style` says otherwise) and no pieces yet. */
+async function autotileProject(page: Page, style: TilesetTerrainStyle = "sides"): Promise<Map<string, Uint8Array>> {
   const files = await minimalProjectFiles();
   const pixels = await greyPng(page, 64);
   const texture = { width: 64, height: 64, usage: "pixelArt", downsample: 1, compressionState: "fallback_uncompressed" };
@@ -50,7 +51,7 @@ async function autotileProject(page: Page): Promise<Map<string, Uint8Array>> {
         atlasHeight: 64,
         tileWidth: 16,
         tileHeight: 16,
-        terrains: [{ id: "ground", name: "Ground", style: "sides" }],
+        terrains: [{ id: "ground", name: "Ground", style }],
       },
     },
     { dependencies: [TEXTURE_GUID] },
@@ -94,5 +95,23 @@ test.describe("Tileset Autotiles window on touch", () => {
     await cell.tap();
     await expect(cell).not.toHaveAttribute("data-terrain");
     await expect(slot(N | E | S | W)).toBeVisible();
+  });
+});
+
+test.describe("Tileset Autotiles window on a tablet", () => {
+  // An 11-inch iPad in landscape with the touch layout: the window sits beside the Inspector.
+  test.use({ hasTouch: true, viewport: { width: 1180, height: 820 } });
+  test.beforeEach(({ page }) => enableTouchLayout(page));
+
+  test("shows a Blob autotile's pieces, the sheet and the preview together without scrolling", async ({ page }) => {
+    await openMinimalTestProject(page, await autotileProject(page, "blob"));
+    await openAssetFromBrowser(page, "assets/ground.tileset.hasset");
+    await page.getByTestId("tileset-edit-autotiles").tap();
+    await expect(page.getByTestId("tileset-autotiles")).toBeVisible();
+    // Every piece of Main and Inner Corners, which a Blob autotile needs; More Corners starts collapsed.
+    const needed = AUTOTILE_PIECE_GROUPS.blob.filter((group) => !group.optional).flatMap((group) => group.masks);
+    for (const mask of needed) await expect(page.getByTestId(`tileset-autotiles-slot-${mask}`)).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId("tileset-autotiles-sheet")).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId("tileset-autotiles-preview-map")).toBeInViewport({ ratio: 1 });
   });
 });

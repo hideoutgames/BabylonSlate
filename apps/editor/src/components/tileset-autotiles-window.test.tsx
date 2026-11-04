@@ -415,7 +415,7 @@ describe("TilesetAutotiles", () => {
   describe("Preview", () => {
     const tileAt = (x: number, y: number) => previewCell(x, y).dataset.tileId;
 
-    it("paints and erases a cell with a tap, with the pieces a Tilemap brush picks, and resets", () => {
+    it("paints and erases a cell with a tap, with the pieces a Tilemap brush picks", () => {
       renderWindow(sheet(4, 4, [GROUND_SIDES], sidesBlock()));
       // The sample's top strip runs from column 2 to 7: left end (tile 13), middles (14), right end (15).
       expect([tileAt(2, 5), tileAt(3, 5), tileAt(7, 5)]).toEqual(["13", "14", "15"]);
@@ -428,9 +428,6 @@ describe("TilesetAutotiles", () => {
       expect(tileAt(2, 5)).toBe("13");
       fireEvent.click(previewCell(2, 5));
       expect(tileAt(3, 5)).toBe("13");
-      fireEvent.click(byId("tileset-autotiles-preview-reset"));
-      expect(tileAt(2, 5)).toBe("13");
-      expect(tileAt(3, 5)).toBe("14");
     });
 
     it("toggles a cell between the autotile and its border autotile in a border set", () => {

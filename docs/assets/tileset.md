@@ -48,7 +48,7 @@ A Tileset with no Texture still paints and plays: each tile draws as a flat colo
 
 An autotile turns a group of tiles into a brush that picks pieces for you. Paint it on a Tilemap and every cell takes the piece that fits its neighbours, so edges and corners follow your strokes.
 
-You build autotiles in the **Autotiles** window: a tab beside the **Preview**, also opened by **Edit Autotiles** in the **Inspector**. On a phone, pick **Autotiles** in the window picker. The window has three columns: the list of autotiles, the pieces of the one you selected with a small preview map, and the sheet. On a narrow screen they stack.
+You build autotiles in the **Autotiles** window: a tab beside the **Preview**, also opened by **Edit Autotiles** in the **Inspector**. On a phone, pick **Autotiles** in the window picker. The window has three columns: the list of autotiles, the pieces of the one you selected, and the sheet with a small preview map below it, so you see the pieces, the sheet and the preview at the same time. In a narrow window, such as on a phone, they stack.
 
 ### Create an autotile
 
@@ -84,7 +84,7 @@ Each change is one undo step.
 
 ### Preview
 
-**Preview** is a small map painted exactly as a Tilemap brush paints it, starting with shapes that use most of the pieces. Tap a cell to paint it or erase it; the cells around it update. As at a Tilemap's edge, ground painted up to the preview's edge continues past it, so no edge is drawn there. **Reset** brings back the starting shapes. The map is never saved.
+**Preview** is a small map painted exactly as a Tilemap brush paints it, starting with shapes that use most of the pieces. Tap a cell to paint it or erase it; the cells around it update. As at a Tilemap's edge, ground painted up to the preview's edge continues past it, so no edge is drawn there. The map is never saved.
 
 - The cells that use the selected piece are highlighted, even while the piece has no tile, so you can see where it goes.
 - A cell with an amber dot has no tile for its piece and uses the closest one instead. The line beside **Preview** says how many cells do.

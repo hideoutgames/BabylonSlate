@@ -17,7 +17,6 @@ import {
   MinusIcon,
   MoreHorizontalIcon,
   PlusIcon,
-  RotateCcwIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -113,6 +112,11 @@ import { useTexturePreview } from "./texture-preview-status";
 const STYLE_NAMES: Record<TilesetTerrainStyle, string> = { sides: "4 Sides", blob: "Blob" };
 
 const PREVIEW_SIZE = { width: AUTOTILE_PREVIEW_WIDTH, height: AUTOTILE_PREVIEW_HEIGHT };
+
+/** Preview cells are at most 28px and shrink with a narrow column, down to 16px (then the map scrolls sideways). */
+const PREVIEW_CELL = 28;
+/** The preview frame at full cell size: the cells, its 10px padding and 1px border on both sides. */
+const PREVIEW_FRAME_WIDTH = PREVIEW_SIZE.width * PREVIEW_CELL + 22;
 
 /** Checkerboard behind transparent tile art. */
 const CHECKERBOARD = {
@@ -618,14 +622,6 @@ export function TilesetAutotiles({
     }
     setPreviewEdits((edits) => new Map(edits).set(setKey, next));
   };
-  const resetPreview = () => {
-    setPreviewEdits((edits) => {
-      const next = new Map(edits);
-      next.delete(setKey);
-      return next;
-    });
-  };
-
   // Long-press or right-click a preview cell: select the piece it uses.
   const menuCellRef = useRef<string | null>(null);
   const previewMenu = useContextMenu({
@@ -690,16 +686,20 @@ export function TilesetAutotiles({
       data-testid="tileset-autotiles"
       onKeyDown={onWindowKeyDown}
     >
+      {/*
+        Three columns from 42rem, each scrolling by itself, so the pieces, the preview and the sheet are all in view:
+        the list, the pieces (one group wide, Blob's Main and Inner Corners stacked), and the sheet over the preview.
+        Narrower (a phone) they stack.
+      */}
       <div
         className={cn(
-          "grid min-h-full grid-cols-1 bg-card",
-          "@2xl/autotiles:grid-cols-[minmax(10rem,13rem)_minmax(0,1fr)]",
-          "@4xl/autotiles:h-full @4xl/autotiles:grid-cols-[minmax(11rem,12.5rem)_minmax(22rem,1fr)_minmax(18rem,28rem)]",
+          "grid min-h-full grid-cols-1",
+          "@2xl/autotiles:h-full @2xl/autotiles:grid-cols-[minmax(9rem,12.5rem)_minmax(15rem,19.5rem)_minmax(15rem,1fr)]",
         )}
       >
         <section
           aria-label="Autotiles"
-          className="flex min-w-0 flex-col border-b border-border @2xl/autotiles:border-r @2xl/autotiles:border-b-0 @4xl/autotiles:min-h-0"
+          className="flex min-w-0 flex-col border-b border-border @2xl/autotiles:min-h-0 @2xl/autotiles:border-r @2xl/autotiles:border-b-0"
           data-testid="tileset-autotiles-list"
         >
           <ColumnHeader title="Autotiles">
@@ -713,7 +713,7 @@ export function TilesetAutotiles({
               <PlusIcon />
             </IconActionButton>
           </ColumnHeader>
-          <div className="flex flex-col gap-px p-1.5 @4xl/autotiles:min-h-0 @4xl/autotiles:overflow-y-auto">
+          <div className="flex flex-col gap-px p-1.5 @2xl/autotiles:min-h-0 @2xl/autotiles:overflow-y-auto">
             {terrains.map((terrain) => {
               const rowSelected = terrain.id === autotile.id && border === undefined;
               const ready = autotileReady(tileset, terrain.id);
@@ -855,7 +855,7 @@ export function TilesetAutotiles({
 
         <section
           aria-label="Pieces"
-          className="flex min-w-0 flex-col border-b border-border @4xl/autotiles:min-h-0 @4xl/autotiles:border-r @4xl/autotiles:border-b-0"
+          className="flex min-w-0 flex-col border-b border-border @2xl/autotiles:min-h-0 @2xl/autotiles:border-r @2xl/autotiles:border-b-0"
           data-testid="tileset-autotiles-pieces"
         >
           <ColumnHeader
@@ -890,7 +890,7 @@ export function TilesetAutotiles({
               </>
             ) : null}
           </ColumnHeader>
-          <div className="flex flex-col gap-3.5 p-3 @4xl/autotiles:min-h-0 @4xl/autotiles:overflow-y-auto">
+          <div className="flex flex-col gap-3.5 p-3 @2xl/autotiles:min-h-0 @2xl/autotiles:flex-1 @2xl/autotiles:overflow-y-auto">
             {selectedMask !== null && selectedName !== null ? (
               <div
                 className="flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-muted px-2.5 py-1 text-xs"
@@ -960,7 +960,7 @@ export function TilesetAutotiles({
                       ) : (
                         <h3 className="text-xs font-semibold">{group.title}</h3>
                       )}
-                      <span className="text-xs text-muted-foreground tabular-nums" data-testid={`tileset-autotiles-group-${group.id}-count`}>
+                      <span className="min-w-0 truncate text-xs text-muted-foreground tabular-nums" data-testid={`tileset-autotiles-group-${group.id}-count`}>
                         {done} of {group.masks.length}
                         {group.optional ? " · Optional" : ""}
                       </span>
@@ -1011,8 +1011,86 @@ export function TilesetAutotiles({
                 );
               })}
             </div>
+          </div>
+        </section>
 
-            <section aria-label="Preview" className="flex flex-col gap-2 border-t border-border pt-3">
+        {/* The sheet with the preview pinned below it, so a tile given to a piece shows in the preview at once. */}
+        <div className="flex min-w-0 flex-col @2xl/autotiles:min-h-0 @2xl/autotiles:overflow-y-auto">
+          <section
+            aria-label="Sheet"
+            className="flex h-[24rem] min-h-0 min-w-0 flex-col @2xl/autotiles:h-auto @2xl/autotiles:min-h-48 @2xl/autotiles:flex-1"
+          >
+            <ColumnHeader title="Sheet">
+              <IconActionButton
+                label="Zoom Out"
+                variant="ghost"
+                size="touch-icon"
+                onClick={() => sheetRef.current?.zoomBy(1 / 1.25)}
+                data-testid="tileset-autotiles-zoom-out"
+              >
+                <MinusIcon />
+              </IconActionButton>
+              <IconActionButton
+                label="Zoom In"
+                variant="ghost"
+                size="touch-icon"
+                onClick={() => sheetRef.current?.zoomBy(1.25)}
+                data-testid="tileset-autotiles-zoom-in"
+              >
+                <PlusIcon />
+              </IconActionButton>
+            </ColumnHeader>
+            <div
+              className="flex min-h-[30px] shrink-0 items-center gap-2 border-b border-border px-2.5 py-1 text-xs text-muted-foreground"
+              data-testid="tileset-autotiles-sheet-hint"
+            >
+              {blockGroup ? (
+                <>
+                  <span>{verb} the top-left tile of a {blockGroup.block.columns} × {blockGroup.block.rows} block.</span>
+                  <span className="flex-1" />
+                  {coarse ? null : <Kbd>Esc</Kbd>}
+                </>
+              ) : selectedName !== null ? (
+                <span>
+                  {verb} a tile for <strong className="font-semibold text-foreground">{selectedName}</strong>
+                  {coarse ? "." : ", or drag one onto any piece."}
+                </span>
+              ) : null}
+            </div>
+            <AtlasTileGrid
+              ref={sheetRef}
+              tileset={tileset}
+              imageUrl={imageUrl}
+              selectedId={0}
+              selectedIds={highlightedTileIds}
+              onSelect={onStableSheetTap}
+              panZoom
+              tool="move"
+              cellMarks={sheetMarks}
+              overlay={blockOutline}
+              tileDrag={tileDrag}
+              onTileHover={blockGroup ? setBlockAnchor : undefined}
+              emptyLabel={
+                preview.status === "missing"
+                  ? "Missing Texture"
+                  : preview.status === "loading"
+                    ? "Loading Texture…"
+                    : preview.status === "failed"
+                      ? "Texture Unavailable"
+                      : "No Texture"
+              }
+              emptyDescription={
+                preview.status === "loading"
+                  ? undefined
+                  : preview.status === "failed"
+                    ? preview.error
+                    : "Pick the sheet's Texture in the Inspector."
+              }
+              data-testid="tileset-autotiles-sheet"
+            />
+          </section>
+
+            <section aria-label="Preview" className="flex shrink-0 flex-col gap-2 border-t border-border p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-xs font-semibold">Preview</h3>
                 <span
@@ -1027,25 +1105,16 @@ export function TilesetAutotiles({
                       ? `${standIns} ${standIns === 1 ? "cell has" : "cells have"} no tile yet`
                       : `${standIns} ${standIns === 1 ? "cell uses" : "cells use"} a nearby piece`}
                 </span>
-                <span className="flex-1" />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="touch"
-                  className="text-xs"
-                  onClick={resetPreview}
-                  data-testid="tileset-autotiles-preview-reset"
-                >
-                  <RotateCcwIcon data-icon="inline-start" />
-                  Reset
-                </Button>
               </div>
-              <div className="max-w-full self-start overflow-x-auto rounded-md border border-border p-2.5" style={CHECKERBOARD}>
+              <div
+                className="w-full self-start overflow-x-auto rounded-md border border-border p-2.5"
+                style={{ ...CHECKERBOARD, maxWidth: PREVIEW_FRAME_WIDTH }}
+              >
                 <div
                   role="group"
                   aria-label="Preview Map"
                   className="grid touch-manipulation select-none"
-                  style={{ gridTemplateColumns: `repeat(${PREVIEW_SIZE.width}, 28px)` }}
+                  style={{ gridTemplateColumns: `repeat(${PREVIEW_SIZE.width}, minmax(1rem, 1fr))` }}
                   data-testid="tileset-autotiles-preview-map"
                   onClick={(event) => {
                     const cell = event.target instanceof Element ? event.target.closest("[data-cell]") : null;
@@ -1080,7 +1149,7 @@ export function TilesetAutotiles({
                           data-border={tile?.border}
                           data-stand-in={own && tile.standIn ? "true" : undefined}
                           data-picked={picked ? "true" : undefined}
-                          className="group/cell relative size-7 cursor-crosshair"
+                          className="group/cell relative aspect-square cursor-crosshair"
                         >
                           {tile && tile.tileId > 0 ? (
                             <TileSwatch
@@ -1110,82 +1179,7 @@ export function TilesetAutotiles({
               </div>
               <ContextMenuOverlay menu={previewMenu.menu} onClose={previewMenu.closeMenu} />
             </section>
-          </div>
-        </section>
-
-        <section
-          aria-label="Sheet"
-          className="flex h-[24rem] min-h-0 min-w-0 flex-col @2xl/autotiles:col-span-2 @4xl/autotiles:col-span-1 @4xl/autotiles:h-auto"
-        >
-          <ColumnHeader title="Sheet">
-            <IconActionButton
-              label="Zoom Out"
-              variant="ghost"
-              size="touch-icon"
-              onClick={() => sheetRef.current?.zoomBy(1 / 1.25)}
-              data-testid="tileset-autotiles-zoom-out"
-            >
-              <MinusIcon />
-            </IconActionButton>
-            <IconActionButton
-              label="Zoom In"
-              variant="ghost"
-              size="touch-icon"
-              onClick={() => sheetRef.current?.zoomBy(1.25)}
-              data-testid="tileset-autotiles-zoom-in"
-            >
-              <PlusIcon />
-            </IconActionButton>
-          </ColumnHeader>
-          <div
-            className="flex min-h-[30px] shrink-0 items-center gap-2 border-b border-border px-2.5 py-1 text-xs text-muted-foreground"
-            data-testid="tileset-autotiles-sheet-hint"
-          >
-            {blockGroup ? (
-              <>
-                <span>{verb} the top-left tile of a {blockGroup.block.columns} × {blockGroup.block.rows} block.</span>
-                <span className="flex-1" />
-                {coarse ? null : <Kbd>Esc</Kbd>}
-              </>
-            ) : selectedName !== null ? (
-              <span>
-                {verb} a tile for <strong className="font-semibold text-foreground">{selectedName}</strong>
-                {coarse ? "." : ", or drag one onto any piece."}
-              </span>
-            ) : null}
-          </div>
-          <AtlasTileGrid
-            ref={sheetRef}
-            tileset={tileset}
-            imageUrl={imageUrl}
-            selectedId={0}
-            selectedIds={highlightedTileIds}
-            onSelect={onStableSheetTap}
-            panZoom
-            tool="move"
-            cellMarks={sheetMarks}
-            overlay={blockOutline}
-            tileDrag={tileDrag}
-            onTileHover={blockGroup ? setBlockAnchor : undefined}
-            emptyLabel={
-              preview.status === "missing"
-                ? "Missing Texture"
-                : preview.status === "loading"
-                  ? "Loading Texture…"
-                  : preview.status === "failed"
-                    ? "Texture Unavailable"
-                    : "No Texture"
-            }
-            emptyDescription={
-              preview.status === "loading"
-                ? undefined
-                : preview.status === "failed"
-                  ? preview.error
-                  : "Pick the sheet's Texture in the Inspector."
-            }
-            data-testid="tileset-autotiles-sheet"
-          />
-        </section>
+        </div>
       </div>
 
       {drag
@@ -1309,7 +1303,7 @@ function neighbourPiece(groups: readonly AutotilePieceGroup[], visible: readonly
 
 function ColumnHeader({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (
-    <header className="flex min-h-10 shrink-0 items-center gap-1.5 border-b border-border px-2.5 py-1">
+    <header className="flex min-h-10 shrink-0 items-center gap-1.5 border-b border-border bg-panel-header px-2.5 py-1">
       <h2 className="min-w-0 flex-1 truncate text-xs font-semibold">{title}</h2>
       {children}
     </header>
