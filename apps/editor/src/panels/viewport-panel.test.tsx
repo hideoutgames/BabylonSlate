@@ -62,6 +62,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     resize: vi.fn(),
     dispose: vi.fn(),
     whenReleased: vi.fn(async () => {}),
+    handOverTextures: vi.fn(),
     resourceCache: {},
     registerFonts: vi.fn(async () => {}),
     setMeshAssets: vi.fn(),
@@ -295,6 +296,7 @@ describe("ViewportPanel engine", () => {
     handle.replaceTextureBytes.mockClear();
     handle.setMaterialDocuments.mockClear();
     handle.dispose.mockClear();
+    handle.handOverTextures.mockClear();
     handle.engine.onContextRestoredObservable.add.mockClear();
     handle.engine.onContextRestoredObservable.remove.mockClear();
     handle.whenEditorModelsReady.mockReset().mockResolvedValue(undefined);
@@ -635,6 +637,8 @@ describe("ViewportPanel engine", () => {
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       expect(play.reportSceneViewportLoading).toHaveBeenLastCalledWith("scene:S", false);
       expect(handle.dispose).toHaveBeenCalledOnce();
+      // Released without a handover: its textures are flushed with it.
+      expect(handle.handOverTextures).not.toHaveBeenCalled();
       expect(createEngineMock).toHaveBeenCalledOnce();
       act(() => viewport.restore());
       await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
@@ -656,9 +660,12 @@ describe("ViewportPanel engine", () => {
       renderViewport();
       const ready = () => screen.getByTestId("viewport-panel").getAttribute("data-scene-ready");
       await waitFor(() => expect(ready()).toBe("true"));
-      await act(async () => { await viewport.suspend(); });
+      await act(async () => { await viewport.suspend({ handOverTextures: true }); });
       // Released, the view has no Engine: anything waiting for readiness must wait for the restore.
       expect(handle.dispose).toHaveBeenCalledOnce();
+      // Play's view takes over its textures, which the handle must know before it is disposed.
+      expect(handle.handOverTextures).toHaveBeenCalledOnce();
+      expect(handle.handOverTextures.mock.invocationCallOrder[0]).toBeLessThan(handle.dispose.mock.invocationCallOrder[0]!);
       expect(ready()).toBe("false");
       act(() => viewport.restore());
       await waitFor(() => expect(ready()).toBe("true"));

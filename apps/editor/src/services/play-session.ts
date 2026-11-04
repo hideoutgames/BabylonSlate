@@ -972,6 +972,8 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       const liveAfter = handle.liveObjectCounts();
       // The leak check runs once release confirms, when these Scenes are disposed. One that is not still owns what it holds.
       const playScenes = new Set(handle.ownedScenes());
+      // Stopping Play reloads the editor views it released, which take over the textures they share with it.
+      if (options.mode !== "simulate") handle.handOverTextures();
       handle.dispose();
       sourceTracker.releaseSessionSources();
       sourceTracker.releaseInitialSources();

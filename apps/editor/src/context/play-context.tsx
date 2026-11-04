@@ -601,13 +601,15 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   /**
    * Play and Preview Build release every open Scene viewport's authoring Scene, as Simulation releases its own:
    * kept beside the game's, its GPU memory (shadow maps, probe cubes) doubled Play's, which iPad WebKit answers
-   * by losing the context. Stop rebuilds them. False when the session ended or the release failed.
+   * by losing the context. Stop rebuilds them. Play, on the same Engine, takes over the textures it shares with
+   * them; Preview Build's own Engine takes none. False when the session ended or the release failed.
    */
   const releaseSceneViewports = useCallback(async (ticket: GameSessionTicket): Promise<boolean> => {
     const viewports = [...simulationViewports.current.values()];
     if (!viewports.length) return true;
     releasedViewportsRef.current.push(...viewports);
-    const release = Promise.all(viewports.map((viewport) => viewport.suspend())).then(() => undefined);
+    const handOverTextures = ticket.mode === "play";
+    const release = Promise.all(viewports.map((viewport) => viewport.suspend({ handOverTextures }))).then(() => undefined);
     sessionOwner.holdRelease(ticket, release.then(() => ({ quarantined: false }), () => ({ quarantined: true })));
     try {
       await sessionOwner.awaitCurrent(ticket, release);
