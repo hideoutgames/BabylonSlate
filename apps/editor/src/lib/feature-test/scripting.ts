@@ -138,6 +138,10 @@ const VISITS_FIELD = { fieldId: "visits", fieldName: "Visits", typeId: "int", ar
 /** Structure Save Fields: a range and a curve, stored as plain records. */
 const SAVED_RANGE_FIELD = { fieldId: "saved-range", fieldName: "SavedRange", typeId: "struct", array: false, typeClassId: "engine:IntRange" };
 const SAVED_CURVE_FIELD = { fieldId: "saved-curve", fieldName: "SavedCurve", typeId: "struct", array: false, typeClassId: "engine:FloatCurve" };
+/** A Tag and an Enum Save Field the Save Probe stores and reads back. */
+const SAVED_TAG_FIELD = { fieldId: "saved-tag", fieldName: "SavedTag", typeId: "tag", array: false };
+const savedSpeedField = (speedMode: string) =>
+  ({ fieldId: "saved-speed", fieldName: "SavedSpeed", typeId: "enum", array: false, typeClassId: speedMode });
 
 /**
  * `FT_GlobalParams`: one parameter of each type. The Data Probe sets and reads Wind Strength;
@@ -229,6 +233,17 @@ export async function buildFeatureTestScriptingTypes(ctx: FeatureTestContext): P
           { id: "best-score", name: "BestScore", type: "float", defaultValue: 0 },
           { id: SAVED_RANGE_FIELD.fieldId, name: SAVED_RANGE_FIELD.fieldName, type: "struct", structId: SAVED_RANGE_FIELD.typeClassId, defaultValue: { Min: 0, Max: 1 } },
           { id: SAVED_CURVE_FIELD.fieldId, name: SAVED_CURVE_FIELD.fieldName, type: "struct", structId: SAVED_CURVE_FIELD.typeClassId, defaultValue: { Keys: [], Before: "constant", After: "constant" } },
+          { id: SAVED_TAG_FIELD.fieldId, name: SAVED_TAG_FIELD.fieldName, type: "tag", defaultValue: 0 },
+          { id: "saved-speed", name: "SavedSpeed", type: "enum", enumId: speedMode.guid, defaultValue: SPEED_MODES[0] },
+          // The remaining value types keep their defaults through every Save Game and Load Game.
+          { id: "saved-tags", name: "SavedTags", type: "struct", structId: "engine:TagContainer", defaultValue: { Tags: [] } },
+          { id: "saved-aim", name: "SavedAim", type: "vector2", defaultValue: { x: 0, y: 1 } },
+          { id: "saved-weights", name: "SavedWeights", type: "vector4", defaultValue: { x: 1, y: 0, z: 0, w: 0 } },
+          { id: "saved-tint", name: "SavedTint", type: "color", array: true, defaultValue: [{ x: 1, y: 0.5, z: 0, w: 1 }] },
+          { id: "saved-checkpoint", name: "SavedCheckpoint", type: "transform", defaultValue: {
+            position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+          } },
+          { id: "saved-class", name: "SavedClass", type: "class", defaultValue: null },
         ],
       }),
     }),
@@ -371,7 +386,7 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
   const objectProbe = await saveObjectProbe(ctx, font, materials.surfaceInstance ?? null);
   const touchProbe = await saveTouchProbe(ctx, types, font, materials.surfaceInstance ?? null);
   const dataProbe = await saveDataProbe(ctx, types, font, materials.surfaceInstance ?? null);
-  const saveProbe = await saveSaveProbe(ctx, font, materials.surfaceInstance ?? null);
+  const saveProbe = await saveSaveProbe(ctx, types, font, materials.surfaceInstance ?? null);
   const streamLoader = await saveStreamLoader(ctx);
   await saveStatsCommand(ctx);
   await saveSpawnCommand(ctx);
@@ -1431,10 +1446,11 @@ async function saveDataProbe(
 }
 
 /**
- * Load Game, increment the Visits Save Field, store a range and a curve in Structure Save Fields, Save Game,
- * then read both back and assert them; a Save Game Component keeps Visits.
+ * Load Game, increment the Visits Save Field, store a range and a curve in Structure Save Fields and a Tag and an
+ * Enum member in their own fields, Save Game, then read them back and assert them; a Save Game Component keeps Visits.
  */
-async function saveSaveProbe(ctx: FeatureTestContext, font: string, materialGuid: string | null): Promise<PlacedClass> {
+async function saveSaveProbe(ctx: FeatureTestContext, types: ScriptingTypes, font: string, materialGuid: string | null): Promise<PlacedClass> {
+  const savedSpeed = savedSpeedField(types.speedMode.guid);
   const visits = varMember("ft-data-var-visits", "Visits", "int", 0);
   const savedRange = varMember("ft-data-var-saved-range", "SavedRange", "struct", { Min: 3, Max: 7 }, {
     typeClassId: "engine:IntRange",
@@ -1465,6 +1481,12 @@ async function saveSaveProbe(ctx: FeatureTestContext, font: string, materialGuid
       gNode("stored-curve", "saveGame.getField", 1620, 1000, SAVED_CURVE_FIELD),
       gNode("evaluate-stored", "curve.evaluateFloat", 1860, 1000, { "default:time": 1 }),
       gNode("assert-curve", "debug.assertEqual", 1620, 900, { "default:expected": 20, "default:message": "The SavedCurve Save Field lost its curve" }),
+      gNode("store-tag", "saveGame.setField", 1380, 1140, { ...SAVED_TAG_FIELD, "default:value": types.tags.scripting }),
+      gNode("store-speed", "saveGame.setField", 1620, 1140, { ...savedSpeed, "default:value": SPEED_MODES[2] }),
+      gNode("stored-tag", "saveGame.getField", 1860, 1280, SAVED_TAG_FIELD),
+      gNode("assert-tag", "debug.assertEqual", 1860, 1140, { "default:expected": types.tags.scripting, "default:message": "The SavedTag Save Field lost its Tag" }),
+      gNode("stored-speed", "saveGame.getField", 2100, 1280, savedSpeed),
+      gNode("assert-speed", "debug.assertEqual", 2100, 1140, { "default:expected": SPEED_MODES[2], "default:message": "The SavedSpeed Save Field lost its Enum member" }),
       gNode("stored-visits", "saveGame.getField", 220, 220, VISITS_FIELD),
       gNode("next-visits", "math.add_int", 440, 220, { "default:b": 1 }),
       setVar("set-visits", visits, 660, 0),
@@ -1490,14 +1512,20 @@ async function saveSaveProbe(ctx: FeatureTestContext, font: string, materialGuid
       gWire("get-saved-range", "value", "store-range", "value"),
       gExec("store-range", "store-curve"),
       gWire("get-saved-curve", "value", "store-curve", "value"),
-      gExec("store-curve", "save"),
+      gExec("store-curve", "store-tag"),
+      gExec("store-tag", "store-speed"),
+      gExec("store-speed", "save"),
       gWire("save", "completed", "assert-range", "execIn"),
       gWire("stored-range", "value", "clamp-stored", "range"),
       gWire("clamp-stored", "result", "assert-range", "actual"),
       gExec("assert-range", "assert-curve"),
       gWire("stored-curve", "value", "evaluate-stored", "curve"),
       gWire("evaluate-stored", "value", "assert-curve", "actual"),
-      gExec("assert-curve", "saved"),
+      gExec("assert-curve", "assert-tag"),
+      gWire("stored-tag", "value", "assert-tag", "actual"),
+      gExec("assert-tag", "assert-speed"),
+      gWire("stored-speed", "value", "assert-speed", "actual"),
+      gExec("assert-speed", "saved"),
       gWire("save", "failed", "assert-saved", "execIn"),
       gExec("assert-saved", "save-failed"),
       gWire("set-visits", "out", "saved-text", fmtArg("visits")),

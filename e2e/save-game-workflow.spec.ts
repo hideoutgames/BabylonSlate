@@ -26,9 +26,17 @@ test("Save Game authoring preserves field identity and project defaults through 
   await expect(workspace).toBeVisible();
   await expect(page.getByTestId("windows-menu")).toBeEnabled();
   const add = workspace.getByRole("button", { name: "Add Field", exact: true });
-  await add.click();
-  await page.getByLabel("Field Name", { exact: true }).fill("Score");
-  await page.getByTestId("name-prompt-confirm").click();
+  // Add Field picks a type, then the new NewField row opens in rename with its name selected.
+  const addField = async (name: string) => {
+    await add.click();
+    await page.getByTestId("search-item-int").click();
+    const rename = workspace.getByRole("textbox", { name: "Rename NewField", exact: true });
+    await expect(rename).toBeFocused();
+    await page.keyboard.type(name);
+    await page.keyboard.press("Enter");
+    await expect(rename).toHaveCount(0);
+  };
+  await addField("Score");
   const scoreRow = workspace.getByRole("treeitem", { name: "Score Integer", exact: true });
   await expect(scoreRow).toBeVisible();
   const identity = (await scoreRow.getAttribute("data-testid"))!.replace("tree-row-", "");
@@ -40,9 +48,7 @@ test("Save Game authoring preserves field identity and project defaults through 
   await defaultValue.fill("25");
   await defaultValue.press("Tab");
   await expect(defaultValue).toHaveValue("25");
-  await add.click();
-  await page.getByLabel("Field Name", { exact: true }).fill("Level");
-  await page.getByTestId("name-prompt-confirm").click();
+  await addField("Level");
   await expect(workspace.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Level");
   await scoreRow.click();
   await expect(defaultValue).toHaveValue("25");

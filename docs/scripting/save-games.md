@@ -5,12 +5,12 @@ A Save Game stores a player's progress, such as coins or the last checkpoint, in
 ## Set up a Save Game
 
 1. In the **Content Browser**, choose **New Asset > Scripting > Save Game** and open it.
-2. In **Fields**, choose **Add Field** and enter a name.
-3. Select the field. In the **Inspector**, set its **Type**, **Container** (**Single** or **Array**) and **Default Value**.
+2. In **Fields**, choose **Add Field**, pick the field's type, then type its name.
+3. In the **Inspector**, set its **Container** (**Single** or **Array**) and **Default Value**. You can change its **Type** there too.
 4. Under **Save Setup**, choose **Use As Project Default**. You can also pick it in **Project Settings > Save Games > Default Definition**.
 5. Optionally change **Default Slot** and **Default Profile**. Use profiles to keep several players' saves apart, and slots for manual saves. Keep the names short and not empty: **Project Settings > Save Games** marks a **Default Slot** or **Default Profile** that a save cannot store.
 
-Fields can be Boolean, Integer, Float, String, Vector 3, Actor Reference, Asset Reference or Structure, or an array of one of these. A Structure field holds any Structure without object references, such as an **Int Range** or a **Float Curve** ([Curves and ranges](curves-and-ranges.md)); choose it under **Structure**. Renaming a field keeps existing saves working. When an older save loads, fields it does not have get their default value.
+Fields can be Boolean, Integer, Float, String, Tag, TagContainer, Enum, Vector 2, Vector 3, Vector 4, Color, Transform, Actor Reference, Class Reference, Asset Reference or Structure, or an array of one of these. A Structure field holds any Structure without object references, such as an **Int Range** or a **Float Curve** ([Curves and ranges](curves-and-ranges.md)); choose it under **Structure**. An Enum field holds one member of the Enum you choose under **Enum**. Renaming a field keeps existing saves working. When an older save loads, fields it does not have get their default value.
 
 ## Save and load
 
