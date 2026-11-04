@@ -66,6 +66,8 @@ Feature Test is a developer starter that places every engine feature in a few sc
 4. Pick **Quick (Current Scene)**, **Full (All Scenes)**, **Benchmark** or **Breakdown**, then choose **Start**.
 5. When it finishes, choose **Copy Report** to copy the plain-text results.
 
+A scene fails when it does not load, a console command fails, Play reports an error, the game view stays black, or the graphics context is lost. The report also shows how many frames each scene drew, held and skipped while it was measured.
+
 If the app crashes or reloads during a check, choose **Run Feature Test Check…** again: it shows the report up to where the app stopped, with what the editor held at the end, so you can still copy it.
 
 Benchmark plays every scene at each quality level and takes about ten minutes; keep the device awake and plugged in.
