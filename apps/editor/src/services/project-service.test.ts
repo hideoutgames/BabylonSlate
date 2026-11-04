@@ -277,8 +277,11 @@ describe("ProjectService lifecycle", () => {
       : await service.loadDocument("scene", path);
     expect(value).toMatchObject({ name: after.name, actors: [] });
     expect(saved).toBe(true);
-    expect(reservations).toHaveLength(1);
-    expect(reservations[0].reserved).toBeGreaterThanOrEqual(reservations[0].bytes);
+    // A load starts from the revision the registry indexes, so a write that no reindex announced is caught by the
+    // read's own storage check and read once more at the current revision. Each read is reserved before it starts.
+    expect(reservations.length).toBeGreaterThanOrEqual(1);
+    expect(reservations.length).toBeLessThanOrEqual(2);
+    for (const reservation of reservations) expect(reservation.reserved).toBeGreaterThanOrEqual(reservation.bytes);
     service.assetLoadingService.trim({ force: true });
     expect(service.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0, entries: [] });
     service.dispose();
