@@ -113,7 +113,8 @@ export class SaveGameWorld {
     for (const field of definition.fields) {
       if (field.type !== "actor") continue;
       const value = (data as Record<string, unknown>)[field.name];
-      const ids = field.array && Array.isArray(value) ? value : [value];
+      const ids = field.container === "map" && Array.isArray(value) ? value.map((entry) => (entry as { value?: unknown } | null)?.value)
+        : field.container === "array" && Array.isArray(value) ? value : [value];
       for (const id of ids) {
         if (id === null) continue;
         if (typeof id !== "string" || !targets.has(id) || targets.get(id)!.destroyed) {

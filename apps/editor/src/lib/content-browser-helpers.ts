@@ -442,6 +442,7 @@ export type ContentBrowserContextAction =
   | "create-child-class"
   | "create-data-definition"
   | "create-data-tree"
+  | "create-linked-save-game"
   | "create-render-target-texture"
   | "duplicate"
   | "rename"
@@ -482,7 +483,7 @@ function createActionsForTypes(types: readonly string[], canCreateChildClass: bo
   if (all((type) => EMITTER_TYPES.has(type)) && types.length <= PARTICLE_SYSTEM_MAX_EMITTERS) actions.push("create-particle-system");
   if (single === "Class" && canCreateChildClass) actions.push("create-child-class");
   if (single === "Structure") actions.push("create-data-definition");
-  if (single === "DataDefinition") actions.push("create-data-tree");
+  if (single === "DataDefinition") actions.push("create-data-tree", "create-linked-save-game");
   if (single === "RenderTarget") actions.push("create-render-target-texture");
   return actions;
 }

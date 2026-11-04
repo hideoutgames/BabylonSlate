@@ -26,7 +26,7 @@ import {
 } from "../lib/use-open-documents-of-kinds";
 import { classHierarchyFromParentOf } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
-import { defaultSaveGameDefinition, loadDefaultSaveGameDefinition } from "../lib/save-game-catalog";
+import { defaultSaveGameDefinition, loadDefaultSaveGameDefinition, resolveSaveGameDefinition } from "../lib/save-game-catalog";
 import { projectTimelineClips } from "../lib/timeline-asset-index";
 import { timelineScriptAssets, type TimelineScriptAsset } from "../lib/timeline-script-catalog";
 
@@ -138,6 +138,12 @@ export function useGraphPanelCatalogs() {
     () => typeSchemasFromGraphAssets(typeAssets),
     [typeAssets],
   );
+  // A Save Game linked to a Data Definition takes its fields from it, so editing the Data Definition updates these nodes.
+  const resolvedSaveGameDefinition = useMemo(() => {
+    if (!saveGameDefinition) return undefined;
+    try { return resolveSaveGameDefinition(saveGameDefinition, typeSchemas).definition; }
+    catch { return undefined; }
+  }, [saveGameDefinition, typeSchemas]);
   const hierarchy = useMemo(
     () => classHierarchyFromParentOf(parentOf),
     [parentOf],
@@ -178,7 +184,7 @@ export function useGraphPanelCatalogs() {
     typeSchemas,
     hierarchy,
     inputAssets,
-    saveGameDefinition,
+    saveGameDefinition: resolvedSaveGameDefinition,
     materialDomains,
     dataAssets,
     timelineAssets,

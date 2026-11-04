@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decodeAssetDocument, encodeAssetDocument, readAssetDocumentHeader } from "@haptic/assets";
-import { defaultSaveGameDefinition, loadDefaultSaveGameDefinition, saveableStructures } from "./save-game-catalog";
+import { defaultSaveGameDefinition, loadDefaultSaveGameDefinition, resolveSaveGameDefinition, saveableStructures } from "./save-game-catalog";
 import { ENGINE_STRUCTS, mergeEngineTypeSchemas } from "@haptic/scripting";
 import { scriptPaletteNodes, defaultNodeRegistry } from "../services/graph-validation";
 
@@ -46,5 +46,48 @@ describe("default Save Game field catalog", () => {
     expect(names).not.toContain("Hit Result");
     expect(names).not.toContain("Squad");
     expect(names).not.toContain("Member");
+  });
+});
+
+describe("Save Games linked to a Data Definition", () => {
+  const dataDefinition = (fields: object[]) => mergeEngineTypeSchemas({
+    enums: { difficulty: { name: "Difficulty", members: [{ name: "Easy", value: 0 }, { name: "Hard", value: 1 }] } },
+    structs: { squad: { name: "Squad", fields: [{ name: "Leader", typeId: "object", typeClassId: "Actor" }] } },
+    dataDefinitions: { progress: { name: "ProgressFields", fields } as never },
+  });
+  const linked = { id: "save", schemaVersion: 1, fields: [], dataDefinitionId: "progress", defaults: { "coins-id": 50, "spawn-id": "not a vector" } };
+  const fields = [
+    { id: "coins-id", name: "Coins", typeId: "int", defaultValue: 5 },
+    { id: "spawn-id", name: "Spawn", typeId: "vec3", defaultValue: { x: 1, y: 2, z: 3 } },
+    { id: "facing-id", name: "Facing", typeId: "rotator" },
+    { id: "banner-id", name: "Banner", typeId: "asset", defaultValue: "" },
+    { id: "ranks-id", name: "Ranks", typeId: "int", container: "map", keyTypeId: "enum", keyTypeClassId: "difficulty", defaultValue: [{ key: "Hard", value: 3 }] },
+    { id: "unlocks-id", name: "Unlocks", typeId: "tag", container: "array" },
+    { id: "squad-id", name: "Squad", typeId: "struct", typeClassId: "squad" },
+  ];
+
+  it("takes field IDs, names, types and defaults from the Data Definition, with valid overrides winning", () => {
+    const resolved = resolveSaveGameDefinition(linked, dataDefinition(fields));
+    expect(resolved.missingDataDefinition).toBe(false);
+    expect(resolved.definition.fields).toEqual([
+      { id: "coins-id", name: "Coins", type: "int", defaultValue: 50 },
+      // The override no longer fits a Vector 3, so the Data Definition's default applies.
+      { id: "spawn-id", name: "Spawn", type: "vector3", defaultValue: { x: 1, y: 2, z: 3 } },
+      { id: "facing-id", name: "Facing", type: "rotator", defaultValue: { pitch: 0, yaw: 0, roll: 0 } },
+      { id: "banner-id", name: "Banner", type: "asset", defaultValue: null },
+      { id: "ranks-id", name: "Ranks", type: "int", container: "map", keyType: "enum", keyEnumId: "difficulty", defaultValue: [{ key: "Hard", value: 3 }] },
+      { id: "unlocks-id", name: "Unlocks", type: "tag", container: "array", defaultValue: [] },
+    ]);
+    expect(resolved.skipped).toEqual([{ name: "Squad", reason: "Its Structure is missing or holds object references." }]);
+  });
+
+  it("follows Data Definition edits without changing field identity", () => {
+    const renamed = fields.map((field) => field.id === "coins-id" ? { ...field, name: "Gold", typeId: "float" } : field);
+    expect(resolveSaveGameDefinition(linked, dataDefinition(renamed)).definition.fields[0]).toEqual({ id: "coins-id", name: "Gold", type: "float", defaultValue: 50 });
+  });
+
+  it("reports a missing Data Definition instead of inventing fields", () => {
+    expect(resolveSaveGameDefinition({ ...linked, dataDefinitionId: "deleted" }, dataDefinition(fields)))
+      .toMatchObject({ missingDataDefinition: true, definition: { fields: [] } });
   });
 });

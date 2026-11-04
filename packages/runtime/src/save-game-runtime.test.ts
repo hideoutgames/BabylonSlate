@@ -276,7 +276,7 @@ describe("runtime Save Game", () => {
     const storage = new MemoryStorage();
     const refs: SaveGameDefinition = { ...definition, fields: [...definition.fields,
       { id: "target", name: "target", type: "actor", defaultValue: null },
-      { id: "party", name: "party", type: "actor", array: true, defaultValue: [] }] };
+      { id: "party", name: "party", type: "actor", container: "array", defaultValue: [] }] };
     const first = await boot(storage, { definition: refs, referenceTarget: true });
     try {
       first.service.getSaveData().target = "reference-only";

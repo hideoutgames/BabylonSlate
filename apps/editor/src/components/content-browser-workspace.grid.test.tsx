@@ -1786,7 +1786,7 @@ describe("ContentBrowserWorkspace creating assets", () => {
     expect(registry.list().find((asset) => asset.header.name === "Coin_Child")?.header.parentClass).toBe("Coin");
   });
 
-  it("creates a Tilemap from a Tileset, and a Data Definition and Data Tree from a Structure", async () => {
+  it("creates a Tilemap from a Tileset, and a Data Definition, its Data Tree and a linked Save Game from a Structure", async () => {
     const registry = await mountProject();
     await createAsset("Tileset", "Ground");
     const ground = registry.list().find((asset) => asset.header.type === "Tileset")!;
@@ -1812,6 +1812,14 @@ describe("ContentBrowserWorkspace creating assets", () => {
     await waitFor(() => expect(registry.list().some((asset) => asset.header.type === "DataTree")).toBe(true));
     const tree = registry.list().find((asset) => asset.header.type === "DataTree")!;
     expect((await registry.readAssetDocument(tree.header.guid)).payload).toMatchObject({ kind: "dataTree", defaultDefinitionGuid: definition.header.guid });
+
+    tapTile(definition.path);
+    chooseFromMenu(definition.path, "Create Linked Save Game");
+    await waitFor(() => expect(registry.list().some((asset) => asset.header.type === "SaveGame")).toBe(true));
+    const save = registry.list().find((asset) => asset.header.type === "SaveGame")!;
+    expect(save.header.name).toBe("Weapon");
+    expect(save.header.requiredDependencies).toContain(definition.header.guid);
+    expect((await registry.readAssetDocument(save.header.guid)).payload).toMatchObject({ fields: [], dataDefinitionId: definition.header.guid });
   });
 
   it("names a folder from the tree's empty space inline and keeps the generated name on Escape", async () => {

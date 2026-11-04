@@ -66,6 +66,7 @@ New assets are named after their source. If that name is taken by an asset of th
 | Create Child Class | One Class | A Class whose parent is that Class, named `<Name>_Child`. Not offered for a Class that cannot have children. |
 | Create Data Definition | One Structure | A [Data Definition](../assets/data-definition.md) whose fields start as the Structure's. |
 | Create Data Tree | One Data Definition | A [Data Tree](../assets/data-tree.md) that uses the Data Definition. |
+| Create Linked Save Game | One Data Definition | A [Save Game](../assets/save-game.md#fields-from-a-data-definition) that takes its fields from the Data Definition. |
 | Create Render Target Texture | One Render Target | A [Render Target Texture](../assets/render-target-texture.md) that shows the Render Target. |
 
 **Create Material** reads the end of each Texture's name:

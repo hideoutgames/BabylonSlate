@@ -322,6 +322,9 @@ export function collectExportReachability(
     }
     const payload = input.payloadByGuid?.(asset.guid);
     if (payload) {
+      if (asset.type === "SaveGame" && typeof payload === "object" && "dataDefinitionId" in payload && typeof payload.dataDefinitionId === "string") {
+        refs.add(payload.dataDefinitionId);
+      }
       if (asset.type === "SaveGame" && typeof payload === "object" && "fields" in payload && Array.isArray(payload.fields)) {
         for (const field of payload.fields as Array<{ type?: string; defaultValue?: unknown }>) {
           if (field.type !== "asset") continue;

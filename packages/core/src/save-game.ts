@@ -3,15 +3,18 @@ import { newGuid, type Result } from "./guid-result";
 /** Save data deliberately contains gameplay values, never Babylon scene objects. */
 export type SaveGameValue = null | boolean | number | string | SaveGameValue[] | { [key: string]: SaveGameValue };
 export type SaveGameFieldType =
-  | "bool" | "int" | "float" | "string" | "tag" | "enum" | "vector2" | "vector3" | "vector4" | "color" | "transform"
-  | "actor" | "class" | "asset" | "struct";
+  | "bool" | "int" | "float" | "string" | "tag" | "enum" | "vector2" | "vector3" | "vector4" | "rotator" | "quat" | "color"
+  | "transform" | "actor" | "class" | "asset" | "struct";
+/** Map keys hold any value type except Actor references, which have no stable value identity. */
+export type SaveGameMapKeyType = Exclude<SaveGameFieldType, "actor">;
 export interface SaveGameField {
   /** Persisted identity. Keep this ID when renaming the field. */
   id: string;
   name: string;
   type: SaveGameFieldType;
   defaultValue: SaveGameValue;
-  array?: boolean;
+  /** Omitted holds one value. `array` holds a list; `map` holds `{ key, value }` entries with unique keys. */
+  container?: "array" | "map";
   /**
    * `struct` fields: the Structure's id (a project Structure or a built-in such as `engine:FloatRange`). Values
    * are plain records of its fields; the editor offers only Structures that hold no object references.
@@ -19,11 +22,19 @@ export interface SaveGameField {
   structId?: string;
   /** `enum` fields: the Enum asset's id. Values are member names. */
   enumId?: string;
+  /** `map` fields: the key type, and its Structure or Enum like `structId` and `enumId`. */
+  keyType?: SaveGameMapKeyType;
+  keyStructId?: string;
+  keyEnumId?: string;
 }
 export interface SaveGameDefinition {
   id: string;
   schemaVersion: number;
+  /** Data Definition mode: the stored asset keeps no fields of its own; the editor resolves them from this Data Definition. */
   fields: SaveGameField[];
+  dataDefinitionId?: string;
+  /** Data Definition mode: default values, by field ID, that replace the Data Definition's own. */
+  defaults?: Record<string, SaveGameValue>;
 }
 export type SaveGameErrorCode = "missing" | "corrupt" | "incompatible" | "storage-full" | "unavailable" | "invalid" | "apply-failed";
 export interface SaveGameFailure { code: SaveGameErrorCode; message: string }
@@ -90,7 +101,8 @@ export interface SaveGameServiceOptions<TData extends object = Record<string, Sa
 
 const forbiddenKeys = new Set(["__proto__", "prototype", "constructor"]);
 const fieldTypes = new Set<string>([
-  "bool", "int", "float", "string", "tag", "enum", "vector2", "vector3", "vector4", "color", "transform", "actor", "class", "asset", "struct",
+  "bool", "int", "float", "string", "tag", "enum", "vector2", "vector3", "vector4", "rotator", "quat", "color", "transform",
+  "actor", "class", "asset", "struct",
 ] satisfies SaveGameFieldType[]);
 const MAX_TAG = 0xffff_ffff;
 const MAX_JSON_NODES = 250_000;
@@ -149,9 +161,9 @@ function isNumberRecord(value: unknown, keys: readonly string[]): boolean {
   return keys.every((key) => typeof value[key] === "number" && Number.isFinite(value[key]));
 }
 
-export function validateSaveGameFieldValue(field: SaveGameField, value: unknown): SaveGameValue {
-  const scalar = (entry: unknown): boolean => {
-    switch (field.type) {
+/** One value of a field or map key type. */
+function isSaveGameTypeValue(type: SaveGameFieldType, entry: unknown): boolean {
+    switch (type) {
       case "bool": return typeof entry === "boolean";
       case "int": return typeof entry === "number" && Number.isSafeInteger(entry);
       case "float": return typeof entry === "number" && Number.isFinite(entry);
@@ -164,16 +176,44 @@ export function validateSaveGameFieldValue(field: SaveGameField, value: unknown)
       case "vector2": return isNumberRecord(entry, ["x", "y"]);
       case "vector3": return isNumberRecord(entry, ["x", "y", "z"]);
       case "vector4":
+      case "quat":
       case "color": return isNumberRecord(entry, ["x", "y", "z", "w"]);
+      case "rotator": return isNumberRecord(entry, ["pitch", "yaw", "roll"]);
       case "transform": return isSaveGameRecord(entry) && Object.keys(entry).length === 3 && isNumberRecord(entry.position, ["x", "y", "z"]) &&
         isNumberRecord(entry.rotation, ["x", "y", "z", "w"]) && isNumberRecord(entry.scale, ["x", "y", "z"]);
       case "struct": return isSaveGameRecord(entry);
     }
-  };
-  if (field.array ? !Array.isArray(value) || !value.every(scalar) : !scalar(value)) {
-    throw new SaveGameError("invalid", `Save field “${field.name}” requires ${field.type}${field.array ? "[]" : ""}.`);
-  }
+}
+
+/** A field's type as `int`, `int[]` or `Map<string, int>`, for messages. */
+export function describeSaveGameFieldType(field: Pick<SaveGameField, "type" | "container" | "keyType">): string {
+  if (field.container === "map") return `Map<${field.keyType ?? "string"}, ${field.type}>`;
+  return `${field.type}${field.container === "array" ? "[]" : ""}`;
+}
+
+function isMapValue(field: SaveGameField, value: unknown): boolean {
+  if (!Array.isArray(value) || !field.keyType) return false;
+  const keys = new Set<string>();
+  return value.every((entry) => {
+    if (!isSaveGameRecord(entry) || Object.keys(entry).length !== 2 || !("key" in entry) || !("value" in entry)) return false;
+    if (!isSaveGameTypeValue(field.keyType!, entry.key) || !isSaveGameTypeValue(field.type, entry.value)) return false;
+    const key = JSON.stringify(entry.key);
+    if (keys.has(key)) return false;
+    keys.add(key);
+    return true;
+  });
+}
+
+export function validateSaveGameFieldValue(field: SaveGameField, value: unknown): SaveGameValue {
+  const valid = field.container === "map" ? isMapValue(field, value)
+    : field.container === "array" ? Array.isArray(value) && value.every((entry) => isSaveGameTypeValue(field.type, entry))
+      : isSaveGameTypeValue(field.type, value);
+  if (!valid) throw new SaveGameError("invalid", `Save field “${field.name}” requires ${describeSaveGameFieldType(field)}${field.container === "map" ? " with unique keys" : ""}.`);
   return cloneSaveGameValue(value);
+}
+
+function isTypeReference(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 256;
 }
 
 export function createDefaultSaveGameDefinition(id = newGuid()): SaveGameDefinition {
@@ -187,28 +227,43 @@ export function validateSaveGameDefinition(input: unknown): SaveGameDefinition {
   const ids = new Set<string>();
   const names = new Set<string>();
   const fields: SaveGameField[] = input.fields.map((entry: unknown) => {
-    if (!isSaveGameRecord(entry) || typeof entry.id !== "string" || !entry.id || entry.id.length > 256 || forbiddenKeys.has(entry.id) || typeof entry.name !== "string" || !entry.name.trim() || entry.name.length > 128 || forbiddenKeys.has(entry.name) || typeof entry.type !== "string" || !fieldTypes.has(entry.type) || (entry.array !== undefined && typeof entry.array !== "boolean")) {
+    if (!isSaveGameRecord(entry) || typeof entry.id !== "string" || !entry.id || entry.id.length > 256 || forbiddenKeys.has(entry.id) || typeof entry.name !== "string" || !entry.name.trim() || entry.name.length > 128 || forbiddenKeys.has(entry.name) || typeof entry.type !== "string" || !fieldTypes.has(entry.type) || (entry.container !== undefined && entry.container !== "array" && entry.container !== "map")) {
       throw new SaveGameError("invalid", "Every Save Game field needs a stable ID, a name, a supported type and a matching default.");
     }
-    if (entry.type === "struct" && (typeof entry.structId !== "string" || !entry.structId || entry.structId.length > 256)) {
-      throw new SaveGameError("invalid", `Save field “${entry.name}” needs a Structure.`);
+    if (entry.type === "struct" && !isTypeReference(entry.structId)) throw new SaveGameError("invalid", `Save field “${entry.name}” needs a Structure.`);
+    if (entry.type === "enum" && !isTypeReference(entry.enumId)) throw new SaveGameError("invalid", `Save field “${entry.name}” needs an Enum.`);
+    const map = entry.container === "map";
+    if (map && (typeof entry.keyType !== "string" || !fieldTypes.has(entry.keyType) || entry.keyType === "actor")) {
+      throw new SaveGameError("invalid", `Save field “${entry.name}” needs a Map key type other than Actor Reference.`);
     }
-    if (entry.type === "enum" && (typeof entry.enumId !== "string" || !entry.enumId || entry.enumId.length > 256)) {
-      throw new SaveGameError("invalid", `Save field “${entry.name}” needs an Enum.`);
-    }
+    if (map && entry.keyType === "struct" && !isTypeReference(entry.keyStructId)) throw new SaveGameError("invalid", `Save field “${entry.name}” needs a key Structure.`);
+    if (map && entry.keyType === "enum" && !isTypeReference(entry.keyEnumId)) throw new SaveGameError("invalid", `Save field “${entry.name}” needs a key Enum.`);
     if (ids.has(entry.id) || names.has(entry.name)) throw new SaveGameError("invalid", "Save Game field IDs and names must be unique.");
     ids.add(entry.id);
     names.add(entry.name);
-    const field = {
-      id: entry.id, name: entry.name, type: entry.type as SaveGameFieldType, defaultValue: entry.defaultValue as SaveGameValue,
-      ...(entry.array === undefined ? {} : { array: entry.array }),
+    const field: SaveGameField = {
+      id: entry.id, name: entry.name, type: entry.type as SaveGameFieldType, defaultValue: null,
+      ...(entry.container === undefined ? {} : { container: entry.container }),
       ...(entry.type === "struct" ? { structId: entry.structId as string } : {}),
       ...(entry.type === "enum" ? { enumId: entry.enumId as string } : {}),
+      ...(map ? { keyType: entry.keyType as SaveGameMapKeyType } : {}),
+      ...(map && entry.keyType === "struct" ? { keyStructId: entry.keyStructId as string } : {}),
+      ...(map && entry.keyType === "enum" ? { keyEnumId: entry.keyEnumId as string } : {}),
     };
     field.defaultValue = validateSaveGameFieldValue(field, entry.defaultValue);
     return field;
   });
-  return { id: input.id, schemaVersion: input.schemaVersion as number, fields };
+  if (input.dataDefinitionId !== undefined && !isTypeReference(input.dataDefinitionId)) {
+    throw new SaveGameError("invalid", "A Save Game's Data Definition must be an asset ID.");
+  }
+  if (input.defaults !== undefined && (!isSaveGameRecord(input.defaults) || Object.keys(input.defaults).some((key) => forbiddenKeys.has(key)))) {
+    throw new SaveGameError("invalid", "Save Game default overrides must be values keyed by field ID.");
+  }
+  return {
+    id: input.id, schemaVersion: input.schemaVersion as number, fields,
+    ...(input.dataDefinitionId === undefined ? {} : { dataDefinitionId: input.dataDefinitionId as string }),
+    ...(input.defaults === undefined ? {} : { defaults: cloneSaveGameValue(input.defaults) as Record<string, SaveGameValue> }),
+  };
 }
 
 export function createSaveGameData(definition: SaveGameDefinition): Record<string, SaveGameValue> {
@@ -222,13 +277,15 @@ export function generateSaveGameTypes(definition: SaveGameDefinition, typeName =
   const vector4 = "{ x: number; y: number; z: number; w: number }";
   const types: Record<SaveGameFieldType, string> = {
     bool: "boolean", int: "number", float: "number", string: "string", tag: "number", enum: "string",
-    vector2: "{ x: number; y: number }", vector3, vector4, color: vector4,
+    vector2: "{ x: number; y: number }", vector3, vector4, rotator: "{ pitch: number; yaw: number; roll: number }", quat: vector4, color: vector4,
     transform: `{ position: ${vector3}; rotation: ${vector4}; scale: ${vector3} }`,
     actor: "string | null", class: "string | null", asset: "string | null", struct: "Record<string, unknown>",
   };
   const fields = validateSaveGameDefinition(definition).fields.map((field) => {
     const type = types[field.type];
-    return `  ${JSON.stringify(field.name)}: ${field.array ? `Array<${type}>` : type};`;
+    const declared = field.container === "map" ? `Array<{ key: ${types[field.keyType ?? "string"]}; value: ${type} }>`
+      : field.container === "array" ? `Array<${type}>` : type;
+    return `  ${JSON.stringify(field.name)}: ${declared};`;
   });
   return `export interface ${typeName} {\n${fields.join("\n")}\n}\n`;
 }

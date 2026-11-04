@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SaveGameDefinition } from "@haptic/core";
 import { ENGINE_ENUMS } from "@haptic/scripting";
@@ -17,11 +17,12 @@ const harness = vi.hoisted(() => ({
   apply: vi.fn<(id: string, definition: SaveGameDefinition) => Promise<boolean>>(),
   settings: vi.fn(),
   defaultGuid: null as string | null,
+  assets: [] as Array<{ path: string; header: { guid: string; name: string; type: string; payload: Record<string, unknown> } }>,
 }));
 vi.mock("../context/document-workspace-context", () => ({ useDocumentWorkspace: () => ({ documentId: "progress" }) }));
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [{ id: "progress", ref: { kind: "save-game", path: "Progress.savegame.hasset" }, content: harness.definition }],
-  assetRegistry: { getByPath: () => ({ header: { guid: "definition" } }), list: () => [] },
+  assetRegistry: { getByPath: () => ({ header: { guid: "definition" } }), getByGuid: () => undefined, list: () => harness.assets },
   projectDocument: { settings: { saveGame: { definitionGuid: harness.defaultGuid, defaultProfile: "player", defaultSlot: "checkpoint", wipeOnPlay: false } } },
   applyAssetDocumentChange: harness.apply,
   updateProjectSettings: harness.settings,
@@ -33,6 +34,7 @@ function editor() {
 beforeEach(() => {
   harness.definition = { id: "definition", schemaVersion: 1, fields: [{ id: "score-id", name: "Score", type: "int", defaultValue: 5 }] };
   harness.defaultGuid = null;
+  harness.assets = [];
   harness.apply.mockReset(); harness.settings.mockClear();
   harness.apply.mockImplementation(async (_id, definition) => { harness.definition = definition; return true; });
 });
@@ -144,7 +146,7 @@ describe("Save Game authoring", () => {
     expect(harness.definition.fields[0]!.enumId).toBeUndefined();
     view.rerender(editor());
     fireEvent.click(screen.getByRole("button", { name: "Array" }));
-    await waitFor(() => expect(harness.definition.fields[0]).toMatchObject({ array: true, type: "string", defaultValue: [] }));
+    await waitFor(() => expect(harness.definition.fields[0]).toMatchObject({ container: "array", type: "string", defaultValue: [] }));
     view.rerender(editor());
     fireEvent.click(screen.getByRole("button", { name: "Add Item" }));
     expect(harness.definition.fields[0]).toMatchObject({ defaultValue: [""] });
@@ -181,11 +183,26 @@ describe("Save Game authoring", () => {
     expect(screen.getByTestId("property-name-score-id")).toHaveProperty("value", "Score");
   });
 
+  it("keeps Map defaults as entries with unique keys", async () => {
+    const view = render(editor());
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+    await waitFor(() => expect(harness.definition.fields[0]).toEqual({ id: "score-id", name: "Score", type: "int", container: "map", keyType: "string", defaultValue: [] }));
+    view.rerender(editor());
+    fireEvent.click(screen.getByRole("button", { name: "Add Entry" }));
+    view.rerender(editor());
+    fireEvent.click(screen.getByRole("button", { name: "Add Entry" }));
+    expect(harness.definition.fields[0]!.defaultValue).toEqual([{ key: "Key", value: 0 }, { key: "Key_1", value: 0 }]);
+    view.rerender(editor());
+    fireEvent.click(screen.getByTestId("save-game-field-key-type"));
+    fireEvent.click(await screen.findByTestId("search-item-int"));
+    await waitFor(() => expect(harness.definition.fields[0]).toMatchObject({ keyType: "int", defaultValue: [] }));
+  });
+
   it("reorders array defaults without changing values or the field identity", () => {
-    harness.definition.fields[0] = { id: "score-id", name: "Milestones", type: "int", array: true, defaultValue: [10, 20] };
+    harness.definition.fields[0] = { id: "score-id", name: "Milestones", type: "int", container: "array", defaultValue: [10, 20] };
     render(editor());
     fireEvent.click(screen.getByTestId("save-game-field-defaults-1-move-up"));
-    expect(harness.definition.fields[0]).toEqual({ id: "score-id", name: "Milestones", type: "int", array: true, defaultValue: [20, 10] });
+    expect(harness.definition.fields[0]).toEqual({ id: "score-id", name: "Milestones", type: "int", container: "array", defaultValue: [20, 10] });
   });
 
   it("reports damaged definitions without substituting empty defaults", () => {
@@ -206,5 +223,69 @@ describe("Save Game authoring", () => {
     expect(harness.settings).toHaveBeenLastCalledWith({ saveGame: { definitionGuid: "definition", defaultProfile: "player", defaultSlot: "autosave", wipeOnPlay: false } });
     fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
     expect(screen.getByText(/"Score": number/)).toBeTruthy();
+  });
+});
+
+describe("Save Games linked to a Data Definition", () => {
+  const dataDefinition = (fields: object[]) => ({
+    path: "ProgressFields.datadefinition.hasset",
+    header: { guid: "progress-fields", name: "ProgressFields", type: "DataDefinition", payload: { kind: "dataDefinition", fields } },
+  });
+  const fields = [
+    { id: "coins-id", name: "Coins", typeId: "int", defaultValue: 5 },
+    { id: "squad-id", name: "Squad", typeId: "struct", typeClassId: "missing-structure" },
+  ];
+  beforeEach(() => {
+    harness.assets = [dataDefinition(fields)];
+    harness.definition = { id: "definition", schemaVersion: 1, fields: [], dataDefinitionId: "progress-fields" };
+  });
+
+  it("shows the Data Definition's fields without Add Field, Name, renaming or type changes", async () => {
+    render(editor());
+    expect(screen.queryByRole("button", { name: "Add Field" })).toBeNull();
+    expect(screen.getByTestId("save-game-open-data-definition").textContent).toBe("Open ProgressFields");
+    expect(screen.queryByTestId("property-name-coins-id")).toBeNull();
+    expect(screen.getByTestId("save-game-field-type").hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByRole("button", { name: "Remove Coins" })).toBeNull();
+    const label = within(screen.getByRole("tree", { name: "Save Fields" })).getByText("Coins");
+    for (let tap = 0; tap < 2; tap++) {
+      dispatchPointerEvent(label, "pointerdown", { clientX: 10, clientY: 10 });
+      dispatchPointerEvent(label, "pointerup", { clientX: 10, clientY: 10 });
+    }
+    fireEvent.keyDown(screen.getByRole("tree", { name: "Save Fields" }), { key: "F2" });
+    expect(screen.queryByTestId("tree-rename-coins-id")).toBeNull();
+    // A Structure field with an unknown Structure cannot be saved; the warning names it.
+    expect(screen.getByTestId("save-game-skipped-fields").textContent).toContain("Squad");
+  });
+
+  it("stores default changes as overrides and resets them to the Data Definition's default", async () => {
+    const view = render(editor());
+    expect(screen.getByTestId("property-default-coins-id-Default Value")).toHaveProperty("value", "5");
+    fireEvent.change(screen.getByTestId("property-default-coins-id-Default Value"), { target: { value: "40" } });
+    expect(harness.definition).toEqual({ id: "definition", schemaVersion: 1, fields: [], dataDefinitionId: "progress-fields", defaults: { "coins-id": 40 } });
+    // Renaming the field in its Data Definition keeps the override, because both use the field's ID.
+    harness.assets = [dataDefinition([{ ...fields[0], name: "Gold" }])];
+    view.rerender(editor());
+    expect(within(screen.getByRole("tree", { name: "Save Fields" })).getByText("Gold")).toBeTruthy();
+    expect(screen.getByTestId("property-default-coins-id-Default Value")).toHaveProperty("value", "40");
+    fireEvent.click(screen.getByTestId("save-game-reset-default"));
+    await waitFor(() => expect(harness.definition.defaults).toEqual({}));
+  });
+
+  it("asks before replacing a Save Game's own fields, and keeps the linked fields when unlinked", async () => {
+    harness.definition = { id: "definition", schemaVersion: 1, fields: [{ id: "score-id", name: "Score", type: "int", defaultValue: 5 }] };
+    const view = render(editor());
+    fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+    fireEvent.click(screen.getByTestId("property-progress-save-data-definition"));
+    fireEvent.click(await screen.findByTestId("search-item-progress-fields"));
+    expect(await screen.findByText("Replace 1 Field?")).toBeTruthy();
+    expect(harness.apply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("save-game-link-confirm"));
+    await waitFor(() => expect(harness.definition).toEqual({ id: "definition", schemaVersion: 1, fields: [], dataDefinitionId: "progress-fields" }));
+    view.rerender(editor());
+    expect(within(screen.getByRole("tree", { name: "Save Fields" })).getByText("Coins")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("property-progress-save-data-definition"));
+    fireEvent.click(await screen.findByTestId("search-item-__none__"));
+    await waitFor(() => expect(harness.definition).toEqual({ id: "definition", schemaVersion: 1, fields: [{ id: "coins-id", name: "Coins", type: "int", defaultValue: 5 }] }));
   });
 });

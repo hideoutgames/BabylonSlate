@@ -18,10 +18,10 @@ function compile(nodes: GraphNode[], edges: LogicGraph["edges"]) {
 
 describe("Save Game graph execution", () => {
   it("types a Structure Save field's value pin as its Structure", () => {
-    const properties = { fieldId: "spawn", fieldName: "Spawn", typeId: "struct", array: false, typeClassId: "engine:IntRange" };
+    const properties = { fieldId: "spawn", fieldName: "Spawn", typeId: "struct", typeClassId: "engine:IntRange" };
     expect(node("get", "saveGame.getField", properties).pins.find((entry) => entry.id === "value")?.type)
       .toEqual({ kind: "structRef", guid: "engine:IntRange" });
-    expect(node("set", "saveGame.setField", { ...properties, array: true }).pins.find((entry) => entry.id === "value")?.type)
+    expect(node("set", "saveGame.setField", { ...properties, container: "array" }).pins.find((entry) => entry.id === "value")?.type)
       .toEqual({ kind: "array", element: { kind: "structRef", guid: "engine:IntRange" } });
   });
 
@@ -32,6 +32,10 @@ describe("Save Game graph execution", () => {
     [{ typeId: "vector4" }, { kind: "vec4" }],
     [{ typeId: "color" }, { kind: "color" }],
     [{ typeId: "transform" }, { kind: "transform" }],
+    [{ typeId: "rotator" }, { kind: "rotator" }],
+    [{ typeId: "float", container: "map", keyTypeId: "enum", keyTypeClassId: "difficulty-enum" },
+      { kind: "map", key: { kind: "enumRef", guid: "difficulty-enum" }, value: { kind: "float" } }],
+    [{ typeId: "actor", container: "map", keyTypeId: "string" }, { kind: "map", key: { kind: "string" }, value: { kind: "objectRef", classId: "Actor" } }],
   ])("types a %o Save field's value pin as its pin type", (properties, type) => {
     expect(node("get", "saveGame.getField", { fieldId: "field", fieldName: "Field", ...properties }).pins.find((entry) => entry.id === "value")?.type)
       .toEqual(type);

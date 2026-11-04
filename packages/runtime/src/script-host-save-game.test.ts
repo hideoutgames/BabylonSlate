@@ -36,14 +36,20 @@ describe("ScriptHost save APIs", () => {
     expect(ctx.getSaveData()).toEqual({ Coins: 21 });
   });
 
-  it("maps typed actor fields through persistent IDs, including arrays", () => {
+  it("maps typed actor fields through persistent IDs, including arrays and Map values", () => {
     const hero = new Actor({ classId: "Actor", guid: "runtime-hero" });
     const saveGame = new SaveGameService({ projectId: "project", storage: storage(), definition: { id: "party", schemaVersion: 1,
-      fields: [{ id: "members", name: "Party", type: "actor", array: true, defaultValue: [] }] } });
+      fields: [
+        { id: "members", name: "Party", type: "actor", container: "array", defaultValue: [] },
+        { id: "posts", name: "Posts", type: "actor", container: "map", keyType: "string", defaultValue: [] },
+      ] } });
     const ctx = new ScriptHost(services({ saveGame, getSaveActorId: () => "hero-stable", resolveSaveActor: (id) => id === "hero-stable" ? hero : undefined })).createContext(hero, 0, 0);
-    ctx.setSaveField("members", [hero, null], "actor", true);
-    expect(ctx.getSaveData()).toEqual({ Party: ["hero-stable", null] });
-    expect(ctx.getSaveField("members", "actor", true)).toEqual([hero, null]);
+    ctx.setSaveField("members", [hero, null], "actor", "array");
+    ctx.setSaveField("posts", new Map([["gate", hero], ["tower", null]]), "actor", "map");
+    // Saved data holds plain entries; gameplay reads a Map of live actors.
+    expect(ctx.getSaveData()).toEqual({ Party: ["hero-stable", null], Posts: [{ key: "gate", value: "hero-stable" }, { key: "tower", value: null }] });
+    expect(ctx.getSaveField("members", "actor", "array")).toEqual([hero, null]);
+    expect(ctx.getSaveField("posts", "actor", "map")).toEqual(new Map([["gate", hero], ["tower", null]]));
   });
 
   it.each([false, true])("runs compiled visual migration against staging and propagates errors (fail=%s)", async (fail) => {
@@ -105,7 +111,7 @@ describe("ScriptHost save APIs", () => {
   it("keeps actor identities intact in visual migrations before spawned actors exist", async () => {
     const disk = storage();
     const schema: SaveGameDefinition = { id: "party", schemaVersion: 1,
-      fields: [{ id: "party-id", name: "Party", type: "actor", array: true, defaultValue: ["companion", null] }] };
+      fields: [{ id: "party-id", name: "Party", type: "actor", container: "array", defaultValue: ["companion", null] }] };
     const previous = new SaveGameService({ projectId: "project", definition: schema, storage: disk });
     expect((await previous.saveGame()).ok).toBe(true);
     const saveGame = new SaveGameService({ projectId: "project", storage: disk, definition: { ...schema, schemaVersion: 2 } });
@@ -113,15 +119,15 @@ describe("ScriptHost save APIs", () => {
     await host.load({ assetGuid: "migration-refs", classId: "Migrator", anchors: [],
       entryPoints: [{ name: "migrate", event: "onSaveMigration", isAsync: false }],
       source: `export function migrate(ctx) {
-        const identities = ctx.getSaveMigrationField('party-id', 'actor', true);
-        ctx.setSaveMigrationField('party-id', identities, 'actor', true);
+        const identities = ctx.getSaveMigrationField('party-id', 'actor', 'array');
+        ctx.setSaveMigrationField('party-id', identities, 'actor', 'array');
       }`,
     });
     const ctx = host.createContext(new Actor({ classId: "Migrator" }), 0, 0);
     ctx.registerSaveMigration(1, "onSaveMigration");
     expect((await ctx.loadGame()).ok).toBe(true);
     expect(ctx.getSaveData()).toEqual({ Party: ["companion", null] });
-    const pin = createDefaultNodeRegistry().get("saveGame.migrationGetField")!.pins({ fieldId: "party-id", typeId: "actor", array: true }).find((entry) => entry.id === "value");
+    const pin = createDefaultNodeRegistry().get("saveGame.migrationGetField")!.pins({ fieldId: "party-id", typeId: "actor", container: "array" }).find((entry) => entry.id === "value");
     expect(pin?.type).toEqual({ kind: "array", element: { kind: "string" } });
   });
 });

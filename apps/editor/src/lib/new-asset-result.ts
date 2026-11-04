@@ -93,6 +93,8 @@ export function buildNewAssetResult(options: {
   defaultDefinitionGuid?: string | null;
   dataDefinition?: DataDefinitionAsset;
   dataTree?: DataTreeAsset;
+  /** A new Save Game takes its fields from this Data Definition. */
+  saveGameDataDefinitionGuid?: string;
   /** A new Prefab starts empty in a 2D scene, with the starter box in 3D. */
   viewportMode?: ViewportMode;
   /** A new 2D or 3D Timeline Clip's required Timeline Asset. */
@@ -286,7 +288,8 @@ export function buildNewAssetResult(options: {
   }
 
   if (type === "SaveGame") {
-    return documentAsset(type, name, guid, { ...createDefaultSaveGameDefinition(guid) });
+    const linked = options.saveGameDataDefinitionGuid;
+    return documentAsset(type, name, guid, { ...createDefaultSaveGameDefinition(guid), ...(linked ? { dataDefinitionId: linked } : {}) });
   }
 
   if (type === "Blackboard") {
