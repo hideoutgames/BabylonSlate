@@ -109,6 +109,58 @@ describe("authored Data Tree entries", () => {
     expect(reconcileDataEntry(asset, "stats", fields, schemasFor(fields), { initializeMissingFields: false }).entry).toBe(asset);
   });
 
+  it("discards retained values on request, including one a new field's name conflicts with", () => {
+    // An entry written for another Definition (a duplicate whose Definition was changed): both share the name Health.
+    const previous: StructField[] = [
+      { id: "old-health", name: "Health", typeId: "int", defaultValue: 7 },
+      { id: "title", name: "Title", typeId: "string", defaultValue: "Scout" },
+    ];
+    const fields: StructField[] = [
+      { id: "health", name: "Health", typeId: "int", defaultValue: 100 },
+      { id: "speed", name: "Speed", typeId: "float", defaultValue: 2 },
+    ];
+    const schemas = schemasFor(fields);
+    const asset = createDataEntryForDefinition("stats", previous, schemasFor(previous));
+    const kept = reconcileDataEntry(asset, "stats", fields, schemas);
+    expect(kept.entry).toBe(asset);
+    expect(kept.issues).toContainEqual(expect.objectContaining({ code: "rename-conflict", path: "Health", severity: "error" }));
+    const discarded = reconcileDataEntry(asset, "stats", fields, schemas, { discardRetained: true });
+    expect(discarded.issues).toEqual([]);
+    expect(discarded.entry.values).toEqual({ Health: 100, Speed: 2 });
+    expect(discarded.entry.schema!.map((field) => field.id)).toEqual(["health", "speed"]);
+    expect(discarded.changes).toEqual(expect.arrayContaining([
+      { kind: "added", path: "Health" }, { kind: "added", path: "Speed" }, { kind: "removed", path: "Title" },
+    ]));
+    expect(validateDataEntry(discarded.entry, "stats", schemas)).toEqual([]);
+    // A rename onto a retained value's name keeps the renamed field's value.
+    const renamed = createDataEntryForDefinition("stats", [{ id: "hp", name: "Health", typeId: "int", defaultValue: 5 }]);
+    renamed.values.HitPoints = 25;
+    const renamedFields: StructField[] = [{ id: "hp", name: "HitPoints", typeId: "int" }];
+    expect(reconcileDataEntry(renamed, "stats", renamedFields, schemasFor(renamedFields), { discardRetained: true }).entry.values)
+      .toEqual({ HitPoints: 5 });
+  });
+
+  it("discards retained values inside nested records", () => {
+    const initial: TypeSchemas = { enums: {}, structs: {
+      stats: { name: "Stats", fields: [{ id: "config", name: "Config", typeId: "struct", typeClassId: "inner" }] },
+      inner: { name: "Inner", fields: [{ id: "damage", name: "Damage", typeId: "float" }, { id: "range", name: "Range", typeId: "float" }] },
+    } };
+    initial.dataDefinitions = initial.structs;
+    const asset = createDataEntryForDefinition("stats", initial.structs.stats!.fields, initial);
+    asset.values = { Config: { Damage: 8, Range: 3 } };
+    const current: TypeSchemas = { enums: {}, structs: {
+      stats: initial.structs.stats!,
+      inner: { name: "Inner", fields: [{ id: "damage", name: "Damage", typeId: "float" }] },
+    } };
+    current.dataDefinitions = current.structs;
+    const fields = current.structs.stats!.fields;
+    expect(reconcileDataEntry(asset, "stats", fields, current).entry.values).toEqual({ Config: { Damage: 8, Range: 3 } });
+    const discarded = reconcileDataEntry(asset, "stats", fields, current, { discardRetained: true });
+    expect(discarded.entry.values).toEqual({ Config: { Damage: 8 } });
+    expect(discarded.changes).toContainEqual({ kind: "removed", path: "Config.Range" });
+    expect(validateDataEntry(discarded.entry, "stats", current)).toEqual([]);
+  });
+
   it("preserves incompatible values on type changes and blocks typed runtime reads", () => {
     const asset = createDataEntryForDefinition("stats", [{ name: "Health", typeId: "string", defaultValue: "twenty" }]);
     const fields: StructField[] = [{ id: "legacy:Health", name: "Health", typeId: "int", defaultValue: 20 }];
