@@ -57,6 +57,26 @@ export interface PlaySourceTracker {
   dispose(): void;
 }
 
+/**
+ * The source union's content controls. Each runtime handler replaces what the previous one of its type
+ * registered, so one equal to the last applied changes nothing.
+ */
+const SOURCE_CONTENT_CONTROLS: ReadonlySet<ControlMessage["type"]> = new Set([
+  "loadSceneContent", "loadModels", "loadSprites", "loadTilemaps", "loadWater", "loadAnimGraphs", "loadBehaviourTrees",
+]);
+
+/** Structural equality of plain control data that stops at shared references; binary data compares by identity. */
+function sameContent(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (ArrayBuffer.isView(a) || ArrayBuffer.isView(b) || a instanceof ArrayBuffer || b instanceof ArrayBuffer) return false;
+  if (Array.isArray(a) !== Array.isArray(b) || Object.getPrototypeOf(a) !== Object.getPrototypeOf(b)) return false;
+  if (a instanceof Map || a instanceof Set) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => Object.hasOwn(b, key) && sameContent((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
+}
+
 /** Same module and metadata: the runtime keeps a held script that compares equal. */
 function sameScript(held: ScriptBundleEntry | undefined, next: ScriptBundleEntry): boolean {
   return held === next || (held !== undefined && held.source === next.source &&
@@ -110,10 +130,14 @@ export function createPlaySourceTracker(ctx: PlaySourceTrackerContext): PlaySour
    * `loadScripts` delivered. Null after a failed delivery, so the next one sends its whole union again.
    */
   let heldScripts: Map<string, ScriptBundleEntry> | null = new Map((options.scripts ?? []).map((script) => [compiledScriptKey(script), script]));
+  /** The last content control of each type the runtime applied; a failed delivery forgets its type. */
+  const appliedContent = new Map<ControlMessage["type"], ControlMessage>();
   const publishSourceControl = async (requested: ControlMessage) => {
     const control = requested.type === "loadScripts" ? scriptDelta(heldScripts, requested) : requested;
     // The runtime holds exactly this union already.
     if (!control) return;
+    const content = SOURCE_CONTENT_CONTROLS.has(control.type);
+    if (content && sameContent(appliedContent.get(control.type), control)) return;
     const worker = ctx.worker();
     const runtime = ctx.runtime();
     if (!worker && !runtime) return;
@@ -129,9 +153,11 @@ export function createPlaySourceTracker(ctx: PlaySourceTrackerContext): PlaySour
         throw new Error(`Unsupported source preparation control: ${control.type}.`);
     } catch (error) {
       if (control.type === "loadScripts") heldScripts = null;
+      if (content) appliedContent.delete(control.type);
       throw error;
     }
     if (requested.type === "loadScripts") heldScripts = heldScriptsAfter(heldScripts, requested);
+    if (content) appliedContent.set(control.type, control);
   };
   // Runtime fallback for a Complex Collision Model the content scan missed. The
   // answer is always asynchronous, so it never re-enters the requesting tick.

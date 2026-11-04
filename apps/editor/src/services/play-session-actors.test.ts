@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene } from "@haptic/core";
 import type { CommandMessage, ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
 import {
+  applyRuntimeSourceControl,
   compiledScriptKey,
   createInProcessRuntime,
   createPlayBootCoordinator,
@@ -211,6 +212,7 @@ describe.each(["worker", "in-process"] as const)(
               const { requestId } = control;
               if (requestId !== undefined) void ready.then(() => onCommand({ type: "assetSourcesReady", requestId, success: true }));
             }
+            if (control.type === "loadModels") void applyRuntimeSourceControl(runtime, control);
             if (control.type === "play") void boot.play(runtime).catch(failBoot);
             if (control.type === "sceneLoadingPainted")
               runtime.notifySceneLoadingPainted(control.sceneAssetGuid, control.sceneLoadId);
@@ -461,7 +463,7 @@ describe.each(["worker", "in-process"] as const)(
       },
     );
 
-    it("hands the runtime only the scripts a slot adds, and none when it holds the slot's whole union", async () => {
+    it("hands the runtime only the scripts and source content a slot changes", async () => {
       const entry = (classId: string, source: string, events: string[]): ScriptBundleEntry => ({
         assetGuid: classId.toLowerCase(), classId, parentClassId: "Actor", anchors: [], source,
         entryPoints: events.map((event) => ({ name: event, event, isAsync: false })),
@@ -472,14 +474,25 @@ describe.each(["worker", "in-process"] as const)(
       ["onBeginPlay", "onTick"]);
       const extra = entry("Extra", "export function onBeginPlay(ctx) {}", ["onBeginPlay"]);
       let union = [mainScript, loader];
+      // Both slots' unions hold the same Model, as separately merged controls.
+      const crate = { meshes: [] };
       const replaced: Array<{ classIds: string[]; retain?: readonly string[] }> = [];
+      const registeredModels: string[][] = [];
       const ready: string[] = [];
       const runtime = await play({
         actors: [createActor("loader", "Loader", { classId: "Loader" })],
         scripts: [loader],
         acquireAssetSources: vi.fn(async (guids: string[]) => ({ sources: {} as never, release() {}, required: new Set(guids) })),
-        getSourceControls: () => [{ type: "loadScripts", scripts: [...union], spawn: [], replace: true }],
+        getSourceControls: () => [
+          { type: "loadScripts", scripts: [...union], spawn: [], replace: true },
+          { type: "loadModels", models: [{ guid: "crate", document: crate }], complexMeshes: [] },
+        ],
         onRuntime: (created) => {
+          const registerModels = created.registerModelContent.bind(created);
+          vi.spyOn(created, "registerModelContent").mockImplementation((content) => {
+            registeredModels.push([...(content.models instanceof Map ? content.models.keys() : Object.keys(content.models))]);
+            registerModels(content);
+          });
           const replace = created.replaceScriptSources.bind(created);
           vi.spyOn(created, "replaceScriptSources").mockImplementation((scripts, retain) => {
             replaced.push({ classIds: scripts.map((script) => script.classId), retain });
@@ -500,6 +513,8 @@ describe.each(["worker", "in-process"] as const)(
       runtime.tick();
       await vi.waitFor(() => expect(ready).toHaveLength(2));
       expect(replaced).toEqual([{ classIds: ["Extra"], retain: [compiledScriptKey(mainScript), compiledScriptKey(loader)] }]);
+      // The first slot applied the Model; the second's equal content was not sent again.
+      expect(registeredModels).toEqual([["crate"]]);
       const classes = runtime.getWorld().classRegistry;
       expect(["main", "Loader", "Extra"].every((classId) => classes.has(classId))).toBe(true);
     });
