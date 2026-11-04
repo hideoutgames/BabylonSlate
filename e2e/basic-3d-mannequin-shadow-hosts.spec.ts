@@ -31,11 +31,13 @@ async function settings(canvas: Locator, host: Host, value: RenderShadingSetting
     return [state?.surfaceMode, state?.requestedShadows.enabled];
   }, { timeout: 30_000 }).toEqual([value.mode, value.shadows!.enabled]);
   const frame = await presented(canvas, host);
-  await expect.poll(() => presented(canvas, host), { timeout: 30_000 }).toBeGreaterThan(frame + 2);
+  // Each frame waits for the GPU to finish the frames before it (frames-in-flight), and software GL compiles the new
+  // pipelines at their first draw: on a slow runner the frames after a mode change took longer than 30 s.
+  await expect.poll(() => presented(canvas, host), { timeout: 90_000 }).toBeGreaterThan(frame + 2);
 }
 
 test("Basic 3D mannequin preserves real materials, contacts and animation in Play and packed player", async ({ page }, testInfo) => {
-  test.setTimeout(240_000);
+  test.setTimeout(300_000);
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => {

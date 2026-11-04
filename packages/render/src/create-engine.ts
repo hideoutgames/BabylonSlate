@@ -768,7 +768,8 @@ function initializeEngine(
         engine.setSize(size.width, size.height);
       admittedSnapshot = prepareSnapshot();
       snapshotAdmitted = true;
-      const admitted = !noLayout && shouldRenderFrame(performance.now()) && frameBackpressure.admit();
+      const loadingFrame = !noLayout && hasLoadingFrame();
+      const admitted = !noLayout && shouldRenderFrame(performance.now(), loadingFrame) && frameBackpressure.admit(loadingFrame);
       if (performanceFeed.active) admissionPreparationMs = performance.now() - preparationStart;
       return admitted;
     }, {
@@ -2104,8 +2105,9 @@ function initializeEngine(
     streamAdmission?.sync();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
-    // GPU backpressure last, so only a frame that would render can be skipped (`frame-backpressure.ts`).
-    if (!shouldRenderFrame(frameStart, loadingFrame) || !frameBackpressure.admit()) {
+    // GPU backpressure last, so only a frame that would render can be skipped (`frame-backpressure.ts`); a loading
+    // owner's presentation frame is never held behind the frames already queued.
+    if (!shouldRenderFrame(frameStart, loadingFrame) || !frameBackpressure.admit(loadingFrame)) {
       return;
     }
     frameWasLoading = loadingFrame;
