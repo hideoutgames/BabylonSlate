@@ -21,7 +21,7 @@ Double-tap a Tilemap to open it.
 | Move | Pans the map. The default tool. |
 | Brush, Eraser | Paint or erase tiles under your finger. |
 | Rect | Fills the rectangle you drag. An outline shows it until you lift your finger. |
-| Bucket | Fills the connected area of matching tiles, up to the edge of the map. |
+| Bucket | Fills the connected area of matching tiles, up to the edge of the map. On an unbounded map, up to 16 cells past the layer's painted tiles. |
 | Stamp | Places a 2 × 2 block of the selected tile. |
 | Picker | Picks the tile you tap as the brush. |
 
@@ -34,7 +34,10 @@ Each stroke is one undo step. Two fingers pinch to zoom and drag to pan in any t
 | Setting | Description |
 | --- | --- |
 | Tilesets | The Tilesets the map can use. **Add Tileset** adds one. Removing a Tileset erases its tiles from every layer; the editor asks first. |
-| Map Width, Map Height | Map size in tiles. Default 64 × 64. Shrinking the map removes tiles outside it. |
+| Unbounded | Removes the map's size, so you can paint in every direction. Default off. See [Unbounded maps](#unbounded-maps). |
+| Map Width, Map Height | Map size in tiles. Default 64 × 64. Shrinking the map removes tiles outside it. Bounded maps only. |
+| Pivot | The point of the map, in tiles, that sits at the actor's position. Moves in half-tile steps. Default 0, 0. Unbounded maps only. **Center Pivot** moves it to the middle of the painted tiles. |
+| Painted Area | How many columns and rows the painted tiles cover. Unbounded maps only. |
 | Tile Width, Tile Height | Cell size in pixels. Default 16. Usually the same as the Tileset's tile size. |
 | Chunk Size | Tiles per side of each internal block. Default 32. Changing it keeps every tile in its cell. |
 
@@ -47,6 +50,16 @@ Each stroke is one undo step. Two fingers pinch to zoom and drag to pan in any t
 | Collision | Makes the layer's solid tiles collide. On for new layers. |
 | Sorting Layer, Order In Layer | Draw order of this layer within the map. |
 | Parallax | How far the layer moves with the camera in Play. 1, 1 stays fixed to the world; 0, 0 follows the camera. Default 1, 1. |
+
+## Unbounded maps
+
+A bounded map has a size: cell 0, 0 is its bottom-left corner, it sits at the actor's position, and the map extends right and up. Turn on **Unbounded** for a map with no size. You paint in every direction, including left of and below cell 0, 0, and the map is as large as its painted tiles: the selection outline, framing the actor in the viewport and collision follow the furthest tiles.
+
+- The **Pivot** is the point of the map that sits at the actor's position. **Paint** opens with the pivot in the middle of the view and shows it as a crosshair over the tiles. Drag the crosshair to move the pivot; each drag is one undo step. A tap on it still paints.
+- Moving the pivot moves the tiles around the actor; it never changes which cell a tile is in.
+- Turning **Unbounded** on keeps every tile in place, and the pivot starts at 0, 0, so nothing moves in the scene.
+- Turning it off sets the map size to the painted tiles. When some tiles lie left of or below cell 0, 0, the editor asks first, then moves every tile so the painted area starts at cell 0, 0. You can undo either change.
+- Autotiles at the edge of an unbounded map draw their edge: beyond the painted tiles there are only empty cells.
 
 ## Notes
 
