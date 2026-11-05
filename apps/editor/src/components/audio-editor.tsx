@@ -590,6 +590,8 @@ export function AudioClips({
           onClick={() => void run(async () => {
             const [file] = await pickImportFiles({ multiple: false, accept: ".wav,.mp3,.ogg" });
             if (!file) return;
+            // iOS pickers show every file.
+            if (!/\.(wav|mp3|ogg)$/i.test(file.name)) throw new Error(`${file.name} is not a WAV, MP3 or OGG file.`);
             const chunkId = allocateAudioClipChunkId(audioRef.current.clips.map((clip) => clip.chunkId));
             if (!chunkId) return;
             const added = { chunkId, name: file.name.replace(/\.[^.]+$/, ""), weight: 1 };

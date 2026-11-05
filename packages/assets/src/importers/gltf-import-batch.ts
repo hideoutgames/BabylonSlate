@@ -39,6 +39,38 @@ function sidecarMatchesUri(file: ImportFileBytes, uri: string): boolean {
   return sidecarBytesForUri(uri, map) != null;
 }
 
+/** `uri` resolved against the model's folder in the batch (`Chair/textures/wood.png`), or null when it climbs out. */
+function batchPathForUri(modelName: string, uri: string): string | null {
+  let decoded = uri;
+  try {
+    decoded = decodeURIComponent(uri);
+  } catch {
+    // Not percent-encoded.
+  }
+  const parts = modelName.replace(/\\/g, "/").split("/").slice(0, -1);
+  for (const part of decoded.replace(/\\/g, "/").split("/")) {
+    if (!part || part === ".") continue;
+    if (part !== "..") parts.push(part);
+    else if (parts.pop() === undefined) return null;
+  }
+  return parts.join("/").toLowerCase();
+}
+
+/**
+ * The batch file `uri` names: the one at its path from the model's folder,
+ * as a ZIP or folder import keeps it, else one with its file name (a flat
+ * pick holds a texture without the folder its URI names).
+ */
+function sidecarForUri(
+  model: ImportFileBytes,
+  uri: string,
+  candidates: readonly ImportFileBytes[],
+): ImportFileBytes | undefined {
+  const path = batchPathForUri(model.name, uri);
+  return candidates.find((file) => path !== null && file.name.replace(/\\/g, "/").toLowerCase() === path) ??
+    candidates.find((file) => sidecarMatchesUri(file, uri));
+}
+
 /** Split a picker batch into glTF/GLB + image/BIN sidecars vs files to import as-is. */
 export function groupGltfImportSidecars(files: ImportFileBytes[]): {
   models: Array<{ model: ImportFileBytes; sidecars: ImportFileBytes[] }>;
@@ -47,19 +79,14 @@ export function groupGltfImportSidecars(files: ImportFileBytes[]): {
   const models: Array<{ model: ImportFileBytes; sidecars: ImportFileBytes[] }> =
     [];
   const usedSidecars = new Set<ImportFileBytes>();
+  const candidates = files.filter((file) => GLTF_SIDECAR_EXTENSIONS.has(extensionOf(file.name)));
 
   for (const file of files) {
     if (!GLTF_EXTENSIONS.has(extensionOf(file.name))) continue;
-    const uris = collectGltfExternalUris(file.name, file.bytes);
     const sidecars: ImportFileBytes[] = [];
-    const seen = new Set<ImportFileBytes>();
-    for (const entry of files) {
-      if (entry === file) continue;
-      if (!GLTF_SIDECAR_EXTENSIONS.has(extensionOf(entry.name))) continue;
-      const matches = uris.some((uri) => sidecarMatchesUri(entry, uri));
-      if (!matches) continue;
-      if (seen.has(entry)) continue;
-      seen.add(entry);
+    for (const uri of collectGltfExternalUris(file.name, file.bytes)) {
+      const entry = sidecarForUri(file, uri, candidates);
+      if (!entry || sidecars.includes(entry)) continue;
       sidecars.push(entry);
       usedSidecars.add(entry);
     }
@@ -116,7 +143,15 @@ export function embedGltfImportBatch(files: ImportFileBytes[]): {
   const released = new Set<ImportFileBytes>();
   for (const { model, sidecars } of models) {
     const extras = unusedSidecars.filter((file) => !sidecars.includes(file));
-    const map = sidecarLookupMap([...sidecars, ...extras]);
+    const map = sidecarLookupMap([...extras, ...sidecars]);
+    // Each URI's own file first: the lookup tries the exact URI before any file name.
+    const resolved = new Set<ImportFileBytes>();
+    for (const uri of collectGltfExternalUris(model.name, model.bytes)) {
+      const file = sidecarForUri(model, uri, [...sidecars, ...extras]);
+      if (!file) continue;
+      map.set(uri, file.bytes);
+      resolved.add(file);
+    }
     try {
       const ingested = ingestGltfForImport(model.name, model.bytes, map);
       const name = model.name.replace(/\.gltf$/i, ".glb");
@@ -127,11 +162,8 @@ export function embedGltfImportBatch(files: ImportFileBytes[]): {
         );
       }
       for (const sidecar of sidecars) embedded.add(sidecar);
-      const uris = collectGltfExternalUris(model.name, model.bytes);
       for (const extra of extras) {
-        if (uris.some((uri) => sidecarMatchesUri(extra, uri))) {
-          consumedExtras.add(extra);
-        }
+        if (resolved.has(extra)) consumedExtras.add(extra);
       }
     } catch {
       prepared.push(model);

@@ -615,6 +615,24 @@ export function isFolderNameTaken(
   return false;
 }
 
+/**
+ * `name`, or the first of `name_1`, `name_2`, … no folder in `parentPath`
+ * has, ignoring case: iOS and macOS folders are case-insensitive, and a new
+ * folder must not land in an existing one.
+ */
+export function freeFolderName(
+  folderPaths: Iterable<string>,
+  parentPath: string,
+  name: string,
+): string {
+  const taken = new Set(Array.from(folderPaths, (path) => path.toLowerCase()));
+  let candidate = name;
+  for (let index = 1; taken.has(joinAssetFolderPath(parentPath, candidate).toLowerCase()); index += 1) {
+    candidate = `${name}_${index}`;
+  }
+  return candidate;
+}
+
 /** Names shown in Delete (N) confirm — selected folders and assets, not flattened contents. */
 /** What a Content Browser delete was asked for: assets, one folder, or a mixed selection. */
 export type DeleteTarget =

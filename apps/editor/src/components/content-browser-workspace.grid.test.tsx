@@ -9,6 +9,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { zipSync } from "fflate";
 import type { IndexedAsset } from "@haptic/assets";
 import { AssetRegistry, createDefaultPluginSettings, projectContentRoot } from "@haptic/assets";
 import { MemoryStorageAdapter } from "@haptic/vfs";
@@ -132,6 +133,14 @@ function installRegistry(assets: IndexedAsset[], folders: string[] = []) {
     getByGuid: (guid: string) =>
       assets.find((asset) => asset.header.guid === guid),
   };
+}
+
+/** A picked `.zip` holding `entries`, readable as the import input reads files. */
+function zipFile(name: string, entries: Record<string, Uint8Array>): File {
+  const bytes = zipSync(entries);
+  const file = new File([bytes], name);
+  Object.defineProperty(file, "arrayBuffer", { value: async () => bytes.slice().buffer });
+  return file;
 }
 
 /** jsdom has no PointerEvent; preserve the fields used by row gestures. */
@@ -935,6 +944,86 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(screen.queryByText("Import Failed")).toBeNull();
     expect(screen.queryByText("Import Partially Completed")).toBeNull();
     expect(screen.getByTestId("content-browser-import").hasAttribute("disabled")).toBe(false);
+  });
+
+  it("imports each ZIP into a free folder named after it, keeping its folders, and lists what it skipped", async () => {
+    const assets: IndexedAsset[] = [];
+    installRegistry(assets, ["props"]);
+    const createFolder = vi.fn(async () => {});
+    const deleteFolder = vi.fn(async () => {});
+    const importFile = vi.fn(async (_root: string, _folder: string, _name: string) => {
+      const asset = texture(assets.length);
+      assets.push(asset);
+      return [asset];
+    });
+    docs.assetRegistry = { ...(docs.assetRegistry as object), importFile, createFolder, deleteFolder };
+    render(<ContentBrowserWorkspace />);
+    const files = [
+      zipFile("Props.zip", {
+        "Chair/chair.png": new Uint8Array([1]),
+        "Chair/notes.txt": new Uint8Array([2]),
+        "__MACOSX/Chair/._chair.png": new Uint8Array([3]),
+        "lamp.png": new Uint8Array([4]),
+      }),
+      zipFile("Tiles.zip", { "Tiles/grass.png": new Uint8Array([5]) }),
+    ];
+    fireEvent.change(screen.getByTestId("content-browser-import-input"), { target: { files } });
+
+    expect(await screen.findByText("Import Partially Completed")).toBeTruthy();
+    // A folder named props already exists, in another case; Tiles.zip's own Tiles folder is dropped.
+    expect(createFolder.mock.calls).toEqual([["project", "Props_1"], ["project", "Tiles"]]);
+    expect(importFile.mock.calls.map(([root, folder, name]) => [root, folder, name])).toEqual([
+      ["project", "Props_1/Chair", "chair.png"],
+      ["project", "Props_1", "lamp.png"],
+      ["project", "Tiles", "grass.png"],
+    ]);
+    expect(screen.getByTestId("import-result-summary").textContent).toMatch(/3 files imported/);
+    expect(screen.getByText(/Props\.zip: Skipped 1 file .*: Chair\/notes\.txt\./)).toBeTruthy();
+    expect(screen.getByText(/Props\.zip: Skipped 1 macOS .*: __MACOSX\/Chair\/\._chair\.png\./)).toBeTruthy();
+    expect(deleteFolder).not.toHaveBeenCalled();
+  });
+
+  it("removes a ZIP's folder when the import is cancelled or none of its files import", async () => {
+    const assets: IndexedAsset[] = [];
+    installRegistry(assets);
+    const createFolder = vi.fn(async () => {});
+    const deleteFolder = vi.fn(async () => {});
+    const deleteAsset = vi.fn(async () => {});
+    let pendingSignal: AbortSignal | undefined;
+    const importFile = vi.fn(async (_root: string, _folder: string, name: string, _bytes: Uint8Array, options?: { signal?: AbortSignal }) => {
+      if (name === "broken.png") throw new Error("Unsupported image");
+      if (name === "a.png") {
+        const asset = texture(0);
+        assets.push(asset);
+        return [asset];
+      }
+      pendingSignal = options?.signal;
+      return new Promise<IndexedAsset[]>((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(options.signal!.reason));
+      });
+    });
+    docs.assetRegistry = { ...(docs.assetRegistry as object), importFile, createFolder, deleteFolder, deleteAsset };
+    render(<ContentBrowserWorkspace />);
+
+    fireEvent.change(screen.getByTestId("content-browser-import-input"), {
+      target: { files: [zipFile("Broken.zip", { "broken.png": new Uint8Array([1]) })] },
+    });
+    expect(await screen.findByText("Import Failed")).toBeTruthy();
+    expect(createFolder).toHaveBeenCalledWith("project", "Broken");
+    expect(deleteFolder).toHaveBeenCalledWith("project", "Broken");
+    fireEvent.click(screen.getByTestId("import-errors-dismiss"));
+
+    fireEvent.change(screen.getByTestId("content-browser-import-input"), {
+      target: { files: [zipFile("Props.zip", { "a.png": new Uint8Array([1]), "b.png": new Uint8Array([2]) })] },
+    });
+    const progress = await screen.findByTestId("importing-overlay");
+    await waitFor(() => expect(pendingSignal).toBeDefined());
+    expect(within(progress).getByText("Props/b.png")).toBeTruthy();
+    fireEvent.click(within(progress).getByTestId("importing-cancel"));
+    await waitFor(() => expect(screen.queryByTestId("importing-overlay")).toBeNull());
+    expect(deleteAsset).toHaveBeenCalledWith("tex-0");
+    expect(deleteFolder).toHaveBeenLastCalledWith("project", "Props");
+    expect(screen.queryByText("Import Failed")).toBeNull();
   });
 
   it("refuses an MSDF atlas pick without its JSON instead of attaching the PNG to the Font", async () => {

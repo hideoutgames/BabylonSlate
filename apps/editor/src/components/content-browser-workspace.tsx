@@ -520,6 +520,7 @@ function ContentBrowserWorkspaceBody({
   } = useContentBrowserImportFlow({
     assetRegistry,
     selectedRoot,
+    existingFolderPaths,
     play,
     busy,
     setBusy,

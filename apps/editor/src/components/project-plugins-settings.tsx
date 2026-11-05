@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { OctagonAlertIcon, PuzzleIcon } from "lucide-react";
 import { LabelHint, NamePromptDialog, SelectableText } from "@haptic/editor-kit";
 import type { PluginDescriptor } from "@haptic/assets";
-import { isMobilePlatform, pickImportFiles } from "@haptic/vfs";
+import { hostImportAccept, isMobilePlatform, pickImportFiles } from "@haptic/vfs";
 import { Badge } from "@haptic/ui/components/badge";
 import { Button } from "@haptic/ui/components/button";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
@@ -353,7 +353,8 @@ export function ProjectPluginsSettings() {
         <input
           ref={importInputRef}
           type="file"
-          accept=".hplugin,application/zip"
+          // iPadOS Safari opens this input too, and greys out `.hplugin` behind a filter.
+          accept={hostImportAccept(".hplugin,application/zip")}
           className="hidden"
           data-testid="import-plugin-input"
           onChange={(event) => {

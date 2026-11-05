@@ -238,6 +238,8 @@ describe("importers", () => {
     expect(pickerImportAccept()).toMatch(/\.mtl/);
     expect(pickerImportAccept()).toMatch(/\.fbx/);
     expect(pickerImportAccept()).toMatch(/\.stl/);
+    // The desktop picker offers ZIPs, which the Content Browser expands into a folder.
+    expect(pickerImportAccept().split(",")).toContain(".zip");
   });
 
   it("imports audio with the MIME its bytes carry, else its extension's", async () => {

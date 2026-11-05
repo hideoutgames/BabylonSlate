@@ -14,6 +14,7 @@ import {
 } from "./hproject";
 import { stableStringify } from "./bytes";
 import { newAssetGuid } from "./guid";
+import { isZipArchive } from "./importers/zip-import";
 import { applyImportGuidRemap } from "./importers/guid-remap";
 import type { ImportResult } from "./importers/types";
 import { copyStorageTree } from "./storage-move";
@@ -169,6 +170,8 @@ async function findPluginSettingsFile(
 }
 
 export async function inspectHplugin(bytes: Uint8Array): Promise<InspectedHplugin> {
+  // iOS pickers show every file; name a wrong pick rather than fail to unzip it.
+  if (!isZipArchive(bytes)) throw new Error("Not a .hplugin: the file is not a plugin archive.");
   const zipFiles = pluginFiles(decodeProjectZip(bytes));
   const settingsFile = await findPluginSettingsFile(zipFiles);
   if (!settingsFile) {

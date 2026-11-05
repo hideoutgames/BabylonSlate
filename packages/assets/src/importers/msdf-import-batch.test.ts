@@ -58,6 +58,11 @@ describe("msdfAtlasPickError", () => {
     expect(msdfAtlasPickError([json, atlas, other])).toContain("hero.png");
   });
 
+  it("refuses a file of another type, which an iOS picker offers and would attach to the Font", () => {
+    const sound = { name: "click.wav", bytes: new Uint8Array([4]) };
+    expect(msdfAtlasPickError([json, atlas, sound])).toContain("click.wav");
+  });
+
   it("refuses a second MSDF JSON, which would replace the first atlas on the Font", () => {
     const hud = {
       name: "Hud-msdf.json",

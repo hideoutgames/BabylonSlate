@@ -62,6 +62,16 @@ describe("Audio editor docks", () => {
     expect(screen.getByTestId("audio-add-clip").hasAttribute("disabled")).toBe(false);
   });
 
+  it("refuses a picked file that is not WAV, MP3 or OGG without adding a clip", async () => {
+    audioIO.pick.mockResolvedValueOnce([{ name: "cover.png", bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) }]);
+    const onChange = vi.fn();
+    render(<AudioClips path="assets/Jump.hasset" assetName="Jump" payload={{ clips: [{ chunkId: "source", name: "Jump", weight: 1 }] }} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("audio-add-clip"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("cover.png is not a WAV, MP3 or OGG file."));
+    expect(audioIO.write).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("keeps the clip listed when its project storage removal fails", async () => {
     audioIO.remove.mockRejectedValueOnce(new Error("Folder is offline"));
     const onChange = vi.fn();

@@ -2,6 +2,7 @@ import type { ComponentProps, Dispatch, ReactNode, RefObject, SetStateAction } f
 import { FolderIcon, PlusIcon, UploadIcon } from "lucide-react";
 import { pickerImportAccept } from "@haptic/assets";
 import { SearchInput, ShortcutKeys, ariaKeyShortcuts } from "@haptic/editor-kit";
+import { hostImportAccept } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
 import { cn } from "@haptic/ui/lib/utils";
 import {
@@ -217,7 +218,8 @@ export function ContentBrowserToolbar({
         disabled={busy}
         className="hidden"
         data-testid="content-browser-import-input"
-        accept={pickerImportAccept()}
+        // iPadOS Safari opens this input too; there every file shows, as in the picker.
+        accept={hostImportAccept(pickerImportAccept())}
         onChange={(event) => {
           void onImportFiles(event.target.files);
           event.target.value = "";
