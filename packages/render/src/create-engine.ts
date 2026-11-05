@@ -2384,6 +2384,11 @@ function initializeEngine(
       message: "WebGL context restored",
     });
     scaling.noteRestore();
+    // A preparation that ran while the context was lost failed (Babylon throws creating GPU resources then) and
+    // latched its failure, which holds every later frame: restart the world's and the layers' preparation.
+    worldRenderer.invalidate();
+    sceneLayerCompositor?.invalidate();
+    syncPipelineHold(false);
     // Babylon rebuilds retained textures/material effects before notifying.
     // Releasing the shared cache here destroys those newly restored resources
     // and leaves other live clients holding disposed wrappers.

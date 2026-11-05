@@ -1,4 +1,5 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
+import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Material, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type AbstractMesh, type Effect, type Mesh } from "@babylonjs/core";
@@ -798,6 +799,34 @@ describe("Play createEngine view", () => {
     };
     return { handle, canvas, holds, set, frame, clock, presentFirstFrame };
   }
+
+  it("draws again after a context restore when a preparation failed while the context was lost", async () => {
+    const { handle, frame, presentFirstFrame } = playViewWithCompilingEffect();
+    // The first override only establishes the quality baseline.
+    handle.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.5 } });
+    await presentFirstFrame();
+    const drawn = () => handle.renderDiagnostics().presentation!.drawn;
+    const settle = async (frames: number) => {
+      for (let index = 0; index < frames; index++) {
+        frame();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    };
+    // A resolution scale change rebuilds the view's graph; the context is lost while that preparation runs, and its
+    // build fails as Babylon's texture creation does on a lost context, which latches the graph's failure.
+    const build = vi.spyOn(FrameGraph.prototype, "buildAsync").mockRejectedValueOnce(new Error("Unable to create texture"));
+    handles.push({ dispose: () => build.mockRestore() });
+    handle.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.25 } });
+    frame();
+    const held = drawn();
+    handle.engine.onContextLostObservable.notifyObservers(handle.engine);
+    await vi.waitFor(() => expect(build).toHaveBeenCalled());
+    await settle(4);
+    expect(drawn()).toBe(held);
+    handle.engine.onContextRestoredObservable.notifyObservers(handle.engine);
+    for (let attempt = 0; attempt < 20 && drawn() === held; attempt++) await settle(1);
+    expect(drawn()).toBeGreaterThan(held);
+  });
 
   it("pauses Play's game time but keeps drawing while an effect compiles mid-session, until a frame draws", async () => {
     const { handle, holds, set, frame, clock, presentFirstFrame } = playViewWithCompilingEffect();
