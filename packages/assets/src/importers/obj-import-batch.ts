@@ -54,14 +54,51 @@ function mtlMapFileName(args: string): string | null {
   return name || null;
 }
 
-function mtlMapNames(mtlText: string): Set<string> {
-  const names = new Set<string>();
+/** The file names the MTL's texture statements give, as written (`textures/wood.png`). */
+function mtlMapPaths(mtlText: string): string[] {
+  const paths: string[] = [];
   for (const line of mtlText.split(/\r?\n/)) {
     const match = /^\s*(?:map_\S+|bump|disp|decal|refl|norm)\s+(.+)$/i.exec(line);
     const name = match?.[1] ? mtlMapFileName(match[1]) : null;
-    if (name) names.add(fileNameOf(name));
+    if (name) paths.push(name);
   }
-  return names;
+  return paths;
+}
+
+/** The folder part of a batch path, lowercase (`chair` for `Chair/chair.obj`, empty in a flat pick). */
+function folderOf(fileName: string): string {
+  const path = fileName.replace(/\\/g, "/").toLowerCase();
+  return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+}
+
+/** `relative` resolved against `folder`, lowercase; `..` above the batch keeps only the file name. */
+function resolveInFolder(folder: string, relative: string): string {
+  const parts = folder ? folder.split("/") : [];
+  for (const part of relative.replace(/\\/g, "/").toLowerCase().split("/")) {
+    if (!part || part === ".") continue;
+    if (part !== "..") parts.push(part);
+    else parts.pop();
+  }
+  return parts.join("/");
+}
+
+/**
+ * The file a MTL texture statement names: the one at its path from the
+ * MTL's folder, else one of that file name in the OBJ's folder, else any.
+ * A ZIP or folder import keeps paths; a flat pick has file names only.
+ */
+function mtlMapFile(
+  mapPath: string,
+  mtl: ImportFileBytes,
+  objFolder: string,
+  files: readonly ImportFileBytes[],
+): ImportFileBytes | undefined {
+  const exact = resolveInFolder(folderOf(mtl.name), mapPath);
+  const name = fileNameOf(mapPath);
+  const named = files.filter((entry) => fileNameOf(entry.name) === name);
+  return named.find((entry) => entry.name.replace(/\\/g, "/").toLowerCase() === exact) ??
+    named.find((entry) => folderOf(entry.name) === objFolder) ??
+    named[0];
 }
 
 /** Split a Content Browser import batch into OBJ+sidecars vs files to import as-is. */
@@ -71,28 +108,35 @@ export function groupObjImportSidecars(files: ImportFileBytes[]): {
 } {
   const objs: Array<{ obj: ImportFileBytes; sidecars: ImportFileBytes[] }> = [];
   const consumed = new Set<ImportFileBytes>();
+  const images = files.filter((entry) => IMAGE_EXTENSIONS.has(extensionOf(entry.name)));
 
   for (const file of files) {
     if (extensionOf(file.name) !== "obj") continue;
     const stem = stemOf(file.name);
+    const folder = folderOf(file.name);
     const sidecars: ImportFileBytes[] = [];
-    const mtl = files.find(
-      (entry) => extensionOf(entry.name) === "mtl" && stemOf(entry.name) === stem,
-    );
-    const mapNames = mtl
-      ? mtlMapNames(new TextDecoder().decode(mtl.bytes))
-      : new Set<string>();
-    for (const entry of files) {
-      if (entry === file) continue;
-      // Only images the MTL names, or a same-stem image, are the OBJ's own;
-      // any other same-stem file (an FBX, a sound) imports on its own.
-      const isMap =
-        mapNames.has(fileNameOf(entry.name)) ||
-        (stemOf(entry.name) === stem && IMAGE_EXTENSIONS.has(extensionOf(entry.name)));
-      if (!isMap && !(mtl && entry === mtl)) continue;
-      if (consumed.has(entry)) continue;
+    const add = (entry: ImportFileBytes | undefined) => {
+      if (!entry || sidecars.includes(entry)) return;
       sidecars.push(entry);
       consumed.add(entry);
+    };
+    // The same-stem MTL beside the OBJ, else one elsewhere in the batch.
+    const mtls = files.filter(
+      (entry) => extensionOf(entry.name) === "mtl" && stemOf(entry.name) === stem,
+    );
+    const mtl = mtls.find((entry) => folderOf(entry.name) === folder) ?? mtls[0];
+    add(mtl);
+    // Only images the MTL names, or a same-stem image beside the OBJ, are the
+    // OBJ's own; any other same-stem file (an FBX, a sound) imports on its own.
+    // An image two OBJs name serves both.
+    if (mtl) {
+      const others = files.filter((entry) => entry !== file && entry !== mtl);
+      for (const mapPath of mtlMapPaths(new TextDecoder().decode(mtl.bytes))) {
+        add(mtlMapFile(mapPath, mtl, folder, others));
+      }
+    }
+    for (const entry of images) {
+      if (stemOf(entry.name) === stem && folderOf(entry.name) === folder) add(entry);
     }
     consumed.add(file);
     objs.push({ obj: file, sidecars });

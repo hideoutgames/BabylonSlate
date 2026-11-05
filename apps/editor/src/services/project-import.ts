@@ -1,11 +1,14 @@
 import { unzipSync } from "fflate";
-import type { ProjectTreeFile } from "@haptic/assets";
+import { isZipArchive, type ProjectTreeFile } from "@haptic/assets";
 
 export const PROJECT_IMPORT_LIMIT = 200 * 1024 * 1024;
 
 export function readProjectArchive(bytes: Uint8Array): ProjectTreeFile[] {
   if (bytes.byteLength > 50 * 1024 * 1024)
     throw new Error("Choose an archive smaller than 50 MB.");
+  // iOS pickers show every file; name a wrong pick rather than fail to unzip it.
+  if (!isZipArchive(bytes))
+    throw new Error("Choose a .zip archive of a Haptic project.");
   let total = 0;
   const archive = unzipSync(bytes, {
     filter: (entry) => {

@@ -3,6 +3,7 @@ import { unzipSync } from "fflate";
 import { encodeProjectZip, readProjectTree, writeProjectTree, type ProjectTreeFile } from "./hproject";
 import { discoverEngineExtensions, discoverProjectExtensions, type ExtensionDescriptor } from "./extension-host";
 import { decodeExtensionSettings, encodeExtensionSettings, EXTENSIONS_DIR, EXTENSION_MANIFEST_FILE, EXTENSION_MANIFEST_MAX_BYTES, isExtensionPackagePath, type ExtensionSettings } from "./extension-settings";
+import { isZipArchive } from "./importers/zip-import";
 
 const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
 const MAX_EXPANDED_BYTES = 256 * 1024 * 1024;
@@ -67,6 +68,8 @@ function inspectExtensionFiles(files: ProjectTreeFile[]): InspectedHextension {
 
 export async function inspectHextension(bytes: Uint8Array): Promise<InspectedHextension> {
   if (bytes.byteLength > MAX_ARCHIVE_BYTES) throw new Error("Extension archive exceeds 64 MiB.");
+  // iOS pickers show every file; name a wrong pick rather than fail to unzip it.
+  if (!isZipArchive(bytes)) throw new Error("Not a .hextension: the file is not an Extension archive.");
   let expandedBytes = 0;
   let fileCount = 0;
   const paths = new Set<string>();

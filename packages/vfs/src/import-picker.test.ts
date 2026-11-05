@@ -1,10 +1,52 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { pickImportFiles } from "./import-picker";
+
+const getPlatform = vi.fn(() => "web");
+
+vi.mock("@capacitor/core", () => ({
+  Capacitor: { getPlatform: () => getPlatform() },
+}));
+
+const { pickImportFiles } = await import("./import-picker");
+
+/** The `accept` the picker's input had when it opened, on a host with this user agent. */
+async function pickedAccept(userAgent: string, maxTouchPoints = 0): Promise<string> {
+  vi.stubGlobal("navigator", { userAgent, maxTouchPoints });
+  const opened: { accept?: string } = {};
+  const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (this: HTMLInputElement) {
+    opened.accept = this.accept;
+    this.dispatchEvent(new Event("cancel"));
+  });
+  try {
+    await pickImportFiles({ accept: ".png,.fbx" });
+  } finally {
+    clickSpy.mockRestore();
+  }
+  if (opened.accept === undefined) throw new Error("The picker did not open.");
+  return opened.accept;
+}
+
+const DESKTOP_SAFARI = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Version/18.0 Safari/605.1.15";
 
 describe("pickImportFiles", () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+    getPlatform.mockReturnValue("web");
     document.body.innerHTML = "";
+  });
+
+  it("offers only the accepted types on desktop and Android", async () => {
+    expect(await pickedAccept("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0")).toBe(".png,.fbx");
+    expect(await pickedAccept(DESKTOP_SAFARI)).toBe(".png,.fbx");
+    expect(await pickedAccept("Mozilla/5.0 (Linux; Android 14; Pixel 8) Mobile Safari/537.36", 5)).toBe(".png,.fbx");
+  });
+
+  it("offers every file on iPhone and iPad, where a type filter greys out extensions iOS has no type for", async () => {
+    expect(await pickedAccept("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148")).toBe("");
+    // iPadOS Safari and WKWebView report a Mac; touch support gives it away.
+    expect(await pickedAccept(DESKTOP_SAFARI, 5)).toBe("");
+    getPlatform.mockReturnValue("ios");
+    expect(await pickedAccept(DESKTOP_SAFARI)).toBe("");
   });
 
   it("uses the DOM file input on web", async () => {

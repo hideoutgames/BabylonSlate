@@ -1,6 +1,46 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { encodeProjectZip } from "../packages/assets/src/hproject";
 import { buildRadianceHdrFixture } from "../packages/test-kit/src/environment-fixtures";
 import { openAssetFromBrowser, openContentBrowser, openTestProject } from "./open-test-project";
+
+const fixtures = path.join(process.cwd(), "e2e/fixtures");
+
+test("a ZIP imports into a folder named after it, keeping its folders and listing what it skipped", async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await openTestProject(page);
+  await openContentBrowser(page);
+  // As macOS Compress writes it: one wrapping folder, plus __MACOSX metadata.
+  const archive = encodeProjectZip([
+    { path: "Props/Chair/albedo.png", data: readFileSync(path.join(fixtures, "albedo.png")) },
+    { path: "Props/hero.glb", data: readFileSync(path.join(fixtures, "hero.glb")) },
+    { path: "Props/notes.txt", data: new TextEncoder().encode("Not an asset.") },
+    { path: "__MACOSX/Props/._hero.glb", data: new Uint8Array([0, 5, 22, 7]) },
+  ]);
+  await page.getByTestId("content-browser-import-input").setInputFiles({
+    name: "Props.zip",
+    mimeType: "application/zip",
+    buffer: Buffer.from(archive),
+  });
+
+  const issues = page.getByTestId("import-errors-dialog");
+  await expect(issues).toBeVisible({ timeout: 60_000 });
+  await expect(issues.getByText("Import Partially Completed")).toBeVisible();
+  await expect(issues.getByText(/Props\.zip: Skipped 1 file .*Props\/notes\.txt/)).toBeVisible();
+  await expect(issues.getByText(/Props\.zip: Skipped 1 macOS .*__MACOSX/)).toBeVisible();
+  await page.getByTestId("import-errors-dismiss").click();
+
+  await expect(page.locator('[data-folder-path="assets/Props"]')).toBeVisible();
+  const guids = await page.evaluate(async () => {
+    const api = (globalThis as { __hapticTest?: { guidForPath: (path: string) => string | null | Promise<string | null> } }).__hapticTest!;
+    return Promise.all(["assets/Props/Chair/albedo.hasset", "assets/Props/hero.hasset"].map((path) => api.guidForPath(path)));
+  });
+  expect(guids.every(Boolean)).toBe(true);
+  expect(errors).toEqual([]);
+});
 
 test("an HDR import shows the Importing dialog, Cancel leaves no asset behind, and Face Size converts again", async ({ page }) => {
   test.setTimeout(120_000);

@@ -194,6 +194,10 @@ describe("importPluginZip", () => {
     expect((await storage.readdir(".")).map((entry) => entry.name)).toEqual(["plugins"]);
   });
 
+  it("refuses a picked file that is not an archive by name, as an iOS picker offers any file", async () => {
+    await expect(inspectHplugin(new TextEncoder().encode("not a plugin"))).rejects.toThrow("Not a .hplugin: the file is not a plugin archive.");
+  });
+
   it("retains a readable recovery copy if the filesystem also prevents restoration", async () => {
     const { storage, incoming, plan } = await replacementFixture();
     const write = storage.writeBinary.bind(storage);

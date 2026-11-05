@@ -65,6 +65,9 @@ export function groupMsdfImportBatch(
  * unpaired PNG would import on its own and attach as a Texture chunk.
  */
 export function msdfAtlasPickError(files: ImportFileBytes[]): string | null {
+  // iOS pickers show every file: anything else would import and attach to the Font.
+  const other = files.find((file) => !["json", "png"].includes(extensionOf(file.name)));
+  if (other) return `${other.name} is not an MSDF JSON or PNG.`;
   const hasJson = files.some((file) => extensionOf(file.name) === "json");
   const hasPng = files.some((file) => extensionOf(file.name) === "png");
   if (!hasJson || !hasPng) return "MSDF needs both JSON and PNG.";

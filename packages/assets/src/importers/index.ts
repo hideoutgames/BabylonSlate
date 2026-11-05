@@ -30,8 +30,12 @@ const IMPORTERS_BY_EXTENSION: Record<string, Importer> = {
 };
 
 export function importerForExtension(extension: string): Importer | undefined {
-  return IMPORTERS_BY_EXTENSION[extension.toLowerCase()];
+  const key = extension.toLowerCase();
+  return Object.hasOwn(IMPORTERS_BY_EXTENSION, key) ? IMPORTERS_BY_EXTENSION[key] : undefined;
 }
+
+/** Converted to GLB before import (FBX, OBJ, STL), or read with a model (MTL, BIN). */
+const CONVERTED_IMPORT_EXTENSIONS = ["obj", "mtl", "bin", "fbx", "stl"];
 
 /** Comma-separated `accept` for the Content Browser file picker (no OBJ — converted first). */
 export function registeredImportAccept(): string {
@@ -40,9 +44,15 @@ export function registeredImportAccept(): string {
     .join(",");
 }
 
-/** Picker accept list: registered importers plus converted FBX/OBJ/STL and their sidecars. */
+/** Whether Content Browser Import reads a file of this name, directly, converted or as a model's sidecar. */
+export function isImportableFileName(fileName: string): boolean {
+  const extension = extensionOf(fileName);
+  return importerForExtension(extension) !== undefined || CONVERTED_IMPORT_EXTENSIONS.includes(extension);
+}
+
+/** Picker accept list: registered importers, converted FBX/OBJ/STL and their sidecars, and ZIPs of them. */
 export function pickerImportAccept(): string {
-  return `${registeredImportAccept()},.obj,.mtl,.bin,.fbx,.stl`;
+  return [registeredImportAccept(), ...[...CONVERTED_IMPORT_EXTENSIONS, "zip"].map((extension) => `.${extension}`)].join(",");
 }
 
 export async function importByExtension(
@@ -74,3 +84,4 @@ export * from "./msdf-import-batch";
 export * from "./obj-import-batch";
 export * from "./types";
 export * from "./util";
+export * from "./zip-import";

@@ -1,10 +1,23 @@
+import { isAppleMobileOperatingSystem } from "./platform";
+
 export interface PickedImportFile {
   name: string;
   bytes: Uint8Array;
 }
 
+/**
+ * The `accept` a file input should use on this host. iOS and iPadOS turn each
+ * extension into a system file type and grey out files of an extension with
+ * none (`.fbx`, `.hasset`, ...), so there the picker shows every file and the
+ * caller rejects a wrong type after the pick.
+ */
+export function hostImportAccept(accept: string | undefined): string | undefined {
+  return accept && !isAppleMobileOperatingSystem() ? accept : undefined;
+}
+
 export interface PickImportFilesOptions {
   multiple?: boolean;
+  /** File types to offer; not applied on iOS and iPadOS (`hostImportAccept`). */
   accept?: string;
   /** Select a directory tree, preserving paths relative to the chosen folder. */
   directory?: boolean;
@@ -29,7 +42,8 @@ export function pickImportFiles(
     input.type = "file";
     input.multiple = options.multiple !== false;
     if (options.directory) input.setAttribute("webkitdirectory", "");
-    if (options.accept) input.accept = options.accept;
+    const accept = hostImportAccept(options.accept);
+    if (accept) input.accept = accept;
     input.style.display = "none";
     input.dataset.testid = "vfs-import-picker-input";
 

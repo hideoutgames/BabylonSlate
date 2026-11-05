@@ -142,3 +142,12 @@ export function isMobilePlatform(): boolean {
   const platform = getHostPlatform();
   return platform === "ios" || platform === "android";
 }
+
+/** iPhone or iPad, in the iOS app or a browser. iPadOS Safari and WKWebView report a Mac; touch support gives it away. */
+export function isAppleMobileOperatingSystem(): boolean {
+  if (getHostPlatform() === "ios") return true;
+  if (typeof navigator === "undefined") return false;
+  const userAgent = navigator.userAgent ?? "";
+  if (/iPhone|iPad|iPod/.test(userAgent)) return true;
+  return /Macintosh/.test(userAgent) && (navigator.maxTouchPoints ?? 0) > 1;
+}

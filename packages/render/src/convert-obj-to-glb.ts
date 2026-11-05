@@ -154,8 +154,9 @@ function containerDispose(scene: Scene): void {
   for (const mesh of [...scene.meshes]) mesh.dispose(false, true);
 }
 
+/** The GLB an OBJ converts to, in the OBJ's folder of the batch (a ZIP import keeps folders). */
 export function glbFileNameFromObj(objName: string): string {
-  return fileNameOf(objName).replace(/\.obj$/i, ".glb");
+  return objName.replace(/\.obj$/i, ".glb");
 }
 
 /** Convert OBJ files in a picker batch to GLB; leave unrelated files as-is. */

@@ -179,7 +179,7 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 
 ### Import pipeline
 
-- Import uses `pickImportFiles` on every host. Importers are pure functions keyed by extension: images → Texture; glb/gltf → Model + Material + Texture + Animation; audio → Audio; woff2/woff/ttf/otf → Font (facetype JSON and MSDF pairs attach to an existing Font); `.hasset` → bundled unpack.
+- Import uses `pickImportFiles` on every host; on iPhone and iPad it offers every file and callers refuse wrong types. Importers are pure functions keyed by extension: images → Texture; glb/gltf → Model + Material + Texture + Animation; audio → Audio; woff2/woff/ttf/otf → Font (facetype JSON and MSDF pairs attach to an existing Font); `.hasset` → bundled unpack. A `.zip` imports its supported files into a new folder named after it, keeping its folders ([asset-registry](architecture/asset-registry.md#importers)).
 - Guids are unique within a project and its plugins, not globally. Templates keep their guids; importing from another project remaps colliding guids and rewrites references.
 
 ### Schema versioning

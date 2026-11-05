@@ -43,6 +43,36 @@ describe("groupObjImportSidecars", () => {
     expect(grouped.rest.map((entry) => entry.name)).toEqual(["Hero.fbx", "Hero.wav"]);
   });
 
+  it("gives each OBJ the MTL and textures of its own folder when a ZIP's folders reuse file names", () => {
+    const files = ["Chair", "Table"].flatMap((folder) => [
+      file(`${folder}/model.obj`, "v 0 0 0"),
+      file(`${folder}/model.mtl`, "map_Kd textures/wood.png"),
+      file(`${folder}/textures/wood.png`, folder),
+      file(`${folder}/model.png`, folder),
+    ]);
+    const grouped = groupObjImportSidecars(files);
+    expect(grouped.objs.map(({ obj, sidecars }) => [obj.name, sidecars.map((entry) => entry.name).sort()])).toEqual([
+      ["Chair/model.obj", ["Chair/model.mtl", "Chair/model.png", "Chair/textures/wood.png"]],
+      ["Table/model.obj", ["Table/model.mtl", "Table/model.png", "Table/textures/wood.png"]],
+    ]);
+    expect(grouped.rest).toEqual([]);
+  });
+
+  it("lets two OBJs share a texture both MTLs name", () => {
+    const grouped = groupObjImportSidecars([
+      file("tree.obj"),
+      file("tree.mtl", "map_Kd colormap.png"),
+      file("house.obj"),
+      file("house.mtl", "map_Kd colormap.png"),
+      file("colormap.png"),
+    ]);
+    expect(grouped.objs.map(({ sidecars }) => sidecars.map((entry) => entry.name).sort())).toEqual([
+      ["colormap.png", "tree.mtl"],
+      ["colormap.png", "house.mtl"],
+    ]);
+    expect(grouped.rest).toEqual([]);
+  });
+
   it("keeps a lone OBJ with no sidecars", () => {
     const grouped = groupObjImportSidecars([file("crate.obj")]);
     expect(grouped.objs[0]!.sidecars).toEqual([]);

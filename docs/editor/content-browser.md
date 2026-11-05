@@ -14,7 +14,7 @@ The toolbar above the grid has:
 
 | Control | Use |
 | --- | --- |
-| Import | Import files into the current folder. See [Importing Assets](importing.md). |
+| Import | Import files into the current folder. A ZIP imports into a new folder named after it. See [Importing Assets](importing.md). |
 | New Asset | Open a menu with **Folder** first under **Structure**, then the asset types grouped by category, with a search field at the top. **Folder** creates a folder at once (see [New folders](#new-folders)). Pick a type, then name the asset to create it in the current folder. Click **Location** to pick a different folder before you create it. See [Assets](../assets/index.md) for every type. |
 | Search assets… | Filter the grid by name. |
 | Filter | Show only the asset types you tick under **Asset Types**, in the grid and the folder tree. Folders always show. |
@@ -34,7 +34,7 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | --- | --- |
 | Open | Open the asset in its editor. |
 | Generate Thumbnail | Redraw the thumbnail of a Model, Animation, Material, actor Class, Tileset or Tilemap. |
-| Import MSDF Atlas… | Fonts only. Attach a pre-made MSDF atlas: pick one JSON and the PNG it names. A JSON that names no atlas page pairs only with a PNG of the same name that contains `msdf`, such as `Ui-msdf.png` for `Ui-msdf.json`. A second JSON or any other PNG in the pick is refused. |
+| Import MSDF Atlas… | Fonts only. Attach a pre-made MSDF atlas: pick one JSON and the PNG it names. A JSON that names no atlas page pairs only with a PNG of the same name that contains `msdf`, such as `Ui-msdf.png` for `Ui-msdf.json`. A second JSON, any other PNG or a file of another type in the pick is refused. |
 | Create … | Make a new asset from the selection. See [Create from assets](#create-from-assets). |
 | Duplicate | Copy the selection in place. |
 | Rename | Rename one asset or folder on its tile (see [Rename](#rename)). References to it stay connected. |

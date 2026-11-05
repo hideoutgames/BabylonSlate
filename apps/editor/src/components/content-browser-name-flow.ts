@@ -16,6 +16,7 @@ import type { useDocumentActions, useSourceControl } from "../context/document-c
 import { applyLockTransfers } from "../lib/source-control-file-ops";
 import {
   classIdConflict,
+  freeFolderName,
   isFolderNameTaken,
   isRenameNameTaken,
   joinAssetFolderPath,
@@ -236,10 +237,7 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
    */
   const createFolder = useCallback(async (place: NewFolderPlace) => {
     if (!assetRegistry || busy || selectedRoot.readOnly) return;
-    let name = NEW_FOLDER_NAME;
-    for (let index = 1; isFolderNameTaken(existingFolderPaths, selectedFolderPath, name); index += 1) {
-      name = `${NEW_FOLDER_NAME}_${index}`;
-    }
+    const name = freeFolderName(existingFolderPaths, selectedFolderPath, NEW_FOLDER_NAME);
     const relative = selectedRoot.relative ? `${selectedRoot.relative}/${name}` : name;
     const path = `${selectedRoot.pathPrefix}/${relative}`;
     setOperationError(null);
