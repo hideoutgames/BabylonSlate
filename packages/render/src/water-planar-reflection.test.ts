@@ -6,10 +6,13 @@ import {
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { afterEach, expect, it, vi } from "vitest";
 import {
-  createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, type QualityLevel, type WaterDefinition,
+  createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch, type QualityLevel,
+  type WaterDefinition,
 } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { managedRenderReservations } from "./managed-render-resources";
+import { isReflectionCamera } from "./reflection-camera";
+import { sceneShadowController } from "./shadow-controller";
 import { compileMaterialPlan } from "./material-compiler";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
@@ -41,7 +44,9 @@ function gpuBoundary(engine: NullEngine, gpu: "mock" | "real" = "mock") {
   if (gpu === "real") return draws;
   vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
   vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
-    draws.push({ meshes: [...(this.renderList ?? [])], eye: this.activeCamera!.globalPosition.clone(), camera: this.activeCamera! });
+    // Shadow maps (no camera of their own) draw nothing.
+    if (!this.activeCamera) return;
+    draws.push({ meshes: [...(this.renderList ?? [])], eye: this.activeCamera.globalPosition.clone(), camera: this.activeCamera });
   });
   return draws;
 }
@@ -242,7 +247,7 @@ it("allocates nothing until a view's water asks for a reflection that can draw",
   for (let i = 0; i < 3; i++) frame(false);
   // Retained but unused: no observer, view, camera, target or charge.
   expect(scene.onBeforeRenderObservable.observers.length).toBe(observers + 1 /* the water mesh's own update */);
-  expect(waterPlanarReflectionDiagnostics(scene)).toEqual({ views: 0, targets: 0, draws: 0, reusedFrames: 0 });
+  expect(waterPlanarReflectionDiagnostics(scene)).toEqual({ views: 0, targets: 0, draws: 0, reusedFrames: 0, sunShadowViews: 0 });
   // Asked for, but no eligible body: a view record only.
   for (let i = 0; i < 3; i++) expect(frame()).toBeNull();
   expect(waterPlanarReflectionDiagnostics(scene)).toMatchObject({ views: 1, targets: 0, draws: 0 });
@@ -327,6 +332,57 @@ it("leases its target under the water category, resizes in place and frees idle 
   expect(waterBytes(engine)).toBe(0);
   expect(waterPlanarReflectionForCamera(scene, camera)).toBeNull();
   expect(waterPlanarReflectionDiagnostics(scene)).toBeNull();
+});
+
+it("gives a drawing view's mirror camera the sun's cascades of its own under Reflection Shadows, and gives them back when off or idle", () => {
+  const { engine, scene, frame, draws } = host();
+  Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16, maxTextureSize: 4096, maxCubemapTextureSize: 4096 });
+  engine._features.supportCSM = true;
+  engine._features.supportShadowSamplers = true;
+  const controller = sceneShadowController(scene);
+  const reflectionShadows = (on: boolean) => {
+    // Ultra's Planar water reflections.
+    updateSceneRenderingSettings(scene, {
+      quality: normalizeRenderingQuality(qualityPresetPatch("ultra")),
+      shadows: normalizeShadowSettings({ profile: "high", cascades: 2, mapSize: 512, localMapSize: 256, maxLocalLights: 1, reflections: on }),
+    });
+    controller.sync();
+  };
+  reflectionShadows(false);
+  const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.2), scene);
+  controller.register(sun, true);
+  controller.sync();
+  const water = lake(scene, "lake", 40, Vector3.Zero());
+  const sunViews = () => [...sun.getShadowGenerators()!.keys()].map((camera) => camera && isReflectionCamera(camera));
+  frame();
+  expect(frame()).not.toBeNull();
+  // Off: the view's mirror camera holds none, and its pass draws with that camera active (the light block then writes
+  // no sun cascades for it).
+  expect(waterPlanarReflectionDiagnostics(scene)).toMatchObject({ sunShadowViews: 0 });
+  expect(sunViews()).toEqual([null]);
+  const camera = draws.at(-1)!.camera;
+  expect(isReflectionCamera(camera)).toBe(true);
+  // On: the next draw (a static view's within two renders) claims the mirror camera's own, keyed to it.
+  reflectionShadows(true);
+  frame();
+  frame();
+  expect(waterPlanarReflectionDiagnostics(scene)).toMatchObject({ sunShadowViews: 1 });
+  expect(sunViews()).toEqual([null, true]);
+  expect(sun.getShadowGenerator(camera)).not.toBeNull();
+  // Off: given back at once.
+  reflectionShadows(false);
+  frame();
+  expect(waterPlanarReflectionDiagnostics(scene)).toMatchObject({ sunShadowViews: 0 });
+  expect(sunViews()).toEqual([null]);
+  // On, then the water out of sight: given back with the target's idle storage.
+  reflectionShadows(true);
+  frame();
+  frame();
+  expect(waterPlanarReflectionDiagnostics(scene)).toMatchObject({ sunShadowViews: 1 });
+  water.setEnabled(false);
+  for (let i = 0; i < 130; i++) frame();
+  expect(waterPlanarReflectionDiagnostics(scene)).toMatchObject({ targets: 0, sunShadowViews: 0 });
+  expect(sunViews()).toEqual([null]);
 });
 
 it("redraws on every render while the view moves and reuses its draw while a static view's content is unchanged", () => {

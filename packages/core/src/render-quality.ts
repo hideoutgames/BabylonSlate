@@ -770,6 +770,15 @@ export class RenderingQualitySession {
           shadows: { ...this.overrides.shadows, enabled: value === "on" },
         };
       else if (
+        group === "shadows" &&
+        choice === "reflections" &&
+        (value === "on" || value === "off")
+      )
+        this.overrides = {
+          ...this.overrides,
+          shadows: { ...this.overrides.shadows, reflections: value === "on" },
+        };
+      else if (
         group === "geometry" &&
         choice === "lod" &&
         (value === "on" || value === "off")
@@ -846,6 +855,7 @@ export function qualitySettingsFingerprint(quality: EffectiveRenderingQuality): 
     shadows: shadows.enabled ? `${shadows.profile} ${shadows.mapSize}` : "off",
     "shadows.filter": shadows.filterQuality,
     "shadows.screen": shadows.screenShadows,
+    "shadows.reflections": String(shadows.reflections),
     "water.refraction": String(water.refraction),
     "water.refractionScale": String(water.refractionScale),
     "water.reflections": water.reflections,

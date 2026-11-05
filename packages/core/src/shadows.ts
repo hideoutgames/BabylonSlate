@@ -28,6 +28,12 @@ export interface ShadowSettings {
   maxLocalLights: number;
   localMapSize: number;
   screenShadows: ScreenShadowsQuality;
+  /**
+   * Reflection Shadows: each planar reflection that draws (Mirrors, planar water) draws the sun's shadow from cascades
+   * fitted to its own view, at the cost of a sun shadow render per drawing reflection. Off, its surfaces take the sun
+   * unshadowed; spot and point light shadows show either way.
+   */
+  reflections: boolean;
 }
 export type ShadowOverrides = Partial<ShadowSettings>;
 const SHADOW_PROFILE_COMMON = {
@@ -43,6 +49,7 @@ const SHADOW_PROFILE_COMMON = {
 export const SHADOW_PROFILES = {
   low: {
     ...SHADOW_PROFILE_COMMON,
+    reflections: false,
     screenShadows: "off",
     distance: 120,
     mapSize: 2048,
@@ -53,6 +60,7 @@ export const SHADOW_PROFILES = {
   },
   medium: {
     ...SHADOW_PROFILE_COMMON,
+    reflections: false,
     screenShadows: "off",
     distance: 250,
     mapSize: 2048,
@@ -63,6 +71,7 @@ export const SHADOW_PROFILES = {
   },
   high: {
     ...SHADOW_PROFILE_COMMON,
+    reflections: false,
     screenShadows: "medium",
     distance: 350,
     mapSize: 2048,
@@ -73,6 +82,7 @@ export const SHADOW_PROFILES = {
   },
   ultra: {
     ...SHADOW_PROFILE_COMMON,
+    reflections: true,
     screenShadows: "high",
     distance: 600,
     mapSize: 4096,
@@ -90,8 +100,8 @@ export const SHADOW_PROFILES = {
  * never edited, so they load as the level's current values instead of turning Custom.
  */
 const SUPERSEDED_SHADOW_PROFILES: Partial<Record<ShadowProfile, Omit<ShadowSettings, "profile" | "preset">>> = {
-  low: { ...SHADOW_PROFILE_COMMON, distance: 80, mapSize: 1024, cascades: 1, filterQuality: "low", localMapSize: 512, maxLocalLights: 1, screenShadows: "off" },
-  medium: { ...SHADOW_PROFILE_COMMON, distance: 200, mapSize: 2048, cascades: 2, filterQuality: "medium", localMapSize: 1024, maxLocalLights: 2, screenShadows: "off" },
+  low: { ...SHADOW_PROFILE_COMMON, distance: 80, mapSize: 1024, cascades: 1, filterQuality: "low", localMapSize: 512, maxLocalLights: 1, screenShadows: "off", reflections: false },
+  medium: { ...SHADOW_PROFILE_COMMON, distance: 200, mapSize: 2048, cascades: 2, filterQuality: "medium", localMapSize: 1024, maxLocalLights: 2, screenShadows: "off", reflections: false },
 };
 export const DEFAULT_SHADOW_SETTINGS: Readonly<ShadowSettings> = {
   profile: "medium",
@@ -124,6 +134,7 @@ export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
     result.preset = source.preset as ShadowSettings["preset"];
   if (typeof source.enabled === "boolean") result.enabled = source.enabled;
   if (typeof source.autoBias === "boolean") result.autoBias = source.autoBias;
+  if (typeof source.reflections === "boolean") result.reflections = source.reflections;
   if (source.localLightMode === "auto" || source.localLightMode === "manual")
     result.localLightMode = source.localLightMode;
   if (

@@ -84,6 +84,11 @@ const fields: {
     hint: "Adds the sun's small contact shadows the shadow map misses, near the camera. Uses a depth pass. PBR only.",
   },
   {
+    key: "reflections",
+    label: "Reflection Shadows",
+    hint: "Mirrors and planar water reflections show the sun's shadow, at the cost of a sun shadow render per drawing reflection.",
+  },
+  {
     key: "depthBias",
     label: "Shadow Depth Bias",
     hint: "High values detach shadows from surfaces.",
@@ -201,7 +206,7 @@ export function ShadowSettingsFields({
                   </Button>
                 ) : null}
               </div>
-              {key === "enabled" || key === "autoBias" ? (
+              {key === "enabled" || key === "autoBias" || key === "reflections" ? (
                 <Switch
                   id={id}
                   aria-describedby={describedBy}

@@ -164,6 +164,7 @@ describe("createCommandRegistry", () => {
     });
     expect(registry.execute("quality high", host).success).toBe(true);
     expect(registry.execute("quality shadows high", host).success).toBe(true);
+    expect(registry.execute("quality shadows reflections on", host).success).toBe(true);
     expect(registry.execute("quality resolution scale 0.75", host).success).toBe(true);
     expect(registry.execute("quality geometry lod off", host).success).toBe(true);
     expect(registry.execute("quality geometry distance 2", host).success).toBe(true);
@@ -181,6 +182,7 @@ describe("createCommandRegistry", () => {
       "changeScene:level-2",
       "quality:all:high",
       "quality:shadows:high",
+      "quality:shadows:reflections:on",
       "quality:resolution:scale:0.75",
       "quality:geometry:lod:off",
       "quality:geometry:distance:2",

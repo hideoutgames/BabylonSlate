@@ -29,6 +29,7 @@ The reflective side faces the actor's local −Z, the same side a Plane mesh sho
 - A reflection draws only what can appear on the mirror's surface: objects outside that part of the mirrored view cost nothing, and moving them doesn't make the mirror draw again unless their shadow falls on something it shows.
 - While the camera and everything in the reflection stay still, the mirror keeps its reflection instead of drawing it again. Text, sprites and tilemaps keep it too, and animated tiles draw it again only when their frame changes. Animated Materials, skinned meshes and live images such as other captures make it draw again each frame.
 - Each mirror keeps its own reflection image in GPU memory. **Resolution Scale** makes it smaller.
+- With [Reflection Shadows](../graphics/shadows.md#shadows-in-reflections) on (Ultra), each mirror that draws also renders the directional light's shadow again, fitted to its reflection.
 
 ## Custom surfaces
 
@@ -42,6 +43,7 @@ Assign a Material with a [**Mirror Reflection**](../scripting/material/mirror-re
 - No reflection is drawn for orthographic cameras; the surface keeps its last reflection, or shows black before its first.
 - Render Target Captures that see a mirror show the reflection drawn for the main camera.
 - Reflection Probes don't capture mirrors.
+- Reflections show point and spot light shadows. They show the directional light's shadow only with [Reflection Shadows](../graphics/shadows.md#shadows-in-reflections) on, which Ultra quality does; otherwise the directional light lights them as if nothing blocked it.
 - A mirror never casts shadows.
 
 ## Related

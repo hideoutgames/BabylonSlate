@@ -84,11 +84,27 @@ import {
   shadowAtlasRenderTarget,
 } from "./shadow-atlas";
 import { ShadowCasterVariants } from "./shadow-caster-variants";
+import { shadowMapChanges } from "./shadow-change-journal";
+import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
+import { withSceneReadinessState } from "./scene-readiness-signal";
 
 export type { EffectiveShadowBias, ShadowLightStatus } from "./shadow-entry";
 export type { ViewShadows } from "./shadow-view-maps";
 
 const controllers = new WeakMap<Scene, SceneShadowController>();
+
+/** A failed caster draw propagates as-is unless restoration also fails. */
+const VIEW_MAP_DRAW: BorrowedDrawPolicy = {
+  restoreAlpha: false,
+  wrapDrawFailure: false,
+  message: "View shadow draw state restoration failed.",
+};
+
+/** Whether `map`'s next render-target gate passes: it draws on a schedule, or its refresh counter was reset. */
+function refreshDue(map: RenderTargetTexture): boolean {
+  return map.refreshRate !== RenderTargetTexture.REFRESHRATE_RENDER_ONCE ||
+    (map as unknown as { _objectRenderer: { _currentRefreshId: number } })._objectRenderer._currentRefreshId === -1;
+}
 
 /** Illumination state and shadow allocation of one light; no entry is "unsupported". */
 function shadowLightRow(light: Light, entry?: Entry) {
@@ -351,12 +367,13 @@ export class SceneShadowController {
   }
 
   /**
-   * Gives `camera` (a High or Full Quality capture's) its own sun maps: each admitted
+   * Gives `camera` (a High or Full Quality capture's, or a planar reflection's) its own sun maps: each admitted
    * sun map is mirrored with the same kind, size, cascades and settings, keyed
    * to the camera, so materials drawn for it bind a map fitted to it as a scene
    * view there would fit one. Point and spot maps do not depend on the view and
    * stay shared. The maps follow every sync until the claim is released; each
-   * takes cascade tiles of the atlas and redraws in every pass the view draws.
+   * takes cascade tiles of the atlas and redraws in every pass the view draws (a reflection's: `drawViewMaps`, only
+   * when it changed).
    */
   attachView(camera: Camera): ViewShadows {
     if (this.scene.isDisposed) return { release: () => Promise.resolve() };
@@ -373,6 +390,54 @@ export class SceneShadowController {
     if (light instanceof DirectionalLight)
       return this.views.generator(light, camera) ?? this.boundGenerator(light);
     return this.boundGenerator(light);
+  }
+  /** Whether `camera` holds sun maps of its own (`attachView`): none while no sun map is admitted or the atlas refuses them. */
+  viewHoldsMaps(camera: Camera): boolean {
+    return this.views.holdsMaps(camera);
+  }
+  /**
+   * Applies the scene view's refresh policy to `camera`'s own sun maps (a planar reflection's, drawn by `drawViewMaps`
+   * outside any frame graph): each draws again only when its fit, its light, its settings or a caster it draws changed,
+   * and its passes describe where, as the scene view's maps' do, so they change no other reflection's image elsewhere.
+   * Run with the camera placed, and projecting, as its maps fit to it. True when one has not drawn yet or would draw
+   * differently from its last pass: what the camera's pass drew with them is out of date.
+   */
+  viewMapsDue(camera: Camera): boolean {
+    let due = false;
+    this.views.forEachMapOf(camera, ({ generator }) => {
+      const map = generator.getShadowMap();
+      if (!map) return;
+      this.refresh.apply(generator);
+      if (awaitsFirstDraw(generator) || refreshDue(map) || !shadowMapChanges(map).region.empty) due = true;
+    });
+    return due;
+  }
+  /**
+   * Draws `camera`'s own sun maps that are due (`viewMapsDue`) now, outside any frame graph, before the pass that
+   * samples them (a planar reflection's), with the scene view's camera active, and restores the view's render state.
+   * A map's first draw waits for its casters' depth variants: until then it samples neutrally. Run as `viewMapsDue`.
+   */
+  drawViewMaps(camera: Camera): void {
+    const scene = this.scene;
+    if (scene.isDisposed || !scene.shadowsEnabled || !scene.renderTargetsEnabled) return;
+    this.views.forEachMapOf(camera, ({ generator }) => {
+      const map = generator.getShadowMap();
+      const light = generator.getLight();
+      if (!map || !light.isEnabled() || !light.shadowEnabled) return;
+      this.refresh.apply(generator);
+      if (awaitsFirstDraw(generator) && !withSceneReadinessState(scene, () => map.isReadyForRendering())) return;
+      if (!map._shouldRender()) return;
+      drawBorrowedTarget(scene, map, () => withSceneReadinessState(scene, () => {
+        const engine = scene.getEngine();
+        engine.setDepthBuffer(true);
+        engine.setDepthWrite(true);
+        // As a view's shadows task draws its maps (`FrameGraphContext.renderUnmanaged`).
+        scene.incrementRenderId();
+        scene.resetCachedMaterial();
+        scene._intermediateRendering = true;
+        map.render();
+      }), VIEW_MAP_DRAW);
+    });
   }
   /** Last completed map pass, bounded to the admitted faces/cascades. */
   effectiveBias(light: Light): readonly EffectiveShadowBias[] {

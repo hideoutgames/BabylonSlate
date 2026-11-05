@@ -16,6 +16,7 @@ import { retainAreaLightLookup } from "./area-light-resources";
 import { deviceProfile } from "./device-profile";
 import { isIlluminatingLight, sortLightsByAdmission, type ForwardLightSelection } from "./light-policy";
 import { CLUSTER_BLOCK_WORDS, CLUSTER_COUNT, CLUSTER_HEADER_FLOATS, buildLightClusters, type ClusterLight } from "./light-clusters";
+import { isReflectionCamera } from "./reflection-camera";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowAtlasTexture, watchShadowDraws } from "./shadow-atlas";
 import { shadowViewTexelRatios } from "./shadow-filter";
 
@@ -144,7 +145,8 @@ function sceneLights(scene: Scene): SceneLights {
       writeShadowViews(scene, state);
       state.buffer.update();
     });
-    // A view with its own sun map (a High or Full Quality capture's) draws with it, and the scene view with its own after.
+    // A view with its own sun map (a High or Full Quality capture's, a reflection's) draws with it, a reflection without
+    // one with none, and the scene view with its own after.
     const cameraChanged = scene.onActiveCameraChanged.add(() => {
       if (!state.sun || sunShadowMap(scene, state.sun) === state.sunWritten) return;
       writeShadowViews(scene, state);
@@ -282,11 +284,16 @@ function shadowedLight(scene: Scene, light: SpotLight | PointLight, views: numbe
 
 /**
  * The sun's cascades the rendering camera samples: its own map when it has one in the atlas (a High or Full Quality capture's,
- * `SceneShadowController.attachView`), else the scene view's, or null when neither is in the atlas.
+ * or a planar reflection's with Reflection Shadows, `SceneShadowController.attachView`), else the scene view's, or null when
+ * neither is in the atlas. A planar reflection without a map of its own samples none (its surfaces take the sun
+ * unshadowed): the scene view's cascades cover the scene camera's view, chosen by its view depth, not what the
+ * reflection shows.
  */
 function sunShadowMap(scene: Scene, light: DirectionalLight): AtlasCascadedShadowGenerator | null {
-  const own = scene.activeCamera && light.getShadowGenerator(scene.activeCamera);
+  const camera = scene.activeCamera;
+  const own = camera && light.getShadowGenerator(camera);
   if (own instanceof AtlasCascadedShadowGenerator) return own;
+  if (isReflectionCamera(camera)) return null;
   const shadow = light.getShadowGenerator();
   return shadow instanceof AtlasCascadedShadowGenerator ? shadow : null;
 }

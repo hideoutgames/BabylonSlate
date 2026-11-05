@@ -52,7 +52,7 @@ export const SCALABILITY_STRUCTS: EngineStruct[] = [
     choice("filterQuality", "ShadowFilterQuality", shadows.filterQuality), number("softness", shadows.softness), bool("autoBias", shadows.autoBias),
     number("depthBias", shadows.depthBias), number("normalBias", shadows.normalBias), choice("localLightMode", "LightBudgetMode", shadows.localLightMode),
     number("maxLocalLights", shadows.maxLocalLights), number("localMapSize", shadows.localMapSize),
-    choice("screenShadows", "ScreenShadowsQuality", shadows.screenShadows)]),
+    choice("screenShadows", "ScreenShadowsQuality", shadows.screenShadows), bool("reflections", shadows.reflections)]),
   define("CelShading", [number("shadowBands", 3), number("shadowThreshold", 0.5), number("shadowStrength", 0.65), bool("specularEnabled", true),
     number("specularStrength", 0.2), number("specularSize", 0.2), number("lightColorInfluence", 1), choice("lightMixing", "CelLightMixing", "strongest"),
     bool("outlinesEnabled", true), field("outlineColor", "color", { x: 0.03, y: 0.03, z: 0.03, w: 1 }), number("outlineWidth", 1),

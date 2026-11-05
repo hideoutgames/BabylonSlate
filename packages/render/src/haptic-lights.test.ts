@@ -28,6 +28,7 @@ import { HAPTIC_LIGHT_MAXIMUM, HAPTIC_SHADOW_VIEW_VEC4S, hapticLightBuffer } fro
 /** Floats per shadow view record. */
 const VIEW = HAPTIC_SHADOW_VIEW_VEC4S * 4;
 import { isForwardLightExcluded } from "./light-policy";
+import { PlanarMirrorCamera } from "./planar-mirror";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { compileMaterialPlan } from "./material-compiler";
 import { setSceneRenderSettings } from "./scene-render-mode";
@@ -377,6 +378,38 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     // A camera without its own map samples the scene view's: nothing to write.
     scene.activeCamera = new FreeCamera("other", Vector3.Zero(), scene);
     expect(update).toHaveBeenCalledTimes(2);
+  });
+
+  it("draws a planar reflection without a sun map of its own with no sun cascades, and keeps its spot shadow", () => {
+    const { engine, scene } = host();
+    engine._features.supportCSM = true;
+    const main = scene.activeCamera!;
+    const reflection = new PlanarMirrorCamera("mirror", new Vector3(0, 2, 10), scene, false);
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    createAtlasCascadedShadowGenerator(sun, EDGE / 4, 2, EDGE)!;
+    const spot = new SpotLight("spot", new Vector3(0, 4, 0), new Vector3(0, -1, 0), Math.PI / 2, 2, scene);
+    const lamp = createAtlasShadowGenerator(spot, EDGE / 4, EDGE)!;
+    syncSceneLighting(scene);
+    const buffer = hapticLightBuffer(scene) as unknown as { _bufferData: Float32Array; _uniformLocations: Record<string, number> };
+    const read = (name: string, from: number, length: number) =>
+      [...buffer._bufferData.subarray(buffer._uniformLocations[name]! + from, buffer._uniformLocations[name]! + from + length)];
+    const sunRecord = () => read("hapticSunShadow", 0, 16);
+    const drawn = sunRecord();
+    // The scene view's two cascades.
+    expect(drawn[0]).toBe(2);
+    const spotView = () => [read("hapticSpot", 12, 1), read("hapticShadowViews", 4 * VIEW + 16, 2)];
+    const lampView = [[4], [lamp.tile.x / EDGE, lamp.tile.y / EDGE]];
+    expect(spotView()).toEqual(lampView);
+    // While the reflection draws, the block holds no sun cascades: the sun's shadow factor is 1 (lit), and the sun still
+    // marks itself shadowed, so no light define changes. The spot light keeps its shadow view.
+    scene.activeCamera = reflection;
+    expect(sunRecord()).toEqual(Array(16).fill(0));
+    expect(read("hapticDirectional", 7, 1)).toEqual([1]);
+    expect(spotView()).toEqual(lampView);
+    // The scene view's camera active again: its cascades are back as they were.
+    scene.activeCamera = main;
+    expect(sunRecord()).toEqual(drawn);
+    expect(spotView()).toEqual(lampView);
   });
 
   it("makes the atlas again after a failed shadow allocation released it with the first tile", () => {

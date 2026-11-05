@@ -1,10 +1,13 @@
 import { Color3, Constants, DirectionalLight, FreeCamera, MeshBuilder, NullEngine, RenderTargetTexture, Scene, StandardMaterial, Texture, Vector3 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
-import { parseMirrorProperties } from "@haptic/core";
+import { normalizeShadowSettings, parseMirrorProperties } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { createMirrorSurfaceMesh, mirrorDiagnostics } from "./mirrors";
 import { setPlanarFootprintCulling } from "./planar-mirror";
+import { isReflectionCamera } from "./reflection-camera";
+import { updateSceneRenderingSettings } from "./render-settings";
+import { sceneShadowController } from "./shadow-controller";
 import { mirrorReflectionBinding } from "./mirror-surface-state";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { createSpriteQuad, setSpriteQuadSize } from "./sprite-quad";
@@ -14,7 +17,10 @@ import { setUnlitMaterial, type UnlitBinding } from "./unlit-material";
 const engines: NullEngine[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
 
-/** NullEngine has no GPU: keep the real owner, leases, cameras and targets; record each mirror pass instead of drawing. */
+/**
+ * NullEngine has no GPU: keep the real owner, leases, cameras and targets; record each mirror pass instead of drawing
+ * (and whether its camera was the scene's active camera), and draw no shadow map.
+ */
 function host() {
   const engine = new NullEngine();
   engines.push(engine);
@@ -25,10 +31,15 @@ function host() {
     target.texture!.format = Constants.TEXTUREFORMAT_RGBA;
     return target;
   });
-  const passes: { target: string; meshes: string[]; eye: Vector3 }[][] = [];
+  const passes: { target: string; meshes: string[]; eye: Vector3; active: boolean }[][] = [];
   vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
   vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
-    passes.at(-1)!.push({ target: this.name, meshes: (this.renderList ?? []).map((mesh) => mesh.name), eye: this.activeCamera!.globalPosition.clone() });
+    const camera = this.activeCamera;
+    if (!camera) return;
+    passes.at(-1)!.push({
+      target: this.name, meshes: (this.renderList ?? []).map((mesh) => mesh.name), eye: camera.globalPosition.clone(),
+      active: this.getScene()!.activeCamera === camera,
+    });
   });
   const scene = new Scene(engine);
   const camera = new FreeCamera("View", new Vector3(0, 1, 0), scene);
@@ -231,6 +242,53 @@ it("redraws a reflection on every render while a time-driven Material it reflect
   expect(drawsOver(10)).toBe(0);
   compiled.dispose();
   still.dispose();
+});
+
+it("gives each drawing mirror the sun's cascades of its own under Reflection Shadows, and gives them back when off or removed", () => {
+  const { scene, passes, frame } = host();
+  const engine = scene.getEngine();
+  Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16, maxTextureSize: 4096, maxCubemapTextureSize: 4096 });
+  engine._features.supportCSM = true;
+  engine._features.supportShadowSamplers = true;
+  const reflectionShadows = (on: boolean) => {
+    updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ profile: "high", cascades: 2, mapSize: 512, localMapSize: 256, maxLocalLights: 1, reflections: on }),
+    });
+    controller.sync();
+  };
+  const controller = sceneShadowController(scene);
+  reflectionShadows(false);
+  const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.2), scene);
+  controller.register(sun, true);
+  controller.sync();
+  mirror(scene, "near", new Vector3(0, 1, 3));
+  mirror(scene, "middle", new Vector3(-2, 1, 5));
+  mirror(scene, "far", new Vector3(2, 1, 8));
+  /** The cameras the sun holds maps for: null for the scene view's. */
+  const sunViews = () => [...sun.getShadowGenerators()!.keys()].map((camera) => camera && [camera.getClassName(), isReflectionCamera(camera)]);
+  // Off: no mirror holds a map of its own. Each pass draws with its mirror camera active, so the light block writes
+  // the sun's shadow for it (none).
+  expect(frame()).toEqual(["mirror:near", "mirror:middle"]);
+  expect(passes.at(-1)!.map((pass) => pass.active)).toEqual([true, true]);
+  expect(mirrorDiagnostics(scene)!.sunShadowViews).toBe(0);
+  expect(sunViews()).toEqual([null]);
+  // On: the mirrors that draw this render claim their own, keyed to their mirror cameras; the third waits its turn.
+  reflectionShadows(true);
+  expect(frame()).toEqual(["mirror:far", "mirror:near"]);
+  expect(mirrorDiagnostics(scene)!.sunShadowViews).toBe(2);
+  expect(sunViews()).toEqual([null, ["PlanarMirrorCamera", true], ["PlanarMirrorCamera", true]]);
+  // Off again: every mirror gives its maps back at once.
+  reflectionShadows(false);
+  frame();
+  expect(mirrorDiagnostics(scene)!.sunShadowViews).toBe(0);
+  expect(sunViews()).toEqual([null]);
+  // A removed mirror's go with it.
+  reflectionShadows(true);
+  frame();
+  expect(mirrorDiagnostics(scene)!.sunShadowViews).toBe(2);
+  scene.getMeshByName(passes.at(-1)![0]!.target.slice("mirror:".length))!.dispose();
+  expect(mirrorDiagnostics(scene)!.sunShadowViews).toBe(1);
+  expect(sunViews()).toEqual([null, ["PlanarMirrorCamera", true]]);
 });
 
 it("hides a disabled mirror and frees a removed mirror's reflection", () => {

@@ -8,7 +8,7 @@ import {
 } from "../packages/core/src/index";
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
-import { openMainScene } from "./open-test-project";
+import { openMainScene, waitForSceneViewportReady } from "./open-test-project";
 import { PROJECT_FILE } from "../packages/core/src/project";
 import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
@@ -19,7 +19,7 @@ type ViewportHost = {
   __hapticViewportTest: {
     setShadowCaptureView(position: number[], target: number[], fov: number): void;
     renderingBaseline(): { backend: string } | null;
-    mirrorDiagnostics(): { draws: number; reuses: number; drawnMeshes: number; shadowPasses: number } | null;
+    mirrorDiagnostics(): { draws: number; reuses: number; drawnMeshes: number; shadowPasses: number; sunShadowViews: number } | null;
     setMirrorFootprintCulling(enabled: boolean): void;
   };
 };
@@ -314,4 +314,124 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror keeps its re
   // The near caster's shadow lies on the reflected floor: the reflection draws again.
   await moveX("near-caster", 0.5);
   await expect.poll(async () => (await mirrors()).draws, { timeout: 30_000 }).toBeGreaterThan(afterFar.draws);
+});
+
+/** Mean brightness of the canvas's central tenth (the middle of the mirror): the mean of its channels' averages. */
+async function centerBrightness(canvas: Locator): Promise<number> {
+  const [r, g, b] = await centerColor(canvas);
+  return (r! + g! + b!) / 3;
+}
+
+for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows the sun's shadow on what only it shows with Reflection Shadows on, and none with them off, on ${backend}`, async ({ page }, testInfo) => {
+  test.setTimeout(240_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type()) &&
+      /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID|INVALID_OPERATION|feedback loop|Mirror reflection|outlived|do not fit the shadow atlas/i.test(message.text())) errors.push(message.text());
+  });
+  const files = await minimalProjectFiles();
+  const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
+  project.settings.render.gpuBackend = backend;
+  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
+  // A plain lit white floor: the default box's checker grid would hide the shadow's edge in the sampled region.
+  const whiteGuid = "00000000-0000-4000-8000-000000000032";
+  const white = createDefaultMaterialDocument("White");
+  white.nodes.find((node) => node.id === "baseColor")!.properties.value = [1, 1, 1];
+  files.set("assets/White.material.hasset", await encodeAssetDocument({
+    guid: whiteGuid, type: "Material", name: "White", version: MATERIAL_PAYLOAD_VERSION, payload: white as unknown as Record<string, unknown>,
+  }));
+  const sceneFile = files.get(MAIN_SCENE_FILE)!;
+  const decoded = await decodeAssetDocument(sceneFile);
+  const scene = decoded.payload as unknown as SerializedScene;
+  const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
+  camera.transform = { ...identitySerializedTransform(), position: [0, 2, -4] };
+  const box = (id: string, position: [number, number, number], scale: [number, number, number], materialGuid?: string) => {
+    const mesh = createMeshComponent(`${id}-mesh`, "box");
+    if (materialGuid) mesh.properties = { ...mesh.properties, materialGuid };
+    return createActor(id, id, { transform: { ...identitySerializedTransform(), position, scale }, components: [mesh] });
+  };
+  scene.actors = [
+    camera,
+    createActor("mirror", "Mirror", {
+      transform: { ...identitySerializedTransform(), position: [0, 2, 0] },
+      components: [{ id: "mirror-surface", classId: "MirrorComponent", properties: { ...parseMirrorProperties({ width: 6, height: 4 }) }, parentId: null, transform: identitySerializedTransform() }],
+    }),
+    // Behind the camera, seen only in the mirror: a white floor, whose part from 7.5 m to 13.5 m behind the mirror fills
+    // the middle of the view, under a slab high enough for the reflected view to pass beneath it.
+    box("floor", [0, -0.1, -10], [10, 0.2, 12], whiteGuid),
+    box("slab", [0, 3, -10.5], [4, 0.2, 9]),
+    createActor("sun", "Sun", {
+      // Pointing down, tilted 10 degrees toward +Z.
+      transform: { ...identitySerializedTransform(), position: [0, 10, -10], rotation: [Math.sin(Math.PI * 2 / 9), 0, 0, Math.cos(Math.PI * 2 / 9)] },
+      components: [{
+        id: "sun-light", classId: "LightComponent", parentId: null, transform: identitySerializedTransform(),
+        properties: { lightKind: "directional", color: [1, 1, 1], intensity: 2, enabled: true, castShadows: true },
+      }],
+    }),
+  ];
+  files.set(MAIN_SCENE_FILE, await encodeAssetDocument(
+    { ...decoded, payload: scene as unknown as Record<string, unknown> },
+    { dependencies: [...readHassetHeader(sceneFile).dependencies, whiteGuid] },
+  ));
+
+  await openMinimalTestProject(page, files);
+  await openMainScene(page);
+  expect(await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.renderingBaseline()?.backend)).toBe(backend);
+  await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
+  const viewport = page.getByTestId("viewport-canvas");
+  const mirrors = () => page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.mirrorDiagnostics()!);
+  /** Waits until renders keep the reflection (its own sun maps unchanged too) and the mirror's middle holds still; its brightness then. */
+  const settled = async () => {
+    let brightness = 0;
+    await expect.poll(async () => {
+      const before = await mirrors(), first = await centerBrightness(viewport);
+      await page.waitForTimeout(500);
+      const after = await mirrors();
+      brightness = await centerBrightness(viewport);
+      return after.draws > 0 && after.draws === before.draws && after.reuses > before.reuses && Math.abs(brightness - first) < 1;
+    }, { timeout: 60_000 }).toBe(true);
+    return brightness;
+  };
+  const reflectionShadows = async (on: boolean) => {
+    await page.getByTestId("settings-menu").click();
+    await page.getByTestId("project-settings").click();
+    await page.getByTestId("settings-modal-category-rendering").click();
+    const section = page.getByTestId("settings-modal").getByRole("button", { name: "Shadows", exact: true });
+    if ((await section.getAttribute("aria-expanded")) !== "true") await section.click();
+    const toggle = page.getByTestId("settings-modal").getByRole("switch", { name: "Reflection Shadows", exact: true });
+    if ((await toggle.getAttribute("aria-checked")) !== String(on)) await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", String(on));
+    await page.getByTestId("settings-modal").getByRole("button", { name: "Done", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Project Settings" })).toBeHidden();
+    await waitForSceneViewportReady(page);
+    await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
+  };
+  const moveSlabX = async (x: number) => {
+    await page.getByTestId("tree-row-actor:slab").click();
+    await page.getByTestId("property-actor-position-x").fill(String(x));
+    await page.getByTestId("property-actor-position-x").press("Enter");
+  };
+
+  // Off (the project's Medium shadows): the reflection draws the sun unshadowed, slab or not.
+  const offWithSlab = await settled();
+  expect((await mirrors()).sunShadowViews).toBe(0);
+  await reflectionShadows(true);
+  const onWithSlab = await settled();
+  expect((await mirrors()).sunShadowViews).toBe(1);
+  await page.screenshot({ path: testInfo.outputPath(`reflection-shadows-on-${backend}.png`) });
+  await moveSlabX(40);
+  const onWithoutSlab = await settled();
+  await reflectionShadows(false);
+  const offWithoutSlab = await settled();
+  expect((await mirrors()).sunShadowViews).toBe(0);
+  const measured = { backend, offWithSlab, onWithSlab, onWithoutSlab, offWithoutSlab };
+  console.log(`reflection-shadows ${JSON.stringify(measured)}`);
+  await testInfo.attach(`reflection-shadows-${backend}`, { body: JSON.stringify(measured, null, 2), contentType: "application/json" });
+  // On, the slab's shadow darkens the reflected floor clearly; off, the slab changes nothing there.
+  expect(onWithoutSlab - onWithSlab).toBeGreaterThan(30);
+  expect(Math.abs(offWithoutSlab - offWithSlab)).toBeLessThan(4);
+  // Without the slab, the floor is as bright either way.
+  expect(Math.abs(onWithoutSlab - offWithoutSlab)).toBeLessThan(4);
+  expect(errors).toEqual([]);
 });

@@ -11,6 +11,7 @@ import {
   resolveLocalLightBudget,
   normalizeRenderingQuality,
   RENDER_QUALITY_PROFILES,
+  qualitySettingsFingerprint,
 } from "./render-quality";
 import {
   DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -57,6 +58,22 @@ describe("rendering quality sessions", () => {
     expect(session.effective().shadows.screenShadows).toBe("off");
     session.execute("shadows", "reset");
     expect(session.effective().shadows.screenShadows).toBe("medium");
+  });
+  it("switches Reflection Shadows from the console, refuses another value, and leaves the rest of the level as it was", () => {
+    const session = new RenderingQualitySession({ shadows: { profile: "high" } });
+    expect(session.effective().shadows.reflections).toBe(false);
+    expect(session.execute("shadows", "reflections", "on")).toMatchObject({ success: true });
+    expect(session.effective().shadows).toMatchObject({ reflections: true, profile: "high", mapSize: 2048, preset: "custom" });
+    expect(qualitySettingsFingerprint(session.effective())["shadows.reflections"]).toBe("true");
+    expect(session.execute("shadows", "reflections", "yes").success).toBe(false);
+    expect(session.effective().shadows.reflections).toBe(true);
+    expect(session.execute("shadows", "reflections", "off").success).toBe(true);
+    expect(session.effective().shadows.reflections).toBe(false);
+    // A level sets it as the level does: on at Ultra.
+    session.execute("shadows", "ultra");
+    expect(qualitySettingsFingerprint(session.effective())["shadows.reflections"]).toBe("true");
+    session.execute("shadows", "reset");
+    expect(session.effective().shadows.reflections).toBe(false);
   });
   it("preserves session overrides across scenes and resets independently to current inherited values", () => {
     const session = new RenderingQualitySession(
