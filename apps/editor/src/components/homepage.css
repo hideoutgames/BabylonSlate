@@ -1514,7 +1514,7 @@ svg.homepage-account-center-avatar {
   border-radius: var(--radius-xl);
 }
 .homepage-profile[data-auth-open="true"] {
-  width: min(880px, calc(100vw - 32px));
+  width: min(400px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
 }
 .homepage-profile [data-slot="dialog-title"] {
@@ -1636,10 +1636,6 @@ svg.homepage-profile-menu-avatar {
   gap: 14px;
   padding: 40px 24px 36px;
   text-align: center;
-}
-.homepage-mobile-auth-hero > p {
-  color: var(--muted-foreground);
-  font-size: 13px;
 }
 .homepage-mobile-auth-wordmark {
   position: relative;
@@ -1865,10 +1861,52 @@ svg.homepage-profile-menu-avatar {
 .homepage-native-auth-actions[data-layout="split"] {
   justify-content: space-between;
 }
-.homepage-native-auth-note {
+/* "Secured by Clerk": a darker footer band across the bottom of the sheet or
+   dialog, set apart from the form. The lock's base sits on the text baseline. */
+.homepage-native-auth-secured {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--background);
   color: var(--muted-foreground);
-  text-align: center;
   font-size: 11px;
+  line-height: 1;
+}
+.homepage-native-auth-secured svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  transform: translateY(-1px);
+}
+.homepage-native-auth-secured strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+/* Phone sheet: the band runs under the home indicator. */
+.homepage-mobile-auth-sheet > .homepage-native-auth-secured {
+  margin: -4px -24px calc(-20px - var(--safe-bottom));
+  padding: 11px 24px calc(11px + var(--safe-bottom));
+}
+@media (min-width: 640px) and (min-height: 600px) {
+  .homepage-mobile-auth-sheet > .homepage-native-auth-secured {
+    margin: -4px -28px -28px;
+    padding: 11px 28px;
+    border-radius: 0 0 var(--radius-4xl) var(--radius-4xl);
+  }
+}
+@media (min-width: 640px) and (max-height: 599px) {
+  .homepage-mobile-auth-sheet > .homepage-native-auth-secured {
+    margin: 0 -20px -16px;
+    padding: 11px 20px;
+    border-radius: 0 0 var(--radius-4xl) var(--radius-4xl);
+  }
+}
+/* Desktop dialog: its body has 16px padding. */
+.homepage-desktop-auth > .homepage-native-auth-secured {
+  margin: 0 -16px -16px;
 }
 .homepage-desktop-auth {
   max-width: none;
