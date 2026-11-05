@@ -19,7 +19,7 @@ On iPhone and iPad the file picker shows every file, including types iOS does no
 Pick a `.zip` to import everything in it at once, such as an asset pack you downloaded.
 
 - Haptic makes a folder named after the ZIP in the current folder (`Props.zip` makes **Props**) and keeps the folders inside the ZIP. If a folder of that name exists, the new one is **Props_1**, then **Props_2**, and so on.
-- When everything in the ZIP is inside one folder, as when you compress a folder on a Mac, that folder is not repeated: `Props.zip` holding `Props/Chair/chair.glb` imports as **Props/Chair**.
+- When everything in the ZIP is inside one folder, as when you compress a folder on a Mac, Haptic leaves that folder out: `Props.zip` holding `Props/Chair/chair.glb` imports as **Props/Chair**, not **Props/Props/Chair**.
 - Models find their companion files by their paths inside the ZIP, so a `.gltf` with its `.bin` and textures, or an `.obj` with its `.mtl` and textures, imports complete.
 - The **Importing** window shows **Unzipping** while it reads the ZIP. **Cancel** removes the new folder and everything in it.
 
