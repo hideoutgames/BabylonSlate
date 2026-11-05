@@ -16,11 +16,12 @@ async function run(graph: LogicGraph) {
   const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
     renderSettings: { mode: "cel" }, frameCap: 30, onCommand: (command) => commands.push(command) });
   const compiled = compileGraph(graph, { registry, assetGuid: "scalability-class" });
-  await runtime.loadScripts([{ assetGuid: "scalability-class", classId: "SettingsActor", source: compiled.source,
-    anchors: compiled.anchors, entryPoints: compiled.entryPoints }]);
-  const actor = runtime.spawnScriptedActor({ classId: "SettingsActor" });
+  // A Game Subsystem hears Scalability Changed; its On Init runs when the session starts.
+  await runtime.loadScripts([{ assetGuid: "scalability-class", classId: "SettingsSubsystem", parentClassId: "GameSubsystem",
+    source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints }]);
   runtime.start(); runtime.tick();
-  return { runtime, commands, actor };
+  const subsystem = runtime.getWorld().getGameSubsystems().find((entry) => entry.classId === "SettingsSubsystem")!;
+  return { runtime, commands, subsystem };
 }
 describe("compiled Class Graph scalability", () => {
   it("applies native Color outline controls and round-trips effective CEL through typed structures", async () => {
@@ -28,14 +29,14 @@ describe("compiled Class Graph scalability", () => {
       structGuid: `engine:${guid}`, fields: [{ name, typeId: "struct", typeClassId: `engine:${type}` }],
     });
     const { runtime } = await run({ id: "outline-settings", kind: "event", nodes: [
-      node("begin", "flow.event.beginPlay"), node("outline", "scalability.setCelOutlines", { "default:enabled": true, "default:color": { x: 0.2, y: 0.4, z: 0.6, w: 1 }, "default:width": 3 }),
+      node("init", "flow.event.init"), node("outline", "scalability.setCelOutlines", { "default:enabled": true, "default:color": { x: 0.2, y: 0.4, z: 0.6, w: 1 }, "default:width": 3 }),
       node("changed", "flow.event.scalabilityChanged"), node("effective", "scalability.getEffective"),
       struct("snapshot", "ScalabilitySnapshot", "effective", "RuntimeRenderingSettings"),
       struct("runtime", "RuntimeRenderingSettings", "render", "RenderSettings"),
       struct("render", "RenderSettings", "cel", "CelShading"), node("roundtrip", "scalability.setCelShading"),
       node("color", "struct.break", { structGuid: "engine:CelShading", fields: [{ name: "outlineColor", typeId: "color" }] }),
       node("colorRoundtrip", "scalability.setCelOutlines", { "default:enabled": true, "default:width": 3 }),
-    ], edges: [edge("begin", "execOut", "outline", "execIn"), edge("changed", "execOut", "roundtrip", "execIn"),
+    ], edges: [edge("init", "execOut", "outline", "execIn"), edge("changed", "execOut", "roundtrip", "execIn"),
       edge("effective", "settings", "snapshot", "in"), edge("snapshot", "effective", "runtime", "in"),
       edge("runtime", "render", "render", "in"), edge("render", "cel", "roundtrip", "settings"),
       edge("render", "cel", "color", "in"), edge("color", "outlineColor", "colorRoundtrip", "color"),
@@ -54,8 +55,8 @@ describe("compiled Class Graph scalability", () => {
     } finally { runtime.stop(); }
   });
   it.each(["low", "medium", "high", "ultra"])("executes the %s enum preset without changing artistic mode or frame cap", async (preset) => {
-    const { runtime } = await run({ id: "settings", kind: "event", nodes: [node("begin", "flow.event.beginPlay"), node("preset", "scalability.setPreset", { "default:preset": preset })],
-      edges: [edge("begin", "execOut", "preset", "execIn")] });
+    const { runtime } = await run({ id: "settings", kind: "event", nodes: [node("init", "flow.event.init"), node("preset", "scalability.setPreset", { "default:preset": preset })],
+      edges: [edge("init", "execOut", "preset", "execIn")] });
     try {
       expect(runtime.getScalability().requested.render.quality?.lighting.profile).toBe(preset);
       expect(runtime.getScalability().requested.render.mode).toBe("cel");
@@ -64,14 +65,14 @@ describe("compiled Class Graph scalability", () => {
     } finally { runtime.stop(); }
   });
   it("executes typed setters, emits confirmed readback through the event and shares reset with console commands", async () => {
-    const { runtime, commands, actor } = await run({ id: "settings", kind: "event", nodes: [
-      node("begin", "flow.event.beginPlay"), node("cap", "scalability.setFrameCap", { "default:fps": 20 }),
+    const { runtime, commands, subsystem } = await run({ id: "settings", kind: "event", nodes: [
+      node("init", "flow.event.init"), node("cap", "scalability.setFrameCap", { "default:fps": 20 }),
       node("scale", "scalability.setRenderScale", { "default:scale": 0.5 }), node("aa", "scalability.setAntiAliasing", { "default:mode": "msaa2" }),
       node("changed", "flow.event.scalabilityChanged"), node("log", "debug.log"),
       node("revision", "struct.break", { structGuid: "engine:ScalabilitySnapshot", fields: [{ name: "appliedRevision", typeId: "float" }] }),
       node("revisionText", "literal.toStringFloat"),
       node("resetEvent", "flow.event.custom", { name: "Restore" }), node("reset", "scalability.reset"),
-    ], edges: [edge("begin", "execOut", "cap", "execIn"), edge("cap", "execOut", "scale", "execIn"), edge("scale", "execOut", "aa", "execIn"),
+    ], edges: [edge("init", "execOut", "cap", "execIn"), edge("cap", "execOut", "scale", "execIn"), edge("scale", "execOut", "aa", "execIn"),
       edge("changed", "execOut", "log", "execIn"), edge("changed", "settings", "revision", "in"), edge("revision", "appliedRevision", "revisionText", "in"), edge("revisionText", "out", "log", "message"), edge("resetEvent", "execOut", "reset", "execIn")] });
     try {
       const snapshot = runtime.getScalability();
@@ -84,17 +85,17 @@ describe("compiled Class Graph scalability", () => {
       expect(commands.filter((command) => command.type === "log")).toHaveLength(1);
       runtime.executeConsoleCommand("quality lighting budget 3");
       expect(runtime.getScalability().requested.render.quality?.lighting.maxLocalLights).toBe(3);
-      runtime.invokeScriptEvent("SettingsActor", "Restore", actor);
+      runtime.invokeScriptEvent("SettingsSubsystem", "Restore", subsystem);
       expect(runtime.getScalability().requested.frameCap).toBe(30);
       expect(runtime.getScalability().requested.render.quality?.resolution.scale).toBe(1);
     } finally { runtime.stop(); }
   });
   it("returns validation failures from a graph instead of changing requested settings", async () => {
-    const { runtime, commands } = await run({ id: "settings", kind: "event", nodes: [node("begin", "flow.event.beginPlay"),
+    const { runtime, commands } = await run({ id: "settings", kind: "event", nodes: [node("init", "flow.event.init"),
       node("cap", "scalability.setFrameCap", { "default:fps": -10 }), node("log", "debug.log"),
       node("result", "struct.break", { structGuid: "engine:ScalabilityResult", fields: [{ name: "status", typeId: "enum", typeClassId: "engine:ScalabilityStatus" }] }),
       node("status", "enum.toString", { enumGuid: "engine:ScalabilityStatus" })],
-      edges: [edge("begin", "execOut", "cap", "execIn"), edge("cap", "execOut", "log", "execIn"), edge("cap", "result", "result", "in"), edge("result", "status", "status", "in"), edge("status", "out", "log", "message")] });
+      edges: [edge("init", "execOut", "cap", "execIn"), edge("cap", "execOut", "log", "execIn"), edge("cap", "result", "result", "in"), edge("result", "status", "status", "in"), edge("status", "out", "log", "message")] });
     try {
       expect(commands.filter((command) => command.type === "setScalability")).toHaveLength(0);
       expect(commands.find((command) => command.type === "log")?.message).toBe("failed");

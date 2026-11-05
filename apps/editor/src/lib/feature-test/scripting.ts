@@ -1105,7 +1105,8 @@ async function saveSceneWatcher(ctx: FeatureTestContext): Promise<void> {
  * Game Instance (Project Settings): On Init flags Booted; On First Scene
  * Loaded prints the scene, spawns `FT_ScriptSpawned` with Deferred Spawn
  * Actor (setting its SpawnedBy before Begin Play) when the Scripting zone
- * exists and runs the `ft_stats` console command.
+ * exists and runs the `ft_stats` console command. On Game Loaded prints once
+ * a Load Game, such as the Save Probe's, has restored the saved state.
  */
 async function saveGameInstance(ctx: FeatureTestContext): Promise<void> {
   const graph = classGraph({
@@ -1134,9 +1135,12 @@ async function saveGameInstance(ctx: FeatureTestContext): Promise<void> {
       gNode("stats", "debug.executeConsoleCommand", 2620, 240, { "default:command": "ft_stats" }),
       gNode("assert-stats", "debug.assert", 2860, 240, { "default:message": "The ft_stats console command failed" }),
       printText("stats-print", 3100, 240, "ft-game-stats", undefined, 8),
+      gNode("game-loaded", "flow.event.gameLoaded", 0, 640),
+      printText("restored-print", 220, 640, "ft-data-save-restored", "Save Game restored the Save Probe"),
     ],
     edges: [
       ...gChain("init", "set-booted", "booted-log"),
+      gExec("game-loaded", "restored-print"),
       ...gChain("first-scene", "scene-print", "settle", "zone-branch"),
       gWire("first-scene", "sceneName", "scene-text", fmtArg("scene")),
       gWire("scene-text", "out", "scene-print", "inString"),
@@ -1506,8 +1510,6 @@ async function saveSaveProbe(ctx: FeatureTestContext, types: ScriptingTypes, fon
       format("failed-text", 1380, 380, "Save failed: {error}"),
       gNode("assert-saved", "debug.assert", 1380, 540, { "default:condition": false }),
       printText("save-failed", 1620, 220, "ft-data-save", undefined, 8),
-      gNode("restored", "flow.event.gameLoaded", 0, 560),
-      printText("restored-print", 220, 560, "ft-data-save-restored", "Save Game restored the Save Probe"),
     ],
     edges: [
       gExec("begin", "load"),
@@ -1542,7 +1544,6 @@ async function saveSaveProbe(ctx: FeatureTestContext, types: ScriptingTypes, fon
       gWire("save", "errorMessage", "failed-text", fmtArg("error")),
       gWire("failed-text", "out", "save-failed", "inString"),
       gWire("failed-text", "out", "assert-saved", "message"),
-      gExec("restored", "restored-print"),
     ],
   });
   const ref = await saveClass(ctx, CLASS.saveProbe, "Actor", graph, DATA_FOLDER);

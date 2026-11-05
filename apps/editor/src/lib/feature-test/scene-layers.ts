@@ -224,8 +224,44 @@ function hudLayer(refs: LayerRefs): SerializedSceneLayer {
   // Scene Layers keep Timeline Clips too; each FT_HUD instance plays its own Reveal.
   const reveal = createTimelineClip("ft-timeline-clip-hud-reveal", "Reveal");
   layer.timelineClips = [reveal];
-  layer.script = withFeatureTestHudPulse(ownedActorProbeScript("FT_HUD", title, { clip: reveal }), refs.timeline, "report", "get-component");
+  layer.script = withScalabilityReport(
+    withFeatureTestHudPulse(ownedActorProbeScript("FT_HUD", title, { clip: reveal }), refs.timeline, "report", "get-component"),
+  );
   return layer;
+}
+
+/**
+ * Event Scalability Changed on the Scene Layer itself: each FT_HUD prints the
+ * status of the renderer's answer to a quality request, such as `ft_cel` or
+ * `quality low`.
+ */
+function withScalabilityReport(graph: SerializedGraph): SerializedGraph {
+  const y = 2400;
+  return {
+    ...graph,
+    nodes: [
+      ...graph.nodes,
+      gNode("scalability-changed", "flow.event.scalabilityChanged", 0, y),
+      gNode("scalability-result", "struct.break", 260, y + 180, {
+        structGuid: "engine:ScalabilitySnapshot", fields: [{ name: "result", typeId: "struct", typeClassId: "engine:ScalabilityResult" }],
+      }),
+      gNode("scalability-status", "struct.break", 520, y + 180, {
+        structGuid: "engine:ScalabilityResult", fields: [{ name: "status", typeId: "enum", typeClassId: "engine:ScalabilityStatus" }],
+      }),
+      gNode("scalability-status-text", "enum.toString", 780, y + 180, { enumGuid: "engine:ScalabilityStatus" }),
+      gNode("scalability-text", "string.format", 1040, y + 180, { "default:format": "FT_HUD heard Scalability Changed ({status})" }),
+      gNode("scalability-print", "debug.printString", 1300, y, { "default:key": "ft-hud-scalability", "default:duration": 6 }),
+    ],
+    edges: [
+      ...graph.edges,
+      gWire("scalability-changed", "execOut", "scalability-print", "execIn"),
+      gWire("scalability-changed", "settings", "scalability-result", "in"),
+      gWire("scalability-result", "result", "scalability-status", "in"),
+      gWire("scalability-status", "status", "scalability-status-text", "in"),
+      gWire("scalability-status-text", "out", "scalability-text", "arg:status"),
+      gWire("scalability-text", "out", "scalability-print", "inString"),
+    ],
+  };
 }
 
 type AddActor = (actor: SerializedActor) => void;

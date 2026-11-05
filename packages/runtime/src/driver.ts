@@ -797,8 +797,9 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   applyScalabilityStatus(acknowledgement: ScalabilityAcknowledgement): void {
     if (!this.scalability.acknowledge(acknowledgement)) return;
     const snapshot = this.scalability.snapshot();
-    // GameSubsystems share the Game Instance's native events, Scalability Changed included.
-    const owners = [this.world.gameInstance, ...this.world.getGameSubsystems(), this.world.currentScene, ...this.world.getSceneLayers(), ...this.world.getActors().flatMap((actor) => [actor, ...actor.components])];
+    // The Game Instance, GameSubsystems, Scene Layers and Scene Layer Actors handle Scalability Changed; components never do.
+    const owners = [this.world.gameInstance, ...this.world.getGameSubsystems(), ...this.world.getSceneLayers(),
+      ...this.world.getActors().filter((actor) => this.world.classRegistry.isA(actor.classId, "SceneLayerActor"))];
     for (const owner of owners) if (owner && !owner.destroyed) {
       this.admission.run(owner, () => this.scriptHost.invokeEvent(owner.classId, "onScalabilityChanged", owner, { settings: snapshot }));
     }

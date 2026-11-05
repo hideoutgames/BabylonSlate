@@ -19,15 +19,18 @@ Copying an event never breaks this rule; see [Copy and duplicate events](#copy-a
 
 | Parent class | Events |
 | --- | --- |
-| **Actor**, **ActorComponent** | [Event Begin Play](class/event-begin-play.md), [Event Tick](class/event-tick.md), [Event On Actor Destroyed](class/event-on-actor-destroyed.md) (called **Event Destroyed** on components), [Event On Game Loaded](class/event-on-game-loaded.md), [Event Scalability Changed](class/event-scalability-changed.md) |
-| **GameInstance**, **GameSubsystem** | [Event On Init](class/event-on-init.md), Tick, [Event On End](class/event-on-end.md), On Game Loaded, Scalability Changed, [Event On First Scene Loaded](class/event-on-first-scene-loaded.md), [Event On Scene Start Loading](class/event-on-scene-start-loading.md), [Event On Scene Finish Loading](class/event-on-scene-finish-loading.md), [Event On Scene Exit](class/event-on-scene-exit.md) |
-| **SceneSubsystem** | On Init, Tick, On End, On Game Loaded, [Event On Scene Loaded](class/event-on-scene-loaded.md), [Event On Streamed Scene Loaded](class/event-on-streamed-scene-loaded.md), [Event On Streamed Scene Unloaded](class/event-on-streamed-scene-unloaded.md), [Event On Scene Layer Added](class/event-on-scene-layer-added.md), [Event On Scene Layer Removed](class/event-on-scene-layer-removed.md), [Event On Scene Actor Spawned](class/event-on-scene-actor-spawned.md), [Event On Scene Actor Destroyed](class/event-on-scene-actor-destroyed.md) |
+| **Actor**, **ActorComponent** | [Event Begin Play](class/event-begin-play.md), [Event Tick](class/event-tick.md), [Event On Actor Destroyed](class/event-on-actor-destroyed.md) (called **Event Destroyed** on components) |
+| **SceneLayerActor** | The Actor events, [Event Scalability Changed](class/event-scalability-changed.md), [Event On Scene Layer Actor Switched To](class/event-on-scene-layer-actor-switched-to.md), [Event On Scene Layer Actor Switched From](class/event-on-scene-layer-actor-switched-from.md) |
+| **GameInstance**, **GameSubsystem** | [Event On Init](class/event-on-init.md), Tick, [Event On End](class/event-on-end.md), [Event On Game Loaded](class/event-on-game-loaded.md), Scalability Changed, [Event On First Scene Loaded](class/event-on-first-scene-loaded.md), [Event On Scene Start Loading](class/event-on-scene-start-loading.md), [Event On Scene Finish Loading](class/event-on-scene-finish-loading.md), [Event On Scene Exit](class/event-on-scene-exit.md) |
+| **SceneSubsystem** | On Init, Tick, On End, [Event On Scene Loaded](class/event-on-scene-loaded.md), [Event On Streamed Scene Loaded](class/event-on-streamed-scene-loaded.md), [Event On Streamed Scene Unloaded](class/event-on-streamed-scene-unloaded.md), [Event On Scene Layer Added](class/event-on-scene-layer-added.md), [Event On Scene Layer Removed](class/event-on-scene-layer-removed.md), [Event On Scene Actor Spawned](class/event-on-scene-actor-spawned.md), [Event On Scene Actor Destroyed](class/event-on-scene-actor-destroyed.md) |
 | **Object** | On Init, and Tick with the **Tickable Object** interface. See [Objects and lifetime](object-lifetime.md). |
 | **DebugCommand** | [Event On Command Run](class/event-on-command-run.md) |
 | **EditorUtilityObject** | [Event Editor On Begin Play](class/event-editor-on-begin-play.md), [Event On Editor Startup](class/event-on-editor-startup.md), [Event On Scene Open](class/event-on-scene-open.md), [Event On Scene Saved](class/event-on-scene-saved.md), [Event On Editor Shutdown](class/event-on-editor-shutdown.md) |
 | **BTTask** | [On Activate](class/on-activate.md), [On Tick](class/on-tick.md), [On Abort](class/on-abort.md) |
 | **BTDecorator** | [On Evaluate](class/on-evaluate.md) |
 | **BTService** | On Tick |
+
+A [Scene Script](scene-scripts.md) has Begin Play, Tick and Destroyed; a Scene Layer Script also has Scalability Changed.
 
 When the Game Instance and subsystem events fire is described in [Game Instance and Subsystems](game-instance.md). Input events such as [Event Input Action](class/event-input-action.md) come from **Add Node**; see [Input](../input/index.md).
 

@@ -3598,14 +3598,16 @@ describe("hydrate component event bindings", () => {
 
 describe("subsystems", () => {
   // Inventory: GameSubsystem. Weather: SceneSubsystem, extended by the two
-  // instantiated leaves RainWeather and SnowWeather. Hero: Actor. Tools:
-  // EditorUtilityObject.
+  // instantiated leaves RainWeather and SnowWeather. Hero: Actor. Part:
+  // ActorComponent. HudButton: SceneLayerActor. Tools: EditorUtilityObject.
   const parents: Record<string, string> = {
     Inventory: "GameSubsystem",
     Weather: "SceneSubsystem",
     RainWeather: "Weather",
     SnowWeather: "Weather",
     Hero: "Actor",
+    Part: "ActorComponent",
+    HudButton: "SceneLayerActor",
     Tools: "EditorUtilityObject",
   };
   const parentOf = (id: string) => parents[id];
@@ -3848,6 +3850,15 @@ describe("subsystems", () => {
     ]);
     expect(lineageErrors("Inventory", ["flow.event.sceneExit", "flow.event.init"])).toEqual([]);
     expect(lineageErrors("Hero", ["flow.event.init", "flow.event.beginPlay"])).toEqual(["flow.event.init"]);
+    // A graph that kept On Game Loaded or Scalability Changed on a host that no longer runs it.
+    const loaded = "flow.event.gameLoaded";
+    const scalability = "flow.event.scalabilityChanged";
+    expect(lineageErrors("Inventory", [loaded, scalability])).toEqual([]);
+    expect(lineageErrors("SceneLayer:hud", [loaded, scalability])).toEqual([loaded]);
+    expect(lineageErrors("HudButton", [loaded, scalability])).toEqual([loaded]);
+    for (const host of ["Hero", "Part", "RainWeather", "Scene:level"]) {
+      expect(lineageErrors(host, [loaded, scalability]), host).toEqual([loaded, scalability]);
+    }
   });
 });
 

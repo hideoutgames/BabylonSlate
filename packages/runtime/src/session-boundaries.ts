@@ -180,9 +180,8 @@ export class SessionBoundaries {
       resetState: () => state.reset(),
       onGameLoaded: (info) => {
         this.pendingGameLoaded = () => {
-          const owners: Array<EngineObject | null> = [world.gameInstance, world.currentScene,
-            ...world.getGameSubsystems(), ...world.getSceneSubsystems(),
-            ...world.getActors().flatMap((actor) => [actor, ...actor.components])];
+          // Only the Game Instance and GameSubsystems handle On Game Loaded.
+          const owners: Array<EngineObject | null> = [world.gameInstance, ...world.getGameSubsystems()];
           for (const owner of owners) {
             if (owner && !owner.destroyed) this.admission.run(owner, () => this.admission.guard(() =>
               this.host.scripts().invokeEvent(owner.classId, "onGameLoaded", owner, { ...info })));

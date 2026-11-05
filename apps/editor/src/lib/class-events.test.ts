@@ -7,11 +7,9 @@ import {
 } from "./class-members";
 
 describe("nativeEventStubs", () => {
-  it("lists Actor lifecycle and Scalability events", () => {
+  it("lists Actor lifecycle events", () => {
     const stubs = nativeEventStubs({ parentClass: "Actor" });
     expect(stubs.map((stub) => stub.eventType)).toEqual([
-      "flow.event.gameLoaded",
-      "flow.event.scalabilityChanged",
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
@@ -20,8 +18,6 @@ describe("nativeEventStubs", () => {
 
   it("defaults to Actor events when no parent class is given", () => {
     expect(nativeEventStubs().map((stub) => stub.eventType)).toEqual([
-      "flow.event.gameLoaded",
-      "flow.event.scalabilityChanged",
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
@@ -30,7 +26,7 @@ describe("nativeEventStubs", () => {
 
   it("exposes lifecycle events on ActorComponent descendants without Actor collision events", () => {
     const options = { parentClass: "Counter", parentOf: (id: string) => id === "Counter" ? "ActorComponent" : id === "ActorComponent" ? "Object" : null };
-    expect(nativeEventStubs(options).map((stub) => stub.eventType)).toEqual(["flow.event.gameLoaded", "flow.event.scalabilityChanged", "flow.event.beginPlay", "flow.event.tick", "flow.event.destroyed"]);
+    expect(nativeEventStubs(options).map((stub) => stub.eventType)).toEqual(["flow.event.beginPlay", "flow.event.tick", "flow.event.destroyed"]);
     for (const event of nativeEventStubs(options)) expect(isScriptCatalogNodeAllowed(event.eventType, options)).toBe(true);
     expect(isScriptCatalogNodeAllowed("flow.event.hit", options)).toBe(false);
   });
@@ -156,7 +152,6 @@ describe("nativeEventStubs", () => {
 
     it("gives a SceneSubsystem subclass Init, Tick, End and the scene events", () => {
       expect(nativeEventStubs(scene).map((stub) => stub.name)).toEqual([
-        "Event On Game Loaded",
         "Event On Init",
         "Event Tick",
         "Event On End",
@@ -197,6 +192,38 @@ describe("nativeEventStubs", () => {
       expect(allowed("flow.event.scalabilityChanged", game)).toBe(true);
       expect(allowed("flow.event.scalabilityChanged", scene)).toBe(false);
       expect(allowed("flow.event.beginPlay", scene)).toBe(false);
+    });
+  });
+
+  describe("On Game Loaded and Scalability Changed hosts", () => {
+    // A project class on each engine host, user subclass first; Scene and Scene Layer scripts by asset class.
+    const parents: Record<string, string> = {
+      MyGame: "GameInstance", GameInstance: "Object",
+      Inventory: "GameSubsystem", GameSubsystem: "Subsystem", Weather: "SceneSubsystem", SceneSubsystem: "Subsystem", Subsystem: "Object",
+      "SceneLayer:hud": "SceneLayer", SceneLayer: "Object", "Scene:level": "Scene", Scene: "Object",
+      HudButton: "SceneLayerActor", Menu: "SceneLayerActorSwitcher", SceneLayerActorSwitcher: "SceneLayerActor", SceneLayerActor: "Actor",
+      Hero: "Actor", Actor: "Object", Counter: "ActorComponent", ActorComponent: "Object",
+    };
+    const parentOf = (id: string) => parents[id] ?? null;
+    // Parent class, then whether it gets On Game Loaded and Scalability Changed.
+    it.each<[string, boolean, boolean]>([
+      ["MyGame", true, true],
+      ["Inventory", true, true],
+      ["SceneLayer", false, true],
+      ["SceneLayer:hud", false, true],
+      ["HudButton", false, true],
+      ["Menu", false, true],
+      ["Hero", false, false],
+      ["Counter", false, false],
+      ["Scene", false, false],
+      ["Scene:level", false, false],
+      ["Weather", false, false],
+    ])("%s: Events menu and Add Node offer On Game Loaded %s, Scalability Changed %s", (parentClass, gameLoaded, scalability) => {
+      const options = { parentClass, parentOf };
+      const listed = nativeEventStubs(options).map((stub) => stub.eventType);
+      for (const [eventType, expected] of [["flow.event.gameLoaded", gameLoaded], ["flow.event.scalabilityChanged", scalability]] as const) {
+        expect([isScriptCatalogNodeAllowed(eventType, options), listed.includes(eventType)], eventType).toEqual([expected, expected]);
+      }
     });
   });
 
@@ -299,11 +326,10 @@ describe("nativeEventStubs", () => {
         (stub) => stub.eventType,
       ),
     ).toEqual([
-      "flow.event.gameLoaded",
-      "flow.event.scalabilityChanged",
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
+      "flow.event.scalabilityChanged",
       "flow.event.sceneLayerActorSwitchedTo",
       "flow.event.sceneLayerActorSwitchedFrom",
     ]);

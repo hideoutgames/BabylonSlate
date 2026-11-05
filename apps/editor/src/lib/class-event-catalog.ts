@@ -15,8 +15,6 @@ import {
 import { OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, OWNED_TIMELINE_CLIP_GET_NODE_ID, SUBSYSTEM_GET_NODE_ID, TIMELINE_CREATE_CLIP_NODE_ID, TIMELINE_GET_CLIP_NODE_ID, isTimelineProxyPickerNode, isDispatcherNodeType } from "@haptic/scripting-nodes";
 
 export const NATIVE_CLASS_EVENT_TYPES = [
-  "flow.event.gameLoaded",
-  "flow.event.scalabilityChanged",
   "flow.event.beginPlay",
   "flow.event.tick",
   "flow.event.destroyed",
@@ -34,17 +32,14 @@ const SEEDED_SUBSYSTEM_EVENT_TYPES = ["flow.event.init"] as const;
 
 /**
  * Self lifecycle events the engine catalog declares per lineage (Game
- * Instance, GameSubsystem, SceneSubsystem). Tick and Scalability Changed are
- * also Actor / component natives, so only the rest are lineage-gated.
+ * Instance, GameSubsystem, SceneSubsystem, Scene Layer, Scene Layer Actor),
+ * On Game Loaded and Scalability Changed among them. Tick is also an Actor,
+ * component and Scene script native, so only the rest are lineage-gated.
  */
 export const LINEAGE_NATIVE_EVENT_TYPES: ReadonlySet<string> = new Set(
   ENGINE_CLASS_SCRIPT_APIS.flatMap((api) =>
     (api.nativeEvents ?? []).map((event) => event.eventType),
-  ).filter(
-    (eventType) =>
-      eventType !== "flow.event.tick" &&
-      eventType !== "flow.event.scalabilityChanged" && eventType !== "flow.event.gameLoaded",
-  ),
+  ).filter((eventType) => eventType !== "flow.event.tick"),
 );
 
 /** Get Game Instance: every runtime host, never editor utilities. */
@@ -241,9 +236,10 @@ function implementsTickableObject(options: ClassEventOptions | undefined, chain:
 }
 
 /**
- * Whether a lineage-gated lifecycle event (On Init, the Game Instance scene
- * events, the SceneSubsystem events) is legal on this class chain. Other
- * events are not lineage-gated and always pass.
+ * Whether a lineage-gated lifecycle event (On Init, On Game Loaded,
+ * Scalability Changed, the Game Instance scene events, the SceneSubsystem
+ * events) is legal on this class chain. Other events are not lineage-gated
+ * and always pass.
  */
 export function isLineageNativeEventAllowed(
   eventType: string,
@@ -328,8 +324,9 @@ export function nativeEventStubs(
   } else if (isEmbeddedScriptChain(chain)) {
     types.push("flow.event.beginPlay", "flow.event.tick", "flow.event.destroyed");
   }
-  // Game Instance, GameSubsystem and SceneSubsystem lifecycles come from the
-  // engine catalog so the editor and runtime share one table.
+  // Game Instance, subsystem and Scene Layer lifecycles (On Game Loaded and
+  // Scalability Changed included) come from the engine catalog, whose hosts
+  // the runtime dispatches them to.
   types.push(...lineageNativeEventTypes(chain));
   if (implementsTickableObject(options, chain)) types.push("flow.event.tick");
   if (chain.includes("DebugCommand")) {
@@ -437,9 +434,6 @@ export function isScriptCatalogNodeAllowed(
   const chain = ancestryChain(options);
   const lineageEvents = lineageNativeEventTypes(chain);
   if (nodeId === GET_GAME_INSTANCE_NODE_ID) return !isEditorUtilityChain(chain);
-  if (nodeId === "flow.event.scalabilityChanged") return !options?.animationGraphHost && (chain.includes("Actor") || chain.includes("ActorComponent") || lineageEvents.has(nodeId));
-  if (nodeId === "flow.event.gameLoaded") return !options?.animationGraphHost && !isEditorUtilityChain(chain) &&
-    (chain.includes("Actor") || chain.includes("ActorComponent") || chain.includes("Scene") || chain.includes("SceneSubsystem") || lineageEvents.has(nodeId));
   const isActorEvent = (ACTOR_EVENT_TYPE_IDS as readonly string[]).includes(nodeId);
   if (LINEAGE_NATIVE_EVENT_TYPES.has(nodeId)) {
     return lineageEvents.has(nodeId);

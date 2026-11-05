@@ -135,7 +135,8 @@ export class OwnerAdmission {
   /** An owner's authored creation (Begin Play, On Init), once it may run. */
   runCreation(owner: EngineObject, create: () => void): void {
     // Restored actors already contain checkpoint values. Begin Play must not
-    // overwrite them; On Game Loaded is their post-restoration lifecycle hook.
+    // overwrite them; the Game Instance's and GameSubsystems' On Game Loaded
+    // runs after restoration.
     if (this.host.saveBoundaryActive()) { this.created.add(owner); return; }
     this.run(owner, () => {
       // Spawned before a SceneSubsystem existed: it hears about it now.
