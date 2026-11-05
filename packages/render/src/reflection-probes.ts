@@ -23,6 +23,7 @@ import { createFilteredEnvironmentTarget, filterEnvironment, type FilteredEnviro
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 import { markMeshEnvironmentChanged, setMeshEnvironmentResolver } from "./mesh-environment";
 import { drawOutsideSceneView } from "./render-target-capture";
+import { withDrawPass } from "./draw-passes";
 import { isRenderTargetCaptureCandidate } from "./render-target-capture-state";
 import { isMirrorSurfaceMesh } from "./mirror-surface-state";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
@@ -403,7 +404,7 @@ export class ReflectionProbes {
     let drawn: boolean;
     this.capturing = true;
     try {
-      drawn = drawOutsideSceneView(this.scene, () => {
+      drawn = withDrawPass(this.scene.getEngine(), "probes", () => drawOutsideSceneView(this.scene, () => {
         let ready = false;
         drawBorrowedTarget(this.scene, target.texture, () => {
           const engine = this.scene.getEngine();
@@ -415,7 +416,7 @@ export class ReflectionProbes {
           if (ready) target.texture.render(false);
         }, { restoreAlpha: true, wrapDrawFailure: false, message: "Reflection probe capture failed." });
         return ready;
-      }, true);
+      }, true));
     } catch (error) {
       probe.failed = true;
       console.warn(`[render] Reflection probe ${probe.id} capture failed: ${String(error)}`);

@@ -445,6 +445,11 @@ export function setMeshRenderingGroup(mesh: AbstractMesh, renderingGroupId: numb
 }
 
 /** `scene`'s instance pool, created on first use and disposed with the Scene. */
+/** `scene`'s instance pool, without creating one for a Scene that has none (diagnostics). */
+export function existingSceneInstancePool(scene: Scene): SceneInstancePool | undefined {
+  return pools.get(scene);
+}
+
 export function sceneInstancePool(scene: Scene): SceneInstancePool {
   let pool = pools.get(scene);
   if (!pool) {

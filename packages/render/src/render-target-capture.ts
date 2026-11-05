@@ -39,6 +39,7 @@ import { retireOwnedEffect } from "./owned-effect-retirement";
 import type { AttachedPostProcessStack } from "./post-process-material";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { registerSceneAuxiliaryViews } from "./scene-auxiliary-views";
+import { enterDrawPass, leaveDrawPass } from "./draw-passes";
 import { beginPipelineDeferral } from "./webgpu-pipeline-deferral";
 import { findSceneShadowController, type ViewShadows } from "./shadow-controller";
 import { isFirstDrawHeld, setFirstDrawsUrgent } from "./shadow-first-draw";
@@ -887,7 +888,13 @@ export class RenderTargetCaptures {
     return undefined;
   }
   private draw(run: () => boolean, materialImageProcessing: boolean): boolean {
-    return drawOutsideSceneView(this.scene, run, materialImageProcessing);
+    const engine = this.scene.getEngine();
+    enterDrawPass(engine, "captures", true);
+    try {
+      return drawOutsideSceneView(this.scene, run, materialImageProcessing);
+    } finally {
+      leaveDrawPass(engine);
+    }
   }
   private drawReady(destination: CaptureRenderTarget): boolean {
     let ready = false;
