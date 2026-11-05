@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowRightIcon, MailIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  CloudOffIcon,
+  MailIcon,
+  RotateCwIcon,
+} from "lucide-react";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -15,7 +21,11 @@ import {
 } from "../services/native-clerk";
 import { NativeHomepageAccountContext } from "./homepage-account-context";
 import { nativeProfileActions } from "./homepage-account-native-actions";
-import { HomepageMobileAccountFrame } from "./homepage-mobile-account-gate";
+import {
+  HomepageAccountNotice,
+  HomepageAccountProgress,
+  HomepageMobileAccountFrame,
+} from "./homepage-mobile-account-gate";
 
 function accountError(error: unknown) {
   return error instanceof Error
@@ -121,18 +131,23 @@ export default function HomepageNativeAccount({
   if (restoring) {
     return (
       <Frame>
-        <p role="status">Connecting your account…</p>
+        <HomepageAccountProgress label="Connecting your account…" />
       </Frame>
     );
   }
   if (restoreError) {
     return (
       <Frame>
-        <h1>Let’s Get You Connected</h1>
+        <HomepageAccountNotice
+          icon={<CloudOffIcon aria-hidden="true" />}
+          tone="destructive"
+          title="Let’s Get You Connected"
+        />
         <Alert variant="destructive">
           <AlertDescription>{restoreError}</AlertDescription>
         </Alert>
         <Button onClick={onRetry}>
+          <RotateCwIcon data-icon="inline-start" aria-hidden="true" />
           Try Again
         </Button>
       </Frame>
@@ -194,25 +209,35 @@ export default function HomepageNativeAccount({
 
   return (
     <Frame>
-      <span className="homepage-native-auth-icon">
-        <MailIcon aria-hidden="true" />
-      </span>
-      <h1>
-        {challenge
-          ? "Check Your Inbox"
-          : mode === "sign-up"
-            ? "Make Yourself at Home"
-            : optional
-              ? "Your Haptic Account"
-              : "Your Studio. Everywhere."}
-      </h1>
-      <p>
-        {challenge
-          ? `Enter the code sent to ${challenge.email}.`
-          : optional
-            ? "Sign in with an email code, or keep creating as a guest."
-            : "Sign in to use Haptic on this device. Every editor feature is included."}
-      </p>
+      {optional && (
+        <span className="homepage-native-auth-icon">
+          <MailIcon aria-hidden="true" />
+        </span>
+      )}
+      <header className="homepage-native-auth-intro">
+        <h1>
+          {challenge
+            ? "Check Your Inbox"
+            : mode === "sign-up"
+              ? "Create Your Account"
+              : optional
+                ? "Your Haptic Account"
+                : "Sign In"}
+        </h1>
+        <p>
+          {challenge ? (
+            <>
+              Enter the code sent to <strong>{challenge.email}</strong>.
+            </>
+          ) : optional ? (
+            "Sign in with an email code, or keep creating as a guest."
+          ) : mode === "sign-up" ? (
+            "Enter your email and we’ll send a code to confirm it."
+          ) : (
+            "We’ll email you a one-time code. Every editor feature is included."
+          )}
+        </p>
+      </header>
       <form
         className="homepage-native-auth-form"
         onSubmit={(event) => {
@@ -248,8 +273,10 @@ export default function HomepageNativeAccount({
               <Input
                 ref={input}
                 id="native-account-code"
+                className="homepage-native-auth-code"
                 name="code"
                 inputMode="numeric"
+                placeholder="000000"
                 autoComplete="one-time-code"
                 value={code}
                 maxLength={12}
@@ -299,40 +326,47 @@ export default function HomepageNativeAccount({
           <ArrowRightIcon data-icon="inline-end" aria-hidden="true" />
         </Button>
       </form>
-      <div className="homepage-native-auth-actions">
-        {challenge ? (
-          <>
-            <Button
-              variant="ghost"
-              disabled={busy}
-              onClick={() => {
-                void run(async () => {
-                  const nextChallenge = await client.resendCode(challenge);
-                  if (!alive.current) return;
-                  setChallenge(nextChallenge);
-                  setCode("");
-                  setStatus("A fresh code is on its way.");
-                });
-              }}
-            >
-              Resend Code
-            </Button>
-            <Button
-              variant="ghost"
-              disabled={busy}
-              onClick={() => {
-                setChallenge(null);
-                setCode("");
-                setError(null);
-                setStatus(null);
-              }}
-            >
-              Use Another Email
-            </Button>
-          </>
-        ) : (
+      {challenge ? (
+        <div className="homepage-native-auth-actions" data-layout="split">
           <Button
             variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              setChallenge(null);
+              setCode("");
+              setError(null);
+              setStatus(null);
+            }}
+          >
+            <ArrowLeftIcon data-icon="inline-start" aria-hidden="true" />
+            Use Another Email
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              void run(async () => {
+                const nextChallenge = await client.resendCode(challenge);
+                if (!alive.current) return;
+                setChallenge(nextChallenge);
+                setCode("");
+                setStatus("A fresh code is on its way.");
+              });
+            }}
+          >
+            Resend Code
+          </Button>
+        </div>
+      ) : (
+        <div className="homepage-native-auth-actions">
+          <span>
+            {mode === "sign-in" ? "New to Haptic?" : "Already have an account?"}
+          </span>
+          <Button
+            variant="link"
+            size="sm"
             disabled={busy}
             onClick={() => {
               setMode(mode === "sign-in" ? "sign-up" : "sign-in");
@@ -342,8 +376,8 @@ export default function HomepageNativeAccount({
           >
             {mode === "sign-in" ? "Create Account" : "Back To Sign In"}
           </Button>
-        )}
-      </div>
+        </div>
+      )}
       <p className="homepage-native-auth-note">
         Your projects stay on this device.
       </p>

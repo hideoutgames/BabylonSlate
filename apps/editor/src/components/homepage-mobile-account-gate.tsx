@@ -6,11 +6,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { CloudOffIcon, KeyRoundIcon, RotateCwIcon } from "lucide-react";
 import { getHostPlatform, isTestModeEnabled } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
-import { brandIconSrc } from "../lib/branding";
 import { useLauncherTransition } from "./launcher-transition";
-import { useMobileDemoSession } from "../context/mobile-demo-context";
 import homepageStyles from "./homepage.css?inline";
 
 const NativeAccountGate = lazy(() => import("./homepage-account-native"));
@@ -28,41 +27,78 @@ class NativeAccountErrorBoundary extends Component<
   }
 }
 
+/** The boot intro's text wordmark at rest: ink over a red and an amber copy. */
+function MobileAccountWordmark() {
+  return (
+    <span className="homepage-mobile-auth-wordmark" role="img" aria-label="Haptic">
+      <span className="homepage-mobile-auth-wordmark-ca homepage-mobile-auth-wordmark-red" aria-hidden="true">
+        HAPTIC
+      </span>
+      <span className="homepage-mobile-auth-wordmark-ca homepage-mobile-auth-wordmark-amber" aria-hidden="true">
+        HAPTIC
+      </span>
+      <span className="homepage-mobile-auth-wordmark-ink" aria-hidden="true">
+        HAPTIC
+      </span>
+    </span>
+  );
+}
+
+/** Indeterminate amber-to-red line with a status, as the project splash shows. */
+export function HomepageAccountProgress({ label }: { label: string }) {
+  return (
+    <div className="homepage-account-progress">
+      <span className="homepage-account-progress-track" aria-hidden="true">
+        <span />
+      </span>
+      <p role="status">{label}</p>
+    </div>
+  );
+}
+
+/** A state heading with an icon tile, for failures and missing setup. */
+export function HomepageAccountNotice({
+  icon,
+  tone = "default",
+  title,
+  children,
+}: {
+  icon: ReactNode;
+  tone?: "default" | "destructive";
+  title: string;
+  children?: ReactNode;
+}) {
+  return (
+    <header className="homepage-native-auth-intro">
+      <span className="homepage-native-auth-notice-icon" data-tone={tone}>
+        {icon}
+      </span>
+      <h1>{title}</h1>
+      {children}
+    </header>
+  );
+}
+
 export function HomepageMobileAccountFrame({
   children,
 }: {
   children: ReactNode;
 }) {
-  const demo = useMobileDemoSession();
-  const host = getHostPlatform();
   const { ready } = useLauncherTransition();
   useEffect(() => {
     ready("home");
   }, [ready]);
   return (
     <main
-      className="homepage-theme homepage-mobile-auth safe-frame safe-frame-top"
+      className="homepage-theme homepage-mobile-auth safe-frame-top"
       data-testid="homepage-mobile-auth"
     >
       <style data-slate-home-styles>{homepageStyles}</style>
-      <div className="homepage-mobile-auth-brand">
-        <img src={brandIconSrc()} alt="" />
-        <span>Haptic</span>
-      </div>
-      <section className="homepage-mobile-auth-content">
-        {children}
-        {demo && !demo.active && (host === "ios" || host === "android") && (
-          <>
-            <Button variant="outline" onClick={demo.start}>
-              Use Temporary Demo Account
-            </Button>
-            <p>
-              Local testing only, without signing in or cloud access. Demo access
-              ends when the app restarts; projects stay on this device.
-            </p>
-          </>
-        )}
-      </section>
+      <header className="homepage-mobile-auth-hero">
+        <MobileAccountWordmark />
+        <p>Your Studio. Everywhere.</p>
+      </header>
+      <section className="homepage-mobile-auth-sheet">{children}</section>
     </main>
   );
 }
@@ -74,12 +110,18 @@ export function HomepageMobileAccountFailure({
 }) {
   return (
     <HomepageMobileAccountFrame>
-      <h1>Let’s Get You Connected</h1>
-      <p role="alert">
-        We could not connect to your account. Check your connection and try
-        again.
-      </p>
+      <HomepageAccountNotice
+        icon={<CloudOffIcon aria-hidden="true" />}
+        tone="destructive"
+        title="Let’s Get You Connected"
+      >
+        <p role="alert">
+          We could not connect to your account. Check your connection and try
+          again.
+        </p>
+      </HomepageAccountNotice>
       <Button onClick={onRetry}>
+        <RotateCwIcon data-icon="inline-start" aria-hidden="true" />
         Try Again
       </Button>
     </HomepageMobileAccountFrame>
@@ -92,20 +134,24 @@ export function HomepageMobileAccountGate({
   children: ReactNode;
 }) {
   const [attempt, setAttempt] = useState(0);
-  const demo = useMobileDemoSession();
   const host = getHostPlatform();
   if (host !== "ios" && host !== "android") return children;
-  if (isTestModeEnabled()) return children;
-  if (demo?.active) return children;
+  // Test mode, and development builds synced with `--demo`, skip sign-in.
+  if (isTestModeEnabled() || import.meta.env.VITE_MOBILE_DEMO === "true")
+    return children;
   const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim();
   if (!publishableKey) {
     return (
       <HomepageMobileAccountFrame>
-        <h1>Sign-In Is Not Set Up</h1>
-        <p>
-          This mobile build is not connected to Slate accounts yet. Please use
-          an updated build with account sign-in enabled.
-        </p>
+        <HomepageAccountNotice
+          icon={<KeyRoundIcon aria-hidden="true" />}
+          title="Sign-In Is Not Set Up"
+        >
+          <p>
+            This build is not connected to Haptic accounts. Install a build
+            with account sign-in enabled.
+          </p>
+        </HomepageAccountNotice>
       </HomepageMobileAccountFrame>
     );
   }
@@ -118,7 +164,7 @@ export function HomepageMobileAccountGate({
       <Suspense
         fallback={
           <HomepageMobileAccountFrame>
-            <p role="status">Connecting your account…</p>
+            <HomepageAccountProgress label="Connecting your account…" />
           </HomepageMobileAccountFrame>
         }
       >

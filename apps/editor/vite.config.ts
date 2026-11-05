@@ -33,6 +33,9 @@ if (
 if (distributionBuild && reactProfiling) {
   throw new Error("Distribution cannot use the React profiling build");
 }
+if (distributionBuild && process.env.VITE_MOBILE_DEMO === "true") {
+  throw new Error("Distribution cannot skip mobile sign-in");
+}
 const declaredVersion = JSON.parse(
   readFileSync(path.join(repoRoot, "release/version.json"), "utf8"),
 ).version as string;

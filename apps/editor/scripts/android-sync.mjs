@@ -4,9 +4,12 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const editorDir = fileURLToPath(new URL("..", import.meta.url));
+// `--demo` builds a development bundle that skips sign-in, for emulator testing.
+const demo = process.argv.slice(2).some((arg) => arg === "--demo" || arg === "-demo");
+const env = demo ? { ...process.env, VITE_MOBILE_DEMO: "true" } : process.env;
 
 function run(args, label) {
-  const result = spawnSync("pnpm", args, { cwd: editorDir, stdio: "inherit" });
+  const result = spawnSync("pnpm", args, { cwd: editorDir, stdio: "inherit", env });
   if (result.error || result.status !== 0) {
     throw result.error ?? new Error(`${label} failed with status ${result.status}`);
   }

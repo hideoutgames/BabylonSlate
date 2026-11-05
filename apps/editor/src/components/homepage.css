@@ -1614,27 +1614,200 @@ svg.homepage-profile-menu-avatar {
   max-width: 100%;
 }
 
+/* Mobile account gate: the boot intro's wordmark above a sheet holding the
+   sign-in steps. The sheet surface runs under the home indicator; its padding
+   keeps content inside the safe area. */
 .homepage-mobile-auth {
-  min-height: 100%;
+  box-sizing: border-box;
+  height: 100%;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: minmax(min-content, 1fr) auto;
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
   background: var(--background);
   overflow: auto;
+  overscroll-behavior: contain;
 }
-.homepage-mobile-auth-brand {
+.homepage-mobile-auth-hero {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  min-height: var(--touch-target, 44px);
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border);
-  font-size: 14px;
-  font-weight: 600;
+  justify-content: center;
+  gap: 14px;
+  padding: 40px 24px 36px;
+  text-align: center;
 }
-.homepage-mobile-auth-brand img {
-  width: 16px;
-  height: 20px;
-  object-fit: contain;
+.homepage-mobile-auth-hero > p {
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.homepage-mobile-auth-wordmark {
+  position: relative;
+  display: block;
+  font:
+    400 56px / 1 "Block Berthold",
+    "Onest Variable",
+    system-ui,
+    sans-serif;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.homepage-mobile-auth-wordmark-ink {
+  position: relative;
+  display: block;
+  color: var(--foreground);
+}
+.homepage-mobile-auth-wordmark-ca {
+  position: absolute;
+  inset: 0;
+}
+.homepage-mobile-auth-wordmark-red {
+  transform: scaleX(1.075);
+  color: var(--brand-red);
+}
+.homepage-mobile-auth-wordmark-amber {
+  transform: scaleX(1.04);
+  color: var(--brand-amber);
+}
+.homepage-mobile-auth-sheet {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  padding: 28px 24px calc(20px + var(--safe-bottom));
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--radius-4xl) var(--radius-4xl) 0 0;
+  background: var(--card);
+}
+.homepage-mobile-auth-sheet h1 {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.homepage-mobile-auth .homepage-native-auth-code {
+  min-height: 40px;
+  font-size: 20px;
+}
+/* Tablets: the wordmark and a centered card. */
+@media (min-width: 640px) and (min-height: 600px) {
+  .homepage-mobile-auth {
+    grid-template-rows: 1fr auto auto 1fr;
+    justify-items: center;
+    padding-bottom: var(--safe-bottom);
+  }
+  .homepage-mobile-auth-hero {
+    grid-row: 2;
+    padding: 0 24px 36px;
+  }
+  .homepage-mobile-auth-wordmark {
+    font-size: 72px;
+  }
+  .homepage-mobile-auth-sheet {
+    grid-row: 3;
+    max-width: 400px;
+    margin-bottom: 48px;
+    padding: 28px;
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius-4xl);
+  }
+}
+/* Landscape phones: the wordmark beside a card. */
+@media (min-width: 640px) and (max-height: 599px) {
+  .homepage-mobile-auth {
+    grid-template-columns: 1fr minmax(320px, 380px);
+    grid-template-rows: auto;
+    align-items: center;
+    padding-bottom: var(--safe-bottom);
+  }
+  .homepage-mobile-auth-sheet {
+    margin: 12px 16px 12px 0;
+    padding: 16px 20px;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius-4xl);
+  }
+}
+.homepage-native-auth-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.homepage-native-auth-intro p {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.homepage-native-auth-intro strong {
+  color: var(--foreground);
+  font-weight: 500;
+}
+.homepage-native-auth-notice-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-lg);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.homepage-native-auth-notice-icon[data-tone="destructive"] {
+  background: color-mix(in oklab, var(--destructive) 14%, transparent);
+  color: var(--destructive);
+}
+.homepage-native-auth-notice-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.homepage-account-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
+}
+.homepage-account-progress > p {
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.homepage-account-progress-track {
+  position: relative;
+  display: block;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--foreground) 10%, transparent);
+}
+.homepage-account-progress-track > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--brand-amber) 35%,
+    var(--brand-red) 70%,
+    transparent
+  );
+  animation: homepage-account-progress 1.5s cubic-bezier(0.45, 0, 0.55, 1)
+    infinite;
+}
+@keyframes homepage-account-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .homepage-account-progress-track > span {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
 }
 .homepage-mobile-auth-content {
   max-width: 420px;
@@ -1672,13 +1845,28 @@ svg.homepage-profile-menu-avatar {
   min-height: 32px;
   font-size: 16px;
 }
+/* Centred, tracked digits; the indent offsets the trailing letter spacing. */
+.homepage-native-auth-form input.homepage-native-auth-code {
+  text-align: center;
+  text-indent: 0.35em;
+  letter-spacing: 0.35em;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
 .homepage-native-auth-actions {
   display: flex;
-  gap: 6px;
+  gap: 2px;
+  align-items: center;
   justify-content: center;
   flex-wrap: wrap;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.homepage-native-auth-actions[data-layout="split"] {
+  justify-content: space-between;
 }
 .homepage-native-auth-note {
+  color: var(--muted-foreground);
   text-align: center;
   font-size: 11px;
 }

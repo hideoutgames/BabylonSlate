@@ -25,7 +25,6 @@ import {
 import { nativeProfileActions } from "./homepage-account-native-actions";
 import { nativeAccountName } from "./homepage-account-types";
 import type { NativeClerkSession } from "../services/native-clerk";
-import { useMobileDemoSession } from "../context/mobile-demo-context";
 import { useSubscriptionBilling } from "../services/subscription-billing";
 
 const ClerkAccount = lazy(() => import("./homepage-account-clerk"));
@@ -55,14 +54,12 @@ export function HomepageAccount({
   onChangelog?: () => void;
 }) {
   const nativeAccount = useNativeHomepageAccount();
-  const demo = useMobileDemoSession();
   const [desktopAccount, setDesktopAccount] =
     useState<NativeHomepageAccount | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [clerkOverlayOpen, setClerkOverlayOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const host = getHostPlatform();
-  const demoActive = demo?.active && (host === "ios" || host === "android");
   const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim();
   const desktopClient = useMemo(
     () =>
@@ -139,20 +136,12 @@ export function HomepageAccount({
   const fallback = (
     <HomepageProfileMenu
       disabled={disabled}
-      name={
-        demoActive
-          ? "Temporary Demo"
-          : account
-            ? nativeAccountName(account.session)
-            : "Guest"
-      }
-      description={demoActive ? "Local Testing Only · Not Signed In" : undefined}
+      name={account ? nativeAccountName(account.session) : "Guest"}
       email={account?.session.email}
       imageUrl={account?.session.imageUrl}
       nativeProfile={account ? nativeProfileEditing(account) : undefined}
       billing={billing}
-      onSignOut={demoActive ? async () => demo.end() : account?.signOut}
-      signOutLabel={demoActive ? "End Demo" : undefined}
+      onSignOut={account?.signOut}
       onSignIn={
         !account && host === "electron" && publishableKey
           ? () => setAuthOpen(true)

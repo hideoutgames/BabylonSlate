@@ -9,10 +9,13 @@ const configPath = new URL(
   import.meta.url,
 );
 const podfilePath = new URL("../ios/App/Podfile", import.meta.url);
+// `--demo` builds a development bundle that skips sign-in, for simulator testing.
+const demo = process.argv.slice(2).some((arg) => arg === "--demo" || arg === "-demo");
 
 const build = spawnSync("pnpm", ["build"], {
   cwd: editorDir,
   stdio: "inherit",
+  env: demo ? { ...process.env, VITE_MOBILE_DEMO: "true" } : process.env,
 });
 if (build.error || build.status !== 0) {
   throw (

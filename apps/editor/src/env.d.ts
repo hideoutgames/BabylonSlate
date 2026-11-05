@@ -1,5 +1,7 @@
 interface ImportMetaEnv {
   readonly VITE_CLERK_PUBLISHABLE_KEY?: string;
+  /** `true` in iOS and Android development builds synced with `--demo`: no sign-in. */
+  readonly VITE_MOBILE_DEMO?: string;
   /** RevenueCat public keys: Web Billing (web and desktop), App Store, Google Play. */
   readonly VITE_REVENUECAT_WEB_API_KEY?: string;
   readonly VITE_REVENUECAT_IOS_API_KEY?: string;

@@ -48,4 +48,5 @@ pnpm --filter editor android:sync && pnpm --filter editor exec cap open android 
 ```
 
 - `ios:sync` / `android:sync` build the editor (with the embedded player) and run `cap sync`. `ios:sync` then restores the custom Secrets, ScopedStorage, AudioLifecycle and Memory plugin classes in `capacitor.config.json`: never run `cap sync ios` directly.
+- `--demo` (`pnpm --filter editor ios:sync --demo`, `android:sync --demo`) builds with `VITE_MOBILE_DEMO=true`, so the app skips the required sign-in for simulator and emulator testing. A later sync without it restores sign-in; distribution builds refuse it. For `ios:build` / `android:build`, set `VITE_MOBILE_DEMO=true` in the environment.
 - `ios:build` / `android:build` add an unsigned simulator build / debug APK. Signing, archives and uploads are distribution operations: [distribution.md](distribution.md) and [the distribution rule](../rules/distribution.md).
