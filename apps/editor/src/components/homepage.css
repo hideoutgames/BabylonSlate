@@ -1514,7 +1514,7 @@ svg.homepage-account-center-avatar {
   border-radius: var(--radius-xl);
 }
 .homepage-profile[data-auth-open="true"] {
-  width: min(880px, calc(100vw - 32px));
+  width: min(400px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
 }
 .homepage-profile [data-slot="dialog-title"] {
