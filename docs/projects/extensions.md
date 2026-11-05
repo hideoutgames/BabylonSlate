@@ -76,7 +76,7 @@ Extensions run as trusted editor code, not in a sandbox. Disabling an extension,
 
 ## Share extensions
 
-- **Export** offers **Export To Download** (a `.hextension` file) and **Export To Engine Extensions**.
+- **Export** offers **Export To File** (a `.hextension` file, saved as in [Saving exported files](index.md#saving-exported-files)) and **Export To Engine Extensions**.
 - **Import Extension** adds a `.hextension` file. Imported extensions stay disabled until you enable them. Replacing an installed extension asks first.
 - Packages are limited to 64 MiB compressed, 256 MiB expanded and 4,096 files.
 

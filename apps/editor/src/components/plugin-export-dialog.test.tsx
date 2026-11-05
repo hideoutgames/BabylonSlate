@@ -19,7 +19,7 @@ const { install, download } = vi.hoisted(() => ({
 vi.mock("../lib/engine-plugin-library", () => ({
   ensureEnginePluginLibrary: async () => ({ import: install }),
 }));
-vi.mock("../lib/plugin-download", () => ({ downloadPluginArchive: download }));
+vi.mock("../lib/plugin-download", () => ({ savePluginArchive: download }));
 
 const plugin: PluginDescriptor = {
   pluginGuid: "plugin-a",
@@ -39,7 +39,8 @@ beforeEach(() => vi.resetAllMocks());
 afterEach(cleanup);
 
 describe("PluginExportDialog", () => {
-  it("waits for a destination and downloads without installing when Download is chosen", async () => {
+  it("waits for a destination and saves a file without installing when File is chosen", async () => {
+    download.mockResolvedValue("downloaded");
     const exportPlugin = vi.fn().mockResolvedValue(bytes);
     const onClose = vi.fn();
     render(
@@ -50,13 +51,32 @@ describe("PluginExportDialog", () => {
       />,
     );
     expect(exportPlugin).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Export To Download" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export To File" }));
     await waitFor(() =>
       expect(download).toHaveBeenCalledWith(bytes, "My Plugin"),
     );
     expect(exportPlugin).toHaveBeenCalledWith("plugin-a");
     expect(install).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("stays open when the share sheet or save dialog is cancelled", async () => {
+    download.mockResolvedValue("cancelled");
+    const onClose = vi.fn();
+    render(
+      <PluginExportDialog
+        plugin={plugin}
+        exportPlugin={async () => bytes}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Export To File" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Export To File" })).toHaveProperty("disabled", false),
+    );
+    expect(download).toHaveBeenCalledWith(bytes, "My Plugin");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("requires a separate Replace confirmation for an existing Engine Plugin", async () => {
@@ -141,7 +161,7 @@ describe("PluginExportDialog", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("button", { name: "Export To Download" }),
+      screen.getByRole("button", { name: "Export To File" }),
     ).toHaveProperty("disabled", false);
   });
 });

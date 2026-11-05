@@ -54,7 +54,7 @@ Choose the editor's colors in **Manage Account > Application** on the Homepage, 
 - Open **Style** to see the color of every part of the editor, grouped into surfaces, text, accents, status, graph, pin, asset type and platform colors.
 - Built-in themes can't be changed. Changing a color while a built-in theme is selected creates a custom theme from it, such as **Haptic Dark Copy**, and selects it. Later changes edit that custom theme.
 - Custom themes have **Rename** and **Delete**. Deleting the selected theme switches the editor back to **Haptic Dark**.
-- **Export Theme** saves the selected theme as a `.haptic-theme.json` file. **Import Theme** adds a theme file as a new custom theme and selects it. Colors the file leaves out use **Haptic Dark**'s colors.
+- **Export Theme** saves the selected theme as a `.haptic-theme.json` file: through the share sheet on iPad and iPhone, a save dialog in the desktop and Android apps, or a download in other browsers. See [Saving exported files](../projects/index.md#saving-exported-files). **Import Theme** adds a theme file as a new custom theme and selects it. Colors the file leaves out use **Haptic Dark**'s colors.
 
 ## Compact Mode
 
