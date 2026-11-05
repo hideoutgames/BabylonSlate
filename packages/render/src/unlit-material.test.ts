@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  MeshBuilder, NullEngine, RawTexture, Scene, Texture, VertexBuffer, type AbstractEngine, type Mesh,
+  Constants, MeshBuilder, NullEngine, RawTexture, Scene, Texture, VertexBuffer, type AbstractEngine, type Mesh,
   type NodeMaterial,
 } from "@babylonjs/core";
+import { drawsAlphaCoverage } from "./alpha-to-coverage";
 import { acquireAuthoredMaterialVariant } from "./material-compiler";
 import { materialIneligibility } from "./instance-pool";
 import { unlitBinding } from "./unlit-material-blocks";
@@ -136,6 +137,26 @@ describe("unlit Material", () => {
     applyOverlayVisualStyle(meshes[5]!, { opacity: 0.5 });
     expect(meshes.map((mesh) => material.needAlphaBlendingForMesh(mesh))).toEqual([false, true, true, false, true, true]);
     expect(meshes.map((mesh) => material.needAlphaTestingForMesh(mesh))).toEqual([false, false, false, true, true, false]);
+  });
+
+  it("writes alpha-to-coverage under MSAA only for a cutout whose texture is filtered", () => {
+    const target = scene();
+    const engine = target.getEngine();
+    // A colour draw into a 4-sample target.
+    (engine as unknown as { _currentRenderTarget: { samples: number } })._currentRenderTarget = { samples: 4 };
+    const draws = (samplingMode: number, overrides: Partial<UnlitBinding> = {}) => {
+      const mesh = MeshBuilder.CreatePlane(`cutout-${samplingMode}`, {}, target);
+      const value = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 0]), 1, 1, target, false, false, samplingMode);
+      setUnlitMaterial(mesh, world, binding({ texture: value, cutoff: 0.4, ...overrides }));
+      return drawsAlphaCoverage(engine, mesh.material, mesh);
+    };
+    // Sprites' and tiles' pixel-art sampling steps alpha at texel edges: they discard at the cutoff.
+    expect([
+      draws(Constants.TEXTURE_NEAREST_NEAREST), draws(Constants.TEXTURE_NEAREST_NEAREST_MIPNEAREST),
+      draws(Constants.TEXTURE_NEAREST_NEAREST_MIPLINEAR), draws(Constants.TEXTURE_BILINEAR_SAMPLINGMODE),
+      draws(Constants.TEXTURE_TRILINEAR_SAMPLINGMODE), draws(Constants.TEXTURE_LINEAR_NEAREST),
+      draws(Constants.TEXTURE_BILINEAR_SAMPLINGMODE, { cutoff: 0 }),
+    ]).toEqual([false, false, false, true, true, true, false]);
   });
 
   it("reports the textures its meshes sample", () => {

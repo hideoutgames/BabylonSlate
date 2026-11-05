@@ -32,7 +32,7 @@ export type AntiAliasingCapture = { label: string; samples: number; tasks: strin
 /**
  * A static camera over white unlit panels with long diagonal edges on black, drawn as a world view at each
  * Anti-Aliasing mode, directly (no post effects) and through a settings chain (a vignette): two consecutive frames each;
- * and a sprite's quad whose UVs map a frame of a nearest-sampled atlas, at Off and 4x.
+ * a sprite's quad whose UVs map a frame of a nearest-sampled atlas, and an alpha-tested tile of one, at Off and 4x.
  */
 export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
   const canvas = document.createElement("canvas");
@@ -90,11 +90,31 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
     setUnlitMaterial(sprite, { textured: true, backFaceCulling: false, fog: false, role: "world" }, {
       texture: atlas, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: false,
     });
-    const show = (subject: "panels" | "cutout" | "sprite") => {
+    // A tile's quad: the middle 16 × 16 cell of a nearest-sampled 48 × 48 atlas, framed half a texel in as tiles are and
+    // cut at 0.4, about one texel per pixel. A 3-texel magenta ring below the cutoff surrounds its white centre, and
+    // every other cell is opaque white, so a pixel's neighbours sample an opaque texel both at the ring's inner edge and
+    // past the quad's edge.
+    const tileTexels = new Uint8Array(48 * 48 * 4);
+    for (let y = 0; y < 48; y++) for (let x = 0; x < 48; x++) {
+      const cellX = x - 16, cellY = y - 16;
+      const ring = cellX >= 0 && cellX < 16 && cellY >= 0 && cellY < 16 && (Math.min(cellX, cellY) < 3 || Math.max(cellX, cellY) > 12);
+      tileTexels.set(ring ? [255, 0, 255, 89] : [255, 255, 255, 255], (y * 48 + x) * 4);
+    }
+    const tileAtlas = RawTexture.CreateRGBATexture(tileTexels, 48, 48, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+    tileAtlas.hasAlpha = true;
+    const tile = MeshBuilder.CreatePlane("Anti-Aliasing Tile", { size: 1.2, updatable: true }, scene);
+    const low = 16.5 / 48, high = 31.5 / 48;
+    tile.updateVerticesData(VertexBuffer.UVKind, new Float32Array([low, low, high, low, high, high, low, high]));
+    tile.rotation.z = 0.35;
+    setUnlitMaterial(tile, { textured: true, backFaceCulling: false, fog: false, role: "world" }, {
+      texture: tileAtlas, color: [1, 1, 1], alpha: 1, cutoff: 0.4, blend: false, textureAlpha: true, twoSided: false,
+    });
+    const show = (subject: "panels" | "cutout" | "sprite" | "tile") => {
       panel.setEnabled(subject === "panels");
       triangle.setEnabled(subject === "panels");
       quad.setEnabled(subject === "cutout");
       sprite.setEnabled(subject === "sprite");
+      tile.setEnabled(subject === "tile");
     };
     const graph = new ForwardSceneFrameGraph(scene);
     const apply = async (antiAliasing: AntiAliasingMode, chain: boolean) => {
@@ -132,6 +152,7 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
         ["chain off", "off", true, "panels"], ["chain msaa4", "msaa4", true, "panels"],
         ["cutout off", "off", false, "cutout"], ["cutout msaa4", "msaa4", false, "cutout"], ["off again", "off", false, "panels"],
         ["msaa4 last", "msaa4", false, "panels"], ["sprite off", "off", false, "sprite"], ["sprite msaa4", "msaa4", false, "sprite"],
+        ["tile off", "off", false, "tile"], ["tile msaa4", "msaa4", false, "tile"],
       ] as const) {
         show(subject);
         await apply(mode, chain);
