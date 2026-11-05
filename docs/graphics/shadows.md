@@ -23,7 +23,7 @@ Shadows have a budget separate from the [light budget](lighting.md#light-budget)
 
 ## Shadow settings
 
-Open **Project Settings > Rendering > Shadows**. The defaults below are the High level, which new projects use.
+Open **Project Settings > Rendering > Shadows**. The defaults below are the High level's. New projects start at Medium; [Quality levels](#quality-levels) lists what each level sets.
 
 | Setting | Default | Description |
 | --- | --- | --- |

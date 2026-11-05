@@ -2,6 +2,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   documentKindForAssetType,
   ENGINE_COMPONENT_CLASS_IDS,
+  QUALITY_GROUPS,
+  qualityGroupLabel,
+  resolveRenderingQuality,
   type ProjectDocument,
   type SerializedComponent,
   type SerializedGraph,
@@ -100,6 +103,14 @@ describe("FeatureTest starter", () => {
     expect(migrationPending).toEqual([]);
     const assets = reopened.registry!.list();
     expect(assets.filter((asset) => asset.placeholder || asset.header.type === "Unresolved")).toEqual([]);
+  });
+
+  it("stays the High showcase while new projects start at Medium, with Dynamic Resolution off", () => {
+    const effective = resolveRenderingQuality(document.settings.render);
+    expect(Object.fromEntries(QUALITY_GROUPS.map((group) => [group, qualityGroupLabel(effective, group)]))).toEqual({
+      shadows: "high", resolution: "custom", textures: "high", geometry: "high", water: "high", postprocessing: "high", lighting: "high",
+    });
+    expect(effective.resolution.dynamic).toBe(false);
   });
 
   it("contains every scene the Feature Test Check walks", () => {

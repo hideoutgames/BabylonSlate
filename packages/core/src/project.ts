@@ -165,11 +165,11 @@ export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
 };
 
 /**
- * New projects start at High in every Scalability group, with 1920×1080
- * custom resolution and Black Bars off (fill).
+ * New projects start at Medium in every Scalability group, which phones and tablets handle far better than High, with
+ * 1920×1080 custom resolution and Black Bars off (fill).
  */
 export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
-  ...applyProjectQualityPatch(DEFAULT_RENDER_PROJECT_SETTINGS, qualityPresetPatch("high")),
+  ...applyProjectQualityPatch(DEFAULT_RENDER_PROJECT_SETTINGS, qualityPresetPatch("medium")),
   customResolution: true,
 };
 

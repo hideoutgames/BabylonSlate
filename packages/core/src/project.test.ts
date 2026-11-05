@@ -172,7 +172,7 @@ describe("project schema", () => {
     expect(look(createEmptyProject("Two", { kind: "2d" }).settings)).toEqual(["legacyDisplay", "neutral"]);
     expect(look(createEmptyProject("Pixels", { pixelArt: true }).settings)).toEqual(["legacyDisplay", "neutral"]);
     expect(createEmptyProject("Three").settings.render.effects?.volumetricLighting.density).toBe(0.003);
-    expect(createEmptyProject("Three").settings.render.quality?.geometry).toMatchObject({ occlusionCulling: true, preset: "high" });
+    expect(createEmptyProject("Three").settings.render.quality?.geometry).toMatchObject({ occlusionCulling: true, preset: "medium" });
     expect(createEmptyProject("Two", { kind: "2d" }).settings.render.quality?.geometry).toMatchObject({ occlusionCulling: false, preset: "custom" });
   });
 
@@ -541,16 +541,20 @@ describe("project schema", () => {
     });
   });
 
-  it("starts new projects at High in every Scalability group, and keeps it on reload", () => {
+  it("starts new projects at Medium in every Scalability group, and keeps it on reload", () => {
     const labels = (settings: ProjectSettings) => {
       const effective = resolveRenderingQuality(settings.render);
-      return QUALITY_GROUPS.map((group) => qualityGroupLabel(effective, group));
+      return Object.fromEntries(QUALITY_GROUPS.map((group) => [group, qualityGroupLabel(effective, group)]));
     };
+    const medium = Object.fromEntries(QUALITY_GROUPS.map((group) => [group, "medium"]));
     const created = createEmptyProject("Demo").settings;
-    expect(labels(created)).toEqual(QUALITY_GROUPS.map(() => "high"));
+    expect(labels(created)).toEqual(medium);
+    // Pixel Art Optimized sets its own resolution and anti-aliasing, which makes those groups Custom.
+    expect(labels(createEmptyProject("Pixels", { pixelArt: true }).settings))
+      .toEqual({ ...medium, postprocessing: "custom", resolution: "custom" });
+    // A 2D project turns Occlusion Culling off, which makes its Geometry group Custom.
+    expect(labels(createEmptyProject("Flat", { kind: "2d" }).settings)).toEqual({ ...medium, geometry: "custom" });
     expect(normalizeProjectSettings(JSON.parse(JSON.stringify(created)))).toEqual(created);
-    // Existing projects without saved quality keep the Medium-based fallback.
-    expect(labels(normalizeProjectSettings(undefined))).not.toContain("high");
   });
 
   it("keeps a custom 1920×1080 black-bars override on new projects", () => {

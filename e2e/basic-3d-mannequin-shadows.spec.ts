@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { expect, test } from "@playwright/test";
-import { normalizeEnvironmentLightingSettings, normalizeRenderingQuality } from "../packages/core/src/index";
+import { normalizeEnvironmentLightingSettings, normalizeRenderingQuality, normalizeShadowSettings, SHADOW_PROFILES } from "../packages/core/src/index";
 import type { RenderShadingSettings, ShadowDiagnostics } from "../packages/render/src/index";
 import { openMainScene, waitForEditorInteractive } from "./open-test-project";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
@@ -44,7 +44,9 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
   const initial = (await page.evaluate(() => window.__hapticViewportTest.shadowDiagnostics()))!;
   const settings: RenderShadingSettings = {
     gpuBackend: variant.backend,
-    mode: variant.mode, shadows: initial.requestedShadows,
+    // New projects start at Medium: the variant's shadow level is set here.
+    mode: variant.mode,
+    shadows: normalizeShadowSettings({ ...initial.requestedShadows, ...SHADOW_PROFILES[variant.profile], profile: variant.profile, preset: variant.profile }),
     quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }),
     // The edge metric reads a shadowed pixel's remaining light as error; the template's Skybox lighting
     // fills shadows, so measure the sun's shadow geometry alone.
