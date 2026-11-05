@@ -20,7 +20,7 @@ export default defineConfig<{ profileContext: boolean }>({
   projects: [
     {
       name: "ipad-webkit",
-      grep: WEBKIT_SMOKE_GREP,
+      grep: WEBKIT_SMOKE_GREP.source ? /@webkit-probe/ : WEBKIT_SMOKE_GREP,
       use: {
         ...devices["iPad Pro 11 landscape"],
         browserName: "webkit",
