@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { isErr, type ProjectDocument } from "@haptic/core";
 import { useDocumentActions } from "../context/document-context";
-import { downloadZipArchive } from "../lib/download";
+import { saveZipArchive, savedFileNotice } from "../lib/file-export";
 import { exportGameFailureMessage } from "../lib/export-game-failure";
 
 /** Web packaging run state shown by the Packaging dialog. */
@@ -12,12 +12,12 @@ export interface GameExport {
   packageWeb: () => Promise<void>;
 }
 
-/** The downloaded web package's file name. */
+/** The saved web package's file name. */
 export function gameArchiveName(projectName: string): string {
   return `${projectName.replace(/\s+/g, "_")}.zip`;
 }
 
-/** Packages the project as a playable web ZIP and downloads it. */
+/** Packages the project as a playable web ZIP and saves it. */
 export function useGameExport(projectDocument: ProjectDocument | null): GameExport {
   const { exportGameArtifact, zipExportedGame } = useDocumentActions();
   const [busy, setBusy] = useState(false);
@@ -35,8 +35,8 @@ export function useGameExport(projectDocument: ProjectDocument | null): GameExpo
         setError(exportGameFailureMessage(result.error));
         return;
       }
-      downloadZipArchive(await zipExportedGame(result.value), gameArchiveName(projectDocument.metadata.name));
-      setNotice("Game package prepared. Check your downloads.");
+      const archive = await zipExportedGame(result.value);
+      setNotice(savedFileNotice("Game package", await saveZipArchive(archive, gameArchiveName(projectDocument.metadata.name))));
     } catch (cause) {
       console.error("[editor] Packaging failed", cause);
       setError(exportGameFailureMessage(cause));

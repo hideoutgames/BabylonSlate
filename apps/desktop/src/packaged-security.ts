@@ -178,7 +178,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     "lfs:fetch": 1, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
     "project:list": 0, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,
     "project:writeBinary": 2, "project:exists": 1, "project:readdir": 1, "project:mkdir": 2,
-    "project:remove": 1, "project:stat": 1,
+    "project:remove": 1, "project:stat": 1, "file:save": 2,
   };
   requireValue(Object.hasOwn(counts, channel) && args.length === counts[channel]);
   if (channel.startsWith("save-games:")) {
@@ -201,6 +201,11 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
   } else if (channel === "project:openDocuments") {
     text(args[0], 200);
     requireValue(args[0].length > 0 && !/[\\/:<>"|?*]/.test(args[0]) && ![".", ".."].includes(args[0]) && !/[. ]$/.test(args[0]));
+  } else if (channel === "file:save") {
+    // Only a suggested file name: the save dialog picks the folder.
+    text(args[0], 255);
+    requireValue(args[0].length > 0 && !/[\\/:<>"|?*\u0000-\u001f]/.test(args[0]) && ![".", ".."].includes(args[0]));
+    requireValue(args[1] instanceof ArrayBuffer && args[1].byteLength <= MAX_IPC_BYTES);
   } else if (channel === "project:openKnown") {
     requireValue(args[0] && typeof args[0] === "object");
     const handle = args[0] as Record<string, unknown>;

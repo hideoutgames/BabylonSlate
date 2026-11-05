@@ -31,6 +31,10 @@ contextBridge.exposeInMainWorld("haptic", {
   http: {
     fetch: (request: unknown) => ipcRenderer.invoke("lfs:fetch", request),
   },
+  // Exports: the main process asks where to save and writes the file.
+  files: {
+    save: (name: string, data: ArrayBuffer) => ipcRenderer.invoke("file:save", name, data),
+  },
   project: {
     pickProjectFolder: () => ipcRenderer.invoke("project:pickFolder"),
     openDocumentsProject: (name: string) =>

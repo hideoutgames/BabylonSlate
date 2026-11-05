@@ -26,7 +26,8 @@ import { cn } from "@haptic/ui/lib/utils";
 import { CameraIcon, CircleIcon, CopyIcon, DownloadIcon, FolderOpenIcon, SquareIcon, XIcon } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { useAppSettings } from "../context/app-settings-context";
-import { downloadBlob } from "../lib/download";
+import { saveFile } from "@haptic/vfs";
+import { savedFileNotice } from "../lib/file-export";
 import { profileDefaultsFromSettings } from "../lib/play-debugger-defaults";
 import { DiagnosticResultsStore, type DiagnosticResult } from "../services/diagnostic-results-store";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
@@ -331,8 +332,9 @@ export default function DiagnosticResultsDialog({ store }: { store: DiagnosticRe
       const text = serializeResult(shown);
       if (copy) { await navigator.clipboard.writeText(text); setMessage("Copied diagnostic JSON."); }
       else {
-        downloadBlob(new Blob([text], { type: "application/json" }), shown.kind === "profile" ? "performance.babprofile.json" : "frame.babframe.json");
-        setMessage("Exported diagnostic JSON.");
+        // Called before any await: Safari shares only during the tap.
+        const saved = await saveFile(shown.kind === "profile" ? "performance.babprofile.json" : "frame.babframe.json", new Blob([text], { type: "application/json" }));
+        setMessage(savedFileNotice("Diagnostic JSON", saved));
       }
     } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
   };

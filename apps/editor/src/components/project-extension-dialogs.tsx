@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import type { EditorExtensionCommandDescriptor } from "../lib/editor-extension-host";
 import type { EditorExtensionService } from "../services/editor-extension-service";
 import { ensureEngineExtensionLibrary, type EngineExtensionEntry } from "../lib/engine-extension-library";
-import { downloadExtensionArchive } from "../lib/extension-download";
+import { saveExtensionArchive } from "../lib/extension-download";
 import { PLUGIN_ICON_OPTIONS } from "../lib/plugin-icons";
 import { CodeBodyEditor } from "./js-body-editor";
 
@@ -131,10 +131,10 @@ export function ExtensionExportDialog({ entry, service, onClose }: { entry: Exte
   };
   return <>
     <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}><DialogContent>
-      <DialogHeader><DialogTitle>Export Extension</DialogTitle><DialogDescription>Download {entry.settings.displayName} or add it to Engine Extensions for new projects.</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>Export Extension</DialogTitle><DialogDescription>Save {entry.settings.displayName} as a file or add it to Engine Extensions for new projects.</DialogDescription></DialogHeader>
       <ActionError message={error} />
       <DialogFooter>
-        <Button variant="outline" size="sm" disabled={busy} onClick={() => void run(async () => { downloadExtensionArchive(await service.export(entry.extensionGuid), entry.settings.displayName); onClose(); })}>Export To Download</Button>
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => void run(async () => { if ((await saveExtensionArchive(await service.export(entry.extensionGuid), entry.settings.displayName)) !== "cancelled") onClose(); })}>Export To File</Button>
         <Button variant="outline" size="sm" disabled={busy} onClick={() => void run(async () => install(await service.export(entry.extensionGuid)))}>Export To Engine Extensions</Button>
       </DialogFooter>
     </DialogContent></Dialog>
