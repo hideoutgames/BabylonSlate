@@ -41,7 +41,7 @@ import {
   markPerMeshBindingMaterial, setMaterialUnlitBinding, setUnlitBinding, unlitBinding, type UnlitBinding,
 } from "./unlit-material-blocks";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
-import { registerAlphaToCoverage } from "./alpha-to-coverage";
+import { registerAlphaToCoverage, samplesSteppedAlpha } from "./alpha-to-coverage";
 
 export type { UnlitBinding } from "./unlit-material-blocks";
 
@@ -345,8 +345,8 @@ function createInstance(scene: Scene, key: UnlitMaterialKey, owned = false): Unl
   material.needAlphaTesting = () => false;
   material.needAlphaBlendingForMesh = (mesh) => unlitNeedsBlending(mesh);
   material.needAlphaTestingForMesh = (mesh) => { const binding = unlitBinding(mesh); return binding.cutoff > 0 && !binding.blend; };
-  // An alpha-tested mesh's colour draws write alpha-to-coverage under MSAA.
-  registerAlphaToCoverage(material, (mesh) => material.needAlphaTestingForMesh(mesh));
+  // An alpha-tested mesh's colour draws write alpha-to-coverage under MSAA, unless its texture's alpha steps (pixel art).
+  registerAlphaToCoverage(material, (mesh) => material.needAlphaTestingForMesh(mesh) && !samplesSteppedAlpha(unlitBinding(mesh).texture));
   const activeTextures = material.getActiveTextures.bind(material);
   material.getActiveTextures = () => {
     const textures = activeTextures();

@@ -46,7 +46,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(result.glErrors).toEqual([]);
     const capture = Object.fromEntries(result.captures.map((entry) => [entry.label, entry]));
     // WebGPU multisamples at 4 only.
-    expect(result.captures.map((entry) => entry.samples)).toEqual([1, 4, backend === "webgpu" ? 4 : 2, 1, 4, 1, 4, 1, 4, 1, 4]);
+    expect(result.captures.map((entry) => entry.samples)).toEqual([1, 4, backend === "webgpu" ? 4 : 2, 1, 4, 1, 4, 1, 4, 1, 4, 1, 4]);
     for (const entry of result.captures) {
       expect(entry.first.some((value, i) => i % 4 === 0 && value > 200), `${entry.label}: visible surfaces`).toBe(true);
       // No jitter: a static camera's consecutive frames are the same image, pixel for pixel.
@@ -72,6 +72,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     const magenta = (pixels: number[]) => pixels.filter((_, i) => i % 4 === 0 && pixels[i]! - pixels[i + 1]! > 24 && pixels[i + 2]! - pixels[i + 1]! > 24).length;
     expect({ off: magenta(capture["sprite off"]!.first), msaa4: magenta(capture["sprite msaa4"]!.first) }).toEqual({ off: 0, msaa4: 0 });
     expect(partialPixels(capture["sprite msaa4"]!.first), "sprite msaa4: smoothed edges").toBeGreaterThan(40);
+    // A nearest-sampled tile's alpha steps at texel edges, so it discards at its cutoff under MSAA too: coverage would draw
+    // its texels below the cutoff wherever a neighbouring pixel samples an opaque one (its centre, the atlas's next cell).
+    expect({ off: magenta(capture["tile off"]!.first), msaa4: magenta(capture["tile msaa4"]!.first) }).toEqual({ off: 0, msaa4: 0 });
   });
 }
 

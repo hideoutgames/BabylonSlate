@@ -2,6 +2,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import { Material } from "@babylonjs/core/Materials/material";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
@@ -61,6 +62,18 @@ function install(): void {
     setCoverage(engine, drawsAlphaCoverage(engine, this, mesh));
     afterBind.call(this, mesh, effect, subMesh);
   };
+}
+
+/**
+ * Whether `texture` is sampled nearest both ways (magnified and minified): its alpha steps at texel edges, so a coverage
+ * clip has no edge to smooth. It would only write the transparent texels just outside each cutout edge, at about 0.1
+ * coverage in their own colour (usually black), wherever a pixel's 2 × 2 neighbours sample an opaque texel; past a
+ * quad's edge they extrapolate its UVs into an atlas's next cell. Draws of such a texture discard at the cutoff instead.
+ */
+export function samplesSteppedAlpha(texture: BaseTexture | null | undefined): boolean {
+  const mode = texture?.samplingMode;
+  return mode === Constants.TEXTURE_NEAREST_NEAREST || mode === Constants.TEXTURE_NEAREST_NEAREST_MIPNEAREST ||
+    mode === Constants.TEXTURE_NEAREST_NEAREST_MIPLINEAR;
 }
 
 /**
