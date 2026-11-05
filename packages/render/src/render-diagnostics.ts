@@ -50,6 +50,12 @@ export type RenderDiagnostics = {
    * Phase timing is enabled by requesting diagnostics, independently of GPU timers. */
   presentation?: {
     attempted: number; drawn: number; copied: number; held: number;
+    /**
+     * `held` by why the world view held each frame (`held-frames.ts`): its draw's `reason` ("Scene is not ready to
+     * render.", "Render pipelines are compiling.", a FrameGraph reason) or a `HELD_FRAME_LABELS` label; at most
+     * `MAX_HELD_FRAME_REASONS` keys, later reasons under "other".
+     */
+    heldReasons: Record<string, number>;
     preparationMs: number; copyMs: number;
     contextLosses: number; contextRestorations: number;
     /** The view shows the Engine canvas itself (sole enabled view) instead of a copy. */

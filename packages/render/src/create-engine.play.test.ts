@@ -855,6 +855,22 @@ describe("Play createEngine view", () => {
     expect(isSceneGameTimePaused(handle.scene)).toBe(false);
   });
 
+  it("counts each held Play frame under the reason the world view gave, and nothing for a drawn frame", async () => {
+    const { handle, set, frame, presentFirstFrame } = playViewWithCompilingEffect();
+    await presentFirstFrame();
+    const presentation = () => handle.renderDiagnostics().presentation!;
+    const { drawn, held } = presentation();
+    expect(presentation().heldReasons).toEqual({});
+    // A light switches on: its variant is not ready, so the world view holds its last image.
+    set({ ready: false, linked: false });
+    frame();
+    frame();
+    expect(presentation()).toMatchObject({ drawn, held: held + 2, heldReasons: { "Scene is not ready to render.": 2 } });
+    set({ ready: true, linked: true });
+    frame();
+    expect(presentation()).toMatchObject({ drawn: drawn + 1, held: held + 2, heldReasons: { "Scene is not ready to render.": 2 } });
+  });
+
   it("does not pause Play for a hold that ends within the pause delay, and restarts the delay for the next one", async () => {
     const { handle, holds, set, frame, clock, presentFirstFrame } = playViewWithCompilingEffect();
     await presentFirstFrame();

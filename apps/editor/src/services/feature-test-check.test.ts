@@ -34,7 +34,9 @@ function fakeEditor(
   scenes: Record<string, SceneBehavior>,
   onSleep?: (now: number) => void,
   /** The Play view's presentation counts at a time, after the given commands. */
-  presentation?: (now: number, commands: readonly string[]) => { drawn: number; held: number; contextLosses?: number; skipped?: number },
+  presentation?: (now: number, commands: readonly string[]) => {
+    drawn: number; held: number; contextLosses?: number; skipped?: number; heldReasons?: Record<string, number>;
+  },
 ) {
   let now = 0;
   let active: string | null = null;
@@ -70,7 +72,7 @@ function fakeEditor(
           rendering: presentation
             ? ({
               ...(({ skipped, ...counts }) => ({
-                presentation: { contextLosses: 0, ...counts }, frameBackpressure: { mode: 2, inFlight: 0, skipped: skipped ?? 0 },
+                presentation: { contextLosses: 0, heldReasons: {}, ...counts }, frameBackpressure: { mode: 2, inFlight: 0, skipped: skipped ?? 0 },
               }))(presentation(now, commands)),
               cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1,
               pipeline: { effective: { gpuBackend: "webgl2" } },
@@ -219,12 +221,14 @@ describe("runFeatureTestCheck", () => {
     expect(report.scenes[2].problems).toEqual(["Play presented no frame to sample in 5 s."]);
   });
 
-  it("fails a scene whose graphics context was lost, and records the frames presented while Play was sampled", async () => {
-    // The view drew 60 more frames, held 2 and skipped 5 between the start of Play's frame sample and its end.
+  it("fails a scene whose graphics context was lost, and records the frames presented while Play was sampled and why it held them", async () => {
+    // The view drew 60 more frames, held 2 (one for each reason) and skipped 5 between the start of Play's frame sample and its end.
     let samples = 0;
-    const editor = fakeEditor({}, undefined, () => samples < 2
-      ? { drawn: 40, held: 1, skipped: 3, contextLosses: 1 }
-      : { drawn: 100, held: 3, skipped: 8, contextLosses: 1 });
+    const before = { drawn: 40, held: 1, skipped: 3, contextLosses: 1, heldReasons: { "Scene is not ready to render.": 1 } };
+    const after = {
+      drawn: 100, held: 3, skipped: 8, contextLosses: 1, heldReasons: { "Scene is not ready to render.": 2, "Render pipelines are compiling.": 1 },
+    };
+    const editor = fakeEditor({}, undefined, () => samples < 2 ? before : after);
     const deps: FeatureTestCheckDeps = {
       ...editor.deps,
       // The editor viewport's sample, then Play's.
@@ -233,7 +237,10 @@ describe("runFeatureTestCheck", () => {
     const report = await runFeatureTestCheck({ mode: "quick", scenes: [scene("main")], deps, signal: new AbortController().signal });
     expect(report.scenes[0].passed).toBe(false);
     expect(report.scenes[0].problems).toEqual(["The graphics context was lost once during Play."]);
-    expect(report.scenes[0].play.presentation).toEqual({ frames: { drawn: 60, held: 2, skipped: 5 }, contextLosses: 1, imageBlack: [0, 0, 0] });
+    expect(report.scenes[0].play.presentation).toEqual({
+      frames: { drawn: 60, held: 2, skipped: 5, heldReasons: { "Scene is not ready to render.": 1, "Render pipelines are compiling.": 1 } },
+      contextLosses: 1, imageBlack: [0, 0, 0],
+    });
   });
 
   it("reports a scene the editor never opened without starting Play", async () => {
@@ -584,6 +591,24 @@ describe("breakdown settling", () => {
     const first = benchmark.find((sample) => !sample.warmup)!;
     expect(first.failed).toEqual(["Shaders were still first drawn or compiling after 10 s; this step's frames include them."]);
     expect(first.unsettled!.compiling).toBeGreaterThan(0);
+  });
+
+  it("bounds a Profile's wait for quiet shaders at 20 s, where a Breakdown waits 90 s", async () => {
+    // Compiling from the first command on: the last row's settle runs to its bound.
+    const last = async (mode: "profile" | "breakdown") => {
+      const report = await runFeatureTestCheck({
+        mode, scenes: mode === "profile" ? FEATURE_TEST_PROFILE_SCENES : [scene("FT_World")], deps: compilingFor(Number.POSITIVE_INFINITY).deps,
+        signal: new AbortController().signal,
+      });
+      const row = report.scenes[0]!.play.benchmark.at(-1)!;
+      return { failed: row.failed, settleMs: row.unsettled!.settleMs };
+    };
+    expect(await last("profile")).toEqual({
+      failed: ["Shaders were still first drawn or compiling after 20 s; this step's frames include them."], settleMs: 20_000,
+    });
+    expect(await last("breakdown")).toEqual({
+      failed: ["Shaders were still first drawn or compiling after 90 s; this step's frames include them."], settleMs: 90_000,
+    });
   });
 });
 
@@ -965,7 +990,103 @@ describe("Profile", () => {
     expect(main!.play.profile).toEqual({
       instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0, unpooled: { deforming: 64, blended: 9 } },
       endChanges: [],
+      // This view reports no presentation counts.
+      holdRate: null,
     });
+  });
+
+  /** Every fourth attempt held, as a scene that steadily holds frames does. */
+  const ONE_IN_FOUR = (attempt: number) => attempt % 4 === 3;
+  /** Whether the commands so far leave `shadows off` applied (`quality reset` undoes it). */
+  const shadowsOff = (commands: readonly string[]) =>
+    commands.lastIndexOf("quality shadows enabled off") > commands.lastIndexOf("quality reset");
+
+  /**
+   * A Play view that tries 40 frames a second and holds those `holds` names after the commands so far; each frame
+   * sample takes its window on the check's clock. `waits` records, for each frame sample, the progress step it belongs
+   * to and how long the check took from that step to the sample. Commands answer at once (`commandMs: 0` keeps their
+   * reply allowance off the clock).
+   */
+  const holdingView = (holds: (attempt: number, commands: readonly string[]) => boolean = ONE_IN_FOUR) => {
+    let attempts = 0;
+    const counts = { drawn: 0, held: 0 };
+    const editor = fakeEditor({}, undefined, (now, commands) => {
+      for (; attempts < Math.floor(now / 25); attempts++) {
+        if (holds(attempts, commands)) counts.held++;
+        else counts.drawn++;
+      }
+      return { ...counts, heldReasons: { "Scene is not ready to render.": counts.held } };
+    });
+    let step = "";
+    let stepAt = 0;
+    const waits: { step: string; ms: number }[] = [];
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      onProgress: (message) => { step = message; stepAt = editor.deps.now(); },
+      sampleFrames: async (ms, signal) => {
+        waits.push({ step, ms: editor.deps.now() - stepAt });
+        const stats = await editor.deps.sampleFrames(ms, signal);
+        await editor.deps.sleep(ms, signal);
+        return stats;
+      },
+    };
+    return { editor, deps, waits, timeouts: { commandMs: 0 } };
+  };
+
+  it("completes every step on a view that steadily holds a frame in four, waiting against the rate its two warm-up windows measured", async () => {
+    const { deps, waits, timeouts } = holdingView();
+    const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, timeouts, signal: new AbortController().signal });
+    const [main] = report.scenes;
+    expect(main!.problems).toEqual([]);
+    const samples = main!.play.benchmark;
+    expect(samples.slice(0, 2).map((sample) => sample.label)).toEqual(["warm-up 1", "warm-up 2"]);
+    expect(samples.slice(2).map((sample) => sample.label))
+      .toEqual(breakdownSequence(featureTestProfilePlan({ ...SESSION, framesInFlight: 2 }).views).map((step) => step.label));
+    // 10 of its 40 attempts a second held.
+    expect(main!.play.profile!.holdRate).toEqual({ heldPerSecond: 10, share: 0.25 });
+    // Every window and row keeps the frames it drew and held while sampled, and why it held them.
+    expect(samples.map((sample) => sample.presentation!.held / (sample.presentation!.drawn + sample.presentation!.held)))
+      .toEqual(samples.map(() => 0.25));
+    expect(samples.every((sample) => sample.presentation!.heldReasons["Scene is not ready to render."] === sample.presentation!.held)).toBe(true);
+    // From each step to its sample: the first window waits 10 s with no rate yet, then 3 s of quiet shaders; every
+    // later one a 2 s window within 25% + 15 points, then the 3 s.
+    const profileWaits = waits.filter((wait) => /: (warming up|measuring (?!Play|the editor))/.test(wait.step));
+    expect(profileWaits.map((wait) => wait.ms)).toEqual([13_000, ...samples.slice(1).map(() => 5_000)]);
+  });
+
+  it("samples a step that raises the hold rate past the margin once the wait's bound passes, says so, and goes on", async () => {
+    // Shadows off holds three attempts in four.
+    const { deps, waits, timeouts } = holdingView((attempt, commands) => shadowsOff(commands) ? attempt % 4 !== 0 : ONE_IN_FOUR(attempt));
+    const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, timeouts, signal: new AbortController().signal });
+    const samples = report.scenes[0]!.play.benchmark;
+    const shadows = samples.find((sample) => sample.label === "shadows off")!;
+    expect(shadows.failed).toEqual([
+      "The view still held 75% of its frames over the last 2 s after 90 s, past the 40% its warm-up allows (25% plus 15 points); these frames include them.",
+    ]);
+    // 90 s of waiting, then the 3 s settle.
+    expect(waits.find((wait) => wait.step === "main: measuring shadows off")!.ms).toBe(93_000);
+    expect(samples.at(-1)!.label).toBe("baseline 15");
+    expect(report.scenes[0]!.problems).toEqual([`shadows off: ${shadows.failed[0]}`]);
+  });
+
+  it("still ends the sweep at a step after which the view draws no frame, and restores the session", async () => {
+    const { editor, deps, waits, timeouts } = holdingView((attempt, commands) => shadowsOff(commands) || ONE_IN_FOUR(attempt));
+    const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, timeouts, signal: new AbortController().signal });
+    const samples = report.scenes[0]!.play.benchmark;
+    expect(samples.map((sample) => sample.label)).toEqual(["warm-up 1", "warm-up 2", "baseline 1", "captures off", "baseline 2", "shadows off"]);
+    expect(samples.at(-1)!.failed).toEqual(["The view drew no frame in the last 2 s of 90 s; the remaining profiles were skipped."]);
+    expect(waits.at(-1)).toEqual({ step: "main: measuring shadows off", ms: 90_000 });
+    expect(editor.commands).not.toContain("quality shadows medium");
+    expect(editor.commands.slice(-2)).toEqual(["gpubusy off", "quality reset"]);
+  });
+
+  it("keeps a Breakdown on its strict wait: a view that holds a frame in four ends its warm-up and its sweep", async () => {
+    const { deps, timeouts } = holdingView();
+    const report = await runFeatureTestCheck({ mode: "breakdown", scenes: [scene("FT_World")], deps, timeouts, signal: new AbortController().signal });
+    expect(report.scenes[0]!.play.benchmark.map((sample) => [sample.label, sample.failed])).toEqual([
+      ["warm-up 1", []],
+      ["baseline 1", ["The view did not draw steadily within 90 s; the remaining profiles were skipped."]],
+    ]);
   });
 
   it("samples no step whose setting the tier already holds, nor the baseline after it, and reports a setting the restore left changed", async () => {
