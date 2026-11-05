@@ -608,18 +608,30 @@ describe("EditorSceneSync", () => {
     sync.dispose();
   });
 
-  it("clears a SceneLayer editor viewport to opaque black and leaves other 2D scenes chrome gray", () => {
+  it("clears a 2D scene to its Environment colour from its first apply, as 3D does", () => {
     const { scene } = createHandle();
-    const gray = scene.clearColor.clone();
     const sync = new EditorSceneSync(scene);
-    sync.apply({
+    const withColour = (viewportMode: "2d" | "3d", environmentColor: [number, number, number]) => ({
       ...createDefaultScene(),
-      viewportMode: "2d",
+      viewportMode,
+      settings: { ...createDefaultScene().settings, environmentColor },
       actors: [],
     });
-    expect(scene.clearColor.r).toBeCloseTo(gray.r);
-    expect(scene.clearColor.g).toBeCloseTo(gray.g);
-    expect(scene.clearColor.b).toBeCloseTo(gray.b);
+    const clear = () => [scene.clearColor.r, scene.clearColor.g, scene.clearColor.b, scene.clearColor.a];
+    sync.apply(withColour("2d", [0.2, 0.4, 0.6]));
+    expect(clear()).toEqual([0.2, 0.4, 0.6, 1].map((value) => expect.closeTo(value, 6)));
+    // An edit in 2D shows at once, and toggling to 3D and back changes nothing.
+    sync.apply(withColour("2d", [0.5, 0.1, 0]));
+    expect(clear()).toEqual([0.5, 0.1, 0, 1].map((value) => expect.closeTo(value, 6)));
+    sync.apply(withColour("3d", [0.5, 0.1, 0]));
+    sync.apply(withColour("2d", [0.5, 0.1, 0]));
+    expect(clear()).toEqual([0.5, 0.1, 0, 1].map((value) => expect.closeTo(value, 6)));
+    sync.dispose();
+  });
+
+  it("clears a SceneLayer editor viewport to opaque black", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
     sync.apply({
       ...createDefaultScene(),
       viewportMode: "2d",
@@ -634,24 +646,6 @@ describe("EditorSceneSync", () => {
     expect(scene.clearColor.g).toBe(0);
     expect(scene.clearColor.b).toBe(0);
     expect(scene.clearColor.a).toBe(1);
-  });
-
-  it("does not treat a world 2D scene with black environment as a SceneLayer editor", () => {
-    const { scene } = createHandle();
-    const gray = scene.clearColor.clone();
-    const sync = new EditorSceneSync(scene);
-    sync.apply({
-      ...createDefaultScene(),
-      viewportMode: "2d",
-      settings: {
-        ...createDefaultScene().settings,
-        environmentColor: [0, 0, 0],
-      },
-      actors: [],
-    });
-    expect(scene.clearColor.r).toBeCloseTo(gray.r);
-    expect(scene.clearColor.g).toBeCloseTo(gray.g);
-    expect(scene.clearColor.b).toBeCloseTo(gray.b);
   });
 
   it("omits MeshComponent collision dashes until Show Collisions is on", () => {

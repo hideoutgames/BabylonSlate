@@ -562,7 +562,7 @@ describe("syncAuthoredIllumination", () => {
     expect(scene.activeCamera).toBe(orbit);
   });
 
-  it("applies linear fog and 3D environmentColor as clearColor", () => {
+  it("applies linear fog and environmentColor as clearColor", () => {
     const { scene } = createHandle();
     syncAuthoredIllumination(
       scene,
@@ -573,7 +573,7 @@ describe("syncAuthoredIllumination", () => {
         fogStart: 2,
         fogEnd: 40,
       }),
-      { stealActiveCamera: false, applyClearColor: true },
+      { stealActiveCamera: false },
     );
     expect(scene.clearColor.r).toBeCloseTo(0.1);
     expect(scene.clearColor.g).toBeCloseTo(0.2);
@@ -651,15 +651,14 @@ describe("syncAuthoredIllumination", () => {
     expect(scene.fogEnd).toBe(50.01);
   });
 
-  it("keeps chrome clearColor for a 2D editor when applyClearColor is false", () => {
+  it("applies environmentColor as clearColor in a 2D scene too", () => {
     const { scene } = createHandle();
-    const r = scene.clearColor.r;
     syncAuthoredIllumination(
       scene,
       sceneWith([], { environmentColor: [1, 0, 0] }, "2d"),
-      { stealActiveCamera: false, applyClearColor: false },
+      { stealActiveCamera: false },
     );
-    expect(scene.clearColor.r).toBeCloseTo(r);
+    expect([scene.clearColor.r, scene.clearColor.g, scene.clearColor.b]).toEqual([1, 0, 0]);
   });
 
   it("allocates directional and local shadow lights independently", () => {

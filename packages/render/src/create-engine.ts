@@ -1654,10 +1654,7 @@ function initializeEngine(
       playViz?.applyCommand({ type: "setShowNav", enabled: false });
       // Play visuals come from assignMesh. Document illumination would plant a
       // second set of lights (`authoredLight:<actorId>`) on changescene.
-      applySerializedSceneEnvironment(scene, sceneData, {
-        applyClearColor: true,
-        assets: binding,
-      });
+      applySerializedSceneEnvironment(scene, sceneData, { assets: binding });
       rebuildPostProcessStack();
       scheduler.invalidate("asset");
       return;
@@ -3390,10 +3387,7 @@ function initializeEngine(
       }
       applySceneDocumentRenderSettings(sceneData);
       outlineHost.refreshSettings();
-      applySerializedSceneEnvironment(scene, sceneData, {
-        applyClearColor: true,
-        assets: binding,
-      });
+      applySerializedSceneEnvironment(scene, sceneData, { assets: binding });
       scheduler.invalidate("asset");
     },
     setRenderSettings: (settings) => {
