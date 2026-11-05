@@ -27,11 +27,11 @@ Every platform opens the same project format, so you can move a project between 
 | Platform | Sign-in |
 | --- | --- |
 | Web and desktop | Optional. You can create and open projects as a guest. |
-| iPad, iPhone and Android | Required before the project list appears. Sign in with your email address and a verification code, or choose **Use Temporary Demo Account**. |
+| iPad, iPhone and Android | Required before the project list appears. Sign in with your email address and a verification code. |
 
-The demo account is for local testing. It has no cloud access and ends when the app restarts; your projects stay on the device.
+The mobile apps keep you signed in across restarts and app updates until you sign out or your session expires. Your projects stay on the device.
 
-Open the account menu from your name at the bottom of the Homepage sidebar. It offers **Manage Account**, **Engine Settings**, **Changelog**, and **Sign In** or **Sign Out** (**End Demo** for the demo account).
+Open the account menu from your name at the bottom of the Homepage sidebar. It offers **Manage Account**, **Engine Settings**, **Changelog**, and **Sign In** or **Sign Out**.
 
 **Manage Account** opens the **Account** window:
 

@@ -10,7 +10,6 @@ import {
 } from "@testing-library/react";
 import { HomepageMobileAccountGate } from "./homepage-mobile-account-gate";
 import { HomepageAccount } from "./homepage-account";
-import { MobileDemoProvider } from "../context/mobile-demo-context";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
 import * as appearanceHelpers from "./homepage-project-appearance";
 
@@ -68,14 +67,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function mobileHome(gateKey = 0) {
+function mobileHome() {
   return (
-    <MobileDemoProvider>
-      <HomepageMobileAccountGate key={gateKey}>
-        <button>Create Project</button>
-        <HomepageAccount />
-      </HomepageMobileAccountGate>
-    </MobileDemoProvider>
+    <HomepageMobileAccountGate>
+      <button>Create Project</button>
+      <HomepageAccount />
+    </HomepageMobileAccountGate>
   );
 }
 
@@ -96,57 +93,18 @@ function renderMobile(host = "ios", publishableKey = "pk_test_example") {
 
 describe("native mobile account requirement", () => {
   it.each(["ios", "android"])(
-    "opens local %s projects only after explicit demo entry and closes them on End Demo",
-    async (host) => {
-      renderMobile(host, "");
-      expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "Use Temporary Demo Account" }));
-      expect(screen.getByRole("button", { name: "Create Project" })).toBeTruthy();
-      fireEvent.click(
-        screen.getByRole("button", {
-          name: "Temporary Demo, Local Testing Only · Not Signed In",
-        }),
-      );
-      expect(within(await screen.findByRole("menu")).getByText("Temporary Demo")).toBeTruthy();
-      expect(screen.getByText("Local Testing Only · Not Signed In")).toBeTruthy();
-      fireEvent.click(screen.getByRole("menuitem", { name: "End Demo" }));
-      expect(await screen.findByRole("heading", { name: "Sign-In Is Not Set Up" })).toBeTruthy();
-      expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
+    "lets %s development builds synced with --demo through without an account",
+    (host) => {
+      auth.host = host;
+      vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
+      vi.stubEnv("VITE_MOBILE_DEMO", "true");
+      render(mobileHome());
+      expect(
+        screen.getByRole("button", { name: "Create Project" }),
+      ).toBeTruthy();
       expect(auth.create).not.toHaveBeenCalled();
-      expect(auth.signOut).not.toHaveBeenCalled();
     },
   );
-
-  it("keeps demo access through homepage remounts but not a fresh app session", () => {
-    const view = renderMobile("ios", "");
-    fireEvent.click(screen.getByRole("button", { name: "Use Temporary Demo Account" }));
-    view.rerender(mobileHome(1));
-    expect(screen.getByRole("button", { name: "Create Project" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Use Temporary Demo Account" })).toBeNull();
-    view.unmount();
-    renderMobile("ios", "");
-    expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Use Temporary Demo Account" })).toBeTruthy();
-  });
-
-  it("allows demo during a pending account restore without accepting its late session", async () => {
-    let finishRestore: (value: typeof session) => void = () => {};
-    auth.restoreSession.mockReturnValueOnce(new Promise((resolve) => {
-      finishRestore = resolve;
-    }));
-    renderMobile();
-    await waitFor(() => expect(auth.restoreSession).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole("button", { name: "Use Temporary Demo Account" }));
-    await act(async () => finishRestore(session));
-    fireEvent.click(screen.getByTestId("homepage-account"));
-    expect(within(await screen.findByRole("menu")).getByText("Temporary Demo")).toBeTruthy();
-    expect(screen.queryByText("Ada Lovelace")).toBeNull();
-    fireEvent.click(screen.getByRole("menuitem", { name: "End Demo" }));
-    expect(await screen.findByLabelText("Email Address")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
-    expect(auth.signOut).not.toHaveBeenCalled();
-    expect(auth.verifyCode).not.toHaveBeenCalled();
-  });
 
   it.each(["web", "electron"])(
     "keeps phone-sized %s project access available without an account",
@@ -542,36 +500,34 @@ describe("native mobile account requirement", () => {
     auth.host = "ios";
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     render(
-      <MobileDemoProvider>
-        <HomepageMobileAccountGate>
-          <HomepageCreateDialog
-            open
-            mode="edit"
-            onOpenChange={vi.fn()}
-            busy={false}
-            name="Moon Garden"
-            onNameChange={vi.fn()}
-            nameIssue={null}
-            appearance={{ icon: "box", color: "coral" }}
-            onAppearanceChange={vi.fn()}
-            templateId="empty"
-            onTemplateIdChange={vi.fn()}
-            templates={[]}
-            hostPlatform="ios"
-            pickFolder={false}
-            onPickFolderChange={vi.fn()}
-            width={1920}
-            onWidthChange={vi.fn()}
-            height={1080}
-            onHeightChange={vi.fn()}
-            blackBars={false}
-            onBlackBarsChange={vi.fn()}
-            pixelArt={false}
-            onPixelArtChange={vi.fn()}
-            onSubmit={vi.fn()}
-          />
-        </HomepageMobileAccountGate>
-      </MobileDemoProvider>,
+      <HomepageMobileAccountGate>
+        <HomepageCreateDialog
+          open
+          mode="edit"
+          onOpenChange={vi.fn()}
+          busy={false}
+          name="Moon Garden"
+          onNameChange={vi.fn()}
+          nameIssue={null}
+          appearance={{ icon: "box", color: "coral" }}
+          onAppearanceChange={vi.fn()}
+          templateId="empty"
+          onTemplateIdChange={vi.fn()}
+          templates={[]}
+          hostPlatform="ios"
+          pickFolder={false}
+          onPickFolderChange={vi.fn()}
+          width={1920}
+          onWidthChange={vi.fn()}
+          height={1080}
+          onHeightChange={vi.fn()}
+          blackBars={false}
+          onBlackBarsChange={vi.fn()}
+          pixelArt={false}
+          onPixelArtChange={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      </HomepageMobileAccountGate>,
     );
     const dialog = await screen.findByRole("dialog", { name: "Edit Project" });
     const input = within(dialog).getByLabelText("Upload Picture");

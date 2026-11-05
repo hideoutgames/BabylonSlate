@@ -63,7 +63,6 @@ function AccountSection({
   onSignIn,
   onSignUp,
   onSignOut,
-  signOutLabel,
   onManageAccount,
   onAccountDeleted,
 }: {
@@ -73,7 +72,6 @@ function AccountSection({
   onSignIn?: () => void;
   onSignUp?: () => void;
   onSignOut?: () => void;
-  signOutLabel: string;
   onManageAccount?: () => void;
   onAccountDeleted: () => void;
 }) {
@@ -120,7 +118,7 @@ function AccountSection({
             )}
             <Button variant="outline" size="sm" disabled={busy} onClick={onSignOut}>
               <LogOutIcon data-icon="inline-start" />
-              {signOutLabel}
+              Sign Out
             </Button>
           </div>
           {onManageAccount && (
@@ -302,7 +300,6 @@ export function HomepageAccountCenter({
   onSignIn,
   onSignUp,
   onSignOut,
-  signOutLabel,
   onManageAccount,
 }: {
   open: boolean;
@@ -315,7 +312,6 @@ export function HomepageAccountCenter({
   onSignIn?: () => void;
   onSignUp?: () => void;
   onSignOut?: () => void;
-  signOutLabel: string;
   onManageAccount?: () => void;
 }) {
   const [section, setSection] = useState<SectionId>("account");
@@ -337,7 +333,6 @@ export function HomepageAccountCenter({
         onSignIn={onSignIn}
         onSignUp={onSignUp}
         onSignOut={onSignOut}
-        signOutLabel={signOutLabel}
         onManageAccount={onManageAccount}
         onAccountDeleted={() => onOpenChange(false)}
       />

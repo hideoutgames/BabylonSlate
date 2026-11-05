@@ -49,7 +49,6 @@ export function HomepageProfileMenu({
   disabled,
   name = "Guest",
   email,
-  description,
   imageUrl,
   details,
   nativeProfile,
@@ -57,7 +56,6 @@ export function HomepageProfileMenu({
   onSignIn,
   onSignUp,
   onSignOut,
-  signOutLabel = "Sign Out",
   onManageAccount,
   onEngineSettings,
   onChangelog,
@@ -66,7 +64,6 @@ export function HomepageProfileMenu({
   disabled?: boolean;
   name?: string;
   email?: string;
-  description?: string;
   imageUrl?: string;
   /** Extra account facts for the Account dialog. */
   details?: Pick<AccountDetails, "memberSince" | "lastSignInAt" | "signInMethods">;
@@ -76,7 +73,6 @@ export function HomepageProfileMenu({
   onSignIn?: () => void;
   onSignUp?: () => void;
   onSignOut?: () => Promise<void>;
-  signOutLabel?: string;
   onManageAccount?: () => void;
   onEngineSettings?: () => void;
   onChangelog?: () => void;
@@ -88,7 +84,7 @@ export function HomepageProfileMenu({
   const [accountOpen, setAccountOpen] = useState(false);
   const signedIn = Boolean(onSignOut);
   const status =
-    description ?? email ?? (signedIn ? "Signed In" : "Not Signed In");
+    email ?? (signedIn ? "Signed In" : "Not Signed In");
   useEffect(() => {
     onOpenChange?.(menuOpen || accountOpen);
   }, [menuOpen, accountOpen, onOpenChange]);
@@ -190,7 +186,7 @@ export function HomepageProfileMenu({
                 {signOut && (
                   <DropdownMenuItem disabled={busy} onClick={signOut}>
                     <LogOutIcon />
-                    {signOutLabel}
+                    Sign Out
                   </DropdownMenuItem>
                 )}
               </DropdownMenuGroup>
@@ -213,7 +209,6 @@ export function HomepageProfileMenu({
         onSignIn={onSignIn}
         onSignUp={onSignUp}
         onSignOut={signOut}
-        signOutLabel={signOutLabel}
         onManageAccount={onManageAccount}
       />
     </>
