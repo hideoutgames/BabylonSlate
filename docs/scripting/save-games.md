@@ -43,7 +43,7 @@ A failed save keeps the last valid save, and a failed load leaves the game as it
 
 ## Save actors
 
-To save an actor's position and selected variables, add a [Save Game](../components/save-game.md) component to it (**Add Component > General > Save Game**) and pick what to save. Actors spawned during play also need [Register Save Actor](class/register-save-actor.md) with a persistent ID. [Event On Game Loaded](class/event-on-game-loaded.md) runs after a load has restored them.
+To save an actor's position and selected variables, add a [Save Game](../components/save-game.md) component to it (**Add Component > General > Save Game**) and pick what to save. Actors spawned during play also need [Register Save Actor](class/register-save-actor.md) with a persistent ID. [Event On Game Loaded](class/event-on-game-loaded.md) runs on the Game Instance and Game Subsystems after a load has restored them. Restored actors do not run Event Begin Play again; to let them react to a load, bind them to an [Event Dispatcher](event-dispatchers.md) that the Game Instance calls from On Game Loaded.
 
 Saved actors belong to the scene that is active when you save; switch to that scene before loading. Actors in streamed scenes and Scene Layers are not saved. Store progress that spans scenes in Save Game fields.
 

@@ -1,7 +1,12 @@
 import { overlayContainerScriptVariables } from "./overlay-container-api";
 import { OVERLAY_LAYOUT_CLASSES, ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID } from "@haptic/core";
 import { UI_CONTROL_2D_SCRIPT_APIS } from "./ui-controls2d-api";
-import { SCENE_LAYER_ACTOR_SCRIPT_API, SCENE_LAYER_SWITCHER_SCRIPT_API } from "./scene-layer-switcher-api";
+import {
+  SCALABILITY_CHANGED_EVENT,
+  SCENE_LAYER_ACTOR_SCRIPT_API,
+  SCENE_LAYER_SCRIPT_API,
+  SCENE_LAYER_SWITCHER_SCRIPT_API,
+} from "./scene-layer-switcher-api";
 import { TIMELINE_CLIP_SCRIPT_API } from "./timeline-clip-api";
 
 export type EngineScriptPin = {
@@ -223,14 +228,14 @@ const END_EVENT: EngineScriptEvent = {
   exportName: "onEnd",
 };
 
-/** Game Instance lifecycle; GameSubsystem shares it for parity. */
+/**
+ * Game Instance lifecycle; GameSubsystem shares it for parity. On Game Loaded
+ * runs only on these two; Scalability Changed also on Scene Layers and Scene
+ * Layer Actors.
+ */
 const GAME_INSTANCE_EVENTS: readonly EngineScriptEvent[] = [
   { name: "On Game Loaded", eventType: "flow.event.gameLoaded", exportName: "onGameLoaded" },
-  {
-    name: "Scalability Changed",
-    eventType: "flow.event.scalabilityChanged",
-    exportName: "onScalabilityChanged",
-  },
+  SCALABILITY_CHANGED_EVENT,
   INIT_EVENT,
   TICK_EVENT,
   END_EVENT,
@@ -257,7 +262,6 @@ const GAME_INSTANCE_EVENTS: readonly EngineScriptEvent[] = [
 ];
 
 const SCENE_SUBSYSTEM_EVENTS: readonly EngineScriptEvent[] = [
-  { name: "On Game Loaded", eventType: "flow.event.gameLoaded", exportName: "onGameLoaded" },
   INIT_EVENT,
   TICK_EVENT,
   END_EVENT,
@@ -355,6 +359,7 @@ const PARTICLE_PARAMETER_FUNCTIONS: EngineScriptFunction[] = [
 
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   ...UI_CONTROL_2D_SCRIPT_APIS,
+  SCENE_LAYER_SCRIPT_API,
   SCENE_LAYER_ACTOR_SCRIPT_API,
   SCENE_LAYER_SWITCHER_SCRIPT_API,
   TIMELINE_CLIP_SCRIPT_API,

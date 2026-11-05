@@ -29,5 +29,5 @@ Restores the game from a saved slot.
 
 - Waits until it finishes, then runs **Completed** or **Failed**; a failed load leaves the current game unchanged.
 - A slot with no save runs **Failed** with the error code missing.
-- [**Event On Game Loaded**](event-on-game-loaded.md) runs after the saved state is restored.
+- [**Event On Game Loaded**](event-on-game-loaded.md) runs on the Game Instance and Game Subsystems after the saved state is restored.
 - Latent: the node finishes later without pausing the rest of the game.

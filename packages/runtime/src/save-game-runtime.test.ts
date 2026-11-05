@@ -23,15 +23,21 @@ const components: SerializedComponent[] = [selected, { id: "inventory", classId:
 const heroScript: CompiledScript = {
   assetGuid: "hero-asset", classId: "Hero", parentClassId: "Actor", anchors: [], components,
   variables: [{ name: "health", type: "float", defaultValue: 100 }],
-  entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: false }, { name: "loaded", event: "onGameLoaded", isAsync: false }],
-  source: `export function begin(ctx) { ctx.self.setVariable('begins', 1); }
-    export function loaded(ctx) {
-      ctx.self.setVariable('loadedHealth', ctx.self.getVariable('health'));
-      ctx.self.setVariable('loadedCoins', ctx.getSaveData().coins);
-      ctx.self.setVariable('loadedTarget', ctx.self.getVariable('target'));
-    }`,
+  entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: false }],
+  source: "export function begin(ctx) { ctx.self.setVariable('begins', 1); }",
 };
-async function boot(storage: MemoryStorage, options: { sceneId?: string; onCommand?: (command: CommandMessage) => void; scripts?: CompiledScript[]; actorScript?: CompiledScript; definition?: SaveGameDefinition; referenceTarget?: boolean } = {}) {
+/** The Game Instance's On Game Loaded, which runs `body` once a load has restored the world. */
+function onGameLoaded(body: string): CompiledScript {
+  return { assetGuid: "game-instance-asset", classId: "GameInstance", parentClassId: "GameInstance", anchors: [],
+    entryPoints: [{ name: "loaded", event: "onGameLoaded", isAsync: false }], source: `export function loaded(ctx) { ${body} }` };
+}
+/** Records on each Hero what it held when On Game Loaded ran. */
+const recordLoadedHeroes = onGameLoaded(`for (const hero of ctx.getAllActorsOfClass('Hero')) {
+  hero.setVariable('loadedHealth', hero.getVariable('health'));
+  hero.setVariable('loadedCoins', ctx.getSaveData().coins);
+  hero.setVariable('loadedTarget', hero.getVariable('target'));
+}`);
+async function boot(storage: MemoryStorage, options: { sceneId?: string; onCommand?: (command: CommandMessage) => void; scripts?: CompiledScript[]; actorScript?: CompiledScript; gameInstance?: CompiledScript; definition?: SaveGameDefinition; referenceTarget?: boolean } = {}) {
   const scene = createDefaultScene();
   const actorScript = options.actorScript ?? heroScript;
   scene.actors = [createActor("hero", "Hero", { classId: actorScript.classId, components: structuredClone(components) }),
@@ -40,7 +46,7 @@ async function boot(storage: MemoryStorage, options: { sceneId?: string; onComma
   const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
     playScene: scene, playSceneGuid: options.sceneId ?? "level", onCommand: options.onCommand });
   const service = runtime.configureSaveGame({ projectId: "project", definition: options.definition ?? definition, storage });
-  await runtime.loadScripts([actorScript, ...(options.scripts ?? [])]);
+  await runtime.loadScripts([actorScript, options.gameInstance ?? recordLoadedHeroes, ...(options.scripts ?? [])]);
   await runtime.realizePlayWorld();
   runtime.start();
   return { runtime, service };
@@ -56,20 +62,20 @@ describe("runtime Save Game", () => {
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
       playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer } });
     const service = runtime.configureSaveGame({ projectId: "project", definition, storage: new MemoryStorage() });
-    const entryPoints = ["onBeginPlay", "onGameLoaded", "onDestroyed"].map((name) => ({ name, event: name, isAsync: false }));
+    const entryPoints = ["onBeginPlay", "onDestroyed"].map((name) => ({ name, event: name, isAsync: false }));
+    const source = `export function onBeginPlay(ctx) { ctx.self.setVariable('beganCoins', ctx.getSaveData().coins); }
+      export function onDestroyed(ctx) { ctx.self.setVariable('ended', true); }`;
     try {
       await runtime.loadScripts([
-        { assetGuid: "row", classId: "Row", parentClassId: "SceneLayerActor", anchors: [], entryPoints,
-          components: [{ id: "row-state", classId: "RowState", properties: {} }],
-          source: `export function onBeginPlay(ctx) { ctx.self.setVariable('beganCoins', ctx.getSaveData().coins); }
-            export function onGameLoaded(ctx) { ctx.self.setVariable('beganWhenLoaded', ctx.self.getVariable('beganCoins')); }
-            export function onDestroyed(ctx) { ctx.self.setVariable('ended', true); }`,
-        },
-        { assetGuid: "row-state", classId: "RowState", parentClassId: "ActorComponent", anchors: [], entryPoints,
-          source: `export function onBeginPlay(ctx) { ctx.self.setVariable('beganCoins', ctx.getSaveData().coins); }
-            export function onGameLoaded(ctx) { ctx.self.setVariable('beganWhenLoaded', ctx.self.getVariable('beganCoins')); }
-            export function onDestroyed(ctx) { ctx.self.setVariable('ended', true); }`,
-        },
+        { assetGuid: "row", classId: "Row", parentClassId: "SceneLayerActor", anchors: [], entryPoints, source,
+          components: [{ id: "row-state", classId: "RowState", properties: {} }] },
+        { assetGuid: "row-state", classId: "RowState", parentClassId: "ActorComponent", anchors: [], entryPoints, source },
+        // What each row and its component had begun with when On Game Loaded ran.
+        onGameLoaded(`for (const row of ctx.getAllActorsOfClass('Row')) {
+          for (const owner of [row, ...row.components.filter((component) => component.classId === 'RowState')]) {
+            owner.setVariable('beganWhenLoaded', owner.getVariable('beganCoins'));
+          }
+        }`),
       ]);
       await runtime.realizePlayWorld();
       const menu = runtime.createSceneLayer("menu")!;
@@ -325,16 +331,15 @@ describe("runtime Save Game", () => {
     const mapScript: CompiledScript = {
       ...heroScript,
       variables: [...heroScript.variables!, { name: "target", type: "Actor", container: "map", keyTypeId: "string", defaultValue: [] }],
-      source: `export function loaded(ctx) {
-        const map = ctx.self.getVariable('target');
-        if (!(map instanceof Map) || !map.has(1)) return;
-        ctx.self.setVariable('loadedMapActor', map.get(1).get('friend'));
-        const component = ctx.self.components.find(item => item.guid === 'inventory');
-        ctx.self.setVariable('loadedMapComponent', component.getVariable('charge').get('nested').get(2).component);
-      }`,
-      entryPoints: [{ name: "loaded", event: "onGameLoaded", isAsync: false }],
     };
-    const first = await boot(storage, { actorScript: mapScript });
+    const recordLoadedMaps = onGameLoaded(`for (const hero of ctx.getAllActorsOfClass('Hero')) {
+      const map = hero.getVariable('target');
+      if (!(map instanceof Map) || !map.has(1)) continue;
+      hero.setVariable('loadedMapActor', map.get(1).get('friend'));
+      const component = hero.components.find(item => item.guid === 'inventory');
+      hero.setVariable('loadedMapComponent', component.getVariable('charge').get('nested').get(2).component);
+    }`);
+    const first = await boot(storage, { actorScript: mapScript, gameInstance: recordLoadedMaps });
     try {
       const companion = first.runtime.spawnScriptedActor({ classId: "Hero" })!;
       first.runtime.registerSaveActor(companion, "map-companion");
@@ -346,7 +351,7 @@ describe("runtime Save Game", () => {
         new Map([["nested", new Map([[2, { component: inventory, actors: [companion] }]])]]));
       expect((await first.service.saveGame()).ok).toBe(true);
     } finally { first.runtime.stop(); }
-    const next = await boot(storage, { actorScript: mapScript });
+    const next = await boot(storage, { actorScript: mapScript, gameInstance: recordLoadedMaps });
     try {
       expect((await next.service.loadGame()).ok).toBe(true);
       const companion = next.runtime.getWorld().findActor("map-companion")!;

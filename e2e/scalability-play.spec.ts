@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { MAIN_CLASS_FILE, MAIN_SCENE_FILE, PROJECT_FILE, createActor, createDefaultScene, createMeshComponent, normalizeRenderProjectSettings, type ProjectDocument, type SerializedGraph } from "../packages/core/src/index";
+import { PROJECT_FILE, normalizeRenderProjectSettings, type ProjectDocument, type SerializedGraph } from "../packages/core/src/index";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { createDefaultMigrationRegistry } from "../packages/assets/src/migration";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
@@ -38,9 +38,6 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
   project.settings.playFrameCap = 30;
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const version = createDefaultMigrationRegistry().currentVersion("Class");
-  const scene = createDefaultScene();
-  scene.actors = [createActor("observer", "Settings Observer", { classId: "main", components: [createMeshComponent("mesh", "box")] }), ...scene.actors.filter((actor) => actor.id === scene.settings.mainCameraActorId)];
-  files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ guid: "00000000-0000-4000-8000-000000000001", type: "Scene", name: "Main", version: createDefaultMigrationRegistry().currentVersion("Scene"), payload: scene as unknown as Record<string, unknown> }, { dependencies: ["00000000-0000-4000-8000-000000000002"] }));
   for (const [index, { name, graph }] of scalabilityGraphDefinitions().entries()) {
     const document: SerializedGraph = {
       nodes: graph.nodes.map((node) => ({ id: node.id, type: node.typeId, data: node.properties, position: node.position })),
@@ -48,7 +45,7 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
     };
     files.set(`assets/${name}.class.hasset`, await encodeAssetDocument({ guid: `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`, type: "Class", name, version, payload: document as unknown as Record<string, unknown> }, { parentClass: "DebugCommand" }));
   }
-  // A real actor receives asynchronous renderer acknowledgements. Both the
+  // A Game Subsystem receives asynchronous renderer acknowledgements. Both the
   // event payload and Get Effective Scalability execute in the authored graph.
   const observer: SerializedGraph = {
     nodes: [
@@ -92,7 +89,7 @@ test(`saved Class scalability graphs compile and run with confirmed events in ed
       [index === 0 ? "logRead" : "payload-log-color", "execOut", `${id}-log-color`, "execIn"]];
     for (const [link, [source, sourceHandle, target, targetHandle]] of links.entries()) observer.edges.push({ id: `${id}-color-${link}`, source: source!, sourceHandle: sourceHandle!, target: target!, targetHandle: targetHandle! });
   }
-  files.set(MAIN_CLASS_FILE, await encodeAssetDocument({ guid: "00000000-0000-4000-8000-000000000002", type: "Class", name: "Main", version, payload: observer as unknown as Record<string, unknown> }, { parentClass: "Actor" }));
+  files.set("assets/SettingsObserver.class.hasset", await encodeAssetDocument({ guid: "30000000-0000-4000-8000-000000000001", type: "Class", name: "SettingsObserver", version, payload: observer as unknown as Record<string, unknown> }, { parentClass: "GameSubsystem" }));
   await openMinimalTestProject(page, files);
   await showOverlayButtons(page, ["console"]);
   await openMainScene(page);

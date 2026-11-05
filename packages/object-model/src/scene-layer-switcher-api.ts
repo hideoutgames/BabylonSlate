@@ -1,13 +1,27 @@
-import type { EngineClassScriptApi, EngineScriptPin } from "./engine-script-api";
+import type { EngineClassScriptApi, EngineScriptEvent, EngineScriptPin } from "./engine-script-api";
 
 const EXEC_IN: EngineScriptPin = { name: "exec", typeId: "exec", direction: "in" };
 const EXEC_OUT: EngineScriptPin = { name: "then", typeId: "exec", direction: "out" };
 const ACTOR_OUT: EngineScriptPin = { name: "actor", typeId: "object", typeClassId: "SceneLayerActor", direction: "out" };
 
+/** Runs on the Game Instance, Game Subsystems, Scene Layers and Scene Layer Actors, never on components. */
+export const SCALABILITY_CHANGED_EVENT: EngineScriptEvent = {
+  name: "Scalability Changed",
+  eventType: "flow.event.scalabilityChanged",
+  exportName: "onScalabilityChanged",
+};
+
+/** A Scene Layer's own script (`SceneLayer:<guid>`). */
+export const SCENE_LAYER_SCRIPT_API: EngineClassScriptApi = {
+  classId: "SceneLayer",
+  nativeEvents: [SCALABILITY_CHANGED_EVENT],
+};
+
 export const SCENE_LAYER_ACTOR_SCRIPT_API: EngineClassScriptApi = {
   classId: "SceneLayerActor",
   variables: [{ name: "Item Index", typeId: "int", propertyKey: "itemIndex", getOnly: true }],
   nativeEvents: [
+    SCALABILITY_CHANGED_EVENT,
     { name: "On Scene Layer Actor Switched To", eventType: "flow.event.sceneLayerActorSwitchedTo", exportName: "onSceneLayerActorSwitchedTo" },
     { name: "On Scene Layer Actor Switched From", eventType: "flow.event.sceneLayerActorSwitchedFrom", exportName: "onSceneLayerActorSwitchedFrom" },
   ],
