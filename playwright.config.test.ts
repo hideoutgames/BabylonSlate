@@ -141,6 +141,8 @@ describe("Playwright WebKit smoke lane", () => {
 
     const webkit = allTests("playwright.webkit.config.ts");
     expect(webkit.map((test) => `${test.file} › ${test.title}`).sort()).toEqual([
+      // WebKit kept the disclosure header in the frame's border, where its touch-layout button took no taps.
+      "application-theme.spec.ts › Application Settings opens and closes the theme Style section",
       "editor-smoke.spec.ts › Haptic editor smoke › loads shell, opens project, and shows viewport canvas",
       "p14-export.spec.ts › P14 export smoke › unzip-serve-boot-tick on range and range-blind servers",
       "p4-play.spec.ts › P4 Play overlay and session report › Play opens overlay; fixture throw shows report and focuses node",
