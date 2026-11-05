@@ -4,7 +4,7 @@ A Skybox surrounds the scene with a cubemap sky, distance fog fades far objects 
 
 ## Background colour
 
-Every scene has an **Environment** colour in **Scene Settings** (in the **Inspector** with nothing selected). It fills the background wherever no Skybox or geometry covers it. New 3D scenes use a horizon blue, so deleting the Skybox does not leave a black screen.
+Every scene has an **Environment** colour in **Scene Settings** (in the **Inspector** with nothing selected). It fills the background wherever no Skybox or geometry covers it, in the viewport in 2D and 3D and in Play. New 3D scenes use a horizon blue, so deleting the Skybox does not leave a black screen.
 
 ## Skybox
 

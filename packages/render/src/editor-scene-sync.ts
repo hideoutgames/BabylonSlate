@@ -465,7 +465,6 @@ export class EditorSceneSync {
       for (const progress of syncAuthoredIlluminationSteps(this.scene, sceneData, {
         stealActiveCamera: this.stealActiveCamera,
         restoreCamera: this.restoreCamera,
-        applyClearColor: sceneData.viewportMode !== "2d" || sceneData.overlayEditor === true,
         assets: this.assets,
       })) void progress;
       // Parents first, so each root freezes under its parent's new world matrix.
@@ -699,7 +698,6 @@ export class EditorSceneSync {
     for (const progress of syncAuthoredIlluminationSteps(this.scene, sceneData, {
       stealActiveCamera: this.stealActiveCamera,
       restoreCamera: this.restoreCamera,
-      applyClearColor: sceneData.viewportMode !== "2d" || sceneData.overlayEditor === true,
       assets: this.assets,
     })) yield 0.7 + 0.2 * progress;
     index = 0;

@@ -729,7 +729,6 @@ export function applySceneToBabylonScene(
 
   syncAuthoredIllumination(scene, sceneData, {
     stealActiveCamera: true,
-    applyClearColor: true,
     assets,
   });
 }

@@ -61,7 +61,6 @@ export type AuthoredCameraProperties = {
 export type SyncIlluminationOptions = {
   stealActiveCamera?: boolean;
   restoreCamera?: Camera | null;
-  applyClearColor?: boolean;
   assets?: MeshAssetContext;
   onDiagnostic?: (message: string) => void;
 };
@@ -567,10 +566,10 @@ export function syncAuthoredAreaLightsFromMeshes(scene: Scene, meshForActor: (ac
 export function applySceneEnvironment(
   scene: Scene,
   sceneData: SerializedScene,
-  options: { applyClearColor?: boolean; assets?: MeshAssetContext } = {},
+  options: { assets?: MeshAssetContext } = {},
 ): void {
   const settings = sceneData.settings;
-  if (options.applyClearColor) scene.clearColor = sceneClearColor(settings.environmentColor);
+  scene.clearColor = sceneClearColor(settings.environmentColor);
   syncEngineDefaultMaterialEmission(scene, sceneData.viewportMode === "2d");
   if (settings.fogEnabled) {
     const fog = normalizeSceneFogSettings(settings);
@@ -638,10 +637,7 @@ export function* syncAuthoredIlluminationSteps(
   // A controller exists only while some document had a probe; others pay nothing.
   if (findSceneReflectionProbes(scene) || sceneData.actors.some((actor) => actor.components.some((component) => component.classId === REFLECTION_PROBE_CLASS_ID)))
     sceneReflectionProbes(scene).syncAuthored(sceneData);
-  applySceneEnvironment(scene, sceneData, {
-    applyClearColor: options.applyClearColor,
-    assets: options.assets,
-  });
+  applySceneEnvironment(scene, sceneData, { assets: options.assets });
 
   const liveLights = new Set<string>();
   const liveCameras = new Set<string>();
