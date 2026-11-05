@@ -3,6 +3,7 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   CloudOffIcon,
+  LockIcon,
   MailIcon,
   RotateCwIcon,
 } from "lucide-react";
@@ -378,6 +379,12 @@ export default function HomepageNativeAccount({
           </Button>
         </div>
       )}
+      <p className="homepage-native-auth-secured">
+        <LockIcon aria-hidden="true" />
+        <span>
+          Secured by <strong>Clerk</strong>
+        </span>
+      </p>
     </Frame>
   );
 }
