@@ -1143,7 +1143,7 @@ function initializeEngine(
       onDiagnostic: (diagnostic) => options.onPostProcessDiagnostic?.(diagnostic),
     });
   };
-  /** `RenderDiagnostics.settings`: what the Feature Test Check's Breakdown steps change, as effective now. */
+  /** `RenderDiagnostics.settings`: what the Feature Test Check's Breakdown and Profile steps change, as effective now. */
   const breakdownSettings = (): Record<string, string> => {
     const quality = resolveSceneRenderingQuality(scene);
     return {
@@ -1151,6 +1151,8 @@ function initializeEngine(
       "post.samples": String(sceneMultisampleCount(scene)),
       "post.enabled": String(postProcessingEnabled),
       captures: renderTargetCaptures.isEveryFrameSuspended() ? "suspended" : "on",
+      // Engine-wide and kept across Play sessions, so a change that is not undone shows.
+      "presentation.framesInFlight": String(frameBackpressure.mode),
       // The live context's attribute, not the stored setting: the setting applies to the next Engine.
       "presentation.preserve": engine.isWebGPU ? "n/a"
         : String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),

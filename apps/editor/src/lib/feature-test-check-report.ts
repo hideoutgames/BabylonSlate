@@ -13,8 +13,13 @@ import {
   isBreakdownBaseline,
   livePreserve,
   meanFrameMs,
+  profileDelta,
+  profileRanking,
+  profileSavings,
+  profileStep,
   SATURATED_SHARE,
   settingsChanges,
+  type BaselineDelta,
   type FeatureTestBreakdownInfo,
   type FeatureTestBreakdownMethod,
   type FeatureTestBenchmarkSample,
@@ -25,6 +30,7 @@ import {
   type FrameStats,
   type PlayPresentation,
 } from "../services/feature-test-check";
+import { DRAW_PASSES } from "@haptic/render";
 import { clipText, formatDiagnosticEnvironment, type DiagnosticEnvironment } from "./diagnostic-info";
 
 export type FeatureTestCheckEnvironment = DiagnosticEnvironment;
@@ -32,7 +38,7 @@ type LongFrame = NonNullable<FeatureTestCheckSceneResult["play"]["firstDraws"]>[
 
 const MAX_LOG_LINES = 8;
 const MAX_LONG_FRAMES = 4;
-const MODE_LABELS = { quick: "Quick", full: "Full", benchmark: "Benchmark", breakdown: "Breakdown" } as const;
+const MODE_LABELS = { quick: "Quick", full: "Full", benchmark: "Benchmark", breakdown: "Breakdown", profile: "Profile" } as const;
 
 const clip = clipText;
 
@@ -149,14 +155,13 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       const vsync = sample.frames?.vsync?.map((share) => (share * 100).toFixed(0)).join("/") ?? "-";
       const busy = sample.gpuBusy ? `${sample.gpuBusy.medianMs.toFixed(1)} (${sample.gpuBusy.p95Ms.toFixed(0)})` : "-";
       const viewFirst = play.benchmark.find((entry) => isBreakdownBaseline(entry) && entry.view === sample.view) ?? first;
-      const occlusion = sample.occlusion
-        ? `occlusion culled ${sample.occlusion.culled}/${sample.occlusion.tested} · ${sample.occlusion.triangles} tris · ${sample.occlusion.ms.toFixed(2)} ms`
-        : "";
       const notes = [
-        sample.warmup ? "warm-up" : "", breakdownNotes(scene.name, method, play.benchmark, sample, viewFirst), occlusion,
+        sample.warmup ? "warm-up" : "", breakdownNotes(scene.name, method, play.benchmark, sample, viewFirst), occlusionText(sample),
       ].filter(Boolean).join(" · ");
       lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(vsync, 16)}${pad(busy, 14)}${pad(change, 18)}${pad(ms(sample.cpuMs), 8)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${notes}`.trimEnd());
     }
+  } else if (play.benchmark.length && mode === "profile") {
+    lines.push(...profileLines(scene));
   } else if (play.benchmark.length) {
     lines.push("  Benchmark (frame cap lifted):", `  Frames in flight: ${framesInFlightText(play.benchmark)}`, `    ${pad("Profile", 18)}${pad("fps", 6)}${pad("p95", 8)}${pad("cpu", 20)}${pad("gpu", 20)}${pad("draws", 14)}resolution`);
     for (const sample of play.benchmark) {
@@ -208,25 +213,19 @@ function preserveText(value: string | undefined): string {
 }
 
 /**
- * A Breakdown step's flags: shaders first drawn or compiling while it sampled, the settings it changed against the
- * first baseline of its camera (UNEXPECTED for a field outside its own; a baseline that differs was NOT RESTORED), or
- * that it changed nothing (its setting already had that value).
+ * A measured sample's flags: shaders first drawn or compiling while it sampled, and the settings it changed against the
+ * first baseline of its camera (UNEXPECTED for a field outside its step's `fields`; a baseline or warm-up window that
+ * differs was NOT RESTORED), or that it changed nothing (its setting already had that value).
  */
-function breakdownNotes(
-  sceneName: string,
-  method: FeatureTestBreakdownMethod,
-  samples: readonly FeatureTestBenchmarkSample[],
-  sample: FeatureTestBenchmarkSample,
-  first: FeatureTestBenchmarkSample | undefined,
-): string {
-  if (sample.skipped) return `skipped (${sample.skipped})`;
+function settingNotes(
+  sample: FeatureTestBenchmarkSample, first: FeatureTestBenchmarkSample | undefined, fields: readonly string[],
+): string[] {
   const notes: string[] = [];
   const unsettled = sample.unsettled;
   if (unsettled && (unsettled.firstDraws > 0 || unsettled.compiling > 0))
     notes.push(`UNSETTLED: ${unsettled.firstDraws} first drawn, ${unsettled.compiling} compiling`);
   if (first?.settings && sample.settings && sample !== first) {
     const changes = settingsChanges(first.settings, sample.settings);
-    const fields = breakdownStep(sceneName, sample.label, method)?.fields ?? [];
     const field = (change: string) => change.slice(0, change.indexOf("="));
     if (isBreakdownBaseline(sample) || sample.warmup) {
       if (changes.length) notes.push(`NOT RESTORED: ${changes.join(", ")}`);
@@ -238,7 +237,23 @@ function breakdownNotes(
       if (other.length) notes.push(`UNEXPECTED: ${other.join(", ")}`);
     }
   }
+  return notes;
+}
+
+/**
+ * A Breakdown step's flags (`settingNotes`), or why it was skipped; for a water detail step the FFT grid it ran, for an
+ * add-one step that includes another its cost beyond that one, and an add-one step past the cap.
+ */
+function breakdownNotes(
+  sceneName: string,
+  method: FeatureTestBreakdownMethod,
+  samples: readonly FeatureTestBenchmarkSample[],
+  sample: FeatureTestBenchmarkSample,
+  first: FeatureTestBenchmarkSample | undefined,
+): string {
+  if (sample.skipped) return `skipped (${sample.skipped})`;
   const step = isBreakdownBaseline(sample) || sample.warmup ? undefined : breakdownStep(sceneName, sample.label, method);
+  const notes = settingNotes(sample, first, step?.fields ?? []);
   // The FFT grid a water detail step ran: resolution-independent work the detail may change.
   if (step?.fields?.includes("water.fft") && sample.settings?.["water.fft"]) notes.push(`fft ${sample.settings["water.fft"]}`);
   if (step?.includes) {
@@ -256,6 +271,87 @@ function breakdownNotes(
     if (value !== null && value > ADD_ONE_CAP_MS) notes.push(`OVER ${ADD_ONE_CAP_MS} ms: the GPU may have changed speed`);
   }
   return notes.join(" · ");
+}
+
+/** A change against baselines as `-1.2ms -5%`, or `-`. */
+function deltaText(delta: BaselineDelta | null): string {
+  if (!delta) return "-";
+  return `${delta.ms >= 0 ? "+" : ""}${delta.ms.toFixed(1)}ms ${delta.percent >= 0 ? "+" : ""}${delta.percent.toFixed(0)}%`;
+}
+
+/** Occlusion culling while sampled, as `stat draws` shows it. */
+function occlusionText(sample: FeatureTestBenchmarkSample): string {
+  return sample.occlusion
+    ? `occlusion culled ${sample.occlusion.culled}/${sample.occlusion.tested} · ${sample.occlusion.triangles} tris · ${sample.occlusion.ms.toFixed(2)} ms`
+    : "";
+}
+
+/** A Profile row's flags (`settingNotes`), `no setting changed` for a step whose setting already had its value, and overlaps. */
+function profileNotes(sample: FeatureTestBenchmarkSample, first: FeatureTestBenchmarkSample | undefined): string {
+  if (sample.skipped) return `no setting changed (${sample.skipped})`;
+  const step = isBreakdownBaseline(sample) || sample.warmup ? undefined : profileStep(sample.label);
+  return [
+    sample.warmup ? "warm-up" : "", ...settingNotes(sample, first, step?.fields ?? []), step?.overlaps ? "overlaps" : "",
+    occlusionText(sample),
+  ].filter(Boolean).join(" · ");
+}
+
+/** The instance pool line: groups, pooled members and meshes left unpooled by reason. */
+function instancePoolText(pool: NonNullable<FeatureTestCheckSceneResult["play"]["profile"]>["instancePool"]): string {
+  if (!pool) return "unreported";
+  const unpooled = Object.entries(pool.unpooled).filter(([, count]) => count).sort(([, a], [, b]) => b - a);
+  const total = unpooled.reduce((sum, [, count]) => sum + count, 0);
+  return `${pool.groups} groups · ${pool.pooled} pooled · ${pool.retained} retained empty · unpooled ${total}${unpooled.length ? ` (${unpooled.map(([reason, count]) => `${reason} ${count}`).join(", ")})` : ""}`;
+}
+
+/** A Profile's section: settings, pool, restore check, the rows, their draws per pass, and the steps ranked by saving. */
+function profileLines(scene: FeatureTestCheckSceneResult): string[] {
+  const samples = scene.play.benchmark;
+  const profile = scene.play.profile;
+  const first = samples.find(isBreakdownBaseline);
+  const drift = breakdownWarmupDrift(samples);
+  const timed = samples.find((sample) => sample.gpuBusy);
+  const lines = [
+    "  Profile at the session's quality tier and frame cap (a short warm-up, then a baseline before and after every step; each sampled 5 s with gpubusy once no shader is first drawn or compiling):",
+    `  Settings: ${first?.settings ? Object.entries(first.settings).map(([field, value]) => `${field} ${value}`).join(" · ") : "unknown"}`,
+    `  Frames in flight: ${framesInFlightText(samples)}`,
+    drift
+      ? `  Warm-up drift: first window ${drift.firstMs.toFixed(1)} ms, steady ${drift.steadyMs.toFixed(1)} ms (${drift.percent >= 0 ? "+" : ""}${drift.percent.toFixed(0)}%) over ${drift.windows} windows${drift.basis === "frame" ? " (mean frame)" : " (gpu busy)"}`
+      : "  Warm-up drift: unmeasured (fewer than two windows)",
+    `  Instance pool: ${instancePoolText(profile?.instancePool ?? null)}`,
+    profile?.endChanges
+      ? profile.endChanges.length ? `  NOT RESTORED at the end: ${profile.endChanges.join(", ")}` : "  Restored: every setting as before the first step"
+      : "  Restored: not checked",
+    "  Legend: mean, p95 = frame time · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · frame, cpu change = against the baselines around the step (a baseline's: against the first) · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED and UNSETTLED mark a row not to trust",
+    `  Timing: ${timed?.gpuBusy ? `gpu busy polled every ${timed.gpuBusy.pollMs.toFixed(1)} ms (each frame up to one poll late)` : "no gpu busy (no fences)"}`,
+    `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("cpu", 8)}${pad("gpu busy", 14)}${pad("bound", 6)}${pad("draws", 14)}${pad("frame change", 16)}${pad("cpu change", 16)}notes`,
+  ];
+  for (const sample of samples) {
+    const mean = meanFrameMs(sample.frames);
+    const busy = sample.gpuBusy ? `${sample.gpuBusy.medianMs.toFixed(1)} (${sample.gpuBusy.p95Ms.toFixed(0)})` : "-";
+    const change = profileDelta(samples, sample);
+    lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(ms(sample.cpuMs), 8)}${pad(busy, 14)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(deltaText(change.frame), 16)}${pad(deltaText(change.cpu), 16)}${profileNotes(sample, first)}`.trimEnd());
+  }
+  // Only the passes some row drew in, in the frame's order.
+  const passes = DRAW_PASSES.filter((pass) => samples.some((sample) => (sample.drawPasses?.[pass] ?? 0) > 0));
+  if (passes.length) {
+    lines.push("  Draws per pass (median per frame):", `    ${pad("Step", 22)}${passes.map((pass) => pad(pass, Math.max(pass.length + 1, 7))).join("")}`.trimEnd());
+    for (const sample of samples) {
+      if (!sample.drawPasses) continue;
+      lines.push(`    ${pad(sample.label, 22)}${passes.map((pass) => pad(String(Math.round(sample.drawPasses![pass] ?? 0)), Math.max(pass.length + 1, 7))).join("")}`.trimEnd());
+    }
+  } else {
+    lines.push("  Draws per pass: unreported");
+  }
+  const ranking = profileRanking(samples);
+  lines.push("  Ranked by frame-time saving:");
+  ranking.forEach((entry, index) => lines.push(
+    `    ${index + 1}. ${entry.label}: frame ${deltaText(entry.frame)} · cpu ${deltaText(entry.cpu)}${entry.overlaps ? " · overlaps" : ""}`,
+  ));
+  if (!ranking.length) lines.push("    none measured");
+  const savings = profileSavings(samples);
+  if (savings) lines.push(`  Steps that overlap no other save ${savings.savingsMs.toFixed(1)} ms of the first baseline's ${savings.frameMs.toFixed(1)} ms frame`);
+  return lines;
 }
 
 /** A counter's median over the sample, with its range when the samples differ. */
@@ -355,6 +451,7 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
   const breakdown = report.mode === "breakdown" ? report.breakdown : undefined;
   const verdicts = report.mode === "breakdown" ? report.scenes.map((scene) => breakdownVerdicts(scene, reportMethod(report))) : [];
   const flags = [
+    ...(report.scenes.some((scene) => scene.play.profile?.endChanges?.length) ? [" · NOT RESTORED"] : []),
     ...(verdicts.some((entry) => entry.nonAdditive.length) ? [" · NON-ADDITIVE"] : []),
     ...(verdicts.some((entry) => entry.saturated) ? [" · SATURATED"] : []),
     ...(verdicts.some((entry) => entry.overCap) ? [" · OVER CAP"] : []),

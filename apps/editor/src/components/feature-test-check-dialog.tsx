@@ -48,6 +48,7 @@ import {
   FEATURE_TEST_BREAKDOWN_METHODS,
   type FeatureTestBreakdownMethod,
   FEATURE_TEST_CHECK_SCENES,
+  FEATURE_TEST_PROFILE_SCENES,
   frameStats,
   runFeatureTestCheck,
   warmDeviceMinutes,
@@ -98,10 +99,11 @@ const MODE_DESCRIPTIONS: Record<FeatureTestCheckMode, string> = {
   quick: "Checks the current scene in the editor and in Play on this device, then writes a report you can copy. About a minute.",
   full: "Checks every Feature Test scene in the editor and in Play and runs the ft_ console commands. A few minutes.",
   benchmark: "Plays every Feature Test scene and measures each quality tier with the frame cap lifted, to find the settings this device holds at 60 and 30 fps. About ten minutes; keep the device awake and plugged in.",
+  profile: "Plays the main scene at this device's quality settings and turns one feature off at a time between unchanged baselines (captures, shadows, screen-space shadows, ambient occlusion, reflections, volumetrics, post-processing, anti-aliasing, occlusion culling, frames in flight, resolution), then ranks what each saves in frame time and CPU cost and shows where the draw calls go. About 5 minutes; keep the device awake and plugged in.",
   breakdown: "Plays FT_World and FT_Occlusion and measures each feature at 60 fps between baselines (anti-aliasing, shadow filter, post-processing effects, water, captures, resolution; occlusion culling from two cameras). Add One starts from a light Low base and turns one feature on at a time, so each change is that feature's own cost; Remove One turns one feature off at a time from the Medium tier. With Compare Preserve Drawing Buffer, the editor then reloads once and repeats it with preserveDrawingBuffer switched, and writes one report of both. About 10 minutes (20 with the comparison); keep the device awake and plugged in.",
 };
 
-const MODES = ["quick", "full", "benchmark", "breakdown"] as const satisfies readonly FeatureTestCheckMode[];
+const MODES = ["quick", "full", "benchmark", "breakdown", "profile"] as const satisfies readonly FeatureTestCheckMode[];
 
 const METHOD_LABELS: Record<FeatureTestBreakdownMethod, string> = { "add-one": "Add One", "remove-one": "Remove One" };
 
@@ -313,8 +315,9 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     const active = activeRef.current;
     const current = FEATURE_TEST_CHECK_SCENES.find((scene) => `scene:${scene.path}` === active);
     const scenes = mode === "quick" ? [current ?? FEATURE_TEST_CHECK_SCENES[0]]
-      : mode === "breakdown" && !breakdownAllScenes ? FEATURE_TEST_BREAKDOWN_SCENES
-        : FEATURE_TEST_CHECK_SCENES;
+      : mode === "profile" ? FEATURE_TEST_PROFILE_SCENES
+        : mode === "breakdown" && !breakdownAllScenes ? FEATURE_TEST_BREAKDOWN_SCENES
+          : FEATURE_TEST_CHECK_SCENES;
     if (mode !== "breakdown") {
       const { report, error } = await runCheck({ mode, scenes });
       finish(report, error);
@@ -401,6 +404,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
               variant="outline"
               size="sm"
               spacing={1}
+              className="flex-wrap"
               value={[mode]}
               onValueChange={(value) => { const next = MODES.find((entry) => entry === value[0]); if (next) setMode(next); }}
               aria-label="Check Scope"
@@ -409,6 +413,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
               <ToggleGroupItem value="full" data-testid="feature-test-check-full">Full (All Scenes)</ToggleGroupItem>
               <ToggleGroupItem value="benchmark" data-testid="feature-test-check-benchmark">Benchmark</ToggleGroupItem>
               <ToggleGroupItem value="breakdown" data-testid="feature-test-check-breakdown">Breakdown</ToggleGroupItem>
+              <ToggleGroupItem value="profile" data-testid="feature-test-check-profile">Profile</ToggleGroupItem>
             </ToggleGroup>
             {mode === "breakdown" ? (
               <ToggleGroup
