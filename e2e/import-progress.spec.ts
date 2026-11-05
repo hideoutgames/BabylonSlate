@@ -102,3 +102,54 @@ test("an HDR import shows the Importing dialog, Cancel leaves no asset behind, a
   await expect(page.getByTestId("property-faceSize")).toHaveText(/128 × 128/);
   expect(errors).toEqual([]);
 });
+
+test("a long phase in the Importing dialog ends in an ellipsis before Cancel and keeps the count in view", async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await openTestProject(page);
+
+  // The largest Face Size keeps the conversion running long enough to measure the dialog.
+  await page.getByTestId("settings-menu").click();
+  await page.getByTestId("engine-settings").click();
+  await page.getByTestId("engine-settings-modal-category-assets").click();
+  await page.getByTestId("setting-hdr-import-face-size").click();
+  await page.getByRole("option", { name: "512 × 512" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("engine-settings-modal")).toHaveCount(0);
+
+  await openContentBrowser(page);
+  const panorama = buildRadianceHdrFixture({ width: 4096, height: 2048, color: () => [1, 0.8, 0.6], runLength: true });
+  const name = `${"Evening Harbour Panorama With A Very Long Descriptive File Name ".repeat(3).trim()}.hdr`;
+  await page.getByTestId("content-browser-import-input").setInputFiles({
+    name,
+    mimeType: "image/vnd.radiance",
+    buffer: Buffer.from(panorama),
+  });
+
+  const dialog = page.getByTestId("importing-overlay");
+  await expect(dialog).toBeVisible();
+  await expect(page.getByTestId("importing-count")).toHaveText(/%$/);
+  const layout = await page.evaluate(() => {
+    const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+    const label = document.querySelector<HTMLElement>('[data-testid="importing-progress"] [data-slot="progress-label"]')!;
+    return {
+      dialog: box('[data-testid="importing-overlay"]'),
+      count: box('[data-testid="importing-count"]'),
+      cancel: box('[data-testid="importing-cancel"]'),
+      label: label.getBoundingClientRect(),
+      truncated: label.scrollWidth > label.clientWidth,
+      textOverflow: getComputedStyle(label).textOverflow,
+    };
+  });
+  // The count and Cancel stay inside the dialog; the phase stops before Cancel and ends in an ellipsis.
+  expect(layout.count.right).toBeLessThanOrEqual(layout.dialog.right);
+  expect(layout.cancel.right).toBeLessThanOrEqual(layout.dialog.right);
+  expect(layout.label.right).toBeLessThanOrEqual(layout.cancel.left);
+  expect(layout.truncated).toBe(true);
+  expect(layout.textOverflow).toBe("ellipsis");
+
+  await page.getByTestId("importing-cancel").click();
+  await expect(dialog).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
