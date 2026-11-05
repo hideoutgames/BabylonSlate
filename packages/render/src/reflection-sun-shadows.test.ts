@@ -105,7 +105,7 @@ it("draws a reflection's maps again only when they change, and gives them back",
   expect(shadows.due(true, fit)).toBe(true);
   shadows.prepare(true, fit, "mirrors", 1);
   expect([shadows.claimed, shadows.holdsMaps]).toEqual([true, true]);
-  const own = sun.getShadowGenerator(mirror)!;
+  const own = sun.getShadowGenerator(mirror) as AtlasCascadedShadowGenerator;
   const map = own.getShadowMap()!;
   // Its first draw waits for the caster's depth variant, neutral and due meanwhile.
   expect([awaitsFirstDraw(own), shadows.due(true, fit)]).toEqual([true, true]);
