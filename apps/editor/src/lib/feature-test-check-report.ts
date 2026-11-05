@@ -10,6 +10,7 @@ import {
   counterStats,
   FEATURE_TEST_BENCHMARK_PROFILES,
   frameBound,
+  heldShare,
   isBreakdownBaseline,
   livePreserve,
   meanFrameMs,
@@ -17,6 +18,8 @@ import {
   profileRanking,
   profileSavings,
   profileStep,
+  PROFILE_HOLD_MARGIN,
+  PROFILE_HOLD_WINDOW_MS,
   SATURATED_SHARE,
   settingsChanges,
   type BaselineDelta,
@@ -83,11 +86,23 @@ function breakdownVerdicts(
   };
 }
 
-/** Frames drawn, held and skipped while sampled, context losses, and each image sample's near-black share. */
+/**
+ * Held frames by reason, the most first, as `20 Scene is not ready to render; 3 other`; past `limit` reasons, the rest
+ * as `+N more`. Empty without one.
+ */
+function heldReasonsText(reasons: Readonly<Record<string, number>>, limit = Number.POSITIVE_INFINITY): string {
+  const entries = Object.entries(reasons).filter(([, count]) => count > 0).sort(([, a], [, b]) => b - a);
+  const shown = entries.slice(0, limit).map(([reason, count]) => `${count} ${reason.replace(/\.$/, "")}`);
+  const rest = entries.length - shown.length;
+  return [...shown, ...rest > 0 ? [`+${rest} more`] : []].join("; ");
+}
+
+/** Frames drawn, held (and why) and skipped while sampled, context losses, and each image sample's near-black share. */
 function presentationText(presentation: PlayPresentation): string {
   const frames = presentation.frames;
+  const reasons = frames ? heldReasonsText(frames.heldReasons) : "";
   const counts = frames
-    ? `drawn ${frames.drawn} · held ${frames.held} · skipped ${frames.skipped} (frames in flight)`
+    ? `drawn ${frames.drawn} · held ${frames.held}${reasons ? ` (${reasons})` : ""} · skipped ${frames.skipped} (frames in flight)`
     : "no frame counts";
   const images = presentation.imageBlack.map((share) => share === null ? "no frame" : `${Math.round(share * 100)}%`).join(", ");
   return `${counts} · context losses ${presentation.contextLosses} · image near-black ${images || "not sampled"}`;
@@ -286,14 +301,37 @@ function occlusionText(sample: FeatureTestBenchmarkSample): string {
     : "";
 }
 
-/** A Profile row's flags (`settingNotes`), `no setting changed` for a step whose setting already had its value, and overlaps. */
+/** Reasons a Profile row prints for its held frames. */
+const PROFILE_ROW_HELD_REASONS = 2;
+
+/**
+ * A Profile row's flags (`settingNotes`), `no setting changed` for a step whose setting already had its value, overlaps,
+ * and why it held frames while sampled (its top reasons).
+ */
 function profileNotes(sample: FeatureTestBenchmarkSample, first: FeatureTestBenchmarkSample | undefined): string {
   if (sample.skipped) return `no setting changed (${sample.skipped})`;
   const step = isBreakdownBaseline(sample) || sample.warmup ? undefined : profileStep(sample.label);
+  const reasons = sample.presentation?.held ? heldReasonsText(sample.presentation.heldReasons, PROFILE_ROW_HELD_REASONS) : "";
   return [
     sample.warmup ? "warm-up" : "", ...settingNotes(sample, first, step?.fields ?? []), step?.overlaps ? "overlaps" : "",
-    occlusionText(sample),
+    occlusionText(sample), reasons ? `held: ${reasons}` : "",
   ].filter(Boolean).join(" · ");
+}
+
+function percent(share: number): string {
+  return `${Math.round(share * 100)}%`;
+}
+
+/** The share of its attempts a sample's view held while sampled, as `23%`, or `-` unmeasured. */
+function heldShareText(sample: FeatureTestBenchmarkSample): string {
+  const share = sample.presentation ? heldShare(sample.presentation) : null;
+  return share === null ? "-" : percent(share);
+}
+
+/** The scene's own hold rate from a Profile's warm-up, and what each step's wait allows against it. */
+function holdRateText(rate: NonNullable<FeatureTestCheckSceneResult["play"]["profile"]>["holdRate"]): string {
+  if (!rate) return "unmeasured (no presentation counts)";
+  return `the warm-up held ${rate.heldPerSecond.toFixed(1)} frames/s, ${percent(rate.share)} of attempts; each step waits for a ${PROFILE_HOLD_WINDOW_MS / 1000} s window holding at most ${percent(rate.share + PROFILE_HOLD_MARGIN)} (+${Math.round(PROFILE_HOLD_MARGIN * 100)} points)`;
 }
 
 /** The instance pool line: groups, pooled members and meshes left unpooled by reason. */
@@ -319,18 +357,19 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
       ? `  Warm-up drift: first window ${drift.firstMs.toFixed(1)} ms, steady ${drift.steadyMs.toFixed(1)} ms (${drift.percent >= 0 ? "+" : ""}${drift.percent.toFixed(0)}%) over ${drift.windows} windows${drift.basis === "frame" ? " (mean frame)" : " (gpu busy)"}`
       : "  Warm-up drift: unmeasured (fewer than two windows)",
     `  Instance pool: ${instancePoolText(profile?.instancePool ?? null)}`,
+    `  Hold rate: ${holdRateText(profile?.holdRate ?? null)}`,
     profile?.endChanges
       ? profile.endChanges.length ? `  NOT RESTORED at the end: ${profile.endChanges.join(", ")}` : "  Restored: every setting as before the first step"
       : "  Restored: not checked",
-    "  Legend: mean, p95 = frame time · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · frame, cpu change = against the baselines around the step (a baseline's: against the first) · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED and UNSETTLED mark a row not to trust",
+    "  Legend: mean, p95 = frame time · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · frame, cpu change = against the baselines around the step (a baseline's: against the first) · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED and UNSETTLED mark a row not to trust",
     `  Timing: ${timed?.gpuBusy ? `gpu busy polled every ${timed.gpuBusy.pollMs.toFixed(1)} ms (each frame up to one poll late)` : "no gpu busy (no fences)"}`,
-    `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("cpu", 8)}${pad("gpu busy", 14)}${pad("bound", 6)}${pad("draws", 14)}${pad("frame change", 16)}${pad("cpu change", 16)}notes`,
+    `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("cpu", 8)}${pad("gpu busy", 14)}${pad("bound", 6)}${pad("draws", 14)}${pad("held", 6)}${pad("frame change", 16)}${pad("cpu change", 16)}notes`,
   ];
   for (const sample of samples) {
     const mean = meanFrameMs(sample.frames);
     const busy = sample.gpuBusy ? `${sample.gpuBusy.medianMs.toFixed(1)} (${sample.gpuBusy.p95Ms.toFixed(0)})` : "-";
     const change = profileDelta(samples, sample);
-    lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(ms(sample.cpuMs), 8)}${pad(busy, 14)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(deltaText(change.frame), 16)}${pad(deltaText(change.cpu), 16)}${profileNotes(sample, first)}`.trimEnd());
+    lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(ms(sample.cpuMs), 8)}${pad(busy, 14)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(heldShareText(sample), 6)}${pad(deltaText(change.frame), 16)}${pad(deltaText(change.cpu), 16)}${profileNotes(sample, first)}`.trimEnd());
   }
   // Only the passes some row drew in, in the frame's order.
   const passes = DRAW_PASSES.filter((pass) => samples.some((sample) => (sample.drawPasses?.[pass] ?? 0) > 0));

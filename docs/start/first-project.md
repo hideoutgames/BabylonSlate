@@ -66,7 +66,7 @@ Feature Test is a developer starter that places every engine feature in a few sc
 4. Pick **Quick (Current Scene)**, **Full (All Scenes)**, **Benchmark**, **Breakdown** or **Profile**, then choose **Start**.
 5. When it finishes, choose **Copy Report** to copy the plain-text results.
 
-A scene fails when it does not load, a console command fails, Play reports an error, the game view stays black, or the graphics context is lost. The report also shows how many frames each scene drew, held and skipped while it was measured.
+A scene fails when it does not load, a console command fails, Play reports an error, the game view stays black, or the graphics context is lost. The report also shows how many frames each scene drew, held and skipped while it was measured, and why it held them (for example, the scene was not ready to draw).
 
 If the app crashes or reloads during a check, choose **Run Feature Test Check…** again: it shows the report up to where the app stopped, with what the editor held at the end, so you can still copy it.
 
@@ -91,4 +91,4 @@ Profile shows what each feature costs at your device's own quality settings, and
 - all four effects that need the extra scene pass at once, post-processing and anti-aliasing
 - occlusion culling (switched to the other setting), frames in flight (the `framesinflight` console command) and half resolution
 
-The report ranks the features by the frame time they save and also shows the CPU time each saves, what limits each frame (the CPU, the GPU or the display), the draw calls each part of the frame made (the split `stat draws` shows), and how many objects draw together through instancing and why the rest do not. A feature your settings already have off says **no setting changed**. Profile puts every setting back afterwards and says **NOT RESTORED** if one did not come back. It takes about 5 minutes; keep the device awake and plugged in.
+The report ranks the features by the frame time they save and also shows the CPU time each saves, what limits each frame (the CPU, the GPU or the display), the draw calls each part of the frame made (the split `stat draws` shows), and how many objects draw together through instancing and why the rest do not. A feature your settings already have off says **no setting changed**. Each row also shows the share of frames the scene held while it was measured and why. Some scenes hold a share of their frames all the time: Profile measures that share while it warms up and, after each change, waits only until the scene is back to about that share, so it still finishes. Profile puts every setting back afterwards and says **NOT RESTORED** if one did not come back. It takes about 5 to 8 minutes; keep the device awake and plugged in.

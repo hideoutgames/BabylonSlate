@@ -29,7 +29,10 @@ describe("formatFeatureTestCheckReport", () => {
         editor: { status: "ready", ms: 900, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 3000, phase: null, frames: { frames: 300, durationMs: 5000, fps: 60, p95Ms: 17, maxMs: 25, stalls: 0 }, runtimeFps: 60,
           snapshot: { drawCalls: 42, meshes: 80, textures: 30, accountedBytes: 8 * 1048576, rendering },
-          presentation: { frames: { drawn: 280, held: 4, skipped: 16 }, contextLosses: 0, imageBlack: [0, 0.031, null] },
+          presentation: {
+            frames: { drawn: 280, held: 4, skipped: 16, heldReasons: { "Render pipelines are compiling.": 1, "Scene is not ready to render.": 3 } },
+            contextLosses: 0, imageBlack: [0, 0.031, null],
+          },
           firstDraws: { draws: 7, loadCompiled: 5, frames: 4, stalls: 2, mostInFrame: 3, worstFrameMs: 180.4, longFrames: 6, longest: [
             { ms: 240.2, engineMs: 31.5, firstDraws: 0, compiles: 0 }, { ms: 180.4, engineMs: 170.1, firstDraws: 3, compiles: 1 },
             { ms: 150, engineMs: 140, firstDraws: 1, compiles: 2 }, { ms: 130, engineMs: 20, firstDraws: 0, compiles: 0 },
@@ -52,7 +55,8 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  > ft_stats: ok in 1.2 s · FeatureTest score 0, spinners 4, spawned 0");
     expect(lines).toContain("  First draws after load: 7 (5 compiled by the load) in 4 frames · 2 over 100 ms · worst 180 ms · most 3 in a frame");
     expect(lines).toContain("  Long frames after load: 6 over 100 ms · longest 240 ms (engine 32 ms, 0 first draws, 0 compiles), 180 ms (engine 170 ms, 3 first draws, 1 compile), 150 ms (engine 140 ms, 1 first draw, 2 compiles), 130 ms (engine 20 ms, 0 first draws, 0 compiles)");
-    expect(lines).toContain("  Presentation: drawn 280 · held 4 · skipped 16 (frames in flight) · context losses 0 · image near-black 0%, 3%, no frame");
+    // Holds by reason, the most first.
+    expect(lines).toContain("  Presentation: drawn 280 · held 4 (3 Scene is not ready to render; 1 Render pipelines are compiling) · skipped 16 (frames in flight) · context losses 0 · image near-black 0%, 3%, no frame");
     expect(lines).toContain("  TypeError: x is undefined");
   });
 
@@ -296,14 +300,15 @@ describe("formatFeatureTestCheckReport", () => {
     expect(row("water detail high")).toMatch(/water\.shadingDetail=high · fft 256x3 · OVER 30 ms/);
   });
 
-  it("reports a Profile: each row's changes in frame time and CPU cost, draws per pass, the pool, the restore check and the ranking", () => {
+  it("reports a Profile: each row's changes in frame time and CPU cost, held share, draws per pass, the pool, the hold rate, the restore check and the ranking", () => {
     const settings = { shadows: "high 2048", "shadows.screen": "off", "resolution.scale": "1", "post.enabled": "true" };
     const passes = { objects: 420, geometry: 40, shadows: 140, captures: 90, post: 12, other: 2 };
     const sample = (label: string, meanMs: number, cpuMs: number, extra: Partial<FeatureTestBenchmarkSample> = {}): FeatureTestBenchmarkSample => ({
       label, baseline: label.startsWith("baseline"),
       frames: { frames: 100, durationMs: meanMs * 100, fps: 1000 / meanMs, medianMs: meanMs, meanMs, p95Ms: meanMs + 8, maxMs: meanMs + 20, stalls: 0 },
       runtimeFps: null, cpuMs, gpuMs: null, drawCalls: 704, draws: { median: 704, min: 704, max: 704, samples: 10 },
-      resolution: "1180x788@1.00", failed: [], settings, unsettled: { firstDraws: 0, compiling: 0, settleMs: 3000 }, drawPasses: passes, ...extra,
+      resolution: "1180x788@1.00", failed: [], settings, unsettled: { firstDraws: 0, compiling: 0, settleMs: 3000 }, drawPasses: passes,
+      presentation: { drawn: 40, held: 0, ms: 5000, heldReasons: {} }, ...extra,
     });
     const report: FeatureTestCheckReport = {
       mode: "profile", startedAt: 0, durationMs: 270_000, cancelled: false, pageErrors: [],
@@ -314,6 +319,7 @@ describe("formatFeatureTestCheckReport", () => {
           profile: {
             instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0, unpooled: { deforming: 64, blended: 9, drawHooks: 0 } },
             endChanges: ["presentation.framesInFlight=off"],
+            holdRate: { heldPerSecond: 2.36, share: 0.234 },
           },
           benchmark: [
             { ...sample("warm-up 1", 90, 44, { drawPasses: undefined }), baseline: false, warmup: true },
@@ -322,6 +328,8 @@ describe("formatFeatureTestCheckReport", () => {
             sample("shadows off", 66, 31, {
               settings: { ...settings, shadows: "off" }, drawPasses: { ...passes, shadows: 0, captures: 70 },
               draws: { median: 544, min: 544, max: 544, samples: 10 },
+              // A quarter of the view's attempts held while sampled.
+              presentation: { drawn: 30, held: 10, ms: 5000, heldReasons: { "Scene is not ready to render.": 10 } },
             }),
             sample("baseline 2", 83, 42),
             sample("resolution 0.5", 70, 40, { settings: { ...settings, "resolution.scale": "0.5" } }),
@@ -330,8 +338,13 @@ describe("formatFeatureTestCheckReport", () => {
               label: "screen shadows off", frames: null, runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null, failed: [],
               baseline: false, skipped: "already shadows.screen off",
             },
-            sample("MSAA off", 81, 40),
-            sample("baseline 4", 80, 40),
+            sample("MSAA off", 81, 40, {
+              presentation: {
+                drawn: 20, held: 20, ms: 5000,
+                heldReasons: { "Scene is not ready to render.": 4, "Render pipelines are compiling.": 15, "FrameGraph is not ready.": 1 },
+              },
+            }),
+            sample("baseline 4", 80, 40, { presentation: undefined }),
           ] },
         session: null,
       }],
@@ -344,14 +357,18 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  Instance pool: 18 groups · 410 pooled · 2 retained empty · unpooled 73 (deforming 64, blended 9)");
     expect(lines).toContain("  NOT RESTORED at the end: presentation.framesInFlight=off");
     expect(lines).toContain("  Warm-up drift: first window 90.0 ms, steady 84.0 ms (-7%) over 2 windows (mean frame)");
+    expect(lines).toContain("  Hold rate: the warm-up held 2.4 frames/s, 23% of attempts; each step waits for a 2 s window holding at most 38% (+15 points)");
     // Against the baselines around it: (80 + 83) / 2 = 81.5 ms frame, (40 + 42) / 2 = 41 ms CPU.
     expect(row("shadows off")[0]).toBe(
-      "    shadows off           15   66.0ms  74ms   31.0ms  -             gpu   544           -15.5ms -19%    -10.0ms -24%    shadows=off");
+      "    shadows off           15   66.0ms  74ms   31.0ms  -             gpu   544           25%   -15.5ms -19%    -10.0ms -24%    shadows=off · held: 10 Scene is not ready to render");
     expect(row("resolution 0.5")[0]).toMatch(/-11\.5ms -14% {4}-1\.0ms -2% {6}resolution\.scale=0\.5 · overlaps$/);
     expect(row("baseline 2")[0]).toMatch(/\+3\.0ms \+4% {6}\+2\.0ms \+5%$/);
     expect(row("baseline 3")[0]).toMatch(/NOT RESTORED: post\.enabled=false$/);
     expect(row("screen shadows off")[0]).toMatch(/ no setting changed \(already shadows\.screen off\)$/);
-    expect(row("MSAA off")[0]).toMatch(/\+1\.0ms \+1% {6}\+0\.0ms \+0% {6}no setting changed$/);
+    // Its held share and top two reasons, the rest counted; a row without counts shows none.
+    expect(row("MSAA off")[0]).toMatch(/ 50% {3}\+1\.0ms \+1% {6}\+0\.0ms \+0% {6}no setting changed · held: 15 Render pipelines are compiling; 4 Scene is not ready to render; \+1 more$/);
+    expect(row("baseline 4")[0]).toMatch(/ 704 {11}- {5}\+0\.0ms \+0% {6}\+0\.0ms \+0%$/);
+    expect(row("baseline 1")[0]).toMatch(/ 704 {11}0% {4}\+0\.0ms \+0% {6}\+0\.0ms \+0%$/);
     expect(row("warm-up 1")[0]).toMatch(/ warm-up$/);
     // Draws per pass: the passes some row drew in, each row as it sampled them (warm-up and skipped rows have none).
     const table = lines.indexOf("  Draws per pass (median per frame):");

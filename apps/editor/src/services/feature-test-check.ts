@@ -658,6 +658,19 @@ export interface FeatureTestBenchmarkSample {
   unsettled?: { firstDraws: number; compiling: number; settleMs: number };
   /** Breakdown and Profile: each pass's median draw calls per frame while sampled (`RenderDiagnostics.drawPasses`). */
   drawPasses?: Partial<Record<DrawPass, number>>;
+  /**
+   * Frames the view drew and held while sampled, over `ms` of the check's clock, and why it held them
+   * (`RenderDiagnostics.presentation.heldReasons`); absent where the view reports no counts.
+   */
+  presentation?: SampledPresentation;
+}
+
+/** What the view presented over a sample window: frames drawn and held, the window's length and the holds by reason. */
+export interface SampledPresentation {
+  drawn: number;
+  held: number;
+  ms: number;
+  heldReasons: Record<string, number>;
 }
 
 /** What a Profile found besides its rows. */
@@ -669,6 +682,17 @@ export interface FeatureTestProfileResult {
    * as restored); null when not checked (cancelled, or no fingerprint).
    */
   endChanges: string[] | null;
+  /**
+   * The scene's own held frames over the warm-up windows (`profileHoldRate`): per second and as a share of the view's
+   * attempts. Each step waits against it (`PROFILE_HOLD_MARGIN`). Null where the view reports no counts.
+   */
+  holdRate: ProfileHoldRate | null;
+}
+
+/** How often a view held frames: per second, and as a share of its attempts (drawn plus held). */
+export interface ProfileHoldRate {
+  heldPerSecond: number;
+  share: number;
 }
 
 /**
@@ -687,9 +711,10 @@ export interface CounterStats {
 export interface PlayPresentation {
   /**
    * Frames the view drew, held (kept its last image, waiting for shaders or settings) and skipped (`framesinflight`)
-   * while its frames were sampled; null where the view reports no counts.
+   * while its frames were sampled, and the holds by reason (`RenderDiagnostics.presentation.heldReasons`); null where
+   * the view reports no counts.
    */
-  frames: { drawn: number; held: number; skipped: number } | null;
+  frames: { drawn: number; held: number; skipped: number; heldReasons: Record<string, number> } | null;
   /** Graphics context losses since Play started. */
   contextLosses: number;
   /** Each image sample's near-black share (`PresentedImageSample.blackShare`), oldest first; null where no frame was presented to sample. */
@@ -849,8 +874,19 @@ export interface FeatureTestCheckTimeouts {
   releaseMs: number;
   /** Quiet time, with no shader first drawn and none compiling, a profile waits for before it samples. */
   profileSettleMs: number;
-  /** Most a profile waits for the view to draw again without held frames, before the settle; past it, the sweep stops. */
+  /**
+   * Most a profile waits for the view to draw again without held frames (a Profile: within its hold margin), before the
+   * settle; past it, the sweep stops (a Profile's only when the view stopped drawing). Benchmark and Breakdown also
+   * bound the settle by it.
+   */
   profileCompileMs: number;
+  /** A Profile's bound on the settle (`profileSettleMs` of quiet), in place of `profileCompileMs`. */
+  profileSettleBoundMs: number;
+  /**
+   * Most a Profile's first warm-up window waits for the view to draw within `PROFILE_HOLD_MARGIN` of no holds, before it
+   * knows the scene's own hold rate; past it, a view that still draws is sampled as it draws.
+   */
+  profileFirstWaitMs: number;
   editorSampleMs: number;
   playSampleMs: number;
   /** A Breakdown's warm-up window: it ends once two consecutive windows differ by under 3%. */
@@ -869,6 +905,8 @@ export const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
   releaseMs: 10_000,
   profileSettleMs: 3_000,
   profileCompileMs: 90_000,
+  profileSettleBoundMs: 20_000,
+  profileFirstWaitMs: 10_000,
   editorSampleMs: 3_000,
   playSampleMs: 5_000,
   breakdownWarmupWindowMs: 10_000,
@@ -1063,7 +1101,7 @@ async function checkScene(
     result.problems.push(...presentationProblems(result.play.presentation));
     const run = (line: string) => runCommand(play, line, deps, signal, limits);
     if (mode === "benchmark" || mode === "breakdown" || mode === "profile") {
-      if (mode === "profile") result.play.profile = { instancePool: null, endChanges: null };
+      if (mode === "profile") result.play.profile = { instancePool: null, endChanges: null, holdRate: null };
       await benchmarkProfiles(scene.name, mode, method, play, run, deps, signal, limits, result.play.benchmark, result.play.profile);
       for (const sample of result.play.benchmark) {
         for (const failure of sample.failed) result.problems.push(`${sample.label}: ${failure}`);
@@ -1141,13 +1179,51 @@ const PRESENTED_IMAGE_WAIT_MS = 5_000;
  */
 export const BLACK_IMAGE_SHARE = 0.6;
 
-function presentationCounts(play: PlayProbe): { drawn: number; held: number; skipped: number; contextLosses: number } | null {
+function presentationCounts(play: PlayProbe): {
+  drawn: number; held: number; skipped: number; contextLosses: number; heldReasons: Readonly<Record<string, number>>;
+} | null {
   const rendering = play.snapshot().rendering;
   const presentation = rendering?.presentation;
   return presentation ? {
     drawn: presentation.drawn, held: presentation.held, skipped: rendering.frameBackpressure?.skipped ?? 0,
-    contextLosses: presentation.contextLosses,
+    contextLosses: presentation.contextLosses, heldReasons: presentation.heldReasons,
   } : null;
+}
+
+/** The holds each reason added between two `RenderDiagnostics.presentation.heldReasons` readings; reasons that added none left out. */
+export function heldReasonsSince(
+  before: Readonly<Record<string, number>>, after: Readonly<Record<string, number>>,
+): Record<string, number> {
+  const since: Record<string, number> = {};
+  for (const [reason, count] of Object.entries(after)) {
+    const added = count - (Object.hasOwn(before, reason) ? before[reason]! : 0);
+    if (added > 0) since[reason] = added;
+  }
+  return since;
+}
+
+/** The share of a view's attempts (drawn plus held) it held, or null without an attempt. */
+export function heldShare(counts: { drawn: number; held: number }): number | null {
+  const attempts = counts.drawn + counts.held;
+  return attempts > 0 ? counts.held / attempts : null;
+}
+
+/**
+ * A Profile's hold rate: the frames its warm-up windows held, per second of their windows and as a share of their
+ * attempts; null without counts or attempts.
+ */
+export function profileHoldRate(samples: readonly FeatureTestBenchmarkSample[]): ProfileHoldRate | null {
+  let drawn = 0;
+  let held = 0;
+  let ms = 0;
+  for (const sample of samples) {
+    if (!sample.warmup || !sample.presentation) continue;
+    drawn += sample.presentation.drawn;
+    held += sample.presentation.held;
+    ms += sample.presentation.ms;
+  }
+  const share = heldShare({ drawn, held });
+  return share === null || ms <= 0 ? null : { heldPerSecond: (held * 1000) / ms, share };
 }
 
 /** The frames presented since `before`, then `PRESENTED_IMAGE_SAMPLES` samples of the image the player sees. */
@@ -1164,7 +1240,10 @@ async function samplePresentation(
   const last = presentationCounts(play) ?? after;
   return {
     frames: before && after
-      ? { drawn: after.drawn - before.drawn, held: after.held - before.held, skipped: after.skipped - before.skipped }
+      ? {
+        drawn: after.drawn - before.drawn, held: after.held - before.held, skipped: after.skipped - before.skipped,
+        heldReasons: heldReasonsSince(before.heldReasons, after.heldReasons),
+      }
       : null,
     contextLosses: last?.contextLosses ?? 0,
     imageBlack,
@@ -1188,8 +1267,26 @@ function presentationProblems(presentation: PlayPresentation): string[] {
 /** Polls of new draws without a held one before a recompiling profile samples (one second at POLL_MS). */
 const STEADY_POLLS = 4;
 
+/** The trailing window over which a Profile reads the view's held share after commands. */
+export const PROFILE_HOLD_WINDOW_MS = 2_000;
+
 /**
- * Waits, bounded by `ms`, until the Play view draws without holding frames
+ * How much more of its attempts than the scene's own hold rate (`ProfileHoldRate.share`, from the warm-up) a Profile's
+ * view may hold over `PROFILE_HOLD_WINDOW_MS` and still draw steadily: 15 percentage points (with no rate yet, 15% in
+ * all). A step's new shaders or rebuilt targets hold nearly every frame, far past it; a scene's own steady holds stay
+ * within it in most windows: at a 23% share and about 20 attempts in 2 s (10 fps), one window's share spreads about 9
+ * points, and the wait checks a new window every poll.
+ */
+export const PROFILE_HOLD_MARGIN = 0.15;
+
+/**
+ * How a sweep's wait for the view ended: `steady` (it drew as the rule asks), `holding` (a Profile's view still draws
+ * but holds more than its margin allows, sampled as it is) or `stopped` (no frame drawn: the sweep ends).
+ */
+type DrawWait = { outcome: "steady" | "holding" | "stopped"; share: number | null };
+
+/**
+ * Benchmark and Breakdown: waits, bounded by `ms`, until the Play view draws without holding frames
  * (shaders and WebGPU pipelines a profile asked for are ready). True when it
  * did, or when the view reports no presentation counts to watch.
  */
@@ -1204,6 +1301,36 @@ async function viewDrawsSteadily(play: PlayProbe, deps: FeatureTestCheckDeps, si
     return steady >= STEADY_POLLS ? true : null;
   });
   return done === true;
+}
+
+/**
+ * A Profile: waits, bounded by `bounds.ms`, until over the last `PROFILE_HOLD_WINDOW_MS` the view drew frames and held
+ * at most `bounds.share` of its attempts (`steady`), so a scene that holds frames at a steady rate does not wait for
+ * none. Past `bounds.acceptAfterMs` a view that still drew in that window is taken as it is (`holding`); one that drew
+ * none by `bounds.ms` has `stopped`. A view without presentation counts is steady. `share` is the last window's.
+ */
+async function viewDrawsWithinHoldShare(
+  play: PlayProbe, deps: FeatureTestCheckDeps, signal: AbortSignal, bounds: { share: number; acceptAfterMs: number; ms: number },
+): Promise<DrawWait> {
+  const started = deps.now();
+  const trail: { at: number; drawn: number; held: number }[] = [];
+  let share: number | null = null;
+  const outcome = await waitFor(deps, signal, bounds.ms, () => {
+    const presentation = play.snapshot().rendering?.presentation;
+    if (!presentation) return "steady" as const;
+    const now = deps.now();
+    trail.push({ at: now, drawn: presentation.drawn, held: presentation.held });
+    // The window starts at the newest reading at least a window old.
+    while (trail.length > 1 && now - trail[1]!.at >= PROFILE_HOLD_WINDOW_MS) trail.shift();
+    const start = trail[0]!;
+    if (now - start.at < PROFILE_HOLD_WINDOW_MS) return null;
+    const drawn = presentation.drawn - start.drawn;
+    share = heldShare({ drawn, held: presentation.held - start.held });
+    if (drawn <= 0) return null;
+    if (share !== null && share <= bounds.share) return "steady" as const;
+    return now - started >= bounds.acceptAfterMs ? "holding" as const : null;
+  });
+  return { outcome: outcome ?? "stopped", share };
 }
 
 /**
@@ -1278,6 +1405,36 @@ async function benchmarkProfiles(
     await runAll(base.commands, carried);
     await runAll(pendingRestore.splice(0), carried);
   };
+  const profileMode = mode === "profile";
+  /**
+   * Waits for the view to draw after commands, or before a warm-up window. Benchmark and Breakdown: strictly, without a
+   * held frame (`viewDrawsSteadily`). A Profile: against the scene's own hold rate from the warm-up windows so far
+   * (`viewDrawsWithinHoldShare`, `PROFILE_HOLD_MARGIN`); before the first, a view that draws is sampled after
+   * `profileFirstWaitMs`. `note` says when a Profile's view still held more than that allows, against a known rate.
+   */
+  const waitForDraws = async (): Promise<DrawWait & { note: string | null }> => {
+    if (!profileMode) {
+      return { outcome: await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs) ? "steady" : "stopped", share: null, note: null };
+    }
+    const rate = profileHoldRate(samples);
+    const allowed = (rate?.share ?? 0) + PROFILE_HOLD_MARGIN;
+    const drew = await viewDrawsWithinHoldShare(play, deps, signal, {
+      share: allowed, acceptAfterMs: rate ? limits.profileCompileMs : limits.profileFirstWaitMs, ms: limits.profileCompileMs,
+    });
+    const note = drew.outcome === "holding" && rate && drew.share !== null
+      ? `The view still held ${percent(drew.share)} of its frames over the last ${seconds(PROFILE_HOLD_WINDOW_MS)} after ${seconds(limits.profileCompileMs)}, past the ${percent(allowed)} its warm-up allows (${percent(rate.share)} plus ${Math.round(PROFILE_HOLD_MARGIN * 100)} points); these frames include them.`
+      : null;
+    return { ...drew, note };
+  };
+  /** Why the sweep ends after a wait in which the view stopped drawing. */
+  const stoppedNote = profileMode
+    ? `The view drew no frame in the last ${seconds(PROFILE_HOLD_WINDOW_MS)} of ${seconds(limits.profileCompileMs)}; the remaining profiles were skipped.`
+    : `The view did not draw steadily within ${seconds(limits.profileCompileMs)}; the remaining profiles were skipped.`;
+  // A Profile bounds the wait for quiet shaders more tightly: a tablet's steady scene may never go quiet for long.
+  const settleBoundMs = profileMode ? limits.profileSettleBoundMs : limits.profileCompileMs;
+  const settle = () => settleView(play, deps, signal, limits.profileSettleMs, settleBoundMs);
+  const unsettledNote = (what: string) =>
+    `Shaders were still first drawn or compiling after ${seconds(settleBoundMs)}; this ${what}'s frames include them.`;
   // GPU-busy time per frame from fences, which display pacing does not quantise; restarted per sample.
   let gpuBusy = false;
   /** Samples the view as it is now into a sample labelled `label`; `failed` collects what went wrong. */
@@ -1285,7 +1442,11 @@ async function benchmarkProfiles(
     const firstDrawsBefore = play.snapshot().rendering?.firstDraws?.draws ?? 0;
     const skippedBefore = play.snapshot().rendering?.frameBackpressure?.skipped ?? 0;
     if (interleaved) gpuBusy = (await run("gpubusy on")).success;
+    const presentedBefore = presentationCounts(play);
+    const sampleStarted = deps.now();
     const sampled = await sampleWithCounters(play, deps.sampleFrames(sampleMs, signal), deps, signal);
+    const presentedAfter = presentationCounts(play);
+    const sampleMsTaken = deps.now() - sampleStarted;
     const snapshot = play.snapshot();
     const rendering = snapshot.rendering;
     const sample: FeatureTestBenchmarkSample = {
@@ -1301,6 +1462,12 @@ async function benchmarkProfiles(
       resolution: rendering ? `${rendering.width}x${rendering.height}@${rendering.scalingLevel.toFixed(2)}` : null,
       failed: [...carried.splice(0), ...failed],
       ...(rendering?.frameBackpressure ? { framesInFlight: { mode: rendering.frameBackpressure.mode, skipped: rendering.frameBackpressure.skipped - skippedBefore } } : {}),
+      ...(presentedBefore && presentedAfter ? {
+        presentation: {
+          drawn: presentedAfter.drawn - presentedBefore.drawn, held: presentedAfter.held - presentedBefore.held, ms: sampleMsTaken,
+          heldReasons: heldReasonsSince(presentedBefore.heldReasons, presentedAfter.heldReasons),
+        },
+      } : {}),
       ...(interleaved ? {
         ...(gpuBusy && rendering?.gpuBusy ? { gpuBusy: { ...rendering.gpuBusy } } : {}),
         ...(rendering?.settings ? { settings: { ...rendering.settings } } : {}),
@@ -1320,13 +1487,16 @@ async function benchmarkProfiles(
     // The base first, so the warm-up runs at the baseline the steps are compared with.
     if (interleaved) {
       await runAll(base.commands, carried);
-      await warmUp(sceneName, play, deps, signal, limits, measure, samples, mode === "profile"
+      await warmUp(sceneName, deps, { draws: waitForDraws, settle, unsettledNote }, measure, samples, mode === "profile"
         ? { windowMs: limits.profileWarmupWindowMs, windows: PROFILE_WARMUP_WINDOWS, ms: Number.POSITIVE_INFINITY }
         : { windowMs: limits.breakdownWarmupWindowMs, windows: Number.POSITIVE_INFINITY, ms: limits.breakdownWarmupMs });
     }
     if (mode === "profile") {
       const rendering = play.snapshot().rendering;
-      if (profile) profile.instancePool = rendering?.instancePool ?? null;
+      if (profile) {
+        profile.instancePool = rendering?.instancePool ?? null;
+        profile.holdRate = profileHoldRate(samples);
+      }
       steps = breakdownSequence(featureTestProfilePlan(profileState(reference(undefined), rendering?.frameBackpressure?.mode)).views);
     }
     for (const step of steps) {
@@ -1337,8 +1507,9 @@ async function benchmarkProfiles(
       await runAll(step.commands, failed);
       // A view that does not draw again (shaders, render targets or a lost graphics context) ends this scene's
       // sweep: more changes on top would only pile up work and memory.
-      const steady = await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs);
-      if (!steady) failed.push(`The view did not draw steadily within ${seconds(limits.profileCompileMs)}; the remaining profiles were skipped.`);
+      const drew = await waitForDraws();
+      const steady = drew.outcome !== "stopped";
+      if (!steady) failed.push(stoppedNote);
       const skip = interleaved && steady && !step.baseline && !failed.length
         ? breakdownSkip(step.fields, reference(step.view), play.snapshot().rendering?.settings)
         : null;
@@ -1353,12 +1524,11 @@ async function benchmarkProfiles(
         continue;
       }
       skippedLast = false;
+      if (drew.note) failed.push(drew.note);
       // The view draws again, but the variants a step asked for may still be first drawing or compiling: sampling
       // them would measure their compiles, not the step.
-      const settled = steady
-        ? await settleView(play, deps, signal, limits.profileSettleMs, limits.profileCompileMs)
-        : { quiet: true, ms: 0 };
-      if (!settled.quiet) failed.push(`Shaders were still first drawn or compiling after ${seconds(limits.profileCompileMs)}; this step's frames include them.`);
+      const settled = steady ? await settle() : { quiet: true, ms: 0 };
+      if (!settled.quiet) failed.push(unsettledNote("step"));
       const sample = await measure(step.label, failed, limits.playSampleMs, settled);
       if (interleaved) {
         sample.baseline = step.baseline === true;
@@ -1377,18 +1547,18 @@ async function benchmarkProfiles(
       if (breakdown) for (const line of [...base.cleanup, ...plan.exit ?? []]) await run(line);
       if (mode !== "profile") await run(`framecap ${cap ?? 60}`);
       // Back as the session was before the first step: `quality reset` must not have dropped or kept anything else.
-      if (profile) await checkProfileRestored(play, deps, signal, limits, samples.find((sample) => sample.warmup)?.settings, profile);
+      if (profile) await checkProfileRestored(play, waitForDraws, samples.find((sample) => sample.warmup)?.settings, profile);
     }
   }
 }
 
 /** Waits for the view to draw the restored settings, then records what still differs from `before` in `profile.endChanges`. */
 async function checkProfileRestored(
-  play: PlayProbe, deps: FeatureTestCheckDeps, signal: AbortSignal, limits: FeatureTestCheckTimeouts,
+  play: PlayProbe, waitForDraws: () => Promise<DrawWait>,
   before: Readonly<Record<string, string>> | undefined, profile: FeatureTestProfileResult,
 ): Promise<void> {
   if (!before) return;
-  await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs);
+  await waitForDraws();
   const after = play.snapshot().rendering?.settings;
   if (after) profile.endChanges = settingsChanges(before, after);
 }
@@ -1397,14 +1567,17 @@ async function checkProfileRestored(
  * Before a Breakdown's or Profile's first step: samples the baseline in windows of `bounds.windowMs` until two
  * consecutive windows differ by under 3% (GPU-busy median where measured, else mean frame interval), for at most
  * `bounds.windows` windows and `bounds.ms`, so a device that heats up during the run starts the steps near its steady
- * state. Each window is kept as a `warmup` sample.
+ * state. Each window is kept as a `warmup` sample. Each waits as the sweep's steps do (`waits`); a wait in which the
+ * view stopped drawing (a Breakdown's: did not draw without held frames) ends the warm-up.
  */
 async function warmUp(
   sceneName: string,
-  play: PlayProbe,
   deps: FeatureTestCheckDeps,
-  signal: AbortSignal,
-  limits: FeatureTestCheckTimeouts,
+  waits: {
+    draws: () => Promise<DrawWait & { note: string | null }>;
+    settle: () => Promise<{ quiet: boolean; ms: number }>;
+    unsettledNote: (what: string) => string;
+  },
   measure: (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }) => Promise<FeatureTestBenchmarkSample>,
   samples: FeatureTestBenchmarkSample[],
   bounds: { windowMs: number; windows: number; ms: number },
@@ -1413,9 +1586,10 @@ async function warmUp(
   let previous: number | null = null;
   for (let window = 1; ; window++) {
     deps.onProgress?.(`${sceneName}: warming up (${window})`);
-    const steady = await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs);
-    const settled = steady ? await settleView(play, deps, signal, limits.profileSettleMs, limits.profileCompileMs) : { quiet: true, ms: 0 };
-    const failed = settled.quiet ? [] : [`Shaders were still first drawn or compiling after ${seconds(limits.profileCompileMs)}; this window's frames include them.`];
+    const drew = await waits.draws();
+    const steady = drew.outcome !== "stopped";
+    const settled = steady ? await waits.settle() : { quiet: true, ms: 0 };
+    const failed = [...drew.note ? [drew.note] : [], ...settled.quiet ? [] : [waits.unsettledNote("window")]];
     const sample = await measure(`warm-up ${window}`, failed, bounds.windowMs, settled);
     sample.warmup = true;
     samples.push(sample);
@@ -1490,4 +1664,8 @@ function sentence(text: string): string {
 
 function seconds(ms: number): string {
   return `${Math.round(ms / 1000)} s`;
+}
+
+function percent(share: number): string {
+  return `${Math.round(share * 100)}%`;
 }

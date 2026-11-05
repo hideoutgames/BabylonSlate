@@ -58,6 +58,7 @@ import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
 import { engineFrameBackpressure } from "./frame-backpressure";
+import { HELD_FRAME_LABELS, HELD_FRAME_OTHER, HeldFrameReasons } from "./held-frames";
 import type { SpawnableLight } from "./spawnable-lights";
 import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
 import { estimateTextureMemory } from "./texture-memory-estimate";
@@ -651,6 +652,8 @@ function initializeEngine(
     preparationMs: 0, copyMs: 0,
     contextLosses: 0, contextRestorations: 0,
   };
+  /** `presentationStats.held` by why the frame was held (`RenderDiagnostics.presentation.heldReasons`). */
+  const heldFrames = new HeldFrameReasons();
   /** `presentationStats.attempted` when the current view step began. */
   let attemptedAtStep = 0;
   /** `samplePresentedImage` callers waiting for the next presented frame. */
@@ -1858,7 +1861,7 @@ function initializeEngine(
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(),
       drawPasses: { ...drawPasses.last },
-      gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
+      gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
         registeredViewEnabled: registeredView?.enabled ?? null,
@@ -2136,6 +2139,8 @@ function initializeEngine(
     }) : null;
     admissionPreparationMs = 0;
     let coherentFrame = true;
+    /** Why the world made this frame incoherent, for `heldFrames`. */
+    let holdReason: string | undefined;
     beginEngineDrawCallFrame(engine);
     beginDrawPassFrame(drawPasses);
     // Water created or enabled since the last update (an editor edit or drop, a Play spawn) settles before the world's
@@ -2237,6 +2242,9 @@ function initializeEngine(
             () => worldRenderer.render(true))
           : worldRenderer.render(pendingPresentations.has("world"));
         coherentFrame = result.rendered && (!frameScope || result.readyForPresentation);
+        if (!coherentFrame) {
+          holdReason = result.reason ?? (result.rendered ? HELD_FRAME_LABELS.unpresentable : HELD_FRAME_LABELS.invalidated);
+        }
         syncPipelineHold(worldRenderer.holdingForPipelines);
         return result.readyForPresentation;
       }, () => {
@@ -2244,7 +2252,10 @@ function initializeEngine(
         // drawing. Only explicit world loading may present ready layers over a
         // clear; an active world must retain its last complete image.
         if (worldLoading) engine.clear(scene.clearColor, true, true, true);
-        else coherentFrame = false;
+        else {
+          coherentFrame = false;
+          holdReason = HELD_FRAME_LABELS.presentationNotReady;
+        }
       });
       else engine.clear(scene.clearColor, true, true, true);
       joysticks.refresh();
@@ -2268,6 +2279,7 @@ function initializeEngine(
           submission?.cancel();
         }
         presentationStats.held += 1;
+        heldFrames.count(holdReason ?? HELD_FRAME_OTHER);
         if (frameReportFeed.active) scheduler.requestPausedFrame();
         return;
       }
