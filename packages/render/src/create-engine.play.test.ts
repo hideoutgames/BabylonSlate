@@ -72,6 +72,7 @@ import { uiControl2DMesh } from "./ui-controls2d-mesh";
 import * as waterMesh from "./water-mesh";
 import { builtInWaterMaterial } from "./water-template";
 import { countEffectCompiles } from "./effect-requests";
+import { emptyDrawPasses, withDrawPass } from "./draw-passes";
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
 
@@ -2246,12 +2247,16 @@ describe("Play createEngine view", () => {
     });
     callback!();
     expect(handle.drawCalls()).toBe(2);
+    // Drawn outside every pass: `other`.
+    expect(handle.renderDiagnostics().drawPasses).toEqual({ ...emptyDrawPasses(), other: 2 });
 
     vi.spyOn(handle.scene, "render").mockImplementation(() => {
-      engine._drawCalls.addCount(1, false);
+      withDrawPass(engine, "mirrors", () => engine._drawCalls.addCount(1, false));
     });
     callback!();
     expect(handle.drawCalls()).toBe(1);
+    // Each frame's own draws, by the pass that drew them.
+    expect(handle.renderDiagnostics().drawPasses).toEqual({ ...emptyDrawPasses(), mirrors: 1 });
   });
 
   it("honors live Play frame caps without adding render cost to the interval", async () => {

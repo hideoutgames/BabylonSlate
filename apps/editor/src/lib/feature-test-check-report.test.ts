@@ -296,6 +296,81 @@ describe("formatFeatureTestCheckReport", () => {
     expect(row("water detail high")).toMatch(/water\.shadingDetail=high · fft 256x3 · OVER 30 ms/);
   });
 
+  it("reports a Profile: each row's changes in frame time and CPU cost, draws per pass, the pool, the restore check and the ranking", () => {
+    const settings = { shadows: "high 2048", "shadows.screen": "off", "resolution.scale": "1", "post.enabled": "true" };
+    const passes = { objects: 420, geometry: 40, shadows: 140, captures: 90, post: 12, other: 2 };
+    const sample = (label: string, meanMs: number, cpuMs: number, extra: Partial<FeatureTestBenchmarkSample> = {}): FeatureTestBenchmarkSample => ({
+      label, baseline: label.startsWith("baseline"),
+      frames: { frames: 100, durationMs: meanMs * 100, fps: 1000 / meanMs, medianMs: meanMs, meanMs, p95Ms: meanMs + 8, maxMs: meanMs + 20, stalls: 0 },
+      runtimeFps: null, cpuMs, gpuMs: null, drawCalls: 704, draws: { median: 704, min: 704, max: 704, samples: 10 },
+      resolution: "1180x788@1.00", failed: [], settings, unsettled: { firstDraws: 0, compiling: 0, settleMs: 3000 }, drawPasses: passes, ...extra,
+    });
+    const report: FeatureTestCheckReport = {
+      mode: "profile", startedAt: 0, durationMs: 270_000, cancelled: false, pageErrors: [],
+      scenes: [{
+        name: "main", path: "assets/main.scene.hasset", passed: true, problems: [],
+        editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
+        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
+          profile: {
+            instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0, unpooled: { deforming: 64, blended: 9, drawHooks: 0 } },
+            endChanges: ["presentation.framesInFlight=off"],
+          },
+          benchmark: [
+            { ...sample("warm-up 1", 90, 44, { drawPasses: undefined }), baseline: false, warmup: true },
+            { ...sample("warm-up 2", 84, 43, { drawPasses: undefined }), baseline: false, warmup: true },
+            sample("baseline 1", 80, 40),
+            sample("shadows off", 66, 31, {
+              settings: { ...settings, shadows: "off" }, drawPasses: { ...passes, shadows: 0, captures: 70 },
+              draws: { median: 544, min: 544, max: 544, samples: 10 },
+            }),
+            sample("baseline 2", 83, 42),
+            sample("resolution 0.5", 70, 40, { settings: { ...settings, "resolution.scale": "0.5" } }),
+            sample("baseline 3", 80, 40, { settings: { ...settings, "post.enabled": "false" } }),
+            {
+              label: "screen shadows off", frames: null, runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null, failed: [],
+              baseline: false, skipped: "already shadows.screen off",
+            },
+            sample("MSAA off", 81, 40),
+            sample("baseline 4", 80, 40),
+          ] },
+        session: null,
+      }],
+    };
+    const lines = formatFeatureTestCheckReport(report, environment).split("\n");
+    const row = (label: string) => lines.filter((line) => line.startsWith(`    ${label} `));
+    expect(lines[0]).toMatch(/^Haptic Feature Test Check \(Profile\)/);
+    expect(lines[1]).toBe("Result: 1/1 scenes passed · NOT RESTORED · took 270.0 s");
+    expect(lines).toContain("  Settings: shadows high 2048 · shadows.screen off · resolution.scale 1 · post.enabled true");
+    expect(lines).toContain("  Instance pool: 18 groups · 410 pooled · 2 retained empty · unpooled 73 (deforming 64, blended 9)");
+    expect(lines).toContain("  NOT RESTORED at the end: presentation.framesInFlight=off");
+    expect(lines).toContain("  Warm-up drift: first window 90.0 ms, steady 84.0 ms (-7%) over 2 windows (mean frame)");
+    // Against the baselines around it: (80 + 83) / 2 = 81.5 ms frame, (40 + 42) / 2 = 41 ms CPU.
+    expect(row("shadows off")[0]).toBe(
+      "    shadows off           15   66.0ms  74ms   31.0ms  -             gpu   544           -15.5ms -19%    -10.0ms -24%    shadows=off");
+    expect(row("resolution 0.5")[0]).toMatch(/-11\.5ms -14% {4}-1\.0ms -2% {6}resolution\.scale=0\.5 · overlaps$/);
+    expect(row("baseline 2")[0]).toMatch(/\+3\.0ms \+4% {6}\+2\.0ms \+5%$/);
+    expect(row("baseline 3")[0]).toMatch(/NOT RESTORED: post\.enabled=false$/);
+    expect(row("screen shadows off")[0]).toMatch(/ no setting changed \(already shadows\.screen off\)$/);
+    expect(row("MSAA off")[0]).toMatch(/\+1\.0ms \+1% {6}\+0\.0ms \+0% {6}no setting changed$/);
+    expect(row("warm-up 1")[0]).toMatch(/ warm-up$/);
+    // Draws per pass: the passes some row drew in, each row as it sampled them (warm-up and skipped rows have none).
+    const table = lines.indexOf("  Draws per pass (median per frame):");
+    expect(lines.slice(table + 1, table + 4)).toEqual([
+      "    Step                  objects geometry shadows captures post   other",
+      "    baseline 1            420     40       140     90       12     2",
+      "    shadows off           420     40       0       70       12     2",
+    ]);
+    expect(row("screen shadows off")).toHaveLength(1);
+    const ranking = lines.indexOf("  Ranked by frame-time saving:");
+    expect(lines.slice(ranking + 1, ranking + 5)).toEqual([
+      "    1. shadows off: frame -15.5ms -19% · cpu -10.0ms -24%",
+      "    2. resolution 0.5: frame -11.5ms -14% · cpu -1.0ms -2% · overlaps",
+      "    3. MSAA off: frame +1.0ms +1% · cpu +0.0ms +0%",
+      // Resolution overlaps every pass's saving, and MSAA off saved nothing.
+      "  Steps that overlap no other save 15.5 ms of the first baseline's 80.0 ms frame",
+    ]);
+  });
+
   it("shows the counters' medians with their ranges when frames differ", () => {
     const report: FeatureTestCheckReport = {
       mode: "benchmark", startedAt: 0, durationMs: 300_000, cancelled: false, pageErrors: [],

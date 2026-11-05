@@ -54,6 +54,7 @@ import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources } from "./render-target-resource-cost";
 import { waterMeshReflectsObjects, waterMeshRestVaries } from "./water-mesh";
 import { sceneViewRenderSize } from "./scene-output-scale";
+import { enterDrawPass, leaveDrawPass } from "./draw-passes";
 
 /** One view's planar reflection, valid for the scene render in which it was returned. */
 export interface WaterPlanarReflection {
@@ -227,7 +228,13 @@ class WaterPlanarReflections {
     let complete = false;
     if (!target.ready) complete = target.ready = target.texture.isReadyForRendering();
     if (!target.ready) return;
-    target.texture.render(false);
+    const engine = this.scene.getEngine();
+    enterDrawPass(engine, "water", true);
+    try {
+      target.texture.render(false);
+    } finally {
+      leaveDrawPass(engine);
+    }
     this.drew = true;
     target.dirty = !(complete || target.texture.isReadyForRendering());
   };

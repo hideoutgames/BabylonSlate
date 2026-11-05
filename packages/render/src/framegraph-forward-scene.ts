@@ -59,6 +59,8 @@ import {
 } from "./managed-render-resources";
 import { managedRenderTextureResource, renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { drawSceneAuxiliaryViews } from "./scene-auxiliary-views";
+import { observeTaskDrawPass, type DrawPass } from "./draw-passes";
+import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import {
   ManagedShadowObjectRendererTask,
   ManagedShadowsTask,
@@ -441,6 +443,32 @@ export class ForwardSceneFrameGraph {
     const graphEffects =
       this.effectsGraph?.tasks.filter((task) => task !== this.outlineTask && !task.disabled).length ?? 0;
     return stackPasses + graphEffects + (this.outlineTask ? 1 : 0);
+  }
+
+  /**
+   * Counts each task's draws to its pass (`RenderDiagnostics.drawPasses`): the shadow maps, the geometry pass and Screen
+   * Shadows, the outline, the post-process stages (and their output copy), the object passes, the water scene copy's
+   * own tasks; clears, culling and a chainless output copy are `other`.
+   */
+  private observeDrawPasses(): void {
+    const engine = this.scene.getEngine();
+    const spatial = this.effectsGraph?.spatial;
+    const geometry = new Set<FrameGraphTask>([
+      ...this.postProcessGraph?.geometryTasks ?? [],
+      ...spatial ? [spatial.clear, spatial.geometry, ...spatial.screenShadows ? [spatial.screenShadows.task] : []] : [],
+    ]);
+    const post = new Set<FrameGraphTask>([...this.postProcessGraph?.postProcessTasks ?? [], ...this.effectsGraph?.tasks ?? []]);
+    if (this.outputCopy && (this.postProcessGraph || this.effectsGraph)) post.add(this.outputCopy);
+    const water = new Set<FrameGraphTask>(this.water ? [this.water.split, ...this.water.afterObjects] : []);
+    const pass = (task: FrameGraphTask): DrawPass => {
+      if (task === this.shadows) return "shadows";
+      if (task === this.outlineTask) return "outlines";
+      if (geometry.has(task)) return "geometry";
+      if (post.has(task)) return "post";
+      if (task instanceof FrameGraphObjectRendererTask) return "objects";
+      return water.has(task) ? "water" : "other";
+    };
+    for (const task of this.graph!.tasks) observeTaskDrawPass(task, engine, pass(task));
   }
 
   /** Prepared graph task names in record order, for diagnostics and tests. */
@@ -1261,6 +1289,7 @@ export class ForwardSceneFrameGraph {
           }
           this.graph.addTask(this.outputCopy);
         }
+        this.observeDrawPasses();
       }
       this.assignCamera(camera);
       this.syncSceneInputs();

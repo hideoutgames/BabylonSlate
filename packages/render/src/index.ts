@@ -19,6 +19,8 @@ export { mirrorDiagnostics, type MirrorDiagnostics } from "./mirrors";
 export { setPlanarFootprintCulling } from "./planar-mirror";
 export * from "./canvas-drawing-buffer";
 export * from "./draw-calls";
+export { DRAW_PASSES, type DrawPass, type DrawPassCounts } from "./draw-passes";
+export type { InstancePoolDiagnostics, InstancingIneligibility } from "./instance-pool";
 export * from "./create-null-engine";
 export * from "./ktx2-transcoder";
 export * from "./gltf-mesh-decoders";

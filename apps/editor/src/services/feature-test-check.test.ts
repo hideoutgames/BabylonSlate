@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { SessionReportEntry } from "@haptic/runtime";
 import {
-  antiAliasingSamples, QUALITY_GROUPS, qualitySettingsFingerprint, RenderingQualitySession, type QualityGroup,
+  antiAliasingSamples, QUALITY_GROUPS, qualitySettingsFingerprint, RENDER_QUALITY_PROFILES, RenderingQualitySession, SHADOW_PROFILES,
+  type QualityGroup, type QualityLevel,
 } from "@haptic/core";
 import {
   ADD_ONE_CAP_MS, breakdownAdditivity, breakdownDelta, breakdownOverCap, breakdownSaturation, breakdownSequence, breakdownSkip,
   breakdownWarmupDrift, counterStats, FEATURE_TEST_BENCHMARK_PROFILES, FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS,
   FEATURE_TEST_BREAKDOWN_BASES, FEATURE_TEST_BREAKDOWN_METHODS, FEATURE_TEST_BREAKDOWN_STEPS, featureTestBreakdownPlan, frameBound,
   frameStats, isBreakdownBaseline, runFeatureTestCheck, SATURATED_SHARE, settingsChanges, vsyncShares, warmDeviceMinutes,
-  type FeatureTestBenchmarkSample, type FeatureTestBreakdownInfo, type FeatureTestCheckDeps,
+  FEATURE_TEST_PROFILE_SCENES, featureTestProfilePlan, featureTestProfileSteps, profileState,
+  type FeatureTestBenchmarkSample, type FeatureTestBreakdownInfo, type FeatureTestCheckDeps, type FeatureTestProfileState,
 } from "./feature-test-check";
 import type { PlaySessionResult } from "./play-session";
 import type { PlayProbe } from "./runtime-probes";
@@ -126,13 +128,18 @@ const REMOVE_ONE: FeatureTestBreakdownInfo = { method: "remove-one", tier: "medi
 
 /**
  * The render-settings fingerprint (`RenderDiagnostics.settings`) after `commands`, as a Play session derives it: quality
- * commands through the session's real `RenderingQualitySession`, `postprocessing` and `rendertargets` as the toggles
- * they are, and MSAA samples at the tier's request (no device limit).
+ * commands through the session's real `RenderingQualitySession` (on `project`'s quality, which `quality reset` returns
+ * to), `postprocessing`, `rendertargets` and the Engine's `framesinflight` as the toggles they are, and MSAA samples at
+ * the tier's request (no device limit).
  */
-function fingerprintAfter(commands: readonly string[]): Record<string, string> {
-  const session = new RenderingQualitySession();
+function fingerprintAfter(
+  commands: readonly string[],
+  options: { project?: ConstructorParameters<typeof RenderingQualitySession>[0]; framesInFlight?: string } = {},
+): Record<string, string> {
+  const session = new RenderingQualitySession(options.project);
   let post = true;
   let captures = true;
+  let framesInFlight = options.framesInFlight ?? "2";
   for (const line of commands) {
     const [name, first, second, third] = line.split(" ");
     if (name === "quality") {
@@ -140,6 +147,7 @@ function fingerprintAfter(commands: readonly string[]): Record<string, string> {
       else session.execute(undefined, first, second);
     } else if (name === "postprocessing") post = first === "on";
     else if (name === "rendertargets") captures = first === "on";
+    else if (name === "framesinflight") framesInFlight = first!;
   }
   const quality = session.effective();
   return {
@@ -147,7 +155,13 @@ function fingerprintAfter(commands: readonly string[]): Record<string, string> {
     "post.samples": String(antiAliasingSamples(quality.postprocessing.antiAliasing)),
     "post.enabled": String(post),
     captures: captures ? "on" : "suspended",
+    "presentation.framesInFlight": framesInFlight,
   };
+}
+
+/** A project at a quality tier, as `RenderingQualitySession` takes it: `quality reset` returns to this tier. */
+function projectAt(tier: QualityLevel): ConstructorParameters<typeof RenderingQualitySession>[0] {
+  return { quality: RENDER_QUALITY_PROFILES[tier], shadows: { ...SHADOW_PROFILES[tier], profile: tier } };
 }
 
 describe("runFeatureTestCheck", () => {
@@ -811,6 +825,164 @@ describe("frame pacing", () => {
     expect(settingsChanges(base, { ...base, "water.reflections": "sky" })).toEqual(["water.reflections=sky"]);
     expect(settingsChanges(base, base)).toEqual([]);
     expect(settingsChanges(undefined, base)).toEqual([]);
+  });
+});
+
+describe("Profile", () => {
+  const SESSION: FeatureTestProfileState = { occlusion: true, framesInFlight: 3, postProcessing: true, captures: true };
+
+  it("plans every step on the session's own tier between two baselines, undone to the session's state, overlapping ones marked", () => {
+    expect(FEATURE_TEST_PROFILE_SCENES).toEqual([{ name: "main", path: "assets/main.scene.hasset" }]);
+    expect(featureTestProfileSteps(SESSION).map((step) => [step.label, step.commands, step.restore ?? [], step.overlaps === true])).toEqual([
+      ["captures off", ["rendertargets off"], ["rendertargets on"], false],
+      ["shadows off", ["quality shadows enabled off"], [], false],
+      ["shadows medium", ["quality shadows medium"], [], true],
+      ["screen shadows off", ["quality shadows screen off"], [], false],
+      ["AO off", ["quality postprocessing ambientOcclusion off"], [], true],
+      ["SSR off", ["quality postprocessing reflections off"], [], true],
+      ["volumetrics off", ["quality postprocessing volumetricLighting off"], [], true],
+      ["geometry effects off", [
+        "quality postprocessing ambientOcclusion off", "quality postprocessing reflections off",
+        "quality postprocessing volumetricLighting off", "quality shadows screen off",
+      ], [], true],
+      ["post off", ["postprocessing off"], ["postprocessing on"], false],
+      ["MSAA off", ["quality postprocessing antialiasing off"], [], false],
+      ["occlusion off", ["quality geometry occlusion off"], [], false],
+      ["frames in flight off", ["framesinflight off"], ["framesinflight 3"], false],
+      ["resolution 0.5", ["quality resolution scale 0.5"], [], true],
+    ]);
+    // Toggles go to the other value and come back to the session's own.
+    const other = featureTestProfileSteps({ occlusion: false, framesInFlight: "off", postProcessing: false, captures: false });
+    expect(other.map((step) => [step.label, step.commands[0], step.restore ?? []])
+      .filter(([label]) => ["captures off", "post off", "occlusion on", "frames in flight off"].includes(label as string))).toEqual([
+      ["captures off", "rendertargets off", ["rendertargets off"]],
+      ["post off", "postprocessing off", ["postprocessing off"]],
+      ["occlusion on", "quality geometry occlusion on", []],
+      ["frames in flight off", "framesinflight off", ["framesinflight off"]],
+    ]);
+    // A baseline before every step and one after the last: every step sits between two baselines.
+    const sequence = breakdownSequence(featureTestProfilePlan(SESSION).views);
+    expect(sequence).toHaveLength(27);
+    expect(sequence.slice(0, 5).map((step) => step.label)).toEqual(["baseline 1", "captures off", "baseline 2", "shadows off", "baseline 3"]);
+    expect(sequence.filter((_, index) => index % 2 === 0).every((step) => step.baseline && !step.commands.length)).toBe(true);
+    expect(sequence.at(-1)!.label).toBe("baseline 14");
+  });
+
+  it("reads the session's state from a baseline's fingerprint, with Play's defaults for what it lacks", () => {
+    expect(profileState({ "geometry.occlusion": "false", "post.enabled": "false", captures: "suspended" }, 3))
+      .toEqual({ occlusion: false, framesInFlight: 3, postProcessing: false, captures: false });
+    expect(profileState({ "presentation.framesInFlight": "off" }, undefined)).toEqual({ ...SESSION, framesInFlight: "off" });
+    expect(profileState(undefined, undefined)).toEqual({ ...SESSION, framesInFlight: 2 });
+  });
+
+  it("changes, with every step at every tier, only its own fields, or nothing where the tier already holds its value", () => {
+    // Low has no Screen-Space Shadows, AO, SSR or volumetrics; Medium has Medium's shadows and no Screen-Space Shadows or volumetrics.
+    const expectedSkips: Record<QualityLevel, string[]> = {
+      low: ["screen shadows off", "AO off", "SSR off", "volumetrics off", "geometry effects off"],
+      medium: ["shadows medium", "screen shadows off", "volumetrics off"],
+      high: [],
+      ultra: [],
+    };
+    for (const tier of ["low", "medium", "high", "ultra"] as const) {
+      const project = projectAt(tier);
+      const reference = fingerprintAfter([], { project });
+      const skipped: string[] = [];
+      for (const step of featureTestProfileSteps(profileState(reference, 2))) {
+        const after = fingerprintAfter(step.commands, { project });
+        const changed = settingsChanges(reference, after).map((change) => change.slice(0, change.indexOf("=")));
+        expect(changed.filter((field) => !step.fields!.includes(field)), `${tier} ${step.label}`).toEqual([]);
+        if (breakdownSkip(step.fields, reference, after)) skipped.push(step.label);
+        // Its restore and `quality reset` give the tier back.
+        expect(fingerprintAfter([...step.commands, "quality reset", ...step.restore ?? []], { project }), `${tier} ${step.label}`).toEqual(reference);
+      }
+      expect(skipped, tier).toEqual(expectedSkips[tier]);
+    }
+  });
+
+  /** Play of the main scene on a project at `tier` (High), which `quality reset` returns to: its fingerprint, draws and pool as the commands left them. */
+  const profileEditor = (options: { tier?: QualityLevel; framesInFlight?: "off" | 2 | 3; refused?: string[] } = {}) => {
+    const refused = options.refused ?? [];
+    const editor = fakeEditor({
+      "assets/main.scene.hasset": { commands: Object.fromEntries(refused.map((line) => [line, { success: false, output: "Refused" }])) },
+    });
+    const project = projectAt(options.tier ?? "high");
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      play: () => {
+        const play = editor.deps.play();
+        return play && { ...play, snapshot: () => {
+          const settings = fingerprintAfter(editor.commands.filter((line) => !refused.includes(line)), { project, framesInFlight: String(options.framesInFlight ?? 2) });
+          const mode = settings["presentation.framesInFlight"] === "off" ? "off" : Number(settings["presentation.framesInFlight"]);
+          return {
+            ...play.snapshot(),
+            rendering: {
+              cpuMs: 30, gpuMs: null, width: 100, height: 100, scalingLevel: 1, settings,
+              frameBackpressure: { mode, inFlight: 0, skipped: 0 },
+              drawPasses: { objects: 520, shadows: settings.shadows === "off" ? 0 : 140, captures: settings.captures === "on" ? 44 : 0, post: 12 },
+              instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0, unpooled: { deforming: 64, blended: 9 } },
+            } as unknown as RenderDiagnostics,
+          };
+        } };
+      },
+    };
+    return { editor, deps };
+  };
+
+  it("plays the main scene at the session's tier and frame cap: two short warm-up windows, then every step between baselines, each undone", async () => {
+    const { editor, deps } = profileEditor({ framesInFlight: 3 });
+    const windows: number[] = [];
+    const report = await runFeatureTestCheck({
+      mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, signal: new AbortController().signal,
+      deps: { ...deps, sampleFrames: (ms, signal) => { windows.push(ms); return deps.sampleFrames(ms, signal); } },
+    });
+    const [main] = report.scenes;
+    expect(main!.passed).toBe(true);
+    const samples = main!.play.benchmark;
+    expect(samples.slice(0, 2).map((sample) => [sample.label, sample.warmup])).toEqual([["warm-up 1", true], ["warm-up 2", true]]);
+    // The editor viewport's 3 s, Play's 5 s, two 5 s warm-up windows, then 5 s per row.
+    expect(windows.slice(0, 4)).toEqual([3_000, 5_000, 5_000, 5_000]);
+    expect(windows.slice(4).every((ms) => ms === 5_000)).toBe(true);
+    // At High nothing is skipped: 13 steps and 14 baselines, occlusion turned the other way from on.
+    const rows = samples.slice(2);
+    expect(rows.map((sample) => sample.label)).toEqual(breakdownSequence(featureTestProfilePlan({ ...SESSION, framesInFlight: 3 }).views).map((step) => step.label));
+    expect(rows.map((sample) => sample.label)).toContain("occlusion off");
+    expect(rows.filter((sample) => sample.skipped)).toEqual([]);
+    const commands = editor.commands;
+    const at = (line: string) => commands.indexOf(line);
+    // No tier and no frame cap: the session's own.
+    expect(commands.filter((line) => line.startsWith("framecap") || /^quality (low|medium|high|ultra)$/.test(line))).toEqual([]);
+    expect(commands.slice(0, 2)).toEqual(["gpubusy on", "gpubusy on"]);
+    // Each step's commands, its sample, then `quality reset` and its own restore before the next baseline.
+    expect(commands.slice(at("framesinflight off"), at("framesinflight 3") + 1)).toEqual(["framesinflight off", "gpubusy on", "quality reset", "framesinflight 3"]);
+    expect(commands.slice(at("rendertargets off"), at("rendertargets on") + 1)).toEqual(["rendertargets off", "gpubusy on", "quality reset", "rendertargets on"]);
+    expect(commands.filter((line) => line === "gpubusy on")).toHaveLength(samples.length);
+    expect(commands.slice(-2)).toEqual(["gpubusy off", "quality reset"]);
+    // Each row's draws per pass, as the step left them.
+    expect(rows.find((sample) => sample.label === "shadows off")!.drawPasses).toEqual({ objects: 520, shadows: 0, captures: 44, post: 12 });
+    expect(rows.find((sample) => sample.label === "captures off")!.drawPasses).toEqual({ objects: 520, shadows: 140, captures: 0, post: 12 });
+    expect(main!.play.profile).toEqual({
+      instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0, unpooled: { deforming: 64, blended: 9 } },
+      endChanges: [],
+    });
+  });
+
+  it("samples no step whose setting the tier already holds, nor the baseline after it, and reports a setting the restore left changed", async () => {
+    // At Medium; the session's own frames in flight cannot be set back.
+    const { deps } = profileEditor({ tier: "medium", framesInFlight: 3, refused: ["framesinflight 3"] });
+    const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, signal: new AbortController().signal });
+    const [main] = report.scenes;
+    const rows = main!.play.benchmark.filter((sample) => !sample.warmup);
+    expect(rows.filter((sample) => sample.skipped).map((sample) => [sample.label, sample.skipped, sample.frames])).toEqual([
+      ["shadows medium", "already shadows medium 2048, shadows.filter high, shadows.screen off", null],
+      ["screen shadows off", "already shadows.screen off", null],
+      ["volumetrics off", "already post.volumetricLighting false", null],
+    ]);
+    const labels = rows.map((sample) => sample.label);
+    expect(labels.slice(labels.indexOf("shadows off"), labels.indexOf("AO off") + 2))
+      .toEqual(["shadows off", "baseline 3", "shadows medium", "screen shadows off", "AO off", "baseline 6"]);
+    // The step's undo failed: the baseline after it says so and fails the scene.
+    expect(main!.problems).toEqual(["baseline 13: framesinflight 3 failed: Refused."]);
+    expect(main!.play.profile!.endChanges).toEqual(["presentation.framesInFlight=off"]);
   });
 });
 

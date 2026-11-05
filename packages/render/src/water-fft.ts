@@ -60,6 +60,7 @@ import {
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import { renderTargetAllocationBytes } from "./render-target-resource-cost";
+import { enterDrawPass, leaveDrawPass } from "./draw-passes";
 import {
   WATER_FFT_BUILD_TEXELS, waterFftCycle, waterFftStages, waterSpectrumBuild, waterSpectrumLayout,
   type WaterFftLayout, type WaterFftSpectrumBuild,
@@ -800,12 +801,18 @@ export function updateSceneWaterFft(scene: Scene, time: number): void {
   for (let i = 0; i < state.pending.length; i++) resolve(scene, state, state.pending[i]!, run);
   state.pending.length = 0;
   if (state.build || state.nextBuild) advanceBuild(scene, state, run);
-  const frame = scene.getEngine().frameId;
-  for (let i = 0; i < state.sims.length; i++) {
-    const sim = state.sims[i]!;
-    // A sea with Wave Speed 0 never changes once drawn.
-    const stale = !sim.ready || (sim.time !== time && sim.layout.timeScale !== 0);
-    if (sim.requestedRun === run && sim.frame !== frame && stale) sim.dispatch(time, frame);
+  const engine = scene.getEngine();
+  const frame = engine.frameId;
+  enterDrawPass(engine, "water", true);
+  try {
+    for (let i = 0; i < state.sims.length; i++) {
+      const sim = state.sims[i]!;
+      // A sea with Wave Speed 0 never changes once drawn.
+      const stale = !sim.ready || (sim.time !== time && sim.layout.timeScale !== 0);
+      if (sim.requestedRun === run && sim.frame !== frame && stale) sim.dispatch(time, frame);
+    }
+  } finally {
+    leaveDrawPass(engine);
   }
 }
 

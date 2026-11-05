@@ -102,12 +102,15 @@ describe("statsHudModel", () => {
         readbackMs: null, autoLod: { meshes: 0, reduced: 0 }, qualityLimits: ["shadows off"],
         occlusion: { tested: 40, culled: 25, triangles: 60, ms: 0.42 },
         firstDraws: { draws: 7, loadCompiled: 5, stalls: 2, worstFrameMs: 180.4 },
+        // Passes that drew nothing in the frame are left out.
+        drawPasses: { objects: 640, geometry: 0, shadows: 6, captures: 210, post: 44, other: 0 },
       },
     }, ["memory", "draws"]);
     expect(rowText(model)).toEqual({
       memory: ["mem 512 B", "js 3.0 MB", "geo 2.0 KB"],
       draws: [
         "draws 900", "meshes 12", "tex 4", "cpu 1.50 ms", "gpu unsupported", "1280×720", "shadows 6 draws",
+        "passes objects 640 · shadows 6 · captures 210 · post 44",
         "occlusion culled 25/40 · 60 tris · 0.42 ms", "first draws 7 (5 load) · worst 180 ms", "shadows off", "draws high", "geo high",
       ],
     });

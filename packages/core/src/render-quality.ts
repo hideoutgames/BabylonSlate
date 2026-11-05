@@ -837,7 +837,7 @@ export class RenderingQualitySession {
 }
 
 /**
- * The quality part of `RenderDiagnostics.settings`: every quality field a Feature Test Check Breakdown step changes,
+ * The quality part of `RenderDiagnostics.settings`: every quality field a Feature Test Check Breakdown or Profile step changes,
  * as text, so a step's sample can say what it changed. `quality` carries the device-clamped water values.
  */
 export function qualitySettingsFingerprint(quality: EffectiveRenderingQuality): Record<string, string> {
@@ -845,6 +845,7 @@ export function qualitySettingsFingerprint(quality: EffectiveRenderingQuality): 
   return {
     shadows: shadows.enabled ? `${shadows.profile} ${shadows.mapSize}` : "off",
     "shadows.filter": shadows.filterQuality,
+    "shadows.screen": shadows.screenShadows,
     "water.refraction": String(water.refraction),
     "water.refractionScale": String(water.refractionScale),
     "water.reflections": water.reflections,

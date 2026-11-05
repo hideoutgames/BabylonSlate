@@ -214,6 +214,9 @@ import {
 } from "@haptic/core";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
+import {
+  beginDrawPassFrame, DrawPassFrame, endDrawPassFrame, enterDrawPass, leaveDrawPass, publishDrawPassFrame,
+} from "./draw-passes";
 import { GlobalParameterSession, globalParameterDefaults } from "./global-parameter-values";
 import { MaterialLibrary } from "./material-library";
 import { refreshText2DMaterials } from "./text2d-mesh";
@@ -1140,7 +1143,7 @@ function initializeEngine(
       onDiagnostic: (diagnostic) => options.onPostProcessDiagnostic?.(diagnostic),
     });
   };
-  /** `RenderDiagnostics.settings`: what the Feature Test Check's Breakdown steps change, as effective now. */
+  /** `RenderDiagnostics.settings`: what the Feature Test Check's Breakdown and Profile steps change, as effective now. */
   const breakdownSettings = (): Record<string, string> => {
     const quality = resolveSceneRenderingQuality(scene);
     return {
@@ -1148,6 +1151,8 @@ function initializeEngine(
       "post.samples": String(sceneMultisampleCount(scene)),
       "post.enabled": String(postProcessingEnabled),
       captures: renderTargetCaptures.isEveryFrameSuspended() ? "suspended" : "on",
+      // Engine-wide and kept across Play sessions, so a change that is not undone shows.
+      "presentation.framesInFlight": String(frameBackpressure.mode),
       // The live context's attribute, not the stored setting: the setting applies to the next Engine.
       "presentation.preserve": engine.isWebGPU ? "n/a"
         : String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
@@ -1803,6 +1808,8 @@ function initializeEngine(
     });
   }
   let lastDrawCalls = 0;
+  /** The view's frames' draws by pass (`RenderDiagnostics.drawPasses`); `last` is the last frame it drew. */
+  const drawPasses = new DrawPassFrame(engine);
   /** `showocclusion`: hosts draw the world view's occlusion buffer over the view. */
   let occlusionOverlay = false;
   let lastRenderCpuMs = 0;
@@ -1853,6 +1860,7 @@ function initializeEngine(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(),
+      drawPasses: { ...drawPasses.last },
       gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
@@ -2132,6 +2140,7 @@ function initializeEngine(
     admissionPreparationMs = 0;
     let coherentFrame = true;
     beginEngineDrawCallFrame(engine);
+    beginDrawPassFrame(drawPasses);
     // Water created or enabled since the last update (an editor edit or drop, a Play spawn) settles before the world's
     // strict probes below request its variants, and counts in this frame's draw calls. A load frame that draws no world
     // leaves it to the load's own settle, so spawn batches arriving over frames never settle partial sets.
@@ -2243,7 +2252,14 @@ function initializeEngine(
       else engine.clear(scene.clearColor, true, true, true);
       joysticks.refresh();
       uiControls.refresh();
-      sceneLayerCompositor?.render(presentingLayers, (layerId, draw, fallback) => drawOwner(`layer:${layerId}`, draw, fallback));
+      if (sceneLayerCompositor) {
+        enterDrawPass(engine, "layers", true);
+        try {
+          sceneLayerCompositor.render(presentingLayers, (layerId, draw, fallback) => drawOwner(`layer:${layerId}`, draw, fallback));
+        } finally {
+          leaveDrawPass(engine);
+        }
+      }
       if (!coherentFrame) {
         for (const pending of frameOwners.values()) {
           if (pending.copied) continue;
@@ -2277,6 +2293,7 @@ function initializeEngine(
       cancelPresentation(error instanceof Error ? error : new Error(String(error)));
       return;
     } finally {
+      endDrawPassFrame(drawPasses);
       frameScope?.dispose();
       // Capture counters change during collection; receipt rows share the bounded arrays.
       if (frameScope && frameReportReceipt) Object.assign(frameReportReceipt.report, frameScope.capture.report);
@@ -2286,6 +2303,7 @@ function initializeEngine(
     frameCopyReady = true;
     presentationStats.drawn += 1;
     lastDrawCalls = readEngineDrawCalls(engine);
+    publishDrawPassFrame(drawPasses);
     scheduler.noteRendered(frameStart, performance.now());
     lastRenderCpuMs = performance.now() - renderStart;
     if (profileReceipt) {

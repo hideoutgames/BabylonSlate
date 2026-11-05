@@ -54,6 +54,7 @@ import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { ReflectedContent } from "./reflected-content";
 import { shadowChangeSequence } from "./shadow-change-journal";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
+import { enterDrawPass, leaveDrawPass } from "./draw-passes";
 import { managedRenderTargetResources } from "./render-target-resource-cost";
 import { connectGeometrySurfaceOutput, GeometrySurfaceOutputBlock } from "./geometry-surface-output-block";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
@@ -171,7 +172,13 @@ class SceneMirrors {
     let complete = false;
     if (!surface.ready) complete = surface.ready = target.texture.isReadyForRendering();
     if (!surface.ready) return;
-    target.texture.render(false);
+    const engine = this.scene.getEngine();
+    enterDrawPass(engine, "mirrors", true);
+    try {
+      target.texture.render(false);
+    } finally {
+      leaveDrawPass(engine);
+    }
     this.drew = true;
     surface.dirty = !(complete || target.texture.isReadyForRendering());
   };

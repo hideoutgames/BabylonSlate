@@ -51,7 +51,7 @@ The game keeps running while the console is open, and pressing the game does not
 | `showfps` | `on`/`off` | Shows or hides Stats. | Yes |
 | `stat unit` | `on`/`off` | Adds the tick total, the time of each tick phase, the publish time and a history graph to Stats. | Yes |
 | `stat memory` | `on`/`off` | Adds memory use, the number of created objects and the time of the last collection to Stats. | Yes |
-| `stat draws` | `on`/`off` | Adds draw calls, meshes, textures, render timings and first shader draws to Stats. | Yes |
+| `stat draws` | `on`/`off` | Adds draw calls (and which passes drew them), meshes, textures, render timings and first shader draws to Stats. | Yes |
 | `stat threads` | `on`/`off` | Adds message traffic, actor count and tick count to Stats. | Yes |
 | `lightsdebug` | `on`/`off` | Shows which lights illuminate and which cast shadows. | Yes |
 | `showocclusion` | `on`/`off` | Shows what occlusion culling sees: solid shapes, light when near and dark when far, and how many objects it skips. | Yes |
@@ -59,7 +59,7 @@ The game keeps running while the console is open, and pressing the game does not
 | `wireframe` | `on`/`off` | Draws meshes as wireframes. | Yes |
 | `postprocessing` | `on`/`off` | Turns all post-processing off or back on, to measure what it costs. | Yes |
 | `rendertargets` | `on`/`off` | Pauses or resumes Render Target Captures that capture every frame, to measure what they cost. Their textures keep their last image; manual captures still capture when asked. | Yes |
-| `gpubusy` | `on`/`off` | Starts (or restarts) or stops measuring how long the GPU spends on each frame, independently of display pacing. The Feature Test Check's Breakdown reads it. | Yes |
+| `gpubusy` | `on`/`off` | Starts (or restarts) or stops measuring how long the GPU spends on each frame, independently of display pacing. The Feature Test Check's Breakdown and Profile read it. | Yes |
 | `framesinflight` | `off`/`2`/`3` | How many drawn frames may wait for the GPU before the next frame skips drawing (2 by default). A skipped frame keeps the previous image on screen while the game keeps running. A loading scene's first frame always draws. `off` draws every frame. **Stats** (`stat draws`) shows frames in flight and skips, and Feature Test reports state the mode. | Yes |
 | `preservebuffer` | `on`/`off` | Keeps (on, the default) or drops the rendering canvas's image between frames, to compare presentation cost. Stored in the browser and applied after the editor reloads or the project is reopened. The Feature Test Check's Breakdown compares both settings by itself and puts yours back. | Yes |
 | `showbounds` | `on`/`off` | Draws the bounding box of each mesh. | Yes |

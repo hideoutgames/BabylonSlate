@@ -1,4 +1,4 @@
-import type { RenderDiagnostics } from "@haptic/render";
+import type { DrawPass, RenderDiagnostics } from "@haptic/render";
 import type { PlaySessionResult } from "./play-session";
 import type { PlayProbe, ViewportProbe } from "./runtime-probes";
 import { RENDER_QUALITY_PROFILES, SHADOW_PROFILES } from "@haptic/core";
@@ -22,7 +22,7 @@ export function featureTestCheckCommands(sceneName: string, mode: FeatureTestChe
   return ["ft_stats"];
 }
 
-export type FeatureTestCheckMode = "quick" | "full" | "benchmark" | "breakdown";
+export type FeatureTestCheckMode = "quick" | "full" | "benchmark" | "breakdown" | "profile";
 
 /**
  * Performance profiles a Benchmark sweeps per scene: each quality tier. A
@@ -110,9 +110,9 @@ export interface FeatureTestBreakdownStep {
    */
   fields?: readonly string[];
   /**
-   * Remove-one: its saving overlaps another step's (a lower setting of a feature another step turns off, one effect of
-   * the post-processing another step turns off, or a resolution scale that shrinks every pass), so the NON-ADDITIVE
-   * check leaves it out of the sum.
+   * Remove-one and Profile: its saving overlaps another step's (a lower setting of a feature another step turns off, one
+   * effect of the post-processing another step turns off, or a resolution scale that shrinks every pass), so the
+   * NON-ADDITIVE check and a Profile's sum of savings leave it out.
    */
   overlaps?: boolean;
   /** Add-one: the label of another step whose cost this one includes (AO and SSR run in the post-processing stack). */
@@ -199,6 +199,85 @@ export const FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS: readonly FeatureTestBreakdown
   { label: "captures", commands: ["rendertargets on"], fields: ["captures"] },
   { label: "resolution 1.0", commands: [`quality resolution scale ${MEDIUM.resolution.scale}`], fields: ["resolution.scale"] },
 ];
+
+/** The only scene a Profile plays: the main scene, whose frame the session's own quality tier draws. */
+export const FEATURE_TEST_PROFILE_SCENES = FEATURE_TEST_CHECK_SCENES.filter((scene) => scene.name === "main");
+
+/** The session before a Profile's first step: what its toggling steps turn back to. */
+export interface FeatureTestProfileState {
+  /** Occlusion culling (`geometry.occlusion`): its step turns it to the other value. */
+  occlusion: boolean;
+  /** The Engine's frames in flight (`framesinflight`, kept across Play sessions): its step turns them off, then back. */
+  framesInFlight: "off" | 2 | 3;
+  /** Whether post-processing runs and every-frame captures draw: their steps turn them off, then back. */
+  postProcessing: boolean;
+  captures: boolean;
+}
+
+/** The session's state from a baseline's settings fingerprint and its frames in flight; a missing field reads as Play's default. */
+export function profileState(settings: Readonly<Record<string, string>> | undefined, framesInFlight: "off" | 2 | 3 | undefined): FeatureTestProfileState {
+  const stored = settings?.["presentation.framesInFlight"];
+  return {
+    occlusion: settings?.["geometry.occlusion"] !== "false",
+    framesInFlight: framesInFlight ?? (stored === "off" ? "off" : stored === "3" ? 3 : 2),
+    postProcessing: settings?.["post.enabled"] !== "false",
+    captures: settings?.captures !== "suspended",
+  };
+}
+
+const GEOMETRY_EFFECT_FIELDS = ["post.ambientOcclusion", "post.reflections", "post.volumetricLighting", "shadows.screen"] as const;
+
+/**
+ * A Profile's steps (`featureTestProfilePlan`), each on top of the session's own quality tier and undone by `quality
+ * reset` and its `restore` before the next, so its change against the baselines around it is what it saves at that
+ * tier. Steps marked `overlaps` save part of another step's saving (a lower setting of a feature another step turns
+ * off, an effect the post-processing or geometry step turns off too, a resolution that shrinks every pass).
+ */
+export function featureTestProfileSteps(state: FeatureTestProfileState): FeatureTestBreakdownStep[] {
+  return [
+    { label: "captures off", commands: ["rendertargets off"], restore: [`rendertargets ${state.captures ? "on" : "off"}`], fields: ["captures"] },
+    { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows", "shadows.filter"] },
+    // Medium's shadow level: its map size, cascades, filter and Screen-Space Shadows (off at Medium).
+    { label: "shadows medium", commands: ["quality shadows medium"], fields: ["shadows", "shadows.filter", "shadows.screen"], overlaps: true },
+    { label: "screen shadows off", commands: ["quality shadows screen off"], fields: ["shadows.screen"] },
+    { label: "AO off", commands: ["quality postprocessing ambientOcclusion off"], fields: ["post.ambientOcclusion"], overlaps: true },
+    { label: "SSR off", commands: ["quality postprocessing reflections off"], fields: ["post.reflections"], overlaps: true },
+    { label: "volumetrics off", commands: ["quality postprocessing volumetricLighting off"], fields: ["post.volumetricLighting"], overlaps: true },
+    // Every effect that reads the geometry pass, so the pass itself goes too.
+    {
+      label: "geometry effects off",
+      commands: [
+        "quality postprocessing ambientOcclusion off", "quality postprocessing reflections off",
+        "quality postprocessing volumetricLighting off", "quality shadows screen off",
+      ],
+      fields: GEOMETRY_EFFECT_FIELDS, overlaps: true,
+    },
+    { label: "post off", commands: ["postprocessing off"], restore: [`postprocessing ${state.postProcessing ? "on" : "off"}`], fields: ["post.enabled"] },
+    { label: "MSAA off", commands: ["quality postprocessing antialiasing off"], fields: ANTI_ALIASING_FIELDS },
+    {
+      label: `occlusion ${state.occlusion ? "off" : "on"}`, commands: [`quality geometry occlusion ${state.occlusion ? "off" : "on"}`],
+      fields: ["geometry.occlusion"],
+    },
+    // Engine-wide and outside `quality`: back to the session's own mode.
+    {
+      label: "frames in flight off", commands: ["framesinflight off"], restore: [`framesinflight ${state.framesInFlight}`],
+      fields: ["presentation.framesInFlight"],
+    },
+    { label: "resolution 0.5", commands: ["quality resolution scale 0.5"], fields: ["resolution.scale"], overlaps: true },
+  ];
+}
+
+/** A Profile's plan: the main scene's own camera, every step between two baselines. */
+export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureTestBreakdownPlan {
+  return { views: [{ steps: featureTestProfileSteps(state) }] };
+}
+
+/** The Profile step a sample measured, by its label (either occlusion step); undefined for baselines and warm-up windows. */
+export function profileStep(label: string): FeatureTestBreakdownStep | undefined {
+  const on: FeatureTestProfileState = { occlusion: true, framesInFlight: 2, postProcessing: true, captures: true };
+  return featureTestProfileSteps(on).find((step) => step.label === label)
+    ?? featureTestProfileSteps({ ...on, occlusion: false }).find((step) => step.label === label);
+}
 
 /** A camera a Breakdown measures from: `enter` switches to it before its first baseline, and it stays until the next view's. */
 export interface FeatureTestBreakdownView {
@@ -316,38 +395,83 @@ export function meanFrameMs(frames: FrameStats | null): number | null {
   return frames.meanMs ?? (frames.frames > 0 ? frames.durationMs / frames.frames : frames.medianMs ?? null);
 }
 
+/** A change against baselines: in ms, and as a share of them. */
+export interface BaselineDelta {
+  ms: number;
+  percent: number;
+}
+
 /**
- * A Breakdown step's change against the baselines of its view around it (the mean of the nearest before and after),
- * or null when unmeasured: in median GPU-busy time per frame when the step and those baselines measured it
- * (`basis: "gpu"`), else in mean frame interval (`"frame"`). A baseline is measured against its view's first
- * baseline: its change is the drift.
+ * A sample's change in `value` against the baselines of its view around it (the mean of the nearest measured before
+ * and after it), or null when it or they are unmeasured. A baseline's change is against its view's first baseline:
+ * its drift. Warm-up windows have none and are never references.
+ */
+export function deltaAroundBaselines(
+  samples: readonly FeatureTestBenchmarkSample[],
+  sample: FeatureTestBenchmarkSample,
+  value: (entry: FeatureTestBenchmarkSample) => number | null,
+): BaselineDelta | null {
+  const index = samples.indexOf(sample);
+  const own = index < 0 || sample.warmup ? null : value(sample);
+  if (own === null) return null;
+  const measured = (entry: FeatureTestBenchmarkSample) => isBreakdownBaseline(entry) && entry.view === sample.view && value(entry) !== null;
+  const around = (isBreakdownBaseline(sample)
+    ? [samples.find(measured)]
+    : [samples.slice(0, index).reverse().find(measured), samples.slice(index + 1).find(measured)])
+    .filter((entry): entry is FeatureTestBenchmarkSample => entry !== undefined);
+  if (!around.length) return null;
+  const base = around.reduce((total, entry) => total + value(entry)!, 0) / around.length;
+  const ms = own - base;
+  return { ms, percent: (ms / base) * 100 };
+}
+
+/**
+ * A Breakdown step's change against the baselines of its view around it (`deltaAroundBaselines`): in median GPU-busy
+ * time per frame when the step and those baselines measured it (`basis: "gpu"`), else in mean frame interval
+ * (`"frame"`).
  */
 export function breakdownDelta(
   samples: readonly FeatureTestBenchmarkSample[],
   sample: FeatureTestBenchmarkSample,
-): { ms: number; percent: number; basis: "gpu" | "frame" } | null {
-  const index = samples.indexOf(sample);
-  if (index < 0 || sample.warmup) return null;
-  const references = (gpu: boolean) => {
-    const measured = (entry: FeatureTestBenchmarkSample) =>
-      isBreakdownBaseline(entry) && entry.view === sample.view && breakdownValue(entry, gpu) !== null;
-    if (isBreakdownBaseline(sample)) {
-      const first = samples.find(measured);
-      return first ? [first] : [];
-    }
-    const before = samples.slice(0, index).reverse().find(measured);
-    const after = samples.slice(index + 1).find(measured);
-    return [before, after].filter((entry): entry is FeatureTestBenchmarkSample => entry !== undefined);
-  };
+): (BaselineDelta & { basis: "gpu" | "frame" }) | null {
   for (const gpu of [true, false]) {
-    const value = breakdownValue(sample, gpu);
-    const around = references(gpu);
-    if (value === null || !around.length) continue;
-    const base = around.reduce((total, entry) => total + breakdownValue(entry, gpu)!, 0) / around.length;
-    const ms = value - base;
-    return { ms, percent: (ms / base) * 100, basis: gpu ? "gpu" : "frame" };
+    const delta = deltaAroundBaselines(samples, sample, (entry) => breakdownValue(entry, gpu));
+    if (delta) return { ...delta, basis: gpu ? "gpu" : "frame" };
   }
   return null;
+}
+
+/** A Profile row's change against the baselines around it, in mean frame time and in median CPU frame cost. */
+export function profileDelta(
+  samples: readonly FeatureTestBenchmarkSample[],
+  sample: FeatureTestBenchmarkSample,
+): { frame: BaselineDelta | null; cpu: BaselineDelta | null } {
+  return {
+    frame: deltaAroundBaselines(samples, sample, (entry) => meanFrameMs(entry.frames)),
+    cpu: deltaAroundBaselines(samples, sample, (entry) => entry.cpuMs),
+  };
+}
+
+/** A Profile's measured steps by frame-time saving, the largest first (a step that cost time last); unmeasured ones left out. */
+export function profileRanking(
+  samples: readonly FeatureTestBenchmarkSample[],
+): { label: string; frame: BaselineDelta; cpu: BaselineDelta | null; overlaps: boolean }[] {
+  return samples.flatMap((sample) => {
+    if (sample.warmup || sample.skipped || isBreakdownBaseline(sample)) return [];
+    const { frame, cpu } = profileDelta(samples, sample);
+    return frame ? [{ label: sample.label, frame, cpu, overlaps: profileStep(sample.label)?.overlaps === true }] : [];
+  }).sort((a, b) => a.frame.ms - b.frame.ms);
+}
+
+/**
+ * The frame-time savings of a Profile's steps that overlap no other (`overlaps`), summed, against the first baseline's
+ * mean frame time: what the measured features explain of the frame. Null without a measured first baseline.
+ */
+export function profileSavings(samples: readonly FeatureTestBenchmarkSample[]): { savingsMs: number; frameMs: number } | null {
+  const frameMs = meanFrameMs(samples.find(isBreakdownBaseline)?.frames ?? null);
+  if (frameMs === null) return null;
+  const savingsMs = profileRanking(samples).reduce((total, entry) => entry.overlaps || entry.frame.ms >= 0 ? total : total - entry.frame.ms, 0);
+  return { savingsMs, frameMs };
 }
 
 /**
@@ -527,6 +651,19 @@ export interface FeatureTestBenchmarkSample {
   skipped?: string;
   /** Shaders first drawn and Effects compiling during the sample (both should be 0), and how long settling took. */
   unsettled?: { firstDraws: number; compiling: number; settleMs: number };
+  /** Breakdown and Profile: each pass's median draw calls per frame while sampled (`RenderDiagnostics.drawPasses`). */
+  drawPasses?: Partial<Record<DrawPass, number>>;
+}
+
+/** What a Profile found besides its rows. */
+export interface FeatureTestProfileResult {
+  /** The scene's instance pool when the warm-up ended (`RenderDiagnostics.instancePool`); null where unreported. */
+  instancePool: RenderDiagnostics["instancePool"] | null;
+  /**
+   * Settings fingerprint fields that differ, once everything was restored, from before the first step (`field=value`
+   * as restored); null when not checked (cancelled, or no fingerprint).
+   */
+  endChanges: string[] | null;
 }
 
 /**
@@ -613,6 +750,8 @@ export interface FeatureTestCheckSceneResult {
     firstDraws: NonNullable<RenderDiagnostics["firstDraws"]> | null;
     commands: FeatureTestCheckCommandResult[];
     benchmark: FeatureTestBenchmarkSample[];
+    /** A Profile's instance pool and end-of-run restore check; absent for other modes. */
+    profile?: FeatureTestProfileResult;
     logs: Array<{ severity: string; message: string }>;
   };
   session: {
@@ -713,6 +852,8 @@ export interface FeatureTestCheckTimeouts {
   breakdownWarmupWindowMs: number;
   /** Most a Breakdown warms up before its first step, stable or not. */
   breakdownWarmupMs: number;
+  /** A Profile's warm-up window; it warms up for at most `PROFILE_WARMUP_WINDOWS` of them. */
+  profileWarmupWindowMs: number;
 }
 
 export const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
@@ -727,7 +868,11 @@ export const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
   playSampleMs: 5_000,
   breakdownWarmupWindowMs: 10_000,
   breakdownWarmupMs: 90_000,
+  profileWarmupWindowMs: 5_000,
 };
+
+/** A Profile warms up for at most this many windows (fewer when the first two agree within 3%): a short run on a tablet. */
+export const PROFILE_WARMUP_WINDOWS = 2;
 
 /** Consecutive warm-up windows within this share of each other end a Breakdown's warm-up. */
 const WARMUP_STABLE = 0.03;
@@ -912,8 +1057,9 @@ async function checkScene(
     result.play.presentation = await samplePresentation(play, before, deps, signal);
     result.problems.push(...presentationProblems(result.play.presentation));
     const run = (line: string) => runCommand(play, line, deps, signal, limits);
-    if (mode === "benchmark" || mode === "breakdown") {
-      await benchmarkProfiles(scene.name, mode, method, play, run, deps, signal, limits, result.play.benchmark);
+    if (mode === "benchmark" || mode === "breakdown" || mode === "profile") {
+      if (mode === "profile") result.play.profile = { instancePool: null, endChanges: null };
+      await benchmarkProfiles(scene.name, mode, method, play, run, deps, signal, limits, result.play.benchmark, result.play.profile);
       for (const sample of result.play.benchmark) {
         for (const failure of sample.failed) result.problems.push(`${sample.label}: ${failure}`);
       }
@@ -1077,15 +1223,19 @@ async function settleView(
   return { quiet: quiet === true, ms: deps.now() - started };
 }
 
+/** A Profile's base: the session's own quality tier, so no commands; `quality reset` alone returns to it. */
+const PROFILE_BASE: FeatureTestBreakdownBase = { label: "the session's quality", commands: [], cleanup: [] };
+
 /**
- * Sweeps FEATURE_TEST_BENCHMARK_PROFILES (a Benchmark, frame cap lifted) or the scene's Breakdown plan (a Breakdown at
- * the normal cap on its method's base, undoing each step after it) on the running scene into `samples`, one as each
- * finishes, then restores the session's quality, render path, camera and cap. A Breakdown step whose fields already
- * hold its values is skipped (`breakdownSkip`), and so is the baseline after it, the one before still being adjacent.
+ * Sweeps FEATURE_TEST_BENCHMARK_PROFILES (a Benchmark, frame cap lifted), the scene's Breakdown plan (a Breakdown at
+ * the normal cap on its method's base) or a Profile's plan (at the session's own tier and frame cap), undoing each
+ * Breakdown or Profile step after it, into `samples`, one as each finishes; then restores the session's quality, render
+ * path, camera and cap. A step whose fields already hold its values is skipped (`breakdownSkip`), and so is the
+ * baseline after it, the one before still being adjacent. A Profile also fills `profile`.
  */
 async function benchmarkProfiles(
   sceneName: string,
-  mode: "benchmark" | "breakdown",
+  mode: "benchmark" | "breakdown" | "profile",
   method: FeatureTestBreakdownMethod,
   play: PlayProbe,
   run: (line: string) => Promise<FeatureTestCheckCommandResult>,
@@ -1093,13 +1243,19 @@ async function benchmarkProfiles(
   signal: AbortSignal,
   limits: FeatureTestCheckTimeouts,
   samples: FeatureTestBenchmarkSample[],
+  profile?: FeatureTestProfileResult,
 ): Promise<void> {
   const breakdown = mode === "breakdown";
+  // Breakdown and Profile alternate baselines and steps, time the GPU with fences and fingerprint every sample.
+  const interleaved = mode !== "benchmark";
   const plan = featureTestBreakdownPlan(sceneName, method);
-  const base = FEATURE_TEST_BREAKDOWN_BASES[method];
-  const cap = /(\d+)/.exec((await run("framecap")).output)?.[1];
-  await run(`framecap ${breakdown ? BREAKDOWN_FRAME_CAP : BENCHMARK_FRAME_CAP}`);
-  const steps: readonly FeatureTestBreakdownSequenceStep[] = breakdown ? breakdownSequence(plan.views) : FEATURE_TEST_BENCHMARK_PROFILES;
+  const base = breakdown ? FEATURE_TEST_BREAKDOWN_BASES[method] : PROFILE_BASE;
+  // A Profile keeps the session's frame cap.
+  const cap = mode === "profile" ? undefined : /(\d+)/.exec((await run("framecap")).output)?.[1];
+  if (mode !== "profile") await run(`framecap ${breakdown ? BREAKDOWN_FRAME_CAP : BENCHMARK_FRAME_CAP}`);
+  // A Profile's plan depends on the session as its warm-up found it.
+  let steps: readonly FeatureTestBreakdownSequenceStep[] = mode === "benchmark" ? FEATURE_TEST_BENCHMARK_PROFILES
+    : breakdown ? breakdownSequence(plan.views) : [];
   /** Runs `lines`, adding each failure to `failed`. */
   const runAll = async (lines: readonly string[], failed: string[]) => {
     for (const line of lines) {
@@ -1112,18 +1268,18 @@ async function benchmarkProfiles(
   const carried: string[] = [];
   /** Back to the base: `quality reset` clears every session override, the base's included. */
   const restore = async () => {
-    if (!breakdown) return;
+    if (!interleaved) return;
     await run("quality reset");
     await runAll(base.commands, carried);
     await runAll(pendingRestore.splice(0), carried);
   };
-  // A Breakdown times each frame's GPU work with fences, which display pacing does not quantise; restarted per sample.
+  // GPU-busy time per frame from fences, which display pacing does not quantise; restarted per sample.
   let gpuBusy = false;
   /** Samples the view as it is now into a sample labelled `label`; `failed` collects what went wrong. */
   const measure = async (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }) => {
     const firstDrawsBefore = play.snapshot().rendering?.firstDraws?.draws ?? 0;
     const skippedBefore = play.snapshot().rendering?.frameBackpressure?.skipped ?? 0;
-    if (breakdown) gpuBusy = (await run("gpubusy on")).success;
+    if (interleaved) gpuBusy = (await run("gpubusy on")).success;
     const sampled = await sampleWithCounters(play, deps.sampleFrames(sampleMs, signal), deps, signal);
     const snapshot = play.snapshot();
     const rendering = snapshot.rendering;
@@ -1140,11 +1296,12 @@ async function benchmarkProfiles(
       resolution: rendering ? `${rendering.width}x${rendering.height}@${rendering.scalingLevel.toFixed(2)}` : null,
       failed: [...carried.splice(0), ...failed],
       ...(rendering?.frameBackpressure ? { framesInFlight: { mode: rendering.frameBackpressure.mode, skipped: rendering.frameBackpressure.skipped - skippedBefore } } : {}),
-      ...(breakdown ? {
+      ...(interleaved ? {
         ...(gpuBusy && rendering?.gpuBusy ? { gpuBusy: { ...rendering.gpuBusy } } : {}),
         ...(rendering?.settings ? { settings: { ...rendering.settings } } : {}),
         unsettled: { firstDraws: (rendering?.firstDraws?.draws ?? 0) - firstDrawsBefore, compiling: sampled.compiling, settleMs: settled.ms },
         ...(sampled.occlusion ? { occlusion: sampled.occlusion } : {}),
+        ...(sampled.drawPasses ? { drawPasses: sampled.drawPasses } : {}),
       } : {}),
     };
     return sample;
@@ -1156,28 +1313,35 @@ async function benchmarkProfiles(
   let skippedLast = false;
   try {
     // The base first, so the warm-up runs at the baseline the steps are compared with.
-    if (breakdown) {
+    if (interleaved) {
       await runAll(base.commands, carried);
-      await warmUp(sceneName, play, deps, signal, limits, measure, samples);
+      await warmUp(sceneName, play, deps, signal, limits, measure, samples, mode === "profile"
+        ? { windowMs: limits.profileWarmupWindowMs, windows: PROFILE_WARMUP_WINDOWS, ms: Number.POSITIVE_INFINITY }
+        : { windowMs: limits.breakdownWarmupWindowMs, windows: Number.POSITIVE_INFINITY, ms: limits.breakdownWarmupMs });
     }
-    for (const profile of steps) {
-      if (profile.baseline && skippedLast) { skippedLast = false; continue; }
-      deps.onProgress?.(`${sceneName}: ${breakdown ? "measuring" : "benchmarking"} ${profile.label}`);
+    if (mode === "profile") {
+      const rendering = play.snapshot().rendering;
+      if (profile) profile.instancePool = rendering?.instancePool ?? null;
+      steps = breakdownSequence(featureTestProfilePlan(profileState(reference(undefined), rendering?.frameBackpressure?.mode)).views);
+    }
+    for (const step of steps) {
+      if (step.baseline && skippedLast) { skippedLast = false; continue; }
+      deps.onProgress?.(`${sceneName}: ${interleaved ? "measuring" : "benchmarking"} ${step.label}`);
       const failed: string[] = [];
-      if (profile.restore) pendingRestore.push(...profile.restore);
-      await runAll(profile.commands, failed);
+      if (step.restore) pendingRestore.push(...step.restore);
+      await runAll(step.commands, failed);
       // A view that does not draw again (shaders, render targets or a lost graphics context) ends this scene's
       // sweep: more changes on top would only pile up work and memory.
       const steady = await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs);
       if (!steady) failed.push(`The view did not draw steadily within ${seconds(limits.profileCompileMs)}; the remaining profiles were skipped.`);
-      const skip = breakdown && steady && !profile.baseline && !failed.length
-        ? breakdownSkip(profile.fields, reference(profile.view), play.snapshot().rendering?.settings)
+      const skip = interleaved && steady && !step.baseline && !failed.length
+        ? breakdownSkip(step.fields, reference(step.view), play.snapshot().rendering?.settings)
         : null;
       if (skip) {
-        deps.onProgress?.(`${sceneName}: skipped ${profile.label} (${skip})`);
+        deps.onProgress?.(`${sceneName}: skipped ${step.label} (${skip})`);
         samples.push({
-          label: profile.label, frames: null, runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null,
-          failed: carried.splice(0), baseline: false, skipped: skip, ...(profile.view ? { view: profile.view } : {}),
+          label: step.label, frames: null, runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null,
+          failed: carried.splice(0), baseline: false, skipped: skip, ...(step.view ? { view: step.view } : {}),
         });
         skippedLast = true;
         await restore();
@@ -1190,10 +1354,10 @@ async function benchmarkProfiles(
         ? await settleView(play, deps, signal, limits.profileSettleMs, limits.profileCompileMs)
         : { quiet: true, ms: 0 };
       if (!settled.quiet) failed.push(`Shaders were still first drawn or compiling after ${seconds(limits.profileCompileMs)}; this step's frames include them.`);
-      const sample = await measure(profile.label, failed, limits.playSampleMs, settled);
-      if (breakdown) {
-        sample.baseline = profile.baseline === true;
-        if (profile.view) sample.view = profile.view;
+      const sample = await measure(step.label, failed, limits.playSampleMs, settled);
+      if (interleaved) {
+        sample.baseline = step.baseline === true;
+        if (step.view) sample.view = step.view;
       }
       samples.push(sample);
       if (!steady) break;
@@ -1206,16 +1370,29 @@ async function benchmarkProfiles(
       await run("quality reset");
       for (const line of pendingRestore.splice(0)) await run(line);
       if (breakdown) for (const line of [...base.cleanup, ...plan.exit ?? []]) await run(line);
-      await run(`framecap ${cap ?? 60}`);
+      if (mode !== "profile") await run(`framecap ${cap ?? 60}`);
+      // Back as the session was before the first step: `quality reset` must not have dropped or kept anything else.
+      if (profile) await checkProfileRestored(play, deps, signal, limits, samples.find((sample) => sample.warmup)?.settings, profile);
     }
   }
 }
 
+/** Waits for the view to draw the restored settings, then records what still differs from `before` in `profile.endChanges`. */
+async function checkProfileRestored(
+  play: PlayProbe, deps: FeatureTestCheckDeps, signal: AbortSignal, limits: FeatureTestCheckTimeouts,
+  before: Readonly<Record<string, string>> | undefined, profile: FeatureTestProfileResult,
+): Promise<void> {
+  if (!before) return;
+  await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs);
+  const after = play.snapshot().rendering?.settings;
+  if (after) profile.endChanges = settingsChanges(before, after);
+}
+
 /**
- * Before a Breakdown's first step: samples the baseline in `breakdownWarmupWindowMs` windows until two consecutive
- * windows differ by under 3% (GPU-busy median where measured, else mean frame interval), bounded by
- * `breakdownWarmupMs`, so a device that heats up during the run starts the steps near its steady state. Each window is
- * kept as a `warmup` sample.
+ * Before a Breakdown's or Profile's first step: samples the baseline in windows of `bounds.windowMs` until two
+ * consecutive windows differ by under 3% (GPU-busy median where measured, else mean frame interval), for at most
+ * `bounds.windows` windows and `bounds.ms`, so a device that heats up during the run starts the steps near its steady
+ * state. Each window is kept as a `warmup` sample.
  */
 async function warmUp(
   sceneName: string,
@@ -1225,6 +1402,7 @@ async function warmUp(
   limits: FeatureTestCheckTimeouts,
   measure: (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }) => Promise<FeatureTestBenchmarkSample>,
   samples: FeatureTestBenchmarkSample[],
+  bounds: { windowMs: number; windows: number; ms: number },
 ): Promise<void> {
   const started = deps.now();
   let previous: number | null = null;
@@ -1233,12 +1411,12 @@ async function warmUp(
     const steady = await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs);
     const settled = steady ? await settleView(play, deps, signal, limits.profileSettleMs, limits.profileCompileMs) : { quiet: true, ms: 0 };
     const failed = settled.quiet ? [] : [`Shaders were still first drawn or compiling after ${seconds(limits.profileCompileMs)}; this window's frames include them.`];
-    const sample = await measure(`warm-up ${window}`, failed, limits.breakdownWarmupWindowMs, settled);
+    const sample = await measure(`warm-up ${window}`, failed, bounds.windowMs, settled);
     sample.warmup = true;
     samples.push(sample);
     const value = sample.gpuBusy?.medianMs ?? meanFrameMs(sample.frames);
     const stable = value !== null && previous !== null && Math.abs(value - previous) <= previous * WARMUP_STABLE;
-    if (!steady || stable || value === null || deps.now() - started >= limits.breakdownWarmupMs) return;
+    if (!steady || stable || value === null || window >= bounds.windows || deps.now() - started >= bounds.ms) return;
     previous = value;
   }
 }
@@ -1249,11 +1427,13 @@ async function sampleWithCounters(
 ): Promise<{
   frames: FrameStats | null; draws: CounterStats | null; cpu: CounterStats | null; gpu: CounterStats | null; compiling: number;
   occlusion: FeatureTestBenchmarkSample["occlusion"] | null;
+  drawPasses: FeatureTestBenchmarkSample["drawPasses"] | null;
 }> {
   let compiling = 0;
   const cpu: number[] = [];
   const gpu: number[] = [];
   const draws: number[] = [];
+  const passes = new Map<DrawPass, number[]>();
   const occlusion = { tested: [] as number[], culled: [] as number[], triangles: [] as number[], ms: [] as number[] };
   let sampling = true;
   const done = frames.finally(() => { sampling = false; });
@@ -1265,6 +1445,11 @@ async function sampleWithCounters(
     if (rendering) {
       cpu.push(rendering.cpuMs);
       if (rendering.gpuMs !== null) gpu.push(rendering.gpuMs);
+      for (const [pass, count] of Object.entries(rendering.drawPasses ?? {}) as [DrawPass, number][]) {
+        const counts = passes.get(pass) ?? [];
+        counts.push(count);
+        passes.set(pass, counts);
+      }
       if (rendering.occlusion) {
         occlusion.tested.push(rendering.occlusion.tested);
         occlusion.culled.push(rendering.occlusion.culled);
@@ -1280,6 +1465,7 @@ async function sampleWithCounters(
     occlusion: occlusion.tested.length ? {
       tested: median(occlusion.tested), culled: median(occlusion.culled), triangles: median(occlusion.triangles), ms: median(occlusion.ms),
     } : null,
+    drawPasses: passes.size ? Object.fromEntries([...passes].map(([pass, counts]) => [pass, median(counts)])) : null,
   };
 }
 

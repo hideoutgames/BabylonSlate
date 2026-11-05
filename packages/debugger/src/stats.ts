@@ -66,6 +66,8 @@ export type StatsHudRendering = {
   firstDraws?: { draws: number; loadCompiled: number; stalls: number; worstFrameMs: number } | null;
   /** The Engine's GPU backpressure: its `framesinflight` mode, frames queued now and renders skipped so far. */
   frameBackpressure?: { mode: "off" | 2 | 3; inFlight: number; skipped: number } | null;
+  /** The world view's last drawn frame's draw calls by what drew them (objects, shadows, post, …), in display order. */
+  drawPasses?: Readonly<Record<string, number>> | null;
 };
 
 /** What a host knows; an absent value leaves its metric out. */
@@ -158,6 +160,12 @@ function bytesMetric(id: string, label: string, bytes: number | undefined, warn?
   return bytes == null ? null : { id, label, text: formatStatBytes(bytes), raw: bytes, ...(warn ? { warn } : {}) };
 }
 
+/** The passes that drew in the last frame, with their draw calls; null when none drew or the host has no split. */
+function drawPassesMetric(passes: StatsHudRendering["drawPasses"]): StatsHudMetric | null {
+  const drawn = Object.entries(passes ?? {}).filter(([, draws]) => draws > 0);
+  return drawn.length ? { id: "draw-passes", label: "passes", text: drawn.map(([pass, draws]) => `${pass} ${draws}`).join(" · ") } : null;
+}
+
 function groupMetrics(group: StatGroup, input: StatsHudInput, overBudget: boolean): StatsHudMetric[] {
   switch (group) {
     case "unit":
@@ -197,6 +205,7 @@ function groupMetrics(group: StatGroup, input: StatsHudInput, overBudget: boolea
           { id: "gpu", label: "gpu", text: rendering.gpuMs === null ? rendering.gpuStatus : ms(rendering.gpuMs), ...(rendering.gpuMs === null ? {} : { raw: rendering.gpuMs }) },
           { id: "resolution", text: `${rendering.width}×${rendering.height}` },
           { id: "shadows", label: "shadows", text: `${rendering.shadowDrawCalls} draws`, raw: rendering.shadowDrawCalls },
+          drawPassesMetric(rendering.drawPasses),
           rendering.readbackMs === null ? null : { id: "readback", label: "readback", text: ms(rendering.readbackMs), raw: rendering.readbackMs },
           rendering.autoLod.meshes ? { id: "lod", label: "lod", text: `${rendering.autoLod.reduced}/${rendering.autoLod.meshes}` } : null,
           rendering.frameBackpressure ? {

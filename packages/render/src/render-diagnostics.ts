@@ -16,6 +16,8 @@ import type { RenderScheduler } from "./render-scheduler";
 import type { FirstDrawStats } from "./first-draw-stats";
 import type { GpuBusyStats } from "./gpu-busy-probe";
 import type { FrameBackpressureStats } from "./frame-backpressure";
+import type { DrawPassCounts } from "./draw-passes";
+import { existingSceneInstancePool, type InstancePoolDiagnostics } from "./instance-pool";
 
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
 import { deviceProfile, deviceTextureLimits } from "./device-profile";
@@ -25,12 +27,18 @@ export type RenderDiagnostics = {
   /** Play: Effects first drawn since its world load presented (`first-draw-stats.ts`); null elsewhere and on WebGPU. */
   firstDraws?: FirstDrawStats | null;
   /**
-   * A compact fingerprint of the effective settings the Feature Test Check's Breakdown steps change (`field: value`):
-   * `qualitySettingsFingerprint` (shadows and their filter, device-clamped water, post-processing tier values, resolution
-   * scale, occlusion culling), plus the scene pass's live MSAA samples, whether post-processing runs, every-frame
-   * captures and the live context's preserveDrawingBuffer. A step that changes more than its own fields shows.
+   * A compact fingerprint of the effective settings the Feature Test Check's Breakdown and Profile steps change
+   * (`field: value`): `qualitySettingsFingerprint` (shadows, their filter and Screen-Space Shadows, device-clamped water,
+   * post-processing tier values, resolution scale, occlusion culling), plus the scene pass's live MSAA samples, whether
+   * post-processing runs, every-frame captures, the Engine's frames in flight and the live context's
+   * preserveDrawingBuffer. A step that changes more than its own fields shows.
    */
   settings?: Record<string, string>;
+  /**
+   * The view's last drawn frame's draw calls by what drew them (`draw-passes.ts`); they add up to that frame's
+   * `drawCalls`. Absent where the view does not attribute them.
+   */
+  drawPasses?: DrawPassCounts;
   /**
    * GPU-busy time per Engine frame while the `gpubusy` debug command measures (`gpu-busy-probe.ts`); null when it has
    * not measured a frame or the Engine has no fences.
@@ -121,6 +129,8 @@ export type RenderDiagnostics = {
   drawCalls: number;
   /** Visible automatic-LOD meshes, how many draw a simplified level, and the triangles that saves. */
   autoLod: ReturnType<typeof autoLodDiagnostics>;
+  /** The Scene's instance pool (`SceneInstancePool.diagnostics`): groups, pooled members, meshes left unpooled by reason; null without one. */
+  instancePool: InstancePoolDiagnostics | null;
   /** The world view's last frame culled by occlusion (meshes tested and culled, occluders, their triangles, ms); null while it does not cull. */
   occlusion: { tested: number; culled: number; occluders: number; triangles: number; ms: number } | null;
   /** Live scene resource counts; cachedTextures is the Engine texture cache. */
@@ -196,6 +206,7 @@ export function createRenderDiagnostics(
       adapter: engineAdapterInfo(engine),
       drawCalls: readEngineDrawCalls(engine),
       autoLod: autoLodDiagnostics(scene),
+      instancePool: existingSceneInstancePool(scene)?.diagnostics() ?? null,
       occlusion: occlusionCounts(scene),
       resources: {
         meshes: liveMeshCount(scene),
