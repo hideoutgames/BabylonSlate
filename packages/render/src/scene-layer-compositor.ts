@@ -324,6 +324,14 @@ export class SceneLayerCompositor {
     return Math.max(1, this.engine.getRenderWidth(true)) / Math.max(1, this.engine.getRenderHeight(true));
   }
 
+  /** Restarts every layer's preparation and clears what it latched (a restored graphics context). */
+  invalidate(): void {
+    for (const layer of this.byId.values()) {
+      layer.renderer.invalidate();
+      layer.probedReady = false;
+    }
+  }
+
   retainResources(): () => void {
     const releases = [...this.byId.values()].map((layer) => layer.renderer.retainResources());
     return () => { for (const release of releases) release(); };
