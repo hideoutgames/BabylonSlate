@@ -200,6 +200,14 @@ export class ReflectedContent {
   }
 
   /**
+   * Takes the shadow map passes recorded since the last `changed` as seen: a reflection's own sun maps, drawn after it
+   * and before the pass that shows them.
+   */
+  acknowledgeShadowPasses(scene: Scene): void {
+    if (this.shadowSequence >= 0) this.shadowSequence = shadowChangeSequence(scene);
+  }
+
+  /**
    * Whether a shadow map pass since the last call may have changed a shadow `meshes` show: one whose changed region,
    * in some tile's drawn view, overlaps a receiver's rectangle there widened by the tile's filter reach. Depth is not
    * compared, so a caster's change reaches every receiver it lines up with in the light's view.

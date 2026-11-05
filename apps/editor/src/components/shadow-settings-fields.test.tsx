@@ -116,3 +116,33 @@ it("overrides Screen-Space Shadows for a scene and shows the project level", asy
   await waitFor(() => expect(written.at(-1)).toMatchObject({ screenShadows: "off" }));
   expect(field().textContent).toMatch(/^Off/);
 });
+it("switches Reflection Shadows for the project, which leaves its level Custom, and overrides them for a scene", async () => {
+  const written: ShadowOverrides[] = [];
+  function ProjectFields() {
+    const [project, setProject] = useState(() => normalizeShadowSettings({ profile: "high" }));
+    return <ShadowSettingsFields project={project}
+      onChange={(next) => { written.push(next); setProject(normalizeShadowSettings(next)); }} />;
+  }
+  const view = render(<ProjectFields />);
+  const toggle = () => screen.getByRole("switch", { name: "Reflection Shadows" });
+  // High's own: off.
+  expect(toggle().getAttribute("aria-checked")).toBe("false");
+  fireEvent.click(toggle());
+  await waitFor(() => expect(written.at(-1)).toMatchObject({ reflections: true, preset: "custom" }));
+  expect(normalizeShadowSettings(written.at(-1))).toMatchObject({ profile: "high", preset: "custom", reflections: true });
+  expect(toggle().getAttribute("aria-checked")).toBe("true");
+  view.unmount();
+  // A scene shows Ultra's (on) until it overrides it.
+  function SceneFields() {
+    const [overrides, setOverrides] = useState<ShadowOverrides>({});
+    return <ShadowSettingsFields project={normalizeShadowSettings({ profile: "ultra" })} overrides={overrides}
+      onChange={(next) => { written.push(next); setOverrides(next); }} />;
+  }
+  render(<SceneFields />);
+  expect(toggle().getAttribute("aria-checked")).toBe("true");
+  expect(toggle().hasAttribute("data-disabled")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Override Reflection Shadows" }));
+  fireEvent.click(toggle());
+  await waitFor(() => expect(written.at(-1)).toEqual({ reflections: false }));
+  expect(toggle().getAttribute("aria-checked")).toBe("false");
+});

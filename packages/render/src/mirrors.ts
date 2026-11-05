@@ -18,6 +18,11 @@
  * surface due on every render while it is reflected, within the same budget. A target allocates on a surface's first draw and lives with the surface (resized
  * when the view's size or Resolution Scale changes), so a skipped surface always has its last image to show.
  *
+ * Shadows: a pass shows the scene view's spot and point light shadows. The sun's, only with Reflection Shadows: then a
+ * drawing surface's mirror camera holds the sun's cascades as maps of its own, fitted to its mirrored view and drawn
+ * just before its pass when they changed (`ReflectionSunShadows`); a surface whose maps would draw differently is not
+ * current. Without them the pass draws the sun unshadowed, as the scene view's cascades cover only its own view.
+ *
  * Views that draw no reflections (their surfaces keep their last image): orthographic, rig/XR and multi-camera views,
  * Scene Linear without half-float targets, and Render Target Captures, which show what the scene view drew.
  */
@@ -52,6 +57,7 @@ import {
 } from "./planar-mirror";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { ReflectedContent } from "./reflected-content";
+import { reflectionShadowsEnabled } from "./reflection-sun-shadows";
 import { shadowChangeSequence } from "./shadow-change-journal";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { enterDrawPass, leaveDrawPass } from "./draw-passes";
@@ -82,6 +88,8 @@ export interface MirrorDiagnostics {
   readonly drawnMeshes: number;
   /** Shadow map passes the Scene's surfaces sample, recorded so far (`shadowChangeSequence`). */
   readonly shadowPasses: number;
+  /** Surfaces whose reflection holds sun maps of its own (Reflection Shadows). */
+  readonly sunShadowViews: number;
 }
 
 type Surface = MirrorCandidate & {
@@ -147,6 +155,9 @@ class SceneMirrors {
   drawnMeshes = 0;
   private readonly scene: Scene;
   private beforeRender: Observer<Scene> | null = null;
+  /** The owner's renders, and whether Reflection Shadows is on in this one. */
+  private renders = 0;
+  private sunShadows = false;
   private order = 0;
   private drawing = false;
   private drawTarget: PlanarMirrorTargetState | null = null;
@@ -206,6 +217,7 @@ class SceneMirrors {
       surfaces: this.surfaces.length, targets: this.surfaces.filter((surface) => surface.target?.lease).length,
       draws: this.draws, lastRenderDraws: this.lastRenderDraws, reuses: this.reuses, drawnMeshes: this.drawnMeshes,
       shadowPasses: shadowChangeSequence(this.scene),
+      sunShadowViews: this.surfaces.filter((surface) => surface.target?.sunShadows.holdsMaps).length,
     };
   }
 
@@ -238,7 +250,11 @@ class SceneMirrors {
     Frustum.GetPlanesToRef(this.viewProjection, this.planes);
     const maxSize = engine.getCaps().maxTextureSize;
     const type = linear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
+    const tick = ++this.renders;
+    this.sunShadows = reflectionShadowsEnabled(scene);
     for (const surface of this.surfaces) {
+      // Off, every surface gives its maps back now; a current one then draws again, unshadowed.
+      if (!this.sunShadows) surface.target?.sunShadows.release();
       this.place(surface, camera.layerMask);
       // A current reflection is not a candidate: the budget goes to surfaces whose image is due.
       if (surface.visible && this.current(surface, camera, viewWidth, viewHeight, type, maxSize)) {
@@ -254,9 +270,12 @@ class SceneMirrors {
       } catch (error) {
         // An optional effect must not break the frame: this surface keeps its last image from now on.
         surface.failed = true;
+        surface.target?.sunShadows.release();
         console.warn(`[render] Mirror reflection is off for "${surface.mesh.name}": ${String(error)}`);
       }
     }
+    // A surface that has stopped drawing gives its sun maps back.
+    for (const surface of this.surfaces) surface.target?.sunShadows.releaseIdle(tick);
     if (draws) this.lastRenderDraws = draws;
     this.selected.length = 0;
   }
@@ -300,6 +319,7 @@ class SceneMirrors {
     if (target.width !== planarMirrorTargetSize(viewWidth, scale, maxSize) || target.height !== planarMirrorTargetSize(viewHeight, scale, maxSize)) return false;
     if (!this.mirrorAndCull(surface, camera, target)) return false;
     if (surface.content.changed(this.scene, target.texture.renderList!)) surface.dirty = true;
+    if (target.sunShadows.due(this.sunShadows, this.projection)) surface.dirty = true;
     target.mirror.mirrorView.multiplyToRef(target.projection, this.nextViewProjection);
     return !surface.dirty && surface.drawnViewProjection.equals(this.nextViewProjection);
   }
@@ -310,7 +330,12 @@ class SceneMirrors {
     if (!this.math.mirror(camera.getViewMatrix(), camera.globalPosition, surface.plane, this.projection,
       engine.useReverseDepthBuffer, engine.isNDCHalfZRange, target.mirror.mirrorView, target.projection)) return false;
     const eye = this.math.eye;
-    target.mirror.position.set(eye[0]!, eye[1]!, eye[2]!);
+    const mirror = target.mirror;
+    mirror.position.set(eye[0]!, eye[1]!, eye[2]!);
+    // Its sun maps split and fit by the view's clip range (`ReflectionSunShadows`).
+    mirror.minZ = camera.minZ;
+    mirror.maxZ = camera.maxZ;
+    mirror.getViewMatrix(true);
     // Cull with the mirror camera's ordinary frustum, cropped to the surface's footprint, its near plane replaced by the
     // mirror plane.
     target.mirror.mirrorView.multiplyToRef(this.projection, this.cullViewProjection);
@@ -350,11 +375,10 @@ class SceneMirrors {
     const target = this.ensureTarget(surface, camera, width, height, type);
     if (!target) return false;
     if (!this.mirrorAndCull(surface, camera, target)) return false;
+    // Its own sun maps first: the shadow passes the content follows from on are then those after them.
+    target.sunShadows.prepare(this.sunShadows, this.projection, "mirrors", this.renders);
     // Follows the drawn list from this draw on (a surface's first draw starts following it here).
     surface.content.changed(scene, target.texture.renderList!);
-    target.mirror.minZ = camera.minZ;
-    target.mirror.maxZ = camera.maxZ;
-    target.mirror.getViewMatrix(true);
     if (!this.draw(surface, target)) return false;
     this.draws++;
     this.drawnMeshes += target.texture.renderList!.length;

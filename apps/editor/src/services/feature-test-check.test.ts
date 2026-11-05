@@ -838,6 +838,7 @@ describe("Profile", () => {
       ["shadows off", ["quality shadows enabled off"], [], false],
       ["shadows medium", ["quality shadows medium"], [], true],
       ["screen shadows off", ["quality shadows screen off"], [], false],
+      ["reflection shadows off", ["quality shadows reflections off"], [], false],
       ["AO off", ["quality postprocessing ambientOcclusion off"], [], true],
       ["SSR off", ["quality postprocessing reflections off"], [], true],
       ["volumetrics off", ["quality postprocessing volumetricLighting off"], [], true],
@@ -862,10 +863,10 @@ describe("Profile", () => {
     ]);
     // A baseline before every step and one after the last: every step sits between two baselines.
     const sequence = breakdownSequence(featureTestProfilePlan(SESSION).views);
-    expect(sequence).toHaveLength(27);
+    expect(sequence).toHaveLength(29);
     expect(sequence.slice(0, 5).map((step) => step.label)).toEqual(["baseline 1", "captures off", "baseline 2", "shadows off", "baseline 3"]);
     expect(sequence.filter((_, index) => index % 2 === 0).every((step) => step.baseline && !step.commands.length)).toBe(true);
-    expect(sequence.at(-1)!.label).toBe("baseline 14");
+    expect(sequence.at(-1)!.label).toBe("baseline 15");
   });
 
   it("reads the session's state from a baseline's fingerprint, with Play's defaults for what it lacks", () => {
@@ -876,11 +877,12 @@ describe("Profile", () => {
   });
 
   it("changes, with every step at every tier, only its own fields, or nothing where the tier already holds its value", () => {
-    // Low has no Screen-Space Shadows, AO, SSR or volumetrics; Medium has Medium's shadows and no Screen-Space Shadows or volumetrics.
+    // Low has no Screen-Space Shadows, AO, SSR or volumetrics; Medium has Medium's shadows and no Screen-Space Shadows or
+    // volumetrics; only Ultra has Reflection Shadows.
     const expectedSkips: Record<QualityLevel, string[]> = {
-      low: ["screen shadows off", "AO off", "SSR off", "volumetrics off", "geometry effects off"],
-      medium: ["shadows medium", "screen shadows off", "volumetrics off"],
-      high: [],
+      low: ["screen shadows off", "reflection shadows off", "AO off", "SSR off", "volumetrics off", "geometry effects off"],
+      medium: ["shadows medium", "screen shadows off", "reflection shadows off", "volumetrics off"],
+      high: ["reflection shadows off"],
       ultra: [],
     };
     for (const tier of ["low", "medium", "high", "ultra"] as const) {
@@ -929,7 +931,7 @@ describe("Profile", () => {
   };
 
   it("plays the main scene at the session's tier and frame cap: two short warm-up windows, then every step between baselines, each undone", async () => {
-    const { editor, deps } = profileEditor({ framesInFlight: 3 });
+    const { editor, deps } = profileEditor({ tier: "ultra", framesInFlight: 3 });
     const windows: number[] = [];
     const report = await runFeatureTestCheck({
       mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, signal: new AbortController().signal,
@@ -942,7 +944,7 @@ describe("Profile", () => {
     // The editor viewport's 3 s, Play's 5 s, two 5 s warm-up windows, then 5 s per row.
     expect(windows.slice(0, 4)).toEqual([3_000, 5_000, 5_000, 5_000]);
     expect(windows.slice(4).every((ms) => ms === 5_000)).toBe(true);
-    // At High nothing is skipped: 13 steps and 14 baselines, occlusion turned the other way from on.
+    // At Ultra nothing is skipped: 14 steps and 15 baselines, occlusion turned the other way from on.
     const rows = samples.slice(2);
     expect(rows.map((sample) => sample.label)).toEqual(breakdownSequence(featureTestProfilePlan({ ...SESSION, framesInFlight: 3 }).views).map((step) => step.label));
     expect(rows.map((sample) => sample.label)).toContain("occlusion off");
@@ -973,15 +975,16 @@ describe("Profile", () => {
     const [main] = report.scenes;
     const rows = main!.play.benchmark.filter((sample) => !sample.warmup);
     expect(rows.filter((sample) => sample.skipped).map((sample) => [sample.label, sample.skipped, sample.frames])).toEqual([
-      ["shadows medium", "already shadows medium 2048, shadows.filter high, shadows.screen off", null],
+      ["shadows medium", "already shadows medium 2048, shadows.filter high, shadows.screen off, shadows.reflections false", null],
       ["screen shadows off", "already shadows.screen off", null],
+      ["reflection shadows off", "already shadows.reflections false", null],
       ["volumetrics off", "already post.volumetricLighting false", null],
     ]);
     const labels = rows.map((sample) => sample.label);
     expect(labels.slice(labels.indexOf("shadows off"), labels.indexOf("AO off") + 2))
-      .toEqual(["shadows off", "baseline 3", "shadows medium", "screen shadows off", "AO off", "baseline 6"]);
+      .toEqual(["shadows off", "baseline 3", "shadows medium", "screen shadows off", "reflection shadows off", "AO off", "baseline 7"]);
     // The step's undo failed: the baseline after it says so and fails the scene.
-    expect(main!.problems).toEqual(["baseline 13: framesinflight 3 failed: Refused."]);
+    expect(main!.problems).toEqual(["baseline 14: framesinflight 3 failed: Refused."]);
     expect(main!.play.profile!.endChanges).toEqual(["presentation.framesInFlight=off"]);
   });
 });

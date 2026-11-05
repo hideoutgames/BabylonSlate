@@ -30,6 +30,8 @@ import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease, type ManagedRenderResource,
 } from "./managed-render-resources";
+import { markReflectionCamera } from "./reflection-camera";
+import { ReflectionSunShadows } from "./reflection-sun-shadows";
 import { isRenderTargetCaptureCandidate, renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { admittedSceneMeshes } from "./scene-stream-admission";
@@ -46,9 +48,16 @@ export interface MirrorPlane {
 const SIZE_STEP = 8;
 const NO_PARTICLES: IParticleSystem[] = [];
 
-/** A rigid camera whose view matrix is written directly; its projection is frozen to an oblique matrix. */
+/**
+ * A rigid camera whose view matrix is written directly; its projection is frozen to an oblique matrix. A reflection
+ * camera (`isReflectionCamera`): the light block draws its sun shadow only from maps of its own.
+ */
 export class PlanarMirrorCamera extends Camera {
   readonly mirrorView = Matrix.Identity();
+  constructor(name: string, position: Vector3, scene: Scene, setActiveOnSceneIfNoneActive?: boolean) {
+    super(name, position, scene, setActiveOnSceneIfNoneActive);
+    markReflectionCamera(this);
+  }
   override _getViewMatrix(): Matrix { return this.mirrorView; }
   override getClassName(): string { return "PlanarMirrorCamera"; }
 }
@@ -77,6 +86,8 @@ export interface PlanarMirrorTargetState {
   mirror: PlanarMirrorCamera;
   /** The mirror camera's frozen oblique projection, rewritten in place. */
   projection: Matrix;
+  /** The mirror camera's own sun maps (Reflection Shadows), given back with the target's storage. */
+  sunShadows: ReflectionSunShadows;
   lease: ManagedRenderLease | null;
   width: number;
   height: number;
@@ -150,7 +161,7 @@ export function createPlanarMirrorTarget(
     lease.commit(resources(texture));
     const thin = new ThinTexture(texture.getInternalTexture());
     thin.wrapU = thin.wrapV = Texture.CLAMP_ADDRESSMODE;
-    return { texture, thin, mirror, projection, lease, width, height, type };
+    return { texture, thin, mirror, projection, sunShadows: new ReflectionSunShadows(scene, mirror, projection), lease, width, height, type };
   } catch (error) {
     texture?.dispose();
     mirror?.dispose();
@@ -188,8 +199,12 @@ export function resizePlanarMirrorTarget(
   return true;
 }
 
-/** Frees the target's GPU storage and charge; the mirror camera and target stay, outside scene membership. */
+/**
+ * Frees the target's GPU storage and charge, and gives its mirror camera's sun maps back; the mirror camera and target
+ * stay, outside scene membership.
+ */
 export function releasePlanarMirrorStorage(scene: Scene, target: PlanarMirrorTargetState): void {
+  target.sunShadows.release();
   const lease = target.lease;
   if (!lease) return;
   target.lease = null;
@@ -430,7 +445,9 @@ const floatingOriginScenes = new WeakMap<Scene, () => Scene | undefined>();
 /**
  * Draws `pass` into `texture` capture-style and restores the view's camera, matrices, UBO, render pass, colour
  * writes, outlines and viewport. The mirror camera never stales the view's graph: the scene carries the Render
- * Target Capture readiness exemption while it draws.
+ * Target Capture readiness exemption while it draws. It is the scene's active camera for the pass, made so through
+ * `activeCamera` (Babylon's object renderer swaps it without notice), so the light block writes the sun shadow it draws
+ * with: its own cascades, or none (`sunShadowMap`).
  */
 export function drawPlanarMirrorPass(
   scene: Scene, texture: RenderTargetTexture, pass: () => void,
@@ -459,6 +476,7 @@ export function drawPlanarMirrorPass(
   FloatingOriginCurrentScene.eyeAtCamera = true;
   renderTargetCaptureDrawing.add(scene);
   try {
+    if (texture.activeCamera) scene.activeCamera = texture.activeCamera;
     drawBorrowedTarget(scene, texture, pass, policy);
   } finally {
     try {

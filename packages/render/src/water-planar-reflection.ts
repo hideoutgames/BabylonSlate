@@ -19,6 +19,10 @@
  * engine frames, so frame caps, paused views and display refresh rates do not change them. The owner's per-frame
  * work allocates nothing; once every view is idle its observers detach.
  *
+ * Shadows: a pass shows the scene view's spot and point light shadows, and the sun's only with Reflection Shadows, from
+ * cascades of the view's mirror camera's own, fitted to the mirrored view and drawn just before a pass when they changed
+ * (`ReflectionSunShadows`); a view whose maps would draw differently is dirty. They go with the target's storage.
+ *
  * Readiness: the mirror camera and target never join the scene's cameras or textures (their construction blocks
  * entity collection), and idle release frees only GPU storage, so allocating, releasing and reallocating never
  * changes scene membership, never re-probes strict readiness and never drops a presented frame. They are
@@ -50,6 +54,7 @@ import {
 } from "./planar-mirror";
 import { sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
 import { ReflectedContent } from "./reflected-content";
+import { reflectionShadowsEnabled } from "./reflection-sun-shadows";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources } from "./render-target-resource-cost";
 import { waterMeshReflectsObjects, waterMeshRestVaries } from "./water-mesh";
@@ -91,6 +96,8 @@ export interface WaterPlanarReflectionDiagnostics {
   readonly draws: number;
   /** Renders a static view reused its previous draw. */
   readonly reusedFrames: number;
+  /** Views whose reflection holds sun maps of its own (Reflection Shadows). */
+  readonly sunShadowViews: number;
 }
 
 /**
@@ -217,6 +224,9 @@ class WaterPlanarReflections {
     else if (!target) this.removeView(view);
   };
   private readonly releaseView = (view: View) => this.removeView(view);
+  private readonly releaseSunShadows = (view: View) => view.target?.sunShadows.release();
+  /** Whether Reflection Shadows is on in this render. */
+  private sunShadows = false;
   private drawTarget: Target | null = null;
   private drew = false;
   /** Runs inside drawBorrowedTarget, which restores the framebuffer and depth/alpha state. */
@@ -259,9 +269,12 @@ class WaterPlanarReflections {
   }
 
   diagnostics(): WaterPlanarReflectionDiagnostics {
-    let targets = 0;
-    this.views.forEach((view) => { if (view.target?.lease) targets++; });
-    return { views: this.views.size, targets, draws: this.draws, reusedFrames: this.reusedFrames };
+    let targets = 0, sunShadowViews = 0;
+    this.views.forEach((view) => {
+      if (view.target?.lease) targets++;
+      if (view.target?.sunShadows.holdsMaps) sunShadowViews++;
+    });
+    return { views: this.views.size, targets, draws: this.draws, reusedFrames: this.reusedFrames, sunShadowViews };
   }
 
   forCamera(camera: Camera): WaterPlanarReflection | null {
@@ -317,6 +330,9 @@ class WaterPlanarReflections {
     const tick = ++this.tick;
     const quality = sceneWaterQualityDeviceClamp(scene).quality;
     const revision = sceneWaterQualityRevision(scene);
+    this.sunShadows = reflectionShadowsEnabled(scene);
+    // Off, every view gives its sun maps back now; a static one then draws again, unshadowed.
+    if (!this.sunShadows) this.views.forEach(this.releaseSunShadows);
     if (quality.reflections === "planar" && revision !== this.failedRevision) {
       const camera = scene.activeCamera;
       const view = camera ? this.views.get(camera) : undefined;
@@ -369,14 +385,15 @@ class WaterPlanarReflections {
     clipFrustumAtMirror(this.cullViewProjection, this.plane, this.reflectionPlanes);
     collectPlanarMirrorMeshes(scene, target.meshes, camera.layerMask, this.reflectionPlanes, this.excluded);
     if (target.content.changed(scene, target.meshes)) target.dirty = true;
+    if (target.sunShadows.due(this.sunShadows, this.projection)) target.dirty = true;
     if (target.result && target.drawnMesh === mesh && target.drawn.equals(this.nextViewProjection) &&
       (!target.dirty || view.renders - target.drawnRender < STATIC_REDRAW_INTERVAL)) {
       this.reusedFrames++;
       return true;
     }
-    target.mirror.minZ = camera.minZ;
-    target.mirror.maxZ = camera.maxZ;
-    target.mirror.getViewMatrix(true);
+    // Its own sun maps first; the pass shows their passes, which the content then takes as seen.
+    target.sunShadows.prepare(this.sunShadows, this.projection, "water", tick);
+    target.content.acknowledgeShadowPasses(scene);
     if (!this.draw(target)) return false;
     this.draws++;
     target.drawn.copyFrom(this.nextViewProjection);
@@ -475,7 +492,12 @@ class WaterPlanarReflections {
     if (!this.math.mirror(camera.getViewMatrix(), camera.globalPosition, this.plane, this.projection,
       engine.useReverseDepthBuffer, engine.isNDCHalfZRange, target.mirror.mirrorView, target.projection)) return false;
     const eye = this.math.eye;
-    target.mirror.position.set(eye[0]!, eye[1]!, eye[2]!);
+    const mirror = target.mirror;
+    mirror.position.set(eye[0]!, eye[1]!, eye[2]!);
+    // Its sun maps split and fit by the view's clip range (`ReflectionSunShadows`).
+    mirror.minZ = camera.minZ;
+    mirror.maxZ = camera.maxZ;
+    mirror.getViewMatrix(true);
     return true;
   }
 

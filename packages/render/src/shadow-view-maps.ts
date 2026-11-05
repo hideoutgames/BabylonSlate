@@ -6,6 +6,7 @@ import type { Light } from "@babylonjs/core/Lights/light";
 import type { Scene } from "@babylonjs/core/scene";
 import type { ShadowSettings } from "@haptic/core";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
+import { isReflectionCamera } from "./reflection-camera";
 import { isAtlasShadow } from "./shadow-atlas";
 import type { ShadowEntry as Entry } from "./shadow-entry";
 import {
@@ -17,7 +18,7 @@ import {
 } from "./shadow-map-factory";
 
 /**
- * A view's own sun map (a High or Full Quality Render Target Capture's): the scene
+ * A view's own sun map (a High or Full Quality Render Target Capture's, or a planar reflection's): the scene
  * map's size, cascades and settings, keyed to the view's camera and fitted to
  * it as a scene view there would fit it. `mirrors` is the scene map it was
  * built from; a replaced scene map replaces it. It is cascade tiles of the same
@@ -42,6 +43,8 @@ type View = {
   /** Disposals that threw, which the view's release reports. */
   pending: Set<Promise<void>>;
 };
+/** Scene maps whose mirror the atlas refused a reflection (warned once each). */
+const refusedReflections = new WeakSet<ShadowGenerator>();
 /** How long a view waits before asking the atlas again for a mirror it refused. */
 const VIEW_REFUSAL_RETRY_MS = 1_000;
 /** A view's claim on its own sun maps. */
@@ -112,6 +115,15 @@ export class ShadowViewMaps {
   /** Every view's map, view by view. */
   forEachMap(action: (map: ViewMap) => void): void {
     for (const view of this.views.values()) for (const map of view.maps.values()) action(map);
+  }
+  /** `camera`'s own maps. */
+  forEachMapOf(camera: Camera, action: (map: ViewMap) => void): void {
+    const view = this.views.get(camera);
+    if (view) for (const map of view.maps.values()) action(map);
+  }
+  /** Whether `camera` holds a map of its own. */
+  holdsMaps(camera: Camera): boolean {
+    return (this.views.get(camera)?.maps.size ?? 0) > 0;
   }
   /** Drops a disposed light's maps and history from every view. */
   forgetLight(light: Light): void {
@@ -198,8 +210,14 @@ export class ShadowViewMaps {
     }
     const previous = view.refused.get(entry.light);
     view.refused.set(entry.light, { mirrors: source, retryAt: performance.now() + VIEW_REFUSAL_RETRY_MS });
-    if (previous?.mirrors !== source)
-      console.warn(`[render] A Render Target Capture samples "${entry.light.name}" shadows from the main camera's map: its own map does not fit the shadow atlas.`);
+    if (!isReflectionCamera(view.camera)) {
+      if (previous?.mirrors !== source)
+        console.warn(`[render] A Render Target Capture samples "${entry.light.name}" shadows from the main camera's map: its own map does not fit the shadow atlas.`);
+    } else if (!refusedReflections.has(source)) {
+      // Once per scene map, for every reflection: they come and go with their surfaces' draws.
+      refusedReflections.add(source);
+      console.warn(`[render] Reflections draw "${entry.light.name}" unshadowed: their own sun maps do not fit the shadow atlas.`);
+    }
   }
   /**
    * When a scene view's map finds no room in the shadow atlas, the views' maps give way: it is built again with their

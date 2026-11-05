@@ -100,6 +100,19 @@ describe("shadow settings", () => {
       settings: { screenShadows: "off" }, limits: ["screen shadows: not in CEL"],
     });
   });
+  it("gives Reflection Shadows at Ultra only, keeps an authored value and drops one that is not a switch", () => {
+    expect((["low", "medium", "high", "ultra"] as const).map((profile) => normalizeShadowSettings({ profile }).reflections))
+      .toEqual([false, false, false, true]);
+    expect(normalizeShadowOverrides({ reflections: true })).toEqual({ reflections: true });
+    expect(normalizeShadowOverrides({ reflections: "on" })).toEqual({});
+    // Turned on at High it is no longer High's set; turned off at Ultra, no longer Ultra's.
+    expect(normalizeShadowSettings({ profile: "high", reflections: true })).toMatchObject({ reflections: true, preset: "custom" });
+    expect(normalizeShadowSettings({ profile: "ultra", preset: "ultra", reflections: false })).toMatchObject({ reflections: false, preset: "custom" });
+    // A scene can override the project's.
+    expect(resolveShadowSettings(normalizeShadowSettings({ profile: "ultra" }), { reflections: false }).reflections).toBe(false);
+    // Neither the device nor CEL changes it.
+    expect(effectiveShadowSettings(normalizeShadowSettings({ profile: "ultra" }), false, "cel").settings.reflections).toBe(true);
+  });
 
   it("selects Auto capacity by quality without overwriting a saved Manual limit", () => {
     for (const [profile, expected] of [

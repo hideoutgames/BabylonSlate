@@ -237,9 +237,14 @@ export function featureTestProfileSteps(state: FeatureTestProfileState): Feature
   return [
     { label: "captures off", commands: ["rendertargets off"], restore: [`rendertargets ${state.captures ? "on" : "off"}`], fields: ["captures"] },
     { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows", "shadows.filter"] },
-    // Medium's shadow level: its map size, cascades, filter and Screen-Space Shadows (off at Medium).
-    { label: "shadows medium", commands: ["quality shadows medium"], fields: ["shadows", "shadows.filter", "shadows.screen"], overlaps: true },
+    // Medium's shadow level: its map size, cascades, filter, Screen-Space Shadows and Reflection Shadows (both off at Medium).
+    {
+      label: "shadows medium", commands: ["quality shadows medium"], fields: ["shadows", "shadows.filter", "shadows.screen", "shadows.reflections"],
+      overlaps: true,
+    },
     { label: "screen shadows off", commands: ["quality shadows screen off"], fields: ["shadows.screen"] },
+    // The reflections' own sun maps (on at Ultra): the main scene's Mirrors.
+    { label: "reflection shadows off", commands: ["quality shadows reflections off"], fields: ["shadows.reflections"] },
     { label: "AO off", commands: ["quality postprocessing ambientOcclusion off"], fields: ["post.ambientOcclusion"], overlaps: true },
     { label: "SSR off", commands: ["quality postprocessing reflections off"], fields: ["post.reflections"], overlaps: true },
     { label: "volumetrics off", commands: ["quality postprocessing volumetricLighting off"], fields: ["post.volumetricLighting"], overlaps: true },

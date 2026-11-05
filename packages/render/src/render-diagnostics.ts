@@ -28,7 +28,7 @@ export type RenderDiagnostics = {
   firstDraws?: FirstDrawStats | null;
   /**
    * A compact fingerprint of the effective settings the Feature Test Check's Breakdown and Profile steps change
-   * (`field: value`): `qualitySettingsFingerprint` (shadows, their filter and Screen-Space Shadows, device-clamped water,
+   * (`field: value`): `qualitySettingsFingerprint` (shadows, their filter, Screen-Space Shadows and Reflection Shadows, device-clamped water,
    * post-processing tier values, resolution scale, occlusion culling), plus the scene pass's live MSAA samples, whether
    * post-processing runs, every-frame captures, the Engine's frames in flight and the live context's
    * preserveDrawingBuffer. A step that changes more than its own fields shows.
