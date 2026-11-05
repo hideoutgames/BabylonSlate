@@ -85,12 +85,12 @@ describe("expandImportZip", () => {
       "beep.wav": new Uint8Array([2]),
     }));
     expect(names(result)).toEqual(["Chair/chair.png", "beep.wav"]);
-    expect(result.skipped.sort((a, b) => a.path.localeCompare(b.path))).toEqual([
-      { path: ".git/config", reason: "metadata" },
-      { path: "Chair/.DS_Store", reason: "metadata" },
-      { path: "Chair/More.zip", reason: "nested-zip" },
+    expect(result.skipped).toEqual([
       { path: "Chair/notes.txt", reason: "unsupported" },
+      { path: "Chair/.DS_Store", reason: "metadata" },
+      { path: ".git/config", reason: "metadata" },
       { path: "__MACOSX/Chair/._chair.png", reason: "metadata" },
+      { path: "Chair/More.zip", reason: "nested-zip" },
     ]);
     const lines = describeSkippedZipEntries(result.skipped);
     expect(lines).toHaveLength(3);

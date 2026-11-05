@@ -30,4 +30,11 @@ describe("ProjectService web import", () => {
     expect(storage.getCurrentFolder()?.name).toBe("Imported");
     expect(await storage.readText("assets/notes.txt")).toBe("notes");
   });
+
+  it("refuses a picked file that is not a ZIP by name, as an iOS picker offers any file", async () => {
+    const service = new ProjectService(new MemoryStorageAdapter("documents"));
+    picker.files = [{ name: "cover.png", bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) }];
+    await expect(service.openProject("zip")).rejects.toThrow("Choose a .zip archive of a Haptic project.");
+    expect(await service.listProjects()).toEqual([]);
+  });
 });

@@ -83,6 +83,10 @@ describe("Extension packages", () => {
     await expect(inspectHextension(encodeProjectZip([...incoming.files, { path, data: text("bad") }]))).rejects.toThrow(/path/i);
   });
 
+  it("refuses a picked file that is not an archive by name, as an iOS picker offers any file", async () => {
+    await expect(inspectHextension(text("{\"name\":\"theme\"}"))).rejects.toThrow("Not a .hextension: the file is not an Extension archive.");
+  });
+
   it("rejects a missing module or an entry point escaping the package", async () => {
     const { incoming } = await extensionPackage();
     await expect(inspectHextension(encodeProjectZip(incoming.files.filter((file) => file.path !== "index.ts")))).rejects.toThrow(/Entry Point is missing/);

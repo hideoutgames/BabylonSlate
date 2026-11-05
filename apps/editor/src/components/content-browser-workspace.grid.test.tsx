@@ -951,7 +951,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     installRegistry(assets, ["props"]);
     const createFolder = vi.fn(async () => {});
     const deleteFolder = vi.fn(async () => {});
-    const importFile = vi.fn(async (_root: string, _folder: string, _name: string) => {
+    const importFile = vi.fn<(root: string, folder: string, name: string) => Promise<IndexedAsset[]>>(async () => {
       const asset = texture(assets.length);
       assets.push(asset);
       return [asset];
