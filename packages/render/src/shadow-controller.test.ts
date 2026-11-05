@@ -37,6 +37,7 @@ import { ShadowAtlasAllocator } from "./shadow-atlas-allocator";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, cascadeTileSizes, isAtlasShadow, shadowAtlasBytes, shadowAtlasTexture } from "./shadow-atlas";
 import { captureShadowDiagnostics } from "./shadow-diagnostics";
 import { builtInWaterMaterial } from "./water-template";
+import { PlanarMirrorCamera } from "./planar-mirror";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -1641,6 +1642,22 @@ describe("view sun shadow maps", () => {
       expect(sun.getShadowGenerator(capture)).toBeNull();
       expect(controller.viewBoundGenerator(sun, capture)).toBe(sun.getShadowGenerator());
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("does not fit the shadow atlas"));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("leaves reflections whose own cascades find no room in the atlas unshadowed by the sun, warned once for them all", () => {
+    const { scene, controller, sun } = atlasSun(4);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const mirrors = [new PlanarMirrorCamera("mirror a", Vector3.Zero(), scene, false), new PlanarMirrorCamera("mirror b", Vector3.Zero(), scene, false)];
+      for (const mirror of mirrors) controller.attachView(mirror);
+      // No map of their own: the light block draws them no sun cascades (`isReflectionCamera`), never the scene view's.
+      expect(mirrors.map((mirror) => [controller.viewHoldsMaps(mirror), sun.getShadowGenerator(mirror)])).toEqual([[false, null], [false, null]]);
+      expect(warn.mock.calls.map(([message]) => message)).toEqual([
+        '[render] Reflections draw "sun" unshadowed: their own sun maps do not fit the shadow atlas.',
+      ]);
     } finally {
       warn.mockRestore();
     }
