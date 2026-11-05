@@ -19,6 +19,7 @@ Shadows have a budget separate from the [light budget](lighting.md#light-budget)
 - The device can lower these requests to fit its memory. A light whose shadows are unavailable shows a yellow icon in the viewport.
 - Phones and tablets get the same shadow limits as desktops at every quality level: the quality level alone sets map sizes, and at **High** and **Ultra** all shadows share one 8192 × 8192 shadow map (256 MiB), as on a desktop. A device whose graphics can't hold a texture that large uses the largest it can. Only a **Directional Map Size** of 8192 differs: see [8192 directional maps](#8192-directional-maps).
 - A High or Full Quality [Render Target Capture](render-targets.md#quality) draws its own directional shadows, fitted to its view, each captured frame. Point and spot lights share their shadow maps with the camera.
+- [Mirrors](../components/mirror.md) and planar [water](water.md#water-quality) reflections show directional shadows only with **Reflection Shadows** on: see [Shadows in reflections](#shadows-in-reflections).
 
 ## Shadow settings
 
@@ -35,6 +36,7 @@ Open **Project Settings > Rendering > Shadows**. The defaults below are the High
 | **Shadow Filter Quality** | High | Low, Medium or High. **Low** blends edges over about 3 shadow-map texels, the narrowest smooth edge. **Medium** blends them over about 5 and **High** over about 7, for softer, wider edges at a higher GPU cost. Edges keep the same softness in the world near and far, except where far shadows have too little detail for it. |
 | **Contact Hardening Size** | 0.05 | PCSS light size. Larger values widen the penumbra. |
 | **Screen-Space Shadows** | Medium | **Off**, **Low**, **Medium** or **High**. Adds the sun's small contact shadows the shadow map misses, near the camera. See [Screen-Space Shadows](#screen-space-shadows). |
+| **Reflection Shadows** | Off | Mirrors and planar water reflections show the directional light's shadow, at the cost of a directional shadow render for each reflection that draws. See [Shadows in reflections](#shadows-in-reflections). |
 | **Shadow Depth Bias** | 0.0001 | Depth offset. High values detach shadows from surfaces. |
 | **Automatic Shadow Bias** | On | Scales directional bias per cascade, with Depth Bias as the minimum. Landscapes also get a normal offset scaled to the shadow resolution, so sculpted terrain does not shadow itself along its edges. |
 | **Shadow Normal Bias** | 0.005 | Normal offset, in world units. |
@@ -57,12 +59,12 @@ No quality level uses a **Directional Map Size** of 8192, so choosing it makes *
 
 The **Shadows Quality** setting in **Scalability** applies one of these sets. Changing any field afterwards makes it **Custom**.
 
-| Level | Distance | Map size | First cascade | Cascades | Half-size far cascades | Filter quality | Local shadow lights | Local map size | Smallest far caster | Screen-Space Shadows |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Low | 120 | 2048 | 2048 | 2 | 0 | Low | 1 | 512 | 3 texels | Off |
-| Medium | 250 | 2048 | 2048 | 3 | 1 | High | 2 | 1024 | 2 texels | Off |
-| High | 350 | 2048 | 4096 | 4 | 1 | High | 4 | 2048 | 1.5 texels | Medium |
-| Ultra | 600 | 4096 | 4096 | 4 | 2 | High | 8 | 2048 | 1 texel | High |
+| Level | Distance | Map size | First cascade | Cascades | Half-size far cascades | Filter quality | Local shadow lights | Local map size | Smallest far caster | Screen-Space Shadows | Reflection Shadows |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Low | 120 | 2048 | 2048 | 2 | 0 | Low | 1 | 512 | 3 texels | Off | Off |
+| Medium | 250 | 2048 | 2048 | 3 | 1 | High | 2 | 1024 | 2 texels | Off | Off |
+| High | 350 | 2048 | 4096 | 4 | 1 | High | 4 | 2048 | 1.5 texels | Medium | Off |
+| Ultra | 600 | 4096 | 4096 | 4 | 2 | High | 8 | 2048 | 1 texel | High | On |
 
 Applying a level also resets a Manual **Local Shadow Light Budget** to that level's count.
 
@@ -97,6 +99,16 @@ The sun's shadow map has a limited number of texels, so small objects resting on
 - They follow each mesh's **Cast Shadows** and **Receive Shadows**, as the shadow map does: only meshes that cast shadows block the sun, and only meshes that receive shadows darken.
 - Opaque and masked surfaces receive them. Translucent surfaces don't, but glass and other translucent surfaces that cast shadows can cast them on the ground behind.
 - Turning them on or off recompiles lit materials once; changing between Low, Medium and High does not.
+
+## Shadows in reflections
+
+[Mirrors](../components/mirror.md) and planar [water](water.md#water-quality) reflections render the scene again from a mirrored camera.
+
+- Point and spot light shadows always show in reflections.
+- The directional light's shadow shows only with **Reflection Shadows** on, which **Ultra** turns on. Each reflection that draws then renders the directional light's shadow again, fitted to what the reflection shows, before it draws: about one more shadow render of the scene per reflection, and room in the shadow map for its cascades. While nothing changes it keeps its shadow, as the reflection keeps its image.
+- With it off, reflections draw the directional light as if nothing blocked it. The camera's own directional shadows cover only what the camera sees, so they cannot shade what only a reflection shows, such as the ground behind the camera.
+- When the shadow map has no room for a reflection's cascades, that reflection draws the directional light unshadowed, and a warning appears once in the Output Log.
+- Change it for a session with `quality shadows reflections on` or `off` in the [console](../debugging/console.md), or from a script with [Set Shadow Quality](../scripting/class/set-shadow-quality.md).
 
 ## Override shadows in a scene
 
