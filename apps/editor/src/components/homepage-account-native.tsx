@@ -378,9 +378,6 @@ export default function HomepageNativeAccount({
           </Button>
         </div>
       )}
-      <p className="homepage-native-auth-note">
-        Your projects stay on this device.
-      </p>
     </Frame>
   );
 }

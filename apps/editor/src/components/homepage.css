@@ -1637,10 +1637,6 @@ svg.homepage-profile-menu-avatar {
   padding: 40px 24px 36px;
   text-align: center;
 }
-.homepage-mobile-auth-hero > p {
-  color: var(--muted-foreground);
-  font-size: 13px;
-}
 .homepage-mobile-auth-wordmark {
   position: relative;
   display: block;
@@ -1864,11 +1860,6 @@ svg.homepage-profile-menu-avatar {
 }
 .homepage-native-auth-actions[data-layout="split"] {
   justify-content: space-between;
-}
-.homepage-native-auth-note {
-  color: var(--muted-foreground);
-  text-align: center;
-  font-size: 11px;
 }
 .homepage-desktop-auth {
   max-width: none;

@@ -96,7 +96,6 @@ export function HomepageMobileAccountFrame({
       <style data-slate-home-styles>{homepageStyles}</style>
       <header className="homepage-mobile-auth-hero">
         <MobileAccountWordmark />
-        <p>Your Studio. Everywhere.</p>
       </header>
       <section className="homepage-mobile-auth-sheet">{children}</section>
     </main>
