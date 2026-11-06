@@ -131,7 +131,7 @@ export function accountedGeometryBytesForScene(scene: Scene): number {
   return glbCaches.get(scene)?.accountedBytes ?? 0;
 }
 
-/** Count of `LoadAssetContainerAsync` calls for this Scene (cache misses). */
+/** Count of `LoadAssetContainerAsync` calls for this Scene (cache misses). Test seam: production code does not call it. */
 export function glbContainerLoadCount(scene: Scene): number {
   return glbCaches.get(scene)?.loadCount ?? 0;
 }
