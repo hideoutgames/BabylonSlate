@@ -334,6 +334,7 @@ describe("formatFeatureTestCheckReport", () => {
             // The world renderer's work while sampled: 40 frames drawn.
             sample("baseline 2", 83, 42, {
               work: { graphBuilds: 1, strictReadinessChecks: 80, outlineReadinessChecks: 0, shadowAdmissions: 120, shadowAdmissionMs: 24 },
+              memory: { deviceAvailableBytes: 1024 * 1048576, appAvailableBytes: 2048 * 1048576 },
             }),
             sample("resolution 0.5", 70, 40, { settings: { ...settings, "resolution.scale": "0.5" } }),
             sample("baseline 3", 80, 40, { settings: { ...settings, "post.enabled": "false" } }),
@@ -365,8 +366,9 @@ describe("formatFeatureTestCheckReport", () => {
     expect(row("shadows off")[0]).toBe(
       "    shadows off           15   66.0ms  74ms   31.0ms  -             gpu   544           25%   -15.5ms -19%    -10.0ms -24%    shadows=off · held: 10 Scene is not ready to render");
     expect(row("resolution 0.5")[0]).toMatch(/-11\.5ms -14% {4}-1\.0ms -2% {6}resolution\.scale=0\.5 · overlaps$/);
-    // Per drawn frame, the counters that grew, and the window's graph builds.
-    expect(row("baseline 2")[0]).toMatch(/\+3\.0ms \+4% {6}\+2\.0ms \+5% {6}work\/frame: 2\.0 readiness checks, 3\.0 shadow admissions \(0\.6 ms\) · 1 graph build$/);
+    // Per drawn frame, the counters that grew, and the window's graph builds; then the native memory as it ended.
+    expect(row("baseline 2")[0]).toMatch(
+      /\+3\.0ms \+4% {6}\+2\.0ms \+5% {6}work\/frame: 2\.0 readiness checks, 3\.0 shadow admissions \(0\.6 ms\) · 1 graph build · device free 1024 MB · app headroom 2048 MB$/);
     expect(row("baseline 3")[0]).toMatch(/NOT RESTORED: post\.enabled=false$/);
     expect(row("screen shadows off")[0]).toMatch(/ no setting changed \(already shadows\.screen off\)$/);
     // Its held share and top two reasons, the rest counted; a row without counts shows none.

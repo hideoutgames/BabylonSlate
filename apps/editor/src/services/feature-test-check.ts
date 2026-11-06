@@ -665,6 +665,8 @@ export interface FeatureTestBenchmarkSample {
   presentation?: SampledPresentation;
   /** The world renderer's work while sampled (`RenderDiagnostics.rendererWork`); absent where the view reports none. */
   work?: SampledRendererWork;
+  /** The native host's memory counters as the sample ended (`FeatureTestCheckDeps.hostMemory`); absent where none. */
+  memory?: HostMemory;
 }
 
 /** The world renderer's work over a sample window: how much each `RenderDiagnostics.rendererWork` counter grew. */
@@ -818,6 +820,18 @@ export interface FeatureTestCheckResources {
   /** Where the browser reports them: the JS heap (Chromium) and the native shell's footprint. */
   jsHeapBytes: number | null;
   appFootprintBytes: number | null;
+  /** Where the native host reports them: the device's free and inactive memory, and the app's headroom (`HostMemory`). */
+  deviceAvailableBytes: number | null;
+  appAvailableBytes: number | null;
+}
+
+/**
+ * Memory the native host reports (iOS): the device's free and inactive memory, which also falls as the web content
+ * and GPU processes grow (the app cannot read theirs), and how much more the app process may allocate.
+ */
+export interface HostMemory {
+  deviceAvailableBytes: number | null;
+  appAvailableBytes: number | null;
 }
 
 export interface FeatureTestCheckReport {
@@ -866,6 +880,8 @@ export interface FeatureTestCheckDeps {
   sampleFrames: (durationMs: number, signal: AbortSignal) => Promise<FrameStats | null>;
   /** Shader programs still compiling across every Engine; absent where unknown. */
   compiling?: () => number;
+  /** The native host's memory counters; absent, or null, where it reports none. */
+  hostMemory?: () => Promise<HostMemory | null>;
   now: () => number;
   sleep: (ms: number, signal: AbortSignal) => Promise<void>;
   onProgress?: (message: string) => void;
@@ -1195,6 +1211,12 @@ function presentationCounts(play: PlayProbe): {
   } : null;
 }
 
+/** The native host's memory counters now, or null where it reports neither or the read fails. */
+async function readHostMemory(deps: FeatureTestCheckDeps): Promise<HostMemory | null> {
+  const memory = await deps.hostMemory?.().catch(() => null);
+  return memory && (memory.deviceAvailableBytes !== null || memory.appAvailableBytes !== null) ? memory : null;
+}
+
 /** How much each of the world renderer's work counters grew between two `RenderDiagnostics.rendererWork` readings. */
 function rendererWorkSince(
   before: SampledRendererWork | undefined, after: SampledRendererWork | undefined,
@@ -1467,6 +1489,7 @@ async function benchmarkProfiles(
     const sampled = await sampleWithCounters(play, deps.sampleFrames(sampleMs, signal), deps, signal);
     const presentedAfter = presentationCounts(play);
     const sampleMsTaken = deps.now() - sampleStarted;
+    const memory = await readHostMemory(deps);
     const snapshot = play.snapshot();
     const rendering = snapshot.rendering;
     const work = rendererWorkSince(workBefore, rendering?.rendererWork);
@@ -1490,6 +1513,7 @@ async function benchmarkProfiles(
         },
       } : {}),
       ...(work ? { work } : {}),
+      ...(memory ? { memory } : {}),
       ...(interleaved ? {
         ...(gpuBusy && rendering?.gpuBusy ? { gpuBusy: { ...rendering.gpuBusy } } : {}),
         ...(rendering?.settings ? { settings: { ...rendering.settings } } : {}),

@@ -1056,7 +1056,7 @@ describe("Profile", () => {
     expect(profileWaits.map((wait) => wait.ms)).toEqual([13_000, ...samples.slice(1).map(() => 5_000)]);
   });
 
-  it("records the world renderer's work each row did while sampled", async () => {
+  it("records the world renderer's work each row did while sampled, and the native memory as it ended", async () => {
     // Two strict readiness checks and one shadow admission per attempt, three times as many while shadows are off.
     let attempts = 0;
     const work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 0, outlineReadinessChecks: 0 };
@@ -1068,6 +1068,7 @@ describe("Profile", () => {
       }
       return { drawn: attempts, held: 0, rendererWork: { ...work } };
     });
+    const MIB = 1048576;
     const deps: FeatureTestCheckDeps = {
       ...editor.deps,
       sampleFrames: async (ms, signal) => {
@@ -1075,11 +1076,17 @@ describe("Profile", () => {
         await editor.deps.sleep(ms, signal);
         return stats;
       },
+      // The device has 1 GiB free, 2 GiB while shadows are off; the app's headroom is unreported.
+      hostMemory: async () => ({ deviceAvailableBytes: (shadowsOff(editor.commands) ? 2048 : 1024) * MIB, appAvailableBytes: null }),
     };
     const report = await runFeatureTestCheck({
       mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, timeouts: { commandMs: 0 }, signal: new AbortController().signal,
     });
     const row = (label: string) => report.scenes[0]!.play.benchmark.find((sample) => sample.label === label)!;
+    // Each row keeps the memory as its sample ended, before the step is undone.
+    expect([row("baseline 1").memory, row("shadows off").memory]).toEqual([
+      { deviceAvailableBytes: 1024 * MIB, appAvailableBytes: null }, { deviceAvailableBytes: 2048 * MIB, appAvailableBytes: null },
+    ]);
     const perDrawn = (label: string) => {
       const { work: sampled, presentation } = row(label);
       return { readiness: sampled!.strictReadinessChecks / presentation!.drawn, admissions: sampled!.shadowAdmissions / presentation!.drawn };
