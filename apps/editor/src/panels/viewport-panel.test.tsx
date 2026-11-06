@@ -1204,8 +1204,8 @@ describe("ViewportPanel engine", () => {
     const libraries = documents.collectPlayMaterialLibrary.mock.calls.length;
     const reads = documents.collectPlayTextureBytes.mock.calls.length;
 
-    // Encode progress rewrites the header without touching what the viewport shows.
-    asset = await texture({ usage: "albedo", compressionState: "encoding" }, [chunk("pixels", "pixels", "a")]);
+    // A failed encode rewrites the header without touching what the viewport shows.
+    asset = await texture({ usage: "albedo", compressionState: "encode_failed", encodeError: "Encoder failed." }, [chunk("pixels", "pixels", "a")]);
     documents.registryEpoch += 1;
     refresh();
     await act(async () => {});

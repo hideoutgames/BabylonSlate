@@ -11,9 +11,9 @@ export function shownCompressionState(saved: unknown, encoding: boolean): string
 }
 
 /**
- * Paths of Textures whose encode has not finished: waiting (saved `pending`),
- * interrupted by an older editor (saved `encoding`), or running now, which
- * covers a re-encode of a compressed Texture before its pending mark lands.
+ * Paths of Textures whose encode has not finished: waiting (saved `pending`)
+ * or running now (`encoding` in memory), which covers a re-encode of a
+ * compressed Texture before its pending mark lands.
  */
 export function unfinishedTextureEncodePaths(
   assets: readonly IndexedAsset[],
