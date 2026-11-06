@@ -71,7 +71,7 @@ const NO_MESHES: ReadonlySet<AbstractMesh> = new Set();
 
 /** The FrameGraph is the only scene renderer; a frame it cannot draw is skipped. */
 export type ForwardSceneGraphResult = { path: "frameGraph" };
-export type ForwardSceneFrameGraphOptions = {
+type ForwardSceneFrameGraphOptions = {
   /**
    * An auxiliary view (a High or Full Quality Render Target Capture) drawn inside the
    * scene's own view frame. It executes its graph without Scene.render, so no

@@ -402,7 +402,7 @@ type EditorCables = { cables: Map<string, EditorCable>; list: EditorCable[]; las
 const editorCables = new WeakMap<Scene, EditorCables>();
 const ORIGIN: readonly number[] = [0, 0, 0];
 
-export type EditorCableBinding = {
+type EditorCableBinding = {
   /** Node whose world matrix frames `endLocal`: the target actor root, or the cable mesh itself. */
   endNode: TransformNode;
   endLocal: readonly number[];

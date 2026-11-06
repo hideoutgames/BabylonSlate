@@ -101,7 +101,7 @@ const SURFACE_VARIANT_LABELS: Record<AuthoredSurfaceVariant, string> = {
   shadowDepth: "Shadow depth",
 };
 
-export interface CompileMaterialOptions {
+interface CompileMaterialOptions {
   /** SceneLayer surfaces bind independent tint/opacity and retain smooth transparency. */
   overlay?: boolean;
   /** Internal coverage variant; retains authored deformation and alpha discard. */
@@ -151,12 +151,12 @@ export interface CompiledMaterial {
   whenReleased: () => Promise<void>;
 }
 
-export interface FailedMaterial {
+interface FailedMaterial {
   ok: false;
   diagnostics: MaterialDiagnostic[];
 }
 
-export type CompileMaterialResult = CompiledMaterial | FailedMaterial;
+type CompileMaterialResult = CompiledMaterial | FailedMaterial;
 
 const materialBuilds = new WeakMap<NodeMaterial, Promise<readonly MaterialDiagnostic[]>>();
 export interface AuthoredMaterialVariant {
@@ -202,7 +202,7 @@ export function ensureAuthoredShadowDepthWrapper(source: Material): boolean {
   return true;
 }
 /** A Material's registered variants (`registerAuthoredVariants`): its shadow wrapper's release, and unregistration. */
-export interface AuthoredVariantRegistration {
+interface AuthoredVariantRegistration {
   /** Settles once every shadow wrapper this registration installed has released its variant. */
   shadowReleased: () => Promise<void>;
   /** Forgets the variants and releases the shadow wrapper. Idempotent. */
@@ -1334,7 +1334,7 @@ const particlePrograms = new WeakMap<AbstractEngine, Map<string, Map<string, num
  * Materials do not share: Babylon creates a pass's Effect a tick after registering its source, and a pass's cleanup
  * (`OwnedPostProcess`) or a rebuild deletes the sources by that name, which another Material's pass would still read.
  */
-export function shareParticleProgram(material: NodeMaterial, key: string): void {
+function shareParticleProgram(material: NodeMaterial, key: string): void {
   const engine = material.getScene().getEngine();
   let byKey = particlePrograms.get(engine);
   if (!byKey) particlePrograms.set(engine, (byKey = new Map()));

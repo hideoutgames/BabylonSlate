@@ -49,7 +49,7 @@ export function applyEnvironmentLighting(
  * sky mesh draws its cube by local direction, so world directions turn by the
  * inverse of its rotation after the Environment Rotation.
  */
-export function skyboxEnvironmentMatrix(
+function skyboxEnvironmentMatrix(
   rotationYDegrees: number,
   skyRotation: Quaternion | null,
   result = new Matrix(),

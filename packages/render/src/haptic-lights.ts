@@ -36,7 +36,7 @@ const AREA_EMISSION_LAYERS = 4;
  * Shadow views the block holds: first one per cascade of the shadowed sun, then 48 for local lights' tiles (a spot
  * light's one, a point light's six). A light whose views do not fit draws unshadowed.
  */
-export const HAPTIC_SHADOW_VIEWS = 4 + 48;
+const HAPTIC_SHADOW_VIEWS = 4 + 48;
 /** The views the sun's cascades take, whichever camera's map they are; local lights' follow. */
 const SUN_SHADOW_VIEWS = 4;
 /**

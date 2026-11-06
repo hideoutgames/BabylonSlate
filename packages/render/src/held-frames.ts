@@ -16,7 +16,7 @@ export const HELD_FRAME_LABELS = {
 export const HELD_FRAME_OTHER = "other";
 
 /** Distinct keys kept, `HELD_FRAME_OTHER` included: a reason can carry a name (a particle system, a failure). */
-export const MAX_HELD_FRAME_REASONS = 8;
+const MAX_HELD_FRAME_REASONS = 8;
 
 /** A view's held frames by reason, since it was created. */
 export class HeldFrameReasons {

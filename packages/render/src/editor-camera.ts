@@ -27,7 +27,7 @@ const scratchPosition = new Vector3();
 const scratchDirectionA = new Vector3();
 const scratchDirectionB = new Vector3();
 
-export interface EditorCameraOptions {
+interface EditorCameraOptions {
   mode?: ViewportMode;
   scheduler?: Pick<RenderScheduler, "invalidate">;
   /** Half-height of the orthographic frustum in world units. */
@@ -35,7 +35,7 @@ export interface EditorCameraOptions {
 }
 
 /** In-session 3D editor camera pose; plain numbers so it can leave Babylon. */
-export interface EditorCameraPose3d {
+interface EditorCameraPose3d {
   target: { x: number; y: number; z: number };
   alpha: number;
   beta: number;
@@ -43,7 +43,7 @@ export interface EditorCameraPose3d {
 }
 
 /** In-session 2D editor camera pose; plain numbers so it can leave Babylon. */
-export interface EditorCameraPose2d {
+interface EditorCameraPose2d {
   target: { x: number; y: number; z: number };
   orthoHalfHeight: number;
   pixelZoom: number;
@@ -60,7 +60,7 @@ function plainVec(v: Vector3): { x: number; y: number; z: number } {
 }
 
 /** 2D canvas-space pivot; 3D zoom always keeps the camera target fixed. */
-export type EditorZoomPivot = {
+type EditorZoomPivot = {
   x: number;
   y: number;
   width: number;
@@ -68,7 +68,7 @@ export type EditorZoomPivot = {
 };
 
 /** Framing captured at two-finger-down so pinch zoom is absolute, not incremental. */
-export type EditorFramingSnapshot = {
+type EditorFramingSnapshot = {
   target: { x: number; y: number; z: number };
   radius: number;
   orthoHalfHeight: number;

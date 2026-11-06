@@ -447,7 +447,7 @@ function ownerFor(scene: Scene): SceneMirrors {
  * add none to the reflection): a geometry pass binds every attachment for it, and a draw that leaves one unwritten is
  * a WebGL error that fails the session's next scene presentation.
  */
-export function builtInMirrorMaterial(scene: Scene): NodeMaterial {
+function builtInMirrorMaterial(scene: Scene): NodeMaterial {
   const existing = builtInMaterials.get(scene);
   if (existing) return existing;
   const material = new NodeMaterial("mirrorSurface", scene, {

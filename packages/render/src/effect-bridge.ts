@@ -11,7 +11,7 @@ export const EFFECT_BRIDGE_MS = 120_000;
  * Feature Test scenes' Play programs (a large level links about 100, a light one about 50). An Effect holds its
  * program and, on WebGPU, its pipelines, never a texture or render target, so the bound is a count of programs.
  */
-export const PLAY_EFFECT_KEEP_BUDGET = 256;
+const PLAY_EFFECT_KEEP_BUDGET = 256;
 
 type Bridge = { effects: Effect[]; timer: ReturnType<typeof setTimeout> };
 const bridges = new WeakMap<AbstractEngine, Bridge>();

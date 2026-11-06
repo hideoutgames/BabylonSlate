@@ -14,7 +14,7 @@ export interface FramePressureSample {
   gpuMs: number | null;
 }
 
-export interface HardwareScalingOptions {
+interface HardwareScalingOptions {
   minLevel?: number;
   maxLevel?: number;
   targetFrameMs?: number;

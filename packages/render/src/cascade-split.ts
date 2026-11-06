@@ -36,7 +36,7 @@ export interface CascadeSplitInput {
   anchor: number | null;
 }
 
-export interface CascadeSplit {
+interface CascadeSplit {
   /** Babylon's `setMinMaxDistance` minimum, as a fraction of [near, far]. */
   minDistance: number;
   lambda: number;

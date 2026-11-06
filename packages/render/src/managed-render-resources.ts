@@ -268,7 +268,7 @@ function contextLost(engine: AbstractEngine): boolean {
 
 /** Whether releaseManagedRenderLeaseAfterDisposal holds a lease until a later
  * end frame (a live WebGPU Engine's destruction drain) rather than releasing it at once. */
-export function managedRenderReleaseIsDeferred(engine: AbstractEngine): boolean {
+function managedRenderReleaseIsDeferred(engine: AbstractEngine): boolean {
   return engine.isWebGPU && !disposedEngines.has(engine) && !contextLost(engine);
 }
 

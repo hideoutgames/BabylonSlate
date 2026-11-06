@@ -5,7 +5,7 @@ type DeviceNavigator = Pick<Navigator, "userAgent" | "maxTouchPoints">;
 const MIB = 1024 * 1024;
 
 /** What a device class allows at most, whatever the project or quality level asks for. */
-export interface DeviceProfile {
+interface DeviceProfile {
   /** A phone or tablet (`isMobileGpuDevice`). */
   mobile: boolean;
   /**

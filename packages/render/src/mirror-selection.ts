@@ -11,7 +11,7 @@
 /** Reflections drawn per scene render; the rest keep their last image. */
 export const MIRROR_RENDERS_PER_FRAME = 2;
 /** An eye closer than this to a mirror's plane, or behind it, sees no reflection: the mirror camera degenerates. */
-export const MIN_MIRROR_EYE_DISTANCE = 1e-3;
+const MIN_MIRROR_EYE_DISTANCE = 1e-3;
 
 export interface MirrorCandidate {
   /** World centre of the surface. */

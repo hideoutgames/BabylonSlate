@@ -4,7 +4,7 @@ import type { Flags, MeshoptSimplifier } from "meshoptimizer/simplifier";
  * Screen size (projected bounding-sphere diameter / viewport height) below
  * which each generated level starts, before the quality distance scale.
  */
-export const AUTO_LOD_SCREEN_SIZES = [0.5, 0.25, 0.125] as const;
+const AUTO_LOD_SCREEN_SIZES = [0.5, 0.25, 0.125] as const;
 /** Deforming meshes are measured in bind pose, so they keep ratio floors. */
 const DEFORMING_TRIANGLE_RATIOS = [0.5, 0.25, 0.125] as const;
 /** Static meshes are error-driven down to this fraction of their triangles. */

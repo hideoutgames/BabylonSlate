@@ -19,11 +19,11 @@ const CLUSTER_FAR_LIMIT = 500;
  */
 export const CLUSTER_HEADER_FLOATS = 24;
 export const CLUSTER_BLOCK_WORDS = CLUSTER_HEADER_FLOATS + CLUSTER_COUNT * 2;
-export const CLUSTER_SPOT_BIT = 0;
-export const CLUSTER_RECT_BIT = 16;
+const CLUSTER_SPOT_BIT = 0;
+const CLUSTER_RECT_BIT = 16;
 
 /** The view the clusters cut: its absolute view and projection matrices and its depth range. */
-export type ClusterView = { view: Matrix; projection: Matrix; near: number; far: number };
+type ClusterView = { view: Matrix; projection: Matrix; near: number; far: number };
 
 /** A local light as the clusters see it: its record's kind and index, and a sphere bounding its reach. */
 export type ClusterLight = { kind: "point" | "spot" | "rect"; index: number; x: number; y: number; z: number; radius: number };

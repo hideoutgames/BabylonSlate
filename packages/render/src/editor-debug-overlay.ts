@@ -61,7 +61,7 @@ function lensPreviewSize(aspect: number): { width: number; height: number } {
   return { width: Math.max(1, Math.round(CAMERA_PREVIEW_HEIGHT * aspect)), height: CAMERA_PREVIEW_HEIGHT };
 }
 
-export type LightDebugKind = "point" | "spot" | "directional" | "area";
+type LightDebugKind = "point" | "spot" | "directional" | "area";
 
 type OverlaySync = {
   sceneData: SerializedScene | null;
@@ -70,7 +70,7 @@ type OverlaySync = {
   audioLibrary?: Pick<AudioLibrary, "audio" | "attenuations">;
 };
 
-export type EditorDebugOverlayOptions = {
+type EditorDebugOverlayOptions = {
   /** Test clock; the overlay then ticks only when the caller asks. */
   now?: () => number;
   /** Installed Render Target assets; a selected capture takes its aspect from its target. */

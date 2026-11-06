@@ -95,7 +95,7 @@ export function createMaterialPreviewMesh(
 }
 
 /** A post-process Material previewed as the preview camera's only pass. */
-export interface MaterialPreviewPostProcess {
+interface MaterialPreviewPostProcess {
   library: MaterialLibrary;
   materialGuid: string;
   document: MaterialDocument;
@@ -341,7 +341,7 @@ export function createPreviewRenderTarget(name: string, size: { width: number; h
 
 const TAP_TOLERANCE_PX = 8;
 const ORBIT_SCALE = 0.005;
-export const MATERIAL_PREVIEW_MAX_SIZE = 512;
+const MATERIAL_PREVIEW_MAX_SIZE = 512;
 
 interface PointerSample {
   x: number;

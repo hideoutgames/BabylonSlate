@@ -14,7 +14,7 @@ import { setSceneFogVolumesPresent } from "./render-settings";
 /** One shared ray march admits at most eight nearby visible local media. */
 export const MAX_FOG_VOLUMES = 8;
 
-export interface PreparedFogVolume {
+interface PreparedFogVolume {
   readonly actorId: string;
   readonly id: string;
   readonly properties: FogVolumeProperties;
@@ -90,7 +90,7 @@ function sphereFrustumSide(planes: readonly Plane[], center: Vector3, radius: nu
 }
 
 /** CPU-only owner: local fog does not allocate geometry, textures or shadow maps. */
-export class FogVolumeRenderer {
+class FogVolumeRenderer {
   readonly volumes: Volume[] = [];
   readonly scene: Scene;
   readonly actorId: string;
@@ -234,7 +234,7 @@ export function setFogVolumesVisible(scene: Scene, actorId: string, visible: boo
   updateDemand(scene);
 }
 
-export function clearFogVolumes(scene: Scene): void {
+function clearFogVolumes(scene: Scene): void {
   const registry = registries.get(scene);
   if (!registry) return;
   for (const owner of registry.owners.values()) owner.dispose();

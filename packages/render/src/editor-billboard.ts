@@ -19,7 +19,7 @@ import { unlitBinding } from "./unlit-material-blocks";
 /** A light or camera icon from both sides, blended by its coverage; editor helpers draw without fog. */
 const BILLBOARD_MATERIAL: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: false, role: "helper" };
 
-export const EDITOR_BILLBOARD_ICONS = [
+const EDITOR_BILLBOARD_ICONS = [
   "default",
   "point_light",
   "spot_light",
@@ -34,7 +34,7 @@ export type EditorBillboardIcon = (typeof EDITOR_BILLBOARD_ICONS)[number];
 const BILLBOARD_KIND_PREFIX = "billboard:";
 const BILLBOARD_SIZE = 0.5;
 /** Later than the editor grid so helper icons are not sorted behind the plane. */
-export const EDITOR_BILLBOARD_ALPHA_INDEX = 1000;
+const EDITOR_BILLBOARD_ALPHA_INDEX = 1000;
 const DEFAULT_FILL = new Color3(1, 1, 1);
 const LIMITED_FILL = new Color3(1, 1, 0);
 const DISABLED_FILL = new Color3(1, 0, 0);
@@ -57,7 +57,7 @@ function isEditorBillboardIcon(icon: string | null | undefined): icon is EditorB
   return EDITOR_BILLBOARD_ICONS.includes(icon as EditorBillboardIcon);
 }
 
-export function resolveEditorBillboardIcon(
+function resolveEditorBillboardIcon(
   icon: string | null | undefined,
 ): EditorBillboardIcon {
   return isEditorBillboardIcon(icon) ? icon : "default";

@@ -3,7 +3,7 @@
  * (engineplan §3.5). Never point at a CDN — editor and exports must work offline.
  */
 
-export interface Ktx2TranscoderUrls {
+interface Ktx2TranscoderUrls {
   jsDecoderModule: string;
   jsMSCTranscoder: string;
   wasmMSCTranscoder: string;
@@ -16,9 +16,9 @@ export interface Ktx2TranscoderUrls {
   wasmZSTDDecoder: string;
 }
 
-export const DEFAULT_KTX2_PUBLIC_BASE = "/ktx2/";
+const DEFAULT_KTX2_PUBLIC_BASE = "/ktx2/";
 
-export function ktx2TranscoderUrls(
+function ktx2TranscoderUrls(
   basePath: string = DEFAULT_KTX2_PUBLIC_BASE,
 ): Ktx2TranscoderUrls {
   const base = basePath.endsWith("/") ? basePath : `${basePath}/`;
@@ -62,7 +62,7 @@ export function configureKtx2Transcoder(
   return urls;
 }
 
-export type Ktx2DecoderRuntimeContainer = {
+type Ktx2DecoderRuntimeContainer = {
   DefaultNumWorkers: number;
   DefaultDecoderOptions: {
     forceRGBA: boolean | undefined;
@@ -90,12 +90,12 @@ const workerDefaults = new WeakMap<Ktx2DecoderRuntimeContainer, number>();
 const SOFTWARE_GL_RENDERER =
   /swiftshader|llvmpipe|softpipe|microsoft basic render|\bsoftware\b/i;
 
-export function isSoftwareGlRenderer(renderer: string): boolean {
+function isSoftwareGlRenderer(renderer: string): boolean {
   return SOFTWARE_GL_RENDERER.test(renderer);
 }
 
 /** Uncompressed RGBA when compressed upload would fail (missing caps or software GL). */
-export function shouldForceKtx2Rgba(
+function shouldForceKtx2Rgba(
   caps?: { astc?: unknown; bptc?: unknown },
   renderer?: string,
 ): boolean {

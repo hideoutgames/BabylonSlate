@@ -19,7 +19,7 @@ import { sceneRenderingSettings } from "./render-settings";
 import { sharedVertexBuffer } from "./shared-vertex-buffer";
 
 /** Smaller meshes are dominated by per-draw cost; simplifying them saves nothing. */
-export const AUTO_LOD_MIN_SOURCE_TRIANGLES = 1024;
+const AUTO_LOD_MIN_SOURCE_TRIANGLES = 1024;
 /** Screen-size band that keeps a mesh on its current level near a threshold. */
 const AUTO_LOD_HYSTERESIS = 0.1;
 /** Keep each main-thread fallback step short so views keep presenting frames. */
@@ -64,7 +64,7 @@ export interface ModelLodSet {
 }
 
 /** Babylon's screen coverage for a projected screen size on a square viewport. */
-export function autoLodCoverage(screenSize: number): number {
+function autoLodCoverage(screenSize: number): number {
   return (Math.PI / 4) * screenSize * screenSize;
 }
 
@@ -383,7 +383,7 @@ function mirrorLodState(master: Mesh, lod: Mesh): void {
 }
 
 /** Babylon screen coverage of a bounding sphere, independent of the bound render target. */
-export function autoLodScreenCoverage(radius: number, center: Vector3, camera: Camera): number {
+function autoLodScreenCoverage(radius: number, center: Vector3, camera: Camera): number {
   if (radius <= 0) return 0;
   if (camera.mode === Camera.ORTHOGRAPHIC_CAMERA) {
     const half = camera.getEngine().getRenderHeight(true) / 2;

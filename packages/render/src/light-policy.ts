@@ -28,7 +28,7 @@ const scratchAuthored: boolean[] = [];
  * Creation order: the stable "authored" order of a Scene's lights, which
  * order-sensitive readers (diagnostics) sort by.
  */
-export function compareLightCreation(a: Light, b: Light): number {
+function compareLightCreation(a: Light, b: Light): number {
   return a.uniqueId - b.uniqueId;
 }
 
@@ -110,7 +110,7 @@ export function syncDirectionalLightPolicy(scene: Scene): void {
 }
 
 /** What the selection may admit in one sync: the scalability local lights. */
-export type ForwardLightCapacity = { locals: number };
+type ForwardLightCapacity = { locals: number };
 
 /**
  * The selection of `syncForwardLightPolicy` (the light block's admission,
@@ -184,7 +184,7 @@ function isForwardEligible(light: Light): boolean {
   return isIlluminatingLight(light) && !excluded.has(light);
 }
 
-export function isGlobalLight(light: Light): boolean {
+function isGlobalLight(light: Light): boolean {
   return light instanceof DirectionalLight || light instanceof HemisphericLight;
 }
 
