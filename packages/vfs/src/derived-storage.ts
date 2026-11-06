@@ -2,9 +2,7 @@ import { OpfsStorageAdapter } from "./web-adapter";
 import type { ProjectStorage } from "@haptic/core";
 import { DocumentsStorageAdapter } from "./documents-adapter";
 import { isMobilePlatform } from "./platform";
-
-/** Folder name of the app-private derived-data store; never a project. */
-export const DERIVED_STORAGE_ROOT = "__haptic_derived__";
+import { DERIVED_STORAGE_ROOT } from "./library-folders";
 
 /**
  * App-private derived-data store keyed under a stable root (outside project trees).

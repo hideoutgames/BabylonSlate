@@ -119,8 +119,9 @@ export interface ProjectStorage {
   /** Validate a picked candidate before replacing a stale external binding. */
   reconnectFolder?(validate?: (candidate: ProjectStorage) => Promise<void>): Promise<ProjectFolderHandle>;
   /**
-   * Permanently remove a project folder (web OPFS). Native Documents /
-   * chosen-folder adapters omit this — Homepage only drops recents there.
+   * Permanently remove a project in the app's own storage (OPFS, mobile
+   * Documents, the desktop Projects Folder). A chosen (`external`) folder is
+   * refused: Homepage only drops its recent.
    */
   deleteProject?(handle: ProjectFolderHandle): Promise<void>;
 

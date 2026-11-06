@@ -36,7 +36,7 @@ import {
   validateIpcArguments,
 } from "./packaged-security";
 import { automaticUpdatesEnabled, createDesktopUpdates, updatesSupported } from "./desktop-updates";
-import { DesktopLibraries, libraryIpcHandlers, STORAGE_OPERATIONS } from "./desktop-storage-ipc";
+import { deleteDesktopProject, DesktopLibraries, libraryIpcHandlers, STORAGE_OPERATIONS } from "./desktop-storage-ipc";
 
 const rootDir = join(app.getAppPath(), "host");
 const rendererRoot = join(app.getAppPath(), "renderer");
@@ -266,6 +266,8 @@ async function registerIpc(): Promise<void> {
     return storage.openAbsoluteFolder(target, folder.name, folder.tier);
   });
   handle("project:list", async event => projects(event).listProjects());
+  handle("project:delete", async (event, handle) =>
+    deleteDesktopProject(projectStorage, event.sender.id, projects(event), handle as ProjectFolderHandle));
   handle("project:release", async event => projects(event).releaseFolder());
   for (const [operation, run] of Object.entries(STORAGE_OPERATIONS)) {
     handle(`project:${operation}`, (event, ...args) => run(projects(event), ...args));

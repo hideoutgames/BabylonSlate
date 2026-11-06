@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectFolderHandle, ProjectMetadata } from "@haptic/core";
 import type { ProjectTemplateCatalogEntry } from "@haptic/assets";
-import { getHostPlatform, type createAppSettingsStore } from "@haptic/vfs";
+import type { createAppSettingsStore } from "@haptic/vfs";
 import {
   listedProjectsFromRecents,
   recentProjectsWithOpenedProject,
-  shouldDeleteOpfsOnRemove,
+  removeDeletesProject,
   type ListedProject,
   type UpdateListedProjectOptions,
 } from "../lib/listed-projects";
@@ -106,7 +106,7 @@ export function useProjectList({
 
   const removeListedProject = useCallback(
     async (handle: ProjectFolderHandle) => {
-      if (shouldDeleteOpfsOnRemove(getHostPlatform(), handle.tier)) {
+      if (removeDeletesProject(handle.tier)) {
         await projectService.deleteListedProject(handle);
       }
       await settingsStore.update((settings) => {

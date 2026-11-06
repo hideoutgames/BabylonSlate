@@ -21,6 +21,7 @@ function fakeProjectBridge(): ElectronProjectBridge {
       return folder;
     }),
     listProjects: vi.fn(async () => (folder ? [folder] : [])),
+    deleteProject: vi.fn(async () => {}),
     releaseFolder: vi.fn(async () => {
       folder = null;
     }),
@@ -65,6 +66,29 @@ describe("ElectronStorageAdapter", () => {
     expect(await storage.exists("assets/a.bin")).toBe(true);
     await storage.releaseFolder();
     expect(storage.getCurrentFolder()).toBeNull();
+  });
+
+  it("deletes through main and forgets only a deleted bound folder", async () => {
+    const bridge = fakeProjectBridge();
+    const storage = new ElectronStorageAdapter(bridge);
+    const game = await storage.openDocumentsProject("Game");
+    await storage.deleteProject({ id: "electron:/docs/Other", name: "Other", tier: "documents" });
+    expect(storage.getCurrentFolder()).toEqual(game);
+    await storage.deleteProject(game);
+    expect(bridge.deleteProject).toHaveBeenLastCalledWith(game);
+    expect(storage.getCurrentFolder()).toBeNull();
+  });
+
+  it("shows main's delete refusal without Electron's invoke prefix", async () => {
+    const bridge = fakeProjectBridge();
+    vi.mocked(bridge.deleteProject).mockRejectedValue(new Error(
+      "Error invoking remote method 'project:delete': Error: This project is open in another window. Close it there and try again.",
+    ));
+    const storage = new ElectronStorageAdapter(bridge);
+    const game = await storage.openDocumentsProject("Game");
+    const refused = await storage.deleteProject(game).catch((error: unknown) => error);
+    expect((refused as Error).message).toBe("This project is open in another window. Close it there and try again.");
+    expect(storage.getCurrentFolder()).toEqual(game);
   });
 
   it("accounts bytes discarded after native revision validation without publishing them", async () => {
@@ -151,11 +175,13 @@ describe("ElectronLibraryStorageAdapter", () => {
   it("refuses project folder operations and other folder names", async () => {
     const bridge = fakeLibraryBridge();
     const storage = new ElectronLibraryStorageAdapter("__slate_templates__", bridge);
-    await expect(storage.openDocumentsProject("Game")).rejects.toThrow("cannot open or list project folders");
-    await expect(storage.pickProjectFolder()).rejects.toThrow("cannot open or list project folders");
-    await expect(storage.listProjects()).rejects.toThrow("cannot open or list project folders");
+    await expect(storage.openDocumentsProject("Game")).rejects.toThrow("cannot open, list or delete project folders");
+    await expect(storage.pickProjectFolder()).rejects.toThrow("cannot open, list or delete project folders");
+    await expect(storage.listProjects()).rejects.toThrow("cannot open, list or delete project folders");
     await expect(storage.openKnownFolder({ id: "node:/elsewhere", name: "Elsewhere", tier: "external" }))
-      .rejects.toThrow("cannot open or list project folders");
+      .rejects.toThrow("cannot open, list or delete project folders");
+    await expect(storage.deleteProject({ id: "node:/projects/Game", name: "Game", tier: "documents" }))
+      .rejects.toThrow("cannot open, list or delete project folders");
     expect(storage.getCurrentFolder()).toBeNull();
   });
 

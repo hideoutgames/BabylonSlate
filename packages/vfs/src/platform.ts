@@ -63,6 +63,8 @@ export interface ElectronProjectBridge {
   openDocumentsProject(name: string): Promise<ProjectFolderHandle>;
   openKnownFolder(handle: ProjectFolderHandle): Promise<ProjectFolderHandle>;
   listProjects(): Promise<ProjectFolderHandle[]>;
+  /** Projects Folder projects only; main refuses picked folders. */
+  deleteProject(handle: ProjectFolderHandle): Promise<void>;
   releaseFolder(): Promise<void>;
   readBinary(path: string): Promise<ArrayBuffer>;
   readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string): Promise<Omit<import("@haptic/core").StorageRangeRead, "bytes"> & { bytes: ArrayBuffer; error?: string; errorCode?: "source-revision-changed" | "not-found" }>;

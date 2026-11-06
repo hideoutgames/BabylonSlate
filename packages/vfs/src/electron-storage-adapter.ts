@@ -81,6 +81,17 @@ export class ElectronStorageAdapter implements ProjectStorage {
     return this.requireBridge().listProjects();
   }
 
+  /** Main's refusal (open in another window, a locked file) reaches the Homepage as its own message. */
+  async deleteProject(handle: ProjectFolderHandle): Promise<void> {
+    try {
+      await this.requireBridge().deleteProject(handle);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message.replace(/^Error invoking remote method '[^']+': (?:\w*Error: )?/, ""), { cause: error });
+    }
+    if (this.folder?.id === handle.id) this.folder = null;
+  }
+
   getCurrentFolder(): ProjectFolderHandle | null {
     return this.folder;
   }
@@ -151,17 +162,18 @@ export class ElectronStorageAdapter implements ProjectStorage {
 /**
  * The project bridge surface of one user library: file operations carry the
  * library scope, it opens only under its own name, and picking, listing or
- * reopening project folders is refused in the renderer as well as in main.
+ * reopening or deleting project folders is refused in the renderer as well as in main.
  */
 function libraryProjectBridge(folder: LibraryFolder, library: ElectronLibraryBridge): ElectronProjectBridge {
   const handle: ProjectFolderHandle = { id: `library:${folder}`, name: folder, tier: "documents" };
   const projectOnly = async (): Promise<never> => {
-    throw new Error(`Library storage ${folder} cannot open or list project folders`);
+    throw new Error(`Library storage ${folder} cannot open, list or delete project folders`);
   };
   return {
     pickProjectFolder: projectOnly,
     openKnownFolder: projectOnly,
     listProjects: projectOnly,
+    deleteProject: projectOnly,
     openDocumentsProject: async (name) => {
       if (name !== folder) return projectOnly();
       return handle;

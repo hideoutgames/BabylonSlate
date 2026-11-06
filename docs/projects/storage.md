@@ -49,12 +49,14 @@ Haptic checks that the folder holds the same project before it reconnects. Picki
 
 From a project card's **Project Actions** menu:
 
-| Platform | Item | Result |
+| Project | Item | Result |
 | --- | --- | --- |
-| Apps | **Remove From List** | Removes the card. The project files stay on the device. |
-| Web | **Delete** | Permanently deletes the project from browser storage. |
+| In default storage | **Delete** | Permanently deletes the project and its files. You confirm first. |
+| In a folder you chose | **Remove From List** | Removes the card. Haptic never deletes a folder you chose; its files stay where they are. |
 
-The apps never delete project folders. On iPad, iPhone and desktop you can delete a project's folder yourself in the Files app or your file manager. Its card leaves the project list when you return to Haptic. A project in a folder you chose yourself keeps its card, because Haptic can't check that folder until you open it.
+Deleting can't be undone: the project does not go to the Trash or Recently Deleted. Export the project first if you might want it back.
+
+On iPad, iPhone and desktop you can also delete a project's folder yourself in the Files app or your file manager. Its card leaves the project list when you return to Haptic. A project in a folder you chose yourself keeps its card, because Haptic can't check that folder until you open it.
 
 ## Game saves
 

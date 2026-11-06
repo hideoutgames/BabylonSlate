@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NodeStorageAdapter } from "@haptic/vfs/node";
 import { LIBRARY_FOLDERS } from "@haptic/vfs/library-folders";
-import { DesktopLibraries, libraryIpcHandlers } from "./desktop-storage-ipc";
+import { deleteDesktopProject, DesktopLibraries, libraryIpcHandlers } from "./desktop-storage-ipc";
 import { knownProjectFolder, validateIpcArguments } from "./packaged-security";
 
 let userData: string;
@@ -94,5 +94,25 @@ describe("desktop user library IPC", () => {
     await expect(invoke("library:writeBinary", "__slate_engine_extensions__", "x.zip", new ArrayBuffer(1)))
       .rejects.toThrow("not inside the libraries home");
     expect(await readdir(outside)).toEqual([]);
+  });
+});
+
+describe("desktop project deletion", () => {
+  it("deletes a Projects Folder project unless another window has it open", async () => {
+    const mine = new NodeStorageAdapter(projectsHome);
+    const other = new NodeStorageAdapter(projectsHome);
+    const documents = new Map([[1, mine], [2, other]]);
+    const game = await other.openDocumentsProject("Game");
+    await other.writeText("project.json", "{}");
+
+    validateIpcArguments("project:delete", [game]);
+    await expect(deleteDesktopProject(documents, 1, mine, game)).rejects.toThrow("open in another window");
+    expect(await readdir(projectsHome)).toEqual(["Game"]);
+
+    await other.releaseFolder();
+    await mine.openKnownFolder(game);
+    await deleteDesktopProject(documents, 1, mine, game);
+    expect(await readdir(projectsHome)).toEqual([]);
+    expect(mine.getCurrentFolder()).toBeNull();
   });
 });
