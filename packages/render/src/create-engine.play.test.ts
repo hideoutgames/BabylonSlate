@@ -41,7 +41,8 @@ import { createEngine, PIPELINE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from 
 import { sceneOutputScale } from "./scene-output-scale";
 import type { RenderPerformanceSample } from "./render-performance";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@haptic/assets";
+import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload, type ParticleLibraryEmitter } from "@haptic/assets";
+import { createDefaultParticleGraphDocument } from "@haptic/particle-graph";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { acquireMaterialTexture, ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { encodeRgbaPng } from "./png-encode";
@@ -869,6 +870,77 @@ describe("Play createEngine view", () => {
     set({ ready: true, linked: true });
     frame();
     expect(presentation()).toMatchObject({ drawn: drawn + 1, held: held + 2, heldReasons: { "Scene is not ready to render.": 2 } });
+  });
+
+  it("keeps the frames in which a Spawn Emitter creates and disposes its Emitters, after the world has drawn", async () => {
+    // The Feature Test main scene's surface sparks play a flash from each dying particle (Spawn Emitter). The particle
+    // service creates each spawned Emitter, and disposes a drained one, in the Scene's after-render observers: after the
+    // world's graph has drawn, so they cannot change that frame's image, and must not discard it ("World readiness
+    // changed during the draw.").
+    const engine = sharedEngine();
+    // A 100 ms frame clock, so a spawned Emitter runs its Duration and drains within a few frames.
+    vi.spyOn(engine, "getDeltaTime").mockReturnValue(100);
+    const graph = createDefaultParticleGraphDocument();
+    graph.materialGuid = "sparks";
+    // A Spawn Emitter whose Condition always fires, spliced into the default graph's spine.
+    graph.nodes.push(
+      { id: "spawn", type: "trigger.spawn", position: { x: 0, y: 0 }, properties: { emitterGuid: "flash", limit: 2, minInterval: 0, inheritVelocity: false } },
+      { id: "one", type: "const.float", position: { x: 0, y: 0 }, properties: { value: [1] } },
+    );
+    graph.edges = graph.edges.filter((edge) => edge.id !== "e-velocity-color");
+    graph.edges.push(
+      { id: "e-velocity-spawn", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "spawn", targetPinId: "particle" },
+      { id: "e-spawn-color", sourceNodeId: "spawn", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
+      { id: "e-one-spawn", sourceNodeId: "one", sourcePinId: "out", targetNodeId: "spawn", targetPinId: "condition" },
+    );
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true,
+      materialDocuments: new Map([["sparks", createDefaultMaterialDocument("Sparks", "particle")]]),
+      particleLibrary: {
+        emitters: new Map<string, ParticleLibraryEmitter>([
+          ["surface", { kind: "graph", document: graph }],
+          ["flash", { kind: "basic", payload: normalizeParticleEmitterPayload({
+            emitter: { loop: "once", duration: 0.2, capacity: 16 }, spawn: { rate: { mode: "constant", value: 30 } },
+            initialize: { lifetime: { mode: "constant", value: 0.1 } }, render: { materialGuid: "sparks" },
+          }) }],
+        ]),
+        systems: new Map([["system", { ...createDefaultParticleSystemPayload(), emitterGuids: ["surface"] }]]),
+      },
+    });
+    handles.push(handle);
+    handle.applyCommand({ type: "spawn", slotId: 1, actorGuid: "surface", classId: "Actor" });
+    handle.applyCommand({ type: "assignParticle", slotId: 1, actorGuid: "surface", componentId: "particle", particleSystemGuid: "system" });
+    const frame = async () => {
+      handle.scheduler.invalidate("manual");
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      // Material bindings settle between frames.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    await handle.prewarmSceneMaterials();
+    let presented = false;
+    const pending = handle.presentFirstFrame().then(() => { presented = true; });
+    for (let index = 0; index < 20 && !presented; index++) await frame();
+    await pending;
+    const spawns = () => handle.scene.meshes.filter((mesh) => mesh.name.startsWith("particleSpawn:"));
+    // Steady frames until the surface plays (its Material binds after the load) and spawns its first flash.
+    for (let index = 0; index < 20 && !spawns().length; index++) await frame();
+    const presentation = () => handle.renderDiagnostics().presentation!;
+    const before = presentation();
+    let spawned = 0;
+    let disposed = 0;
+    let live = new Set<AbstractMesh>(spawns());
+    for (let index = 0; index < 30; index++) {
+      await frame();
+      const now = new Set(spawns());
+      for (const mesh of now) if (!live.has(mesh)) spawned++;
+      for (const mesh of live) if (!now.has(mesh)) disposed++;
+      live = now;
+    }
+    const after = presentation();
+    expect({ spawned: spawned > 1, disposed: disposed > 1, drawn: after.drawn - before.drawn, held: after.held - before.held, heldReasons: after.heldReasons })
+      .toEqual({ spawned: true, disposed: true, drawn: 30, held: 0, heldReasons: before.heldReasons });
   });
 
   it("does not pause Play for a hold that ends within the pause delay, and restarts the delay for the next one", async () => {

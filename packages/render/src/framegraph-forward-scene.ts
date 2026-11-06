@@ -298,6 +298,8 @@ export class ForwardSceneFrameGraph {
   private probedOutlineSources = 0;
   private outlineChecks = 0;
   private readinessRevision = 0;
+  /** The readiness revision as the current `render`'s graph finished drawing (`endDraw`); undefined until it has. */
+  private drawnRevision: number | undefined;
   private readonly membership: number[] = [];
   private membershipRecorded = false;
   private strictChecks = 0;
@@ -316,8 +318,10 @@ export class ForwardSceneFrameGraph {
   private graphRender: Scene["customRenderFunction"];
   // Scene.render already updates the selected camera. The pinned graph
   // function would update every scene camera a second time if passed true.
-  private readonly pinnedGraphRender = (_update: boolean, ignoreAnimations: boolean) =>
+  private readonly pinnedGraphRender = (_update: boolean, ignoreAnimations: boolean) => {
     this.graphRender!.call(this.scene, false, ignoreAnimations);
+    this.endDraw();
+  };
   private readonly readinessDetach: (() => void)[] = [];
   private readonly meshMaterialObservers = new Map<AbstractMesh, Observer<AbstractMesh>>();
   private readonly lightEnabledObservers = new Map<Light, Observer<boolean>>();
@@ -907,12 +911,13 @@ export class ForwardSceneFrameGraph {
     try {
       this.renderingCamera = camera;
       const revision = this.readinessRevision;
+      this.drawnRevision = undefined;
       const capture = activeRenderFrameCapture(engine);
       if (this.auxiliary) {
         // Inside the owning view's frame: its Scene.render already stepped
         // animation and particles and ran the render observers this frame.
         this.scene.activeCamera = camera;
-        const execute = () => graph.execute();
+        const execute = () => { graph.execute(); this.endDraw(); };
         if (capture) capture.frameGraph(this.scene, graph, this.work.graphBuilds, execute);
         else execute();
       } else {
@@ -924,8 +929,11 @@ export class ForwardSceneFrameGraph {
           () => renderSceneWithGameTime(this.scene, updateCameras));
         else renderSceneWithGameTime(this.scene, updateCameras);
       }
+      // What Scene.render's after-render observers changed stales the next frame's probe, not this frame.
       this.syncMembership();
-      return { path: "frameGraph", ...(revision === this.readinessRevision ? {} : { rendered: false }) };
+      // A Scene.render that never ran the graph's render function has no draw end: the whole call is the window.
+      const drawn = this.drawnRevision ?? this.readinessRevision;
+      return { path: "frameGraph", ...(revision === drawn ? {} : { rendered: false }) };
     } finally {
       if (!this.auxiliary) this.scene.frameGraph = null;
       this.scene.activeCamera = this.auxiliary ? previousCamera : camera;
@@ -939,6 +947,18 @@ export class ForwardSceneFrameGraph {
       this.renderingCamera = undefined;
       endGraphCameraWrite(this.scene);
     }
+  }
+
+  /**
+   * The graph has drawn this frame's image. A readiness change from here to the end of `render` (Scene.render's
+   * after-render observers: a Spawn Emitter creating or disposing its Emitters, a drained effect retiring) cannot alter
+   * that image, so the frame stays rendered; it still marks readiness dirty, so the next frame probes before it draws.
+   * Babylon defers the observables of an added mesh or Material, so membership is compared here: what was added before
+   * or during the draw holds the frame.
+   */
+  private endDraw(): void {
+    this.syncMembership();
+    this.drawnRevision = this.readinessRevision;
   }
 
   /** Releases only this coordinator's tasks and graph, never the scene/Engine. */
