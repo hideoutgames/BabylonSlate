@@ -679,7 +679,9 @@ export class SceneShadowController {
     const engine = scene.getEngine();
     if (heldEdge !== 0 && heldEdge !== atlasEdge) {
       releaseEmptyShadowAtlas(scene);
-      this.atlasReleasedFrame = engine.frameId;
+      // An atlas a tile still holds stays, and the first new map's allocation fails on it, rather than every map
+      // waiting for it.
+      if (liveShadowAtlasEdge(scene) === 0) this.atlasReleasedFrame = engine.frameId;
     }
     const atlasResizing = this.atlasReleasedFrame === engine.frameId;
     // Hand a retained map to a same-kind winner instead of constructing one.
