@@ -398,7 +398,7 @@ it("keeps parent graph frames rendering while streamed resources and fog wait fo
   expect(child.isEnabled()).toBe(false);
   expect(hasFogVolumes(scene)).toBe(false);
   expect(sceneRenderingSettings(scene).effectsPlan).toBeNull();
-  expect(selectFogVolumes(scene, camera, 50)).toHaveLength(0);
+  expect(selectFogVolumes(scene, camera)).toHaveLength(0);
   expect(renderer.render().rendered).toBe(true);
   // A normal parent-world spawn remains admitted while the stream is pending.
   const ordinary = MeshBuilder.CreateBox("normal-spawn", {}, scene);
@@ -409,7 +409,7 @@ it("keeps parent graph frames rendering while streamed resources and fog wait fo
   textureReady.mockReturnValue(true);
   admission.publish([2], identity);
   expect(child.isEnabled()).toBe(true);
-  expect(selectFogVolumes(scene, camera, 50)).toHaveLength(1);
+  expect(selectFogVolumes(scene, camera)).toHaveLength(1);
   await renderer.prepare();
   expect(renderer.render().rendered).toBe(true);
   retirePlaySlot(binding, 2);

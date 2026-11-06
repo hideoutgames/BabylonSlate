@@ -5092,7 +5092,7 @@ describe("Play createEngine view", () => {
       expect(handle.scene.getMeshByName(guideName)).toBe(guide);
       expect(handle.postProcessPassCount()).toBe(1);
       expect(created).toEqual(passes);
-      expect(selectFogVolumes(handle.scene, probe, 50)[0]?.properties).toMatchObject(properties);
+      expect(selectFogVolumes(handle.scene, probe)[0]?.properties).toMatchObject(properties);
     }
     data = structuredClone(data);
     Object.assign(data.actors[0]!.components[0]!.properties, { shape: "sphere", size: [4, 6, 8] });
@@ -5101,7 +5101,7 @@ describe("Play createEngine view", () => {
     expect(reshaped).not.toBe(guide);
     expect(guide.isDisposed()).toBe(true);
     expect(reshaped.getBoundingInfo().boundingBox.maximum.y).toBeCloseTo(3);
-    expect(selectFogVolumes(handle.scene, probe, 50)[0]?.properties).toMatchObject({ shape: "sphere", size: [4, 6, 8] });
+    expect(selectFogVolumes(handle.scene, probe)[0]?.properties).toMatchObject({ shape: "sphere", size: [4, 6, 8] });
     data = structuredClone(data);
     data.actors[0]!.components[0]!.properties.enabled = false;
     handle.loadScene(data);
@@ -5133,10 +5133,10 @@ describe("Play createEngine view", () => {
     expect(hasFogVolumes(handle.scene)).toBe(false);
     const assign = { type: "assignMesh" as const, slotId: 4, actorGuid: "mist", meshAssetGuid: null, meshKind: null };
     handle.applyCommand(assign);
-    expect(selectFogVolumes(handle.scene, camera, 50)).toHaveLength(1);
+    expect(selectFogVolumes(handle.scene, camera)).toHaveLength(1);
     expect(sceneRenderingSettings(handle.scene).effectsPlan?.volumetricLighting?.density).toBe(0);
     handle.applyCommand({ ...assign, meshKind: "box" });
-    expect(selectFogVolumes(handle.scene, camera, 50)).toHaveLength(1);
+    expect(selectFogVolumes(handle.scene, camera)).toHaveLength(1);
     setSceneEffectsEnabled(handle.scene, false);
     expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
     setSceneEffectsEnabled(handle.scene, true);
