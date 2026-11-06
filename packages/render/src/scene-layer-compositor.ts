@@ -28,6 +28,7 @@ import {
   type MaterialParameterValue,
 } from "@haptic/core";
 import { installEngineDefaultMaterial } from "./default-material";
+import { setSceneDrawBatching } from "./overlay-draw-batcher";
 import { isSceneFrameReady } from "./scene-perf";
 import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
@@ -135,6 +136,8 @@ export class SceneLayerCompositor {
     const scene = this.ownScene(new Scene(this.engine));
     configureCutoutSorting(scene);
     installEngineDefaultMaterial(scene);
+    // HUD content is many small unlit draws: batched where the output cannot change (`overlay-draw-batcher.ts`).
+    setSceneDrawBatching(scene, true);
     scene.lightsEnabled = false;
     scene.skipPointerMovePicking = false;
     scene.autoClear = false;

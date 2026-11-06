@@ -20,6 +20,16 @@ export function overlayVisualStyle(mesh: AbstractMesh | undefined): OverlayVisua
   return mesh ? bindings.get(mesh)?.style ?? white : white;
 }
 
+/**
+ * `target` draws with `source`'s style (its opacity and tint, live), or white without one: a draw batch binds what its
+ * members bind (`draw-batching.ts`).
+ */
+export function shareOverlayVisualStyle(target: AbstractMesh, source: AbstractMesh): void {
+  const binding = bindings.get(source);
+  if (binding) bindings.set(target, binding);
+  else bindings.delete(target);
+}
+
 /** Bind only this component's native children, before other components are parented beneath it. */
 export function applyOverlayVisualStyle(root: AbstractMesh, value: unknown): void {
   let binding = roots.get(root);

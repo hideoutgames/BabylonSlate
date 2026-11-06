@@ -6,6 +6,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { SmartArray } from "@babylonjs/core/Misc/smartArray";
 import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
 import { RenderingGroup } from "@babylonjs/core/Rendering/renderingGroup";
+import { sceneDrawBatcher } from "./draw-batching";
 import { isMeshFrameReady } from "./scene-perf";
 
 type SortCompare = (a: SubMesh, b: SubMesh) => number;
@@ -36,7 +37,8 @@ function drawsDepthPrePass(mesh: AbstractMesh): boolean {
  * `renderTransparent` replaces a rendering manager's sorted transparent rendering with the same order, frozen-list
  * clipping and state changes as Babylon's (`RenderingGroup._RenderSorted`), allocation-free, and draws each pre-pass
  * under `renderPassId`, so each variant keeps its own stable draw wrapper. Per-pass material overrides
- * (`setMaterialForRenderPass`) are not mirrored into the pre-pass; the passes that use this set none.
+ * (`setMaterialForRenderPass`) are not mirrored into the pre-pass; the passes that use this set none. A Scene that
+ * batches its draws (`sceneDrawBatcher`, Scene Layers) hands the sorted list to its batcher.
  */
 export class TransparentDepthPrePass {
   /** Render pass id of the pre-pass draws (the colour draws keep their pass's own). */
@@ -45,6 +47,8 @@ export class TransparentDepthPrePass {
   /** Per frame: the transparent submeshes in draw order, cleared after drawing. */
   private readonly sorted: (SubMesh | null)[] = [];
   private disposed = false;
+  /** Whether the group drawing now draws pre-passes (its `disableDepthPrePass` is off). */
+  private prePass = true;
 
   constructor(scene: Scene, name: string) {
     this.scene = scene;
@@ -88,9 +92,27 @@ export class TransparentDepthPrePass {
     this.scene.getEngine().releaseRenderPassId(this.renderPassId);
   }
 
+  /** Draws one blended submesh: its depth pre-pass first when its Material has one, then its colour. */
+  private readonly drawOne = (subMesh: SubMesh): void => {
+    if (this.prePass && subMesh.getMaterial()?.needDepthPrePass) {
+      const engine = this.scene.getEngine(), pass = engine.currentRenderPassId;
+      engine.setColorWrite(false);
+      engine.setAlphaMode(Constants.ALPHA_DISABLE);
+      // Once disposed (its id released), pre-passes draw under the colour pass's id, as Babylon does.
+      if (!this.disposed) engine.currentRenderPassId = this.renderPassId;
+      try {
+        subMesh.render(false);
+      } finally {
+        engine.currentRenderPassId = pass;
+        engine.setColorWrite(true);
+      }
+    }
+    subMesh.render(true);
+  };
+
   private drawSorted(data: readonly SubMesh[], count: number, group: RenderingGroup | undefined): void {
     if (count === 0) return;
-    const scene = this.scene, engine = scene.getEngine();
+    const scene = this.scene;
     const camera = scene.activeCamera, eye = camera ? camera.globalPosition : Vector3.ZeroReadOnly;
     const sorted = this.sorted;
     sorted.length = count;
@@ -102,25 +124,17 @@ export class TransparentDepthPrePass {
     }
     const sortedGroup = group as SortedGroup | undefined;
     (sorted as SubMesh[]).sort(sortedGroup?._transparentSortCompareFn ?? RenderingGroup.defaultTransparentSortCompare);
-    // Once disposed (its id released), pre-passes draw under the colour pass's id, as Babylon does.
-    const prePass = !sortedGroup?.disableDepthPrePass, ownPass = !this.disposed;
+    this.prePass = !sortedGroup?.disableDepthPrePass;
     try {
+      const batcher = scene._activeMeshesFrozenButKeepClipping ? undefined : sceneDrawBatcher(scene);
+      if (batcher) {
+        batcher.draw(sorted as SubMesh[], count, true, this.drawOne);
+        return;
+      }
       for (let index = 0; index < count; index += 1) {
         const subMesh = sorted[index]!;
         if (scene._activeMeshesFrozenButKeepClipping && !subMesh.isInFrustum(scene._frustumPlanes)) continue;
-        if (prePass && subMesh.getMaterial()?.needDepthPrePass) {
-          const pass = engine.currentRenderPassId;
-          engine.setColorWrite(false);
-          engine.setAlphaMode(Constants.ALPHA_DISABLE);
-          if (ownPass) engine.currentRenderPassId = this.renderPassId;
-          try {
-            subMesh.render(false);
-          } finally {
-            engine.currentRenderPassId = pass;
-            engine.setColorWrite(true);
-          }
-        }
-        subMesh.render(true);
+        this.drawOne(subMesh);
       }
     } finally {
       // Hold no submesh between frames.
