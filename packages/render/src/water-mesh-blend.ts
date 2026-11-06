@@ -58,8 +58,8 @@ export const WATER_BLEND_REFRESH_MS = 200;
  * unfinished at the deadline (or after two frames when frames are slower than half of it) ignores the budget and finishes
  * in its frame, so a refresh always lands.
  */
-export const WATER_BLEND_FRAME_BUDGET_MS = 2;
-export const WATER_BLEND_DEADLINE_MS = 100;
+const WATER_BLEND_FRAME_BUDGET_MS = 2;
+const WATER_BLEND_DEADLINE_MS = 100;
 const BLEND_CHUNK = 32;
 /** At least a hair per chunk, so a clock that does not advance within a frame still spreads the work. */
 const BLEND_CHUNK_MIN_MS = 0.05;

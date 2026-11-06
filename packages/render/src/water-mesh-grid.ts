@@ -43,8 +43,8 @@ export const WATER_OCEAN_CELL_BUDGET = 256;
 /** A spectrum Ocean rebuilds its graded grid when the camera moves this share of the dense region's width. */
 const OCEAN_RECENTRE_SHARE = 0.125;
 export const WATER_FINITE_CELL_BUDGET = 160;
-export const WATER_RIVER_ROW_BUDGET = 512;
-export const WATER_RIVER_COLUMN_BUDGET = 64;
+const WATER_RIVER_ROW_BUDGET = 512;
+const WATER_RIVER_COLUMN_BUDGET = 64;
 
 /** Global Water cells per side for an effective resolution: even, at least 32 and at most the Global cap. */
 function globalBudget(resolution: number): number {
