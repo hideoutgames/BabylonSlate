@@ -1219,6 +1219,8 @@ function PlayOverlayView({
         tickIndex: () => number;
         inspectWorld: PlaySession["inspectWorld"];
         runtimeMode: () => PlaySession["runtimeMode"] | null;
+        /** Play's error and warning log lines (the Debug Console's), oldest first. */
+        problemLogs: () => Array<{ severity: string; message: string }>;
         rendering: () => ReturnType<PlaySession["handle"]["renderDiagnostics"]> | null;
         /** The next presented frame as the player sees it, downsampled (`samplePresentedImage`). */
         presentedImage: () => ReturnType<PlaySession["handle"]["samplePresentedImage"]>;
@@ -1257,6 +1259,7 @@ function PlayOverlayView({
       tickIndex: () => sessionRef.current?.lastTickIndex() ?? 0,
       inspectWorld: () => sessionRef.current?.inspectWorld() ?? Promise.resolve({ tickIndex: 0, nodes: [] }),
       runtimeMode: () => sessionRef.current?.runtimeMode ?? null,
+      problemLogs: () => playProbes.get(PLAY_PROBE_KEY)?.problemLogs() ?? [],
       flyThrough: async (options) => {
         if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Fly-through requires a test build.");
         const handle = sessionRef.current?.handle;
