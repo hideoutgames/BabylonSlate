@@ -21,8 +21,8 @@ function resolveModule(from: string, specifier: string): string | null {
 /** Static imports of CodeMirror and its Lezer parsers. */
 const CODE_EDITOR_IMPORT = /^\s*(?:import|export)\s+(?!type\b)(?:[^'"]*?\sfrom\s+)?["']@(?:codemirror|lezer)\//m;
 
-/** Editor modules `entry` reaches through static relative imports. */
-function staticClosure(entry: string): Set<string> {
+/** Editor modules (relative to `src`) that `entry` reaches through static relative imports. */
+function staticClosure(entry: string): string[] {
   const seen = new Set<string>();
   const stack = [join(SRC, entry)];
   while (stack.length > 0) {
@@ -34,12 +34,12 @@ function staticClosure(entry: string): Set<string> {
       if (next) stack.push(next);
     }
   }
-  return seen;
+  return [...seen].map((file) => relative(SRC, file));
 }
 
 describe("editor boot imports", () => {
   it("keep the Content Browser helpers barrel and its New Asset factories out of the Homepage preload", () => {
-    const closure = [...staticClosure("main.tsx")].map((file) => relative(SRC, file));
+    const closure = staticClosure("main.tsx");
     // The audit follows the provider's services, so an empty result is a finding.
     expect(closure).toContain("services/project-service.ts");
     expect(closure).toContain("services/play-content-service.ts");
@@ -47,12 +47,35 @@ describe("editor boot imports", () => {
   });
 
   it("keep CodeMirror out of the editor route, which loads it with the first code body shown", () => {
-    const closure = [...staticClosure("routes/editor-route.tsx")];
-    const relativeClosure = closure.map((file) => relative(SRC, file));
+    const closure = staticClosure("routes/editor-route.tsx");
     // Every screen that shows code is reached, so an empty result is a finding.
     for (const screen of ["panels/graph-panel.tsx", "panels/inspector-graph-node-details.tsx", "components/material-editor.tsx",
       "components/material-custom-glsl.tsx", "components/project-extension-dialogs.tsx", "components/lazy-code-editors.tsx"])
-      expect(relativeClosure).toContain(screen);
-    expect(closure.filter((file) => CODE_EDITOR_IMPORT.test(readFileSync(file, "utf8"))).map((file) => relative(SRC, file))).toEqual([]);
+      expect(closure).toContain(screen);
+    expect(closure.filter((file) => CODE_EDITOR_IMPORT.test(readFileSync(join(SRC, file), "utf8")))).toEqual([]);
+  });
+
+  // The lazy Homepage route: the miniature editor in Theme Settings brings Dockview and the graph editor, and the
+  // Feature Test Check's runner is needed only when a Breakdown waits to resume.
+  it("keep the Theme Settings preview and the Feature Test Check runner out of the Homepage route", () => {
+    const closure = staticClosure("routes/home-route.tsx");
+    expect(closure).toContain("components/homepage-theme-settings.tsx");
+    expect(closure).toContain("components/feature-test-check-resume.tsx");
+    expect(closure.filter((file) => [
+      "components/editor-theme-preview.tsx",
+      "services/feature-test-check.ts",
+      "lib/feature-test-breakdown-ab.ts",
+    ].includes(file))).toEqual([]);
+  });
+
+  it("keep the Feature Test Check dialog and its report out of the Editor route's first load", () => {
+    const closure = staticClosure("routes/editor-route.tsx");
+    expect(closure).toContain("components/editor-chrome-bar.tsx");
+    expect(closure).toContain("lib/use-is-feature-test-project.ts");
+    expect(closure.filter((file) => [
+      "components/feature-test-check-dialog.tsx",
+      "lib/feature-test-check-report.ts",
+      "services/feature-test-check.ts",
+    ].includes(file))).toEqual([]);
   });
 });

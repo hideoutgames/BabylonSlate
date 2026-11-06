@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useRegistryState } from "../context/document-context";
-import { FEATURE_TEST_CHECK_SCENES } from "../services/feature-test-check";
+import { FEATURE_TEST_CHECK_SCENES } from "../services/feature-test-check-scenes";
 
 /** True when the open project contains the Feature Test starter's scenes. */
 export function useIsFeatureTestProject(): boolean {

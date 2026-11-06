@@ -3,16 +3,7 @@ import type { PlaySessionResult } from "./play-session";
 import type { PlayProbe, ViewportProbe } from "./runtime-probes";
 import { RENDER_QUALITY_PROFILES, SHADOW_PROFILES } from "@haptic/core";
 import { describeError } from "../lib/diagnostic-info";
-
-/** Scenes a Full check walks, in order; the heaviest runs last. */
-export const FEATURE_TEST_CHECK_SCENES = [
-  { name: "main", path: "assets/main.scene.hasset" },
-  { name: "FT_World", path: "assets/FeatureTest/Scenes/FT_World.scene.hasset" },
-  { name: "FT_Lights", path: "assets/FeatureTest/Scenes/FT_Lights.scene.hasset" },
-  { name: "FT_Occlusion", path: "assets/FeatureTest/Scenes/FT_Occlusion.scene.hasset" },
-  { name: "FT_2D", path: "assets/FeatureTest/Scenes/FT_2D.scene.hasset" },
-  { name: "FT_Stress", path: "assets/FeatureTest/Scenes/FT_Stress.scene.hasset" },
-] as const;
+import { FEATURE_TEST_CHECK_SCENES } from "./feature-test-check-scenes";
 
 /** Console commands each scene runs in Play; the main scene exercises the full set. */
 function featureTestCheckCommands(sceneName: string, mode: FeatureTestCheckMode): string[] {

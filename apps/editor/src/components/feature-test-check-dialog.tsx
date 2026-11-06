@@ -38,6 +38,7 @@ import {
   type BreakdownResumeMarker,
 } from "../lib/feature-test-breakdown-ab";
 import { FEATURE_TEST_AB_DEPS } from "../lib/feature-test-ab-deps";
+import { FEATURE_TEST_CHECK_SCENES } from "../services/feature-test-check-scenes";
 import { FeatureTestCheckStatus } from "./feature-test-check-status";
 import { formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
 import { collectDiagnosticEnvironment, copyText } from "../lib/diagnostic-info";
@@ -47,7 +48,6 @@ import {
   FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD,
   FEATURE_TEST_BREAKDOWN_METHODS,
   type FeatureTestBreakdownMethod,
-  FEATURE_TEST_CHECK_SCENES,
   FEATURE_TEST_PROFILE_SCENES,
   frameStats,
   runFeatureTestCheck,
