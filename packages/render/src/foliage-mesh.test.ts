@@ -3,7 +3,7 @@ import { Mesh, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { createActor, createDefaultScene, identitySerializedTransform } from "@haptic/core";
 import { installAssetBytes, normalizeModelPayload } from "@haptic/assets";
 import { EditorSceneSync } from "./editor-scene-sync";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { createFoliageMesh, foliagePreparation, refreshFoliageMaterials } from "./foliage-mesh";
 import { glbContainerLoadCount } from "./glb-anim";

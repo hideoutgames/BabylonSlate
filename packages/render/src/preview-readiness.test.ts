@@ -1,6 +1,6 @@
 import { MeshBuilder } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { waitForPreviewMeshesReady, waitUntilReady } from "./preview-readiness";
 import { createHeldThreadBudget, SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";

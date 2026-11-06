@@ -3,7 +3,7 @@ import { installAssetBytes } from "@haptic/assets";
 import { installTextureBytes } from "./mesh-assets";
 import { afterEach, expect, it, vi } from "vitest";
 import { identityTransform, parseText2DProperties } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { unlitBinding } from "./unlit-material-blocks";
 import { isUnlitMaterial } from "./unlit-material";
 import { createText2DMesh, updateText2DAppear } from "./text2d-mesh";

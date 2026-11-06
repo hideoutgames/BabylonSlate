@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach } from "vitest";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { isEngineDefaultMaterial } from "./default-material";
 import { setupDefaultViewport } from "./viewport";
 import { DEFAULT_CAMERA_RADIUS } from "./editor-camera";

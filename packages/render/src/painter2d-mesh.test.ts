@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DynamicTexture } from "@babylonjs/core";
 import { unlitBinding } from "./unlit-material-blocks";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { createPainter2DMesh, updatePainter2DMesh } from "./painter2d-mesh";
 
 /** NullEngine runs in Node: DynamicTexture needs a canvas whose 2D calls are no-ops. */

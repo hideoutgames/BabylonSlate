@@ -9,7 +9,7 @@ import {
   type AbstractMesh,
   type Material,
 } from "@babylonjs/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import {
   clampGizmoScreenScale,
   createGizmoHost,

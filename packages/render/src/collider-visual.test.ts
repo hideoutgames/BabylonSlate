@@ -1,6 +1,6 @@
 import { LinesMesh, Mesh, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import {
   createColliderVisualMesh,
   isColliderVisualMesh,

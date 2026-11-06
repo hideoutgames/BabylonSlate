@@ -4,7 +4,7 @@ import { createActor, createDefaultScene, identitySerializedTransform, parseCabl
 import { SNAPSHOT_FLAG_VISIBLE } from "@haptic/bridge";
 import { applyCableFrame, createCableMesh, sampleCableFrame, stepEditorCables } from "./cable-mesh";
 import { applyMaterialBounds } from "./material-bounds";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { applySceneToBabylonScene, clearSceneMeshes, editorComponentMeshName, unfreezeActorWorldMatrix } from "./scene-loader";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { applyAssignMesh, applySnapshotToScene, createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";

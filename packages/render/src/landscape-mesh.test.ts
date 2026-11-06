@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { VertexBuffer, Mesh, StandardMaterial } from "@babylonjs/core";
 import { createActor, createDefaultScene, parseLandscapeProperties, sculptLandscape } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); });

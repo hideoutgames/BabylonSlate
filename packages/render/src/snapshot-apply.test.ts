@@ -9,7 +9,7 @@ import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@haptic/bridge";
 import { createDefaultSpritePayload, createDefaultTilemapPayload, decodeHasset, embedGlbExternalImages, encodeHasset, normalizeTilesetPayload, setTile } from "@haptic/assets";
 import { createDefaultWaterDefinition, DEFAULT_SORTING_LAYERS, identityTransform, normalizeWaterBody, parseText2DProperties } from "@haptic/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { isUnlitMaterial } from "./unlit-material";
 import { unlitBinding } from "./unlit-material-blocks";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";

@@ -9,7 +9,7 @@ import {
   type SerializedScene,
 } from "@haptic/core";
 import type { ActorSlot } from "@haptic/bridge";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import {
   actorVisualFingerprint,
   applySceneToBabylonScene,

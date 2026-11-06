@@ -22,7 +22,7 @@ import {
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { hapticLightBuffer } from "./haptic-lights";
 import { compileMaterialPlan } from "./material-compiler";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { installPreviewEnvironment } from "./preview-environment";

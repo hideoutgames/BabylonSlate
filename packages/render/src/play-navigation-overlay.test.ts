@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { createPlayNavigationOverlay } from "./play-navigation-overlay";
 
 describe("createPlayNavigationOverlay", () => {

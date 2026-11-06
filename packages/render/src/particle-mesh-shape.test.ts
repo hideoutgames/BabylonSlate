@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { MeshBuilder, Vector3 } from "@babylonjs/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { PREVIEW_OWNER_MESH, meshGeometryRelativeTo } from "./particle-mesh-shape";
 
 const cleanups: Array<() => void> = [];

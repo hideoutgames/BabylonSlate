@@ -1,7 +1,7 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PBRMaterial, Texture } from "@babylonjs/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { createMaterialPreviewScene } from "./material-preview";
 import { createModelPreviewScene } from "./model-preview";
 import {

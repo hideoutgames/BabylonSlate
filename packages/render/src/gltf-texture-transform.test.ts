@@ -3,7 +3,7 @@ import type { PBRMaterial, Texture } from "@babylonjs/core";
 import { buildMinimalGlbFixture, encodeGlbJsonBin, importModel, splitGlbJsonBin } from "@haptic/assets";
 import type { MaterialDocument } from "@haptic/shader-graph";
 import { describe, expect, it } from "vitest";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import "./gltf-loader";
 
 /** The fixture GLB with its base color texture read through `transform`. */

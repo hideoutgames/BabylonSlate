@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { Mesh, VertexBuffer } from "@babylonjs/core";
 import { identitySerializedTransform, parseLandscapeProperties } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { createSnapshotSceneBinding, applyAssignMesh, retirePlaySlot } from "./snapshot-apply";
 import { installModelSources } from "./mesh-assets";
 import { encodeTriangleGlb } from "./glb-test-fixtures";

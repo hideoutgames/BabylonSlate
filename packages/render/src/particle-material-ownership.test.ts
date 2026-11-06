@@ -2,7 +2,7 @@ import { NodeMaterial, ParticleSystem, Scene } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeParticleEmitterPayload } from "@haptic/assets";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { MaterialLibrary } from "./material-library";
 import { acquireParticleMaterial } from "./particle-material";
 import { ParticleService, type ParticleMaterialOwner } from "./particle-service";

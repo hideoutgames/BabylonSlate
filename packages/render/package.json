@@ -9,6 +9,7 @@
     "./glb-test-fixtures": "./src/glb-test-fixtures.ts",
     "./framegraph-test-fixtures": "./src/framegraph-test-fixtures.ts",
     "./light-block-engine": "./src/test-support/light-block-engine.ts",
+    "./test-engine": "./src/test-support/test-engine.ts",
     "./global-parameter-values": "./src/global-parameter-values.ts",
     "./render-scheduler": "./src/render-scheduler.ts",
     "./managed-render-resources": "./src/managed-render-resources.ts",

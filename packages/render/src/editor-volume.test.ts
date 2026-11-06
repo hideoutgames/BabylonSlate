@@ -1,7 +1,7 @@
 import { VertexBuffer, type AbstractMesh } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { createEditorCamera } from "./editor-camera";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { editorComponentMeshName } from "./scene-loader";

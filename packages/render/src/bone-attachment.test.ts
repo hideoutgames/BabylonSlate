@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { isPlayEngineCommandType, readActorSlot, readSnapshotHeader, snapshotFloatCount, SNAPSHOT_FLAG_VISIBLE, type ActorSlot } from "@haptic/bridge";
 import { createInProcessRuntime } from "@haptic/test-kit";
 import { identityTransform } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import * as snapshot from "./snapshot-apply";
 import * as attachments from "./bone-attachment";
 import { writeSampledAudioPoses, type SampledAudioPose } from "./snapshot-sync";
