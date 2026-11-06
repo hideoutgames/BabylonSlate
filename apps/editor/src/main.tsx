@@ -59,6 +59,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/instance-parameters-proof").then(({ runInstanceParametersProof }) => Object.assign(window, { __instanceParametersProof: runInstanceParametersProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("pooledLodProof")) {
   void import("./testing/pooled-lod-proof").then(({ runPooledLodProof }) => Object.assign(window, { __pooledLodProof: runPooledLodProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("sceneLayerBatchingProof")) {
+  void import("./testing/scene-layer-batching-proof").then(({ runSceneLayerBatchingProof }) => Object.assign(window, { __sceneLayerBatchingProof: runSceneLayerBatchingProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("instancingParityProof")) {
   void import("./testing/instancing-parity-proof").then(({ runInstancingParityProof }) => Object.assign(window, { __instancingParityProof: runInstancingParityProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("shadowFilterProof")) {
