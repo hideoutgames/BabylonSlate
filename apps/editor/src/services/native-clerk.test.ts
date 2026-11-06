@@ -496,3 +496,110 @@ describe("NativeClerkClient account management", () => {
     expect(await secrets.get(`slate-clerk-client:${key}`)).toBeNull();
   });
 });
+
+describe("NativeClerkClient social sign-in", () => {
+  const redirectUrl = "haptic://sso-callback";
+  const providerUrl = "https://github.com/login/oauth/authorize?client_id=gh";
+  const started = {
+    id: "sia_oauth",
+    status: "needs_first_factor",
+    first_factor_verification: {
+      status: "unverified",
+      strategy: "oauth_github",
+      external_verification_redirect_url: providerUrl,
+    },
+  };
+
+  it("lists only the social strategies Clerk enables for signing in", async () => {
+    const environment = {
+      user_settings: {
+        social: {
+          oauth_github: { enabled: true, authenticatable: true, strategy: "oauth_github" },
+          oauth_discord: { enabled: true, authenticatable: true, strategy: "oauth_discord" },
+          oauth_google: { enabled: false, authenticatable: true, strategy: "oauth_google" },
+          oauth_x: { enabled: true, authenticatable: false, strategy: "oauth_x" },
+        },
+      },
+    };
+    const { http, requests } = transport([
+      { status: 200, bodyText: JSON.stringify(environment) },
+    ]);
+    const auth = new NativeClerkClient(key, http, new MemorySecretStore());
+    expect(await auth.socialStrategies()).toEqual(["oauth_discord", "oauth_github"]);
+    expect(requests[0]?.method).toBe("GET");
+    expect(new URL(requests[0]!.url).pathname).toBe("/v1/environment");
+  });
+
+  it("signs in through the provider page and the rotating token nonce", async () => {
+    const secrets = new MemorySecretStore();
+    const { http, requests } = transport([
+      response({ object: "client", sessions: [] }, "client-a"),
+      response(started, "client-b"),
+      response({ id: "sia_oauth", status: "complete", created_session_id: "sess_one" }, "client-c"),
+      response(client, "client-d"),
+    ]);
+    const auth = new NativeClerkClient(key, http, secrets);
+    const oauth = await auth.beginOAuth("oauth_github", redirectUrl);
+    expect(oauth).toEqual({ signInId: "sia_oauth", url: providerUrl, redirectUrl });
+    expect(requests[1]?.body).toBe(
+      "strategy=oauth_github&redirect_url=haptic%3A%2F%2Fsso-callback",
+    );
+    expect(
+      await auth.completeOAuth(oauth, `${redirectUrl}?rotating_token_nonce=nonce-1`),
+    ).toMatchObject({ id: "sess_one", email: "sam@example.com" });
+    const reload = new URL(requests[2]!.url);
+    expect(requests[2]?.method).toBe("GET");
+    expect(reload.pathname).toBe("/v1/client/sign_ins/sia_oauth");
+    expect(reload.searchParams.get("rotating_token_nonce")).toBe("nonce-1");
+    expect(requests[2]?.headers.Authorization).toBe("client-b");
+    expect(await secrets.get(`slate-clerk-client:${key}`)).toBe("client-d");
+  });
+
+  it("turns a first-time provider account into a sign-up by transfer", async () => {
+    const { http, requests } = transport([
+      response({ object: "client", sessions: [] }, "client-a"),
+      response(started, "client-b"),
+      response({
+        id: "sia_oauth",
+        status: "needs_identifier",
+        first_factor_verification: { status: "transferable", strategy: "oauth_github" },
+      }),
+      response({ id: "sua_one", status: "complete", created_session_id: "sess_one" }),
+      response(client),
+    ]);
+    const auth = new NativeClerkClient(key, http, new MemorySecretStore());
+    const oauth = await auth.beginOAuth("oauth_github", redirectUrl);
+    await expect(
+      auth.completeOAuth(
+        oauth,
+        `${redirectUrl}?__clerk_status=failed&__clerk_error_code=external_account_not_found&rotating_token_nonce=n2`,
+      ),
+    ).resolves.toMatchObject({ id: "sess_one" });
+    expect(new URL(requests[3]!.url).pathname).toBe("/v1/client/sign_ups");
+    expect(requests[3]?.body).toBe("transfer=true");
+  });
+
+  it("rejects denied, foreign and unfinished callbacks without signing in", async () => {
+    const { http, requests } = transport([
+      response({ object: "client", sessions: [] }, "client-a"),
+      response(started, "client-b"),
+      response({ id: "sia_oauth", status: "needs_second_factor" }),
+    ]);
+    const auth = new NativeClerkClient(key, http, new MemorySecretStore());
+    await expect(auth.beginOAuth("github", redirectUrl)).rejects.toMatchObject({
+      code: "authentication_failed",
+    });
+    expect(requests).toHaveLength(0);
+    const oauth = await auth.beginOAuth("oauth_github", redirectUrl);
+    await expect(
+      auth.completeOAuth(oauth, `${redirectUrl}?__clerk_status=failed&__clerk_error_code=oauth_access_denied`),
+    ).rejects.toMatchObject({ code: "oauth_access_denied" });
+    await expect(
+      auth.completeOAuth(oauth, "https://evil.example/sso-callback?rotating_token_nonce=n"),
+    ).rejects.toMatchObject({ code: "oauth_callback_failed" });
+    expect(requests).toHaveLength(2);
+    await expect(
+      auth.completeOAuth(oauth, `${redirectUrl}?rotating_token_nonce=n3`),
+    ).rejects.toMatchObject({ code: "additional_verification_required" });
+  });
+});

@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BabylonSlateScopedStoragePlugin.class);
         registerPlugin(BabylonSlateAudioLifecyclePlugin.class);
         registerPlugin(BabylonSlateMemoryPlugin.class);
+        registerPlugin(BabylonSlateAuthSessionPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

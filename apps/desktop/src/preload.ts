@@ -31,6 +31,11 @@ contextBridge.exposeInMainWorld("haptic", {
   http: {
     fetch: (request: unknown) => ipcRenderer.invoke("lfs:fetch", request),
   },
+  // Opens a provider sign-in page in the system browser; resolves with the callback deep link or null.
+  authBrowser: {
+    open: (url: string, callbackUrl: string) =>
+      ipcRenderer.invoke("auth:open-browser", url, callbackUrl),
+  },
   project: {
     pickProjectFolder: () => ipcRenderer.invoke("project:pickFolder"),
     openDocumentsProject: (name: string) =>

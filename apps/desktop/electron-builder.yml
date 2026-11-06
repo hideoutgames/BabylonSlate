@@ -9,6 +9,10 @@ files:
   - host/*.cjs
   - renderer/**/*
 asar: true
+# Third-party sign-in returns through haptic://sso-callback (macOS Info.plist, Linux desktop entry).
+protocols:
+  - name: Haptic Sign-In
+    schemes: [haptic]
 npmRebuild: false
 publish:
   provider: github

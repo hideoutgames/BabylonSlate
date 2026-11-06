@@ -37,7 +37,7 @@ try {
   validateAppIcon(await readFile(join(iconsDir, icon.filename)));
   validatePrivacyManifest(await plist(join(editor, "ios/App/App/PrivacyInfo.xcprivacy"), "privacy-source"));
   const capacitor = JSON.parse(await readFile(join(editor, "ios/App/App/capacitor.config.json"), "utf8"));
-  if (!["BabylonSlateSecretsPlugin", "BabylonSlateScopedStoragePlugin", "BabylonSlateAudioLifecyclePlugin", "BabylonSlateMemoryPlugin"].every(name => capacitor.packageClassList?.includes(name))) throw new Error("Custom Capacitor registration is missing; use ios:sync");
+  if (!["BabylonSlateSecretsPlugin", "BabylonSlateScopedStoragePlugin", "BabylonSlateAudioLifecyclePlugin", "BabylonSlateMemoryPlugin", "BabylonSlateAuthSessionPlugin"].every(name => capacitor.packageClassList?.includes(name))) throw new Error("Custom Capacitor registration is missing; use ios:sync");
   // Only a distribution build (which refuses test-mode storage) emits build-manifest.json.
   const bundledIdentity = await readFile(join(editor, "ios/App/App/public/build-manifest.json"), "utf8").catch(() => null);
   if (bundledIdentity !== identityText) throw new Error("Native web bundle is not this identity's distribution build; use ios:sync");
