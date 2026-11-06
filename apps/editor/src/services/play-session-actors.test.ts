@@ -717,9 +717,11 @@ describe.each(["worker", "in-process"] as const)(
         entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
       };
       await play({ actors: [createActor("pump", "Pump", { classId: "logger" })], scripts: [logger], onRuntimeLog });
-      await vi.waitFor(() => expect(onRuntimeLog).toHaveBeenCalledTimes(2));
+      // Host-side Play lines (the in-process fallback notice) reach the Output Log under "Play".
+      const scriptLines = () => onRuntimeLog.mock.calls.map(([entry]) => entry).filter((entry) => entry.category !== "Play");
+      await vi.waitFor(() => expect(scriptLines()).toHaveLength(2));
       // An error log also raises a runtime diagnostic; that one stays out of the Output Log feed.
-      expect(onRuntimeLog.mock.calls.map(([entry]) => entry)).toEqual([
+      expect(scriptLines()).toEqual([
         { category: "Fuel", severity: "warning", message: "Low" },
         { category: "Fuel", severity: "error", message: "Empty" },
       ]);

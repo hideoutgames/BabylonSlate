@@ -1473,18 +1473,6 @@ function PlayOverlayView({
           <SelectableText>{audioDebugText}</SelectableText>
         </pre>
       ) : null}
-      {logs.length > 0 ? (
-        <div
-          className="play-debug-readout pointer-events-none absolute bottom-3 left-3 max-h-32 max-w-md overflow-hidden"
-          data-testid="play-log-tail"
-        >
-          {logs.slice(-5).map((line) => (
-            <div key={line.id}>
-              <SelectableText>{line.message}</SelectableText>
-            </div>
-          ))}
-        </div>
-      ) : null}
       <PlayDebugConsole
         open={consoleOpen}
         onOpenChange={setConsoleOpen}
