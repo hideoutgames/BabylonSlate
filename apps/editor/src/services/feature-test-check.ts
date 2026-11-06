@@ -663,7 +663,12 @@ export interface FeatureTestBenchmarkSample {
    * (`RenderDiagnostics.presentation.heldReasons`); absent where the view reports no counts.
    */
   presentation?: SampledPresentation;
+  /** The world renderer's work while sampled (`RenderDiagnostics.rendererWork`); absent where the view reports none. */
+  work?: SampledRendererWork;
 }
+
+/** The world renderer's work over a sample window: how much each `RenderDiagnostics.rendererWork` counter grew. */
+export type SampledRendererWork = NonNullable<RenderDiagnostics["rendererWork"]>;
 
 /** What the view presented over a sample window: frames drawn and held, the window's length and the holds by reason. */
 export interface SampledPresentation {
@@ -1190,6 +1195,20 @@ function presentationCounts(play: PlayProbe): {
   } : null;
 }
 
+/** How much each of the world renderer's work counters grew between two `RenderDiagnostics.rendererWork` readings. */
+function rendererWorkSince(
+  before: SampledRendererWork | undefined, after: SampledRendererWork | undefined,
+): SampledRendererWork | null {
+  if (!before || !after) return null;
+  return {
+    graphBuilds: after.graphBuilds - before.graphBuilds,
+    shadowAdmissions: after.shadowAdmissions - before.shadowAdmissions,
+    shadowAdmissionMs: after.shadowAdmissionMs - before.shadowAdmissionMs,
+    strictReadinessChecks: after.strictReadinessChecks - before.strictReadinessChecks,
+    outlineReadinessChecks: after.outlineReadinessChecks - before.outlineReadinessChecks,
+  };
+}
+
 /** The holds each reason added between two `RenderDiagnostics.presentation.heldReasons` readings; reasons that added none left out. */
 export function heldReasonsSince(
   before: Readonly<Record<string, number>>, after: Readonly<Record<string, number>>,
@@ -1443,12 +1462,14 @@ async function benchmarkProfiles(
     const skippedBefore = play.snapshot().rendering?.frameBackpressure?.skipped ?? 0;
     if (interleaved) gpuBusy = (await run("gpubusy on")).success;
     const presentedBefore = presentationCounts(play);
+    const workBefore = play.snapshot().rendering?.rendererWork;
     const sampleStarted = deps.now();
     const sampled = await sampleWithCounters(play, deps.sampleFrames(sampleMs, signal), deps, signal);
     const presentedAfter = presentationCounts(play);
     const sampleMsTaken = deps.now() - sampleStarted;
     const snapshot = play.snapshot();
     const rendering = snapshot.rendering;
+    const work = rendererWorkSince(workBefore, rendering?.rendererWork);
     const sample: FeatureTestBenchmarkSample = {
       label,
       frames: sampled.frames,
@@ -1468,6 +1489,7 @@ async function benchmarkProfiles(
           heldReasons: heldReasonsSince(presentedBefore.heldReasons, presentedAfter.heldReasons),
         },
       } : {}),
+      ...(work ? { work } : {}),
       ...(interleaved ? {
         ...(gpuBusy && rendering?.gpuBusy ? { gpuBusy: { ...rendering.gpuBusy } } : {}),
         ...(rendering?.settings ? { settings: { ...rendering.settings } } : {}),
