@@ -95,10 +95,8 @@ function summaryGroups(profile: PerformanceProfile): SummaryGroup[] {
     { title: "Worker", unit: "per runtime tick", rows: [
       ["Worker Script and Physics", summarizePerformanceColumns(profile.ticks, ["scriptMs", "physicsMs"], TICK_BUDGET_MS), TICK_BUDGET_MS],
       ["Worker Script Phase", summarizePerformanceColumn(profile.ticks, "scriptMs")],
-      // Version 2 profiles split script into the tick's phases; a version 1 profile has none to show.
       ...TICK_TIMING_PHASES.filter((phase) => phase !== "physics")
-        .map((phase): SummaryRow => [`${TICK_TIMING_PHASE_LABELS[phase]} Phase`, summarizePerformanceColumn(profile.ticks, `${phase}Ms`)])
-        .filter(([, values]) => values.count > 0),
+        .map((phase): SummaryRow => [`${TICK_TIMING_PHASE_LABELS[phase]} Phase`, summarizePerformanceColumn(profile.ticks, `${phase}Ms`)]),
       ["Worker Physics Phase", summarizePerformanceColumn(profile.ticks, "physicsMs")],
       ["Worker Snapshot Publish", summarizePerformanceColumn(profile.ticks, "publishMs")],
       ["Other Measured Runtime Phase", summarizePerformanceColumn(profile.ticks, "otherMs")],

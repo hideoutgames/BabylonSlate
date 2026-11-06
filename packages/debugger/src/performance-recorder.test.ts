@@ -1,10 +1,6 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   PERFORMANCE_TICK_COLUMNS,
-  PERFORMANCE_TICK_COLUMNS_V1,
-  PERFORMANCE_TICK_COLUMNS_V2,
-  PERFORMANCE_TICK_COLUMNS_V5,
   PerformanceRecorder,
   parsePerformanceProfile,
   serializePerformanceProfile,
@@ -137,13 +133,10 @@ describe("PerformanceRecorder", () => {
     expect(summarizePerformanceColumn(reopened!.ticks, "actorsMs").median).toBe(1.25);
     expect(summarizePerformanceColumn(reopened!.ticks, "objectsMs").median).toBe(0.5);
     expect(summarizePerformanceColumn(reopened!.ticks, "sceneSystemsMs").median).toBe(0.75);
-    // Version 2 tick rows are the full width; version 1 rows under a version 2 label are not.
+    // Tick rows without every phase column, or a profile of an earlier version, are not opened.
     const json = JSON.parse(serializePerformanceProfile(reopened!));
-    expect(parsePerformanceProfile({ ...json, ticks: { ...json.ticks, columns: [...PERFORMANCE_TICK_COLUMNS_V1] } })).toBeNull();
-    // A version 5 profile opens with its own columns and no Garbage Collection phase.
-    const version5 = parsePerformanceProfile({ ...json, version: 5, ticks: { columns: [...PERFORMANCE_TICK_COLUMNS_V5], count: 0, chunks: [] } });
-    expect(version5?.ticks.columns).toEqual(PERFORMANCE_TICK_COLUMNS_V5);
-    expect(summarizePerformanceColumn(version5!.ticks, "garbageCollectionMs").count).toBe(0);
+    expect(parsePerformanceProfile({ ...json, ticks: { columns: PERFORMANCE_TICK_COLUMNS.slice(0, 6), count: 0, chunks: [] } })).toBeNull();
+    expect(parsePerformanceProfile({ ...json, version: 5 })).toBeNull();
   });
 
   it("records memory and long tasks, leaving out a long task that started before the recording", () => {
@@ -160,12 +153,12 @@ describe("PerformanceRecorder", () => {
     const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(recorder.stop()!)))!;
     expect(Array.from(reopened.memory.chunks[0]!)).toEqual([0, 4096, 1024, 200, 8192, 1024]);
     expect(Array.from(reopened.longTasks.chunks[0]!)).toEqual([50, 120]);
-    // A profile of version 3 or later without them is incomplete.
+    // A profile without them is incomplete.
     const json = JSON.parse(serializePerformanceProfile(reopened));
     expect(parsePerformanceProfile({ ...json, longTasks: undefined })).toBeNull();
   });
 
-  it("records script costs, each row naming one of its entries, and opens a version 3 profile with none", () => {
+  it("records script costs, each row naming one of its entries", () => {
     const recorder = new PerformanceRecorder({ now: () => 0 });
     recorder.start(identity);
     recorder.recordTick(tick({ tickId: 1, elapsedMs: 0, scriptMs: 3 }));
@@ -182,38 +175,9 @@ describe("PerformanceRecorder", () => {
     // A row naming an entry the profile lacks, or an entry without its Class, is not a profile.
     expect(parsePerformanceProfile({ ...json, scriptEntries: [] })).toBeNull();
     expect(parsePerformanceProfile({ ...json, scriptEntries: [{ ...door, classId: undefined }] })).toBeNull();
-    const version3 = { ...json, version: 3, ticks: { columns: [...PERFORMANCE_TICK_COLUMNS_V2], count: 0, chunks: [] } };
-    delete version3.scripts;
-    delete version3.scriptEntries;
-    const opened = parsePerformanceProfile(version3);
-    expect(opened?.version).toBe(3);
-    expect(opened?.scripts.count).toBe(0);
-    expect(opened?.scriptEntries).toEqual([]);
-  });
-
-  it("opens a version 2 profile with no memory or long tasks, and exports it as it was", () => {
-    const golden = JSON.parse(readFileSync(new URL("./__fixtures__/profile-v2.golden.json", import.meta.url), "utf8"));
-    const opened = parsePerformanceProfile(golden);
-    expect(opened?.version).toBe(2);
-    expect(opened?.ticks.columns).toEqual(PERFORMANCE_TICK_COLUMNS_V2);
-    expect(summarizePerformanceColumn(opened!.ticks, "actorsMs").median).toBe(2);
-    // No Objects phase is invented before version 5.
-    expect(summarizePerformanceColumn(opened!.ticks, "objectsMs").count).toBe(0);
-    expect(opened?.memory.count).toBe(0);
-    expect(opened?.longTasks.count).toBe(0);
-    expect(parsePerformanceProfile(JSON.parse(serializePerformanceProfile(opened!)))).toEqual(opened);
-  });
-
-  it("opens a version 1 profile with its script and physics split, and exports it as it was", () => {
-    const golden = JSON.parse(readFileSync(new URL("./__fixtures__/profile-v1.golden.json", import.meta.url), "utf8"));
-    const opened = parsePerformanceProfile(golden);
-    expect(opened?.version).toBe(1);
-    expect(opened?.ticks.columns).toEqual(PERFORMANCE_TICK_COLUMNS_V1);
-    expect(summarizePerformanceColumn(opened!.ticks, "scriptMs").median).toBe(4);
-    // No phase is invented for a version 1 tick.
-    expect(summarizePerformanceColumn(opened!.ticks, "actorsMs").count).toBe(0);
-    const reopened = parsePerformanceProfile(JSON.parse(serializePerformanceProfile(opened!)));
-    expect(reopened).toEqual(opened);
+    // Nor is one without its script streams.
+    expect(parsePerformanceProfile({ ...json, scripts: undefined })).toBeNull();
+    expect(parsePerformanceProfile({ ...json, scriptEntries: undefined })).toBeNull();
   });
 
   it("retains a separate bounded valid-query population without repeating stale GPU results", () => {
