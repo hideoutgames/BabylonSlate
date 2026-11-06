@@ -12,7 +12,7 @@ function deferred() {
 }
 
 describe("editor viewport frame hold", () => {
-  it("stays held until the last overlapping hold settles, whichever settles first and however", async () => {
+  it("stays held until the last overlapping hold settles, whether each resolves or rejects", async () => {
     const first = deferred();
     const second = deferred();
     const firstHold = withEditorViewportFramesHeld(() => first.promise);
