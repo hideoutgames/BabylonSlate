@@ -144,7 +144,7 @@ describe("Play quality changes", () => {
     };
     const work = () => {
       const diagnostics = play.renderDiagnostics();
-      return { graphBuilds: diagnostics.rendererWork!.graphBuilds, drawn: diagnostics.presentation.drawn };
+      return { graphBuilds: diagnostics.rendererWork!.graphBuilds, drawn: diagnostics.presentation!.drawn };
     };
     await frames(20);
     return { engine, play, session, frames, run, work };
