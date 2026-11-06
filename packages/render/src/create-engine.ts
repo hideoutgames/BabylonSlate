@@ -52,7 +52,7 @@ import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
-import { bridgeEngineEffects, keepPlayEffects, releaseBridgedEffects } from "./effect-bridge";
+import { bridgeEngineEffects, holdCompiledEffects, keepPlayEffects, releaseBridgedEffects } from "./effect-bridge";
 import { countEffectCompiles } from "./effect-requests";
 import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
@@ -1161,9 +1161,23 @@ function initializeEngine(
         : String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
     };
   };
+  // `postprocessing off` stops drawing the post-processing passes' programs and the Material variants they draw; they
+  // are held (`holdCompiledEffects`) until the view presents ready with post-processing on again, so turning it back on
+  // links none of them again.
+  let postProcessingPrograms: { release: () => void; releaseWhenReady: boolean } | null = null;
+  const releasePostProcessingPrograms = () => {
+    const held = postProcessingPrograms;
+    postProcessingPrograms = null;
+    held?.release();
+  };
+  onRollback(releasePostProcessingPrograms);
   const setPostProcessingEnabled = (enabled: boolean) => {
     // Unchanged: no stack rebuild (the Breakdown's add-one base turns it off again after every step).
     if (postProcessingEnabled === enabled) return;
+    if (enabled) {
+      if (postProcessingPrograms) postProcessingPrograms.releaseWhenReady = true;
+    } else if (postProcessingPrograms) postProcessingPrograms.releaseWhenReady = false;
+    else postProcessingPrograms = { release: holdCompiledEffects(engine), releaseWhenReady: false };
     postProcessingEnabled = enabled;
     setSceneEffectsEnabled(scene, enabled);
     rebuildPostProcessStack();
@@ -2336,12 +2350,16 @@ function initializeEngine(
         try { sample = shown ? samplePresentedImage(shown) : null; } catch { sample = null; }
         answerPresentedImageRequests(sample);
       }
-      if (runtimeScalability && !worldLoading) {
+      if ((runtimeScalability || postProcessingPrograms?.releaseWhenReady) && !worldLoading) {
         // A stored preparation failure rethrows until the coordinator's retry
         // succeeds. It must not escape endFrame and stop the shared Engine loop.
         let ready: boolean;
         try { ready = worldRenderer.isReady() && sceneLayerCompositor?.isReady() !== false; } catch { ready = false; }
-        if (ready) runtimeScalability.presented();
+        if (ready) {
+          runtimeScalability?.presented();
+          // The graphs drawn with post-processing on again hold their programs now.
+          if (postProcessingPrograms?.releaseWhenReady) releasePostProcessingPrograms();
+        }
       }
       const presentedAt = performance.now();
       // Only Play handles pace frames: their presented-frame interval measures
@@ -2514,6 +2532,7 @@ function initializeEngine(
       if (disposed) return;
       // The Engine's next view (Play after the editor's, the editor's after Play) draws mostly these Effects.
       if (!ownsEngine) bridgeEngineEffects(engine);
+      releasePostProcessingPrograms();
       stopKeepingEffects?.();
       // And, once released, the textures this view leases now (`handOverTextures`). A handover it claimed and has not
       // ended joins that hold; without one, it ends here.
