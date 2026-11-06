@@ -204,7 +204,8 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
   } else if (channel === "file:save") {
     // Only a suggested file name: the save dialog picks the folder.
     text(args[0], 255);
-    requireValue(args[0].length > 0 && !/[\\/:<>"|?*\u0000-\u001f]/.test(args[0]) && ![".", ".."].includes(args[0]));
+    requireValue(args[0].length > 0 && !/[\\/:<>"|?*]/.test(args[0]) && ![".", ".."].includes(args[0]));
+    requireValue(![...args[0]].some(character => character.charCodeAt(0) < 32));
     requireValue(args[1] instanceof ArrayBuffer && args[1].byteLength <= MAX_IPC_BYTES);
   } else if (channel === "project:openKnown") {
     requireValue(args[0] && typeof args[0] === "object");

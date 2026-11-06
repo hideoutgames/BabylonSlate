@@ -4,10 +4,10 @@ import type { BabylonSlateFileExportPlugin } from "./capacitor-file-export";
 
 const getPlatform = vi.fn(() => "web");
 const plugin = {
-  begin: vi.fn(async (_options: { name: string; mimeType: string }) => ({ id: "export-1" })),
-  append: vi.fn(async (_options: { id: string; data: string }) => {}),
-  finish: vi.fn(async (_options: { id: string }) => ({ result: "shared" as "shared" | "saved" | "cancelled" })),
-  discard: vi.fn(async (_options: { id: string }) => {}),
+  begin: vi.fn<BabylonSlateFileExportPlugin["begin"]>(async () => ({ id: "export-1" })),
+  append: vi.fn<BabylonSlateFileExportPlugin["append"]>(async () => {}),
+  finish: vi.fn<BabylonSlateFileExportPlugin["finish"]>(async () => ({ result: "shared" })),
+  discard: vi.fn<BabylonSlateFileExportPlugin["discard"]>(async () => {}),
 };
 
 vi.mock("@capacitor/core", () => ({
@@ -136,7 +136,7 @@ describe("saveFile", () => {
   });
 
   it("saves through the desktop app's save dialog with the file's bytes", async () => {
-    const save = vi.fn(async (_name: string, _data: ArrayBuffer) => true);
+    const save = vi.fn<(name: string, data: ArrayBuffer) => Promise<boolean>>(async () => true);
     (globalThis as { haptic?: unknown }).haptic = { userData: {}, files: { save } };
     const downloads = watchDownloads();
     await expect(saveFile("Haptic_Dark.haptic-theme.json", theme())).resolves.toBe("saved");
