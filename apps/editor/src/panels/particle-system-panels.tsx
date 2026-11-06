@@ -40,14 +40,9 @@ import {
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
 import { particleParameterValueRow } from "../lib/particle-parameter-rows";
+import { asRecord } from "../lib/as-record";
 
 const EMITTER_TYPES: string[] = [...PARTICLE_EMITTER_ASSET_TYPES];
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
 
 function useSystemDocument() {
   const { documentId } = useDocumentWorkspace();

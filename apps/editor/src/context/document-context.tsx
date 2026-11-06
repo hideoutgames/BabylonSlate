@@ -905,6 +905,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentRevisions,
     GRAPH_SIGNATURE_KINDS,
   );
+  // Open-graph compile fingerprint (node positions omitted), recomputed only
+  // when Class graph or Input Action / Axis documents change or the registry
+  // epoch advances.
   const currentGraphSignature = useMemo(() => {
     void graphSignatureRevision;
     void registryEpoch;
@@ -942,15 +945,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     () => ({ dirtyDocuments: stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable }),
     [stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable],
   );
+  const graphsNeedCompile = compileSignatureIsStale(
+    currentGraphSignature,
+    lastCompiledSignature,
+  );
   const compileState = useMemo<CompileState>(
-    () => ({
-      graphsNeedCompile: compileSignatureIsStale(
-        currentGraphSignature,
-        lastCompiledSignature,
-      ),
-      currentGraphSignature,
-    }),
-    [currentGraphSignature, lastCompiledSignature],
+    () => ({ graphsNeedCompile }),
+    [graphsNeedCompile],
   );
   const editorShellState = useMemo<EditorShellState>(
     () => ({

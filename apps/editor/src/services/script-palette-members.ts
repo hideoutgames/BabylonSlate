@@ -20,7 +20,7 @@ import {
   sceneAssetClassId,
   type EngineScriptPin,
 } from "@haptic/object-model";
-import { componentGraphMembersForClass } from "../lib/component-graph-members";
+import { componentGraphMembersForClass, uniquifyLabels } from "../lib/component-graph-members";
 import {
   timelineClipNodeData,
   timelineCreateClipNodeData,
@@ -675,20 +675,6 @@ export function variableAccessPaletteNodes(
     }
   }
   return injected;
-}
-
-function uniquifyLabels(labels: readonly string[]): string[] {
-  const counts = new Map<string, number>();
-  for (const label of labels) {
-    counts.set(label, (counts.get(label) ?? 0) + 1);
-  }
-  const seen = new Map<string, number>();
-  return labels.map((label) => {
-    if ((counts.get(label) ?? 0) < 2) return label;
-    const next = (seen.get(label) ?? 0) + 1;
-    seen.set(label, next);
-    return next === 1 ? label : `${label} ${next}`;
-  });
 }
 
 function scenePlacedComponentRows(

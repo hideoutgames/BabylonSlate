@@ -58,6 +58,7 @@ import {
   type SkyboxCreatorPreviewFacePngs,
 } from "./skybox-creator-preview-canvas";
 import { SkyboxCreatorSourceOverlay } from "./skybox-creator-source-overlay";
+import { asRecord } from "../lib/as-record";
 
 const SOURCE_DECODE_MAX = 16384;
 const SKYBOX_CREATOR_SOURCE_MERGE_KEY = "skybox-creator-source";
@@ -166,12 +167,6 @@ type IndexedAsset = {
   path: string;
   rootId: string;
 };
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
 
 function identityFor(assets: ReadonlyArray<IndexedAsset>, guid: string | null) {
   const asset = guid

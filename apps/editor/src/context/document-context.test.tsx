@@ -32,7 +32,7 @@ import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { JOURNAL_FLUSH_DELAY_MS } from "../lib/journal-buffer";
 import { registerNavBakeSaveFlush } from "../lib/nav-bake-save";
 import { setEditorQuiet } from "../lib/editor-quiet";
-import { editorViewportFramesHeld, subscribeEditorViewportFrameHold } from "../lib/editor-frame-hold";
+import { subscribeEditorViewportFrameHold } from "../lib/editor-frame-hold";
 import { onEncodeQueuePause } from "../services/encode-queue-pause";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
@@ -1723,21 +1723,21 @@ describe("DocumentProvider closed document history", () => {
     const transitions: boolean[] = [];
     const unsubscribe = subscribeEditorViewportFrameHold((held) => transitions.push(held));
     const saveProject = ProjectService.prototype.saveProject;
-    const heldWhileSaving: boolean[] = [];
+    const heldWhileSaving: (boolean | undefined)[] = [];
     const save = vi.spyOn(ProjectService.prototype, "saveProject").mockImplementation(function (this: ProjectService, ...args) {
-      heldWhileSaving.push(editorViewportFramesHeld());
+      heldWhileSaving.push(transitions.at(-1));
       return saveProject.apply(this, args);
     });
     try {
       await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
       expect(await act(() => actions.saveAll())).toBe(true);
       expect(heldWhileSaving).toEqual([true]);
-      expect(editorViewportFramesHeld()).toBe(false);
+      expect(transitions.at(-1)).toBe(false);
 
       save.mockRejectedValueOnce(new Error("Storage unavailable"));
       await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
       await expect(act(() => actions.saveAll())).rejects.toThrow("Storage unavailable");
-      expect(editorViewportFramesHeld()).toBe(false);
+      expect(transitions.at(-1)).toBe(false);
 
       const pending = vi.spyOn(ProjectService.prototype, "pendingMigrations", "get").mockReturnValue([
         { type: "Scene", fromVersion: 0, toVersion: 4, path: "assets/Untouched.scene.hasset" },
@@ -1747,7 +1747,7 @@ describe("DocumentProvider closed document history", () => {
       } finally {
         pending.mockRestore();
       }
-      expect(editorViewportFramesHeld()).toBe(false);
+      expect(transitions.at(-1)).toBe(false);
       // Each of the three took the hold once and gave it back.
       expect(transitions).toEqual([false, true, false, true, false, true, false]);
     } finally {

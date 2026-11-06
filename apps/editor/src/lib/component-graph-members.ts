@@ -31,7 +31,7 @@ export type ComponentGraphMember = GraphClassMember & {
  * ` N` suffix, skipping any label a component already shows (a component
  * renamed "3D Text 2" beside two "3D Text" rows), so every name is unique.
  */
-function uniquifyLabels(labels: readonly string[]): string[] {
+export function uniquifyLabels(labels: readonly string[]): string[] {
   const shown = new Set(labels);
   const used = new Set<string>();
   const nextSuffix = new Map<string, number>();

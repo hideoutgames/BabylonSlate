@@ -28,12 +28,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useModelSourceBytes } from "../lib/use-model-source-bytes";
 import { ModelSourceReadError } from "./model-editor";
 import { SkeletonPreviewCanvas } from "./skeleton-preview-canvas";
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
+import { asRecord } from "../lib/as-record";
 
 export function SkeletonPreviewPanel(_props: IDockviewPanelProps) {
   void _props;

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
+import { particleLibraryEmitterKey } from "@haptic/assets";
 import {
   createDefaultParticleGraphDocument,
   type ParticleGraphDocument,
@@ -76,6 +77,11 @@ function mount(doc: ParticleGraphDocument) {
   };
 }
 
+/** The key the Preview panel tags its build report with: that of the document it built. */
+function previewBuildKey(): string {
+  return particleLibraryEmitterKey({ kind: "graph", document: editing.previewDocument! });
+}
+
 function embers(): ParticleGraphDocument {
   return { ...createDefaultParticleGraphDocument("Embers"), materialGuid: "mat-sparks" };
 }
@@ -101,7 +107,6 @@ describe("ParticleGraphEditingProvider", () => {
     const doc = embers();
     const view = mount(doc);
     const built = editing.previewDocument;
-    const key = editing.previewKey;
     expect(built).not.toBeNull();
 
     view.update({
@@ -112,10 +117,9 @@ describe("ParticleGraphEditingProvider", () => {
       })),
     });
     expect(editing.previewDocument).toBe(built);
-    expect(editing.previewKey).toBe(key);
 
     view.update(withLifetime(doc, 3));
-    expect(editing.previewKey).not.toBe(key);
+    expect(editing.previewDocument).not.toBe(built);
     expect(
       editing.previewDocument?.nodes.find((node) => node.id === "create")?.properties[
         "default:lifetime"
@@ -141,13 +145,12 @@ describe("ParticleGraphEditingProvider", () => {
     mount(broken(embers()));
     expect(editing.errorCount).toBeGreaterThan(0);
     expect(editing.previewDocument).toBeNull();
-    expect(editing.previewKey).toBeNull();
   });
 
   it("drops build reports tagged with an older Preview key and clears them on a new build", () => {
     const doc = embers();
     const view = mount(doc);
-    const staleKey = editing.previewKey!;
+    const staleKey = previewBuildKey();
     view.update(withLifetime(doc, 3));
 
     act(() =>
@@ -158,7 +161,7 @@ describe("ParticleGraphEditingProvider", () => {
     expect(editing.buildDiagnostics).toEqual([]);
 
     act(() =>
-      editing.reportBuildDiagnostics(editing.previewKey!, [
+      editing.reportBuildDiagnostics(previewBuildKey(), [
         {
           code: "particle.compile.buildFailed",
           message: "Create Particle failed",

@@ -30,12 +30,7 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { AnimationPreviewCanvas } from "./animation-preview-canvas";
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
+import { asRecord } from "../lib/as-record";
 
 function useAssetSourceBytes(guid: string | null): Uint8Array | null {
   const { readAssetChunk } = useDocumentActions();
