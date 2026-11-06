@@ -36,6 +36,7 @@ function fakeEditor(
   /** The Play view's presentation counts at a time, after the given commands. */
   presentation?: (now: number, commands: readonly string[]) => {
     drawn: number; held: number; contextLosses?: number; skipped?: number; heldReasons?: Record<string, number>;
+    rendererWork?: RenderDiagnostics["rendererWork"];
   },
 ) {
   let now = 0;
@@ -71,8 +72,9 @@ function fakeEditor(
           drawCalls: 10, meshes: 20, textures: 5, accountedBytes: 0,
           rendering: presentation
             ? ({
-              ...(({ skipped, ...counts }) => ({
+              ...(({ skipped, rendererWork, ...counts }) => ({
                 presentation: { contextLosses: 0, heldReasons: {}, ...counts }, frameBackpressure: { mode: 2, inFlight: 0, skipped: skipped ?? 0 },
+                ...(rendererWork ? { rendererWork } : {}),
               }))(presentation(now, commands)),
               cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1,
               pipeline: { effective: { gpuBackend: "webgl2" } },
@@ -1052,6 +1054,39 @@ describe("Profile", () => {
     // later one a 2 s window within 25% + 15 points, then the 3 s.
     const profileWaits = waits.filter((wait) => /: (warming up|measuring (?!Play|the editor))/.test(wait.step));
     expect(profileWaits.map((wait) => wait.ms)).toEqual([13_000, ...samples.slice(1).map(() => 5_000)]);
+  });
+
+  it("records the world renderer's work each row did while sampled", async () => {
+    // Two strict readiness checks and one shadow admission per attempt, three times as many while shadows are off.
+    let attempts = 0;
+    const work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 0, outlineReadinessChecks: 0 };
+    const editor = fakeEditor({}, undefined, (now, commands) => {
+      for (; attempts < Math.floor(now / 25); attempts++) {
+        const scale = shadowsOff(commands) ? 3 : 1;
+        work.strictReadinessChecks += 2 * scale;
+        work.shadowAdmissions += scale;
+      }
+      return { drawn: attempts, held: 0, rendererWork: { ...work } };
+    });
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      sampleFrames: async (ms, signal) => {
+        const stats = await editor.deps.sampleFrames(ms, signal);
+        await editor.deps.sleep(ms, signal);
+        return stats;
+      },
+    };
+    const report = await runFeatureTestCheck({
+      mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, timeouts: { commandMs: 0 }, signal: new AbortController().signal,
+    });
+    const row = (label: string) => report.scenes[0]!.play.benchmark.find((sample) => sample.label === label)!;
+    const perDrawn = (label: string) => {
+      const { work: sampled, presentation } = row(label);
+      return { readiness: sampled!.strictReadinessChecks / presentation!.drawn, admissions: sampled!.shadowAdmissions / presentation!.drawn };
+    };
+    expect(perDrawn("baseline 1")).toEqual({ readiness: 2, admissions: 1 });
+    expect(perDrawn("shadows off")).toEqual({ readiness: 6, admissions: 3 });
+    expect(perDrawn("baseline 2")).toEqual({ readiness: 2, admissions: 1 });
   });
 
   it("samples a step that raises the hold rate past the margin once the wait's bound passes, says so, and goes on", async () => {

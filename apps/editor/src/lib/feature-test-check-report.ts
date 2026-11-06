@@ -301,6 +301,24 @@ function occlusionText(sample: FeatureTestBenchmarkSample): string {
     : "";
 }
 
+/**
+ * A Profile row's world renderer work per drawn frame while sampled (`work`): strict readiness checks, outline-only
+ * checks and shadow admissions with their time, and the graph builds in the window; the counters that grew.
+ */
+function workText(sample: FeatureTestBenchmarkSample): string {
+  const work = sample.work;
+  const drawn = sample.presentation?.drawn;
+  if (!work || !drawn) return "";
+  const perFrame = (value: number) => (value / drawn).toFixed(1);
+  const parts = [
+    work.strictReadinessChecks ? `${perFrame(work.strictReadinessChecks)} readiness checks` : "",
+    work.outlineReadinessChecks ? `${perFrame(work.outlineReadinessChecks)} outline checks` : "",
+    work.shadowAdmissions ? `${perFrame(work.shadowAdmissions)} shadow admissions (${perFrame(work.shadowAdmissionMs)} ms)` : "",
+  ].filter(Boolean);
+  const builds = work.graphBuilds ? `${work.graphBuilds} graph ${work.graphBuilds === 1 ? "build" : "builds"}` : "";
+  return [parts.length ? `work/frame: ${parts.join(", ")}` : "", builds].filter(Boolean).join(" · ");
+}
+
 /** Reasons a Profile row prints for its held frames. */
 const PROFILE_ROW_HELD_REASONS = 2;
 
@@ -314,7 +332,7 @@ function profileNotes(sample: FeatureTestBenchmarkSample, first: FeatureTestBenc
   const reasons = sample.presentation?.held ? heldReasonsText(sample.presentation.heldReasons, PROFILE_ROW_HELD_REASONS) : "";
   return [
     sample.warmup ? "warm-up" : "", ...settingNotes(sample, first, step?.fields ?? []), step?.overlaps ? "overlaps" : "",
-    occlusionText(sample), reasons ? `held: ${reasons}` : "",
+    occlusionText(sample), workText(sample), reasons ? `held: ${reasons}` : "",
   ].filter(Boolean).join(" · ");
 }
 
@@ -361,7 +379,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
     profile?.endChanges
       ? profile.endChanges.length ? `  NOT RESTORED at the end: ${profile.endChanges.join(", ")}` : "  Restored: every setting as before the first step"
       : "  Restored: not checked",
-    "  Legend: mean, p95 = frame time · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · frame, cpu change = against the baselines around the step (a baseline's: against the first) · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED and UNSETTLED mark a row not to trust",
+    "  Legend: mean, p95 = frame time · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · work/frame = the world renderer's strict readiness checks, outline checks and shadow admissions (their ms) per drawn frame, and its graph builds while sampled · frame, cpu change = against the baselines around the step (a baseline's: against the first) · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED and UNSETTLED mark a row not to trust",
     `  Timing: ${timed?.gpuBusy ? `gpu busy polled every ${timed.gpuBusy.pollMs.toFixed(1)} ms (each frame up to one poll late)` : "no gpu busy (no fences)"}`,
     `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("cpu", 8)}${pad("gpu busy", 14)}${pad("bound", 6)}${pad("draws", 14)}${pad("held", 6)}${pad("frame change", 16)}${pad("cpu change", 16)}notes`,
   ];
