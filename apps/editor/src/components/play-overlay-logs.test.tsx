@@ -42,24 +42,31 @@ async function openPlay() {
   return callbacks;
 }
 
-it("shows a burst of Play prints in arrival order, keeping the newest 500", async () => {
+it("keeps a burst of Play prints in the Debug Console in arrival order, keeping the newest 500", async () => {
   const callbacks = await openPlay();
   act(() => {
     for (let index = 0; index < 600; index += 1) {
       callbacks.onPrint?.({ message: `line ${index}`, key: "status", duration: 1, color: "#ffffff" });
     }
   });
-  await waitFor(() =>
-    expect(
-      Array.from(screen.getByTestId("play-log-tail").children, (line) => line.textContent),
-    ).toEqual(["line 595", "line 596", "line 597", "line 598", "line 599"]),
-  );
   fireEvent.click(screen.getByTestId("play-console-open"));
   const transcript = await screen.findByTestId("debug-console-transcript");
-  const rows = transcript.querySelectorAll('[data-testid^="debug-console-log-"]');
-  expect(Array.from(rows, (row) => row.textContent)).toEqual(
-    Array.from({ length: 500 }, (_, index) => `[print] line ${index + 100}`),
-  );
+  await waitFor(() => {
+    const rows = transcript.querySelectorAll('[data-testid^="debug-console-log-"]');
+    expect(Array.from(rows, (row) => row.textContent)).toEqual(
+      Array.from({ length: 500 }, (_, index) => `[print] line ${index + 100}`),
+    );
+  });
+});
+
+it("prints nothing in the bottom-left of the Play view", async () => {
+  const callbacks = await openPlay();
+  act(() => {
+    callbacks.onLog?.("Audio clip missing", "warning");
+    callbacks.onPrint?.({ message: "hello", key: "", duration: 1, color: "#ffffff" });
+  });
+  await waitFor(() => expect(screen.getByTestId("print-overlay").textContent).toContain("hello"));
+  expect(screen.queryByTestId("play-log-tail")).toBeNull();
 });
 
 it("shows a one-frame print on screen as soon as it arrives", async () => {
@@ -73,4 +80,13 @@ it("sends runtime logs to the Output Log with their category and severity", asyn
   appendLog.mockClear();
   act(() => callbacks.onRuntimeLog?.({ category: "Fuel", severity: "warning", message: "Low" }));
   expect(appendLog).toHaveBeenCalledExactlyOnceWith("[Fuel] Warning: Low");
+});
+
+it("puts Play warnings and errors in the Debug Console, not on the Play view", async () => {
+  const callbacks = await openPlay();
+  act(() => callbacks.onLog?.("Audio clip missing", "warning"));
+  fireEvent.click(screen.getByTestId("play-console-open"));
+  const transcript = await screen.findByTestId("debug-console-transcript");
+  await waitFor(() => expect(transcript.textContent).toContain("Audio clip missing"));
+  expect(screen.queryByTestId("play-log-tail")).toBeNull();
 });

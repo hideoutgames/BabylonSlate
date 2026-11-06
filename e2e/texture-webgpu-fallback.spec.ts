@@ -273,8 +273,9 @@ test("WebGPU decodes a Basis KTX2 off the 4×4 block grid to RGBA: the viewport 
   const started = await tick();
   await expect.poll(tick, { timeout: 30_000 }).toBeGreaterThan(started + 30);
   await expect(page.getByTestId("play-overlay")).toBeVisible();
-  // The log tail renders only once something is logged.
-  await expect(page.getByTestId("play-log-tail").filter({ hasText: /Scene loading failed|was not drawn/ })).toHaveCount(0);
+  const problems = await page.evaluate(() =>
+    (globalThis as unknown as { __hapticPlayTest?: { problemLogs(): Array<{ message: string }> } }).__hapticPlayTest?.problemLogs() ?? []);
+  expect(problems.filter(({ message }) => /Scene loading failed|was not drawn/.test(message))).toEqual([]);
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
 
