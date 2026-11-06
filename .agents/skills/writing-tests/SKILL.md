@@ -47,7 +47,7 @@ expect(buildSearchQuery({ tag: "urgent" })).toBe('tag:"urgent"');
 
 ```typescript
 // ❌ A hand-written factory: hooks it omits return undefined, and the test runs against a context the app never builds
-vi.mock("../context/document-context", () => ({ useDocuments: () => ({ openDocuments: docs }) }));
+vi.mock("../context/document-context", () => ({ useOpenDocumentTabs: () => docs }));
 
 // ✅ The shared mock: typed, inert defaults; supply only the fields the test controls
 vi.mock("../context/document-context", async () =>

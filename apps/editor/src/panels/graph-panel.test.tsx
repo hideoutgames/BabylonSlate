@@ -10,7 +10,6 @@ import {
 import {
   DocumentProvider,
   useDocumentActions,
-  useDocuments,
   type DocumentActions,
 } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
@@ -29,6 +28,7 @@ import {
   installMemoryOpfs,
   unmountDocumentProvider,
 } from "../testing/real-document-provider";
+import { useDocumentStateProbe, type DocumentStateProbe } from "../testing/document-state-probe";
 import { GraphPanel } from "./graph-panel";
 
 // jsdom has no PointerEvent; the palette's Base UI checkbox dispatches one on click.
@@ -76,7 +76,7 @@ const MAIN_CLASS_ID = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
 
 const seen: {
   actions: DocumentActions | null;
-  documents: ReturnType<typeof useDocuments> | null;
+  documents: DocumentStateProbe | null;
   panelProps: IDockviewPanelProps;
   graphId: string;
 } = { actions: null, documents: null, panelProps: {} as IDockviewPanelProps, graphId: MAIN_CLASS_ID };
@@ -84,7 +84,7 @@ const seen: {
 /** The Class graph panel for `seen.graphId` (Main by default), mounted once its tab is open. */
 function MainClassGraph() {
   seen.actions = useDocumentActions();
-  seen.documents = useDocuments();
+  seen.documents = useDocumentStateProbe();
   const graphId = seen.graphId;
   if (!seen.documents.openDocuments.some((doc) => doc.id === graphId)) {
     return null;

@@ -16,27 +16,37 @@
  * open documents, actions that do nothing, and loaders that find nothing.
  * Defaults that would have to invent project content reject instead.
  *
- * Unless the test supplies them, `documentRevisions` (every kind) and
- * `tabsRevision` advance whenever the value's `openDocuments` array is
- * replaced, so memos keyed on revisions follow the test's documents as they
- * would follow edits in the real provider.
+ * Besides the document context's fields, the value holds the open-document
+ * state the real subscription hooks read from DocumentService:
+ * `openDocuments` (tab order, also what `getOpenDocuments()` returns),
+ * `tabOrder` and `documentRevisions`. Unless the test supplies them,
+ * `documentRevisions` (every kind) advance whenever the value's
+ * `openDocuments` array is replaced, so memos keyed on revisions follow the
+ * test's documents as they would follow edits in the real provider.
  *
  * `useDocumentActions()` returns that same value (it carries every action) and
  * `useAppRoute()` its `route`. The slice hooks (`useRegistryState`,
  * `useProjectState`, `useSaveState`, …) return objects with the value's own
- * field names, so they return the same documents value, as does any `use…`
- * hook added later without an entry here. Hooks returning one field or one
- * document (`useActiveDocumentId`, `useOpenDocument`, …) read it from the
- * value; add an entry for any new such hook.
+ * field names, so they return the same value, as does any `use…` hook added
+ * later without an entry here. Hooks returning one field or one document
+ * (`useActiveDocumentId`, `useOpenDocument`, …) read it from the value; add an
+ * entry for any new such hook.
  */
 import { useSyncExternalStore, type ReactNode } from "react";
 import { ASSET_DOCUMENT_KINDS, type DocumentKind } from "@haptic/core";
-import { documentKindsRevision, type DocumentRevisions } from "../services/document-service";
+import type { DocumentContextValue } from "../context/document-context-types";
+import { documentKindsRevision, type DocumentRevisions, type OpenDocument } from "../services/document-service";
 import type { ExtensionSnapshot } from "../services/editor-extension-service";
 import { SourceControlService } from "../services/source-control-service";
 
 type DocumentContextModule = typeof import("../context/document-context");
-export type DocumentsValue = ReturnType<DocumentContextModule["useDocuments"]>;
+/** What every mocked hook reads: the context's fields plus the open-document state behind the subscription hooks. */
+export type DocumentsValue = DocumentContextValue & {
+  /** Open documents in tab order. */
+  openDocuments: OpenDocument[];
+  tabOrder: string[];
+  documentRevisions: DocumentRevisions;
+};
 /** Fields a test supplies; anything else falls back to the inert default. */
 export type DocumentsOverrides = { readonly [K in keyof DocumentsValue]?: unknown };
 
@@ -149,9 +159,6 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     getOpenDocuments: () => current()?.openDocuments ?? [],
     get documentRevisions() {
       return revisionsFor(current()?.openDocuments);
-    },
-    get tabsRevision() {
-      return revisionsFor(current()?.openDocuments).scene;
     },
     tabOrder: [],
     activeDocumentId: null,
@@ -322,7 +329,7 @@ export function documentContextMock(
   let current: DocumentsValue | undefined;
   let defaults: DocumentsValue | undefined;
   const values = new WeakMap<object, DocumentsValue>();
-  const useDocuments = (): DocumentsValue => {
+  const useMockValue = (): DocumentsValue => {
     const overrides = useValue();
     defaults ??= inertDocuments(() => current);
     let value = values.get(overrides);
@@ -335,39 +342,38 @@ export function documentContextMock(
   };
   const moduleExports = {
     DocumentProvider: ({ children }: { children: ReactNode }) => children,
-    useDocuments,
-    // The documents value carries every action, so it serves the narrow hooks.
-    useDocumentActions: useDocuments,
-    useAppRoute: () => useDocuments().route,
+    // The value carries every action, so it serves the actions hook.
+    useDocumentActions: useMockValue,
+    useAppRoute: () => useMockValue().route,
     useDockWindowTick: options.useDockWindowTick ?? (() => 0),
     // Slices use the value's field names, so the value serves them as-is.
-    useProjectState: useDocuments,
-    useRegistryState: useDocuments,
-    useActiveDocumentState: useDocuments,
-    useSaveState: useDocuments,
-    useCompileState: useDocuments,
-    useEditorShellState: useDocuments,
-    useSourceControl: useDocuments,
+    useProjectState: useMockValue,
+    useRegistryState: useMockValue,
+    useActiveDocumentState: useMockValue,
+    useSaveState: useMockValue,
+    useCompileState: useMockValue,
+    useEditorShellState: useMockValue,
+    useSourceControl: useMockValue,
     // Single-value narrow hooks read their field of the same value.
-    useActiveDocumentId: () => useDocuments().activeDocumentId,
-    useTabOrder: () => useDocuments().tabOrder,
-    useOpenDocumentTabs: () => useDocuments().openDocuments,
+    useActiveDocumentId: () => useMockValue().activeDocumentId,
+    useTabOrder: () => useMockValue().tabOrder,
+    useOpenDocumentTabs: () => useMockValue().openDocuments,
     useOpenDocument: (id: string | null | undefined) => {
-      const { openDocuments } = useDocuments();
+      const { openDocuments } = useMockValue();
       return id ? openDocuments.find((doc) => doc.id === id) : undefined;
     },
     useDocumentDirty: (id: string | null | undefined) => {
-      const { openDocuments } = useDocuments();
+      const { openDocuments } = useMockValue();
       return Boolean(id && openDocuments.find((doc) => doc.id === id)?.dirty);
     },
     useDocumentKindsRevision: (kinds: readonly DocumentKind[]) =>
-      documentKindsRevision(useDocuments().documentRevisions, kinds),
+      documentKindsRevision(useMockValue().documentRevisions, kinds),
   };
   return new Proxy(moduleExports, {
     has: (target, key) => Reflect.has(target, key) || isHookName(key),
     get: (target, key) => {
       if (Reflect.has(target, key)) return Reflect.get(target, key);
-      return isHookName(key) ? useDocuments : undefined;
+      return isHookName(key) ? useMockValue : undefined;
     },
   }) as DocumentContextModule;
 }
