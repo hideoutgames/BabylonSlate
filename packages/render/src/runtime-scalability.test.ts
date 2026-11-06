@@ -35,6 +35,38 @@ describe("view runtime scalability queue", () => {
     f.controller.presented();
     expect(f.acknowledgements).toMatchObject([{ revision: 2, status: "applied" }]);
   });
+  it("awaits a presented frame only while one would confirm something", async () => {
+    const f = fixture();
+    // The first presented frame confirms the starting settings; a frame after it confirms nothing.
+    expect(f.controller.awaitsPresentation).toBe(true);
+    f.controller.presented();
+    expect(f.acknowledgements).toMatchObject([{ revision: 0 }]);
+    expect(f.controller.awaitsPresentation).toBe(false);
+    // A drawn change awaits nothing while queued or preparing, then its own presented frame.
+    f.session.request({ kind: "patch", render: { effects: { exposure: 2 } } });
+    expect(f.controller.awaitsPresentation).toBe(false);
+    f.controller.advance();
+    expect(f.controller.awaitsPresentation).toBe(false);
+    f.work[0]!.resolve(); await flush();
+    expect(f.controller.awaitsPresentation).toBe(true);
+    f.controller.presented();
+    expect(f.controller.awaitsPresentation).toBe(false);
+    // A change that draws alike is acknowledged by the next presented frame.
+    f.session.request({ kind: "patch", frameCap: 30 }); f.controller.advance();
+    expect(f.controller.awaitsPresentation).toBe(true);
+    f.controller.presented();
+    expect(f.acknowledgements.map((ack) => ack.revision)).toEqual([0, 1, 2]);
+    expect(f.controller.awaitsPresentation).toBe(false);
+    // A failed preparation rolls back first: nothing is confirmed until the restoration prepares.
+    f.session.request({ kind: "patch", render: { effects: { exposure: 3 } } }); f.controller.advance();
+    f.work[1]!.reject(new Error("Target allocation failed")); await flush();
+    expect(f.controller.awaitsPresentation).toBe(false);
+    f.controller.advance();
+    f.work[2]!.resolve(); await flush();
+    expect(f.controller.awaitsPresentation).toBe(true);
+    f.controller.dispose();
+    expect(f.controller.awaitsPresentation).toBe(false);
+  });
   it("cancels stale preparation and handles a newer request after readiness but before presentation", async () => {
     const f = fixture();
     f.session.request({ kind: "patch", frameCap: 30 }); f.controller.advance();

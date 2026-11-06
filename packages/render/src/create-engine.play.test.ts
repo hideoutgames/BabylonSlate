@@ -1513,22 +1513,63 @@ describe("Play createEngine view", () => {
     expect(handle.scene.frameGraph).toBeNull();
   });
 
-  it("keeps the shared Engine frame loop running when a presented Play frame's readiness probe fails", async () => {
+  /** A presented Play view whose first frame confirmed its starting settings, with an Engine frame as the browser runs it. */
+  async function presentedPlay() {
     const engine = sharedEngine();
-    const { handle } = playHandle(engine);
+    const acknowledged: number[] = [];
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true, onScalabilityApplied: (acknowledgement) => acknowledged.push(acknowledgement.revision),
+    });
+    handles.push(handle);
     await handle.prewarmSceneMaterials();
+    const frame = async () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      // Past the frame cap's interval, so every call draws and presents.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    };
     const presented = handle.presentFirstFrame();
-    renderViews(engine);
-    engine.onEndFrameObservable.notifyObservers(engine);
+    await frame();
     await presented;
+    for (let i = 0; i < 8 && acknowledged.length === 0; i++) await frame();
+    expect(acknowledged).toEqual([0]);
+    return { engine, handle, acknowledged, frame };
+  }
+
+  it("keeps the shared Engine frame loop running when a presented Play frame's readiness probe fails", async () => {
+    const { engine, handle } = await presentedPlay();
     // A stored preparation failure rethrows from readiness; the frame loop
-    // must survive it.
+    // must survive it. The probe runs for the frame that confirms a transaction.
     const probe = vi.spyOn(SceneRenderCoordinator.prototype, "isReady").mockImplementation(() => {
       throw new Error("Scene rendering preparation timed out.");
     });
     try {
+      handle.applyCommand(scalabilityCommand({}));
+      engine.onBeginFrameObservable.notifyObservers(engine);
       renderViews(engine);
       expect(() => engine.onEndFrameObservable.notifyObservers(engine)).not.toThrow();
+      expect(probe).toHaveBeenCalled();
+    } finally {
+      probe.mockRestore();
+    }
+  });
+
+  it("probes readiness after a presented Play frame only while a scalability transaction awaits that frame", async () => {
+    const { handle, acknowledged, frame } = await presentedPlay();
+    const probe = vi.spyOn(SceneRenderCoordinator.prototype, "isReady");
+    try {
+      // Steady frames confirm nothing: none walks the frame path again after it presented.
+      for (let i = 0; i < 4; i++) await frame();
+      expect(probe).not.toHaveBeenCalled();
+      // The frame that confirms a transaction probes, and acknowledges it; then probing stops again.
+      handle.applyCommand(scalabilityCommand({}));
+      for (let i = 0; i < 8 && acknowledged.length === 1; i++) await frame();
+      expect(acknowledged).toEqual([0, 1]);
+      const confirming = probe.mock.calls.length;
+      expect(confirming).toBeGreaterThan(0);
+      for (let i = 0; i < 4; i++) await frame();
+      expect(probe).toHaveBeenCalledTimes(confirming);
     } finally {
       probe.mockRestore();
     }
