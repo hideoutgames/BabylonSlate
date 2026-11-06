@@ -482,7 +482,7 @@ export class SceneRenderCoordinator {
     // An auxiliary view defers only inside its owner's deferring frame, which then holds too.
     // A steady frame leaves a draw whose pipeline is still being created out of a geometry pass that has drawn a
     // complete frame, instead of holding: a few frames of spatial-effect artefacts on that mesh. A geometry pass yet to
-    // draw one (a new graph, an effect switched on, an invalidation, a Fog Volume first within reach) can miss every
+    // draw one (a new graph, an effect switched on, an invalidation, a Fog Volume first in view) can miss every
     // mesh's pipeline at once, so it holds as before; so do validated presentations (loading, a frame report) and
     // auxiliary views, whose captures publish what they draw.
     const deferral = this.deferPipelines

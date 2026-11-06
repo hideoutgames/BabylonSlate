@@ -1839,15 +1839,16 @@ describe("compile holds after the first frame", () => {
     });
   });
 
-  it("a geometry pass that first draws when a Fog Volume comes within reach holds the view for its pipelines: webgpu", async () => {
-    // Fog Volumes alone run the geometry pass only while one is within reach of the camera, so the view's complete
-    // frames leave it undrawn. Its first draws miss every mesh's pipeline at once, so they hold as a new graph's do.
+  it("a geometry pass that first draws when a Fog Volume comes into view holds the view for its pipelines: webgpu", async () => {
+    // Fog Volumes alone run the geometry pass only while one is in the camera's view (behind the camera it is not), so
+    // the view's complete frames leave it undrawn. Its first draws miss every mesh's pipeline at once, so they hold as a
+    // new graph's do.
     const world = playWorld("webgpu", []);
     Object.assign(world.engine.getCaps(), { texelFetch: true });
     // Fog Volumes alone: Screen-Space Shadows would keep the geometry pass drawing every frame.
     updateSceneRenderingSettings(world.handle.scene, undefined, undefined, { screenShadows: "off" });
     const fog = new TransformNode("fog", world.handle.scene);
-    fog.position.z = 5_000;
+    fog.position.z = -5_000;
     upsertFogVolumes(world.handle.scene, "fog", fog, fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]));
     const record = await measure(world, () => { fog.position.z = 0; });
     // Its geometry variants are compiled only once it runs: the pass had not drawn before.
@@ -1901,8 +1902,9 @@ describe("compile holds after the first frame", () => {
   const HELD = { geometryVariants: true, held: true, holdRaised: true, leftOut: 0, waitedFor: true, recovered: true };
 
   it("a Fog Volume pass that went idle holds again for its next draws: webgpu", async () => {
-    // The pass drew while a volume was within reach, then idled while the crate's geometry variant changed. A volume
-    // coming within reach again draws that new variant first; an idle pass is forgotten, so it holds as a first draw.
+    // The pass drew while a volume was in view, then idled (the volume behind the camera) while the crate's geometry
+    // variant changed. The volume coming into view again draws that new variant first; an idle pass is forgotten, so it
+    // holds as a first draw.
     const world = playWorld("webgpu", []);
     Object.assign(world.engine.getCaps(), { texelFetch: true });
     // Fog Volumes alone: Screen-Space Shadows would keep the geometry pass drawing every frame.
@@ -1911,7 +1913,7 @@ describe("compile holds after the first frame", () => {
     upsertFogVolumes(world.handle.scene, "fog", fog, fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]));
     const [crate] = ownMaterials(world, "actor-2");
     await settle(world);
-    fog.position.z = 5_000;
+    fog.position.z = -5_000;
     for (let index = 0; index < 3; index++) await world.frame();
     expect(await geometryLag(world, async () => {
       changeDefines(world, crate!);

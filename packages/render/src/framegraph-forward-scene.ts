@@ -523,7 +523,7 @@ export class ForwardSceneFrameGraph {
    * complete frame since the graph was prepared or invalidated, and has not
    * been idle since (`noteCompleteFrame`): a frame may then present it without
    * a draw for a few frames. Before that, its draws (a new graph, an effect
-   * switched on, a Fog Volume coming within reach, a first view of anything)
+   * switched on, a Fog Volume coming into view, a first view of anything)
    * can miss every mesh's pipeline at once.
    */
   omitsGeometryPass(renderPassId: number): boolean {
