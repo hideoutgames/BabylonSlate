@@ -70,7 +70,6 @@ import {
   AUDIO_REVERB_CHUNK_ID,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   DOCUMENT_CHUNK_ID,
-  EncodeQueue,
   encodeAssetDocument,
   audioClipChunk,
   audioClipChunkToDrop,
@@ -411,10 +410,6 @@ export class ProjectService {
     });
   }
 
-  get textureEncodeQueue(): EncodeQueue {
-    return this.textures.publicQueue;
-  }
-
   onRegistryChange(listener: () => void): () => void {
     this.registryListeners.add(listener);
     return () => {
@@ -436,15 +431,6 @@ export class ProjectService {
     return () => {
       this.ownWriteListeners.delete(listener);
     };
-  }
-
-  /** Pause encode jobs while Preview runs (engineplan §3.5). */
-  pauseTextureEncodeQueue(): void {
-    this.textures.pause();
-  }
-
-  resumeTextureEncodeQueue(): void {
-    this.textures.resume();
   }
 
   async retryTextureEncoding(

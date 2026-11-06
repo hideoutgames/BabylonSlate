@@ -105,13 +105,15 @@ export function subscribeAppSettings(listener: Listener): () => void {
 
 /** Current settings outside React rendering, for event handlers. */
 export function getAppSettingsSnapshot(): AppSettingsSnapshot {
-  return getActiveAppSettingsSnapshot();
-}
-
-function getActiveAppSettingsSnapshot(): AppSettingsSnapshot {
   return activeOwner.getSnapshot();
 }
 
+/**
+ * Test seam: publishes `patch` from the active owner, which is the module's
+ * fallback owner when no `AppSettingsProvider` is mounted. Tests of lib code
+ * and of components rendered without a provider set settings through it; it
+ * lives here because the active owner is module state.
+ */
 export function receiveActiveAppSettingsUpdate(
   patch: Partial<EngineSettings> & {
     theme?: EngineSettings["appearance"]["theme"];
@@ -240,8 +242,8 @@ export function useAppSettings(): AppSettingsContextValue {
   const value = useContext(AppSettingsContext);
   const snapshot = useSyncExternalStore(
     subscribeAppSettings,
-    getActiveAppSettingsSnapshot,
-    getActiveAppSettingsSnapshot,
+    getAppSettingsSnapshot,
+    getAppSettingsSnapshot,
   );
   return (
     value ?? {
