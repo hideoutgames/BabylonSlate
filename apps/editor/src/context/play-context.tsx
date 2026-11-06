@@ -51,7 +51,16 @@ import {
 } from "@haptic/ui/components/alert-dialog";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "@haptic/exporter";
 import { simulationDefaultsFromSettings } from "../lib/play-debugger-defaults";
-import { useDocuments } from "./document-context";
+import {
+  useActiveDocumentId,
+  useCompileState,
+  useDocumentActions,
+  useEditorShellState,
+  useProjectState,
+  useRegistryState,
+  useSaveState,
+} from "./document-context";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { useValidation } from "./validation-context";
 import { PreviewSessionReport } from "../components/preview-session-report";
 import type { SessionReportLocationSources } from "../lib/session-report-locations";
@@ -127,6 +136,9 @@ export {
   usePlaySimulationDocumentId,
 } from "./play-context-hooks";
 /* eslint-enable react-refresh/only-export-components */
+
+/** The kinds Play and Simulation find their open Scene among (see `play-physics`). */
+const PLAY_SCENE_KINDS = ["scene"] as const;
 
 /** High-frequency updates must not rerender the session owner or its overlays. */
 function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
@@ -299,23 +311,34 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [playAudioSourceLoader, setPlayAudioSourceLoader] =
     useState<PlayAudioSourceLoader | undefined>(undefined);
   const [playInputAssets, setPlayInputAssets] = useState<import("@haptic/core").InputAssetDefinition[]>([]);
-  const documents = useDocuments();
   const {
-    activeDocumentId,
-    assetRegistry,
+    beginSimulationDocument,
+    collectPlayInputAssets,
+    collectPlayPreviewScripts,
+    createAssetLoadScope,
+    exportGameArtifact,
+    getAssetLoadState,
     getOpenDocuments,
-    migrationPending,
+    loadAssetDocument,
+    lockAuthoring,
+    lockAuthoringWrites,
     onSessionDiagnostic,
     openDocument,
-    openDocuments,
     openRecordedTrace,
-    projectDocument,
-    projectGuid,
-    registryEpoch,
     registerBeforeTransition,
+    saveAll,
     setActiveDocument,
     setAnimEditorMode,
-  } = documents;
+  } = useDocumentActions();
+  const activeDocumentId = useActiveDocumentId();
+  const { projectDocument } = useProjectState();
+  const { assetRegistry, registryEpoch, projectGuid } = useRegistryState();
+  const { migrationPending } = useEditorShellState();
+  const { dirtyDocuments, projectDirty } = useSaveState();
+  const { graphsNeedCompile } = useCompileState();
+  // Edits of other kinds leave this list alone; the save, compile and shell
+  // slices above still re-render this provider whenever they change.
+  const sceneDocuments = useOpenDocumentsOfKinds(PLAY_SCENE_KINDS);
   const projectOpen = projectDocument != null;
   const requestedBackend = normalizeRenderingPipeline(projectDocument?.settings.render).gpuBackend;
   const { setDiagnostics, focusDiagnostic, setFocusDiagnostic } = useValidation();
@@ -343,7 +366,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           : undefined;
       },
       openContent: (asset) =>
-        openDocuments.find((doc) => doc.ref.path === asset.path)?.content ?? undefined,
+        getOpenDocuments().find((doc) => doc.ref.path === asset.path)?.content ?? undefined,
       readContent: async (asset) => {
         const found = indexed(asset.guid);
         if (!assetRegistry || !found) throw new Error(`Asset is unavailable: ${asset.guid}`);
@@ -353,12 +376,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         return document.payload;
       },
     };
-  }, [assetRegistry, openDocuments]);
-  // This provider renders for every document edit, so it identifies the Scene
+  }, [assetRegistry, getOpenDocuments]);
+  // This provider renders for every Scene edit, so it identifies the Scene
   // Play would run without normalizing it (every actor, on every render); the
   // Scene itself is read only while a game is presented.
   const openPlayScene = playSceneRefFromOpenDocuments(
-    openDocuments,
+    sceneDocuments,
     activeDocumentId,
   );
   const openPlaySceneGuid = openPlayScene
@@ -375,12 +398,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const playSceneGuid = playSceneRef
     ? canonicalPlaySceneGuid(playSceneRef, guidForPath)
     : undefined;
-  const canPlay = !sessionState.quarantined && playIsEnabled(openDocuments, activeDocumentId, {
+  const canPlay = !sessionState.quarantined && playIsEnabled(sceneDocuments, activeDocumentId, {
     previewBuild,
     playFromScene,
     hasStartupScene,
   });
-  const simulationDocument = simulationSceneDocument(openDocuments, activeDocumentId);
+  const simulationDocument = simulationSceneDocument(sceneDocuments, activeDocumentId);
   const simulationUnavailableReason = !simulationDocument ? "Open a world Scene to simulate" :
     !simulationViewports.current.has(simulationDocument.id) ? "Open the Scene Viewport to simulate" :
     sessionState.quarantined ? "Reload the editor after the previous session release failure" : null;
@@ -402,7 +425,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   // session carries its own Scene, so its props depend on that alone and keep
   // their identity across unrelated edits (the memoized overlay then skips
   // them); only a game presented without a session Scene follows the open
-  // documents, and re-renders with them by design.
+  // Scene documents, and re-renders with them by design.
   const sessionPresentation = useMemo(
     () =>
       sessionPlayScene
@@ -416,7 +439,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const openPresentation = useMemo(() => {
     if (!playOpen || sessionPlayScene) return null;
     const scene = resolvePlayScene({
-      documents: openDocuments,
+      documents: sceneDocuments,
       activeDocumentId,
       playFromScene,
     });
@@ -424,27 +447,40 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       scene: scene?.scene,
       physics: scene
         ? playPhysicsFromSceneSettings(scene.scene.settings)
-        : playPhysicsFromOpenDocuments(openDocuments, activeDocumentId),
+        : playPhysicsFromOpenDocuments(sceneDocuments, activeDocumentId),
     };
-  }, [activeDocumentId, openDocuments, playFromScene, playOpen, sessionPlayScene]);
+  }, [activeDocumentId, sceneDocuments, playFromScene, playOpen, sessionPlayScene]);
   const presentedPlay = sessionPresentation ?? openPresentation;
 
-  // Play requests read documents, dirty state and collectors as they are when
-  // Play is pressed. Keeping that per-edit state out of the callbacks'
+  // Play requests read documents, dirty state and project state as they are
+  // when Play is pressed. Keeping that per-edit state out of the callbacks'
   // dependencies keeps the Play context value stable while documents change.
-  const playRequestInputs = { documents, openPlaySceneGuid, openPlaySceneDocumentId: openPlayScene?.sceneAssetGuid ?? null, hasStartupScene };
+  const playRequestInputs: PlayRequestInputs = {
+    activeDocumentId,
+    assetRegistry,
+    projectGuid,
+    projectDocument,
+    dirtyDocuments,
+    projectDirty,
+    graphsNeedCompile,
+    migrationPending,
+    sceneDocuments,
+    openPlaySceneGuid,
+    openPlaySceneDocumentId: openPlayScene?.sceneAssetGuid ?? null,
+    hasStartupScene,
+  };
   const playRequestInputsRef = useRef<PlayRequestInputs>(playRequestInputs);
   useLayoutEffect(() => {
     playRequestInputsRef.current = playRequestInputs;
   });
   /** Loads the project's Save Game definition from the documents as they are when Play reads it. */
   const loadSaveGameDefinition = useCallback(async (guid: string) => {
-    const current = playRequestInputsRef.current.documents;
-    const asset = current.assetRegistry?.getByGuid(guid);
+    const registry = playRequestInputsRef.current.assetRegistry;
+    const asset = registry?.getByGuid(guid);
     if (!asset) throw new Error("The default Save Game definition is missing.");
-    const stored = await current.loadAssetDocument("save-game", asset.path);
-    return requireSaveGameDefinition(stored, projectTypeSchemas(current.assetRegistry?.list() ?? [], current.getOpenDocuments()));
-  }, []);
+    const stored = await loadAssetDocument("save-game", asset.path);
+    return requireSaveGameDefinition(stored, projectTypeSchemas(registry?.list() ?? [], getOpenDocuments()));
+  }, [getOpenDocuments, loadAssetDocument]);
 
   useEffect(
     () => onSessionDiagnostic(appendLog),
@@ -503,7 +539,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   }, [gameCoversEditor]);
   useEffect(() => () => setEditorQuiet(false), []);
   // Stopped Play leaves the editor read-only, as a running Simulation does; breakpoints can still change.
-  const { lockAuthoring } = documents;
   useEffect(() => (playStopped ? lockAuthoring("Read-only while Play is stopped") : undefined), [lockAuthoring, playStopped]);
 
   useEffect(() => {
@@ -692,6 +727,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     sessionSourceDocumentRef,
     preparingRef,
     playRequestInputsRef,
+    saveAll,
+    exportGameArtifact,
     setPreparing,
     setPlayOpen,
     setSessionPlayScene,
@@ -717,23 +754,20 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       if (!sessionOwner.canStart() || preparingRef.current) return;
       // Read at call time (see playRequestInputsRef); shadows the render values.
       const {
-        documents: {
-          activeDocumentId, assetRegistry, collectPlayInputAssets, collectPlayPreviewScripts,
-          dirtyDocuments, graphsNeedCompile, migrationPending, openDocuments,
-          projectDirty, projectDocument, saveAll,
-        },
+        activeDocumentId, assetRegistry, dirtyDocuments, graphsNeedCompile, migrationPending,
+        projectDirty, projectDocument, sceneDocuments,
         hasStartupScene,
         openPlaySceneGuid,
         openPlaySceneDocumentId,
       } = playRequestInputsRef.current;
-      const simulationTarget = simulating ? simulationSceneDocument(openDocuments, activeDocumentId) : null;
+      const simulationTarget = simulating ? simulationSceneDocument(sceneDocuments, activeDocumentId) : null;
       const simulationViewport = simulationTarget ? simulationViewports.current.get(simulationTarget.id) : undefined;
       if (simulating && (!simulationTarget || !simulationViewport)) {
         appendLog("Open a world Scene and its Scene Viewport to simulate.");
         return;
       }
       if (!simulating && (
-        !playIsEnabled(openDocuments, activeDocumentId, {
+        !playIsEnabled(sceneDocuments, activeDocumentId, {
           playFromScene,
           hasStartupScene,
         })
@@ -778,15 +812,14 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       try {
         if (simulating && simulationTarget && simulationViewport) {
           setPrepareState({ phase: "compiling", dirtyNames: [] });
-          const source = playRequestInputsRef.current.documents;
           const simulation = await SimulationSession.prepare({
-            ticket, viewport: simulationViewport, source, backingStorage: createSaveGameStorage(),
+            ticket, viewport: simulationViewport, source: { lockAuthoringWrites, beginSimulationDocument }, backingStorage: createSaveGameStorage(),
             keepChanges: simulationDefaultsFromSettings(appSettings.debuggerDefaults).keepChanges,
           });
           if (!sessionOwner.isCurrent(ticket)) { simulation.dispose(false); return; }
           simulationRef.current = simulation;
-          setSimulationAssetGuids((source.assetRegistry?.list() ?? []).map(asset => asset.header.guid));
-          source.setActiveDocument(simulation.baseline.id);
+          setSimulationAssetGuids((assetRegistry?.list() ?? []).map(asset => asset.header.guid));
+          setActiveDocument(simulation.baseline.id);
         }
         if (plan.action === "prepare") {
           setPrepareState({
@@ -820,7 +853,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         const lifetime = new AbortController();
         const sourceSignal = AbortSignal.any([lifetime.signal, ticket.signal]);
         playSourceLifetimeRef.current = lifetime;
-        const sourceDocuments = playRequestInputsRef.current.documents.getOpenDocuments().map(document => ({
+        const sourceDocuments = getOpenDocuments().map(document => ({
           ...(simulationRef.current?.baseline.id === document.id ? simulationRef.current.baseline : document),
         }));
         // An open Scene names its physics world now; a closed one once it is prepared below.
@@ -829,7 +862,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         if (openScene?.content) {
           preloadPrewarmedGameWorkerPhysics(playPhysicsFromOpenDocuments([openScene], openScene.id).physicsWorld, editorHavokWasmUrl());
         }
-        const { createAssetLoadScope } = playRequestInputsRef.current.documents;
         const sourceHost: PlayAssetSourceHost = {
           registry: assetRegistry,
           documentOverrides: playDocumentOverrides(assetRegistry, sourceDocuments),
@@ -862,7 +894,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         if (requestedBackend === "webgpu") {
           const reason = webGpuMaterialCompatibilityReason(content.materialDocuments, content.materialFunctions);
           if (reason) {
-            await current(projectEngine.sync({ projectGuid: playRequestInputsRef.current.documents.projectGuid!, backend: requestedBackend,
+            await current(projectEngine.sync({ projectGuid: playRequestInputsRef.current.projectGuid!, backend: requestedBackend,
               prepare: async (signal) => { signal.throwIfAborted(); return reason; },
             }, true));
             sourceSignal.throwIfAborted();
@@ -894,7 +926,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         });
         setPlaySaveGame(await current(prepareSaveGameConfiguration({
           storage: simulating ? simulationRef.current?.storage : undefined,
-          projectId: playRequestInputsRef.current.documents.projectGuid,
+          projectId: playRequestInputsRef.current.projectGuid,
           settings: projectDocument?.settings.saveGame,
           loadDefinition: loadSaveGameDefinition,
         })));
@@ -955,6 +987,14 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       playSourceSetsRef,
       initialPlaySourceRef,
       setSessionSources,
+      beginSimulationDocument,
+      collectPlayInputAssets,
+      collectPlayPreviewScripts,
+      createAssetLoadScope,
+      getOpenDocuments,
+      lockAuthoringWrites,
+      saveAll,
+      setActiveDocument,
     ],
   );
 
@@ -1173,7 +1213,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             classAssetGuids={registryViews?.classAssetGuids}
             consoleCommands={registryViews?.consoleCommands}
             audioAssetGuids={registryViews?.audioAssetGuids}
-            getAssetLoadState={documents.getAssetLoadState}
+            getAssetLoadState={getAssetLoadState}
             getSourceControls={mergedSourceControls}
             acquireSceneSources={acquireSceneSources}
             acquireAssetSources={acquireAssetSources}
@@ -1321,7 +1361,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           onNavigate={(d) => {
             const revealId = documentIdToRevealForDiagnostic(
               d,
-              openDocuments.map((doc) => doc.id),
+              getOpenDocuments().map((doc) => doc.id),
             );
             setFocusDiagnostic(d, revealId ?? undefined);
             if (revealId) setActiveDocument(revealId);
