@@ -41,6 +41,15 @@ export class HardwareScalingController {
   private cooldown = 0;
   private dynamic = true;
   private samples: FramePressureSample[] = [];
+  /**
+   * Raise backoff: frames a raise waits after the last drop. A drop soon after a
+   * raise doubles it, so a load that fits only the lower level settles there
+   * instead of flipping (each flip resizes the output, which rebuilds a view's
+   * frame graph). A raise that holds clears it.
+   */
+  private raiseWait = 0;
+  private sinceRaise = Number.POSITIVE_INFINITY;
+  private sinceDrop = Number.POSITIVE_INFINITY;
 
   constructor(engine: AbstractEngine, options: HardwareScalingOptions = {}) {
     this.apply = options.apply ?? ((level) => engine.setHardwareScalingLevel(level));
@@ -58,6 +67,7 @@ export class HardwareScalingController {
     this.targetFrameMs = 1000 / settings.targetFps;
     this.dynamic = settings.dynamic;
     this.samples = [];
+    this.resetRaiseBackoff();
     this.setLevel(this.minLevel);
   }
 
@@ -73,6 +83,7 @@ export class HardwareScalingController {
   setSettingsLevel(level: number): void {
     if (!Number.isFinite(level) || level <= 0) return;
     this.minLevel = Math.min(this.maxLevel, level);
+    this.resetRaiseBackoff();
     this.setLevel(level);
   }
 
@@ -90,11 +101,20 @@ export class HardwareScalingController {
   noteRestore(): void {
     this.samples = [];
     this.cooldown = this.cooldownFrames;
+    this.resetRaiseBackoff();
     this.setLevel(this.minLevel);
+  }
+
+  private resetRaiseBackoff(): void {
+    this.raiseWait = 0;
+    this.sinceRaise = Number.POSITIVE_INFINITY;
+    this.sinceDrop = Number.POSITIVE_INFINITY;
   }
 
   noteFramePressure(sample: FramePressureSample): void {
     if (!this.dynamic) return;
+    this.sinceRaise += 1;
+    this.sinceDrop += 1;
     this.samples.push(sample);
     if (this.samples.length > 15) this.samples.shift();
     if (this.cooldown > 0) {
@@ -108,10 +128,15 @@ export class HardwareScalingController {
       ),
     );
     if (medianPressure > this.targetFrameMs * 1.15 && this.level < this.maxLevel) {
+      this.raiseWait = this.sinceRaise <= this.cooldownFrames * 2
+        ? Math.min(this.cooldownFrames * 16, Math.max(this.cooldownFrames, this.raiseWait * 2))
+        : 0;
       this.setLevel(this.level + 0.25);
       this.cooldown = this.cooldownFrames;
+      this.sinceDrop = 0;
       return;
     }
+    if (this.sinceDrop < this.raiseWait) return;
     // Quality only climbs back when every signal proves headroom: real
     // presentation intervals at the target cadence for the whole window plus
     // CPU (and GPU when it is attributable) inside the headroom margin. An
@@ -141,6 +166,7 @@ export class HardwareScalingController {
     ) {
       this.setLevel(this.level - 0.25);
       this.cooldown = this.cooldownFrames;
+      this.sinceRaise = 0;
     }
   }
 }

@@ -168,3 +168,42 @@ describe("scaling target", () => {
     expect(setHardwareScalingLevel).not.toHaveBeenCalled();
   });
 });
+
+describe("raise backoff", () => {
+  /** iPad at a 60 fps cap with no GPU timer: full resolution costs 19.9 ms, one step down is capped at 16.7 ms. */
+  function capped(level: number): FramePressureSample {
+    return sample(level === 1 ? 19.9 : 16.7, 4);
+  }
+
+  function run(scaling: HardwareScalingController, frames: number, frame: (level: number) => FramePressureSample): number {
+    let changes = 0;
+    for (let i = 0; i < frames; i++) {
+      const before = scaling.getLevel();
+      scaling.noteFramePressure(frame(before));
+      if (scaling.getLevel() !== before) changes += 1;
+    }
+    return changes;
+  }
+
+  it("settles at the lower level instead of flipping when only that level fits", () => {
+    const scaling = controller({ cooldownFrames: 30 });
+    // Without backoff this load flips every ~31 frames: about 20 changes per 600 frames, about 100 per 3000.
+    expect(run(scaling, 600, capped)).toBeLessThanOrEqual(10);
+    // The wait doubles to its cap of 16 cooldowns, so one raise attempt every ~9 s at most.
+    expect(run(scaling, 2400, capped)).toBeLessThanOrEqual(10);
+  });
+
+  it("clears the backoff once a raise holds, so a later drop recovers after one cooldown", () => {
+    const scaling = controller({ cooldownFrames: 30 });
+    run(scaling, 600, capped);
+    // The load gets lighter: full resolution fits, so the next raise holds.
+    run(scaling, 1000, () => sample(16.7, 4));
+    expect(scaling.getLevel()).toBe(1);
+    // One unrelated spike drops a level well after that raise; recovery waits only the cooldown.
+    for (let i = 0; i < 8; i++) scaling.noteFramePressure(sample(40, 4));
+    expect(scaling.getLevel()).toBe(1.25);
+    for (let i = 0; i < 31; i++) scaling.noteFramePressure(sample(16.7, 4));
+    expect(scaling.getLevel()).toBe(1);
+  });
+});
+
