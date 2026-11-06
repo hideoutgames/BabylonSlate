@@ -56,6 +56,10 @@ const plugins = [
     className: "BabylonSlateMemoryPlugin",
     typescript: "device-memory.ts",
   },
+  {
+    className: "BabylonSlateAuthSessionPlugin",
+    typescript: "auth-browser.ts",
+  },
 ].map((plugin) => ({
   ...plugin,
   jsName: registeredPluginName(join(vfsDir, plugin.typescript)),
@@ -123,7 +127,7 @@ describe("Capacitor 8 Android host", () => {
     for (const match of platformPaths) expect(match[1]).toBe(androidVersion);
   });
 
-  it("registers the four app-module plugins with their TypeScript names", () => {
+  it("registers the app-module plugins with their TypeScript names", () => {
     const registeredClasses = [
       ...mainActivity.matchAll(/registerPlugin\((\w+)\.class\)/g),
     ].map((match) => match[1]);

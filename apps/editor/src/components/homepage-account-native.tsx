@@ -4,9 +4,13 @@ import {
   ArrowRightIcon,
   CloudOffIcon,
   LockIcon,
-  MailIcon,
   RotateCwIcon,
 } from "lucide-react";
+import Apple from "react-bootstrap-icons/dist/icons/apple";
+import Discord from "react-bootstrap-icons/dist/icons/discord";
+import Github from "react-bootstrap-icons/dist/icons/github";
+import Google from "react-bootstrap-icons/dist/icons/google";
+import { createAuthBrowser, getHostPlatform } from "@haptic/vfs";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -28,6 +32,16 @@ import {
   HomepageMobileAccountFrame,
 } from "./homepage-mobile-account-gate";
 
+/** Where Clerk returns the system browser; allowlisted as a mobile SSO redirect in Clerk. */
+export const SSO_REDIRECT_URL = "haptic://sso-callback";
+
+/** Providers the apps complete in the system browser, in display order. */
+const SOCIAL_PROVIDERS = [
+  { strategy: "oauth_github", name: "GitHub", Icon: Github },
+  { strategy: "oauth_discord", name: "Discord", Icon: Discord },
+  { strategy: "oauth_google", name: "Google", Icon: Google },
+] as const;
+
 function accountError(error: unknown) {
   return error instanceof Error
     ? error.message
@@ -39,18 +53,19 @@ export default function HomepageNativeAccount({
   children,
   onRetry,
   frame: Frame = HomepageMobileAccountFrame,
-  optional = false,
 }: {
   publishableKey: string;
   children: ReactNode;
   onRetry: () => void;
   frame?: (props: { children: ReactNode }) => ReactNode;
-  optional?: boolean;
 }) {
   const client = useMemo(
     () => createNativeClerkClient(publishableKey),
     [publishableKey],
   );
+  const browser = useMemo(() => createAuthBrowser(), []);
+  const host = getHostPlatform();
+  const [strategies, setStrategies] = useState<readonly string[]>([]);
   const [session, setSession] = useState<NativeClerkSession | null>(null);
   const [restoring, setRestoring] = useState(true);
   const [restoreError, setRestoreError] = useState<string | null>(null);
@@ -112,6 +127,23 @@ export default function HomepageNativeAccount({
   useEffect(() => {
     if (!restoring && !session) input.current?.focus();
   }, [challenge, mode, restoring, session]);
+
+  // Only providers Clerk enables, and only where a system browser can finish them.
+  useEffect(() => {
+    if (!browser || restoring || session) return;
+    let cancelled = false;
+    void client.socialStrategies().then(
+      (next) => {
+        if (!cancelled) setStrategies(next);
+      },
+      () => {
+        if (!cancelled) setStrategies([]);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [browser, client, restoring, session]);
 
   async function run(action: () => Promise<void>) {
     if (busyRef.current) return;
@@ -208,37 +240,68 @@ export default function HomepageNativeAccount({
     );
   }
 
+  const providers = browser
+    ? SOCIAL_PROVIDERS.filter((provider) => strategies.includes(provider.strategy))
+    : [];
+  // Sign in with Apple is not available yet; iOS shows where it will be.
+  const appleSoon = host === "ios";
+
+  function signInWith(strategy: string) {
+    if (!browser) return;
+    void run(async () => {
+      const oauth = await client.beginOAuth(strategy, SSO_REDIRECT_URL);
+      const callback = await browser.open(oauth.url, SSO_REDIRECT_URL);
+      if (!callback || !alive.current) return;
+      const next = await client.completeOAuth(oauth, callback);
+      if (!alive.current) return;
+      currentSession.current = next;
+      setSession(next);
+    });
+  }
+
   return (
     <Frame>
-      {optional && (
-        <span className="homepage-native-auth-icon">
-          <MailIcon aria-hidden="true" />
-        </span>
-      )}
       <header className="homepage-native-auth-intro">
         <h1>
           {challenge
             ? "Check Your Inbox"
             : mode === "sign-up"
-              ? "Create Your Account"
-              : optional
-                ? "Your Haptic Account"
-                : "Sign In"}
+              ? "Sign Up With"
+              : "Sign In With"}
         </h1>
-        <p>
-          {challenge ? (
-            <>
-              Enter the code sent to <strong>{challenge.email}</strong>.
-            </>
-          ) : optional ? (
-            "Sign in with an email code, or keep creating as a guest."
-          ) : mode === "sign-up" ? (
-            "Enter your email and we’ll send a code to confirm it."
-          ) : (
-            "We’ll email you a one-time code. Every editor feature is included."
-          )}
-        </p>
+        {challenge && (
+          <p>
+            Enter the code sent to <strong>{challenge.email}</strong>.
+          </p>
+        )}
       </header>
+      {!challenge && (appleSoon || providers.length > 0) && (
+        <>
+          <div className="homepage-native-auth-providers">
+            {appleSoon && (
+              <Button type="button" variant="outline" disabled>
+                <Apple data-icon="inline-start" aria-hidden="true" />
+                Apple
+              </Button>
+            )}
+            {providers.map(({ strategy, name, Icon }) => (
+              <Button
+                key={strategy}
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => signInWith(strategy)}
+              >
+                <Icon data-icon="inline-start" aria-hidden="true" />
+                {name}
+              </Button>
+            ))}
+          </div>
+          <div className="homepage-native-auth-divider" role="separator">
+            or
+          </div>
+        </>
+      )}
       <form
         className="homepage-native-auth-form"
         onSubmit={(event) => {

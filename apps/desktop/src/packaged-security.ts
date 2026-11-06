@@ -84,6 +84,34 @@ export function externalOpenUrl(rawUrl: string): string | null {
   }
 }
 
+/** Where Clerk returns the system browser after a third-party sign-in. */
+export const AUTH_CALLBACK_URL = "haptic://sso-callback";
+/** Sign-in pages of the social providers the editor offers. */
+const AUTH_PROVIDER_HOSTS = new Set(["github.com", "discord.com", "accounts.google.com"]);
+
+/** A provider sign-in page the system browser may open, normalized, or null. */
+export function authProviderUrl(rawUrl: string): string | null {
+  try {
+    const url = new URL(rawUrl);
+    return url.protocol === "https:" && !url.username && !url.password &&
+      AUTH_PROVIDER_HOSTS.has(url.hostname)
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A deep link from the operating system, when it is the sign-in callback. */
+export function authCallbackUrl(rawUrl: string): string | null {
+  try {
+    const url = new URL(rawUrl);
+    return url.protocol === "haptic:" && url.host === "sso-callback" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 /** A frame and its ancestors, as Electron's `WebFrameMain` exposes them. */
 export interface FrameChain {
   readonly url: string;
@@ -175,7 +203,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     "save-games:list": 1, "save-games:acquire-lock": 1, "save-games:release-lock": 1,
     "memory:stats": 0, "settings:read": 0, "settings:write": 1, "secrets:get": 1, "secrets:set": 2, "secrets:delete": 1,
     "account-secrets:get": 1, "account-secrets:set": 2, "account-secrets:delete": 1,
-    "lfs:fetch": 1, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
+    "lfs:fetch": 1, "auth:open-browser": 2, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
     "project:list": 0, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,
     "project:writeBinary": 2, "project:exists": 1, "project:readdir": 1, "project:mkdir": 2,
     "project:remove": 1, "project:stat": 1,
@@ -208,6 +236,9 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     text(handle.name, 200);
     validateIpcArguments("project:openDocuments", [handle.name]);
     requireValue(handle.tier === "documents" || handle.tier === "external");
+  } else if (channel === "auth:open-browser") {
+    text(args[0], 8192);
+    requireValue(authProviderUrl(args[0]) !== null && args[1] === AUTH_CALLBACK_URL);
   } else if (channel === "lfs:fetch") {
     requireValue(args[0] && typeof args[0] === "object");
     const request = args[0] as Record<string, unknown>;

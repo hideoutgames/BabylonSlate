@@ -29,6 +29,7 @@ export * from "./create-secret-store";
 export * from "./electron-secret-store";
 export * from "./native-http-port";
 export * from "./native-http";
+export * from "./auth-browser";
 export * from "./status-bar-style-port";
 export * from "./create-status-bar-style";
 export * from "./purchases-port";

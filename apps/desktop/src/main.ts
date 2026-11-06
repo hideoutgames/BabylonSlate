@@ -22,8 +22,10 @@ import { DesktopSecretStore, isMissingFile } from "./desktop-secret-store";
 import { DesktopAccountSecretStore } from "./desktop-account-secrets";
 import { fetchDesktopHttp, type DesktopHttpRequest } from "./desktop-http";
 import { desktopMemoryStats } from "./desktop-memory";
+import { createAuthBrowserSessions } from "./desktop-auth-browser";
 import {
   allowsEditorPermission,
+  authProviderUrl,
   externalOpenUrl,
   isBillingFrameUrl,
   insidePreviewFrame,
@@ -49,11 +51,25 @@ let libraries: DesktopLibraries | undefined;
 let windowsAllowed = false;
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
-app.on("second-instance", () => {
+/** Third-party sign-in returns through the `haptic://sso-callback` deep link. */
+const authBrowser = createAuthBrowserSessions({ openExternal: url => shell.openExternal(url) });
+function focusEditorWindow(): void {
   const window = BrowserWindow.getAllWindows()[0];
   if (window?.isMinimized()) window.restore();
   window?.focus();
+}
+// Windows and Linux start a second copy with the deep link as an argument.
+app.on("second-instance", (_event, argv) => {
+  for (const arg of argv) authBrowser.deliver(arg);
+  focusEditorWindow();
 });
+// macOS hands the deep link to the running app.
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  if (authBrowser.deliver(url)) focusEditorWindow();
+});
+// macOS and Linux read the scheme from the packaged app's Info.plist and desktop entry.
+if (app.isPackaged) app.setAsDefaultProtocolClient("haptic");
 protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } }]);
 
 function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void {
@@ -221,6 +237,8 @@ async function registerIpc(): Promise<void> {
   handle("lfs:fetch", async (_event, request) => {
     return fetchDesktopHttp(request as DesktopHttpRequest, (url, init) => net.fetch(url, init));
   });
+  // Arguments are validated: a provider sign-in page and the sign-in callback.
+  handle("auth:open-browser", (_event, url) => authBrowser.open(authProviderUrl(String(url))!));
 
   handle("project:pickFolder", async event => {
     const storage = projects(event);
