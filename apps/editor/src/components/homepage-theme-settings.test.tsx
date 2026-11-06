@@ -33,6 +33,10 @@ describe("ThemeSettingsFields", () => {
     expect(preview.hasAttribute("inert")).toBe(true);
     expect(view.getByTestId("application-theme-select").textContent).toContain("Haptic Dark");
     expect(view.queryByLabelText("Background")).toBeNull();
+    // The miniature editor loads on demand into the same frame.
+    await waitFor(() =>
+      expect(view.getByTestId("application-theme-preview").querySelector(".editor-statusbar")).not.toBeNull(),
+    );
 
     fireEvent.click(view.getByRole("button", { name: "Style" }));
     await waitFor(() => expect(view.getByLabelText("Background Hex")).toBeTruthy());
