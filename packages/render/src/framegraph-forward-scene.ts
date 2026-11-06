@@ -931,7 +931,9 @@ export class ForwardSceneFrameGraph {
       }
       // What Scene.render's after-render observers changed stales the next frame's probe, not this frame.
       this.syncMembership();
-      return { path: "frameGraph", ...(revision === this.drawnRevision ? {} : { rendered: false }) };
+      // A Scene.render that never ran the graph's render function has no draw end: the whole call is the window.
+      const drawn = this.drawnRevision ?? this.readinessRevision;
+      return { path: "frameGraph", ...(revision === drawn ? {} : { rendered: false }) };
     } finally {
       if (!this.auxiliary) this.scene.frameGraph = null;
       this.scene.activeCamera = this.auxiliary ? previousCamera : camera;
