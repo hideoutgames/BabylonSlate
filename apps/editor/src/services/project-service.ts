@@ -1,14 +1,13 @@
 import { isProjectOpenElsewhere, SourceRevisionChangedError } from "@haptic/core";
 import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
-import { DERIVED_STORAGE_ROOT, getHostPlatform, pickImportFiles, TEMPLATE_LIBRARY_FOLDER } from "@haptic/vfs";
+import { getHostPlatform, isAppOwnedFolder, pickImportFiles } from "@haptic/vfs";
 import type { DockviewApi } from "dockview-react";
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@haptic/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
 import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
 import { guardProjectAssetRegistry } from "./project-authoring-ports";
-import { ENGINE_EXTENSION_LIBRARY_ROOT } from "../lib/engine-extension-library";
 import { isExtensionPackagePath, isAssetSourceRevisionChanged, type AssetDocument } from "@haptic/assets";
 import type {
   DocumentKind,
@@ -110,7 +109,6 @@ import {
   searchNodeTitles,
 } from "../lib/search-catalog";
 import { isPluginDocumentReadOnly } from "../lib/plugin-ui";
-import { ENGINE_PLUGIN_LIBRARY_ROOT } from "../lib/engine-plugin-library";
 import {
   normalizeProjectFolderName,
   type BuiltInStarterKind,
@@ -604,14 +602,13 @@ export class ProjectService {
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
-    return (await this.storage.listProjects()).filter(
-      (folder) => folder.name !== ENGINE_PLUGIN_LIBRARY_ROOT && folder.name !== ENGINE_EXTENSION_LIBRARY_ROOT &&
-        folder.name !== TEMPLATE_LIBRARY_FOLDER && folder.name !== DERIVED_STORAGE_ROOT,
-    );
+    return (await this.storage.listProjects()).filter((folder) => !isAppOwnedFolder(folder.name));
   }
 
+  /** Permanently deletes a project in the app's own storage; chosen folders are never deleted. */
   async deleteListedProject(handle: ProjectFolderHandle): Promise<void> {
-    await this.storage.deleteProject?.(handle);
+    if (!this.storage.deleteProject) throw new Error("This storage cannot delete projects");
+    await this.storage.deleteProject(handle);
   }
 
   async openProject(

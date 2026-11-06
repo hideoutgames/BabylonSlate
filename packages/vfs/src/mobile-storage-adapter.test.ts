@@ -56,4 +56,16 @@ describe("mobile project binding", () => {
     await expect(storage.openKnownFolder({ id: "revoked", name: "Cloud", tier: "external" })).rejects.toEqual({ code: "ACCESS_REVOKED" });
     expect(await storage.needsReconnect()).toBe(true);
   });
+
+  it("deletes a Documents project and never a chosen folder", async () => {
+    prefs.set("haptic:scoped-folder", JSON.stringify({ id: "external-old", name: "Old Game" }));
+    const fs = createFakeDocumentsFs();
+    const storage = new MobileStorageAdapter(new DocumentsStorageAdapter(fs));
+    await storage.openDocumentsProject("Local");
+    await storage.writeText("project.json", "local");
+    await expect(storage.deleteProject({ id: "external-old", name: "Old Game", tier: "external" })).rejects.toThrow(/chosen folder/);
+    await storage.deleteProject({ id: "documents:Local", name: "Local", tier: "documents" });
+    expect(fs.tree.has("BabylonSlate/projects/Local")).toBe(false);
+    expect((await storage.listProjects()).map((folder) => folder.id)).toEqual(["external-old"]);
+  });
 });

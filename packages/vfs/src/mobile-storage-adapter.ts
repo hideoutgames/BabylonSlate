@@ -73,6 +73,15 @@ export class MobileStorageAdapter implements ProjectStorage {
     return [...docs, ...ext];
   }
 
+  /** Deletes a project in app storage; a chosen folder is never deleted. */
+  async deleteProject(handle: ProjectFolderHandle): Promise<void> {
+    await this.init();
+    if (handle.tier !== "documents") {
+      throw new Error("A project in a chosen folder cannot be deleted");
+    }
+    await this.documents.deleteProject(handle);
+  }
+
   getCurrentFolder(): ProjectFolderHandle | null {
     return this.port().getCurrentFolder();
   }

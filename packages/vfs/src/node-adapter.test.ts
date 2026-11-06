@@ -176,4 +176,52 @@ describe("node storage adapter", () => {
     await storage.openDocumentsProject("Game-copy");
     expect(await storage.readText("notes.txt")).toBe("private sibling");
   });
+
+  it("deletes only a project directly in the documents base, never a picked folder or the base itself", async () => {
+    dir = await mkdtemp(join(tmpdir(), "haptic-node-"));
+    const base = join(dir, "projects");
+    const picked = join(dir, "Picked");
+    await mkdir(picked, { recursive: true });
+    await writeFile(join(picked, "project.json"), "picked");
+    const storage = new NodeStorageAdapter(base);
+    await storage.openDocumentsProject("Keep");
+    await storage.writeText("project.json", "keep");
+    await storage.openDocumentsProject("Gone");
+    await storage.writeText("assets/a.bin", "gone");
+    const gone = (await storage.listProjects()).find((project) => project.name === "Gone")!;
+
+    await storage.deleteProject(gone);
+    await expect(stat(join(base, "Gone"))).rejects.toThrow();
+    expect(storage.getCurrentFolder()).toBeNull();
+    await expect(storage.deleteProject(gone)).resolves.toBeUndefined();
+
+    for (const handle of [
+      { id: `node:${picked}`, name: "Picked", tier: "external" as const },
+      { id: `node:${picked}`, name: "Picked", tier: "documents" as const },
+      { id: `node:${join(base, "Keep")}`, name: "Keep", tier: "external" as const },
+      { id: `node:${base}`, name: "projects", tier: "documents" as const },
+      { id: `node:${join(base, "Keep", "..", "..", "Picked")}`, name: "Picked", tier: "documents" as const },
+      { id: `node:${join(base, "Keep", "assets")}`, name: "assets", tier: "documents" as const },
+      { id: "documents:Keep", name: "Keep", tier: "documents" as const },
+    ]) await expect(storage.deleteProject(handle), handle.id).rejects.toThrow(/cannot delete/);
+    expect(await readFile(join(picked, "project.json"), "utf8")).toBe("picked");
+    expect(await readFile(join(base, "Keep", "project.json"), "utf8")).toBe("keep");
+  });
+
+  it("removes a link in a project's place without touching its target", async () => {
+    dir = await mkdtemp(join(tmpdir(), "haptic-node-"));
+    const base = join(dir, "projects");
+    const outside = join(dir, "Outside");
+    await mkdir(base, { recursive: true });
+    await mkdir(outside);
+    await writeFile(join(outside, "keep.txt"), "outside");
+    await symlink(outside, join(base, "Linked"), "dir");
+    const storage = new NodeStorageAdapter(base);
+    await storage.openDocumentsProject("Open");
+
+    await storage.deleteProject({ id: `node:${join(base, "Linked")}`, name: "Linked", tier: "documents" });
+    await expect(stat(join(base, "Linked"))).rejects.toThrow();
+    expect(await readFile(join(outside, "keep.txt"), "utf8")).toBe("outside");
+    expect(storage.getCurrentFolder()?.name).toBe("Open");
+  });
 });

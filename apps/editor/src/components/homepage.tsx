@@ -63,7 +63,7 @@ import {
 import {
   filterListedProjects,
   HOMEPAGE_PROJECT_SORT_OPTIONS,
-  shouldDeleteOpfsOnRemove,
+  removeDeletesProject,
   sortListedProjects,
   type HomepageProjectSortMode,
   type ListedProject,
@@ -251,8 +251,7 @@ export function Homepage({
         createName,
         projects.map((project) => project.name),
       );
-  const deleting =
-    !!removeTarget && shouldDeleteOpfsOnRemove(hostPlatform, removeTarget.tier);
+  const deleting = !!removeTarget && removeDeletesProject(removeTarget.tier);
   const visibleProjects = useMemo(
     () =>
       sortListedProjects(
@@ -606,10 +605,7 @@ export function Homepage({
                         project={project}
                         layout={layout}
                         busy={busy}
-                        deleting={shouldDeleteOpfsOnRemove(
-                          hostPlatform,
-                          project.tier,
-                        )}
+                        deleting={removeDeletesProject(project.tier)}
                         onOpen={() =>
                           void run(() =>
                             launch(() => onOpenProject(project), project.label),

@@ -163,7 +163,7 @@ function projectPath(value: unknown, allowRoot = true): void {
 /**
  * File operations a user library scope may perform. `library:*` mirrors these
  * `project:*` channels with the scope as an extra first argument; the
- * project-only channels (picker, Documents, reopen, list, release) have no
+ * project-only channels (picker, Documents, reopen, list, delete, release) have no
  * library counterpart, so a library can never be pointed at another folder.
  */
 export const LIBRARY_FILE_OPERATIONS = [
@@ -204,7 +204,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     "memory:stats": 0, "settings:read": 0, "settings:write": 1, "secrets:get": 1, "secrets:set": 2, "secrets:delete": 1,
     "account-secrets:get": 1, "account-secrets:set": 2, "account-secrets:delete": 1,
     "lfs:fetch": 1, "auth:open-browser": 2, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
-    "project:list": 0, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,
+    "project:list": 0, "project:delete": 1, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,
     "project:writeBinary": 2, "project:exists": 1, "project:readdir": 1, "project:mkdir": 2,
     "project:remove": 1, "project:stat": 1,
   };
@@ -229,13 +229,14 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
   } else if (channel === "project:openDocuments") {
     text(args[0], 200);
     requireValue(args[0].length > 0 && !/[\\/:<>"|?*]/.test(args[0]) && ![".", ".."].includes(args[0]) && !/[. ]$/.test(args[0]));
-  } else if (channel === "project:openKnown") {
+  } else if (channel === "project:openKnown" || channel === "project:delete") {
     requireValue(args[0] && typeof args[0] === "object");
     const handle = args[0] as Record<string, unknown>;
     text(handle.id, 4096);
     text(handle.name, 200);
     validateIpcArguments("project:openDocuments", [handle.name]);
-    requireValue(handle.tier === "documents" || handle.tier === "external");
+    // Only a Projects Folder project can be deleted; picked folders never are.
+    requireValue(handle.tier === "documents" || (channel === "project:openKnown" && handle.tier === "external"));
   } else if (channel === "auth:open-browser") {
     text(args[0], 8192);
     requireValue(authProviderUrl(args[0]) !== null && args[1] === AUTH_CALLBACK_URL);

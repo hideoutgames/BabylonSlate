@@ -174,4 +174,35 @@ describe("DocumentsStorageAdapter", () => {
     await expect(storage.stat("project.json")).rejects.toBe(denied);
     await expect(storage.listProjects()).rejects.toBe(denied);
   });
+
+  it("deletes a project folder and refuses app folders, chosen folders and the projects root", async () => {
+    await storage.openDocumentsProject("__haptic_derived__");
+    await storage.writeText("thumb.bin", "derived");
+    await storage.openDocumentsProject("Gone");
+    await storage.writeText("assets/a.bin", "gone");
+    await storage.openDocumentsProject("Keep");
+    await storage.writeText("project.json", "keep");
+    const gone = { id: "documents:Gone", name: "Gone", tier: "documents" as const };
+
+    await storage.deleteProject(gone);
+    expect([...fs.tree.keys()].filter((path) => path.includes("/Gone"))).toEqual([]);
+    expect(storage.getCurrentFolder()?.id).toBe("documents:Keep");
+    await expect(storage.deleteProject(gone)).resolves.toBeUndefined();
+
+    for (const handle of [
+      { id: "documents:__haptic_derived__", name: "Derived", tier: "documents" as const },
+      { id: "documents:__slate_templates__", name: "Templates", tier: "documents" as const },
+      { id: "documents:", name: "Projects", tier: "documents" as const },
+      { id: "documents:..", name: "Parent", tier: "documents" as const },
+      { id: "documents:Keep/assets", name: "Assets", tier: "documents" as const },
+      { id: "documents:Keep", name: "Keep", tier: "external" as const },
+      { id: "external:Keep", name: "Keep", tier: "documents" as const },
+    ]) await expect(storage.deleteProject(handle), handle.id).rejects.toThrow();
+    expect(fs.tree.has("BabylonSlate/projects/Keep/project.json")).toBe(true);
+    expect(fs.tree.has("BabylonSlate/projects/__haptic_derived__/thumb.bin")).toBe(true);
+
+    await storage.deleteProject({ id: "documents:Keep", name: "Keep", tier: "documents" });
+    expect(fs.tree.has("BabylonSlate/projects/Keep")).toBe(false);
+    expect(storage.getCurrentFolder()).toBeNull();
+  });
 });
