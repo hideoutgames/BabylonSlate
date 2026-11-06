@@ -72,7 +72,7 @@ import type { EngineOptions } from "@babylonjs/core/Engines/thinEngine";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import type { Material } from "@babylonjs/core/Materials/material";
 import type { AssetContainer } from "@babylonjs/core/assetContainer";
-import { qualitySettingsFingerprint, resolveRenderingQuality } from "@haptic/core";
+import { qualitySettingsFingerprint, qualityValuesKey, resolveRenderingQuality } from "@haptic/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
@@ -1193,11 +1193,13 @@ function initializeEngine(
     const quality = resolveSceneRenderingQuality(scene);
     const previous = appliedQuality;
     appliedQuality = quality;
-    if (JSON.stringify(previous?.resolution) !== JSON.stringify(quality.resolution)) {
+    // By value: a level label alone (Custom, then the level again) must not restart dynamic resolution at its floor,
+    // which would rebuild the view's graph at another size.
+    if (qualityValuesKey(previous?.resolution) !== qualityValuesKey(quality.resolution)) {
       scaling.configureQuality(effectiveResolution(quality.resolution));
       syncLockedViewSize();
     }
-    if (JSON.stringify(previous?.textures) !== JSON.stringify(quality.textures)) {
+    if (qualityValuesKey(previous?.textures) !== qualityValuesKey(quality.textures)) {
       resourceCache.setByteCeiling(quality.textures.byteBudget);
       for (const texture of scene.textures) applyTextureAnisotropy(texture);
     }

@@ -21,6 +21,7 @@ import { TimingTools } from "@babylonjs/core/Misc/timingTools";
 import {
   componentCastsShadows,
   effectiveShadowSettings,
+  qualityValuesKey,
   SHADOW_FIRST_CASCADE_SCALE,
   SHADOW_HALF_TILE_CASCADES,
   type SerializedComponent,
@@ -627,9 +628,10 @@ export class SceneShadowController {
           casterBounds.max,
         );
     };
-    // Only map moves and standby retention compare serialized settings.
+    // Only map moves and standby retention compare serialized settings, by value: a level label (Custom, then the
+    // level again) keeps every standby map.
     let serializedSettings: string | undefined;
-    const settingsKey = () => (serializedSettings ??= JSON.stringify(settings));
+    const settingsKey = () => (serializedSettings ??= qualityValuesKey(settings));
     const release = (entry: Entry) => {
       if (entry.generator) {
         entry.generator.dispose();
@@ -679,7 +681,7 @@ export class SceneShadowController {
       generator.moveTo(entry.light as LocalShadowLight);
       // Same-kind lights exchange shader light indices, so receivers keep their
       // defines and effects. Otherwise dirty them as construction/disposal would.
-      if (JSON.stringify(donor.settings) !== settingsKey() ||
+      if (qualityValuesKey(donor.settings) !== settingsKey() ||
         !exchangeShadowReceivers(scene, donor.light, entry.light)) {
         invalidateShadowReceiverHandoffs(scene);
         donor.light._markMeshesAsLightDirty();
@@ -725,7 +727,7 @@ export class SceneShadowController {
         (entry.status !== "outside-relevant-area" &&
           entry.status !== "budget-limited" &&
           !forwardLimited) ||
-        JSON.stringify(entry.settings) !== settingsKey() ||
+        qualityValuesKey(entry.settings) !== settingsKey() ||
         pooled >= settings.maxLocalLights ||
         admitted.bytes - (admitted.exempt ?? 0) > standbyBudget
       ) {

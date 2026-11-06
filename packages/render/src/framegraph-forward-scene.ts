@@ -543,7 +543,10 @@ export class ForwardSceneFrameGraph {
     return this.water?.diagnostics() ?? null;
   }
 
-  /** Hold the current valid graph while the view prepares a replacement. Superseded candidates are not retained. */
+  /**
+   * Hold the current valid graph's tasks while the view prepares a replacement; a replaced graph's render targets are
+   * freed when it is replaced (`releaseGraphResources`). Superseded candidates are not retained.
+   */
   retainResources(): () => void {
     const graph = this.graph;
     if (!graph || this.disposed) return () => {};
@@ -1745,8 +1748,15 @@ export class ForwardSceneFrameGraph {
       }
     };
     const retained = graph && this.retainedGraphs.get(graph);
-    if (retained && !this.disposed) retained.release = release;
-    else release();
+    if (retained && !this.disposed) {
+      // Replaced, the graph never executes again, and the view keeps its last image without it: its passes' render
+      // targets and every texture it allocated go now, so the replacement allocates into their room instead of beside
+      // them. Its tasks, and the Effects their draw wrappers and passes hold, stay until the retain ends, so the
+      // replacement's identical programs come from the Effect cache instead of compiling again; their leases stay
+      // reserved until then too.
+      graph.clear();
+      retained.release = release;
+    } else release();
     this.postProcessGraph = undefined;
     this.effectsGraph = undefined;
     this.outlineTask = undefined;
