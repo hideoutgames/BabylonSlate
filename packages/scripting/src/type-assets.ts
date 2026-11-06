@@ -21,7 +21,7 @@ export type EnumAsset = {
 };
 
 export type StructField = {
-  /** Optional for legacy assets; persisted identities make field renames safe. */
+  /** Absent on the engine's built-in Structure fields, which `dataFieldIdentity` identifies by name; persisted identities make field renames safe. */
   id?: string;
   name: string;
   typeId: string;
