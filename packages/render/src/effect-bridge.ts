@@ -28,13 +28,7 @@ const watched = new WeakSet<AbstractEngine>();
  */
 export function bridgeEngineEffects(engine: AbstractEngine): void {
   if (engine.isDisposed) return;
-  const compiled = (engine as unknown as { _compiledEffects?: Record<string, unknown> })._compiledEffects ?? {};
-  const effects: Effect[] = [];
-  for (const effect of Object.values(compiled)) {
-    if (!(effect instanceof Effect) || effect.isDisposed) continue;
-    effect._refCount += 1;
-    effects.push(effect);
-  }
+  const effects = takeCompiledEffects(engine);
   // Retained before the earlier bridge lets go, so an Effect both hold never reaches zero in between.
   const previous = bridges.get(engine);
   if (!watched.has(engine)) {
@@ -43,6 +37,37 @@ export function bridgeEngineEffects(engine: AbstractEngine): void {
   }
   bridges.set(engine, { effects, timer: setTimeout(() => releaseBridgedEffects(engine), EFFECT_BRIDGE_MS) });
   if (previous) release(previous);
+}
+
+/** One reference on each Effect in `engine`'s cache, returned. */
+function takeCompiledEffects(engine: AbstractEngine): Effect[] {
+  const compiled = (engine as unknown as { _compiledEffects?: Record<string, unknown> })._compiledEffects ?? {};
+  const effects: Effect[] = [];
+  for (const effect of Object.values(compiled)) {
+    if (!(effect instanceof Effect) || effect.isDisposed) continue;
+    effect._refCount += 1;
+    effects.push(effect);
+  }
+  return effects;
+}
+
+/**
+ * Holds one reference on every Effect compiled on `engine` now, until the returned release, the Engine's disposal or a
+ * lost context (a WebGL2 restore relinks every Effect left in the cache). For a switch that stops drawing programs the
+ * view draws again once switched back (Play's `postprocessing off`): they stay in the Effect cache meanwhile, so
+ * switching back links none of them again, whatever the Play keep's budget let go.
+ */
+export function holdCompiledEffects(engine: AbstractEngine): () => void {
+  if (engine.isDisposed) return () => {};
+  const effects = takeCompiledEffects(engine);
+  const release = () => {
+    engine.onDisposeObservable.remove(disposed);
+    engine.onContextLostObservable.remove(lost);
+    for (const effect of effects.splice(0)) effect.dispose();
+  };
+  const disposed = engine.onDisposeObservable.addOnce(release);
+  const lost = engine.onContextLostObservable.add(release);
+  return release;
 }
 
 /** Ends `engine`'s bridge: Effects no view draws any more are released. */

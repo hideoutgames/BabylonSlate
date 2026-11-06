@@ -2,13 +2,14 @@ import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine, type InternalTexture } from "@babylonjs/core";
+import { NullEngine, type Effect, type InternalTexture } from "@babylonjs/core";
 import { SNAPSHOT_FLAG_VISIBLE, snapshotFloatCount, writeActorSlot, writeSnapshotHeader } from "@haptic/bridge";
 import {
   applyProjectQualityPatch, createDefaultScene, DEFAULT_RENDER_EFFECTS, normalizeRenderProjectSettings,
   qualityPresetPatch, QUALITY_GROUPS, ScalabilitySession, type QualityGroup, type RenderProjectSettings,
 } from "@haptic/core";
 import { createEngine } from "./create-engine";
+import { releaseKeptEffects } from "./effect-bridge";
 import { estimateTextureBytes } from "./texture-memory-estimate";
 
 class FakeCanvas {
@@ -183,6 +184,35 @@ describe("Play quality changes", () => {
     expect(session.snapshot()).toMatchObject({ appliedRevision: 3, effective: { render: { quality: { resolution: { preset: "custom" } } } } });
     expect(await step("quality reset")).toEqual(nothing);
     expect(play.scaling.getLevel()).toBe(1.25);
+  });
+
+  it("turns post-processing back on without compiling a program again, whatever Play's keep let go meanwhile", async () => {
+    const { engine, frames, run } = await startPlay();
+    const compiled = () => new Map(Object.entries((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects));
+    const before = compiled();
+    run("postprocessing off");
+    await frames(20);
+    // The keep lets go of what was not drawn lately once a scene's programs outnumber its budget; here it lets go of
+    // all of them.
+    releaseKeptEffects(engine);
+    run("postprocessing on");
+    await frames(20);
+    const after = compiled();
+    // Every program drawn before is the same Effect again: none compiled a second time.
+    const compiledAgain = [...before].filter(([key, effect]) => after.get(key) !== effect).length;
+    expect({ programs: before.size, compiledAgain }).toEqual({ programs: 20, compiledAgain: 0 });
+    // The hold ends once the view draws with post-processing on again: back at Medium shadows, the programs only High
+    // draws go with the keep.
+    run("postprocessing off");
+    await frames(20);
+    run("quality shadows medium");
+    run("postprocessing on");
+    await frames(20);
+    releaseKeptEffects(engine);
+    await frames(5);
+    const medium = compiled();
+    // The Screen-Space Shadows stage and a surface variant Medium does not draw; a hold that never ended keeps both.
+    expect([...before.keys()].filter((key) => !medium.has(key))).toHaveLength(2);
   });
 
   it("never holds more textures than the larger of the states before and after a step or its restore", async () => {

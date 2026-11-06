@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { NullEngine, type Effect } from "@babylonjs/core";
 import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";
-import { bridgeEngineEffects, EFFECT_BRIDGE_MS, keepPlayEffects, keptEffectCount, releaseBridgedEffects } from "./effect-bridge";
+import { bridgeEngineEffects, EFFECT_BRIDGE_MS, holdCompiledEffects, keepPlayEffects, keptEffectCount, releaseBridgedEffects } from "./effect-bridge";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -48,6 +48,32 @@ it("ends a bridge no view presents after its time bound, and a later bridge take
   expect(effect._refCount).toBe(1);
   vi.advanceTimersByTime(EFFECT_BRIDGE_MS);
   expect(effect.isDisposed).toBe(true);
+});
+
+it("holds every compiled program until its release, however long, and lets a lost context take them", () => {
+  vi.useFakeTimers();
+  const engine = new NullEngine();
+  engines.push(engine);
+  const drawn = compile(engine);
+  const release = holdCompiledEffects(engine);
+  // The switched-off passes release their references; the hold outlasts any bridge bound.
+  drawn.dispose();
+  vi.advanceTimersByTime(EFFECT_BRIDGE_MS * 2);
+  expect(compile(engine)).toBe(drawn);
+  drawn.dispose();
+  release();
+  expect(drawn.isDisposed).toBe(true);
+  // A WebGL2 restore relinks every Effect left in the cache: a lost context ends the hold.
+  const switchedOff = compile(engine, "#define OFF");
+  const drawing = compile(engine, "#define ON");
+  const releaseAfterLoss = holdCompiledEffects(engine);
+  switchedOff.dispose();
+  engine.onContextLostObservable.notifyObservers(engine);
+  expect(switchedOff.isDisposed).toBe(true);
+  // Its release afterwards takes nothing from a program still drawn.
+  releaseAfterLoss();
+  expect(drawing.isDisposed).toBe(false);
+  expect(drawing._refCount).toBe(1);
 });
 
 it("keeps a Play view's programs past its close and the editor's next presentation, so the next Play compiles none", () => {
