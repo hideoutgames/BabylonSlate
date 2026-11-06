@@ -1,4 +1,3 @@
-
 /**
  * Self-hosted Draco / meshopt decoder URLs for Babylon's glTF loader.
  * Never point at a CDN — editor and exports must work offline.
