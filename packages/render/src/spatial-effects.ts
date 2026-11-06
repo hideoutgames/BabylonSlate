@@ -184,7 +184,7 @@ export function volumetricMarchIdle(
   volume: VolumetricPlan,
   localVolumes = hasFogVolumes(scene),
 ): boolean {
-  return volume.density <= 0 && (!localVolumes || selectFogVolumes(scene, camera, volume.maxDistance).length === 0);
+  return volume.density <= 0 && (!localVolumes || selectFogVolumes(scene, camera).length === 0);
 }
 
 /**
@@ -498,7 +498,7 @@ export function createSpatialStages(
           // maps by now, so the nearest lights and their maps are this frame's.
           fillVolumetricSlots(slots, scene, camera, volume);
           bindVolumetricLights(effect, scene, camera, slots, slotCount, scratch);
-          if (localVolumes) bindFogVolumes(effect, scene, camera, volume.maxDistance);
+          if (localVolumes) bindFogVolumes(effect, scene, camera);
         },
       });
       const scale = Math.max(0.25, volume.resolutionScale * quality);

@@ -170,6 +170,12 @@ for (const backend of ["webgl2"] as const) {
       expect(pixelDifference(off, capture.disabled), "disabled local sources restore scene color").toBeLessThan(1);
       expect(pixelDifference(off, capture.removed), "removing the final source restores scene color").toBeLessThan(1);
       expect(fogDarkening(capture.insideOff, capture.inside, 48, 36), "camera inside a volume sees fog").toBeGreaterThan(30);
+      // With scene-wide fog on, the volume's samples stay on the volume: its fog does not shift as the camera walks.
+      const walked = capture.walk.map(({ clear, fogged }) => fogDarkening(clear, fogged, 48, 36));
+      expect(Math.min(...walked), "the volume fogs the view with scene-wide fog on").toBeGreaterThan(30);
+      expect(Math.max(...walked) - Math.min(...walked), "the volume's fog holds still as the camera moves").toBeLessThan(3);
+      expect(fogDarkening(capture.beyondClear, capture.beyond, 48, 36), "Volumetric Distance does not cut Fog Volumes")
+        .toBeGreaterThan(30);
     }
   });
 }

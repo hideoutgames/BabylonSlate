@@ -1,4 +1,4 @@
-import { Camera } from "@babylonjs/core/Cameras/camera";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
 import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Frustum } from "@babylonjs/core/Maths/math.frustum";
@@ -243,27 +243,23 @@ export function clearFogVolumes(scene: Scene): void {
   updateDemand(scene);
 }
 
-/** Reuses fixed scratch storage; selection is O(authored volumes × eight). */
+/**
+ * The nearest eight volumes in the camera's frustum. Volumetric Distance does not limit them: the march fogs a
+ * volume up to the visible surface at any distance. Reuses fixed scratch storage; selection is O(authored volumes × eight).
+ */
 export function selectFogVolumes(
   scene: Scene,
   camera: Camera,
-  maxDistance: number,
 ): readonly PreparedFogVolume[] {
   const registry = registries.get(scene);
   if (!registry) return [];
   const selected = registry.selected;
   selected.length = 0;
-  const view = camera.getViewMatrix().m;
+  camera.getViewMatrix();
   camera.getProjectionMatrix();
+  // The near and far planes bound the march too: it runs from the near plane to the visible surface.
   Frustum.GetPlanesToRef(camera.getTransformationMatrix(), registry.planes);
   const eye = camera.globalPosition;
-  const orthographic = camera.mode === Camera.ORTHOGRAPHIC_CAMERA;
-  const handedness = scene.useRightHandedSystem ? -1 : 1;
-  const cameraWorld = camera.getWorldMatrix().m;
-  // The shader starts orthographic rays at minZ, then normalizes inverseView's
-  // forward axis. Account for that normalization if a camera parent is scaled.
-  const orthographicFar = orthographic ? camera.minZ + maxDistance /
-    Math.hypot(cameraWorld[8]!, cameraWorld[9]!, cameraWorld[10]!) : 0;
   for (const owner of registry.owners.values()) {
     if (!owner.prepare()) continue;
     for (const volume of owner.volumes) {
@@ -275,22 +271,11 @@ export function selectFogVolumes(
       if (!volume.valid) continue;
       const side = sphereFrustumSide(registry.planes, volume.center, volume.radius);
       if (side < 0 || (side === 0 && !box.isInFrustum(registry.planes))) continue;
-      if (orthographic) {
-        let nearest = Infinity, farthest = -Infinity;
-        for (const corner of box.vectorsWorld) {
-          const depth = handedness * (corner.x * view[2]! + corner.y * view[6]! + corner.z * view[10]! + view[14]!);
-          nearest = Math.min(nearest, depth);
-          farthest = Math.max(farthest, depth);
-        }
-        if (farthest <= camera.minZ || nearest >= orthographicFar) continue;
-      }
       const min = box.minimumWorld, max = box.maximumWorld;
       const x = Math.max(min.x - eye.x, 0, eye.x - max.x);
       const y = Math.max(min.y - eye.y, 0, eye.y - max.y);
       const z = Math.max(min.z - eye.z, 0, eye.z - max.z);
       volume.distance = x * x + y * y + z * z;
-      // Orthographic rays start across a plane, not at the camera position.
-      if (!orthographic && volume.distance > maxDistance * maxDistance) continue;
       let index = 0;
       while (index < selected.length) {
         const other = selected[index]!;
@@ -309,9 +294,9 @@ export function selectFogVolumes(
   return selected;
 }
 
-export function bindFogVolumes(effect: Effect, scene: Scene, camera: Camera, maxDistance: number): void {
+export function bindFogVolumes(effect: Effect, scene: Scene, camera: Camera): void {
   const registry = registryFor(scene);
-  const volumes = selectFogVolumes(scene, camera, maxDistance);
+  const volumes = selectFogVolumes(scene, camera);
   for (let index = 0; index < volumes.length; index++) {
     const volume = volumes[index]!;
     volume.inverseWorld.copyToArray(registry.matrices, index * 16);

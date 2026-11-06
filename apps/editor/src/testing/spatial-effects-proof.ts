@@ -33,7 +33,12 @@ import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { setUnlitMaterial } from "../../../../packages/render/src/unlit-material";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
-async function captureFogVolumes(scene: Scene, camera: FreeCamera, draw: () => Promise<number[]>) {
+async function captureFogVolumes(
+  scene: Scene,
+  camera: FreeCamera,
+  effects: ReturnType<typeof normalizeRenderEffectsSettings>,
+  draw: () => Promise<number[]>,
+) {
   const root = new TransformNode("Local Fog Actor", scene);
   const properties = { enabled: true, shape: "box", size: [2, 2, 2], density: 0.8, edgeFalloff: 0 };
   const update = () => upsertFogVolumes(scene, "fog-actor", root, fogVolumeBindings([{
@@ -88,7 +93,27 @@ async function captureFogVolumes(scene: Scene, camera: FreeCamera, draw: () => P
     properties.size = [4, 4, 4];
     update();
     const inside = await draw();
-    return { off, box, overlap, moved, sphere, softSphere, disabled, removed, insideOff, inside };
+
+    // Scene-wide fog on (uniform, extinction only: intensity 0). The Fog Volume ahead must take the same fog from every
+    // camera position a fraction of a march step apart, and a Volumetric Distance short of it must not cut it.
+    Object.assign(effects.volumetricLighting, { enabled: true, density: 0.02 });
+    properties.size = [2, 2, 2];
+    root.position.set(0, 0, 4);
+    const walk: { clear: number[]; fogged: number[] }[] = [];
+    for (const z of [-1, -1.1, -1.2, -1.3, -1.4]) {
+      camera.position.set(0, 0, z);
+      camera.setTarget(new Vector3(0, 0, 8));
+      removeFogVolumes(scene, "fog-actor");
+      const clear = await draw();
+      update();
+      walk.push({ clear, fogged: await draw() });
+    }
+    effects.volumetricLighting.maxDistance = 2;
+    removeFogVolumes(scene, "fog-actor");
+    const beyondClear = await draw();
+    update();
+    const beyond = await draw();
+    return { off, box, overlap, moved, sphere, softSphere, disabled, removed, insideOff, inside, walk, beyondClear, beyond };
   } finally {
     removeFogVolumes(scene, "fog-actor");
     root.dispose();
@@ -457,7 +482,7 @@ export async function runSpatialEffectsProof(
       };
       try {
         if (kind === "fogVolumes") {
-          return { fogCaptures: [await captureFogVolumes(scene, camera, draw)] };
+          return { fogCaptures: [await captureFogVolumes(scene, camera, effects, draw)] };
         }
         if (kind === "ambientOcclusion") {
           return { occlusionCaptures: [await captureAmbientOcclusion(camera, effects, draw)] };

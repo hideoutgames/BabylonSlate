@@ -62,7 +62,7 @@ ${field(v3, "volumeShadowOffset")}${field(f, "volumeLightCount")}
   const localArray = (type: string, name: string) => wgsl
     ? `var ${name}: array<${type}, ${MAX_FOG_VOLUMES}>;`
     : `${type} ${name}[${MAX_FOG_VOLUMES}];`;
-  let localSetup = "", localSample = "";
+  let localSetup = "", localPick = "", localSample = "";
   if (localVolumes) {
     header += field(integer, "fogVolumeCount") +
       array(m4, "fogVolumeInverse", MAX_FOG_VOLUMES) +
@@ -95,11 +95,11 @@ ${decl(integer, "occupiedIndex", "0")}${decl(f, "occupiedOffset", "0.0")}
 ${loop("volume", u("fogVolumeCount"))} {
   fogOrigins[volume] = (${u("fogVolumeInverse")}[volume] * ${v4}(origin,1.0)).xyz;
   fogDirections[volume] = (${u("fogVolumeInverse")}[volume] * ${v4}(worldDirection,0.0)).xyz;
-  fogRanges[volume] = fogRayInterval(fogOrigins[volume], fogDirections[volume], ${u("fogVolumeParameters")}[volume].z, distanceLimit);
+  fogRanges[volume] = fogRayInterval(fogOrigins[volume], fogDirections[volume], ${u("fogVolumeParameters")}[volume].z, depthLimit);
 }
-if (${u("volumeSettings")}.x <= 0.0) {
-  // Sort and merge at most eight occupied intervals once per pixel. Marching
-  // across their combined length does not waste the sample budget in gaps.
+// Sort and merge at most eight occupied intervals once per pixel. Fog Volume samples are spread over their combined
+// length, so their placement is fixed to the volumes rather than to distances from the eye.
+{
   ${loop("volume", u("fogVolumeCount"))} {
     ${decl(v2, "range", "fogRanges[volume]")}
     if (range.y <= range.x) { continue; }
@@ -121,19 +121,34 @@ if (${u("volumeSettings")}.x <= 0.0) {
     }
     occupiedRanges[mergedCount] = range; mergedCount++;
   }
-  occupiedCount = mergedCount; distanceSpan = 0.0;
-  ${loop("volume", "occupiedCount")} { distanceSpan += occupiedRanges[volume].y - occupiedRanges[volume].x; }
+  occupiedCount = mergedCount;
+}
+${decl(f, "localSpan", "0.0")}
+${loop("volume", "occupiedCount")} { localSpan += occupiedRanges[volume].y - occupiedRanges[volume].x; }
+// A pixel crossing Fog Volumes gives them their share of the steps (all of them without scene-wide fog).
+${decl(integer, "localSteps", "0")}
+if (localSpan > 0.0) {
+  localSteps = ${steps};
+  if (sceneSpan > 0.0) { localSteps = ${Math.ceil(steps / 2)}; }
+}
+sceneSteps = ${steps} - localSteps;
+${decl(f, "localSegment", "0.0")}
+if (localSteps > 0) { localSegment = localSpan / ${f}(localSteps); }
+${decl(integer, "localIndex", "0")}
+`;
+    localPick = `
+if (localIndex < localSteps) {
+  ${decl(f, "localOffset", `(${f}(localIndex) + 0.5) * localSegment`)}
+  ${loop("skip", String(MAX_FOG_VOLUMES))} {
+    ${decl(f, "length", "occupiedRanges[occupiedIndex].y - occupiedRanges[occupiedIndex].x")}
+    if (occupiedIndex+1 >= occupiedCount || localOffset <= occupiedOffset+length) { break; }
+    occupiedOffset += length; occupiedIndex++;
+  }
+  ${decl(f, "localDistance", "occupiedRanges[occupiedIndex].x + localOffset - occupiedOffset")}
+  if (localDistance < rayDistance) { rayDistance = localDistance; segment = localSegment; fromLocal = 1; }
 }
 `;
     localSample = `
-if (${u("volumeSettings")}.x <= 0.0) {
-  ${loop("skip", String(MAX_FOG_VOLUMES))} {
-    ${decl(f, "length", "occupiedRanges[occupiedIndex].y - occupiedRanges[occupiedIndex].x")}
-    if (occupiedIndex+1 >= occupiedCount || rayDistance <= occupiedOffset+length) { break; }
-    occupiedOffset += length; occupiedIndex++;
-  }
-  rayDistance = occupiedRanges[occupiedIndex].x + rayDistance - occupiedOffset;
-}
 ${loop("volume", u("fogVolumeCount"))} {
   if (rayDistance < fogRanges[volume].x || rayDistance > fogRanges[volume].y) { continue; }
   ${decl(v3, "local", "fogOrigins[volume] + fogDirections[volume] * rayDistance")}
@@ -209,19 +224,37 @@ if (${u("volumeCamera")}.w > 0.5) {
 }
 ${decl(v3, "origin", `(${u("inverseView")} * ${v4}(viewOrigin, 1.0)).xyz`)}
 ${decl(v3, "worldDirection", `normalize((${u("inverseView")} * ${v4}(viewDirection, 0.0)).xyz)`)}
-${decl(f, "distanceLimit", `min(${u("volumeSettings")}.z, max(0.0, depth - abs(viewOrigin.z)) / max(abs(viewDirection.z), 0.0001))`)}
-${decl(f, "distanceSpan", "distanceLimit")}
+// Fog Volumes reach the visible surface. Volumetric Distance bounds scene-wide fog only.
+${decl(f, "depthLimit", "max(0.0, depth - abs(viewOrigin.z)) / max(abs(viewDirection.z), 0.0001)")}
+${decl(f, "sceneSpan", "0.0")}
+if (${u("volumeSettings")}.x > 0.0) { sceneSpan = min(${u("volumeSettings")}.z, depthLimit); }
+${decl(integer, "sceneSteps", String(steps))}
 ${localSetup}
-${decl(f, "segment", `distanceSpan / ${f}(${steps})`)}
+${decl(f, "sceneSegment", "0.0")}
+if (sceneSteps > 0) { sceneSegment = sceneSpan / ${f}(sceneSteps); }
+${decl(integer, "sceneIndex", "0")}
 ${decl(f, "transmittance", "1.0")}
 ${decl(v3, "scattering", `${v3}(0.0)`)}
+// Scene-wide fog samples evenly to its span and Fog Volume samples over their intervals. Each step takes the nearer
+// of the two next samples, so in-scattering is gathered front to back through both media.
 for (${wgsl ? "var step: i32 = 0" : "int step = 0"}; step < ${steps}; step++) {
-  if (distanceSpan <= 0.0 || transmittance < 0.001) { break; }
-  ${decl(f, "rayDistance", `(${f}(step) + 0.5) * segment`)}
-  // Scene-wide fog is full at and below its height and thins above it (volumeHeight: height, falloff per unit).
-  ${decl(f, "aboveFogHeight", `max(0.0, origin.y + worldDirection.y * rayDistance - ${u("volumeHeight")}.x)`)}
-  ${decl(f, "density", `${u("volumeSettings")}.x * exp(-aboveFogHeight * ${u("volumeHeight")}.y)`)}
-  ${localSample}
+  if (transmittance < 0.001) { break; }
+  ${decl(f, "rayDistance", "1.0e30")}
+  ${decl(f, "segment", "sceneSegment")}
+  ${decl(integer, "fromLocal", "0")}
+  if (sceneIndex < sceneSteps && sceneSpan > 0.0) { rayDistance = (${f}(sceneIndex) + 0.5) * sceneSegment; }
+  ${localPick}
+  if (rayDistance > 1.0e29) { break; }
+  ${decl(f, "density", "0.0")}
+  if (fromLocal > 0) {
+    ${localVolumes ? "localIndex++;" : ""}
+    ${localSample}
+  } else {
+    sceneIndex++;
+    // Scene-wide fog is full at and below its height and thins above it (volumeHeight: height, falloff per unit).
+    ${decl(f, "aboveFogHeight", `max(0.0, origin.y + worldDirection.y * rayDistance - ${u("volumeHeight")}.x)`)}
+    density = ${u("volumeSettings")}.x * exp(-aboveFogHeight * ${u("volumeHeight")}.y);
+  }
   if (density <= 0.0) { continue; }
   ${decl(f, "extinction", "exp(-density * segment)")}
   ${decl(v3, "p", "origin + worldDirection * rayDistance")}
