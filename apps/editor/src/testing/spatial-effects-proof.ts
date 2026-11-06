@@ -94,13 +94,14 @@ async function captureFogVolumes(
     update();
     const inside = await draw();
 
-    // Scene-wide fog on (uniform, extinction only: intensity 0). The Fog Volume ahead must take the same fog from every
-    // camera position a fraction of a march step apart, and a Volumetric Distance short of it must not cut it.
-    Object.assign(effects.volumetricLighting, { enabled: true, density: 0.02 });
+    // Scene-wide fog on (thin, uniform, extinction only: intensity 0). The Fog Volume ahead must take the same fog from
+    // every camera position, and a Volumetric Distance short of it must not cut it. Eye-anchored steps put 7, 8, 8, 7
+    // and 8 of the 32 steps inside the volume at these positions.
+    Object.assign(effects.volumetricLighting, { enabled: true, density: 0.005 });
     properties.size = [2, 2, 2];
     root.position.set(0, 0, 4);
     const walk: { clear: number[]; fogged: number[] }[] = [];
-    for (const z of [-1, -1.1, -1.2, -1.3, -1.4]) {
+    for (const z of [-0.7, -0.6, -0.4, -0.3, -0.2]) {
       camera.position.set(0, 0, z);
       camera.setTarget(new Vector3(0, 0, 8));
       removeFogVolumes(scene, "fog-actor");
