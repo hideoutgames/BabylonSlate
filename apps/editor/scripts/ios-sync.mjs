@@ -52,6 +52,7 @@ packageClassList.add("BabylonSlateSecretsPlugin");
 packageClassList.add("BabylonSlateScopedStoragePlugin");
 packageClassList.add("BabylonSlateAudioLifecyclePlugin");
 packageClassList.add("BabylonSlateMemoryPlugin");
+packageClassList.add("BabylonSlateFileExportPlugin");
 config.packageClassList = [...packageClassList];
 await writeFile(configPath, `${JSON.stringify(config, null, "\t")}\n`);
 

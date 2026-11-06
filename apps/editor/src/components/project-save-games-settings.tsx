@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SaveGameService, createDefaultSaveGameDefinition, documentId, validateSaveGameId, type SaveGameInfo, type SaveGameResult, type SaveGameValue } from "@haptic/core";
-import { createSaveGameStorage, pickImportFiles } from "@haptic/vfs";
+import { createSaveGameStorage, pickImportFiles, saveFile } from "@haptic/vfs";
 import { AssetPicker, AssetPickerControl, LabelHint } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Input } from "@haptic/ui/components/input";
@@ -17,7 +17,7 @@ import {
   useRegistryState,
   useOpenDocument,
 } from "../context/document-context";
-import { downloadBlob } from "../lib/download";
+import { savedFileNotice } from "../lib/file-export";
 import { requireSaveGameDefinition } from "../lib/save-game-catalog";
 import { useDataCatalog } from "../lib/use-data-catalog";
 
@@ -46,10 +46,10 @@ function saveIdError(label: string, value: string): string | null {
   }
 }
 
-function downloadSave(text: string, slot: string) {
-  downloadBlob(
-    new Blob([text], { type: "application/json" }),
+function saveExportedSave(text: string, slot: string) {
+  return saveFile(
     `${slot.replace(/[^a-zA-Z0-9_.-]+/g, "_") || "save"}.babsave`,
+    new Blob([text], { type: "application/json" }),
   );
 }
 
@@ -178,7 +178,7 @@ export function ProjectSaveGamesSettings() {
             if (inspectionGeneration.current !== generation) return;
             setInspection({ slot: save.slot, values: structuredClone(service.getSaveData()) });
           })}>Inspect</Button>
-          <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={disabled || save.status === "corrupt"} aria-label={`Export ${save.slot}`} onClick={() => void run(async () => { if (service) downloadSave(resultValue(await service.exportSave(save)), save.slot); })}>Export Save</Button>
+          <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={disabled || save.status === "corrupt"} aria-label={`Export ${save.slot}`} onClick={() => void run(async () => { if (service) setNotice(savedFileNotice(`Save ${save.slot}`, await saveExportedSave(resultValue(await service.exportSave(save)), save.slot))); })}>Export Save</Button>
           <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={disabled} aria-label={`Delete ${save.slot}`} onClick={() => setDeleteTarget(save)}>Delete Save</Button>
         </div>
       </Field>)}

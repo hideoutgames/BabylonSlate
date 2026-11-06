@@ -84,7 +84,12 @@ describe("packaged renderer boundary", () => {
     expect(() => validateIpcArguments("account-secrets:set", ["slate-clerk-client:pk_test_example", "token"])).not.toThrow();
     expect(() => validateIpcArguments("account-secrets:delete", ["slate-clerk-client:pk_test_example"])).not.toThrow();
     expect(() => validateIpcArguments("project:writeBinary", ["assets/a.bin", new ArrayBuffer(4)])).not.toThrow();
+    expect(() => validateIpcArguments("file:save", ["Haptic_Dark.haptic-theme.json", new ArrayBuffer(4)])).not.toThrow();
     for (const [channel, args] of [
+      // An export names a file, never a folder: the save dialog picks where it goes.
+      ["file:save", ["../outside.zip", new ArrayBuffer(1)]], ["file:save", ["C:\\secret.zip", new ArrayBuffer(1)]],
+      ["file:save", ["", new ArrayBuffer(1)]], ["file:save", [".", new ArrayBuffer(1)]],
+      ["file:save", ["backup.zip", "bytes"]], ["file:save", ["backup.zip"]],
       ["save-games:read", ["../outside"]], ["save-games:write", ["/absolute", "{}"]],
       ["save-games:remove", ["project//file"]], ["save-games:release-lock", ["../token"]],
       ["save-games:write", ["project/file", {}]],

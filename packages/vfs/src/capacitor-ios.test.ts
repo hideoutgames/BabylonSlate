@@ -47,6 +47,10 @@ const memoryPlugin = readFileSync(
   join(repoRoot, "apps/editor/ios/App/App/BabylonSlateMemoryPlugin.swift"),
   "utf8",
 );
+const fileExportPlugin = readFileSync(
+  join(repoRoot, "apps/editor/ios/App/App/BabylonSlateFileExportPlugin.swift"),
+  "utf8",
+);
 
 const skippedDirectories = new Set([
   "public",
@@ -185,6 +189,9 @@ describe("Capacitor 8 iOS host", () => {
     expect(iosSyncScript).toMatch(
       /packageClassList\.add\("BabylonSlateMemoryPlugin"\)/,
     );
+    expect(iosSyncScript).toMatch(
+      /packageClassList\.add\("BabylonSlateFileExportPlugin"\)/,
+    );
     expect(audioLifecyclePlugin).toContain("AVAudioSession");
     expect(audioLifecyclePlugin).toContain("interruptionNotification");
     expect(audioLifecyclePlugin).toContain("routeChangeNotification");
@@ -212,6 +219,10 @@ describe("Capacitor 8 iOS host", () => {
     expect(pbxproj).toMatch(/BabylonSlateMemoryPlugin\.swift in Sources/);
     expect(pbxproj).toMatch(
       /BabylonSlateMemoryPlugin\.swift \*\/ = \{isa = PBXFileReference/,
+    );
+    expect(pbxproj).toMatch(/BabylonSlateFileExportPlugin\.swift in Sources/);
+    expect(pbxproj).toMatch(
+      /BabylonSlateFileExportPlugin\.swift \*\/ = \{isa = PBXFileReference/,
     );
     expect(pbxproj).not.toContain("CODE_SIGN_IDENTITY");
 
@@ -247,6 +258,17 @@ describe("Capacitor 8 iOS host", () => {
     expect(scopedStoragePlugin).toContain(
       "Array(targetComponents.prefix(rootComponents.count)) == rootComponents",
     );
+  });
+
+  it("exports through the share sheet with an iPad popover source and a bounded temporary file", () => {
+    for (const method of ["begin", "append", "finish", "discard"]) {
+      expect(fileExportPlugin).toContain(`CAPPluginMethod(name: "${method}"`);
+    }
+    expect(fileExportPlugin).toContain("UIActivityViewController");
+    expect(fileExportPlugin).toContain("popoverPresentationController");
+    expect(fileExportPlugin).toContain("sourceRect");
+    expect(fileExportPlugin).toContain("completionWithItemsHandler");
+    expect(fileExportPlugin).toContain("removeExport(file)");
   });
 
   it("keeps the iOS web host assets available", () => {

@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ProjectDocument } from "@haptic/core";
 import { useDocumentActions } from "../context/document-context";
 import { projectArchiveDownloadName } from "../lib/display-project-name";
-import { downloadZipArchive } from "../lib/download";
+import { saveZipArchive, savedFileNotice } from "../lib/file-export";
 
 /** Export Project run state shown by Project Settings → Export → Project Backup. */
 export interface ProjectExport {
@@ -30,8 +30,8 @@ export function useProjectExport(projectDocument: ProjectDocument | null): Proje
     setExportNotice(null);
     try {
       const bytes = await exportProject(projectDocument);
-      downloadZipArchive(bytes, projectArchiveDownloadName(projectDocument.metadata.name));
-      setExportNotice("Project backup prepared. Check your downloads.");
+      const saved = await saveZipArchive(bytes, projectArchiveDownloadName(projectDocument.metadata.name));
+      setExportNotice(savedFileNotice("Project backup", saved));
     } catch (error) {
       setExportProjectError(error instanceof Error ? error.message : String(error));
     } finally {

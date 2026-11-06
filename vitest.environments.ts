@@ -26,4 +26,5 @@ export const domLogicTests = [
   "packages/vfs/src/capacitor-app-lifecycle.test.ts",
   "packages/vfs/src/app-settings.test.ts",
   "packages/vfs/src/import-picker.test.ts",
+  "packages/vfs/src/save-file.test.ts",
 ];
