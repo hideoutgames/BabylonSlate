@@ -26,7 +26,7 @@ describe("scene backend ownership", () => {
       await vi.waitFor(() => expect(release).toBeTypeOf("function"));
       runtime.stop();
       await expect(loading).rejects.toMatchObject({ name: "AbortError" });
-      late = await createBackend({ kind: "2d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+      late = await createBackend({ kind: "2d", gravity: { x: 0, y: 0, z: 0 } });
       const disposed = vi.spyOn(late, "dispose");
       release(late);
       await vi.waitFor(() => expect(disposed).toHaveBeenCalledOnce());

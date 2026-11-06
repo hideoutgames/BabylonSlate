@@ -14,7 +14,7 @@ async function backendFor(kind: Kind): Promise<PhysicsBackend> {
   const gravity = { x: 0, y: -9.81, z: 0 };
   if (kind === "software3d") return createSoftwarePhysicsBackend("3d", gravity);
   if (kind === "software2d") return createSoftwarePhysicsBackend("2d", gravity);
-  return createPhysicsBackend({ kind: kind === "havok" ? "3d" : "2d", gravity, allowSoftwareFallback: false });
+  return createPhysicsBackend({ kind: kind === "havok" ? "3d" : "2d", gravity });
 }
 
 const cleanups: Array<() => void> = [];
