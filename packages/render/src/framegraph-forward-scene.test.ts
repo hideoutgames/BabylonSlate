@@ -185,14 +185,27 @@ it("draws a multisampled world view into its own scene targets, copies them to t
   graph.dispose();
 });
 
-it("retains the previous graph during a settings transaction and releases superseded candidates", async () => {
-  const { scene, camera } = host();
+it("retains the previous graph's tasks during a settings transaction, frees its targets, and releases superseded candidates", async () => {
+  const { engine, scene, camera } = host();
+  // 4x MSAA: the view draws into its own multisampled scene colour and depth.
+  engine.getCaps().maxMSAASamples = 4;
+  allowSceneScreenShadows(scene, () => false);
+  sceneRenderingSettings(scene).qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing: "msaa4" });
+  updateSceneRenderingSettings(scene);
+  const live = () => engine.getLoadedTexturesCache().filter((texture) => texture._references > 0);
+  // The light block's one-texel atlas stand-in, which the first lighting sync makes and the Scene keeps, is not the graph's.
+  shadowAtlasTexture(scene);
+  const before = live();
   const graph = new ForwardSceneFrameGraph(scene);
   await graph.prepare(camera);
+  const targets = live().filter((texture) => !before.includes(texture));
+  expect(targets).toHaveLength(2);
   const release = vi.spyOn(FrameGraphObjectRendererTask.prototype, "dispose");
   const releasePrevious = graph.retainResources();
   setTierFxaa(scene, true);
   await graph.prepare(camera);
+  // Its targets went before the replacement allocated; its tasks (and the Effects they hold) wait for the retain.
+  expect(live().filter((texture) => targets.includes(texture))).toEqual([]);
   expect(release).not.toHaveBeenCalled();
   expect(graph.taskNames()).toContain("Scene Effects FXAA");
   // A cancelled intermediate build must not accumulate another retained graph.

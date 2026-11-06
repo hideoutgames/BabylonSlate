@@ -998,6 +998,17 @@ describe("shared shadow lifecycle", () => {
     expect(dispose).not.toHaveBeenCalled();
   });
 
+  it("keeps the standby map of a Forward-dropped light through a change of the shadow level's label alone", () => {
+    const { scene, controller, shadowed, generator, dispose } = forwardDroppedStandby();
+    const before = sceneRenderingSettings(scene).shadows;
+    // The level's values labelled Custom: what a session step that changes no value leaves (and its reset undoes).
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ ...before, preset: "custom" }) });
+    expect(sceneRenderingSettings(scene).shadows).toEqual({ ...before, preset: "custom" });
+    controller.sync();
+    expect(shadowed.getShadowGenerator()).toBe(generator);
+    expect(dispose).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["a withdrawn shadow request", ({ controller, shadowed }: ReturnType<typeof forwardDroppedStandby>) =>
       controller.register(shadowed, false)],
@@ -1596,6 +1607,22 @@ describe("atlas caster variants", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     controller.sync();
     expect(variants().filter((effect) => /SM_NORMALBIAS 0/.test(effect.defines))).toHaveLength(3);
+  });
+
+  it("keeps its maps through a change of the shadow level's label alone", async () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    MeshBuilder.CreateBox("crate", { size: 1 }, scene);
+    controller.warmCasterVariants();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.sync();
+    const textures = new Set(engine.getLoadedTexturesCache());
+    const before = sceneRenderingSettings(scene).shadows;
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ ...before, preset: "custom" }) });
+    expect(sceneRenderingSettings(scene).shadows).toEqual({ ...before, preset: "custom" });
+    controller.sync();
+    // Built again, the stand-in maps would allocate another private atlas.
+    expect(engine.getLoadedTexturesCache().filter((texture) => !textures.has(texture))).toEqual([]);
   });
 });
 

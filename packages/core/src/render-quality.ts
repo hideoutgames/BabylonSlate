@@ -846,6 +846,14 @@ export class RenderingQualitySession {
 }
 
 /**
+ * `settings` (a quality group, shadow settings or a whole render block) serialised without the `preset` labels, which
+ * only name the level the values match: equal keys draw the same. `profile` stays, since it sizes shadow capacity.
+ */
+export function qualityValuesKey(settings: unknown): string {
+  return JSON.stringify(settings, (key, value: unknown) => key === "preset" ? undefined : value) ?? "";
+}
+
+/**
  * The quality part of `RenderDiagnostics.settings`: every quality field a Feature Test Check Breakdown or Profile step changes,
  * as text, so a step's sample can say what it changed. `quality` carries the device-clamped water values.
  */
