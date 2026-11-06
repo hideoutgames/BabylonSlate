@@ -4,7 +4,7 @@ This is the entry point for every agent working in this repository. The engine i
 
 ## Working agreements
 
-- If the user's instructions are ambiguous, ask before proceeding. Ask every question, and request every approval, through the host's question tool (`AskUserQuestion` in Claude Code), never in prose; a design the user asked to see first waits for approval there ([asking the user](.agents/rules/asking-the-user.md)).
+- If the user's instructions are ambiguous, ask before proceeding. Use the Ask Question tool when you have questions or need input from the user ([asking the user](.agents/rules/asking-the-user.md)).
 - Haptic is not released yet, so keep no backwards compatibility. Change formats, APIs and behaviour in place; never add migrations, version bumps, compatibility shims, legacy fallbacks or deprecated aliases for old data or old callers.
 - Explanations, investigations, reviews and plans are read-only unless the user explicitly asks for changes. Confirm behaviour in the code, not only in docs.
 - Keep the editor's compact desktop density (small controls, including Primary buttons, and tight margins); never enlarge it to follow imported design guidance. Touch gets hit areas or a touch layout instead ([gesture rules](.agents/reference/architecture.md#gesture-rules)).
@@ -18,7 +18,7 @@ This is the entry point for every agent working in this repository. The engine i
 Read these rules in full at the start of each task:
 
 - [Workflow: verification, testing, git, PRs and merging](.agents/rules/agent-workflow.md)
-- [Asking the user: questions and approvals through the question tool](.agents/rules/asking-the-user.md)
+- [Asking the user: the Ask Question tool](.agents/rules/asking-the-user.md)
 - [Public repository hygiene](.agents/rules/public-repository.md)
 - [No AI-generated artwork](.agents/rules/no-ai-artwork.md)
 
