@@ -81,8 +81,14 @@ export class ElectronStorageAdapter implements ProjectStorage {
     return this.requireBridge().listProjects();
   }
 
+  /** Main's refusal (open in another window, a locked file) reaches the Homepage as its own message. */
   async deleteProject(handle: ProjectFolderHandle): Promise<void> {
-    await this.requireBridge().deleteProject(handle);
+    try {
+      await this.requireBridge().deleteProject(handle);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message.replace(/^Error invoking remote method '[^']+': (?:\w*Error: )?/, ""), { cause: error });
+    }
     if (this.folder?.id === handle.id) this.folder = null;
   }
 

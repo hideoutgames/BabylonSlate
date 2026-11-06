@@ -79,6 +79,18 @@ describe("ElectronStorageAdapter", () => {
     expect(storage.getCurrentFolder()).toBeNull();
   });
 
+  it("shows main's delete refusal without Electron's invoke prefix", async () => {
+    const bridge = fakeProjectBridge();
+    vi.mocked(bridge.deleteProject).mockRejectedValue(new Error(
+      "Error invoking remote method 'project:delete': Error: This project is open in another window. Close it there and try again.",
+    ));
+    const storage = new ElectronStorageAdapter(bridge);
+    const game = await storage.openDocumentsProject("Game");
+    const refused = await storage.deleteProject(game).catch((error: unknown) => error);
+    expect((refused as Error).message).toBe("This project is open in another window. Close it there and try again.");
+    expect(storage.getCurrentFolder()).toEqual(game);
+  });
+
   it("accounts bytes discarded after native revision validation without publishing them", async () => {
     const bridge = fakeProjectBridge();
     vi.mocked(bridge.readBinaryRange).mockResolvedValue({ bytes: new ArrayBuffer(0), totalSize: 0, revision: "",

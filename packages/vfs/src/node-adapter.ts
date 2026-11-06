@@ -127,7 +127,8 @@ export class NodeStorageAdapter implements ProjectStorage {
       throw new Error(`Node adapter cannot delete project ${handle.id}`);
     }
     projectFolderName(basename(root));
-    await rm(root, { recursive: true, force: true });
+    // Retries ride out a brief Windows lock (antivirus, indexing); a file held open still fails, and deleting again finishes.
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     if (this.root?.path === root) {
       this.folder = null;
       this.root = null;

@@ -86,6 +86,9 @@ describe("packaged renderer boundary", () => {
     expect(() => validateIpcArguments("project:writeBinary", ["assets/a.bin", new ArrayBuffer(4)])).not.toThrow();
     expect(() => validateIpcArguments("project:delete", [{ id: "node:/data/projects/Game", name: "Game", tier: "documents" }]))
       .not.toThrow();
+    for (const tier of ["documents", "external"]) {
+      expect(() => validateIpcArguments("project:openKnown", [{ id: "node:/picked/Game", name: "Game", tier }])).not.toThrow();
+    }
     for (const [channel, args] of [
       ["project:delete", [{ id: "node:/picked/Game", name: "Game", tier: "external" }]],
       ["project:delete", [{ id: "node:/data/projects/Game", name: "../Game", tier: "documents" }]],
