@@ -3,16 +3,6 @@
  * (engineplan §3.5). Never point at a CDN — editor and exports must work offline.
  */
 
-import {
-  KTX2_TRANSCODER_RELATIVE_FILES,
-  playerFilesHaveKtx2Transcoder,
-} from "@haptic/assets";
-
-export {
-  KTX2_TRANSCODER_RELATIVE_FILES,
-  playerFilesHaveKtx2Transcoder,
-};
-
 export interface Ktx2TranscoderUrls {
   jsDecoderModule: string;
   jsMSCTranscoder: string;
@@ -116,7 +106,7 @@ export function shouldForceKtx2Rgba(
 /**
  * Preview Build always packs PNG/pixels so a cold iframe matches overlay Play.
  * Itch Export Game still packs KTX2 when the player files contain the
- * transcoder ({@link playerFilesHaveKtx2Transcoder}).
+ * transcoder (`playerFilesHaveKtx2Transcoder` in `@haptic/assets`).
  */
 export function shouldPackKtx2ForPreviewBuild(): boolean {
   return false;

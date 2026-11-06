@@ -10,7 +10,7 @@ import { acquireGlbContainer, prepareInstanceMaterials } from "./glb-anim";
 import { installAssetBytes } from "@haptic/assets";
 import { applyModelMaterialSlots } from "./model-preview";
 import { RENDERING_GROUP } from "./sorting";
-import { snapshotByteFingerprint } from "./asset-byte-fingerprint";
+import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { VisualBundle } from "./visual-bundle";
 import { applyMaterialBounds } from "./material-bounds";
 import { sharedVertexBuffer } from "./shared-vertex-buffer";
@@ -55,7 +55,7 @@ export function foliagePropertiesFingerprint(properties: unknown): string {
 export function foliageSourceFingerprint(properties: unknown, assets?: MeshAssetContext): string {
   return foliageSummary(properties).models.map((guid) => {
     const source = assets?.modelSources?.get(guid) ?? assets?.modelBytes?.get(guid);
-    return `${guid}:${source ? snapshotByteFingerprint(source) : "missing"}:${assets?.modelPayloads?.get(guid)?.importScale ?? 1}`;
+    return `${guid}:${source ? assetByteFingerprint(source) : "missing"}:${assets?.modelPayloads?.get(guid)?.importScale ?? 1}`;
   }).join("|");
 }
 

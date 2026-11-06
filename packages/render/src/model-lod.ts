@@ -18,8 +18,6 @@ import { isPoolMember } from "./instance-pool";
 import { sceneRenderingSettings } from "./render-settings";
 import { sharedVertexBuffer } from "./shared-vertex-buffer";
 
-export { AUTO_LOD_SCREEN_SIZES } from "./model-lod-simplify";
-
 /** Smaller meshes are dominated by per-draw cost; simplifying them saves nothing. */
 export const AUTO_LOD_MIN_SOURCE_TRIANGLES = 1024;
 /** Screen-size band that keeps a mesh on its current level near a threshold. */

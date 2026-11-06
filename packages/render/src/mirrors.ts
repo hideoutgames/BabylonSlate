@@ -68,8 +68,6 @@ import type { MaterialPlumbing } from "./material-block-registry";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import { sceneViewRenderSize } from "./scene-output-scale";
 
-export { isMirrorSurfaceMesh } from "./mirror-surface-state";
-
 const DRAW_POLICY = { restoreAlpha: true, wrapDrawFailure: false, message: "Mirror reflection failed." };
 
 /** Counters for proofs and tests; null when the scene has no Mirror surface. */

@@ -73,7 +73,6 @@ import type { MaterialParameterValue } from "@haptic/bridge";
 import { SharedOutlineIdentityBlock, SharedOutlineOutputBlock } from "./shared-outline-output-block";
 import { TextMaterialBlock } from "./text-material-block";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
-export { createSurfacePlumbing } from "./surface-material-plumbing";
 import { createGeometryCaptureOutput } from "./geometry-capture-output";
 import { AuthoredShadowFragmentOutput, createAuthoredShadowVertexOutput } from "./authored-shadow-output";
 import { AuthoredShadowDepthWrapper } from "./authored-shadow-depth-wrapper";

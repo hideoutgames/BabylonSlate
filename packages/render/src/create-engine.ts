@@ -357,8 +357,6 @@ function projectEngineOptions(): EngineOptions {
   };
 }
 
-export { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting };
-
 /** Frames with no layer still presenting share this set instead of building one. */
 const NO_PRESENTING_LAYERS: ReadonlySet<string> = new Set();
 

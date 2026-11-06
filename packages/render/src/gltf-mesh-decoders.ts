@@ -1,6 +1,3 @@
-import { GLTF_MESH_DECODER_RELATIVE_FILES } from "@haptic/assets";
-
-export { GLTF_MESH_DECODER_RELATIVE_FILES };
 
 /**
  * Self-hosted Draco / meshopt decoder URLs for Babylon's glTF loader.

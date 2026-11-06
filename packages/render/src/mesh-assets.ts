@@ -128,7 +128,7 @@ export class PayloadFingerprints {
 
 import { environmentTextureContainer, installAssetBytes, isKtx2Bytes } from "@haptic/assets";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { snapshotByteFingerprint } from "./asset-byte-fingerprint";
+import { assetByteFingerprint } from "./asset-byte-fingerprint";
 
 export function installModelSources(assets: Pick<MeshAssetContext, "modelBytes" | "modelSources">): ReadonlyMap<string, Blob> | undefined {
   if (assets.modelSources) return assets.modelSources;
@@ -141,7 +141,7 @@ function byteMapFingerprint(
 ): string {
   if (!map || map.size === 0) return "";
   return [...map.entries()]
-    .map(([guid, bytes]) => `${guid}:${snapshotByteFingerprint(bytes)}`)
+    .map(([guid, bytes]) => `${guid}:${assetByteFingerprint(bytes)}`)
     .sort()
     .join(",");
 }
@@ -389,7 +389,7 @@ export function applyAlbedoTexture(
   if (!mesh.material && binding.material) restoreAlbedoMaterial(mesh);
   const source = assets?.textureBytes?.get(textureGuid);
   if (!source || !assets?.resourceCache) return;
-  const identity = source instanceof Blob && binding.source === source ? binding.identity : snapshotByteFingerprint(source);
+  const identity = source instanceof Blob && binding.source === source ? binding.identity : assetByteFingerprint(source);
   if (binding.identity === identity && binding.guid === textureGuid &&
     ((binding.lease && !isDisposedGpuTexture(binding.lease.resource)) || binding.pending)) { binding.source = source; return; }
   if (binding.failed === `${textureGuid}:${identity}`) return;

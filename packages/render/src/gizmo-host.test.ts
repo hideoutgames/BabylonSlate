@@ -16,8 +16,8 @@ import {
   GIZMO_MIN_CAMERA_DISTANCE,
   GIZMO_PLANAR_HOVER_ALPHA,
   GIZMO_PLANAR_IDLE_ALPHA,
-  linkedAxisScale,
 } from "./gizmo-host";
+import { linkedAxisScale } from "./linked-axis-scale";
 import { isUnlitMaterial } from "./unlit-material";
 import { unlitBinding } from "./unlit-material-blocks";
 

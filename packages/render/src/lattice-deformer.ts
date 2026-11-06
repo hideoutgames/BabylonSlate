@@ -22,7 +22,7 @@ import { materialBaseBounds, setMaterialBoundsExpansion } from "./material-bound
 import { ensureLatticeShadowAdapter, isLatticeComponentRoot, latticeMarksRevision, markLatticeComponentRoot, meshLatticeBinding, releaseLatticeShadowAdapter, setLatticeBinding } from "./lattice-deformer-binding";
 import { ensureLatticeDeformerPlugin } from "./lattice-deformer-native";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
-export { markLatticeComponentRoot, hasMeshLatticeDeformer, bindMeshLatticeDeformer } from "./lattice-deformer-binding";
+export { markLatticeComponentRoot } from "./lattice-deformer-binding";
 
 export interface LatticeDeformerConfig {
   enabled: boolean;

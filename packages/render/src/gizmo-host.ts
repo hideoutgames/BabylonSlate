@@ -19,8 +19,6 @@ import { createOverlayTransformBox } from "./overlay-transform-box";
 import { linkedAxisScale, type ScaleVector } from "./linked-axis-scale";
 import { ownedUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
 
-export { linkedAxisScale, type ScaleVector } from "./linked-axis-scale";
-
 export type GizmoTool = "none" | "translate" | "rotate" | "scale";
 
 /**
