@@ -128,7 +128,8 @@ export function syncQuality(s: Surface): void {
   if (density !== s.density) { s.density = density; s.version++; }
 }
 
-const UNCHANGED = 0, RECENTRED = 1, REBUILT = 2;
+const UNCHANGED = 0;
+export const RECENTRED = 1, REBUILT = 2;
 export type LayoutChange = typeof UNCHANGED | typeof RECENTRED | typeof REBUILT;
 
 /**
