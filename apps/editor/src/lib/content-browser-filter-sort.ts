@@ -1,6 +1,6 @@
 /**
  * Content Browser grid search, type filter options and sort orders.
- * `content-browser-helpers.ts` re-exports the public names.
+ * `content-browser-helpers.ts` re-exports the names its importers use.
  */
 import type { IndexedAsset } from "@haptic/assets";
 
