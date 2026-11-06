@@ -193,6 +193,61 @@ describe("raise backoff", () => {
     expect(run(scaling, 2400, capped)).toBeLessThanOrEqual(10);
   });
 
+  it("does not ratchet down under recurring hitches the resolution does not cause", () => {
+    // Full resolution fits; 8 frames of 25 ms every second are hitches that no level would remove.
+    const scaling = controller({ cooldownFrames: 30, maxLevel: 2 });
+    let lowest = 1;
+    for (let frame = 0; frame < 3600; frame++) {
+      scaling.noteFramePressure(frame % 60 < 8 ? sample(25, 4) : sample(16.7, 4));
+      lowest = Math.max(lowest, scaling.getLevel());
+    }
+    expect(lowest).toBeLessThanOrEqual(1.25);
+  });
+
+  it("retries a level after one cooldown once the level below it has held", () => {
+    // Levels 1 and 1.25 fit only 1.5 at first, which drives the wait to its cap.
+    let fits = 1.5;
+    const frame = (level: number) => sample(level < fits ? 19.9 : 16.7, 4);
+    const scaling = controller({ cooldownFrames: 30 });
+    run(scaling, 1500, frame);
+    // Now 1.25 fits: the raise to it holds, so the next raise to 1 starts a fresh backoff.
+    fits = 1.25;
+    const changes: { frame: number; level: number }[] = [];
+    for (let i = 0; i < 2000; i++) {
+      const before = scaling.getLevel();
+      scaling.noteFramePressure(frame(before));
+      if (scaling.getLevel() !== before) changes.push({ frame: i, level: scaling.getLevel() });
+    }
+    const firstAtOne = changes.findIndex((change) => change.level === 1);
+    expect(changes[firstAtOne + 1]?.level).toBe(1.25);
+    const retry = changes[firstAtOne + 2]!;
+    expect(retry.level).toBe(1);
+    expect(retry.frame - changes[firstAtOne + 1]!.frame).toBeLessThanOrEqual(65);
+  });
+
+  it.each([
+    ["configureQuality", (scaling: HardwareScalingController) =>
+      scaling.configureQuality({ scale: 1, minScale: 0.25, targetFps: 60, dynamic: true })],
+    ["setSettingsLevel", (scaling: HardwareScalingController) => scaling.setSettingsLevel(1)],
+    ["noteRestore", (scaling: HardwareScalingController) => scaling.noteRestore()],
+  ] as const)("starts a fresh backoff after %s", (_name, reset) => {
+    const scaling = controller({ cooldownFrames: 30 });
+    // Build the wait to its cap, then reset just after a raise, when the next drop would double it again.
+    run(scaling, 600, capped);
+    for (let i = 0; i < 600 && scaling.getLevel() !== 1; i++) scaling.noteFramePressure(capped(scaling.getLevel()));
+    expect(scaling.getLevel()).toBe(1);
+    reset(scaling);
+    const changes: number[] = [];
+    for (let i = 0; i < 200; i++) {
+      const before = scaling.getLevel();
+      scaling.noteFramePressure(capped(before));
+      if (scaling.getLevel() !== before) changes.push(i);
+    }
+    // Drop, then the first raise back after one cooldown, not after the 480-frame wait built before.
+    expect(changes.length).toBeGreaterThanOrEqual(2);
+    expect(changes[1]! - changes[0]!).toBeLessThanOrEqual(35);
+  });
+
   it("clears the backoff once a raise holds, so a later drop recovers after one cooldown", () => {
     const scaling = controller({ cooldownFrames: 30 });
     run(scaling, 600, capped);

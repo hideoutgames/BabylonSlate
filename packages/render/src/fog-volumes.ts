@@ -294,11 +294,14 @@ export function selectFogVolumes(
   return selected;
 }
 
-export function bindFogVolumes(effect: Effect, scene: Scene, camera: Camera): void {
+/** Binds the selected volumes and returns how far from the eye the farthest of them reaches (0 without any). */
+export function bindFogVolumes(effect: Effect, scene: Scene, camera: Camera): number {
   const registry = registryFor(scene);
   const volumes = selectFogVolumes(scene, camera);
+  let reach = 0;
   for (let index = 0; index < volumes.length; index++) {
     const volume = volumes[index]!;
+    reach = Math.max(reach, Math.sqrt(volume.distance) + 2 * volume.radius);
     volume.inverseWorld.copyToArray(registry.matrices, index * 16);
     const { density, edgeFalloff, shape } = volume.properties;
     registry.parameters[index * 4] = density;
@@ -308,4 +311,5 @@ export function bindFogVolumes(effect: Effect, scene: Scene, camera: Camera): vo
   effect.setInt("fogVolumeCount", volumes.length);
   effect.setMatrices("fogVolumeInverse", registry.matrices);
   effect.setFloatArray4("fogVolumeParameters", registry.parameters);
+  return reach;
 }

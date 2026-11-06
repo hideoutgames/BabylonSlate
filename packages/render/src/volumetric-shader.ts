@@ -87,78 +87,51 @@ if (shape > 0.5) {
   }
 }
 return ${v2}(entry, max(entry, exit));`);
+    // Each crossed volume gets its own samples over its own chord, in proportion to the chord's length and at least
+    // one where the budget allows: a short volume inside or beside a long one is never starved, and every sample is
+    // fixed to its volume rather than to a distance from the eye. Optical depth adds up per volume, so overlaps stay exact.
     localSetup = `
-${localArray(v3, "fogOrigins")}${localArray(v3, "fogDirections")}
-${localArray(v2, "fogRanges")}${localArray(v2, "occupiedRanges")}
-${decl(integer, "occupiedCount", "0")}
-${decl(integer, "occupiedIndex", "0")}${decl(f, "occupiedOffset", "0.0")}
+${localArray(v3, "fogOrigins")}${localArray(v3, "fogDirections")}${localArray(v2, "fogRanges")}
+${localArray(integer, "localCounts")}${localArray(integer, "localIndices")}${localArray(f, "localSegments")}
+${decl(f, "localSpan", "0.0")}
+${decl(integer, "crossed", "0")}
 ${loop("volume", u("fogVolumeCount"))} {
   fogOrigins[volume] = (${u("fogVolumeInverse")}[volume] * ${v4}(origin,1.0)).xyz;
   fogDirections[volume] = (${u("fogVolumeInverse")}[volume] * ${v4}(worldDirection,0.0)).xyz;
   fogRanges[volume] = fogRayInterval(fogOrigins[volume], fogDirections[volume], ${u("fogVolumeParameters")}[volume].z, depthLimit);
+  if (fogRanges[volume].y > fogRanges[volume].x) { localSpan += fogRanges[volume].y - fogRanges[volume].x; crossed++; }
 }
-// Sort and merge at most eight occupied intervals once per pixel. Fog Volume samples are spread over their combined
-// length, so their placement is fixed to the volumes rather than to distances from the eye.
-{
-  ${loop("volume", u("fogVolumeCount"))} {
-    ${decl(v2, "range", "fogRanges[volume]")}
-    if (range.y <= range.x) { continue; }
-    ${decl(integer, "position", "occupiedCount")}
-    for (${wgsl ? "var previous: i32" : "int previous"} = occupiedCount-1; previous >= 0; previous--) {
-      if (occupiedRanges[previous].x <= range.x) { break; }
-      occupiedRanges[previous+1] = occupiedRanges[previous]; position = previous;
-    }
-    occupiedRanges[position] = range; occupiedCount++;
-  }
-  ${decl(integer, "mergedCount", "0")}
-  ${loop("volume", "occupiedCount")} {
-    ${decl(v2, "range", "occupiedRanges[volume]")}
-    if (mergedCount > 0) {
-      if (range.x <= occupiedRanges[mergedCount-1].y) {
-        occupiedRanges[mergedCount-1].y = max(occupiedRanges[mergedCount-1].y, range.y);
-        continue;
-      }
-    }
-    occupiedRanges[mergedCount] = range; mergedCount++;
-  }
-  occupiedCount = mergedCount;
+// With scene-wide fog the steps split evenly on every pixel of a scene with Fog Volumes, so no outline shows in it.
+if (${u("volumeSettings")}.x > 0.0) { sceneSteps = ${Math.floor(steps / 2)}; } else { sceneSteps = 0; }
+${decl(integer, "localBudget", `${steps} - sceneSteps`)}
+${decl(integer, "spare", "localBudget - crossed")}
+${loop("volume", u("fogVolumeCount"))} {
+  localIndices[volume] = 0; localCounts[volume] = 0; localSegments[volume] = 0.0;
+  ${decl(f, "chord", "fogRanges[volume].y - fogRanges[volume].x")}
+  if (chord <= 0.0) { continue; }
+  if (spare >= 0) { localCounts[volume] = 1 + ${integer}(floor(${f}(spare) * chord / localSpan)); }
+  else { localCounts[volume] = ${integer}(floor(${f}(localBudget) * chord / localSpan)); }
+  if (localCounts[volume] > 0) { localSegments[volume] = chord / ${f}(localCounts[volume]); }
 }
-${decl(f, "localSpan", "0.0")}
-${loop("volume", "occupiedCount")} { localSpan += occupiedRanges[volume].y - occupiedRanges[volume].x; }
-// A pixel crossing Fog Volumes gives them their share of the steps (all of them without scene-wide fog).
-${decl(integer, "localSteps", "0")}
-if (localSpan > 0.0) {
-  localSteps = ${steps};
-  if (sceneSpan > 0.0) { localSteps = ${Math.ceil(steps / 2)}; }
-}
-sceneSteps = ${steps} - localSteps;
-${decl(f, "localSegment", "0.0")}
-if (localSteps > 0) { localSegment = localSpan / ${f}(localSteps); }
-${decl(integer, "localIndex", "0")}
 `;
     localPick = `
-if (localIndex < localSteps) {
-  ${decl(f, "localOffset", `(${f}(localIndex) + 0.5) * localSegment`)}
-  ${loop("skip", String(MAX_FOG_VOLUMES))} {
-    ${decl(f, "length", "occupiedRanges[occupiedIndex].y - occupiedRanges[occupiedIndex].x")}
-    if (occupiedIndex+1 >= occupiedCount || localOffset <= occupiedOffset+length) { break; }
-    occupiedOffset += length; occupiedIndex++;
+${loop("volume", u("fogVolumeCount"))} {
+  if (localIndices[volume] < localCounts[volume]) {
+    ${decl(f, "localDistance", `fogRanges[volume].x + (${f}(localIndices[volume]) + 0.5) * localSegments[volume]`)}
+    if (localDistance < rayDistance) { rayDistance = localDistance; segment = localSegments[volume]; picked = volume; }
   }
-  ${decl(f, "localDistance", "occupiedRanges[occupiedIndex].x + localOffset - occupiedOffset")}
-  if (localDistance < rayDistance) { rayDistance = localDistance; segment = localSegment; fromLocal = 1; }
 }
 `;
     localSample = `
-${loop("volume", u("fogVolumeCount"))} {
-  if (rayDistance < fogRanges[volume].x || rayDistance > fogRanges[volume].y) { continue; }
-  ${decl(v3, "local", "fogOrigins[volume] + fogDirections[volume] * rayDistance")}
-  ${decl(f, "boundary", "max(max(abs(local.x),abs(local.y)),abs(local.z))")}
-  if (${u("fogVolumeParameters")}[volume].z > 0.5) { boundary = length(local); }
-  if (boundary > 1.0) { continue; }
-  ${decl(f, "falloff", `${u("fogVolumeParameters")}[volume].y`)}
+localIndices[picked] = localIndices[picked] + 1;
+${decl(v3, "local", "fogOrigins[picked] + fogDirections[picked] * rayDistance")}
+${decl(f, "boundary", "max(max(abs(local.x),abs(local.y)),abs(local.z))")}
+if (${u("fogVolumeParameters")}[picked].z > 0.5) { boundary = length(local); }
+if (boundary <= 1.0) {
+  ${decl(f, "falloff", `${u("fogVolumeParameters")}[picked].y`)}
   ${decl(f, "weight", "1.0")}
   if (falloff > 0.0) { weight = smoothstep(0.0, falloff, 1.0-boundary); }
-  density += ${u("fogVolumeParameters")}[volume].x * weight;
+  density = ${u("fogVolumeParameters")}[picked].x * weight;
 }
 `;
   }
@@ -235,19 +208,18 @@ if (sceneSteps > 0) { sceneSegment = sceneSpan / ${f}(sceneSteps); }
 ${decl(integer, "sceneIndex", "0")}
 ${decl(f, "transmittance", "1.0")}
 ${decl(v3, "scattering", `${v3}(0.0)`)}
-// Scene-wide fog samples evenly to its span and Fog Volume samples over their intervals. Each step takes the nearer
-// of the two next samples, so in-scattering is gathered front to back through both media.
+// Scene-wide fog samples evenly to its span and each Fog Volume over its own chord. Each step takes the nearest next
+// sample of all of them, so in-scattering is gathered front to back through every medium.
 for (${wgsl ? "var step: i32 = 0" : "int step = 0"}; step < ${steps}; step++) {
   if (transmittance < 0.001) { break; }
   ${decl(f, "rayDistance", "1.0e30")}
   ${decl(f, "segment", "sceneSegment")}
-  ${decl(integer, "fromLocal", "0")}
+  ${decl(integer, "picked", "-1")}
   if (sceneIndex < sceneSteps && sceneSpan > 0.0) { rayDistance = (${f}(sceneIndex) + 0.5) * sceneSegment; }
   ${localPick}
   if (rayDistance > 1.0e29) { break; }
   ${decl(f, "density", "0.0")}
-  if (fromLocal > 0) {
-    ${localVolumes ? "localIndex++;" : ""}
+  if (picked >= 0) {
     ${localSample}
   } else {
     sceneIndex++;

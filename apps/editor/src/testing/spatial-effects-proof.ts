@@ -114,7 +114,40 @@ async function captureFogVolumes(
     const beyondClear = await draw();
     update();
     const beyond = await draw();
-    return { off, box, overlap, moved, sphere, softSphere, disabled, removed, insideOff, inside, walk, beyondClear, beyond };
+
+    // A short dense volume inside a long thin one keeps samples of its own as the camera walks: spread over the pair's
+    // merged span, the dense one would take 3 or 4 of 16 steps depending on where the camera stands.
+    effects.volumetricLighting.maxDistance = 20;
+    const nested = [
+      { id: "mist", properties: { ...properties, size: [2, 2, 24], density: 0.01 } },
+      { id: "smoke", properties: { ...properties } },
+    ].map(({ id, properties }) => ({ id, classId: "FogVolumeComponent", properties, transform: identitySerializedTransform() }));
+    const nestedWalk: { clear: number[]; fogged: number[] }[] = [];
+    for (const z of [-0.7, -0.6, -0.4, -0.3, -0.2]) {
+      camera.position.set(0, 0, z);
+      camera.setTarget(new Vector3(0, 0, 8));
+      removeFogVolumes(scene, "fog-actor");
+      const clear = await draw();
+      upsertFogVolumes(scene, "fog-actor", root, fogVolumeBindings(nested));
+      nestedWalk.push({ clear, fogged: await draw() });
+    }
+
+    // Scene-wide fog and a Fog Volume on one ray darken it together: neither medium loses its share of the steps.
+    camera.position.set(0, 0, -0.5);
+    camera.setTarget(new Vector3(0, 0, 8));
+    removeFogVolumes(scene, "fog-actor");
+    effects.volumetricLighting.density = 0;
+    const clear = await draw();
+    effects.volumetricLighting.density = 0.03;
+    const sceneFog = await draw();
+    update();
+    const both = await draw();
+    effects.volumetricLighting.density = 0;
+    const volumeFog = await draw();
+    return {
+      off, box, overlap, moved, sphere, softSphere, disabled, removed, insideOff, inside, walk, beyondClear, beyond,
+      nestedWalk, composition: { clear, sceneFog, volumeFog, both },
+    };
   } finally {
     removeFogVolumes(scene, "fog-actor");
     root.dispose();

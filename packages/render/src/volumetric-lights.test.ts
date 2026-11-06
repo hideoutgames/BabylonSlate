@@ -50,6 +50,10 @@ it("bounds contributors and follows parent transforms", () => {
     );
     const far = new PointLight("far", new Vector3(100, 0, 0), scene);
     far.range = 2;
+    // A Fog Volume bound out to 99 m keeps the far light lighting it.
+    const reached = createVolumetricSlots();
+    fillVolumetricSlots(reached, scene, camera, { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, maxLights: 4, maxDistance: 10 }, 99);
+    expect(reached.lights.slice(0, reached.count)).toContain(far);
     const parent = new TransformNode("moving parent", scene);
     child.parent = parent;
     const settings = {

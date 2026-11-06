@@ -86,7 +86,7 @@ const EFFECT_GROUPS: ReadonlyArray<{ legend?: string; rows: readonly EffectRowSp
     { path: ["volumetricLighting", "intensity"], suffix: "volumetric-intensity", label: "Volumetric Intensity", control: number(L.volumetricIntensity, 0.01),
       hint: "Brightness of scattered light. Zero removes light beams but keeps fog darkening." },
     { path: ["volumetricLighting", "maxDistance"], suffix: "volumetric-distance", label: "Volumetric Distance", control: number(L.volumetricDistance, 1),
-      hint: "Maximum distance sampled from the camera, in scene units. Scene surfaces stop the fog ray earlier." },
+      hint: "How far from the camera scene-wide fog is sampled; Fog Volumes always reach the nearest surface." },
     { path: ["volumetricLighting", "anisotropy"], suffix: "volumetric-anisotropy", label: "Scattering Anisotropy", control: number(L.volumetricAnisotropy, 0.01),
       hint: "Zero scatters evenly. Positive values strengthen beams when looking toward a light; negative values favor the opposite view." },
     { path: ["volumetricLighting", "resolutionScale"], suffix: "volumetric-scale", label: "Volumetric Resolution Scale", control: number(L.spatialResolutionScale, 0.25),

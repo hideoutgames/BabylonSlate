@@ -61,10 +61,10 @@ Volumetric fog is lit by directional, point and spot lights, so light shafts sho
 | **Fog Height** | 0 | World height below which scene-wide fog is at full density. |
 | **Fog Height Falloff** | 0.1 | How fast scene-wide fog thins above **Fog Height**, per scene unit: at 0.1 it halves about every 7 units. 0 keeps it the same at every height. Higher values keep fog low, in valleys and over water. |
 | **Volumetric Intensity** | 1 | Brightness of scattered light. 0 removes beams but keeps the darkening. |
-| **Volumetric Distance** | 50 | How far from the camera scene-wide fog is sampled, in scene units. Fog Volumes are fogged up to the nearest surface at any distance. |
+| **Volumetric Distance** | 50 | How far from the camera scene-wide fog is sampled, in scene units. Fog Volumes are fogged up to the nearest surface at any distance, and lights near them still light them. |
 | **Scattering Anisotropy** | 0.2 | Positive values strengthen beams when looking toward a light. |
 | **Volumetric Resolution Scale** | 0.5 | Lower values cost less and look softer. |
-| **Volumetric Steps** | 24 | More steps reduce banding, at a higher cost. Where a view crosses a Fog Volume with Scene-Wide Fog on, the steps are shared between the two. |
+| **Volumetric Steps** | 24 | More steps reduce banding, at a higher cost. In a scene with Fog Volumes and Scene-Wide Fog on, half the steps go to each. |
 | **Volumetric Light Limit** | 4 | Lights that contribute, 1 to 4. Fill and area lights never contribute. |
 
 - Light colours tint the fog. Turn on **Cast Shadows** on a light for beams that are blocked by objects.
