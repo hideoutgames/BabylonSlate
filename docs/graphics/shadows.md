@@ -68,7 +68,7 @@ The **Shadows Quality** setting in **Scalability** applies one of these sets. Ch
 
 Applying a level also resets a Manual **Local Shadow Light Budget** to that level's count.
 
-All shadows share one shadow map: 4096 × 4096 at Low and Medium, 8192 × 8192 at High and Ultra where the device allows, and larger for an [8192 directional map](#8192-directional-maps). When its size changes, the old map is freed in one frame and the new one made in the next, so the two never hold GPU memory together: for that one frame nothing casts a shadow, and `stat draws` in the [console](../debugging/console.md) lists **shadow atlas resizing**.
+All shadows share one shadow map: 4096 × 4096 at Low and Medium, 8192 × 8192 at High and Ultra where the device allows, and larger for an [8192 directional map](#8192-directional-maps). When its size changes, the old map is freed in one frame and the new one made in the next, so the two never hold GPU memory together: shadows are missing for at least that frame, and `stat draws` in the [console](../debugging/console.md) lists **shadow atlas resizing**.
 
 The last cascades, those farthest from the camera, use half the **Directional Map Size** in each direction (never below 256, and never the first two cascades): far shadows are seen small, and the room they leave goes to closer shadows and local lights.
 
