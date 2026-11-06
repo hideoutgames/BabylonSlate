@@ -1,13 +1,12 @@
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore";
 import { selectionVertexShader } from "@babylonjs/core/Shaders/selection.vertex";
-import { selectionVertexShaderWGSL } from "@babylonjs/core/ShadersWGSL/selection.vertex";
 import "@babylonjs/core/Shaders/selection.fragment";
-import "@babylonjs/core/ShadersWGSL/selection.fragment";
 import "@babylonjs/core/Shaders/postprocess.vertex";
-import "@babylonjs/core/ShadersWGSL/postprocess.vertex";
+// The WGSL twins register with the WebGPU Engine's code (webgpu-registrations).
 import { SHARED_OUTLINE_ATTRIBUTE, SHARED_OUTLINE_GROUPS, SHARED_OUTLINE_MAX_WIDTH } from "./shared-outline";
 import { checkedShader } from "./checked-shader";
+import { registeredWgsl } from "./webgpu-on-demand";
 import { latticeShaderDeclarations, latticeShaderFunctions, LATTICE_WORLD_POSITION_PATTERN, latticeWorldPositionCode } from "./lattice-deformer-shader";
 
 export const SHARED_OUTLINE_MASK_SHADER = "hapticSharedOutlineMask";
@@ -76,12 +75,16 @@ ${output}vOutlineAlpha*=${vertex}instanceColor.a;
 #include<clipPlaneVertex>`);
 }
 
-/** Native deformation with owned regular-instance IDs and whole-actor thin IDs. */
-export function registerSharedOutlineShaders(): void {
+/**
+ * Native deformation with owned regular-instance IDs and whole-actor thin IDs. The WGSL mask stage rewrites Babylon's
+ * WGSL selection stage, which only the WebGPU Engine's code registers, so only a WebGPU Engine's outline builds it.
+ */
+export function registerSharedOutlineShaders(webgpu: boolean): void {
   ShaderStore.ShadersStore[`${SHARED_OUTLINE_MASK_SHADER}VertexShader`] =
     maskVertex(selectionVertexShader.shader, false);
-  ShaderStore.ShadersStoreWGSL[`${SHARED_OUTLINE_MASK_SHADER}VertexShader`] =
-    maskVertex(selectionVertexShaderWGSL.shader, true);
+  if (webgpu)
+    ShaderStore.ShadersStoreWGSL[`${SHARED_OUTLINE_MASK_SHADER}VertexShader`] =
+      maskVertex(registeredWgsl("selectionVertexShader", "shader"), true);
   ShaderStore.ShadersStore[`${SHARED_OUTLINE_MASK_SHADER}PixelShader`] = `
 #if defined(INSTANCES) && !defined(THIN_INSTANCES)
 flat varying float vSelectionId;

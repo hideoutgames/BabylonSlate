@@ -65,7 +65,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     if (view.scene !== graph.scene || view.isDisposed) throw new Error("Shared outline view does not belong to the live graph Scene.");
     this.view = view;
     this.outputTexture = graph.textureManager.createDanglingHandle();
-    registerSharedOutlineShaders();
+    registerSharedOutlineShaders(graph.engine.isWebGPU);
     this.compose = new EffectWrapper({
       name: `${name} Compose`, engine: graph.engine, useShaderStore: true,
       fragmentShader: SHARED_OUTLINE_COMPOSE_SHADER,

@@ -2,7 +2,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
 import { Observable } from "@babylonjs/core/Misc/observable";
 import type { Nullable } from "@babylonjs/core/types";
-import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
+import { webGpuPipelineStatistics } from "./webgpu-on-demand";
 
 /**
  * A deferring view that has held its image this long starts no more
@@ -111,9 +111,6 @@ type DeferralState = {
   lookingUp: number;
 };
 
-/** Babylon 9.29 pipeline-cache statistics a synchronous creation updates. */
-const statistics = WebGPUCacheRenderPipeline as unknown as { NumCacheMiss: number; _NumPipelineCreationCurrentFrame: number };
-
 /** Thrown out of the pipeline cache to skip the draw that missed it. */
 const DEFERRED = Symbol("deferred render pipeline");
 const states = new WeakMap<AbstractEngine, DeferralState>();
@@ -127,6 +124,9 @@ function install(engine: AbstractEngine): DeferralState {
   if (typeof draw !== "function" || typeof create !== "function" || typeof lookup !== "function" ||
     typeof cache._buildRenderPipelineDescriptor !== "function")
     throw new Error("Unsupported Babylon WebGPU pipeline cache layout: _draw, getRenderPipeline, _createRenderPipeline or _buildRenderPipelineDescriptor is missing.");
+  // Babylon 9.29 pipeline-cache statistics a synchronous creation updates; the WebGPU code that created this Engine provides them.
+  const statistics = webGpuPipelineStatistics();
+  if (!statistics) throw new Error("WebGPU pipeline deferral needs the WebGPU code loaded (webgpu-registrations).");
   const state: DeferralState = {
     scopes: [], pending: new Set(), synchronous: new WeakSet(), progressAt: 0, settled: 0, drawn: new WeakSet(), passDraws: new Map(),
     startedAt: new WeakMap(), omitting: 0, warmOpen: 0, lookingUp: 0,

@@ -10,12 +10,10 @@ import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { defaultVertexShader } from "@babylonjs/core/Shaders/default.vertex";
 import { pbrVertexShader } from "@babylonjs/core/Shaders/pbr.vertex";
-import { defaultVertexShaderWGSL } from "@babylonjs/core/ShadersWGSL/default.vertex";
-import { pbrVertexShaderWGSL } from "@babylonjs/core/ShadersWGSL/pbr.vertex";
 import { bumpFragment } from "@babylonjs/core/Shaders/ShadersInclude/bumpFragment";
-import { bumpFragmentWGSL } from "@babylonjs/core/ShadersWGSL/ShadersInclude/bumpFragment";
 import { bindMeshLatticeDeformerBuffer, hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { checkedShader } from "./checked-shader";
+import { registeredWgsl } from "./webgpu-on-demand";
 import { LATTICE_SAMPLER, LATTICE_WORLD_POSITION_PATTERN, latticeNormalShaderFunction, latticeShaderDeclarations, latticeShaderFunctions, latticeWorldPositionCode } from "./lattice-deformer-shader";
 
 /** Attached on demand to the materials an active cage draws. Per-mesh defines
@@ -49,7 +47,7 @@ export class LatticeDeformerPlugin extends MaterialPluginBase {
     const objectNormalVaryings = `#if defined(SLATE_LATTICE) && defined(OBJECTSPACE_NORMALMAP)\n${[0, 1, 2].map((i) => wgsl ? `varying vSlateLatticeJ${i}: vec3f;` : `varying vec3 vSlateLatticeJ${i};`).join("\n")}\n#endif\n`;
     if (type === "fragment") {
       const normalMap = "(normalW\\s*=\\s*normalize\\(mat3(?:x3f)?\\((?:uniforms\\.)?normalMatrix[^;]*\\*\\s*normalW\\);)";
-      checkedShader(wgsl ? bumpFragmentWGSL.shader : bumpFragment.shader, "lattice object normal map").replace(new RegExp(normalMap), "$1");
+      checkedShader(wgsl ? registeredWgsl("bumpFragment", "include") : bumpFragment.shader, "lattice object normal map").replace(new RegExp(normalMap), "$1");
       const input = wgsl ? "fragmentInputs." : "";
       return {
         CUSTOM_FRAGMENT_DEFINITIONS: objectNormalVaryings + `#if defined(SLATE_LATTICE) && defined(OBJECTSPACE_NORMALMAP)\n${latticeNormalShaderFunction(language)}\n#endif\n`,
@@ -58,8 +56,8 @@ export class LatticeDeformerPlugin extends MaterialPluginBase {
     }
     if (type !== "vertex") return null;
     const source = this._material instanceof PBRBaseMaterial
-      ? (wgsl ? pbrVertexShaderWGSL.shader : pbrVertexShader.shader)
-      : (wgsl ? defaultVertexShaderWGSL.shader : defaultVertexShader.shader);
+      ? (wgsl ? registeredWgsl("pbrVertexShader", "shader") : pbrVertexShader.shader)
+      : (wgsl ? registeredWgsl("defaultVertexShader", "shader") : defaultVertexShader.shader);
     const normal = "((?:vertexOutputs\\.)?vNormalW\\s*=\\s*normalize\\(normalWorld\\s*\\*\\s*(?:normalUpdated|(?:vertexOutputs\\.)?vNormalW)\\);)";
     // Regex plugin hooks run after include expansion. Validate their original
     // stock anchors now rather than silently losing a stage after an upgrade.

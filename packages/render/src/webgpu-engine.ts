@@ -1,4 +1,9 @@
+/**
+ * WebGPU Engine construction. Loaded on demand (`webgpu-on-demand.ts`) with the WebGPU-only Babylon code it imports, so
+ * only a session that creates a WebGPU Engine fetches it.
+ */
 import "./babylon-registrations";
+import "./webgpu-registrations";
 import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCompression";

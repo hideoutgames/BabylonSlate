@@ -10,7 +10,7 @@ import { ThinSSRBlurPostProcess } from "@babylonjs/core/PostProcesses/thinSSRBlu
 import { ThinSSRBlurCombinerPostProcess } from "@babylonjs/core/PostProcesses/thinSSRBlurCombinerPostProcess";
 // The stages' vertex shader, from the shader store.
 import "@babylonjs/core/Shaders/postprocess.vertex";
-import "@babylonjs/core/ShadersWGSL/postprocess.vertex";
+// The WGSL twin registers with the WebGPU Engine's code (webgpu-registrations).
 import type { SceneEffectsPlan } from "./scene-effects";
 import {
   sceneRenderingSettings,

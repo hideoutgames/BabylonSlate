@@ -4,6 +4,8 @@ import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 import { WebGPUCacheRenderPipelineTree } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipelineTree";
 import { WebGPUDepthCullingState } from "@babylonjs/core/Engines/WebGPU/webgpuDepthCullingState";
 import { StencilState } from "@babylonjs/core/States/stencilState";
+// What creating a WebGPU Engine loads first: the pipeline-cache statistics the deferral counts with, among others.
+import "./webgpu-registrations";
 
 type Pipeline = { label: string };
 

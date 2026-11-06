@@ -7,6 +7,7 @@ import { havokHostedWasmVitePlugin } from "../editor/vite-havok-wasm";
 import { rapierHostedWasmVitePlugin } from "../editor/vite-rapier-wasm";
 import { bundledPackagesReport } from "./vite-bundled-packages";
 import { previewDiagnosticsEntry } from "./vite-preview-diagnostics";
+import { isWebGpuOnlyModule, webGpuChunkGuard } from "./vite-webgpu-chunk";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(rootDir, "../..");
@@ -68,25 +69,32 @@ function writePlayerFileList(): Plugin {
   };
 }
 
-/** Wasm runtimes the player page imports only on demand; everything else is in `player.js`. */
+/** Wasm runtimes the player page imports only on demand; everything else is in `player.js` or `player-webgpu.js`. */
 const PAGE_ON_DEMAND_RUNTIME = /node_modules[\\/](@dimforge[\\/]rapier2d[^\\/]*|@babylonjs[\\/]havok|@recast-navigation[\\/]wasm)[\\/]/;
 
 export default defineConfig({
   base: "./",
-  plugins: [copyRuntimePublic(), havokHostedWasmVitePlugin(), rapierHostedWasmVitePlugin(), previewDiagnosticsEntry(rootDir), bundledPackages.main, writePlayerFileList()],
+  plugins: [copyRuntimePublic(), havokHostedWasmVitePlugin(), rapierHostedWasmVitePlugin(), previewDiagnosticsEntry(rootDir), bundledPackages.main, writePlayerFileList(), webGpuChunkGuard()],
   build: {
     target: "es2022",
     cssCodeSplit: false,
     rolldownOptions: {
       output: {
         format: "es",
-        // One player bundle: every module, Babylon's lazily imported shaders and loaders included,
-        // goes into `player.js`. Only the wasm runtimes the page itself loads on demand (Rapier 2D,
-        // Havok and Recast for the in-process fallback and navigation debug) stay separate files, so a
-        // game that never needs them never downloads them. Their names keep `rapier` / `havok`, which
+        // Two player bundles. `player.js` holds every module a WebGL2 game runs, Babylon's lazily
+        // imported shaders and loaders included. `player-webgpu.js` holds the WebGPU engine and every
+        // WGSL shader, which only a WebGPU game loads (`isWebGpuOnlyModule`; `webGpuChunkGuard` fails
+        // the build if `player.js` would still import any of it). Main is matched first, so a module
+        // that WebGL2 code imports statically stays in `player.js` with everything it imports.
+        // The wasm runtimes the page itself loads on demand (Rapier 2D, Havok and Recast for the
+        // in-process fallback and navigation debug) stay separate files, so a game that never needs
+        // them never downloads them. Their names keep `rapier` / `havok`, which
         // `selectPlayerRuntimeFiles` uses to leave an unused engine out of an export.
         codeSplitting: {
-          groups: [{ name: "main", test: (id: string) => !PAGE_ON_DEMAND_RUNTIME.test(id) }],
+          groups: [
+            { name: "main", test: (id: string) => !PAGE_ON_DEMAND_RUNTIME.test(id) && !isWebGpuOnlyModule(id) },
+            { name: "webgpu", test: isWebGpuOnlyModule },
+          ],
         },
         entryFileNames: "player.js",
         chunkFileNames: "player-[name].js",

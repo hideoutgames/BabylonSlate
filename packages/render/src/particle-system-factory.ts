@@ -10,11 +10,9 @@ import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem"
 import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
 import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 import type { Scene } from "@babylonjs/core/scene";
-// GPUParticleSystem looks its WebGL2 and WebGPU simulation up by class name; the compute path needs the
-// WebGPU compute extension.
+// GPUParticleSystem looks its WebGL2 and WebGPU simulation up by class name. The WebGPU one, with the compute
+// extension it needs, registers as the WebGPU Engine's code loads (webgpu-registrations).
 import "@babylonjs/core/Particles/webgl2ParticleSystem";
-import "@babylonjs/core/Particles/computeShaderParticleSystem";
-import "@babylonjs/core/Engines/WebGPU/Extensions/engine.computeShader";
 import type {
   BasicEmitterPlan,
   BasicPlanFactorKey,
