@@ -7,12 +7,11 @@ import type { ParticleLibrary } from "./particle-service";
 import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import type { RagdollCaptureResult } from "./ragdoll-pose";
 import type { RenderProjectSettings, ScalabilityAcknowledgement } from "@haptic/core";
-import type { ResolvedRenderingPipeline } from "@haptic/core";
 import type { SceneOutlineSelection } from "./scene-outline-host";
 import type { SceneLayerLoadIdentity, SceneLoadCount } from "./scene-load-readiness";
 import type { SceneStreamIdentity } from "./scene-streaming-readiness";
 import type { SceneSourceAssets } from "./scene-source-assets";
-import type { nativePreparationForEngine, NativePreparationLimits, NativePreparationPriority } from "./native-preparation";
+import type { NativePreparationPriority } from "./native-preparation";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { RenderDiagnostics } from "./render-diagnostics";
 import type { PresentedImageSample } from "./presented-image";
@@ -166,16 +165,9 @@ export interface EngineHandle {
   cancelFrameCapture: (reason?: string) => void;
   /** Existing gizmos/selection overlay adapted to exact runtime identities. */
   attachRuntimeTransformTools: (options: RuntimeTransformToolsOptions) => RuntimeTransformTools;
-  /** The backend the Engine runs, against the project's request. */
-  renderingPipeline: () => ResolvedRenderingPipeline;
   scalabilityStatus: () => ScalabilityAcknowledgement | undefined;
   /** Accounted GPU vertex+index bytes for this Scene's GLB cache. */
   accountedGeometryBytes: () => number;
-  /** Explicit tap pick (hover picking is disabled). */
-  pickAt: (
-    canvasX: number,
-    canvasY: number,
-  ) => { meshName: string; slotId: number | null } | null;
   /** Editor camera, gizmos, grid, outline and scene sync; null in Play views. */
   editor: EditorTools | null;
   /** Latest snapshot actor positions (Play), for e2e collision / motion. */
@@ -226,20 +218,17 @@ export interface EngineHandle {
    * sources leave `warm` off: its load compiles once its lighting is final.
    */
   acquireSceneSources: (sources: SceneSourceAssets, options?: { prepare?: boolean; warm?: boolean; signal?: AbortSignal; priority?: NativePreparationPriority }) => Promise<() => void>;
-  nativePreparationStats: () => ReturnType<ReturnType<typeof nativePreparationForEngine>["snapshot"]>;
   /** Play's last load-time warm-up of what it may spawn (`warmSpawnables`): what it compiled for, and how long it took. */
   spawnableWarmStats: () => { materials: number; models: number; ms: number } | null;
   /** Release startup source ownership after its actors have retired. */
   releaseInitialSources: () => void;
-  /** Refresh owned library unions without resetting live mixer session settings. */
-  setSourceLibraries: (libraries: Pick<SceneSourceAssets, "audioLibrary" | "particleLibrary">) => void;
   /** Project render mode and defaults; scene overrides remain independent. */
   setRenderSettings: (settings: RenderShadingSettings) => void;
   /** Register FontFace source bytes before Bitmap 2D Text paints. */
   registerFonts: (entries: readonly FontAssetEntry[]) => Promise<void>;
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
   applySceneEnvironment: (sceneData: SerializedScene) => void;
-  /** Overlay Play SceneLayer scenes, back to front. */
+  /** Overlay Play SceneLayer scenes, back to front, with their layer ids. Test seam: production code does not call it. */
   sceneLayerScenes: () => Array<{
     layerId: string;
     scene: Scene;
@@ -266,6 +255,7 @@ export interface EngineHandle {
   setAudioBudget: (bytes: number, enabled: boolean) => void;
   /** Live Engine Settings max concurrent voices (Play only). */
   setMaxVoices: (maxVoices: number) => void;
+  /** Test seam: replace the post-process stack directly. Production replaces it through the `scenePostProcess` command and scene loads. */
   setPostProcessStack: (stack: readonly PostProcessStackInput[]) => void;
   setMaterialDocuments: (
     documents: ReadonlyMap<string, MaterialDocument>,
@@ -468,8 +458,6 @@ export interface CreateEngineOptions {
   audioByteCeiling?: number;
   audioBudgetEnabled?: boolean;
   audioMaxVoices?: number;
-  /** Shared Engine admission limits, configured when its first handle is created. */
-  nativePreparation?: NativePreparationLimits;
   /** Engine Settings `hardwareScalingLevel`. 1 is native. */
   hardwareScalingLevel?: number;
   /**
