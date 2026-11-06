@@ -7,7 +7,6 @@ import {
   collectExportReachability,
   exportGame,
   zipExport,
-  MISSING_STARTUP_SCENE_MESSAGE,
   NAVMESH_EXPORT_TYPE,
   navmeshExportGuid,
   AUDIO_REVERB_EXPORT_TYPE,
@@ -56,8 +55,6 @@ import type { ScriptBundleEntry } from "@haptic/bridge";
 import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
 import { embeddedScriptHost } from "../lib/embedded-script";
 import { requireSaveGameDefinition } from "../lib/save-game-catalog";
-
-export { MISSING_STARTUP_SCENE_MESSAGE };
 
 export function assetsFromIndexed(
   list: ReadonlyArray<IndexedAsset>,

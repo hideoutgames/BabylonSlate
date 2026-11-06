@@ -26,10 +26,10 @@ import { ownedActorProbeScript } from "./scene-scripts";
 import { withFeatureTestHudPulse } from "./timeline";
 
 /** Folder under `assets/FeatureTest/` for the Scene Layers and their SceneLayerActor Classes. */
-export const FEATURE_TEST_SCENE_LAYERS_FOLDER = "SceneLayers";
+const FEATURE_TEST_SCENE_LAYERS_FOLDER = "SceneLayers";
 
 /** Asset names (Classes are `FT_UI*`, so their class ids never collide with other areas). */
-export const FEATURE_TEST_SCENE_LAYER_NAMES = {
+const FEATURE_TEST_SCENE_LAYER_NAMES = {
   /** Every 2D overlay widget, spawned over the main scene at z-order 10. */
   hud: "FT_HUD",
   /** Small physics-enabled layer (own 2D world), spawned over the main scene at z-order 5. */
@@ -49,7 +49,7 @@ export const FEATURE_TEST_SCENE_LAYER_NAMES = {
  * overscan (about 10 list rows and 24 grid cells), so the item counts change
  * scroll range rather than per-frame cost.
  */
-export const FEATURE_TEST_SCENE_LAYER_KNOBS = {
+const FEATURE_TEST_SCENE_LAYER_KNOBS = {
   listItemCount: 10_000,
   gridItemCount: 400,
   scrollRows: 10,

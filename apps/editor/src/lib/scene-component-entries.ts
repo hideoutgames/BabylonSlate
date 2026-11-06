@@ -2,7 +2,7 @@ import type { SerializedScene } from "@haptic/core";
 import type { SceneComponentPickerEntry } from "@haptic/editor-kit";
 import { sceneActorDisplayNames } from "./scene-actor-names";
 
-export function sceneComponentTitle(classId: string): string {
+function sceneComponentTitle(classId: string): string {
   return classId.replace(/Component$/, "");
 }
 

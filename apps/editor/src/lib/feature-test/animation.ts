@@ -37,10 +37,10 @@ import { stressPoint } from "./layout";
  */
 
 /** Folder under `assets/FeatureTest/` for every animation asset. */
-export const FEATURE_TEST_ANIMATION_FOLDER = "Animation";
+const FEATURE_TEST_ANIMATION_FOLDER = "Animation";
 
 /** Asset names (Class ids are the file stems), so tests and docs can find them by path. */
-export const FEATURE_TEST_ANIMATION_NAMES = {
+const FEATURE_TEST_ANIMATION_NAMES = {
   /** Idle / Walk / Run / Cheer state machine on the Mannequin clips. */
   locomotionGraph: "FT_AnimLocomotion",
   /** Open / Close cycle on the Holiday Pack door's node animation clips. */
@@ -53,7 +53,7 @@ export const FEATURE_TEST_ANIMATION_NAMES = {
  * Perf knob: the `FT_Stress` crowd is `columns × rows` (64) Locomotor
  * Mannequins, each running one Class Tick and one Anim Graph evaluation.
  */
-export const FEATURE_TEST_ANIMATION_STRESS = { columns: 8, rows: 8, spacing: 2.75 } as const;
+const FEATURE_TEST_ANIMATION_STRESS = { columns: 8, rows: 8, spacing: 2.75 } as const;
 
 const NAMES = FEATURE_TEST_ANIMATION_NAMES;
 const FOLDER = FEATURE_TEST_ANIMATION_FOLDER;

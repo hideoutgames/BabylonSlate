@@ -35,7 +35,7 @@ export const MANNEQUIN_ASSET_FOLDER = "Mannequin";
 export const MANNEQUIN_CLASS_ID = "Mannequin";
 export const MANNEQUIN_ACTOR_ID = "actor-1";
 /** The model faces +Z; turn it toward the default Camera on the -Z side. */
-export const MANNEQUIN_ROTATION: QuaternionTuple = [0, 1, 0, 0];
+const MANNEQUIN_ROTATION: QuaternionTuple = [0, 1, 0, 0];
 
 /**
  * Kenney Mannequin is 2.7 units tall at Import Scale 1 (rest pose, origin at the feet), and its

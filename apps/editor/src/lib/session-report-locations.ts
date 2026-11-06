@@ -45,7 +45,7 @@ export const EMPTY_SESSION_REPORT_LABELS: SessionReportLabels = {
   nodes: new Map(),
 };
 
-export const UNKNOWN_ASSET_LABEL = "Unknown Asset";
+const UNKNOWN_ASSET_LABEL = "Unknown Asset";
 /** The location of an entry that has no asset to open. */
 export const NO_SOURCE_LABEL = "No Source";
 
@@ -55,7 +55,7 @@ export function sessionReportNodeId(
   return entry.btNodeId ?? entry.nodeId;
 }
 
-export function sessionReportNodeKey(assetRef: string, nodeId: string): string {
+function sessionReportNodeKey(assetRef: string, nodeId: string): string {
   return `${assetRef}\u0000${nodeId}`;
 }
 

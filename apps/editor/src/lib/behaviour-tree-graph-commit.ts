@@ -5,7 +5,7 @@ import {
 } from "@haptic/behaviour-tree";
 import type { SerializedGraph } from "@haptic/core";
 
-export function attachNewBehaviourTreeNodes(
+function attachNewBehaviourTreeNodes(
   next: BehaviourTreeDocument,
   previous: BehaviourTreeDocument,
   parentId: string | null,

@@ -11,7 +11,7 @@ import {
   type TypeVisual,
 } from "@haptic/editor-kit";
 
-export const SEARCH_RESULT_GROUPS: Array<{ kind: SearchEntryKind; label: string }> = [
+const SEARCH_RESULT_GROUPS: Array<{ kind: SearchEntryKind; label: string }> = [
   { kind: "asset", label: "Assets" },
   { kind: "actor", label: "Actors" },
   { kind: "component", label: "Components" },

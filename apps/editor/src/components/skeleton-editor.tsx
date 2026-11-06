@@ -62,7 +62,7 @@ export function SkeletonDetailsPanel(_props: IDockviewPanelProps) {
   );
 }
 
-export function SkeletonPreview({
+function SkeletonPreview({
   payload,
   sourceBytes = null,
   sourceError = null,
@@ -100,7 +100,7 @@ export function SkeletonPreview({
   );
 }
 
-export function SkeletonEditor({ payload }: { payload: Record<string, unknown> }) {
+function SkeletonEditor({ payload }: { payload: Record<string, unknown> }) {
   const skeleton = normalizeSkeletonPayload(payload);
   const { assetRegistry } = useRegistryState();
   const assets = assetRegistry?.list() ?? [];

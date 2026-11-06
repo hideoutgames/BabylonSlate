@@ -18,7 +18,7 @@ export type DebugConsoleTranscriptLog = {
 const logRows = new WeakMap<DebugConsoleTranscriptLog, DebugConsoleTranscriptEntry>();
 
 /** The row for a log, reused while the same log object is passed in. */
-export function transcriptEntryForLog(
+function transcriptEntryForLog(
   log: DebugConsoleTranscriptLog,
 ): DebugConsoleTranscriptEntry {
   let row = logRows.get(log);

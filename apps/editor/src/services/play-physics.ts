@@ -9,7 +9,7 @@ import {
 import { publicAssetUrl } from "../lib/branding";
 
 /** Public path of the self-hosted Havok wasm (same pattern as `/ktx2/`). */
-export const EDITOR_HAVOK_WASM_PATH = "/havok/HavokPhysics.wasm";
+const EDITOR_HAVOK_WASM_PATH = "/havok/HavokPhysics.wasm";
 
 export type PlayPhysicsSettings = {
   physicsWorld: PhysicsWorldKind;

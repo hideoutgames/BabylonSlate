@@ -35,7 +35,7 @@ export function contentBrowserColumnCount(viewportWidth: number): number {
   return Math.max(1, Math.floor(inner / stride));
 }
 
-export function windowedGridSlice({
+function windowedGridSlice({
   itemCount,
   viewportWidth,
   viewportHeight,

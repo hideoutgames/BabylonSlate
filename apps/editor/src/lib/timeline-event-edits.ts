@@ -41,7 +41,7 @@ function mapEventTracks(clip: SerializedTimelineClip, map: (track: TimelineEvent
 const sortKeys = (keys: TimelineEventKey[]) => keys.sort((a, b) => a.time - b.time);
 
 /** A name no other track of the clip, and no built-in event, uses. */
-export function uniqueTimelineEventName(clip: SerializedTimelineClip, name: string, exceptTrackId?: string): string {
+function uniqueTimelineEventName(clip: SerializedTimelineClip, name: string, exceptTrackId?: string): string {
   const taken = [
     ...TIMELINE_CLIP_BUILT_IN_DISPATCHERS,
     ...clip.eventTracks.filter((track) => track.id !== exceptTrackId).map((track) => track.name),

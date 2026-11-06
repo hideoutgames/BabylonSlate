@@ -10,7 +10,7 @@ import type { ClassEventOptions } from "./class-event-catalog";
 
 export type ClassBlueprintMemberKind = GraphClassMemberKind;
 
-export type BlueprintSection = {
+type BlueprintSection = {
   id: string;
   label: string;
   kind: ClassBlueprintMemberKind;
@@ -96,7 +96,7 @@ export function classAllowsMemberKind(
 }
 
 /** Starting names for members created before the user renames them inline. */
-export const NEW_MEMBER_NAMES = {
+const NEW_MEMBER_NAMES = {
   variable: "NewVariable",
   function: "NewFunction",
   event: "NewEvent",

@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import type { DebugConsoleLogEntry } from "../components/debug-console";
 
 /** Lines a Debug Console host keeps; older lines can never be shown. */
-export const DEBUG_CONSOLE_LOG_CAP = 500;
+const DEBUG_CONSOLE_LOG_CAP = 500;
 
 /** The newest `cap` entries of `previous` followed by `batch`, in arrival order. */
-export function appendDebugConsoleLogs(
+function appendDebugConsoleLogs(
   previous: readonly DebugConsoleLogEntry[],
   batch: readonly DebugConsoleLogEntry[],
   cap = DEBUG_CONSOLE_LOG_CAP,

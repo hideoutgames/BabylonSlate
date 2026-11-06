@@ -17,6 +17,6 @@ export function WatchesProvider({ children }: { children: ReactNode }) {
 }
 
 /** Supplies a watch store as is, with no loading or saving: `WatchesProvider`'s core. */
-export function WatchStoreProvider({ store, children }: { store: WatchStore; children: ReactNode }) {
+function WatchStoreProvider({ store, children }: { store: WatchStore; children: ReactNode }) {
   return <WatchStoreContext.Provider value={store}>{children}</WatchStoreContext.Provider>;
 }

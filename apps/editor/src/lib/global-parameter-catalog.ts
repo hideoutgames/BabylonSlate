@@ -13,7 +13,7 @@ const GLOBAL_PARAMETER_DOCUMENT_KINDS = ["global-parameter-collection"] as const
  * Every Global Parameter Collection's parameters by guid: an open tab's unsaved document first,
  * else the header snapshot saved with the asset, so nothing needs loading.
  */
-export function collectGlobalParameterCatalog(
+function collectGlobalParameterCatalog(
   assets: readonly { path: string; header: { guid: string; type: string; payload?: unknown } }[],
   documents: readonly { ref: { path: string }; content?: unknown }[] = [],
 ): GlobalParameterCatalog {

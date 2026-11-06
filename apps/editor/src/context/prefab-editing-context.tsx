@@ -618,6 +618,4 @@ export function usePrefabEditing(): PrefabEditingContextValue {
 export function useOptionalPrefabEditing(): PrefabEditingContextValue | null {
   return useContext(PrefabEditingContext);
 }
-
-export { previewSceneFor } from "../lib/prefab-preview";
 /* eslint-enable react-refresh/only-export-components */

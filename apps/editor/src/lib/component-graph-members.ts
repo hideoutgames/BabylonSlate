@@ -13,7 +13,7 @@ import {
 export const COMPONENT_GRAPH_MEMBER_CATEGORY = "Components";
 
 /** The component's object-ref category: Components unless authored; empty is uncategorized. */
-export function componentGraphMemberCategory(
+function componentGraphMemberCategory(
   component: { category?: string },
 ): string | undefined {
   return component.category === undefined

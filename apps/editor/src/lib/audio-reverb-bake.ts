@@ -17,16 +17,16 @@ export type AudioReverbBakeWrite = {
 };
 type AudioReverbWrite = (entry: AudioReverbBakeWrite) => Promise<void>;
 
-export type AudioReverbBakeDiagnostic = {
+type AudioReverbBakeDiagnostic = {
   code: string;
   message: string;
 };
 
-export type AudioReverbBakeScene = {
+type AudioReverbBakeScene = {
   actors?: readonly SerializedActor[];
 } & Record<string, unknown>;
 
-export type AudioReverbBakeSceneEntry = { path: string; scene: AudioReverbBakeScene };
+type AudioReverbBakeSceneEntry = { path: string; scene: AudioReverbBakeScene };
 
 /**
  * A flush whose result did not reach its Scene's `audioReverb` chunk, for
@@ -53,7 +53,7 @@ export class AudioReverbBakeUnsavedError extends Error {
 }
 
 /** Scenes whose flushed result was not saved, by path. */
-export type AudioReverbUnsavedResults = ReadonlyMap<string, AudioReverbBakeUnsavedError>;
+type AudioReverbUnsavedResults = ReadonlyMap<string, AudioReverbBakeUnsavedError>;
 
 export type AudioReverbBakeController = {
   schedule(path: string, scene: AudioReverbBakeScene): void;
@@ -397,7 +397,7 @@ export function sceneFromDocument(
   return scene as AudioReverbBakeScene;
 }
 
-export type AudioReverbFlushScenes = {
+type AudioReverbFlushScenes = {
   scenes: AudioReverbBakeSceneEntry[];
   /** Scenes the bake could not load, by path, with the reason. */
   unreadable: Map<string, unknown>;

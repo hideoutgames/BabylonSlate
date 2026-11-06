@@ -1,7 +1,7 @@
 import type { TraceFrame } from "@haptic/debugger";
 import { humanizePropertyLabel } from "@haptic/editor-kit";
 
-export type ParsedTraceSnapshot =
+type ParsedTraceSnapshot =
   { status: "ready"; value: unknown } | { status: "missing" | "invalid" };
 
 export function parseTraceSnapshot(
@@ -60,7 +60,7 @@ export function traceValuePreview(value: unknown): string {
   return text.length > 100 ? `${text.slice(0, 100)}…` : text;
 }
 
-export type TraceValueNode = {
+type TraceValueNode = {
   id: string;
   /** JSON pointer into the selected frame (snapshot is the parsed snapshotText). */
   path: string;
@@ -372,7 +372,7 @@ export function traceSnapshotRoots(
   return roots;
 }
 
-export type TraceSnapshotRow = TraceValueNode & {
+type TraceSnapshotRow = TraceValueNode & {
   depth: number;
   expanded: boolean;
   hasChildren: boolean;
@@ -445,7 +445,7 @@ export function findTraceNode(
   return undefined;
 }
 
-export type TraceChange = {
+type TraceChange = {
   id: string;
   path: string;
   label: string;

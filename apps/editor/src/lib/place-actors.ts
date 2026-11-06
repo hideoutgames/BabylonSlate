@@ -289,7 +289,7 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
 }
 
 /** Place Actors' default page, in display order; ids absent from the host are skipped. */
-export const FEATURED_PLACE_ACTOR_IDS: readonly string[] = [
+const FEATURED_PLACE_ACTOR_IDS: readonly string[] = [
   "empty",
   "shape-box",
   "shape-sphere",
@@ -347,7 +347,7 @@ export function featuredPlaceActors(
   });
 }
 
-export const PLACEABLE_PROJECT_TYPES = new Set([
+const PLACEABLE_PROJECT_TYPES = new Set([
   "Class",
   "Prefab",
   "Model",

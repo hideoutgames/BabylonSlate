@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@haptic/core";
+import { addCallEventNode, addCallFunctionNode } from "./class-member-nodes";
 import {
-  addCallEventNode,
-  addCallFunctionNode,
   addClassMember,
   addVariableAccessNode,
   blueprintSectionsForClass,

@@ -18,11 +18,11 @@ export const FEATURE_TEST_HOLIDAY_MODELS = [
 
 export type FeatureTestHolidayModel = (typeof FEATURE_TEST_HOLIDAY_MODELS)[number];
 
-export const HOLIDAY_PACK_DIR = "engine-content/kenney-assets/Holiday Pack";
+const HOLIDAY_PACK_DIR = "engine-content/kenney-assets/Holiday Pack";
 export const HOLIDAY_COLORMAP_PATH = `${HOLIDAY_PACK_DIR}/Textures/colormap.png`;
 /** Onest (SIL OFL 1.1); `OFL.txt` ships beside it. */
 export const ONEST_FONT_PATH = "engine-content/fonts/Onest/Onest-Latin-Variable.woff2";
-export const ONEST_LICENSE_PATH = "engine-content/fonts/Onest/OFL.txt";
+const ONEST_LICENSE_PATH = "engine-content/fonts/Onest/OFL.txt";
 export const SKYBOX_NET_PATH = "engine-content/skybox/cubemap_layout.png";
 
 /** Kenney Platformer Pack Redux tilesheet: 13 × 12 tiles of 128 px (CC0). */

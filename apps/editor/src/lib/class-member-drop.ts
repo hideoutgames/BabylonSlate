@@ -42,7 +42,7 @@ export function droppedRowsNotice(
   return sentences.length > 0 ? sentences.join(" ") : null;
 }
 
-export type ClassMemberDropKind = ClassBlueprintMemberKind;
+type ClassMemberDropKind = ClassBlueprintMemberKind;
 
 export type ClassMemberDropRow = {
   id: string;
@@ -63,7 +63,7 @@ export type GraphDropPoint = {
   clientToFlow(clientX: number, clientY: number): { x: number; y: number };
 };
 
-export type ClassMemberDropResult =
+type ClassMemberDropResult =
   | { kind: "ignore" }
   | {
       kind: "choose-access";
@@ -116,7 +116,7 @@ export function dropVariableBinding(
 }
 
 /** Component variables are read-only, and only single Object / Actor variables validate. */
-export function variableAccessAllowed(
+function variableAccessAllowed(
   variable: Pick<GraphClassMember, "typeId" | "container" | "componentId">,
   access: VariableAccessKind,
 ): boolean {
@@ -151,7 +151,7 @@ function dropNodeHeight(
  * `access`; one that cannot (Set on a component, Validated Get on a value
  * type) is reported by name instead of placed.
  */
-export function placeClassMemberDrop(options: {
+function placeClassMemberDrop(options: {
   graph: SerializedGraph;
   rows: readonly ClassMemberDropRow[];
   position: { x: number; y: number };

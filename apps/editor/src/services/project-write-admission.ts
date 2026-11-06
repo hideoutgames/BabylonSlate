@@ -25,7 +25,6 @@ export class ProjectWriteAdmission {
 
   get blocked(): boolean { return this.locks.size > 0; }
   get locked(): boolean { return this.blocked && this.active === 0; }
-  get pendingOperations(): number { return this.active; }
   get reason(): string | null { return this.locks.values().next().value?.reason ?? null; }
 
   subscribe(listener: () => void): () => void {

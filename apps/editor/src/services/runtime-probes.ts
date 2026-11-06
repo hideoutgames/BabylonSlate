@@ -35,7 +35,7 @@ export interface ViewportProbe {
 }
 
 /** Latest registration wins; unregistering an older one leaves the newer intact. */
-export class ProbeRegistry<T> {
+class ProbeRegistry<T> {
   private readonly entries = new Map<string, T>();
 
   register(key: string, probe: T): () => void {

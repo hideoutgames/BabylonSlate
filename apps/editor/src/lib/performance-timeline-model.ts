@@ -103,7 +103,7 @@ export function profileMarkers(profile: PerformanceProfile): TimelineMarker[] {
 }
 
 /** The rows of `stream` whose time falls in `range`, as a stream of their own. */
-export function streamInRange(stream: PerformanceStream, times: ArrayLike<number>, range: TimelineDomain): PerformanceStream {
+function streamInRange(stream: PerformanceStream, times: ArrayLike<number>, range: TimelineDomain): PerformanceStream {
   const width = stream.columns.length;
   const rows: number[] = [];
   let row = 0;

@@ -38,7 +38,7 @@ export function outlinerRowTarget(
   return null;
 }
 
-export function splitOutlinerRowIds(rowIds: readonly string[]): {
+function splitOutlinerRowIds(rowIds: readonly string[]): {
   folderIds: string[];
   actorIds: string[];
 } {

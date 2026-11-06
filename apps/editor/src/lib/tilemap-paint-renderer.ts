@@ -482,7 +482,7 @@ function cellsOnCanvas(frame: TilemapPaintFrame, rect: TilemapCellRect): { left:
 /** The selection outline's colour: the editor's `--selection` orange, as the viewport outline. */
 export const SELECTION_STROKE = "#ff8000";
 /** Over floating cells past the map's edge, which placing them cuts off: the canvas dimmed, then the dark theme's `--destructive`. */
-export const CUT_OFF_DIM = "oklch(0.2 0 0 / 0.55)";
+const CUT_OFF_DIM = "oklch(0.2 0 0 / 0.55)";
 export const CUT_OFF_FILL = "oklch(0.704 0.191 22.216 / 0.4)";
 
 /**

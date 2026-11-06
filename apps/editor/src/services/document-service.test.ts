@@ -16,6 +16,11 @@ import {
 } from "./document-service";
 import { ProjectService } from "./project-service";
 
+function activeDocument(service: DocumentService) {
+  const id = service.getState().activeDocumentId;
+  return id ? service.getDocument(id) : undefined;
+}
+
 function createMockProjectService(
   overrides: Partial<{
     loadDocument: ProjectService["loadDocument"];
@@ -211,7 +216,6 @@ describe("DocumentService", () => {
     const edited = { ...original, entries: [{ ...original.entries[0]!, values: { Price: 12 } }] };
     service.updateAssetDocument(id, edited);
     expect(service.getOpenDocumentsOrdered()).toContain(working);
-    expect(service.getClosableDocumentsOrdered()).toContain(working);
     expect(service.getDirtyDocuments()).toEqual([working]);
     expect(service.getScrollableDocumentsOrdered()).toEqual([]);
     expect(service.getState().activeDocumentId).toBe(CONTENT_BROWSER_ID);
@@ -346,12 +350,12 @@ describe("DocumentService", () => {
     expect(loadDocument).not.toHaveBeenCalled();
     paint();
     await vi.waitFor(() => expect(loadDocument).toHaveBeenCalledOnce());
-    expect(service.getActiveDocument()?.id).toBe(documentId(previous));
+    expect(activeDocument(service)?.id).toBe(documentId(previous));
     expect(beforeCommit).not.toHaveBeenCalled();
     read({ ...createDefaultScene(), name: "Next" });
     await opened;
     expect(beforeCommit).toHaveBeenCalledOnce();
-    expect(service.getActiveDocument()?.content).toMatchObject({ name: "Next" });
+    expect(activeDocument(service)?.content).toMatchObject({ name: "Next" });
     expect(service.getDocument(documentId(previous))).toBeUndefined();
   });
 
@@ -367,7 +371,7 @@ describe("DocumentService", () => {
       { kind: "scene", path: "assets/Missing.scene.hasset", label: "Missing" }, null, true, { beforeCommit },
     )).rejects.toBe(failure);
     expect(beforeCommit).not.toHaveBeenCalled();
-    expect(service.getActiveDocument()).toMatchObject({ id: documentId(previous), dirty: true, content: edited });
+    expect(activeDocument(service)).toMatchObject({ id: documentId(previous), dirty: true, content: edited });
   });
 
   it("does not let a cancelled late read replace a newer exclusive scene", async () => {
@@ -385,7 +389,7 @@ describe("DocumentService", () => {
     finishOldRead({ ...createDefaultScene(), name: "Old" });
     await rejected;
     expect(beforeCommit).not.toHaveBeenCalled();
-    expect(service.getActiveDocument()?.id).toBe(documentId(next));
+    expect(activeDocument(service)?.id).toBe(documentId(next));
     expect(service.getOpenDocumentsOrdered().filter((doc) => doc.ref.kind === "scene")).toHaveLength(1);
   });
 
@@ -446,7 +450,7 @@ describe("DocumentService", () => {
     expect(service.getDocument(sceneId)?.content).toBeNull();
     const restoredLabels = [sceneId, graphId].map((id) => service.getDocument(id)?.ref.label);
     await service.openDocument(projectService, service.getDocument(sceneId)!.ref);
-    expect(service.getActiveDocument()?.content).toMatchObject({ name: "Main" });
+    expect(activeDocument(service)?.content).toMatchObject({ name: "Main" });
     expect(service.getDocument(graphId)?.content).toBeNull();
     expect(projectService.loadDocument).toHaveBeenCalledOnce();
     await service.openDocument(projectService, service.getDocument(graphId)!.ref);

@@ -70,7 +70,6 @@ describe("project write admission", () => {
     await rejected;
     expect(await lease.ready).toBe(true);
     expect(rolledBack).toBe(true);
-    expect(admission.pendingOperations).toBe(0);
     lease.release();
   });
 
@@ -104,6 +103,9 @@ describe("project write admission", () => {
       write: async () => { throw new Error("No space"); },
     }, async writer => { void writer.write(); });
     await expect(save).rejects.toThrow("No space");
-    expect(admission.pendingOperations).toBe(0);
+    // No admitted operation is left retained: a lock lands at once.
+    const lease = admission.lock("Checking");
+    expect(admission.locked).toBe(true);
+    lease.release();
   });
 });
