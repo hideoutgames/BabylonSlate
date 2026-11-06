@@ -3,7 +3,6 @@ import {
   filterListedProjects,
   listedProjectsFromRecents,
   recentProjectsWithOpenedProject,
-  removeDeletesProject,
   sortListedProjects,
   type ListedProject,
 } from "./listed-projects";
