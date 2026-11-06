@@ -46,9 +46,11 @@ export function sceneWaterRemovals(scene: Scene): Array<{ mesh: Mesh; volume: Wa
   return result;
 }
 
-function circle(axis: "x" | "y" | "z", radius: number, offset = 0, segments = 48): Vector3[] {
-  return Array.from({ length: segments + 1 }, (_, i) => {
-    const a = i / segments * Math.PI * 2, u = Math.cos(a) * radius, v = Math.sin(a) * radius;
+const CIRCLE_SEGMENTS = 48;
+
+function circle(axis: "x" | "y" | "z", radius: number, offset = 0): Vector3[] {
+  return Array.from({ length: CIRCLE_SEGMENTS + 1 }, (_, i) => {
+    const a = i / CIRCLE_SEGMENTS * Math.PI * 2, u = Math.cos(a) * radius, v = Math.sin(a) * radius;
     return axis === "y" ? new Vector3(u, offset, v) : axis === "x" ? new Vector3(offset, u, v) : new Vector3(u, v, offset);
   });
 }

@@ -331,7 +331,7 @@ export async function renderPreviewFrame(
   return waitUntilReady(() => {
     const frame = host.renderer.render();
     return frame.rendered && frame.readyForPresentation;
-  }, isCurrent, undefined, budget, compiles ?? new DriverCompileWatch(host.scene.getEngine()));
+  }, isCurrent, budget, compiles ?? new DriverCompileWatch(host.scene.getEngine()));
 }
 
 /** A preview output target the FrameGraph can draw into: color plus depth. */

@@ -251,7 +251,7 @@ export async function captureAssetThumbnailPng(
     // A wait ends unready when the capture stopped being current (cancelled, past
     // its ceiling, or its Scene was disposed) or its bound ran out. A disposed
     // Scene is no time limit, as in `whileCurrent`.
-    if (!(await waitUntilReady(() => meshes.every((mesh) => mesh.isReady(true)), current, undefined, budget, compiles))) {
+    if (!(await waitUntilReady(() => meshes.every((mesh) => mesh.isReady(true)), current, budget, compiles))) {
       bounds.timedOut = !host.scene.isDisposed;
       return ranOut();
     }
