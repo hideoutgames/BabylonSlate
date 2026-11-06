@@ -15,7 +15,7 @@ import {
 import { cullStrictOccluders } from "./shared-outline-occluders";
 
 export const SHARED_OUTLINE_ATTRIBUTE = "hapticOutlineIdentity";
-export const SHARED_OUTLINE_MAX_ID = 65_535;
+const SHARED_OUTLINE_MAX_ID = 65_535;
 export const SHARED_OUTLINE_MAX_WIDTH = 8;
 export type SharedOutlineGroup = "strict" | "through" | "selection";
 export const SHARED_OUTLINE_GROUPS: readonly SharedOutlineGroup[] = ["strict", "through", "selection"];

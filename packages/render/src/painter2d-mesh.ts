@@ -29,7 +29,7 @@ function tracePath(context: PaintContext, path: readonly PainterPathSegment[]): 
 }
 
 /** Replays a complete component stream. Clip state never escapes this painter or replay. */
-export function paint2DCommands(context: PaintContext, commands: readonly PainterCommand[], width: number, height: number, worldWidth: number, worldHeight: number): void {
+function paint2DCommands(context: PaintContext, commands: readonly PainterCommand[], width: number, height: number, worldWidth: number, worldHeight: number): void {
   context.save();
   let maskDepth = 0;
   try {

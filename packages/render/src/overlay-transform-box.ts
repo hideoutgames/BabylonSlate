@@ -22,7 +22,7 @@ import type { RenderScheduler } from "./render-scheduler";
 import { overlayMinTargetWorldSize } from "./overlay-touch-target";
 import { linkedAxisScale } from "./linked-axis-scale";
 
-export const OVERLAY_BOX_HANDLES = [
+const OVERLAY_BOX_HANDLES = [
   "n",
   "s",
   "e",
@@ -209,7 +209,7 @@ function applyOverlayBoxResize(
   };
 }
 
-export function overlayBoxVisualCenter(
+function overlayBoxVisualCenter(
   bounds: OverlayBoxLocalBounds,
   transform: OverlayBoxTransform,
 ): { x: number; y: number } {
@@ -461,7 +461,7 @@ type Text2DOverlayMeta = {
   text2dDragStartScale?: [number, number, number];
 };
 
-export function readOverlayBoxTransform(mesh: AbstractMesh): OverlayBoxTransform {
+function readOverlayBoxTransform(mesh: AbstractMesh): OverlayBoxTransform {
   const rotation = mesh.rotationQuaternion
     ? mesh.rotationQuaternion
     : Quaternion.FromEulerVector(mesh.rotation);

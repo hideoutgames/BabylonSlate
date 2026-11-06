@@ -22,8 +22,8 @@ const NAV_FILL_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: 
 import { RENDERING_GROUP } from "./sorting";
 
 export const NAVMESH_DEBUG_Y_OFFSET = 0.04;
-export const NAVMESH_DEBUG_FILL = new Color3(0.18, 0.78, 0.32);
-export const NAVMESH_DEBUG_EDGE = new Color4(0.06, 0.32, 0.12, 1);
+const NAVMESH_DEBUG_FILL = new Color3(0.18, 0.78, 0.32);
+const NAVMESH_DEBUG_EDGE = new Color4(0.06, 0.32, 0.12, 1);
 
 export type NavDebugBlockerPose = {
   id: string;

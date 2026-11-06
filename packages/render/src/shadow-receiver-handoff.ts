@@ -6,7 +6,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import { notifySceneReceiversChanged } from "./scene-readiness-signal";
 
 /** Every per-light input of Babylon 9.29 PrepareDefinesForLight except the generator. */
-export function receiverSignature(light: Light): string {
+function receiverSignature(light: Light): string {
   const defines: Record<string, unknown> = {};
   // Light subclasses that add a define key rebuild the define set (area-rect-light).
   Object.defineProperty(defines, "rebuild", { value: () => {} });
@@ -23,7 +23,7 @@ export function receiverSignature(light: Light): string {
 }
 
 /** Lights a node block is bound to; it prepares their defines outside lightSources order. */
-export function pinnedLights(scene: Scene): Set<Light> {
+function pinnedLights(scene: Scene): Set<Light> {
   const pinned = new Set<Light>();
   for (const material of scene.materials) {
     if (!(material instanceof NodeMaterial)) continue;

@@ -19,7 +19,7 @@ export function pickBufferSize(scene: Scene): PointerCanvasSize {
 }
 
 /** Map a point on a canvas into Engine pick pixels. */
-export function mapCanvasToPick(
+function mapCanvasToPick(
   canvasX: number,
   canvasY: number,
   canvas: PointerCanvasSize,

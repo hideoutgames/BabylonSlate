@@ -20,7 +20,7 @@ import { drawWhateverTheView } from "./play-view-culling";
 export const SPRING_ARM_MESH_KIND = "springarm";
 export const SPRING_ARM_DEBUG_PREFIX = "springArmDebug:";
 /** Samples kept for each debug socket trail. */
-export const SPRING_ARM_DEBUG_TRAIL_POINTS = 48;
+const SPRING_ARM_DEBUG_TRAIL_POINTS = 48;
 
 const EDITOR_BOOM_COLOR = new Color3(0.92, 0.93, 0.96);
 const TARGET_COLOR = new Color4(1, 0.85, 0.2, 1);
@@ -31,7 +31,7 @@ const MARKER_SIZE = 0.12;
 type SpringArmMetadata = { springArmSocket?: TransformNode };
 
 /** Add the node that children attach to, `armLength` behind the arm pivot. */
-export function addSpringArmSocket(arm: Mesh, armLength: number): TransformNode {
+function addSpringArmSocket(arm: Mesh, armLength: number): TransformNode {
   const socket = new TransformNode(`${arm.name}:socket`, arm.getScene());
   socket.parent = arm;
   socket.position.fromArray(springArmSocketPosition(armLength));
@@ -39,7 +39,7 @@ export function addSpringArmSocket(arm: Mesh, armLength: number): TransformNode 
   return socket;
 }
 
-export function springArmSocketOf(node: Node | null | undefined): TransformNode | null {
+function springArmSocketOf(node: Node | null | undefined): TransformNode | null {
   const socket = (node?.metadata as SpringArmMetadata | null | undefined)?.springArmSocket;
   return socket && !socket.isDisposed() ? socket : null;
 }
@@ -198,7 +198,7 @@ export function updateSpringArmRig(rig: SpringArmRig, store: SpringArmLagStore, 
  * lagged arm (green), the lag offsets between their pivots and sockets (red),
  * and recent socket trails for both.
  */
-export class SpringArmDebugLines {
+class SpringArmDebugLines {
   readonly mesh: LinesMesh;
   private readonly targetTrail: Vector3[] = [];
   private readonly laggedTrail: Vector3[] = [];

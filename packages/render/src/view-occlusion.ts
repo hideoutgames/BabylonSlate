@@ -68,7 +68,7 @@ export function applyOccluderProperty(node: Node, value: unknown): void {
 }
 
 /** The Occluder mode set on `mesh` or its nearest ancestor. */
-export function occluderMode(mesh: AbstractMesh): OccluderMode {
+function occluderMode(mesh: AbstractMesh): OccluderMode {
   for (let node: Node | null = mesh; node; node = node.parent) {
     const mode = modes.get(node);
     if (mode) return mode;

@@ -122,7 +122,7 @@ function decodeJson(bytes: Uint8Array): unknown {
 }
 
 /** Parse an msdf-bmfont JSON atlas. */
-export function parseMsdfAtlas(bytes: Uint8Array): MsdfAtlas | null {
+function parseMsdfAtlas(bytes: Uint8Array): MsdfAtlas | null {
   const parsed = decodeJson(bytes) as {
     info?: { size?: number };
     common?: { scaleW?: number; scaleH?: number };

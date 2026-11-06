@@ -229,7 +229,7 @@ export function composeAuthoredComponentTransform(
   return { position: composed.position.clone(), rotation: composed.rotation.clone() };
 }
 
-export function actorForwardFromRotation(rotation: {
+function actorForwardFromRotation(rotation: {
   x: number;
   y: number;
   z: number;
@@ -240,7 +240,7 @@ export function actorForwardFromRotation(rotation: {
   );
 }
 
-export function actorUpFromRotation(rotation: {
+function actorUpFromRotation(rotation: {
   x: number;
   y: number;
   z: number;
@@ -304,7 +304,7 @@ export function createPlayLight(scene: Scene, name: string, kind: string, proper
   return light;
 }
 
-export const CAMERA_LENS_FALLBACK_ASPECT = 16 / 9;
+const CAMERA_LENS_FALLBACK_ASPECT = 16 / 9;
 
 const authoredCameraAspects = new WeakMap<Camera, number>();
 

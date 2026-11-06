@@ -53,7 +53,7 @@ export type WebGpuPresentationInternals = AbstractEngine & {
 };
 
 /** The Engine's internals when they have the shape this store relies on, else null (presentation copies). */
-export function webGpuPresentationInternals(engine: AbstractEngine): WebGpuPresentationInternals | null {
+function webGpuPresentationInternals(engine: AbstractEngine): WebGpuPresentationInternals | null {
   if (!engine.isWebGPU) return null;
   const native = engine as AbstractEngine & Partial<WebGpuPresentationInternals>;
   const { _device: device, _context: context, _options: options } = native;

@@ -47,7 +47,7 @@ export function projectToCanvas(
   return { x: projected.x, y: projected.y };
 }
 
-export function rectContains(rect: CanvasRect, point: CanvasPoint): boolean {
+function rectContains(rect: CanvasRect, point: CanvasPoint): boolean {
   return (
     point.x >= rect.x &&
     point.x <= rect.x + rect.width &&

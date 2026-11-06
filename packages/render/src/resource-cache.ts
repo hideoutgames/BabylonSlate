@@ -71,13 +71,13 @@ const TEXTURE_PREPARATION_TIMEOUT_MS = 30_000;
 /** How long a texture handover waits for the Engine's next world view to claim it. */
 export const TEXTURE_HANDOVER_CLAIM_MS = 10_000;
 /** Longest a claimed handover keeps what its view has not leased, for a view that never presents. */
-export const TEXTURE_HANDOVER_MS = 120_000;
+const TEXTURE_HANDOVER_MS = 120_000;
 
 /**
  * Six-face cubemap bound to the Engine, not a Scene. Scene.dispose must not
  * drop a ResourceCache-owned cube (Play overlay shares the editor Engine).
  */
-export function createEngineCubeTextureFromImages(
+function createEngineCubeTextureFromImages(
   engine: AbstractEngine,
   files: string[],
   noMipmap = false,

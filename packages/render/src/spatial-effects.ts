@@ -178,7 +178,7 @@ type VolumetricPlan = NonNullable<SceneEffectsPlan["volumetricLighting"]>;
  * Without scene density the volumetric march only fogs authored Fog Volumes: none in front of this camera leaves
  * every pixel unfogged, whatever the lights.
  */
-export function volumetricMarchIdle(
+function volumetricMarchIdle(
   scene: Scene,
   camera: Camera,
   volume: VolumetricPlan,
