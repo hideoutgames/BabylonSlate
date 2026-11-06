@@ -13,7 +13,6 @@ import { Matrix, TmpVectors, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import { rectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
-import { deviceProfile } from "./device-profile";
 import { isIlluminatingLight, sortLightsByAdmission, type ForwardLightSelection } from "./light-policy";
 import { CLUSTER_BLOCK_WORDS, CLUSTER_COUNT, CLUSTER_HEADER_FLOATS, buildLightClusters, type ClusterLight } from "./light-clusters";
 import { isReflectionCamera } from "./reflection-camera";
@@ -26,8 +25,13 @@ import { shadowViewTexelRatios } from "./shadow-filter";
  * Behind an Engine switch while the plan's phases land; unshadowed.
  */
 
-/** Records per light type the block holds: the most any device draws (`DeviceProfile.lightMaximum`). */
+/**
+ * Records per light type the block holds, and the most of each type it draws at once on every device: every lit
+ * pixel loops over the lights in use. Lights past it are ranked out as the Local Light Budget ranks them.
+ */
 export const HAPTIC_LIGHT_MAXIMUM = { directional: 4, point: 32, spot: 16, rect: 4 } as const;
+/** Distinct rect area light emission textures the block holds at once (5.3 MiB each). */
+const AREA_EMISSION_LAYERS = 4;
 /**
  * Shadow views the block holds: first one per cascade of the shadowed sun, then 48 for local lights' tiles (a spot
  * light's one, a point light's six). A light whose views do not fit draws unshadowed.
@@ -239,13 +243,12 @@ const admittedCounts = { directional: 0, point: 0, spot: 0, rect: 0 };
 
 /**
  * The block's admission, as Forward's selection (`syncForwardLightPolicy`): the lights ranked as Forward ranks them
- * (priority, camera distance, the incumbent bonus), then admitted while their type is under this device's maximum
- * (`DeviceProfile.lightMaximum`) and, for point, spot and rect lights, within the Local Light Budget. The first fill
+ * (priority, camera distance, the incumbent bonus), then admitted while their type is under its maximum
+ * (`HAPTIC_LIGHT_MAXIMUM`) and, for point, spot and rect lights, within the Local Light Budget. The first fill
  * is admitted beside them. The block has no shader slots or samplers to run out of; the rest are limited.
  */
 export const selectHapticLights: ForwardLightSelection = (scene, candidates, previous, capacity, limited) => {
   sortLightsByAdmission(scene, candidates, previous);
-  const maximum = deviceProfile().lightMaximum;
   admitted.length = 0;
   admittedCounts.directional = admittedCounts.point = admittedCounts.spot = admittedCounts.rect = 0;
   let fill = false;
@@ -257,7 +260,7 @@ export const selectHapticLights: ForwardLightSelection = (scene, candidates, pre
       fill = true;
     } else {
       const local = kind !== "directional";
-      if (!kind || admittedCounts[kind] >= maximum[kind] || (local && locals >= capacity.locals)) { limited.push(light); continue; }
+      if (!kind || admittedCounts[kind] >= HAPTIC_LIGHT_MAXIMUM[kind] || (local && locals >= capacity.locals)) { limited.push(light); continue; }
       admittedCounts[kind]++;
       if (local) locals++;
     }
@@ -435,13 +438,12 @@ export function writeHapticLights(scene: Scene): void {
       points++;
     }
   }
-  const cap = deviceProfile().areaEmissionLayers;
-  syncAreaEmissionLayers(scene, state.rects, cap, state.layers);
+  syncAreaEmissionLayers(scene, state.rects, AREA_EMISSION_LAYERS, state.layers);
   state.limits.length = 0;
   state.rects.forEach((light, index) => {
     rect[index * 16 + 15] = state.layers[index]!;
     if (state.layers[index] === -1 && rectLightEmission(light))
-      state.limits.push(`${light.name}: draws its flat colour; this device holds ${cap} area light emission textures at once`);
+      state.limits.push(`${light.name}: draws its flat colour; this device holds ${AREA_EMISSION_LAYERS} area light emission textures at once`);
   });
   const buffer = state.buffer;
   buffer.updateFloat4("hapticCounts", directionals, points, spots, rects);
