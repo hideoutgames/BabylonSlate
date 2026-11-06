@@ -297,7 +297,8 @@ export function selectFogVolumes(
 /** Binds the selected volumes and returns how far from the eye the farthest of them reaches (0 without any). */
 export function bindFogVolumes(effect: Effect, scene: Scene, camera: Camera): number {
   const registry = registryFor(scene);
-  const volumes = selectFogVolumes(scene, camera);
+  selectFogVolumes(scene, camera);
+  const volumes = registry.selected;
   let reach = 0;
   for (let index = 0; index < volumes.length; index++) {
     const volume = volumes[index]!;
