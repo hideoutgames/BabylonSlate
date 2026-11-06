@@ -48,7 +48,7 @@ export interface WaterUniformSink {
 }
 
 /** Floats of the spectrum's vertex uniforms (`slateWaterFft` and every cascade's vec4) written by `waterSpectrumUniforms`. */
-export const SPECTRUM_UNIFORM_FLOATS = (1 + WATER_FFT_CASCADES_MAX) * 4;
+const SPECTRUM_UNIFORM_FLOATS = (1 + WATER_FFT_CASCADES_MAX) * 4;
 
 /**
  * The spectrum `water` draws with in `scene` (`waterFftForSurface`, which is also its demand) and its uniforms for Wave
@@ -58,7 +58,7 @@ export const SPECTRUM_UNIFORM_FLOATS = (1 + WATER_FFT_CASCADES_MAX) * 4;
  * floating origin never reaches the shader as a large coordinate. Returns the spectrum only when it is ready and matches
  * `cascades`. Allocation-free.
  */
-export function waterSpectrumUniforms(scene: Scene, water: WaterDefinition, scale: number, cascades: number, out: Float32Array): WaterFftResult | null {
+function waterSpectrumUniforms(scene: Scene, water: WaterDefinition, scale: number, cascades: number, out: Float32Array): WaterFftResult | null {
   const result = waterFftForSurface(scene, water);
   const band = result?.ready && result.cascades === cascades ? result : null;
   const origin = scene.floatingOriginMode ? scene.floatingOriginOffset : Vector3.ZeroReadOnly;
@@ -80,7 +80,7 @@ export function waterSpectrumUniforms(scene: Scene, water: WaterDefinition, scal
  * rest grid), the bank fade length and the spectrum's uniforms (`waterSpectrumUniforms`), with a placeholder texture
  * until the spectrum is ready. A surface binds them to its Material (`WaterVertexWaves.bind`).
  */
-export function bindWaterVertexUniforms(
+function bindWaterVertexUniforms(
   sink: WaterUniformSink, scene: Scene, grid: ArrayLike<number>, bankFade: number, spectrum: Float32Array, band: WaterFftResult | null,
 ): void {
   sink.setFloat4("slateWaterGridOffset", grid[0]!, grid[1]!, grid[2]!, 0);

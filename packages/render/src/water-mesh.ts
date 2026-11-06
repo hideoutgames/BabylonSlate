@@ -43,7 +43,7 @@ const surfaceByMesh = new WeakMap<AbstractMesh, Surface>();
 const copyIntents = new WeakMap<Scene, { refracting: number; reflecting: number }>();
 
 /** Milliseconds a water surface stays disabled before it gives back its terrain and contact textures (GPU memory). */
-export const WATER_RELEASE_DISABLED_MS = 2000;
+const WATER_RELEASE_DISABLED_MS = 2000;
 /** Released surfaces that restore their terrain and contact textures in one frame when enabled again. */
 export const WATER_RESTORES_PER_FRAME = 2;
 

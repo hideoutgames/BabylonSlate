@@ -44,7 +44,7 @@ import { sceneViewRenderSize } from "./scene-output-scale";
  * a copy alpha at or above 0.9 × this value as sky (water-node-blocks.ts, water-shader-chunks.ts).
  */
 export const WATER_SCENE_COPY_SKY_DEPTH = 65000;
-export const WATER_SCENE_COPY_SHADER = "hapticWaterSceneCopy";
+const WATER_SCENE_COPY_SHADER = "hapticWaterSceneCopy";
 
 /**
  * One view's opaque scene copy, sampled by built-in water drawn in that view's

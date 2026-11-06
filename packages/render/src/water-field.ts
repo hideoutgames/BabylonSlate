@@ -16,7 +16,7 @@ import { landscapeMeshData, sceneLandscapeRoots } from "./landscape-mesh";
 export const WATER_FIELD_SHORE_RANGE: readonly [number, number] = [-8, 24];
 export const WATER_FIELD_DEPTH_RANGE: readonly [number, number] = [-8, 32];
 /** Smallest fine span: about 2 cm per step, so gentle shores shade and foam without depth terraces. */
-export const WATER_FIELD_FINE_DEPTH_SPAN = 5;
+const WATER_FIELD_FINE_DEPTH_SPAN = 5;
 const MAX_CELLS = 512;
 const MIN_CELL = 0.2;
 /** Cells at the field's border across which the shader hands it over to the open-water defaults (`swFieldEdge`). */
@@ -439,7 +439,7 @@ const LEVEL_STRIDE = 4;
  */
 export const WATER_FIELD_TERRAIN_ALPHA = 0.97;
 /** Alpha of the first extended ring past an underwater edge, out of 255; below `WATER_FIELD_TERRAIN_ALPHA`. */
-export const WATER_FIELD_EXTENDED_ALPHA = 240;
+const WATER_FIELD_EXTENDED_ALPHA = 240;
 const UNREACHED = 0xffff;
 
 /**

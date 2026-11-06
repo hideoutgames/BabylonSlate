@@ -11,7 +11,7 @@ import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
 /** An invisible pick target: drawn at zero alpha, without fog. */
 const PICK_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: true, fog: false, role: "helper" };
 
-export const WATER_REMOVAL_COLOR = new Color3(0.25, 0.85, 1);
+const WATER_REMOVAL_COLOR = new Color3(0.25, 0.85, 1);
 const removals = new WeakMap<Scene, Set<Mesh>>();
 
 /** Shape code, then half extents, as uploaded to water materials. */
@@ -24,7 +24,7 @@ export function waterRemovalShapeVector(volume: WaterRemovalProperties): [number
  * Full local extents (X, Y, Z) of the shape the water cuts: a sphere is Width across on every axis, and a capsule is at
  * least Width tall (its height includes the caps, a sphere when it is not taller than it is wide).
  */
-export function waterRemovalExtents(volume: WaterRemovalProperties): [number, number, number] {
+function waterRemovalExtents(volume: WaterRemovalProperties): [number, number, number] {
   if (volume.shape === "sphere") return [volume.width, volume.width, volume.width];
   if (volume.shape === "cylinder") return [volume.width, volume.height, volume.width];
   if (volume.shape === "capsule") return [volume.width, Math.max(volume.height, volume.width), volume.width];

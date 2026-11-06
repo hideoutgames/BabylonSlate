@@ -158,7 +158,7 @@ export const SPECTRUM_FOAM_SCALE = 2.4;
 export const EDGE_FOAM_CALM = -0.5;
 
 /** Share of the wind sea's peak phase speed at which foam patterns drift downwind, as foam on a real sea does. */
-export const FOAM_DRIFT_SHARE = 0.03;
+const FOAM_DRIFT_SHARE = 0.03;
 /**
  * Velocity (metres per second of water time, world x and z) at which a body's foam patterns drift with its waves: along
  * Wave Direction, `FOAM_DRIFT_SHARE` of the peak wave's phase speed at Wave Speed, scaled by Wave Scale up to 1, so calm
