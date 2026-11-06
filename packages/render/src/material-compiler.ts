@@ -195,10 +195,6 @@ export function waterVariantBase(material: Material | null): Material | null;
 export function waterVariantBase(material: Material | null): Material | null {
   return material ? waterVariantBases.get(material) ?? material : null;
 }
-/** Whether `material` is a water variant (`acquireWaterVariant`). */
-export function isWaterVariant(material: Material | null | undefined): boolean {
-  return !!material && waterVariantBases.has(material);
-}
 /** Enable final-position shadows when a mesh acquires a runtime deformer. */
 export function ensureAuthoredShadowDepthWrapper(source: Material): boolean {
   const install = authoredShadowFactories.get(source);

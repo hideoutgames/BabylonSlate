@@ -622,8 +622,3 @@ export function setSceneDrawBatching(scene: Scene, enabled: boolean): void {
   setSceneDrawBatcher(scene, new OverlayDrawBatcher(scene));
   scene.onDisposeObservable.addOnce(() => setSceneDrawBatcher(scene, null));
 }
-
-/** Whether `scene` batches its draws. */
-export function sceneDrawBatching(scene: Scene): boolean {
-  return sceneDrawBatcher(scene) !== undefined;
-}
