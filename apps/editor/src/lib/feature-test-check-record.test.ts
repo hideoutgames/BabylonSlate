@@ -9,7 +9,7 @@ const report: FeatureTestCheckReport = {
     name: "main", path: "assets/main.scene.hasset", passed: false, problems: [],
     editor: { status: "ready", ms: 4200, phase: null, frames: null, error: null, gpu: null },
     play: { status: "loaded", ms: 9000, phase: null, frames: null, runtimeFps: 60, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
-      benchmark: [{ label: "low", frames: { frames: 300, durationMs: 5000, fps: 60, p95Ms: 17, maxMs: 20, stalls: 0 }, runtimeFps: 60,
+      benchmark: [{ label: "low", frames: { frames: 300, durationMs: 5000, fps: 60, medianMs: 16.7, meanMs: 5000 / 300, vsync: [1, 0, 0, 0], p95Ms: 17, maxMs: 20, stalls: 0 }, runtimeFps: 60,
         cpuMs: 4, gpuMs: null, drawCalls: 100, resolution: "1180x820@1.00", failed: [] }] },
     session: null,
   }],
@@ -63,9 +63,17 @@ describe("the unfinished Feature Test Check", () => {
     expect(loadCheckEnded()).toBeNull();
   });
 
-  it("ignores a record it cannot read, and runs on without storage", () => {
+  it("ignores a record it cannot read, discarding a report with incomplete frame statistics, and runs on without storage", () => {
     store.set("haptic:feature-test-check:unfinished", "{not json");
     expect(loadSavedCheck()).toBeNull();
+    // A sample's frames without their mean, median and pacing would format as a missing field.
+    const { frames, durationMs, fps, p95Ms, maxMs, stalls } = report.scenes[0]!.play.benchmark[0]!.frames!;
+    const partial = { frames, durationMs, fps, p95Ms, maxMs, stalls };
+    const incomplete = { ...report, scenes: [{ ...report.scenes[0]!, play: { ...report.scenes[0]!.play,
+      benchmark: [{ ...report.scenes[0]!.play.benchmark[0]!, frames: partial }] } }] };
+    store.set("haptic:feature-test-check:unfinished", JSON.stringify({ finished: true, report: incomplete }));
+    expect(loadSavedCheck()).toBeNull();
+    expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
     vi.stubGlobal("localStorage", { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("full"); }, removeItem: () => { throw new Error("denied"); } });
     expect(() => saveUnfinishedCheck({ step: "x", report, resources: [] })).not.toThrow();
     expect(loadSavedCheck()).toBeNull();
