@@ -212,6 +212,8 @@ function resourceLine(sample: FeatureTestCheckResources): string {
     `${sample.textures} textures (${mb(sample.textureBytes)})`,
     ...(sample.jsHeapBytes !== null ? [`JS heap ${mb(sample.jsHeapBytes)}`] : []),
     ...(sample.appFootprintBytes !== null ? [`app ${mb(sample.appFootprintBytes)}`] : []),
+    ...(sample.deviceAvailableBytes != null ? [`device free ${mb(sample.deviceAvailableBytes)}`] : []),
+    ...(sample.appAvailableBytes != null ? [`app headroom ${mb(sample.appAvailableBytes)}`] : []),
   ];
   return `  ${pad(s(sample.atMs), 9)}${memory.join(" · ")} · ${clip(sample.step, 80)}`;
 }
@@ -319,6 +321,16 @@ function workText(sample: FeatureTestBenchmarkSample): string {
   return [parts.length ? `work/frame: ${parts.join(", ")}` : "", builds].filter(Boolean).join(" · ");
 }
 
+/** A Profile row's native memory counters as it ended (`memory`): the device's free memory and the app's headroom. */
+function memoryText(sample: FeatureTestBenchmarkSample): string {
+  const memory = sample.memory;
+  if (!memory) return "";
+  return [
+    memory.deviceAvailableBytes !== null ? `device free ${mb(memory.deviceAvailableBytes)}` : "",
+    memory.appAvailableBytes !== null ? `app headroom ${mb(memory.appAvailableBytes)}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
 /** Reasons a Profile row prints for its held frames. */
 const PROFILE_ROW_HELD_REASONS = 2;
 
@@ -332,7 +344,7 @@ function profileNotes(sample: FeatureTestBenchmarkSample, first: FeatureTestBenc
   const reasons = sample.presentation?.held ? heldReasonsText(sample.presentation.heldReasons, PROFILE_ROW_HELD_REASONS) : "";
   return [
     sample.warmup ? "warm-up" : "", ...settingNotes(sample, first, step?.fields ?? []), step?.overlaps ? "overlaps" : "",
-    occlusionText(sample), workText(sample), reasons ? `held: ${reasons}` : "",
+    occlusionText(sample), workText(sample), memoryText(sample), reasons ? `held: ${reasons}` : "",
   ].filter(Boolean).join(" · ");
 }
 
@@ -379,7 +391,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
     profile?.endChanges
       ? profile.endChanges.length ? `  NOT RESTORED at the end: ${profile.endChanges.join(", ")}` : "  Restored: every setting as before the first step"
       : "  Restored: not checked",
-    "  Legend: mean, p95 = frame time · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · work/frame = the world renderer's strict readiness checks, outline checks and shadow admissions (their ms) per drawn frame, and its graph builds while sampled · frame, cpu change = against the baselines around the step (a baseline's: against the first) · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED and UNSETTLED mark a row not to trust",
+    "  Legend: mean, p95 = frame time · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · work/frame = the world renderer's strict readiness checks, outline checks and shadow admissions (their ms) per drawn frame, and its graph builds while sampled · device free, app headroom = the device's free and inactive memory (it falls as the web content and GPU processes grow) and what the app process may still allocate, as the sample ended · frame, cpu change = against the baselines around the step (a baseline's: against the first) · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED and UNSETTLED mark a row not to trust",
     `  Timing: ${timed?.gpuBusy ? `gpu busy polled every ${timed.gpuBusy.pollMs.toFixed(1)} ms (each frame up to one poll late)` : "no gpu busy (no fences)"}`,
     `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("cpu", 8)}${pad("gpu busy", 14)}${pad("bound", 6)}${pad("draws", 14)}${pad("held", 6)}${pad("frame change", 16)}${pad("cpu change", 16)}notes`,
   ];
