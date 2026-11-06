@@ -39,12 +39,6 @@ const SCOPE_ROOTS = {
   ],
 };
 
-/**
- * Dependencies whose own dependency tree never reaches a shipped bundle.
- * `shadcn` is a CLI; the editor imports only its stylesheet.
- */
-const NO_TRANSITIVE = new Set(["shadcn"]);
-
 const LICENSE_FILE = /^(licen[cs]e|copying|notice)([.-].*)?$/i;
 
 function readJson(file) {
@@ -122,7 +116,7 @@ function collectPackages(roots) {
           author: typeof depPkg.author === "string" ? depPkg.author : depPkg.author?.name,
         });
       }
-      if (!NO_TRANSITIVE.has(depPkg.name)) visit(depDir, depPkg);
+      visit(depDir, depPkg);
     }
   };
   for (const root of roots) {

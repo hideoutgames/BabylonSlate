@@ -14,7 +14,7 @@ shadcn/ui components are source files that the CLI copies into a project. Here t
 - **Primitives are Base UI** (`@base-ui/react`); nothing imports Radix. Upstream examples written for Radix (`asChild`, `type="single"`, string `defaultValue`) do not apply. See [rules/base-ui.md](rules/base-ui.md).
 - **Theme tokens** live in `packages/ui/src/styles/tokens.css`, which `globals.css` imports. See [customization.md](customization.md).
 - **Not present**: registries, presets, chat components, toast or sonner, Spinner, InputGroup, Avatar, Combobox, RadioGroup and the shadcn MCP server. Do not import them or follow upstream advice that assumes them; adding one is a new component (see Workflow).
-- **Dependency**: `shadcn` ^4.16.2 is a dependency of `packages/ui` because `globals.css` imports `shadcn/tailwind.css`.
+- **Stylesheet**: `packages/ui/src/styles/shadcn.css` is an unchanged copy of shadcn 4.16.2's `dist/tailwind.css` (the `data-*` state variants, keyframes and utilities the primitives use), imported by `globals.css`. `shadcn` is not a dependency; the CLI runs through `npx`. After an `add`, check that it did not add the `shadcn` package or a `shadcn/tailwind.css` import, and refresh the copy by hand if the new component needs a variant or utility it lacks.
 - **Density**: compact toolbars use `size="sm"`, and segmented ToggleGroups use `spacing={0}` (`apps/editor/src/components/viewport-toolbar.tsx`, `texture-editor.tsx`). The `touch` and `touch-icon` sizes are 44px only in the touch layout (Compact Mode off) and compact otherwise. Imported examples must not enlarge the compact desktop defaults ([theming.md](../../reference/architecture/theming.md#density-and-touch)).
 
 ## Workflow
