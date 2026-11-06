@@ -43,14 +43,14 @@ Export Game and Preview Build: the headless `@haptic/exporter` closure and packe
 
 ```
 index.html          # player CSS inlined; itch requires it at the zip root
-player.js           # one bundle; workers and the page's on-demand wasm runtimes stay separate files
+player.js           # every module a WebGL2 game runs; workers and the page's on-demand code stay separate files
 game.json           # catalog: required dependencies, paths, byte lengths, SHA-256
 assets/data-<n>.bin # one per asset or sidecar
 coi-serviceworker.js, havok/ (3D), assets/rapier-*.js and rapier/ (2D or physics SceneLayers), ktx2/, draco/, meshopt/
-player-rapier.js, player-HavokPhysics_es.js, player-recast-navigation.wasm-compat.js
+player-webgpu.js, player-rapier.js, player-HavokPhysics_es.js, player-recast-navigation.wasm-compat.js
 ```
 
-- `player.js` holds every page module, Babylon's lazily imported shaders and loaders included (`codeSplitting.groups` in `apps/player/vite.config.ts`), so an export stays a handful of files under the itch cap. Only the wasm runtimes the page loads on demand stay `player-<name>.js` beside it: Rapier 2D and Havok for the in-process runtime (used when the game worker cannot start) and Recast for the navigation debug overlay. Their names keep `rapier` / `havok` so `selectPlayerRuntimeFiles` drops the engine a game does not use.
+- `player.js` holds every page module a WebGL2 game runs, Babylon's lazily imported GLSL shaders and loaders included (`codeSplitting.groups` in `apps/player/vite.config.ts`), so an export stays a handful of files under the itch cap. `player-webgpu.js` holds Babylon's WebGPU engine and every WGSL shader, which only a WebGPU game loads (`isWebGpuOnlyModule` in [`apps/player/vite-webgpu-chunk.ts`](../../../apps/player/vite-webgpu-chunk.ts); [render.md](render.md#babylon-modules-and-registrations)); `webGpuChunkGuard` fails the build when `player.js` statically imports another file or holds a WebGPU-only module, so a WebGL2 device never fetches it. Every export ships it. The wasm runtimes the page loads on demand also stay `player-<name>.js` beside it: Rapier 2D and Havok for the in-process runtime (used when the game worker cannot start) and Recast for the navigation debug overlay. Their names keep `rapier` / `havok` so `selectPlayerRuntimeFiles` drops the engine a game does not use.
 
 - Sidecars use typed ids: `navmesh:<sceneGuid>` (`NavMesh`), `audioReverb:<sceneGuid>`, `font-facetype:`, `font-msdf:`, `font-msdf-png:`, area emission. Packed Audio is a **BSAU** envelope, packed Model a **BSMO** envelope (payload incl. `importScale`, `materialSlots`, `autoLod` + GLB).
 - `selectPlayerRuntimeFiles` keeps Havok for 3D, Rapier for 2D, and Rapier in 3D only when a reached SceneLayer enables physics (an unreadable layer keeps it).
