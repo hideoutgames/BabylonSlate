@@ -31,6 +31,7 @@ import { applyEnvironmentLighting } from "./environment-lighting";
 import { sceneClearColor } from "./editor-clear-color";
 import { syncEngineDefaultMaterialEmission } from "./default-material";
 import { setSceneEffectsAssets, updateSceneRenderingSettings } from "./render-settings";
+import { asNumber } from "./as-number";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
 export const AUTHORED_CAMERA_PREFIX = "authoredCamera:";
@@ -93,10 +94,6 @@ function asRgb(value: unknown): Color3 {
     return new Color3(Number(value[0]) || 0, Number(value[1]) || 0, Number(value[2]) || 0);
   }
   return Color3.White();
-}
-
-function asNumber(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 function degreesToRadians(degrees: unknown, fallback: number): number {

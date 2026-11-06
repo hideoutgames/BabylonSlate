@@ -1,19 +1,9 @@
-import type { Camera } from "@babylonjs/core/Cameras/camera";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLayerRenderer";
 import type { Scene } from "@babylonjs/core/scene";
 import { parseSplineProperties, splineCentreline, type SplinePoint, type SplineProperties } from "@haptic/core";
-import { createShapeHandles, type ShapeHandleTarget, type ShapeHandlesOptions, type ShapeHandlesHost } from "./shape-handles";
+import { cameraFacingConstraint, createShapeHandles, type ShapeHandleTarget, type ShapeHandlesOptions, type ShapeHandlesHost } from "./shape-handles";
 import { splineMeshBody, updateSplineMeshBody } from "./spline-mesh";
-
-const FORWARD = new Vector3();
-const FALLBACK_FORWARD = Vector3.Forward();
-
-function cameraForward(camera: Camera): Vector3 {
-  const m = camera.getWorldMatrix().m;
-  return FORWARD.set(m[8]!, m[9]!, m[10]!).normalize();
-}
 
 export interface SplineHandle {
   id: string;
@@ -68,7 +58,7 @@ export function createSplineHandles(layer: UtilityLayerRenderer, scene: Scene, o
       return properties ? { properties, handle: { id: `point:${index}`, kind: "point", position: local, index } } : null;
     },
     remove: (body, handle) => removeSplinePoint(body, handle.index),
-    constraint: (_handle, _world, camera) => ({ dragPlaneNormal: camera ? cameraForward(camera) : FALLBACK_FORWARD }),
+    constraint: cameraFacingConstraint,
     color: () => new Color3(0.95, 0.97, 1),
     selectable: (handle) => handle.kind === "point",
   }, options);
