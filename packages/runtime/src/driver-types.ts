@@ -211,6 +211,11 @@ export interface RuntimeDriver {
   copySnapshot(out: Float32Array): boolean;
   readonly snapshotCapacity: number;
   readonly snapshotGeneration: number;
+  /**
+   * Counts the snapshots written; equal across two reads when no tick, edit or realization wrote a newer pose
+   * between them, so a transport posts a pose only when it moved.
+   */
+  readonly snapshotSerial: number;
   getWorld(): World;
   getDiagnostics(): SessionDiagnosticAggregator;
   /** Add a host/native console message to both live output and dumplog. */

@@ -2,7 +2,7 @@ import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Material, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type AbstractMesh, type Effect, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Material, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, TransformNode, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type AbstractMesh, type Effect, type Mesh } from "@babylonjs/core";
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
@@ -38,6 +38,7 @@ import {
 } from "@haptic/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createEngine, PIPELINE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
+import { AUTHORED_CAMERA_PREFIX } from "./scene-illumination";
 import { sceneOutputScale } from "./scene-output-scale";
 import type { RenderPerformanceSample } from "./render-performance";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
@@ -1513,22 +1514,63 @@ describe("Play createEngine view", () => {
     expect(handle.scene.frameGraph).toBeNull();
   });
 
-  it("keeps the shared Engine frame loop running when a presented Play frame's readiness probe fails", async () => {
+  /** A presented Play view whose first frame confirmed its starting settings, with an Engine frame as the browser runs it. */
+  async function presentedPlay() {
     const engine = sharedEngine();
-    const { handle } = playHandle(engine);
+    const acknowledged: number[] = [];
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true, onScalabilityApplied: (acknowledgement) => acknowledged.push(acknowledgement.revision),
+    });
+    handles.push(handle);
     await handle.prewarmSceneMaterials();
+    const frame = async () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      // Past the frame cap's interval, so every call draws and presents.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    };
     const presented = handle.presentFirstFrame();
-    renderViews(engine);
-    engine.onEndFrameObservable.notifyObservers(engine);
+    await frame();
     await presented;
+    for (let i = 0; i < 8 && acknowledged.length === 0; i++) await frame();
+    expect(acknowledged).toEqual([0]);
+    return { engine, handle, acknowledged, frame };
+  }
+
+  it("keeps the shared Engine frame loop running when a presented Play frame's readiness probe fails", async () => {
+    const { engine, handle } = await presentedPlay();
     // A stored preparation failure rethrows from readiness; the frame loop
-    // must survive it.
+    // must survive it. The probe runs for the frame that confirms a transaction.
     const probe = vi.spyOn(SceneRenderCoordinator.prototype, "isReady").mockImplementation(() => {
       throw new Error("Scene rendering preparation timed out.");
     });
     try {
+      handle.applyCommand(scalabilityCommand({}));
+      engine.onBeginFrameObservable.notifyObservers(engine);
       renderViews(engine);
       expect(() => engine.onEndFrameObservable.notifyObservers(engine)).not.toThrow();
+      expect(probe).toHaveBeenCalled();
+    } finally {
+      probe.mockRestore();
+    }
+  });
+
+  it("probes readiness after a presented Play frame only while a scalability transaction awaits that frame", async () => {
+    const { handle, acknowledged, frame } = await presentedPlay();
+    const probe = vi.spyOn(SceneRenderCoordinator.prototype, "isReady");
+    try {
+      // Steady frames confirm nothing: none walks the frame path again after it presented.
+      for (let i = 0; i < 4; i++) await frame();
+      expect(probe).not.toHaveBeenCalled();
+      // The frame that confirms a transaction probes, and acknowledges it; then probing stops again.
+      handle.applyCommand(scalabilityCommand({}));
+      for (let i = 0; i < 8 && acknowledged.length === 1; i++) await frame();
+      expect(acknowledged).toEqual([0, 1]);
+      const confirming = probe.mock.calls.length;
+      expect(confirming).toBeGreaterThan(0);
+      for (let i = 0; i < 4; i++) await frame();
+      expect(probe).toHaveBeenCalledTimes(confirming);
     } finally {
       probe.mockRestore();
     }
@@ -2754,6 +2796,55 @@ describe("Play createEngine view", () => {
       });
       frame();
       expect(apply).toHaveBeenCalledTimes(3);
+    } finally {
+      apply.mockRestore();
+    }
+  });
+
+  it("moves a bone-attached camera with its bone on running frames that bring no new pose, without re-applying the snapshot", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+    const frame = () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderLoop();
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    const apply = vi.spyOn(snapshotApply, "applySnapshotToScene");
+    try {
+      handle.applyCommand({ type: "assignMesh", slotId: 0, meshKind: "box", meshAssetGuid: null });
+      handle.applyCommand({
+        type: "assignMesh", slotId: 1, meshKind: "camera", meshAssetGuid: null,
+        camera: { projectionMode: "perspective", fieldOfView: 60, isDefault: true },
+      });
+      // The host animates this joint between poses, as Babylon does a model's bones.
+      const head = new TransformNode("Head", handle.scene);
+      head.parent = handle.scene.getMeshByName("actor-0")!;
+      head.position.y = 2;
+      handle.applyCommand({ type: "attachToBone", slotId: 1, targetSlotId: 0, boneName: "Head" });
+      const snapshot = new Float32Array(snapshotFloatCount(8));
+      writeSnapshotHeader(snapshot, { frameId: 1, tickIndex: 1, actorCount: 2, scriptMs: 0, physicsMs: 0 });
+      for (const slotId of [0, 1]) {
+        writeActorSlot(snapshot, slotId, {
+          slotId, position: { x: 10, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+          flags: SNAPSHOT_FLAG_VISIBLE,
+        });
+      }
+      handle.pushSnapshot(snapshot);
+      frame();
+      const camera = handle.scene.getCameraByName(`${AUTHORED_CAMERA_PREFIX}1`)!;
+      expect(handle.scene.activeCamera).toBe(camera);
+      expect(camera.position.asArray()).toEqual([10, 2, 0]);
+      head.position.y = 5;
+      frame();
+      expect(camera.position.asArray()).toEqual([10, 5, 0]);
+      expect(apply).toHaveBeenCalledTimes(1);
+      // A paused session's frames apply nothing: the camera holds until the next pose.
+      handle.setGameTimePaused(true);
+      head.position.y = 7;
+      frame();
+      expect(camera.position.asArray()).toEqual([10, 5, 0]);
     } finally {
       apply.mockRestore();
     }

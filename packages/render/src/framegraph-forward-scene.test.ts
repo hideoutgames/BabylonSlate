@@ -57,6 +57,7 @@ import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneShadowController } from "./shadow-controller";
 import { AtlasCascadedShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
 import { HAPTIC_SHADOW_ATLAS } from "./haptic-lighting-shader";
+import { hapticLightBuffer, hapticShadowedSun } from "./haptic-lights";
 import { VOLUME_SHADOW_CODE } from "./volumetric-lights";
 import { configureCutoutSorting } from "./sorting";
 
@@ -1304,6 +1305,24 @@ it("keeps drawing a running fog march in the frame in which shadow admission dro
   expect(skipped()).toEqual([]);
   expect(bindings.shadow(0)).toEqual([[VOLUME_SHADOW_CODE.none, 0]]);
   expect(graph.diagnostics().graphBuilds).toBe(builds);
+  graph.dispose();
+});
+
+it("writes the light block once per readiness while shadow admission changes nothing, and again after it drops a map", async () => {
+  const { scene, camera, graph, sun, controller } = await shadowedFogHost();
+  expect(graph.readiness(camera)).not.toMatchObject({ preparationRequired: true });
+  const writes = vi.spyOn(hapticLightBuffer(scene), "update");
+  // A steady frame's readiness: the lighting sync before admission is the only write.
+  for (let frame = 0; frame < 3; frame += 1) graph.readiness(camera);
+  expect(writes).toHaveBeenCalledTimes(3);
+  expect(hapticShadowedSun(scene)).toBe(sun);
+  // Admission drops the sun's map inside the readiness: the block is written again, without its sun shadow.
+  writes.mockClear();
+  controller.register(sun, false);
+  graph.readiness(camera);
+  expect(controller.generator(sun)).toBeNull();
+  expect(writes).toHaveBeenCalledTimes(2);
+  expect(hapticShadowedSun(scene)).toBeNull();
   graph.dispose();
 });
 

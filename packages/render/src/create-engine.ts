@@ -168,6 +168,8 @@ import {
 } from "./snapshot-sync";
 import {
   applySnapshotToScene,
+  applyHostClockPoses,
+  hasHostClockPoses,
   applyAssignMaterial,
   applyAttachToBone,
   applySetMaterialParameter,
@@ -1994,6 +1996,9 @@ function initializeEngine(
       appliedSnapshotIdentity.frameId === sampled.frameId &&
       appliedSnapshotIdentity.layoutGeneration === layoutGeneration
     ) {
+      // A running frame that brings no new pose still moves what follows the host's clock (animated bones,
+      // spring-arm lag); a paused session's frames hold it until the next pose.
+      if (!binding.paused && hasHostClockPoses(binding)) applyHostClockPoses(scene, binding);
       return sampled;
     }
     const previousCamera = scene.activeCamera;
@@ -2348,7 +2353,9 @@ function initializeEngine(
         try { sample = shown ? samplePresentedImage(shown) : null; } catch { sample = null; }
         answerPresentedImageRequests(sample);
       }
-      if ((runtimeScalability || postProcessingPrograms?.releaseWhenReady) && !worldLoading) {
+      // A strict probe walks the whole frame path (shadow admission, light block): only a frame that confirms a
+      // scalability transaction or releases post-processing programs asks; steady frames probe in their own readiness.
+      if ((runtimeScalability?.awaitsPresentation || postProcessingPrograms?.releaseWhenReady) && !worldLoading) {
         // A stored preparation failure rethrows until the coordinator's retry
         // succeeds. It must not escape endFrame and stop the shared Engine loop.
         let ready: boolean;

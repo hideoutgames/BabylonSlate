@@ -72,6 +72,8 @@ export class SnapshotPublisher {
   };
   /** Most recent publish: overlay layout and removal pass, composition and buffer write (stats `publishMs`). */
   private _lastPublishMs = 0;
+  /** Completed snapshot writes; unchanged while nothing (a tick, an edit, a realization) wrote a newer pose. */
+  private _writes = 0;
   /** True while `advance()` runs catch-up ticks; their snapshot writes wait for the burst to end. */
   private deferring = false;
   /** Header of the last tick that reached its publish point while writes were deferred. */
@@ -96,6 +98,7 @@ export class SnapshotPublisher {
   get capacity(): number { return this.snapshots.maxActors; }
   get generation(): number { return this._generation; }
   get lastPublishMs(): number { return this._lastPublishMs; }
+  get writes(): number { return this._writes; }
 
   /** Grow the buffers to hold `required` slots and announce the new layout, or report and throw. */
   ensureCapacity(required: number): void {
@@ -260,5 +263,6 @@ export class SnapshotPublisher {
       originGeneration: this.originGeneration,
     });
     this.snapshots.publish();
+    this._writes += 1;
   }
 }
