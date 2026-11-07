@@ -5,6 +5,7 @@ import { tapAtlasTile } from "../../../../packages/editor-kit/src/test-support/a
 import {
   AssetRegistry,
   createDefaultSpriteAnimationPayload,
+  parseSpritePivot,
   projectContentRoot,
 } from "@haptic/assets";
 import { MemoryStorageAdapter } from "@haptic/vfs";
@@ -12,6 +13,11 @@ import {
   SpriteAnimationDetails,
   SpriteAnimationPreview,
 } from "./sprite-animation-editor";
+// Counted: the preview reads its frame's pivot once per render.
+vi.mock("@haptic/assets", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/assets")>();
+  return { ...actual, parseSpritePivot: vi.fn(actual.parseSpritePivot) };
+});
 
 if (typeof window !== "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -278,6 +284,41 @@ describe("SpriteAnimation editor", () => {
     });
     expect(preview.getAttribute("data-frame-index")).toBe("0");
     expect(listAssets).not.toHaveBeenCalled();
+  });
+
+  it("re-renders the preview only when playback reaches another frame, while the scrubber follows every tick", () => {
+    let now = 0;
+    const raf = new Map<number, FrameRequestCallback>();
+    let nextId = 1;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const id = nextId++;
+      raf.set(id, callback);
+      return id;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+      raf.delete(id);
+    });
+    const flush = (advanceMs: number) => {
+      now += advanceMs;
+      const queued = [...raf.values()];
+      raf.clear();
+      for (const callback of queued) callback(now);
+    };
+    const frame = { textureGuid: "a", durationMs: 100, pivot: { x: 0.5, y: 0.5 }, collision: { x: 0, y: 0, width: 1, height: 1 } };
+    render(<SpriteAnimationPreview payload={{ frames: [frame, { ...frame, textureGuid: "b" }] } as unknown as Record<string, unknown>} />);
+    fireEvent.click(screen.getByTestId("sprite-animation-play"));
+    const renders = vi.mocked(parseSpritePivot).mock.calls.length;
+    act(() => flush(10));
+    act(() => flush(10));
+    act(() => flush(10));
+    expect(screen.getByTestId("sprite-animation-position").textContent).toBe("Frame 1/2 · 30/200 ms");
+    expect(screen.getByTestId("sprite-animation-scrubber").querySelector("[aria-valuenow]")?.getAttribute("aria-valuenow")).toBe("30");
+    expect(vi.mocked(parseSpritePivot).mock.calls.length).toBe(renders);
+    act(() => flush(80));
+    expect(screen.getByTestId("sprite-animation-preview").getAttribute("data-frame-index")).toBe("1");
+    expect(screen.getByTestId("sprite-animation-position").textContent).toBe("Frame 2/2 · 110/200 ms");
+    expect(vi.mocked(parseSpritePivot).mock.calls.length).toBeGreaterThan(renders);
   });
 
   it("keeps the playback position on one line", () => {

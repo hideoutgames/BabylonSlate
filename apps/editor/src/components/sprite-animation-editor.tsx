@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
 } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
@@ -237,6 +238,69 @@ function PlaybackPosition({
   );
 }
 
+/**
+ * The preview's play time in milliseconds. A store rather than React state,
+ * so playback re-renders only the scrubber and its readout; the preview
+ * itself re-renders when the frame changes.
+ */
+class PlayTime {
+  private timeMs = 0;
+  private readonly listeners = new Set<() => void>();
+
+  get = (): number => this.timeMs;
+
+  set(timeMs: number): void {
+    if (timeMs === this.timeMs) return;
+    this.timeMs = timeMs;
+    for (const listener of [...this.listeners]) listener();
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+}
+
+/** The scrubber and the frame and time readout: the only parts that follow every played millisecond. */
+function PlaybackScrubber({
+  playTime,
+  durationMs,
+  frameIndex,
+  frameCount,
+  onSeek,
+}: {
+  playTime: PlayTime;
+  durationMs: number;
+  frameIndex: number;
+  frameCount: number;
+  onSeek: (timeMs: number) => void;
+}) {
+  const timeMs = useSyncExternalStore(playTime.subscribe, playTime.get, playTime.get);
+  return (
+    <>
+      <Slider
+        className="min-w-0 flex-1"
+        min={0}
+        max={durationMs}
+        step={1}
+        value={timeMs}
+        aria-label="Playback"
+        data-testid="sprite-animation-scrubber"
+        onValueChange={(next) => {
+          const value = sliderNumber(next);
+          if (value !== undefined) onSeek(value);
+        }}
+      />
+      <PlaybackPosition
+        frameIndex={frameIndex}
+        frameCount={frameCount}
+        timeMs={timeMs}
+        durationMs={durationMs}
+      />
+    </>
+  );
+}
+
 type PreviewView = "frame" | "sheet";
 
 export function SpriteAnimationPreview({
@@ -260,7 +324,7 @@ export function SpriteAnimationPreview({
   const { url } = preview;
   const [playing, setPlaying] = useState(false);
   const [loop, setLoop] = useState(true);
-  const [timeMs, setTimeMs] = useState(0);
+  const [playTime] = useState(() => new PlayTime());
   const [viewMode, setViewMode] = useState<PreviewView>("frame");
   const showSheet = animation.source === "sheet" && viewMode === "sheet";
   const durationMs = spriteAnimationDurationMs(animation);
@@ -268,8 +332,6 @@ export function SpriteAnimationPreview({
   animationRef.current = animation;
   const loopRef = useRef(loop);
   loopRef.current = loop;
-  const timeMsRef = useRef(timeMs);
-  timeMsRef.current = timeMs;
   const lastTickRef = useRef(0);
   const selectedFrameIndexRef = useRef(selectedFrameIndex);
   selectedFrameIndexRef.current = selectedFrameIndex;
@@ -278,30 +340,28 @@ export function SpriteAnimationPreview({
     if (!playing) return;
     const head = spriteAnimationPlayhead(
       animationRef.current,
-      timeMsRef.current,
+      playTime.get(),
       loopRef.current,
     );
     if (head.index !== selectedFrameIndexRef.current) {
-      const start = spriteAnimationFrameStartMs(
+      playTime.set(spriteAnimationFrameStartMs(
         animationRef.current,
         selectedFrameIndexRef.current,
-      );
-      timeMsRef.current = start;
-      setTimeMs(start);
+      ));
     }
     lastTickRef.current = performance.now();
     let rafId = 0;
     const tick = (now: number) => {
-      const elapsed = timeMsRef.current + (now - lastTickRef.current);
+      const elapsed = playTime.get() + (now - lastTickRef.current);
       lastTickRef.current = now;
       const next = spriteAnimationPlayhead(
         animationRef.current,
         elapsed,
         loopRef.current,
       );
-      timeMsRef.current = next.timeMs;
-      setTimeMs(next.timeMs);
-      setSelectedFrameIndex(next.index);
+      playTime.set(next.timeMs);
+      // The preview re-renders only for a new frame.
+      if (next.index !== selectedFrameIndexRef.current) setSelectedFrameIndex(next.index);
       if (next.finished) {
         setPlaying(false);
         return;
@@ -310,7 +370,7 @@ export function SpriteAnimationPreview({
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [playing, setSelectedFrameIndex]);
+  }, [playTime, playing, setSelectedFrameIndex]);
 
   const pivot = parseSpritePivot(frame?.pivot);
   const collision = parseSpriteCollision(frame?.collision);
@@ -324,16 +384,13 @@ export function SpriteAnimationPreview({
   const seekToFrame = (index: number) => {
     setPlaying(false);
     setSelectedFrameIndex(index);
-    const start = spriteAnimationFrameStartMs(animation, index);
-    timeMsRef.current = start;
-    setTimeMs(start);
+    playTime.set(spriteAnimationFrameStartMs(animation, index));
   };
 
   const seekToTime = (nextTimeMs: number) => {
     setPlaying(false);
     const head = spriteAnimationPlayhead(animation, nextTimeMs, false);
-    timeMsRef.current = head.timeMs;
-    setTimeMs(head.timeMs);
+    playTime.set(head.timeMs);
     setSelectedFrameIndex(head.index);
   };
 
@@ -480,24 +537,12 @@ export function SpriteAnimationPreview({
       )}
       <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-panel-header px-2 py-2">
         <div className="flex min-w-0 items-center gap-3">
-          <Slider
-            className="min-w-0 flex-1"
-            min={0}
-            max={durationMs}
-            step={1}
-            value={timeMs}
-            aria-label="Playback"
-            data-testid="sprite-animation-scrubber"
-            onValueChange={(next) => {
-              const value = sliderNumber(next);
-              if (value !== undefined) seekToTime(value);
-            }}
-          />
-          <PlaybackPosition
+          <PlaybackScrubber
+            playTime={playTime}
+            durationMs={durationMs}
             frameIndex={selectedFrameIndex}
             frameCount={frameCount}
-            timeMs={timeMs}
-            durationMs={durationMs}
+            onSeek={seekToTime}
           />
         </div>
         <div
