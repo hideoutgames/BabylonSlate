@@ -107,11 +107,61 @@ export function disposeWorldOverlayLeftovers(
   }
 }
 
+/** Removals from a world Scene's mesh list, counted as Babylon's `removeMesh` reports them (synchronously). */
+const meshRemovals = new WeakMap<Scene, { count: number }>();
+
+function meshRemovalCounter(scene: Scene): { count: number } {
+  let counter = meshRemovals.get(scene);
+  if (!counter) {
+    const created = { count: 0 };
+    scene.onMeshRemovedObservable.add(() => { created.count++; });
+    meshRemovals.set(scene, counter = created);
+  }
+  return counter;
+}
+
+/** What one owner's last world-leftover sweep saw: its overlay slots and the world Scene's mesh list. */
+interface LeftoverSweep { scene: Scene; slots: Set<number>; meshCount: number; removals: number }
+const leftoverSweeps = new WeakMap<object, LeftoverSweep>();
+
+/**
+ * {@link disposeWorldOverlayLeftoverSlots} for one applied snapshot of `owner` (its Play binding), run only when a
+ * leftover can exist that the owner's last sweep did not already dispose. A leftover is a world mesh named for an
+ * overlay slot, so one can appear only when a slot joins the overlay set, a visual moved between Scenes (`moved`),
+ * or the world Scene gained a mesh. Babylon adds every mesh through `addMesh` and reports every removal at once, so
+ * meshes gained since the last sweep are the change in length plus the removals since; nothing renames an actor
+ * mesh after adding it. A sweep that throws records nothing, so the next snapshot sweeps again.
+ */
+export function sweepWorldOverlayLeftoverSlots(
+  owner: object,
+  worldScene: Scene,
+  slotIds: ReadonlySet<number>,
+  moved: boolean,
+): void {
+  const removals = meshRemovalCounter(worldScene);
+  const last = leftoverSweeps.get(owner);
+  if (last?.scene === worldScene && !moved &&
+    worldScene.meshes.length - last.meshCount + removals.count - last.removals <= 0) {
+    let joined = false;
+    for (const slotId of slotIds) {
+      if (!last.slots.has(slotId)) { joined = true; break; }
+    }
+    if (!joined) return;
+  }
+  disposeWorldOverlayLeftoverSlots(worldScene, slotIds);
+  const record = last?.scene === worldScene ? last : { scene: worldScene, slots: new Set<number>(), meshCount: 0, removals: 0 };
+  record.slots.clear();
+  for (const slotId of slotIds) record.slots.add(slotId);
+  record.meshCount = worldScene.meshes.length;
+  record.removals = removals.count;
+  leftoverSweeps.set(owner, record);
+}
+
 /**
  * {@link disposeWorldOverlayLeftovers} for every overlay slot of one snapshot,
  * with a single pass over the world Scene's meshes instead of one per slot.
  */
-export function disposeWorldOverlayLeftoverSlots(
+function disposeWorldOverlayLeftoverSlots(
   worldScene: Scene,
   slotIds: ReadonlySet<number>,
 ): void {

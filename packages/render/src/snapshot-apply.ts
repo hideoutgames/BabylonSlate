@@ -29,8 +29,8 @@ export { applyAttachToBone } from "./bone-attachment";
 import { slotKeysOf, type SnapshotSceneBinding } from "./snapshot-binding";
 import {
   appliedPlayVisibilityOf,
-  disposeWorldOverlayLeftoverSlots,
   setPlayVisualVisibility,
+  sweepWorldOverlayLeftoverSlots,
 } from "./snapshot-visibility";
 import {
   applyMaterialToActorMeshes,
@@ -262,9 +262,11 @@ function reconcileSnapshotVisuals(
   animationScenes.add(scene);
   const count = snapshot.actorCount ?? snapshot.actors.length;
   binding.snapshotMeshes.length = count;
-  // World copies of all overlay slots are dropped in one pass. It also runs
+  // World copies of all overlay slots are dropped in one pass, which runs
+  // only when one can exist that the last pass did not drop. It also runs
   // when a later slot throws, so earlier slots keep their per-slot cleanup.
   let overlaySlots: Set<number> | undefined;
+  let moved = false;
   try {
     for (let i = 0; i < count; i++) {
       const actor = snapshot.actors[i]!;
@@ -277,7 +279,10 @@ function reconcileSnapshotVisuals(
         // Until its layer is live, a world copy must not keep drawing at its
         // last pose; migration restores it once the layer Scene exists.
         const waiting = binding.meshes.get(actor.slotId);
-        if (waiting?.getScene() === scene) setPlayVisualVisibility(binding, waiting, false);
+        if (waiting?.getScene() === scene) {
+          setPlayVisualVisibility(binding, waiting, false);
+          moved = true;
+        }
         continue;
       }
       const hostScene = wantsOverlay ? overlayScene : scene;
@@ -285,6 +290,7 @@ function reconcileSnapshotVisuals(
       animationScenes.add(hostScene);
       let mesh = binding.meshes.get(actor.slotId) ?? null;
       if (mesh && mesh.getScene() !== hostScene) {
+        moved = true;
         mesh = migratePlaySlotVisual(hostScene, binding, actor.slotId);
       }
       if (!mesh) {
@@ -300,7 +306,7 @@ function reconcileSnapshotVisuals(
       seen.add(actor.slotId);
     }
   } finally {
-    if (overlaySlots) disposeWorldOverlayLeftoverSlots(scene, overlaySlots);
+    if (overlaySlots) sweepWorldOverlayLeftoverSlots(binding, scene, overlaySlots, moved);
   }
   for (const slotId of binding.meshes.keys()) {
     // A command-built visual not yet seen must survive a stale buffer.

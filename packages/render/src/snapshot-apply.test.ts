@@ -2223,6 +2223,47 @@ describe("createPlayMesh", () => {
     overlay.dispose();
   });
 
+  it("sweeps world leftovers again only after an overlay slot joins or the world Scene gains a mesh", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene, engine } = handle;
+    const overlay = new Scene(engine);
+    const plane = (name: string) => MeshBuilder.CreatePlane(name, { size: 1 }, scene);
+    const binding = createSnapshotSceneBinding();
+    for (const slotId of [1, 2]) binding.meshKinds.set(slotId, "box");
+    binding.sceneForSlot = () => overlay;
+    let frameId = 0;
+    const apply = (...slotIds: number[]) => applySnapshotToScene(scene, binding, { frameId: ++frameId, tickIndex: frameId,
+      actorCount: slotIds.length, actors: slotIds.map((slotId) => ({ slotId, flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
+        position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } })) });
+    apply(1);
+    // A steady snapshot does not walk the world Scene again: a mesh renamed after it was added is not seen.
+    const renamed = plane("unrelated");
+    apply(1);
+    renamed.name = "actor-1|late";
+    apply(1);
+    expect(renamed.isDisposed()).toBe(false);
+    // A world mesh added for an overlay slot is swept by the next snapshot.
+    const added = plane("actor-1|part");
+    apply(1);
+    expect(added.isDisposed()).toBe(true);
+    expect(renamed.isDisposed()).toBe(true);
+    // A slot joining the overlay sweeps its existing world copy although no mesh was added meanwhile.
+    const copy = plane("actor-2");
+    apply(1);
+    expect(copy.isDisposed()).toBe(false);
+    apply(1, 2);
+    expect(copy.isDisposed()).toBe(true);
+    // A removal and an addition between snapshots keep the mesh count, and still count as a gained mesh.
+    const bystander = plane("bystander");
+    apply(1, 2);
+    bystander.dispose();
+    const swapped = plane("actor-2|swapped");
+    apply(1, 2);
+    expect(swapped.isDisposed()).toBe(true);
+    overlay.dispose();
+  });
+
   it("keeps a command-built visual alive when a stale snapshot omits its slot", () => {
     const handle = createTestEngine();
     handles.push(handle);
