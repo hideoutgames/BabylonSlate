@@ -79,7 +79,7 @@ export interface JournalLine {
   command: { type: string; [key: string]: unknown };
 }
 
-export type CommandReviver = (
+type CommandReviver = (
   payload: Record<string, unknown>,
 ) => EditCommand<unknown>;
 

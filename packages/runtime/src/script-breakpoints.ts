@@ -23,7 +23,7 @@ export type BreakpointHit = BreakpointLocation & {
 type HitDetail = { owner?: EngineObject; event?: BreakpointEvent };
 
 /** A node's breakpoint and what it has counted this session. */
-export type NodeBreakpoint = {
+type NodeBreakpoint = {
   condition: BreakpointCondition | null;
   hitCount: number | null;
   /** The settings as one string: sending the same breakpoint again keeps its count. */

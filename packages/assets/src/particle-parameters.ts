@@ -40,7 +40,7 @@ export type ParticleBasicBinding = {
 };
 
 /** A parameter one emitter declares. */
-export type ParticleEmitterParameter = { name: string; type: ParticleParameterType; defaultValue: number[] };
+type ParticleEmitterParameter = { name: string; type: ParticleParameterType; defaultValue: number[] };
 
 function isTarget(value: unknown): value is ParticleBasicBindingTarget {
   return typeof value === "string" && Object.hasOwn(PARTICLE_BASIC_BINDING_TARGETS, value);

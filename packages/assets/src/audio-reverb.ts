@@ -75,7 +75,7 @@ export type AudioReverbGeometry = {
   triangles: AudioReverbTriangle[];
 };
 
-export type AudioReverbOccupancyGrid = {
+type AudioReverbOccupancyGrid = {
   sizeX: number;
   sizeY: number;
   sizeZ: number;
