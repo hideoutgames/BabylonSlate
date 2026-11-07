@@ -100,12 +100,6 @@ export class RuntimeGlobalParameters {
     return { found: true, value: [...this.valueOf(resolved.guid, resolved.parameter)] };
   }
 
-  /** The current value of a parameter by id, for readers that resolved it already. */
-  valueById(collectionGuid: string, parameterId: string): number[] | null {
-    const parameter = this.catalog[collectionGuid]?.find((entry) => entry.id === parameterId);
-    return parameter ? [...this.valueOf(collectionGuid, parameter)] : null;
-  }
-
   /** The values set this session, for a trace frame. */
   traceState(): TraceGlobalParameterValue[] {
     return [...this.values].map(([key, value]) => {

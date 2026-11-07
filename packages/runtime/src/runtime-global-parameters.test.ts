@@ -16,7 +16,6 @@ describe("runtime global parameters", () => {
     expect(globals.get("fx", "Heat", ["float"])).toEqual({ found: true, value: [1] });
     expect(globals.set("fx", " Wind ", [3, 4, 5], ["vec2", "vec3"])?.id).toBe("wind");
     expect(globals.get("fx", "Wind", ["vec2", "vec3"])).toEqual({ found: true, value: [3, 4] });
-    expect(globals.valueById("fx", "wind")).toEqual([3, 4]);
     // A Float node cannot set a Vector parameter, and unknown names do nothing; each warns once.
     expect(globals.set("fx", "Wind", [1], ["float"])).toBeNull();
     expect(globals.set("fx", "Missing", [1], ["float"])).toBeNull();
