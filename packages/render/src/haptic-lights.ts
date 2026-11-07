@@ -309,22 +309,40 @@ function writeViews(scene: Scene, state: SceneLights, shadow: AtlasShadowGenerat
   const size = shadow.contactHardeningLightSizeUVRatio;
   const cascaded = shadow instanceof AtlasCascadedShadowGenerator;
   const ratios = shadowViewTexelRatios(shadow);
-  shadow.tiles.forEach((tile, index) => {
+  const views = state.shadowViews;
+  const tiles = shadow.tiles;
+  const drawn = shadow.drawnViews;
+  for (let index = 0; index < tiles.length; index++) {
+    const tile = tiles[index]!;
     const base = (first + index) * HAPTIC_SHADOW_VIEW_VEC4S * 4;
     Matrix.TranslationToRef(offset.x, offset.y, offset.z, shadowTransform);
-    shadowTransform.multiplyToRef(shadow.drawnViews[index]!, shadowTransform);
-    state.shadowViews.set(shadowTransform.m, base);
-    state.shadowViews.set([tile.x / edge, tile.y / edge, tile.size / edge, 1 / edge, shadow.getDarkness(), filter, Number(cascaded),
-      Number(cascaded && shadow.autoBias)], base + 16);
+    shadowTransform.multiplyToRef(drawn[index]!, shadowTransform);
+    views.set(shadowTransform.m, base);
+    views[base + 16] = tile.x / edge;
+    views[base + 17] = tile.y / edge;
+    views[base + 18] = tile.size / edge;
+    views[base + 19] = 1 / edge;
+    views[base + 20] = shadow.getDarkness();
+    views[base + 21] = filter;
+    views[base + 22] = Number(cascaded);
+    views[base + 23] = Number(cascaded && shadow.autoBias);
     if (cascaded) {
       const correction = shadow.cascadeCorrections[index]!;
-      state.shadowViews.set([correction.x, correction.y, correction.z, size], base + 24);
+      views[base + 24] = correction.x;
+      views[base + 25] = correction.y;
+      views[base + 26] = correction.z;
     } else {
       const range = shadow.drawnDepthRange;
-      state.shadowViews.set([range.x, range.y, 0, size], base + 24);
+      views[base + 24] = range.x;
+      views[base + 25] = range.y;
+      views[base + 26] = 0;
     }
-    state.shadowViews.set([ratios[index]!, 0, 0, 0], base + 28);
-  });
+    views[base + 27] = size;
+    views[base + 28] = ratios[index]!;
+    views[base + 29] = 0;
+    views[base + 30] = 0;
+    views[base + 31] = 0;
+  }
 }
 
 /**
@@ -346,18 +364,48 @@ function writeShadowViews(scene: Scene, state: SceneLights): void {
     const plane = shadow.cascadeDepth;
     // The camera's view depth of a block position, which is relative to the floating origin.
     const sign = scene.useRightHandedSystem ? -1 : 1;
-    state.sunShadow.set([shadow.numCascades, shadow.cascadeBlendPercentage === 0 ? 10000 : 1 / shadow.cascadeBlendPercentage, shadow.fadeFraction, 0,
-      sign * plane.x, sign * plane.y, sign * plane.z, sign * (plane.w + plane.x * offset.x + plane.y * offset.y + plane.z * offset.z)]);
-    state.sunShadow.set(shadow.cascadeEnds.slice(0, 4), 8);
-    state.sunShadow.set(shadow.cascadeLengths.slice(0, 4), 12);
+    const sun = state.sunShadow;
+    sun[0] = shadow.numCascades;
+    sun[1] = shadow.cascadeBlendPercentage === 0 ? 10000 : 1 / shadow.cascadeBlendPercentage;
+    sun[2] = shadow.fadeFraction;
+    sun[3] = 0;
+    sun[4] = sign * plane.x;
+    sun[5] = sign * plane.y;
+    sun[6] = sign * plane.z;
+    sun[7] = sign * (plane.w + plane.x * offset.x + plane.y * offset.y + plane.z * offset.z);
+    // At most four cascades; the rest stay 0.
+    const ends = shadow.cascadeEnds;
+    const lengths = shadow.cascadeLengths;
+    for (let index = 0; index < Math.min(4, ends.length); index++) sun[8 + index] = ends[index]!;
+    for (let index = 0; index < Math.min(4, lengths.length); index++) sun[12 + index] = lengths[index]!;
   }
   state.buffer.updateFloatArray("hapticShadowViews", state.shadowViews);
   state.buffer.updateFloatArray("hapticSunShadow", state.sunShadow);
 }
 
+/** A local light's cluster record at `count`, the one written there last time when there is one (records are reused). */
+function clusterRecord(clusters: ClusterLight[], count: number, kind: ClusterLight["kind"], index: number,
+  x: number, y: number, z: number, radius: number): void {
+  const record = clusters[count];
+  if (!record) {
+    clusters.push({ kind, index, x, y, z, radius });
+    return;
+  }
+  record.kind = kind;
+  record.index = index;
+  record.x = x;
+  record.y = y;
+  record.z = z;
+  record.radius = radius;
+}
+
+const spotDirection = new Vector3();
+const fillDirection = new Vector3();
+
 /**
- * Write the block from the lights the admission left on (`selectHapticLights`), once per frame, after it. The fill is
- * the admitted hemispheric light. A spot light's record holds its cone's half-angle cosines, the outer beside its
+ * Write the block from the lights the admission left on (`selectHapticLights`), after it, at each scene-lighting sync;
+ * the frame draws with the write of its `onBeforeRender` sync (`scene-lighting.ts`). The fill is the admitted
+ * hemispheric light. A spot light's record holds its cone's half-angle cosines, the outer beside its
  * direction and the inner beside its shadow's first view (glTF's cone: full inside the inner, none past the outer). A
  * rect area light's record holds its centre and its half width and half height vectors, as Babylon's does, and the
  * layer of its emission in the texture array (`area-emission-array.ts`), -1 for its flat colour. A Scene with its lights disabled (the Unlit viewport) writes none, as Babylon's materials then light
@@ -376,7 +424,7 @@ export function writeHapticLights(scene: Scene): void {
   state.shadowed.length = 0;
   state.sun = null;
   const clusters = state.clusterLights;
-  clusters.length = 0;
+  let clustered = 0;
   // The admission keeps within the block's records; the checks below hold them whatever it admitted.
   if (scene.lightsEnabled) for (const light of scene.lights) {
     if (!light.isEnabled() || !isIlluminatingLight(light)) continue;
@@ -389,25 +437,46 @@ export function writeHapticLights(scene: Scene): void {
       // The first shadowed sun's shadow is the block's sun shadow; w marks the light that casts it.
       const shadowed = !state.sun && castsShadows(scene, light) && light.getShadowGenerator() instanceof AtlasCascadedShadowGenerator;
       if (shadowed) state.sun = light;
-      directional.set([direction.x, direction.y, direction.z, light.radius,
-        light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, shadowed ? 1 : 0], directionals * 8);
+      const at = directionals * 8;
+      directional[at] = direction.x;
+      directional[at + 1] = direction.y;
+      directional[at + 2] = direction.z;
+      directional[at + 3] = light.radius;
+      directional[at + 4] = light.diffuse.r * intensity;
+      directional[at + 5] = light.diffuse.g * intensity;
+      directional[at + 6] = light.diffuse.b * intensity;
+      directional[at + 7] = shadowed ? 1 : 0;
       directionals++;
     } else if (light instanceof SpotLight) {
       if (spots === HAPTIC_LIGHT_MAXIMUM.spot) continue;
       const transformed = light.computeTransformedInformation();
       const position = transformed ? light.transformedPosition : light.position;
-      const direction = (transformed ? light.transformedDirection : light.direction).normalizeToNew();
+      const direction = (transformed ? light.transformedDirection : light.direction).normalizeToRef(spotDirection);
       const intensity = light.getScaledIntensity();
       const shadowed = shadowedLight(scene, light, views);
       if (shadowed) {
         state.shadowed.push(shadowed);
         views += shadowed.shadow.tiles.length;
       }
-      spot.set([position.x - offset.x, position.y - offset.y, position.z - offset.z, light.radius,
-        direction.x, direction.y, direction.z, Math.cos(light.angle * 0.5),
-        light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, light.range,
-        shadowed ? shadowed.first : -1, Math.cos(light.innerAngle * 0.5), 0, 0], spots * 16);
-      clusters.push({ kind: "spot", index: spots, x: position.x - offset.x, y: position.y - offset.y, z: position.z - offset.z, radius: light.range });
+      const x = position.x - offset.x, y = position.y - offset.y, z = position.z - offset.z;
+      const at = spots * 16;
+      spot[at] = x;
+      spot[at + 1] = y;
+      spot[at + 2] = z;
+      spot[at + 3] = light.radius;
+      spot[at + 4] = direction.x;
+      spot[at + 5] = direction.y;
+      spot[at + 6] = direction.z;
+      spot[at + 7] = Math.cos(light.angle * 0.5);
+      spot[at + 8] = light.diffuse.r * intensity;
+      spot[at + 9] = light.diffuse.g * intensity;
+      spot[at + 10] = light.diffuse.b * intensity;
+      spot[at + 11] = light.range;
+      spot[at + 12] = shadowed ? shadowed.first : -1;
+      spot[at + 13] = Math.cos(light.innerAngle * 0.5);
+      spot[at + 14] = 0;
+      spot[at + 15] = 0;
+      clusterRecord(clusters, clustered++, "spot", spots, x, y, z, light.range);
       spots++;
     } else if (light instanceof RectAreaLight) {
       if (rects === HAPTIC_LIGHT_MAXIMUM.rect) continue;
@@ -416,10 +485,25 @@ export function writeHapticLights(scene: Scene): void {
       const width = Vector3.TransformNormalFromFloatsToRef(light.width / 2, 0, 0, world, TmpVectors.Vector3[1]);
       const height = Vector3.TransformNormalFromFloatsToRef(0, light.height / 2, 0, world, TmpVectors.Vector3[2]);
       const intensity = light.getScaledIntensity();
-      rect.set([position.x - offset.x, position.y - offset.y, position.z - offset.z, 0, width.x, width.y, width.z, 0,
-        height.x, height.y, height.z, 0, light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, -1], rects * 16);
+      const at = rects * 16;
+      rect[at] = position.x - offset.x;
+      rect[at + 1] = position.y - offset.y;
+      rect[at + 2] = position.z - offset.z;
+      rect[at + 3] = 0;
+      rect[at + 4] = width.x;
+      rect[at + 5] = width.y;
+      rect[at + 6] = width.z;
+      rect[at + 7] = 0;
+      rect[at + 8] = height.x;
+      rect[at + 9] = height.y;
+      rect[at + 10] = height.z;
+      rect[at + 11] = 0;
+      rect[at + 12] = light.diffuse.r * intensity;
+      rect[at + 13] = light.diffuse.g * intensity;
+      rect[at + 14] = light.diffuse.b * intensity;
+      rect[at + 15] = -1;
       state.rects.push(light);
-      clusters.push({ kind: "rect", index: rects, x: 0, y: 0, z: 0, radius: Infinity });
+      clusterRecord(clusters, clustered++, "rect", rects, 0, 0, 0, Infinity);
       rects++;
     } else if (light instanceof PointLight) {
       if (points === HAPTIC_LIGHT_MAXIMUM.point) continue;
@@ -431,31 +515,45 @@ export function writeHapticLights(scene: Scene): void {
         views += shadowed.shadow.tiles.length;
       }
       // The shadow: its first view and its faces (six, one for a point light with a direction), -1 for none.
-      point.set([position.x - offset.x, position.y - offset.y, position.z - offset.z, light.radius,
-        light.diffuse.r * intensity, light.diffuse.g * intensity, light.diffuse.b * intensity, light.range,
-        shadowed ? shadowed.first : -1, shadowed?.shadow.tiles.length ?? 0, 0, 0], points * 12);
-      clusters.push({ kind: "point", index: points, x: position.x - offset.x, y: position.y - offset.y, z: position.z - offset.z, radius: light.range });
+      const x = position.x - offset.x, y = position.y - offset.y, z = position.z - offset.z;
+      const at = points * 12;
+      point[at] = x;
+      point[at + 1] = y;
+      point[at + 2] = z;
+      point[at + 3] = light.radius;
+      point[at + 4] = light.diffuse.r * intensity;
+      point[at + 5] = light.diffuse.g * intensity;
+      point[at + 6] = light.diffuse.b * intensity;
+      point[at + 7] = light.range;
+      point[at + 8] = shadowed ? shadowed.first : -1;
+      point[at + 9] = shadowed?.shadow.tiles.length ?? 0;
+      point[at + 10] = 0;
+      point[at + 11] = 0;
+      clusterRecord(clusters, clustered++, "point", points, x, y, z, light.range);
       points++;
     }
   }
+  clusters.length = clustered;
   syncAreaEmissionLayers(scene, state.rects, AREA_EMISSION_LAYERS, state.layers);
   state.limits.length = 0;
-  state.rects.forEach((light, index) => {
+  for (let index = 0; index < state.rects.length; index++) {
+    const light = state.rects[index]!;
     rect[index * 16 + 15] = state.layers[index]!;
     if (state.layers[index] === -1 && rectLightEmission(light))
       state.limits.push(`${light.name}: draws its flat colour; this device holds ${AREA_EMISSION_LAYERS} area light emission textures at once`);
-  });
+  }
   const buffer = state.buffer;
   buffer.updateFloat4("hapticCounts", directionals, points, spots, rects);
   if (!fill) buffer.updateFloat4("hapticFillDirection", 0, 1, 0, 0);
   else {
-    const direction = fill.direction.normalizeToNew();
-    const sky = fill.diffuse.scale(fill.getScaledIntensity());
-    const ground = fill.groundColor.scale(fill.intensity);
+    const direction = fill.direction.normalizeToRef(fillDirection);
+    const sky = fill.diffuse;
+    const skyScale = fill.getScaledIntensity();
+    const ground = fill.groundColor;
     // w marks the fill present.
     buffer.updateFloat4("hapticFillDirection", direction.x, direction.y, direction.z, 1);
-    buffer.updateFloat4("hapticFillSky", sky.r, sky.g, sky.b, 0);
-    buffer.updateFloat4("hapticFillGround", ground.r, ground.g, ground.b, 0);
+    buffer.updateFloat4("hapticFillSky", sky.r * skyScale, sky.g * skyScale, sky.b * skyScale, 0);
+    buffer.updateFloat4("hapticFillGround", ground.r * fill.intensity, ground.g * fill.intensity, ground.b * fill.intensity, 0);
   }
   buffer.updateFloatArray("hapticDirectional", directional);
   buffer.updateFloatArray("hapticPoint", point);

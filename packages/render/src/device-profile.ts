@@ -47,9 +47,17 @@ export function isMobileGpuDevice(nav: DeviceNavigator | undefined = globalThis.
   return /iPhone|iPad|iPod|Android/i.test(agent) || (/Macintosh/.test(agent) && (nav.maxTouchPoints ?? 0) > 1);
 }
 
-/** This device's profile; the one place render code tells device classes apart. */
-export function deviceProfile(nav?: DeviceNavigator): DeviceProfile {
-  return isMobileGpuDevice(nav) ? MOBILE : DESKTOP;
+/** The navigator last profiled and its profile: a navigator's user agent and touch points do not change. */
+let profiled: { nav: DeviceNavigator; profile: DeviceProfile } | null = null;
+
+/**
+ * This device's profile; the one place render code tells device classes apart. Read many times a frame, so the
+ * user agent is classed once per navigator.
+ */
+export function deviceProfile(nav: DeviceNavigator | undefined = globalThis.navigator): DeviceProfile {
+  if (!nav) return DESKTOP;
+  if (profiled?.nav !== nav) profiled = { nav, profile: isMobileGpuDevice(nav) ? MOBILE : DESKTOP };
+  return profiled.profile;
 }
 
 /** The limit a texture budget of `requested` bytes meets on this device, for `qualityLimits`. */

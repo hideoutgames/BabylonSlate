@@ -537,10 +537,14 @@ export class SceneShadowController {
    * "admission" leaves both to refreshShadowMaps(), which runs before every map
    * render; it still walks when it must read caster state itself (a new map or
    * a changed directional distance).
+   *
+   * Returns whether the sync changed shadow allocation or caster participation: a map built, released, moved, put on
+   * or taken off standby, a view's map built or dropped, caster flags or membership applied, or receiver defines
+   * dirtied. False means the lights, their maps and the receivers' defines are as the sync found them.
    */
-  sync(mode: "full" | "admission" = "full"): void {
+  sync(mode: "full" | "admission" = "full"): boolean {
     const scene = this.scene;
-    if (scene.isDisposed) return;
+    if (scene.isDisposed) return false;
     syncDirectionalLightPolicy(scene);
     // Babylon pushes a mesh synchronously but notifies it on a later task, and
     // a frame can render first. Removals notify synchronously, so a length
@@ -587,6 +591,7 @@ export class SceneShadowController {
     // Caster participation and receiveShadows changed material defines or map
     // membership; cached strict readiness no longer applies.
     if (hadPending) markSceneReadinessDirty(scene);
+    let changed = hadPending;
     // Without a map nothing reads caster state, so the walk waits for the first
     // allocation; kept snapshots make the late walk report only real changes.
     const holding = this.holdsGenerator();
@@ -647,6 +652,7 @@ export class SceneShadowController {
         entry.generator.dispose();
         markSceneReadinessDirty(scene);
         invalidateShadowReceiverHandoffs(scene);
+        changed = true;
       }
       entry.generator = null;
       entry.standby = false;
@@ -667,6 +673,7 @@ export class SceneShadowController {
           entry.standby = false;
           entry.admittedAt = selectionTime;
           neutralUntilRendered(entry.generator);
+          changed = true;
         }
         continue;
       }
@@ -676,7 +683,7 @@ export class SceneShadowController {
       else release(entry);
     }
     // The views' atlas mirrors of maps released above go too, before a replacement could need their tiles.
-    this.views.prune();
+    if (this.views.prune()) changed = true;
     // An atlas of another edge (another quality level's, or a sun's growth coming or going) is empty now and goes in
     // this frame; the maps planned into the new one wait `budget-limited` until a later Engine frame builds it, so the
     // two never live in the same frame. WebGPU destroys a disposed texture only at the frame's end, and a GPU process
@@ -703,6 +710,7 @@ export class SceneShadowController {
       const [donor] = donors.splice(index, 1) as [Entry];
       const generator = donor.generator as AtlasShadowGenerator;
       generator.moveTo(entry.light as LocalShadowLight);
+      changed = true;
       // Same-kind lights exchange shader light indices, so receivers keep their
       // defines and effects. Otherwise dirty them as construction/disposal would.
       if (qualityValuesKey(donor.settings) !== settingsKey() ||
@@ -761,6 +769,7 @@ export class SceneShadowController {
       pooled++;
       if (entry.standby) continue;
       entry.standby = true;
+      changed = true;
       entry.effectiveBias.length = 0;
       generator.setDarkness(NEUTRAL_DARKNESS);
       setAwaitingFirstDraw(generator, false);
@@ -790,6 +799,7 @@ export class SceneShadowController {
             previousSettings?.fadeFraction !== settings.fadeFraction) ||
             (directionalLight && previousSettings?.autoBias !== settings.autoBias))) {
           materialsDirty = true;
+          changed = true;
           scene.markAllMaterialsAsDirty(Material.LightDirtyFlag);
           markSceneReadinessDirty(scene);
           invalidateShadowReceiverHandoffs(scene);
@@ -802,6 +812,8 @@ export class SceneShadowController {
         entry.reason = atlasResizing ? "shadow atlas resizing" : "shadow atlas space";
         continue;
       }
+      // A map is built here, or its allocation fails and its status says so.
+      changed = true;
       // The first map reads caster state, bounds and spatial queries from here on.
       currentCasters();
       // Halving is bounded by the normalized 8192 maximum and 256 floor. Failed
@@ -900,10 +912,11 @@ export class SceneShadowController {
         if (castersCurrent) this.refresh.apply(entry.generator);
       }
     // Views mirror the maps admitted above, after their releases and replacements.
-    this.views.sync(settings, () => {
+    if (this.views.sync(settings, () => {
       currentCasters();
       return casterBounds;
-    }, atlasEdge);
+    }, atlasEdge)) changed = true;
+    return changed;
   }
   /** Every allocated map: the scene view's (admitted or standby) and every view's own. */
   private forEachGenerator(action: (generator: ShadowGenerator) => void): void {
