@@ -16,7 +16,7 @@
  * settings). A pass culls with the mirrored frustum cropped to the surface's footprint on screen (where its Material can
  * sample the reflection), so content no reflection can show is neither drawn nor followed. Content that changes on its own (skinning, time-driven materials, textures updated in place) keeps its
  * surface due on every render while it is reflected, within the same budget. A target allocates on a surface's first draw and lives with the surface (resized
- * when the view's size or Resolution Scale changes), so a skipped surface always has its last image to show.
+ * when the size the view draws at, which FSR Upscaling lowers, or Resolution Scale changes), so a skipped surface always has its last image to show.
  *
  * Shadows: a pass shows the scene view's spot and point light shadows. The sun's, only with Reflection Shadows: then a
  * drawing surface's mirror camera holds the sun's cascades as maps of its own, fitted to its mirrored view and drawn
@@ -67,6 +67,8 @@ import { createSurfacePlumbing } from "./surface-material-plumbing";
 import type { MaterialPlumbing } from "./material-block-registry";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import { sceneViewRenderSize } from "./scene-output-scale";
+import { upscaledRenderSize } from "./scene-effects";
+import { sceneRenderingSettings } from "./render-settings";
 
 const DRAW_POLICY = { restoreAlpha: true, wrapDrawFailure: false, message: "Mirror reflection failed." };
 
@@ -246,6 +248,10 @@ class SceneMirrors {
     buildViewProjectionMatrix(scene, camera, viewWidth / viewHeight, this.projection);
     camera.getViewMatrix().multiplyToRef(this.projection, this.viewProjection);
     Frustum.GetPlanesToRef(this.viewProjection, this.planes);
+    // Targets follow the size the view's scene draws at: its output's, or less under FSR Upscaling's render scale.
+    const drawn = upscaledRenderSize(sceneRenderingSettings(scene).effectsPlan, view.width, view.height);
+    const drawnWidth = drawn.width * camera.viewport.width;
+    const drawnHeight = drawn.height * camera.viewport.height;
     const maxSize = engine.getCaps().maxTextureSize;
     const type = linear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     const tick = ++this.renders;
@@ -255,7 +261,7 @@ class SceneMirrors {
       if (!this.sunShadows) surface.target?.sunShadows.release();
       this.place(surface, camera.layerMask);
       // A current reflection is not a candidate: the budget goes to surfaces whose image is due.
-      if (surface.visible && this.current(surface, camera, viewWidth, viewHeight, type, maxSize)) {
+      if (surface.visible && this.current(surface, camera, drawnWidth, drawnHeight, type, maxSize)) {
         surface.visible = false;
         this.reuses++;
       }
@@ -264,7 +270,7 @@ class SceneMirrors {
     let draws = 0;
     for (const surface of this.selected) {
       try {
-        if (this.renderSurface(surface, camera, viewWidth, viewHeight, linear)) draws++;
+        if (this.renderSurface(surface, camera, drawnWidth, drawnHeight, linear)) draws++;
       } catch (error) {
         // An optional effect must not break the frame: this surface keeps its last image from now on.
         surface.failed = true;
@@ -308,13 +314,14 @@ class SceneMirrors {
   /**
    * Whether a drawn surface's reflection still shows what a draw would: the same target size and colour type, the same
    * mirror view-projection, and nothing the pass draws changed (`ReflectedContent`, followed on every visible render).
-   * Leaves the mirror camera and the pass's list as a draw this render would set them.
+   * Leaves the mirror camera and the pass's list as a draw this render would set them. `drawnWidth` × `drawnHeight` is
+   * the size the view's scene draws at.
    */
-  private current(surface: Surface, camera: Camera, viewWidth: number, viewHeight: number, type: number, maxSize: number): boolean {
+  private current(surface: Surface, camera: Camera, drawnWidth: number, drawnHeight: number, type: number, maxSize: number): boolean {
     const target = surface.target;
     if (!surface.drawn || !target?.lease || target.type !== type) return false;
     const scale = surface.properties.resolutionScale;
-    if (target.width !== planarMirrorTargetSize(viewWidth, scale, maxSize) || target.height !== planarMirrorTargetSize(viewHeight, scale, maxSize)) return false;
+    if (target.width !== planarMirrorTargetSize(drawnWidth, scale, maxSize) || target.height !== planarMirrorTargetSize(drawnHeight, scale, maxSize)) return false;
     if (!this.mirrorAndCull(surface, camera, target)) return false;
     if (surface.content.changed(this.scene, target.texture.renderList!)) surface.dirty = true;
     if (target.sunShadows.due(this.sunShadows, this.projection)) surface.dirty = true;
@@ -364,11 +371,11 @@ class SceneMirrors {
     return cropToFootprint(this.cullViewProjection, this.corners, marginX, marginY, this.cropViewProjection);
   }
 
-  private renderSurface(surface: Surface, camera: Camera, viewWidth: number, viewHeight: number, linear: boolean): boolean {
+  private renderSurface(surface: Surface, camera: Camera, drawnWidth: number, drawnHeight: number, linear: boolean): boolean {
     const scene = this.scene, engine = scene.getEngine();
     const maxSize = engine.getCaps().maxTextureSize;
     const scale = surface.properties.resolutionScale;
-    const width = planarMirrorTargetSize(viewWidth, scale, maxSize), height = planarMirrorTargetSize(viewHeight, scale, maxSize);
+    const width = planarMirrorTargetSize(drawnWidth, scale, maxSize), height = planarMirrorTargetSize(drawnHeight, scale, maxSize);
     const type = linear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     const target = this.ensureTarget(surface, camera, width, height, type);
     if (!target) return false;

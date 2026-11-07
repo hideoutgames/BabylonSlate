@@ -13,7 +13,7 @@ Select an actor, then choose **Add Component > Rendering > Mirror**. You can als
 | Enabled | Shows the mirror. Off hides the surface and stops its reflection. Default on. |
 | Width | Width along local X, in scene units. Default 2. |
 | Height | Height along local Y, in scene units. Default 2. |
-| Resolution Scale | Reflection resolution as a fraction of the view's, from 0.1 to 1. Lower values look softer and save GPU time and memory. Default 1. |
+| Resolution Scale | Reflection resolution as a fraction of the resolution the view renders at, from 0.1 to 1. With [FSR Upscaling](../graphics/post-processing.md#project-effects) on, that is its lower render resolution. Lower values look softer and save GPU time and memory. Default 1. |
 | Tint | Multiplies the reflection on the built-in surface. Default white. |
 | Material | A Material for the surface instead of the built-in one. Default none (the built-in surface). |
 
