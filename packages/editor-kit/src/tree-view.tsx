@@ -63,7 +63,7 @@ export function rangeSelectTreeIds(
   return ids.slice(start, end + 1);
 }
 
-export function isTreeSwipeAdd(dx: number, dy: number): boolean {
+function isTreeSwipeAdd(dx: number, dy: number): boolean {
   return Math.abs(dx) >= TREE_SWIPE_ADD_PX && Math.abs(dx) >= Math.abs(dy);
 }
 

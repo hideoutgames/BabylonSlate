@@ -29,7 +29,7 @@ function assetTypeOf(row: Extract<PropertyRow, { kind: "asset" }>): string | und
 }
 
 /** The value as plain text for the system clipboard, so it can also go outside the editor. */
-export function propertyRowText(row: PropertyRow): string {
+function propertyRowText(row: PropertyRow): string {
   switch (row.kind) {
     case "number":
     case "slider":

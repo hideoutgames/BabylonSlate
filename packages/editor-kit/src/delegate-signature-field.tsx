@@ -38,7 +38,7 @@ export function delegateSignaturePatch(
 }
 
 /** `On Damaged (Enemy)`, or No Inputs, as the Signature field shows it. */
-export function delegateSignatureLabel(
+function delegateSignatureLabel(
   entries: readonly DelegateSignatureEntry[],
   value: DelegateSignatureValue,
 ): string {
