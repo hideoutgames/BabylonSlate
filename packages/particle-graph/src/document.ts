@@ -6,6 +6,7 @@ import {
   PARTICLE_CAPACITY_MAX,
   PARTICLE_CAPACITY_MIN,
   PARTICLE_PREWARM_MAX_SECONDS,
+  normalizeGraphPinEdges,
   type ParticleBillboardMode,
   type ParticleBlendMode,
   type ParticleLoopMode,
@@ -378,27 +379,6 @@ function normalizeNodes(value: unknown): ParticleGraphNode[] {
   });
 }
 
-function normalizeEdges(value: unknown): ParticleGraphEdge[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry, index) => {
-    const record = asRecord(entry);
-    const sourceNodeId = asString(record.sourceNodeId, "");
-    const sourcePinId = asString(record.sourcePinId, "");
-    const targetNodeId = asString(record.targetNodeId, "");
-    const targetPinId = asString(record.targetPinId, "");
-    if (!sourceNodeId || !sourcePinId || !targetNodeId || !targetPinId) return [];
-    return [
-      {
-        id: asString(record.id, `edge-${index}`),
-        sourceNodeId,
-        sourcePinId,
-        targetNodeId,
-        targetPinId,
-      },
-    ];
-  });
-}
-
 /** A graph can never lack its Emitter Output. */
 function withOutput(nodes: ParticleGraphNode[]): ParticleGraphNode[] {
   if (nodes.some((node) => node.type === PARTICLE_OUTPUT_NODE_TYPE)) return nodes;
@@ -425,7 +405,7 @@ export function normalizeParticleGraphDocument(
     settings: normalizeParticleGraphSettings(record.settings),
     parameters,
     nodes: syncParameterNodeTypes(withOutput(normalizeNodes(record.nodes)), parameters),
-    edges: normalizeEdges(record.edges),
+    edges: normalizeGraphPinEdges(record.edges),
   };
 }
 

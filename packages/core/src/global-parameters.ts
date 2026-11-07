@@ -134,3 +134,59 @@ export function findGlobalParameter(
   if (typeof collectionGuid !== "string" || typeof parameterId !== "string") return null;
   return catalog[collectionGuid]?.find((parameter) => parameter.id === parameterId) ?? null;
 }
+
+/**
+ * The parameter a Material or Particle Graph **Global Parameter** node reads. `valueType` is the
+ * parameter's type when it was picked; the node's output follows it.
+ */
+export interface GlobalParameterSelection {
+  collectionGuid: string;
+  parameterId: string;
+  valueType: GlobalParameterType;
+}
+
+const trimmedText = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+
+/** A Global Parameter node's selection, or null while it has no collection, parameter or valid type. */
+export function globalParameterSelection(
+  properties: Readonly<Record<string, unknown>>,
+): GlobalParameterSelection | null {
+  const collectionGuid = trimmedText(properties.collectionGuid);
+  const parameterId = trimmedText(properties.parameterId);
+  const valueType = properties.valueType;
+  if (!collectionGuid || !parameterId || !isGlobalParameterType(valueType)) return null;
+  return { collectionGuid, parameterId, valueType };
+}
+
+/** A Global Parameter node's title: "<name> (Global <Type>)" when `catalog` holds its parameter, else "Global Parameter". */
+export function globalParameterNodeTitle(
+  properties: Readonly<Record<string, unknown>>,
+  catalog: Readonly<GlobalParameterCatalog> | undefined,
+): string {
+  const selection = globalParameterSelection(properties);
+  const parameter = selection && catalog
+    ? findGlobalParameter(catalog, selection.collectionGuid, selection.parameterId)
+    : null;
+  return selection && parameter
+    ? `${parameter.name} (Global ${GLOBAL_PARAMETER_TYPE_LABELS[selection.valueType]})`
+    : "Global Parameter";
+}
+
+/**
+ * The warning for a Global Parameter node: no parameter, or, given the project's `catalog`, a
+ * parameter that is gone or has changed type since it was picked.
+ */
+export function globalParameterNodeWarning(
+  properties: Readonly<Record<string, unknown>>,
+  catalog: Readonly<GlobalParameterCatalog> | undefined,
+): string | null {
+  const selection = globalParameterSelection(properties);
+  if (!selection) return "Global Parameter has no parameter selected";
+  if (!catalog) return null;
+  if (!catalog[selection.collectionGuid]) return "Global Parameter's collection is missing; it reads 0";
+  const parameter = findGlobalParameter(catalog, selection.collectionGuid, selection.parameterId);
+  if (!parameter) return "Global Parameter's parameter is no longer in its collection; it reads 0";
+  return parameter.type === selection.valueType
+    ? null
+    : `"${parameter.name}" is now a ${GLOBAL_PARAMETER_TYPE_LABELS[parameter.type]} parameter; select it again to update this node`;
+}

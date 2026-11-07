@@ -1,5 +1,5 @@
-import type { GlobalParameterCatalog, SerializedGraph } from "@haptic/core";
-import { PARTICLE_GLOBAL_PARAMETER_NODE_TYPE, particleGlobalParameterTitle } from "./global-parameter";
+import { globalParameterNodeTitle, type GlobalParameterCatalog, type SerializedGraph } from "@haptic/core";
+import { PARTICLE_GLOBAL_PARAMETER_NODE_TYPE } from "./global-parameter";
 import {
   PARTICLE_PARAMETER_NODE_TYPE,
   PARTICLE_UNSUPPORTED_V1_TYPES,
@@ -333,7 +333,7 @@ export function hydrateParticleGraphForEditor(
             : {}),
           ...(definition?.terminal ? { __protected: true } : {}),
           title: node.type === PARTICLE_GLOBAL_PARAMETER_NODE_TYPE
-            ? particleGlobalParameterTitle(properties, globalParameters)
+            ? globalParameterNodeTitle(properties, globalParameters)
             : parameter?.name ?? definition?.title ?? PARTICLE_UNSUPPORTED_V1_TYPES[node.type] ?? node.type,
         },
       };

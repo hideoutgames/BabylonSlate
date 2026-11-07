@@ -42,7 +42,8 @@ import type {
   MaterialTextureFilter,
   MaterialValueType,
 } from "@haptic/shader-graph";
-import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, componentCount, isPerInstanceParameter, materialGlobalParameterSelection, materialNodeDefinition } from "@haptic/shader-graph";
+import { globalParameterSelection } from "@haptic/core";
+import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, componentCount, isPerInstanceParameter, materialNodeDefinition } from "@haptic/shader-graph";
 import { globalParameterDefaults, type GlobalParameterValueSource } from "./global-parameter-values";
 import { createGlobalParameterBlock } from "./material-global-parameter";
 import { attachInstanceParameters, createInstanceParameterBlock, instanceParameterAttribute, type InstanceParameter } from "./instance-parameters";
@@ -518,7 +519,7 @@ export function compileMaterialPlan(
     if (realized.has(operation.id)) return true;
     if (operation.nodeType === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE) {
       // Without a parameter the node has no outputs, so nothing reads it.
-      const selection = materialGlobalParameterSelection(operation.properties);
+      const selection = globalParameterSelection(operation.properties);
       const blocks: NodeMaterialBlock[] = [];
       const outputs: Record<string, NodeMaterialConnectionPoint> = {};
       if (selection) {

@@ -1,5 +1,5 @@
-import { PARTICLE_CPU_CAPACITY_BUDGET, findGraphCycle, type GlobalParameterCatalog } from "@haptic/core";
-import { PARTICLE_GLOBAL_PARAMETER_NODE_TYPE, particleGlobalParameterWarning } from "./global-parameter";
+import { PARTICLE_CPU_CAPACITY_BUDGET, findGraphCycle, globalParameterNodeWarning, type GlobalParameterCatalog } from "@haptic/core";
+import { PARTICLE_GLOBAL_PARAMETER_NODE_TYPE } from "./global-parameter";
 import {
   PARTICLE_PARAMETER_NODE_TYPE,
   PARTICLE_OUTPUT_NODE_TYPE,
@@ -586,7 +586,7 @@ export function checkParticleGraphDocument(
   diagnostics.push(...validateSettings(doc, context));
   diagnostics.push(...validateParameterNodes(doc));
   for (const node of doc.nodes) {
-    const message = node.type === PARTICLE_GLOBAL_PARAMETER_NODE_TYPE ? particleGlobalParameterWarning(node, context.globalParameters) : null;
+    const message = node.type === PARTICLE_GLOBAL_PARAMETER_NODE_TYPE ? globalParameterNodeWarning(node.properties, context.globalParameters) : null;
     if (message) diagnostics.push({ code: "particle.globalParameter", message, severity: "warning", nodeId: node.id });
   }
   return { diagnostics, resolver };

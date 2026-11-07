@@ -1,5 +1,5 @@
 import { nameNewMaterialParameters } from "./parameter-authoring";
-import type { GlobalParameterCatalog, SerializedGraph } from "@haptic/core";
+import { globalParameterNodeTitle, type GlobalParameterCatalog, type SerializedGraph } from "@haptic/core";
 import {
   materialNodeDefinition,
   materialPaletteEntries,
@@ -16,7 +16,7 @@ import { isMaterialParameterNode, materialParameterName } from "./parameters";
 import { customGlslDefinition, newCustomGlslProperties } from "./custom-glsl";
 import { callDefinition, createTypeResolver, plumbingDefinition } from "./resolve";
 import { vectorMaskDefinition } from "./vector-mask";
-import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, materialGlobalParameterDefinition, materialGlobalParameterTitle } from "./global-parameter";
+import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, materialGlobalParameterDefinition } from "./global-parameter";
 
 /** Pin shape the shared graph shell renders and connects. */
 export interface MaterialGraphPin {
@@ -246,7 +246,7 @@ export function hydrateMaterialGraphForEditor(
           title: isMaterialParameterNode(node.type)
             ? materialParameterName({ ...node, properties: data }) || definition?.title || node.type
             : node.type === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE
-              ? materialGlobalParameterTitle(data, context.globalParameters)
+              ? globalParameterNodeTitle(data, context.globalParameters)
               : calledFunction?.name ?? definition?.title ?? node.type,
         },
       };

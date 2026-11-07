@@ -1,7 +1,7 @@
 import type { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
-import type { MaterialGlobalParameterSelection } from "@haptic/shader-graph";
+import type { GlobalParameterSelection } from "@haptic/core";
 import { createConstantBlock } from "./material-block-registry";
 import { globalParameterComponents, type GlobalParameterValueSource } from "./global-parameter-values";
 
@@ -15,7 +15,7 @@ const BLOCK_TYPES = { float: "float", vec2: "vec2", vec3: "vec3", color: "vec4" 
  */
 export function createGlobalParameterBlock(
   name: string,
-  selection: MaterialGlobalParameterSelection,
+  selection: GlobalParameterSelection,
   source: GlobalParameterValueSource,
 ): InputBlock {
   const { collectionGuid, parameterId, valueType } = selection;
