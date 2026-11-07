@@ -70,6 +70,8 @@ describe("project write admission", () => {
     await rejected;
     expect(await lease.ready).toBe(true);
     expect(rolledBack).toBe(true);
+    // The settled write no longer holds admission open.
+    expect(admission.locked).toBe(true);
     lease.release();
   });
 
