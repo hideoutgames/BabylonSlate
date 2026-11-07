@@ -146,7 +146,7 @@ const PARTICLES_FINISHED: EngineScriptEvent = {
   exportName: "onParticlesFinished",
 };
 
-export const BUTTON_MOUSE_EVENTS: readonly EngineScriptEvent[] = [
+const BUTTON_MOUSE_EVENTS: readonly EngineScriptEvent[] = [
   {
     name: "On Mouse Enter",
     eventType: "flow.event.onMouseEnter",
@@ -190,7 +190,7 @@ const FOCUS_FUNCTIONS: readonly EngineScriptFunction[] = [
   { name: "Clear Focus", runtime: "clearFocusTarget", pins: [EXEC_IN, EXEC_OUT] },
 ];
 
-export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
+const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
   { name: "On Hit", eventType: "flow.event.hit", exportName: "onHit" },
   {
     name: "On Begin Overlap",
@@ -204,7 +204,7 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
   },
 ];
 
-export const MOVEMENT_EVENTS: readonly EngineScriptEvent[] = [
+const MOVEMENT_EVENTS: readonly EngineScriptEvent[] = [
   { name: "On Movement Started", eventType: "flow.event.movementStarted", exportName: "onMovementStarted" },
   { name: "On Movement Stopped", eventType: "flow.event.movementStopped", exportName: "onMovementStopped" },
   { name: "On Movement Jumped", eventType: "flow.event.movementJumped", exportName: "onMovementJumped" },
