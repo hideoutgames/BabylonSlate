@@ -74,6 +74,7 @@ export class TweenRuntime {
   }
 
   advance(deltaSeconds: number): void {
+    if (this.active.size === 0) return;
     const delta = Number.isFinite(deltaSeconds) && deltaSeconds > 0 ? deltaSeconds : 0;
     // A setter may synchronously start another action; it begins advancing next tick.
     const current = [...this.active];

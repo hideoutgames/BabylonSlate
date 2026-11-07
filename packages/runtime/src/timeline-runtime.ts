@@ -79,6 +79,12 @@ export class TimelineRuntime {
   /** Live clip asset instances, in creation order. */
   private readonly instances = new Set<TimelineClipInstance>();
   private instanceCount = 0;
+  /** Owners in `owners` with at least one clip: none means a tick has no clip to step. */
+  private ownersWithClips = 0;
+  /** `advance`'s snapshot of `owners` and `instances`, reused each tick and emptied after it. */
+  private readonly tickOwners: EngineObject[] = [];
+  private readonly tickClips: Map<string, TimelineClipObject>[] = [];
+  private readonly tickInstances: TimelineClipInstance[] = [];
 
   constructor(host: TimelineRuntimeHost) {
     this.host = host;
@@ -96,6 +102,7 @@ export class TimelineRuntime {
         return [clip.id, new TimelineClipObject(clip, owner, classId)];
       }));
       this.owners.set(owner, clips);
+      if (clips.size > 0) this.ownersWithClips += 1;
     }
     return clips;
   }
@@ -105,6 +112,7 @@ export class TimelineRuntime {
     const clips = this.owners.get(owner);
     if (!clips) return;
     this.owners.delete(owner);
+    if (clips.size > 0) this.ownersWithClips -= 1;
     for (const clip of clips.values()) {
       clip.destroyed = true;
       this.host.release(clip);
@@ -235,21 +243,44 @@ export class TimelineRuntime {
    */
   advance(dt: number, owners: Iterable<EngineObject>, canRun: (owner: EngineObject) => boolean): void {
     for (const owner of owners) this.ensure(owner);
-    for (const [owner, clips] of [...this.owners]) {
-      if (owner.destroyed) {
-        this.remove(owner);
-        continue;
-      }
-      if (!canRun(owner)) continue;
-      for (const clip of clips.values()) {
-        if (!clip.started && clip.clip.autoPlay) this.play(clip);
-        this.step(clip, dt);
+    if (this.ownersWithClips === 0) {
+      // No clip to step, so no script runs: only copies that ended are dropped.
+      for (const owner of this.owners.keys()) if (owner.destroyed) this.remove(owner);
+    } else {
+      // Clip events run scripts, which may load or end copies: walk the owners present when the tick began.
+      const tickOwners = this.tickOwners;
+      const tickClips = this.tickClips;
+      for (const owner of this.owners.keys()) tickOwners.push(owner);
+      for (const clips of this.owners.values()) tickClips.push(clips);
+      try {
+        for (let index = 0; index < tickOwners.length; index++) {
+          const owner = tickOwners[index]!;
+          if (owner.destroyed) {
+            this.remove(owner);
+            continue;
+          }
+          if (!canRun(owner)) continue;
+          for (const clip of tickClips[index]!.values()) {
+            if (!clip.started && clip.clip.autoPlay) this.play(clip);
+            this.step(clip, dt);
+          }
+        }
+      } finally {
+        tickOwners.length = 0;
+        tickClips.length = 0;
       }
     }
+    if (this.instances.size === 0) return;
     // Instances never Auto Play; one created this tick by an actor waits for the next.
-    for (const instance of [...this.instances]) {
-      if (instance.destroyed) this.instances.delete(instance);
-      else if (canRun(instance.owner)) this.step(instance, dt);
+    const tickInstances = this.tickInstances;
+    for (const instance of this.instances) tickInstances.push(instance);
+    try {
+      for (const instance of tickInstances) {
+        if (instance.destroyed) this.instances.delete(instance);
+        else if (canRun(instance.owner)) this.step(instance, dt);
+      }
+    } finally {
+      tickInstances.length = 0;
     }
   }
 

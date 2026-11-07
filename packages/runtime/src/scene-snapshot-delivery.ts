@@ -9,8 +9,8 @@ export function createSceneSnapshotDelivery(options: {
 }) {
   const pending = new Map<string, SceneRealized>();
   const flush = (): boolean => {
+    if (pending.size === 0 || !options.publishSnapshot()) return false;
     const commands = [...pending.entries()];
-    if (commands.length === 0 || !options.publishSnapshot()) return false;
     let sent = false;
     for (const [key, command] of commands) {
       if (pending.get(key) !== command) continue;

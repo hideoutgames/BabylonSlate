@@ -22,6 +22,8 @@ type DelayWaiter = {
 export class LatentDelays implements RuntimeSubsystem {
   private readonly waiters: DelayWaiter[] = [];
   private readonly retriggerable = new Map<string, DelayWaiter>();
+  /** This tick's due waiters, in waiter order; emptied once they resumed. */
+  private readonly due: DelayWaiter[] = [];
   /** An owner's time runs while its actions may run (a SceneSubsystem's with its Scene). */
   private readonly admission: Pick<OwnerAdmission, "canRunActions">;
   /** The World's tick index, which steps once per tick before scripts run. */
@@ -63,32 +65,37 @@ export class LatentDelays implements RuntimeSubsystem {
    * continuation ends (an owner cancellation) rather than staying pending.
    */
   advance(dt: number): void {
-    if (this.waiters.length === 0) return;
+    const waiters = this.waiters;
+    if (waiters.length === 0) return;
     const tick = this.tickIndex();
-    const remaining: DelayWaiter[] = [];
-    const due: DelayWaiter[] = [];
-    for (const waiter of this.waiters) {
+    const due = this.due;
+    // Waiters that stay move down over the due ones, keeping their order.
+    let kept = 0;
+    for (const waiter of waiters) {
       if (waiter.owner?.destroyed) {
         due.push(waiter);
         continue;
       }
       if (waiter.owner && !this.admission.canRunActions(waiter.owner)) {
-        remaining.push(waiter);
+        waiters[kept++] = waiter;
         continue;
       }
       if (waiter.afterTick !== undefined) {
         if (tick > waiter.afterTick) due.push(waiter);
-        else remaining.push(waiter);
+        else waiters[kept++] = waiter;
         continue;
       }
       waiter.remaining -= dt;
       if (waiter.remaining <= 0) due.push(waiter);
-      else remaining.push(waiter);
+      else waiters[kept++] = waiter;
     }
-    this.waiters.length = 0;
-    this.waiters.push(...remaining);
-    for (const waiter of due) if (waiter.key) this.retriggerable.delete(waiter.key);
-    for (const waiter of due) waiter.resolve();
+    waiters.length = kept;
+    try {
+      for (const waiter of due) if (waiter.key) this.retriggerable.delete(waiter.key);
+      for (const waiter of due) waiter.resolve();
+    } finally {
+      due.length = 0;
+    }
   }
 
   /** Stop resumes every pending wait; its continuation then observes the stopped session. */
