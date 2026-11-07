@@ -1,6 +1,5 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { environmentTextureContainer, readEnvironmentTextureInfo, type EnvironmentTextureInfo } from "./environment-texture";
-import { isKtx2Bytes } from "./ktx2-identifier";
 
 const identities = new WeakMap<Blob, string>();
 const headers = new WeakMap<Blob, Uint8Array>();
@@ -23,13 +22,6 @@ export function installAssetBytes(bytes: Uint8Array | Blob, mime = "application/
   headers.set(blob, source.slice(0, 64 * 1024));
   if (environmentTextureContainer(source)) environmentInfo.set(blob, readEnvironmentTextureInfo(source));
   return blob;
-}
-
-/** The MIME type an installed Texture source carries, from its container. */
-export function textureSourceMime(bytes: Uint8Array): string {
-  const kind = environmentTextureContainer(bytes);
-  return kind === "env" ? "application/vnd.babylon.env" : kind === "dds" ? "image/vnd-ms.dds"
-    : isKtx2Bytes(bytes) ? "image/ktx2" : "application/octet-stream";
 }
 
 /** Bounded copied header for synchronous upload admission; never exposes mutable installed content. */

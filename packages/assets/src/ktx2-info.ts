@@ -1,5 +1,5 @@
 import type { ImageSize } from "./image-size";
-import { isKtx2Bytes } from "./ktx2-identifier";
+import { isKtx2Bytes } from "./texture-loader";
 
 function readU32le(bytes: Uint8Array, offset: number): number {
   return (
