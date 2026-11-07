@@ -168,6 +168,8 @@ import {
 } from "./snapshot-sync";
 import {
   applySnapshotToScene,
+  applyHostClockPoses,
+  hasHostClockPoses,
   applyAssignMaterial,
   applyAttachToBone,
   applySetMaterialParameter,
@@ -1994,6 +1996,9 @@ function initializeEngine(
       appliedSnapshotIdentity.frameId === sampled.frameId &&
       appliedSnapshotIdentity.layoutGeneration === layoutGeneration
     ) {
+      // A running frame that brings no new pose still moves what follows the host's clock (animated bones,
+      // spring-arm lag); a paused session's frames hold it until the next pose.
+      if (!binding.paused && hasHostClockPoses(binding)) applyHostClockPoses(scene, binding);
       return sampled;
     }
     const previousCamera = scene.activeCamera;
