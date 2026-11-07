@@ -67,7 +67,7 @@ export function meetsBreakpointCondition({ op, value: operand }: BreakpointCondi
 }
 
 /** The breakpoints of one graph. */
-export class GraphBreakpoints {
+class GraphBreakpoints {
   private readonly nodes = new Map<string, NodeBreakpoint>();
   private readonly assetGuid: string;
   private readonly graphId: string;

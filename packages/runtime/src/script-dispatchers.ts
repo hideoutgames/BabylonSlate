@@ -33,7 +33,7 @@ export class EventDelegate {
   }
 }
 
-export function isEventDelegate(value: unknown): value is EventDelegate {
+function isEventDelegate(value: unknown): value is EventDelegate {
   return value instanceof EventDelegate;
 }
 
