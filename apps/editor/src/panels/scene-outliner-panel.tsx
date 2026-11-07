@@ -105,6 +105,7 @@ import {
   classParentLookup,
 } from "../lib/content-browser-helpers";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
+import { useStableBy } from "../lib/use-stable-by";
 import {
   actorRowId,
   applyOutlinerDropMoves,
@@ -334,6 +335,25 @@ function listedParent(
     cursor = parentById.get(cursor) ?? null;
   }
   return parent;
+}
+
+function sameList<T>(a: readonly T[], b: readonly T[], same: (left: T, right: T) => boolean): boolean {
+  return a === b || (a.length === b.length && a.every((entry, index) => same(entry, b[index]!)));
+}
+
+/**
+ * Whether two versions of a Scene list the same Outliner rows: `flattenOutliner`
+ * and the row icons read only these parts, so an edit of a transform, a
+ * property or a component's settings keeps the rows.
+ */
+function sameOutlinerRows(previous: SerializedScene | null, next: SerializedScene | null): boolean {
+  if (!previous || !next) return previous === next;
+  return sameList(previous.folders, next.folders, (a, b) =>
+    a.id === b.id && a.name === b.name && a.parentFolderId === b.parentFolderId) &&
+    sameList(previous.actors, next.actors, (a, b) => a === b || (
+      a.id === b.id && a.name === b.name && a.parentId === b.parentId && a.folderId === b.folderId &&
+      a.visible === b.visible && a.classId === b.classId &&
+      sameList(a.components, b.components, (left, right) => left.classId === right.classId)));
 }
 
 /**
@@ -630,18 +650,18 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     return classParentLookup(assetRegistry?.list() ?? []);
   }, [assetRegistry, registryEpoch]);
 
+  // The rows follow only what they show, so a Details scrub or gizmo commit leaves them and the tree alone.
+  const listedScene = useStableBy(scene, sameOutlinerRows);
   const nodes = useMemo(
     () =>
-      scene ? flattenOutliner(scene, { collapsed, search, parentOf }) : [],
-    [collapsed, parentOf, scene, search],
+      listedScene ? flattenOutliner(listedScene, { collapsed, search, parentOf }) : [],
+    [collapsed, listedScene, parentOf, search],
   );
-  const lockedIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const actor of scene?.actors ?? []) {
-      if (actor.locked) ids.add(actor.id);
-    }
-    return ids;
-  }, [scene]);
+  const lockedKey = (scene?.actors ?? []).filter((actor) => actor.locked).map((actor) => actor.id).join("\n");
+  const lockedIds = useMemo(() => new Set(lockedKey ? lockedKey.split("\n") : []), [lockedKey]);
+  // The tree's handlers read the Scene when they run, so a new Scene does not rebuild the tree.
+  const sceneRef = useRef(scene);
+  sceneRef.current = scene;
 
   const mutate = useCallback(
     (next: SerializedScene) => {
@@ -798,6 +818,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
 
   const renameFolder = useCallback(
     (folderId: string, name: string) => {
+      const scene = sceneRef.current;
       if (!scene) return;
       const trimmed = name.trim();
       if (!trimmed) return;
@@ -808,13 +829,14 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         ),
       });
     },
-    [mutate, scene],
+    [mutate],
   );
 
   const finishRowRename = useCallback(
     (rowId: string, name: string | null) => {
       setRenamingRowId(null);
       const target = outlinerRowTarget(rowId);
+      const scene = sceneRef.current;
       if (!scene || name === null || !target) return;
       if (target.kind === "folder") {
         renameFolder(target.id, name);
@@ -827,7 +849,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         ),
       });
     },
-    [mutate, renameFolder, scene],
+    [mutate, renameFolder],
   );
 
   /** Keep each choice in one scene mutation so undo restores the whole operation. */
@@ -889,6 +911,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       targetRowId: string | null,
       placement?: TreeDropPlacement,
     ) => {
+      const scene = sceneRef.current;
       if (!scene) return;
       const moves = outlinerTreeDropMoves({
         dragRowId,
@@ -900,11 +923,12 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       if (moves.length === 0) return;
       mutate(applyOutlinerDropMoves(scene, moves));
     },
-    [mutate, scene, selectedRowIds],
+    [mutate, selectedRowIds],
   );
 
   const dropActorRow = useCallback(
     (rowId: string, clientX: number, clientY: number) => {
+      const scene = sceneRef.current;
       if (!scene) return;
       const target = outlinerRowTarget(rowId);
       if (target?.kind !== "actor") return;
@@ -931,7 +955,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       }
       selectActor(copy.id);
     },
-    [applySceneChange, documentId, scene, timelineTarget, selectActor, selectedActorIdSet, selectedActorIds, viewportDropApi],
+    [applySceneChange, documentId, timelineTarget, selectActor, selectedActorIdSet, selectedActorIds, viewportDropApi],
   );
 
   const moveActorDropHint = useCallback(
@@ -945,7 +969,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         setDropHint({ clientX, clientY, allowed: true, label: `Add to ${timelineTarget.clipName()}` });
         return;
       }
-      const actor = scene?.actors.find((actor) => actor.id === target.id);
+      const actor = sceneRef.current?.actors.find((actor) => actor.id === target.id);
       const name = actor?.name ?? "Actor";
       setDropHint({
         clientX,
@@ -956,7 +980,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         label: name,
       });
     },
-    [scene, timelineTarget, viewportDropApi],
+    [timelineTarget, viewportDropApi],
   );
 
   const actorMenuItems = useCallback((actorId: string): NestedMenuItem[] => {
@@ -1225,7 +1249,8 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   );
 
   // Other documents' edits re-render this panel through the document
-  // context; an unchanged scene, selection and registry reuse every row.
+  // context; unchanged rows, selection and registry reuse the tree.
+  const hasScene = scene !== null;
   const tree = useMemo(
     () => (
       <TreeView
@@ -1254,7 +1279,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         onExternalDragMove={moveActorDropHint}
         onExternalDragEnd={() => setDropHint(null)}
         emptyLabel={
-          scene
+          hasScene
             ? search.trim()
               ? "No Matching Actors"
               : "No Actors Yet"
@@ -1271,7 +1296,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       touchSizing,
       renamingRowId,
       reparentRow,
-      scene,
+      hasScene,
       search,
       selectedRowId,
       selectedRowIds,

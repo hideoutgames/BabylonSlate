@@ -8,6 +8,8 @@ import { SceneOutlinerPanel } from "./scene-outliner-panel";
 import { SceneEditingProvider } from "../context/scene-editing-context";
 import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { KeybindProvider } from "../context/keybind-context";
+import { TreeView } from "@haptic/editor-kit";
+import { sceneActorDisplayNames } from "../lib/scene-actor-names";
 
 if (
   typeof window !== "undefined" &&
@@ -48,6 +50,16 @@ const assetRegistry = vi.hoisted(() => ({
     return harness.assets;
   },
 }));
+
+// Counted: the Outliner lists its rows from the actors' display names, and renders its tree.
+vi.mock("../lib/scene-actor-names", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/scene-actor-names")>();
+  return { ...actual, sceneActorDisplayNames: vi.fn(actual.sceneActorDisplayNames) };
+});
+vi.mock("@haptic/editor-kit", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/editor-kit")>();
+  return { ...actual, TreeView: vi.fn(actual.TreeView) };
+});
 
 vi.mock("../shell/use-platform-layout", () => ({
   usePhoneLayout: () => harness.phone,
@@ -122,6 +134,34 @@ afterEach(() => {
   harness.keybindReads = 0;
   harness.registryEpoch = 0;
   harness.loadGraphDocument = () => Promise.resolve(null);
+});
+
+describe("SceneOutlinerPanel rows", () => {
+  it("keeps its rows and tree through a property-only edit and rebuilds them for a rename", () => {
+    const scene = createDefaultScene();
+    scene.actors = [createActor("actor-1", "Cube"), createActor("actor-2", "Lamp")];
+    harness.scene = scene;
+    const panel = () => (
+      <SceneEditingProvider>
+        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+      </SceneEditingProvider>
+    );
+    const view = render(panel());
+    const listings = vi.mocked(sceneActorDisplayNames).mock.calls.length;
+    const trees = vi.mocked(TreeView).mock.calls.length;
+
+    // A Details scrub or gizmo commit: a new Scene and actor, the same rows.
+    const moved = { ...scene.actors[0]!, transform: { ...scene.actors[0]!.transform, position: [4, 0, 0] as [number, number, number] } };
+    harness.scene = { ...scene, actors: [moved, scene.actors[1]!] };
+    view.rerender(panel());
+    expect(vi.mocked(sceneActorDisplayNames).mock.calls.length).toBe(listings);
+    expect(vi.mocked(TreeView).mock.calls.length).toBe(trees);
+
+    harness.scene = { ...harness.scene, actors: [{ ...moved, name: "Crate" }, scene.actors[1]!] };
+    view.rerender(panel());
+    expect(vi.mocked(sceneActorDisplayNames).mock.calls.length).toBeGreaterThan(listings);
+    expect(screen.getByText("Crate")).toBeTruthy();
+  });
 });
 
 describe("SceneOutlinerPanel menus", () => {
