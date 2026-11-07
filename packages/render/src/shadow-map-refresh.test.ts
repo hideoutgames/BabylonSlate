@@ -770,6 +770,20 @@ describe("cascaded sun refresh", () => {
       expect(listed(1)).toBe(true);
     });
 
+    it("tests each caster against the cascades without allocating per caster or cascade", async () => {
+      // The break: a one-matrix array and a view of the cascades' scales (`subarray`) made for every caster and
+      // cascade on each frame's refresh, which a far caster threshold (on at every level) always takes.
+      const sun = await withCaster(0.04, far);
+      expect((sun.generator as AtlasCascadedShadowGenerator).farCasterMinTexels).toBeGreaterThan(0);
+      const subarray = vi.spyOn(Float64Array.prototype, "subarray");
+      sceneShadowController(sun.scene).refreshShadowMaps();
+      expect(subarray).not.toHaveBeenCalled();
+      subarray.mockRestore();
+      // The same casters still decide the cascades: a small far one moving redraws nothing.
+      sun.caster.position.x += 0.5;
+      expect(sun.render()).toBe(0);
+    });
+
     it("redraws nothing for a small far caster that moves, and redraws for a large one", async () => {
       const small = await withCaster(0.04, far);
       small.caster.position.x += 0.5;
