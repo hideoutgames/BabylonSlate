@@ -16,12 +16,12 @@ import { parseText2DAppearProperties, type Text2DAppearProperties } from "./text
 
 export { DEFAULT_RICH_TEXT_EXAMPLE };
 
-export const DEFAULT_TEXT2D_TEXT = "Text";
-export const DEFAULT_TEXT2D_SIZE = 32;
+const DEFAULT_TEXT2D_TEXT = "Text";
+const DEFAULT_TEXT2D_SIZE = 32;
 export const DEFAULT_TEXT2D_WRAP_WIDTH = 200;
 export const DEFAULT_TEXT2D_WRAP_HEIGHT = 64;
-export const DEFAULT_TEXT2D_COLOR: Rgb = [1, 1, 1];
-export const DEFAULT_TEXT2D_OUTLINE_COLOR: Rgb = [0, 0, 0];
+const DEFAULT_TEXT2D_COLOR: Rgb = [1, 1, 1];
+const DEFAULT_TEXT2D_OUTLINE_COLOR: Rgb = [0, 0, 0];
 
 export const TEXT2D_RENDERERS = ["bitmap", "msdf"] as const;
 export type Text2DRenderer = (typeof TEXT2D_RENDERERS)[number];
@@ -131,7 +131,7 @@ export function text2dMsdfDescription(status: Text2DMsdfStatus): string {
   }
 }
 
-export function parseText2DRenderer(value: unknown): Text2DRenderer {
+function parseText2DRenderer(value: unknown): Text2DRenderer {
   return value === "msdf" ? "msdf" : "bitmap";
 }
 
@@ -144,13 +144,13 @@ export function resolveText2DRenderer(
     : "bitmap";
 }
 
-export function parseText2DAlignment(value: unknown): Text2DAlignment {
+function parseText2DAlignment(value: unknown): Text2DAlignment {
   return TEXT2D_ALIGNMENTS.includes(value as Text2DAlignment)
     ? (value as Text2DAlignment)
     : "left";
 }
 
-export function parseText2DVerticalAlignment(
+function parseText2DVerticalAlignment(
   value: unknown,
 ): Text2DVerticalAlignment {
   return TEXT2D_VERTICAL_ALIGNMENTS.includes(value as Text2DVerticalAlignment)

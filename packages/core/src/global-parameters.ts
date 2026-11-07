@@ -16,7 +16,7 @@ export const GLOBAL_PARAMETER_TYPE_LABELS: Readonly<Record<GlobalParameterType, 
 };
 
 /** Longest parameter name, after trimming. */
-export const GLOBAL_PARAMETER_NAME_MAX = 64;
+const GLOBAL_PARAMETER_NAME_MAX = 64;
 
 /**
  * One named value of a collection. Graphs reference it by the collection guid and the stable
@@ -38,7 +38,7 @@ export interface GlobalParameterCollectionPayload {
 /** Every collection's parameters by collection guid, as Play and exported games carry them. */
 export type GlobalParameterCatalog = Record<string, GlobalParameter[]>;
 
-export function isGlobalParameterType(value: unknown): value is GlobalParameterType {
+function isGlobalParameterType(value: unknown): value is GlobalParameterType {
   return typeof value === "string" && (GLOBAL_PARAMETER_TYPES as readonly string[]).includes(value);
 }
 
@@ -86,7 +86,7 @@ export function uniqueGlobalParameterName(
  * Parameters with an id, a valid name and a known type, defaults sized to the type. A repeated
  * id is dropped; a repeated name gets the first free `_N` suffix.
  */
-export function normalizeGlobalParameters(value: unknown): GlobalParameter[] {
+function normalizeGlobalParameters(value: unknown): GlobalParameter[] {
   if (!Array.isArray(value)) return [];
   const parameters: GlobalParameter[] = [];
   for (const raw of value) {

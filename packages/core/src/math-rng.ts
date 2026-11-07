@@ -37,7 +37,7 @@ export function serializeVec3(v: Vec3): [number, number, number] {
   return [v.x, v.y, v.z];
 }
 
-export function serializeQuat(q: Quat): [number, number, number, number] {
+function serializeQuat(q: Quat): [number, number, number, number] {
   return [q.x, q.y, q.z, q.w];
 }
 

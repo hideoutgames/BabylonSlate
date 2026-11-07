@@ -84,7 +84,7 @@ export interface FontProjectSettings {
   globalFallback: string;
 }
 
-export const DEFAULT_FONT_PROJECT_SETTINGS: FontProjectSettings = {
+const DEFAULT_FONT_PROJECT_SETTINGS: FontProjectSettings = {
   defaultFontGuid: null,
   globalFallback: "sans-serif",
 };
@@ -168,7 +168,7 @@ export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
  * New projects start at High in every Scalability group, with 1920×1080
  * custom resolution and Black Bars off (fill).
  */
-export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
+const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
   ...applyProjectQualityPatch(DEFAULT_RENDER_PROJECT_SETTINGS, qualityPresetPatch("high")),
   customResolution: true,
 };
@@ -251,7 +251,7 @@ export interface SaveGameProjectSettings {
   wipeOnPlay: boolean;
 }
 
-export function normalizeSaveGameSettings(value?: Partial<SaveGameProjectSettings>): SaveGameProjectSettings {
+function normalizeSaveGameSettings(value?: Partial<SaveGameProjectSettings>): SaveGameProjectSettings {
   return {
     definitionGuid: typeof value?.definitionGuid === "string" && value.definitionGuid.trim() ? value.definitionGuid.trim() : null,
     defaultSlot: typeof value?.defaultSlot === "string" && value.defaultSlot.trim() ? value.defaultSlot.trim() : "default",
@@ -483,8 +483,8 @@ export function resolveActorDefaults(
 }
 
 
-export const DEFAULT_SOURCE_CONTROL_POLL_INTERVAL_MS = 60_000;
-export const DEFAULT_SOURCE_CONTROL_BRANCH = "main";
+const DEFAULT_SOURCE_CONTROL_POLL_INTERVAL_MS = 60_000;
+const DEFAULT_SOURCE_CONTROL_BRANCH = "main";
 
 export const DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS: SourceControlProjectSettings =
   {
@@ -500,9 +500,9 @@ export const DEFAULT_INFINITE_LOOP_DETECTION = true;
 export const DEFAULT_LOOP_COUNT = 1_000_000;
 /** About one second at the default 60 Hz simulation step. */
 export const DEFAULT_GARBAGE_COLLECTION_INTERVAL_TICKS = 60;
-export const DEFAULT_AUTO_SAVE_INTERVAL_MS = 120_000;
-export const DEFAULT_PLAY_PREVIEW_ASPECT_WIDTH = 16;
-export const DEFAULT_PLAY_PREVIEW_ASPECT_HEIGHT = 9;
+const DEFAULT_AUTO_SAVE_INTERVAL_MS = 120_000;
+const DEFAULT_PLAY_PREVIEW_ASPECT_WIDTH = 16;
+const DEFAULT_PLAY_PREVIEW_ASPECT_HEIGHT = 9;
 
 export const DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS: PlayPreviewProjectSettings =
   {
@@ -511,7 +511,7 @@ export const DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS: PlayPreviewProjectSettings =
     aspectHeight: DEFAULT_PLAY_PREVIEW_ASPECT_HEIGHT,
   };
 
-export const DEFAULT_TEXTURE_PROJECT_SETTINGS: TextureProjectSettings = {
+const DEFAULT_TEXTURE_PROJECT_SETTINGS: TextureProjectSettings = {
   maxTextureDimension: 2048,
   autoRequeueUncompressed: true,
 };

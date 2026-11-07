@@ -90,13 +90,13 @@ export function patchComponentProperties(
 export const DEFAULT_SCENE_SKYBOX_ACTOR_ID = "actor-skybox";
 export const DEFAULT_SCENE_SUN_ACTOR_ID = "actor-sun";
 export const DEFAULT_SCENE_SUN_COMPONENT_ID = "component-sun";
-export const DEFAULT_SCENE_SKYBOX_COMPONENT_ID = "component-skybox";
+const DEFAULT_SCENE_SKYBOX_COMPONENT_ID = "component-skybox";
 
 /** Warm daylight for the painterly default sky. */
-export const DEFAULT_SCENE_SUN_COLOR: [number, number, number] = [
+const DEFAULT_SCENE_SUN_COLOR: [number, number, number] = [
   1, 0.96, 0.88,
 ];
-export const DEFAULT_SCENE_SUN_INTENSITY = 1.5;
+const DEFAULT_SCENE_SUN_INTENSITY = 1.5;
 
 /**
  * About 45° up and 35° left of the default camera's line (-Z), so surfaces

@@ -88,7 +88,7 @@ export function invertAffineTransform(
  * nonuniform parent scale and an oblique child rotation produce, which no
  * translation-rotation-scale pose represents.
  */
-export function affineBasisHasShear(values: ArrayLike<number>, stride = 3): boolean {
+function affineBasisHasShear(values: ArrayLike<number>, stride = 3): boolean {
   for (let i = 0; i < 2; i++) {
     for (let j = i + 1; j < 3; j++) {
       const a = i * stride, b = j * stride;

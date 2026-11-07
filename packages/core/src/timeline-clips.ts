@@ -22,8 +22,8 @@ export function parseTimelineLoopMode(value: unknown): TimelineLoopMode | undefi
 }
 export type TimelineWhenFinished = "keep" | "restore";
 
-export const DEFAULT_TIMELINE_CLIP_LENGTH = 5;
-export const DEFAULT_TIMELINE_FRAME_RATE: TimelineFrameRate = 30;
+const DEFAULT_TIMELINE_CLIP_LENGTH = 5;
+const DEFAULT_TIMELINE_FRAME_RATE: TimelineFrameRate = 30;
 /** Shortest clip Length, in seconds. */
 export const MIN_TIMELINE_CLIP_LENGTH = 0.1;
 

@@ -10,7 +10,7 @@
  * weaker of its two responses (`collisionPairResponse`).
  */
 
-export const MAX_COLLISION_PRESETS = 64;
+const MAX_COLLISION_PRESETS = 64;
 export const CUSTOM_COLLISION_PRESET = "custom";
 export const DEFAULT_COLLISION_PRESET_ID = "default";
 
@@ -62,7 +62,7 @@ export function normalizeCollisionPresets(value: unknown): CollisionPreset[] {
 }
 
 /** A component's preset reference: a preset id or `custom`; the Default preset when missing. */
-export function parseCollisionPresetRef(value: unknown): string {
+function parseCollisionPresetRef(value: unknown): string {
   return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_COLLISION_PRESET_ID;
 }
 

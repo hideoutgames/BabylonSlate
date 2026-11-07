@@ -47,7 +47,7 @@ export interface SceneLayerActorDesign {
   rootAnchor: SceneLayerAnchor;
 }
 
-export const SCENE_LAYER_ACTOR_DEFAULT_CUSTOM_SIZE_PX = { width: 400, height: 300 } as const;
+const SCENE_LAYER_ACTOR_DEFAULT_CUSTOM_SIZE_PX = { width: 400, height: 300 } as const;
 
 export function normalizeSceneLayerActorDesign(value: unknown): SceneLayerActorDesign {
   const source = (value ?? {}) as Record<string, unknown>;
@@ -97,7 +97,7 @@ export function sceneLayerActorFrameBounds(
  * Centre of a `width` × `height` frame whose `anchor` point sits on the
  * origin (+X right, +Y up).
  */
-export function sceneLayerAnchoredFrameCenter(
+function sceneLayerAnchoredFrameCenter(
   anchor: SceneLayerAnchor,
   width: number,
   height: number,
@@ -261,8 +261,8 @@ export function parseSceneLayerHitTest(
 }
 
 /** Ortho half-height used by Play overlay cameras (frustum height 9). */
-export const SCENE_LAYER_ORTHO_HALF_HEIGHT = 4.5;
-export const SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT =
+const SCENE_LAYER_ORTHO_HALF_HEIGHT = 4.5;
+const SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT =
   SCENE_LAYER_ORTHO_HALF_HEIGHT * 2;
 
 const ANCHOR_ORIGIN: Record<SceneLayerAnchor, readonly [number, number]> = {
