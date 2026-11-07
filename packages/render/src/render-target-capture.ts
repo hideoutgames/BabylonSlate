@@ -735,9 +735,11 @@ export class RenderTargetCaptures {
     if (width > engine.getCaps().maxTextureSize || height > engine.getCaps().maxTextureSize) return undefined;
     // A scalar floating-point depth image avoids packed RGBA decoding in the
     // material graph. Unsupported devices fail closed to the blank output.
+    // Only red carries depth: an R16F target samples as (d, 0, 0, 1), as the
+    // capture writes and clears it, at a quarter of RGBA16F's bytes.
     const type = mode === "DepthPass" ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     if (mode === "DepthPass" && !engine.getCaps().textureHalfFloatRender) return undefined;
-    const format = Constants.TEXTUREFORMAT_RGBA;
+    const format = mode === "DepthPass" ? Constants.TEXTUREFORMAT_R : Constants.TEXTUREFORMAT_RGBA;
     const bytes = renderTargetAllocationBytes({ width, height, format, type }) +
       renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH32FLOAT_STENCIL8, renderbuffer: true });
     const lease = beginManagedRenderAllocation(engine, bytes);
