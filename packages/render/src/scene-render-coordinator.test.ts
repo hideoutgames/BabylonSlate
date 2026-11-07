@@ -21,16 +21,18 @@ import { SceneOutlineHost } from "./scene-outline-host";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { createDefaultAudioPayload, createDefaultSoundAttenuationPayload } from "@haptic/assets";
-import { createActor, createDefaultScene, fogVolumeBindings, normalizeRenderingQuality, normalizeShadowSettings, outlineBindings } from "@haptic/core";
+import { createActor, createDefaultScene, fogVolumeBindings, normalizeRenderingQuality, normalizeShadowSettings, outlineBindings, qualitySettingPatch } from "@haptic/core";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { sceneShadowController } from "./shadow-controller";
 import { setSceneRenderSettings } from "./scene-render-mode";
-import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
+import { allowSceneScreenShadows, sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { hasFogVolumes, selectFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { markSceneReadinessDirty } from "./scene-perf";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
+import { backbufferColorTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
+import type { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { COMPILE_HOLD_STALL_MS, PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
 import {
   SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS, SCENE_THREAD_HELD_MS,
@@ -1205,6 +1207,33 @@ it("attaches an inactive outline view without allocating or replacing the admitt
   renderer.dispose();
   view.dispose();
   foreign.dispose();
+});
+
+it("composes a multisampled WebGL2 view's outlines onto the backbuffer after its single blit, with no resolve or output copy", async () => {
+  const { engine, scene, renderer } = host();
+  engine.getCaps().maxMSAASamples = 4;
+  vi.spyOn(engine, "webGLVersion", "get").mockReturnValue(2);
+  allowSceneScreenShadows(scene, () => false);
+  sceneRenderingSettings(scene).qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing: "msaa4" });
+  updateSceneRenderingSettings(scene, {});
+  const box = MeshBuilder.CreateBox("outlined", {}, scene);
+  const view = SharedOutlineOwner.forScene(scene).createView("editor");
+  view.setContribution("selection", {
+    kind: "selection", targets: [{ key: "actor", meshes: [box] }], color: [1, 0, 0], width: 1, throughMeshes: true,
+  });
+  const detach = renderer.attachSharedOutline(view);
+  await renderer.prepare();
+  expect(renderer.render()).toMatchObject({ path: "frameGraph", rendered: true });
+  // The outline only blends onto its target: it follows the blit that presents the multisampled colour.
+  const tasks = renderer.taskNames();
+  expect(tasks.slice(tasks.indexOf("Multisample present"))).toEqual(["Multisample present", "Shared outlines"]);
+  expect(tasks).not.toContain("Multisample output");
+  const graph = (renderer as unknown as { graph: { objects: FrameGraphObjectRendererTask; outlineTask: { targetTexture: unknown } } }).graph;
+  expect(graph.objects.resolveMSAAColors).toBe(false);
+  expect(graph.outlineTask.targetTexture).toBe(backbufferColorTextureHandle);
+  detach();
+  renderer.dispose();
+  view.dispose();
 });
 
 it("rejects an outlined view on a scene the graph cannot draw without drawing it", async () => {

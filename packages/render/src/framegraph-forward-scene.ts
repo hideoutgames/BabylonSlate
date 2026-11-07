@@ -1157,6 +1157,18 @@ export class ForwardSceneFrameGraph {
         // backbuffer created without antialiasing, is single-sample), and one whose output target has no depth.
         if ((this.auxiliary || output.scale !== 1 || samples > 1 || (output.color && !output.depth)) && !this.postProcessGraph && !effectsPlan)
           this.ownScene = this.declareOwnSceneTargets(this.graph, renderSize.width, renderSize.height, samples);
+        const engine = scene.getEngine();
+        /** Whether the view's own multisampled colour presents by one blit to the backbuffer (`MultisamplePresentTask`). */
+        const presentsByBlit = (own: { samples: number; colorType: number }, laterReaders: boolean) => presentsMultisampleByBlit({
+          webGl2: !engine.isWebGPU && (engine as { webGLVersion?: number }).webGLVersion === 2, samples: own.samples, colorType: own.colorType,
+          backbuffer: !output.color, outputSized: renderSize.width === output.width && renderSize.height === output.height,
+          laterReaders,
+        });
+        // The outline composition only blends onto its target and never samples the colour beneath, so where the own
+        // pair presents by one blit (nothing else reads the scene colour after the objects pass) it composes onto the
+        // backbuffer after that blit: no resolve and no output copy.
+        const outlineOnOutput = !!this.preparedOutlineView && !effectsPlan && !this.postProcessGraph && !!this.ownScene &&
+          presentsByBlit(this.ownScene, waterDemand > 0);
         if (effectsPlan) {
           this.effectsGraph = new SceneEffectsGraph({
             frameGraph: this.graph,
@@ -1173,7 +1185,7 @@ export class ForwardSceneFrameGraph {
             outputTarget: color,
           });
         } else if (this.preparedOutlineView) {
-          composeOutline(this.postProcessGraph?.outputTexture ?? this.ownScene?.color ?? color);
+          composeOutline(this.postProcessGraph?.outputTexture ?? (outlineOnOutput ? undefined : this.ownScene?.color) ?? color);
         }
         this.clear = new FrameGraphClearTextureTask(
           "Forward clear",
@@ -1273,20 +1285,15 @@ export class ForwardSceneFrameGraph {
         for (const task of this.water?.afterObjects ?? []) this.graph.addTask(task);
         for (const task of this.postProcessGraph?.postProcessTasks ?? []) this.graph.addTask(task);
         for (const task of this.effectsGraph?.tasks ?? []) this.graph.addTask(task);
-        if (this.outlineTask && !this.effectsGraph) this.graph.addTask(this.outlineTask);
+        if (this.outlineTask && !this.effectsGraph && !outlineOnOutput) this.graph.addTask(this.outlineTask);
         // The single output owner: every authored or settings-driven chain
         // feeds this copy; nothing else writes the view's output.
         const chainOutput =
           this.effectsGraph?.outputTexture ??
           (this.postProcessGraph ? this.outlineTask?.outputTexture ?? this.postProcessGraph.outputTexture : undefined) ??
           (this.ownScene ? this.outlineTask?.outputTexture ?? this.ownScene.color : undefined);
-        const engine = scene.getEngine();
         const own = this.ownScene;
-        if (own && !this.outlineTask && presentsMultisampleByBlit({
-          webGl2: !engine.isWebGPU && (engine as { webGLVersion?: number }).webGLVersion === 2, samples: own.samples, colorType: own.colorType,
-          backbuffer: !output.color, outputSized: renderSize.width === output.width && renderSize.height === output.height,
-          laterReaders: this.water !== undefined,
-        })) {
+        if (own && (outlineOnOutput || (!this.outlineTask && presentsByBlit(own, this.water !== undefined)))) {
           // The objects pass is the scene colour's last writer and nothing samples its resolve: one blit from the
           // multisampled colour to the backbuffer replaces the resolve and the output copy.
           this.objects.resolveMSAAColors = false;
@@ -1294,6 +1301,8 @@ export class ForwardSceneFrameGraph {
           present.sourceTexture = own.color;
           this.outputCopy = present;
           this.graph.addTask(present);
+          // Then the outlines blend onto the presented colour.
+          if (outlineOnOutput) this.graph.addTask(this.outlineTask!);
         } else if (chainOutput && !this.effectsGraph?.rendersToOutput) {
           // A chain whose last stage drew the output needs no copy.
           if (output.color) {
