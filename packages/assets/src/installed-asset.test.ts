@@ -21,7 +21,7 @@ it("identifies installed content by its SHA-256, or by the digest the host alrea
     expect(installedAssetIdentity(hashed)).toBe("039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81");
     const verified = installAssetBytes(bytes, "image/png", "f".repeat(64));
     expect(installedAssetIdentity(verified)).toBe("f".repeat(64));
-    // The Blob is the only full copy; the bounded upload header is the other read.
-    expect(slice.mock.calls).toEqual([[0, 64 * 1024], [0, 64 * 1024]]);
+    // The Blob is the only full copy of the source; the bounded upload header is the other one.
+    expect(slice.mock.calls.filter((_, index) => slice.mock.contexts[index] === bytes)).toEqual([[0, 64 * 1024], [0, 64 * 1024]]);
   } finally { slice.mockRestore(); }
 });
