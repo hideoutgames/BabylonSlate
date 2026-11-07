@@ -40,6 +40,7 @@ Float indices, little-endian views. `SNAPSHOT_HEADER_FLOATS = 16`, `SNAPSHOT_ACT
 Actor slot `i` starts at `16 + i * 16`: `slotId` (0), position xyz (1–3), rotation quaternion xyzw (4–7), scale xyz (8–10), `flags` (11: `SNAPSHOT_FLAG_VISIBLE = 1`, `SNAPSHOT_FLAG_OVERLAY = 2` for SceneLayer actors), position residual (12–14), reserved (15).
 
 - Guids never travel in the hot buffer: guid ↔ `slotId` is maintained on the command channel (`spawn` / `despawn`). Slot ids are dense and recycled; interpolation matches `slotId`, not row index.
+- Each publishing tick's removal pass (`SnapshotPublisher.retireRemovedActors`) despawns slots whose actor left the World. It walks the slots only when `World.structuralRevision` or `RenderSlots.revision` moved since the last pass, or that pass kept a slot for a spawn-queued actor, because a cancelled spawn moves neither.
 - Positions are relative to a camera-selected 1024-unit origin cell (`snapshot-publisher.ts`); readers reconstruct world coordinates before interpolating, so an origin change cannot jump.
 - `maxActors` is an initial allocation, not an Actor limit. Growth allocates a complete replacement pair, sends `snapshotLayout { capacity, generation }`, and waits for `snapshotLayoutAck` before publishing. Receivers ignore frames from non-installed generations.
 - Copies carry only `snapshotActiveFloatCount` (header + `actorCount` rows). Buffers are not zero-filled: **never read past `actorCount`**.

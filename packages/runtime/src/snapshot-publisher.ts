@@ -83,6 +83,8 @@ export class SnapshotPublisher {
   private writePending = false;
   /** Removal-pass time already spent on the pending publish. */
   private pendingPublishMs = 0;
+  /** The World structure and slot table the last removal pass checked, and whether it kept a spawn-queued actor's slot. */
+  private readonly removalPass = { structure: -1, slots: -1, queued: false };
   private readonly world: World;
   private readonly slots: RenderSlots;
   private readonly host: SnapshotPublisherHost;
@@ -210,13 +212,29 @@ export class SnapshotPublisher {
    * Retire detached streams, then despawn and release slots of actors no
    * longer in the World. An actor whose spawn is still queued (a Scene Layer
    * created mid-tick publishes before its actors commit) keeps its slot.
+   * After a pass every slot's actor is live or queued. A live actor leaves
+   * only through a destroy commit or a Scene change, both of which advance
+   * `structuralRevision`, but a queued spawn can be cancelled without one, so
+   * the slots are checked again unless neither the World structure nor the
+   * slot table changed and no slot was kept for a queued spawn.
    */
   private retireRemovedActors(): void {
     this.host.retireDetachedStreams();
+    const pass = this.removalPass;
+    const structure = this.world.structuralRevision;
+    const slots = this.slots.revision;
+    if (!pass.queued && pass.structure === structure && pass.slots === slots) return;
+    pass.structure = structure;
+    pass.slots = slots;
+    pass.queued = false;
     let removedActors = false;
     for (const [slotId, owner] of this.slots.entries()) {
       // The World's guid index answers whether this slot's own actor is still live.
-      if (this.world.findActor(owner.guid) === owner || this.world.isSpawnQueued(owner)) continue;
+      if (this.world.findActor(owner.guid) === owner) continue;
+      if (this.world.isSpawnQueued(owner)) {
+        pass.queued = true;
+        continue;
+      }
       this.host.emit({ type: "despawn", slotId, actorGuid: owner.guid });
       this.slots.release(slotId);
       removedActors = true;
