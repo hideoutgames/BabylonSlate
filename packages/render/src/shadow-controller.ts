@@ -402,6 +402,13 @@ export class SceneShadowController {
     return this.views.holdsMaps(camera);
   }
   /**
+   * Whether this Engine frame is the one a sync freed the atlas in for one of another edge: every planned map waits
+   * `budget-limited` for `shadow atlas resizing`, and none exists until a later frame builds the new atlas.
+   */
+  atlasResizing(): boolean {
+    return this.atlasReleasedFrame === this.scene.getEngine().frameId;
+  }
+  /**
    * Applies the scene view's refresh policy to `camera`'s own sun maps (a planar reflection's, drawn by `drawViewMaps`
    * outside any frame graph): each draws again only when its fit, its light, its settings or a caster it draws changed,
    * and its passes describe where, as the scene view's maps' do, so they change no other reflection's image elsewhere.
@@ -683,7 +690,7 @@ export class SceneShadowController {
       // waiting for it.
       if (liveShadowAtlasEdge(scene) === 0) this.atlasReleasedFrame = engine.frameId;
     }
-    const atlasResizing = this.atlasReleasedFrame === engine.frameId;
+    const atlasResizing = this.atlasResizing();
     // Hand a retained map to a same-kind winner instead of constructing one.
     // Farther donors are least likely to return.
     donors.sort((a, b) => b.distanceSquared - a.distanceSquared);
