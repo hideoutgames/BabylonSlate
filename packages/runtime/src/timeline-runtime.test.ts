@@ -97,7 +97,7 @@ describe("TimelineRuntime", () => {
   it("asks no owner whether it may run while no loaded copy has a clip, and asks again once one does", () => {
     const { runtime, owner, clip } = setup({ autoPlay: true });
     const layer = new EngineObject({ classId: "SceneLayer:hud", guid: "layer" });
-    const canRun = vi.fn(() => true);
+    const canRun = vi.fn<(candidate: EngineObject) => boolean>(() => true);
     runtime.remove(owner);
     runtime.advance(0.5, [layer], canRun);
     runtime.advance(0.5, [layer], canRun);
