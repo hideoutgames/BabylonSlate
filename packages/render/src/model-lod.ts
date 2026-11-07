@@ -266,7 +266,7 @@ function touchModel(cached: CachedModel): void {
 }
 
 /** The cached generation for `key`, now used once more. */
-function useCachedModel(key: string): CachedModel | undefined {
+function takeCachedModel(key: string): CachedModel | undefined {
   const cached = generatedModels.get(key);
   if (!cached) return undefined;
   cached.users++;
@@ -316,11 +316,11 @@ export async function generateModelLods(
   // Low-poly models never load the simplifier.
   if (candidates.length) {
     try {
-      cached = cacheKey ? useCachedModel(cacheKey) : undefined;
+      cached = cacheKey ? takeCachedModel(cacheKey) : undefined;
       models = await (cached?.levels ?? inLodTurn(async () => {
         assertCurrent();
         // Another Scene may have generated these levels while this one waited.
-        cached = cacheKey ? useCachedModel(cacheKey) : undefined;
+        cached = cacheKey ? takeCachedModel(cacheKey) : undefined;
         if (cached) return cached.levels;
         return admit(async () => {
           const levels = generateLevels(candidates.flatMap(({ mesh, index }) => prepareMesh(mesh, index) ?? []));

@@ -96,9 +96,10 @@ export class NativePreparationScheduler {
 /**
  * Starts a group of preparation jobs at once, in order, so the queue's
  * concurrency and byte ceiling bound them rather than the caller. The first
- * failure aborts the signal the jobs schedule with, cancelling those still
- * queued, and is rethrown only once the whole group has settled, so nothing the
- * group started is still acquiring. `signal` cancels the group with its reason.
+ * failure aborts the signal the jobs schedule with, cancelling those the queue
+ * has not admitted by then (it may admit one into the slot the failure frees),
+ * and is rethrown only once the whole group has settled, so nothing the group
+ * started is still acquiring. `signal` cancels the group with its reason.
  * Results keep job order.
  */
 export async function prepareTogether<T>(

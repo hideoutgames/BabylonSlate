@@ -3370,7 +3370,7 @@ function initializeEngine(
               if (diagnostics.some((entry) => entry.severity === "error"))
                 throw new Error(`Material ${guid}: ${diagnostics.map((entry) => entry.message).join("; ")}`);
               return document.domain === "surface" ? material.material : null;
-            })))).filter((material): material is Material => material !== null);
+            })))).flatMap((material) => material ? [material] : []);
           const models = [...prepared.assets?.modelSources ?? []];
           if (models.length) check();
           const spawnableContainers: AssetContainer[] = await prepareTogether(preparation.signal, models.map(([guid, source]) => (signal) => {
