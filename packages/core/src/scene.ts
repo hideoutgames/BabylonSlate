@@ -104,14 +104,21 @@ export interface SerializedActor {
   folderId: string | null;
 }
 
-/** An Outliner-only anchor carrier has no authored spatial pose. */
+/**
+ * An Outliner-only anchor carrier has no authored spatial pose: it has a live
+ * component, and every live one is a 2D Anchor. Allocation-free, since the
+ * runtime asks for every actor on every published tick.
+ */
 export function isSceneLayerAnchorActor(actor: {
   components: readonly { classId: string; destroyed?: boolean }[];
 }): boolean {
-  const components = actor.components.filter((component) => !component.destroyed);
-  return components.length > 0 && components.every(
-    (component) => component.classId === "2DAnchorComponent",
-  );
+  let anchored = false;
+  for (const component of actor.components) {
+    if (component.destroyed) continue;
+    if (component.classId !== "2DAnchorComponent") return false;
+    anchored = true;
+  }
+  return anchored;
 }
 
 /** Editor-only Outliner grouping. Never instantiated as a runtime actor. */

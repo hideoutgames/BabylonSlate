@@ -8,6 +8,7 @@ import {
   createMeshComponent,
   findActor,
   folderSubtree,
+  isSceneLayerAnchorActor,
   nextFolderId,
   normalizeScene,
   sceneDefaultCameraActor,
@@ -591,5 +592,22 @@ describe("scene schema", () => {
       rotation: [0, 0, 0, 1],
       scale: [1, 1, 1],
     });
+  });
+});
+
+describe("isSceneLayerAnchorActor", () => {
+  const anchor = { classId: "2DAnchorComponent" };
+  const panel = { classId: "2DPanelComponent" };
+  it.each([
+    ["no components", [], false],
+    ["one anchor", [anchor], true],
+    ["two anchors", [anchor, anchor], true],
+    ["an anchor and a visual", [anchor, panel], false],
+    ["a visual before an anchor", [panel, anchor], false],
+    ["a destroyed visual beside an anchor", [{ ...panel, destroyed: true }, anchor], true],
+    ["only destroyed anchors", [{ ...anchor, destroyed: true }], false],
+    ["serialized components without a destroyed field", [{ classId: "2DAnchorComponent", destroyed: undefined }], true],
+  ])("%s: %s", (_name, components, expected) => {
+    expect(isSceneLayerAnchorActor({ components })).toBe(expected);
   });
 });
