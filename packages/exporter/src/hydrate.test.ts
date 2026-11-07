@@ -147,10 +147,10 @@ describe("packed content cache", () => {
 
   it("keeps a loaded Material's document across refreshes and normalizes a newly loaded payload", () => {
     const { material } = tintedMaterial();
-    const game = sources([{ guid: "mat", type: "Material", name: "Floor", encoding: "json" }], { mat: material });
+    const game = sources([{ guid: "mat", type: "Material", encoding: "json" }], { mat: material });
     const cache = createPackedContentCache();
     const first = packedContentFromGame(game, cache).materialDocuments.get("mat");
-    expect(first?.name).toBe("Floor");
+    expect(first?.nodes.some((node) => node.id === "call")).toBe(true);
     expect(packedContentFromGame(game, cache).materialDocuments.get("mat")).toBe(first);
     // Without a cache, as editor Play packs, every call normalizes again.
     expect(packedContentFromGame(game).materialDocuments.get("mat")).not.toBe(first);
