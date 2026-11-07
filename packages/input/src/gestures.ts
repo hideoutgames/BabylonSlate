@@ -25,17 +25,17 @@ const C = TOUCH_GESTURE_CODES;
 export const TOUCH_PULSE_GESTURES: readonly string[] = [C.tap, C.doubleTap, C.swipeUp, C.swipeDown, C.swipeLeft, C.swipeRight];
 
 /** Movement a tap or a long press tolerates; the editor's long-press slop. */
-export const GESTURE_SLOP_PX = 8;
+const GESTURE_SLOP_PX = 8;
 /** Hold time that turns a press into a long press, and the longest a tap may last. */
-export const LONG_PRESS_SECONDS = 0.5;
+const LONG_PRESS_SECONDS = 0.5;
 /** Longest gap from one tap's lift to the next tap's press for a double tap. */
-export const DOUBLE_TAP_SECONDS = 0.3;
+const DOUBLE_TAP_SECONDS = 0.3;
 /** Farthest the second tap of a double tap may land from the first. */
-export const DOUBLE_TAP_DISTANCE_PX = 32;
+const DOUBLE_TAP_DISTANCE_PX = 32;
 /** Shortest distance, from press to lift, of a swipe. */
-export const SWIPE_MIN_DISTANCE_PX = 48;
+const SWIPE_MIN_DISTANCE_PX = 48;
 /** Longest press-to-lift time of a swipe; a slower move is a drag. */
-export const SWIPE_MAX_SECONDS = 0.5;
+const SWIPE_MAX_SECONDS = 0.5;
 /** Summed tick lengths drift (30 × 1/60 is just under 0.5); thresholds allow for it. */
 const TIME_EPSILON = 1e-6;
 

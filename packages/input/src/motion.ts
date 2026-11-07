@@ -12,14 +12,14 @@ export const MOTION_CODES = {
 } as const;
 
 /** Tilt from the calibrated pose that reads as a full axis (1). */
-export const TILT_FULL_DEGREES = 30;
+const TILT_FULL_DEGREES = 30;
 /** Acceleration, without gravity, that counts toward a shake. */
-export const SHAKE_ACCELERATION = 12;
+const SHAKE_ACCELERATION = 12;
 /** Readings at or above the shake acceleration, within the window, that make a shake. */
-export const SHAKE_READINGS = 3;
-export const SHAKE_WINDOW_SECONDS = 0.5;
+const SHAKE_READINGS = 3;
+const SHAKE_WINDOW_SECONDS = 0.5;
 /** No second shake until this long after one. */
-export const SHAKE_COOLDOWN_SECONDS = 0.75;
+const SHAKE_COOLDOWN_SECONDS = 0.75;
 
 /** Whether any binding reads device motion, so the host must start it. */
 export function mappingsUseDeviceMotion(mappings: InputMappings): boolean {
