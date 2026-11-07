@@ -27,6 +27,27 @@ const readAssetChunk = vi.hoisted(() =>
   vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47])),
 );
 
+const fontAssets = vi.hoisted(() => [
+  {
+    header: {
+      guid: "font-1",
+      name: "Display",
+      type: "Font",
+      payload: { family: "Display" },
+    },
+    path: "assets/Display.font.hasset",
+  },
+  {
+    header: {
+      guid: "font-2",
+      name: "Body",
+      type: "Font",
+      payload: { family: "Body" },
+    },
+    path: "assets/Body.font.hasset",
+  },
+]);
+
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [
     {
@@ -49,26 +70,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     },
   },
   assetRegistry: {
-    list: () => [
-      {
-        header: {
-          guid: "font-1",
-          name: "Display",
-          type: "Font",
-          payload: { family: "Display" },
-        },
-        path: "assets/Display.font.hasset",
-      },
-      {
-        header: {
-          guid: "font-2",
-          name: "Body",
-          type: "Font",
-          payload: { family: "Body" },
-        },
-        path: "assets/Body.font.hasset",
-      },
-    ],
+    list: () => fontAssets,
+    getByPath: (path: string) => fontAssets.find((asset) => asset.path === path),
     getByGuid: (guid: string) =>
       guid === "font-2"
         ? {
