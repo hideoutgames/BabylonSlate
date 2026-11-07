@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene, createMeshComponent, type SerializedScene } from "@haptic/core";
-import { readActorSlot, readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
+import { readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
+import { readActorSlot } from "../../bridge/src/test-support/actor-slot";
 import { sceneAssetClassId } from "@haptic/object-model";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import type { CompiledScript } from "./script-host";

@@ -13,7 +13,8 @@ import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { ViewportToolbar } from "./viewport-toolbar";
 import { KeybindProvider } from "../context/keybind-context";
 import { AppSettingsProvider } from "../context/app-settings-context";
-import { MemoryAppSettingsStore, defaultEngineSettings } from "@haptic/vfs";
+import { defaultEngineSettings } from "@haptic/vfs";
+import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
 
 if (
   typeof window !== "undefined" &&

@@ -1,6 +1,7 @@
 import { Bone, Matrix, Mesh, Quaternion, Skeleton, SpotLight, TransformNode, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { isPlayEngineCommandType, readActorSlot, readSnapshotHeader, snapshotFloatCount, SNAPSHOT_FLAG_VISIBLE, type ActorSlot } from "@haptic/bridge";
+import { isPlayEngineCommandType, readSnapshotHeader, snapshotFloatCount, SNAPSHOT_FLAG_VISIBLE, type ActorSlot } from "@haptic/bridge";
+import { readActorSlot } from "../../bridge/src/test-support/actor-slot";
 import { createInProcessRuntime } from "@haptic/test-kit";
 import { identityTransform } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";

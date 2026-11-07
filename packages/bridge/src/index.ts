@@ -13,7 +13,6 @@ export {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
   isPublishedSnapshot,
-  readActorSlot,
   readActorSlotInto,
   readSnapshotHeader,
   snapshotActiveFloatCount,

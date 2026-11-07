@@ -1,11 +1,11 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
-  readActorSlot,
   readSnapshotHeader,
   snapshotFloatCount,
   type ActorSlot,
   type CommandMessage,
 } from "@haptic/bridge";
+import { readActorSlot } from "../../bridge/src/test-support/actor-slot";
 import {
   createActor,
   createDefaultSceneLayer,
