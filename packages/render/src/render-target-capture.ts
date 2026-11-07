@@ -822,15 +822,29 @@ export class RenderTargetCaptures {
    * defines. A slot container whose children changed is the same Material: its submeshes' wrappers hold the old
    * children's programs, so it is set again (Babylon's `SubMesh.getMaterial` also drops every pass's wrappers of a
    * MultiMaterial mesh whenever its effective sub-material changes, as it does when the main and capture passes alternate).
+   *
+   * A kept wrapper still prepares its defines on each capture, as no dirty call is sure to reach it: `Material.markDirty`,
+   * the define-dirty marks and `NodeMaterial.build` touch only submeshes whose material in the current pass (the main
+   * pass, where they run) is theirs, never a variant's, and on WebGPU only wrappers holding that material's context. A
+   * frozen variant (the editor freezes library Materials) would otherwise answer from its last readiness after a define
+   * input changed in place, such as a lattice cage attaching to or leaving the mesh, and draw the old program.
+   * Unchanged defines cost no new Effect.
    */
   private overrideMaterial(target: Target, mesh: AbstractMesh): void {
     const slots = target.normalSlots.get(mesh);
     const children = slots?.subMaterials;
     const material = this.normalMeshMaterial(target, mesh);
-    // An instance draws its source's pass material.
+    const pass = target.texture.renderPassId;
+    // An instance draws its source's pass material and submeshes.
     const source = mesh.isAnInstance ? (mesh as InstancedMesh).sourceMesh : mesh;
-    if (source.getMaterialForRenderPass(target.texture.renderPassId) !== material || (material === slots && slots.subMaterials !== children))
+    if (source.getMaterialForRenderPass(pass) !== material || (material === slots && slots.subMaterials !== children)) {
       target.texture.setMaterialForRendering(mesh, material);
+      return;
+    }
+    for (const subMesh of source.subMeshes ?? []) {
+      const wrapper = subMesh._getDrawWrapper(pass);
+      if (wrapper) wrapper._wasPreviouslyReady = false;
+    }
   }
   /** The mesh's depth or normal variant: its source's, or a per-mesh slot container of its sub-materials' (null when blended). */
   private normalMeshMaterial(target: Target, mesh: AbstractMesh): Material {

@@ -5,6 +5,7 @@ import {
 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
+import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { createDefaultRenderTargetCaptureProperties } from "@haptic/core";
 import { RenderTargetCaptures } from "./render-target-capture";
 import { createStartingStateDraw } from "./starting-state-draw";
@@ -17,6 +18,8 @@ import { bindParticleMaterial } from "./particle-system-factory";
 import { createSceneStreamAdmission, registerSceneStreamParticle } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { acquireAuthoredMaterialVariant } from "./material-compiler";
+import { disposeMeshLatticeDeformer, setMeshLatticeDeformer } from "./lattice-deformer";
+import { applyEditorMaterialFreeze } from "./scene-perf";
 import { beginPipelineDeferral } from "./webgpu-pipeline-deferral";
 
 // NullEngine is not WebGPU, so the deferral itself never engages; its scopes are the seam here.
@@ -456,6 +459,77 @@ it.each(["WorldNormal", "DepthPass"] as const)("keeps a steady %s capture's draw
   capture();
   expect(single.getMaterialForRenderPass(pass)).not.toBe((multi.getMaterialForRenderPass(pass) as MultiMaterial).subMaterials[0]);
   expect(kept()).toEqual([false, true]);
+});
+
+it.each(["WorldNormal", "DepthPass"] as const)("prepares a frozen authored %s variant's kept draw wrapper again when a lattice cage on its mesh attaches or detaches in place", async (mode) => {
+  const { scene, captures, engine } = host();
+  const caps = engine.getCaps();
+  caps.textureHalfFloatRender = true; caps.textureFloat = true; caps.maxVertexTextureImageUnits = 16;
+  vi.spyOn(engine, "webGLVersion", "get").mockReturnValue(2);
+  // NullEngine has no 3D texture backend; the cage's lattice data replaces only that allocation and upload.
+  vi.spyOn(engine, "createRawTexture3D").mockImplementation((_data, width, height, depth) => {
+    const texture = new InternalTexture(engine, InternalTextureSource.Raw3D);
+    texture.width = width; texture.height = height; texture.depth = depth; texture.isReady = true;
+    return texture;
+  });
+  vi.spyOn(engine, "updateRawTexture3D").mockImplementation(() => {});
+  // As on WebGPU, each Material owns a context: a dirty call reaches only the draw wrappers holding its own. (WebGL has
+  // none, so the main pass's Material marking itself dirty there also reaches the capture pass's wrappers by chance.)
+  let contexts = 0;
+  vi.spyOn(engine, "createMaterialContext").mockImplementation(() => ({ uniqueId: ++contexts, useVertexPulling: false, reset() {} }));
+  const library = new MaterialLibrary();
+  try {
+    const source = library.acquire(scene, "source", createDefaultMaterialDocument("Deformed Capture"));
+    if (!source.ok) throw new Error(JSON.stringify(source.diagnostics));
+    expect(await source.ready).toEqual([]);
+    const root = new Mesh("Deformed Component", scene);
+    const mesh = MeshBuilder.CreateBox("Deformed Part", { size: 2 }, scene);
+    mesh.parent = root; mesh.material = source.material;
+    captures.setAssets(new Map([["target", { mode, width: 16, height: 8 }]]));
+    const capture = () => { captures.request("capture"); captures.render(); };
+    capture();
+    const pass = (scene.textures.find((entry) => entry.name === "renderTarget:target") as RenderTargetTexture).renderPassId;
+    const variant = acquireAuthoredMaterialVariant(source.material, mode === "DepthPass" ? "captureDepth" : "captureNormal")!;
+    expect(await variant.compiled.ready).toEqual([]);
+    expect(mesh.getMaterialForRenderPass(pass)).toBe(variant.compiled.material);
+    const subMesh = mesh.subMeshes[0]!;
+    // The pass's draw (mocked here) asks its material whether the submesh is ready, under the pass's id, once per frame.
+    const draw = async () => {
+      const main = engine.currentRenderPassId;
+      engine.currentRenderPassId = pass;
+      try {
+        for (let attempt = 0; attempt < 50; attempt++) {
+          scene.incrementRenderId();
+          if (subMesh.getMaterial()!.isReadyForSubMesh(mesh, subMesh, false)) break;
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+      } finally { engine.currentRenderPassId = main; }
+      const wrapper = subMesh._getDrawWrapper(pass)!;
+      return { wrapper, lattice: String(wrapper.defines).includes("#define SLATE_LATTICE") };
+    };
+    const first = await draw();
+    expect(first.lattice).toBe(false);
+    // The editor freezes every library Material it is not editing, and a variant is never one it edits.
+    applyEditorMaterialFreeze(scene, new Set(["source"]));
+    expect(variant.compiled.material.isFrozen).toBe(true);
+    capture(); await draw();
+    // A cage keeps the mesh and its Material: only the pass's defines can follow it.
+    setMeshLatticeDeformer(root, {
+      enabled: true, resolution: [2, 2, 2], strength: 1, offsets: Array.from({ length: 24 }, (_, i) => i % 3 === 0 ? 2 : 0),
+      fitToMesh: true, boundsMin: [-1, -1, -1], boundsMax: [1, 1, 1],
+    });
+    capture();
+    const deformed = await draw();
+    expect(deformed.wrapper).toBe(first.wrapper);
+    expect(deformed.lattice).toBe(true);
+    disposeMeshLatticeDeformer(root);
+    capture();
+    const restored = await draw();
+    expect(restored.wrapper).toBe(first.wrapper);
+    expect(restored.lattice).toBe(false);
+    await variant.release();
+    captures.clear();
+  } finally { library.dispose(); }
 });
 
 it.each(["WorldNormal", "DepthPass"] as const)("borrows retained authored %s geometry and releases only its capture lease on replacement", async (mode) => {
