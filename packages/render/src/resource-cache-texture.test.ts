@@ -380,7 +380,39 @@ describe("resource cache getTexture", () => {
     engine.dispose();
   });
 
-  it("loads a no-mip KTX2 wrapper from a distinct unmodified blob URL", () => {
+  it("decodes a 2D KTX2 from its own buffer with no Blob copy, and loads images and blob URL leases from one", () => {
+    const engine = textureEngine();
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const objectUrls = vi.spyOn(URL, "createObjectURL");
+    const create = vi.spyOn(engine, "createTexture");
+    const ktx2 = ktx2HeaderBytes(4, 4);
+    const lease = cache.acquireTexture("ktx2", engine, ktx2);
+    // Babylon decodes the copy of its bytes it is given and never fetches the URL, which only names the upload.
+    const [url, , , , , , , buffer] = create.mock.calls.at(-1)!;
+    expect(buffer).toEqual(ktx2);
+    expect(buffer).not.toBe(ktx2);
+    expect(url.startsWith("blob:")).toBe(false);
+    expect(objectUrls).not.toHaveBeenCalled();
+    // Another upload of the same bytes has a name of its own, so the two never share a native texture.
+    const nearest = cache.acquireTexture("ktx2", engine, ktx2, { noMipmap: true, samplingMode: Texture.NEAREST_SAMPLINGMODE });
+    expect(create.mock.calls.at(-1)![0]).not.toBe(url);
+    expect(nearest.resource.getInternalTexture()).not.toBe(lease.resource.getInternalTexture());
+    expect(objectUrls).not.toHaveBeenCalled();
+    // A lease of the bytes' URL (a skybox face) is fetched: it mints the Blob and its object URL then.
+    const face = cache.acquireBlobUrl("ktx2", ktx2);
+    expect(objectUrls).toHaveBeenCalledTimes(1);
+    expect(face.resource).toBe(objectUrls.mock.results[0]!.value);
+    // An image loads from its object URL; Babylon's image path never reads a buffer, so none is copied for it.
+    cache.acquireTexture("png", engine, encodeRgbaPng(1, 1, new Uint8Array([0, 200, 0, 255])));
+    const [imageUrl, , , , , , , imageBuffer] = create.mock.calls.at(-1)!;
+    expect(objectUrls).toHaveBeenCalledTimes(2);
+    expect(imageUrl).toBe(objectUrls.mock.results[1]!.value);
+    expect(imageBuffer).toBeFalsy();
+    cache.dispose();
+    engine.dispose();
+  });
+
+  it("loads a no-mip KTX2 wrapper from a distinct unmodified URL", () => {
     const ktx2 = new Uint8Array([
       0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
       1, 2, 3, 4,

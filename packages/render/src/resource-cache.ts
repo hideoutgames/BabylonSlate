@@ -40,8 +40,13 @@ export interface TextureSamplingOptions {
 interface CacheEntry {
   assetGuid: string;
   key: string;
+  /** The object URL of the entry's Blob; empty until something fetches the bytes by URL (`entryBlobUrl`). */
   blobUrl: string;
   extraBlobUrls: string[];
+  /**
+   * Per upload key, the URL its native texture loads from: an object URL, or, for an upload Babylon decodes from the
+   * buffer it is given (a 2D KTX2 from bytes), a name that is never fetched (`BUFFER_UPLOAD_URL`).
+   */
   uploadUrls?: Map<string, string>;
   textureUploads?: Map<string, string>;
   bytes: number;
@@ -213,6 +218,12 @@ function samplingKey(options: TextureSamplingOptions = {}): string {
   return `${uploadSamplingKey(options)}:${options.hasAlpha ? 1 : 0}:${options.anisotropicFilteringLevel ?? 4}`;
 }
 
+/**
+ * The scheme of the URL a buffer-decoded upload is named by: Babylon decodes a 2D KTX2 from the buffer it is given and
+ * never fetches its URL, which only keys its texture cache, so such an upload needs no Blob copy of its bytes.
+ */
+const BUFFER_UPLOAD_URL = "haptic-buffer:";
+
 function revokeBlobUrl(url: string): void {
   if (!url.startsWith("blob:") || typeof URL === "undefined") return;
   try {
@@ -353,6 +364,8 @@ export class ResourceCache {
   /** Shared-upload wrappers whose own preparation passed load-time admission. */
   private readonly admittedTextures = new WeakSet<BaseTexture>();
   private readonly urlKeys = new Map<string, string>();
+  /** Names minted for buffer-decoded uploads (`BUFFER_UPLOAD_URL`), unique for the cache's life. */
+  private bufferUploads = 0;
   private clock = 0;
   private totalBytes = 0;
   private handover: TextureHandover | null = null;
@@ -615,13 +628,35 @@ export class ResourceCache {
   }
 
   private prepareBlobUrl(assetGuid: string, bytes: Uint8Array | Blob, identity = contentKey(bytes)): string {
+    return this.entryBlobUrl(this.referenceEntry(assetGuid, identity), bytes);
+  }
+
+  /** Takes one reference on the entry of `identity`, creating it (with no Blob or object URL yet) when absent. */
+  private referenceEntry(assetGuid: string, identity: string): CacheEntry {
     const key = `${assetGuid}\0${identity}`;
     const existing = this.entries.get(key);
     if (existing) {
       existing.refCount += 1;
       existing.lastUsed = ++this.clock;
-      return existing.blobUrl;
+      return existing;
     }
+    const entry: CacheEntry = {
+      assetGuid,
+      key,
+      blobUrl: "",
+      extraBlobUrls: [],
+      bytes: 0,
+      refCount: 1,
+      lastUsed: ++this.clock,
+      textures: new Map(),
+    };
+    this.entries.set(key, entry);
+    return entry;
+  }
+
+  /** The entry's object URL, minting its Blob (a copy of `bytes`) the first time something fetches them by URL. */
+  private entryBlobUrl(entry: CacheEntry, bytes: Uint8Array | Blob): string {
+    if (entry.blobUrl) return entry.blobUrl;
     const blob =
       bytes instanceof Blob
         ? bytes
@@ -638,30 +673,21 @@ export class ResourceCache {
                 : "application/octet-stream",
             },
           );
-    this.blobs.set(key, blob);
+    this.blobs.set(entry.key, blob);
     const url =
       typeof URL !== "undefined" && URL.createObjectURL
         ? URL.createObjectURL(blob)
-        : `blob:haptic/${assetGuid}`;
-    const entry: CacheEntry = {
-      assetGuid,
-      key,
-      blobUrl: url,
-      extraBlobUrls: [],
-      bytes: 0,
-      refCount: 1,
-      lastUsed: ++this.clock,
-      textures: new Map(),
-    };
-    this.entries.set(key, entry);
-    this.urlKeys.set(url, key);
+        : `blob:haptic/${entry.assetGuid}`;
+    entry.blobUrl = url;
+    this.urlKeys.set(url, entry.key);
     return url;
   }
 
   /**
    * Resolve a Texture for an asset guid through the cache so editor and Play
-   * share InternalTextures per sampling key. Extra sampling keys get another
-   * `createObjectURL` of the same Blob (never a `#nomip` / `#ninv` fragment).
+   * share InternalTextures per sampling key. Extra upload keys get another
+   * `createObjectURL` of the same Blob (never a `#nomip` / `#ninv` fragment),
+   * or, for a 2D KTX2 decoded from its buffer, another never-fetched name.
    */
   private prepareTexture(
     assetGuid: string,
@@ -683,11 +709,14 @@ export class ResourceCache {
       existing!.lastUsed = ++this.clock;
       return reused as Texture | CubeTexture;
     }
-    this.prepareBlobUrl(assetGuid, bytes, identity);
-    const entry = this.entries.get(variantKey)!;
+    const entry = this.referenceEntry(assetGuid, identity);
     const uploadKey = uploadSamplingKey(options);
-    const blobUrl = this.blobUrlForSamplingKey(entry, uploadKey);
     const ktx2 = ktx2LoaderHints(bytes);
+    const raw = asUint8Array(bytes);
+    // Babylon decodes a 2D KTX2 from the buffer it is given and never fetches its URL; every other upload (a cube, a
+    // Blob input, an image, whose loader fetches the URL and never reads a buffer) loads from the entry's Blob.
+    const fromBuffer = !options.isCube && raw !== null && ktx2.mimeType !== undefined;
+    const blobUrl = this.uploadUrl(entry, uploadKey, fromBuffer ? null : bytes);
     // Babylon 9.29 uploads a block-compressed KTX2 without invertY (WebGPU
     // passes false, WebGL2 sets no UNPACK_FLIP_Y) and, unlike KTX1 and .basis,
     // sets no _invertVScale for it. Upload a 2D KTX2 unflipped whatever the
@@ -695,7 +724,6 @@ export class ResourceCache {
     // as its PNG whether the decoder picks a block format or RGBA. Upload keys
     // keep the requested invertY: flipped and unflipped wrappers stay distinct.
     const flipV = !options.isCube && ktx2.mimeType !== undefined && options.invertY !== false;
-    const raw = asUint8Array(bytes);
     const preparation = this.preparing(entry);
     let texture: Texture | CubeTexture;
     try {
@@ -715,7 +743,7 @@ export class ResourceCache {
           mimeType: ktx2.mimeType,
           forcedExtension: ktx2.forcedExtension,
           // A copy: the decoder may take ownership of the buffer it is given.
-          buffer: raw ? raw.slice() : undefined,
+          buffer: fromBuffer ? raw.slice() : undefined,
           onLoad: preparation.onLoad, onError: preparation.onError,
         });
     } catch (error) {
@@ -773,16 +801,25 @@ export class ResourceCache {
     return texture;
   }
 
-  /** Wrappers with identical uploads share native storage; upload variants get another URL. */
-  private blobUrlForSamplingKey(entry: CacheEntry, uploadKey: string): string {
+  /**
+   * Wrappers with identical uploads share native storage; upload variants get another URL. `bytes` is null for an
+   * upload decoded from its buffer, which a unique, never-fetched name keys instead of an object URL.
+   */
+  private uploadUrl(entry: CacheEntry, uploadKey: string, bytes: Uint8Array | Blob | null): string {
     entry.uploadUrls ??= new Map();
     const existing = entry.uploadUrls.get(uploadKey);
     if (existing) return existing;
-    let url = entry.blobUrl;
-    const blob = this.blobs.get(entry.key);
-    if (entry.uploadUrls.size && blob && typeof URL !== "undefined" && URL.createObjectURL) {
-      url = URL.createObjectURL(blob);
-      entry.extraBlobUrls.push(url);
+    let url: string;
+    if (bytes === null) {
+      url = `${BUFFER_UPLOAD_URL}${entry.assetGuid}/${++this.bufferUploads}`;
+      this.urlKeys.set(url, entry.key);
+    } else {
+      url = this.entryBlobUrl(entry, bytes);
+      const blob = this.blobs.get(entry.key);
+      if ([...entry.uploadUrls.values()].includes(url) && blob && typeof URL !== "undefined" && URL.createObjectURL) {
+        url = URL.createObjectURL(blob);
+        entry.extraBlobUrls.push(url);
+      }
     }
     entry.uploadUrls.set(uploadKey, url);
     return url;
@@ -913,6 +950,7 @@ export class ResourceCache {
     const url = entry.uploadUrls?.get(uploadKey);
     if (!url || url === entry.blobUrl) return;
     entry.uploadUrls!.delete(uploadKey);
+    if (url.startsWith(BUFFER_UPLOAD_URL)) this.urlKeys.delete(url);
     const extra = entry.extraBlobUrls.indexOf(url);
     if (extra >= 0) entry.extraBlobUrls.splice(extra, 1);
     revokeBlobUrl(url);
@@ -1040,6 +1078,7 @@ export class ResourceCache {
     this.entries.delete(entry.key);
     this.blobs.delete(entry.key);
     this.urlKeys.delete(entry.blobUrl);
+    for (const url of entry.uploadUrls?.values() ?? []) if (url.startsWith(BUFFER_UPLOAD_URL)) this.urlKeys.delete(url);
     for (const cancel of [...entry.preparations ?? []]) cancel("Texture preparation cancelled during cache retirement");
     disposeEntryTextures(entry);
     revokeEntryBlobUrls(entry);
