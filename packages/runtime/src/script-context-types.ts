@@ -48,7 +48,7 @@ import type { CompiledModuleExports } from "./module-loader";
 import type { ScriptBreakpoints } from "./script-breakpoints";
 import type { ScriptDebugTrace } from "./script-debug";
 import type { EventDelegate } from "./script-dispatchers";
-import type { ScriptAssetLoadResult, ScriptColor } from "./script-host-services";
+import type { ScriptAssetLoadResult, ScriptColor, SpawnActorOptions } from "./script-host-services";
 import type { TweenReference } from "./tween-runtime";
 
 /** What is under a point of the game view: Project Cursor To Scene and Project Touch To Scene. */
@@ -327,8 +327,8 @@ export interface ScriptContext {
     transform?: unknown,
   ): unknown;
   spawnActor(classId: string, transform?: unknown): Actor | null;
-  spawnActorAsync(classId: string, transform?: unknown): Promise<Actor | null>;
-  beginDeferredSpawnActorAsync(classId: string, transform?: unknown): Promise<Actor | null>;
+  spawnActorAsync(classId: string, transform?: unknown, options?: SpawnActorOptions): Promise<Actor | null>;
+  beginDeferredSpawnActorAsync(classId: string, transform?: unknown, options?: SpawnActorOptions): Promise<Actor | null>;
   finishDeferredSpawnActor(actor: unknown): Actor | null;
   isA(instance: unknown, classId: string): boolean;
   getSceneLoadingProgress(): number;

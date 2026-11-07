@@ -6,8 +6,12 @@ const script = (classId: string, source = ""): ScriptBundleEntry =>
   ({ assetGuid: classId.toLowerCase(), classId, source, anchors: [], entryPoints: [] });
 
 describe("spawnsUnseenClasses", () => {
-  it("counts a Deferred Spawn Actor's Class like a Spawn Actor's", () => {
-    const spawner = script("Spawner", 'out = await ctx.beginDeferredSpawnActorAsync("Torch", transform);');
+  it.each([
+    ["Spawn Actor Deferred (Async)", 'out = await ctx.beginDeferredSpawnActorAsync("Torch", transform);'],
+    ["Spawn Actor (Blocking)", 'out = await ctx.spawnActorAsync("Torch", transform, { blocking: true });'],
+    ["Spawn Actor Deferred (Blocking)", 'out = await ctx.beginDeferredSpawnActorAsync("Torch", transform, { blocking: true });'],
+  ])("counts the Class of %s like Spawn Actor (Async)'s", (_node, source) => {
+    const spawner = script("Spawner", source);
     const load = (scripts: ScriptBundleEntry[]) => spawnsUnseenClasses({ scripts, assets: [], isClass: () => true });
     expect([load([spawner]), load([spawner, script("Torch")])]).toEqual([true, false]);
   });

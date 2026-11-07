@@ -116,9 +116,10 @@ const UNSEEN_CLASS_LIGHTS: ReadonlyMap<string, SpawnableLight> = new Map([
 ]);
 
 /**
- * Spawn Actor's and Deferred Spawn Actor's compiled calls (`actor.spawn` emits `ctx.spawnActorAsync(<class>,
- * <transform>)`, `actor.deferredSpawn` `ctx.beginDeferredSpawnActorAsync(…)`): the class is a JSON string when the
- * node names it, any other expression when a pin feeds it.
+ * The Spawn Actor nodes' compiled calls (`actor.spawn` emits `ctx.spawnActorAsync(<class>, <transform>)`,
+ * `actor.spawnBlocking` the same with a third `{ blocking: true }` argument, and the deferred pair
+ * `ctx.beginDeferredSpawnActorAsync(…)`): the class is a JSON string when the node names it, any other expression
+ * when a pin feeds it.
  */
 const SPAWN_CALL = /\bctx\.(?:spawnActorAsync|beginDeferredSpawnActorAsync)\(\s*(?:("(?:[^"\\\n]|\\.)*")\s*[,)])?/g;
 

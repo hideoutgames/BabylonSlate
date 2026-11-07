@@ -59,6 +59,8 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
 
 /** How a load handle settled: Loaded succeeds; a Failed handle carries its error. */
 export type ScriptAssetLoadResult = Pick<RuntimeAssetPreloadResult, "success" | "errorMessage">;
+/** `blocking`: Spawn Actor (Blocking) and Spawn Actor Deferred (Blocking) hold the simulation while the Class prepares. */
+export type SpawnActorOptions = { blocking?: boolean };
 
 /**
  * Engine services a compiled graph calls through `ctx`. The host implements the
@@ -151,9 +153,9 @@ export interface ScriptHostServices {
   createObject?(classId: string): EngineObject | null;
   /** Collect Garbage: request a collection pass at the end of the tick. */
   collectGarbage?(): void;
-  spawnActorAsync?(classId: string, transform?: unknown, owner?: EngineObject | null): Promise<Actor | null>;
-  /** Deferred Spawn Actor: the prepared actor outside the World, without Begin Play, until `finishDeferredSpawn`. */
-  beginDeferredSpawnAsync?(classId: string, transform?: unknown, owner?: EngineObject | null): Promise<Actor | null>;
+  spawnActorAsync?(classId: string, transform?: unknown, owner?: EngineObject | null, options?: SpawnActorOptions): Promise<Actor | null>;
+  /** Spawn Actor Deferred: the prepared actor outside the World, without Begin Play, until `finishDeferredSpawn`. */
+  beginDeferredSpawnAsync?(classId: string, transform?: unknown, owner?: EngineObject | null, options?: SpawnActorOptions): Promise<Actor | null>;
   /** Finish Deferred Spawn Actor: spawns a `beginDeferredSpawnAsync` actor, running its Begin Play; null when it was discarded. */
   finishDeferredSpawn?(actor: Actor): Actor | null;
   /** Emit a bone attachment (or detach with a null target); false when the renderer cannot address either actor. */

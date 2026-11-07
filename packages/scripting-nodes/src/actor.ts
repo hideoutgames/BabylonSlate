@@ -12,6 +12,39 @@ import {
 import { selfActorPin, subject } from "./self-pin";
 import { liveReferenceCall } from "./live-reference";
 
+/**
+ * The Spawn Actor nodes prepare the Class, then create the actor. Async lets
+ * gameplay run while the Class prepares; Blocking prepares at High priority and
+ * holds the simulation meanwhile, like Load Class Blocking. The deferred pair
+ * stops before Begin Play, for Finish Deferred Spawn Actor.
+ */
+function spawnNode(
+  id: string,
+  title: string,
+  call: "spawnActorAsync" | "beginDeferredSpawnActorAsync",
+  blocking: boolean,
+): NodeDefinition {
+  return {
+    id,
+    title,
+    category: "actor",
+    latent: true,
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("classId", "classId", "in", classRef("Actor")),
+      pin("transform", "Transform", "in", TRANSFORM, "data", true),
+      pin("out", "out", "out", objectRef("Actor")),
+    ],
+    codegen: (ctx) => {
+      const options = blocking ? ", { blocking: true }" : "";
+      ctx.emit(
+        `${ctx.output("out")} = await ctx.${call}(${ctx.input("classId")}, ${ctx.input("transform")}${options});`,
+      );
+    },
+  };
+}
+
 export const actorNodes: NodeDefinition[] = [
   {
     id: "actor.getSelf",
@@ -58,44 +91,10 @@ export const actorNodes: NodeDefinition[] = [
     ],
     codegen: (ctx) => ({ out: liveReferenceCall(ctx, ctx.input("target")) }),
   },
-  {
-    id: "actor.spawn",
-    title: "Spawn Actor",
-    category: "actor",
-    latent: true,
-    pins: () => [
-      pin("execIn", "exec", "in", EXEC),
-      pin("execOut", "then", "out", EXEC),
-      pin("classId", "classId", "in", classRef("Actor")),
-      pin("transform", "Transform", "in", TRANSFORM, "data", true),
-      pin("out", "out", "out", objectRef("Actor")),
-    ],
-    codegen: (ctx) => {
-      const out = ctx.output("out");
-      ctx.emit(
-        `${out} = await ctx.spawnActorAsync(${ctx.input("classId")}, ${ctx.input("transform")});`,
-      );
-    },
-  },
-  {
-    id: "actor.deferredSpawn",
-    title: "Deferred Spawn Actor",
-    category: "actor",
-    latent: true,
-    pins: () => [
-      pin("execIn", "exec", "in", EXEC),
-      pin("execOut", "then", "out", EXEC),
-      pin("classId", "classId", "in", classRef("Actor")),
-      pin("transform", "Transform", "in", TRANSFORM, "data", true),
-      pin("out", "out", "out", objectRef("Actor")),
-    ],
-    codegen: (ctx) => {
-      const out = ctx.output("out");
-      ctx.emit(
-        `${out} = await ctx.beginDeferredSpawnActorAsync(${ctx.input("classId")}, ${ctx.input("transform")});`,
-      );
-    },
-  },
+  spawnNode("actor.spawn", "Spawn Actor (Async)", "spawnActorAsync", false),
+  spawnNode("actor.spawnBlocking", "Spawn Actor (Blocking)", "spawnActorAsync", true),
+  spawnNode("actor.deferredSpawn", "Spawn Actor Deferred (Async)", "beginDeferredSpawnActorAsync", false),
+  spawnNode("actor.deferredSpawnBlocking", "Spawn Actor Deferred (Blocking)", "beginDeferredSpawnActorAsync", true),
   {
     id: "actor.finishDeferredSpawn",
     title: "Finish Deferred Spawn Actor",

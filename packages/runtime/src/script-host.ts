@@ -33,7 +33,7 @@ import type { ScriptHostServices } from "./script-host-services";
 import { ScriptMaterialOwnership } from "./script-material-ownership";
 import { RuntimeContinuationCancelled } from "./simulation-waits";
 
-export type { AnimGraphControl, ScriptAssetLoadResult, ScriptColor, ScriptHostServices } from "./script-host-services";
+export type { AnimGraphControl, ScriptAssetLoadResult, ScriptColor, ScriptHostServices, SpawnActorOptions } from "./script-host-services";
 export type {
   CompiledScript,
   HostContextKey,

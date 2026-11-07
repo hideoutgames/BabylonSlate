@@ -84,6 +84,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
       classAssetGuids: rt.scriptRuntime.classAssetGuids,
       demandAssetCatalog: rt.demandAssetCatalog,
       assetPreloads: rt.assetPreloads,
+      blocks: rt.blocks,
       spawn: (spawn) => rt.spawnScriptedActor(spawn),
       prepareSpawn: (spawn) => rt.prepareScriptedActor(spawn),
       finishSpawn: (actor) => rt.finishScriptedActor(actor),

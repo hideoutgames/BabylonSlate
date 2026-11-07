@@ -9,7 +9,8 @@ import {
 } from "@haptic/object-model";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
-import type { ScriptHost, ScriptHostServices } from "./script-host";
+import type { ScriptHost, ScriptHostServices, SpawnActorOptions } from "./script-host";
+import type { SimulationBlocks } from "./simulation-blocks";
 import type { TweenRuntime } from "./tween-runtime";
 
 interface ActorHostDeps {
@@ -23,8 +24,10 @@ interface ActorHostDeps {
   /** The host prepares class assets on demand, so spawns must wait for them. */
   demandAssetCatalog: boolean;
   assetPreloads: Pick<RuntimeAssetPreloads, "acquire" | "release" | "transferOwner" | "getState">;
+  /** A blocking spawn holds the simulation while its Class prepares. */
+  blocks: Pick<SimulationBlocks, "hold">;
   spawn(options: SpawnOptions): Actor | null;
-  /** `spawn` in two steps for Deferred Spawn Actor: the actor outside the World, then its realization. */
+  /** `spawn` in two steps for Spawn Actor Deferred: the actor outside the World, then its realization. */
   prepareSpawn(options: SpawnOptions): Actor | null;
   finishSpawn(actor: Actor): Actor | null;
   /** Pending while a session boundary holds the owner's continuation. */
@@ -39,25 +42,30 @@ type SpawnOptions = { classId: string; transform?: Transform; streamOwner?: Engi
 export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostServices,
   "destroyActor" | "addComponent" | "spawnActor" | "spawnActorAsync" | "beginDeferredSpawnAsync" | "finishDeferredSpawn" |
   "getActors" | "attachToBone" | "findActor"> {
-  // Deferred Spawn Actor results awaiting Finish Deferred Spawn Actor, with the Class preload each one owns.
+  // Spawn Actor Deferred results awaiting Finish Deferred Spawn Actor, with the Class preload each one owns.
   const deferred = new WeakMap<Actor, string | null>();
   const release = (preloadId: string | null) => {
     if (preloadId) deps.assetPreloads.release(preloadId);
   };
-  // The latent half of Spawn Actor: prepare the Class for `owner`, wait for the owner's simulation, then `create`.
-  // The preload is the caller's to hand on or release.
+  // The latent half of the Spawn Actor nodes: prepare the Class for `owner`, wait for the owner's simulation, then
+  // `create`. A blocking spawn prepares at High priority and holds the simulation meanwhile, like Load Class
+  // Blocking, so no game time passes before the actor exists. The preload is the caller's to hand on or release.
   const createPrepared = async (
     classId: string,
     transform: unknown,
     owner: EngineObject | null | undefined,
     create: (options: SpawnOptions) => Actor | null,
+    options: SpawnActorOptions | undefined,
   ): Promise<{ actor: Actor | null; preloadId: string | null } | null> => {
     const id = String(classId ?? "").trim();
     if (!id || deps.stopped() || owner?.destroyed) return null;
     const guid = deps.classAssetGuids.get(id);
     if (deps.demandAssetCatalog && !guid && !isLockedEngineClassId(id)) throw new Error(`Class ${id} is missing from the asset catalog`);
-    const preload = deps.demandAssetCatalog && guid
-      ? await deps.assetPreloads.acquire([guid], owner?.guid ?? deps.world().currentScene?.guid ?? "session") : null;
+    const blocking = options?.blocking === true;
+    const acquiring = deps.demandAssetCatalog && guid
+      ? deps.assetPreloads.acquire([guid], owner?.guid ?? deps.world().currentScene?.guid ?? "session", blocking ? { priority: "High" } : {})
+      : null;
+    const preload = acquiring ? await (blocking ? deps.blocks.hold(acquiring) : acquiring) : null;
     try {
       // Ends quietly, like any continuation, when the session stopped or the owner was destroyed meanwhile,
       // including by another continuation that resumed in the same flush.
@@ -80,7 +88,7 @@ export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostSer
     destroyActor: (actor) => {
       if (!actor) return;
       if (deferred.has(actor)) {
-        // An unfinished Deferred Spawn Actor result never entered play: its preparation is cancelled.
+        // An unfinished Spawn Actor Deferred result never entered play: its preparation is cancelled.
         release(deferred.get(actor) ?? null);
         deferred.delete(actor);
         deps.world().destroyActorInstance(actor);
@@ -119,7 +127,7 @@ export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostSer
       if (!id) return null;
       const guid = deps.classAssetGuids.get(id);
       if (deps.demandAssetCatalog && guid && deps.assetPreloads.getState(guid) !== "ready") {
-        throw new Error(`Class ${id} (${guid}) is not prepared; use Spawn Actor (ctx.spawnActorAsync), or load the Class first with Async Load Class or Load Class Blocking`);
+        throw new Error(`Class ${id} (${guid}) is not prepared; use Spawn Actor (Async) or Spawn Actor (Blocking), or load the Class first with Async Load Class or Load Class Blocking`);
       }
       return deps.spawn({
         classId: id,
@@ -127,14 +135,14 @@ export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostSer
         streamOwner: owner,
       });
     },
-    spawnActorAsync: async (classId, transform, owner) => {
-      const prepared = await createPrepared(classId, transform, owner, deps.spawn);
+    spawnActorAsync: async (classId, transform, owner, options) => {
+      const prepared = await createPrepared(classId, transform, owner, deps.spawn, options);
       if (!prepared) return null;
       handOver(prepared.preloadId, prepared.actor);
       return prepared.actor;
     },
-    beginDeferredSpawnAsync: async (classId, transform, owner) => {
-      const prepared = await createPrepared(classId, transform, owner, deps.prepareSpawn);
+    beginDeferredSpawnAsync: async (classId, transform, owner, options) => {
+      const prepared = await createPrepared(classId, transform, owner, deps.prepareSpawn, options);
       if (!prepared) return null;
       handOver(prepared.preloadId, prepared.actor);
       if (prepared.actor) deferred.set(prepared.actor, prepared.preloadId);
@@ -143,7 +151,7 @@ export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostSer
     finishDeferredSpawn: (actor) => {
       if (!deferred.has(actor)) {
         if (actor.destroyed) return null;
-        throw new Error(`${actor.classId} (${actor.guid}) is not waiting to finish spawning; pass the result of Deferred Spawn Actor to Finish Deferred Spawn Actor once`);
+        throw new Error(`${actor.classId} (${actor.guid}) is not waiting to finish spawning; pass the result of Spawn Actor Deferred (Async) or Spawn Actor Deferred (Blocking) to Finish Deferred Spawn Actor once`);
       }
       const preloadId = deferred.get(actor) ?? null;
       deferred.delete(actor);
