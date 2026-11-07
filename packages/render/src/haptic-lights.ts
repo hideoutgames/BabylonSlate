@@ -102,10 +102,18 @@ type SceneLights = {
   /** The clusters' block as written (`HAPTIC_CLUSTERS_GLSL`), its GPU buffer and the local lights it was built from. */
   clusterWords: Float32Array; clusterMasks: Uint32Array; clusterHeader: Float32Array; clusterBuffer: DataBuffer | null;
   clusterLights: ClusterLight[];
-  /** The camera and frame the clusters were last built for; another rebuilds them at its first bind. */
-  clusterCamera: Camera | null; clusterFrame: number;
+  /** Bumped when `clusterLights` change (`writeHapticLights`) or culling is switched (`setHapticLightCulling`). */
+  clusterRevision: number;
+  /** The revision and camera the clusters were last built for. */
+  clusterBuilt: number; clusterCamera: Camera | null;
+  /** The view the clusters were last built for (`recordClusterView`). */
+  clusterView: Float64Array;
+  /** The render id the clusters were last checked at: a pass's draws draw one view, so its later binds check nothing. */
+  clusterFrame: number;
 };
 const scenes = new WeakMap<Scene, SceneLights>();
+/** The view inputs a build reads: the view and projection matrices, the depth range, the floating origin and whether it culls. */
+const CLUSTER_VIEW_INPUTS = 16 + 16 + 2 + 3 + 1;
 const directional = new Float32Array(HAPTIC_LIGHT_MAXIMUM.directional * 8);
 const point = new Float32Array(HAPTIC_LIGHT_MAXIMUM.point * 12);
 const spot = new Float32Array(HAPTIC_LIGHT_MAXIMUM.spot * 16);
@@ -140,7 +148,7 @@ function sceneLights(scene: Scene): SceneLights {
       clusterWords, clusterMasks: new Uint32Array(clusterWords.buffer, CLUSTER_HEADER_FLOATS * 4),
       clusterHeader: clusterWords.subarray(0, CLUSTER_HEADER_FLOATS),
       clusterBuffer: scene.getEngine().createUniformBuffer(clusterWords, "HapticClusters"), clusterLights: [],
-      clusterCamera: null, clusterFrame: -1,
+      clusterRevision: 0, clusterBuilt: -1, clusterCamera: null, clusterView: new Float64Array(CLUSTER_VIEW_INPUTS), clusterFrame: -1,
     };
     scenes.set(scene, lights);
     // A map draws after the block's write, with the views it is then sampled by.
@@ -179,7 +187,37 @@ const unculledScenes = new WeakSet<Scene>();
 export function setHapticLightCulling(scene: Scene, enabled: boolean): void {
   if (enabled) unculledScenes.delete(scene);
   else unculledScenes.add(scene);
-  sceneLights(scene).clusterFrame = -1;
+  sceneLights(scene).clusterRevision++;
+}
+
+/** Stores `value` at `index` of `inputs`; true when it differs from the one there (bit for bit: -0 is not 0). */
+function storeClusterInput(inputs: Float64Array, index: number, value: number): boolean {
+  if (Object.is(inputs[index], value)) return false;
+  inputs[index] = value;
+  return true;
+}
+
+/**
+ * Records the view the Scene is drawing into `inputs`, as a build reads it (`writeClusters`); true when it differs from
+ * the one recorded last, so a build from it would differ from the last.
+ */
+function recordClusterView(scene: Scene, inputs: Float64Array): boolean {
+  const camera = scene.activeCamera;
+  let changed = storeClusterInput(inputs, CLUSTER_VIEW_INPUTS - 1, camera && !unculledScenes.has(scene) ? 1 : 0);
+  if (!inputs[CLUSTER_VIEW_INPUTS - 1] || !camera) return changed;
+  const view = scene.getViewMatrix().m;
+  const projection = scene.getProjectionMatrix().m;
+  for (let index = 0; index < 16; index++) {
+    if (storeClusterInput(inputs, index, view[index]!)) changed = true;
+    if (storeClusterInput(inputs, 16 + index, projection[index]!)) changed = true;
+  }
+  const offset = scene.floatingOriginOffset;
+  if (storeClusterInput(inputs, 32, camera.minZ)) changed = true;
+  if (storeClusterInput(inputs, 33, camera.maxZ)) changed = true;
+  if (storeClusterInput(inputs, 34, offset.x)) changed = true;
+  if (storeClusterInput(inputs, 35, offset.y)) changed = true;
+  if (storeClusterInput(inputs, 36, offset.z)) changed = true;
+  return changed;
 }
 
 /**
@@ -190,7 +228,7 @@ export function setHapticLightCulling(scene: Scene, enabled: boolean): void {
 function writeClusters(scene: Scene, state: SceneLights): void {
   const camera = scene.activeCamera;
   state.clusterCamera = camera;
-  state.clusterFrame = scene.getRenderId();
+  state.clusterBuilt = state.clusterRevision;
   const view = camera && !unculledScenes.has(scene)
     ? { view: scene.getViewMatrix(), projection: scene.getProjectionMatrix(), near: camera.minZ, far: camera.maxZ }
     : null;
@@ -201,9 +239,17 @@ function writeClusters(scene: Scene, state: SceneLights): void {
 /** Bind the clusters' block for a draw with `effect`, which reads it. */
 export function bindHapticClusters(scene: Scene, effect: Effect): void {
   const state = sceneLights(scene);
-  // The clusters follow the drawing view (a capture's), built at its first draw of each frame; masks built for another
-  // view stay correct, only coarser.
-  if (state.clusterCamera !== scene.activeCamera || state.clusterFrame !== scene.getRenderId()) writeClusters(scene, state);
+  // The clusters follow the drawing view (a capture's), checked at each pass's first draw and built only when the
+  // view, its camera or the local lights differ from the last build's: the buffer already holds what a build from the
+  // same inputs writes, so the passes of one view, and frames of a still one, build once. Masks built for another view
+  // stay correct, only coarser.
+  const renderId = scene.getRenderId();
+  const camera = scene.activeCamera;
+  if (state.clusterFrame !== renderId || state.clusterCamera !== camera || state.clusterBuilt !== state.clusterRevision) {
+    state.clusterFrame = renderId;
+    const viewChanged = recordClusterView(scene, state.clusterView);
+    if (viewChanged || state.clusterCamera !== camera || state.clusterBuilt !== state.clusterRevision) writeClusters(scene, state);
+  }
   const buffer = state.clusterBuffer;
   if (buffer) effect.bindUniformBuffer(buffer, "HapticClusters");
 }
@@ -383,20 +429,26 @@ function writeShadowViews(scene: Scene, state: SceneLights): void {
   state.buffer.updateFloatArray("hapticSunShadow", state.sunShadow);
 }
 
-/** A local light's cluster record at `count`, the one written there last time when there is one (records are reused). */
+/**
+ * A local light's cluster record at `count`, the one written there last time when there is one (records are reused);
+ * true when it differs from that one.
+ */
 function clusterRecord(clusters: ClusterLight[], count: number, kind: ClusterLight["kind"], index: number,
-  x: number, y: number, z: number, radius: number): void {
+  x: number, y: number, z: number, radius: number): boolean {
   const record = clusters[count];
   if (!record) {
     clusters.push({ kind, index, x, y, z, radius });
-    return;
+    return true;
   }
+  if (record.kind === kind && record.index === index && Object.is(record.x, x) && Object.is(record.y, y) &&
+    Object.is(record.z, z) && Object.is(record.radius, radius)) return false;
   record.kind = kind;
   record.index = index;
   record.x = x;
   record.y = y;
   record.z = z;
   record.radius = radius;
+  return true;
 }
 
 const spotDirection = new Vector3();
@@ -425,6 +477,7 @@ export function writeHapticLights(scene: Scene): void {
   state.sun = null;
   const clusters = state.clusterLights;
   let clustered = 0;
+  let clustersChanged = false;
   // The admission keeps within the block's records; the checks below hold them whatever it admitted.
   if (scene.lightsEnabled) for (const light of scene.lights) {
     if (!light.isEnabled() || !isIlluminatingLight(light)) continue;
@@ -476,7 +529,7 @@ export function writeHapticLights(scene: Scene): void {
       spot[at + 13] = Math.cos(light.innerAngle * 0.5);
       spot[at + 14] = 0;
       spot[at + 15] = 0;
-      clusterRecord(clusters, clustered++, "spot", spots, x, y, z, light.range);
+      if (clusterRecord(clusters, clustered++, "spot", spots, x, y, z, light.range)) clustersChanged = true;
       spots++;
     } else if (light instanceof RectAreaLight) {
       if (rects === HAPTIC_LIGHT_MAXIMUM.rect) continue;
@@ -503,7 +556,7 @@ export function writeHapticLights(scene: Scene): void {
       rect[at + 14] = light.diffuse.b * intensity;
       rect[at + 15] = -1;
       state.rects.push(light);
-      clusterRecord(clusters, clustered++, "rect", rects, 0, 0, 0, Infinity);
+      if (clusterRecord(clusters, clustered++, "rect", rects, 0, 0, 0, Infinity)) clustersChanged = true;
       rects++;
     } else if (light instanceof PointLight) {
       if (points === HAPTIC_LIGHT_MAXIMUM.point) continue;
@@ -529,11 +582,16 @@ export function writeHapticLights(scene: Scene): void {
       point[at + 9] = shadowed?.shadow.tiles.length ?? 0;
       point[at + 10] = 0;
       point[at + 11] = 0;
-      clusterRecord(clusters, clustered++, "point", points, x, y, z, light.range);
+      if (clusterRecord(clusters, clustered++, "point", points, x, y, z, light.range)) clustersChanged = true;
       points++;
     }
   }
-  clusters.length = clustered;
+  if (clusters.length !== clustered) {
+    clusters.length = clustered;
+    clustersChanged = true;
+  }
+  // The clusters are built from these lights at the next draw that binds them, unless they are the last build's.
+  if (clustersChanged) state.clusterRevision++;
   syncAreaEmissionLayers(scene, state.rects, AREA_EMISSION_LAYERS, state.layers);
   state.limits.length = 0;
   for (let index = 0; index < state.rects.length; index++) {
@@ -561,8 +619,6 @@ export function writeHapticLights(scene: Scene): void {
   buffer.updateFloatArray("hapticRect", rect);
   writeShadowViews(scene, state);
   buffer.update();
-  // Built from these lights at the frame's first draw, with the view it draws.
-  state.clusterFrame = -1;
 }
 
 /**

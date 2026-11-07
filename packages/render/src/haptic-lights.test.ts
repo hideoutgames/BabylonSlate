@@ -14,6 +14,7 @@ import {
   ShadowGenerator,
   SpotLight,
   Vector3,
+  type Effect,
   type Mesh,
   type NodeMaterial,
 } from "@babylonjs/core";
@@ -23,7 +24,10 @@ import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/sh
 import { areaEmissionTexture, setRectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { HapticLightingBlock } from "./haptic-lighting-block";
-import { HAPTIC_LIGHT_MAXIMUM, HAPTIC_SHADOW_VIEW_VEC4S, hapticLightBuffer } from "./haptic-lights";
+import {
+  HAPTIC_LIGHT_MAXIMUM, HAPTIC_SHADOW_VIEW_VEC4S, bindHapticClusters, hapticLightBuffer, setHapticLightCulling,
+} from "./haptic-lights";
+import { CLUSTER_COUNT, CLUSTER_HEADER_FLOATS } from "./light-clusters";
 
 /** Floats per shadow view record. */
 const VIEW = HAPTIC_SHADOW_VIEW_VEC4S * 4;
@@ -464,6 +468,73 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     // The block holds one fill.
     expect(sceneLightingLimits(scene).join()).toContain("Light block: 22/23 requested lights admitted; 64 scalability local lights");
     expect(sceneLightingLimits(scene).join()).toMatch(/Limited: second fill$/);
+  });
+
+  it("builds and uploads the light clusters once per view and set of local lights, whatever number of passes draws them", () => {
+    // The break: rebuilding (and uploading 15 KiB) at each pass's first draw, or after every lighting sync that writes
+    // the same lights, instead of only when the view, its camera or the local lights change.
+    const { engine, scene } = host();
+    const camera = scene.activeCamera as FreeCamera;
+    const lamp = new PointLight("lamp", new Vector3(0, 0, 2), scene);
+    lamp.range = 4;
+    const viewOf = (from: FreeCamera) => scene.setTransformMatrix(from.getViewMatrix(true), from.getProjectionMatrix(true));
+    viewOf(camera);
+    syncSceneLighting(scene);
+    const uploads: Uint32Array[] = [];
+    let clusterBuffer: unknown;
+    const effect = {
+      bindUniformBuffer: (buffer: unknown, name: string) => { if (name === "HapticClusters") clusterBuffer = buffer; },
+    } as unknown as Effect;
+    vi.spyOn(engine, "updateUniformBuffer").mockImplementation((buffer, elements) => {
+      // The light block's own updates go through here too; the clusters' upload is its words, the header then masks.
+      if (elements.length === CLUSTER_HEADER_FLOATS + CLUSTER_COUNT * 2)
+        uploads.push(new Uint32Array(new Float32Array(elements as Float32Array).buffer, CLUSTER_HEADER_FLOATS * 4));
+      void buffer;
+    });
+    // A view's passes: each its own render id, each drawing more than one lit draw.
+    const pass = () => {
+      scene.incrementRenderId();
+      bindHapticClusters(scene, effect);
+      bindHapticClusters(scene, effect);
+    };
+    const pointBits = (masks: Uint32Array) => masks.filter((_, index) => index % 2 === 0).some((word) => word !== 0);
+    pass();
+    pass();
+    expect(clusterBuffer).toBeTruthy();
+    expect(uploads).toHaveLength(1);
+    expect(pointBits(uploads[0]!)).toBe(true);
+    // A sync that writes the same lights builds none.
+    syncSceneLighting(scene);
+    pass();
+    expect(uploads).toHaveLength(1);
+    // A moved light builds again, from its new place: behind the camera, it reaches no cluster.
+    lamp.position.set(0, 0, -20);
+    syncSceneLighting(scene);
+    pass();
+    expect(uploads).toHaveLength(2);
+    expect(pointBits(uploads[1]!)).toBe(false);
+    pass();
+    expect(uploads).toHaveLength(2);
+    // So does a moved view, and another camera drawing.
+    camera.position.z = -6;
+    viewOf(camera);
+    pass();
+    expect(uploads).toHaveLength(3);
+    const other = new FreeCamera("other", new Vector3(0, 0, -6), scene);
+    scene.activeCamera = other;
+    viewOf(other);
+    pass();
+    expect(uploads).toHaveLength(4);
+    scene.activeCamera = camera;
+    viewOf(camera);
+    pass();
+    expect(uploads).toHaveLength(5);
+    // And a culling switch, which builds the header that sends every position to every light.
+    setHapticLightCulling(scene, false);
+    pass();
+    expect(uploads).toHaveLength(6);
+    pass();
+    expect(uploads).toHaveLength(6);
   });
 
   it("draws the preview studio rig whole: one directional key and one fill", () => {

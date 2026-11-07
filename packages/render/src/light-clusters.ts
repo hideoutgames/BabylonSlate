@@ -32,11 +32,61 @@ const relativeView = new Matrix();
 const viewProjection = new Matrix();
 const center = new Vector3();
 const corner = new Vector3();
+/** A build's slices' near view depths; each slice ends at the next one's, the last one past the far limit. */
+const sliceDepths = new Float64Array(CLUSTER_SLICES);
+/** A build's tile edges in view space per unit of depth: each tile's low then high edge, x then y. */
+const tileEdgesX = new Float64Array(CLUSTER_TILES_X * 2);
+const tileEdgesY = new Float64Array(CLUSTER_TILES_Y * 2);
+
+/** The view slice `depth` lies in, for a build's near plane and log scale. */
+function slice(depth: number, near: number, logScale: number): number {
+  return Math.min(CLUSTER_SLICES - 1, Math.max(0, Math.floor(Math.log(depth / near) * logScale)));
+}
+
+/** The screen tile an NDC coordinate lies in, of `count` across. */
+function tile(ndc: number, count: number): number {
+  return Math.min(count - 1, Math.max(0, Math.floor((ndc * 0.5 + 0.5) * count)));
+}
+
+/** Fills `edges` with each of `count` tiles' two edges for a projection's scale and shift on that axis. */
+function fillTileEdges(edges: Float64Array, count: number, scale: number, shift: number): void {
+  for (let index = 0; index < count; index++) {
+    edges[index * 2] = ((index / count) * 2 - 1 - shift) / scale;
+    edges[index * 2 + 1] = (((index + 1) / count) * 2 - 1 - shift) / scale;
+  }
+}
+
+/**
+ * The distance from `centre` to a tile's view-space extent on one axis over the depths z0 to zFar: the box spans the
+ * extremes of its two edges (`low`, `high`) at the two depths.
+ */
+function axisDistance(low: number, high: number, z0: number, zFar: number, centre: number): number {
+  const min = Math.min(low * z0, low * zFar, high * z0, high * zFar);
+  const max = Math.max(low * z0, low * zFar, high * z0, high * zFar);
+  return centre < min ? min - centre : centre > max ? centre - max : 0;
+}
+
+/**
+ * Whether a perspective cluster (tile tx, ty of slice s) reaches the sphere at view-space (x, y, z) of radius r: the
+ * cluster's view-space box, its x and y over the slice's depth range (finite: the last slice tests up to the sphere's
+ * far side), against the sphere.
+ */
+function clusterReaches(tx: number, ty: number, s: number, x: number, y: number, z: number, r: number): boolean {
+  const z0 = sliceDepths[s]!;
+  const z1 = s === CLUSTER_SLICES - 1 ? Infinity : sliceDepths[s + 1]!;
+  const dz = z < z0 ? z0 - z : z > z1 ? z - z1 : 0;
+  if (dz >= r) return false;
+  const zFar = Math.min(z1, z + r);
+  const dx = axisDistance(tileEdgesX[tx * 2]!, tileEdgesX[tx * 2 + 1]!, z0, zFar, x);
+  const dy = axisDistance(tileEdgesY[ty * 2]!, tileEdgesY[ty * 2 + 1]!, z0, zFar, y);
+  return dx * dx + dy * dy + dz * dz < r * r;
+}
 
 /**
  * Fills `masks` (two words per cluster) and `header` for `view` from `lights`, whose positions are relative to the
  * floating origin `offset`, as the block's records are. A rect light reaches every cluster: its records have no range.
- * Without a view the header sends every position to every light.
+ * Without a view the header sends every position to every light. The slice depths and tile edges are computed once
+ * per build, not per cluster tested.
  */
 export function buildLightClusters(
   masks: Uint32Array,
@@ -59,33 +109,22 @@ export function buildLightClusters(
   const view = relativeView.m;
   header.set(viewProjection.m, 0);
   // A position's view depth: dot((x, y, z, 1), this row).
-  header.set([view[2]!, view[6]!, view[10]!, view[14]!], 16);
-  header.set([near, logScale, 1, 0], 20);
-  const slice = (depth: number) => Math.min(CLUSTER_SLICES - 1, Math.max(0, Math.floor(Math.log(depth / near) * logScale)));
+  header[16] = view[2]!;
+  header[17] = view[6]!;
+  header[18] = view[10]!;
+  header[19] = view[14]!;
+  header[20] = near;
+  header[21] = logScale;
+  header[22] = 1;
   // A perspective camera's clusters are frustum pieces: each is tested against the light's sphere through its view
   // space box. An orthographic camera's keep the screen and depth bounds alone.
   const p = projection.m;
   const perspective = p[11] !== 0;
-  const sliceNear = (index: number) => near * Math.exp(index / logScale);
-  const clusterReaches = (tx: number, ty: number, s: number, x: number, y: number, z: number, r: number) => {
-    const z0 = sliceNear(s);
-    const z1 = s === CLUSTER_SLICES - 1 ? Infinity : sliceNear(s + 1);
-    const dz = z < z0 ? z0 - z : z > z1 ? z - z1 : 0;
-    if (dz >= r) return false;
-    // The box's x and y over the slice's depth range (finite: the last slice tests up to the sphere's far side).
-    const zFar = Math.min(z1, z + r);
-    const axis = (tile: number, count: number, scale: number, shift: number, centre: number) => {
-      // The tile's two edges at the two depths; the box spans their extremes.
-      const low = ((tile / count) * 2 - 1 - shift) / scale;
-      const high = (((tile + 1) / count) * 2 - 1 - shift) / scale;
-      const min = Math.min(low * z0, low * zFar, high * z0, high * zFar);
-      const max = Math.max(low * z0, low * zFar, high * z0, high * zFar);
-      return centre < min ? min - centre : centre > max ? centre - max : 0;
-    };
-    const dx = axis(tx, CLUSTER_TILES_X, p[0]!, p[8]!, x);
-    const dy = axis(ty, CLUSTER_TILES_Y, p[5]!, p[9]!, y);
-    return dx * dx + dy * dy + dz * dz < r * r;
-  };
+  if (perspective) {
+    for (let s = 0; s < CLUSTER_SLICES; s++) sliceDepths[s] = near * Math.exp(s / logScale);
+    fillTileEdges(tileEdgesX, CLUSTER_TILES_X, p[0]!, p[8]!);
+    fillTileEdges(tileEdgesY, CLUSTER_TILES_Y, p[5]!, p[9]!);
+  }
   for (const light of lights) {
     const bit = light.kind === "point" ? light.index : light.kind === "spot" ? CLUSTER_SPOT_BIT + light.index : CLUSTER_RECT_BIT + light.index;
     const word = light.kind === "point" ? 0 : 1;
@@ -108,12 +147,11 @@ export function buildLightClusters(
         minY = Math.min(minY, corner.y); maxY = Math.max(maxY, corner.y);
       }
       if (maxX < -1 || minX > 1 || maxY < -1 || minY > 1) continue;
-      const tile = (ndc: number, count: number) => Math.min(count - 1, Math.max(0, Math.floor((ndc * 0.5 + 0.5) * count)));
       tx0 = tile(minX, CLUSTER_TILES_X); tx1 = tile(maxX, CLUSTER_TILES_X);
       ty0 = tile(minY, CLUSTER_TILES_Y); ty1 = tile(maxY, CLUSTER_TILES_Y);
     }
-    const s0 = center.z - r <= near ? 0 : slice(center.z - r);
-    const s1 = slice(center.z + r);
+    const s0 = center.z - r <= near ? 0 : slice(center.z - r, near, logScale);
+    const s1 = slice(center.z + r, near, logScale);
     for (let s = s0; s <= s1; s++)
       for (let ty = ty0; ty <= ty1; ty++)
         for (let tx = tx0; tx <= tx1; tx++) {
