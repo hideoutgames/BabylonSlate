@@ -551,7 +551,8 @@ export function nearestTextureFiltering(twoD: Pick<TwoDProjectSettings, "pixelPe
   return twoD.pixelPerfect && twoD.nearestTextures;
 }
 
-function normalizeSortingLayers(value: unknown): string[] {
+/** Trimmed, unique, non-empty sorting layer names in order; the defaults when none remain. */
+export function normalizeSortingLayers(value: unknown): string[] {
   if (!Array.isArray(value)) return [...DEFAULT_SORTING_LAYERS];
   const seen = new Set<string>();
   const layers: string[] = [];
@@ -804,7 +805,8 @@ export function normalizeProjectSettings(
   };
 }
 
-function clampAudioScale(value: unknown, fallback = 1): number {
+/** A project audio scale clamped to 0..2; `fallback` when it is not a finite number. */
+export function clampAudioScale(value: unknown, fallback = 1): number {
   const n =
     typeof value === "number" && Number.isFinite(value) ? value : fallback;
   if (n < 0) return 0;
