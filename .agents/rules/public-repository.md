@@ -13,7 +13,7 @@ None of these belong in git, commit messages, PR titles or descriptions, comment
 
 ## Enforcement
 
-`.gitignore` keeps common offenders untracked; gitleaks (`security.yml`) and `scripts/check-public-hygiene.mjs` (with its unit test) reject credentials, Apple signing identifiers and paths, agent session links and attribution in tracked files, added lines, commit messages and every part of a pull request. They are a safety net, not the rule.
+`.gitignore` keeps common offenders untracked; gitleaks (`security.yml`) and `scripts/check-public-hygiene.mjs` (with its unit test) reject credentials, Apple signing identifiers and paths, agent session links and attribution in tracked files, added lines, commit messages and every part of a pull request. They are a safety net, not the rule. A gitleaks finding that is not a secret is listed by its fingerprint in `.gitleaksignore`, with a comment saying why; fix the line too, so the entry covers only a commit already pushed.
 
 ## If a secret is committed
 

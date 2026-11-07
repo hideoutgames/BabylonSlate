@@ -1,0 +1,7 @@
+# Findings gitleaks reports that are not secrets, one fingerprint per line
+# (commit:file:rule:line).
+#
+# The Rapier plugin test's first version joined the package's wasm file name
+# beside RAPIER_DIST; "RAPIER" contains "API", so generic-api-key read the file
+# name as a key. The test names the file in a constant now.
+76814f27a3ac26556399e79ed81f9e45969f641c:apps/editor/vite-rapier-wasm.test.ts:generic-api-key:14
