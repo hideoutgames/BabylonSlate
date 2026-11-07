@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   DockviewReact,
   themeAbyss,
@@ -43,7 +43,8 @@ import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty
 import { Field, FieldGroup, FieldLabel } from "@haptic/ui/components/field";
 import { Toggle } from "@haptic/ui/components/toggle";
 import { cn } from "@haptic/ui/lib/utils";
-import { themeCssVariables, type ThemeColors } from "../lib/editor-themes";
+import type { ThemeColors } from "../lib/editor-themes";
+import { THEME_PREVIEW_HEIGHT, THEME_PREVIEW_WIDTH, ThemePreviewFrame } from "./editor-theme-preview-frame";
 import { IconActionButton } from "./icon-action-button";
 import { ProjectIdentityMark } from "./project-identity-mark";
 import "dockview-react/dist/styles/dockview.css";
@@ -55,9 +56,6 @@ import "../shell/editor-chrome.css";
  * theme, trees, graph and Inspector controls. It is laid out at desktop size
  * and scaled down to fit, so it reads as the editor in miniature.
  */
-const PREVIEW_WIDTH = 1440;
-const PREVIEW_HEIGHT = 900;
-
 const NOOP = () => undefined;
 
 /** Non-interactive miniature of the editor, drawn with a theme's colors. */
@@ -69,7 +67,7 @@ export function ThemePreview({ colors }: { colors: ThemeColors }) {
     if (!frame) return;
     const measure = () => {
       const width = frame.clientWidth;
-      if (width > 0) setScale(width / PREVIEW_WIDTH);
+      if (width > 0) setScale(width / THEME_PREVIEW_WIDTH);
     };
     measure();
     if (typeof ResizeObserver === "undefined") return;
@@ -107,22 +105,12 @@ export function ThemePreview({ colors }: { colors: ThemeColors }) {
   }, []);
 
   return (
-    <div
-      ref={frameRef}
-      aria-hidden="true"
-      inert
-      data-testid="application-theme-preview"
-      className="pointer-events-none relative w-full max-w-[640px] select-none overflow-hidden rounded-lg border border-border"
-      style={{
-        ...(themeCssVariables(colors) as CSSProperties),
-        aspectRatio: `${PREVIEW_WIDTH} / ${PREVIEW_HEIGHT}`,
-      }}
-    >
+    <ThemePreviewFrame ref={frameRef} colors={colors}>
       <div
         className="absolute left-0 top-0 flex origin-top-left flex-col bg-background text-foreground"
         style={{
-          width: PREVIEW_WIDTH,
-          height: PREVIEW_HEIGHT,
+          width: THEME_PREVIEW_WIDTH,
+          height: THEME_PREVIEW_HEIGHT,
           transform: measured ? `scale(${scale})` : undefined,
           visibility: measured ? undefined : "hidden",
         }}
@@ -147,7 +135,7 @@ export function ThemePreview({ colors }: { colors: ThemeColors }) {
           <span className="editor-status-version">Development build</span>
         </footer>
       </div>
-    </div>
+    </ThemePreviewFrame>
   );
 }
 

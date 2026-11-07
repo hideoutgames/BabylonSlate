@@ -35,7 +35,7 @@ import {
   EllipsisIcon,
   CircleAlertIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   CONTENT_BROWSER_ID,
   type DocumentRef,
@@ -102,7 +102,6 @@ import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { SettingsModal } from "./settings-modal";
 import { PackagingDialog } from "./packaging-dialog";
 import { GlobalSearchDialog } from "./global-search-dialog";
-import { FeatureTestCheckDialog } from "./feature-test-check-dialog";
 import { useIsFeatureTestProject } from "../lib/use-is-feature-test-project";
 import { useAppSettings, useDebugMode } from "../context/app-settings-context";
 import { IconActionButton } from "./icon-action-button";
@@ -122,6 +121,11 @@ import {
 } from "../lib/document-type-visual";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 import "../shell/editor-chrome.css";
+
+// Only a Feature Test project in Debug Mode mounts the check, so other projects never load it or its report.
+const FeatureTestCheckDialog = lazy(() =>
+  import("./feature-test-check-dialog").then((module) => ({ default: module.FeatureTestCheckDialog })),
+);
 
 function kindIcon(ref: DocumentRef, resolveVisual: DocumentTypeVisualResolver) {
   if (ref.kind === "content-browser") {
@@ -1207,7 +1211,9 @@ export function EditorChromeBar({
 
       <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       {featureTestCheck ? (
-        <FeatureTestCheckDialog open={featureTestCheckOpen} onOpenChange={setFeatureTestCheckOpen} />
+        <Suspense fallback={null}>
+          <FeatureTestCheckDialog open={featureTestCheckOpen} onOpenChange={setFeatureTestCheckOpen} />
+        </Suspense>
       ) : null}
       {openedSettings.project ? (
         <SettingsModal

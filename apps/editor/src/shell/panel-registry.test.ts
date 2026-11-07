@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { panelComponents } from "./panel-registry";
+import { panelComponents, scenePanelComponents } from "./panel-registry";
 import { SCENE_MODES } from "./scene-document-layout";
 import {
   listDockWindows,
@@ -73,5 +73,13 @@ describe("panelComponents", () => {
       listDockWindows(kind, options).map((window) => window.component),
     ).filter((component) => !(component in panelComponents));
     expect(missing).toEqual([]);
+  });
+
+  // A project opens on a Scene, so its windows in every mode load with the Editor route rather than on first use.
+  it.each(["scene", "scene-layer"] as const)("registers every %s window with the Editor route", (kind) => {
+    const lazy = OPTION_VARIANTS.flatMap((options) =>
+      listDockWindows(kind, options).map((window) => window.component),
+    ).filter((component) => !(component in scenePanelComponents));
+    expect(lazy).toEqual([]);
   });
 });

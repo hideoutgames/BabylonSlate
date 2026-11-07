@@ -29,7 +29,7 @@ import {
 } from "@haptic/particle-graph";
 import { physicsActorsDiagnostics } from "@haptic/physics";
 import { loadCompiledModule } from "@haptic/runtime";
-import { FEATURE_TEST_CHECK_SCENES } from "./feature-test-check";
+import { FEATURE_TEST_CHECK_SCENES } from "./feature-test-check-scenes";
 import {
   lowerMaterialDocument,
   materializeMaterialInstances,
