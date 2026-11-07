@@ -340,15 +340,20 @@ function keepSpectrum(engine: AbstractEngine, key: string, data: Float32Array): 
  * nothing in the pair outlives a dispatch. Leased once, released with the last simulation using it.
  */
 class WaterFftWork {
+  readonly engine: AbstractEngine;
+  readonly size: number;
+  readonly cascades: number;
   readonly targets: [RenderTargetWrapper, RenderTargetWrapper];
   readonly textures: [ThinTexture, ThinTexture];
+  private readonly lease: ManagedRenderLease;
   private users = 0;
   disposed = false;
 
   private constructor(
-    readonly engine: AbstractEngine, readonly size: number, readonly cascades: number,
-    targets: [RenderTargetWrapper, RenderTargetWrapper], private readonly lease: ManagedRenderLease,
+    engine: AbstractEngine, size: number, cascades: number, targets: [RenderTargetWrapper, RenderTargetWrapper],
+    lease: ManagedRenderLease,
   ) {
+    this.engine = engine; this.size = size; this.cascades = cascades; this.lease = lease;
     this.targets = targets;
     this.textures = [new ThinTexture(targets[0].texture), new ThinTexture(targets[1].texture)];
   }

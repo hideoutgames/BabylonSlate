@@ -391,7 +391,7 @@ describe("resource cache getTexture", () => {
     const [url, , , , , , , buffer] = create.mock.calls.at(-1)!;
     expect(buffer).toEqual(ktx2);
     expect(buffer).not.toBe(ktx2);
-    expect(url.startsWith("blob:")).toBe(false);
+    expect(url).not.toMatch(/^blob:/);
     expect(objectUrls).not.toHaveBeenCalled();
     // Another upload of the same bytes has a name of its own, so the two never share a native texture.
     const nearest = cache.acquireTexture("ktx2", engine, ktx2, { noMipmap: true, samplingMode: Texture.NEAREST_SAMPLINGMODE });
