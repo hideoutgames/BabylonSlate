@@ -5,6 +5,7 @@ import { defineConfig, type Plugin } from "vite";
 import { copyEngineDefaultSkyboxFaces } from "../editor/vite-engine-skybox";
 import { havokHostedWasmVitePlugin } from "../editor/vite-havok-wasm";
 import { rapierHostedWasmVitePlugin } from "../editor/vite-rapier-wasm";
+import { recastHostedWasmVitePlugin } from "../editor/vite-recast-wasm";
 import { bundledPackagesReport } from "./vite-bundled-packages";
 import { previewDiagnosticsEntry } from "./vite-preview-diagnostics";
 import { isWebGpuOnlyModule, webGpuChunkGuard } from "./vite-webgpu-chunk";
@@ -74,7 +75,16 @@ const PAGE_ON_DEMAND_RUNTIME = /node_modules[\\/](@dimforge[\\/]rapier2d[^\\/]*|
 
 export default defineConfig({
   base: "./",
-  plugins: [copyRuntimePublic(), havokHostedWasmVitePlugin(), rapierHostedWasmVitePlugin(), previewDiagnosticsEntry(rootDir), bundledPackages.main, writePlayerFileList(), webGpuChunkGuard()],
+  plugins: [
+    copyRuntimePublic(),
+    havokHostedWasmVitePlugin(),
+    rapierHostedWasmVitePlugin(),
+    recastHostedWasmVitePlugin(),
+    previewDiagnosticsEntry(rootDir),
+    bundledPackages.main,
+    writePlayerFileList(),
+    webGpuChunkGuard(),
+  ],
   build: {
     target: "es2022",
     cssCodeSplit: false,
@@ -104,7 +114,7 @@ export default defineConfig({
   },
   worker: {
     format: "es",
-    plugins: () => [havokHostedWasmVitePlugin(), rapierHostedWasmVitePlugin(), bundledPackages.worker()],
+    plugins: () => [havokHostedWasmVitePlugin(), rapierHostedWasmVitePlugin(), recastHostedWasmVitePlugin(), bundledPackages.worker()],
     rolldownOptions: {
       output: {
         entryFileNames: "worker-[name].js",

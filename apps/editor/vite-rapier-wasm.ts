@@ -1,4 +1,5 @@
 import type { Plugin } from "vite";
+import { embeddedWasm, hostedWasmUrl } from "./vite-hosted-wasm";
 
 /** Rapier 2D's compat glue inside `@dimforge/rapier2d-deterministic-compat`. */
 const RAPIER_COMPAT_GLUE = /[\\/]@dimforge[\\/]rapier2d-deterministic-compat[\\/]dist[\\/]rapier\.mjs$/;
@@ -27,24 +28,14 @@ export function rapierHostedWasmVitePlugin(): Plugin {
     transform: {
       filter: { id: RAPIER_COMPAT_GLUE },
       handler(code, id) {
-        const embedded = [...code.matchAll(EMBEDDED_WASM)];
-        const wasm = embedded.length === 1 ? Buffer.from(embedded[0][1], "base64") : null;
-        if (!wasm || !isWasmBinary(wasm)) {
+        const wasm = embeddedWasm(code, EMBEDDED_WASM);
+        if (!wasm) {
           this.error(`Rapier glue ${id} no longer embeds one base64 wasm passed to init; update vite-rapier-wasm.ts.`);
         }
-        const reference = this.emitFile({ type: "asset", fileName: RAPIER_WASM_FILE, source: wasm });
-        const match = embedded[0];
-        const start = match.index;
-        return {
-          code: `${code.slice(0, start)}import.meta.ROLLUP_FILE_URL_${reference}${code.slice(start + match[0].length)}`,
-          map: null,
-        };
+        const url = hostedWasmUrl(this, RAPIER_WASM_FILE, wasm.bytes);
+        return { code: `${code.slice(0, wasm.index)}${url}${code.slice(wasm.index + wasm.length)}`, map: null };
       },
     },
   };
 }
 
-/** `\0asm` followed by version 1. */
-function isWasmBinary(bytes: Uint8Array): boolean {
-  return bytes.length > 8 && bytes[0] === 0 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d && bytes[4] === 1;
-}
