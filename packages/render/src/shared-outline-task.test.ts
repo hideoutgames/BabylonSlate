@@ -54,3 +54,29 @@ it("draws every strict occluder in a frame without view culling, and only those 
   task.onBeforeTaskExecute.notifyObservers(task);
   expect(narrowed).toHaveBeenCalledTimes(1);
 });
+
+it("keeps each group's object list across frames and points it at the group's meshes only when they change", async () => {
+  const { view, task } = await outlineGraph();
+  // The mask records are private; their object lists are what Babylon's mask passes read each frame.
+  const lists = () => (task as unknown as { masks: { group: string; objects: { objectList: { meshes: unknown[] | null } } }[] }).masks
+    .map((record) => ({ group: record.group, list: record.objects.objectList, meshes: record.objects.objectList.meshes }));
+  task.onBeforeTaskExecute.notifyObservers(task);
+  const before = lists();
+  expect(before.find((entry) => entry.group === "strict")!.meshes!.length).toBeGreaterThan(0);
+  task.onBeforeTaskExecute.notifyObservers(task);
+  const after = lists();
+  for (const [index, entry] of after.entries()) {
+    expect(entry.list).toBe(before[index]!.list);
+    expect(entry.meshes).toBe(before[index]!.meshes);
+  }
+  // A group that turns inactive lists nothing, in the same list.
+  view.replaceContributions(new Map(), []);
+  task.onBeforeTaskExecute.notifyObservers(task);
+  const inactive = lists();
+  for (const [index, entry] of inactive.entries()) {
+    expect(entry.list).toBe(before[index]!.list);
+    expect(entry.meshes).toEqual([]);
+  }
+  task.onBeforeTaskExecute.notifyObservers(task);
+  for (const [index, entry] of lists().entries()) expect(entry.meshes).toBe(inactive[index]!.meshes);
+});

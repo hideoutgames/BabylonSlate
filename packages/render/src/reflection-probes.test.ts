@@ -141,3 +141,30 @@ it("recompiles meshes for a probe's cube when the first probe publishes and for 
   probes.remove("actor");
   expect((await readyDefines(scene, material, inside)).USE_LOCAL_REFLECTIONMAP_CUBIC).toBe(false);
 });
+
+it("builds the static signature only when a probe that is not busy could capture, not on frames that wait for a filter", async () => {
+  const { probes, root, frame } = fixture();
+  vi.mocked(drawOutsideSceneView).mockClear();
+  let finishFilter!: () => void;
+  vi.mocked(filterEnvironment).mockReturnValue(new Promise<void>((resolve) => { finishFilter = resolve; }));
+  // Each built signature asks every admitted mesh whether it is static.
+  const isStatic = vi.fn(() => true);
+  probes.setStaticPredicate(isStatic);
+  probes.upsert("actor", root, reflectionProbeBindings([
+    { id: "probe", classId: REFLECTION_PROBE_CLASS_ID, properties: { size: [8, 4, 8], resolution: 64 } },
+  ]));
+  frame();
+  expect(isStatic).toHaveBeenCalled();
+  expect(drawOutsideSceneView).toHaveBeenCalledTimes(1);
+  // While its filter runs the probe is busy: the settled frames still wait, and build no signature.
+  isStatic.mockClear();
+  frame();
+  frame();
+  expect(isStatic).not.toHaveBeenCalled();
+  finishFilter();
+  await vi.waitFor(() => expect(probes.diagnostics()[0]?.published).toBe(true));
+  // Settled again with nothing changed: the signature matches the capture, so no second capture runs.
+  frame();
+  expect(isStatic).toHaveBeenCalled();
+  expect(drawOutsideSceneView).toHaveBeenCalledTimes(1);
+});

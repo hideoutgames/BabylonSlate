@@ -275,12 +275,15 @@ export class ReflectionProbes {
     if (this.disposed || this.capturing || !this.probes.size) return;
     for (const probes of this.probes.values()) for (const probe of probes) this.place(probe);
     if (this.dirtyAt < 0 || performance.now() - this.dirtyAt < REFLECTION_PROBE_RECAPTURE_DELAY_MS) return;
-    // One capture per frame: six draws of the static scene are the CPU cost.
-    const signature = this.staticSignature();
+    // One capture per frame: six draws of the static scene are the CPU cost. The static signature walks every
+    // admitted mesh, so it is built only once a probe could use it; a frame whose probes are all busy builds none.
+    let signature: string | undefined;
     let pending = false;
     for (const probes of this.probes.values()) for (const probe of probes) {
       if (probe.busy) { pending = true; continue; }
-      if (probe.failed || probe.captured === signature) continue;
+      if (probe.failed) continue;
+      signature ??= this.staticSignature();
+      if (probe.captured === signature) continue;
       this.capture(probe, signature);
       return;
     }

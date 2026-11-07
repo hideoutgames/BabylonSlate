@@ -147,7 +147,7 @@ function showsAssignment(scene: Scene, binding: SnapshotSceneBinding, command: A
   if (!current || !built || !visual || built.failed || built.revision !== meshAssetInstallRevision(binding)) return false;
   const shown = pendingVisualReplacement(binding, command.slotId) ?? binding.meshes.get(command.slotId);
   if (shown !== visual || shown.isDisposed() || shown.getScene() !== scene) return false;
-  return current === command || JSON.stringify(current) === JSON.stringify(command);
+  return sameJson(current, command);
 }
 
 /** Builds the slot's visual for `command`, then records what it built (`builtVisuals`). */

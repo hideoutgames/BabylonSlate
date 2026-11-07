@@ -6,6 +6,7 @@ import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coor
 import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import * as scenePerf from "./scene-perf";
+import { unlitBinding } from "./unlit-material-blocks";
 
 describe("SceneLayerCompositor", () => {
   const engines: NullEngine[] = [];
@@ -488,6 +489,12 @@ describe("SceneLayerCompositor", () => {
     const oldBlit = engine.scenes.find((scene) => scene.getMeshByName("sceneLayerBlitPlane"))!;
     const plane = oldBlit.getMeshByName("sceneLayerBlitPlane")!;
     expect(plane.material!.needAlphaBlendingForMesh(plane)).toBe(true);
+    // The plane was bound to the layer's target when the target was made; presenting frames only draw it.
+    const bound = unlitBinding(plane);
+    expect(bound.texture).toBe(first);
+    compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
+    expect(acknowledged).toBe(true);
+    expect(unlitBinding(plane)).toBe(bound);
     const disposeFirst = vi.spyOn(first, "dispose");
     const fallbackDraw = vi.spyOn(oldBlit, "render");
     compositor.setPostProcess("overlay", [{ materialGuid: "second", enabled: true }]);
