@@ -1,4 +1,4 @@
-import { FreeCamera, NullEngine, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { FreeCamera, MeshBuilder, NullEngine, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@haptic/bridge";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prewarmSceneMaterials } from "./scene-perf";
@@ -8,6 +8,13 @@ import {
   createSnapshotSceneBinding,
 } from "./snapshot-apply";
 import type { SampledSnapshot } from "./snapshot-sync";
+import { disposeWorldOverlayLeftoverSlots } from "./snapshot-visibility";
+
+// The real sweep, observed: each call walks every world-Scene mesh.
+vi.mock("./snapshot-visibility", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./snapshot-visibility")>();
+  return { ...actual, disposeWorldOverlayLeftoverSlots: vi.fn(actual.disposeWorldOverlayLeftoverSlots) };
+});
 
 const handles: Array<{ engine: NullEngine; scene: Scene }> = [];
 
@@ -234,5 +241,43 @@ describe("snapshot synchronization native work", () => {
     expect(binding.meshes.get(0)!.getScene()).toBe(scene);
     expect(binding.meshes.get(0)!.material).toBe(worldMaterial);
     expect(layer.meshes).toHaveLength(0);
+  });
+
+  it("walks the world Scene for overlay leftovers only when an overlay slot joins or a mesh joins the Scene", () => {
+    const { scene, engine, binding, snapshot } = fixture(3);
+    const layer = new Scene(engine);
+    const sweeps = vi.mocked(disposeWorldOverlayLeftoverSlots);
+    sweeps.mockClear();
+    let overlay = new Set([0]);
+    binding.sceneForSlot = (slotId) => overlay.has(slotId) ? layer : null;
+    snapshot.actors[0]!.flags |= SNAPSHOT_FLAG_OVERLAY;
+    const frame = () => { snapshot.frameId += 1; applySnapshotToScene(scene, binding, snapshot); };
+    frame();
+    expect(sweeps).toHaveBeenCalledTimes(1);
+    // Steady frames: the same overlay slots, and no mesh added to the world Scene.
+    for (let i = 0; i < 4; i++) frame();
+    expect(sweeps).toHaveBeenCalledTimes(1);
+    // A world copy of an overlay slot appears: the next snapshot drops it, and the one after walks nothing.
+    const stray = MeshBuilder.CreateBox("actor-0|stray", {}, scene);
+    frame();
+    expect(stray.isDisposed()).toBe(true);
+    frame();
+    expect(sweeps).toHaveBeenCalledTimes(2);
+    // Slot 2 asks for its layer before the layer is live: its world copy waits hidden, then a part of it is added.
+    snapshot.actors[2]!.flags |= SNAPSHOT_FLAG_OVERLAY;
+    const waiting = MeshBuilder.CreateBox("actor-2|part", {}, scene);
+    frame();
+    expect(waiting.isDisposed()).toBe(false);
+    frame();
+    const sweptBeforeLayer = sweeps.mock.calls.length;
+    // The layer becomes live with no mesh added to the world Scene: slot 2 joining the overlay slots sweeps.
+    overlay = new Set([0, 2]);
+    frame();
+    expect(sweeps).toHaveBeenCalledTimes(sweptBeforeLayer + 1);
+    expect(waiting.isDisposed()).toBe(true);
+    expect(binding.meshes.get(2)!.getScene()).toBe(layer);
+    expect(scene.meshes.filter((mesh) => mesh.name.startsWith("actor-0") || mesh.name.startsWith("actor-2"))).toEqual([]);
+    frame();
+    expect(sweeps).toHaveBeenCalledTimes(sweptBeforeLayer + 1);
   });
 });

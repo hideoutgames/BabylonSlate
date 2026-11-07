@@ -91,6 +91,7 @@ export {
 export {
   isPlayConsoleVizSkipMesh,
   disposeWorldOverlayLeftovers,
+  disposeWorldOverlayLeftoverSlots,
 } from "./snapshot-visibility";
 export {
   retainAssignMeshComponentTransforms,
@@ -248,6 +249,38 @@ function snapshotSlotWantsOverlay(
   );
 }
 
+/**
+ * A world Scene's overlay-leftover sweeps: the overlay slots the last snapshot held, and the Scene's mesh additions
+ * now and at the last sweep. A world copy of an overlay slot only appears as a mesh added to the Scene (visuals are
+ * built, and rebuilt on migration, under their final `actor-N` names), so a snapshot whose overlay slots the previous
+ * one also held, with no mesh added since the last sweep, has no leftover to find.
+ */
+type OverlaySweep = { held: Set<number>; next: Set<number>; added: number; sweptAt: number };
+const overlaySweeps = new WeakMap<Scene, OverlaySweep>();
+
+function overlaySweepOf(scene: Scene): OverlaySweep {
+  let sweep = overlaySweeps.get(scene);
+  if (!sweep) {
+    const created: OverlaySweep = { held: new Set(), next: new Set(), added: 0, sweptAt: -1 };
+    scene.onNewMeshAddedObservable.add(() => { created.added++; });
+    overlaySweeps.set(scene, (sweep = created));
+  }
+  return sweep;
+}
+
+/** Drops world copies of the snapshot's overlay slots (`sweep.next`) when one joined them or a mesh joined the Scene. */
+function sweepWorldOverlayLeftovers(scene: Scene, sweep: OverlaySweep): void {
+  const slots = sweep.next;
+  let found = sweep.added !== sweep.sweptAt;
+  if (!found) for (const slotId of slots) if (!sweep.held.has(slotId)) { found = true; break; }
+  // The held set becomes this snapshot's, so a slot that leaves the overlay and returns joins it again.
+  sweep.next = sweep.held;
+  sweep.held = slots;
+  if (!found || !slots.size) return;
+  sweep.sweptAt = sweep.added;
+  disposeWorldOverlayLeftoverSlots(scene, slots);
+}
+
 /** Resolve ownership and membership before the pose-only pass. */
 function reconcileSnapshotVisuals(
   scene: Scene,
@@ -262,9 +295,11 @@ function reconcileSnapshotVisuals(
   animationScenes.add(scene);
   const count = snapshot.actorCount ?? snapshot.actors.length;
   binding.snapshotMeshes.length = count;
-  // World copies of all overlay slots are dropped in one pass. It also runs
+  // World copies of all overlay slots are dropped in one pass, when one can exist. It also runs
   // when a later slot throws, so earlier slots keep their per-slot cleanup.
-  let overlaySlots: Set<number> | undefined;
+  const sweep = overlaySweepOf(scene);
+  const overlaySlots = sweep.next;
+  overlaySlots.clear();
   try {
     for (let i = 0; i < count; i++) {
       const actor = snapshot.actors[i]!;
@@ -293,14 +328,14 @@ function reconcileSnapshotVisuals(
         applyMaterialToActorMeshes(binding, actor.slotId, mesh);
         binding.onVisualChanged?.(actor.slotId);
       }
-      if (wantsOverlay) (overlaySlots ??= new Set()).add(actor.slotId);
+      if (wantsOverlay) overlaySlots.add(actor.slotId);
       binding.snapshotMeshes[i] = mesh;
       // Seen only once applied: a scene lookup or visual build that throws
       // leaves a command-built visual protected from a stale buffer.
       seen.add(actor.slotId);
     }
   } finally {
-    if (overlaySlots) disposeWorldOverlayLeftoverSlots(scene, overlaySlots);
+    sweepWorldOverlayLeftovers(scene, sweep);
   }
   for (const slotId of binding.meshes.keys()) {
     // A command-built visual not yet seen must survive a stale buffer.

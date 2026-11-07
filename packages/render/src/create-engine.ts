@@ -188,6 +188,7 @@ import {
   createSnapshotSceneBinding,
   disposeSnapshotBinding,
   disposeWorldOverlayLeftovers,
+  disposeWorldOverlayLeftoverSlots,
   refreshPlayActiveCamera,
   resolvePlayGameCamera,
   retirePlaySlot,
@@ -1291,10 +1292,8 @@ function initializeEngine(
   const commandSources = new CommandSourcePreparation({ onError: (error) => console.warn(`[render] ${error.message}`) });
   let applyingPreparedCommand = false;
   const worldPlaySlots = new Set<number>();
-  const syncOverlaySlot = (slotId: number) => {
-    if (!sceneLayerCompositor) return;
-    const overlayScene = sceneLayerCompositor.sceneForSlot(slotId);
-    if (!overlayScene) return;
+  /** Builds or moves the slot's visual into its layer Scene, from its pending assignment if one waited for the layer. */
+  const bindOverlaySlot = (overlayScene: Scene, slotId: number) => {
     const pending = pendingOverlayAssign.get(slotId);
     if (pending) {
       applyAssignMesh(overlayScene, binding, pending);
@@ -1302,14 +1301,27 @@ function initializeEngine(
     } else {
       migratePlaySlotVisual(overlayScene, binding, slotId);
     }
+  };
+  const syncOverlaySlot = (slotId: number) => {
+    if (!sceneLayerCompositor) return;
+    const overlayScene = sceneLayerCompositor.sceneForSlot(slotId);
+    if (!overlayScene) return;
+    bindOverlaySlot(overlayScene, slotId);
     disposeWorldOverlayLeftovers(scene, slotId);
     particleService?.bindSlot(slotId, binding.meshes.get(slotId) ?? null);
   };
   const syncOverlayLayer = (layerId: string) => {
     if (!sceneLayerCompositor) return;
+    // The layer's slots move first; then one pass over the world Scene drops their world copies.
+    const bound = new Set<number>();
     for (const slotId of sceneLayerCompositor.slotIdsForLayer(layerId)) {
-      syncOverlaySlot(slotId);
+      const overlayScene = sceneLayerCompositor.sceneForSlot(slotId);
+      if (!overlayScene) continue;
+      bindOverlaySlot(overlayScene, slotId);
+      bound.add(slotId);
     }
+    if (bound.size) disposeWorldOverlayLeftoverSlots(scene, bound);
+    for (const slotId of bound) particleService?.bindSlot(slotId, binding.meshes.get(slotId) ?? null);
   };
   const overlayPointerState = createOverlayPointerState();
   const joysticks = new Joystick2DInput(
@@ -1675,7 +1687,7 @@ function initializeEngine(
       snapshots.clear();
       appliedSnapshotIdentity = null;
       lastRenderedSnapshotFrame = null;
-      retirePlayWorldSlots(binding);
+      outlineHost.batch(() => retirePlayWorldSlots(binding));
       commandSources.releaseSlots(worldPlaySlots);
       worldPlaySlots.clear();
       refreshPlayActiveCamera(scene, binding);
@@ -2014,7 +2026,8 @@ function initializeEngine(
       return sampled;
     }
     const previousCamera = scene.activeCamera;
-    applySnapshotToScene(scene, binding, sampled);
+    // The snapshot's spawns and retirements publish their outline membership once.
+    outlineHost.batch(() => applySnapshotToScene(scene, binding, sampled));
     playViz?.refresh();
     rebuildIfActiveCameraChanged(previousCamera);
     publishPositions(sampled);

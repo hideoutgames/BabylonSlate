@@ -82,6 +82,10 @@ export class SceneOutlineHost {
   private occluders: AbstractMesh[] = [];
   /** Nothing is outlined, and the views already hold no contributions or occluders. */
   private idle = false;
+  /** Open `batch` calls; while one is open, membership edits collect in `pending` instead of publishing. */
+  private batching = 0;
+  /** A batch's membership: a copy of `actors`, published (and committed) as one snapshot when the batch ends. */
+  private pending: Map<string, ActorOutline> | null = null;
 
   constructor(scene: Scene, renderer: SceneRenderCoordinator, invalidate: () => void) {
     this.scene = scene; this.invalidate = invalidate;
@@ -89,44 +93,82 @@ export class SceneOutlineHost {
     this.detach = renderer.attachSharedOutline(this.view);
     this.selection = {
       set: (meshes) => {
+        this.flush();
         const chosen = new Set([...meshes].filter((mesh): mesh is AbstractMesh => !!mesh));
         this.setSelection([...this.actors].filter(([, actor]) => actor.meshes.some((mesh) => chosen.has(mesh))).map(([id]) => id));
       },
-      selected: () => this.selectedActors.flatMap((id) => this.actors.get(id)?.meshes ?? []).filter((mesh) => !mesh.isDisposed()),
+      selected: () => this.selectedActors.flatMap((id) => (this.pending ?? this.actors).get(id)?.meshes ?? []).filter((mesh) => !mesh.isDisposed()),
       clear: () => this.setSelection([]),
       dispose: () => this.setSelection([]),
     };
   }
 
+  /**
+   * Runs `edits`, publishing the `setActor` and `removeActor` calls it makes as one snapshot when it returns: a Play
+   * snapshot's spawns and retirements republish once, not once per actor. The edits run on this call stack, so nothing
+   * reads the views in between; every other method publishes the batch's edits first. When `edits` throws, what it
+   * changed is still published, as the separate calls would have been, and its own error is the one reported.
+   */
+  batch<T>(edits: () => T): T {
+    this.batching++;
+    let completed = false;
+    try {
+      const result = edits();
+      completed = true;
+      return result;
+    } finally {
+      if (--this.batching === 0) {
+        if (completed) this.flush();
+        else try { this.flush(); } catch { /* A rejected publish keeps the previous snapshot; `edits`' error propagates. */ }
+      }
+    }
+  }
+
+  /** Publishes a batch's membership edits: one validated snapshot, committed only once it is accepted. */
+  private flush(): void {
+    const pending = this.pending;
+    if (!pending) return;
+    this.pending = null;
+    if (!this.disposed) this.sync(pending);
+  }
+
   setActor(actorId: string, meshes: readonly AbstractMesh[], bindings: readonly OutlineBinding[], previousActorId?: string): void {
     if (this.disposed) return;
     const actor = { meshes: meshes.filter((mesh) => this.eligible(mesh)), bindings };
-    const actors = this.staysIdle(actor) ? this.actors : new Map(this.actors);
+    const actors = this.pending ?? (this.staysIdle(actor) ? this.actors : new Map(this.actors));
     if (previousActorId && previousActorId !== actorId) actors.delete(previousActorId);
     actors.set(actorId, actor);
-    if (actors !== this.actors) this.sync(actors);
+    if (actors === this.actors || actors === this.pending) return;
+    if (this.batching) this.pending = actors;
+    else this.sync(actors);
   }
 
   replaceActors(actors: readonly { id: string; meshes: readonly AbstractMesh[]; bindings: readonly OutlineBinding[] }[]): void {
     if (this.disposed) return;
+    this.flush();
     this.sync(new Map(actors.map((actor) => [actor.id, { meshes: actor.meshes.filter((mesh) => this.eligible(mesh)), bindings: actor.bindings }])));
   }
 
   removeActor(actorId: string): void {
-    if (this.disposed || !this.actors.has(actorId)) return;
+    if (this.disposed) return;
+    if (this.pending) { this.pending.delete(actorId); return; }
+    if (!this.actors.has(actorId)) return;
     if (this.staysIdle()) { this.actors.delete(actorId); return; }
     const actors = new Map(this.actors); actors.delete(actorId);
-    this.sync(actors);
+    if (this.batching) this.pending = actors;
+    else this.sync(actors);
   }
 
   setSelection(actorIds: readonly string[]): void {
     if (this.disposed) return;
+    this.flush();
     this.sync(this.actors, [...actorIds]);
   }
 
   /** Scalar comparison only on unchanged frames; no membership scan/upload. */
   refreshSettings(): void {
     if (this.disposed) return;
+    this.flush();
     const { mode, cel } = sceneRenderingSettings(this.scene);
     // Settings updates replace the resolved CEL object; they never mutate it.
     if (mode === this.settingsMode && cel === this.settingsCel) return;
@@ -215,6 +257,7 @@ export class SceneOutlineHost {
   attachCaptureView(renderer: SceneRenderCoordinator, includes: (mesh: AbstractMesh) => boolean = () => true):
     { refresh(): void; detach(): void } {
     if (this.disposed) return { refresh() {}, detach() {} };
+    this.flush();
     const view = SharedOutlineOwner.forScene(this.scene).createView(`capture:${++this.captureViewCount}`);
     let detach: () => void;
     try {
@@ -227,7 +270,11 @@ export class SceneOutlineHost {
     this.captureViews.set(view, capture);
     this.publishCaptureView(view, capture);
     return {
-      refresh: () => { if (this.captureViews.get(view) === capture) this.publishCaptureView(view, capture); },
+      refresh: () => {
+        if (this.captureViews.get(view) !== capture) return;
+        this.flush();
+        this.publishCaptureView(view, capture);
+      },
       detach: () => {
         if (!this.captureViews.delete(view)) return;
         detach();
@@ -252,6 +299,7 @@ export class SceneOutlineHost {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.pending = null;
     for (const [view, { detach }] of this.captureViews) { detach(); view.dispose(); }
     this.captureViews.clear();
     this.detach(); this.view.dispose(); this.actors.clear();

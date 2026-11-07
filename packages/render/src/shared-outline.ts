@@ -574,7 +574,8 @@ function normalizedContribution(key: string, input: SharedOutlineContribution): 
     Math.fround(input.distanceFade.end) <= Math.fround(input.distanceFade.start)))
     throw new Error("Only global outlines accept a finite increasing distance fade range.");
   const copies = input.targets.map((target, index) => ({ target: { key: target.key, meshes: [...target.meshes] }, index }));
-  copies.sort((a, b) => a.target.key.localeCompare(b.target.key));
+  // Any fixed order serves: it only lets snapshots be compared target by target (identities come from `reconcile`).
+  copies.sort((a, b) => a.target.key < b.target.key ? -1 : a.target.key > b.target.key ? 1 : 0);
   const normalized: SharedOutlineContribution = { ...input, distanceFade: input.distanceFade ? { ...input.distanceFade } : undefined,
     color: [...input.color], targets: copies.map((copy) => copy.target) };
   inputOrders.set(normalized, copies.map((copy) => copy.index));

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Material, MeshBuilder, NullEngine, Scene, StandardMaterial, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { createActor, createDefaultScene, createMeshComponent, outlineBindings } from "@haptic/core";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
@@ -238,6 +238,39 @@ describe("authored scene outline host", () => {
     setSceneRenderSettings(scene, { mode: "cel" });
     host.refreshSettings();
     expect(host.view.contributions.get("global")?.targets.map((target) => target.key)).toEqual(["a", "d", "renamed"]);
+  });
+
+  it("publishes a batch's spawns and retirements as one snapshot, and what a failing batch changed", () => {
+    let invalidations = 0;
+    const { scene, host } = setup(() => invalidations++);
+    setSceneRenderSettings(scene, { mode: "cel" });
+    host.refreshSettings();
+    const meshes = ["m0", "m1", "m2", "m3", "m4", "m5"].map((name) => MeshBuilder.CreateBox(name, {}, scene));
+    host.setActor("a0", [meshes[0]!], []);
+    const publish = vi.spyOn(host.view, "replaceContributions");
+    const before = invalidations;
+    host.batch(() => {
+      for (let i = 1; i < 6; i++) host.setActor(`a${i}`, [meshes[i]!], []);
+      host.removeActor("a0");
+      host.setActor("a5", [meshes[5]!], [], "a5");
+      expect(publish).not.toHaveBeenCalled();
+    });
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(invalidations).toBe(before + 1);
+    expect(host.view.contributions.get("global")?.targets.map((target) => target.key)).toEqual(["a1", "a2", "a3", "a4", "a5"]);
+    expect(host.view.meshesForGroup("strict")).toEqual(meshes.slice(1));
+    // Selection reads the batch's members: it publishes them first.
+    host.batch(() => {
+      host.setActor("a0", [meshes[0]!], []);
+      host.selection.set([meshes[0]]);
+      expect(host.selection.selected()).toEqual([meshes[0]]);
+    });
+    expect(host.view.contributions.get("selection")?.targets.map((target) => target.key)).toEqual(["a0"]);
+    expect(() => host.batch(() => {
+      host.removeActor("a1");
+      throw new Error("snapshot failed");
+    })).toThrow("snapshot failed");
+    expect(host.view.contributions.get("global")?.targets.map((target) => target.key)).toEqual(["a0", "a2", "a3", "a4", "a5"]);
   });
 
   it("keeps editor guides out of gameplay masks and removes only global CEL on a mode change", () => {
