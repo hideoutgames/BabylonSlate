@@ -46,7 +46,7 @@ index.html          # player CSS inlined; itch requires it at the zip root
 player.js           # one bundle; workers and the page's on-demand wasm runtimes stay separate files
 game.json           # catalog: required dependencies, paths, byte lengths, SHA-256
 assets/data-<n>.bin # one per asset or sidecar
-coi-serviceworker.js, havok/ (3D), assets/rapier-*.js (2D or physics SceneLayers), ktx2/, draco/, meshopt/
+coi-serviceworker.js, havok/ (3D), assets/rapier-*.js and rapier/ (2D or physics SceneLayers), ktx2/, draco/, meshopt/
 player-rapier.js, player-HavokPhysics_es.js, player-recast-navigation.wasm-compat.js
 ```
 
@@ -55,6 +55,7 @@ player-rapier.js, player-HavokPhysics_es.js, player-recast-navigation.wasm-compa
 - Sidecars use typed ids: `navmesh:<sceneGuid>` (`NavMesh`), `audioReverb:<sceneGuid>`, `font-facetype:`, `font-msdf:`, `font-msdf-png:`, area emission. Packed Audio is a **BSAU** envelope, packed Model a **BSMO** envelope (payload incl. `importScale`, `materialSlots`, `autoLod` + GLB).
 - `selectPlayerRuntimeFiles` keeps Havok for 3D, Rapier for 2D, and Rapier in 3D only when a reached SceneLayer enables physics (an unreadable layer keeps it).
 - The Havok wasm ships once, as `havok/HavokPhysics.wasm` (copied from `apps/editor/public/havok/`); the page and the game worker both load that URL. `havokHostedWasmVitePlugin` ([`apps/editor/vite-havok-wasm.ts`](../../../apps/editor/vite-havok-wasm.ts)) removes the Havok glue's unused `new URL("HavokPhysics.wasm", import.meta.url)` fallback in the editor and player page and worker builds, which would otherwise emit a 2 MB copy per bundle into every 3D export and native shell.
+- The Rapier 2D wasm ships once, as `rapier/rapier_wasm2d.wasm`, which the page's and the game worker's Rapier chunks both fetch. `rapierHostedWasmVitePlugin` ([`apps/editor/vite-rapier-wasm.ts`](../../../apps/editor/vite-rapier-wasm.ts)) emits it from the base64 copy the compat glue embeds and hands its URL to the glue's `init` in the editor and player page and worker builds, which would otherwise carry a 3.4 MB copy per bundle into every 2D export and native shell. It fails the build if a Rapier upgrade changes that glue; the path keeps `rapier`, so `selectPlayerRuntimeFiles` drops it with the Rapier chunks.
 - Filenames stay distinct on case-insensitive filesystems and cannot contain separators or Windows reserved names. File count warns at 800 and fails at 1000 by default (preset-overridable) because itch caps uploads.
 - `zipExport` uses a fixed local-noon 1980-01-01 mtime (`SAFE_ZIP_MTIME`): UTC midnight is 1979 west of UTC and DOS dates reject it.
 - `game.json` carries `project: { name, version }` (Get Project Name / Version; the player refuses a manifest without it), `render` normalized by `normalizeRenderProjectSettings`, `playFrameCap`, 2D settings, `physicsWorld`, audio settings, and `assets[]` with `assetPath` for authored entries. Debugger loop settings appear only when `bundleDebugger` is true. `parseGameManifest` rejects outdated manifests and asks for a rebuild.

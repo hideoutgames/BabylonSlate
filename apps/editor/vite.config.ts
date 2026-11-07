@@ -12,6 +12,7 @@ import { engineBillboardsVitePlugin } from "./vite-engine-billboards.ts";
 import { featureTestEngineContentVitePlugin } from "./vite-engine-content.ts";
 import { playerHostVitePlugin } from "./vite-player-host.ts";
 import { havokHostedWasmVitePlugin } from "./vite-havok-wasm.ts";
+import { rapierHostedWasmVitePlugin } from "./vite-rapier-wasm.ts";
 import { validateChangelog, validatePatchNotes } from "../../scripts/distribution/changelog.mjs";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
@@ -85,6 +86,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     havokHostedWasmVitePlugin(),
+    rapierHostedWasmVitePlugin(),
     enginePluginsVitePlugin({
       sourceDir: path.join(repoRoot, "engine-plugins"),
       publicDir: path.join(rootDir, "public/engine-plugins"),
@@ -116,7 +118,7 @@ export default defineConfig({
   // bundled worker is constructed with `{ type: "module" }`; classic workers load from `public/` unbundled.
   worker: {
     format: "es",
-    plugins: () => [havokHostedWasmVitePlugin()],
+    plugins: () => [havokHostedWasmVitePlugin(), rapierHostedWasmVitePlugin()],
   },
   // Localhost only by default; `--host` opts in to LAN access (see README).
   server: {
