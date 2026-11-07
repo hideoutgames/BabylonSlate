@@ -189,6 +189,36 @@ describe("NumericDragField", () => {
     expect(onChange).toHaveBeenLastCalledWith(0);
   });
 
+  it("sends no edit for a move that leaves the value unchanged", () => {
+    const onChange = vi.fn();
+    const onDragEnd = vi.fn();
+    render(
+      <NumericDragField
+        label="Scale"
+        value={1}
+        sensitivity={1}
+        min={0}
+        max={2}
+        onChange={onChange}
+        onDragEnd={onDragEnd}
+        data-testid="field"
+      />,
+    );
+
+    const scrub = screen.getByTestId("field-scrub");
+    dispatchPointerEvent(scrub, "pointerdown", { clientX: 0 });
+    // A vertical drift moves no value.
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 0, clientY: 30 });
+    expect(onChange).not.toHaveBeenCalled();
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 100 });
+    // Further past the maximum stays at it.
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 150 });
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 200 });
+    expect(onChange.mock.calls).toEqual([[2]]);
+    dispatchPointerEvent(scrub, "pointerup", { clientX: 200 });
+    expect(onDragEnd).toHaveBeenCalledWith(2, "drag");
+  });
+
   it("ignores pointer moves from an unrelated pointer", () => {
     const onChange = vi.fn();
     render(

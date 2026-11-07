@@ -114,7 +114,8 @@ export function NumericDragField({
       if (!drag || drag.pointerId !== event.pointerId) return;
       const delta = (event.clientX - drag.startX) * sensitivity;
       const next = clamp(drag.startValue + delta, min, max);
-      if (validate?.(next)) return;
+      // A move that leaves the value as it is (vertical drift, past a limit) sends no edit.
+      if (next === drag.latest || validate?.(next)) return;
       drag.latest = next;
       onChange(next);
     },
