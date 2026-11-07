@@ -10,6 +10,8 @@ import {
   SceneLayer,
   SceneSubsystem,
   type EngineObject,
+  type LifecycleHooks,
+  type TickContext,
   type World,
 } from "@haptic/object-model";
 import type { SceneLayers } from "./scene-layers";
@@ -202,13 +204,26 @@ export class OwnerAdmission {
     try {
       run();
     } catch (error) {
-      if (isInfiniteLoopError(error)) {
-        // Stop must finish tearing down every owner even if On End loops.
-        if (!this.host.stopped()) throw error;
-        return;
-      }
-      this.host.reportError(error);
+      this.guardFailed(error);
     }
+  }
+
+  /** `guard` for a Tick hook, which runs per object per tick, without a closure per call. */
+  guardTick<T extends EngineObject>(hooks: LifecycleHooks<T> | undefined, self: T, ctx: TickContext): void {
+    try {
+      hooks?.onTick?.(self, ctx);
+    } catch (error) {
+      this.guardFailed(error);
+    }
+  }
+
+  private guardFailed(error: unknown): void {
+    if (isInfiniteLoopError(error)) {
+      // Stop must finish tearing down every owner even if On End loops.
+      if (!this.host.stopped()) throw error;
+      return;
+    }
+    this.host.reportError(error);
   }
 
   private canRunGameSubsystem(subsystem: GameSubsystem): boolean {
