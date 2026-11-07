@@ -1,5 +1,7 @@
 import { expect, it, vi } from "vitest";
-import { InputBlock, NodeMaterial, NullEngine } from "@babylonjs/core";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { createEngine } from "@haptic/render";
 import { adaptNullEngineFrameGraph } from "@haptic/render/framegraph-test-fixtures";
 // The renderer draws lit surfaces on the light block, as a shipped Engine does.

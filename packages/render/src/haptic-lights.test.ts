@@ -1,23 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  Color3,
-  DirectionalLight,
-  FreeCamera,
-  HemisphericLight,
-  LightBlock,
-  MeshBuilder,
-  NullEngine,
-  PBRMetallicRoughnessBlock,
-  PointLight,
-  RectAreaLight,
-  Scene,
-  ShadowGenerator,
-  SpotLight,
-  Vector3,
-  type Effect,
-  type Mesh,
-  type NodeMaterial,
-} from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { LightBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/lightBlock";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PBRMetallicRoughnessBlock } from "@babylonjs/core/Materials/Node/Blocks/PBR/pbrMetallicRoughnessBlock";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { RectAreaLight } from "@babylonjs/core/Lights/rectAreaLight";
+import { Scene } from "@babylonjs/core/scene";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { AreaEmissionPixels } from "@haptic/assets";
 import { normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";

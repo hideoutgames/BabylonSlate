@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  Constants,
-  NullEngine,
-  type RenderTargetWrapper,
-} from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
 import {
   managedRenderTargetResources,
   managedRenderTextureResource,

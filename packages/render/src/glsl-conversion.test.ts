@@ -1,5 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { AnimatedInputBlockTypes, ArcRotateCamera, MeshBuilder, NullEngine, PrecisionDate, Scene, Vector3 } from "@babylonjs/core";
+import { AnimatedInputBlockTypes } from "@babylonjs/core/Materials/Node/Blocks/Input/animatedInputBlockTypes";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PrecisionDate } from "@babylonjs/core/Misc/precisionDate";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { convertGlslToMaterial, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 

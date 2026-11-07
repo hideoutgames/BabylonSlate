@@ -1,13 +1,11 @@
-import {
-  CascadedShadowGenerator,
-  DirectionalLight,
-  MeshBuilder,
-  NullEngine,
-  Scene,
-  TransformNode,
-  UniversalCamera,
-  Vector3,
-} from "@babylonjs/core";
+import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { normalizeShadowSettings } from "@haptic/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { updateSceneRenderingSettings } from "./render-settings";

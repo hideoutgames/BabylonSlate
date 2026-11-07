@@ -1,31 +1,27 @@
 import { setSceneGameTimePaused } from "./scene-game-time";
 import { beginRenderFrameCapture } from "./render-frame-report";
-import {
-  type AbstractEngine,
-  Animation,
-  Constants,
-  DirectionalLight,
-  Effect,
-  PrecisionDate,
-  TransformNode,
-  FreeCamera,
-  MeshBuilder,
-  NodeMaterial,
-  NodeMaterialModes,
-  NullEngine,
-  NullEngineOptions,
-  PassPostProcess,
-  PBRMaterial,
-  PointLight,
-  RenderTargetTexture,
-  RawTexture,
-  Scene,
-  ScenePerformancePriority,
-  ShadowGenerator,
-  StandardMaterial,
-  Vector3,
-  Viewport,
-} from "@babylonjs/core";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Animation } from "@babylonjs/core/Animations/animation";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { Effect } from "@babylonjs/core/Materials/effect";
+import { PrecisionDate } from "@babylonjs/core/Misc/precisionDate";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
+import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
+import { PassPostProcess } from "@babylonjs/core/PostProcesses/passPostProcess";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Scene, ScenePerformancePriority } from "@babylonjs/core/scene";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";

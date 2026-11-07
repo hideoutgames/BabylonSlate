@@ -1,14 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  FreeCamera,
-  MeshBuilder,
-  RenderTargetTexture,
-  Scene,
-  StandardMaterial,
-  Vector3,
-  type AbstractMesh,
-  type Material,
-} from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Material } from "@babylonjs/core/Materials/material";
 import { createTestEngine } from "./test-support/test-engine";
 import {
   clampGizmoScreenScale,

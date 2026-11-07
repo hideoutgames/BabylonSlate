@@ -1,5 +1,26 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Bone, Logger, Matrix, Skeleton, Material, MeshBuilder, NodeMaterial, NullEngine, Observable, ParticleBlendMultiplyBlock, ParticleSystem, Scene, ShaderMaterial, Texture, TextureBlock, FragmentOutputBlock, type ClampBlock, type Effect, type InputBlock, type NodeMaterialConnectionPoint, type MorphTargetsBlock, type Rotate2dBlock } from "@babylonjs/core";
+import { Bone } from "@babylonjs/core/Bones/bone";
+import { Logger } from "@babylonjs/core/Misc/logger";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import { Material } from "@babylonjs/core/Materials/material";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Observable } from "@babylonjs/core/Misc/observable";
+import { ParticleBlendMultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleBlendMultiplyBlock";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import { Scene } from "@babylonjs/core/scene";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
+import { FragmentOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/fragmentOutputBlock";
+import type { ClampBlock } from "@babylonjs/core/Materials/Node/Blocks/clampBlock";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
+import type { MorphTargetsBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/morphTargetsBlock";
+import type { Rotate2dBlock } from "@babylonjs/core/Materials/Node/Blocks/rotate2dBlock";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,

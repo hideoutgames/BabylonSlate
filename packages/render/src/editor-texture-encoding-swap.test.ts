@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TextureBlock, type NodeMaterial, type Texture } from "@babylonjs/core";
+import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { createDefaultSpritePayload } from "@haptic/assets";
 import { createActor, createDefaultScene, createMeshComponent, type SerializedScene } from "@haptic/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";

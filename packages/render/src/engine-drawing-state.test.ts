@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { NullEngine } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { restoreEngineDrawingState, saveEngineDrawingState, createEngineDrawingState } from "./engine-drawing-state";
 
 const GL_FRONT = 1028;

@@ -1,22 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  CascadedShadowGenerator,
-  InternalTexture,
-  DirectionalLight,
-  MeshBuilder,
-  NullEngine,
-  PointLight,
-  SpotLight,
-  RenderTargetTexture,
-  Scene,
-  ShadowDepthWrapper,
-  ShadowGenerator,
-  StandardMaterial,
-  UniversalCamera,
-  TransformNode,
-  Vector3,
-  type Effect,
-} from "@babylonjs/core";
+import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
+import { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { ShadowDepthWrapper } from "@babylonjs/core/Materials/shadowDepthWrapper";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import { sceneShadowController } from "./shadow-controller";
 import { meshCastsShadows } from "./instance-pool";
 import { isForwardLightExcluded, syncForwardLightPolicy } from "./light-policy";

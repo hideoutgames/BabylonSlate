@@ -1,6 +1,23 @@
 import { setSceneGameTimePaused } from "./scene-game-time";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ArcRotateCamera, ArcTan2Block, Constants, FragmentOutputBlock, InputBlock, MeshBuilder, MultiplyBlock, NullEngine, PrecisionDate, Scene, TrigonometryBlock, TrigonometryBlockOperations, Vector3, VectorMergerBlock, type NodeMaterialBlock, type NodeMaterialConnectionPoint } from "@babylonjs/core";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { ArcTan2Block } from "@babylonjs/core/Materials/Node/Blocks/arcTan2Block";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { FragmentOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/fragmentOutputBlock";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { MultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/multiplyBlock";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PrecisionDate } from "@babylonjs/core/Misc/precisionDate";
+import { Scene } from "@babylonjs/core/scene";
+import {
+  TrigonometryBlock,
+  TrigonometryBlockOperations,
+} from "@babylonjs/core/Materials/Node/Blocks/trigonometryBlock";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { VectorMergerBlock } from "@babylonjs/core/Materials/Node/Blocks/vectorMergerBlock";
+import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
 import { CoverageClipBlock } from "./alpha-to-coverage";
 import { createDefaultMaterialDocument, lowerMaterialDocument, newCustomGlslProperties, type MaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";

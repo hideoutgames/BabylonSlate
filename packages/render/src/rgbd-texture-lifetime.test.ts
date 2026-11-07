@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Effect, Logger, NullEngine, RawTexture, Scene } from "@babylonjs/core";
+import { Effect } from "@babylonjs/core/Materials/effect";
+import { Logger } from "@babylonjs/core/Misc/logger";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Scene } from "@babylonjs/core/scene";
 import { RGBDTextureTools } from "@babylonjs/core/Misc/rgbdTextureTools";
 import { isSceneTextureWorkReady } from "./scene-perf";
 

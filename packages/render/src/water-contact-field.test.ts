@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ArcRotateCamera, FreeCamera, Matrix, Mesh, MeshBuilder, NullEngine, Scene, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, type QualityLevel } from "@haptic/core";
 import { createEditorGrid } from "./editor-grid";
 import { updateSceneRenderingSettings } from "./render-settings";

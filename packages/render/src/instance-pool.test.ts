@@ -1,18 +1,16 @@
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  InstancedMesh,
-  Material,
-  Mesh,
-  MeshBuilder,
-  MorphTargetManager,
-  NullEngine,
-  Scene,
-  ShaderMaterial,
-  Skeleton,
-  StandardMaterial,
-  TransformNode,
-  Vector3,
-} from "@babylonjs/core";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Material } from "@babylonjs/core/Materials/material";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { drawnMaterialVariants } from "./drawn-variants";
 import {
   instancingIneligibility,

@@ -1,5 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { Constants, FreeCamera, MeshBuilder, NullEngine, Scene, Vector3 } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { managedRenderReservations } from "./managed-render-resources";

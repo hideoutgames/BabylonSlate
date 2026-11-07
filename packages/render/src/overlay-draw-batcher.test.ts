@@ -1,4 +1,9 @@
-import { Mesh, MeshBuilder, NullEngine, RawTexture, StandardMaterial, type Scene } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import type { Scene } from "@babylonjs/core/scene";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sceneDrawBatcher } from "./draw-batching";
 import { beginEngineDrawCallFrame } from "./draw-calls";

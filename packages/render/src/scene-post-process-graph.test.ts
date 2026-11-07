@@ -1,11 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
-import {
-  Constants,
-  FreeCamera,
-  NullEngine,
-  Scene,
-  Vector3,
-} from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";

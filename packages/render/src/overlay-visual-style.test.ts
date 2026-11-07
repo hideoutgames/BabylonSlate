@@ -1,4 +1,7 @@
-import { Matrix, Mesh, MeshBuilder, StandardMaterial } from "@babylonjs/core";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { afterEach, expect, it, vi } from "vitest";
 import { createActor, identitySerializedTransform, parseText2DProperties } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";

@@ -1,6 +1,9 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine, PBRMaterial, Scene, TransformNode } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { Scene } from "@babylonjs/core/scene";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { createDefaultSpritePayload } from "@haptic/assets";
 import { createActor, createDefaultScene, createSkyboxComponent, emptySkyboxFaces } from "@haptic/core";
 import { EditorSceneSync } from "./editor-scene-sync";

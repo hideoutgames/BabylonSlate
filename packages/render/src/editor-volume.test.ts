@@ -1,4 +1,5 @@
-import { VertexBuffer, type AbstractMesh } from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";

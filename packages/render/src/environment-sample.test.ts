@@ -1,5 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { Matrix, MeshBuilder, NullEngine, Scene } from "@babylonjs/core";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,

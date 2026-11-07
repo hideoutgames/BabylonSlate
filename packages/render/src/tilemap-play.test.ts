@@ -1,4 +1,4 @@
-import { VertexBuffer } from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
 import { createTestEngine } from "./test-support/test-engine";

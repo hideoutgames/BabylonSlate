@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { InstancedMesh, Mesh, VertexBuffer } from "@babylonjs/core";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@haptic/assets";
 import { createTestEngine } from "./test-support/test-engine";
 import { loadModelContainer } from "./model-container";

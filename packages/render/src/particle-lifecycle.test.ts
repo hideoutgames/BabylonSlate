@@ -1,4 +1,9 @@
-import { MeshBuilder, NodeMaterial, NodeMaterialModes, NullEngine, ParticleSystem, Scene } from "@babylonjs/core";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import { Scene } from "@babylonjs/core/scene";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeParticleEmitterPayload, type ParticleLibrary, type ParticleLibraryEmitter } from "@haptic/assets";
 import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "@haptic/particle-graph";

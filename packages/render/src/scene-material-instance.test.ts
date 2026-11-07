@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { InputBlock, NodeMaterial, NullEngine, RawTexture, Scene, TextureBlock } from "@babylonjs/core";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
 import { createActor, createDefaultScene, createMeshComponent, type MaterialParameterValue, type SerializedScene } from "@haptic/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { EditorSceneSync } from "./editor-scene-sync";

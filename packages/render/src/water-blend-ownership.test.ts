@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { FreeCamera, type Mesh, NullEngine, Quaternion, Scene, Vector3, VertexBuffer } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Scene } from "@babylonjs/core/scene";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import {
   createDefaultWaterDefinition, createWaterBlendSample, DEFAULT_WATER_BLEND_DISTANCE, evaluateWaterBlend, normalizeWaterBody, WaterBlendIndex, type WaterBlendBody,
 } from "@haptic/core";

@@ -1,4 +1,5 @@
-import { Mesh, Quaternion, Vector3 } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { SNAPSHOT_FLAG_VISIBLE } from "@haptic/bridge";
 import { identitySerializedTransform, identityTransform } from "@haptic/core";
 import { afterEach, expect, it } from "vitest";

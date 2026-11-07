@@ -1,4 +1,4 @@
-import { NullEngine } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { describe, expect, it, vi } from "vitest";
 import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled } from "./registered-view-admission";
 

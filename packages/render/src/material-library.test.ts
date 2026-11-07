@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MeshBuilder, NullEngine, PointLight, Scene, Texture, TextureBlock, Vector3, type Effect, type Material } from "@babylonjs/core";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { Scene } from "@babylonjs/core/scene";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Material } from "@babylonjs/core/Materials/material";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,

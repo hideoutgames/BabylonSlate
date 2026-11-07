@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { MeshBuilder, Vector3 } from "@babylonjs/core";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { createTestEngine } from "./test-support/test-engine";
 import { PREVIEW_OWNER_MESH, meshGeometryRelativeTo } from "./particle-mesh-shape";
 

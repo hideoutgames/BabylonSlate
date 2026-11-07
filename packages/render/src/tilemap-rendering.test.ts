@@ -1,4 +1,11 @@
-import { Color3, HemisphericLight, Mesh, StandardMaterial, Vector3, VertexBuffer, type AbstractMesh, type NodeMaterial } from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createMeshComponent } from "@haptic/core";
 import { createDefaultSpritePayload, createDefaultTilemapPayload, normalizeTilesetPayload, setTile, type TilemapPayload } from "@haptic/assets";

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Mesh, NullEngine, Scene } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
 import { markLatticeComponentRoot, meshLatticeBinding, setLatticeBinding, type LatticeBinding } from "./lattice-deformer-binding";
 
 const cleanups: (() => void)[] = [];

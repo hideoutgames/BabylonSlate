@@ -1,4 +1,6 @@
-import { Matrix, Quaternion, Vector3, VertexBuffer, type Mesh } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   generateNavMesh,

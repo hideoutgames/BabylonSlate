@@ -1,4 +1,10 @@
-import { DirectionalLight, Matrix, MeshBuilder, NullEngine, Scene, SpotLight, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { afterEach, expect, it, vi } from "vitest";
 import { normalizeShadowSettings } from "@haptic/core";
 import { buildViewProjectionMatrix, PlanarMirrorCamera, PlanarMirrorMath, type MirrorPlane } from "./planar-mirror";

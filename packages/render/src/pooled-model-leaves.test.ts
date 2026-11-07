@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Animation, FreeCamera, InstancedMesh, Mesh, StandardMaterial, Vector3, type AnimationGroup } from "@babylonjs/core";
+import { Animation } from "@babylonjs/core/Animations/animation";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import { createTestEngine } from "./test-support/test-engine";
 import { encodeAnimatedLimbGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { sceneInstancePool, setSceneInstancing } from "./instance-pool";

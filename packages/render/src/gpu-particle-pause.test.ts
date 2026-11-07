@@ -1,4 +1,7 @@
-import { GPUParticleSystem, NullEngine, Scene, Vector3 } from "@babylonjs/core";
+import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, expect, it, vi } from "vitest";
 
 const engines: NullEngine[] = [];

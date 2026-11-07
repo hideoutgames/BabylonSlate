@@ -1,4 +1,10 @@
-import { Animation, AnimationGroup, Bone, Matrix, Mesh, Quaternion, Skeleton, TransformNode, Vector3 } from "@babylonjs/core";
+import { Animation } from "@babylonjs/core/Animations/animation";
+import { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
+import { Bone } from "@babylonjs/core/Bones/bone";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./test-support/test-engine";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";

@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Matrix, MeshBuilder, NullEngine, Scene } from "@babylonjs/core";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
 import {
   SHARED_OUTLINE_ATTRIBUTE,

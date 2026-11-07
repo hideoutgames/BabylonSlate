@@ -1,14 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
-import {
-  InputBlock,
-  Mesh,
-  NullEngine,
-  Scene,
-  ShaderMaterial,
-  Texture,
-  TextureBlock,
-} from "@babylonjs/core";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,

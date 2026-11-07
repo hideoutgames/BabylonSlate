@@ -1,4 +1,6 @@
-import { NullEngine, Scene, type AbstractEngine } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphExecuteTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/executeTask";
 import { afterEach, expect, it } from "vitest";

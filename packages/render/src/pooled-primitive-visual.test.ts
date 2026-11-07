@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { InstancedMesh, Logger, Mesh, NullEngine, Scene, StandardMaterial, type Material } from "@babylonjs/core";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Logger } from "@babylonjs/core/Misc/logger";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import type { Material } from "@babylonjs/core/Materials/material";
 import { sceneInstancePool, setSceneInstancing } from "./instance-pool";
 import { actorMeshName } from "./picking";
 import { onPooledLeafEjected, pooledLeafOf } from "./pooled-visuals";

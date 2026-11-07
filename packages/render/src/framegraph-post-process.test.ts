@@ -1,14 +1,12 @@
 import { afterEach, expect, it, vi } from "vitest";
-import {
-  NullEngine,
-  Scene,
-  Texture,
-  RawTexture,
-  InputBlock,
-  NodeMaterial,
-  Effect,
-  ShaderStore,
-} from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { Effect } from "@babylonjs/core/Materials/effect";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { OwnedPostProcess } from "./owned-post-process";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";

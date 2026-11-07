@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Color4, InstancedMesh, Mesh, StandardMaterial, type Scene } from "@babylonjs/core";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import type { Scene } from "@babylonjs/core/scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { instanceParameterOf } from "./instance-parameters";
 import { compileMaterialPlan } from "./material-compiler";

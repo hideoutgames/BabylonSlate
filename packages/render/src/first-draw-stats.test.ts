@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ArcRotateCamera, FresnelParameters, HemisphericLight, MeshBuilder, StandardMaterial, Vector3, type Scene } from "@babylonjs/core";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { FresnelParameters } from "@babylonjs/core/Materials/fresnelParameters";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 import { createTestEngine } from "./test-support/test-engine";
 import { FIRST_DRAW_STALL_MS, LONG_FRAMES_KEPT, openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 

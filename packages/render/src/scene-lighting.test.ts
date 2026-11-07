@@ -9,22 +9,19 @@ import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer, selectHapticLights } from "./h
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { createRenderDiagnostics } from "./render-diagnostics";
-import {
-  DirectionalLight,
-  MeshBuilder,
-  NullEngine,
-  NullEngineOptions,
-  type NodeMaterial,
-  PBRMaterial,
-  PointLight,
-  RectAreaLight,
-  Scene,
-  SpotLight,
-  StandardMaterial,
-  TransformNode,
-  UniversalCamera,
-  Vector3,
-} from "@babylonjs/core";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { RectAreaLight } from "@babylonjs/core/Lights/rectAreaLight";
+import { Scene } from "@babylonjs/core/scene";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createDefaultMaterialDocument,

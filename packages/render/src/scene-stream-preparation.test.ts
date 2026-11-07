@@ -1,4 +1,8 @@
-import { NullEngine, Scene, MeshBuilder, StandardMaterial, RawTexture } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeWaterBody } from "@haptic/core";
 import { prepareSceneStream } from "./scene-stream-preparation";

@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Constants, MeshBuilder, NullEngine, RawTexture, Scene, type Texture } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Scene } from "@babylonjs/core/scene";
+import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { nearestTexturesEnabled, observeNearestTextures, setNearestTextures, trackMaterialTexture } from "./nearest-textures";
 
 const NEAREST = Constants.TEXTURE_NEAREST_SAMPLINGMODE;

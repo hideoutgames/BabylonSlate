@@ -1,4 +1,11 @@
-import { Color4, Effect, GPUParticleSystem, NodeMaterial, NodeMaterialModes, ParticleSystem, Vector3, type Scene } from "@babylonjs/core";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Effect } from "@babylonjs/core/Materials/effect";
+import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Scene } from "@babylonjs/core/scene";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import {

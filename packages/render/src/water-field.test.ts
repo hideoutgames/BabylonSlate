@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { FreeCamera, MeshBuilder, NullEngine, Scene, Vector3, type Mesh } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { createDefaultWaterDefinition, normalizeWaterBody } from "@haptic/core";
 import { createLandscapeMesh } from "./landscape-mesh";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Mesh, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import {
   EditorSceneSync,
   applySceneToBabylonScene,

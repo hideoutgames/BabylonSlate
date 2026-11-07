@@ -1,5 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { Constants, EffectRenderer, FreeCamera, NullEngine, Scene, Vector3, Viewport } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { EffectRenderer } from "@babylonjs/core/Materials/effectRenderer";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import {
   createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, normalizeWaterDefinition, waterSpectrum, type WaterDefinition,
 } from "@haptic/core";

@@ -1,19 +1,14 @@
 import { afterEach, expect, it, vi } from "vitest";
-import {
-  BaseTexture,
-  CubeTexture,
-  NullEngine,
-  NullEngineOptions,
-  Scene,
-  SphericalPolynomial,
-  Vector3,
-  Matrix,
-  MeshBuilder,
-  PBRMaterial,
-  Quaternion,
-  RawTexture,
-  Texture,
-} from "@babylonjs/core";
+import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
+import { Vector3, Matrix, Quaternion } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { normalizeEnvironmentLightingSettings } from "@haptic/core";
 import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 import { ResourceCache } from "./resource-cache";

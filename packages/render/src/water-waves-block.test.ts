@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FreeCamera, Matrix, MeshBuilder, NullEngine, Scene, ShaderLanguage, Vector3, type AbstractMesh, type NodeMaterial } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import {
   createDefaultWaterDefinition, createWaterWaveOutput, normalizeWaterBody, RENDER_QUALITY_PROFILES, WATER_FFT_CASCADES_MAX, waterBankGain,
   waterEulerianGradient, waterSpectrum,

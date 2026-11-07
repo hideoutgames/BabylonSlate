@@ -1,4 +1,6 @@
-import { NullEngine, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, parseJoystick2DProperties, walkOverlayPointerHits } from "@haptic/core";
 import { Joystick2DInput } from "./joystick2d-input";

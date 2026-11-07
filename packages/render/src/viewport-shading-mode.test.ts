@@ -1,15 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  HemisphericLight,
-  Mesh,
-  MeshBuilder,
-  PBRMaterial,
-  RawTexture,
-  StandardMaterial,
-  Vector3,
-  type Effect,
-  type Scene,
-} from "@babylonjs/core";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Scene } from "@babylonjs/core/scene";
 import {
   createActor,
   createDefaultScene,

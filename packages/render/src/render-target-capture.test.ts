@@ -1,8 +1,19 @@
 import { setSceneGameTimePaused } from "./scene-game-time";
-import {
-  Constants, FreeCamera, Material, Mesh, MeshBuilder, MultiMaterial, NodeMaterial, NullEngine, ObjectRenderer, ParticleSystem, RawTexture, RenderTargetTexture,
-  Scene, StandardMaterial, Vector3,
-} from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Material } from "@babylonjs/core/Materials/material";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";

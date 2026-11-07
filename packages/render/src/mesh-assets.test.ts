@@ -1,13 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  Material,
-  type NodeMaterial,
-  MeshBuilder,
-  NullEngine,
-  Scene,
-  StandardMaterial,
-  Texture,
-} from "@babylonjs/core";
+import { Material } from "@babylonjs/core/Materials/material";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import {
   applyAlbedoTexture,
   installTextureBytes,

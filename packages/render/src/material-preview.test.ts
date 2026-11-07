@@ -1,17 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  Animation,
-  ArcRotateCamera,
-  Matrix,
-  MeshBuilder,
-  NullEngine,
-  NodeMaterial,
-  RenderTargetTexture,
-  Scene,
-  StandardMaterial,
-  Vector3,
-  VertexBuffer,
-} from "@babylonjs/core";
+import { Animation } from "@babylonjs/core/Animations/animation";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { MATERIAL_PREVIEW_MESHES, createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { normalizeCelShadingSettings } from "@haptic/core";
 import { isEngineDefaultMaterial } from "./default-material";

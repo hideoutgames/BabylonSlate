@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
-import {
-  MeshBuilder,
-  NullEngine,
-  Plane,
-  Scene,
-  Skeleton,
-  TransformNode,
-  Vector3,
-} from "@babylonjs/core";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Plane } from "@babylonjs/core/Maths/math.plane";
+import { Scene } from "@babylonjs/core/scene";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
 
 describe("shadow caster spatial selection", () => {

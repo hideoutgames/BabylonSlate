@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { NullEngine } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { createUIControl2DMesh, uiControl2DMesh } from "./ui-controls2d-mesh";

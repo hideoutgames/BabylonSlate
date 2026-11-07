@@ -1,4 +1,5 @@
-import { Material, Mesh } from "@babylonjs/core";
+import { Material } from "@babylonjs/core/Materials/material";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { installAssetBytes } from "@haptic/assets";
 import { installTextureBytes } from "./mesh-assets";
 import { afterEach, expect, it, vi } from "vitest";

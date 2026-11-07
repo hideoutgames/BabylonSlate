@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Color3, FreeCamera, Matrix, MeshBuilder, Vector3, NullEngine, Scene, ShaderLanguage, type AbstractMesh, type Mesh, type NodeMaterial } from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody } from "@haptic/core";
 import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { acquireAuthoredMaterialVariant, acquireWaterVariant, compileMaterialPlan, waterVariantBase, type CompiledMaterial } from "./material-compiler";

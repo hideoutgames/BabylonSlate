@@ -1,4 +1,6 @@
-import { FreeCamera, MeshBuilder, Quaternion, Vector3 } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { RuntimeObjectIdentity } from "@haptic/bridge";
 import { afterEach, expect, it, vi } from "vitest";
 import { createTestEngine } from "./test-support/test-engine";

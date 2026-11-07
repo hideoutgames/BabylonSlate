@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { FreeCamera, MeshBuilder, NullEngine, ObjectRenderer, Scene, Vector3, type AbstractMesh, type Effect } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import {
   COMPILE_AHEAD_LIMIT, DriverCompileWatch, pendingDriverCompiles, readinessScanMeshes, requestCompilesAhead,
 } from "./driver-compile";

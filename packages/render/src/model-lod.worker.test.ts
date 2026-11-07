@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { VertexData } from "@babylonjs/core";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import type { LodSimplifyInput } from "./model-lod-simplify";
 import type { ModelLodWorkerReply, ModelLodWorkerRequest } from "./model-lod.worker";
 

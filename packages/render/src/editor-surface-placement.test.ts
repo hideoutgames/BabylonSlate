@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { MeshBuilder, NullEngine, Scene, Vector3, type AbstractMesh } from "@babylonjs/core";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { createActor, createDefaultScene } from "@haptic/core";
 import { markEditorHelperMesh } from "./helper-mesh";
 import {

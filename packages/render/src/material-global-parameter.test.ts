@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Color4, InputBlock, NullEngine, Scene, Vector3 } from "@babylonjs/core";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { GlobalParameterSession, type GlobalParameterValueSource } from "./global-parameter-values";
