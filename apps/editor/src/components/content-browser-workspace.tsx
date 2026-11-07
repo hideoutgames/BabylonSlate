@@ -43,6 +43,7 @@ import {
   useRegistryState,
   useSourceControl,
   useTabOrder,
+  useThumbnailVersions,
 } from "../context/document-context";
 import type { OpenDocument } from "../services/document-service";
 import { useOptionalPlay } from "../context/play-context";
@@ -102,7 +103,7 @@ type ContentBrowserWorkspaceBodyProps = {
   actions: ReturnType<typeof useDocumentActions>;
   registry: ReturnType<typeof useRegistryState>;
   projectDocument: ReturnType<typeof useProjectState>["projectDocument"];
-  thumbnailVersions: ReturnType<typeof useEditorShellState>["thumbnailVersions"];
+  thumbnailVersions: ReturnType<typeof useThumbnailVersions>;
   thumbnailsEnabled: boolean;
   sourceControl: ReturnType<typeof useSourceControl>["sourceControl"];
   activeDocumentId: string | null;
@@ -1055,7 +1056,8 @@ export function ContentBrowserWorkspace({
   const actions = useDocumentActions();
   const registry = useRegistryState();
   const { projectDocument } = useProjectState();
-  const { thumbnailVersions, thumbnailsEnabled } = useEditorShellState();
+  const { thumbnailsEnabled } = useEditorShellState();
+  const thumbnailVersions = useThumbnailVersions();
   const { sourceControl } = useSourceControl();
   const activeDocumentId = useActiveDocumentId();
   const tabOrder = useTabOrder();

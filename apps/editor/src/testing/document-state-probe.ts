@@ -9,6 +9,7 @@ import {
   useSaveState,
   useSourceControl,
   useTabOrder,
+  useThumbnailVersions,
 } from "../context/document-context";
 
 /**
@@ -30,6 +31,7 @@ export function useDocumentStateProbe() {
     ...useSourceControl(),
     openDocuments: useOpenDocumentTabs(),
     tabOrder: useTabOrder(),
+    thumbnailVersions: useThumbnailVersions(),
   };
 }
 

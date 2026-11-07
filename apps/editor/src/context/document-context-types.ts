@@ -534,7 +534,6 @@ export type EditorShellState = Pick<
   | "pendingExclusiveScene"
   | "externalChangePrompt"
   | "undoHistoryNotice"
-  | "thumbnailVersions"
   | "thumbnailsEnabled"
 >;
 /** `useSourceControl()`: a new object whenever source control state changes. */

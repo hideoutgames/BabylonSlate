@@ -368,6 +368,7 @@ export function documentContextMock(
     },
     useDocumentKindsRevision: (kinds: readonly DocumentKind[]) =>
       documentKindsRevision(useMockValue().documentRevisions, kinds),
+    useThumbnailVersions: () => useMockValue().thumbnailVersions,
   };
   return new Proxy(moduleExports, {
     has: (target, key) => Reflect.has(target, key) || isHookName(key),

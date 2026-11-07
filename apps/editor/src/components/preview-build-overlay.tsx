@@ -22,7 +22,7 @@ import {
   previewTargetFromSrc,
 } from "../lib/preview-build-handoff";
 import { DebugConsole } from "./debug-console";
-import { useDebugConsoleLogs } from "../lib/use-debug-console-logs";
+import { useDebugConsoleLogs, useShownDebugConsoleLogs } from "../lib/use-debug-console-logs";
 import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
 import { Separator } from "@haptic/ui/components/separator";
 import { PlayChromeTool, ProfilerRecordingChip } from "./play-overlay-chrome";
@@ -85,7 +85,9 @@ export function PreviewBuildOverlay({
   const [consoleOpen, setConsoleOpen] = useState(false);
   // The player starts with Stats hidden; console commands report changes back.
   const [statsOpen, setStatsOpen] = useState(false);
-  const { logs, pushLog } = useDebugConsoleLogs();
+  const logFeed = useDebugConsoleLogs();
+  const pushLog = logFeed.push;
+  const logs = useShownDebugConsoleLogs(logFeed, consoleOpen);
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
   const [treeOpen, setTreeOpen] = useState(false);
   const [userCommands, setUserCommands] = useState<

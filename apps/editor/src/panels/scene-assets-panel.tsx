@@ -64,9 +64,9 @@ import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group
 import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
 import {
   useDocumentActions,
-  useEditorShellState,
   useOpenDocument,
   useRegistryState,
+  useThumbnailVersions,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useEditorSessionState } from "../context/editor-session-state-context";
@@ -187,7 +187,7 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
   const simulating = usePlaySimulationDocumentId() === documentId;
   const shown = useDockPanelShown(api);
   const { openDocument, loadAssetThumbnail } = useDocumentActions();
-  const { thumbnailVersions } = useEditorShellState();
+  const thumbnailVersions = useThumbnailVersions();
   const { assetRegistry, registryEpoch, pluginDescriptors } = useRegistryState();
   const projectSearch = useOptionalProjectSearch();
   const { viewportDropApi } = useSceneEditing();

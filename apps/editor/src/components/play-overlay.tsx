@@ -390,7 +390,10 @@ function PlayOverlayView({
   const [bridgeRate, setBridgeRate] = useState(0);
   const [threadStats, setThreadStats] = useState<Pick<PlayHudStats,
     "ticks" | "liveActors" | "snapshotCapacity" | "phaseMs" | "collectableObjects" | "garbageCollectionMs">>({});
-  const { logs, pushLog } = useDebugConsoleLogs();
+  // Lines reach the console through the feed, not this component's state, so a printing game
+  // does not re-render the overlay every frame.
+  const logFeed = useDebugConsoleLogs();
+  const pushLog = logFeed.push;
   const [treeOpen, setTreeOpen] = useState(false);
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
   // Test builds (or `?test`) expose e2e hooks as data attributes; other builds skip their polling.
@@ -1283,7 +1286,7 @@ function PlayOverlayView({
   const copyLoadDetails = () => {
     const session = sessionRef.current;
     const rendering = (() => { try { return session?.handle.renderDiagnostics() ?? null; } catch { return null; } })();
-    const problems = logs.filter((entry) => entry.severity === "error" || entry.severity === "warning" || entry.severity === "warn").slice(-15);
+    const problems = logFeed.getSnapshot().filter((entry) => entry.severity === "error" || entry.severity === "warning" || entry.severity === "warn").slice(-15);
     return formatSceneLoadReport({
       surface: "Play",
       scene: sceneAssetGuid ? `${sceneCatalog?.find((entry) => entry.guid === sceneAssetGuid)?.name ?? "Scene"} (${sceneAssetGuid})` : null,
@@ -1304,8 +1307,8 @@ function PlayOverlayView({
     });
   };
 
-  const probeStateRef = useRef({ sceneLoading, logs });
-  probeStateRef.current = { sceneLoading, logs };
+  const probeStateRef = useRef({ sceneLoading });
+  probeStateRef.current = { sceneLoading };
   useEffect(() => playProbes.register(PLAY_PROBE_KEY, {
     loadingPhase: () => probeStateRef.current.sceneLoading,
     tickIndex: () => sessionRef.current?.lastTickIndex() ?? 0,
@@ -1321,14 +1324,14 @@ function PlayOverlayView({
         rendering: session?.handle.renderDiagnostics() ?? null,
       };
     },
-    problemLogs: () => probeStateRef.current.logs
+    problemLogs: () => logFeed.getSnapshot()
       .filter((entry) => entry.severity === "error" || entry.severity === "warning" || entry.severity === "warn")
       .map(({ severity, message }) => ({ severity, message })),
     samplePresentedImage: () => sessionRef.current?.handle.samplePresentedImage() ?? Promise.resolve(null),
     executeConsoleCommand: (line) => sessionRef.current?.executeConsoleCommand(line)
       ?? Promise.resolve({ success: false, output: "Play is not running." }),
     stop: () => finishSessionRef.current(),
-  }), []);
+  }), [logFeed]);
 
   useEffect(() => {
     let raf = 0;
@@ -1477,7 +1480,7 @@ function PlayOverlayView({
         open={consoleOpen}
         onOpenChange={setConsoleOpen}
         commands={commands}
-        logs={logs}
+        logFeed={logFeed}
         inspectStore={inspectStore}
         sceneAssetGuid={sceneAssetGuid}
         scene={scene}

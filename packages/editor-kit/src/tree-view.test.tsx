@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Profiler } from "react";
 import {
   act,
   cleanup,
@@ -1367,5 +1368,78 @@ describe("TreeView", () => {
     expect(
       screen.getByTestId("tree-row-other").getAttribute("data-drop-target"),
     ).toBeNull();
+  });
+
+  it("re-renders on scroll only when the mounted rows change", () => {
+    const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(280);
+    try {
+      const items = Array.from({ length: 100 }, (_, index) => ({
+        id: `item-${index}`, label: `Item ${index}`, depth: 0, hasChildren: false, expanded: false,
+      }));
+      let commits = 0;
+      render(
+        <Profiler id="tree" onRender={() => { commits += 1; }}>
+          <TreeView nodes={items} data-testid="tree" />
+        </Profiler>,
+      );
+      const tree = screen.getByTestId("tree");
+      const mounted = () =>
+        screen.getAllByRole("treeitem").map((row) => Number(row.textContent?.replace("Item ", "")));
+      const range = (first: number, last: number) =>
+        Array.from({ length: last - first + 1 }, (_, index) => first + index);
+      const scrollTo = (top: number) => fireEvent.scroll(tree, { target: { scrollTop: top } });
+      // Ten 28px rows fill the viewport, plus four overscan rows.
+      expect(mounted()).toEqual(range(0, 13));
+      scrollTo(30);
+      expect(mounted()).toEqual(range(0, 15));
+      // React may render once more after a commit to confirm an unchanged
+      // state; later unchanged updates skip rendering.
+      scrollTo(33);
+      const settled = commits;
+      // Scrolls inside the second row keep the same rows mounted.
+      for (const top of [35, 40, 45, 50, 55]) scrollTo(top);
+      expect(commits).toBe(settled);
+      expect(mounted()).toEqual(range(0, 15));
+      scrollTo(200);
+      expect(commits).toBe(settled + 1);
+      // The keyboard's active row (the first) stays mounted.
+      expect(mounted()).toEqual([0, ...range(3, 21)]);
+    } finally {
+      height.mockRestore();
+    }
+  });
+
+  it("re-renders during a reparent drag only when the drop hint changes", () => {
+    let commits = 0;
+    render(
+      <Profiler id="tree" onRender={() => { commits += 1; }}>
+        <TreeView nodes={nodes} onReparent={() => {}} data-testid="tree" />
+      </Profiler>,
+    );
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
+    const moveTo = (clientY: number) =>
+      act(() => {
+        dispatchPointerEvent(tree, "pointermove", { pointerType: "mouse", clientX: 10, clientY });
+      });
+    dispatchPointerEvent(screen.getByTestId("tree-row-child"), "pointerdown", {
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 40,
+    });
+    // The middle of Other (rows are 28px from 0): nest into it.
+    moveTo(66);
+    expect(screen.getByTestId("tree-row-other").getAttribute("data-drop-target")).toBe("true");
+    // React may render once more after a commit to confirm an unchanged
+    // state; later unchanged updates skip rendering.
+    moveTo(67);
+    const settled = commits;
+    for (const clientY of [68, 70, 72, 74]) moveTo(clientY);
+    expect(commits).toBe(settled);
+    // Its bottom edge band: drop after it.
+    moveTo(80);
+    expect(commits).toBe(settled + 1);
+    expect(screen.getByTestId("tree-row-other").getAttribute("data-drop-after")).toBe("true");
   });
 });
