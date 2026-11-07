@@ -18,6 +18,7 @@ import {
 import {
   applyAssignMesh,
   applyComponentTransformsCommand,
+  applyPossessCamera,
   applySnapshotToScene,
   createSnapshotSceneBinding,
   retirePlaySlot,
@@ -93,7 +94,7 @@ describe("spring arm", () => {
         slotId: 0,
         meshAssetGuid: null,
         meshKind: "springarm",
-        camera: { projectionMode: "perspective", isDefault: true },
+        camera: { projectionMode: "perspective" },
         parts: [
           {
             componentId: "arm",
@@ -116,6 +117,8 @@ describe("spring arm", () => {
           },
         ],
       });
+      // Play looks through the arm's camera once the runtime possesses the actor.
+      applyPossessCamera(scene, binding, 0);
     }
 
     function snapshot(

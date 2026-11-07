@@ -618,6 +618,19 @@ export function sceneDefaultCameraActor(scene: Pick<SerializedScene, "actors" | 
   return actor && actorCameraComponent(actor) ? actor : null;
 }
 
+/**
+ * The orange outline the 2D viewport draws: the Layer Camera's view at zoom 1
+ * (Layer Camera Width × Height) centred on its Layer Camera Location. A world
+ * Scene that starts on a Default Camera actor draws none, because Play does
+ * not start on its Layer Camera; a Scene Layer always draws its canvas.
+ */
+export function sceneLayerCameraFrame(
+  scene: Pick<SerializedScene, "actors" | "settings" | "overlayEditor">,
+): { width: number; height: number; center: [number, number] } | null {
+  if (!scene.overlayEditor && sceneDefaultCameraActor(scene)) return null;
+  return { ...scene.settings.cameraBounds2D, center: [...scene.settings.cameraLocation2D] };
+}
+
 /** The Camera component an actor is looked through: its first one. */
 export function actorCameraComponent<T extends { classId: string }>(actor: { components: readonly T[] }): T | null {
   return actor.components.find((component) => component.classId === "CameraComponent") ?? null;

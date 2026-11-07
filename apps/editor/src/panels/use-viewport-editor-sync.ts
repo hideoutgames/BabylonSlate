@@ -1,5 +1,5 @@
 import { useEffect, type RefObject } from "react";
-import { isSceneLayerAnchorActor, type SerializedScene } from "@haptic/core";
+import { isSceneLayerAnchorActor, sceneLayerCameraFrame, type SerializedScene } from "@haptic/core";
 import type { EngineHandle } from "@haptic/render";
 import { useAppSettings } from "../context/app-settings-context";
 import { useProjectState, useRegistryState } from "../context/document-context";
@@ -149,19 +149,22 @@ export function useViewportEditorSync({
     });
   }, [scene?.settings.grid, snapEnabled, engineEpoch, engineRef]);
 
+  // The frame hides while the Scene starts on a Default Camera actor, so it follows actor edits too.
+  const cameraFrame = scene ? sceneLayerCameraFrame(scene) : null;
+  const cameraFrameKey = JSON.stringify(cameraFrame);
   useEffect(() => {
     const settings = scene?.settings;
     if (!settings) return;
     engineRef.current?.editor?.setGridSettings({
       tileSize: settings.grid.tileSize,
       tileSubdivisions: settings.grid.tileSubdivisions,
-      cameraBounds2D: settings.cameraBounds2D,
+      cameraBounds2D: cameraFrameKey === "null" ? null : JSON.parse(cameraFrameKey),
       showGrid: gridVisible,
     });
     // engineEpoch: the first scene payload often exists before createEngine.
     // Without it, this effect runs once with a null engineRef and never
     // reapplies cameraBounds2D (orange frame missing until Show Grid).
-  }, [scene?.settings, viewportMode, gridVisible, engineEpoch, engineRef]);
+  }, [scene?.settings, cameraFrameKey, viewportMode, gridVisible, engineEpoch, engineRef]);
 
   useEffect(() => {
     engineRef.current?.editor?.grid.setVisible(gridVisible);

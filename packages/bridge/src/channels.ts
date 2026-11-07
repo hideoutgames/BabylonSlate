@@ -1199,8 +1199,8 @@ export type CommandMessage =
       ownerSceneGuid: string | null;
       postProcessStack: ScenePostProcessEntry[];
       layerBounds?: { width: number; height: number };
-      /** The instance's Layer Camera pose at creation: the asset's Camera Location. */
-      camera: LayerCameraState;
+      /** The instance's Layer Camera pose at creation (the asset's Camera Location); absent is the default pose. */
+      camera?: LayerCameraState;
     }
   | { type: "sceneLayerRemove"; layerId: string }
   | { type: "sceneLayerClear" }

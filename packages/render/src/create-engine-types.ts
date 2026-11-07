@@ -576,8 +576,8 @@ export interface EditorTools {
   setGridSettings: (settings: {
     tileSize: number;
     tileSubdivisions: number;
-    /** The orange frame; `center` offsets it from the origin (SceneLayerActor Prefab Root pivot). */
-    cameraBounds2D: EditorCameraBounds2D;
+    /** The orange frame, or null for none; `center` offsets it from the origin (Layer Camera Location, SceneLayerActor Prefab Root pivot). */
+    cameraBounds2D: EditorCameraBounds2D | null;
     showGrid?: boolean;
   }) => void;
   /** Select actors by id; passing an empty list clears the selection. */

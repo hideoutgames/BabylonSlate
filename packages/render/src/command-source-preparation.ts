@@ -79,7 +79,7 @@ export class CommandSourcePreparation {
       return true;
     }
     if (command.type !== "assignMesh" && command.type !== "assignMaterial" && command.type !== "assignParticle") {
-      if ("slotId" in command && this.slotPending(command.slotId)) {
+      if ("slotId" in command && command.slotId !== null && this.slotPending(command.slotId)) {
         const waiting = this.followers.get(command.slotId) ?? [];
         waiting.push({ command, apply });
         this.followers.set(command.slotId, waiting);

@@ -1,5 +1,6 @@
 import {
   ENVIRONMENT_SOURCES,
+  actorCameraComponent,
   createDefaultSceneSettings,
   normalizeSceneFogSettings,
   type EnvironmentSource,
@@ -13,7 +14,7 @@ import {
   type ClassPickerEntry,
   type PropertyRow,
 } from "@haptic/editor-kit";
-import { sceneComponentDisplayLabel } from "../lib/scene-component-entries";
+import { sceneActorDisplayLabel } from "../lib/scene-actor-entries";
 
 /** Scene rows shown inside the Environment Lighting section. */
 export const ENVIRONMENT_ROW_IDS = new Set(["scene-environment-source", "scene-environment-texture"]);
@@ -31,8 +32,8 @@ export interface SceneDetailsSettingsRowsInput {
 
 /**
  * The Scene Settings rows of a world Scene, and the subset a Scene Layer
- * shows, which adds Enable Physics and labels the 2D camera bounds Layer Width
- * and Layer Height.
+ * shows, which adds Enable Physics and labels its Layer Camera rows Layer
+ * Width, Layer Height and Camera Location.
  */
 export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): {
   settingsRows: PropertyRow[];
@@ -258,34 +259,8 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
           },
         ]
       : []),
-    {
-      kind: "asset",
-      id: "scene-default-camera",
-      label: "Default Camera",
-      value: scene.settings.mainCameraComponentId,
-      displayLabel: sceneComponentDisplayLabel(
-        scene,
-        scene.settings.defaultCameraActorId,
-        scene.settings.mainCameraComponentId,
-      ),
-      displayType: scene.settings.mainCameraComponentId
-        ? "CameraComponent"
-        : undefined,
-      visual: scene.settings.mainCameraComponentId
-        ? { classId: "CameraComponent", family: "class" }
-        : undefined,
-      placeholder: "None",
-      onPick: () => setCameraPickerOpen(true),
-      onChange: () =>
-        mutate({
-          ...scene,
-          settings: {
-            ...scene.settings,
-            defaultCameraActorId: null,
-            mainCameraComponentId: null,
-          },
-        }),
-    },
+    defaultCameraRow(scene, mutate, setCameraPickerOpen),
+    ...layerCameraRows(scene, mutate),
     {
       kind: "boolean",
       id: "scene-editor-joystick",
@@ -361,36 +336,6 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
           },
         }),
     },
-    {
-      kind: "number",
-      id: "scene-camera-bounds-width",
-      label: "2D Camera Width",
-      value: scene.settings.cameraBounds2D.width,
-      defaultValue: defaults.cameraBounds2D.width,
-      onChange: (width) =>
-        mutate({
-          ...scene,
-          settings: {
-            ...scene.settings,
-            cameraBounds2D: { ...scene.settings.cameraBounds2D, width },
-          },
-        }),
-    },
-    {
-      kind: "number",
-      id: "scene-camera-bounds-height",
-      label: "2D Camera Height",
-      value: scene.settings.cameraBounds2D.height,
-      defaultValue: defaults.cameraBounds2D.height,
-      onChange: (height) =>
-        mutate({
-          ...scene,
-          settings: {
-            ...scene.settings,
-            cameraBounds2D: { ...scene.settings.cameraBounds2D, height },
-          },
-        }),
-    },
   ];
 
   const layerPhysicsRow: PropertyRow = {
@@ -406,24 +351,99 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
         settings: { ...scene.settings, layerPhysicsEnabled },
       }),
   };
-  const overlaySettingsRows = settingsRows
-    .filter(
-      (row) =>
-        row.id === "scene-name" ||
-        row.id === "scene-gravity" ||
-        row.id === "scene-camera-bounds-width" ||
-        row.id === "scene-camera-bounds-height",
-    )
-    .flatMap((row) => {
-      if (row.id === "scene-gravity") return [layerPhysicsRow, row];
-      if (row.id === "scene-camera-bounds-width") {
-        return [{ ...row, label: "Layer Width" }];
-      }
-      if (row.id === "scene-camera-bounds-height") {
-        return [{ ...row, label: "Layer Height" }];
-      }
-      return [row];
-    });
+  const row = (id: string) => settingsRows.find((entry) => entry.id === id)!;
+  const [layerLocation, layerWidth, layerHeight] = layerCameraRows(scene, mutate);
+  // A Scene Layer's canvas is its camera's view: Layer Width and Height, and where its Layer Camera starts.
+  const overlaySettingsRows: PropertyRow[] = [
+    row("scene-name"),
+    layerPhysicsRow,
+    row("scene-gravity"),
+    { ...layerWidth!, label: "Layer Width" },
+    { ...layerHeight!, label: "Layer Height" },
+    { ...layerLocation!, label: "Camera Location" },
+  ];
 
   return { settingsRows, overlaySettingsRows };
+}
+
+/**
+ * Default Camera: a placed actor Play possesses when the Scene starts. Its
+ * status says when Play starts on the Layer Camera instead (no Camera
+ * component, or the actor is gone).
+ */
+function defaultCameraRow(
+  scene: SerializedScene,
+  mutate: (next: SerializedScene) => void,
+  setCameraPickerOpen: (open: boolean) => void,
+): PropertyRow {
+  const actorId = scene.settings.defaultCameraActorId;
+  const actor = actorId ? scene.actors.find((entry) => entry.id === actorId) : undefined;
+  return {
+    kind: "asset",
+    id: "scene-default-camera",
+    label: "Default Camera",
+    description: "The placed actor Play views through when the Scene starts. None starts on the Layer Camera.",
+    value: actorId,
+    displayLabel: sceneActorDisplayLabel(scene, actorId),
+    displayType: actor?.classId,
+    visual: actor ? { classId: actor.classId, family: "class" } : undefined,
+    placeholder: "None",
+    ...(actorId && !actor ? { status: "This actor is no longer in the Scene, so Play starts on the Layer Camera." }
+      : actor && !actorCameraComponent(actor) ? { status: "This actor has no Camera component, so Play starts on the Layer Camera." }
+        : {}),
+    onPick: () => setCameraPickerOpen(true),
+    onChange: () =>
+      mutate({
+        ...scene,
+        settings: { ...scene.settings, defaultCameraActorId: null },
+      }),
+  };
+}
+
+/** The Layer Camera's start: where it looks (the orange outline's centre) and the view it frames at zoom 1. */
+function layerCameraRows(
+  scene: SerializedScene,
+  mutate: (next: SerializedScene) => void,
+): PropertyRow[] {
+  const defaults = createDefaultSceneSettings();
+  const bounds = scene.settings.cameraBounds2D;
+  return [
+    {
+      kind: "vector3",
+      id: "scene-camera-location",
+      label: "Layer Camera Location",
+      value: [scene.settings.cameraLocation2D[0], scene.settings.cameraLocation2D[1], 0],
+      defaultValue: [defaults.cameraLocation2D[0], defaults.cameraLocation2D[1], 0],
+      axes: ["X", "Y"],
+      onChange: ([x, y]) =>
+        mutate({
+          ...scene,
+          settings: { ...scene.settings, cameraLocation2D: [x, y] },
+        }),
+    },
+    {
+      kind: "number",
+      id: "scene-camera-bounds-width",
+      label: "Layer Camera Width",
+      value: bounds.width,
+      defaultValue: defaults.cameraBounds2D.width,
+      onChange: (width) =>
+        mutate({
+          ...scene,
+          settings: { ...scene.settings, cameraBounds2D: { ...bounds, width } },
+        }),
+    },
+    {
+      kind: "number",
+      id: "scene-camera-bounds-height",
+      label: "Layer Camera Height",
+      value: bounds.height,
+      defaultValue: defaults.cameraBounds2D.height,
+      onChange: (height) =>
+        mutate({
+          ...scene,
+          settings: { ...scene.settings, cameraBounds2D: { ...bounds, height } },
+        }),
+    },
+  ];
 }

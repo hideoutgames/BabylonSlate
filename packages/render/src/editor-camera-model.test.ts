@@ -122,7 +122,6 @@ describe("editor camera model", () => {
     other.transform.position = [0, 0, 4];
     const data = { ...createDefaultScene(), actors: [primary, other] };
     data.settings.defaultCameraActorId = "primary";
-    data.settings.mainCameraComponentId = "camera";
     sync.apply(data);
     const model = scene.getMeshByName(editorComponentMeshName("other", "camera")) as Mesh;
     // The editor never freezes its active queue; collect the current frame's members.

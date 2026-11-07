@@ -19,9 +19,9 @@ import {
   sceneLayerCanvasToLayer,
   sceneLayerOrthoBounds,
   sceneLayerViewBounds,
-  SCENE_LAYER_DEFAULT_CAMERA,
+  DEFAULT_LAYER_CAMERA_STATE,
   type OverlayPointerHit,
-  type SceneLayerCamera,
+  type LayerCameraState,
   type SceneLayerHitTest,
   type ScenePostProcessEntry,
   type MaterialParameterValue,
@@ -59,7 +59,7 @@ export interface SceneLayerView {
   /** The ortho extent at zoom 1: Layer Width × Height widened to the output aspect. */
   viewBounds: { width: number; height: number };
   /** The camera centre, roll and zoom scripts set; with `viewBounds` it maps the canvas into the layer (`sceneLayerCanvasToLayer`). */
-  cameraState: SceneLayerCamera;
+  cameraState: LayerCameraState;
 }
 
 export interface SceneLayerCompositorOptions {
@@ -159,7 +159,7 @@ export class SceneLayerCompositor {
       renderer: new SceneRenderCoordinator(scene),
       designBounds: sceneLayerOrthoBounds(command.layerBounds),
       viewBounds: sceneLayerViewBounds(command.layerBounds, this.outputAspect()),
-      cameraState: { ...SCENE_LAYER_DEFAULT_CAMERA },
+      cameraState: { ...(command.camera ?? DEFAULT_LAYER_CAMERA_STATE) },
       hudPose: null,
       postProcessStack: command.postProcessStack.map((entry) => ({ ...entry })),
       rtt: null,
@@ -231,7 +231,7 @@ export class SceneLayerCompositor {
   }
 
   /** Move, turn or zoom a layer's camera (`sceneLayerCamera`); the next pick and draw use it. */
-  setCamera(layerId: string, camera: Readonly<SceneLayerCamera>): void {
+  setCamera(layerId: string, camera: Readonly<LayerCameraState>): void {
     const layer = this.byId.get(layerId);
     if (!layer) return;
     layer.cameraState = { ...camera };

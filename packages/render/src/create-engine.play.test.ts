@@ -4092,7 +4092,6 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 1 });
@@ -4134,7 +4133,6 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 1 });
@@ -4175,7 +4173,7 @@ describe("Play createEngine view", () => {
     expect(handle.assignedMaterialGuids()).toEqual(["mat-rock"]);
   });
 
-  it("draws the post-process stack from the authored Default Camera", async () => {
+  it("draws the post-process stack from the Layer Camera, then from a possessed camera", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -4189,8 +4187,7 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     await handle.prewarmSceneMaterials();
-    const fallback = handle.scene.getCameraByName("camera");
-    expect(handle.scene.activeCamera).toBe(fallback);
+    expect(handle.scene.activeCamera?.name).toBe("playLayerCamera");
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
 
     handle.applyCommand({
@@ -4198,8 +4195,9 @@ describe("Play createEngine view", () => {
       slotId: 1,
       meshKind: "camera",
       meshAssetGuid: null,
-      camera: { isDefault: true, projectionMode: "perspective" },
+      camera: { projectionMode: "perspective" },
     });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
     const buf = new Float32Array(snapshotFloatCount(8));
     writeSnapshotHeader(buf, {
       frameId: 1,
@@ -4224,7 +4222,7 @@ describe("Play createEngine view", () => {
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
   });
 
-  it("keeps the post-process stack on the fallback camera after Default Camera despawn", async () => {
+  it("keeps the post-process stack on the Layer Camera after the possessed camera despawns", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -4243,8 +4241,9 @@ describe("Play createEngine view", () => {
       slotId: 1,
       meshKind: "camera",
       meshAssetGuid: null,
-      camera: { isDefault: true, projectionMode: "perspective" },
+      camera: { projectionMode: "perspective" },
     });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
     const spawn = new Float32Array(snapshotFloatCount(8));
     writeSnapshotHeader(spawn, {
       frameId: 1,
@@ -4278,9 +4277,9 @@ describe("Play createEngine view", () => {
     callback?.();
 
     await handle.prewarmSceneMaterials();
-    const fallback = handle.scene.getCameraByName("camera");
-    expect(handle.scene.activeCamera).toBe(fallback);
-    expect(fallback?.isDisposed()).toBe(false);
+    const layerCamera = handle.scene.getCameraByName("playLayerCamera");
+    expect(handle.scene.activeCamera).toBe(layerCamera);
+    expect(layerCamera?.isDisposed()).toBe(false);
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
   });
 
@@ -4340,7 +4339,23 @@ describe("Play createEngine view", () => {
     return buf;
   }
 
-  it("lets the destination Default Camera win after play loadScene", () => {
+  it("views through the Scene's Layer Camera until a camera is possessed, and moves it on sceneCamera", () => {
+    const { handle } = playHandle(sharedEngine());
+    const layerCamera = handle.scene.getCameraByName("playLayerCamera");
+    expect(handle.scene.activeCamera).toBe(layerCamera);
+    handle.applyCommand({ type: "sceneCamera", camera: { x: 3, y: -1, rotation: 0, zoom: 2 }, bounds: { width: 20, height: 10 } });
+    expect(layerCamera?.position.asArray()).toEqual([3, -1, -500]);
+    expect(layerCamera?.orthoTop).toBeCloseTo(2.5);
+    handle.applyCommand({ type: "spawn", slotId: 1, actorGuid: "cam", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 1, meshKind: "camera", meshAssetGuid: null, camera: { projectionMode: "perspective" } });
+    expect(handle.scene.activeCamera).toBe(layerCamera);
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
+    expect(handle.scene.activeCamera?.name).toBe("authoredCamera:1");
+    handle.applyCommand({ type: "possessCamera", slotId: null });
+    expect(handle.scene.activeCamera).toBe(layerCamera);
+  });
+
+  it("drops the previous Scene's possession on play loadScene and lets the destination's win", () => {
     const { handle } = playHandle(sharedEngine());
     handle.applyCommand({
       type: "spawn",
@@ -4356,13 +4371,13 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: false,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 1 });
     expect(handle.scene.activeCamera?.name).toBe("authoredCamera:1");
 
     handle.loadScene(createDefaultScene());
+    expect(handle.scene.activeCamera?.name).toBe("playLayerCamera");
     handle.applyCommand({
       type: "spawn",
       slotId: 2,
@@ -4377,9 +4392,9 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
+    handle.applyCommand({ type: "possessCamera", slotId: 2 });
     expect(handle.scene.activeCamera?.name).toBe("authoredCamera:2");
     expect(handle.scene.getCameraByName("authoredCamera:1")).toBeFalsy();
   });
@@ -4409,7 +4424,6 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 1 });
@@ -4432,7 +4446,6 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 2 });
@@ -4459,7 +4472,6 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 1 });
@@ -4701,7 +4713,6 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 1 });
@@ -5614,7 +5625,7 @@ describe("Play createEngine view", () => {
     ).toBe(false);
   });
 
-  it("keeps the Default Camera active after a perspective-to-ortho switch and refreshes ortho on setSize", () => {
+  it("keeps a possessed camera active after a perspective-to-ortho switch and refreshes ortho on setSize", () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);
     handle.applyCommand({
@@ -5623,12 +5634,12 @@ describe("Play createEngine view", () => {
       meshKind: "camera",
       meshAssetGuid: null,
       camera: {
-        isDefault: true,
         projectionMode: "perspective",
         fieldOfView: 60,
         orthographicSize: 5,
       },
     });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
     const camera = handle.scene.getCameraByName(
       "authoredCamera:1",
     ) as UniversalCamera;
@@ -5639,7 +5650,6 @@ describe("Play createEngine view", () => {
       meshKind: "camera",
       meshAssetGuid: null,
       camera: {
-        isDefault: true,
         projectionMode: "orthographic",
         fieldOfView: 60,
         orthographicSize: 5,

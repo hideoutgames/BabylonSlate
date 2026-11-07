@@ -129,10 +129,13 @@ import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-bu
 import {
   AUTHORED_LIGHT_PREFIX,
   applySceneEnvironment as applySerializedSceneEnvironment,
+  cameraRenderAspect,
   refreshAuthoredCameraLenses,
+  sceneCameraLensExtent,
   setSceneCameraLensExtent,
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
+import { createWorldLayerCamera } from "./world-layer-camera";
 import { RenderScheduler } from "./render-scheduler";
 import { CommandSourcePreparation } from "./command-source-preparation";
 import {
@@ -887,6 +890,12 @@ function initializeEngine(
   binding.pixelsPerUnit = options.pixelsPerUnit;
   binding.sortingLayers = options.sortingLayers;
   binding.pixelPerfect = options.pixelPerfect === true;
+  // Play looks through the main Scene's Layer Camera until a camera actor is possessed.
+  const worldLayerCamera = options.playMode ? createWorldLayerCamera(scene) : null;
+  binding.layerCamera = worldLayerCamera?.camera ?? null;
+  const fitWorldLayerCamera = () =>
+    worldLayerCamera?.fit(cameraRenderAspect(engine.getRenderWidth(), engine.getRenderHeight()), sceneCameraLensExtent(scene));
+  fitWorldLayerCamera();
   if (options.nearestTextures !== undefined) setNearestTextures(engine, options.nearestTextures);
   // The Engine's other views (the editor's settings) switch it too: this view redraws with the new sampling.
   const releaseNearestTextures = observeNearestTextures(engine, () => scheduler.invalidate("asset"));
@@ -1745,6 +1754,7 @@ function initializeEngine(
     sceneLayerCompositor?.resize();
     setSceneCameraLensExtent(scene, 1);
     refreshAuthoredCameraLenses(scene);
+    fitWorldLayerCamera();
     notifyOverlayResize();
   };
 
@@ -1783,6 +1793,7 @@ function initializeEngine(
       // A pixelated framebuffer extended past the design size shows more world in its extra rows, not a larger one.
       setSceneCameraLensExtent(scene, playOutput ? pixelatedLensExtent(playOutput, lockedViewSize) : 1);
       refreshAuthoredCameraLenses(scene);
+      fitWorldLayerCamera();
       notifyOverlayResize();
     };
 
@@ -2949,6 +2960,10 @@ function initializeEngine(
       }
       if (command.type === "sceneLayerCamera") {
         sceneLayerCompositor?.setCamera(command.layerId, command.camera);
+        scheduler.invalidate("camera");
+      }
+      if (command.type === "sceneCamera") {
+        worldLayerCamera?.set(command.camera, command.bounds);
         scheduler.invalidate("camera");
       }
       audioService?.handleCommand(command);
