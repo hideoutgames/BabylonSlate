@@ -174,7 +174,7 @@ it("plans an FSR chain on its own and renders it at the scaled size", () => {
   expect(upscaledRenderSize(null, 1920, 1080)).toEqual({ width: 1920, height: 1080 });
 });
 
-it("plans Screen-Space Shadows on their own in PBR, never in CEL or with post-processing off, and keys their level", () => {
+it("plans Screen-Space Shadows on their own in PBR, never in CEL or with post-processing off, and keys only their presence", () => {
   const plain = effects();
   expect(planSceneEffects(plain, "pbr", true, { screenShadows: "off" })).toBeNull();
   expect(planSceneEffects(plain, "pbr", true, { screenShadows: "medium" })).toMatchObject({
@@ -182,8 +182,10 @@ it("plans Screen-Space Shadows on their own in PBR, never in CEL or with post-pr
   });
   expect(planSceneEffects(plain, "cel", true, { screenShadows: "medium" })).toBeNull();
   expect(planSceneEffects(plain, "pbr", false, { screenShadows: "medium" })).toBeNull();
-  const keys = (["off", "low", "high"] as const).map((screenShadows) => sceneEffectsKey(plain, "pbr", true, { screenShadows }));
-  expect(new Set(keys).size).toBe(3);
+  const [off, low, high] = (["off", "low", "high"] as const).map((screenShadows) => sceneEffectsKey(plain, "pbr", true, { screenShadows }));
+  // Every level is the same pass and target, its level only uniforms: a level change keeps the prepared graph.
+  expect(low).not.toBe(off);
+  expect(high).toBe(low);
   expect(sceneEffectsKey(plain, "cel", true, { screenShadows: "high" })).toBe(sceneEffectsKey(plain, "cel", true));
 });
 

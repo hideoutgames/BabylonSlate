@@ -214,7 +214,8 @@ export function sceneEffectsKey(
   const skipped = allowed
     ? `:skip${allowed.ambientOcclusion ? "" : "O"}${allowed.reflections ? "" : "R"}${allowed.volumetricLighting ? "" : "V"}`
     : "";
-  const screen = mode === "pbr" && inputs.screenShadows && inputs.screenShadows !== "off" ? `:screen${inputs.screenShadows}` : "";
+  // Presence only: a level is uniforms the pass reads live (`ScreenShadowsGraph`), so changing it rebuilds nothing.
+  const screen = mode === "pbr" && inputs.screenShadows && inputs.screenShadows !== "off" ? ":screen" : "";
   const fxaa = inputs.fxaa ? ":fxaa" : "";
   return `${mode}${JSON.stringify(effects)}${fxaa}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}${screen}`;
 }
