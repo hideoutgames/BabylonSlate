@@ -35,9 +35,16 @@ import { drawingMesh, isInstanceSource } from "./instance-source";
 export const REFLECTION_PROBE_RECAPTURE_DELAY_MS = 750;
 const NEAR = 0.05;
 
+/** The raw half-float cube a capture draws into, with its depth, under its own lease. */
+type ProbeCapture = { texture: RenderTargetTexture; lease: ManagedRenderLease };
+
 type CaptureTarget = {
-  texture: RenderTargetTexture;
-  lease: ManagedRenderLease;
+  /**
+   * Null between captures in a runtime scene (Play, Preview Build, the exported player): lighting reads only the
+   * filtered cube, and the raw one is drawn again only when the static set changes, so it goes once the filtered cube
+   * publishes and the next capture makes a new one. An editor scene keeps it, as every settled document edit recaptures.
+   */
+  capture: ProbeCapture | null;
   filtered: FilteredEnvironmentTarget;
   /** What materials sample: the filtered cube, box-projected onto the probe's volume. */
   view: CubeTexture;
@@ -326,18 +333,15 @@ export class ReflectionProbes {
     return this.isStatic(mesh);
   }
 
-  private ensureTarget(probe: Probe): CaptureTarget | null {
-    if (probe.target) return probe.target;
+  /** The probe's raw capture cube under its own lease; null when the ledger refuses it. */
+  private createCapture(probe: Probe): ProbeCapture | null {
     const engine = this.scene.getEngine();
     const size = probe.properties.resolution;
     const bytes = captureBytes(size);
     const lease = beginManagedRenderAllocation(engine, bytes);
     if (!lease) return null;
-    let filtered: FilteredEnvironmentTarget | null = null;
     let texture: RenderTargetTexture | undefined;
     try {
-      filtered = createFilteredEnvironmentTarget(engine, size);
-      if (!filtered) { void releaseManagedRenderLeaseAfterDisposal(engine, lease); return null; }
       texture = new RenderTargetTexture(`reflectionProbe:${probe.actorId}:${probe.id}`, size, this.scene, {
         generateMipMaps: true, isCube: true, doNotChangeAspectRatio: true,
         type: engine.getCaps().textureHalfFloatRender ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE,
@@ -348,6 +352,43 @@ export class ReflectionProbes {
       texture.clearColor = this.scene.clearColor;
       texture.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
       lease.commit([{ handle: texture.getInternalTexture()!, bytes, category: "environment" }]);
+      return { texture, lease };
+    } catch (error) {
+      texture?.dispose();
+      void releaseManagedRenderLeaseAfterDisposal(engine, lease);
+      throw error;
+    }
+  }
+
+  private disposeCapture(capture: ProbeCapture): void {
+    capture.texture.dispose();
+    void releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), capture.lease);
+  }
+
+  private releaseCapture(target: CaptureTarget): void {
+    const capture = target.capture;
+    if (!capture) return;
+    target.capture = null;
+    this.disposeCapture(capture);
+  }
+
+  /** The probe's target with a capture cube to draw into; null when the ledger refuses either. */
+  private ensureTarget(probe: Probe): CaptureTarget | null {
+    const existing = probe.target;
+    if (existing?.capture) return existing;
+    const capture = this.createCapture(probe);
+    if (!capture) return null;
+    if (existing) {
+      existing.capture = capture;
+      this.bindFaces(probe, existing, capture.texture);
+      return existing;
+    }
+    const engine = this.scene.getEngine();
+    const size = probe.properties.resolution;
+    let filtered: FilteredEnvironmentTarget | null = null;
+    try {
+      filtered = createFilteredEnvironmentTarget(engine, size);
+      if (!filtered) { this.disposeCapture(capture); return null; }
       const view = filtered.cube.clone();
       filtered.target.texture!.incrementReferences();
       view._texture = filtered.target.texture;
@@ -361,21 +402,21 @@ export class ReflectionProbes {
       const sceneUbos = engine.supportsUniformBuffers
         ? Array.from({ length: 6 }, (_, face) => this.scene.createSceneUniformBuffer(`Reflection Probe ${probe.id} face ${face}`, { forceMono: true }))
         : [];
-      probe.target = { texture, lease, filtered, view, sceneUbos };
-      this.bindFaces(probe, probe.target);
-      return probe.target;
+      const target: CaptureTarget = { capture, filtered, view, sceneUbos };
+      probe.target = target;
+      this.bindFaces(probe, target, capture.texture);
+      return target;
     } catch (error) {
-      texture?.dispose();
+      this.disposeCapture(capture);
       filtered?.release();
-      void releaseManagedRenderLeaseAfterDisposal(engine, lease);
       throw error;
     }
   }
 
   /** Each face looks along its axis from the probe's centre (Babylon's ReflectionProbe convention). */
-  private bindFaces(probe: Probe, target: CaptureTarget): void {
+  private bindFaces(probe: Probe, target: CaptureTarget, texture: RenderTargetTexture): void {
     const scene = this.scene;
-    target.texture.onBeforeRenderObservable.add((face) => {
+    texture.onBeforeRenderObservable.add((face) => {
       if (target.sceneUbos.length) {
         scene.setSceneUniformBuffer(target.sceneUbos[face]!);
         scene.getSceneUniformBuffer().unbindEffect();
@@ -392,28 +433,30 @@ export class ReflectionProbes {
       if (target.sceneUbos.length) scene.finalizeSceneUbo();
       scene._forcedViewPosition = center;
     });
-    target.texture.onAfterUnbindObservable.add(() => { scene._forcedViewPosition = null; });
+    texture.onAfterUnbindObservable.add(() => { scene._forcedViewPosition = null; });
   }
 
   private capture(probe: Probe, signature: string): void {
+    // Refused: a published probe keeps its last filtered cube.
     const target = this.ensureTarget(probe);
     if (!target) { probe.failed = true; return; }
+    const texture = target.capture!.texture;
     const meshes: AbstractMesh[] = [];
     for (const mesh of admittedSceneMeshes(this.scene) ?? this.scene.meshes) if (this.eligible(mesh)) meshes.push(mesh);
-    target.texture.renderList = meshes;
+    texture.renderList = meshes;
     let drawn: boolean;
     this.capturing = true;
     try {
       drawn = withDrawPass(this.scene.getEngine(), "probes", () => drawOutsideSceneView(this.scene, () => {
         let ready = false;
-        drawBorrowedTarget(this.scene, target.texture, () => {
+        drawBorrowedTarget(this.scene, texture, () => {
           const engine = this.scene.getEngine();
           engine.setAlphaMode(Constants.ALPHA_DISABLE);
           engine.setDepthBuffer(true);
           engine.setDepthWrite(true);
           engine.setColorWrite(true);
-          ready = target.texture.isReadyForRendering();
-          if (ready) target.texture.render(false);
+          ready = texture.isReadyForRendering();
+          if (ready) texture.render(false);
         }, { restoreAlpha: true, wrapDrawFailure: false, message: "Reflection probe capture failed." });
         return ready;
       }, true));
@@ -429,7 +472,7 @@ export class ReflectionProbes {
     probe.busy = true;
     const engine = this.scene.getEngine();
     const current = () => !this.disposed && probe.target === target;
-    void filterEnvironment(engine, target.texture, target.filtered)
+    void filterEnvironment(engine, texture, target.filtered)
       .then(() => current() ? environmentPolynomial(target.filtered.cube, current, { rgbd: false, gamma: false, exactSrgb: false }) : null)
       .then((polynomial) => {
         if (!current()) return;
@@ -444,7 +487,11 @@ export class ReflectionProbes {
         probe.failed = true;
         console.warn(`[render] Reflection probe ${probe.id} filtering failed: ${String(error)}`);
       })
-      .finally(() => { probe.busy = false; });
+      .finally(() => {
+        probe.busy = false;
+        // The filter has read the raw cube: a runtime scene draws it again only when its static set changes.
+        if (current() && this.authored === null) this.releaseCapture(target);
+      });
   }
 
   private retire(probe: Probe): void {
@@ -453,10 +500,9 @@ export class ReflectionProbes {
     probe.published = false;
     if (!target) return;
     target.view.dispose();
-    target.texture.dispose();
+    this.releaseCapture(target);
     for (const ubo of target.sceneUbos) ubo.dispose();
     target.filtered.release();
-    void releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), target.lease);
   }
 
   private dispose(): void {
