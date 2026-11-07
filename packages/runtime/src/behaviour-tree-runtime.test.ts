@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CommandMessage } from "@haptic/bridge";
 import { createActor, createDefaultSceneSettings, quaternionToEulerDegrees, type SerializedScene } from "@haptic/core";
-import type { BehaviourTreeDocument, BlackboardDocument } from "@haptic/behaviour-tree";
+import { evaluateBehaviourTree, type BehaviourTreeDocument, type BlackboardDocument } from "@haptic/behaviour-tree";
 import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
+
+vi.mock("@haptic/behaviour-tree", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/behaviour-tree")>();
+  return { ...actual, evaluateBehaviourTree: vi.fn(actual.evaluateBehaviourTree) };
+});
 
 type BtNode = BehaviourTreeDocument["nodes"][number];
 
@@ -176,6 +181,39 @@ describe("BehaviourTreeRuntime", () => {
       expect(tickWith("none")).toBeUndefined();
       expect(tickWith("map-edit")).toMatchObject({ lookup: { a: 2 } });
       expect(tickWith("none")).toBeUndefined();
+    } finally { runtime.stop(); }
+  });
+
+  it("reuses a slot's evaluator hosts across ticks, and an abort reports the step of the tick that aborts", async () => {
+    const commands: CommandMessage[] = [];
+    const hold = { ...task("hold", "BTTask_Hold"), decorators: [{
+      id: "limit", classId: "bt.decorator.timeLimit", abortMode: "none" as const, observedKeys: [], properties: { durationMs: 150 },
+    }] };
+    const runtime = createInProcessRuntime({
+      seed: 1, maxActors: 4, seedDemoActors: false, dt: 0.1, playScene: guardScene(),
+      behaviourTrees: { "tree-1": { name: "Hold", rootId: "hold", blackboardGuid: null, nodes: [hold] } },
+      onCommand: (command) => commands.push(command),
+    });
+    const evaluate = vi.mocked(evaluateBehaviourTree);
+    try {
+      await runtime.loadScripts([{ assetGuid: "hold", classId: "BTTask_Hold", anchors: [],
+        source: `export function onBtTick(ctx) {}
+export function onAbort(ctx) { ctx.log("log", "Probe", "abort " + ctx.deltaSeconds); }`,
+        entryPoints: [{ name: "onBtTick", event: "onBtTick", isAsync: false }, { name: "onAbort", event: "onAbort", isAsync: false }] }]);
+      runtime.start();
+      runtime.realizePlayWorld();
+      evaluate.mockClear();
+      runtime.tick();
+      // Tick 2 runs at twice the step; its Time Limit abort reports that step, not the step the hosts were made in.
+      expect(runtime.executeConsoleCommand("slomo 2").success).toBe(true);
+      runtime.tick();
+      expect(commands.flatMap((command) => command.type === "log" && command.category === "Probe" ? [command.message] : []))
+        .toEqual(["abort 0.2"]);
+      const [first, second] = evaluate.mock.calls.map((call) => call[3]!);
+      expect(evaluate).toHaveBeenCalledTimes(2);
+      expect(second!.host).toBe(first!.host);
+      expect(second!.decoratorHost).toBe(first!.decoratorHost);
+      expect(second!.serviceHost).toBe(first!.serviceHost);
     } finally { runtime.stop(); }
   });
 

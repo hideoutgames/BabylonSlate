@@ -15,6 +15,7 @@ import {
   type BtEvalState,
   type BtEvalTrace,
   type BtResult,
+  type EvaluateBehaviourTreeOptions,
 } from "@haptic/behaviour-tree";
 import {
   actorChainWorldTransform,
@@ -41,6 +42,20 @@ const BT_TASK_ACTIVATION = Symbol("btTaskActivation");
 type BtTaskActivation = { active: boolean; blackboard: BlackboardValues; result?: "success" | "failure" };
 /** The fields of a published `btState`, kept to skip unchanged ticks. */
 type BtStatePayload = Pick<BtEvalState, "status" | "btNodeId" | "lastResults" | "blackboard" | "stack">;
+
+/**
+ * What a slot's evaluation belongs to (component, tree and Blackboard), with the evaluator
+ * options its ticks reuse. The options' hosts call back for the actor and step `tickActor`
+ * writes before each evaluation; the evaluator keeps neither past the call.
+ */
+type SlotSource = {
+  componentGuid: string;
+  treeGuid: string;
+  blackboardGuid: string;
+  actor: Actor;
+  dtSeconds: number;
+  options: EvaluateBehaviourTreeOptions;
+};
 
 interface BehaviourTreeRuntimeHost {
   world(): World;
@@ -85,7 +100,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
   /** Every Play Sound voice each actor's tree started, oldest first. */
   private readonly voiceByActor = new Map<string, Set<string>>();
   /** The component, tree and Blackboard each slot's evaluation belongs to. */
-  private readonly sourceBySlot = new Map<number, { key: string; treeGuid: string }>();
+  private readonly sourceBySlot = new Map<number, SlotSource>();
   private readonly lastState = new Map<number, BtStatePayload>();
   /**
    * Per slot, a raw copy of the Blackboard whose sanitized form equals `lastState`'s, so an
@@ -616,38 +631,61 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
       return;
     }
     const blackboardGuid = this.stringGuid(component.getVariable("blackboardGuid")) ?? document.blackboardGuid;
-    const source = `${component.guid}\0${guid}\0${blackboardGuid ?? ""}`;
-    if (this.sourceBySlot.get(slotId)?.key !== source) {
-      if (this.sourceBySlot.has(slotId)) this.resetEvaluation(actor, slotId, dtSeconds);
-      this.sourceBySlot.set(slotId, { key: source, treeGuid: guid });
+    let source = this.sourceBySlot.get(slotId);
+    if (!source || source.componentGuid !== component.guid || source.treeGuid !== guid ||
+      source.blackboardGuid !== (blackboardGuid ?? "")) {
+      if (source) this.resetEvaluation(actor, slotId, dtSeconds);
+      source = this.slotSource(component.guid, guid, blackboardGuid ?? "", actor, dtSeconds);
+      this.sourceBySlot.set(slotId, source);
     }
+    source.actor = actor;
+    source.dtSeconds = dtSeconds;
     this.assetGuid = guid;
     const previous = this.evalBySlot.get(slotId) ?? null;
     // Evaluation copies its Blackboard input, so the previous state's is passed as is.
-    const blackboard: BlackboardValues = previous ? previous.blackboard : this.blackboardDefaults(blackboardGuid);
     const followed = component === this.debugComponent;
-    const next = evaluateBehaviourTree(document, previous, dtSeconds, {
-      seed: this.host.seed(),
-      trace: followed ? this.followedTrace(guid) : undefined,
-      breakpoints: this.treeBreakpoints(guid, component, actor),
-      blackboard,
+    const options = source.options;
+    options.blackboard = previous ? previous.blackboard : this.blackboardDefaults(blackboardGuid);
+    options.seed = this.host.seed();
+    options.trace = followed ? this.followedTrace(guid) : undefined;
+    options.breakpoints = this.treeBreakpoints(guid, component, actor);
+    let next: BtEvalState;
+    try {
+      next = evaluateBehaviourTree(document, previous, dtSeconds, options);
+    } finally {
+      // Between ticks the options hold no Blackboard or debugger.
+      options.blackboard = undefined;
+      options.trace = undefined;
+      options.breakpoints = undefined;
+    }
+    this.evalBySlot.set(slotId, next);
+    this.nodeId = null;
+    this.assetGuid = null;
+    if (followed) this.publishState(slotId, next);
+  }
+
+  /** A new source for a slot, with evaluator hosts that read the actor and step its ticks write. */
+  private slotSource(componentGuid: string, treeGuid: string, blackboardGuid: string, actor: Actor, dtSeconds: number): SlotSource {
+    const source: SlotSource = { componentGuid, treeGuid, blackboardGuid, actor, dtSeconds, options: {} };
+    source.options = {
       host: {
-        tick: (node, board, dtSeconds, memory) =>
-          this.tickTask(actor, node, board, dtSeconds, memory),
+        tick: (node, board, nodeDtSeconds, memory) =>
+          this.tickTask(source.actor, node, board, nodeDtSeconds, memory),
         abort: (node, board, memory) =>
-          this.abortTask(actor, node, board, memory, dtSeconds),
+          this.abortTask(source.actor, node, board, memory, source.dtSeconds),
       },
       decoratorHost: {
         evaluate: (decorator, _node, board) =>
-          this.evaluateDecorator(actor, decorator.classId, board, dtSeconds),
+          this.evaluateDecorator(source.actor, decorator.classId, board, source.dtSeconds),
       },
       serviceHost: {
-        tick: (service, _node, board, dtSeconds) => {
+        tick: (service, _node, board, serviceDtSeconds) => {
+          // A latent service script may keep its Blackboard accessors past the tick, so each call gets its own.
           this.host.scripts().invokeBtEvent(
             service.classId,
             "onBtTick",
-            actor,
-            dtSeconds,
+            source.actor,
+            serviceDtSeconds,
             {
               btFinish: () => undefined,
               btEvaluate: () => undefined,
@@ -659,11 +697,8 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
           );
         },
       },
-    });
-    this.evalBySlot.set(slotId, next);
-    this.nodeId = null;
-    this.assetGuid = null;
-    if (followed) this.publishState(slotId, next);
+    };
+    return source;
   }
 
   /** The tree's breakpoints as `component` evaluates it, or undefined when it has none. */
