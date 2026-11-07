@@ -18,7 +18,7 @@ for (const backend of ["webgl2"] as const) {
     expect(errors).toEqual([]);
     expect(result.mainCameraPreserved).toBe(true);
     expect(result.retainedBytes).toBe(0);
-    // A target with a depth texture (previews, views presented through a target, SceneLayers) depth-tests through it:
+    // A target with a depth texture (previews, views presented through a target) depth-tests through it:
     // of two crossing planes, the facing one shows left of the crossing and the turned one right of it; and no unused
     // depth renderbuffer of its size sits beside the texture.
     const { left, right, depthRenderbuffer } = result.depthTexture;
