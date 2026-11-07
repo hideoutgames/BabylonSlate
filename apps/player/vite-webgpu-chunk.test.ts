@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { OutputBundle } from "vite";
+import type { Rolldown } from "vite";
 import { webGpuChunkProblems } from "./vite-webgpu-chunk";
 
 const babylon = (path: string) => `/repo/node_modules/.pnpm/@babylonjs+core@9.29.0/node_modules/@babylonjs/core/${path}`;
 const render = (file: string) => `/repo/packages/render/src/${file}`;
 
-function bundle(modules: string[], imports: string[] = []): OutputBundle {
+function bundle(modules: string[], imports: string[] = []): Rolldown.OutputBundle {
   return {
     "player.js": { type: "chunk", fileName: "player.js", imports, modules: Object.fromEntries(modules.map((id) => [id, {}])) },
     "player-webgpu.js": { type: "chunk", fileName: "player-webgpu.js", imports: ["player.js"], modules: { [babylon("Engines/webgpuEngine.js")]: {} } },
-  } as unknown as OutputBundle;
+  } as unknown as Rolldown.OutputBundle;
 }
 
 describe("webGpuChunkProblems", () => {

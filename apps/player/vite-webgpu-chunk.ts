@@ -1,4 +1,4 @@
-import type { OutputBundle, Plugin } from "vite";
+import type { Plugin, Rolldown } from "vite";
 
 /**
  * Code only a WebGPU Engine runs: Babylon's WebGPU engine, caches and extensions, every WGSL shader (the stages Babylon
@@ -27,7 +27,7 @@ function shortId(id: string): string {
  * Why this build would make a WebGL2 game fetch or run WebGPU code: `player.js` statically importing another file,
  * or holding a WebGPU-only module some module that runs on both backends imports statically.
  */
-export function webGpuChunkProblems(bundle: OutputBundle, importersOf: (id: string) => readonly string[]): string[] {
+export function webGpuChunkProblems(bundle: Rolldown.OutputBundle, importersOf: (id: string) => readonly string[]): string[] {
   const entry = bundle["player.js"];
   if (entry?.type !== "chunk") return ["The player build emitted no player.js."];
   const problems = entry.imports.map((file) => `player.js statically imports ${file}, so every game fetches it at start.`);
