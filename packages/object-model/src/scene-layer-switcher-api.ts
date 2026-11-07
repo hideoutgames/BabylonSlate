@@ -1,3 +1,4 @@
+import { LAYER_CAMERA_VARIABLE } from "./camera-script-api";
 import type { EngineClassScriptApi, EngineScriptEvent, EngineScriptPin } from "./engine-script-api";
 
 const EXEC_IN: EngineScriptPin = { name: "exec", typeId: "exec", direction: "in" };
@@ -14,12 +15,16 @@ export const SCALABILITY_CHANGED_EVENT: EngineScriptEvent = {
 /** A Scene Layer's own script (`SceneLayer:<guid>`). */
 export const SCENE_LAYER_SCRIPT_API: EngineClassScriptApi = {
   classId: "SceneLayer",
+  variables: [LAYER_CAMERA_VARIABLE],
   nativeEvents: [SCALABILITY_CHANGED_EVENT],
 };
 
 export const SCENE_LAYER_ACTOR_SCRIPT_API: EngineClassScriptApi = {
   classId: "SceneLayerActor",
-  variables: [{ name: "Item Index", typeId: "int", propertyKey: "itemIndex", getOnly: true }],
+  variables: [
+    { name: "Item Index", typeId: "int", propertyKey: "itemIndex", getOnly: true },
+    LAYER_CAMERA_VARIABLE,
+  ],
   nativeEvents: [
     SCALABILITY_CHANGED_EVENT,
     { name: "On Scene Layer Actor Switched To", eventType: "flow.event.sceneLayerActorSwitchedTo", exportName: "onSceneLayerActorSwitchedTo" },

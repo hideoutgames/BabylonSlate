@@ -17,6 +17,7 @@ With nothing selected, the **Inspector** shows the layer's settings:
 | Enable Physics | Off by default. When on, each copy of the layer simulates its Rigid Bodies and Colliders in its own 2D world. |
 | Gravity | Gravity for that 2D world. |
 | Layer Width, Layer Height | Size of the design canvas in layer units. Default 32 × 18. |
+| Camera Location | Where the layer's camera starts: the centre of the view and of the orange design canvas. Default 0, 0. |
 | Post Processing | Post-process passes applied to this layer only. |
 
 ## What goes on a layer
@@ -57,21 +58,24 @@ Layers with a higher **Z-Order** draw on top. The same asset can be shown more t
 
 ## Move the layer camera
 
-Each layer shown in the game has its own 2D camera, separate from the world camera and from other layers. It starts centred on the design canvas at its normal size; scripts can pan, turn and zoom it, for example to scroll a map or a level-select screen.
+Each layer shown in the game has its own 2D **Layer Camera**, separate from the scene's camera and from other layers. It starts centred on **Camera Location** at its normal size; scripts can pan, turn and zoom it, for example to scroll a map or a level-select screen.
 
-| To | Use |
+Get it with **Get Layer Camera**: on the layer in its own script, on one of its **Scene Layer Actors** (their own layer's camera), or on the layer that [Create Scene Layer](../scripting/class/create-scene-layer.md) returns. The [Scene Camera Manager](../scripting/class/get-scene-camera-manager.md) never returns a layer's camera.
+
+| To | Use, on the Layer Camera |
 | --- | --- |
-| Pan | [Set Scene Layer Camera Location](../scripting/class/set-scene-layer-camera-location.md), [Add Scene Layer Camera Offset](../scripting/class/add-scene-layer-camera-offset.md), [Tween Scene Layer Camera Location](../scripting/class/tween-scene-layer-camera-location.md) |
-| Turn | [Set Scene Layer Camera Rotation](../scripting/class/set-scene-layer-camera-rotation.md), [Tween Scene Layer Camera Rotation](../scripting/class/tween-scene-layer-camera-rotation.md) |
-| Zoom | [Set Scene Layer Camera Zoom](../scripting/class/set-scene-layer-camera-zoom.md), [Tween Scene Layer Camera Zoom](../scripting/class/tween-scene-layer-camera-zoom.md) |
-| Read it | [Get Scene Layer Camera Location](../scripting/class/get-scene-layer-camera-location.md), [Get Scene Layer Camera Rotation](../scripting/class/get-scene-layer-camera-rotation.md), [Get Scene Layer Camera Zoom](../scripting/class/get-scene-layer-camera-zoom.md) |
+| Pan | **Set Camera Location**, **Add Camera Offset**, [Tween Layer Camera Location](../scripting/class/tween-layer-camera-location.md) |
+| Turn | **Set Camera Rotation**, [Tween Layer Camera Rotation](../scripting/class/tween-layer-camera-rotation.md) |
+| Zoom | **Set Camera Zoom**, [Tween Layer Camera Zoom](../scripting/class/tween-layer-camera-zoom.md) |
+| Read it | **Get Camera Location**, **Get Camera Rotation**, **Get Camera Zoom** |
 
-These nodes take the layer. A **Scene Layer Actor** finds its own with [Get Owning Scene Layer](../scripting/class/get-owning-scene-layer.md); [Create Scene Layer](../scripting/class/create-scene-layer.md) returns the layer it creates.
+The members work as for the scene's own camera; see [Script the camera](../graphics/cameras.md#script-the-camera).
 
-- Everything on the layer moves with its camera, including actors with a [2D Anchor](../components/2d-anchor.md). To keep a HUD still over a moving layer, put the HUD on another layer with a higher **Z-Order**.
+- Everything on the layer moves with its camera, including actors with a [2D Anchor](../components/2d-anchor.md). Anchors place content around the design canvas wherever **Camera Location** puts it. To keep a HUD still over a moving layer, put the HUD on another layer with a higher **Z-Order**.
 - Taps, buttons, scroll boxes, form controls, joysticks and [Project Cursor To Scene](../scripting/class/project-cursor-to-scene.md) follow the moved, turned or zoomed view.
 - While the camera is turned, a [2D Scroll Box](../components/2d-scroll-box.md) or [2D Mask](../components/2d-mask.md) clips to the smallest upright rectangle on screen that contains it.
-- The camera is not saved. Every layer starts with the default camera each time it is shown, and a Scene Layer open in the editor always shows the default view.
+- The moved camera is not saved. Every layer starts again at **Camera Location** each time it is shown, and a Scene Layer open in the editor always shows that starting view.
+- Once the layer is removed, its Layer Camera is no longer valid.
 
 ## Buttons and pointer events
 

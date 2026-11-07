@@ -63,6 +63,8 @@ interface RenderCommandEmitterHost {
   textAppear(): Pick<Text2DAppearRuntime, "progress">;
   materialParameters(): Pick<RuntimeMaterialParameters, "captureOverrides">;
   emit(command: CommandMessage): void;
+  /** The outlines the actor's 2D body casts 2D light shadows with, in its body's frame (`RuntimePhysicsWorlds.occluders2D`). */
+  occluders2D?(actor: Actor): Array<{ closed: boolean; points: number[] }>;
 }
 
 /**
@@ -183,9 +185,16 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
   private emitActorLights2D(actor: Actor, slotId: number): void {
     this.emitComponentBindings(slotId, this.state.light2DSlots, !actor.sceneLayerId && hasLiveComponent(actor, LIGHT_2D_CLASS_ID),
       () => light2DBindings(liveBindingInputs(actor, LIGHT_2D_CLASS_ID, (component) => Object.fromEntries(
-        ["enabled", "lightKind", "color", "intensity", "radius", "innerRadius", "outerAngle", "innerAngle"].map((key) =>
+        ["enabled", "lightKind", "color", "intensity", "radius", "innerRadius", "outerAngle", "innerAngle", "castShadows"].map((key) =>
           [key, key === "color" ? rgbTuple(component.getVariable(key)) : component.getVariable(key)])))),
       (lights) => this.host.emit({ type: "setLights2D", slotId, lights }));
+  }
+
+  /** The actor's 2D shadow casters: its 2D body's solid collider outlines, sent when they change and with its visual. */
+  emitActorOccluders2D(actor: Actor, slotId: number): void {
+    const shapes = actor.sceneLayerId ? [] : this.host.occluders2D?.(actor) ?? [];
+    this.emitComponentBindings(slotId, this.state.occluder2DSlots, shapes.length > 0, () => shapes,
+      (sent) => this.host.emit({ type: "setOccluders2D", slotId, shapes: sent }));
   }
 
   /** Send the slot's bindings when it `has` any, or the empty list when its last send (in `slots`) had some. */
@@ -197,11 +206,9 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
   }
 
   private cameraAssignPayload(
-    actor: Actor,
     camera: ActorComponent,
   ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["camera"]> {
     const projection = camera.getVariable("projectionMode");
-    const settings = this.host.playScene()?.settings;
     return {
       projectionMode:
         projection === "orthographic" ? "orthographic" : "perspective",
@@ -209,9 +216,6 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
       orthographicSize: Number(camera.getVariable("orthographicSize") ?? 5),
       nearClip: Number(camera.getVariable("nearClip") ?? 0.1),
       farClip: Number(camera.getVariable("farClip") ?? 1000),
-      isDefault:
-        settings?.mainCameraActorId === actor.guid &&
-        settings.mainCameraComponentId === camera.guid,
     };
   }
 
@@ -248,6 +252,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
     this.emitActorReflectionProbes(actor, slotId);
     this.emitActorAreaLights(actor, slotId);
     this.emitActorLights2D(actor, slotId);
+    this.emitActorOccluders2D(actor, slotId);
     const skipButtonMesh =
       overlayButtonHasSiblingVisual(actor) ||
       overlayButtonHasParentVisual(actor, this.host.world());
@@ -307,7 +312,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
               ...(component.classId === "2DPainterComponent" ? { painter: this.host.painters().payload(component) } : {}),
               ...(component.classId === "DynamicRuntimeMeshComponent" ? { dynamicMesh: this.host.dynamicMeshes().assign(component) } : {}),
               ...(component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" ? { light: lightAssignPayload(component) } : {}),
-              ...(component.classId === "CameraComponent" ? { camera: this.cameraAssignPayload(actor, component) } : {}),
+              ...(component.classId === "CameraComponent" ? { camera: this.cameraAssignPayload(component) } : {}),
               parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds),
             };
           })
@@ -323,8 +328,8 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
           component.classId === "2DTextComponent" ||
           component.classId === "2DRichTextComponent",
       );
-      const cameras = renderables.filter(component => component.classId === "CameraComponent");
-      const camera = cameras.find(component => this.cameraAssignPayload(actor, component).isDefault) ?? cameras[0];
+      // An actor is looked through its first Camera component.
+      const camera = renderables.find(component => component.classId === "CameraComponent");
       const light = renderables.find(component => component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent");
       this.host.emit({
         type: "assignMesh",
@@ -364,7 +369,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
           : {}),
         ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp,
           text2dComp.classId === "2DRichTextComponent" ? this.host.textAppear().progress(text2dComp) : 1) } : {}),
-        ...(camera ? { camera: this.cameraAssignPayload(actor, camera) } : {}),
+        ...(camera ? { camera: this.cameraAssignPayload(camera) } : {}),
         ...(light ? { light: lightAssignPayload(light) } : {}),
         ...(overlayPanel ? { overlayPanel } : {}),
         ...(parts ? { parts } : {}),

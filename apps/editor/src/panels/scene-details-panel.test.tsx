@@ -905,6 +905,31 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.queryByTestId("property-scene-fog-density")).toBeNull();
   });
 
+  it("picks any placed actor as the Default Camera and says when Play starts on the Layer Camera instead", async () => {
+    scene().actors = [
+      createActor("rig", "Rig", { components: [{ id: "lens", classId: "CameraComponent", properties: {} }] }),
+      createActor("prop", "Prop"),
+    ];
+    scene().settings.defaultCameraActorId = "prop";
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const applyChange = () => {
+      harness.scene = harness.applySceneChange.mock.calls.at(-1)![1];
+      view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    };
+    expect(screen.getByText("This actor has no Camera component, so Play starts on the Layer Camera.")).toBeTruthy();
+    expect(screen.getByTestId("property-row-scene-camera-location")).toBeTruthy();
+    expect(screen.getByText("Layer Camera Width")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("property-scene-default-camera"));
+    fireEvent.click(await screen.findByTestId("search-item-rig"));
+    applyChange();
+    expect(scene().settings.defaultCameraActorId).toBe("rig");
+    expect(screen.queryByText(/so Play starts on the Layer Camera/)).toBeNull();
+    fireEvent.click(screen.getByTestId("property-scene-default-camera"));
+    fireEvent.click(await screen.findByTestId("search-item-__none__"));
+    applyChange();
+    expect(scene().settings.defaultCameraActorId).toBeNull();
+  });
+
   it("shows Environment Texture only for the Texture source and keeps the picked cube while lighting from the Skybox", async () => {
     scene().settings.environmentTextureGuid = "kept-cube";
     const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
@@ -1296,6 +1321,7 @@ describe("SceneDetailsPanel authoring", () => {
     ).toBeTruthy();
     expect(screen.getByText("Layer Width")).toBeTruthy();
     expect(screen.getByText("Layer Height")).toBeTruthy();
+    expect(screen.getByText("Camera Location")).toBeTruthy();
   });
 
   it("toggles Scene Layer Enable Physics into the saved SceneLayer document", () => {

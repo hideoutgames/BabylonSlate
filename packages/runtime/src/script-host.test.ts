@@ -559,18 +559,18 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("continues a latent Tick cycle without stacking new entry runs", async () => {
+  it("continues a latent cycle through its Delay", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "event-graph",
       kind: "event",
       nodes: [
-        node(registry, "tick", "flow.event.tick"),
+        node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "delay", "timers.delay", { "default:duration": 0.25 }),
         node(registry, "log", "debug.log", { "default:message": "after delay" }),
       ],
       edges: [
-        edge("e1", "tick", "execOut", "delay", "execIn"),
+        edge("e1", "begin", "execOut", "delay", "execIn"),
         edge("e2", "delay", "execOut", "log", "execIn"),
         edge("cycle", "log", "execOut", "delay", "execIn"),
       ],
@@ -585,13 +585,14 @@ describe("script host runs compiled graphs", () => {
     });
     const script = toScript(graph, registry, "Waiter", "waiter-asset");
     expect(script.entryPoints[0]).toMatchObject({
-      event: "onTick",
+      event: "onBeginPlay",
       isAsync: true,
     });
 
     await runtime.loadScripts([script]);
     runtime.spawnScriptedActor({ classId: "Waiter" });
     runtime.start();
+    // 0.25 s of 0.1 s ticks: the cycle logs every third tick.
     for (let tick = 0; tick < 10; tick++) {
       runtime.tick();
       await flushMicrotasks();
@@ -2419,55 +2420,40 @@ describe("script host runs compiled graphs", () => {
   });
 
   it("Project Cursor To Scene casts from a parented Play camera's world pose", async () => {
+    const settings = createDefaultSceneSettings();
+    settings.defaultCameraActorId = "camera";
     const runtime = createInProcessRuntime({
       seed: 11,
       maxActors: 8,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
       seedDemoActors: false,
-    });
-    const world = runtime.getWorld();
-    // A quarter turn about +Y maps the camera's local forward (+Z) to world +X.
-    const rig = world.createActor({
-      classId: "Actor",
-      transform: {
-        position: { x: 5, y: 0, z: 0 },
-        rotation: { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 },
-        scale: { x: 1, y: 1, z: 1 },
+      playScene: {
+        name: "Aim",
+        viewportMode: "3d",
+        settings,
+        folders: [],
+        actors: [
+          // A quarter turn about +Y maps the camera's local forward (+Z) to world +X.
+          createActor("rig", "Rig", {
+            transform: { position: [5, 0, 0], rotation: [0, Math.SQRT1_2, 0, Math.SQRT1_2], scale: [1, 1, 1] },
+          }),
+          createActor("camera", "Camera", {
+            parentId: "rig",
+            transform: { position: [0, 0, -10], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+            components: [{ id: "lens", classId: "CameraComponent",
+              properties: { projectionMode: "perspective", fieldOfView: 60, nearClip: 0.1, farClip: 1000 } }],
+          }),
+          createActor("ground", "Ground", {
+            components: [
+              { id: "body", classId: "RigidBodyComponent", properties: { motionType: "static", mass: 0, gravityScale: 0 } },
+              { id: "box", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 2, y: 2, z: 2 } } } },
+            ],
+          }),
+        ],
       },
     });
-    world.spawnActorNow(rig);
-    const camera = world.createActor({
-      classId: "Actor",
-      variables: { parentId: rig.guid },
-      transform: {
-        position: { x: 0, y: 0, z: -10 },
-        rotation: { x: 0, y: 0, z: 0, w: 1 },
-        scale: { x: 1, y: 1, z: 1 },
-      },
-    });
-    camera.attachComponent(world.createComponent({
-      classId: "CameraComponent",
-      variables: { projectionMode: "perspective", fieldOfView: 60, nearClip: 0.1, farClip: 1000 },
-    }));
-    world.spawnActorNow(camera);
-    const ground = world.createActor({
-      classId: "Actor",
-      transform: {
-        position: { x: 0, y: 0, z: 0 },
-        rotation: { x: 0, y: 0, z: 0, w: 1 },
-        scale: { x: 1, y: 1, z: 1 },
-      },
-    });
-    ground.attachComponent(world.createComponent({
-      classId: "RigidBodyComponent",
-      variables: { motionType: "static", mass: 0, gravityScale: 0 },
-    }));
-    ground.attachComponent(world.createComponent({
-      classId: "ColliderComponent",
-      variables: { shape: { kind: "box", halfExtents: { x: 2, y: 2, z: 2 } } },
-    }));
-    world.spawnActorNow(ground);
+    runtime.realizePlayWorld();
     await runtime.loadScripts([{
       assetGuid: "aim-world-asset",
       classId: "AimWorld",
@@ -2702,8 +2688,6 @@ describe("script host runs compiled graphs", () => {
     };
     const commands: CommandMessage[] = [];
     const settings = createDefaultSceneSettings();
-    settings.mainCameraActorId = "rig";
-    settings.mainCameraComponentId = "cam";
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,

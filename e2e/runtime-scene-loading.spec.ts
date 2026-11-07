@@ -70,7 +70,7 @@ for (const mode of ["Play"] as const) {
     scene.settings.environmentColor = [0, 0, 0];
     scene.settings.grid.showGrid = false;
     scene.settings.shadowOverrides = { enabled: false };
-    scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.mainCameraActorId);
+    scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.defaultCameraActorId);
     scene.actors[0]!.transform.position = [0, 1.5, -10];
     scene.actors[0]!.transform.rotation = [0, 0, 0, 1];
     scene.actors.push(createActor("fill", "Fill", { components: [{ id: "fill-light", classId: "HemisphericFillLightComponent", properties: { intensity: 1, color: [1, 1, 1], groundColor: [1, 1, 1] } }] }));

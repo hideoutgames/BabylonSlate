@@ -60,7 +60,7 @@ test("scalability updates budgets, persists Custom and preserves independent set
   const scene = createDefaultScene();
   scene.actors = scene.actors.filter(
     (actor) =>
-      actor.id === scene.settings.mainCameraActorId ||
+      actor.id === scene.settings.defaultCameraActorId ||
       actor.components.some(
         (component) => component.classId === "LightComponent",
       ),

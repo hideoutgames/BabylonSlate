@@ -435,7 +435,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.renderSlots = createRenderSlots(this);
     this.renderEmitter = createRenderEmitter(this);
     this.audioParticles = createAudioParticles(this);
-    this.delays = new LatentDelays(this.admission);
+    this.delays = new LatentDelays(this.admission, () => this.world.clock.tickIndex);
     this.navigation = createNavigation(this);
     this.streams = createStreams(this);
     this.sceneRealizer = createSceneRealizer(this);

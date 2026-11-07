@@ -6,7 +6,7 @@ import {
   NavMeshDebugOverlay,
   type EngineHandle,
 } from "@haptic/render";
-import type { EnvironmentLightingSettings, SerializedScene } from "@haptic/core";
+import { sceneLayerCameraFrame, type EnvironmentLightingSettings, type SerializedScene } from "@haptic/core";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
@@ -231,12 +231,12 @@ export function useViewportEngine({
         });
         handle.setPaused(true);
         setEngineEpoch((epoch) => epoch + 1);
-        const gridSettings = sceneRef.current?.settings;
-        if (gridSettings) {
+        const gridScene = sceneRef.current;
+        if (gridScene) {
           handle.editor?.setGridSettings({
-            tileSize: gridSettings.grid.tileSize,
-            tileSubdivisions: gridSettings.grid.tileSubdivisions,
-            cameraBounds2D: gridSettings.cameraBounds2D,
+            tileSize: gridScene.settings.grid.tileSize,
+            tileSubdivisions: gridScene.settings.grid.tileSubdivisions,
+            cameraBounds2D: sceneLayerCameraFrame(gridScene),
             showGrid: gridVisible,
           });
         }

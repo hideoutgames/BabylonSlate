@@ -52,6 +52,8 @@ import {
   type SerializedScene,
 } from "@haptic/core";
 import { parseColliderProperties, parseConstraintProperties } from "@haptic/physics";
+import { engineScriptApiFor } from "@haptic/object-model";
+import { classGraph, gChain, gNode, gWire } from "./graph";
 import {
   actor,
   comp,
@@ -82,6 +84,7 @@ const FEATURE_TEST_TWO_D_NAMES = {
   robotGraph: "FT_2DRobotGraph",
   torchAnimation: "FT_2DTorchSheetAnim",
   torchGraph: "FT_2DTorchGraph",
+  cameraProbe: "FT_2DCameraProbe",
   tiles: "FT_2DTiles",
   decorTiles: "FT_2DDecorTiles",
   worldMap: "FT_2DWorldMap",
@@ -217,7 +220,8 @@ export async function buildFeatureTestTwoD(ctx: FeatureTestContext): Promise<voi
   const graph = await buildRobotGraph(ctx, sprites);
   const torchGraph = await buildTorchGraph(ctx);
   const { tilemap, skyIsland } = await buildTilemap(ctx);
-  const scene = buildScene(ctx, { sprites, graph, torchGraph, tilemap, skyIsland });
+  const cameraProbe = (await saveCameraProbe(ctx)).classId;
+  const scene = buildScene(ctx, { sprites, graph, torchGraph, tilemap, skyIsland, cameraProbe });
   placeThreeDShadedSprite(ctx, sprites);
   await ctx.addSceneDocument({
     kind: "scene",
@@ -884,7 +888,62 @@ function tileBottomY(row: number): number {
 }
 
 /**
- * `FT_2D`: orthographic camera framing the whole map over a sky clear color,
+ * The Scene Camera Manager on `FT_2D`'s Begin Play: the Scene starts on its
+ * Layer Camera, so Get Camera Actor and Get Camera Component are None and its
+ * Layer Camera is unzoomed; Possess Camera with None keeps it there.
+ */
+async function saveCameraProbe(ctx: FeatureTestContext) {
+  const managerVariable = (id: string, propertyKey: string, x: number, y: number) => {
+    const variable = engineScriptApiFor("SceneCameraManager")?.variables?.find((entry) => entry.propertyKey === propertyKey);
+    if (!variable) throw new Error(`SceneCameraManager has no ${propertyKey} variable.`);
+    return gNode(id, "variables.get", x, y, {
+      variableName: variable.name, variableId: `engine:SceneCameraManager:var:${propertyKey}`, scope: "member",
+      typeId: variable.typeId, typeClassId: variable.typeClassId, classId: "SceneCameraManager", propertyKey, getOnly: true,
+    });
+  };
+  const graph = classGraph({
+    actorDefaults: { eventTick: "disabled" },
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, 0),
+      gNode("manager", "camera.getSceneCameraManager", 0, 200),
+      managerVariable("camera-actor", "cameraActor", 240, 200),
+      managerVariable("camera-component", "cameraComponent", 240, 320),
+      managerVariable("layer-camera", "layerCamera", 240, 440),
+      gNode("actor-valid", "actor.isValid", 480, 200),
+      gNode("component-valid", "actor.isValid", 480, 320),
+      gNode("no-actor", "boolean.not", 680, 200),
+      gNode("no-component", "boolean.not", 680, 320),
+      gNode("zoom", "variables.get", 480, 440, {
+        variableName: "Camera Zoom", variableId: "engine:LayerCamera:var:zoom", scope: "member",
+        typeId: "float", classId: "LayerCamera", propertyKey: "zoom",
+      }),
+      gNode("unzoomed", "math.equals", 680, 440, { "default:b": 1 }),
+      gNode("check-actor", "debug.assert", 240, 0, { "default:message": "FT_2D did not start on its Layer Camera" }),
+      gNode("check-component", "debug.assert", 480, 0, { "default:message": "Get Camera Component is not None on the Layer Camera" }),
+      gNode("check-zoom", "debug.assert", 720, 0, { "default:message": "FT_2D's Layer Camera did not start at zoom 1" }),
+      gNode("possess-none", "camera.possess", 960, 0),
+    ],
+    edges: [
+      ...gChain("begin", "check-actor", "check-component", "check-zoom", "possess-none"),
+      ...["camera-actor", "camera-component", "layer-camera"].map((target) => gWire("manager", "out", target, "target")),
+      gWire("camera-actor", "value", "actor-valid", "target"),
+      gWire("camera-component", "value", "component-valid", "target"),
+      gWire("actor-valid", "out", "no-actor", "in"),
+      gWire("component-valid", "out", "no-component", "in"),
+      gWire("no-actor", "out", "check-actor", "condition"),
+      gWire("no-component", "out", "check-component", "condition"),
+      gWire("layer-camera", "value", "zoom", "target"),
+      gWire("zoom", "value", "unzoomed", "a"),
+      gWire("unzoomed", "out", "check-zoom", "condition"),
+      // A wired None returns the view to (here: keeps it on) the Layer Camera.
+      gWire("camera-actor", "value", "possess-none", "target"),
+    ],
+  });
+  return ctx.saveClass({ folder: FOLDER, name: NAMES.cameraProbe, parentClass: "Actor", graph });
+}
+
+/**
+ * `FT_2D`: its Layer Camera framing the whole map over a sky clear color (no camera actor),
  * the Tilemap (Background), falling robot bodies (Characters) of every 2D
  * Collider shape, a chain funnel, a 2D hinge pendulum (Default), and two
  * robots on the AnimationGraph: a UI-layer mascot on the left cliff and a
@@ -892,7 +951,7 @@ function tileBottomY(row: number): number {
  */
 function buildScene(
   ctx: FeatureTestContext,
-  refs: { sprites: SpriteGuids; graph: string; torchGraph: string; tilemap: string; skyIsland: string },
+  refs: { sprites: SpriteGuids; graph: string; torchGraph: string; tilemap: string; skyIsland: string; cameraProbe: string },
 ): SerializedScene {
   const scene = createDefaultScene("2d");
   scene.name = FEATURE_TEST_TWO_D_SCENE_NAME;
@@ -900,15 +959,14 @@ function buildScene(
     ...scene.settings,
     physicsWorld: "2d",
     environmentColor: [...SKY_COLOR],
+    // Play starts on the Scene's Layer Camera: the whole map, centred on the origin.
+    defaultCameraActorId: null,
     cameraBounds2D: { width: MAP_W * TILE, height: MAP_H * TILE },
+    cameraLocation2D: [0, 0],
     grid: { ...scene.settings.grid, tileSize: TILE },
   };
+  scene.actors = scene.actors.filter((entry) => !entry.components.some((component) => component.classId === "CameraComponent"));
   scene.folders.push(...Object.values(FOLDERS).map((folder) => ({ ...folder, parentFolderId: null })));
-  const camera = scene.actors.find((entry) => entry.id === scene.settings.mainCameraActorId);
-  const lens = camera?.components.find((component) => component.classId === "CameraComponent");
-  if (!camera || !lens) throw new Error("FeatureTest FT_2D needs the default 2D camera.");
-  lens.properties.orthographicSize = (MAP_H * TILE) / 2;
-  camera.folderId = FOLDERS.world.id;
 
   const add = (
     folder: keyof typeof FOLDERS,
@@ -925,6 +983,9 @@ function buildScene(
       { scene },
     );
 
+  ctx.addActor(actor("ft-2d-camera-probe", "Camera Probe", tf([0, 0, 0]), [], {
+    folderId: FOLDERS.world.id, classId: refs.cameraProbe,
+  }), { scene });
   add("world", "ft-2d-tilemap", "World Tilemap", [MAP_ORIGIN[0], MAP_ORIGIN[1], 0], [
     comp("ft-2d-tilemap-map", "TilemapComponent", { assetGuid: refs.tilemap, sortingLayer: "Background", orderInLayer: 0 }),
   ]);

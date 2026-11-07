@@ -1,5 +1,5 @@
 import type { CommandMessage } from "@haptic/bridge";
-import { newGuid, normalizeSceneLayer, remapSceneStreamingReferences, updateSceneLayerCamera, type SceneLayerCamera, type SerializedActor, type SerializedSceneLayer } from "@haptic/core";
+import { newGuid, normalizeSceneLayer, remapSceneStreamingReferences, sameLayerCameraState, updateLayerCameraState, type SerializedActor, type SerializedSceneLayer } from "@haptic/core";
 import type { RegisteredPostProcess } from "./scene-post-process";
 import { hydrateScenePropertyReferences, sceneLayerAssetClassId, type Actor, type EngineObject, type LifecycleHooks, type SceneLayer, type World } from "@haptic/object-model";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
@@ -367,19 +367,13 @@ export class SceneLayers implements RuntimeSubsystem {
     return layerGuid ? this.host.world().findSceneLayer(layerGuid) ?? null : null;
   }
 
-  camera(layerGuid: string): SceneLayerCamera | null {
-    const layer = this.host.world().findSceneLayer(layerGuid);
-    return layer ? { ...layer.camera } : null;
-  }
-
   /** Move, turn or zoom a layer instance's camera; values that are not finite numbers keep the current ones. */
-  setCamera(layerGuid: string, changes: Parameters<typeof updateSceneLayerCamera>[1]): void {
+  setCamera(layerGuid: string, changes: Parameters<typeof updateLayerCameraState>[1]): void {
     const layer = this.host.world().findSceneLayer(layerGuid);
     if (!layer) return;
-    const camera = updateSceneLayerCamera(layer.camera, changes);
-    const current = layer.camera;
-    if (camera.x === current.x && camera.y === current.y && camera.rotation === current.rotation && camera.zoom === current.zoom) return;
-    layer.camera = camera;
+    const camera = updateLayerCameraState(layer.camera.state, changes);
+    if (sameLayerCameraState(camera, layer.camera.state)) return;
+    layer.camera.state = camera;
     this.host.emit({ type: "sceneLayerCamera", layerId: layer.guid, camera: { ...camera } });
   }
 
@@ -432,6 +426,7 @@ export class SceneLayers implements RuntimeSubsystem {
         ...entry,
       })),
       layerBounds: document.settings.layerBounds,
+      cameraLocation: document.settings.cameraLocation,
     });
     this.host.markUnsupportedInstance(layer.guid);
     this.host.addLayerPhysics(layer.guid, guid, document.settings, Array.isArray(raw.actors) ? raw.actors : []);
@@ -453,6 +448,7 @@ export class SceneLayers implements RuntimeSubsystem {
         ownerSceneGuid: layer.ownerSceneGuid,
         postProcessStack: layer.postProcessStack.map((entry) => ({ ...entry })),
         layerBounds: { ...layer.layerBounds },
+        camera: { ...layer.camera.state },
       });
       checkpoint();
       // Return the live loading identity before actor remapping or realization.
@@ -535,11 +531,10 @@ interface SceneLayerHostDeps {
   layers: SceneLayers;
 }
 
-/** Script Scene Layer calls: create (immediate or latent), remove, clear, the layer post-process stack, its camera and an actor's owning layer. */
+/** Script Scene Layer calls: create (immediate or latent), remove, clear, the layer post-process stack and an actor's owning layer. */
 export function createSceneLayerHostBindings(deps: SceneLayerHostDeps): Pick<ScriptHostServices,
   "createSceneLayer" | "createSceneLayerAsync" | "removeSceneLayer" | "clearSceneLayers" |
-  "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess" |
-  "getSceneLayerCamera" | "setSceneLayerCamera" | "getOwningSceneLayer"> {
+  "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess" | "getOwningSceneLayer"> {
   const { layers } = deps;
   return {
     createSceneLayer: (assetGuid, zOrder) => layers.create(assetGuid, zOrder),
@@ -548,8 +543,6 @@ export function createSceneLayerHostBindings(deps: SceneLayerHostDeps): Pick<Scr
     clearSceneLayers: () => { layers.clearAll(); },
     registerSceneLayerPostProcess: (layerGuid, materialGuid) => layers.registerPostProcess(layerGuid, materialGuid),
     unregisterSceneLayerPostProcess: (layerGuid, materialGuid) => { layers.unregisterPostProcess(layerGuid, materialGuid); },
-    getSceneLayerCamera: (layerGuid) => layers.camera(layerGuid),
-    setSceneLayerCamera: (layerGuid, changes) => { layers.setCamera(layerGuid, changes); },
     getOwningSceneLayer: (object) => layers.owning(object),
   };
 }

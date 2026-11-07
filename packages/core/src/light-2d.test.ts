@@ -7,6 +7,7 @@ describe("2D Light authoring", () => {
   it("defaults a missing light to a white full-circle Point light", () => {
     expect(parseLight2DProperties(undefined)).toEqual({
       enabled: true, lightKind: "point", color: [1, 1, 1], intensity: 1, radius: 3, innerRadius: 0, outerAngle: 360, innerAngle: 360,
+      castShadows: true,
     });
   });
 
@@ -23,6 +24,7 @@ describe("2D Light authoring", () => {
     ["an unknown kind", { lightKind: "spot" }, { lightKind: "point" }],
     ["the Global kind", { lightKind: "global" }, { lightKind: "global" }],
     ["Enabled off", { enabled: false }, { enabled: false }],
+    ["Cast Shadows off", { castShadows: false }, { castShadows: false }],
   ])("normalizes %s", (_label, input, expected) => {
     expect(parseLight2DProperties(input)).toMatchObject(expected);
   });

@@ -12,7 +12,7 @@ Select a function in the **Class** window to reopen its tab. Renaming a function
 
 ## Settings
 
-Select the function in the **Class** window to edit it in the **Inspector**.
+Select the function in the **Class** window, or click an empty part of its graph, to edit it in the **Inspector**.
 
 | Setting | Description |
 | --- | --- |

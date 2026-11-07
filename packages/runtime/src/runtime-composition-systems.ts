@@ -49,6 +49,7 @@ export function createRenderEmitter(rt: RuntimeComposition): RenderCommandEmitte
     textAppear: () => rt.textAppear,
     materialParameters: () => rt.materialParameters,
     emit: (command) => rt.emit(command),
+    occluders2D: (actor) => rt.physics.occluders2D(actor),
   });
 }
 
@@ -118,11 +119,11 @@ export function createCamera(rt: RuntimeComposition, options: RuntimeDriverOptio
     slot: (actor) => rt.actorSlot(actor),
     slotOwner: (slotId) => rt.renderSlots.owner(slotId),
     guidSlot: (guid) => rt.guidSlot(guid),
-    streams: () => rt.streams,
     cursor: () => rt.resolvedInput.cursor,
     touches: () => rt.resolvedInput.touches,
     overlay: () => rt.overlay,
     physics: () => rt.physics,
+    warn: (message) => rt.reportLog(message, "warning", "Camera"),
     emit: (command) => rt.emit(command),
   });
 }
@@ -234,6 +235,10 @@ export function createPhysics(
     frameId: () => rt.frameId,
     recordDiagnostic: (diagnostic) => recordDiagnostic(rt, diagnostic),
     emit: (command) => rt.emit(command),
+    occludersChanged: (actor) => {
+      const slotId = rt.renderSlots.recordedSlot(actor);
+      if (slotId !== undefined) rt.renderEmitter.emitActorOccluders2D(actor, slotId);
+    },
   }, {
     kind: options.physicsWorld ?? options.playScene?.settings.physicsWorld ?? "3d",
     gravity: options.gravity ?? [0, -9.81, 0],
@@ -320,6 +325,7 @@ export function createSnapshots(rt: RuntimeComposition, options: RuntimeDriverOp
     lastPhysicsMs: () => rt.ticks.lastPhysicsMs,
     canPublish: () => rt.admission.canTickScene() || rt.admission.hasReadyLayers(),
     cameraActor: () => rt.camera.cameraActor(),
+    layerCameraCentre: () => rt.world.currentScene?.camera.state ?? null,
     applyOverlayLayouts: () => rt.overlay.applyLayouts(),
     retireDetachedStreams: () => rt.streams.retireDetached(),
     removedActors: () => rt.behaviourTrees.emitSnapshot(true),

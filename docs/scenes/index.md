@@ -30,7 +30,7 @@ See [Touch Gestures](../start/gestures.md) for the full list.
 | **Drag Select** | The next drag draws a selection box (<kbd>Q</kbd>). |
 | **Drop** | Drops the selected actors straight down onto the nearest collision surface (<kbd>End</kbd>). |
 | **View** | Shows how the viewport draws the scene (**PBR** or **CEL**, **Unlit**, **Wireframe**) and holds **Show Grid**, **Show Navmesh** and **Show Collisions**. |
-| **Game Camera** | Looks through the scene's Default Camera (<kbd>Shift</kbd>+<kbd>C</kbd>); viewport navigation then moves that camera. Not shown for Scene Layers, which have no camera of their own. |
+| **Game Camera** | Looks through the scene's Default Camera (<kbd>Shift</kbd>+<kbd>C</kbd>); viewport navigation then moves that camera. Not shown for Scene Layers, whose camera only scripts move. |
 | **Viewport Settings** | **Joystick**, **Pivot Around Center**, **Grid Settings** and **Camera Speed**. |
 | **2D** / **3D** | One switch: tap anywhere on it to flip the scene between 2D and 3D (<kbd>Alt</kbd>+<kbd>V</kbd>). The active side is highlighted. |
 
@@ -52,11 +52,11 @@ Tap empty space in the viewport, or clear the selection, to show **Scene Setting
 | Physics World | **3D (Havok)** or **2D (Rapier)**. A scene uses one or the other. |
 | Environment | Background colour. |
 | Fog | Distance fog, with **Fog Mode**, **Fog Color** and its distance or density settings. See [Sky and Fog](../graphics/sky-and-fog.md). |
-| Default Camera | The camera Play looks through. See [Cameras](../graphics/cameras.md). |
+| Default Camera | The placed actor Play looks through when the scene starts; **None** starts on the Layer Camera. See [Cameras](../graphics/cameras.md#choose-the-camera-in-view). |
 | Joystick | Shows the on-screen joystick for the editor camera. |
 | Gravity | Default 0, −9.81, 0. |
 | Snap Step, Tile Size, Tile Subdivisions | Grid Snap, Grid Size, and how many subdivisions each grid cell has. |
-| 2D Camera Width, 2D Camera Height | Size of the orange guide frame drawn in 2D. Default 16 × 9. |
+| Layer Camera Location, Layer Camera Width, Layer Camera Height | Where the scene's [Layer Camera](../graphics/cameras.md#layer-camera) starts and the area it frames, shown as the orange outline in 2D. Default 0, 0 and 16 × 9. |
 
 Below the settings are the scene's **Post-Process Passes**, its overrides of **Project Settings > Rendering** (**Shadows**, **Environment Lighting**, **Post Processing** and, in the CEL render mode, **CEL Shading**, with the same fields in the same order as there), and the **Scene Layers** that appear with it. See [Post-Processing](../graphics/post-processing.md), [Shadows](../graphics/shadows.md) and [Scene Layers](scene-layers.md).
 

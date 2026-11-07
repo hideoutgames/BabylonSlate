@@ -1,17 +1,17 @@
 ---
-node: tween.sceneLayerCameraZoom
+node: tween.layerCameraZoom
 ---
 
-# Tween Scene Layer Camera Zoom
+# Tween Layer Camera Zoom
 
-Zooms a Scene Layer's camera from A to B over Duration seconds.
+Zooms a Layer Camera from A to B over Duration seconds.
 
 ## Inputs
 
 | Pin | Type | Description |
 | --- | --- | --- |
 | Exec | Exec |  |
-| Target | SceneLayer Reference | The Scene Layer whose camera zooms. |
+| Target | LayerCamera Reference | The Layer Camera that zooms: a Scene's or a Scene Layer's. |
 | A | Float | Defaults to 1, the normal size. |
 | B | Float | Defaults to 1, the normal size. |
 | Duration | Float | Seconds the tween takes, in game time. Defaults to 2; 0 or less writes B immediately. |
@@ -26,6 +26,6 @@ Zooms a Scene Layer's camera from A to B over Duration seconds.
 ## Notes
 
 - Writes A when it starts, interpolates to B, and runs **Completed** once B is written.
-- Zoom works as for [**Set Scene Layer Camera Zoom**](set-scene-layer-camera-zoom.md); values below 0.01, including an overshoot, are raised to 0.01.
-- A new tween on the same property cancels the running one, which then never runs **Completed**. Removing the layer cancels it too.
+- A zoom of 2 shows half the view at twice the size. Values below 0.01, including an overshoot, are raised to 0.01. See [Layer Camera](../../graphics/cameras.md#layer-camera).
+- A new tween on the same property cancels the running one, which then never runs **Completed**. Removing the camera's Scene or Scene Layer cancels it too.
 - Latent: the node finishes later without pausing the rest of the game.

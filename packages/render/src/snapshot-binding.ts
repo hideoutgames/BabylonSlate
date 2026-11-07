@@ -23,7 +23,7 @@ import type {
 import type { BoneAttachment } from "./bone-attachment";
 import type { MaterialResolveOptions } from "./material-library";
 import { AreaRectLightGroup } from "./area-rect-light";
-import type { Light2DGroup } from "./light-2d-group";
+import type { Light2DGroup, Occluder2DGroup } from "./light-2d-group";
 
 export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
 export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
@@ -39,6 +39,8 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   areaLights: Map<number, AreaRectLightGroup>;
   /** Each slot's 2D lights, posed from its root like its area lights. */
   lights2D: Map<number, Light2DGroup>;
+  /** Each 2D body slot's shadow casters, posed from its root. */
+  occluders2D: Map<number, Occluder2DGroup>;
   meshes: SlotRootMap;
   boneAttachments: Map<number, BoneAttachment>;
   lights: Map<number, Light>;
@@ -98,8 +100,9 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   slotAnimReady?: (slotId: number) => void;
   /** Move external render users to a prepared successor before retiring its predecessor. */
   slotVisualReady?: (slotId: number, successor: Mesh) => void;
-  defaultCameraSlotId: number | null;
   possessedCameraSlotId: number | null;
+  /** Play: the main Scene's Layer Camera, in view while no camera slot is possessed. */
+  layerCamera?: Camera | null;
   /** Material asset guid per slot (whole actor), keyed by slotId. */
   materialAssetGuids: Map<number, string | null>;
   /** Material asset guid per component, keyed by `slotId|componentId`. */
@@ -232,6 +235,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     lightProps: new Map(),
     areaLights: new Map(),
     lights2D: new Map(),
+    occluders2D: new Map(),
     cameraProps: new Map(),
     skyboxProps: new Map(),
     text3dProps: new Map(),
@@ -250,7 +254,6 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     pendingAnimState: new Map(),
     slotAnimLoads: new Map(),
     slotAnimEpoch: new Map(),
-    defaultCameraSlotId: null,
     possessedCameraSlotId: null,
     materialAssetGuids: new Map(),
     componentMaterialGuids: new SlotKeyedMap(),

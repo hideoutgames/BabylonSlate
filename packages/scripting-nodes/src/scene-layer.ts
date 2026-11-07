@@ -2,9 +2,7 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
-  FLOAT,
   INT,
-  VEC2,
   assetRef,
   objectRef,
   diagnostic,
@@ -165,101 +163,6 @@ export const sceneLayerNodes: NodeDefinition[] = [
     ],
     codegen: (ctx) => ({
       out: `ctx.getOwningSceneLayer(${ctx.input("actor")})`,
-    }),
-  },
-  {
-    id: "scene-layer.setCameraLocation",
-    title: "Set Scene Layer Camera Location",
-    category: "scene-layer",
-    pins: () => [
-      pin("execIn", "exec", "in", EXEC),
-      pin("execOut", "then", "out", EXEC),
-      subject(pin("layer", "Layer", "in", LAYER)),
-      pin("location", "Location", "in", VEC2),
-    ],
-    codegen: (ctx) => {
-      ctx.emit(`ctx.setSceneLayerCameraLocation(${ctx.input("layer")}, ${ctx.input("location")});`);
-    },
-  },
-  {
-    id: "scene-layer.addCameraOffset",
-    title: "Add Scene Layer Camera Offset",
-    category: "scene-layer",
-    pins: () => [
-      pin("execIn", "exec", "in", EXEC),
-      pin("execOut", "then", "out", EXEC),
-      subject(pin("layer", "Layer", "in", LAYER)),
-      pin("delta", "Delta", "in", VEC2),
-    ],
-    codegen: (ctx) => {
-      ctx.emit(`ctx.addSceneLayerCameraOffset(${ctx.input("layer")}, ${ctx.input("delta")});`);
-    },
-  },
-  {
-    id: "scene-layer.getCameraLocation",
-    title: "Get Scene Layer Camera Location",
-    category: "scene-layer",
-    pure: true,
-    pins: () => [
-      subject(pin("layer", "Layer", "in", LAYER)),
-      pin("out", "Location", "out", VEC2),
-    ],
-    codegen: (ctx) => ({
-      out: `ctx.getSceneLayerCameraLocation(${ctx.input("layer")})`,
-    }),
-  },
-  {
-    id: "scene-layer.setCameraRotation",
-    title: "Set Scene Layer Camera Rotation",
-    category: "scene-layer",
-    pins: () => [
-      pin("execIn", "exec", "in", EXEC),
-      pin("execOut", "then", "out", EXEC),
-      subject(pin("layer", "Layer", "in", LAYER)),
-      pin("rotation", "Rotation", "in", FLOAT),
-    ],
-    codegen: (ctx) => {
-      ctx.emit(`ctx.setSceneLayerCameraRotation(${ctx.input("layer")}, ${ctx.input("rotation")});`);
-    },
-  },
-  {
-    id: "scene-layer.getCameraRotation",
-    title: "Get Scene Layer Camera Rotation",
-    category: "scene-layer",
-    pure: true,
-    pins: () => [
-      subject(pin("layer", "Layer", "in", LAYER)),
-      pin("out", "Rotation", "out", FLOAT),
-    ],
-    codegen: (ctx) => ({
-      out: `ctx.getSceneLayerCameraRotation(${ctx.input("layer")})`,
-    }),
-  },
-  {
-    id: "scene-layer.setCameraZoom",
-    title: "Set Scene Layer Camera Zoom",
-    category: "scene-layer",
-    pins: () => [
-      pin("execIn", "exec", "in", EXEC),
-      pin("execOut", "then", "out", EXEC),
-      subject(pin("layer", "Layer", "in", LAYER)),
-      pin("zoom", "Zoom", "in", FLOAT, "data", true, 1),
-    ],
-    codegen: (ctx) => {
-      ctx.emit(`ctx.setSceneLayerCameraZoom(${ctx.input("layer")}, ${ctx.input("zoom")});`);
-    },
-  },
-  {
-    id: "scene-layer.getCameraZoom",
-    title: "Get Scene Layer Camera Zoom",
-    category: "scene-layer",
-    pure: true,
-    pins: () => [
-      subject(pin("layer", "Layer", "in", LAYER)),
-      pin("out", "Zoom", "out", FLOAT),
-    ],
-    codegen: (ctx) => ({
-      out: `ctx.getSceneLayerCameraZoom(${ctx.input("layer")})`,
     }),
   },
 ];

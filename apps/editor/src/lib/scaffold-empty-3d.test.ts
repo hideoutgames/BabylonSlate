@@ -95,7 +95,7 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
     // The model's front (+Z) turns toward the default Camera.
     const [qx, qy, qz, qw] = actor!.transform.rotation;
     const front = quatRotateVector({ x: qx, y: qy, z: qz, w: qw }, { x: 0, y: 0, z: 1 });
-    const camera = scene.actors.find((entry) => entry.id === scene.settings.mainCameraActorId)!;
+    const camera = scene.actors.find((entry) => entry.id === scene.settings.defaultCameraActorId)!;
     const [cx, , cz] = camera.transform.position;
     expect(front.x * cx + front.z * cz).toBeGreaterThan(0);
     const actorBody = actor?.components.find(

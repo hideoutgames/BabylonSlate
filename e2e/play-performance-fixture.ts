@@ -91,7 +91,7 @@ export function playPerformanceRoom(): SerializedScene {
   scene.actors.push(light("Spot 0", "spot", [-8, 7, 0]), light("Spot 1", "spot", [8, 7, 0]));
   for (let index = 0; index < 6; index += 1)
     scene.actors.push(light(`Point ${index}`, "point", [(index % 3) * 12 - 12, 4, Math.floor(index / 3) * 12 - 6]));
-  const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId);
+  const camera = scene.actors.find((actor) => actor.id === scene.settings.defaultCameraActorId);
   if (camera) {
     // Behind the room, pitched ~20 degrees down so walls, casters and spheres are all in frame.
     camera.transform = {

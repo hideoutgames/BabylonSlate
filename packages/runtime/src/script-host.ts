@@ -84,7 +84,6 @@ export class ScriptHost {
    * a reload reaches actors that captured their hooks at creation.
    */
   private readonly lifecycleScriptsByClassId = new Map<string, Map<string, LoadedScript[] | null>>();
-  private readonly pending = new WeakMap<EngineObject, Set<string>>();
   private readonly flowStates = new WeakMap<
     EngineObject,
     Map<string, Record<string, unknown>>
@@ -435,9 +434,11 @@ export class ScriptHost {
   /**
    * Report a latent script failure. A continuation cancelled because `owner`
    * was destroyed (a counting Delay, or one Pause or a blocking load held)
-   * ends that owner's graph quietly, like a cancelled tween.
+   * ends that owner's graph quietly, like a cancelled tween, and so does one
+   * a later call of its Retriggerable Delay replaced.
    */
   private reportLatentError(error: unknown, owner: EngineObject | null): void {
+    if (error instanceof RuntimeContinuationCancelled && error.reason === "retriggered") return;
     if (owner?.destroyed && error instanceof RuntimeContinuationCancelled && error.reason === "ownerDestroyed") return;
     this.services.reportError(error);
   }
@@ -667,9 +668,7 @@ export class ScriptHost {
         }
         const fn = entry.exports[point.name];
         if (typeof fn !== "function") continue;
-        // Only a latent entry point is checked for a pending run; the synchronous common path builds no key.
-        const latentKey = self && point.isAsync ? `${entry.script.assetGuid}:${point.name}` : undefined;
-        if (self && latentKey !== undefined && this.isPending(self, latentKey)) continue;
+        // Every call runs, also while an earlier run of a latent entry still waits: each waits on its own.
         const ctx = this.createContext(
           self,
           deltaSeconds,
@@ -681,15 +680,7 @@ export class ScriptHost {
         );
         try {
           const result = this.invokeEntry(self, entry.script, point.name, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
-          if (result instanceof Promise) {
-            const key = latentKey ?? `${entry.script.assetGuid}:${point.name}`;
-            if (self) this.markPending(self, key);
-            void result
-              .catch((error) => this.reportLatentError(error, self))
-              .finally(() => {
-                if (self) this.clearPending(self, key);
-              });
-          }
+          if (result instanceof Promise) void result.catch((error) => this.reportLatentError(error, self));
         } catch (error) {
           this.services.reportError(error);
           if (isInfiniteLoopError(error)) throw error;
@@ -698,20 +689,6 @@ export class ScriptHost {
       }
     }
     return failure;
-  }
-
-  private isPending(self: EngineObject, key: string): boolean {
-    return this.pending.get(self)?.has(key) ?? false;
-  }
-
-  private markPending(self: EngineObject, key: string): void {
-    const set = this.pending.get(self) ?? new Set<string>();
-    set.add(key);
-    this.pending.set(self, set);
-  }
-
-  private clearPending(self: EngineObject, key: string): void {
-    this.pending.get(self)?.delete(key);
   }
 
   private clearFlowState(self: EngineObject | null | undefined): void {

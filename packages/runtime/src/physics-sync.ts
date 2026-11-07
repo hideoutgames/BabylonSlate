@@ -4,6 +4,7 @@ import {
   multiplyQuat,
   parseRigidBodyProperties,
   rotateQuatVec,
+  type ColliderDesc,
   type LineTraceOptions,
   type PhysicsBackend,
   type PhysicsTransform,
@@ -128,6 +129,8 @@ export class PhysicsWorldSync {
        * names one takes its layer and mask. Omitted: every collider keeps its own.
        */
       collisionPresets?: readonly Pick<CollisionPreset, "id" | "layer" | "mask" | "overlapMask">[];
+      /** Told when an actor's published collider set changes or its body retires (`publishedColliders`). */
+      onCollidersPublished?: (actor: Actor) => void;
     },
   ) {
     this.backend = backend;
@@ -135,7 +138,7 @@ export class PhysicsWorldSync {
     this.skipEmptySteps = options?.skipEmptySteps ?? false;
     this.actorsOf = options?.actorsOf;
     this.actorFilter = options?.actorFilter ?? (() => true);
-    this.colliders = new PhysicsColliderSets(backend, options?.collisionPresets);
+    this.colliders = new PhysicsColliderSets(backend, options?.collisionPresets, options?.onCollidersPublished);
     this.classifier = new PhysicsBodyClassifier(backend.kind, this.colliders.meshes);
     // Hosts read reassigned state (`actors`, `world`, `worldTransforms`, the
     // hosting map) through closures, never as captured values.
@@ -209,6 +212,11 @@ export class PhysicsWorldSync {
     if ((this.contactReporting.get(actor.guid) ?? true) === wants) return;
     this.contactReporting.set(actor.guid, wants);
     this.backend.setContactReporting(actor.guid, wants);
+  }
+
+  /** The collider set last published for `actor`'s body, or undefined while it has none. */
+  publishedColliders(actor: Actor): ReadonlyMap<string, ColliderDesc> | undefined {
+    return this.colliders.publishedColliders(actor);
   }
 
   /** An articulated ragdoll replaces the actor's ordinary body and colliders. */

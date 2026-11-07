@@ -89,9 +89,11 @@ export {
   defaultParentClassForType,
   buildNewAssetResult,
   buildMaterialInstanceAssetResult,
+  buildSheetSpriteAnimationAssetResult,
   buildSpriteAnimationAssetResult,
   buildTilesetAssetResult,
   derivedAssetNameFor,
+  sheetAnimationCell,
   spriteAnimationNameFor,
 } from "./new-asset-result";
 export {
@@ -410,8 +412,10 @@ type ContentBrowserContextAction =
   | "generate-thumbnail"
   | "import-msdf-atlas"
   | "create-material-instance"
+  | "convert-to-2d"
   | "create-sprite"
   | "create-sprite-animation"
+  | "create-sheet-animation"
   | "create-tileset"
   | "create-material"
   | "create-tilemap"
@@ -432,6 +436,12 @@ type ContentBrowserContextAction =
   | "show-references"
   | "delete";
 
+/**
+ * Convert to 2D's submenu for a selection of Textures: a Sprite per Texture, one Sprite Animation with a frame per
+ * Texture, and a Sheet Sprite Animation per Texture.
+ */
+export const CONVERT_TO_2D_ACTIONS = ["create-sprite", "create-sprite-animation", "create-sheet-animation"] as const;
+
 export function canRetargetSelectedAssets(
   assets: ReadonlyArray<{ type: string; payload?: unknown }>,
 ): boolean {
@@ -451,9 +461,10 @@ function createActionsForTypes(types: readonly string[], canCreateChildClass: bo
   const all = (accepted: (type: string) => boolean) => types.every(accepted);
   const single = types.length === 1 ? types[0] : undefined;
   const actions: ContentBrowserContextAction[] = [];
-  if (all((type) => type === "Texture")) actions.push("create-sprite");
-  // Any mix of Textures and Sprites becomes one Sprite Animation; one Texture can also become a Tileset.
-  if (all((type) => type === "Texture" || type === "Sprite")) actions.push("create-sprite-animation");
+  // Textures alone convert to 2D assets (`CONVERT_TO_2D_ACTIONS`); a mix with Sprites, or Sprites, becomes one Sprite
+  // Animation. One Texture can also become a Tileset.
+  if (all((type) => type === "Texture")) actions.push("convert-to-2d");
+  else if (all((type) => type === "Texture" || type === "Sprite")) actions.push("create-sprite-animation");
   if (single === "Texture") actions.push("create-tileset");
   if (all((type) => type === "Texture")) actions.push("create-material");
   if (all((type) => type === "Tileset")) actions.push("create-tilemap");

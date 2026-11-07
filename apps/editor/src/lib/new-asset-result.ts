@@ -481,6 +481,46 @@ export function buildSpriteAnimationAssetResult(
   };
 }
 
+/**
+ * The cell a Sheet animation starts with on a `width` × `height` Texture: square frames along a strip when one side
+ * is a whole multiple of the other (frames side by side, or stacked), else the whole image as one frame. Unknown sizes
+ * keep the default cell.
+ */
+export function sheetAnimationCell(width: number, height: number): { width: number; height: number } | null {
+  if (!(width > 0) || !(height > 0)) return null;
+  if (width >= height && width % height === 0) return { width: height, height };
+  if (height > width && height % width === 0) return { width, height: width };
+  return { width, height };
+}
+
+/** A Sheet Sprite Animation cutting a frame from every cell of `texture`, in reading order. */
+export function buildSheetSpriteAnimationAssetResult(
+  texture: { guid: string; payload?: Record<string, unknown> },
+  guid: string,
+  name: string,
+): ImportResult {
+  const defaults = createDefaultSpriteAnimationPayload();
+  const width = Number(texture.payload?.width), height = Number(texture.payload?.height);
+  const cell = sheetAnimationCell(width, height);
+  const cells = cell ? Math.floor(width / cell.width) * Math.floor(height / cell.height) : 1;
+  const document: SpriteAnimationPayload = {
+    ...defaults,
+    source: "sheet",
+    sheet: { ...defaults.sheet, textureGuid: texture.guid, ...(cell ? { cellWidth: cell.width, cellHeight: cell.height } : {}) },
+    frames: Array.from({ length: Math.max(1, cells) }, (_, index): SpriteAnimationFrame => ({ ...defaults.frames[0]!, cell: index + 1 })),
+  };
+  const result = documentAsset("SpriteAnimation", name, guid, document as unknown as Record<string, unknown>);
+  return {
+    ...result,
+    payload: {
+      ...result.payload,
+      durationMs: spriteAnimationDurationMs(document),
+      [ATLAS_TEXTURES_META]: atlasTextureGuids("SpriteAnimation", result.payload),
+    },
+    dependencies: spriteAnimationDependencyGuids(document),
+  };
+}
+
 /** A Tileset slicing `texture`, sized from the Texture's header so its tiles are ready to paint. */
 export function buildTilesetAssetResult(
   texture: { guid: string; payload?: Record<string, unknown> },

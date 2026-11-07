@@ -33,7 +33,6 @@
  * it draws with is ready, its pipelines included.
  */
 import {
-  ArcRotateCamera,
   Color4,
   Constants,
   DirectionalLight,
@@ -563,7 +562,7 @@ function playWorld(
     { slotId: 1, guid: "floor", position: [0, 0, 0], scale: [12, 0.2, 12], assign: { meshAssetGuid: null, meshKind: "box" } },
     { slotId: 2, guid: "crate", position: [0, 1, 0], assign: { meshAssetGuid: null, meshKind: "box" } },
     sun(),
-    { slotId: 4, guid: "camera", position: [0, 3, -10], assign: { meshAssetGuid: null, meshKind: null, parts: [part("lens", "camera", { camera: { fieldOfView: 60, isDefault: true } })] } },
+    { slotId: 4, guid: "camera", position: [0, 3, -10], assign: { meshAssetGuid: null, meshKind: null, parts: [part("lens", "camera", { camera: { fieldOfView: 60 } })] } },
   ];
   let frameId = 0;
   const pose = () => {
@@ -609,6 +608,8 @@ function playWorld(
   };
   for (const actor of world) handle.applyCommand({ type: "spawn", slotId: actor.slotId, actorGuid: actor.guid, classId: "Actor" });
   for (const actor of world) assign(actor);
+  // The runtime possesses the Scene's Default Camera when it starts.
+  handle.applyCommand({ type: "possessCamera", slotId: 4 });
   place(...actors);
 
   // The world view's frames, as the render loop drives them.
@@ -942,9 +943,10 @@ describe("compile holds after the first frame", () => {
     if (spec.full) updateSceneRenderingSettings(world.handle.scene,
       { quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 2 } }) });
     if (spec.camera) {
-      const camera = world.handle.scene.activeCamera as ArcRotateCamera;
+      // The possessed camera, looking at the origin from the case's viewpoint; unchanged actor poses leave it there.
+      const camera = world.handle.scene.activeCamera as UniversalCamera;
+      camera.position.copyFrom(spec.camera);
       camera.setTarget(Vector3.Zero());
-      camera.setPosition(spec.camera);
     }
     const lightOf = (slotId: number) => world.handle.scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}${slotId}`);
     let before: Effect | null = null;

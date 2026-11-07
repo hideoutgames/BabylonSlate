@@ -289,6 +289,9 @@ export interface ScriptContext {
   executeConsoleCommand(command: string): { success: boolean; output: string };
   executeConsoleCommandAsync(command: string): Promise<{ success: boolean; output: string }>;
   delay(seconds: number): Promise<void>;
+  delayOneTick(): Promise<void>;
+  /** Waits `seconds` after this node's latest call for `self`; an earlier waiting call ends. */
+  retriggerableDelay(nodeId: string, seconds: number): Promise<void>;
   commandArgs: Record<string, unknown>;
   /** Alias of `commandArgs` so function Input nodes can read `ctx.args`. */
   args: Record<string, unknown>;
@@ -513,13 +516,6 @@ export interface ScriptContext {
   /** The new pass's Material Object, or null when nothing was registered. */
   registerScenePostProcess(materialGuid: string): PostProcessMaterialObject | null;
   unregisterScenePostProcess(materialGuid: string): void;
-  setSceneLayerCameraLocation(layer: EngineObject | string | null | undefined, location: unknown): void;
-  addSceneLayerCameraOffset(layer: EngineObject | string | null | undefined, delta: unknown): void;
-  getSceneLayerCameraLocation(layer: EngineObject | string | null | undefined): { x: number; y: number };
-  setSceneLayerCameraRotation(layer: EngineObject | string | null | undefined, degrees: unknown): void;
-  getSceneLayerCameraRotation(layer: EngineObject | string | null | undefined): number;
-  setSceneLayerCameraZoom(layer: EngineObject | string | null | undefined, zoom: unknown): void;
-  getSceneLayerCameraZoom(layer: EngineObject | string | null | undefined): number;
   getOwningSceneLayer(target: unknown): SceneLayer | null;
   getScalability(): ScalabilitySnapshot | null;
   requestScalability(request: ScalabilityRequest): ScalabilityResult;
@@ -563,7 +559,10 @@ export interface ScriptContext {
   setMeshMaterial(component: unknown, materialGuid: string | null): MaterialObject | null;
   setMeshMaterialAsync(component: unknown, materialGuid: string | null): Promise<MaterialObject | null>;
   getMaterialAsset(material: unknown): string | null;
+  /** View through `target`'s first Camera component; None (or an actor without one) returns the view to the Scene's Layer Camera. */
   possessCamera(target: unknown): void;
+  /** The session's Scene Camera Manager. */
+  getSceneCameraManager(): EngineObject | null;
   getRenderTargetMode(guid: string | null): RenderTargetMode;
   getRenderTargetTextureTarget(guid: string | null): string | null;
   captureRenderTarget(target: unknown): void;
@@ -668,9 +667,8 @@ export type HostContextKey =
   | "setGlobalVolume" | "changeScene" | "createSceneLayer" | "removeSceneLayer" | "clearSceneLayers"
   | "setFocusTarget" | "clearFocusTarget" | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"
   | "registerScenePostProcess" | "unregisterScenePostProcess"
-  | "setSceneLayerCameraLocation" | "addSceneLayerCameraOffset" | "getSceneLayerCameraLocation" | "setSceneLayerCameraRotation"
-  | "getSceneLayerCameraRotation" | "setSceneLayerCameraZoom" | "getSceneLayerCameraZoom" | "getOwningSceneLayer"
-  | "getScalability" | "requestScalability" | "possessCamera" | "getRenderTargetMode"
+  | "getOwningSceneLayer"
+  | "getScalability" | "requestScalability" | "possessCamera" | "getSceneCameraManager" | "getRenderTargetMode"
   | "getRenderTargetTextureTarget" | "captureRenderTarget" | "recaptureReflectionProbes" | "getRenderTargetCaptureProperty"
   | "setRenderTargetCaptureProperty" | "getCameraFieldOfView" | "setCameraFieldOfView" | "getCameraOrthographicSize"
   | "setCameraOrthographicSize" | "setLightEnabled" | "setLightColor" | "setLightIntensity" | "findPathTo"

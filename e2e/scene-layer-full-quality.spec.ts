@@ -100,7 +100,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       guid: layerGuid, type: "SceneLayer", name: "Panel HUD", version: versions.currentVersion("SceneLayer"), payload: layer as unknown as Record<string, unknown>,
     }, { dependencies: [classGuid, materialGuid] }));
     const scene = createDefaultScene();
-    scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.mainCameraActorId);
+    scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.defaultCameraActorId);
     scene.settings.environmentColor = [0, 0, 0];
     scene.settings.sceneLayers = [{ assetGuid: layerGuid, zOrder: 0, enabled: true }];
     files.set(MAIN_SCENE_FILE, await encodeAssetDocument({

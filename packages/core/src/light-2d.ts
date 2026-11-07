@@ -22,6 +22,8 @@ export type Light2DProperties = {
   outerAngle: number;
   /** The full-intensity part of the cone in degrees, at most `outerAngle` (Point). */
   innerAngle: number;
+  /** Solid 2D colliders block the light (Point): what lies behind them, as seen from the light, is in shadow. */
+  castShadows: boolean;
 };
 
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
@@ -43,6 +45,7 @@ export function parseLight2DProperties(value: unknown): Light2DProperties {
     innerRadius: finite(source.innerRadius) ? clamp(source.innerRadius, 0, radius) : 0,
     outerAngle,
     innerAngle: finite(source.innerAngle) ? clamp(source.innerAngle, 0, outerAngle) : outerAngle,
+    castShadows: source.castShadows !== false,
   };
 }
 

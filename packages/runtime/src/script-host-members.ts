@@ -28,14 +28,12 @@ import {
   rotatorToQuat,
   rotatorUp,
   SaveGameError,
-  SCENE_LAYER_DEFAULT_CAMERA,
   slerpQuats,
   type CurveAssetCatalogEntry,
   type CurveKind,
   type Rng,
   type SaveGameResult,
   type SaveGameValue,
-  type SceneLayerCamera,
 } from "@haptic/core";
 import { Actor, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipInstance, TimelineClipObject, TimelineObject } from "@haptic/object-model";
 import { timelineClipState } from "./timeline-runtime";
@@ -60,7 +58,6 @@ import {
   sceneLayerGuidOf,
   setActorLink,
 } from "./script-host-helpers";
-import type { ScriptHostServices } from "./script-host-services";
 import type { ScriptMaterialOwnership } from "./script-material-ownership";
 import { scriptValuesEqual } from "./script-values-equal";
 import type { LatentFrameRoots } from "./latent-frame-roots";
@@ -105,15 +102,6 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     }
     return cloneSaveGameValue(type === "actor" && value instanceof Actor ? services.getSaveActorId?.(value) ?? value.guid : value);
   };
-  const layerCamera = (layer: EngineObject | string | null | undefined): SceneLayerCamera => {
-    const guid = sceneLayerGuidOf(layer);
-    return (guid ? services.getSceneLayerCamera?.(guid) : null) ?? SCENE_LAYER_DEFAULT_CAMERA;
-  };
-  const setLayerCamera = (layer: EngineObject | string | null | undefined, changes: Parameters<NonNullable<ScriptHostServices["setSceneLayerCamera"]>>[1]) => {
-    const guid = sceneLayerGuidOf(layer);
-    if (guid) services.setSceneLayerCamera?.(guid, changes);
-  };
-  const vector2 = (value: unknown) => value as { x?: unknown; y?: unknown } | null | undefined;
   const breakpoints = () => {
     const current = host.breakpoints();
     return current === null || current.empty ? null : current;
@@ -513,21 +501,6 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     unregisterScenePostProcess: (materialGuid) => {
       services.unregisterScenePostProcess?.(String(materialGuid ?? ""));
     },
-    setSceneLayerCameraLocation: (layer, location) => {
-      setLayerCamera(layer, { x: vector2(location)?.x, y: vector2(location)?.y });
-    },
-    addSceneLayerCameraOffset: (layer, delta) => {
-      const camera = layerCamera(layer);
-      setLayerCamera(layer, { x: camera.x + Number(vector2(delta)?.x), y: camera.y + Number(vector2(delta)?.y) });
-    },
-    getSceneLayerCameraLocation: (layer) => {
-      const camera = layerCamera(layer);
-      return { x: camera.x, y: camera.y };
-    },
-    setSceneLayerCameraRotation: (layer, degrees) => { setLayerCamera(layer, { rotation: degrees }); },
-    getSceneLayerCameraRotation: (layer) => layerCamera(layer).rotation,
-    setSceneLayerCameraZoom: (layer, zoom) => { setLayerCamera(layer, { zoom }); },
-    getSceneLayerCameraZoom: (layer) => layerCamera(layer).zoom,
     getOwningSceneLayer: (target) => services.getOwningSceneLayer?.(target instanceof EngineObject ? target : null) ?? null,
     getScalability: () => services.getScalability?.() ?? null,
     requestScalability: (request) => services.requestScalability?.(request) ?? {
@@ -536,6 +509,7 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     possessCamera: (target) => {
       services.possessCamera?.(target);
     },
+    getSceneCameraManager: () => services.getSceneCameraManager?.() ?? null,
     getRenderTargetMode: (guid) => typeof guid === "string" ? services.getRenderTargetMode?.(guid) ?? "SceneColor" : "SceneColor",
     getRenderTargetTextureTarget: (guid) => typeof guid === "string" ? services.getRenderTargetTextureTarget?.(guid) ?? null : null,
     captureRenderTarget: (target) => {

@@ -2,8 +2,9 @@ import { setAuthoredLightEnabled, syncDirectionalLightPolicy } from "./light-pol
 import { sceneRenderTargetCaptures } from "./render-target-capture";
 import { findSceneReflectionProbes, sceneReflectionProbes } from "./reflection-probes";
 import { AreaRectLightGroup } from "./area-rect-light";
-import { Light2DGroup } from "./light-2d-group";
-import { setScene2DLighting, type Light2DRecord } from "./lights-2d";
+import { Light2DGroup, Occluder2DGroup } from "./light-2d-group";
+import { scene2DLighting, setScene2DLighting, type Light2DRecord } from "./lights-2d";
+import { authoredOccluders2D } from "./authored-occluders-2d";
 import { authoredActorMatrices, authoredComponentActorTransform } from "./authored-transform-matrices";
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
@@ -19,11 +20,13 @@ import { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { actorsHaveLights2D, LIGHT_2D_CLASS_ID, light2DBindings, type SerializedActor, type SerializedComponent, type SerializedScene } from "@haptic/core";
 import {
+  actorCameraComponent,
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   identitySerializedTransform,
   areaRectLightBindings,
   normalizeSceneFogSettings,
+  sceneDefaultCameraActor,
   sceneEnvironmentTextureGuid,
   REFLECTION_PROBE_CLASS_ID,
 } from "@haptic/core";
@@ -58,7 +61,6 @@ export type AuthoredCameraProperties = {
   orthographicSize?: number;
   nearClip?: number;
   farClip?: number;
-  isDefault?: boolean;
 };
 
 export type SyncIlluminationOptions = {
@@ -71,6 +73,8 @@ export type SyncIlluminationOptions = {
 type AuthoredState = {
   areaLights: Map<string, AreaRectLightGroup>;
   lights2D: Map<string, Light2DGroup>;
+  /** Each actor's 2D shadow casters, with what they were built from (its collider components, assets and scale). */
+  occluders2D: Map<string, { group: Occluder2DGroup; source: string; assets: unknown[] }>;
   lights: Map<string, Light>;
   cameras: Map<string, Camera>;
   lightKinds: Map<string, string>;
@@ -84,6 +88,7 @@ function stateOf(scene: Scene): AuthoredState {
     state = {
       areaLights: new Map(),
       lights2D: new Map(),
+      occluders2D: new Map(),
       lights: new Map(),
       cameras: new Map(),
       lightKinds: new Map(),
@@ -365,6 +370,11 @@ const lensExtents = new WeakMap<Scene, number>();
  * Sets how much more world a Scene's cameras show vertically than the authored lens frames: a pixelated framebuffer
  * extended past the design size keeps the design size's scale and shows more of the scene in the extra rows.
  */
+/** How much more world the Scene's cameras show vertically than their authored lens frames (`setSceneCameraLensExtent`). */
+export function sceneCameraLensExtent(scene: Scene): number {
+  return lensExtents.get(scene) ?? 1;
+}
+
 export function setSceneCameraLensExtent(scene: Scene, extent: number): void {
   const value = Number.isFinite(extent) && extent > 1 ? extent : 1;
   if ((lensExtents.get(scene) ?? 1) === value) return;
@@ -572,6 +582,47 @@ export function syncAuthoredAreaLightsFromMeshes(scene: Scene, meshForActor: (ac
     const mesh = meshForActor(id);
     if (mesh) group.setWorld(mesh.computeWorldMatrix(true));
   }
+  for (const [id, entry] of state.occluders2D) {
+    const mesh = meshForActor(id);
+    if (mesh) entry.group.setWorld(mesh.computeWorldMatrix(true));
+  }
+}
+
+const occluderScale = new Vector3();
+const occluderRotation = new Quaternion();
+const occluderPosition = new Vector3();
+
+/**
+ * Keeps the actor's 2D shadow casters in a 2D physics Scene that is 2D-lit (no other Scene pays for them), rebuilt only
+ * when its Collider or Tilemap components, their assets or its world scale change.
+ */
+function syncAuthoredOccluders(scene: Scene, state: AuthoredState, sceneData: SerializedScene, actor: SerializedActor, worldOf: () => Matrix,
+  assets: MeshAssetContext | undefined, live: Set<string>): void {
+  if (sceneData.settings.physicsWorld !== "2d" || !scene2DLighting(scene)) return;
+  const casters = actor.components.filter((component) => component.classId === "ColliderComponent" || component.classId === "TilemapComponent");
+  if (!casters.length) return;
+  // An actor whose attachment is missing has no world pose; its lights report that, and it casts nothing.
+  let world: Matrix;
+  try { world = worldOf(); } catch { return; }
+  live.add(actor.id);
+  world.decompose(occluderScale, occluderRotation, occluderPosition);
+  const scale = { x: occluderScale.x, y: occluderScale.y, z: occluderScale.z };
+  const sprite = actor.components.find((component) => component.classId === "SpriteComponent");
+  const guid = (value: unknown) => typeof value === "string" ? value : "";
+  const used = [
+    assets?.spritePayloads?.get(guid(sprite?.properties.assetGuid)),
+    ...casters.map((component) => component.classId === "TilemapComponent" ? assets?.tilemaps?.get(guid(component.properties.assetGuid)) : undefined),
+    assets?.tilesets, assets?.pixelsPerUnit,
+  ];
+  const source = JSON.stringify([casters, sprite?.properties.assetGuid, scale]);
+  let entry = state.occluders2D.get(actor.id);
+  if (!entry) { entry = { group: new Occluder2DGroup(scene), source: "", assets: [] }; state.occluders2D.set(actor.id, entry); }
+  if (entry.source !== source || entry.assets.length !== used.length || entry.assets.some((asset, index) => asset !== used[index])) {
+    entry.group.update(authoredOccluders2D(actor, assets, scale));
+    entry.source = source;
+    entry.assets = used;
+  }
+  entry.group.setWorld(world);
 }
 
 /**
@@ -612,14 +663,9 @@ export function applySceneEnvironment(
 }
 
 function resolveDefaultCameraKey(sceneData: SerializedScene): string | null {
-  const actorId = sceneData.settings.mainCameraActorId;
-  const componentId = sceneData.settings.mainCameraComponentId;
-  if (!actorId || !componentId) return null;
-  const actor = sceneData.actors.find((entry) => entry.id === actorId);
-  const component = actor?.components.find(
-    (entry) => entry.id === componentId && entry.classId === "CameraComponent",
-  );
-  return component ? authoredComponentKey(actorId, component.id) : null;
+  const actor = sceneDefaultCameraActor(sceneData);
+  const component = actor ? actorCameraComponent(actor) : null;
+  return actor && component ? authoredComponentKey(actor.id, component.id) : null;
 }
 
 /**
@@ -659,6 +705,7 @@ export function* syncAuthoredIlluminationSteps(
   const liveCameras = new Set<string>();
   const liveAreaLights = new Set<string>();
   const liveLights2D = new Set<string>();
+  const liveOccluders2D = new Set<string>();
   const actorWorld = authoredActorMatrices(sceneData.actors);
 
 
@@ -679,6 +726,7 @@ export function* syncAuthoredIlluminationSteps(
         options.onDiagnostic?.(`Rectangular Area Light ${actor.id}: ${String(error)}`);
       }
     }
+    syncAuthoredOccluders(scene, state, sceneData, actor, () => actorWorld(actor), options.assets, liveOccluders2D);
     if (actor.components.some((component) => component.classId === LIGHT_2D_CLASS_ID)) {
       // An actor whose attachment is missing has no world pose: its 2D lights report it rather than stop the sync.
       try {
@@ -783,6 +831,7 @@ export function* syncAuthoredIlluminationSteps(
   const shadows = sceneShadowController(scene);
   for (const [id, group] of state.areaLights) if (!liveAreaLights.has(id)) { group.dispose(); state.areaLights.delete(id); }
   for (const [id, group] of state.lights2D) if (!liveLights2D.has(id)) { group.dispose(); state.lights2D.delete(id); }
+  for (const [id, entry] of state.occluders2D) if (!liveOccluders2D.has(id)) { entry.group.dispose(); state.occluders2D.delete(id); }
 
 
   const namedId = resolveDefaultCameraKey(sceneData);

@@ -9,13 +9,14 @@ import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import {
-  HAPTIC_2D_LIGHT_FUNCTION_GLSL, HAPTIC_2D_LIGHT_FUNCTION_WGSL, HAPTIC_2D_LIGHTS_GLSL, HAPTIC_2D_LIGHTS_WGSL, bind2DLights,
+  HAPTIC_2D_LIGHT_FUNCTION_GLSL, HAPTIC_2D_LIGHT_FUNCTION_WGSL, HAPTIC_2D_LIGHTS_GLSL, HAPTIC_2D_LIGHTS_WGSL, HAPTIC_2D_SHADOW_SAMPLER,
+  bind2DLights, bind2DShadows,
 } from "./lights-2d";
 
 /**
  * Fragment: the unlit colour (display space) times the Scene's 2D light at the pixel's world XY (`haptic2DLight`), read
- * from the one per-Scene block every 2D-lit surface binds. Bound for every draw: other programs reuse the block's
- * binding point.
+ * from the one per-Scene block every 2D-lit surface binds, and its shadows from the Scene's 2D shadow map. Bound for
+ * every draw: other programs reuse the block's binding point.
  */
 export class Light2DBlock extends NodeMaterialBlock {
   constructor(name: string) {
@@ -35,7 +36,9 @@ export class Light2DBlock extends NodeMaterialBlock {
   }
 
   override bind(effect: Effect, _material: NodeMaterial, mesh?: Mesh): void {
-    if (mesh) bind2DLights(mesh.getScene(), effect);
+    if (!mesh) return;
+    bind2DLights(mesh.getScene(), effect);
+    bind2DShadows(mesh.getScene(), effect);
   }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
@@ -43,6 +46,7 @@ export class Light2DBlock extends NodeMaterialBlock {
     state.sharedData.dynamicUniformBlocks.push(this);
     state.sharedData.forcedBindableBlocks.push(this);
     const wgsl = state.shaderLanguage === 1;
+    state._emit2DSampler(HAPTIC_2D_SHADOW_SAMPLER);
     state._emitFunction("haptic2DLights", wgsl ? HAPTIC_2D_LIGHTS_WGSL : HAPTIC_2D_LIGHTS_GLSL, "// Haptic2DLights");
     state._emitFunction("haptic2DLightFunction", wgsl ? HAPTIC_2D_LIGHT_FUNCTION_WGSL : HAPTIC_2D_LIGHT_FUNCTION_GLSL, "// 2D light");
     state.compilationString += `${state._declareOutput(this.output)} = ${this.color.associatedVariableName} * haptic2DLight(${this.worldPosition.associatedVariableName}.xy);\n`;

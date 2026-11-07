@@ -11,6 +11,7 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "dynamicMeshUpdate",
   "setAreaLights",
   "setLights2D",
+  "setOccluders2D",
   "setActorOutlines",
   "setActorDeformers",
   "setFogVolumes",
@@ -80,6 +81,7 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "sceneLayerPostProcess",
   "scenePostProcess",
   "sceneLayerCamera",
+  "sceneCamera",
 ] as const satisfies readonly CommandMessage["type"][];
 
 export type PlayEngineCommandType = (typeof PLAY_ENGINE_COMMAND_TYPES)[number];

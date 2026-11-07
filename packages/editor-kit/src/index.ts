@@ -282,11 +282,10 @@ export {
   type ClassPickerProps,
 } from "./class-picker";
 export {
-  SceneComponentPicker,
-  type SceneComponentPickerEntry,
-  type SceneComponentPickerProps,
-  type SceneComponentRef,
-} from "./scene-component-picker";
+  SceneActorPicker,
+  type SceneActorPickerEntry,
+  type SceneActorPickerProps,
+} from "./scene-actor-picker";
 export {
   NamedListEditor,
   type NamedListEditorProps,

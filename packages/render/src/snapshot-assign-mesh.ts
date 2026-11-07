@@ -263,11 +263,6 @@ function beginAssignMesh(
   }
   if (command.camera) {
     binding.cameraProps.set(command.slotId, command.camera);
-    if (command.camera.isDefault) {
-      binding.defaultCameraSlotId = command.slotId;
-    } else if (binding.defaultCameraSlotId === command.slotId) {
-      binding.defaultCameraSlotId = null;
-    }
   }
   const componentHelpers = command.parts?.some(part => part.light || part.camera);
   return { scene, binding, command, meshKind, previousParts, reusable, componentHelpers, retireRemovedMaterials };
@@ -289,7 +284,8 @@ function reuseIlluminationHelpers(assign: AssignMeshContext): boolean {
       }
       if (helper.camera && part?.camera) {
         applyAuthoredCameraProperties(helper.camera, part.camera);
-        if (!selectedCamera || part.camera.isDefault) selectedCamera = helper.camera;
+        // An actor is looked through its first Camera component.
+        selectedCamera ??= helper.camera;
       }
     }
     if (selectedCamera) binding.cameras.set(command.slotId, selectedCamera);

@@ -52,13 +52,16 @@ export function setActorIllumination(root: Mesh, helpers: ComponentIllumination[
 
 export const PLAY_FREE_CAM_NAME = "playFreeCam";
 
-/** Resolve the game listener/camera independently of a viewport-owned free camera. */
+/**
+ * The game listener/camera, independent of a viewport-owned free camera: the
+ * possessed camera slot's camera, else the main Scene's Layer Camera
+ * (else the viewport's default camera); only a camera of `scene` itself, so a
+ * Scene Layer's scene never takes the world's.
+ */
 export function resolvePlayGameCamera(scene: Scene, binding: SnapshotSceneBinding): Camera | null {
+  const own = (camera: Camera | null | undefined) => camera && !camera.isDisposed() && camera.getScene() === scene ? camera : null;
   const possessed = binding.possessedCameraSlotId !== null ? binding.cameras.get(binding.possessedCameraSlotId) : undefined;
-  if (possessed && !possessed.isDisposed()) return possessed;
-  const named = binding.defaultCameraSlotId !== null ? binding.cameras.get(binding.defaultCameraSlotId) : undefined;
-  if (named && !named.isDisposed()) return named;
-  return scene.getCameraByName("camera");
+  return own(possessed) ?? own(binding.layerCamera) ?? scene.getCameraByName("camera");
 }
 
 export function refreshPlayActiveCamera(
@@ -75,10 +78,11 @@ export function applyPlayShadows(scene: Scene): void {
   shadows.sync();
 }
 
+/** View through `slotId`'s camera; null returns the view to the Layer Camera. */
 export function applyPossessCamera(
   scene: Scene,
   binding: SnapshotSceneBinding,
-  slotId: number,
+  slotId: number | null,
 ): void {
   binding.possessedCameraSlotId = slotId;
   refreshPlayActiveCamera(scene, binding);
@@ -124,7 +128,8 @@ export function createPlayHelperMesh(
     camera.inputs.clear();
     const props = illuminationPart?.camera ?? binding.cameraProps.get(slotId);
     if (props) applyAuthoredCameraProperties(camera, props);
-    if (!cameras.has(slotId) || props?.isDefault) cameras.set(slotId, camera);
+    // An actor is looked through its first Camera component.
+    if (!cameras.has(slotId)) cameras.set(slotId, camera);
     helper.camera = camera;
     if (!targets) refreshPlayActiveCamera(scene, binding);
   }

@@ -231,8 +231,7 @@ describe("authored mesh content", () => {
         ],
       }),
     ]);
-    data.settings.mainCameraActorId = "cam";
-    data.settings.mainCameraComponentId = "camera";
+    data.settings.defaultCameraActorId = "cam";
     applySceneToBabylonScene(scene, data);
     expect(scene.activeCamera?.name).toBe("authoredCamera:cam");
   });

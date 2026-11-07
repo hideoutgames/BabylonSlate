@@ -109,7 +109,9 @@ describe("Play quality changes", () => {
       { ...part("sun-light", "light:directional"), light: { color: [1, 1, 1], intensity: 1.5, enabled: true, castShadows: true } }] });
     play.applyCommand({ type: "spawn", slotId: 3, actorGuid: "camera", classId: "Actor" });
     play.applyCommand({ type: "assignMesh", slotId: 3, meshAssetGuid: null, meshKind: null, actorGuid: "camera", parts: [
-      { ...part("lens", "camera"), camera: { fieldOfView: 60, isDefault: true } }] });
+      { ...part("lens", "camera"), camera: { fieldOfView: 60 } }] });
+    // The runtime possesses the Scene's Default Camera when it starts.
+    play.applyCommand({ type: "possessCamera", slotId: 3 });
     const snapshot = new Float32Array(snapshotFloatCount(8));
     writeSnapshotHeader(snapshot, { frameId: 1, tickIndex: 1, actorCount: 3, scriptMs: 0, physicsMs: 0 });
     const pose = (index: number, slotId: number, position: { x: number; y: number; z: number }, rotation = { x: 0, y: 0, z: 0, w: 1 }) =>

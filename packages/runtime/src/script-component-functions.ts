@@ -1,5 +1,5 @@
 import { DEFORMER_MAX_COORDINATE, isUIControl2DClass, parseDeformerProperties } from "@haptic/core";
-import { Actor, MaterialObject, type ActorComponent, type EngineObject } from "@haptic/object-model";
+import { Actor, LayerCamera, MaterialObject, type ActorComponent, type EngineObject } from "@haptic/object-model";
 import { particleParameterArg, particleParameterResult } from "./particle-parameter-bindings";
 import { asActor, asActorComponent, vec3Arg } from "./script-host-helpers";
 import type { ScriptHostServices } from "./script-host-services";
@@ -13,7 +13,7 @@ export interface ComponentFunctionHost {
 }
 
 /**
- * `ctx.callComponentFunction` on an engine component, plus the two Scene Layer actor functions. The checks
+ * `ctx.callComponentFunction` on an engine component, plus Add Camera Offset on a Layer Camera and the two Scene Layer actor functions. The checks
  * run in order and the order is the precedence, including where the destroyed-component and owner
  * admission gates sit, so keep it one chain.
  */
@@ -23,6 +23,13 @@ export function callNativeComponentFunction(
   name: string,
   args: Record<string, unknown>,
 ): Record<string, unknown> {
+  if (target instanceof LayerCamera) {
+    if (name === "addLayerCameraOffset") {
+      const delta = args.delta as { x?: unknown; y?: unknown } | null | undefined;
+      host.services.setLayerCamera?.(target, { x: target.state.x + Number(delta?.x), y: target.state.y + Number(delta?.y) });
+    }
+    return {};
+  }
   if (target instanceof Actor && name === "switchSceneLayerActor") {
     return { actor: host.canInvokeOwner(target) ? host.services.switchSceneLayerActor?.(target, args.index) ?? null : null };
   }

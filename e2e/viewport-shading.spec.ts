@@ -87,8 +87,7 @@ test("Scene fog changes authored PBR surface pixels in the editor and Play", asy
   scene.settings.environmentColor = [0, 0, 0];
   scene.settings.environmentSource = "none";
   scene.settings.grid.showGrid = false;
-  scene.settings.mainCameraActorId = null;
-  scene.settings.mainCameraComponentId = null;
+  scene.settings.defaultCameraActorId = null;
   scene.settings.fogColor = [1, 0, 0];
   scene.settings.fogMode = "exponentialSquared";
   scene.settings.fogDensity = 2;
