@@ -590,11 +590,14 @@ const occluderPosition = new Vector3();
  * Keeps the actor's 2D shadow casters in a 2D physics Scene that is 2D-lit (no other Scene pays for them), rebuilt only
  * when its Collider or Tilemap components, their assets or its world scale change.
  */
-function syncAuthoredOccluders(scene: Scene, state: AuthoredState, sceneData: SerializedScene, actor: SerializedActor, world: Matrix,
+function syncAuthoredOccluders(scene: Scene, state: AuthoredState, sceneData: SerializedScene, actor: SerializedActor, worldOf: () => Matrix,
   assets: MeshAssetContext | undefined, live: Set<string>): void {
   if (sceneData.settings.physicsWorld !== "2d" || !scene2DLighting(scene)) return;
   const casters = actor.components.filter((component) => component.classId === "ColliderComponent" || component.classId === "TilemapComponent");
   if (!casters.length) return;
+  // An actor whose attachment is missing has no world pose; its lights report that, and it casts nothing.
+  let world: Matrix;
+  try { world = worldOf(); } catch { return; }
   live.add(actor.id);
   world.decompose(occluderScale, occluderRotation, occluderPosition);
   const scale = { x: occluderScale.x, y: occluderScale.y, z: occluderScale.z };
@@ -722,7 +725,7 @@ export function* syncAuthoredIlluminationSteps(
         options.onDiagnostic?.(`Rectangular Area Light ${actor.id}: ${String(error)}`);
       }
     }
-    syncAuthoredOccluders(scene, state, sceneData, actor, actorWorld(actor), options.assets, liveOccluders2D);
+    syncAuthoredOccluders(scene, state, sceneData, actor, () => actorWorld(actor), options.assets, liveOccluders2D);
     if (actor.components.some((component) => component.classId === LIGHT_2D_CLASS_ID)) {
       // An actor whose attachment is missing has no world pose: its 2D lights report it rather than stop the sync.
       try {
