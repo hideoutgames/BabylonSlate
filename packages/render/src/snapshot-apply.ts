@@ -165,6 +165,8 @@ export function retirePlaySlot(
   binding.areaLights.delete(slotId);
   binding.lights2D.get(slotId)?.dispose();
   binding.lights2D.delete(slotId);
+  binding.occluders2D.get(slotId)?.dispose();
+  binding.occluders2D.delete(slotId);
   forgetRejectedAssignments(binding, slotId);
   cancelPendingVisualReplacement(binding, slotId);
   retireBoneAttachments(binding, slotId);
@@ -220,6 +222,7 @@ export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
     ...binding.reflectionProbes.keys(),
     ...binding.areaLights.keys(),
     ...binding.lights2D.keys(),
+    ...binding.occluders2D.keys(),
     ...binding.meshes.keys(),
     ...binding.cameras.keys(),
     ...binding.lights.keys(),
@@ -332,6 +335,7 @@ export function applySnapshotToScene(
       (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE);
     binding.areaLights.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
     binding.lights2D.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
+    binding.occluders2D.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
     setPlayVisualVisibility(
       binding,
       mesh,
@@ -364,6 +368,7 @@ export function applySnapshotToScene(
     if (!attachment.applied) continue;
     binding.areaLights.get(slotId)?.setWorld(attachment.world);
     binding.lights2D.get(slotId)?.setWorld(attachment.world);
+    binding.occluders2D.get(slotId)?.setWorld(attachment.world);
   }
   for (const [slotId, attachment] of binding.boneAttachments) {
     if (!attachment.applied) continue;
@@ -422,6 +427,8 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.areaLights.clear();
   for (const group of binding.lights2D.values()) group.dispose();
   binding.lights2D.clear();
+  for (const group of binding.occluders2D.values()) group.dispose();
+  binding.occluders2D.clear();
   for (const camera of binding.cameras.values()) camera.dispose();
   binding.meshes.clear();
   binding.liveSlots.clear();

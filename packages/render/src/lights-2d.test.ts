@@ -13,7 +13,7 @@ import { Light2DBlock } from "./unlit-lighting-blocks";
 const record = (properties: Partial<Light2DProperties>, x = 0, y = 0, direction: [number, number] = [0, 1]): Light2DRecord => ({
   properties: parseLight2DProperties(properties), x, y, directionX: direction[0], directionY: direction[1],
 });
-const words = () => new Float32Array(LIGHT_2D_MAXIMUM * 12);
+const words = () => new Float32Array(LIGHT_2D_MAXIMUM * 16);
 const lit = { lightsEnabled: true, camera: null, origin: { x: 0, y: 0 } };
 
 describe("pack2DLights", () => {
@@ -24,11 +24,21 @@ describe("pack2DLights", () => {
       record({ lightKind: "global", color: [0, 0, 1], intensity: 2 }),
       record({ color: [1, 0.5, 0.25], intensity: 2, radius: 4, innerRadius: 1, outerAngle: 120, innerAngle: 60 }, 3, -2, [0, -1]),
     ], { ...lit, origin: { x: 1, y: 1 } }, out);
-    expect(packed).toEqual({ count: 1, ambient: [0.5, 0.25, 2], limited: [] });
+    expect(packed).toEqual({ count: 1, ambient: [0.5, 0.25, 2], limited: [], shadowed: [] });
     // Relative to the floating origin; cos(60°) and cos(30°) are the half-angles' cosines.
-    expect([...out.subarray(0, 12)].map((value) => Number(value.toFixed(4)))).toEqual([
-      2, -3, 4, 1, 2, 1, 0.5, 1, 0, -1, 0.5, 0.866,
+    expect([...out.subarray(0, 16)].map((value) => Number(value.toFixed(4)))).toEqual([
+      2, -3, 4, 1, 2, 1, 0.5, 1, 0, -1, 0.5, 0.866, 0, 0, 0, 0,
     ]);
+  });
+
+  it("gives shadow map rows to the first shadow-casting Point lights it holds, only while there are casters", () => {
+    const lights = [record({ castShadows: false }), record({}), record({})];
+    const out = words();
+    const packed = pack2DLights(lights, { ...lit, shadows: true }, out);
+    expect(packed.shadowed).toEqual([lights[1], lights[2]]);
+    // Row v at its texel centre (of eight rows), and the flag; none for the light that casts no shadow.
+    expect([...out.subarray(12, 16), ...out.subarray(28, 32), ...out.subarray(44, 48)]).toEqual([0, 0, 0, 0, 0.0625, 1, 0, 0, 0.1875, 1, 0, 0]);
+    expect(pack2DLights(lights, lit, words()).shadowed).toEqual([]);
   });
 
   it("marks a full-circle light as having no cone", () => {
@@ -40,7 +50,7 @@ describe("pack2DLights", () => {
   it("skips a disabled light, one of zero intensity and one with an error", () => {
     const broken = { ...record({}), error: "2D Light requires a finite transform." };
     const packed = pack2DLights([record({ enabled: false }), record({ intensity: 0 }), broken, record({ lightKind: "global", enabled: false })], lit, words());
-    expect(packed).toEqual({ count: 0, ambient: [0, 0, 0], limited: [] });
+    expect(packed).toEqual({ count: 0, ambient: [0, 0, 0], limited: [], shadowed: [] });
   });
 
   it("keeps the Point lights nearest the camera, less their radius, and reports the rest as limited", () => {
@@ -51,14 +61,14 @@ describe("pack2DLights", () => {
     const packed = pack2DLights([...far, wide, near], { ...lit, camera: { x: 0, y: 0 } }, out);
     expect(packed.count).toBe(LIGHT_2D_MAXIMUM);
     // The wide light reaches the camera, so it outranks the near one; the two farthest small lights are left out.
-    expect([out[0], out[12]]).toEqual([150, 2]);
+    expect([out[0], out[16]]).toEqual([150, 2]);
     expect(packed.limited).toEqual(far.slice(-2));
   });
 
   it("packs a white ambient and no lights while the Scene's lights are off (the Unlit viewport)", () => {
     const out = words();
     expect(pack2DLights([record({}), record({ lightKind: "global", intensity: 3 })], { ...lit, lightsEnabled: false }, out))
-      .toEqual({ count: 0, ambient: [1, 1, 1], limited: [] });
+      .toEqual({ count: 0, ambient: [1, 1, 1], limited: [], shadowed: [] });
     expect(out.every((value) => value === 0)).toBe(true);
   });
 });

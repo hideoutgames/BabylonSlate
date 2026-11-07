@@ -56,13 +56,17 @@ export class PhysicsColliderSets implements MeshCollidersHost, SpriteTileCollide
   >();
   private readonly hostedScratch = new Map<string, ColliderDesc>();
   private readonly collisionScratch = new DescriptorScratch();
+  private readonly onPublished: ((actor: Actor) => void) | undefined;
 
   constructor(
     backend: Pick<PhysicsBackend, "kind" | "applyColliderChanges">,
     collisionPresets?: readonly Pick<CollisionPreset, "id" | "layer" | "mask" | "overlapMask">[],
+    /** Told when an actor's published set changes or its body retires (2D lights' shadow casters follow it). */
+    onPublished?: (actor: Actor) => void,
   ) {
     this.backend = backend;
     this.collisionPresets = collisionPresets;
+    this.onPublished = onPublished;
     this.meshes = new MeshColliders(backend.kind, this);
     this.tiles = new SpriteTileColliders(this);
   }
@@ -121,6 +125,7 @@ export class PhysicsColliderSets implements MeshCollidersHost, SpriteTileCollide
     if (upsert.length || remove.length)
       this.backend.applyColliderChanges(bodyId, { upsert, remove });
     this.preparedByActor.set(actor.guid, { actor, descriptor, colliders });
+    if (upsert.length || remove.length) this.onPublished?.(actor);
   }
 
   /** The collider set last prepared for `actor`'s body; undefined when none was, or it was another actor's. */
@@ -132,7 +137,9 @@ export class PhysicsColliderSets implements MeshCollidersHost, SpriteTileCollide
   /** A retired body's set, and the sprite clip of the actor it belonged to. */
   forgetActor(actorId: string, owner: Actor | undefined): void {
     if (owner) this.tiles.forgetSpriteClip(owner);
+    const had = this.preparedByActor.get(actorId);
     this.preparedByActor.delete(actorId);
+    if (had && had.actor === owner) this.onPublished?.(had.actor);
   }
 
   /** A body whose creation failed: its set only, never its actor's sprite clip. */
