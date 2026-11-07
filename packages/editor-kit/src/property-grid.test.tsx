@@ -23,6 +23,13 @@ import {
   stubPointerCapture,
 } from "./test-support/pointer-events";
 
+
+// Counted: each row humanizes its label once per render, shared by its caption and controls.
+vi.mock("./humanize-property-label", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./humanize-property-label")>();
+  return { ...actual, humanizePropertyLabel: vi.fn(actual.humanizePropertyLabel) };
+});
+
 describe("PropertyGrid", () => {
   afterEach(() => {
     cleanup();
@@ -472,6 +479,29 @@ describe("PropertyGrid", () => {
     expect(screen.getByTestId("property-texture").textContent).toContain(
       "Grass",
     );
+  });
+
+  it("humanizes each row's label once per render for its caption, accessible names and reset", () => {
+    vi.mocked(humanizePropertyLabel).mockClear();
+    render(
+      <PropertyGrid
+        rows={[
+          { kind: "number", id: "speed", label: "walkSpeed", value: 2, defaultValue: 1, onChange: () => {} },
+          { kind: "vector3", id: "spawn", label: "spawnLocation", value: [1, 2, 3], defaultValue: [0, 0, 0], linked: false, onLinkedChange: () => {}, onChange: () => {} },
+          { kind: "color", id: "tint", label: "tintColor", value: [1, 1, 1], onChange: () => {} },
+        ]}
+      />,
+    );
+    const humanized = vi.mocked(humanizePropertyLabel).mock.calls.map(([key]) => key);
+    expect(humanized.filter((key) => key === "walkSpeed")).toHaveLength(1);
+    expect(humanized.filter((key) => key === "spawnLocation")).toHaveLength(1);
+    expect(humanized.filter((key) => key === "tintColor")).toHaveLength(1);
+    expect(screen.getByText("Walk Speed")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reset Walk Speed" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Spawn Location Y" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Link Spawn Location Axes" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reset Spawn Location" })).toBeTruthy();
+    expect(screen.getAllByLabelText("Tint Color").length).toBeGreaterThan(0);
   });
 
   it("humanizes camelCase property keys as Title Case", () => {
