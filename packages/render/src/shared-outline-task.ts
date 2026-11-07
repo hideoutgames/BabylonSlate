@@ -123,12 +123,13 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     const pass = graph.addRenderPass(`${this.name} Compose`);
     this.composePass = pass;
     pass.setRenderTarget(this.outputTexture);
-    pass.addDependencies(this.masks.flatMap((record) => [record.mask, record.depth]));
+    // Every group's mask, but only the strict group's depth: the others end with their own mask pass, so the graph's
+    // allocator gives the through and selection passes one depth target in turn.
+    const strictDepth = this.masks[0]!.depth;
+    pass.addDependencies([...this.masks.map((record) => record.mask), strictDepth]);
     pass.setInitializeFunc((context) => {
-      for (const record of this.masks) {
-        context.setTextureSamplingMode(record.mask, Texture.NEAREST_SAMPLINGMODE);
-        context.setTextureSamplingMode(record.depth, Texture.NEAREST_SAMPLINGMODE);
-      }
+      for (const record of this.masks) context.setTextureSamplingMode(record.mask, Texture.NEAREST_SAMPLINGMODE);
+      context.setTextureSamplingMode(strictDepth, Texture.NEAREST_SAMPLINGMODE);
     });
     pass.setExecuteFunc((context) => {
       if (!this.view.active) return;
@@ -151,7 +152,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
           context.bindTextureHandle(effect, `${record.group}Mask`, record.mask);
           effect.setTexture(`${record.group}Style`, this.view.styleTexture(record.group));
         }
-        context.bindTextureHandle(effect, "strictDepth", this.masks[0]!.depth);
+        context.bindTextureHandle(effect, "strictDepth", strictDepth);
       }, undefined, false, false, false, false, Constants.ALPHA_COMBINE);
     });
     this.sync();
