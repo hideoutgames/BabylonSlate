@@ -92,6 +92,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Sky and ground fill lighting",
     "Rendering",
   ),
+  engineComponent("Light2DComponent", "2D Light", "Lights 2D Sprites and Tilemaps; Point or Global", "Rendering"),
   engineComponent(
     "SkyboxComponent",
     "Skybox",

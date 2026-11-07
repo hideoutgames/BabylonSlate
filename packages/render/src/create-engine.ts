@@ -59,7 +59,7 @@ import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
 import { engineFrameBackpressure } from "./frame-backpressure";
 import { HELD_FRAME_LABELS, HELD_FRAME_OTHER, HeldFrameReasons } from "./held-frames";
-import type { SpawnableLight } from "./spawnable-lights";
+import { spawnsLights2D, type SpawnableLight } from "./spawnable-lights";
 import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
 import { estimateTextureMemory } from "./texture-memory-estimate";
 import { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting } from "./preserve-drawing-buffer-setting";
@@ -1673,7 +1673,7 @@ function initializeEngine(
       playViz?.applyCommand({ type: "setShowNav", enabled: false });
       // Play visuals come from assignMesh. Document illumination would plant a
       // second set of lights (`authoredLight:<actorId>`) on changescene.
-      applySerializedSceneEnvironment(scene, sceneData, { assets: binding });
+      applySerializedSceneEnvironment(scene, sceneData, { assets: binding, spawnsLights2D: !options.editor && spawnsLights2D(spawnableLights.values()) });
       rebuildPostProcessStack();
       scheduler.invalidate("asset");
       return;

@@ -46,6 +46,14 @@ describe("isLightValueOnlySceneEdit", () => {
     expect(isLightValueOnlySceneEdit(sceneOf([area]), sceneOf([edited(area, { enabled: false })]))).toBe(false);
   });
 
+  it("takes every 2D Light value but its kind as in place: 2D lights choose no variant", () => {
+    const glow = light("glow", "Light2DComponent", { enabled: true, lightKind: "point", radius: 3, intensity: 1 });
+    for (const properties of [{ enabled: false }, { radius: 6, innerRadius: 1 }, { outerAngle: 90, innerAngle: 45 }, { color: [1, 0, 0], intensity: 2 }])
+      expect(isLightValueOnlySceneEdit(sceneOf([glow]), sceneOf([edited(glow, properties)]))).toBe(true);
+    // The kind picks the billboard's icon.
+    expect(isLightValueOnlySceneEdit(sceneOf([glow]), sceneOf([edited(glow, { lightKind: "global" })]))).toBe(false);
+  });
+
   it("rejects a light value edit combined with any other change", () => {
     const moved = { ...edited(lamp, { range: 12 }), transform: { ...lamp.transform, position: [1, 2, 3] as [number, number, number] } };
     expect(isLightValueOnlySceneEdit(previous, sceneOf([box, moved]))).toBe(false);

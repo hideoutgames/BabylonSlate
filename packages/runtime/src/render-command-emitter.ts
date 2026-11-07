@@ -652,8 +652,9 @@ function playSortingOf(component: ActorComponent): {
   };
 }
 
-/** A sprite or tilemap's Shading Mode when it is not the default 2D. */
+/** A sprite or tilemap's Shading Mode when it is not the default 2D; a Scene Layer draws unlit, so its actors send none. */
 function playShadingOf(component: ActorComponent): { shadingMode?: "3d" | "unlit" } {
+  if (component.owner?.sceneLayerId) return {};
   const mode = parseSurfaceShadingMode(component.getVariable("shadingMode"));
   return mode === "2d" ? {} : { shadingMode: mode };
 }

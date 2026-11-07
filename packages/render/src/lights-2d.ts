@@ -187,55 +187,66 @@ export function bind2DLights(scene: Scene, effect: Effect): void {
   if (buffer) effect.bindUniformBuffer(buffer, "Haptic2DLights");
 }
 
+/** What `pack2DLights` packed: the Point lights it holds, the ambient, and the enabled Point lights past its maximum. */
+export type Packed2DLights = { count: number; ambient: [number, number, number]; limited: Light2DRecord[] };
+
 /**
- * Writes the block from the Scene's 2D lights: the Global lights summed into the ambient, then up to `LIGHT_2D_MAXIMUM`
- * enabled Point lights, nearest to the active camera's XY first (by distance less radius). A Scene with its lights
- * disabled (the Unlit viewport) writes a white ambient and no lights, so lit surfaces draw as unlit ones.
+ * Packs `records` into `words` (the block's light records, `LIGHT_2D_MAXIMUM` × 3 vec4s): the Global lights summed into
+ * the ambient, then up to `LIGHT_2D_MAXIMUM` enabled Point lights, nearest to the camera's XY first (by distance less
+ * radius; in record order without a camera), at positions relative to the floating `origin`. With lights disabled (the
+ * Unlit viewport) it packs a white ambient and no lights, so lit surfaces draw as unlit ones. A disabled light, one of
+ * zero intensity or one with an error draws nothing.
  */
+export function pack2DLights(
+  records: Iterable<Light2DRecord>,
+  options: { lightsEnabled: boolean; camera: { x: number; y: number } | null; origin: { x: number; y: number } },
+  words: Float32Array,
+): Packed2DLights {
+  const ambient: [number, number, number] = [0, 0, 0];
+  const limited: Light2DRecord[] = [];
+  words.fill(0);
+  if (!options.lightsEnabled) return { count: 0, ambient: [1, 1, 1], limited };
+  const camera = options.camera;
+  candidates.length = 0;
+  for (const record of records) {
+    const properties = record.properties;
+    if (!properties.enabled || properties.intensity <= 0 || record.error) continue;
+    if (properties.lightKind === "global") {
+      for (let channel = 0; channel < 3; channel++) ambient[channel]! += properties.color[channel]! * properties.intensity;
+      continue;
+    }
+    const score = camera ? Math.hypot(record.x - camera.x, record.y - camera.y) - properties.radius : 0;
+    candidates.push({ record, score });
+  }
+  // Stable: equal scores keep record order.
+  candidates.sort((a, b) => a.score - b.score);
+  const count = Math.min(LIGHT_2D_MAXIMUM, candidates.length);
+  for (let index = 0; index < candidates.length; index++) {
+    const record = candidates[index]!.record;
+    if (index >= count) { limited.push(record); continue; }
+    const properties = record.properties;
+    const cone = properties.outerAngle < 360 || properties.innerAngle < 360;
+    words.set([
+      record.x - options.origin.x, record.y - options.origin.y, properties.radius, properties.innerRadius,
+      properties.color[0] * properties.intensity, properties.color[1] * properties.intensity, properties.color[2] * properties.intensity, cone ? 1 : 0,
+      record.directionX, record.directionY, Math.cos(properties.outerAngle * Math.PI / 360), Math.cos(properties.innerAngle * Math.PI / 360),
+    ], index * RECORD_VEC4S * 4);
+  }
+  candidates.length = 0;
+  return { count, ambient, limited };
+}
+
+/** Writes the block from the Scene's 2D lights (`pack2DLights`), seen from its active camera. */
 export function write2DLights(scene: Scene): void {
   const state = scenes.get(scene);
   const buffer = state?.buffer;
   if (!state || !buffer) return;
+  const camera = scene.activeCamera?.globalPosition ?? null;
+  const origin = scene.floatingOriginOffset;
+  const packed = pack2DLights(state.records, { lightsEnabled: scene.lightsEnabled, camera, origin }, lightWords);
   state.limited.clear();
-  let ambientR = 0, ambientG = 0, ambientB = 0;
-  candidates.length = 0;
-  if (!scene.lightsEnabled) {
-    ambientR = ambientG = ambientB = 1;
-  } else {
-    const camera = scene.activeCamera?.globalPosition;
-    for (const record of state.records) {
-      const properties = record.properties;
-      if (!properties.enabled || properties.intensity <= 0 || record.error) continue;
-      const [r, g, b] = properties.color;
-      if (properties.lightKind === "global") {
-        ambientR += r * properties.intensity;
-        ambientG += g * properties.intensity;
-        ambientB += b * properties.intensity;
-        continue;
-      }
-      const score = camera ? Math.hypot(record.x - camera.x, record.y - camera.y) - properties.radius : 0;
-      candidates.push({ record, score });
-    }
-  }
-  candidates.sort((a, b) => a.score - b.score);
-  const offset = scene.floatingOriginOffset;
-  const count = Math.min(LIGHT_2D_MAXIMUM, candidates.length);
-  lightWords.fill(0);
-  for (let index = 0; index < candidates.length; index++) {
-    const record = candidates[index]!.record;
-    if (index >= count) { state.limited.add(record); continue; }
-    const properties = record.properties;
-    const cone = properties.outerAngle < 360 || properties.innerAngle < 360;
-    const halfOuter = properties.outerAngle * Math.PI / 360;
-    const halfInner = properties.innerAngle * Math.PI / 360;
-    lightWords.set([
-      record.x - offset.x, record.y - offset.y, properties.radius, properties.innerRadius,
-      properties.color[0] * properties.intensity, properties.color[1] * properties.intensity, properties.color[2] * properties.intensity, cone ? 1 : 0,
-      record.directionX, record.directionY, Math.cos(halfOuter), Math.cos(halfInner),
-    ], index * RECORD_VEC4S * 4);
-  }
-  candidates.length = 0;
-  buffer.updateFloat4("haptic2DHeader", count, ambientR, ambientG, ambientB);
+  for (const record of packed.limited) state.limited.add(record);
+  buffer.updateFloat4("haptic2DHeader", packed.count, packed.ambient[0], packed.ambient[1], packed.ambient[2]);
   buffer.updateFloatArray("haptic2DLights", lightWords);
   buffer.update();
 }
