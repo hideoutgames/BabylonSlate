@@ -28,6 +28,7 @@ A component gives an actor one ability: drawing a mesh, simulating a body, casti
 | [Light](light.md) | A point, spot or directional light. |
 | [Rectangular Area Light](area-rect-light.md) | A rectangular light for windows, screens and light panels. |
 | [Hemispheric Fill Light](hemispheric-fill-light.md) | Soft fill light with one colour from above and another from below. |
+| [2D Light](light-2d.md) | Lights Sprites and Tilemaps in 2D: a Point light with an optional cone, or a Global light. |
 | [Fog Volume](fog-volume.md) | A local box or sphere of fog with soft edges. |
 | [Reflection Probe](reflection-probe.md) | Captures the static scene so surfaces inside its box reflect their surroundings. |
 | [Outline](outline.md) | Draws a coloured silhouette around an actor. |
