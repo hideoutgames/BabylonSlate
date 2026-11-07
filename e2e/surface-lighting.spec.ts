@@ -22,9 +22,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(result.twoDNear, "2D near").toBeGreaterThan(200);
     expect(result.twoDFar, "2D far").toBeGreaterThan(15);
     expect(result.twoDFar, "2D far").toBeLessThan(40);
-    // A caster between the light and a pixel leaves only the Global light there; the same distance in the open is lit.
+    // A caster between the light and a pixel leaves only the Global light there. The same distance (2.2 of the
+    // radius 4) in the open is lit by the falloff: 255 × (0.1 + (1 - 0.55)²) ≈ 77.
     expect(result.twoDShadowed, "2D behind a caster").toBeLessThan(40);
-    expect(result.twoDBeside, "2D beside a caster").toBeGreaterThan(100);
+    expect(result.twoDBeside, "2D beside a caster").toBeGreaterThan(60);
+    expect(result.twoDBeside - result.twoDShadowed, "2D shadow contrast").toBeGreaterThan(30);
     // 3D: the point light brightens the sprite's facing side and leaves its far edge unlit.
     expect(result.threeDNear, "3D near").toBeGreaterThan(result.threeDFar + 60);
   });
