@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageDetails } from "./message-details";
 import { DiagnosticResultRow } from "./diagnostic-result-row";
 import { MaterialCustomGlsl } from "./material-custom-glsl";
-import { GlslCodePreview } from "./glsl-code-preview";
+import { LazyGlslCodePreview } from "./lazy-code-editors";
 import { GlobalParameterNodePicker } from "./global-parameter-node-picker";
 import { useGlobalParameterCatalog } from "../lib/global-parameter-catalog";
 import type { IDockviewPanelProps } from "dockview-react";
@@ -116,7 +116,7 @@ function previewMeshIcon(mesh: MaterialPreviewMesh): LucideIcon {
 type MaterialGraphDocument = MaterialDocument | MaterialFunctionDocument;
 
 function renderMaterialNodeBody(_id: string, data: Record<string, unknown>) {
-  return data.__nodeType === "custom.glsl" ? <div className="w-88 max-w-88 overflow-hidden border-t px-3 py-2"><GlslCodePreview value={String(data.body ?? "")} /></div> : null;
+  return data.__nodeType === "custom.glsl" ? <div className="w-88 max-w-88 overflow-hidden border-t px-3 py-2"><LazyGlslCodePreview value={String(data.body ?? "")} /></div> : null;
 }
 
 function materialPinDefaultRows(

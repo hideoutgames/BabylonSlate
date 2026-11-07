@@ -75,7 +75,6 @@ type CachedGlb = {
   container?: AssetContainer;
   load: Promise<AssetContainer>;
   controller: AbortController;
-  priority?: NativePreparationPriority;
   /** Automatic LOD levels, generated once when an Auto LOD actor first needs them. */
   lods?: Promise<ModelLodSet | null>;
   lodSet?: ModelLodSet;
@@ -276,10 +275,13 @@ function modelLods(cache: SceneGlbCache, entry: CachedGlb): Promise<ModelLodSet 
     const current = () => {
       if (cache.disposed || entry.retired) throw new Error("Model preparation cancelled");
     };
-    const lods = await nativePreparationForEngine(container.scene.getEngine()).schedule({
+    const preparation = nativePreparationForEngine(container.scene.getEngine());
+    // Levels never gate publishing, so their admission ranks after gameplay and preload work, and
+    // is taken only for the model's own turn in the LOD worker, never while it waits for one.
+    const lods = await generateModelLods(container, current, entry.key, (work) => preparation.schedule({
       label: `Model ${entry.guid} LOD`, temporaryBytes: Math.max(1024, entry.accounted * 2), signal: entry.controller.signal,
-      priority: entry.priority,
-    }, () => generateModelLods(container, current, entry.key));
+      priority: "background",
+    }, work));
     if (cache.disposed || entry.retired) {
       lods.dispose();
       throw new Error("Model preparation cancelled");
@@ -315,7 +317,6 @@ export function acquireGlbContainer(
     entry = {
       key, guid, references: 0, retired: false, accounted: 0,
       controller: new AbortController(),
-      priority,
       load: Promise.resolve(null as unknown as AssetContainer),
     };
     cache.entries.set(key, entry);

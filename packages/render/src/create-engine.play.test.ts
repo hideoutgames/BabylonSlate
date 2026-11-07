@@ -44,7 +44,8 @@ import type { RenderPerformanceSample } from "./render-performance";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload, type ParticleLibraryEmitter } from "@haptic/assets";
 import { createDefaultParticleGraphDocument } from "@haptic/particle-graph";
-import { encodeTriangleGlb } from "./glb-test-fixtures";
+import { encodeTriangleGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
+import { nativePreparationForEngine } from "./native-preparation";
 import { acquireMaterialTexture, ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { encodeRgbaPng } from "./png-encode";
 import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
@@ -271,6 +272,107 @@ describe("Play createEngine view", () => {
     handle.resourceCache.flushUnreferenced();
     expect(handle.accountedGeometryBytes()).toBe(0);
     expect(isDisposedGpuTexture(cube)).toBe(true);
+  });
+
+  /** Records how many preparation jobs the Engine's queue is running when each job is scheduled. */
+  function watchPreparation(engine: NullEngine) {
+    const scheduler = nativePreparationForEngine(engine);
+    const schedule = scheduler.schedule.bind(scheduler);
+    const activeAtSchedule = new Map<string, number>();
+    const spy = vi.spyOn(scheduler, "schedule").mockImplementation(((request, prepare) => {
+      activeAtSchedule.set(request.label, scheduler.snapshot().active);
+      return schedule(request, prepare);
+    }) as typeof scheduler.schedule);
+    return { activeAtSchedule, restore: () => spy.mockRestore() };
+  }
+
+  it("prepares a scope's textures together and releases everything it acquired when a model fails", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    const watched = watchPreparation(engine);
+    try {
+      const wrappers = handle.resourceCache.resourceStats().wrappers;
+      const png = (value: number) => encodeRgbaPng(2, 2, new Uint8Array(16).fill(value));
+      await expect(handle.acquireSceneSources({ assets: {
+        textureBytes: new Map([["albedo-a", png(255)], ["albedo-b", png(128)]]),
+        modelBytes: new Map([["model-good", encodeTriangleGlb()], ["model-broken", new Uint8Array([1, 2, 3, 4])]]),
+      } }, { prepare: true })).rejects.toThrow("Unsupported model content");
+      // The second texture was scheduled while the first was still being prepared.
+      expect(watched.activeAtSchedule.get("Texture albedo-a")).toBe(0);
+      expect(watched.activeAtSchedule.get("Texture albedo-b")).toBe(1);
+      handle.resourceCache.flushUnreferenced();
+      expect(handle.resourceCache.resourceStats().wrappers).toBe(wrappers);
+      expect(handle.accountedGeometryBytes()).toBe(0);
+      expect(nativePreparationForEngine(engine).snapshot()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
+    } finally {
+      watched.restore();
+    }
+  });
+
+  it("cancels a scope mid-preparation with the caller's reason, starting nothing more and keeping nothing", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    const controller = new AbortController();
+    const scheduler = nativePreparationForEngine(engine);
+    const schedule = scheduler.schedule.bind(scheduler);
+    const started: string[] = [];
+    // The scope is cancelled as its third texture is queued behind the two being prepared.
+    const spy = vi.spyOn(scheduler, "schedule").mockImplementation(((request, prepare) => {
+      const job = schedule(request, () => { started.push(request.label); return prepare(); });
+      if (request.label === "Texture albedo-c") controller.abort(new Error("Scene unloaded"));
+      return job;
+    }) as typeof scheduler.schedule);
+    try {
+      const wrappers = handle.resourceCache.resourceStats().wrappers;
+      const png = (value: number) => encodeRgbaPng(2, 2, new Uint8Array(16).fill(value));
+      await expect(handle.acquireSceneSources({
+        assets: { textureBytes: new Map([["albedo-a", png(255)], ["albedo-b", png(128)], ["albedo-c", png(64)]]) },
+        materialDocuments: new Map([["cancelled-material", createDefaultMaterialDocument("Cancelled Material")]]),
+      }, { prepare: true, signal: controller.signal })).rejects.toThrow("Scene unloaded");
+      expect(started).toEqual(["Texture albedo-a", "Texture albedo-b"]);
+      handle.resourceCache.flushUnreferenced();
+      expect(handle.resourceCache.resourceStats().wrappers).toBe(wrappers);
+      expect(handle.scene.materials.some((material) => material.name.includes("cancelled-material"))).toBe(false);
+      expect(nativePreparationForEngine(engine).snapshot()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("resolves a prepared scope while its Auto LOD levels still generate, and generates none for a model without Auto LOD", async () => {
+    const replies: Array<() => void> = [];
+    let terminated = 0;
+    class HeldWorker {
+      onmessage: ((event: { data: unknown }) => void) | null = null;
+      onerror: unknown = null;
+      onmessageerror: unknown = null;
+      terminate() { terminated++; }
+      postMessage(message: { meshes: unknown[] }) {
+        replies.push(() => this.onmessage?.({ data: { levels: message.meshes.map(() => []) } }));
+      }
+    }
+    vi.stubGlobal("Worker", HeldWorker);
+    try {
+      const engine = sharedEngine();
+      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+      handles.push(handle);
+      const payload = { materialSlots: [], clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [] };
+      const release = await handle.acquireSceneSources({ assets: {
+        modelBytes: new Map([["dense-lod", encodeUvSphereGlb()], ["dense-full", encodeUvSphereGlb()]]),
+        modelPayloads: new Map([["dense-lod", { ...payload, autoLod: true }], ["dense-full", { ...payload, autoLod: false }]]),
+      } }, { prepare: true });
+      // Generation started on the held lease; the scope did not wait for it.
+      await vi.waitFor(() => expect(replies).toHaveLength(1));
+      replies[0]!();
+      // The worker exits once no model is left to simplify.
+      await vi.waitFor(() => expect(terminated).toBe(1));
+      expect(replies).toHaveLength(1);
+      release();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("installs collected editor assets and materials without replaying the previous document", async () => {
