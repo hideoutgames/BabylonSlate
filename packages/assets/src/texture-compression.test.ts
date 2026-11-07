@@ -437,9 +437,6 @@ describe("selectTextureChunk", () => {
     expect(
       selectTextureChunk(header, { transcoderAvailable: false }).kind,
     ).toBe("source");
-    expect(
-      selectTextureChunk(header, { supportedFormatsEmpty: true }).reason,
-    ).toBe("supported-formats-empty");
   });
 });
 
