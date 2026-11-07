@@ -22,7 +22,7 @@ The **Prefab Root** row is the actor's origin: the point that sits at the actor'
 
 - Place a Prefab from **Place Actors**, under **Content > Project**. Editing the Prefab updates every placed copy.
 - Prefabs do not accept your scripted Actor Component classes. Use an Actor Class for those.
-- [Spawn Actor](../scripting/class/spawn-actor.md) creates actors from a Class, not from a Prefab.
+- [Spawn Actor (Async)](../scripting/class/spawn-actor-async.md) or [Spawn Actor (Blocking)](../scripting/class/spawn-actor-blocking.md) create actors from a Class, not from a Prefab.
 
 ## Related
 

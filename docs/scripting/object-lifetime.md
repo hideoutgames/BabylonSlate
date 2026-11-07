@@ -13,7 +13,7 @@ Every object in a game is either owned or collected:
 
 Create Object runs the new object's [Event On Init](class/event-on-init.md) before it returns. Created objects have no transform, no components and no Begin Play.
 
-Only a Class whose parent is **Object** can be created this way. Picking an Actor, a component, the Game Instance, a subsystem or another engine class is an error in **Compiler Results**; use [Spawn Actor](class/spawn-actor.md) for actors.
+Only a Class whose parent is **Object** can be created this way. Picking an Actor, a component, the Game Instance, a subsystem or another engine class is an error in **Compiler Results**; use [Spawn Actor (Async)](class/spawn-actor-async.md) or [Spawn Actor (Blocking)](class/spawn-actor-blocking.md) for actors.
 
 ## Tick
 

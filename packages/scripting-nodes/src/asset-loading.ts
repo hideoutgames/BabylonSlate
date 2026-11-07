@@ -67,7 +67,7 @@ export const assetLoadingNodes: NodeDefinition[] = [
     `Loads every Asset and its required dependencies as one request while gameplay continues, then runs Completed; runs Failed with an Error if any cannot load, and none stay loaded. ${OWNERSHIP} ${POLICY}`,
     ["preload", "preload assets", "streamable", "soft", "soft reference", "load assets", "stream"]),
   loadNode("assets.asyncLoadClass", "Async Load Class", "class", false,
-    `Loads the Class (its scripts and required resources) while gameplay continues, then runs Completed; runs Failed with an Error if it cannot load. Spawn Actor can then create it without waiting. ${OWNERSHIP}`,
+    `Loads the Class (its scripts and required resources) while gameplay continues, then runs Completed; runs Failed with an Error if it cannot load. Spawn Actor (Async) or Spawn Actor (Blocking) can then create it without waiting. ${OWNERSHIP}`,
     ["preload", "preload class", "streamable", "soft", "soft class", "load class", "stream"]),
   loadNode("assets.loadBlocking", "Load Asset Blocking", "asset", true,
     `Loads the Asset at High priority and pauses game simulation (ticks, physics, timers, tweens) until it settles; loading and rendering preparation continue. Runs Completed or Failed with an Error. ${OWNERSHIP}`,

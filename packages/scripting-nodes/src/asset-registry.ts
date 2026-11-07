@@ -96,7 +96,7 @@ export const assetRegistryNodes: NodeDefinition[] = [
     category: "assetRegistry",
     pure: true,
     description:
-      "Lists the Class assets of a Class, and with Include Subclasses the Classes that inherit from it, without loading them. Classes holds their Class values, typed as the selected Class so a Class that inherits from Actor can feed Spawn Actor.",
+      "Lists the Class assets of a Class, and with Include Subclasses the Classes that inherit from it, without loading them. Classes holds their Class values, typed as the selected Class so a Class that inherits from Actor can feed Spawn Actor (Async) or Spawn Actor (Blocking).",
     pins: (properties) => [
       pin("class", "Class", "in", classRef("Object")),
       pin("includeSubclasses", "Include Subclasses", "in", BOOL, "data", true, true),

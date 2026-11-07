@@ -27,6 +27,6 @@ Loads a Class, with its scripts and required resources, in the background while 
 ## Notes
 
 - Runs **Completed** when the Class is ready, or **Failed** with an **Error** if it cannot load.
-- A loaded Class lets [**Spawn Actor**](spawn-actor.md) create it without waiting.
+- A loaded Class lets [**Spawn Actor (Async)**](spawn-actor-async.md) or [**Spawn Actor (Blocking)**](spawn-actor-blocking.md) create it without waiting.
 - The load belongs to the calling object until you release it, that object is destroyed or Play stops.
 - Latent: the node finishes later without pausing the rest of the game.

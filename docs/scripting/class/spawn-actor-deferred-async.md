@@ -2,9 +2,9 @@
 node: actor.deferredSpawn
 ---
 
-# Deferred Spawn Actor
+# Spawn Actor Deferred (Async)
 
-Creates a new actor from a Class without starting it, so you can set it up before its **Event Begin Play** runs.
+Creates a new actor from a Class without starting it, so you can set it up before its **Event Begin Play** runs. The game keeps running while the Class loads.
 
 ## Inputs
 
@@ -27,5 +27,6 @@ Creates a new actor from a Class without starting it, so you can set it up befor
 - Before it starts, you can set its variables, its location, rotation and scale, and the properties of its components, and add components to it. Use [**Cast To**](cast-to.md) on **Out** to reach the variables of its Class.
 - Connect **Out** to [**Finish Deferred Spawn Actor**](finish-deferred-spawn-actor.md) to put the actor in the game. Its **Event Begin Play** then sees everything you set.
 - An actor that never finishes stays out of the game. [**Destroy Actor**](destroy-actor.md) on it cancels the spawn.
-- Latent: execution waits while the Class and its resources load, then continues without pausing the rest of the game.
+- Latent: execution waits while the Class and its resources load, then continues. The rest of the game keeps running meanwhile.
+- To pause the game until the actor exists instead, use [**Spawn Actor Deferred (Blocking)**](spawn-actor-deferred-blocking.md).
 - Returns an empty reference if the actor cannot be created, for example when **Class ID** is empty.
