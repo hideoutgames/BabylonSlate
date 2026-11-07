@@ -95,7 +95,7 @@ Other Scalability nodes cover each group, such as [Set Shadow Quality](../script
 
 - [Lighting](lighting.md): lights, environment lighting and the light budget.
 - [Shadows](shadows.md): shadow settings and per-light shadows.
-- [Cameras](cameras.md): cameras, the Default Camera and Spring Arm.
+- [Cameras](cameras.md): cameras, the Default Camera, the Layer Camera and Spring Arm.
 - [Sky and Fog](sky-and-fog.md): skyboxes, distance fog and volumetric fog.
 - [Post-Processing](post-processing.md): bloom, colour grading, anti-aliasing and post-process Materials.
 - [Materials](materials.md): authoring Materials, instances and functions.

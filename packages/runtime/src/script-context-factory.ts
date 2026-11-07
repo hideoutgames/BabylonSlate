@@ -194,7 +194,9 @@ export function createScriptContext(
       },
       bool: () => host.rng.nextFloat() < 0.5,
     };
-    context.getVariable = (name) => store?.getVariable(name);
+    // Get Layer Camera on Self (a Scene Layer or Scene Layer Actor) is read live, unless the class declares its own.
+    context.getVariable = (name) => name === "layerCamera" && store instanceof EngineObject && !store.variables.has(name)
+      ? context.getVariableFrom(store, name) : store?.getVariable(name);
     context.variableReference = (target, name, implicitSelf = false) => {
       const object = implicitSelf ? store : target;
       if (!object || typeof name !== "string" || !name ||

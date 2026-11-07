@@ -893,6 +893,7 @@ function initializeEngine(
   // Play looks through the main Scene's Layer Camera until a camera actor is possessed.
   const worldLayerCamera = options.playMode ? createWorldLayerCamera(scene) : null;
   binding.layerCamera = worldLayerCamera?.camera ?? null;
+  if (worldLayerCamera) scene.activeCamera = worldLayerCamera.camera;
   const fitWorldLayerCamera = () =>
     worldLayerCamera?.fit(cameraRenderAspect(engine.getRenderWidth(), engine.getRenderHeight()), sceneCameraLensExtent(scene));
   fitWorldLayerCamera();

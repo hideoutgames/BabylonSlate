@@ -58,7 +58,6 @@ import {
   sceneLayerGuidOf,
   setActorLink,
 } from "./script-host-helpers";
-import type { ScriptHostServices } from "./script-host-services";
 import type { ScriptMaterialOwnership } from "./script-material-ownership";
 import { scriptValuesEqual } from "./script-values-equal";
 import type { LatentFrameRoots } from "./latent-frame-roots";

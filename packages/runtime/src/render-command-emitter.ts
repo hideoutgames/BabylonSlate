@@ -185,7 +185,6 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
   }
 
   private cameraAssignPayload(
-    actor: Actor,
     camera: ActorComponent,
   ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["camera"]> {
     const projection = camera.getVariable("projectionMode");
@@ -290,7 +289,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
               ...(component.classId === "2DPainterComponent" ? { painter: this.host.painters().payload(component) } : {}),
               ...(component.classId === "DynamicRuntimeMeshComponent" ? { dynamicMesh: this.host.dynamicMeshes().assign(component) } : {}),
               ...(component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" ? { light: lightAssignPayload(component) } : {}),
-              ...(component.classId === "CameraComponent" ? { camera: this.cameraAssignPayload(actor, component) } : {}),
+              ...(component.classId === "CameraComponent" ? { camera: this.cameraAssignPayload(component) } : {}),
               parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds),
             };
           })
@@ -347,7 +346,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
           : {}),
         ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp,
           text2dComp.classId === "2DRichTextComponent" ? this.host.textAppear().progress(text2dComp) : 1) } : {}),
-        ...(camera ? { camera: this.cameraAssignPayload(actor, camera) } : {}),
+        ...(camera ? { camera: this.cameraAssignPayload(camera) } : {}),
         ...(light ? { light: lightAssignPayload(light) } : {}),
         ...(overlayPanel ? { overlayPanel } : {}),
         ...(parts ? { parts } : {}),

@@ -53,12 +53,15 @@ export function setActorIllumination(root: Mesh, helpers: ComponentIllumination[
 export const PLAY_FREE_CAM_NAME = "playFreeCam";
 
 /** Resolve the game listener/camera independently of a viewport-owned free camera. */
-/** The possessed camera slot's camera, else the main Scene's Layer Camera (else the viewport's default camera). */
+/**
+ * The possessed camera slot's camera, else the main Scene's Layer Camera
+ * (else the viewport's default camera); only a camera of `scene` itself, so a
+ * Scene Layer's scene never takes the world's.
+ */
 export function resolvePlayGameCamera(scene: Scene, binding: SnapshotSceneBinding): Camera | null {
+  const own = (camera: Camera | null | undefined) => camera && !camera.isDisposed() && camera.getScene() === scene ? camera : null;
   const possessed = binding.possessedCameraSlotId !== null ? binding.cameras.get(binding.possessedCameraSlotId) : undefined;
-  if (possessed && !possessed.isDisposed()) return possessed;
-  if (binding.layerCamera && !binding.layerCamera.isDisposed()) return binding.layerCamera;
-  return scene.getCameraByName("camera");
+  return own(possessed) ?? own(binding.layerCamera) ?? scene.getCameraByName("camera");
 }
 
 export function refreshPlayActiveCamera(

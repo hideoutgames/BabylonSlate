@@ -12,6 +12,7 @@ import {
   normalizeScene,
   sceneDefaultCameraActor,
   sceneEnvironmentTextureGuid,
+  sceneLayerCameraFrame,
   normalizeTransform,
   wouldCreateComponentCycle,
   wouldCreateCycle,
@@ -438,6 +439,19 @@ describe("scene schema", () => {
     }).settings;
     expect(settings.defaultCameraActorId).toBeNull();
     expect(settings.cameraLocation2D).toEqual([0, 7]);
+  });
+
+  it("draws the orange outline on the Layer Camera unless a world Scene starts on a Default Camera actor", () => {
+    const camera = createActor("rig", "Rig", { components: [{ id: "lens", classId: "CameraComponent", properties: {} }] });
+    const settings = { ...createDefaultSceneSettings(), cameraBounds2D: { width: 20, height: 10 }, cameraLocation2D: [4, -1] as [number, number] };
+    expect(sceneLayerCameraFrame({ actors: [camera], settings })).toEqual({ width: 20, height: 10, center: [4, -1] });
+    expect(sceneLayerCameraFrame({ actors: [camera], settings: { ...settings, defaultCameraActorId: "rig" } })).toBeNull();
+    // A Default Camera without a Camera component starts Play on the Layer Camera, so the outline stays.
+    const prop = createActor("prop", "Prop", { components: [] });
+    expect(sceneLayerCameraFrame({ actors: [prop], settings: { ...settings, defaultCameraActorId: "prop" } })).not.toBeNull();
+    // A Scene Layer's canvas always shows.
+    expect(sceneLayerCameraFrame({ actors: [camera], settings: { ...settings, defaultCameraActorId: "rig" }, overlayEditor: true }))
+      .toEqual({ width: 20, height: 10, center: [4, -1] });
   });
 
   it("resolves the Default Camera only to a placed actor with a Camera component", () => {

@@ -33,7 +33,6 @@
  * it draws with is ready, its pipelines included.
  */
 import {
-  ArcRotateCamera,
   Color4,
   Constants,
   DirectionalLight,
@@ -944,9 +943,10 @@ describe("compile holds after the first frame", () => {
     if (spec.full) updateSceneRenderingSettings(world.handle.scene,
       { quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 2 } }) });
     if (spec.camera) {
-      const camera = world.handle.scene.activeCamera as ArcRotateCamera;
+      // The possessed camera, looking at the origin from the case's viewpoint; unchanged actor poses leave it there.
+      const camera = world.handle.scene.activeCamera as UniversalCamera;
+      camera.position.copyFrom(spec.camera);
       camera.setTarget(Vector3.Zero());
-      camera.setPosition(spec.camera);
     }
     const lightOf = (slotId: number) => world.handle.scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}${slotId}`);
     let before: Effect | null = null;

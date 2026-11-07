@@ -12,13 +12,14 @@ const actors = [
 ];
 
 describe("SceneActorPicker", () => {
-  it("lists each actor under its group with its class and can clear the reference", () => {
+  it("lists each actor with its class and group and can clear the reference", () => {
     const onPick = vi.fn();
     render(<SceneActorPicker open onOpenChange={() => {}} actors={actors} onPick={onPick} />);
     expect(screen.getByTestId("search-item-hero").textContent).toContain("Hero");
     expect(screen.getByTestId("search-item-hero").textContent).toContain("Player");
-    expect(screen.getByText("Camera Actors")).toBeTruthy();
-    expect(screen.getByText("Actors")).toBeTruthy();
+    // The group names each row's section (its tooltip, and a search term).
+    expect(screen.getByTestId("search-item-hero").closest("[role=option]")?.getAttribute("title")).toBe("Hero · Camera Actors");
+    expect(screen.getByTestId("search-item-lamp").closest("[role=option]")?.getAttribute("title")).toBe("Lamp · Actors");
     screen.getByTestId("search-item-__none__").click();
     expect(onPick).toHaveBeenCalledWith(null);
   });
