@@ -24,7 +24,7 @@ import { emitInputEventEntry } from "./compile-input-events";
  * Several successor chains share one function scope, so each gets its own
  * block: a node reached on two of them must not declare a local twice.
  */
-export function emitAlong(s: CodegenState, edges: ExecTarget[], visited: ExecPath) {
+function emitAlong(s: CodegenState, edges: ExecTarget[], visited: ExecPath) {
   const scoped = edges.length > 1;
   for (const edge of edges) {
     if (scoped) emitBody(s, "  {");
