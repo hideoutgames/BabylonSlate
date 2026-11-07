@@ -15,4 +15,4 @@ Starts a function and provides the values its caller passed in.
 ## Notes
 
 - Every function graph has one. It cannot be added or deleted.
-- Add or edit the function's inputs in the **Inspector** while the function is selected.
+- Add, edit, reorder or remove the function's inputs under **Inputs** in the **Inspector** while this node or the function is selected.

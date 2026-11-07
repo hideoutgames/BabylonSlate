@@ -563,6 +563,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         selectedNode={selectedNode}
         activeFunctionId={activeFunctionId}
         docPath={docPath}
+        classId={graphClassId}
         focusBodyLine={focusDiagnostic?.bodyLine}
         catalogs={catalogs}
         persistGraph={persistGraph}
