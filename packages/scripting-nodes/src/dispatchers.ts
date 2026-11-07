@@ -1,6 +1,7 @@
 import {
   delegateOf,
   EXEC,
+  jsIdent,
   objectRef,
   pin,
   pinTypeForVariable,
@@ -12,7 +13,6 @@ import {
 import {
   CALL_PIN_IDS,
   dataMemberPins,
-  jsIdent,
   memberPinRows,
   memberTargetPin,
   type MemberPinRow,

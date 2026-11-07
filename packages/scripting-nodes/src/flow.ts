@@ -1,4 +1,5 @@
 import {
+  jsIdent,
   pin,
   type NodeDefinition,
   type PinType,
@@ -26,7 +27,6 @@ import {
   CALL_PIN_IDS,
   EXEC_PIN_IDS,
   dataMemberPins,
-  jsIdent,
   memberArgPinId,
   memberPinRows,
   memberTargetPin,

@@ -1,4 +1,5 @@
 import {
+  jsIdent,
   pin,
   type NodeDefinition,
   EXEC,
@@ -6,7 +7,6 @@ import {
 import {
   CALL_PIN_IDS,
   assignResultFields,
-  jsIdent,
   memberArgPinId,
   memberPinRows,
   memberPinUnit,

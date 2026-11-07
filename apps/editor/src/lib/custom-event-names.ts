@@ -1,6 +1,6 @@
 import type { SerializedGraph } from "@haptic/core";
 import { formatEventMemberName } from "@haptic/editor-kit";
-import { jsIdent } from "@haptic/scripting-nodes";
+import { jsIdent } from "@haptic/scripting";
 
 /**
  * Names collide when they compile to one identifier (the validator's rule) or
