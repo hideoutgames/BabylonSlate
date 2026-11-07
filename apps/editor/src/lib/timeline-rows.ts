@@ -45,6 +45,8 @@ export interface TimelineRowModel {
   label: string;
   /** The value at the playhead, as text. */
   value?: string;
+  /** A property track's authored value, which the value falls back to off its keys. */
+  authored?: unknown;
   keys: TimelineRowKey[];
   connect: boolean;
   gradient?: Array<{ time: number; color: string }>;
@@ -108,10 +110,10 @@ export function timelineTrackLabel(actor: SerializedActor | undefined, track: Ti
 /** The summary key id a group row shows for every key on one frame. */
 const summaryKeyId = (frame: number) => `f${frame}`;
 
-export interface TimelineRowsOptions {
+/** What the rows are built from, apart from the playhead. */
+export interface TimelineRowStructureOptions {
   scene: SerializedScene;
   clip: SerializedTimelineClip;
-  time: number;
   /** Object ids whose tracks are hidden. */
   collapsed: ReadonlySet<string>;
   filter: string;
@@ -120,16 +122,18 @@ export interface TimelineRowsOptions {
   assetName?: (guid: string) => string | undefined;
 }
 
+export interface TimelineRowsOptions extends TimelineRowStructureOptions {
+  time: number;
+}
+
 function trackRow(
   object: TimelineObjectTrack,
   actor: SerializedActor | undefined,
   track: TimelinePropertyTrack,
   label: string,
-  options: TimelineRowsOptions,
+  options: TimelineRowStructureOptions,
 ): TimelineRowModel {
-  const { time, context } = options;
-  const authored = actor ? authoredTimelineValue(actor, track.target, track.valueType, context) : undefined;
-  const value = timelineKeyValueAt(track, time, authored);
+  const authored = actor ? authoredTimelineValue(actor, track.target, track.valueType, options.context) : undefined;
   const interpolates = INTERPOLATED_VALUE_TYPES.has(track.valueType);
   return {
     id: track.id,
@@ -138,7 +142,7 @@ function trackRow(
     actor,
     track,
     label,
-    value: value === undefined ? undefined : formatTimelineValue(track.valueType, value, options.assetName),
+    authored,
     keys: track.keys.map((key) => ({ id: key.id, time: key.Time, shape: timelineKeyShape(track.valueType, key.Interpolation) })),
     connect: interpolates && track.keys.length > 1 && track.valueType !== "color",
     ...(track.valueType === "color" && track.keys.length > 0
@@ -148,7 +152,12 @@ function trackRow(
   };
 }
 
-export function timelineRows(options: TimelineRowsOptions): TimelineRowModel[] {
+/**
+ * The rows without the values at the playhead: everything but those depends
+ * on the clip, the Scene and the list's state, so playback and scrubbing
+ * reuse it and fill in only the values (`withTimelineValues`).
+ */
+export function timelineRowStructure(options: TimelineRowStructureOptions): TimelineRowModel[] {
   const { scene, clip, collapsed, filter, actorName, context } = options;
   const needle = filter.trim().toLowerCase();
   const rows: TimelineRowModel[] = [];
@@ -188,6 +197,34 @@ export function timelineRows(options: TimelineRowsOptions): TimelineRowModel[] {
   return rows;
 }
 
+/**
+ * `rows` with each property track's value at `time`. `cache` keeps the row
+ * made for a structure row while its value text is unchanged, so a playhead
+ * move replaces only the rows whose shown value changed.
+ */
+export function withTimelineValues(
+  rows: readonly TimelineRowModel[],
+  time: number,
+  assetName?: (guid: string) => string | undefined,
+  cache?: WeakMap<TimelineRowModel, TimelineRowModel>,
+): TimelineRowModel[] {
+  return rows.map((row) => {
+    const track = row.track;
+    if (!track) return row;
+    const at = timelineKeyValueAt(track, time, row.authored);
+    const value = at === undefined ? undefined : formatTimelineValue(track.valueType, at, assetName);
+    const previous = cache?.get(row);
+    if (previous && previous.value === value) return previous;
+    const next = { ...row, value };
+    cache?.set(row, next);
+    return next;
+  });
+}
+
+export function timelineRows(options: TimelineRowsOptions): TimelineRowModel[] {
+  return withTimelineValues(timelineRowStructure(options), options.time, options.assetName);
+}
+
 /** An event key's label: its first input's value, or the event's name when it has no inputs. */
 function eventKeyLabel(track: TimelineEventTrack, key: TimelineEventTrack["keys"][number], assetName?: (guid: string) => string | undefined): string {
   const input = track.inputs[0];
@@ -197,7 +234,7 @@ function eventKeyLabel(track: TimelineEventTrack, key: TimelineEventTrack["keys"
 }
 
 /** The Events group and, while it is open, a row per Custom Event Track. */
-function eventRows(options: TimelineRowsOptions): TimelineRowModel[] {
+function eventRows(options: TimelineRowStructureOptions): TimelineRowModel[] {
   const { clip, collapsed, filter } = options;
   if (clip.eventTracks.length === 0) return [];
   const needle = filter.trim().toLowerCase();

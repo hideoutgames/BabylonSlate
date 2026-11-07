@@ -91,7 +91,7 @@ import {
   type TimelinePropertyContext,
 } from "../lib/timeline-property-catalog";
 import { useTimelinePlayheadTime } from "../lib/timeline-playhead";
-import { laneSelection, timelineRows, trackKeyRefs, type TimelineRowModel } from "../lib/timeline-rows";
+import { laneSelection, timelineRowStructure, trackKeyRefs, withTimelineValues, type TimelineRowModel } from "../lib/timeline-rows";
 import {
   addTimelineObjects,
   addTimelineTracks,
@@ -143,6 +143,83 @@ const newId = () => crypto.randomUUID();
 function problemLabel(row: TimelineRowModel): React.ReactNode {
   if (!row.problem) return row.label;
   return <span className="text-destructive" title={timelineTrackProblemText(row.problem)} data-problem={row.problem}>{row.label}</span>;
+}
+
+type LaneActions = {
+  toggleKey: (trackId: string) => void;
+  addEventTrack: () => void;
+  setAddTrackActorId: (actorId: string) => void;
+};
+
+/** A row as the keyframe timeline lists it: label, icon, value and key button. */
+function timelineLaneRow(row: TimelineRowModel, options: {
+  keyed: boolean;
+  pending: boolean;
+  touch: boolean;
+  parentOf: (classId: string) => string | null | undefined;
+  actions: { current: LaneActions };
+}): KeyframeTimelineTrackRow {
+  const { keyed, pending, touch, parentOf, actions } = options;
+  const size = touch ? "touch-icon" : "icon-xs";
+  if (row.id === TIMELINE_EVENTS_ROW_ID) {
+    return {
+      id: row.id, kind: "group", depth: 0, label: row.label, icon: <ZapIcon />, expanded: row.expanded, keys: row.keys,
+      testId: `timeline-row-${row.id}`,
+      actions: <IconActionButton label="Add Custom Event Track" variant="ghost" size={size}
+        onClick={(event) => { event.stopPropagation(); actions.current.addEventTrack(); }} data-testid="timeline-add-event-track-row">
+        <PlusIcon />
+      </IconActionButton>,
+    };
+  }
+  if (row.eventTrack) {
+    return {
+      id: row.id, kind: "track", depth: 1, label: row.label, value: row.value, keys: row.keys, testId: `timeline-row-${row.id}`,
+      actions: <IconActionButton label={keyed ? `Remove Key on ${row.label}` : `Set Key on ${row.label}`}
+        variant="ghost" size={size}
+        onClick={(event) => { event.stopPropagation(); actions.current.toggleKey(row.id); }} data-testid={`timeline-key-toggle-${row.id}`}>
+        <DiamondIcon className={keyed ? "fill-current text-selection" : undefined} />
+      </IconActionButton>,
+    };
+  }
+  if (row.kind === "group") {
+    const actor = row.actor;
+    return {
+      id: row.id,
+      kind: "group",
+      depth: 0,
+      label: problemLabel(row),
+      icon: actor
+        ? <TypeVisualIcon visual={resolveActorTypeVisual({ classId: actor.classId, components: actor.components, ancestry: walkAncestry(actor.classId, parentOf) })} />
+        : <BoxIcon />,
+      ...(row.value ? { value: row.value } : {}),
+      expanded: row.expanded,
+      keys: row.keys,
+      muted: row.muted,
+      testId: `timeline-row-${row.id}`,
+      actions: actor ? <IconActionButton label={`Add Track to ${row.label}`} variant="ghost" size={size}
+        onClick={(event) => { event.stopPropagation(); actions.current.setAddTrackActorId(actor.id); }} data-testid={`timeline-add-track-${row.id}`}>
+        <PlusIcon />
+      </IconActionButton> : undefined,
+    };
+  }
+  return {
+    id: row.id,
+    kind: "track",
+    depth: 1,
+    label: problemLabel(row),
+    ...(row.problem ? { icon: <TriangleAlertIcon className="text-destructive" /> } : {}),
+    value: row.value,
+    keys: row.keys,
+    connect: row.connect,
+    ...(row.gradient ? { gradient: row.gradient } : {}),
+    muted: row.muted,
+    testId: `timeline-row-${row.id}`,
+    actions: <IconActionButton label={pending ? `Key Change on ${row.label}` : keyed ? `Remove Key on ${row.label}` : `Set Key on ${row.label}`}
+      variant="ghost" size={size} data-unkeyed={pending ? "true" : undefined}
+      onClick={(event) => { event.stopPropagation(); actions.current.toggleKey(row.id); }} data-testid={`timeline-key-toggle-${row.id}`}>
+      <DiamondIcon className={pending ? "fill-current text-brand-amber" : keyed ? "fill-current text-selection" : undefined} />
+    </IconActionButton>,
+  };
 }
 
 function TransportButton({ label, shortcut, onClick, disabled, children, testId }: {
@@ -230,17 +307,20 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const rows = useMemo(() => timelineRows({
+  // Everything but the values at the playhead: playback and scrubbing reuse it.
+  const structure = useMemo(() => timelineRowStructure({
     scene,
     clip,
-    time,
     collapsed,
     filter,
     actorName,
     context: { graphs: property.graphs, parentOf: property.parentOf },
     assetName,
-  }), [scene, clip, time, collapsed, filter, actorName, property, assetName]);
-  const rowById = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows]);
+  }), [scene, clip, collapsed, filter, actorName, property, assetName]);
+  // A playhead move replaces only the rows whose shown value changed.
+  const valuedRows = useRef(new WeakMap<TimelineRowModel, TimelineRowModel>());
+  const rows = useMemo(() => withTimelineValues(structure, time, assetName, valuedRows.current), [structure, time, assetName]);
+  const rowById = useMemo(() => new Map(structure.map((row) => [row.id, row])), [structure]);
 
   // Playback previews the clip at its Play Rate; it stops at the end unless Loop is on.
   useEffect(() => {
@@ -600,69 +680,35 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
   };
 
   const parentOf = property.parentOf;
-  const laneRows: KeyframeTimelineTrackRow[] = rows.map((row) => {
-    if (row.id === TIMELINE_EVENTS_ROW_ID) {
-      return {
-        id: row.id, kind: "group", depth: 0, label: row.label, icon: <ZapIcon />, expanded: row.expanded, keys: row.keys,
-        testId: `timeline-row-${row.id}`,
-        actions: <IconActionButton label="Add Custom Event Track" variant="ghost" size={touch ? "touch-icon" : "icon-xs"}
-          onClick={(event) => { event.stopPropagation(); addEventTrack(); }} data-testid="timeline-add-event-track-row">
-          <PlusIcon />
-        </IconActionButton>,
-      };
-    }
-    if (row.eventTrack) {
-      const keyed = Boolean(timelineEventKeyAt(row.eventTrack, time, clip.frameRate));
-      return {
-        id: row.id, kind: "track", depth: 1, label: row.label, value: row.value, keys: row.keys, testId: `timeline-row-${row.id}`,
-        actions: <IconActionButton label={keyed ? `Remove Key on ${row.label}` : `Set Key on ${row.label}`}
-          variant="ghost" size={touch ? "touch-icon" : "icon-xs"}
-          onClick={(event) => { event.stopPropagation(); toggleKey(row.id); }} data-testid={`timeline-key-toggle-${row.id}`}>
-          <DiamondIcon className={keyed ? "fill-current text-selection" : undefined} />
-        </IconActionButton>,
-      };
-    }
-    if (row.kind === "group") {
-      return {
-        id: row.id,
-        kind: "group",
-        depth: 0,
-        label: problemLabel(row),
-        icon: row.actor
-          ? <TypeVisualIcon visual={resolveActorTypeVisual({ classId: row.actor.classId, components: row.actor.components, ancestry: walkAncestry(row.actor.classId, parentOf) })} />
-          : <BoxIcon />,
-        ...(row.value ? { value: row.value } : {}),
-        expanded: row.expanded,
-        keys: row.keys,
-        muted: row.muted,
-        testId: `timeline-row-${row.id}`,
-        actions: row.actor ? <IconActionButton label={`Add Track to ${row.label}`} variant="ghost" size={touch ? "touch-icon" : "icon-xs"}
-          onClick={(event) => { event.stopPropagation(); setAddTrackActorId(row.actor!.id); }} data-testid={`timeline-add-track-${row.id}`}>
-          <PlusIcon />
-        </IconActionButton> : undefined,
-      };
-    }
-    const keyed = row.track ? Boolean(timelineKeyAt(row.track, time, clip.frameRate)) : false;
-    const pending = unkeyed.has(row.id);
-    return {
-      id: row.id,
-      kind: "track",
-      depth: 1,
-      label: problemLabel(row),
-      ...(row.problem ? { icon: <TriangleAlertIcon className="text-destructive" /> } : {}),
-      value: row.value,
-      keys: row.keys,
-      connect: row.connect,
-      ...(row.gradient ? { gradient: row.gradient } : {}),
-      muted: row.muted,
-      testId: `timeline-row-${row.id}`,
-      actions: <IconActionButton label={pending ? `Key Change on ${row.label}` : keyed ? `Remove Key on ${row.label}` : `Set Key on ${row.label}`}
-        variant="ghost" size={touch ? "touch-icon" : "icon-xs"} data-unkeyed={pending ? "true" : undefined}
-        onClick={(event) => { event.stopPropagation(); toggleKey(row.id); }} data-testid={`timeline-key-toggle-${row.id}`}>
-        <DiamondIcon className={pending ? "fill-current text-brand-amber" : keyed ? "fill-current text-selection" : undefined} />
-      </IconActionButton>,
-    };
-  });
+  // Lane rows outlive a render while their value, key state and look are unchanged, so their buttons call
+  // through this ref to act on the current clip and playhead.
+  const laneActions = useRef({ toggleKey, addEventTrack, setAddTrackActorId });
+  laneActions.current = { toggleKey, addEventTrack, setAddTrackActorId };
+  const laneCache = useRef(new WeakMap<TimelineRowModel, { keyed: boolean; pending: boolean; touch: boolean; parentOf: typeof parentOf; lane: KeyframeTimelineTrackRow }>());
+  const laneRows = useMemo(() => rows.map((row): KeyframeTimelineTrackRow => {
+    const keyed = row.eventTrack ? Boolean(timelineEventKeyAt(row.eventTrack, time, clip.frameRate))
+      : row.track ? Boolean(timelineKeyAt(row.track, time, clip.frameRate)) : false;
+    const pending = row.kind === "track" && !row.eventTrack && unkeyed.has(row.id);
+    const cached = laneCache.current.get(row);
+    if (cached && cached.keyed === keyed && cached.pending === pending && cached.touch === touch && cached.parentOf === parentOf) return cached.lane;
+    const lane = timelineLaneRow(row, { keyed, pending, touch, parentOf, actions: laneActions });
+    laneCache.current.set(row, { keyed, pending, touch, parentOf, lane });
+    return lane;
+  }), [clip.frameRate, parentOf, rows, time, touch, unkeyed]);
+  const laneSelected = useMemo(() => laneSelection(clip, selection), [clip, selection]);
+  const toggleRow = useCallback((id: string) => setCollapsed((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  }), []);
+  // A stable row menu handler, so the track list's rows can skip re-rendering.
+  const openRowMenu = useRef<(id: string, x: number, y: number) => void>(() => {});
+  openRowMenu.current = (id, x, y) => {
+    const row = rowById.get(id);
+    if (row) openMenuAt(x, y, rowMenuItems(row));
+  };
+  const onRowContextMenu = useCallback((id: string, x: number, y: number) => openRowMenu.current(id, x, y), []);
 
   const unanimated = scene.actors.filter((actor) => !clip.objects.some((object) => object.actorId === actor.id));
   // A clip asset's rows are its proxies; only Custom Event Tracks are added here.
@@ -761,7 +807,7 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
           </EmptyHeader>
         </Empty>
       ) : view === "curves" ? (
-        <TimelineCurves clip={clip} rows={rows} rowId={rowId} setRowId={setRowId} snap={snap} commitClip={commitClip} touch={touch} />
+        <TimelineCurves clip={clip} rows={structure} rowId={rowId} setRowId={setRowId} snap={snap} commitClip={commitClip} touch={touch} />
       ) : (
         <KeyframeTimeline
           rows={laneRows}
@@ -770,21 +816,13 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
           time={time}
           onTimeChange={(next) => playhead.set(next)}
           snap={snap}
-          selectedKeys={laneSelection(clip, selection)}
+          selectedKeys={laneSelected}
           onSelectKeys={selectKeys}
           onMoveKeys={moveKeys}
           selectedRowId={rowId}
           onSelectRow={setRowId}
-          onToggleRow={(id) => setCollapsed((current) => {
-            const next = new Set(current);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
-          })}
-          onRowContextMenu={(id, x, y) => {
-            const row = rowById.get(id);
-            if (row) openMenuAt(x, y, rowMenuItems(row));
-          }}
+          onToggleRow={toggleRow}
+          onRowContextMenu={onRowContextMenu}
           onKeyContextMenu={(ref, x, y) => openMenuAt(x, y, keyMenuItems(ref))}
           onLengthChange={(length, phase) => {
             // One undo step: every move replaces the clip at the drag's start length.

@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -108,8 +109,11 @@ type Press =
  * A keyframe editor: a track list beside a time ruler and canvas-drawn key
  * lanes that share one vertical scroll. Rows are groups (objects, whose lane
  * sums their tracks' keys) or tracks. The canvas draws shapes only; labels,
- * values and the ruler are HTML. Colours are CSS custom properties read on
- * every draw.
+ * values, the ruler and the playhead are HTML, so a playhead move or a new
+ * value leaves the canvas alone. It redraws only when what it draws changes:
+ * a row's id, kind, keys, gradient, connect or muted (compared by identity),
+ * the view, the selection, the marquee, or the theme. Colours are CSS custom
+ * properties read once per draw.
  *
  * Mouse: drag the ruler to scrub, or the clip's end on it to change the
  * length; click a key to select it (Shift adds, Ctrl/⌘ toggles) and drag to
@@ -194,6 +198,8 @@ export function KeyframeTimeline({
     scheme?.addEventListener?.("change", redraw);
     const observer = typeof MutationObserver === "undefined" ? null : new MutationObserver(redraw);
     observer?.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme", "style"] });
+    // An editor theme is a stylesheet in the head; the lanes no longer redraw on every playhead move to pick it up.
+    observer?.observe(document.head, { childList: true, subtree: true, characterData: true });
     return () => {
       scheme?.removeEventListener?.("change", redraw);
       observer?.disconnect();
@@ -219,6 +225,12 @@ export function KeyframeTimeline({
     return () => lanes.removeEventListener("wheel", onWheel);
   }, [fitted]);
 
+  // What the canvas draws of the rows; kept while every row's lane parts are the same, so new rows that differ
+  // only in their track list text (a value at the playhead) do not redraw it.
+  const drawnRows = useRef(rows);
+  if (drawnRows.current !== rows && !sameLanes(drawnRows.current, rows)) drawnRows.current = rows;
+  const lanes = drawnRows.current;
+
   // The canvas sticks to the top of the scroller, and the lanes column is at
   // least as tall as the track list, so the canvas always starts at scrollTop.
   const drawHeight = Math.max(0, Math.min(viewportHeight, Math.max(laneHeight, contentHeight)));
@@ -226,45 +238,48 @@ export function KeyframeTimeline({
     const canvas = canvasRef.current;
     if (!canvas || laneWidth <= 0 || drawHeight <= 0) return;
     const ratio = typeof devicePixelRatio === "number" && devicePixelRatio > 0 ? devicePixelRatio : 1;
-    canvas.width = Math.round(laneWidth * ratio);
-    canvas.height = Math.round(drawHeight * ratio);
+    // Setting a canvas's size reallocates and clears it even at the same size.
+    const width = Math.round(laneWidth * ratio);
+    const height = Math.round(drawHeight * ratio);
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
     const context = canvas.getContext("2d");
     if (!context) return;
-    const style = getComputedStyle(canvas);
-    const color = (property: string) => style.getPropertyValue(property).trim() || "#888";
+    const palette = lanePalette(getComputedStyle(canvas));
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, width, height);
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.clearRect(0, 0, laneWidth, drawHeight);
     const x = (seconds: number) => timeToX(view, seconds);
     const end = x(length);
     const firstRow = Math.max(0, Math.floor(scrollTop / rowHeight));
-    const lastRow = Math.min(rows.length - 1, Math.floor((scrollTop + drawHeight) / rowHeight));
+    const lastRow = Math.min(lanes.length - 1, Math.floor((scrollTop + drawHeight) / rowHeight));
 
     // Row backgrounds and separators.
     for (let index = firstRow; index <= lastRow; index++) {
-      const row = rows[index]!;
+      const row = lanes[index]!;
       const top = index * rowHeight - scrollTop;
       if (row.id === selectedRowId) {
-        context.fillStyle = color("--accent");
+        context.fillStyle = palette.accent;
         context.fillRect(0, top, laneWidth, rowHeight);
       } else if (row.kind === "group") {
-        context.fillStyle = color("--list-stripe");
+        context.fillStyle = palette.stripe;
         context.fillRect(0, top, laneWidth, rowHeight);
       }
-      context.fillStyle = color("--border");
+      context.fillStyle = palette.border;
       context.fillRect(0, top + rowHeight - 1, laneWidth, 1);
     }
     // Labelled seconds as faint lines.
     context.globalAlpha = 0.5;
-    context.fillStyle = color("--border");
+    context.fillStyle = palette.border;
     for (const tick of ticks) if (tick.label) context.fillRect(Math.round(x(tick.time)), 0, 1, drawHeight);
     context.globalAlpha = 1;
     // After the clip's end.
     if (end < laneWidth) {
-      context.fillStyle = color("--background");
+      context.fillStyle = palette.background;
       context.globalAlpha = 0.6;
       context.fillRect(Math.max(0, end), 0, laneWidth - Math.max(0, end), drawHeight);
       context.globalAlpha = 0.35;
-      context.strokeStyle = color("--border");
+      context.strokeStyle = palette.border;
       context.lineWidth = 1;
       context.save();
       context.beginPath();
@@ -282,9 +297,11 @@ export function KeyframeTimeline({
 
     const keySize = coarse ? 12 : 9;
     for (let index = firstRow; index <= lastRow; index++) {
-      const row = rows[index]!;
+      const row = lanes[index]!;
       const centre = index * rowHeight - scrollTop + rowHeight / 2;
       context.globalAlpha = row.muted ? 0.4 : 1;
+      const labelled = row.keys.some((key) => key.label);
+      const sorted = (row.connect && row.keys.length > 1) || labelled ? [...row.keys].sort((a, b) => a.time - b.time) : row.keys;
       if (row.gradient && row.gradient.length > 0) {
         const barHeight = Math.min(rowHeight - 10, 12);
         const left = Math.max(0, x(0));
@@ -297,18 +314,16 @@ export function KeyframeTimeline({
           context.fillRect(left, centre - barHeight / 2, right - left, barHeight);
         }
       } else if (row.connect && row.keys.length > 1) {
-        context.fillStyle = color("--muted-foreground");
-        const sorted = [...row.keys].sort((a, b) => a.time - b.time);
+        context.fillStyle = palette.mutedForeground;
         const from = x(sorted[0]!.time);
         const to = x(sorted[sorted.length - 1]!.time);
         context.fillRect(from, Math.round(centre), to - from, 1);
       }
       const size = row.kind === "group" ? keySize - 2 : keySize;
-      if (row.keys.some((key) => key.label)) {
-        const sorted = [...row.keys].sort((a, b) => a.time - b.time);
+      if (labelled) {
         context.font = "10px ui-sans-serif, system-ui, sans-serif";
         context.textBaseline = "middle";
-        context.fillStyle = color("--muted-foreground");
+        context.fillStyle = palette.mutedForeground;
         sorted.forEach((key, order) => {
           if (!key.label) return;
           const left = x(key.time) + size / 2 + 3;
@@ -326,33 +341,27 @@ export function KeyframeTimeline({
         const kx = x(key.time);
         if (kx < -size || kx > laneWidth + size) continue;
         const selected = selectedKeys.has(keyRefId({ rowId: row.id, keyId: key.id }));
-        context.fillStyle = selected ? color("--selection") : row.kind === "group" ? color("--muted-foreground") : color("--foreground");
-        context.strokeStyle = color("--background");
+        context.fillStyle = selected ? palette.selection : row.kind === "group" ? palette.mutedForeground : palette.foreground;
+        context.strokeStyle = palette.background;
         context.lineWidth = 1.5;
         drawKey(context, key.shape, kx, centre, size);
       }
       context.globalAlpha = 1;
     }
 
-    // Playhead.
-    const playhead = Math.round(x(time));
-    if (playhead >= 0 && playhead <= laneWidth) {
-      context.fillStyle = color("--selection");
-      context.fillRect(playhead, 0, 1, drawHeight);
-    }
     if (marquee) {
       const top = marquee.top - scrollTop;
-      context.fillStyle = color("--selection");
+      context.fillStyle = palette.selection;
       context.globalAlpha = 0.12;
       context.fillRect(marquee.left, top, marquee.right - marquee.left, marquee.bottom - marquee.top);
       context.globalAlpha = 0.8;
-      context.strokeStyle = color("--selection");
+      context.strokeStyle = palette.selection;
       context.lineWidth = 1;
       context.strokeRect(marquee.left + 0.5, top + 0.5, marquee.right - marquee.left - 1, marquee.bottom - marquee.top - 1);
       context.globalAlpha = 1;
     }
     // themeRevision: the colours were read again for the new theme.
-  }, [rows, view, ticks, laneWidth, drawHeight, scrollTop, rowHeight, selectedKeys, selectedRowId, length, time, marquee, coarse, themeRevision]);
+  }, [lanes, view, ticks, laneWidth, drawHeight, scrollTop, rowHeight, selectedKeys, selectedRowId, length, marquee, coarse, themeRevision]);
 
   const lanePoint = (event: { clientX: number; clientY: number }) => {
     const rect = lanesRef.current!.getBoundingClientRect();
@@ -578,6 +587,7 @@ export function KeyframeTimeline({
 
   const endX = timeToX(view, length);
   const playheadX = timeToX(view, time);
+  const lanePlayhead = Math.round(playheadX);
   const gridStyle: CSSProperties = { gridTemplateColumns: `${TRACK_LIST_WIDTH_PX}px minmax(0, 1fr)` };
 
   return (
@@ -679,6 +689,15 @@ export function KeyframeTimeline({
               className="pointer-events-none sticky top-0 left-0 block w-full"
               style={{ height: drawHeight }}
             />
+            {/* The playhead over the keys, as the ruler draws its own: moving it touches no pixels of the canvas. */}
+            {lanePlayhead >= 0 && lanePlayhead < laneWidth ? (
+              <div
+                aria-hidden="true"
+                data-testid="keyframe-timeline-lane-playhead"
+                className="pointer-events-none absolute top-0 bottom-0 w-px bg-selection"
+                style={{ left: lanePlayhead }}
+              />
+            ) : null}
           </div>
         </div>
       </div>
@@ -686,7 +705,31 @@ export function KeyframeTimeline({
   );
 }
 
-function TrackListRow({
+/** Whether two row lists draw the same lanes: the canvas reads only these parts of a row. */
+function sameLanes(a: readonly KeyframeTimelineTrackRow[], b: readonly KeyframeTimelineTrackRow[]): boolean {
+  return a.length === b.length && a.every((row, index) => {
+    const other = b[index]!;
+    return row.id === other.id && row.kind === other.kind && row.keys === other.keys && row.gradient === other.gradient &&
+      row.connect === other.connect && row.muted === other.muted;
+  });
+}
+
+/** The lane colours, read from the theme's tokens once per draw. */
+function lanePalette(style: CSSStyleDeclaration) {
+  const color = (property: string) => style.getPropertyValue(property).trim() || "#888";
+  return {
+    accent: color("--accent"),
+    stripe: color("--list-stripe"),
+    border: color("--border"),
+    background: color("--background"),
+    foreground: color("--foreground"),
+    mutedForeground: color("--muted-foreground"),
+    selection: color("--selection"),
+  };
+}
+
+/** A track list row; it re-renders only when its row, height, selection or handlers change. */
+const TrackListRow = memo(function TrackListRow({
   row,
   height,
   selected,
@@ -768,7 +811,7 @@ function TrackListRow({
       {row.actions ? <span className="flex shrink-0 items-center">{row.actions}</span> : null}
     </div>
   );
-}
+});
 
 function drawKey(context: CanvasRenderingContext2D, shape: KeyframeShape, x: number, y: number, size: number) {
   const half = size / 2;

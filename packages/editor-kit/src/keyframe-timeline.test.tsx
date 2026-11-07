@@ -234,3 +234,92 @@ describe("KeyframeTimeline", () => {
     expect(onMove.mock.calls.map(([, phase]) => phase)).toEqual(["start", "move", "end"]);
   });
 });
+
+describe("KeyframeTimeline drawing", () => {
+  const NO_KEYS: ReadonlySet<string> = new Set();
+  const noop = () => {};
+
+  /** A 2D context that counts what it draws; jsdom has none. */
+  function stubLaneCanvas() {
+    const counts = { fillRect: 0 };
+    const context = new Proxy({} as Record<string | symbol, unknown>, {
+      get(target, property) {
+        if (property in target) return target[property];
+        if (property === "createLinearGradient") return () => ({ addColorStop: noop });
+        return () => {
+          if (property === "fillRect") counts.fillRect++;
+        };
+      },
+      set(target, property, value) {
+        target[property] = value;
+        return true;
+      },
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context as unknown as RenderingContext);
+    const tokens = vi.fn((name: string) => (name === "--selection" ? "#4af" : "#222"));
+    const computed = window.getComputedStyle.bind(window);
+    vi.spyOn(window, "getComputedStyle").mockImplementation((element, pseudo) =>
+      element instanceof HTMLCanvasElement ? ({ getPropertyValue: tokens } as unknown as CSSStyleDeclaration) : computed(element, pseudo));
+    return { counts, tokens };
+  }
+
+  function Lanes({ rows: shown, time, selectedRowId = null, onSelectRow = noop }: {
+    rows: readonly KeyframeTimelineTrackRow[];
+    time: number;
+    selectedRowId?: string | null;
+    onSelectRow?: (rowId: string) => void;
+  }) {
+    return (
+      <KeyframeTimeline rows={shown} length={4} frameRate={30} time={time} onTimeChange={noop} selectedKeys={NO_KEYS}
+        onSelectKeys={noop} selectedRowId={selectedRowId} onSelectRow={onSelectRow} onToggleRow={noop} onRowContextMenu={noop} aria-label="Intro" />
+    );
+  }
+
+  it("leaves the lane canvas alone when only the playhead or a row's value changes, and reads each colour once per draw", () => {
+    const { counts, tokens } = stubLaneCanvas();
+    const widths = vi.spyOn(HTMLCanvasElement.prototype, "width", "set");
+    const view = render(<Lanes rows={rows} time={0.5} />);
+    expect(counts.fillRect).toBeGreaterThan(0);
+    expect(widths).toHaveBeenCalledWith(WIDTH);
+    const playhead = () => screen.getByTestId("keyframe-timeline-lane-playhead").style.left;
+    expect(playhead()).toBe(`${Math.round(x(0.5))}px`);
+    counts.fillRect = 0;
+    widths.mockClear();
+
+    // Playback: the playhead moves and track values change text, the keys stay the same arrays.
+    view.rerender(<Lanes rows={rows} time={1.5} />);
+    view.rerender(<Lanes rows={rows.map((row) => ({ ...row, value: "4, 0, 0" }))} time={2} />);
+    expect(counts.fillRect).toBe(0);
+    expect(playhead()).toBe(`${Math.round(x(2))}px`);
+
+    // A selected row does redraw, without reallocating the canvas at the same size.
+    tokens.mockClear();
+    view.rerender(<Lanes rows={rows} time={2} selectedRowId="loc" />);
+    expect(counts.fillRect).toBeGreaterThan(0);
+    expect(widths).not.toHaveBeenCalled();
+    expect(new Set(tokens.mock.calls.map(([name]) => name)).size).toBe(tokens.mock.calls.length);
+  });
+
+  it("re-renders only the track list rows whose row changed", () => {
+    const renders = new Map<string, number>();
+    // The track list reads a row's depth each time it renders the row.
+    const counted = rows.map((row) => Object.defineProperty({ ...row }, "depth", {
+      get: () => {
+        renders.set(row.id, (renders.get(row.id) ?? 0) + 1);
+        return row.depth;
+      },
+    }) as KeyframeTimelineTrackRow);
+    const view = render(<Lanes rows={counted} time={0.5} />);
+    renders.clear();
+    view.rerender(<Lanes rows={counted} time={1} />);
+    expect([...renders.keys()]).toEqual([]);
+    const moved = counted.map((row) => (row.id === "loc" ? Object.defineProperty({ ...rows[1]!, value: "0, 0, 2" }, "depth", {
+      get: () => {
+        renders.set(row.id, (renders.get(row.id) ?? 0) + 1);
+        return 1;
+      },
+    }) as KeyframeTimelineTrackRow : row));
+    view.rerender(<Lanes rows={moved} time={1.5} />);
+    expect([...renders.keys()]).toEqual(["loc"]);
+  });
+});

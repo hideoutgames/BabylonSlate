@@ -12,6 +12,7 @@ import {
 import { KeybindProvider } from "../context/keybind-context";
 import { SceneToolsProvider, useSceneTools } from "../context/scene-tools-context";
 import { TimelinePanel } from "./timeline-panel";
+import { timelinePropertyEntries } from "../lib/timeline-property-catalog";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {}
@@ -31,12 +32,23 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("../context/document-workspace-context", () => ({ useDocumentWorkspace: () => ({ documentId: "scene:main" }) }));
+// The open documents change only with the Scene, as the provider's do; the mock advances every kind's revision with them.
+const openScene = vi.hoisted(() => ({ scene: null as unknown, documents: [] as unknown[] }));
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   get openDocuments() {
-    return [{ id: "scene:main", ref: { kind: "scene" }, content: harness.scene }];
+    if (openScene.scene !== harness.scene) {
+      openScene.scene = harness.scene;
+      openScene.documents = [{ id: "scene:main", ref: { kind: "scene" }, content: harness.scene }];
+    }
+    return openScene.documents;
   },
   applySceneChange: harness.applySceneChange,
 })));
+// Counted: building the row structure reads each object's property entries.
+vi.mock("../lib/timeline-property-catalog", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/timeline-property-catalog")>();
+  return { ...actual, timelinePropertyEntries: vi.fn(actual.timelinePropertyEntries) };
+});
 vi.mock("../context/scene-editing-context", () => ({
   useOptionalSceneEditing: () => ({ selectedActorIds: harness.selectedActorIds, selectActor: harness.selectActor }),
 }));
@@ -122,6 +134,22 @@ describe("Timeline window", () => {
     expect(screen.getByTestId("timeline-row-t-loc").textContent).toContain("0, 0, 0");
     fireEvent.click(screen.getByTestId("timeline-go-end"));
     expect(screen.getByTestId("timeline-row-t-loc").textContent).toContain("4, 0, 0");
+  });
+
+  it("moves the playhead without rebuilding the rows, updating only the values it changes", () => {
+    harness.scene = sceneWith(animated());
+    renderPanel();
+    expect(screen.getByTestId("timeline-row-t-loc").textContent).toContain("0, 0, 0");
+    const builds = vi.mocked(timelinePropertyEntries).mock.calls.length;
+    expect(builds).toBeGreaterThan(0);
+    fireEvent.click(screen.getByTestId("timeline-next-key"));
+    fireEvent.click(screen.getByTestId("timeline-go-end"));
+    fireEvent.click(screen.getByTestId("timeline-go-start"));
+    expect(screen.getByTestId("timeline-row-t-loc").textContent).toContain("0, 0, 0");
+    expect(vi.mocked(timelinePropertyEntries).mock.calls.length).toBe(builds);
+    // A collapsed object is a new structure.
+    fireEvent.click(within(screen.getByTestId("timeline-row-o-door")).getByRole("button", { name: "Collapse" }));
+    expect(vi.mocked(timelinePropertyEntries).mock.calls.length).toBeGreaterThan(builds);
   });
 
   it("sets and removes the key on the playhead's frame from a track row", () => {
