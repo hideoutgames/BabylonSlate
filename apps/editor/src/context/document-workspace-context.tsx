@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 
 interface DocumentWorkspaceContextValue {
   documentId: string;
@@ -14,8 +14,10 @@ export function DocumentWorkspaceProvider({
   documentId: string;
   children: ReactNode;
 }) {
+  // Stable per document, so a workspace re-render (tab switch, save, Play) leaves every panel's consumers alone.
+  const value = useMemo(() => ({ documentId }), [documentId]);
   return (
-    <DocumentWorkspaceContext.Provider value={{ documentId }}>
+    <DocumentWorkspaceContext.Provider value={value}>
       {children}
     </DocumentWorkspaceContext.Provider>
   );
