@@ -11,6 +11,8 @@ import { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+// Registers thin instances, which the fixture adds.
+import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { drawnMaterialVariants } from "./drawn-variants";
 import {
   instancingIneligibility,

@@ -17,6 +17,8 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
+// Registers the scene's outline renderer, which the test enables.
+import "@babylonjs/core/Rendering/outlineRenderer";
 import { createDefaultRenderTargetCaptureProperties } from "@haptic/core";
 import { RenderTargetCaptures } from "./render-target-capture";
 import { createStartingStateDraw } from "./starting-state-draw";

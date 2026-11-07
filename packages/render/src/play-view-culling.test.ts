@@ -5,6 +5,8 @@ import { Matrix } from "@babylonjs/core/Maths/math.vector";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene, ScenePerformancePriority } from "@babylonjs/core/scene";
 import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+// Registers thin instances, which the fixture adds.
+import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { drawWhateverTheView, installPlayViewCulling, settlePlayViewCulling } from "./play-view-culling";
 
 const engines: NullEngine[] = [];

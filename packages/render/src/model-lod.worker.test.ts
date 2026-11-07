@@ -1,5 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+// Registers VertexData.CreateSphere, which the fixture uses.
+import "@babylonjs/core/Meshes/Builders/sphereBuilder";
 import type { LodSimplifyInput } from "./model-lod-simplify";
 import type { ModelLodWorkerReply, ModelLodWorkerRequest } from "./model-lod.worker";
 

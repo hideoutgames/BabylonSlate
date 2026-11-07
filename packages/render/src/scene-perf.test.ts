@@ -20,6 +20,8 @@ import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
+// Registers thin instances, which the fixture adds.
+import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { installTimerClock } from "./virtual-clock-test-fixtures";
 import {
   applyEditorMaterialFreeze,

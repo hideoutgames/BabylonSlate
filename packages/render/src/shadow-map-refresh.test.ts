@@ -16,6 +16,8 @@ import { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+// Registers thin instances, which the fixture adds.
+import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { DynamicRuntimeMeshGeometry, normalizeShadowSettings, SHADOW_FAR_CASTER_MIN_TEXELS } from "@haptic/core";
 import { applyDynamicRuntimeMeshUpdate, createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
 import { sceneShadowController } from "./shadow-controller";

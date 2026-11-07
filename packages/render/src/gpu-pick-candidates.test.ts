@@ -14,6 +14,8 @@ import { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+// Registers thin instances, which the fixture adds.
+import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { afterEach, describe, expect, it } from "vitest";
 import { pickFrustumPlanes } from "./gpu-object-id-picker";
 import { pickCandidates } from "./gpu-pick-candidates";

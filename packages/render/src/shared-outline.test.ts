@@ -4,6 +4,8 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
+// Registers createInstance, which the fixture uses.
+import "@babylonjs/core/Meshes/instancedMesh";
 import {
   SHARED_OUTLINE_ATTRIBUTE,
   SharedOutlineOwner,
