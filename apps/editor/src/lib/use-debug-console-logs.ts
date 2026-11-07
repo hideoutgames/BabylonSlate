@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { DebugConsoleLogEntry } from "../components/debug-console";
 
 /** Lines a Debug Console host keeps; older lines can never be shown. */
@@ -44,23 +44,39 @@ export function createFrameFlush(flush: () => void, fallbackMs = 250) {
 }
 
 /**
+ * A Debug Console host's lines, outside React state so a flush re-renders
+ * only the console that shows them. `push` keeps its identity, so session
+ * callbacks may capture it once; `getSnapshot` is the same array until a
+ * frame adds lines.
+ */
+export type DebugConsoleLogFeed = {
+  push: (severity: string, message: string) => void;
+  subscribe: (listener: () => void) => () => void;
+  getSnapshot: () => readonly DebugConsoleLogEntry[];
+};
+
+const NO_LOGS: readonly DebugConsoleLogEntry[] = [];
+
+/**
  * Debug Console lines for a Play or Preview Build host. Each line gets its
  * id and timestamp on arrival, so ordering against command entries is
- * unchanged, but a burst commits once per frame instead of once per line.
- * `pushLog` keeps its identity, so session callbacks may capture it once.
+ * unchanged, but a burst reaches subscribers once per frame instead of once
+ * per line. The feed keeps its identity while the host is mounted; read it
+ * with `useShownDebugConsoleLogs`, or call `getSnapshot` when a handler runs.
  */
-export function useDebugConsoleLogs() {
-  const [logs, setLogs] = useState<DebugConsoleLogEntry[]>([]);
+export function useDebugConsoleLogs(): DebugConsoleLogFeed {
   const [feed] = useState(() => {
     let sequence = 0;
+    let logs: readonly DebugConsoleLogEntry[] = NO_LOGS;
     let pending: DebugConsoleLogEntry[] = [];
     let disposed = false;
+    const listeners = new Set<() => void>();
     const frame = createFrameFlush(() => {
       const batch = pending;
       pending = [];
-      if (!disposed && batch.length > 0) {
-        setLogs((previous) => appendDebugConsoleLogs(previous, batch));
-      }
+      if (disposed || batch.length === 0) return;
+      logs = appendDebugConsoleLogs(logs, batch);
+      for (const listener of [...listeners]) listener();
     });
     return {
       push(severity: string, message: string) {
@@ -74,6 +90,13 @@ export function useDebugConsoleLogs() {
         }
         frame.schedule();
       },
+      subscribe(listener: () => void) {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      getSnapshot: () => logs,
       attach() {
         disposed = false;
       },
@@ -88,5 +111,22 @@ export function useDebugConsoleLogs() {
     feed.attach();
     return () => feed.detach();
   }, [feed]);
-  return { logs, pushLog: feed.push };
+  return feed;
+}
+
+/**
+ * The feed's lines for a Debug Console that is `open`. While it is closed
+ * the lines it last showed are kept, so flushes neither re-render it nor
+ * rebuild its transcript; opening it reads the newest lines.
+ */
+export function useShownDebugConsoleLogs(
+  feed: DebugConsoleLogFeed,
+  open: boolean,
+): readonly DebugConsoleLogEntry[] {
+  const shown = useRef(NO_LOGS);
+  const getShown = useCallback(() => {
+    if (open) shown.current = feed.getSnapshot();
+    return shown.current;
+  }, [feed, open]);
+  return useSyncExternalStore(feed.subscribe, getShown);
 }
