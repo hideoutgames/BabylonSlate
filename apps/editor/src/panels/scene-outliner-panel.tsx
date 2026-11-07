@@ -75,8 +75,8 @@ import { GraphDropHint, type GraphDropHintState } from "@haptic/graph-ui";
 import {
   useDocumentActions,
   useRegistryState,
-  useEditorShellState,
   useOpenDocument,
+  useThumbnailVersions,
 } from "../context/document-context";
 import { useOptionalSceneTools } from "../context/scene-tools-context";
 import { addTimelineObjects, withTimelineClip } from "../lib/timeline-track-edits";
@@ -307,7 +307,7 @@ const MemoPlaceActorsDialog = memo(PlaceActorsDialog);
 function PlaceActorsDialogHost(
   props: Omit<ComponentProps<typeof PlaceActorsDialog>, "thumbnailVersions">,
 ) {
-  const { thumbnailVersions } = useEditorShellState();
+  const thumbnailVersions = useThumbnailVersions();
   return (
     <MemoPlaceActorsDialog
       {...props}

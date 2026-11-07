@@ -81,6 +81,7 @@ import {
   RegistryStateContext,
   SaveStateContext,
   SourceControlStateContext,
+  ThumbnailVersionsContext,
 } from "./document-context-hooks";
 import { useDocumentDockLayouts } from "./use-document-dock-layouts";
 import { useRefState } from "./use-ref-state";
@@ -126,6 +127,7 @@ export {
   useSaveState,
   useSourceControl,
   useTabOrder,
+  useThumbnailVersions,
 } from "./document-context-hooks";
 /* eslint-enable react-refresh/only-export-components */
 
@@ -959,10 +961,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       pendingExclusiveScene,
       externalChangePrompt,
       undoHistoryNotice,
-      thumbnailVersions,
       thumbnailsEnabled,
     }),
-    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, migrationPromptRequest, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, thumbnailVersions, thumbnailsEnabled],
+    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, migrationPromptRequest, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, thumbnailsEnabled],
   );
 
   return (
@@ -975,30 +976,32 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                 <SaveStateContext.Provider value={saveState}>
                   <CompileStateContext.Provider value={compileState}>
                     <EditorShellStateContext.Provider value={editorShellState}>
-                      <SourceControlStateContext.Provider value={sourceControlState}>
-                          <DockWindowTickContext.Provider value={dockWindowTick}>
-                            {children}
-                          </DockWindowTickContext.Provider>
-                          <SceneLoadingDialog
-                            open={sceneDocumentLoad !== null}
-                            progress={null}
-                            phase="Loading Document"
-                            failed={sceneDocumentLoad?.failed}
-                            onRetry={() => { if (sceneDocumentLoad) void finishOpenDocument(sceneDocumentLoad.ref); }}
-                            onDismiss={cancelSceneDocumentLoad}
-                            reason={sceneDocumentLoad?.error instanceof AssetFormatVersionError ? sceneDocumentLoad.error.message : undefined}
-                            onCopyDetails={debugMode && sceneDocumentLoad ? () => formatSceneLoadReport({
-                              surface: "Scene Document", scene: sceneDocumentLoad.ref.path, phase: "Loading Document",
-                              progress: null, failed: sceneDocumentLoad.failed, elapsedMs: null, error: sceneDocumentLoad.error,
-                            }) : undefined}
-                          />
-                          <DocumentOpenErrorDialog
-                            error={documentOpenError}
-                            onClose={() => setDocumentOpenError(null)}
-                            testId="document-open-error"
-                            dismissTestId="document-open-error-dismiss"
-                          />
-                      </SourceControlStateContext.Provider>
+                      <ThumbnailVersionsContext.Provider value={thumbnailVersions}>
+                        <SourceControlStateContext.Provider value={sourceControlState}>
+                            <DockWindowTickContext.Provider value={dockWindowTick}>
+                              {children}
+                            </DockWindowTickContext.Provider>
+                            <SceneLoadingDialog
+                              open={sceneDocumentLoad !== null}
+                              progress={null}
+                              phase="Loading Document"
+                              failed={sceneDocumentLoad?.failed}
+                              onRetry={() => { if (sceneDocumentLoad) void finishOpenDocument(sceneDocumentLoad.ref); }}
+                              onDismiss={cancelSceneDocumentLoad}
+                              reason={sceneDocumentLoad?.error instanceof AssetFormatVersionError ? sceneDocumentLoad.error.message : undefined}
+                              onCopyDetails={debugMode && sceneDocumentLoad ? () => formatSceneLoadReport({
+                                surface: "Scene Document", scene: sceneDocumentLoad.ref.path, phase: "Loading Document",
+                                progress: null, failed: sceneDocumentLoad.failed, elapsedMs: null, error: sceneDocumentLoad.error,
+                              }) : undefined}
+                            />
+                            <DocumentOpenErrorDialog
+                              error={documentOpenError}
+                              onClose={() => setDocumentOpenError(null)}
+                              testId="document-open-error"
+                              dismissTestId="document-open-error-dismiss"
+                            />
+                        </SourceControlStateContext.Provider>
+                      </ThumbnailVersionsContext.Provider>
                     </EditorShellStateContext.Provider>
                   </CompileStateContext.Provider>
                 </SaveStateContext.Provider>
