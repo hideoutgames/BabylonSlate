@@ -11,7 +11,7 @@ import {
 import { isParticleNumericType, resizeParticleValue, type ParticleNumericType } from "./types";
 
 /** The Constant node type of each value type. */
-export const PARTICLE_CONSTANT_NODE_TYPES: Readonly<Record<ParticleNumericType, string>> = {
+const PARTICLE_CONSTANT_NODE_TYPES: Readonly<Record<ParticleNumericType, string>> = {
   float: "const.float",
   vec2: "const.vec2",
   vec3: "const.vec3",
@@ -27,7 +27,7 @@ export function particleConstantValueType(type: string): ParticleNumericType | n
 }
 
 /** The starting value of a new parameter of `type`: the Constant node's starting value. */
-export function particleParameterStartValue(type: ParticleNumericType): number[] {
+function particleParameterStartValue(type: ParticleNumericType): number[] {
   return [...(newParticleNodeProperties(PARTICLE_CONSTANT_NODE_TYPES[type]).value as number[])];
 }
 

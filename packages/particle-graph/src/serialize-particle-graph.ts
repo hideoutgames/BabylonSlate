@@ -67,7 +67,7 @@ function toPin(pin: ParticlePinDefinition, direction: "in" | "out"): ParticleGra
 }
 
 /** Catalog pins, inputs then outputs. Particle pins come first in each list. */
-export function pinsForParticleNode(
+function pinsForParticleNode(
   type: string,
   properties: Record<string, unknown> = {},
 ): ParticleGraphPin[] {
@@ -83,7 +83,7 @@ export function pinsForParticleNode(
  * Canvas data key of a Parameter node's {@link ParticleParameterSnapshot}. Copies carry it,
  * so a paste can declare the parameter again where it is missing.
  */
-export const PARTICLE_PARAMETER_SNAPSHOT_KEY = "__parameter";
+const PARTICLE_PARAMETER_SNAPSHOT_KEY = "__parameter";
 
 /** Keys hydrate adds (and graph-ui may add); dehydrate strips exactly these. */
 const EDITOR_NODE_KEYS = new Set([
@@ -100,7 +100,7 @@ const EDITOR_NODE_KEYS = new Set([
 ]);
 
 /** Saved node properties from canvas node data (editor-only keys removed). */
-export function particleNodePropertiesFromData(
+function particleNodePropertiesFromData(
   data: Record<string, unknown>,
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
@@ -132,7 +132,7 @@ const NEW_PARAMETER_ENTRIES: readonly { type: ParticleNumericType; title: string
 ];
 
 /** Add Node category of the Parameter entries. */
-export const PARTICLE_PARAMETER_CATEGORY = "Parameter";
+const PARTICLE_PARAMETER_CATEGORY = "Parameter";
 
 function snapshotOf(parameter: ParticleGraphParameter): ParticleParameterSnapshot {
   return { name: parameter.name, type: parameter.type, defaultValue: [...parameter.defaultValue] };

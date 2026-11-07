@@ -30,7 +30,7 @@ import { resizeParticleValue, type ParticleNumericType } from "./types";
 import { DEFAULT_PARTICLE_SPAWN, particleGraphSpawnEmitters, particleSpawnSettings } from "./spawn";
 
 /** Payload field; never a top-level `version` (the project service strips it). */
-export const PARTICLE_GRAPH_SCHEMA_VERSION = 1 as const;
+const PARTICLE_GRAPH_SCHEMA_VERSION = 1 as const;
 
 export interface ParticleGraphNode {
   id: string;
@@ -107,7 +107,7 @@ export function normalizeParticleParameterName(value: unknown): string | null {
 }
 
 /** Drops parameters without an id or a valid name, and later duplicates of either. */
-export function normalizeParticleGraphParameters(value: unknown): ParticleGraphParameter[] {
+function normalizeParticleGraphParameters(value: unknown): ParticleGraphParameter[] {
   if (!Array.isArray(value)) return [];
   const ids = new Set<string>();
   const names = new Set<string>();
@@ -245,7 +245,7 @@ const CONSTANT_TYPES: Readonly<Record<string, ParticleNumericType>> = {
  * Sanitize the properties a node type reads. Unknown keys are kept; every
  * `default:<pinId>` becomes a finite number array.
  */
-export function normalizeParticleNodeProperties(
+function normalizeParticleNodeProperties(
   type: string,
   properties: Record<string, unknown>,
 ): Record<string, unknown> {
