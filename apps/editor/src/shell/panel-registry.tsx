@@ -1,16 +1,4 @@
-import { GlobalParameterCollectionPanel } from "../components/global-parameter-collection-editor";
-import { CurveAssetDetailsPanel, CurveAssetEditorPanel } from "../components/curve-asset-editor";
-import { TimelineAssetClipsPanel, TimelineAssetEventsPanel } from "../components/timeline-asset-editor";
-import { TimelineClipInspectorPanel, TimelineClipProxiesPanel, TimelineClipTimelinePanel } from "../components/timeline-clip-asset-editor";
-import { TimelineClipPreviewPanel } from "../panels/timeline-clip-preview-panel";
-import { BreakpointsPanel } from "../panels/breakpoints-panel";
-import { WatchesPanel } from "../panels/watches-panel";
-import { SaveGameFieldsPanel, SaveGameDefinitionPanel } from "../panels/save-game-panels";
-import { WaterDetailsPanel, WaterPreviewPanel } from "../panels/water-panels";
-import { RenderTargetDetailsPanel, RenderTargetTextureDetailsPanel } from "../panels/render-target-panels";
-import { InputBindingsPanel, InputBindingDetailsPanel } from "../panels/input-asset-panels";
-import { DataTreeHierarchyPanel, DataTreeEntriesPanel, DataTreeValuesPanel, DataTreeValidationPanel } from "../panels/data-asset-panels";
-import { DataDefinitionFieldsPanel, DataDefinitionDetailsPanel } from "../panels/data-definition-panel";
+import { lazy, Suspense, type FunctionComponent } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "../panels/viewport-panel";
 import { GraphPanel } from "../panels/graph-panel";
@@ -21,115 +9,24 @@ import { MyClassPanel } from "../panels/my-class-panel";
 import { SceneOutlinerPanel } from "../panels/scene-outliner-panel";
 import { SceneDetailsPanel } from "../panels/scene-details-panel";
 import { SceneAssetsPanel } from "../panels/scene-assets-panel";
-import { ActorPrefabPanel } from "../panels/actor-prefab-panel";
-import { PrefabViewportPanel } from "../panels/prefab-viewport-panel";
-
-import { TypeMembersPanel } from "../panels/type-members-panel";
-import { TypeDetailsPanel } from "../panels/type-details-panel";
-import { InterfaceMethodsPanel } from "../panels/interface-methods-panel";
-import { InterfacePreviewPanel } from "../panels/interface-preview-panel";
-import { InterfaceDetailsPanel } from "../panels/interface-details-panel";
-import {
-  SpritePreviewPanel,
-  SpriteDetailsPanel,
-} from "../components/sprite-editor";
-import {
-  AudioClipsPanel,
-  AudioDetailsPanel,
-  AudioPreviewPanel,
-} from "../components/audio-editor";
-import {
-  SpriteAnimationPreviewPanel,
-  SpriteAnimationDetailsPanel,
-} from "../components/sprite-animation-editor";
-import {
-  TilesetPreviewPanel,
-  TilesetDetailsPanel,
-} from "../components/tileset-editor";
-import { TilesetAutotilesPanel } from "../components/tileset-autotiles-window";
-import {
-  TilemapPaintPanel,
-  TilemapDetailsPanel,
-  TilemapPalettePanel,
-} from "../components/tilemap-editor";
-import {
-  MaterialCompilerResultsPanel,
-  MaterialDetailsPanel,
-  MaterialFunctionGraphPanel,
-  MaterialFunctionInterfacePanel,
-  MaterialGraphPanel,
-  MaterialPreviewPanel,
-} from "../components/material-editor";
-import {
-  MaterialInstanceDetailsPanel,
-  MaterialInstancePreviewPanel,
-} from "../components/material-instance-editor";
-import { PluginSettingsDetailsPanel } from "../panels/plugin-settings-details-panel";
-import {
-  AudioChannelDetailsPanel,
-  AudioMixerDetailsPanel,
-  SoundAttenuationDetailsPanel,
-} from "../components/audio-asset-editor";
-import {
-  ParticleEmitterDetailsPanel,
-  ParticleEmitterPreviewPanel,
-} from "../panels/particle-emitter-panels";
-import {
-  ParticleGraphCanvasPanel,
-  ParticleGraphCompilerResultsPanel,
-  ParticleGraphDetailsPanel,
-  ParticleGraphPreviewPanel,
-} from "../panels/particle-graph-panels";
-import {
-  ParticleSystemDetailsPanel,
-  ParticleSystemPreviewPanel,
-} from "../panels/particle-system-panels";
-import {
-  ModelCollidersPanel,
-  ModelDetailsPanel,
-  ModelPreviewPanel,
-} from "../components/model-editor";
-import {
-  SkeletonDetailsPanel,
-  SkeletonPreviewPanel,
-} from "../components/skeleton-editor";
-import {
-  AnimationDetailsPanel,
-  AnimationPreviewPanel,
-} from "../components/animation-editor";
-import {
-  SkyboxCreatorCubemapPanel,
-  SkyboxCreatorDetailsPanel,
-  SkyboxCreatorPreviewPanel,
-} from "../components/skybox-creator-editor";
-import {
-  TextureDetailsPanel,
-  TexturePreviewPanel,
-} from "../components/texture-editor";
-import { FontDetailsPanel, FontPreviewPanel } from "../components/font-editor";
-import { BlackboardInspectorPanel, BlackboardKeysPanel } from "../components/blackboard-editor";
 import { LocksPanel } from "../panels/locks-panel";
+import { BreakpointsPanel } from "../panels/breakpoints-panel";
 import {
-  AnimGraphDetailsPanel,
-  AnimGraphGraphPanel,
-  AnimGraphVariablesPanel,
-  AnimObjectVariablesPanel,
-} from "../components/anim-graph-editor";
-import {
-  BehaviourTreeBlackboardPanel,
-  BehaviourTreeCompilerResultsPanel,
-  BehaviourTreeDetailsPanel,
-  BehaviourTreeGraphPanel,
-} from "../components/behaviour-tree-editor";
-import {
-  TraceLogPanel,
-  TraceSnapshotPanel,
-  TraceTimelinePanel,
-} from "../components/trace-editor";
+  FoliageGroupsPanel,
+  FoliageOutlinerPanel,
+  FoliageSettingsPanel,
+  LandscapeOutlinerPanel,
+  LandscapeSettingsPanel,
+} from "../panels/scene-environment-panels";
+import { TimelineClipsPanel, TimelinePanel } from "../panels/timeline-panels";
 
-export const panelComponents = {
-  "save-game-fields": (props: IDockviewPanelProps) => <SaveGameFieldsPanel {...props} />,
-  "save-game-definition": (props: IDockviewPanelProps) => <SaveGameDefinitionPanel {...props} />,
+type DockPanel = FunctionComponent<IDockviewPanelProps>;
+
+/**
+ * Scene and Scene Layer windows in every mode, imported with the Editor route: a project opens on a Scene, so these
+ * panels never wait for a download.
+ */
+export const scenePanelComponents = {
   viewport: (props: IDockviewPanelProps) => <ViewportPanel {...props} />,
   graph: (props: IDockviewPanelProps) => <GraphPanel {...props} />,
   // FUNCTION_GRAPH_PANEL_COMPONENT; a literal key, since an imported constant
@@ -140,8 +37,6 @@ export const panelComponents = {
   "compiler-results": (props: IDockviewPanelProps) => (
     <CompilerResultsPanel {...props} />
   ),
-  breakpoints: () => <BreakpointsPanel />,
-  watches: () => <WatchesPanel />,
   "my-class": (props: IDockviewPanelProps) => <MyClassPanel {...props} />,
   "scene-outliner": (props: IDockviewPanelProps) => (
     <SceneOutlinerPanel {...props} />
@@ -150,226 +45,8 @@ export const panelComponents = {
     <SceneDetailsPanel {...props} />
   ),
   "scene-assets": (props: IDockviewPanelProps) => <SceneAssetsPanel {...props} />,
-  "actor-prefab": (props: IDockviewPanelProps) => <ActorPrefabPanel {...props} />,
-  "prefab-viewport": (props: IDockviewPanelProps) => (
-    <PrefabViewportPanel {...props} />
-  ),
-  "type-members": (props: IDockviewPanelProps) => (
-    <TypeMembersPanel {...props} />
-  ),
-  "type-details": (props: IDockviewPanelProps) => (
-    <TypeDetailsPanel {...props} />
-  ),
-  "script-interface-methods": (props: IDockviewPanelProps) => (
-    <InterfaceMethodsPanel {...props} />
-  ),
-  "script-interface-preview": (props: IDockviewPanelProps) => (
-    <InterfacePreviewPanel {...props} />
-  ),
-  "script-interface-details": (props: IDockviewPanelProps) => (
-    <InterfaceDetailsPanel {...props} />
-  ),
-  "sprite-preview": (props: IDockviewPanelProps) => (
-    <SpritePreviewPanel {...props} />
-  ),
-  "sprite-details": (props: IDockviewPanelProps) => (
-    <SpriteDetailsPanel {...props} />
-  ),
-  "audio-preview": (props: IDockviewPanelProps) => (
-    <AudioPreviewPanel {...props} />
-  ),
-  "audio-details": (props: IDockviewPanelProps) => (
-    <AudioDetailsPanel {...props} />
-  ),
-  "audio-clips": (props: IDockviewPanelProps) => (
-    <AudioClipsPanel {...props} />
-  ),
-  "sprite-animation-preview": (props: IDockviewPanelProps) => (
-    <SpriteAnimationPreviewPanel {...props} />
-  ),
-  "sprite-animation-details": (props: IDockviewPanelProps) => (
-    <SpriteAnimationDetailsPanel {...props} />
-  ),
-  "tileset-preview": (props: IDockviewPanelProps) => (
-    <TilesetPreviewPanel {...props} />
-  ),
-  "tileset-details": (props: IDockviewPanelProps) => (
-    <TilesetDetailsPanel {...props} />
-  ),
-  "tileset-autotiles": (props: IDockviewPanelProps) => (
-    <TilesetAutotilesPanel {...props} />
-  ),
-  "tilemap-paint": (props: IDockviewPanelProps) => (
-    <TilemapPaintPanel {...props} />
-  ),
-  "tilemap-palette": (props: IDockviewPanelProps) => (
-    <TilemapPalettePanel {...props} />
-  ),
-  "tilemap-details": (props: IDockviewPanelProps) => (
-    <TilemapDetailsPanel {...props} />
-  ),
-  "material-graph": (props: IDockviewPanelProps) => (
-    <MaterialGraphPanel {...props} />
-  ),
-  "material-preview": (props: IDockviewPanelProps) => (
-    <MaterialPreviewPanel {...props} />
-  ),
-  "material-details": (props: IDockviewPanelProps) => (
-    <MaterialDetailsPanel {...props} />
-  ),
-  "material-compiler-results": (props: IDockviewPanelProps) => (
-    <MaterialCompilerResultsPanel {...props} />
-  ),
-  "material-function-graph": (props: IDockviewPanelProps) => (
-    <MaterialFunctionGraphPanel {...props} />
-  ),
-  "material-function-interface": (props: IDockviewPanelProps) => (
-    <MaterialFunctionInterfacePanel {...props} />
-  ),
-  "material-instance-preview": (props: IDockviewPanelProps) => (
-    <MaterialInstancePreviewPanel {...props} />
-  ),
-  "material-instance-details": (props: IDockviewPanelProps) => (
-    <MaterialInstanceDetailsPanel {...props} />
-  ),
-  "plugin-settings-details": (props: IDockviewPanelProps) => (
-    <PluginSettingsDetailsPanel {...props} />
-  ),
-  "input-bindings": (props: IDockviewPanelProps) => <InputBindingsPanel {...props} />,
-  "input-details": (props: IDockviewPanelProps) => <InputBindingDetailsPanel {...props} />,
-  "data-definition-fields": (props: IDockviewPanelProps) => <DataDefinitionFieldsPanel {...props} />,
-  "data-definition-details": (props: IDockviewPanelProps) => <DataDefinitionDetailsPanel {...props} />,
-  "data-tree-hierarchy": (props: IDockviewPanelProps) => <DataTreeHierarchyPanel {...props} />,
-  "data-tree-values": (props: IDockviewPanelProps) => <DataTreeValuesPanel {...props} />,
-  "data-tree-validation": (props: IDockviewPanelProps) => <DataTreeValidationPanel {...props} />,
-  "data-tree-entries": (props: IDockviewPanelProps) => <DataTreeEntriesPanel {...props} />,
-  "audio-mixer-details": (props: IDockviewPanelProps) => (
-    <AudioMixerDetailsPanel {...props} />
-  ),
-  "audio-channel-details": (props: IDockviewPanelProps) => (
-    <AudioChannelDetailsPanel {...props} />
-  ),
-  "curve-asset-editor": (props: IDockviewPanelProps) => <CurveAssetEditorPanel {...props} />,
-  "curve-asset-details": (props: IDockviewPanelProps) => <CurveAssetDetailsPanel {...props} />,
-  "global-parameter-collection": (props: IDockviewPanelProps) => <GlobalParameterCollectionPanel {...props} />,
-  "timeline-asset-clips": (props: IDockviewPanelProps) => <TimelineAssetClipsPanel {...props} />,
-  "timeline-asset-events": (props: IDockviewPanelProps) => <TimelineAssetEventsPanel {...props} />,
-  "timeline-clip-proxies": (props: IDockviewPanelProps) => <TimelineClipProxiesPanel {...props} />,
-  "timeline-clip-inspector": (props: IDockviewPanelProps) => <TimelineClipInspectorPanel {...props} />,
-  "timeline-clip-timeline": (props: IDockviewPanelProps) => <TimelineClipTimelinePanel {...props} />,
-  "timeline-clip-viewport": (props: IDockviewPanelProps) => <TimelineClipPreviewPanel {...props} />,
-  "sound-attenuation-details": (props: IDockviewPanelProps) => (
-    <SoundAttenuationDetailsPanel {...props} />
-  ),
-  "particle-emitter-preview": (props: IDockviewPanelProps) => (
-    <ParticleEmitterPreviewPanel {...props} />
-  ),
-  "particle-emitter-details": (props: IDockviewPanelProps) => (
-    <ParticleEmitterDetailsPanel {...props} />
-  ),
-  "particle-graph-canvas": (props: IDockviewPanelProps) => (
-    <ParticleGraphCanvasPanel {...props} />
-  ),
-  "particle-graph-preview": (props: IDockviewPanelProps) => (
-    <ParticleGraphPreviewPanel {...props} />
-  ),
-  "particle-graph-details": (props: IDockviewPanelProps) => (
-    <ParticleGraphDetailsPanel {...props} />
-  ),
-  "particle-graph-compiler-results": (props: IDockviewPanelProps) => (
-    <ParticleGraphCompilerResultsPanel {...props} />
-  ),
-  "water-preview": (props: IDockviewPanelProps) => <WaterPreviewPanel {...props} />,
-  "water-details": (props: IDockviewPanelProps) => <WaterDetailsPanel {...props} />,
-  "render-target-details": (props: IDockviewPanelProps) => <RenderTargetDetailsPanel {...props} />,
-  "render-target-texture-details": (props: IDockviewPanelProps) => <RenderTargetTextureDetailsPanel {...props} />,
-  "particle-system-preview": (props: IDockviewPanelProps) => (
-    <ParticleSystemPreviewPanel {...props} />
-  ),
-  "particle-system-details": (props: IDockviewPanelProps) => (
-    <ParticleSystemDetailsPanel {...props} />
-  ),
-  "model-preview": (props: IDockviewPanelProps) => (
-    <ModelPreviewPanel {...props} />
-  ),
-  "model-colliders": (props: IDockviewPanelProps) => (
-    <ModelCollidersPanel {...props} />
-  ),
-  "model-details": (props: IDockviewPanelProps) => (
-    <ModelDetailsPanel {...props} />
-  ),
-  "skeleton-preview": (props: IDockviewPanelProps) => (
-    <SkeletonPreviewPanel {...props} />
-  ),
-  "skeleton-details": (props: IDockviewPanelProps) => (
-    <SkeletonDetailsPanel {...props} />
-  ),
-  "animation-preview": (props: IDockviewPanelProps) => (
-    <AnimationPreviewPanel {...props} />
-  ),
-  "animation-details": (props: IDockviewPanelProps) => (
-    <AnimationDetailsPanel {...props} />
-  ),
-  "skybox-creator-preview": (props: IDockviewPanelProps) => (
-    <SkyboxCreatorPreviewPanel {...props} />
-  ),
-  "skybox-creator-cubemap": (props: IDockviewPanelProps) => (
-    <SkyboxCreatorCubemapPanel {...props} />
-  ),
-  "skybox-creator-details": (props: IDockviewPanelProps) => (
-    <SkyboxCreatorDetailsPanel {...props} />
-  ),
-  "texture-preview": (props: IDockviewPanelProps) => (
-    <TexturePreviewPanel {...props} />
-  ),
-  "texture-details": (props: IDockviewPanelProps) => (
-    <TextureDetailsPanel {...props} />
-  ),
-  "font-preview": (props: IDockviewPanelProps) => <FontPreviewPanel {...props} />,
-  "font-details": (props: IDockviewPanelProps) => <FontDetailsPanel {...props} />,
-  "blackboard-keys": (props: IDockviewPanelProps) => <BlackboardKeysPanel {...props} />,
-  "blackboard-inspector": (props: IDockviewPanelProps) => <BlackboardInspectorPanel {...props} />,
-  "anim-graph-graph": (props: IDockviewPanelProps) => (
-    <AnimGraphGraphPanel {...props} />
-  ),
-  "anim-graph-variables": (props: IDockviewPanelProps) => (
-    <AnimGraphVariablesPanel {...props} />
-  ),
-  "anim-graph-details": (props: IDockviewPanelProps) => (
-    <AnimGraphDetailsPanel {...props} />
-  ),
-  "anim-graph-compiler-results": (props: IDockviewPanelProps) => (
-    <CompilerResultsPanel {...props} />
-  ),
-  "anim-object-graph": (props: IDockviewPanelProps) => (
-    <GraphPanel {...props} />
-  ),
-  "anim-object-variables": (props: IDockviewPanelProps) => (
-    <AnimObjectVariablesPanel {...props} />
-  ),
-  "anim-object-inspector": (props: IDockviewPanelProps) => (
-    <InspectorPanel {...props} />
-  ),
-  "behaviour-tree-graph": (props: IDockviewPanelProps) => (
-    <BehaviourTreeGraphPanel {...props} />
-  ),
-  "behaviour-tree-details": (props: IDockviewPanelProps) => (
-    <BehaviourTreeDetailsPanel {...props} />
-  ),
-  "behaviour-tree-blackboard": (props: IDockviewPanelProps) => (
-    <BehaviourTreeBlackboardPanel {...props} />
-  ),
-  "behaviour-tree-compiler-results": (props: IDockviewPanelProps) => (
-    <BehaviourTreeCompilerResultsPanel {...props} />
-  ),
-  "trace-timeline": (props: IDockviewPanelProps) => (
-    <TraceTimelinePanel {...props} />
-  ),
-  "trace-snapshot": (props: IDockviewPanelProps) => (
-    <TraceSnapshotPanel {...props} />
-  ),
-  "trace-log": (props: IDockviewPanelProps) => <TraceLogPanel {...props} />,
   locks: (props: IDockviewPanelProps) => <LocksPanel {...props} />,
+  breakpoints: () => <BreakpointsPanel />,
   "landscape-outliner": LandscapeOutlinerPanel,
   "landscape-settings": LandscapeSettingsPanel,
   "foliage-groups": FoliageGroupsPanel,
@@ -377,6 +54,135 @@ export const panelComponents = {
   "foliage-outliner": FoliageOutlinerPanel,
   "timeline-clips": TimelineClipsPanel,
   "scene-timeline": TimelinePanel,
+} satisfies Record<string, DockPanel>;
+
+/**
+ * A panel from a family module (`asset-panels/`) the Editor route loads the first time a document shows one of the
+ * family's panels. Until it has loaded, the panel's body is empty under its tab.
+ */
+function lazyPanel<M>(load: () => Promise<M>, pick: (module: M) => DockPanel): DockPanel {
+  const Panel = lazy(() => load().then((module) => ({ default: pick(module) })));
+  return function LazyDockPanel(props: IDockviewPanelProps) {
+    return (
+      <Suspense fallback={null}>
+        <Panel {...props} />
+      </Suspense>
+    );
+  };
+}
+
+// Each family is one download: a document's first panel of a family loads every editor in it.
+const classPanels = () => import("./asset-panels/class");
+const animationAiPanels = () => import("./asset-panels/animation-ai");
+const renderingPanels = () => import("./asset-panels/rendering");
+const panels2d = () => import("./asset-panels/2d");
+const panels3d = () => import("./asset-panels/3d");
+const dataPanels = () => import("./asset-panels/data");
+
+/**
+ * Every other document kind's windows, loaded by family. Each lazily loaded module is a chunk entry, and the bundler
+ * splits the code it shares with the Homepage and the Editor route by which entries reach it, so a few large families
+ * keep those routes in fewer, larger chunks than one entry per asset editor would.
+ */
+const assetEditorPanelComponents = {
+  "save-game-fields": lazyPanel(dataPanels, (m) => m.SaveGameFieldsPanel),
+  "save-game-definition": lazyPanel(dataPanels, (m) => m.SaveGameDefinitionPanel),
+  watches: lazyPanel(classPanels, (m) => m.WatchesPanel),
+  "actor-prefab": lazyPanel(classPanels, (m) => m.ActorPrefabPanel),
+  "prefab-viewport": lazyPanel(classPanels, (m) => m.PrefabViewportPanel),
+  "type-members": lazyPanel(classPanels, (m) => m.TypeMembersPanel),
+  "type-details": lazyPanel(classPanels, (m) => m.TypeDetailsPanel),
+  "script-interface-methods": lazyPanel(classPanels, (m) => m.InterfaceMethodsPanel),
+  "script-interface-preview": lazyPanel(classPanels, (m) => m.InterfacePreviewPanel),
+  "script-interface-details": lazyPanel(classPanels, (m) => m.InterfaceDetailsPanel),
+  "sprite-preview": lazyPanel(panels2d, (m) => m.SpritePreviewPanel),
+  "sprite-details": lazyPanel(panels2d, (m) => m.SpriteDetailsPanel),
+  "audio-preview": lazyPanel(dataPanels, (m) => m.AudioPreviewPanel),
+  "audio-details": lazyPanel(dataPanels, (m) => m.AudioDetailsPanel),
+  "audio-clips": lazyPanel(dataPanels, (m) => m.AudioClipsPanel),
+  "sprite-animation-preview": lazyPanel(panels2d, (m) => m.SpriteAnimationPreviewPanel),
+  "sprite-animation-details": lazyPanel(panels2d, (m) => m.SpriteAnimationDetailsPanel),
+  "tileset-preview": lazyPanel(panels2d, (m) => m.TilesetPreviewPanel),
+  "tileset-details": lazyPanel(panels2d, (m) => m.TilesetDetailsPanel),
+  "tileset-autotiles": lazyPanel(panels2d, (m) => m.TilesetAutotilesPanel),
+  "tilemap-paint": lazyPanel(panels2d, (m) => m.TilemapPaintPanel),
+  "tilemap-palette": lazyPanel(panels2d, (m) => m.TilemapPalettePanel),
+  "tilemap-details": lazyPanel(panels2d, (m) => m.TilemapDetailsPanel),
+  "material-graph": lazyPanel(renderingPanels, (m) => m.MaterialGraphPanel),
+  "material-preview": lazyPanel(renderingPanels, (m) => m.MaterialPreviewPanel),
+  "material-details": lazyPanel(renderingPanels, (m) => m.MaterialDetailsPanel),
+  "material-compiler-results": lazyPanel(renderingPanels, (m) => m.MaterialCompilerResultsPanel),
+  "material-function-graph": lazyPanel(renderingPanels, (m) => m.MaterialFunctionGraphPanel),
+  "material-function-interface": lazyPanel(renderingPanels, (m) => m.MaterialFunctionInterfacePanel),
+  "material-instance-preview": lazyPanel(renderingPanels, (m) => m.MaterialInstancePreviewPanel),
+  "material-instance-details": lazyPanel(renderingPanels, (m) => m.MaterialInstanceDetailsPanel),
+  "plugin-settings-details": lazyPanel(dataPanels, (m) => m.PluginSettingsDetailsPanel),
+  "input-bindings": lazyPanel(dataPanels, (m) => m.InputBindingsPanel),
+  "input-details": lazyPanel(dataPanels, (m) => m.InputBindingDetailsPanel),
+  "data-definition-fields": lazyPanel(dataPanels, (m) => m.DataDefinitionFieldsPanel),
+  "data-definition-details": lazyPanel(dataPanels, (m) => m.DataDefinitionDetailsPanel),
+  "data-tree-hierarchy": lazyPanel(dataPanels, (m) => m.DataTreeHierarchyPanel),
+  "data-tree-values": lazyPanel(dataPanels, (m) => m.DataTreeValuesPanel),
+  "data-tree-validation": lazyPanel(dataPanels, (m) => m.DataTreeValidationPanel),
+  "data-tree-entries": lazyPanel(dataPanels, (m) => m.DataTreeEntriesPanel),
+  "audio-mixer-details": lazyPanel(dataPanels, (m) => m.AudioMixerDetailsPanel),
+  "audio-channel-details": lazyPanel(dataPanels, (m) => m.AudioChannelDetailsPanel),
+  "sound-attenuation-details": lazyPanel(dataPanels, (m) => m.SoundAttenuationDetailsPanel),
+  "curve-asset-editor": lazyPanel(dataPanels, (m) => m.CurveAssetEditorPanel),
+  "curve-asset-details": lazyPanel(dataPanels, (m) => m.CurveAssetDetailsPanel),
+  "global-parameter-collection": lazyPanel(dataPanels, (m) => m.GlobalParameterCollectionPanel),
+  "timeline-asset-clips": lazyPanel(dataPanels, (m) => m.TimelineAssetClipsPanel),
+  "timeline-asset-events": lazyPanel(dataPanels, (m) => m.TimelineAssetEventsPanel),
+  "timeline-clip-proxies": lazyPanel(dataPanels, (m) => m.TimelineClipProxiesPanel),
+  "timeline-clip-inspector": lazyPanel(dataPanels, (m) => m.TimelineClipInspectorPanel),
+  "timeline-clip-timeline": lazyPanel(dataPanels, (m) => m.TimelineClipTimelinePanel),
+  "timeline-clip-viewport": lazyPanel(dataPanels, (m) => m.TimelineClipPreviewPanel),
+  "particle-emitter-preview": lazyPanel(renderingPanels, (m) => m.ParticleEmitterPreviewPanel),
+  "particle-emitter-details": lazyPanel(renderingPanels, (m) => m.ParticleEmitterDetailsPanel),
+  "particle-graph-canvas": lazyPanel(renderingPanels, (m) => m.ParticleGraphCanvasPanel),
+  "particle-graph-preview": lazyPanel(renderingPanels, (m) => m.ParticleGraphPreviewPanel),
+  "particle-graph-details": lazyPanel(renderingPanels, (m) => m.ParticleGraphDetailsPanel),
+  "particle-graph-compiler-results": lazyPanel(renderingPanels, (m) => m.ParticleGraphCompilerResultsPanel),
+  "water-preview": lazyPanel(renderingPanels, (m) => m.WaterPreviewPanel),
+  "water-details": lazyPanel(renderingPanels, (m) => m.WaterDetailsPanel),
+  "render-target-details": lazyPanel(renderingPanels, (m) => m.RenderTargetDetailsPanel),
+  "render-target-texture-details": lazyPanel(renderingPanels, (m) => m.RenderTargetTextureDetailsPanel),
+  "particle-system-preview": lazyPanel(renderingPanels, (m) => m.ParticleSystemPreviewPanel),
+  "particle-system-details": lazyPanel(renderingPanels, (m) => m.ParticleSystemDetailsPanel),
+  "model-preview": lazyPanel(panels3d, (m) => m.ModelPreviewPanel),
+  "model-colliders": lazyPanel(panels3d, (m) => m.ModelCollidersPanel),
+  "model-details": lazyPanel(panels3d, (m) => m.ModelDetailsPanel),
+  "skeleton-preview": lazyPanel(panels3d, (m) => m.SkeletonPreviewPanel),
+  "skeleton-details": lazyPanel(panels3d, (m) => m.SkeletonDetailsPanel),
+  "animation-preview": lazyPanel(panels3d, (m) => m.AnimationPreviewPanel),
+  "animation-details": lazyPanel(panels3d, (m) => m.AnimationDetailsPanel),
+  "skybox-creator-preview": lazyPanel(renderingPanels, (m) => m.SkyboxCreatorPreviewPanel),
+  "skybox-creator-cubemap": lazyPanel(renderingPanels, (m) => m.SkyboxCreatorCubemapPanel),
+  "skybox-creator-details": lazyPanel(renderingPanels, (m) => m.SkyboxCreatorDetailsPanel),
+  "texture-preview": lazyPanel(panels2d, (m) => m.TexturePreviewPanel),
+  "texture-details": lazyPanel(panels2d, (m) => m.TextureDetailsPanel),
+  "font-preview": lazyPanel(panels2d, (m) => m.FontPreviewPanel),
+  "font-details": lazyPanel(panels2d, (m) => m.FontDetailsPanel),
+  "blackboard-keys": lazyPanel(animationAiPanels, (m) => m.BlackboardKeysPanel),
+  "blackboard-inspector": lazyPanel(animationAiPanels, (m) => m.BlackboardInspectorPanel),
+  "anim-graph-graph": lazyPanel(animationAiPanels, (m) => m.AnimGraphGraphPanel),
+  "anim-graph-variables": lazyPanel(animationAiPanels, (m) => m.AnimGraphVariablesPanel),
+  "anim-graph-details": lazyPanel(animationAiPanels, (m) => m.AnimGraphDetailsPanel),
+  "anim-object-variables": lazyPanel(animationAiPanels, (m) => m.AnimObjectVariablesPanel),
+  "behaviour-tree-graph": lazyPanel(animationAiPanels, (m) => m.BehaviourTreeGraphPanel),
+  "behaviour-tree-details": lazyPanel(animationAiPanels, (m) => m.BehaviourTreeDetailsPanel),
+  "behaviour-tree-blackboard": lazyPanel(animationAiPanels, (m) => m.BehaviourTreeBlackboardPanel),
+  "behaviour-tree-compiler-results": lazyPanel(animationAiPanels, (m) => m.BehaviourTreeCompilerResultsPanel),
+  "trace-timeline": lazyPanel(dataPanels, (m) => m.TraceTimelinePanel),
+  "trace-snapshot": lazyPanel(dataPanels, (m) => m.TraceSnapshotPanel),
+  "trace-log": lazyPanel(dataPanels, (m) => m.TraceLogPanel),
+  // The Animation Graph's Animation Object mode reuses the shared Class panels, which load with the Scene's.
+  "anim-graph-compiler-results": (props: IDockviewPanelProps) => <CompilerResultsPanel {...props} />,
+  "anim-object-graph": (props: IDockviewPanelProps) => <GraphPanel {...props} />,
+  "anim-object-inspector": (props: IDockviewPanelProps) => <InspectorPanel {...props} />,
+} satisfies Record<string, DockPanel>;
+
+export const panelComponents: Record<string, DockPanel> = {
+  ...scenePanelComponents,
+  ...assetEditorPanelComponents,
 };
-import { LandscapeOutlinerPanel, LandscapeSettingsPanel, FoliageGroupsPanel, FoliageSettingsPanel, FoliageOutlinerPanel } from "../panels/scene-environment-panels";
-import { TimelineClipsPanel, TimelinePanel } from "../panels/timeline-panels";

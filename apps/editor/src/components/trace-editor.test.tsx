@@ -11,10 +11,10 @@ import type { IDockviewPanelProps } from "dockview-react";
 import type { TracePayload } from "@haptic/debugger";
 import {
   TraceLogPanel,
-  TracePlaybackProvider,
   TraceSnapshotPanel,
   TraceTimelinePanel,
 } from "./trace-editor";
+import { TracePlaybackProvider } from "../context/trace-playback-context";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 
 const traceDocument = vi.hoisted(() => ({

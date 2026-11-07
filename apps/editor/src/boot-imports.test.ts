@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -66,6 +66,24 @@ describe("editor boot imports", () => {
       "services/feature-test-check.ts",
       "lib/feature-test-breakdown-ab.ts",
     ].includes(file))).toEqual([]);
+  });
+
+  // Asset editor panels load by family on first use (`shell/asset-panels/`); the Scene's panels stay in the route.
+  it("keep the asset editor panel families out of the Editor route's first load", () => {
+    const closure = staticClosure("routes/editor-route.tsx");
+    expect(closure).toContain("shell/panel-registry.tsx");
+    expect(closure).toContain("panels/viewport-panel.tsx");
+    const familyDir = join(SRC, "shell/asset-panels");
+    const families = readdirSync(familyDir).filter((file) => file.endsWith(".ts"));
+    expect(families.length).toBeGreaterThan(0);
+    const familyModules = families.flatMap((family) => {
+      const file = join(familyDir, family);
+      return [...readFileSync(file, "utf8").matchAll(STATIC_IMPORT)].map((match) =>
+        relative(SRC, resolveModule(file, match[1]!)!),
+      );
+    });
+    expect(familyModules).toContain("components/tilemap-editor.tsx");
+    expect(familyModules.filter((file) => closure.includes(file))).toEqual([]);
   });
 
   it("keep the Feature Test Check dialog and its report out of the Editor route's first load", () => {
