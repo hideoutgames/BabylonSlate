@@ -11,8 +11,18 @@ import type { CreateEngineOptions } from "./create-engine";
  * it reads what it needs from here, which that code fills when it loads.
  */
 
-/** The on-demand WebGPU code; loading it registers its WGSL shaders and engine extensions. */
-export function loadWebGpuEngineModule(): Promise<typeof import("./webgpu-engine")> {
+/** Throws when this browser has no WebGPU. */
+export function assertWebGpuAvailable(): void {
+  if (typeof navigator === "undefined" || !("gpu" in navigator) || !navigator.gpu)
+    throw new Error("WebGPU is unavailable in this browser.");
+}
+
+/**
+ * The on-demand WebGPU code; loading it registers its WGSL shaders and engine extensions. A browser without WebGPU
+ * rejects before the fetch, so a WebGL2-only device never downloads it, even for a project that asks for WebGPU.
+ */
+export async function loadWebGpuEngineModule(): Promise<typeof import("./webgpu-engine")> {
+  assertWebGpuAvailable();
   return import("./webgpu-engine");
 }
 

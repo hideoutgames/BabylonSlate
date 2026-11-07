@@ -19,6 +19,7 @@ import {
 import { pruneReleasedWebGpuCacheEntries } from "./webgpu-cache-pruning";
 import { SHADOW_ATLAS_MAX_EDGE } from "./shadow-atlas";
 import { releaseDeletedWebGpuPipelineContexts } from "./webgpu-resource-release";
+import { assertWebGpuAvailable } from "./webgpu-on-demand";
 
 /** A fully initialized project Engine, with the same offline assets as WebGL2. */
 export async function createAppWebGpuEngine(
@@ -30,12 +31,7 @@ export async function createAppWebGpuEngine(
   signal?: AbortSignal,
 ): Promise<WebGPUEngine> {
   signal?.throwIfAborted();
-  if (
-    typeof navigator === "undefined" ||
-    !("gpu" in navigator) ||
-    !navigator.gpu
-  )
-    throw new Error("WebGPU is unavailable in this browser.");
+  assertWebGpuAvailable();
   configureKtx2Transcoder(KhronosTextureContainer2, options.ktx2BasePath);
   configureGltfMeshDecoders(DracoDecoder, MeshoptCompression, {
     dracoBasePath: options.dracoBasePath,
