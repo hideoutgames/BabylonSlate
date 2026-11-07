@@ -1600,7 +1600,8 @@ function createPostProcessPlumbing(
 // they still need the standard gamma conversion in that case, just like
 // Babylon's PBR final output. Under a Scene Linear display stage
 // (IMAGEPROCESSINGPOSTPROCESS) they stay linear for that stage to encode.
-class LinearSurfaceImageProcessingBlock extends ImageProcessingBlock {
+/** Image processing of a linear surface colour, encoded for display even where the Scene's processing is off. */
+export class LinearSurfaceImageProcessingBlock extends ImageProcessingBlock {
   override getClassName(): string {
     return "LinearSurfaceImageProcessingBlock";
   }

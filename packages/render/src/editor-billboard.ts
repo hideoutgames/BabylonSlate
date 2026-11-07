@@ -1,6 +1,7 @@
 import { sceneShadowController } from "./shadow-controller";
 import { isForwardLightExcluded } from "./light-policy";
-import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
+import { AUTHORED_LIGHT_PREFIX, authoredLight2DRecord } from "./scene-illumination";
+import { is2DLightLimited } from "./lights-2d";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Light } from "@babylonjs/core/Lights/light";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -77,6 +78,11 @@ export function lightBillboardIcon(
   if (lightKind === "spot") return "spot_light";
   if (lightKind === "directional") return "directional_light";
   return "point_light";
+}
+
+/** A 2D Light's icon: a Global light lights everything evenly, as a sun does. */
+export function light2DBillboardIcon(lightKind: unknown): EditorBillboardIcon {
+  return lightKind === "global" ? "directional_light" : "point_light";
 }
 
 export function isEditorBillboardMesh(mesh: Mesh): boolean {
@@ -166,7 +172,8 @@ export function applyEditorBillboardFromActor(
   }
   // The actor snapshot is fixed per registration; only its properties are re-read.
   const component = actor.components.find((entry) =>
-    entry.classId === "LightComponent" || entry.classId === "HemisphericFillLightComponent" || entry.classId === "AreaRectLightComponent");
+    entry.classId === "LightComponent" || entry.classId === "HemisphericFillLightComponent" || entry.classId === "AreaRectLightComponent" ||
+    entry.classId === "Light2DComponent");
   const lightName = component?.classId === "AreaRectLightComponent" ? `authoredAreaLight:${actor.id}:${component.id}` : `${AUTHORED_LIGHT_PREFIX}${actor.id}`;
   const scene = mesh.getScene();
   let light: Light | null = null;
@@ -175,6 +182,20 @@ export function applyEditorBillboardFromActor(
   // changed count is the synchronous backstop.
   let missedAt = -1;
   const update = () => {
+    if (component?.classId === "Light2DComponent") {
+      // A 2D light is data in the 2D light block, not a Babylon light: its record says whether the block draws it.
+      const record = authoredLight2DRecord(scene, actor.id, component.id);
+      const off = !record || !record.properties.enabled || record.properties.intensity <= 0 || !!record.error;
+      const limited = !off && is2DLightLimited(scene, record!);
+      tint(off ? DISABLED_FILL : limited ? LIMITED_FILL : DEFAULT_FILL);
+      const status = off
+        ? "Disabled: This Light Is Disabled Or Does Not Illuminate."
+        : limited
+          ? "Limited: Exceeds The 2D Light Limit; The Lights Nearest The Camera Draw."
+          : "Active: This Light Is Operating As Configured.";
+      if (mesh.metadata.editorBillboardStatus !== status) mesh.metadata.editorBillboardStatus = status;
+      return;
+    }
     if (
       light
         ? light.isDisposed() || light.name !== lightName

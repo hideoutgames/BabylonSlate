@@ -286,6 +286,8 @@ export function createPlayMesh(
   illuminationPart?: AssignMeshPart,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
+  // A part carries its own Shading Mode; the slot's single visual, the command's.
+  const shadingMode = (meshName === undefined ? binding?.meshSorting.get(slotId)?.shadingMode : illuminationPart?.shadingMode) ?? "2d";
   if (meshKind === "dynamicRuntimeMesh") return finishPlayWorldMesh(createDynamicRuntimeMesh(scene, name, dynamicMesh));
   if (meshKind === "2dlayout") {
     const mesh = new Mesh(name, scene);
@@ -325,7 +327,7 @@ export function createPlayMesh(
         size.width,
         size.height,
       );
-      applyTilemapAlbedoTextures(mesh, scene, binding);
+      applyTilemapAlbedoTextures(mesh, scene, binding, undefined, shadingMode);
       return mesh;
     }
   }
@@ -341,7 +343,7 @@ export function createPlayMesh(
           payload.pixelsPerUnit ?? binding?.pixelsPerUnit,
         )
       : createPrimitiveMesh(scene, name, "sprite");
-    applyAlbedoTexture(mesh, scene, payload?.textureGuid, binding);
+    applyAlbedoTexture(mesh, scene, payload?.textureGuid, binding, { shadingMode });
     // Sprite clip crossfades blend the slot's own visual (`resolvePlaySpriteSlot`);
     // a component part's quad must not take over that single tracked overlay.
     if (payload && binding && meshName === undefined) {
@@ -354,7 +356,7 @@ export function createPlayMesh(
       );
       overlay.parent = mesh;
       overlay.visibility = 0;
-      applyAlbedoTexture(overlay, scene, payload?.textureGuid, binding);
+      applyAlbedoTexture(overlay, scene, payload?.textureGuid, binding, { shadingMode });
       (targets?.spriteOverlays ?? binding.spriteOverlays).set(slotId, overlay);
     }
     return mesh;

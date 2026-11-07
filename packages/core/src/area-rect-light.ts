@@ -1,4 +1,5 @@
-import { identitySerializedTransform, type SerializedComponent, type SerializedTransform } from "./scene";
+import { componentAttachmentTransforms } from "./component-attachment";
+import type { SerializedComponent, SerializedTransform } from "./scene";
 
 export const AREA_RECT_LIGHT_CLASS_ID = "AreaRectLightComponent";
 
@@ -60,16 +61,10 @@ export type AreaRectLightBinding = {
 export function areaRectLightBindings(components: readonly SerializedComponent[]): AreaRectLightBinding[] {
   const byId = new Map(components.map((component) => [component.id, component]));
   return components.filter((component) => component.classId === AREA_RECT_LIGHT_CLASS_ID).map((component) => {
-    const binding: AreaRectLightBinding = { id: component.id, properties: parseAreaRectLightProperties(component.properties), transforms: [] };
-    const visited = new Set<string>();
-    let current: SerializedComponent | undefined = component;
-    while (current) {
-      if (visited.has(current.id)) { binding.error = "Rectangular Area Light has a cyclic component attachment."; break; }
-      visited.add(current.id);
-      binding.transforms.push(current.transform ?? identitySerializedTransform());
-      if (current.parentId && !byId.has(current.parentId)) { binding.error = "Rectangular Area Light has a missing component attachment."; break; }
-      current = current.parentId ? byId.get(current.parentId) : undefined;
-    }
+    const chain = componentAttachmentTransforms(component, byId);
+    const binding: AreaRectLightBinding = { id: component.id, properties: parseAreaRectLightProperties(component.properties), transforms: chain.transforms };
+    if (chain.error === "cyclic") binding.error = "Rectangular Area Light has a cyclic component attachment.";
+    if (chain.error === "missing") binding.error = "Rectangular Area Light has a missing component attachment.";
     return binding;
   });
 }
