@@ -12,10 +12,11 @@ export function textureEncodeQueue(service: ProjectService): EncodeQueue {
 }
 
 /**
- * Pause `service`'s Texture encodes the way Preview and a hidden page do
- * (`encode-queue-pause.ts`), until the returned resume runs. Starts the
- * service's provider-lifetime resources, which subscribe it to the shared
- * pause, and disposes them when the test ends.
+ * Pause `service`'s Texture encodes through the shared `encode-queue-pause.ts`
+ * with a scoped hold, as blocking Scene loads do (Play, Preview Build and a
+ * hidden page set named reasons instead), until the returned resume runs.
+ * Starts the service's provider-lifetime resources, which subscribe it to the
+ * shared pause, and disposes them when the test ends.
  */
 export function pauseTextureEncodes(service: ProjectService): () => void {
   service.initialize();
