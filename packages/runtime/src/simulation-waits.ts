@@ -4,12 +4,13 @@ import type { SessionBoundaries } from "./session-boundaries";
 import type { SimulationBlocks } from "./simulation-blocks";
 
 /** Why a latent continuation cannot resume. */
-type RuntimeContinuationCancelReason = "sessionStopped" | "ownerDestroyed" | "streamNotLoaded";
+type RuntimeContinuationCancelReason = "sessionStopped" | "ownerDestroyed" | "streamNotLoaded" | "retriggered";
 
 const CONTINUATION_CANCELLED: Record<RuntimeContinuationCancelReason, string> = {
   sessionStopped: "Script continuation cancelled: the runtime session ended.",
   ownerDestroyed: "Script continuation cancelled: its owner was destroyed.",
   streamNotLoaded: "Script continuation cancelled: its owner's streamed Scene is not loaded.",
+  retriggered: "Script continuation cancelled: its Retriggerable Delay was called again.",
 };
 
 /**
