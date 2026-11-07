@@ -44,8 +44,9 @@ export function createFrameFlush(flush: () => void, fallbackMs = 250) {
 }
 
 /**
- * A Debug Console host's lines, outside React state so a flush re-renders
- * only the console that shows them. `push` keeps its identity, so session
+ * A Debug Console host's lines, outside React state. A flush re-renders only
+ * the components that read them with `useShownDebugConsoleLogs`, and only
+ * while their console is open. `push` keeps its identity, so session
  * callbacks may capture it once; `getSnapshot` is the same array until a
  * frame adds lines.
  */
@@ -115,9 +116,11 @@ export function useDebugConsoleLogs(): DebugConsoleLogFeed {
 }
 
 /**
- * The feed's lines for a Debug Console that is `open`. While it is closed
- * the lines it last showed are kept, so flushes neither re-render it nor
- * rebuild its transcript; opening it reads the newest lines.
+ * The feed's lines for a Debug Console that is `open`. While it is open,
+ * each flush re-renders the component that calls this. While it is closed
+ * the caller keeps the lines it last showed, so a flush neither re-renders
+ * the caller nor rebuilds the console's transcript; opening it reads the
+ * newest lines.
  */
 export function useShownDebugConsoleLogs(
   feed: DebugConsoleLogFeed,
