@@ -211,7 +211,7 @@ function beginAssignMesh(
   binding.meshKinds.set(command.slotId, meshKind);
   binding.meshSorting.set(command.slotId, {
     actorGuid: command.actorGuid, sortingLayer: command.sortingLayer, orderInLayer: command.orderInLayer,
-    castShadows: command.castShadows, receiveShadows: command.receiveShadows,
+    castShadows: command.castShadows, receiveShadows: command.receiveShadows, shadingMode: command.shadingMode,
   });
   binding.meshAssetGuids.set(command.slotId, command.meshAssetGuid);
   if (command.parts && command.parts.length > 0) {

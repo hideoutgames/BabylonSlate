@@ -988,6 +988,7 @@ describe("syncAuthoredIllumination", () => {
         child("lamp", "parent", "LightComponent", { lightKind: "spot" }),
         child("rig", "parent", "CameraComponent"),
         child("orphan", "missing", "LightComponent", { lightKind: "point" }),
+        child("orphan2D", "missing", "Light2DComponent"),
       ]),
       { stealActiveCamera: false, onDiagnostic: (message) => diagnostics.push(message) },
     );
@@ -1000,6 +1001,10 @@ describe("syncAuthoredIllumination", () => {
     expect(Vector3.Distance(rig.getDirection(Vector3.Forward()), new Vector3(1, 0, 0))).toBeCloseTo(0);
     // An unresolved attachment keeps its local pose and reports why.
     expect((scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}orphan`) as PointLight).position.x).toBeCloseTo(1);
-    expect(diagnostics).toEqual([expect.stringMatching(/^Light orphan: .*Missing actor attachment/)]);
+    // A 2D Light on one is reported too, and the sync goes on.
+    expect(diagnostics).toEqual([
+      expect.stringMatching(/^Light orphan: .*Missing actor attachment/),
+      expect.stringMatching(/^2D Light orphan2D: .*Missing actor attachment/),
+    ]);
   });
 });

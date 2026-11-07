@@ -2,6 +2,8 @@ import { setAuthoredLightEnabled, syncDirectionalLightPolicy } from "./light-pol
 import { sceneRenderTargetCaptures } from "./render-target-capture";
 import { findSceneReflectionProbes, sceneReflectionProbes } from "./reflection-probes";
 import { AreaRectLightGroup } from "./area-rect-light";
+import { Light2DGroup } from "./light-2d-group";
+import { setScene2DLighting, type Light2DRecord } from "./lights-2d";
 import { authoredActorMatrices, authoredComponentActorTransform } from "./authored-transform-matrices";
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
@@ -15,7 +17,7 @@ import { Quaternion, Vector3, type Matrix } from "@babylonjs/core/Maths/math.vec
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
-import type { SerializedActor, SerializedComponent, SerializedScene } from "@haptic/core";
+import { actorsHaveLights2D, LIGHT_2D_CLASS_ID, light2DBindings, type SerializedActor, type SerializedComponent, type SerializedScene } from "@haptic/core";
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
@@ -68,6 +70,7 @@ export type SyncIlluminationOptions = {
 
 type AuthoredState = {
   areaLights: Map<string, AreaRectLightGroup>;
+  lights2D: Map<string, Light2DGroup>;
   lights: Map<string, Light>;
   cameras: Map<string, Camera>;
   lightKinds: Map<string, string>;
@@ -80,6 +83,7 @@ function stateOf(scene: Scene): AuthoredState {
   if (!state) {
     state = {
       areaLights: new Map(),
+      lights2D: new Map(),
       lights: new Map(),
       cameras: new Map(),
       lightKinds: new Map(),
@@ -252,7 +256,7 @@ function actorUpFromRotation(rotation: {
 }
 
 export function isAuthoredLightClassId(classId: string): boolean {
-  return classId === "LightComponent" || classId === HEMISPHERIC_FILL_LIGHT_CLASS_ID || classId === "AreaRectLightComponent";
+  return classId === "LightComponent" || classId === HEMISPHERIC_FILL_LIGHT_CLASS_ID || classId === "AreaRectLightComponent" || classId === LIGHT_2D_CLASS_ID;
 }
 
 function lightKindOf(component: { properties: Record<string, unknown> }): string {
@@ -551,6 +555,11 @@ export function syncAuthoredCamerasFromMeshes(
 }
 
 /** Gizmo preview uses the live actor matrix; component chains stay owned. */
+/** The editor's record of an authored 2D light (its billboard's status reads it), if the Scene has synced it. */
+export function authoredLight2DRecord(scene: Scene, actorId: string, componentId: string): Light2DRecord | undefined {
+  return stateByScene.get(scene)?.lights2D.get(actorId)?.record(componentId);
+}
+
 export function syncAuthoredAreaLightsFromMeshes(scene: Scene, meshForActor: (actorId: string) => AbstractMesh | null): void {
   const state = stateByScene.get(scene);
   if (!state) return;
@@ -558,16 +567,26 @@ export function syncAuthoredAreaLightsFromMeshes(scene: Scene, meshForActor: (ac
     const mesh = meshForActor(id);
     if (mesh) group.setWorld(mesh.computeWorldMatrix(true));
   }
+  // 2D lights follow a gizmo drag as area lights do: their records are data, so a pose costs nothing to redraw.
+  for (const [id, group] of state.lights2D) {
+    const mesh = meshForActor(id);
+    if (mesh) group.setWorld(mesh.computeWorldMatrix(true));
+  }
 }
 
+/**
+ * Applies the Scene's environment settings. Its Shading Mode 2D surfaces draw lit when it holds a 2D Light or, in Play,
+ * may spawn one (`spawnsLights2D`), decided here so Play compiles that variant at its load.
+ */
 export function applySceneEnvironment(
   scene: Scene,
   sceneData: SerializedScene,
-  options: { assets?: MeshAssetContext } = {},
+  options: { assets?: MeshAssetContext; spawnsLights2D?: boolean } = {},
 ): void {
   const settings = sceneData.settings;
   scene.clearColor = sceneClearColor(settings.environmentColor);
   syncEngineDefaultMaterialEmission(scene, sceneData.viewportMode === "2d");
+  setScene2DLighting(scene, options.spawnsLights2D === true || actorsHaveLights2D(sceneData.actors));
   if (settings.fogEnabled) {
     const fog = normalizeSceneFogSettings(settings);
     scene.fogMode =
@@ -639,6 +658,7 @@ export function* syncAuthoredIlluminationSteps(
   const liveLights = new Set<string>();
   const liveCameras = new Set<string>();
   const liveAreaLights = new Set<string>();
+  const liveLights2D = new Set<string>();
   const actorWorld = authoredActorMatrices(sceneData.actors);
 
 
@@ -657,6 +677,19 @@ export function* syncAuthoredIlluminationSteps(
       } catch (error) {
         group.update([]);
         options.onDiagnostic?.(`Rectangular Area Light ${actor.id}: ${String(error)}`);
+      }
+    }
+    if (actor.components.some((component) => component.classId === LIGHT_2D_CLASS_ID)) {
+      // An actor whose attachment is missing has no world pose: its 2D lights report it rather than stop the sync.
+      try {
+        const world = actorWorld(actor);
+        liveLights2D.add(actor.id);
+        let group = state.lights2D.get(actor.id);
+        if (!group) { group = new Light2DGroup(scene); state.lights2D.set(actor.id, group); }
+        group.setWorld(world);
+        group.update(light2DBindings(actor.components));
+      } catch (error) {
+        options.onDiagnostic?.(`2D Light ${actor.id}: ${String(error)}`);
       }
     }
     const lightComponents = actor.components.filter(component =>
@@ -749,6 +782,7 @@ export function* syncAuthoredIlluminationSteps(
 
   const shadows = sceneShadowController(scene);
   for (const [id, group] of state.areaLights) if (!liveAreaLights.has(id)) { group.dispose(); state.areaLights.delete(id); }
+  for (const [id, group] of state.lights2D) if (!liveLights2D.has(id)) { group.dispose(); state.lights2D.delete(id); }
 
 
   const namedId = resolveDefaultCameraKey(sceneData);

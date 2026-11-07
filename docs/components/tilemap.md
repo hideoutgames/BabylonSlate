@@ -13,10 +13,12 @@ Select an actor, then choose **Add Component > Rendering > Tilemap**. You can al
 | Asset | The [Tilemap](../assets/tilemap.md) to draw. |
 | Sorting Layer | The layer the tilemap draws on. Default **Default**. |
 | Order In Layer | Order within the layer. Higher values draw in front. Default 0. |
+| Shading Mode | **2D**: lit by the scene's [2D Lights](light-2d.md), and unlit while the scene has none. **3D**: lit by 3D lights and environment lighting, like a Material surface. **Unlit**: always drawn as it is. Default **2D**. |
 | Cast Shadows | Whether it casts a shadow in a lit world scene. Default off, because it is unlit. |
 
 ## Notes
 
+- Use **3D** to light a 2D element in a 3D game. With **3D**, 2D Lights do not light it; with **2D**, 3D lights do not.
 - Works in world scenes and in Scene Layers.
 - The actor's position is cell 0, 0's bottom-left corner, and the map extends right and up. An [unbounded](../assets/tilemap.md#unbounded-maps) Tilemap puts its **Pivot** at the actor's position instead, and its bounds are its painted tiles.
 - The Sorting Layer and Order In Layer apply to the whole tilemap. Inside it, the asset's own layers keep their order.

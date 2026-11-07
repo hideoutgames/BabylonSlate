@@ -163,6 +163,8 @@ export function retirePlaySlot(
   binding.reflectionProbes.delete(slotId);
   binding.areaLights.get(slotId)?.dispose();
   binding.areaLights.delete(slotId);
+  binding.lights2D.get(slotId)?.dispose();
+  binding.lights2D.delete(slotId);
   forgetRejectedAssignments(binding, slotId);
   cancelPendingVisualReplacement(binding, slotId);
   retireBoneAttachments(binding, slotId);
@@ -217,6 +219,7 @@ export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
     ...binding.fogVolumes.keys(),
     ...binding.reflectionProbes.keys(),
     ...binding.areaLights.keys(),
+    ...binding.lights2D.keys(),
     ...binding.meshes.keys(),
     ...binding.cameras.keys(),
     ...binding.lights.keys(),
@@ -328,6 +331,7 @@ export function applySnapshotToScene(
     if (fogVolumes) setFogVolumesVisible(scene, fogVolumes.actorId,
       (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE);
     binding.areaLights.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
+    binding.lights2D.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
     setPlayVisualVisibility(
       binding,
       mesh,
@@ -357,7 +361,9 @@ export function applySnapshotToScene(
   }
   updateBoneAttachments(binding);
   for (const [slotId, attachment] of binding.boneAttachments) {
-    if (attachment.applied) binding.areaLights.get(slotId)?.setWorld(attachment.world);
+    if (!attachment.applied) continue;
+    binding.areaLights.get(slotId)?.setWorld(attachment.world);
+    binding.lights2D.get(slotId)?.setWorld(attachment.world);
   }
   for (const [slotId, attachment] of binding.boneAttachments) {
     if (!attachment.applied) continue;
@@ -414,6 +420,8 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   for (const light of binding.lights.values()) light.dispose();
   for (const group of binding.areaLights.values()) group.dispose();
   binding.areaLights.clear();
+  for (const group of binding.lights2D.values()) group.dispose();
+  binding.lights2D.clear();
   for (const camera of binding.cameras.values()) camera.dispose();
   binding.meshes.clear();
   binding.liveSlots.clear();

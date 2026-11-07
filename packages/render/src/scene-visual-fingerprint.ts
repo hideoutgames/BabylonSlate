@@ -4,14 +4,14 @@
  * `scene-loader.ts` re-exports the public names.
  */
 import {
-  isOverlayLayoutClass, isUIControl2DClass, MIRROR_CLASS_ID, overlayPanelDestFromScale, parseCableProperties,
+  isOverlayLayoutClass, isUIControl2DClass, LIGHT_2D_CLASS_ID, MIRROR_CLASS_ID, parseSurfaceShadingMode, overlayPanelDestFromScale, parseCableProperties,
   parseFogVolumeProperties, parseMirrorProperties, parseOverlayLayoutProperties, parseOverlayPanelProperties,
   parseReflectionProbeProperties, parseSkyboxFaces, parseSkyboxSize, parseSpringArmProperties, parseText2DProperties,
   parseText3DProperties, SKYBOX_FACE_KEYS, SPRING_ARM_COMPONENT_CLASS_ID, waterKindForClass, type SerializedActor,
   type SerializedComponent,
 } from "@haptic/core";
 import { meshCollisionFingerprint } from "@haptic/assets";
-import { editorBillboardKind, lightBillboardIcon } from "./editor-billboard";
+import { editorBillboardKind, light2DBillboardIcon, lightBillboardIcon } from "./editor-billboard";
 import { timelineProxyShapeOptions } from "./editor-volume";
 import { EDITOR_CAMERA_MODEL_KIND } from "./editor-camera-model";
 import { foliagePropertiesFingerprint, foliageSourceFingerprint } from "./foliage-mesh";
@@ -66,11 +66,12 @@ function componentVisualKind(
     );
     return `mesh:${kind}:${asset}:${collision}`;
   }
-  if (component.classId === "SpriteComponent") return `sprite:${asset}`;
-  if (component.classId === "TilemapComponent") return `tilemap:${asset}`;
+  if (component.classId === "SpriteComponent") return `sprite:${asset}:${parseSurfaceShadingMode(component.properties.shadingMode)}`;
+  if (component.classId === "TilemapComponent") return `tilemap:${asset}:${parseSurfaceShadingMode(component.properties.shadingMode)}`;
   if (component.classId === "HemisphericFillLightComponent") {
     return editorBillboardKind("directional_light");
   }
+  if (component.classId === LIGHT_2D_CLASS_ID) return editorBillboardKind(light2DBillboardIcon(component.properties.lightKind));
   if (component.classId === "LightComponent") {
     return editorBillboardKind(lightBillboardIcon(component.properties.lightKind));
   }
@@ -196,8 +197,8 @@ export function editorMeshKindOf(
   if (typeof meshComponent?.properties.meshKind === "string") {
     return `${meshComponent.properties.meshKind}:${asset}`;
   }
-  if (spriteComponent) return `sprite:${asset}`;
-  if (tilemapComponent) return `tilemap:${asset}`;
+  if (spriteComponent) return `sprite:${asset}:${parseSurfaceShadingMode(spriteComponent.properties.shadingMode)}`;
+  if (tilemapComponent) return `tilemap:${asset}:${parseSurfaceShadingMode(tilemapComponent.properties.shadingMode)}`;
   if (
     actor.components.some(
       (component) => component.classId === "HemisphericFillLightComponent",
@@ -212,6 +213,8 @@ export function editorMeshKindOf(
     return editorBillboardKind(lightBillboardIcon(light?.properties.lightKind));
   }
   if (actor.components.some((component) => component.classId === "AreaRectLightComponent")) return editorBillboardKind("directional_light");
+  const light2D = actor.components.find((component) => component.classId === LIGHT_2D_CLASS_ID);
+  if (light2D) return editorBillboardKind(light2DBillboardIcon(light2D.properties.lightKind));
   if (actor.components.some((component) => component.classId === "CameraComponent" || component.classId === "RenderTargetCaptureComponent")) {
     return EDITOR_CAMERA_MODEL_KIND;
   }

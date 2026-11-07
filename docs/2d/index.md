@@ -17,6 +17,18 @@ See [Your First Project](../start/first-project.md) and [Scenes](../scenes/index
 - The **Inspector** shows Position X and Y, **Z-Order**, Rotation Z and Scale X and Y.
 - The orange frame is a guide sized by **2D Camera Width** and **2D Camera Height** in **Scene Settings** (default 16 × 9). It does not change what the game camera shows.
 
+## 2D lighting
+
+Sprites and Tilemaps draw unlit until a scene holds a [2D Light](../components/light-2d.md). Add one from **Place Actors > Lights** (**2D Point Light** or **2D Global Light**) and the scene's Sprites and Tilemaps are lit by its 2D lights, with a **Global** light setting how dark the rest is.
+
+Each Sprite and Tilemap has a **Shading Mode**:
+
+| Mode | Lit by |
+| --- | --- |
+| 2D | The scene's 2D Lights. Unlit while the scene has none. Default. |
+| 3D | 3D lights and environment lighting, as a Material surface is. Use it for 2D elements in a 3D game. |
+| Unlit | Nothing: always drawn as it is, for glowing items, backdrops or HUD-like figures. |
+
 ## Units and pixels
 
 **Project Settings > Game > 2D** holds the project-wide 2D settings:

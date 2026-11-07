@@ -47,7 +47,7 @@ import {
   tilemapPropertyRows,
 } from "./asset-component-property-rows";
 import { cameraPropertyRows, renderTargetCapturePropertyRows, springArmPropertyRows } from "./camera-property-rows";
-import { areaRectLightPropertyRows, hemisphericFillLightPropertyRows, lightPropertyRows } from "./light-property-rows";
+import { areaRectLightPropertyRows, hemisphericFillLightPropertyRows, light2DPropertyRows, lightPropertyRows } from "./light-property-rows";
 import { cableComponentPropertyRows, dynamicRuntimeMeshPropertyRows, meshPropertyRows } from "./mesh-property-rows";
 import { navAgentPropertyRows, navMeshBlockerPropertyRows, navMeshPropertyRows } from "./navigation-property-rows";
 import { anchor2DPropertyRows, joystick2DPropertyRows, panel2DPropertyRows, visual2DPropertyRows } from "./overlay-element-property-rows";
@@ -130,6 +130,7 @@ const COMPONENT_ROW_BUILDERS = {
 
   LightComponent: lightPropertyRows,
   HemisphericFillLightComponent: hemisphericFillLightPropertyRows,
+  Light2DComponent: light2DPropertyRows,
   AreaRectLightComponent: areaRectLightPropertyRows,
 
   CameraComponent: cameraPropertyRows,

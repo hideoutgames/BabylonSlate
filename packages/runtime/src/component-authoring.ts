@@ -38,7 +38,7 @@ import {
   defaultNavMeshBlockerComponentProperties,
   defaultNavMeshComponentProperties,
 } from "@haptic/navigation/settings";
-import { normalizeSceneStreamingProperties, parseLandscapeProperties, parseFoliageProperties } from "@haptic/core";
+import { normalizeSceneStreamingProperties, parseLandscapeProperties, parseFoliageProperties, parseLight2DProperties } from "@haptic/core";
 
 /** Canonical authorable fields shared by scene editing and final-state capture. */
 export function defaultComponentAuthoringProperties(
@@ -76,9 +76,9 @@ export function defaultComponentAuthoringProperties(
         collisionPreset: DEFAULT_COLLISION_PRESET_ID,
       };
     case "SpriteComponent":
-      return { assetGuid: null, sortingLayer: "Default", orderInLayer: 0 };
+      return { assetGuid: null, sortingLayer: "Default", orderInLayer: 0, shadingMode: "2d" };
     case "TilemapComponent":
-      return { assetGuid: null, sortingLayer: "Default", orderInLayer: 0 };
+      return { assetGuid: null, sortingLayer: "Default", orderInLayer: 0, shadingMode: "2d" };
     case "AnimationGraphComponent":
       return { graphGuid: null };
     case "BehaviourTreeComponent":
@@ -138,6 +138,8 @@ export function defaultComponentAuthoringProperties(
         groundColor: [0, 0, 0],
         enabled: true,
       };
+    case "Light2DComponent":
+      return { ...parseLight2DProperties({}) };
     case "SkyboxComponent":
       return { size: 1000, faces: emptySkyboxFaces() };
     case "Text3DComponent":
