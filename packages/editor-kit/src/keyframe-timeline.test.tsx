@@ -61,7 +61,6 @@ function Harness(props: {
         onLengthChange={props.onLength}
         fitToken={props.fitToken}
         header={<span>Filter</span>}
-        footer={<button type="button">Add Track</button>}
         aria-label="Intro"
       />
       <output data-testid="selected">{[...selected].map((id) => id.split("\u0000")[1]).sort().join(",")}</output>
@@ -168,7 +167,6 @@ describe("KeyframeTimeline", () => {
     expect(onRowMenu).toHaveBeenCalledWith("vis");
     expect(screen.getByTestId("row").textContent).toBe("vis");
     expect(screen.getByText("0, 0, 1")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Add Track" })).toBeTruthy();
   });
 
   it("moves keys off the frame grid while Alt is held", () => {
