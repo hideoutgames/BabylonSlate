@@ -49,7 +49,6 @@ export type ViewportTestHost = {
     setRenderSettings: EngineHandle["setRenderSettings"];
     setShadowCaptureView: (position: [number, number, number], target: [number, number, number], fov: number) => void;
     environmentTextureSamples: () => Promise<Record<string, unknown> | null>;
-    environmentLightingProof: () => Promise<Record<string, unknown>>;
     measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
     /** Direct presentation of a sole view (default on); off copies into the view canvas, for A/B runs. */
     setDirectViewPresentation: (enabled: boolean) => void;
@@ -106,10 +105,6 @@ export function installViewportTestHost({
   let releaseFrameHold: (() => void) | null = null;
 
     host.__hapticViewportTest = {
-    environmentLightingProof: async () => {
-      if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Environment proof requires a test build.");
-      return (await import("../lib/environment-lighting-proof")).runEnvironmentLightingProof();
-    },
     webgpuPreviewsProof: async (options) => {
       if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Preview proof requires a test build.");
       const handle = engineRef.current;
