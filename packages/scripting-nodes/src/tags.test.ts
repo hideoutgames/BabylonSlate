@@ -31,7 +31,7 @@ function loadEntry(source: string, name: string): (ctx: unknown) => unknown {
   return new Function(`${body}\nreturn ${name};`)() as (ctx: unknown) => unknown;
 }
 
-function fixture() {
+function fixture(registryForCompile: TagRegistry = tagRegistry) {
   const registry = createDefaultNodeRegistry();
   registry.register({
     id: "test.captureTagResult",
@@ -85,7 +85,7 @@ function fixture() {
   }
   function run(context: Record<string, unknown> = {}) {
     const values: Record<string, unknown> = {};
-    const compiled = compileGraph(graph, { assetGuid: "tags", registry, tagRegistry });
+    const compiled = compileGraph(graph, { assetGuid: "tags", registry, tagRegistry: registryForCompile });
     loadEntry(compiled.source, "onBeginPlay")({
       ...context,
       capture: (label: string, value: unknown) => { values[label] = value; },
@@ -155,6 +155,22 @@ describe("compiled Tags", () => {
     f.capture(matches);
 
     expect(f.run({ getVariable: () => value })).toEqual({ matches: expected });
+  });
+
+  it("matches through parents derived from paths when the serialized parent table is cyclic", () => {
+    const f = fixture({
+      tags: [
+        { id: 9, path: "State.Ready", parentId: 9 },
+        { id: 4, path: "State", parentId: 9 },
+        { id: 6, path: "state", parentId: 4 },
+      ],
+      nextId: 10,
+    });
+    for (const [id, value, query] of [["childOfState", 9, 4], ["childOfLowercase", 9, 6], ["parentOfChild", 4, 9]] as const) {
+      f.capture(f.add(id, "tags.matches", { "default:value": value, "default:query": query, "default:exact": false }));
+    }
+
+    expect(f.run()).toEqual({ childOfState: true, childOfLowercase: false, parentOfChild: false });
   });
 
   it("assigns Tags through typed writable references and rejects literal targets", () => {
