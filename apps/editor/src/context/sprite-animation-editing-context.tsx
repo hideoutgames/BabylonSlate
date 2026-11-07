@@ -33,6 +33,7 @@ export function SpriteAnimationEditingProvider({
 }
 
 /** The shared frame selection, or null outside a Sprite Animation document. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useOptionalSpriteAnimationEditing(): SpriteAnimationEditingValue | null {
   return useContext(SpriteAnimationEditingContext);
 }

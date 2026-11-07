@@ -94,6 +94,7 @@ export function TracePlaybackProvider({
 }
 
 /** The open Trace document's playback state, shared by its Timeline, Snapshot and Log panels. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useTracePlayback(): TracePlaybackContextValue {
   const context = useContext(TracePlaybackContext);
   if (!context)
