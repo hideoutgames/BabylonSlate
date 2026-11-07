@@ -16,6 +16,7 @@ import { hapticShadowedSun } from "./haptic-lights";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
 import { AtlasCascadedShadowGenerator, shadowTileSize } from "./shadow-atlas";
 import { SHADOW_FILTER_REACH_TEXELS } from "./shadow-filter";
+import { sceneRenderingSettings } from "./render-settings";
 import { customWrapper } from "./spatial-effects";
 
 /**
@@ -202,7 +203,8 @@ class ScreenShadowsTask extends FrameGraphPostProcessTask {
 /**
  * One view's screen shadows: the task (after the geometry pass, before the objects), its RG16F target and the objects
  * passes that read it. It never idles on light state: without a shadowed sun it writes lit through a uniform, so the
- * sun starting to cast shadows creates no pipeline.
+ * sun starting to cast shadows creates no pipeline. Nor does a level change: every level is the same program and
+ * target, so the march reads the Scene's current level (`level` until its plan has one) when it draws.
  */
 export class ScreenShadowsGraph {
   readonly task: ScreenShadowsTask;
@@ -216,7 +218,6 @@ export class ScreenShadowsGraph {
   ) {
     const scene = graph.scene;
     this.scene = scene;
-    const settings = SCREEN_SHADOW_LEVELS[level];
     const wrapper = customWrapper(scene, "Screen shadows", screenShadowsShader(scene.getEngine().isWebGPU),
       ["ssProjection", "ssInverseProjection", "ssSun", "ssMarch", "ssFade", "ssTexel", "ssCascadeEnds", "ssCascadeCaps"], ["depthSampler"], failure);
     this.output = graph.textureManager.createRenderTargetTexture("Screen shadows", {
@@ -248,6 +249,7 @@ export class ScreenShadowsGraph {
       const ends = caps?.ends ?? NO_CASCADES, reach = caps?.caps ?? NO_CASCADES;
       effect.setFloat4("ssCascadeEnds", ends[0], ends[1], ends[2], ends[3]);
       effect.setFloat4("ssCascadeCaps", reach[0], reach[1], reach[2], reach[3]);
+      const settings = SCREEN_SHADOW_LEVELS[sceneRenderingSettings(scene).effectsPlan?.screenShadows ?? level];
       effect.setFloat4("ssMarch", settings.steps, settings.pixels, settings.length, 0);
       effect.setFloat4("ssFade", settings.fadeStart, settings.fadeEnd, height * Math.abs(projection.m[5]!), 0);
       effect.setFloat2("ssTexel", 1 / width, 1 / height);

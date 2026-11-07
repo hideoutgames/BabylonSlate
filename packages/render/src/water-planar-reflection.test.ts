@@ -6,7 +6,7 @@ import {
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { afterEach, expect, it, vi } from "vitest";
 import {
-  createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch, type QualityLevel,
+  createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch, type QualityLevel,
   type WaterDefinition,
 } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
@@ -299,6 +299,15 @@ it("leases its target under the water category, resizes in place and frees idle 
   setSceneOutputScale(scene, 0.5);
   expect(frame()!.texture.getInternalTexture()).toMatchObject({ width: 192, height: 96 });
   setSceneOutputScale(scene, 1);
+  expect(frame()!.texture.getInternalTexture()).toMatchObject({ width: 384, height: 192 });
+  // So does FSR Upscaling: the view's scene draws at its render scale and upscales.
+  const upscaling = (enabled: boolean) => updateSceneRenderingSettings(scene, {
+    quality: normalizeRenderingQuality(qualityPresetPatch("ultra")),
+    effects: { ...DEFAULT_RENDER_EFFECTS, upscaling: { enabled, renderScale: 0.5, sharpness: 0.2 } },
+  });
+  upscaling(true);
+  expect(frame()!.texture.getInternalTexture()).toMatchObject({ width: 192, height: 96 });
+  upscaling(false);
   expect(frame()!.texture.getInternalTexture()).toMatchObject({ width: 384, height: 192 });
   // A smaller view resizes the same target and swaps its charge.
   camera.viewport.width = 0.5;

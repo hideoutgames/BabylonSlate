@@ -58,7 +58,7 @@ import {
   VertexBuffer,
   type AbstractEngine,
   type AbstractMesh,
-  type Effect,
+  Effect,
 } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_VISIBLE,
@@ -2388,6 +2388,27 @@ describe("the lighting CI gate", () => {
       compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, synchronous: 0, builds: 0,
       marched: ["Spatial Geometry", "Screen shadows", "Forward objects"], tasks, reading: true, sameReaders: before,
     });
+  });
+
+  it.each(MODELS)("a Screen-Space Shadows level change rebuilds nothing and the march reads the new level: %s", async (model) => {
+    const world = playWorld(model, actors());
+    Object.assign(world.engine.getCaps(), { texelFetch: true });
+    const screenShadows = (level: "low" | "high") =>
+      world.handle.setRenderSettings(normalizeRenderProjectSettings({ shadows: { screenShadows: level } }));
+    screenShadows("high");
+    await settle(world);
+    const tasks = world.handle.renderTaskNames();
+    const builds = vi.spyOn(FrameGraph.prototype, "buildAsync");
+    const uniforms = vi.spyOn(Effect.prototype, "setFloat4");
+    // Steps, pixel cap and world cap of the frame's last march.
+    const march = () => uniforms.mock.calls.filter(([name]) => name === "ssMarch").at(-1)?.slice(1, 4);
+    await world.frame();
+    expect(march()).toEqual([16, 64, 0.8]);
+    screenShadows("low");
+    const frames: boolean[] = [];
+    for (let index = 0; index < 3; index++) frames.push((await world.frame()).view?.rendered === true);
+    expect({ march: march(), frames, builds: builds.mock.calls.length, tasks: world.handle.renderTaskNames() })
+      .toEqual({ march: [6, 30, 0.35], frames: [true, true, true], builds: 0, tasks });
   });
 
   /** The world view's Anti-Aliasing, on a device that multisamples at up to 4. */
