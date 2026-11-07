@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import {
   verificationPolicy,
@@ -74,4 +79,44 @@ test("every pull-request job tests the head merged with the base branch as it is
       name,
     );
   }
+});
+
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+
+async function verifyWorkflow() {
+  return parse(
+    await readFile(
+      new URL("../.github/workflows/verify.yml", import.meta.url),
+      "utf8",
+    ),
+  );
+}
+
+test("the browser cache is keyed on the installed Playwright release, not the whole lockfile", async (t) => {
+  const { steps } = (await verifyWorkflow()).jobs.e2e;
+  const cache = steps.find((step) => step.with?.path === "~/.cache/ms-playwright");
+  assert.ok(cache, "e2e restores the Playwright browser cache");
+  const key = /^playwright-\$\{\{ runner\.os \}\}-\$\{\{ steps\.([\w-]+)\.outputs\.version \}\}$/.exec(
+    cache.with.key,
+  );
+  assert.ok(key, `unexpected cache key ${cache.with.key}`);
+  const version = steps.find((step) => step.id === key[1]);
+  assert.ok(
+    steps.indexOf(version) > steps.findIndex((step) => step.run === "pnpm install") &&
+      steps.indexOf(version) < steps.indexOf(cache),
+    "the version is read after install and before the cache is restored",
+  );
+  // Run the step as Actions would and compare with the release that installs the browsers.
+  const directory = await mkdtemp(join(tmpdir(), "playwright-key "));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const output = join(directory, "output");
+  execFileSync("bash", ["-e", "-c", version.run], {
+    cwd: repoRoot,
+    env: { ...process.env, GITHUB_OUTPUT: output },
+  });
+  const installed = createRequire(join(repoRoot, "package.json"))(
+    "@playwright/test/package.json",
+  ).version;
+  assert.match(installed, /^\d+\.\d+\.\d+/);
+  assert.equal(await readFile(output, "utf8"), `version=${installed}\n`);
 });
