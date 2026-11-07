@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ASSET_DOCUMENT_KINDS,
   DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
@@ -9,6 +10,7 @@ import {
   documentId,
   isProjectOpenElsewhere,
   type DataDefinitionAsset,
+  type DocumentKind,
   type DocumentRef,
   type SerializedComponent,
   type SerializedGraph,
@@ -41,13 +43,14 @@ import {
   installMemoryOpfs,
   unmountDocumentProvider,
 } from "../testing/real-document-provider";
+import { useDocumentStateProbe, type DocumentStateProbe } from "../testing/document-state-probe";
 import {
   DocumentProvider,
   useActiveDocumentId,
   useAppRoute,
   useDocumentActions,
   useDocumentDirty,
-  useDocuments,
+  useDocumentKindsRevision,
   useOpenDocument,
   useOpenDocumentTabs,
   useRegistryState,
@@ -83,9 +86,14 @@ vi.mock("@haptic/render/scene-load-readiness", async (importOriginal) => ({
   waitForSceneLoadingPaint: async () => {},
 }));
 
-type Documents = ReturnType<typeof useDocuments>;
+type Documents = DocumentStateProbe;
 
 const CLASS_KINDS = ["graph"] as const;
+const SCENE_KINDS = ["scene"] as const;
+const EVERY_KIND: readonly DocumentKind[] = ["content-browser", ...ASSET_DOCUMENT_KINDS];
+
+/** `useDocumentKindsRevision` for each kind set a test compares. */
+type Revisions = { scene: number; graph: number; every: number };
 
 const seen: {
   actions: DocumentActions | null;
@@ -93,14 +101,25 @@ const seen: {
   route: AppRoute | null;
   /** What a Class-keyed memo (palettes, prefab ancestors) is keyed on. */
   classDocuments: OpenDocument[] | null;
-} = { actions: null, documents: null, route: null, classDocuments: null };
+  revisions: Revisions | null;
+} = { actions: null, documents: null, route: null, classDocuments: null, revisions: null };
 
 function Probe() {
   seen.actions = useDocumentActions();
-  seen.documents = useDocuments();
+  seen.documents = useDocumentStateProbe();
   seen.route = useAppRoute();
   seen.classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
+  seen.revisions = {
+    scene: useDocumentKindsRevision(SCENE_KINDS),
+    graph: useDocumentKindsRevision(CLASS_KINDS),
+    every: useDocumentKindsRevision(EVERY_KIND),
+  };
   return null;
+}
+
+function revisions(): Revisions {
+  if (!seen.revisions) throw new Error("DocumentProvider has not rendered.");
+  return seen.revisions;
 }
 
 function documents(): Documents {
@@ -178,6 +197,7 @@ afterEach(async () => {
   seen.documents = null;
   seen.route = null;
   seen.classDocuments = null;
+  seen.revisions = null;
 });
 
 describe("DocumentProvider actions and route", () => {
@@ -683,7 +703,7 @@ describe("DocumentProvider actions and route", () => {
     act(() => actions.undoActiveDocument());
     expect(documents().canRedoActiveDocument).toBe(true);
     const restored = openScene(MAIN_SCENE_ID);
-    const revisions = documents().documentRevisions;
+    const revision = revisions().every;
     const settings = documents().projectDocument!.settings;
     let release!: () => void;
     act(() => { release = actions.lockAuthoring("Read-only during a session."); });
@@ -700,7 +720,7 @@ describe("DocumentProvider actions and route", () => {
       await actions.confirmExternalChangeReloadDocs([MAIN_SCENE_FILE]);
     });
     expect(openScene(MAIN_SCENE_ID)).toBe(restored);
-    expect(documents().documentRevisions).toBe(revisions);
+    expect(revisions().every).toBe(revision);
     expect(documents().projectDocument!.settings).toBe(settings);
     act(release);
     expect(documents().canRedoActiveDocument).toBe(true);
@@ -1084,10 +1104,8 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().projectDocument?.settings.compileOnSave).toBe(false);
 
     expect(seen.actions).toBe(actions);
-    const facade = documents();
     for (const [name, callback] of Object.entries(callbacks)) {
       expect(seen.actions![name as keyof DocumentActions], name).toBe(callback);
-      expect(facade[name as keyof DocumentActions], name).toBe(callback);
     }
 
     // Save All, taken before any of the changes, writes all of them.
@@ -1352,6 +1370,7 @@ describe("DocumentProvider actions and route", () => {
       actions.openDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }),
     );
     const before = documents();
+    const revisionsBefore = revisions();
     const classDocuments = seen.classDocuments;
     expect(classDocuments?.map((doc) => doc.id)).toEqual([classId]);
 
@@ -1376,8 +1395,8 @@ describe("DocumentProvider actions and route", () => {
       edited.actors[0]!.transform.position,
     );
     expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
-    expect(documents().documentRevisions.scene).not.toBe(before.documentRevisions.scene);
-    expect(documents().documentRevisions.graph).toBe(before.documentRevisions.graph);
+    expect(revisions().scene).not.toBe(revisionsBefore.scene);
+    expect(revisions().graph).toBe(revisionsBefore.graph);
     expect(seen.classDocuments).toBe(classDocuments);
   });
 

@@ -37,6 +37,7 @@ import { loadPlayerDistFiles } from "../services/load-player-files";
 import { resolvePreviewStartupGuid, type PlaySceneLoad } from "../services/play-physics";
 import type { PlaySessionResult } from "../services/play-session";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
+import type { DocumentActions } from "./document-context-types";
 import { dirtyDocumentLabels, type PlayRequestInputs, type PlayUnsavedPrompt } from "./play-context-hooks";
 
 /**
@@ -50,6 +51,8 @@ export interface PreviewBuildHost {
   sessionSourceDocumentRef: RefObject<string | null>;
   preparingRef: RefObject<boolean>;
   playRequestInputsRef: RefObject<PlayRequestInputs>;
+  saveAll: DocumentActions["saveAll"];
+  exportGameArtifact: DocumentActions["exportGameArtifact"];
   setPreparing: Dispatch<SetStateAction<boolean>>;
   setPlayOpen: Dispatch<SetStateAction<boolean>>;
   setSessionPlayScene: Dispatch<SetStateAction<PlaySceneLoad | null>>;
@@ -77,6 +80,8 @@ export function usePreviewBuild({
   sessionSourceDocumentRef,
   preparingRef,
   playRequestInputsRef,
+  saveAll,
+  exportGameArtifact,
   setPreparing,
   setPlayOpen,
   setSessionPlayScene,
@@ -242,15 +247,11 @@ export function usePreviewBuild({
     if (!sessionOwner.canStart() || preparingRef.current) return;
     // Read at call time (see playRequestInputsRef); shadows the render values.
     const {
-      documents: {
-        assetRegistry,
-        dirtyDocuments,
-        exportGameArtifact,
-        migrationPending,
-        projectDirty,
-        projectDocument,
-        saveAll,
-      },
+      assetRegistry,
+      dirtyDocuments,
+      migrationPending,
+      projectDirty,
+      projectDocument,
       openPlaySceneGuid,
       openPlaySceneDocumentId,
     } = playRequestInputsRef.current;
@@ -306,7 +307,7 @@ export function usePreviewBuild({
       }
       if (!isCurrentRequest()) return;
       await prepareSaveGameConfiguration({
-        projectId: playRequestInputsRef.current.documents.projectGuid,
+        projectId: playRequestInputsRef.current.projectGuid,
         settings: projectDocument?.settings.saveGame,
         loadDefinition: loadSaveGameDefinition,
       });
@@ -346,7 +347,7 @@ export function usePreviewBuild({
       setPreviewError(null);
       previewOriginRef.current = previewTarget.origin;
       previewSaveHostRef.current?.dispose();
-      const previewProjectId = playRequestInputsRef.current.documents.projectGuid;
+      const previewProjectId = playRequestInputsRef.current.projectGuid;
       previewSaveHostRef.current = previewProjectId ? createPreviewSaveStorageHost(createSaveGameStorage(), previewProjectId, {
         source: () => previewIframeRef.current?.contentWindow,
         origin: () => previewOriginRef.current,
@@ -391,6 +392,8 @@ export function usePreviewBuild({
     finishPreviewPresentation,
     loadSaveGameDefinition,
     playRequestInputsRef,
+    saveAll,
+    exportGameArtifact,
     preparingRef,
     sessionSourceDocumentRef,
     sessionTicketRef,

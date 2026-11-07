@@ -47,8 +47,8 @@ function sameIds(a: readonly string[], b: readonly string[]): boolean {
  * snapshot keeps its identity until what it describes changes, so a hook
  * re-renders its component only for the state it reads. `DocumentProvider`
  * calls `publish()` after each of its commits (every service mutation is
- * followed by one), so subscribers update in the same frame as the
- * `useDocuments()` facade and never see a newer or older state than it.
+ * followed by one), so subscribers update in the same frame as the state
+ * slices and never see a newer or older state than them.
  */
 export class DocumentSubscriptions {
   private readonly listeners = new Set<() => void>();
