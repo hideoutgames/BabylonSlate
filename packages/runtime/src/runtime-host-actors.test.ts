@@ -15,6 +15,7 @@ function bindings(world: World) {
       classAssetGuids: new Map(),
       demandAssetCatalog: false,
       assetPreloads: { acquire: vi.fn(), release: vi.fn(), transferOwner: vi.fn(), getState: vi.fn() },
+      blocks: { hold: vi.fn() },
       spawn: () => null,
       prepareSpawn: () => null,
       finishSpawn: () => null,

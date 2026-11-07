@@ -48,4 +48,5 @@ Parent Class and Actor Defaults appear for actor classes. Some parents add their
 - [Classes](../scripting/classes.md)
 - [Prefab](prefab.md)
 - [Scripting](../scripting/index.md)
-- [Spawn Actor](../scripting/class/spawn-actor.md)
+- [Spawn Actor (Async)](../scripting/class/spawn-actor-async.md)
+- [Spawn Actor (Blocking)](../scripting/class/spawn-actor-blocking.md)

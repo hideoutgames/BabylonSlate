@@ -442,15 +442,15 @@ export function createScriptContext(
     };
     context.spawnActor = (classId, transform) =>
       services.spawnActor?.(String(classId), transform, self) ?? null;
-    context.spawnActorAsync = async (classId, transform) => {
+    context.spawnActorAsync = async (classId, transform, options) => {
       if (!services.spawnActorAsync) throw new Error("This host cannot prepare a cold actor; use a runtime with asset loading");
-      const actor = await services.spawnActorAsync(String(classId), transform, self);
+      const actor = await services.spawnActorAsync(String(classId), transform, self, { blocking: options?.blocking === true });
       if (self?.destroyed) throw Object.assign(new Error("The spawn caller was destroyed"), { name: "AbortError" });
       return actor;
     };
-    context.beginDeferredSpawnActorAsync = async (classId, transform) => {
+    context.beginDeferredSpawnActorAsync = async (classId, transform, options) => {
       if (!services.beginDeferredSpawnAsync) throw new Error("This host cannot defer an actor spawn");
-      const actor = await services.beginDeferredSpawnAsync(String(classId), transform, self);
+      const actor = await services.beginDeferredSpawnAsync(String(classId), transform, self, { blocking: options?.blocking === true });
       if (self?.destroyed) throw Object.assign(new Error("The spawn caller was destroyed"), { name: "AbortError" });
       return actor;
     };

@@ -43,7 +43,7 @@ Open a scene, tap **+** in the **Outliner** and find the Prefab or Class under *
 
 ## Prefabs in scripts
 
-[Spawn Actor](../scripting/class/spawn-actor.md) creates actors from a Class, not from a Prefab asset. If you need to create copies during Play, build the prefab on an Actor Class.
+[Spawn Actor (Async)](../scripting/class/spawn-actor-async.md) or [Spawn Actor (Blocking)](../scripting/class/spawn-actor-blocking.md) create actors from a Class, not from a Prefab asset. If you need to create copies during Play, build the prefab on an Actor Class.
 
 ## Related
 

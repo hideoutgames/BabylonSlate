@@ -2,9 +2,9 @@
 node: actor.spawn
 ---
 
-# Spawn Actor
+# Spawn Actor (Async)
 
-Creates a new actor from a Class and returns a reference to it.
+Creates a new actor from a Class and returns a reference to it, while the game keeps running.
 
 ## Inputs
 
@@ -23,6 +23,6 @@ Creates a new actor from a Class and returns a reference to it.
 
 ## Notes
 
-- Latent: execution waits while the Class and its resources load, then continues.
+- Latent: execution waits while the Class and its resources load, then continues. The rest of the game keeps running meanwhile.
+- To pause the game until the actor exists instead, use [**Spawn Actor (Blocking)**](spawn-actor-blocking.md).
 - Returns an empty reference if the actor cannot be created, for example when **Class ID** is empty.
-- Latent: the node finishes later without pausing the rest of the game.

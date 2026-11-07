@@ -524,10 +524,9 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Attach Actor](attach-actor.md) | Makes an actor a child of another actor so it follows its parent. |
 | [Attach To Bone](attach-to-bone.md) | Attaches an actor to a named bone of another actor's model so it follows that bone. |
-| [Deferred Spawn Actor](deferred-spawn-actor.md) | Creates a new actor from a Class without starting it, so you can set it up before its **Event Begin Play** runs. |
 | [Destroy Actor](destroy-actor.md) | Removes an actor, and all of its components, from the game. |
 | [Detach Actor](detach-actor.md) | Removes an actor's parent so it no longer follows another actor. |
-| [Finish Deferred Spawn Actor](finish-deferred-spawn-actor.md) | Puts an actor created by **Deferred Spawn Actor** into the game, running its **Event Begin Play**. |
+| [Finish Deferred Spawn Actor](finish-deferred-spawn-actor.md) | Puts an actor created by **Spawn Actor Deferred (Async)** or **Spawn Actor Deferred (Blocking)** into the game, running its **Event Begin Play**. |
 | [Get Actor Name](get-actor-name.md) | Returns the name of an actor as text. |
 | [Get Actor Of Class](get-actor-of-class.md) | Returns one actor of a Class, or an empty reference when none exists. |
 | [Get All Actors Of Class](get-all-actors-of-class.md) | Returns every actor in the game that is an instance of a Class. |
@@ -536,7 +535,10 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Self](get-self.md) | Returns a reference to the actor that is running this graph. |
 | [Is Valid](is-valid.md) | Returns true when an object reference points to an object, and false when it is empty. |
 | [Set Owner](set-owner.md) | Records an actor as the owner of another actor, without attaching or moving it. |
-| [Spawn Actor](spawn-actor.md) | Creates a new actor from a Class and returns a reference to it. |
+| [Spawn Actor (Async)](spawn-actor-async.md) | Creates a new actor from a Class and returns a reference to it, while the game keeps running. |
+| [Spawn Actor (Blocking)](spawn-actor-blocking.md) | Creates a new actor from a Class and returns a reference to it, pausing the game until it exists. |
+| [Spawn Actor Deferred (Async)](spawn-actor-deferred-async.md) | Creates a new actor from a Class without starting it, so you can set it up before its **Event Begin Play** runs. The game keeps running while the Class loads. |
+| [Spawn Actor Deferred (Blocking)](spawn-actor-deferred-blocking.md) | Creates a new actor from a Class without starting it, so you can set it up before its **Event Begin Play** runs. The game pauses until the actor exists. |
 
 ## Object
 

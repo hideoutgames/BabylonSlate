@@ -115,6 +115,29 @@ describe("script load handles in a running session", () => {
     } finally { runtime.stop(); }
   });
 
+  it.each([
+    // Blocking: High priority, gameplay ticks held until the Class is prepared.
+    [true, "gameplay", 0, [true, false]],
+    // Async: Normal priority, gameplay keeps ticking and nothing is held.
+    [false, "preload", 1, []],
+  ] as const)("a spawn with blocking %s prepares its Class at %s priority, then spawns it", async (blockingSpawn, priority, ticksWhileLoading, holds) => {
+    const { runtime, commands, world, actor } = await start(`export async function begin(ctx) {
+      const boss = await ctx.spawnActorAsync("Boss", undefined, { blocking: ${blockingSpawn} });
+      ctx.setVariable("spawned", boss ? boss.classId : "none");
+    }`, { Boss: "boss-class" });
+    try {
+      const [request] = requests(commands);
+      expect(request).toMatchObject({ assetGuids: ["boss-class"], ownerId: "actor", priority });
+      runtime.tick();
+      expect(world.clock.tickIndex).toBe(ticksWhileLoading);
+      await runtime.loadScripts([{ classId: "Boss", parentClassId: "Actor", assetGuid: "boss-class", anchors: [], source: "", entryPoints: [] }]);
+      runtime.setAssetLoadStates([{ guid: "boss-class", state: "ready" }]);
+      runtime.notifyAssetPreloadResult({ preloadId: request!.preloadId, success: true });
+      await vi.waitFor(() => expect(actor.getVariable("spawned")).toBe("Boss"));
+      expect(blocking(commands)).toEqual(holds);
+    } finally { runtime.stop(); }
+  });
+
   it("loads a Class through its asset so the synchronous spawn accepts it, and fails an unknown Class at once", async () => {
     const { runtime, commands, world, actor } = await start(`export async function begin(ctx) {
       const handle = ctx.requestClassLoad("Boss");

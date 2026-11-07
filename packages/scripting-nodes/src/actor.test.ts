@@ -180,14 +180,19 @@ describe("actor nodes", () => {
     });
   });
 
-  it("compiled Spawn Actor passes the authored transform to asynchronous preparation", async () => {
+  it.each([
+    ["actor.spawn", "spawnActorAsync", undefined],
+    ["actor.spawnBlocking", "spawnActorAsync", { blocking: true }],
+    ["actor.deferredSpawn", "beginDeferredSpawnActorAsync", undefined],
+    ["actor.deferredSpawnBlocking", "beginDeferredSpawnActorAsync", { blocking: true }],
+  ] as const)("compiles %s to ctx.%s with the authored transform and %o", async (typeId, call, options) => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "spawn", "actor.spawn", { "default:classId": "Child" }),
+        node(registry, "spawn", typeId, { "default:classId": "Child" }),
       ],
       edges: [
         {
@@ -201,20 +206,23 @@ describe("actor nodes", () => {
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     const mod = loadModule(compiled.source);
-    const calls: Array<{ classId: string; transform: unknown }> = [];
+    const calls: Array<{ call: string; args: unknown[] }> = [];
+    const record = (name: string) => async (...args: unknown[]) => {
+      calls.push({ call: name, args });
+      return { classId: args[0] };
+    };
     await (mod.onBeginPlay as (ctx: unknown) => Promise<void>)({
-      spawnActorAsync: async (classId: string, transform: unknown) => {
-        calls.push({ classId, transform });
-        return { classId };
-      },
+      spawnActorAsync: record("spawnActorAsync"),
+      beginDeferredSpawnActorAsync: record("beginDeferredSpawnActorAsync"),
     });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.classId).toBe("Child");
-    expect(calls[0]?.transform).toEqual({
-      position: { x: 0, y: 0, z: 0 },
-      rotation: { x: 0, y: 0, z: 0, w: 1 },
-      scale: { x: 1, y: 1, z: 1 },
-    });
+    expect(calls).toEqual([{
+      call,
+      args: [
+        "Child",
+        { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } },
+        ...(options ? [options] : []),
+      ],
+    }]);
   });
 
   it("compiles class queries through ctx.getAllActorsOfClass and ctx.getActorOfClass", () => {
