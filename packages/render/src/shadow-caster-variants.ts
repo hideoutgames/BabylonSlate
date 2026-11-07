@@ -7,7 +7,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
-import { qualityValuesKey, type ShadowSettings } from "@haptic/core";
+import type { ShadowSettings } from "@haptic/core";
 import {
   beginManagedRenderAllocation,
   releaseManagedRenderLeaseAfterDisposal,
@@ -21,6 +21,7 @@ import {
   type PrivateShadowAtlas,
 } from "./shadow-atlas";
 import { drawnMaterialVariants } from "./drawn-variants";
+import { shadowSettingsKey } from "./shadow-entry";
 import { createDetachedShadowGenerator, type ShadowMapContext } from "./shadow-map-factory";
 
 /** The maps' tiles (a map's kind, format and filter shape its casters' depth variants, never its size). */
@@ -71,7 +72,7 @@ export class ShadowCasterVariants {
   private lights: Light[] = [];
   private atlas: PrivateShadowAtlas | null = null;
   private lease: ManagedRenderLease | null = null;
-  /** The settings the maps were built with, serialized without level labels (`qualityValuesKey`); null without maps. */
+  /** The settings the maps were built with, serialized without level labels (`shadowSettingsKey`); null without maps. */
   private built: string | null = null;
   /** The casters some map's readiness check found not ready when it last asked. */
   private waiting = new Set<AbstractMesh>();
@@ -80,7 +81,7 @@ export class ShadowCasterVariants {
   }
   /** Asks every caster for its depth variant of each kind of atlas map with `settings`, building the maps for them. */
   warm(settings: ShadowSettings): void {
-    if (qualityValuesKey(settings) !== this.built) this.build(settings);
+    if (shadowSettingsKey(settings) !== this.built) this.build(settings);
     this.request(this.context.casters);
     // The atlas tiles' clear, whose WebGPU pipeline would otherwise be made at the first shadow start.
     if (this.atlas) prepareTileClear(this.atlas);
@@ -88,7 +89,7 @@ export class ShadowCasterVariants {
   /** A sync: builds the maps again for `settings` when they were built for others, or asks the casters still waiting. */
   follow(settings: ShadowSettings): void {
     if (this.built === null) return;
-    if (qualityValuesKey(settings) !== this.built) this.warm(settings);
+    if (shadowSettingsKey(settings) !== this.built) this.warm(settings);
     else if (this.waiting.size) this.request([...this.waiting].filter((caster) => this.context.casters.has(caster)));
   }
   /** Disposes the maps, which release the variants only they held. */
@@ -125,7 +126,7 @@ export class ShadowCasterVariants {
       map.getShadowMap()!.renderList = [];
       this.maps.push(map);
     }
-    this.built = qualityValuesKey(settings);
+    this.built = shadowSettingsKey(settings);
   }
   /** `casters`' depth variants for each map, prepared in the map's first pass by its own readiness check. */
   private request(casters: Iterable<AbstractMesh>): void {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DirectionalLight, NullEngine, PointLight, Scene, SpotLight, Vector3, type AbstractEngine } from "@babylonjs/core";
 import { normalizeShadowSettings, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_TILE_CASCADES, type ShadowProfile } from "@haptic/core";
-import { planShadowAdmission, type ShadowAdmissionBudget } from "./shadow-admission-plan";
+import { planShadowAdmission, type ShadowAdmissionBudget, type ShadowAdmissionDecision } from "./shadow-admission-plan";
 import { cascadeTileSizes, SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge, shadowAtlasEdgeLimit } from "./shadow-atlas";
 import type { ShadowEntry } from "./shadow-entry";
 
@@ -72,6 +72,37 @@ describe("Shadow admission into the shadow atlas", () => {
       ["budget-limited", "shadow atlas space", 0],
     ]);
     expect(admitted.bytes).toBe(2048 ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL);
+  });
+
+  it("decides with a caller's reused decisions as a fresh plan does, rewriting the same objects", () => {
+    // The break: a reused decision keeping its last plan's status, reason or size, or a reuse that makes new objects.
+    const host = scene();
+    const spots = [0, 1, 2, 3, 4].map((index) => new SpotLight(`spot ${index}`, new Vector3(index, 4, 0), Vector3.Down(), 1, 2, host));
+    const lamp = new PointLight("lamp", new Vector3(0, 2, 0), host);
+    const entries = new Map([...spots, lamp].map((light) => [light, entry(light)]));
+    const input = {
+      entries, settings: normalizeShadowSettings({ mapSize: 2048, cascades: 1, maxLocalLights: 8, localMapSize: 1024 }), camera: null,
+      previousCamera: null, at: 0, budget: budget(2048), measure: () => 0,
+    };
+    const reuse: ShadowAdmissionDecision[] = [];
+    expect(planShadowAdmission(input, reuse).decisions).toBe(reuse);
+    const objects = [...reuse];
+    const shape = (decisions: readonly ShadowAdmissionDecision[]) =>
+      decisions.map(({ entry: { light }, status, reason, mapSize }) => [light.name, status, reason, mapSize]);
+    // The first spot light goes out and the lamp withdraws its request: the fifth spot light takes the room.
+    spots[0]!.setEnabled(false);
+    entries.get(lamp)!.requested = false;
+    const replanned = planShadowAdmission(input, reuse).decisions;
+    expect(replanned.every((decision, index) => decision === objects[index])).toBe(true);
+    expect(shape(replanned)).toEqual([
+      ["spot 0", "disabled", null, 0],
+      ...[1, 2, 3, 4].map((index) => [`spot ${index}`, "active", null, 1024]),
+      ["lamp", "not-requested", null, 0],
+    ]);
+    expect(shape(replanned)).toEqual(shape(planShadowAdmission(input).decisions));
+    // A light that leaves takes its decision with it.
+    entries.delete(lamp);
+    expect(planShadowAdmission(input, reuse).decisions).toHaveLength(5);
   });
 
   it("admits the sun's cascades as tiles, leaving room for the local maps planned into the atlas", () => {

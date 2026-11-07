@@ -21,7 +21,6 @@ import { TimingTools } from "@babylonjs/core/Misc/timingTools";
 import {
   componentCastsShadows,
   effectiveShadowSettings,
-  qualityValuesKey,
   SHADOW_FIRST_CASCADE_SCALE,
   SHADOW_HALF_TILE_CASCADES,
   type SerializedComponent,
@@ -56,6 +55,7 @@ import {
   allocationRequestKey,
   generatorPasses,
   matchesAllocationKey,
+  shadowSettingsKey,
   type EffectiveShadowBias,
   type LocalShadowLight,
   type ShadowEntry as Entry,
@@ -66,6 +66,7 @@ import {
   cameraDistanceSquared,
   planShadowAdmission,
   readShadowAdmissionBudget,
+  type ShadowAdmissionDecision,
 } from "./shadow-admission-plan";
 import {
   NEUTRAL_DARKNESS,
@@ -167,6 +168,13 @@ export class SceneShadowController {
   private selectionCamera: Camera | null = null;
   /** The effective settings the last sync admitted by. */
   private planSettings: ShadowSettings | null = null;
+  /**
+   * What `planSettings` were derived from (`effectiveSettings`): the requested settings, which a change replaces, the
+   * Engine's cascade support and the render mode. The same inputs keep the same settings object.
+   */
+  private effectiveFrom: { requested: ShadowSettings; cascades: boolean; mode: string } | null = null;
+  /** The decisions of each sync's admission plan, reused from one plan to the next. */
+  private readonly decisions: ShadowAdmissionDecision[] = [];
   /**
    * The Engine frame (`engine.frameId`) in which a sync released the atlas for one of another edge, or -1: no map is
    * built until a later frame, so the old and the resized atlas never live in the same frame.
@@ -515,6 +523,17 @@ export class SceneShadowController {
     // The atlas whole; its tiles hold none of their own.
     return { passes, bytes: shadowAtlasBytes(this.scene) };
   }
+  /**
+   * The effective settings for these inputs (`effectiveShadowSettings`): the last sync's object while they are the
+   * last sync's, so a sync's comparisons of settings find the same object and serialise nothing.
+   */
+  private effectiveSettings(requested: ShadowSettings, cascades: boolean, mode: "pbr" | "cel"): ShadowSettings {
+    const from = this.effectiveFrom;
+    if (this.planSettings && from && from.requested === requested && from.cascades === cascades && from.mode === mode)
+      return this.planSettings;
+    this.effectiveFrom = { requested, cascades, mode };
+    return effectiveShadowSettings(requested, cascades, mode).settings;
+  }
   /** Whether the Scene lists the mesh; only a mesh that has left needs the search. */
   private listed(mesh: AbstractMesh): boolean {
     return !this.departed.has(mesh) || this.scene.meshes.includes(mesh);
@@ -608,11 +627,7 @@ export class SceneShadowController {
     const state = sceneRenderingSettings(scene);
     const requested = state.shadows;
     const engineSupportsCascades = scene.getEngine()._features.supportCSM;
-    const { settings } = effectiveShadowSettings(
-      requested,
-      engineSupportsCascades,
-      state.mode,
-    );
+    const settings = this.effectiveSettings(requested, engineSupportsCascades, state.mode);
     this.planSettings = settings;
     if (settings.enabled) this.casterVariants.follow(settings);
     else this.casterVariants.dispose();
@@ -630,7 +645,7 @@ export class SceneShadowController {
       at: selectionTime,
       budget,
       measure: (light) => cameraDistanceSquared(light, camera!),
-    });
+    }, this.decisions);
     applyShadowAdmission(plan);
     const { planned, admitted, atlasEdge } = plan;
     // CSM freezes caster bounds; retained owners refresh them every sync.
@@ -645,8 +660,7 @@ export class SceneShadowController {
     };
     // Only map moves and standby retention compare serialized settings, by value: a level label (Custom, then the
     // level again) keeps every standby map.
-    let serializedSettings: string | undefined;
-    const settingsKey = () => (serializedSettings ??= qualityValuesKey(settings));
+    const settingsKey = shadowSettingsKey(settings);
     const release = (entry: Entry) => {
       if (entry.generator) {
         entry.generator.dispose();
@@ -713,7 +727,7 @@ export class SceneShadowController {
       changed = true;
       // Same-kind lights exchange shader light indices, so receivers keep their
       // defines and effects. Otherwise dirty them as construction/disposal would.
-      if (qualityValuesKey(donor.settings) !== settingsKey() ||
+      if (shadowSettingsKey(donor.settings) !== settingsKey ||
         !exchangeShadowReceivers(scene, donor.light, entry.light)) {
         invalidateShadowReceiverHandoffs(scene);
         donor.light._markMeshesAsLightDirty();
@@ -759,7 +773,7 @@ export class SceneShadowController {
         (entry.status !== "outside-relevant-area" &&
           entry.status !== "budget-limited" &&
           !forwardLimited) ||
-        qualityValuesKey(entry.settings) !== settingsKey() ||
+        shadowSettingsKey(entry.settings) !== settingsKey ||
         pooled >= settings.maxLocalLights ||
         admitted.bytes - (admitted.exempt ?? 0) > standbyBudget
       ) {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Camera, FreeCamera, NullEngine, Scene, Vector3 } from "@babylonjs/core";
 import {
   CLUSTER_COUNT,
@@ -11,7 +11,10 @@ import {
 } from "./light-clusters";
 
 const disposers: (() => void)[] = [];
-afterEach(() => { while (disposers.length) disposers.pop()!(); });
+afterEach(() => {
+  vi.restoreAllMocks();
+  while (disposers.length) disposers.pop()!();
+});
 
 function view(orthographic = false) {
   const engine = new NullEngine({ renderWidth: 320, renderHeight: 200, textureSize: 256, deterministicLockstep: false, lockstepMaxSteps: 1 });
@@ -106,6 +109,18 @@ describe("light clusters", () => {
       expect(masks[cluster * 2]).toBe(0);
       expect(masks[cluster * 2 + 1]).toBe(1 << (16 + 2));
     }
+  });
+
+  it("computes the slices' depths once per build, however many clusters its lights test", () => {
+    // The break: a slice's depth computed (Math.exp) for every cluster tested against every light, thousands per build.
+    const camera = view();
+    const lights: ClusterLight[] = [];
+    for (let index = 0; index < 32; index++) lights.push({ kind: "point", index, x: (index % 8) * 4 - 14, y: 1, z: Math.floor(index / 8) * 6, radius: 8 });
+    for (let index = 0; index < 16; index++) lights.push({ kind: "spot", index, x: (index % 4) * 6 - 9, y: 2, z: Math.floor(index / 4) * 8, radius: 10 });
+    const exp = vi.spyOn(Math, "exp");
+    const { masks } = build(camera, lights);
+    expect(masks.some((word) => word !== 0)).toBe(true);
+    expect(exp.mock.calls.length).toBeLessThanOrEqual(CLUSTER_SLICES);
   });
 
   it("disables the lookup without a view, so every light draws", () => {

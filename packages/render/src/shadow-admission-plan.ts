@@ -54,7 +54,7 @@ export type ShadowAdmissionInput = {
 };
 /** One entry's admission, which `applyShadowAdmission` writes back. */
 export type ShadowAdmissionDecision = {
-  readonly entry: Entry;
+  entry: Entry;
   status: ShadowLightStatus;
   reason: string | null;
   /** The ranking distance measured now (0 for a sun or without a camera); undefined keeps the entry's last one. */
@@ -120,9 +120,10 @@ export function cameraDistanceSquared(light: LocalShadowLight, camera: Camera): 
 /**
  * Which lights hold a map, and at what size, without writing to the entries: ranked by priority, residency and camera
  * distance (an incumbent's bonus included), the sun first, then within the light count and pass
- * budgets and the atlas's area. `applyShadowAdmission` writes the decisions back.
+ * budgets and the atlas's area. `applyShadowAdmission` writes the decisions back. With `reuse` (a caller's, kept between
+ * its plans) the plan's decisions are that list, its decision objects reused: a later plan with it rewrites them.
  */
-export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissionPlan {
+export function planShadowAdmission(input: ShadowAdmissionInput, reuse?: ShadowAdmissionDecision[]): ShadowAdmissionPlan {
   const { entries, settings, camera, budget, measure } = input;
   const cameraChanged = camera !== input.previousCamera;
   const selectionTime = input.at;
@@ -132,9 +133,22 @@ export function planShadowAdmission(input: ShadowAdmissionInput): ShadowAdmissio
     decision.distanceSquared = camera && !(light instanceof DirectionalLight) ? measure(light) : 0;
     return decision.distanceSquared;
   };
-  const decisions = [...entries.values()].map((entry): ShadowAdmissionDecision => ({
-    entry, status: "disabled", reason: null, distanceSquared: undefined, dropRecovery: false, mapSize: 0,
-  }));
+  const decisions = reuse ?? [];
+  let count = 0;
+  for (const entry of entries.values()) {
+    const decision = decisions[count++];
+    if (!decision) {
+      decisions.push({ entry, status: "disabled", reason: null, distanceSquared: undefined, dropRecovery: false, mapSize: 0 });
+      continue;
+    }
+    decision.entry = entry;
+    decision.status = "disabled";
+    decision.reason = null;
+    decision.distanceSquared = undefined;
+    decision.dropRecovery = false;
+    decision.mapSize = 0;
+  }
+  decisions.length = count;
   const candidates = decisions.filter((decision) => {
     const entry = decision.entry;
     // Healthy entries build no request key.
