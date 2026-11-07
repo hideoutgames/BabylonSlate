@@ -2019,7 +2019,10 @@ function initializeEngine(
       const camera = simulationEditMode ? resolvePlayGameCamera(scene, binding) : scene.activeCamera;
       let listener: AudioPose | null = null;
       if (camera && !gameTimePaused) {
-        const pos = camera.globalPosition ?? camera.position;
+        // The Layer Camera hears from its centre on the XY plane, where 2D content lies, not from its depth.
+        const pos = camera === worldLayerCamera?.camera
+          ? { x: camera.position.x, y: camera.position.y, z: 0 }
+          : camera.globalPosition ?? camera.position;
         const rot = camera.absoluteRotation;
         // A fresh object per snapshot: the service keeps the previous listener
         // for Doppler until the next one arrives.

@@ -2835,11 +2835,14 @@ describe("Play createEngine view", () => {
         renderLoop();
         engine.onEndFrameObservable.notifyObservers(engine);
       };
+      handle.applyCommand({ type: "sceneCamera", camera: { x: 3, y: -1, rotation: 0, zoom: 1 }, bounds: { width: 16, height: 9 } });
       handle.pushSnapshot(actorSnapshot(1, 0));
       engine.onBeginFrameObservable.notifyObservers(engine);
       await handle.prewarmSceneMaterials();
       frame();
       expect(listener).toHaveBeenCalledTimes(1);
+      // The Layer Camera in view hears from its centre on the XY plane, not from 500 units in front of it.
+      expect(listener.mock.calls[0]![0]).toMatchObject({ x: 3, y: -1, z: 0 });
       expect(handle.scheduler.stats().renderedFrames).toBe(1);
 
       // The 1 fps cap refuses the next draw, but the applied snapshot still

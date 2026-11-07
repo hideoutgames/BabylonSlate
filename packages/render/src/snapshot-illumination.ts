@@ -52,9 +52,9 @@ export function setActorIllumination(root: Mesh, helpers: ComponentIllumination[
 
 export const PLAY_FREE_CAM_NAME = "playFreeCam";
 
-/** Resolve the game listener/camera independently of a viewport-owned free camera. */
 /**
- * The possessed camera slot's camera, else the main Scene's Layer Camera
+ * The game listener/camera, independent of a viewport-owned free camera: the
+ * possessed camera slot's camera, else the main Scene's Layer Camera
  * (else the viewport's default camera); only a camera of `scene` itself, so a
  * Scene Layer's scene never takes the world's.
  */
