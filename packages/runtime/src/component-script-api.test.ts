@@ -203,7 +203,7 @@ describe("component script API", () => {
       runtime.realizePlayWorld();
       const lights = () => commands.filter((command): command is Extract<CommandMessage, { type: "setLights2D" }> => command.type === "setLights2D");
       expect(lights().at(-1)?.lights).toEqual([{ id: "glow", transforms: [expect.any(Object)], properties: {
-        enabled: true, lightKind: "point", color: [1, 1, 1], intensity: 1, radius: 4, innerRadius: 0, outerAngle: 90, innerAngle: 90,
+        enabled: true, lightKind: "point", color: [1, 1, 1], intensity: 1, radius: 4, innerRadius: 0, outerAngle: 90, innerAngle: 90, castShadows: true,
       } }]);
       const sprite = commands.find((command): command is Extract<CommandMessage, { type: "assignMesh" }> => command.type === "assignMesh");
       // The sprite is the actor's one visual (a 2D Light is not one), so the mode rides on the command itself.

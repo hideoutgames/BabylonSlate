@@ -11,6 +11,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "dynamicMeshUpdate",
   "setAreaLights",
   "setLights2D",
+  "setOccluders2D",
   "setActorOutlines",
   "setActorDeformers",
   "setFogVolumes",

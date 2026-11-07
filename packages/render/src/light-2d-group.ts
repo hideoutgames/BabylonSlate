@@ -1,7 +1,7 @@
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import type { Light2DBinding } from "@haptic/core";
-import { add2DLight, type Light2DRecord } from "./lights-2d";
+import { add2DLight, add2DOccluder, setOccluderPose, setOccluderShapes, type Light2DRecord, type Occluder2DRecord } from "./lights-2d";
 
 const part = Matrix.Identity();
 const world = Matrix.Identity();
@@ -88,4 +88,32 @@ export class Light2DGroup {
     this.owners.clear();
     this.signature = "";
   }
+}
+
+/**
+ * A 2D body's shadow casters, posed from its root's world: position and rotation about Z, never scale, which its
+ * outlines already carry (as its collider shapes do).
+ */
+export class Occluder2DGroup {
+  private readonly record: Occluder2DRecord = { shapes: [], x: 0, y: 0, angle: 0, dirty: true, world: [] };
+  private readonly remove: () => void;
+  private signature = "";
+
+  constructor(scene: Scene) { this.remove = add2DOccluder(scene, this.record); }
+
+  /** Applies the body's outlines; returns whether they changed. */
+  update(shapes: Occluder2DRecord["shapes"]): boolean {
+    const signature = JSON.stringify(shapes);
+    if (signature === this.signature) return false;
+    this.signature = signature;
+    setOccluderShapes(this.record, shapes);
+    return true;
+  }
+
+  setWorld(world: Matrix): void {
+    const m = world.m;
+    setOccluderPose(this.record, m[12]!, m[13]!, Math.atan2(m[1]!, m[0]!));
+  }
+
+  dispose(): void { this.remove(); }
 }

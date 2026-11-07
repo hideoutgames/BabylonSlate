@@ -23,7 +23,7 @@ import type {
 import type { BoneAttachment } from "./bone-attachment";
 import type { MaterialResolveOptions } from "./material-library";
 import { AreaRectLightGroup } from "./area-rect-light";
-import type { Light2DGroup } from "./light-2d-group";
+import type { Light2DGroup, Occluder2DGroup } from "./light-2d-group";
 
 export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
 export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
@@ -39,6 +39,8 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   areaLights: Map<number, AreaRectLightGroup>;
   /** Each slot's 2D lights, posed from its root like its area lights. */
   lights2D: Map<number, Light2DGroup>;
+  /** Each 2D body slot's shadow casters, posed from its root. */
+  occluders2D: Map<number, Occluder2DGroup>;
   meshes: SlotRootMap;
   boneAttachments: Map<number, BoneAttachment>;
   lights: Map<number, Light>;
@@ -232,6 +234,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     lightProps: new Map(),
     areaLights: new Map(),
     lights2D: new Map(),
+    occluders2D: new Map(),
     cameraProps: new Map(),
     skyboxProps: new Map(),
     text3dProps: new Map(),
