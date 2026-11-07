@@ -120,3 +120,22 @@ test("the browser cache is keyed on the installed Playwright release, not the wh
   assert.match(installed, /^\d+\.\d+\.\d+/);
   assert.equal(await readFile(output, "utf8"), `version=${installed}\n`);
 });
+
+test("static restores ESLint's cache only for the same lockfile and saves it only from main", async () => {
+  const { steps } = (await verifyWorkflow()).jobs.static;
+  const lint = steps.findIndex((step) => step.run === "pnpm lint");
+  const restore = steps.findIndex((step) => step.uses?.startsWith("actions/cache/restore@"));
+  const save = steps.findIndex((step) => step.uses?.startsWith("actions/cache/save@"));
+  assert.ok(restore >= 0 && restore < lint && lint < save, "restore, lint, then save");
+  const lockfile = "${{ hashFiles('pnpm-lock.yaml') }}";
+  for (const step of [steps[restore], steps[save]]) {
+    // The directory the lint runner passes as --cache-location.
+    assert.equal(step.with.path, ".cache/eslint");
+    // ESLint's per-file check covers the config but not plugin code, so a dependency change must miss.
+    assert.ok(step.with.key.includes(lockfile), step.with.key);
+    assert.ok(step.with.key.includes("${{ hashFiles('eslint.config.js') }}"), step.with.key);
+  }
+  assert.equal(steps[save].with.key, steps[restore].with.key);
+  assert.equal(steps[restore].with["restore-keys"], `eslint-\${{ runner.os }}-${lockfile}-`);
+  assert.equal(steps[save].if, "github.event_name == 'push'");
+});

@@ -94,10 +94,12 @@ test("scoped lint and typecheck preserve the selected files and workspace", asyn
   );
   process.env.npm_execpath = manager;
   const options = { capture: true, env: { ...env, HAPTIC_TEST_LEASE: JSON.stringify({ ticket: lease.ticket, token: lease.token }) } };
+  // Content-keyed, because a checkout resets modification times.
+  const cache = ["--cache", "--cache-strategy", "content", "--cache-location", ".cache/eslint/"];
   const scoped = await runTests("lint", ["scripts/test-runner.mjs"], options);
-  assert.deepEqual(JSON.parse(scoped.output), ["exec", "eslint", "scripts/test-runner.mjs"]);
+  assert.deepEqual(JSON.parse(scoped.output), ["exec", "eslint", ...cache, "scripts/test-runner.mjs"]);
   const all = await runTests("lint", [], options);
-  assert.deepEqual(JSON.parse(all.output), ["exec", "eslint", "."]);
+  assert.deepEqual(JSON.parse(all.output), ["exec", "eslint", ...cache, "."]);
   const types = await runTests("typecheck", ["--filter", "editor", "--noEmit"], options);
   assert.deepEqual(JSON.parse(types.output), ["--workspace-concurrency=1", "--no-sort", "--filter", "editor", "-r", "typecheck", "--noEmit"]);
   const equals = await runTests("typecheck", ["--filter=docs-site"], options);

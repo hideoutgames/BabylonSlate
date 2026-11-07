@@ -112,6 +112,19 @@ export async function runPnpm(profile, args, options) {
 }
 
 /**
+ * ESLint's own per-file result cache. An entry is reused only for the same file content (not modification time,
+ * which a checkout resets), ESLint and Node versions and computed config; plugin code is not part of it, so CI keys
+ * the restored cache on the lockfile as well.
+ */
+const ESLINT_CACHE = [
+  "--cache",
+  "--cache-strategy",
+  "content",
+  "--cache-location",
+  ".cache/eslint/",
+];
+
+/**
  * Workspace typechecks run `tsc --noEmit`, which reads sibling workspaces' sources (every export points at `src`),
  * never their build outputs, so they need no dependency order and run as many at once as the plan allows.
  */
@@ -273,7 +286,7 @@ export async function runTests(mode, args, options = {}) {
     }
     const command =
       mode === "lint"
-        ? ["exec", "eslint", ...(args.length ? args : ["."])]
+        ? ["exec", "eslint", ...ESLINT_CACHE, ...(args.length ? args : ["."])]
         : (plan) => [
             // Builds consume their dependencies' outputs, so they keep pnpm's dependency order, one at a time.
             ...(mode === "build-all"

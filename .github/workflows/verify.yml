@@ -53,7 +53,21 @@ jobs:
       - run: pnpm test:tooling
       - run: pnpm test:distribution
       - run: pnpm typecheck
+      # ESLint's per-file cache: an entry is reused only for the same file content, ESLint and Node versions and
+      # computed config. Plugin code is not part of it, so the lockfile hash is in every key. Only main saves it.
+      - name: Restore the ESLint cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/eslint
+          key: eslint-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('eslint.config.js') }}-${{ github.sha }}
+          restore-keys: eslint-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
       - run: pnpm lint
+      - name: Save the ESLint cache
+        if: github.event_name == 'push'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/eslint
+          key: eslint-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('eslint.config.js') }}-${{ github.sha }}
       - run: pnpm --filter docs-site build
 
   unit:
