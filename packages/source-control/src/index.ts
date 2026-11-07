@@ -13,12 +13,10 @@ export type {
   UnlockOptions,
 } from "./types";
 export {
-  LFS_JSON,
-  SOURCE_CONTROL_SECRET_PREFIX,
   isSourceControlHost,
   sourceControlSecretKey,
 } from "./types";
-export { lfsEndpointFromRepoUrl, lfsLocksUrl, lfsRefName } from "./lfs-endpoint";
+export { lfsEndpointFromRepoUrl } from "./lfs-endpoint";
 export { parseGitConfigPrefill } from "./git-config";
 export { GitLfsLockProvider } from "./git-lfs-lock-provider";
 export { FakeLockProvider } from "./fake-lock-provider";

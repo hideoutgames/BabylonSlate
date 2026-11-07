@@ -2,12 +2,8 @@ export {
   SNAPSHOT_ACTOR_STRIDE,
   SNAPSHOT_HEADER_FLOATS,
   SNAPSHOT_LAYOUT_VERSION,
-  SNAPSHOT_MAGIC_F32,
   SNAPSHOT_MAGIC_U32,
-  actorSlotOffset,
-  floatBitsToU32,
   snapshotFloatCount,
-  u32ToFloatBits,
 } from "./layout";
 export {
   SNAPSHOT_FLAG_OVERLAY,
@@ -65,7 +61,6 @@ export {
   sameDebugObserveTarget,
 } from "./debug-target";
 export {
-  PLAY_ENGINE_COMMAND_TYPES,
   isPlayEngineCommandType,
   type PlayEngineCommandType,
 } from "./play-engine-commands";

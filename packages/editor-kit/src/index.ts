@@ -8,8 +8,6 @@ export {
   type CatalogDialogProps,
 } from "./catalog-dialog";
 export {
-  CATALOG_MENU_ROW_HEIGHT,
-  CATALOG_MENU_TOUCH_ROW_HEIGHT,
   CatalogMenu,
   type CatalogMenuItem,
   type CatalogMenuProps,
@@ -43,14 +41,11 @@ export {
 export { useToolbarOverflowEntry } from "./toolbar-overflow-registry";
 export {
   clampOverlayMenuPosition,
-  overlaySubmenuOrigin,
 } from "./clamp-overlay-menu";
 export { useSuppressNativeContextMenu } from "./use-suppress-native-context-menu";
 export { useSuppressIosEditingGestures } from "./use-suppress-ios-editing-gestures";
 export {
   keepsNativeEditing,
-  shouldSuppressIosEditingGesture,
-  shouldSuppressIosHistoryInput,
 } from "./ios-editing-gestures";
 export {
   ariaKeyShortcuts,
@@ -71,7 +66,6 @@ export { ShortcutKeys, type ShortcutKeysProps } from "./shortcut-keys";
 export { usePreventDocumentOverscroll } from "./use-prevent-document-overscroll";
 export {
   isCoarsePointerEnvironment,
-  shouldPreventDocumentOverscroll,
 } from "./prevent-document-overscroll";
 export {
   ChecklistDialog,
@@ -87,19 +81,11 @@ export {
   type KeySelectMode,
 } from "./keyframe-timeline";
 export {
-  KEYFRAME_TIMELINE_END_GUTTER_PX,
-  KEYFRAME_TIMELINE_GUTTER_PX,
-  fitKeyframeView,
   frameAt,
-  keyAt,
   keyRefFromId,
   keyRefId,
-  keysInRect,
   rulerTicks,
   snapToFrame,
-  timeToX,
-  xToTime,
-  zoomKeyframeView,
   type KeyRef,
   type KeyframeShape,
   type KeyframeTimelineKey,
@@ -150,19 +136,16 @@ export {
 } from "./pin-list-editor";
 export {
   DelegateSignatureField,
-  delegateSignatureLabel,
   delegateSignaturePatch,
   type DelegateSignatureEntry,
   type DelegateSignatureValue,
 } from "./delegate-signature-field";
 export {
-  PIN_PICKER_TYPES,
   CLASS_PIN_PICKER_TYPES,
   FUNCTION_PIN_PICKER_TYPES,
   pinPickerShape,
   pinPickerColorVar,
   pinPickerLabel,
-  pinPickerKeepsTypeClassId,
   ASSET_REF_PICKER_TYPES,
   type PinPickerType,
 } from "./pin-types";
@@ -171,11 +154,6 @@ export {
   type NumericDragFieldProps,
 } from "./numeric-drag-field";
 export { NumberField, type NumberFieldProps } from "./number-field";
-export { parseNumberInput } from "./parse-number-input";
-export {
-  evaluateNumericExpression,
-  formatNumericDisplay,
-} from "./numeric-expression";
 export {
   formatEventMemberName,
   formatEventTitle,
@@ -213,8 +191,6 @@ export { CurveEditor, type CurveEditorHandle, type CurveEditorProps } from "./cu
 export { GradientEditor, type GradientEditorProps } from "./gradient-editor";
 export { CurvePreview, CurveValueField, type CurveValueFieldProps } from "./curve-value-field";
 export {
-  CURVE_CHANNELS,
-  curveValue,
   editorKeys,
   type CurveEditorConstraints,
   type CurveEditorKind,
@@ -228,26 +204,19 @@ export {
   type RangeFieldValue,
 } from "./range-values";
 export { TimelineChart, type TimelineChartProps, type TimelineSelection } from "./timeline-chart";
-export {
-  timelineBucket,
-  timelineHit,
-  timelinePeaks,
-  timelineScale,
-  timelineTotals,
-  type TimelineDomain,
-  type TimelineMarker,
-  type TimelineSegment,
-  type TimelineTrack,
+export type {
+  TimelineDomain,
+  TimelineMarker,
+  TimelineSegment,
+  TimelineTrack,
 } from "./timeline-chart-model";
 export { GradientField, type GradientFieldProps } from "./gradient-field";
 export type { CurveKey, GradientStop } from "./curve-keys";
 export {
   TreeView,
   TREE_ROW_HEIGHT,
-  TREE_SWIPE_ADD_PX,
   isSidewaysDragOut,
   rangeSelectTreeIds,
-  treeDropPlacement,
   type TreeDropPlacement,
   type TreeSelectOptions,
   type TreeViewNode,
@@ -275,8 +244,6 @@ export {
 } from "./picker-identity";
 export {
   SearchDialog,
-  filterSearchItems,
-  groupSearchItems,
   type SearchDialogItem,
   type SearchDialogProps,
   type SearchItemGroup,
@@ -284,8 +251,6 @@ export {
 export { SearchDropdown, type SearchDropdownProps } from "./search-dropdown";
 export {
   MarkupAutocompleteTextarea,
-  applyMarkupSuggestion,
-  markupAutocompleteAt,
   type MarkupAutocompleteSession,
   type MarkupAutocompleteTextareaProps,
   type MarkupSuggestion,
@@ -345,22 +310,11 @@ export {
   type AtlasTileGridTool,
   type AtlasTileMark,
 } from "./atlas-tile-grid";
-export {
-  centeredView,
-  fitScale,
-  panView,
-  pinchView,
-  viewToContent,
-  zoomViewAbout,
-  type PanZoomLimits,
-  type PanZoomSize,
-  type PanZoomView,
+export type {
+  PanZoomLimits,
+  PanZoomSize,
+  PanZoomView,
 } from "./pan-zoom-model";
-export {
-  isInlineNumberUnit,
-  stripNumberUnit,
-  withNumberUnit,
-} from "./number-units";
 export {
   usePanZoomSurface,
   type PanZoomBase,
@@ -368,7 +322,6 @@ export {
   type PanZoomSurfaceOptions,
 } from "./use-pan-zoom-surface";
 export {
-  ADD_MEMBER_EMPTY_ID,
   AddMemberMenu,
   type AddMemberMenuItem,
   type AddMemberMenuProps,
@@ -394,7 +347,6 @@ export {
   ColorField,
   colorFromHex,
   colorToHex,
-  parseHexColor,
   type ColorFieldProps,
   type ColorValue,
 } from "./color-field";
@@ -403,8 +355,6 @@ export { CollisionPresetsField, type CollisionPresetsFieldProps } from "./collis
 export { CollisionResponsesField, type CollisionResponsesFieldProps, type CollisionResponsesValue } from "./collision-responses-field";
 export {
   FlagsField,
-  hasFlagBit,
-  setFlagBit,
   type FlagsFieldProps,
 } from "./flags-field";
 export {
