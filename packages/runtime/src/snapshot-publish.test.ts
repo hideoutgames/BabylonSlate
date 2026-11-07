@@ -413,6 +413,7 @@ describe("snapshot removal pass", () => {
       lastPhysicsMs: () => 0,
       canPublish: () => true,
       cameraActor: () => null,
+      layerCameraCentre: () => null,
       applyOverlayLayouts: () => {},
       retireDetachedStreams: () => {},
       removedActors: () => {},
