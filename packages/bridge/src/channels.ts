@@ -636,6 +636,8 @@ export type CommandMessage =
   | { type: "recaptureReflectionProbes" }
   | { type: "setAreaLights"; slotId: number; lights: import("@haptic/core").AreaRectLightBinding[] }
   | { type: "setLights2D"; slotId: number; lights: import("@haptic/core").Light2DBinding[] }
+  /** A 2D body's collider outlines in its body's frame, which cast 2D light shadows; empty clears them. */
+  | { type: "setOccluders2D"; slotId: number; shapes: Array<{ closed: boolean; points: number[] }> }
   | { type: "snapshotLayout"; capacity: number; generation: number }
   | {
       type: "spawn";

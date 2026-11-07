@@ -1057,11 +1057,11 @@ export class ForwardSceneFrameGraph {
       syncSceneLighting(this.scene);
       // Admission needs no caster state; ManagedShadowsTask walks the casters
       // once, right before it consumes each map's refresh.
-      controller?.sync("admission");
       // Allocation/participation changes alter the material shadow layout.
       // Commit that layout before probing effects, so onBeforeRender cannot
       // invalidate the variants we just declared ready for the first frame.
-      syncSceneLighting(this.scene);
+      // An admission that changed neither leaves the first sync current.
+      if (controller?.sync("admission")) syncSceneLighting(this.scene);
     });
     if (this.measureWork) this.work.shadowAdmissionMs += performance.now() - started;
   }

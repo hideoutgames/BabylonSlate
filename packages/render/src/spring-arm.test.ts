@@ -18,9 +18,11 @@ import {
 import {
   applyAssignMesh,
   applyComponentTransformsCommand,
+  applyHostClockPoses,
   applyPossessCamera,
   applySnapshotToScene,
   createSnapshotSceneBinding,
+  hasHostClockPoses,
   retirePlaySlot,
   type AssignMeshPart,
 } from "./snapshot-apply";
@@ -205,6 +207,22 @@ describe("spring arm", () => {
       snapshot(scene, halfSteps, 1000, {});
       snapshot(scene, halfSteps, 1025, moved);
       expectVector(snapshot(scene, halfSteps, 1050, moved).position, [lagged, 1, -4]);
+    });
+
+    it("keeps lagging toward the applied pose on frames that bring no new one", () => {
+      const { scene } = createHandle();
+      const binding = createSnapshotSceneBinding();
+      assign(scene, binding, {
+        springArm: parseSpringArmProperties({ armLength: 4, enableLocationLag: true, locationLagSpeed: 10 }),
+      });
+      snapshot(scene, binding, 1000, {});
+      const camera = snapshot(scene, binding, 1050, { position: { x: 10, y: 0, z: 0 } });
+      // The frame path re-poses a binding with spring arms between snapshots.
+      expect(hasHostClockPoses(binding)).toBe(true);
+      vi.spyOn(performance, "now").mockReturnValue(1100);
+      applyHostClockPoses(scene, binding);
+      // As if the 1050 pose had been applied again at 1100: 100 ms of lag in all.
+      expectVector(camera.position, [10 * (1 - Math.exp(-10 * 0.1)), 1, -4]);
     });
 
     it("keeps the lag across a property rebuild and draws debug lines until retired", () => {

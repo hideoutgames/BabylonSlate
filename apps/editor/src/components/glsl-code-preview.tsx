@@ -2,10 +2,11 @@ import { highlightTree } from "@lezer/highlight";
 import type { ReactNode } from "react";
 import { codeHighlight, glslLanguage } from "./code-highlighting";
 import { javascriptLanguage } from "@codemirror/lang-javascript";
+import { codePreviewText } from "./code-preview-text";
 
 /** Static spans: graph nodes never allocate an editable CodeMirror view. */
 export function GlslCodePreview({ value, language = "glsl" }: { value: string; language?: "glsl" | "javascript" }) {
-  const code = value.split("\n").slice(0, 4).join("\n");
+  const code = codePreviewText(value);
   const spans: ReactNode[] = [];
   let offset = 0;
   highlightTree((language === "glsl" ? glslLanguage : javascriptLanguage).parser.parse(code), codeHighlight, (from, to, className) => {

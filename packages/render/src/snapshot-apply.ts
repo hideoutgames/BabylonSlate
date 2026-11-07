@@ -46,6 +46,7 @@ import {
 } from "./snapshot-illumination";
 import {
   disposeSpringArmState,
+  playSpringArmSlots,
   retireSpringArmLag,
   updatePlaySpringArms,
 } from "./snapshot-spring-arms";
@@ -165,6 +166,8 @@ export function retirePlaySlot(
   binding.areaLights.delete(slotId);
   binding.lights2D.get(slotId)?.dispose();
   binding.lights2D.delete(slotId);
+  binding.occluders2D.get(slotId)?.dispose();
+  binding.occluders2D.delete(slotId);
   forgetRejectedAssignments(binding, slotId);
   cancelPendingVisualReplacement(binding, slotId);
   retireBoneAttachments(binding, slotId);
@@ -217,6 +220,7 @@ export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
     ...binding.reflectionProbes.keys(),
     ...binding.areaLights.keys(),
     ...binding.lights2D.keys(),
+    ...binding.occluders2D.keys(),
     ...binding.meshes.keys(),
     ...binding.cameras.keys(),
     ...binding.lights.keys(),
@@ -328,6 +332,7 @@ export function applySnapshotToScene(
       (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE);
     binding.areaLights.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
     binding.lights2D.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
+    binding.occluders2D.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
     setPlayVisualVisibility(
       binding,
       mesh,
@@ -355,11 +360,47 @@ export function applySnapshotToScene(
       );
     }
   }
+  updateHostClockPoses(binding);
+  for (const root of binding.snapshotMeshes) if (root) updateComponentIllumination(root);
+  refreshPlayActiveCamera(scene, binding);
+  updateCameraDependentPasses(scene, binding);
+  for (const animationScene of binding.tilemapAnimationScenes ?? []) {
+    updateSceneTilemapAnimations(animationScene, binding.tilemapAnimationTimeMs ?? 0);
+  }
+}
+
+/** Whether the binding holds poses that move on the host's clock between snapshots (`applyHostClockPoses`). */
+export function hasHostClockPoses(binding: SnapshotSceneBinding): boolean {
+  return binding.boneAttachments.size > 0 || playSpringArmSlots(binding).size > 0;
+}
+
+/**
+ * Re-pose, from the applied snapshot, what moves on the host's clock rather than with the pose: bone attachments (Babylon
+ * animates bones on wall time) and the lights and cameras they carry, spring-arm lag (stepped on wall time) and the
+ * cameras at its sockets, those actors' component lights and cameras, and the camera-dependent passes after them.
+ * Everything else an apply wrote follows the snapshot alone and stays as written.
+ */
+export function applyHostClockPoses(scene: Scene, binding: SnapshotSceneBinding): void {
+  updateHostClockPoses(binding);
+  for (const slotId of binding.boneAttachments.keys()) {
+    const root = binding.meshes.get(slotId);
+    if (root) updateComponentIllumination(root);
+  }
+  for (const slotId of playSpringArmSlots(binding)) {
+    const root = binding.boneAttachments.has(slotId) ? undefined : binding.meshes.get(slotId);
+    if (root) updateComponentIllumination(root);
+  }
+  updateCameraDependentPasses(scene, binding);
+}
+
+/** Runs after every snapshot TRS write, so attachments follow moved parents and spring arms their moved roots. */
+function updateHostClockPoses(binding: SnapshotSceneBinding): void {
   updateBoneAttachments(binding);
   for (const [slotId, attachment] of binding.boneAttachments) {
     if (!attachment.applied) continue;
     binding.areaLights.get(slotId)?.setWorld(attachment.world);
     binding.lights2D.get(slotId)?.setWorld(attachment.world);
+    binding.occluders2D.get(slotId)?.setWorld(attachment.world);
   }
   for (const [slotId, attachment] of binding.boneAttachments) {
     if (!attachment.applied) continue;
@@ -378,17 +419,17 @@ export function applySnapshotToScene(
     if (camera) updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
   }
   updatePlaySpringArms(binding, performance.now());
-  for (const root of binding.snapshotMeshes) if (root) updateComponentIllumination(root);
-  refreshPlayActiveCamera(scene, binding);
-  // Camera-dependent passes wait for every camera pose, including later slots
-  // and bone attachments, and for this snapshot's active camera.
+}
+
+/**
+ * Camera-dependent passes wait for every camera pose, including later slots
+ * and bone attachments, and for this snapshot's active camera.
+ */
+function updateCameraDependentPasses(scene: Scene, binding: SnapshotSceneBinding): void {
   snapPlayCameraToPixelGrid(scene, binding);
   // Only the world Scene: overlay slots skip world-camera parallax.
   const activeCamera = scene.activeCamera;
   if (activeCamera) updateSceneTilemapParallax(scene, activeCamera.position);
-  for (const animationScene of binding.tilemapAnimationScenes ?? []) {
-    updateSceneTilemapAnimations(animationScene, binding.tilemapAnimationTimeMs ?? 0);
-  }
 }
 
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
@@ -418,6 +459,8 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.areaLights.clear();
   for (const group of binding.lights2D.values()) group.dispose();
   binding.lights2D.clear();
+  for (const group of binding.occluders2D.values()) group.dispose();
+  binding.occluders2D.clear();
   for (const camera of binding.cameras.values()) camera.dispose();
   binding.meshes.clear();
   binding.liveSlots.clear();

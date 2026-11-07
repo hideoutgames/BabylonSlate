@@ -26,3 +26,14 @@ it("lowers a texture budget above a phone or tablet's ceiling, and reports it", 
 it("keeps a phone or tablet's texture ceiling", () => {
   expect(deviceProfile(IPAD).textureByteCeiling).toBe(768 * 1024 * 1024);
 });
+
+it("classes a navigator's user agent once, and another navigator's afresh", () => {
+  let reads = 0;
+  const counted = { get userAgent() { reads += 1; return IPAD.userAgent; }, maxTouchPoints: 5 };
+  expect(deviceProfile(counted).mobile).toBe(true);
+  expect(deviceProfile(counted).mobile).toBe(true);
+  expect(reads).toBe(1);
+  expect(deviceProfile(MAC).mobile).toBe(false);
+  expect(deviceProfile(counted).mobile).toBe(true);
+  expect(reads).toBe(2);
+});

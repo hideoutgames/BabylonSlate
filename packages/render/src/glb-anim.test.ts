@@ -10,8 +10,10 @@ import {
 import { markInstanceSource } from "./instance-source";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./test-support/test-engine";
+import { nativePreparationForEngine } from "./native-preparation";
 import {
   accountedGeometryBytesForScene,
+  acquireGlbContainer,
   adoptLoadedHierarchy,
   animationRetargetMatchingClips,
   beginSlotModelAnimLoad,
@@ -417,6 +419,78 @@ describe("beginSlotModelAnimLoad", () => {
     } finally {
       vi.unstubAllGlobals();
       vi.restoreAllMocks();
+    }
+  });
+
+  /** A LOD worker that answers each model only when the test releases it, with no levels. */
+  function stubHeldLodWorker(onPost: () => void = () => {}): Array<() => void> {
+    const replies: Array<() => void> = [];
+    class HeldWorker {
+      onmessage: ((event: { data: unknown }) => void) | null = null;
+      onerror: unknown = null;
+      onmessageerror: unknown = null;
+      terminate() {}
+      postMessage(message: { meshes: unknown[] }) {
+        onPost();
+        replies.push(() => this.onmessage?.({ data: { levels: message.meshes.map(() => []) } }));
+      }
+    }
+    vi.stubGlobal("Worker", HeldWorker);
+    return replies;
+  }
+
+  it("takes no preparation slot for an Auto LOD model waiting for its turn in the LOD worker", async () => {
+    const replies = stubHeldLodWorker();
+    try {
+      const handle = createTestEngine();
+      handles.push(handle);
+      const { scene } = handle;
+      const preparation = nativePreparationForEngine(scene.getEngine());
+      const first = acquireGlbContainer(scene, "dense-a", installAssetBytes(encodeUvSphereGlb()));
+      const second = acquireGlbContainer(scene, "dense-b", installAssetBytes(encodeUvSphereGlb()));
+      const levels = [first.lods(), second.lods()];
+      await Promise.all([first.load, second.load]);
+      await vi.waitFor(() => expect(replies).toHaveLength(1));
+      // Only the model being simplified holds admission.
+      expect(preparation.snapshot()).toMatchObject({ active: 1, queued: 0 });
+      // So a decode queued now does not wait for simplification.
+      const third = acquireGlbContainer(scene, "triangle", installAssetBytes(encodeTriangleGlb()));
+      await third.load;
+      replies[0]!();
+      await vi.waitFor(() => expect(replies).toHaveLength(2));
+      replies[1]!();
+      expect(await Promise.all(levels)).not.toContain(null);
+      for (const lease of [first, second, third]) lease.release();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("admits Auto LOD generation after gameplay work queued behind it", async () => {
+    const order: string[] = [];
+    const replies = stubHeldLodWorker(() => order.push("levels"));
+    try {
+      const handle = createTestEngine();
+      handles.push(handle);
+      const { scene } = handle;
+      // One slot, so the order of admission is observable.
+      const preparation = nativePreparationForEngine(scene.getEngine(), { maxConcurrent: 1 });
+      const lease = acquireGlbContainer(scene, "dense", installAssetBytes(encodeUvSphereGlb()));
+      const levels = lease.lods();
+      let release!: () => void;
+      const held = preparation.schedule({ label: "held", temporaryBytes: 1 }, () => new Promise<void>((resolve) => { release = resolve; }));
+      await lease.load;
+      // The held work took the slot as the decode finished; the model's levels now wait for admission.
+      await vi.waitFor(() => expect(preparation.snapshot()).toMatchObject({ active: 1, queued: 1 }));
+      const later = preparation.schedule({ label: "later", temporaryBytes: 1 }, async () => { order.push("gameplay"); });
+      release();
+      await vi.waitFor(() => expect(order).toEqual(["gameplay", "levels"]));
+      await Promise.all([held, later]);
+      replies[0]!();
+      expect(await levels).not.toBeNull();
+      lease.release();
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 

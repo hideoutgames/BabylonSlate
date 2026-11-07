@@ -2,7 +2,7 @@ import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Material, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type AbstractMesh, type Effect, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Material, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, TransformNode, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type AbstractMesh, type Effect, type Mesh } from "@babylonjs/core";
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
@@ -38,12 +38,14 @@ import {
 } from "@haptic/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createEngine, PIPELINE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
+import { AUTHORED_CAMERA_PREFIX } from "./scene-illumination";
 import { sceneOutputScale } from "./scene-output-scale";
 import type { RenderPerformanceSample } from "./render-performance";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload, type ParticleLibraryEmitter } from "@haptic/assets";
 import { createDefaultParticleGraphDocument } from "@haptic/particle-graph";
-import { encodeTriangleGlb } from "./glb-test-fixtures";
+import { encodeTriangleGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
+import { nativePreparationForEngine } from "./native-preparation";
 import { acquireMaterialTexture, ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { encodeRgbaPng } from "./png-encode";
 import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
@@ -270,6 +272,107 @@ describe("Play createEngine view", () => {
     handle.resourceCache.flushUnreferenced();
     expect(handle.accountedGeometryBytes()).toBe(0);
     expect(isDisposedGpuTexture(cube)).toBe(true);
+  });
+
+  /** Records how many preparation jobs the Engine's queue is running when each job is scheduled. */
+  function watchPreparation(engine: NullEngine) {
+    const scheduler = nativePreparationForEngine(engine);
+    const schedule = scheduler.schedule.bind(scheduler);
+    const activeAtSchedule = new Map<string, number>();
+    const spy = vi.spyOn(scheduler, "schedule").mockImplementation(((request, prepare) => {
+      activeAtSchedule.set(request.label, scheduler.snapshot().active);
+      return schedule(request, prepare);
+    }) as typeof scheduler.schedule);
+    return { activeAtSchedule, restore: () => spy.mockRestore() };
+  }
+
+  it("prepares a scope's textures together and releases everything it acquired when a model fails", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    const watched = watchPreparation(engine);
+    try {
+      const wrappers = handle.resourceCache.resourceStats().wrappers;
+      const png = (value: number) => encodeRgbaPng(2, 2, new Uint8Array(16).fill(value));
+      await expect(handle.acquireSceneSources({ assets: {
+        textureBytes: new Map([["albedo-a", png(255)], ["albedo-b", png(128)]]),
+        modelBytes: new Map([["model-good", encodeTriangleGlb()], ["model-broken", new Uint8Array([1, 2, 3, 4])]]),
+      } }, { prepare: true })).rejects.toThrow("Unsupported model content");
+      // The second texture was scheduled while the first was still being prepared.
+      expect(watched.activeAtSchedule.get("Texture albedo-a")).toBe(0);
+      expect(watched.activeAtSchedule.get("Texture albedo-b")).toBe(1);
+      handle.resourceCache.flushUnreferenced();
+      expect(handle.resourceCache.resourceStats().wrappers).toBe(wrappers);
+      expect(handle.accountedGeometryBytes()).toBe(0);
+      expect(nativePreparationForEngine(engine).snapshot()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
+    } finally {
+      watched.restore();
+    }
+  });
+
+  it("cancels a scope mid-preparation with the caller's reason, starting nothing more and keeping nothing", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    const controller = new AbortController();
+    const scheduler = nativePreparationForEngine(engine);
+    const schedule = scheduler.schedule.bind(scheduler);
+    const started: string[] = [];
+    // The scope is cancelled as its third texture is queued behind the two being prepared.
+    const spy = vi.spyOn(scheduler, "schedule").mockImplementation(((request, prepare) => {
+      const job = schedule(request, () => { started.push(request.label); return prepare(); });
+      if (request.label === "Texture albedo-c") controller.abort(new Error("Scene unloaded"));
+      return job;
+    }) as typeof scheduler.schedule);
+    try {
+      const wrappers = handle.resourceCache.resourceStats().wrappers;
+      const png = (value: number) => encodeRgbaPng(2, 2, new Uint8Array(16).fill(value));
+      await expect(handle.acquireSceneSources({
+        assets: { textureBytes: new Map([["albedo-a", png(255)], ["albedo-b", png(128)], ["albedo-c", png(64)]]) },
+        materialDocuments: new Map([["cancelled-material", createDefaultMaterialDocument("Cancelled Material")]]),
+      }, { prepare: true, signal: controller.signal })).rejects.toThrow("Scene unloaded");
+      expect(started).toEqual(["Texture albedo-a", "Texture albedo-b"]);
+      handle.resourceCache.flushUnreferenced();
+      expect(handle.resourceCache.resourceStats().wrappers).toBe(wrappers);
+      expect(handle.scene.materials.some((material) => material.name.includes("cancelled-material"))).toBe(false);
+      expect(nativePreparationForEngine(engine).snapshot()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("resolves a prepared scope while its Auto LOD levels still generate, and generates none for a model without Auto LOD", async () => {
+    const replies: Array<() => void> = [];
+    let terminated = 0;
+    class HeldWorker {
+      onmessage: ((event: { data: unknown }) => void) | null = null;
+      onerror: unknown = null;
+      onmessageerror: unknown = null;
+      terminate() { terminated++; }
+      postMessage(message: { meshes: unknown[] }) {
+        replies.push(() => this.onmessage?.({ data: { levels: message.meshes.map(() => []) } }));
+      }
+    }
+    vi.stubGlobal("Worker", HeldWorker);
+    try {
+      const engine = sharedEngine();
+      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+      handles.push(handle);
+      const payload = { materialSlots: [], clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [] };
+      const release = await handle.acquireSceneSources({ assets: {
+        modelBytes: new Map([["dense-lod", encodeUvSphereGlb()], ["dense-full", encodeUvSphereGlb()]]),
+        modelPayloads: new Map([["dense-lod", { ...payload, autoLod: true }], ["dense-full", { ...payload, autoLod: false }]]),
+      } }, { prepare: true });
+      // Generation started on the held lease; the scope did not wait for it.
+      await vi.waitFor(() => expect(replies).toHaveLength(1));
+      replies[0]!();
+      // The worker exits once no model is left to simplify.
+      await vi.waitFor(() => expect(terminated).toBe(1));
+      expect(replies).toHaveLength(1);
+      release();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("installs collected editor assets and materials without replaying the previous document", async () => {
@@ -1513,22 +1616,63 @@ describe("Play createEngine view", () => {
     expect(handle.scene.frameGraph).toBeNull();
   });
 
-  it("keeps the shared Engine frame loop running when a presented Play frame's readiness probe fails", async () => {
+  /** A presented Play view whose first frame confirmed its starting settings, with an Engine frame as the browser runs it. */
+  async function presentedPlay() {
     const engine = sharedEngine();
-    const { handle } = playHandle(engine);
+    const acknowledged: number[] = [];
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true, onScalabilityApplied: (acknowledgement) => acknowledged.push(acknowledgement.revision),
+    });
+    handles.push(handle);
     await handle.prewarmSceneMaterials();
+    const frame = async () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      // Past the frame cap's interval, so every call draws and presents.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    };
     const presented = handle.presentFirstFrame();
-    renderViews(engine);
-    engine.onEndFrameObservable.notifyObservers(engine);
+    await frame();
     await presented;
+    for (let i = 0; i < 8 && acknowledged.length === 0; i++) await frame();
+    expect(acknowledged).toEqual([0]);
+    return { engine, handle, acknowledged, frame };
+  }
+
+  it("keeps the shared Engine frame loop running when a presented Play frame's readiness probe fails", async () => {
+    const { engine, handle } = await presentedPlay();
     // A stored preparation failure rethrows from readiness; the frame loop
-    // must survive it.
+    // must survive it. The probe runs for the frame that confirms a transaction.
     const probe = vi.spyOn(SceneRenderCoordinator.prototype, "isReady").mockImplementation(() => {
       throw new Error("Scene rendering preparation timed out.");
     });
     try {
+      handle.applyCommand(scalabilityCommand({}));
+      engine.onBeginFrameObservable.notifyObservers(engine);
       renderViews(engine);
       expect(() => engine.onEndFrameObservable.notifyObservers(engine)).not.toThrow();
+      expect(probe).toHaveBeenCalled();
+    } finally {
+      probe.mockRestore();
+    }
+  });
+
+  it("probes readiness after a presented Play frame only while a scalability transaction awaits that frame", async () => {
+    const { handle, acknowledged, frame } = await presentedPlay();
+    const probe = vi.spyOn(SceneRenderCoordinator.prototype, "isReady");
+    try {
+      // Steady frames confirm nothing: none walks the frame path again after it presented.
+      for (let i = 0; i < 4; i++) await frame();
+      expect(probe).not.toHaveBeenCalled();
+      // The frame that confirms a transaction probes, and acknowledges it; then probing stops again.
+      handle.applyCommand(scalabilityCommand({}));
+      for (let i = 0; i < 8 && acknowledged.length === 1; i++) await frame();
+      expect(acknowledged).toEqual([0, 1]);
+      const confirming = probe.mock.calls.length;
+      expect(confirming).toBeGreaterThan(0);
+      for (let i = 0; i < 4; i++) await frame();
+      expect(probe).toHaveBeenCalledTimes(confirming);
     } finally {
       probe.mockRestore();
     }
@@ -2754,6 +2898,57 @@ describe("Play createEngine view", () => {
       });
       frame();
       expect(apply).toHaveBeenCalledTimes(3);
+    } finally {
+      apply.mockRestore();
+    }
+  });
+
+  it("moves a bone-attached camera with its bone on running frames that bring no new pose, without re-applying the snapshot", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+    const frame = () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderLoop();
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    const apply = vi.spyOn(snapshotApply, "applySnapshotToScene");
+    try {
+      handle.applyCommand({ type: "assignMesh", slotId: 0, meshKind: "box", meshAssetGuid: null });
+      handle.applyCommand({
+        type: "assignMesh", slotId: 1, meshKind: "camera", meshAssetGuid: null,
+        camera: { projectionMode: "perspective", fieldOfView: 60 },
+      });
+      // The runtime possesses the Scene's Default Camera when it starts.
+      handle.applyCommand({ type: "possessCamera", slotId: 1 });
+      // The host animates this joint between poses, as Babylon does a model's bones.
+      const head = new TransformNode("Head", handle.scene);
+      head.parent = handle.scene.getMeshByName("actor-0")!;
+      head.position.y = 2;
+      handle.applyCommand({ type: "attachToBone", slotId: 1, targetSlotId: 0, boneName: "Head" });
+      const snapshot = new Float32Array(snapshotFloatCount(8));
+      writeSnapshotHeader(snapshot, { frameId: 1, tickIndex: 1, actorCount: 2, scriptMs: 0, physicsMs: 0 });
+      for (const slotId of [0, 1]) {
+        writeActorSlot(snapshot, slotId, {
+          slotId, position: { x: 10, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+          flags: SNAPSHOT_FLAG_VISIBLE,
+        });
+      }
+      handle.pushSnapshot(snapshot);
+      frame();
+      const camera = handle.scene.getCameraByName(`${AUTHORED_CAMERA_PREFIX}1`)!;
+      expect(handle.scene.activeCamera).toBe(camera);
+      expect(camera.position.asArray()).toEqual([10, 2, 0]);
+      head.position.y = 5;
+      frame();
+      expect(camera.position.asArray()).toEqual([10, 5, 0]);
+      expect(apply).toHaveBeenCalledTimes(1);
+      // A paused session's frames apply nothing: the camera holds until the next pose.
+      handle.setGameTimePaused(true);
+      head.position.y = 7;
+      frame();
+      expect(camera.position.asArray()).toEqual([10, 5, 0]);
     } finally {
       apply.mockRestore();
     }

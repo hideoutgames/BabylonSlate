@@ -1839,6 +1839,44 @@ describe("ContentBrowserWorkspace creating assets", () => {
     fireEvent.click(screen.getByRole("menuitem", { name }));
   }
 
+  /** Opens the tile's menu, then its Convert to 2D submenu, and chooses `name` there. */
+  function chooseFromConvertTo2D(path: string, name: string) {
+    fireEvent.contextMenu(screen.getByTestId(`content-item-${path}`));
+    expect(screen.queryByRole("menuitem", { name: "Create Sprite Animation" })).toBeNull();
+    fireEvent.click(screen.getByTestId("context-menu-item-convert-to-2d"));
+    fireEvent.click(within(screen.getByTestId("context-menu-sub-convert-to-2d")).getByRole("menuitem", { name }));
+  }
+
+  it("converts selected Textures to one Sprite Animation with a frame each, or a Sheet Sprite Animation each", async () => {
+    const registry = await mountProject();
+    for (const [name, width, height] of [["Run_10", 64, 32], ["Run_2", 20, 30]] as const) {
+      await registry.createAsset("project", `${name}.texture.hasset`, {
+        guid: `tex-${name}`, name, type: "Texture", version: 1, dependencies: [], payload: { width, height }, chunks: [],
+      });
+    }
+    act(() => docs.noteAssetsCreated());
+    tapTile("assets/Run_10.texture.hasset");
+    tapTile("assets/Run_2.texture.hasset", { ctrlKey: true });
+    chooseFromConvertTo2D("assets/Run_2.texture.hasset", "Create Animation");
+    await waitFor(() => expect(registry.list().filter((asset) => asset.header.type === "SpriteAnimation")).toHaveLength(1));
+    const animation = registry.list().find((asset) => asset.header.type === "SpriteAnimation")!;
+    // One animation for the whole selection, its frames in name order.
+    expect((animation.header.payload as { source: string; frames: Array<{ textureGuid: string }> })).toMatchObject({
+      source: "frames", frames: [{ textureGuid: "tex-Run_2" }, { textureGuid: "tex-Run_10" }],
+    });
+
+    tapTile("assets/Run_10.texture.hasset");
+    tapTile("assets/Run_2.texture.hasset", { ctrlKey: true });
+    chooseFromConvertTo2D("assets/Run_2.texture.hasset", "Create Sheet Animations");
+    await waitFor(() => expect(registry.list().filter((asset) => asset.header.type === "SpriteAnimation")).toHaveLength(3));
+    const sheets = registry.list().filter((asset) => asset.header.type === "SpriteAnimation" && asset.header.guid !== animation.header.guid)
+      .map((asset) => asset.header.payload as { source: string; sheet: { textureGuid: string; cellWidth: number; cellHeight: number }; frames: Array<{ cell?: number }> })
+      .sort((a, b) => a.sheet.textureGuid.localeCompare(b.sheet.textureGuid));
+    // A 64 × 32 strip cuts two square cells; a 20 × 30 image that is no strip is one frame.
+    expect(sheets.map((sheet) => [sheet.source, sheet.sheet.textureGuid, sheet.sheet.cellWidth, sheet.sheet.cellHeight, sheet.frames.map((frame) => frame.cell)]))
+      .toEqual([["sheet", "tex-Run_10", 32, 32, [1, 2]], ["sheet", "tex-Run_2", 20, 30, [1]]]);
+  });
+
   it("creates a Sprite per Texture, an Actor from a Sprite and a Child Class of that Actor", async () => {
     const registry = await mountProject();
     for (const name of ["Coin", "Gem"]) {
@@ -1849,7 +1887,7 @@ describe("ContentBrowserWorkspace creating assets", () => {
     act(() => docs.noteAssetsCreated());
     tapTile("assets/Coin.texture.hasset");
     tapTile("assets/Gem.texture.hasset", { ctrlKey: true });
-    chooseFromMenu("assets/Gem.texture.hasset", "Create Sprites");
+    chooseFromConvertTo2D("assets/Gem.texture.hasset", "Create Sprites");
     await waitFor(() =>
       expect(registry.list().filter((asset) => asset.header.type === "Sprite").map((asset) => asset.header.name).sort()).toEqual(["Coin", "Gem"]),
     );

@@ -261,6 +261,47 @@ describe("worker entry snapshot transport", () => {
     expect(snapshots()[3]!.frameId).toBe(newest);
   });
 
+  it("posts a pose only when one was written: none while paused, the stepped one, then each tick's again", async () => {
+    const { deliver, runFrames, kinds, snapshots, newestFrame } = await bootWorker(
+      { type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [createActor("prop", "Prop")] } });
+    // The host returns every pose at once, so backpressure never holds one back.
+    let returned = 0;
+    const frames = async (count: number) => {
+      for (let i = 0; i < count; i++) {
+        runFrames(1);
+        while (returned < snapshots().length) deliver({ channel: "recycleSnapshot", payload: snapshots()[returned++]!.buffer });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    };
+    for (let i = 0; i < 100 && !kinds().includes("sceneRealized"); i++) await frames(1);
+    await frames(4);
+    const running = snapshots().length;
+    await frames(6);
+    const ticked = snapshots().slice(running);
+    expect(ticked.length).toBeGreaterThan(0);
+    // Every post carries a newer tick than the one before it: no pose is posted twice.
+    for (let i = 1; i < ticked.length; i++) expect(ticked[i]!.frameId).toBeGreaterThan(ticked[i - 1]!.frameId);
+
+    send!({ type: "setPaused", paused: true });
+    await frames(2);
+    const paused = snapshots().length;
+    await frames(30);
+    expect(snapshots()).toHaveLength(paused);
+
+    // A step writes one pose; the next pump posts it, and then nothing again.
+    send!({ type: "step" });
+    await frames(1);
+    expect(snapshots()).toHaveLength(paused + 1);
+    expect(snapshots().at(-1)!.frameId).toBe(newestFrame());
+    await frames(10);
+    expect(snapshots()).toHaveLength(paused + 1);
+
+    send!({ type: "setPaused", paused: false });
+    await frames(4);
+    expect(snapshots().length).toBeGreaterThan(paused + 1);
+    expect(snapshots().at(-1)!.frameId).toBeGreaterThan(snapshots()[paused]!.frameId);
+  });
+
   it("sends a tick's commands as one batch in emission order, ahead of that tick's pose", async () => {
     const { deliver, posts, runtime, runFrames, snapshots } = await bootWorker(
       { type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [createActor("prop", "Prop")] } });
@@ -273,9 +314,13 @@ describe("worker entry snapshot transport", () => {
       runtime.reportLog("second");
     });
 
-    const before = posts.length;
-    runFrames(1);
-    const frame = posts.slice(before);
+    // A frame whose pump ran no tick (its elapsed time short of a step) writes no pose and posts none: take the next one that ticks.
+    let frame: Post[] = [];
+    for (let i = 0; i < 4 && !frame.some((post) => post.kind === "snapshot"); i++) {
+      const before = posts.length;
+      runFrames(1);
+      frame = posts.slice(before);
+    }
     const poseAt = frame.findIndex((post) => post.kind === "snapshot");
     expect(poseAt).toBeGreaterThan(1);
     const commands = frame.slice(0, poseAt).flatMap((post) => post.kind === "command" ? [post] : []);

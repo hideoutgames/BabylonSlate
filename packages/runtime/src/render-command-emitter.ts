@@ -63,6 +63,8 @@ interface RenderCommandEmitterHost {
   textAppear(): Pick<Text2DAppearRuntime, "progress">;
   materialParameters(): Pick<RuntimeMaterialParameters, "captureOverrides">;
   emit(command: CommandMessage): void;
+  /** The outlines the actor's 2D body casts 2D light shadows with, in its body's frame (`RuntimePhysicsWorlds.occluders2D`). */
+  occluders2D?(actor: Actor): Array<{ closed: boolean; points: number[] }>;
 }
 
 /**
@@ -183,9 +185,16 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
   private emitActorLights2D(actor: Actor, slotId: number): void {
     this.emitComponentBindings(slotId, this.state.light2DSlots, !actor.sceneLayerId && hasLiveComponent(actor, LIGHT_2D_CLASS_ID),
       () => light2DBindings(liveBindingInputs(actor, LIGHT_2D_CLASS_ID, (component) => Object.fromEntries(
-        ["enabled", "lightKind", "color", "intensity", "radius", "innerRadius", "outerAngle", "innerAngle"].map((key) =>
+        ["enabled", "lightKind", "color", "intensity", "radius", "innerRadius", "outerAngle", "innerAngle", "castShadows"].map((key) =>
           [key, key === "color" ? rgbTuple(component.getVariable(key)) : component.getVariable(key)])))),
       (lights) => this.host.emit({ type: "setLights2D", slotId, lights }));
+  }
+
+  /** The actor's 2D shadow casters: its 2D body's solid collider outlines, sent when they change and with its visual. */
+  emitActorOccluders2D(actor: Actor, slotId: number): void {
+    const shapes = actor.sceneLayerId ? [] : this.host.occluders2D?.(actor) ?? [];
+    this.emitComponentBindings(slotId, this.state.occluder2DSlots, shapes.length > 0, () => shapes,
+      (sent) => this.host.emit({ type: "setOccluders2D", slotId, shapes: sent }));
   }
 
   /** Send the slot's bindings when it `has` any, or the empty list when its last send (in `slots`) had some. */
@@ -243,6 +252,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
     this.emitActorReflectionProbes(actor, slotId);
     this.emitActorAreaLights(actor, slotId);
     this.emitActorLights2D(actor, slotId);
+    this.emitActorOccluders2D(actor, slotId);
     const skipButtonMesh =
       overlayButtonHasSiblingVisual(actor) ||
       overlayButtonHasParentVisual(actor, this.host.world());

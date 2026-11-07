@@ -63,6 +63,11 @@ let snapshotPing = new TransferablePingPong(256);
 const MAX_IN_FLIGHT_SNAPSHOTS = 2;
 let inFlightSnapshots = 0;
 let snapshotSkipped = false;
+// The runtime and write serial (`snapshotSerial`) of the last pose posted. A pump that ran no
+// tick (always while paused) posts nothing: the host already holds that pose. Clearing
+// `postedRuntime` makes the next pump post the current pose again.
+let postedRuntime: RuntimeDriver | null = null;
+let postedSerial = 0;
 // One-shot replies that describe a pose and were held by backpressure; each
 // is sent, in order, right after the next pose snapshot. Never dropped.
 let afterPose: CommandMessage[] = [];
@@ -563,6 +568,7 @@ function publishSnapshot(): boolean {
     snapshotSkipped = true;
     return false;
   }
+  const serial = rt.snapshotSerial;
   const buf = snapshotPing.beginWrite();
   if (!rt.copySnapshot(buf)) {
     snapshotPing.cancelWrite();
@@ -571,9 +577,17 @@ function publishSnapshot(): boolean {
   const ab = snapshotPing.commitWrite();
   inFlightSnapshots++;
   snapshotSkipped = false;
+  postedRuntime = rt;
+  postedSerial = serial;
   post({ channel: "snapshot", payload: ab, generation: installedGeneration }, [ab]);
   releaseAfterPose();
   return true;
+}
+
+/** Post the newest pose when one was written since the last post; markers, edits and skipped poses post through `publishSnapshot`. */
+function publishNewSnapshot(): void {
+  const rt = runtime;
+  if (rt && (rt !== postedRuntime || rt.snapshotSerial !== postedSerial)) publishSnapshot();
 }
 
 function pump(elapsed: number): void {
@@ -581,7 +595,7 @@ function pump(elapsed: number): void {
   if (!rt) return;
   try {
     rt.advance(elapsed);
-    if (!sceneSnapshots.flush()) publishSnapshot();
+    if (!sceneSnapshots.flush()) publishNewSnapshot();
   } finally {
     flushCommands();
   }
@@ -610,6 +624,8 @@ function handleHostMessage(msg: BridgeHostMessage): void {
   if (msg.channel === "snapshotLayoutAck" && msg.generation === pendingGeneration) {
     installedGeneration = msg.generation;
     pendingGeneration = null;
+    // The host emptied its pose when it installed the layout: the next pump posts the current one.
+    postedRuntime = null;
     sceneSnapshots.flush();
   }
 }

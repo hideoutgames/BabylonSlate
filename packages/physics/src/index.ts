@@ -77,3 +77,4 @@ export {
 
 export { prepareColliderShape } from "./collider-validation";
 export { RagdollPhysics } from "./ragdoll";
+export { occluder2DShapes, type Occluder2DShape } from "./occluder-2d";

@@ -212,10 +212,18 @@ export function light2DPropertyRows(
         max: properties.outerAngle,
         onChange: (next) => update("innerAngle", next),
       },
+      {
+        kind: "boolean",
+        id: rowId(actorId, component.id, "castShadows"),
+        label: "Cast Shadows",
+        description: "Solid 2D colliders block the light; needs the scene's 2D physics world.",
+        value: properties.castShadows,
+        onChange: (next) => update("castShadows", next),
+      },
     );
   }
   rows.push(...genericRows(actorId, component, update,
-    new Set(["enabled", "lightKind", "color", "intensity", "radius", "innerRadius", "outerAngle", "innerAngle"])));
+    new Set(["enabled", "lightKind", "color", "intensity", "radius", "innerRadius", "outerAngle", "innerAngle", "castShadows"])));
   return rows;
 }
 

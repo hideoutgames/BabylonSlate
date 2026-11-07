@@ -49,6 +49,7 @@ export function createRenderEmitter(rt: RuntimeComposition): RenderCommandEmitte
     textAppear: () => rt.textAppear,
     materialParameters: () => rt.materialParameters,
     emit: (command) => rt.emit(command),
+    occluders2D: (actor) => rt.physics.occluders2D(actor),
   });
 }
 
@@ -234,6 +235,10 @@ export function createPhysics(
     frameId: () => rt.frameId,
     recordDiagnostic: (diagnostic) => recordDiagnostic(rt, diagnostic),
     emit: (command) => rt.emit(command),
+    occludersChanged: (actor) => {
+      const slotId = rt.renderSlots.recordedSlot(actor);
+      if (slotId !== undefined) rt.renderEmitter.emitActorOccluders2D(actor, slotId);
+    },
   }, {
     kind: options.physicsWorld ?? options.playScene?.settings.physicsWorld ?? "3d",
     gravity: options.gravity ?? [0, -9.81, 0],

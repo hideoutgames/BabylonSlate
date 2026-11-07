@@ -24,6 +24,12 @@ import { hasActorIllumination } from "./snapshot-illumination";
 type SpringArmPlayState = { store: SpringArmLagStore; slots: Set<number>; lastMs: number | null };
 
 const springArmStates = new WeakMap<SnapshotSceneBinding, SpringArmPlayState>();
+const NO_SPRING_ARM_SLOTS: ReadonlySet<number> = new Set();
+
+/** The slots whose spring arms lag on the host's clock. */
+export function playSpringArmSlots(binding: SnapshotSceneBinding): ReadonlySet<number> {
+  return springArmStates.get(binding)?.slots ?? NO_SPRING_ARM_SLOTS;
+}
 
 function springArmStateOf(binding: SnapshotSceneBinding): SpringArmPlayState {
   let state = springArmStates.get(binding);
@@ -85,7 +91,7 @@ const scratchAnchorScale = new Vector3();
 const scratchAnchorRotation = new Quaternion();
 const scratchAnchorPosition = new Vector3();
 
-/** Step every spring arm lag once per applied snapshot and pose cameras at their sockets. */
+/** Step every spring arm lag by the wall time since its last step and pose cameras at their sockets. */
 export function updatePlaySpringArms(binding: SnapshotSceneBinding, nowMs: number): void {
   const state = springArmStates.get(binding);
   if (!state || state.slots.size === 0) return;

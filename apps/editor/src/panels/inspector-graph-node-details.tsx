@@ -26,8 +26,7 @@ import { Input } from "@haptic/ui/components/input";
 import { Button } from "@haptic/ui/components/button";
 import { useRegistryState } from "../context/document-context";
 import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
-import { JsBodyEditor } from "../components/js-body-editor";
-import { GlslCodePreview } from "../components/glsl-code-preview";
+import { LazyGlslCodePreview, LazyJsBodyEditor } from "../components/lazy-code-editors";
 import { DataTreeEntryField } from "../components/data-tree-entry-picker";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import { executeJavaScriptNameError } from "@haptic/scripting-nodes";
@@ -469,8 +468,8 @@ export function GraphNodeDetails({
             <MultilineTextField code title="JavaScript Function Body" data-testid="class-node-code"
               value={String(selectedNode.data.body ?? "")}
               onChange={(body) => updateNodeData({ body })}
-              renderPreview={(value) => <GlslCodePreview value={value} language="javascript" />}
-              renderEditor={(value, onChange) => <JsBodyEditor value={value} onChange={onChange} bodyLine={focusBodyLine} names={[...inputs, ...outputs].map((pin) => pin.name)} />}
+              renderPreview={(value) => <LazyGlslCodePreview value={value} language="javascript" />}
+              renderEditor={(value, onChange) => <LazyJsBodyEditor value={value} onChange={onChange} bodyLine={focusBodyLine} names={[...inputs, ...outputs].map((pin) => pin.name)} />}
             />
           </>
         ) : null}

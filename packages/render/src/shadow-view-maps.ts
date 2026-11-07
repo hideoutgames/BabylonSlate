@@ -97,20 +97,24 @@ export class ShadowViewMaps {
   }
   /**
    * Mirrors the maps a sync admitted with `settings`, after their releases and replacements, as tiles of the
-   * `atlasEdge`-texel atlas (`ShadowAdmissionPlan.atlasEdge`).
+   * `atlasEdge`-texel atlas (`ShadowAdmissionPlan.atlasEdge`). Whether any view's map was built or dropped.
    */
-  sync(settings: ShadowSettings, casterBounds: () => CasterBounds | undefined, atlasEdge: number): void {
+  sync(settings: ShadowSettings, casterBounds: () => CasterBounds | undefined, atlasEdge: number): boolean {
     this.settings = settings;
     this.atlasEdge = atlasEdge;
-    for (const view of this.views.values()) this.syncView(view, casterBounds);
+    let changed = false;
+    for (const view of this.views.values()) if (this.syncView(view, casterBounds)) changed = true;
+    return changed;
   }
   /**
    * Drops every view's mirrors of scene maps released or replaced since, before their replacements are built: their
-   * tiles go back with the scene map's, and the atlas with its last tile.
+   * tiles go back with the scene map's, and the atlas with its last tile. Whether any was dropped.
    */
-  prune(): void {
+  prune(): boolean {
+    let dropped = false;
     for (const view of this.views.values())
-      for (const [light, map] of view.maps) if (this.stale(light, map.mirrors)) this.dropViewMap(view, light);
+      for (const [light, map] of view.maps) if (this.stale(light, map.mirrors) && this.dropViewMap(view, light)) dropped = true;
+    return dropped;
   }
   /** Every view's map, view by view. */
   forEachMap(action: (map: ViewMap) => void): void {
@@ -139,17 +143,18 @@ export class ShadowViewMaps {
   /**
    * Mirrors every admitted sun map for `view` and drops mirrors of replaced or
    * released maps. Settings that keep the allocation apply in place, as they do
-   * to the scene map. Point and spot maps stay shared.
+   * to the scene map. Point and spot maps stay shared. Whether a map of the view was built or dropped.
    */
   private syncView(
     view: View,
     casterBounds: () => CasterBounds | undefined,
-  ): void {
+  ): boolean {
     const settings = this.settings;
-    for (const [light, map] of view.maps) if (this.stale(light, map.mirrors)) this.dropViewMap(view, light);
+    let changed = false;
+    for (const [light, map] of view.maps) if (this.stale(light, map.mirrors) && this.dropViewMap(view, light)) changed = true;
     for (const [light, { mirrors }] of view.refused)
       if (this.entries.get(light)?.generator !== mirrors) view.refused.delete(light);
-    if (!settings) return;
+    if (!settings) return changed;
     const now = performance.now();
     for (const entry of this.entries.values()) {
       const source = entry.generator;
@@ -164,8 +169,9 @@ export class ShadowViewMaps {
       }
       const refused = view.refused.get(entry.light);
       if (refused?.mirrors === source && now < refused.retryAt) continue;
-      this.createViewMap(view, entry, source, settings, casterBounds());
+      if (this.createViewMap(view, entry, source, settings, casterBounds())) changed = true;
     }
+    return changed;
   }
   /** Whether a mirror of `light`'s map `mirrors` outlived it: the scene map was released or replaced since. */
   private stale(light: Light, mirrors: ShadowGenerator): boolean {
@@ -176,7 +182,7 @@ export class ShadowViewMaps {
    * The scene map's cascade tiles for the view's camera, of the size the atlas has room for, halving at once, in the
    * room the scene view's admitted and standby maps leave; it samples neutrally until its first draw. Refused at every
    * size, the view's receivers sample the scene view's map instead, and the view asks again later
-   * (`VIEW_REFUSAL_RETRY_MS`, or once the scene map changes).
+   * (`VIEW_REFUSAL_RETRY_MS`, or once the scene map changes). Whether it built the map.
    */
   private createViewMap(
     view: View,
@@ -184,8 +190,8 @@ export class ShadowViewMaps {
     source: ShadowGenerator,
     settings: ShadowSettings,
     casterBounds: CasterBounds | undefined,
-  ): void {
-    if (!isAtlasShadow(source)) return;
+  ): boolean {
+    if (!isAtlasShadow(source)) return false;
     const layers = source instanceof CascadedShadowGenerator ? source.numCascades : 1;
     for (let mapSize = entry.mapSize; mapSize >= 256; mapSize /= 2) {
       const cleanup = shadowAllocationCheckpoint(this.scene);
@@ -195,7 +201,7 @@ export class ShadowViewMaps {
         neutralUntilRendered(generator);
         view.maps.set(entry.light, { generator, mirrors: source, passes: layers });
         view.refused.delete(entry.light);
-        return;
+        return true;
       } catch (error) {
         const failures: unknown[] = [error];
         try {
@@ -218,6 +224,7 @@ export class ShadowViewMaps {
       refusedReflections.add(source);
       console.warn(`[render] Reflections draw "${entry.light.name}" unshadowed: their own sun maps do not fit the shadow atlas.`);
     }
+    return false;
   }
   /**
    * When a scene view's map finds no room in the shadow atlas, the views' maps give way: it is built again with their
@@ -232,10 +239,10 @@ export class ShadowViewMaps {
       }
     return yielded;
   }
-  /** Disposes a view's map; its tiles go back to the atlas. */
-  private dropViewMap(view: View, light: Light): void {
+  /** Disposes a view's map; its tiles go back to the atlas. Whether the view held one for `light`. */
+  private dropViewMap(view: View, light: Light): boolean {
     const map = view.maps.get(light);
-    if (!map) return;
+    if (!map) return false;
     view.maps.delete(light);
     try {
       map.generator.dispose();
@@ -245,6 +252,7 @@ export class ShadowViewMaps {
       view.pending.add(failed);
       failed.catch(() => {});
     }
+    return true;
   }
   private releaseView(view: View): Promise<void> {
     if (this.views.get(view.camera) === view) this.views.delete(view.camera);
