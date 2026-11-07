@@ -106,7 +106,7 @@ function isRepoRootStyle(pathname: string): boolean {
   );
 }
 
-export type MarkdownLinkEnv = {
+type MarkdownLinkEnv = {
   relativePath?: string;
 };
 

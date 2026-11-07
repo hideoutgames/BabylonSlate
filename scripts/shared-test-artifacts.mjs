@@ -143,7 +143,7 @@ async function artifactFiles(directory, prefix = "") {
   return files;
 }
 
-export async function writeArtifactManifest(directory) {
+async function writeArtifactManifest(directory) {
   const files = await artifactFiles(directory);
   if (!files.some((file) => file.path === "index.html"))
     throw new Error("Test artifact has no index.html");

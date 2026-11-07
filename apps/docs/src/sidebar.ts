@@ -24,7 +24,7 @@ function fileForLink(link: string): string {
 }
 
 /** The page's `# Heading`, so sidebar labels follow the page. */
-export function pageTitle(link: string): string {
+function pageTitle(link: string): string {
   const file = fileForLink(link);
   if (!existsSync(file)) {
     throw new Error(`Sidebar link ${link} has no page at ${path.relative(docsRoot, file)}.`);
@@ -68,7 +68,7 @@ export function indexGroups(dir: string): IndexGroup[] {
  * Sidebar for a reference folder, built from its `index.md`: every `## Group`
  * heading becomes a collapsed group holding the folder pages linked under it.
  */
-export function referenceSidebar(dir: string, title: string): SidebarItem[] {
+function referenceSidebar(dir: string, title: string): SidebarItem[] {
   return [
     { text: title, link: `/${dir}/` },
     ...indexGroups(dir).map(({ title: text, pages }) => ({ text, collapsed: true, items: pages })),
@@ -79,7 +79,7 @@ export function referenceSidebar(dir: string, title: string): SidebarItem[] {
  * Sidebar for a node reference: one link per node family into the graph's
  * index. Listing every node would repeat hundreds of links in every page.
  */
-export function nodeGraphSidebar(dir: string, title: string): SidebarItem[] {
+function nodeGraphSidebar(dir: string, title: string): SidebarItem[] {
   return [
     { text: "Scripting", link: "/scripting/" },
     {
@@ -98,7 +98,7 @@ export const NODE_GRAPHS = [
   { dir: "scripting/behaviour-tree", title: "Behaviour Tree Nodes" },
 ] as const;
 
-export function guideSidebar(): SidebarItem[] {
+function guideSidebar(): SidebarItem[] {
   return [
     {
       text: "Get Started",
