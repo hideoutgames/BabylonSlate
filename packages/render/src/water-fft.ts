@@ -7,7 +7,8 @@
  * - h0: the initial spectrum (`waterSpectrumInitial`), uploaded as an RGBA32F raw texture (`cascades · N` × N).
  * - Per dispatch: one time-evolution pass into an RGBA32F work atlas (`2 · cascades · N` × N), log2 N horizontal and
  *   log2 N − 1 vertical Stockham butterfly passes ping-ponging between two work atlases (every cascade in one draw), then
- *   the last vertical pass once per output layer; then the foam pass per cascade and both outputs' mips. ∂Dx/∂z shares
+ *   the last vertical pass once per output layer; then the foam pass per cascade and both outputs' mips. Nothing in the
+ *   work atlases outlives a dispatch, so a Scene's simulations share one pair (`WaterFftWork`). ∂Dx/∂z shares
  *   its complex transform with Dz and is up to 100× larger, so it travels divided by `layout.shearScales[c]` and the
  *   final pass multiplies it back: rounding in one half never swamps the other.
  *
@@ -333,6 +334,64 @@ function keepSpectrum(engine: AbstractEngine, key: string, data: Float32Array): 
   }
 }
 
+/**
+ * The two RGBA32F work atlases (`2 · cascades · N` × N) every simulation of one size in a Scene dispatches through: a
+ * dispatch writes the first in full (the evolve pass) before it reads either, and dispatches run one at a time, so
+ * nothing in the pair outlives a dispatch. Leased once, released with the last simulation using it.
+ */
+class WaterFftWork {
+  readonly targets: [RenderTargetWrapper, RenderTargetWrapper];
+  readonly textures: [ThinTexture, ThinTexture];
+  private users = 0;
+  disposed = false;
+
+  private constructor(
+    readonly engine: AbstractEngine, readonly size: number, readonly cascades: number,
+    targets: [RenderTargetWrapper, RenderTargetWrapper], private readonly lease: ManagedRenderLease,
+  ) {
+    this.targets = targets;
+    this.textures = [new ThinTexture(targets[0].texture), new ThinTexture(targets[1].texture)];
+  }
+
+  /** Allocates the pair under its own lease; null when the ledger refuses or allocation fails. */
+  static create(engine: AbstractEngine, size: number, cascades: number): WaterFftWork | null {
+    const bytes = renderTargetAllocationBytes({ width: 2 * cascades * size, height: size, format: RGBA, type: Constants.TEXTURETYPE_FLOAT });
+    const lease = beginManagedRenderAllocation(engine, 2 * bytes);
+    if (!lease) return null;
+    const owned: RenderTargetWrapper[] = [];
+    try {
+      const work = (label: string) => {
+        const target = engine.createRenderTargetTexture({ width: 2 * cascades * size, height: size }, {
+          type: Constants.TEXTURETYPE_FLOAT, format: RGBA, samplingMode: Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+          generateMipMaps: false, generateDepthBuffer: false, generateStencilBuffer: false, label,
+        });
+        owned.push(target);
+        return target;
+      };
+      const targets: [RenderTargetWrapper, RenderTargetWrapper] = [work("Water FFT work A"), work("Water FFT work B")];
+      lease.commit(targets.map((target) => ({ handle: target.texture!, bytes, category: "water" as const })));
+      return new WaterFftWork(engine, size, cascades, targets, lease);
+    } catch {
+      for (const target of owned) target.dispose();
+      void releaseManagedRenderLeaseAfterDisposal(engine, lease);
+      return null;
+    }
+  }
+
+  acquire(): this {
+    this.users++;
+    return this;
+  }
+
+  /** Drops one simulation's use; the last frees the pair, then its lease (after WebGPU drains its deferred destruction). */
+  release(): void {
+    if (this.disposed || --this.users > 0) return;
+    this.disposed = true;
+    for (const target of this.targets) target.dispose();
+    void releaseManagedRenderLeaseAfterDisposal(this.engine, this.lease);
+  }
+}
+
 class WaterFftSimulation {
   readonly texture: BaseTexture;
   /** Run of the last request; `updateSceneWaterFft` dispatches only simulations requested in its run. */
@@ -343,7 +402,6 @@ class WaterFftSimulation {
   disposed = false;
   dispatches = 0;
   private readonly h0Texture: ThinTexture;
-  private readonly workTextures: [ThinTexture, ThinTexture];
   private readonly renderer: EffectRenderer;
   private readonly evolve: EffectWrapper;
   private readonly butterfly: EffectWrapper;
@@ -357,13 +415,14 @@ class WaterFftSimulation {
   readonly engine: AbstractEngine;
   layout: WaterFftLayout;
   private readonly h0: InternalTexture;
-  private readonly work: [RenderTargetWrapper, RenderTargetWrapper];
+  /** The Scene's shared work pair of this size (`WaterFftWork`), held until this simulation is disposed. */
+  private readonly work: WaterFftWork;
   private readonly output: RenderTargetWrapper;
   private readonly lease: ManagedRenderLease;
 
   private constructor(
     engine: AbstractEngine, layout: WaterFftLayout, h0: InternalTexture,
-    work: [RenderTargetWrapper, RenderTargetWrapper], output: RenderTargetWrapper, lease: ManagedRenderLease,
+    work: WaterFftWork, output: RenderTargetWrapper, lease: ManagedRenderLease,
     foam: [RenderTargetWrapper, RenderTargetWrapper],
   ) {
     this.engine = engine; this.layout = layout; this.h0 = h0;
@@ -380,7 +439,6 @@ class WaterFftSimulation {
     this.foamTargets = foam;
     this.foamTextures = [wrap(foam[0], "Water FFT Foam A"), wrap(foam[1], "Water FFT Foam B")];
     this.h0Texture = new ThinTexture(h0);
-    this.workTextures = [new ThinTexture(work[0].texture), new ThinTexture(work[1].texture)];
     this.renderer = new EffectRenderer(engine);
     const language = engine.isWebGPU ? 1 : 0;
     this.evolve = new EffectWrapper({
@@ -406,11 +464,13 @@ class WaterFftSimulation {
   get cascades(): number { return this.layout.cascades; }
 
   /**
-   * Reserves the whole footprint in the managed ledger, then allocates and uploads the completed unit spectrum; null
-   * when the ledger refuses or allocation fails. No CPU spectrum work.
+   * Reserves its own footprint in the managed ledger (the shared `work` pair has its own lease), then allocates and
+   * uploads the completed unit spectrum; null when the ledger refuses or allocation fails. Takes one use of `work`,
+   * which it drops when it fails or is disposed. No CPU spectrum work.
    */
-  static create(engine: AbstractEngine, layout: WaterFftLayout, spectrum: Float32Array): WaterFftSimulation | null {
+  static create(engine: AbstractEngine, layout: WaterFftLayout, spectrum: Float32Array, work: WaterFftWork): WaterFftSimulation | null {
     const { size, cascades } = layout, caps = engine.getCaps();
+    work.acquire();
     // Half-float output where renderable; float output keeps the ocean where only float targets render.
     const outputType = caps.textureHalfFloatRender ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_FLOAT;
     // Water samples its normals and foam through mips (trilinear), so far water filters instead of aliasing.
@@ -418,24 +478,17 @@ class WaterFftSimulation {
     const outputSampling = mips ? Constants.TEXTURE_TRILINEAR_SAMPLINGMODE : Constants.TEXTURE_NEAREST_SAMPLINGMODE;
     const mipFactor = mips ? 4 / 3 : 1;
     const h0Bytes = renderTargetAllocationBytes({ width: cascades * size, height: size, format: RGBA, type: Constants.TEXTURETYPE_FLOAT });
-    const workBytes = renderTargetAllocationBytes({ width: 2 * cascades * size, height: size, format: RGBA, type: Constants.TEXTURETYPE_FLOAT });
     const outputBytes = Math.ceil(renderTargetAllocationBytes({ width: size, height: size, layers: 2 * cascades, format: RGBA, type: outputType }) * mipFactor);
     const foamBytes = Math.ceil(renderTargetAllocationBytes({ width: size, height: size, layers: cascades, format: RGBA, type: outputType }) * mipFactor);
-    const lease = beginManagedRenderAllocation(engine, h0Bytes + 2 * workBytes + outputBytes + 2 * foamBytes);
-    if (!lease) return null;
+    const lease = beginManagedRenderAllocation(engine, h0Bytes + outputBytes + 2 * foamBytes);
+    if (!lease) {
+      work.release();
+      return null;
+    }
     const owned: { dispose(): void }[] = [];
     try {
       const h0 = engine.createRawTexture(spectrum, cascades * size, size, RGBA, false, false, Constants.TEXTURE_NEAREST_SAMPLINGMODE, null, Constants.TEXTURETYPE_FLOAT);
       owned.push(h0);
-      const work = (label: string) => {
-        const target = engine.createRenderTargetTexture({ width: 2 * cascades * size, height: size }, {
-          type: Constants.TEXTURETYPE_FLOAT, format: RGBA, samplingMode: Constants.TEXTURE_NEAREST_SAMPLINGMODE,
-          generateMipMaps: false, generateDepthBuffer: false, generateStencilBuffer: false, label,
-        });
-        owned.push(target);
-        return target;
-      };
-      const targets: [RenderTargetWrapper, RenderTargetWrapper] = [work("Water FFT work A"), work("Water FFT work B")];
       const output = engine.createRenderTargetTexture({ width: size, height: size, layers: 2 * cascades }, {
         type: outputType, format: RGBA, samplingMode: outputSampling,
         generateMipMaps: mips, generateDepthBuffer: false, generateStencilBuffer: false, label: "Water FFT ocean",
@@ -452,16 +505,15 @@ class WaterFftSimulation {
       const foam: [RenderTargetWrapper, RenderTargetWrapper] = [foamTarget("Water FFT foam A"), foamTarget("Water FFT foam B")];
       lease.commit([
         { handle: h0, bytes: h0Bytes, category: "water" },
-        { handle: targets[0].texture!, bytes: workBytes, category: "water" },
-        { handle: targets[1].texture!, bytes: workBytes, category: "water" },
         { handle: output.texture!, bytes: outputBytes, category: "water" },
         ...foam.map((target) => ({ handle: target.texture!, bytes: foamBytes, category: "water" as const })),
       ]);
-      return new WaterFftSimulation(engine, layout, h0, targets, output, lease, foam);
+      return new WaterFftSimulation(engine, layout, h0, work, output, lease, foam);
     } catch {
       // A device that cannot allocate keeps analytic-only water, like a ledger refusal.
       for (const resource of owned) resource.dispose();
       void releaseManagedRenderLeaseAfterDisposal(engine, lease);
+      work.release();
       return null;
     }
   }
@@ -487,7 +539,8 @@ class WaterFftSimulation {
     try {
       engine.setAlphaMode(Constants.ALPHA_DISABLE);
       engine.setColorWrite(true);
-      engine.bindFramebuffer(this.work[0], 0, undefined, undefined, true);
+      const work = this.work.targets;
+      engine.bindFramebuffer(work[0], 0, undefined, undefined, true);
       renderer.applyEffectWrapper(this.evolve);
       const evolve = this.evolve.effect;
       evolve.setTexture("h0Texture", this.h0Texture);
@@ -495,10 +548,10 @@ class WaterFftSimulation {
       evolve.setFloat4("fftPatch", 2 * Math.PI / patchSizes[0]!, 2 * Math.PI / (patchSizes[1] ?? 1), 2 * Math.PI / (patchSizes[2] ?? 1), 0);
       evolve.setFloat4("fftShear", 1 / shearScales[0]!, 1 / (shearScales[1] ?? 1), 1 / (shearScales[2] ?? 1), 0);
       renderer.draw();
-      engine.unBindFramebuffer(this.work[0], true);
+      engine.unBindFramebuffer(work[0], true);
       let source = 0;
-      for (let stage = 0; stage < stages; stage++, source ^= 1) this.stage(source, this.work[source ^ 1]!, 0, stage, true, 0, 1);
-      for (let stage = 0; stage < stages - 1; stage++, source ^= 1) this.stage(source, this.work[source ^ 1]!, 0, stage, false, 0, 1);
+      for (let stage = 0; stage < stages; stage++, source ^= 1) this.stage(source, work[source ^ 1]!, 0, stage, true, 0, 1);
+      for (let stage = 0; stage < stages - 1; stage++, source ^= 1) this.stage(source, work[source ^ 1]!, 0, stage, false, 0, 1);
       for (let layer = 0; layer < 2 * cascades; layer++) {
         this.stage(source, this.output, layer, stages - 1, false, layer * size, layer & 1 ? 1 : shearScales[layer >> 1]!);
       }
@@ -547,7 +600,7 @@ class WaterFftSimulation {
     engine.bindFramebuffer(target, 0, undefined, undefined, true, 0, layer);
     this.renderer.applyEffectWrapper(this.butterfly);
     const effect = this.butterfly.effect;
-    effect.setTexture("fftInput", this.workTextures[source]!);
+    effect.setTexture("fftInput", this.work.textures[source]!);
     effect.setFloat4("fftStage", 1 << stage, horizontal ? 1 : 0, xOffset, this.layout.size);
     effect.setFloat4("fftScale", 1, 1, 1, shear);
     this.renderer.draw();
@@ -566,13 +619,13 @@ class WaterFftSimulation {
     this.foamTargets.forEach((target) => target.dispose());
     const foamEffect = this.foamEffect;
     retireOwnedEffect(foamEffect.effect, () => foamEffect.dispose());
-    this.work[0].dispose(); this.work[1].dispose();
     this.h0.dispose();
     this.renderer.dispose();
     const evolve = this.evolve, butterfly = this.butterfly;
     retireOwnedEffect(evolve.effect, () => evolve.dispose());
     retireOwnedEffect(butterfly.effect, () => butterfly.dispose());
     void releaseManagedRenderLeaseAfterDisposal(engine, this.lease);
+    this.work.release();
   }
 }
 
@@ -595,6 +648,8 @@ type SceneFft = {
   /** Observer run counter: requests mark the current run, `updateSceneWaterFft` processes it and advances. */
   run: number;
   sims: WaterFftSimulation[];
+  /** The work pair the simulations share: all are of the Water quality's size (others retire before any is created). */
+  work: WaterFftWork | null;
   byKey: Map<string, WaterFftSimulation>;
   definitions: WeakMap<WaterDefinition, DefinitionEntry>;
   /** Entries without a simulation this run; resolved after every request is in, so recycling never steals a live one. */
@@ -619,7 +674,7 @@ function sceneFft(scene: Scene): SceneFft {
   let state = scenes.get(scene);
   if (!state) {
     const owned: SceneFft = state = {
-      run: 0, sims: [], byKey: new Map(), definitions: new WeakMap(), pending: [], deniedUntil: 0,
+      run: 0, sims: [], work: null, byKey: new Map(), definitions: new WeakMap(), pending: [], deniedUntil: 0,
       build: null, buildWanted: -1, nextBuild: null,
       created: 0, retargeted: 0, respectrummed: 0, retired: 0, denied: 0, built: 0,
     };
@@ -698,6 +753,14 @@ function idleSimulation(state: SceneFft, layout: WaterFftLayout, run: number, id
   return idle;
 }
 
+/** The Scene's work pair for `layout`'s size, allocated when it has none of that size; null when the ledger refuses it. */
+function sharedWork(state: SceneFft, engine: AbstractEngine, layout: WaterFftLayout): WaterFftWork | null {
+  const current = state.work;
+  if (current && !current.disposed && current.size === layout.size && current.cascades === layout.cascades) return current;
+  // A simulation creating it takes its first use; one refused after it releases it at once.
+  return state.work = WaterFftWork.create(engine, layout.size, layout.cascades);
+}
+
 /** Moves `sim` to `layout`'s key in the shared-simulation index. */
 function rekey(state: SceneFft, sim: WaterFftSimulation, layout: WaterFftLayout): void {
   if (state.byKey.get(sim.key) === sim) state.byKey.delete(sim.key);
@@ -732,7 +795,8 @@ function resolve(scene: Scene, state: SceneFft, entry: DefinitionEntry, run: num
     }
     let reuse = idleSimulation(state, layout, run, WATER_FFT_RECYCLE_RUNS);
     if (!reuse && state.sims.length < WATER_FFT_MAX_SIMULATIONS && run >= state.deniedUntil) {
-      sim = WaterFftSimulation.create(engine, layout, spectrum);
+      const work = sharedWork(state, engine, layout);
+      sim = work && WaterFftSimulation.create(engine, layout, spectrum, work);
       if (sim) {
         state.sims.push(sim);
         state.byKey.set(layout.key, sim);
