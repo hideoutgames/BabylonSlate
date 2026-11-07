@@ -683,11 +683,17 @@ export function* syncAuthoredIlluminationSteps(
       }
     }
     if (actor.components.some((component) => component.classId === LIGHT_2D_CLASS_ID)) {
-      liveLights2D.add(actor.id);
-      let group = state.lights2D.get(actor.id);
-      if (!group) { group = new Light2DGroup(scene); state.lights2D.set(actor.id, group); }
-      group.setWorld(actorWorld(actor));
-      group.update(light2DBindings(actor.components));
+      // An actor whose attachment is missing has no world pose: its 2D lights report it rather than stop the sync.
+      try {
+        const world = actorWorld(actor);
+        liveLights2D.add(actor.id);
+        let group = state.lights2D.get(actor.id);
+        if (!group) { group = new Light2DGroup(scene); state.lights2D.set(actor.id, group); }
+        group.setWorld(world);
+        group.update(light2DBindings(actor.components));
+      } catch (error) {
+        options.onDiagnostic?.(`2D Light ${actor.id}: ${String(error)}`);
+      }
     }
     const lightComponents = actor.components.filter(component =>
       component.classId === HEMISPHERIC_FILL_LIGHT_CLASS_ID || component.classId === "LightComponent");
