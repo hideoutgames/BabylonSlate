@@ -231,6 +231,10 @@ class RecastNavigationBackend implements NavigationBackend {
   private nextObstacle = 1;
   private agents = new Map<string, CrowdAgent>();
   private nextAgent = 1;
+  /** Each agent's last `syncAgentPosition`: the position it got, where it projected, and the navmesh it read. */
+  private readonly agentSyncs = new Map<string, AgentSync>();
+  /** Advances on an import and on each flush that rebuilt tiles or restamped areas, which can move a projection. */
+  private meshRevision = 0;
   private costVolumes = new Map<
     string,
     { volume: NavCostVolume; polyRefs: number[] }
@@ -253,6 +257,7 @@ class RecastNavigationBackend implements NavigationBackend {
     // Move targets project onto the mesh with the same reach as path queries.
     this.crowd.navMeshQuery.defaultQueryHalfExtents = { ...QUERY_EXTENTS };
     this.applyAreaCosts();
+    this.meshRevision += 1;
   }
 
   findPath(from: NavPoint, to: NavPoint): NavPoint[] {
@@ -453,6 +458,7 @@ class RecastNavigationBackend implements NavigationBackend {
 
   removeAgent(id: string): void {
     const agent = this.agents.get(id);
+    this.agentSyncs.delete(id);
     if (!agent || !this.crowd) {
       this.agents.delete(id);
       return;
@@ -462,17 +468,31 @@ class RecastNavigationBackend implements NavigationBackend {
   }
 
   agentPosition(id: string): NavPoint | null {
-    const agent = this.agents.get(id);
-    if (!agent) return null;
-    const point = agent.position();
-    return { x: point.x, y: point.y, z: point.z };
+    const point = { x: 0, y: 0, z: 0 };
+    return this.agentPositionInto(id, point) ? point : null;
   }
 
   agentVelocity(id: string): NavPoint | null {
-    const agent = this.agents.get(id);
-    if (!agent) return null;
-    const point = agent.velocity();
-    return { x: point.x, y: point.y, z: point.z };
+    const point = { x: 0, y: 0, z: 0 };
+    return this.agentVelocityInto(id, point) ? point : null;
+  }
+
+  agentPositionInto(id: string, out: NavPoint): boolean {
+    const raw = this.agents.get(id)?.raw;
+    if (!raw) return false;
+    out.x = raw.get_npos(0);
+    out.y = raw.get_npos(1);
+    out.z = raw.get_npos(2);
+    return true;
+  }
+
+  agentVelocityInto(id: string, out: NavPoint): boolean {
+    const raw = this.agents.get(id)?.raw;
+    if (!raw) return false;
+    out.x = raw.get_vel(0);
+    out.y = raw.get_vel(1);
+    out.z = raw.get_vel(2);
+    return true;
   }
 
   agentDebugState(id: string): NavAgentDebugState | null {
@@ -500,14 +520,36 @@ class RecastNavigationBackend implements NavigationBackend {
   }
 
   syncAgentPosition(id: string, position: NavPoint): boolean {
+    // As `closestPoint` would, so the revision below covers every pending change.
+    this.flushPendingChanges();
     const agent = this.agents.get(id);
+    const last = this.agentSyncs.get(id);
+    // The same input over the same navmesh projects to the same point. npos holds
+    // that point exactly (both are float32) unless the crowd step moved it since.
+    if (agent && last && last.revision === this.meshRevision &&
+      last.x === position.x && last.y === position.y && last.z === position.z &&
+      agent.raw.get_npos(0) === last.px && agent.raw.get_npos(1) === last.py && agent.raw.get_npos(2) === last.pz) {
+      return true;
+    }
     const projected = this.closestPoint(position);
-    if (!agent || !projected) return false;
+    if (!agent || !projected) {
+      this.agentSyncs.delete(id);
+      return false;
+    }
     // Detour moves the corridor to npos during update. teleport() would reset
     // both the target and accumulated velocity, preventing physical steering.
     agent.raw.set_npos(0, projected.x);
     agent.raw.set_npos(1, projected.y);
     agent.raw.set_npos(2, projected.z);
+    const sync = last ?? { x: 0, y: 0, z: 0, px: 0, py: 0, pz: 0, revision: 0 };
+    sync.x = position.x;
+    sync.y = position.y;
+    sync.z = position.z;
+    sync.px = projected.x;
+    sync.py = projected.y;
+    sync.pz = projected.z;
+    sync.revision = this.meshRevision;
+    this.agentSyncs.set(id, sync);
     return true;
   }
 
@@ -545,6 +587,7 @@ class RecastNavigationBackend implements NavigationBackend {
 
   private flushTileCache(): void {
     if (!this.tileCacheDirty || !this.tileCache || !this.navMesh) return;
+    this.meshRevision += 1;
     this.restoreCostVolumePolys();
     // Each update rebuilds one touched tile; finish them all before the next query.
     for (;;) {
@@ -568,6 +611,7 @@ class RecastNavigationBackend implements NavigationBackend {
   private flushPendingChanges(): void {
     this.flushTileCache();
     if (this.costVolumesDirty) {
+      this.meshRevision += 1;
       this.restoreCostVolumePolys();
       this.applyAreaCosts();
       this.stampCostVolumes();
@@ -659,10 +703,13 @@ class RecastNavigationBackend implements NavigationBackend {
     this.costVolumesDirty = false;
     this.obstacles.clear();
     this.agents.clear();
+    this.agentSyncs.clear();
     this.costVolumes.clear();
     this.costAreas.clear();
   }
 }
+
+type AgentSync = { x: number; y: number; z: number; px: number; py: number; pz: number; revision: number };
 
 /** The box Detour searches for a volume's polygons; a cylinder uses its bounding box. */
 function costVolumeHalfExtents(volume: NavCostVolume): NavPoint {

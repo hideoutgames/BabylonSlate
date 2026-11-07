@@ -40,7 +40,7 @@ Recast navmesh bake, Scene `navmesh` chunk, runtime crowd/obstacles/cost volumes
 - Tile cache: 32-cell tiles, 128 obstacles; crowd: 128 agents. Full capacity returns `""` instead of throwing. Obstacle edits batch before the next query/crowd step.
 - Obstacles and cost volumes take center `pose` and full `size`; cylinders use X/Z as diameters. Unwalkable obstacles carve; cost volumes set Detour poly areas and filter costs and never call `addObstacle`.
 - Up to 62 distinct cost prices (area 63 is walkable); overlaps use the highest price; a 63rd distinct price throws before changing anything.
-- `syncAgentPosition` projects a physics-resolved position onto the corridor without resetting the destination. `dispose()` is idempotent and the backend can import again.
+- `syncAgentPosition` projects a physics-resolved position onto the corridor without resetting the destination. It skips the closest-point query and the npos write when the position equals the last sync's, the agent's npos still equals that sync's projection (exact: both are float32) and the navmesh revision is unchanged; the revision advances on import and on every flush that rebuilt tiles or restamped cost areas, and the sync flushes first as the query would. `agentPositionInto` / `agentVelocityInto` read npos and velocity into caller storage. `dispose()` is idempotent and the backend can import again.
 - Fixed-dt crowd steps with the same bytes must be identical across backends; if that breaks, record agent pose into traces instead of recomputing.
 
 ## Editor bake
@@ -56,7 +56,7 @@ Recast navmesh bake, Scene `navmesh` chunk, runtime crowd/obstacles/cost volumes
 - Hosts pass `sceneNavmeshBytes` keyed by canonical scene guid; `loadNavMesh` imports before Play realizes. Change Scene selects the target mesh before Begin Play and clears navigation for unbaked targets. Stop disposes the session.
 - `NavAgentComponent` registers agents after Begin Play, or lazily on the first Move To. Dynamic unwalkable blockers → `addObstacle`; cost blockers → `applyCostVolume` (re-stamped only when kind, cost or world pose changed). Streamed instances do not apply cost blockers.
 - A Move To (graph node or Behaviour Tree task) without a loaded navmesh or a live Nav Agent stays a no-op; `warnMoveBlocked` logs one `Navigation` warning per actor and reason per session.
-- Crowd poses write before the published frame, parents before children. Agents face velocity while moving (3D about +Y, 2D about +Z) and keep facing when idle.
+- The crowd tick composes Nav Agents and moving cost blockers through two `WorldTransformComposer`s over the frame index, and keeps its posed-agent list, depth map and point reads in scratch it clears when the tick ends. Crowd poses write before the published frame, parents before children (sorted by depth only when a posed agent has a parent). Agents face velocity while moving (3D about +Y, 2D about +Z) and keep facing when idle.
 - In 3D a dynamic RigidBody owns the actor position: navigation supplies XZ steering, preserves vertical velocity and syncs the crowd to the physics result.
 - Agent lookups use the tick's shared GUID-to-actor map and component owner index ([object-model.md](object-model.md)), never a per-agent world scan.
 - Debug overlays (`shownav`, `showpathfinding`, `shownavagent`) read live crowd telemetry (`agentDebugState`) at up to 5 Hz; they never issue extra path queries. Blocking Volumes belong to physics, not navigation.
