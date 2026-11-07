@@ -13,7 +13,6 @@ import {
   AssetPickerControl,
   CLASS_PIN_PICKER_TYPES,
   ClassPicker,
-  FUNCTION_PIN_PICKER_TYPES,
   EntryListEditor,
   PinListEditor,
   PropertyGrid,
@@ -50,6 +49,7 @@ import {
   variableContainerOf,
   type CommittedPinRowIds,
 } from "./inspector-member-rows";
+import { FunctionPinListEditors } from "./inspector-function-pins";
 
 export function ClassMemberDetails({
   graph,
@@ -557,18 +557,6 @@ export function ClassMemberDetails({
   }
 
   if (member.kind === "function") {
-    const inputRows = memberPinRows(member.pins, member.id, "in",
-      pinRowIdsFor(pinRowIds, member.id, member.pins, "in"));
-    const outputRows = memberPinRows(member.pins, member.id, "out",
-      pinRowIdsFor(pinRowIds, member.id, member.pins, "out"));
-    const commitPins = (
-      nextInputs: PinListRow[],
-      nextOutputs: PinListRow[],
-    ) => {
-      const pins = memberPinsFromRows(nextInputs, nextOutputs);
-      setPinRowIds(committedPinRowIds(member.id, pins, nextInputs, nextOutputs));
-      commit({ pins });
-    };
     const interfaceImpl = member.implementsInterface;
     const lockSignature = Boolean(interfaceImpl);
     return (
@@ -610,36 +598,14 @@ export function ClassMemberDetails({
             categoryRow,
           ]}
         />
-        <PinListEditor
-          title="Inputs"
-          rows={inputRows}
-          types={FUNCTION_PIN_PICKER_TYPES}
+        <FunctionPinListEditors
+          graph={graph}
+          member={member}
           classEntries={classEntries}
           typeAssets={typeAssets}
-          itemLabel="Input"
-          testIdPrefix="class-fn-in"
-          data-testid="inspector-member-inputs"
+          classId={classId}
           delegateSignatures={delegateSignatures}
-          showOptional={false}
-          showDefault={false}
-          showUnit
-          readOnly={lockSignature}
-          onChange={(nextRows) => commitPins(nextRows, outputRows)}
-        />
-        <PinListEditor
-          title="Outputs"
-          rows={outputRows}
-          types={FUNCTION_PIN_PICKER_TYPES}
-          classEntries={classEntries}
-          typeAssets={typeAssets}
-          itemLabel="Output"
-          testIdPrefix="class-fn-out"
-          data-testid="inspector-member-outputs"
-          delegateSignatures={delegateSignatures}
-          showOptional={false}
-          showDefault={false}
-          readOnly={lockSignature}
-          onChange={(nextRows) => commitPins(inputRows, nextRows)}
+          onChange={onChange}
         />
       </div>
     );
