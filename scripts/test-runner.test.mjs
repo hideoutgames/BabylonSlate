@@ -99,10 +99,38 @@ test("scoped lint and typecheck preserve the selected files and workspace", asyn
   const all = await runTests("lint", [], options);
   assert.deepEqual(JSON.parse(all.output), ["exec", "eslint", "."]);
   const types = await runTests("typecheck", ["--filter", "editor", "--noEmit"], options);
-  assert.deepEqual(JSON.parse(types.output), ["--workspace-concurrency=1", "--filter", "editor", "-r", "typecheck", "--noEmit"]);
+  assert.deepEqual(JSON.parse(types.output), ["--workspace-concurrency=1", "--no-sort", "--filter", "editor", "-r", "typecheck", "--noEmit"]);
   const equals = await runTests("typecheck", ["--filter=docs-site"], options);
-  assert.deepEqual(JSON.parse(equals.output), ["--workspace-concurrency=1", "--filter=docs-site", "-r", "typecheck"]);
+  assert.deepEqual(JSON.parse(equals.output), ["--workspace-concurrency=1", "--no-sort", "--filter=docs-site", "-r", "typecheck"]);
   await assert.rejects(runTests("typecheck", ["--filter"], options), /requires a workspace selector/);
+});
+
+test("hosted CI typechecks four workspaces at once while builds keep their dependency order", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hosted typecheck "));
+  const manager = join(directory, "package-manager.mjs");
+  const originalManager = process.env.npm_execpath;
+  t.after(async () => {
+    if (originalManager === undefined) delete process.env.npm_execpath;
+    else process.env.npm_execpath = originalManager;
+    await rm(directory, { recursive: true, force: true });
+  });
+  await writeFile(manager, "console.log(JSON.stringify(process.argv.slice(2)));\n");
+  process.env.npm_execpath = manager;
+  const options = {
+    capture: true,
+    env: {
+      HAPTIC_EXECUTION_POLICY: "hosted-ci",
+      GITHUB_ACTIONS: "true",
+      RUNNER_ENVIRONMENT: "github-hosted",
+      GITHUB_RUN_ID: "123",
+      GITHUB_REPOSITORY: "fixture/repo",
+      RUNNER_OS: "Linux",
+    },
+  };
+  const types = await runTests("typecheck", [], options);
+  assert.deepEqual(JSON.parse(types.output), ["--workspace-concurrency=4", "--no-sort", "-r", "typecheck"]);
+  const builds = await runTests("build-all", [], options);
+  assert.deepEqual(JSON.parse(builds.output), ["--workspace-concurrency=1", "-r", "build"]);
 });
 
 test("a reader that closes early does not strand the stage's reservation", async (t) => {

@@ -100,9 +100,23 @@ export async function runStage(profile, command, args, options = {}) {
   }
 }
 
+/** `args` may be a function of the resolved plan, like runStage's. */
 export async function runPnpm(profile, args, options) {
-  const [command, commandArgs] = pnpmCommand(args);
-  return runStage(profile, command, commandArgs, options);
+  const [command] = pnpmCommand([]);
+  return runStage(
+    profile,
+    command,
+    (plan) => pnpmCommand(typeof args === "function" ? args(plan) : args)[1],
+    options,
+  );
+}
+
+/**
+ * Workspace typechecks run `tsc --noEmit`, which reads sibling workspaces' sources (every export points at `src`),
+ * never their build outputs, so they need no dependency order and run as many at once as the plan allows.
+ */
+function typecheckConcurrency(plan) {
+  return [`--workspace-concurrency=${plan.workspaceConcurrency}`, "--no-sort"];
 }
 
 async function vitest(args, options = {}) {
@@ -198,7 +212,7 @@ async function fullVerification(options = {}) {
     () =>
       runPnpm(
         "build",
-        ["--workspace-concurrency=1", "-r", "typecheck"],
+        (plan) => [...typecheckConcurrency(plan), "-r", "typecheck"],
         options,
       ),
     "typecheck",
@@ -260,8 +274,11 @@ export async function runTests(mode, args, options = {}) {
     const command =
       mode === "lint"
         ? ["exec", "eslint", ...(args.length ? args : ["."])]
-        : [
-            "--workspace-concurrency=1",
+        : (plan) => [
+            // Builds consume their dependencies' outputs, so they keep pnpm's dependency order, one at a time.
+            ...(mode === "build-all"
+              ? ["--workspace-concurrency=1"]
+              : typecheckConcurrency(plan)),
             ...selectors,
             "-r",
             mode === "build-all" ? "build" : "typecheck",
