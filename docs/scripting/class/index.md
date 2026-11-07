@@ -805,6 +805,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | Node | Description |
 | --- | --- |
 | [Delay](delay.md) | Waits for a number of seconds, then continues. |
+| [Delay One Tick](delay-one-tick.md) | Waits until the next tick, then continues. |
+| [Retriggerable Delay](retriggerable-delay.md) | Waits for a number of seconds after its latest call, then continues once. |
 
 ## Tween
 

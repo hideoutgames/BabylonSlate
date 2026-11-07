@@ -559,18 +559,18 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("continues a latent Tick cycle without stacking new entry runs", async () => {
+  it("continues a latent cycle through its Delay", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "event-graph",
       kind: "event",
       nodes: [
-        node(registry, "tick", "flow.event.tick"),
+        node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "delay", "timers.delay", { "default:duration": 0.25 }),
         node(registry, "log", "debug.log", { "default:message": "after delay" }),
       ],
       edges: [
-        edge("e1", "tick", "execOut", "delay", "execIn"),
+        edge("e1", "begin", "execOut", "delay", "execIn"),
         edge("e2", "delay", "execOut", "log", "execIn"),
         edge("cycle", "log", "execOut", "delay", "execIn"),
       ],
@@ -585,13 +585,14 @@ describe("script host runs compiled graphs", () => {
     });
     const script = toScript(graph, registry, "Waiter", "waiter-asset");
     expect(script.entryPoints[0]).toMatchObject({
-      event: "onTick",
+      event: "onBeginPlay",
       isAsync: true,
     });
 
     await runtime.loadScripts([script]);
     runtime.spawnScriptedActor({ classId: "Waiter" });
     runtime.start();
+    // 0.25 s of 0.1 s ticks: the cycle logs every third tick.
     for (let tick = 0; tick < 10; tick++) {
       runtime.tick();
       await flushMicrotasks();

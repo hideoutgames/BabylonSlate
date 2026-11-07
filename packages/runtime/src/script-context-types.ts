@@ -289,6 +289,9 @@ export interface ScriptContext {
   executeConsoleCommand(command: string): { success: boolean; output: string };
   executeConsoleCommandAsync(command: string): Promise<{ success: boolean; output: string }>;
   delay(seconds: number): Promise<void>;
+  delayOneTick(): Promise<void>;
+  /** Waits `seconds` after this node's latest call for `self`; an earlier waiting call ends. */
+  retriggerableDelay(nodeId: string, seconds: number): Promise<void>;
   commandArgs: Record<string, unknown>;
   /** Alias of `commandArgs` so function Input nodes can read `ctx.args`. */
   args: Record<string, unknown>;

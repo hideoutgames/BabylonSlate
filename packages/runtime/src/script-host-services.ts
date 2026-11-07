@@ -172,6 +172,10 @@ export interface ScriptHostServices {
   executeConsoleCommand(command: string): { success: boolean; output: string };
   executeConsoleCommandAsync?(command: string): Promise<{ success: boolean; output: string }>;
   delay(seconds: number, owner?: EngineObject | null): Promise<void>;
+  /** Resolves in the next tick, counted like `delay` while the owner may run. */
+  delayOneTick?(owner?: EngineObject | null): Promise<void>;
+  /** Restarts `key`'s wait for `owner`; the earlier wait rejects with a `retriggered` cancellation. */
+  retriggerableDelay?(key: string, seconds: number, owner?: EngineObject | null): Promise<void>;
   tween?(request: TweenRequest): Promise<boolean>;
   isTweenSessionActive?(): boolean;
   reportError(error: unknown): void;

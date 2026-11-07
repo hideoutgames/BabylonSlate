@@ -392,6 +392,16 @@ export function createScriptContext(
       return result;
     };
     context.delay = (seconds) => services.delay(seconds, self);
+    context.delayOneTick = () => {
+      if (!services.delayOneTick) throw new Error("This host cannot delay by one tick");
+      return services.delayOneTick(self);
+    };
+    // Keyed like `flowState`: one wait per node of this script for each object.
+    context.retriggerableDelay = (nodeId, seconds) => {
+      if (!services.retriggerableDelay) throw new Error("This host cannot run a Retriggerable Delay");
+      const key = flowNamespace ? `${flowNamespace}\0${String(nodeId)}` : String(nodeId);
+      return services.retriggerableDelay(key, seconds, self);
+    };
     context.callInterface = (target, interfaceGuid, method, args) => {
       const registry = services.interfaceRegistry;
       if (!registry) return {};

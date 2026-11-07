@@ -61,7 +61,7 @@ A delegate pin is a square. While it is unconnected it is dark red inside a ligh
 - Binding the same event of the same object twice keeps one binding. Unbind removes it whichever node bound it.
 - A Call with nothing bound does nothing.
 - A bound event of an object that has been destroyed is skipped and removed. A destroyed object's own dispatchers lose their bindings, after its **Event On Actor Destroyed** has run.
-- A bound event still waiting on a latent node such as [Delay](class/delay.md) is skipped, like any custom event called while it waits.
+- A bound event runs on every Call, even while an earlier run still waits on a latent node such as [Delay](class/delay.md). Each run waits on its own.
 - Events bound or unbound during a Call take effect from the next Call, except that an event unbound during a Call is not run later in that Call.
 - A dispatcher called again from its own bound events stops after 64 levels and reports an error in the **Output Log**.
 - An empty **Target** or **Event** does nothing and reports an error such as `Health Bar: Bind Event to On Damaged (Target) tried to access null.`.
