@@ -6,7 +6,7 @@ An asset editor tab is a **DockView** document (`DockviewShell`), so its panels 
 
 1. Add the kind to `DockviewDocumentKind` / `DOCKVIEW_KINDS` in `apps/editor/src/shell/window-catalog.ts`.
 2. Add its `DockWindowDefinition[]` (stable `id`, `component`, Title Case `title`, `defaultPosition` relative to the primary panel) and the primary panel id in `DOCK_PRIMARY_PANEL`.
-3. Register each `component` in `apps/editor/src/shell/panel-registry.tsx`: a Scene or Scene Layer window in `scenePanelComponents`, any other kind's panel with `lazyPanel` from the fitting family module in `apps/editor/src/shell/asset-panels/` (or a new family module there), so it loads on first use.
+3. Register each `component` in `apps/editor/src/shell/panel-registry.tsx`: a Scene or Scene Layer window in `scenePanelComponents`, any other kind's panel with `lazyPanel` (`apps/editor/src/shell/lazy-dock-panel.tsx`) from the fitting family module in `apps/editor/src/shell/asset-panels/` (or a new family module there), so it loads on first use.
 4. Build the panels with `PanelFrame`, under `apps/editor/src/panels/` or in the asset editor's own file; omit a title DockView already shows.
 5. Mount `DockviewShell` for the kind in `apps/editor/src/components/document-workspace.tsx` with the real `documentKind`, never the scene or graph fallback. Import its editing provider from `apps/editor/src/context/`, never from the editor's panel module, which would pull the family into the Editor route (`boot-imports.test.ts` checks).
 6. Map the asset type in `documentKindForAssetType` (`packages/core/src/document.ts`).

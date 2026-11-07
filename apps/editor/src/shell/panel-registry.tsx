@@ -1,5 +1,5 @@
-import { lazy, Suspense, type FunctionComponent } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { lazyPanel, type DockPanel } from "./lazy-dock-panel";
 import { ViewportPanel } from "../panels/viewport-panel";
 import { GraphPanel } from "../panels/graph-panel";
 import { InspectorPanel } from "../panels/inspector-panel";
@@ -19,8 +19,6 @@ import {
   LandscapeSettingsPanel,
 } from "../panels/scene-environment-panels";
 import { TimelineClipsPanel, TimelinePanel } from "../panels/timeline-panels";
-
-type DockPanel = FunctionComponent<IDockviewPanelProps>;
 
 /**
  * Scene and Scene Layer windows in every mode, imported with the Editor route: a project opens on a Scene, so these
@@ -55,21 +53,6 @@ export const scenePanelComponents = {
   "timeline-clips": TimelineClipsPanel,
   "scene-timeline": TimelinePanel,
 } satisfies Record<string, DockPanel>;
-
-/**
- * A panel from a family module (`asset-panels/`) the Editor route loads the first time a document shows one of the
- * family's panels. Until it has loaded, the panel's body is empty under its tab.
- */
-function lazyPanel<M>(load: () => Promise<M>, pick: (module: M) => DockPanel): DockPanel {
-  const Panel = lazy(() => load().then((module) => ({ default: pick(module) })));
-  return function LazyDockPanel(props: IDockviewPanelProps) {
-    return (
-      <Suspense fallback={null}>
-        <Panel {...props} />
-      </Suspense>
-    );
-  };
-}
 
 // Each family is one download: a document's first panel of a family loads every editor in it.
 const classPanels = () => import("./asset-panels/class");
