@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -36,10 +36,11 @@ describe("gltf mesh decoder config", () => {
     const joined = [
       draco.DefaultConfiguration.wasmUrl,
       draco.DefaultConfiguration.wasmBinaryUrl,
-      draco.DefaultConfiguration.fallbackUrl,
       meshopt.Configuration.decoder.url,
     ].join(" ");
     expect(joined).not.toMatch(/cdn|http/i);
+    // Babylon's CDN asm.js fallback must not survive the configuration spread.
+    expect(draco.DefaultConfiguration.fallbackUrl).toBeUndefined();
     expect(draco.DefaultConfiguration.wasmUrl).toBe(
       "/assets/draco/draco_wasm_wrapper_gltf.js",
     );
@@ -84,5 +85,13 @@ describe("vendored editor glTF mesh decoders", () => {
       join(editorPublic, "draco/draco_decoder_gltf.wasm"),
     );
     expect([...wasm.subarray(0, 4)]).toEqual([0x00, 0x61, 0x73, 0x6d]);
+  });
+
+  it("ships no asm.js Draco fallback, which the editor, players and exports would carry", () => {
+    expect(readdirSync(join(editorPublic, "draco")).sort()).toEqual([
+      "README.md",
+      "draco_decoder_gltf.wasm",
+      "draco_wasm_wrapper_gltf.js",
+    ]);
   });
 });
