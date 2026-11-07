@@ -45,7 +45,7 @@ describe("player decoder prefetch", () => {
   });
 
   it("downloads each needed decoder file once, and never the ETC1S transcoder for a UASTC game", async () => {
-    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) => new Response(new Uint8Array([1])));
+    const fetchImpl = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => new Response(new Uint8Array([1])));
     const prefetch = createDecoderPrefetch(fetchImpl as unknown as typeof fetch, paths);
     prefetch("ktx2-zstd");
     prefetch("ktx2-zstd");
@@ -60,7 +60,7 @@ describe("player decoder prefetch", () => {
   });
 
   it("ignores a decoder file that cannot be fetched", async () => {
-    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit): Promise<Response> => { throw new TypeError("offline"); });
+    const fetchImpl = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => { throw new TypeError("offline"); });
     createDecoderPrefetch(fetchImpl as unknown as typeof fetch, paths)("meshopt");
     await Promise.resolve();
     expect(fetchImpl).toHaveBeenCalledWith("https://game.example/my-game/meshopt/meshopt_decoder.js", expect.anything());
