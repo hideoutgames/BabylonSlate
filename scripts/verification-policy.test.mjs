@@ -1,9 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
@@ -92,7 +91,7 @@ async function verifyWorkflow() {
   );
 }
 
-test("the browser cache is keyed on the installed Playwright release, not the whole lockfile", async (t) => {
+test("the browser cache is keyed on the installed Playwright release, not the whole lockfile", async () => {
   const { steps } = (await verifyWorkflow()).jobs.e2e;
   const cache = steps.find((step) => step.with?.path === "~/.cache/ms-playwright");
   assert.ok(cache, "e2e restores the Playwright browser cache");
@@ -106,19 +105,17 @@ test("the browser cache is keyed on the installed Playwright release, not the wh
       steps.indexOf(version) < steps.indexOf(cache),
     "the version is read after install and before the cache is restored",
   );
-  // Run the step as Actions would and compare with the release that installs the browsers.
-  const directory = await mkdtemp(join(tmpdir(), "playwright-key "));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const output = join(directory, "output");
-  execFileSync("bash", ["-e", "-c", version.run], {
-    cwd: repoRoot,
-    env: { ...process.env, GITHUB_OUTPUT: output },
-  });
+  // The step writes one Node expression's value as its `version` output. Evaluate that expression with this Node,
+  // without a POSIX shell (Windows hosts run the tooling suite too), and compare with the release that installs the
+  // browsers.
+  const step = /^echo "version=\$\(node -p "([^"]+)"\)" >> "\$GITHUB_OUTPUT"$/.exec(version.run.trim());
+  assert.ok(step, `unexpected version step ${version.run}`);
+  const reported = execFileSync(process.execPath, ["-p", step[1]], { cwd: repoRoot, encoding: "utf8" });
   const installed = createRequire(join(repoRoot, "package.json"))(
     "@playwright/test/package.json",
   ).version;
   assert.match(installed, /^\d+\.\d+\.\d+/);
-  assert.equal(await readFile(output, "utf8"), `version=${installed}\n`);
+  assert.equal(reported, `${installed}\n`);
 });
 
 test("static restores ESLint's cache only for the same lockfile and saves it only from main", async () => {
