@@ -11,7 +11,8 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const RAPIER_DIST = dirname(createRequire(join(REPO_ROOT, "packages/physics/package.json")).resolve("@dimforge/rapier2d-deterministic-compat"));
 const RAPIER_GLUE = join(RAPIER_DIST, "rapier.mjs");
 /** The package also ships its wasm as a file: the bytes its glue embeds as base64. */
-const PACKAGE_WASM = readFileSync(join(RAPIER_DIST, "rapier_wasm2d_bg.wasm"));
+const PACKAGE_WASM_FILE = "rapier_wasm2d_bg.wasm";
+const PACKAGE_WASM = readFileSync(join(RAPIER_DIST, PACKAGE_WASM_FILE));
 const HOST = "https://game.test/";
 
 type Output = { fileName: string; type: "asset" | "chunk"; source?: string | Uint8Array; code?: string };
