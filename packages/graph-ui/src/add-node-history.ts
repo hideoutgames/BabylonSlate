@@ -27,8 +27,8 @@ export interface AddNodeHistoryBackend {
 /** A pick loses half its weight every three weeks. */
 export const HALF_LIFE_DAYS = 21;
 /** Two recent picks are needed before a node moves up. */
-export const PROMOTE_MIN_SCORE = 2;
-export const MAX_PROMOTED = 5;
+const PROMOTE_MIN_SCORE = 2;
+const MAX_PROMOTED = 5;
 export const MAX_PICKS_PER_CONTEXT = 16;
 export const MAX_CONTEXTS = 1000;
 /** Decayed scores below this are forgotten. */
