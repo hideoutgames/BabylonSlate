@@ -6,6 +6,7 @@ import {
 import { audioStats, particleStats } from "@haptic/render";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayerWithBackend } from "./player-backend";
+import { prewarmPlayerWorker, type PrewarmedPlayerWorker } from "./worker-host";
 import { previewConsoleCatalog } from "./console-catalog";
 import type { PlayerTestHandle } from "./boot";
 import { mountPlayerHud, mountPlayerDebuggerOverlays, type PlayerHudStats } from "./hud";
@@ -88,22 +89,32 @@ async function launchFromPreview(files: Map<string, Uint8Array>, traceByteBudget
   window.addEventListener("message", receive);
   const release = () => { source.dispose(); window.removeEventListener("message", receive); };
   startupAbort.signal.addEventListener("abort", release, { once: true });
+  // The player takes the worker at boot; one it never took (a failed launch) goes here.
+  const worker = prewarmPlayerWorker(startupAbort.signal);
   try {
-    const game = await loadGameFromFiles(files, { signal: startupAbort.signal, readFile: source.readFile });
+    const game = await loadGameFromFiles(files, { signal: startupAbort.signal, readFile: source.readFile,
+      onManifest: (manifest) => worker?.preloadPhysics(manifest.physicsWorld) });
     const dispose = game.dispose;
     game.dispose = () => { try { dispose?.(); } finally { startupAbort.signal.removeEventListener("abort", release); release(); } };
-    try { await launchLoaded(game, traceByteBudget); } catch (error) { game.dispose(); throw error; }
+    try { await launchLoaded(game, traceByteBudget, worker); } catch (error) { game.dispose(); throw error; }
   } catch (error) { startupAbort.signal.removeEventListener("abort", release); release(); throw error; }
+  finally { worker?.release(); }
 }
 
 async function launchFromHttp(): Promise<void> {
-  const game = await loadGameFromHttp(document.baseURI, fetch, startupAbort.signal);
-  try { await launchLoaded(game); } catch (error) { game.dispose?.(); throw error; }
+  // Started before the catalog request: the worker loads while the game downloads.
+  const worker = prewarmPlayerWorker(startupAbort.signal);
+  try {
+    const game = await loadGameFromHttp(document.baseURI, fetch, startupAbort.signal,
+      (manifest) => worker?.preloadPhysics(manifest.physicsWorld));
+    try { await launchLoaded(game, undefined, worker); } catch (error) { game.dispose?.(); throw error; }
+  } finally { worker?.release(); }
 }
 
 async function launchLoaded(
   game: Awaited<ReturnType<typeof loadGameFromFiles>>,
   traceByteBudget?: number,
+  worker?: PrewarmedPlayerWorker,
 ): Promise<void> {
   startupAbort.signal.throwIfAborted();
   const canvas = canvasEl();
@@ -174,6 +185,7 @@ async function launchLoaded(
     signal: startupAbort.signal,
     canvas,
     game,
+    takePrewarmedWorker: worker?.take,
     saveStorage: previewSaves?.storage,
     traceByteBudget,
     previewDiagnostics: previewHosted,

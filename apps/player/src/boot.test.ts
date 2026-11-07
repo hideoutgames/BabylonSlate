@@ -11,6 +11,7 @@ import { loadGameFromFiles } from "./artifact";
 import { startPlayer, type PlayerBootHandle } from "./boot";
 import { startPlayerWithBackend } from "./player-backend";
 import * as inputs from "./input";
+import * as workerHosts from "./worker-host";
 const attachInputCapture = inputs.attachInputCapture;
 
 class TestWorker {
@@ -459,6 +460,24 @@ describe("player startup and Stop ownership", () => {
     expect(load?.type === "load" && load.sceneNavmeshBytes).toEqual({ world: new Uint8Array([4, 5, 6]) });
     // The worker imports the load's catalog entry; no second copy follows.
     expect(controls.filter((control) => control.type === "loadNavMesh")).toEqual([{ type: "loadNavMesh" }]);
+  });
+
+  it("boots on the worker the launch started, after its physics preload, and spawns a fresh one for a failed worker", async () => {
+    const { game, canvas } = await fixture();
+    const prewarmed = workerHosts.prewarmPlayerWorker(new AbortController().signal)!;
+    prewarmed.preloadPhysics("3d");
+    sessions.push(startPlayer({ game, canvas, takePrewarmedWorker: prewarmed.take }));
+    expect(TestWorker.instances).toHaveLength(1);
+    const types = TestWorker.instances[0]!.messages.flatMap((message) => message.channel === "control" ? [message.payload.type] : []);
+    expect(types.slice(0, 2)).toEqual(["preloadPhysics", "load"]);
+
+    const failed = workerHosts.prewarmPlayerWorker(new AbortController().signal)!;
+    const failedWorker = TestWorker.instances[1]!;
+    failedWorker.onerror?.({ message: "Failed to fetch worker module" } as ErrorEvent);
+    sessions.push(startPlayer({ game: (await fixture()).game, canvas, takePrewarmedWorker: failed.take }));
+    expect(failedWorker.terminated).toBe(true);
+    expect(failedWorker.messages).toEqual([]);
+    expect(TestWorker.instances[2]!.messages.some((message) => message.channel === "control" && message.payload.type === "load")).toBe(true);
   });
 
   it("keys the worker Class lookup by class id only", async () => {

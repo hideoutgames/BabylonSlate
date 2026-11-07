@@ -87,12 +87,17 @@ function parseJsonAsset(bytes: Uint8Array): unknown {
 
 export async function loadGameFromFiles(
   files: Map<string, Uint8Array>,
-  options: { fetchImpl?: typeof fetch; baseUrl?: string; signal?: AbortSignal; readFile?: (path: string, signal: AbortSignal) => Promise<Uint8Array> } = {},
+  options: {
+    fetchImpl?: typeof fetch; baseUrl?: string; signal?: AbortSignal; readFile?: (path: string, signal: AbortSignal) => Promise<Uint8Array>;
+    /** Runs once the catalog is read, before any asset loads. */
+    onManifest?: (manifest: GameManifest) => void;
+  } = {},
 ): Promise<LoadedGame> {
   // Invoke native fetch as a function, never as an options-object method: a
   // browser rejects the latter's receiver with an Illegal invocation error.
   const fetchAsset = options.fetchImpl;
   const manifest = parseGameManifest(textFromFiles(files, GAME_MANIFEST_FILE));
+  options.onManifest?.(manifest);
   // Compiled Class code arrives as CompiledScript sidecars when acquired.
   const scripts: ScriptBundleEntry[] = [];
   const scenes = new Map<string, SerializedScene>();
@@ -469,11 +474,12 @@ export async function loadGameFromHttp(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
+  onManifest?: (manifest: GameManifest) => void,
 ): Promise<LoadedGame> {
   const manifestUrl = new URL(GAME_MANIFEST_FILE, baseUrl).href;
   const manifestRes = await fetchImpl(manifestUrl, { signal });
   if (!manifestRes.ok) throw new Error("Export is missing game.json");
   const manifestBytes = new Uint8Array(await manifestRes.arrayBuffer());
   const files = new Map<string, Uint8Array>([[GAME_MANIFEST_FILE, manifestBytes]]);
-  return loadGameFromFiles(files, { fetchImpl, baseUrl, signal });
+  return loadGameFromFiles(files, { fetchImpl, baseUrl, signal, onManifest });
 }

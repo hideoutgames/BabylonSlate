@@ -1,16 +1,18 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeHostMessage, BridgeWorkerMessage, CommandMessage } from "@haptic/bridge";
-import { createPlayerWorkerHost } from "./worker-host";
+import { createPlayerWorkerHost, prewarmPlayerWorker } from "./worker-host";
 
 class FakeWorker {
   static instance: FakeWorker;
   static events: string[] = [];
+  readonly messages: BridgeHostMessage[] = [];
   onmessage: ((event: MessageEvent<BridgeWorkerMessage>) => void) | null = null;
   onerror: ((event: ErrorEvent) => void) | null = null;
   onmessageerror: ((event: MessageEvent) => void) | null = null;
   terminate = vi.fn();
   constructor() { FakeWorker.instance = this; }
   postMessage(message: BridgeHostMessage) {
+    this.messages.push(message);
     if (message.channel === "snapshotLayoutAck") FakeWorker.events.push(`ack ${message.generation}`);
   }
   receive(message: BridgeWorkerMessage) {
@@ -74,4 +76,70 @@ it("reports a worker whose module never evaluates, and not one that started or w
     vi.advanceTimersByTime(10_000);
     expect(errors).toEqual(["The game worker did not start within 10 seconds: its module never finished loading."]);
   } finally { vi.useRealTimers(); }
+});
+
+it("remembers a failure that came before anyone listened, and times a silent start from the first listener", () => {
+  vi.useFakeTimers();
+  try {
+    const crashed = createPlayerWorkerHost();
+    FakeWorker.instance.onerror?.({ message: "SyntaxError" } as ErrorEvent);
+    expect(crashed.failed()).toBe(true);
+    const slow = createPlayerWorkerHost();
+    vi.advanceTimersByTime(9_000);
+    const errors: string[] = [];
+    slow.onError((error) => errors.push(error.message));
+    vi.advanceTimersByTime(9_999);
+    expect([errors, slow.failed()]).toEqual([[], false]);
+    vi.advanceTimersByTime(1);
+    expect(errors).toEqual(["The game worker did not start within 10 seconds: its module never finished loading."]);
+  } finally { vi.useRealTimers(); }
+});
+
+describe("prewarmed player worker", () => {
+  const controls = (worker: FakeWorker) => worker.messages.flatMap((message) => message.channel === "control" ? [message.payload] : []);
+
+  it("loads the game's physics engine once per world and hands the same worker to the player", () => {
+    const prewarmed = prewarmPlayerWorker(new AbortController().signal)!;
+    const worker = FakeWorker.instance;
+    prewarmed.preloadPhysics("3d");
+    prewarmed.preloadPhysics("3d");
+    expect(controls(worker)).toEqual([{ type: "preloadPhysics", physicsWorld: "3d", havokWasmUrl: new URL("./havok/HavokPhysics.wasm", document.baseURI).href }]);
+    const host = prewarmed.take();
+    expect(host).toBeDefined();
+    expect(prewarmed.take()).toBeUndefined();
+    // The player owns it now: a launch that ends does not stop it.
+    prewarmed.release();
+    expect(worker.terminate).not.toHaveBeenCalled();
+    host!.postControl({ type: "play" });
+    expect(controls(worker).map((control) => control.type)).toEqual(["preloadPhysics", "play"]);
+  });
+
+  it("terminates a worker the player never took when the launch ends or is aborted", () => {
+    const ended = prewarmPlayerWorker(new AbortController().signal)!;
+    const endedWorker = FakeWorker.instance;
+    ended.release();
+    expect(endedWorker.terminate).toHaveBeenCalledOnce();
+    expect(ended.take()).toBeUndefined();
+    const abort = new AbortController();
+    const aborted = prewarmPlayerWorker(abort.signal)!;
+    const abortedWorker = FakeWorker.instance;
+    abort.abort();
+    expect(abortedWorker.terminate).toHaveBeenCalledOnce();
+    expect(aborted.take()).toBeUndefined();
+  });
+
+  it("never hands over a worker that failed while the game downloaded", () => {
+    const prewarmed = prewarmPlayerWorker(new AbortController().signal)!;
+    const worker = FakeWorker.instance;
+    worker.onerror?.({ message: "Failed to fetch worker module" } as ErrorEvent);
+    prewarmed.preloadPhysics("2d");
+    expect(controls(worker)).toEqual([]);
+    expect(prewarmed.take()).toBeUndefined();
+    expect(worker.terminate).toHaveBeenCalledOnce();
+  });
+
+  it("starts nothing when no worker can be created or the launch was already aborted", () => {
+    expect(prewarmPlayerWorker(new AbortController().signal, () => { throw new Error("No module workers"); })).toBeUndefined();
+    expect(prewarmPlayerWorker(AbortSignal.abort())).toBeUndefined();
+  });
 });

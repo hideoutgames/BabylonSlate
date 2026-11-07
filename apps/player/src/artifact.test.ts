@@ -32,6 +32,22 @@ describe("loadGameFromFiles", () => {
       game.dispose!();
     } finally { vi.unstubAllGlobals(); }
   });
+  it("reports the catalog before requesting any asset, so the launch can start the game's physics meanwhile", async () => {
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", physicsWorld: "2d", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+      { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const requested: string[] = [];
+    const seen: Array<{ physicsWorld: string; requested: string[] }> = [];
+    const game = await loadGameFromHttp("https://game.example/", async (input) => {
+      const path = new URL(String(input)).pathname.slice(1);
+      requested.push(path);
+      return new Response(body(exported.value.files.get(path)));
+    }, undefined, (manifest) => seen.push({ physicsWorld: manifest.physicsWorld, requested: [...requested] }));
+    expect(seen).toEqual([{ physicsWorld: "2d", requested: [GAME_MANIFEST_FILE] }]);
+    expect(requested).toHaveLength(2);
+    game.dispose!();
+  });
   it("keeps deferred compiled Class code unread and releases it after its final source owner", async () => {
     const script = { assetGuid: "prefab", classId: "Prefab", source: "export function onBeginPlay() {}", anchors: [], entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] };
     const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [script], assets: [
