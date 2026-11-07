@@ -14,11 +14,6 @@ export function isTimelineClassId(classId: string): boolean {
   return classId.startsWith(`${TIMELINE_CLASS_ID}:`);
 }
 
-/** The Timeline Asset guid of a `Timeline:<guid>` class, else undefined. */
-export function timelineAssetGuidOf(classId: string | undefined): string | undefined {
-  return classId && isTimelineClassId(classId) ? classId.slice(TIMELINE_CLASS_ID.length + 1) || undefined : undefined;
-}
-
 /**
  * The dispatcher a Timeline re-fires a clip's event on: `On Door Open
  * (Intro)`, also `On Finished (Intro)` and `On Looped (Intro)`.

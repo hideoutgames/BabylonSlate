@@ -17,10 +17,6 @@ export interface PropertyClipboardEntry {
 /** The editor-wide copied property, shared by every PropertyGrid for the session. */
 let copied: PropertyClipboardEntry | null = null;
 
-export function propertyClipboardEntry(): PropertyClipboardEntry | null {
-  return copied;
-}
-
 /** A row's value cannot be copied when it shows several values (a mixed selection). */
 export function canCopyPropertyRow(row: PropertyRow): boolean {
   if (row.mixed) return false;

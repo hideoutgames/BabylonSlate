@@ -142,7 +142,6 @@ export {
   TIMELINE_REFIRED_CLIP_INPUT,
   TimelineObject,
   isTimelineClassId,
-  timelineAssetGuidOf,
   timelineClassId,
   timelineRefiredDispatcherName,
 } from "./timeline-object";
