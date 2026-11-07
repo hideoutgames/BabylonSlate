@@ -5,7 +5,7 @@ import {
   DEFAULT_RENDER_PROJECT_SETTINGS,
 } from "@haptic/core";
 import { exportGame, GAME_MANIFEST_FILE, AREA_EMISSION_EXPORT_TYPE, areaEmissionExportGuid, FONT_FACETYPE_EXPORT_TYPE, FONT_MSDF_EXPORT_TYPE, FONT_MSDF_ATLAS_EXPORT_TYPE, fontFacetypeExportGuid, fontMsdfExportGuid, fontMsdfAtlasExportGuid } from "@haptic/exporter";
-import { AREA_EMISSION_EDGE, encodeAreaEmission } from "@haptic/assets";
+import { AREA_EMISSION_EDGE, encodeAreaEmission, installedAssetIdentity } from "@haptic/assets";
 import { createGameAudioSourceLoader, loadGameFromFiles, loadGameFromHttp } from "./artifact";
 
 const encoder = new TextEncoder();
@@ -217,6 +217,27 @@ describe("loadGameFromFiles", () => {
     expect(cancelled).toBe(true);
     expect(game.getReadMetrics!().actualBytesRead - before).toBe(2);
     expect(game.textureBytes.has("texture")).toBe(false);
+    game.dispose!();
+  });
+  it("installs each loaded Texture once, identified by its verified catalog revision, and drops it with its payload", async () => {
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+      { guid: "scene", type: "Scene", sceneGuid: "scene", requiredDependencies: [], bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
+      { guid: "texture", type: "Texture", sceneGuid: "level", bytes: new Uint8Array([1, 2, 3]) },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const game = await loadGameFromFiles(exported.value.files);
+    const request = (consumer: string) => game.acquireAssets!(["texture"], { consumer, signal: new AbortController().signal });
+    const first = await request("first");
+    const blob = game.installed.textures.get("texture")!;
+    // The catalog revision is the SHA-256 of [1, 2, 3], which the load verified.
+    expect(installedAssetIdentity(blob)).toBe("039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81");
+    expect([...new Uint8Array(await blob.arrayBuffer())]).toEqual([1, 2, 3]);
+    const second = await request("second");
+    expect(game.installed.textures.get("texture")).toBe(blob);
+    first.release();
+    second.release();
+    game.assets.trim({ force: true });
+    expect(game.installed.textures.has("texture")).toBe(false);
     game.dispose!();
   });
   it("loads prepared emission independently of visual texture bytes", async () => {

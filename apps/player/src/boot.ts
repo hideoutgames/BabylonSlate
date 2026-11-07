@@ -68,6 +68,21 @@ import type { DebugInspectSnapshot } from "@haptic/object-model";
 import type { PlayerPreviewDiagnosticPorts } from "./player-diagnostic-types";
 import { playerContainer } from "./layout";
 
+/**
+ * The game's installed Blob for each of `bytes`' sources, so the view neither
+ * copies nor hashes them again; undefined unless every source has one (the
+ * view then installs the bytes itself).
+ */
+function installedSources(bytes: ReadonlyMap<string, Uint8Array>, installed: ReadonlyMap<string, Blob>): Map<string, Blob> | undefined {
+  const sources = new Map<string, Blob>();
+  for (const guid of bytes.keys()) {
+    const blob = installed.get(guid);
+    if (!blob) return undefined;
+    sources.set(guid, blob);
+  }
+  return sources;
+}
+
 export type PlayerDiagnostic = {
   message: string;
   severity: string;
@@ -272,16 +287,17 @@ function initializePlayer(
         return () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } };
       } catch (error) { releaseRender?.(); source.release(); throw error; }
     } : undefined,
-    textureBytes: game.textureBytes,
+    textureBytes: installedSources(game.textureBytes, game.installed.textures) ?? game.textureBytes,
     areaEmissions: game.areaEmissions,
     texturePixelSizes: content.texturePixelSizes,
     fontFacetypeBytes: game.fontFacetypeBytes,
     fontMsdfJson: game.fontMsdfJson,
-    fontMsdfPng: game.fontMsdfPng,
+    fontMsdfPng: installedSources(game.fontMsdfPng, game.installed.fontMsdfPng) ?? game.fontMsdfPng,
     fontFaceEntries: [...game.fontBytes].map(([guid, bytes]) => ({ guid, family: game.fontFamilies.get(guid) ?? guid, bytes: bytes.slice().buffer })),
     fontCssStack: fontCss.fontCssStack,
     fontCssStackByGuid: fontCss.fontCssStackByGuid,
     modelBytes: game.modelBytes,
+    modelSources: installedSources(game.modelBytes, game.installed.models),
     modelPayloads: game.modelPayloads,
     modelClipAnimationGuids: content.modelClipAnimationGuids,
     retargetAnimationLoads: content.retargetAnimationLoads,
@@ -805,14 +821,15 @@ function initializePlayer(
     const fonts = packedFontCssStacks(sources.fontFamilies, "sans-serif", manifest.defaultFontGuid, fontFallbacks);
     return {
       assets: {
-        textureBytes: sources.textureBytes, areaEmissions: sources.areaEmissions,
-        modelBytes: sources.modelBytes, modelPayloads: sources.modelPayloads,
+        textureBytes: installedSources(sources.textureBytes, game.installed.textures) ?? sources.textureBytes, areaEmissions: sources.areaEmissions,
+        modelBytes: sources.modelBytes, modelSources: installedSources(sources.modelBytes, game.installed.models), modelPayloads: sources.modelPayloads,
         modelClipAnimationGuids: prepared.modelClipAnimationGuids, retargetAnimationLoads: prepared.retargetAnimationLoads,
         spritePayloads: prepared.spritePayloads, spriteAnimations: prepared.spriteAnimationPayloads,
         tilemaps: prepared.tilemapPayloads, tilesets: prepared.tilesetPayloads, waters: prepared.waterPayloads,
         renderTargets: prepared.renderTargets, renderTargetTextures: prepared.renderTargetTextures,
         texturePixelSizes: prepared.texturePixelSizes, pixelsPerUnit: prepared.pixelsPerUnit,
-        fontFacetypeBytes: sources.fontFacetypeBytes, fontMsdfJson: sources.fontMsdfJson, fontMsdfPng: sources.fontMsdfPng,
+        fontFacetypeBytes: sources.fontFacetypeBytes, fontMsdfJson: sources.fontMsdfJson,
+        fontMsdfPng: installedSources(sources.fontMsdfPng, game.installed.fontMsdfPng) ?? sources.fontMsdfPng,
         fontCssStack: fonts.fontCssStack, fontCssStackByGuid: fonts.fontCssStackByGuid,
       },
       materialDocuments: prepared.materialDocuments, materialFunctions: prepared.materialFunctions,

@@ -480,6 +480,25 @@ describe("player startup and Stop ownership", () => {
     expect(TestWorker.instances[2]!.messages.some((message) => message.channel === "control" && message.payload.type === "load")).toBe(true);
   });
 
+  it("hands the view and every acquisition the game's installed Texture and Model Blobs instead of their bytes", async () => {
+    const { game, canvas, handle } = await fixture();
+    const texture = new Blob([new Uint8Array([1])]);
+    const model = new Blob([new Uint8Array([2])]);
+    game.textureBytes.set("texture", new Uint8Array([1]));
+    game.installed.textures.set("texture", texture);
+    game.modelBytes.set("model", new Uint8Array([2]));
+    game.installed.models.set("model", model);
+    game.systemAssetGuids = new Set(["texture", "model"]);
+    sessions.push(startPlayer({ game, canvas }));
+    const options = vi.mocked(rendering.createEngine).mock.calls[0]![1]!;
+    expect(options.textureBytes?.get("texture")).toBe(texture);
+    expect(options.modelSources?.get("model")).toBe(model);
+    await vi.waitFor(() => expect(handle.acquireSceneSources).toHaveBeenCalled());
+    const [sources] = handle.acquireSceneSources.mock.calls[0] as unknown as [rendering.SceneSourceAssets];
+    expect(sources.assets?.textureBytes?.get("texture")).toBe(texture);
+    expect(sources.assets?.modelSources?.get("model")).toBe(model);
+  });
+
   it("keys the worker Class lookup by class id only", async () => {
     const { game, canvas } = await fixture();
     // A display name equal to another Class id must not take over that id.

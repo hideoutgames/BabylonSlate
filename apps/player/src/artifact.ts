@@ -26,6 +26,8 @@ import {
   complexCollisionModelGuids,
   cookComplexCollisionMesh,
   sha256Hex,
+  installAssetBytes,
+  textureSourceMime,
   type AssetLoadScope,
   type AssetLoadPriority,
   extractPackedAudioClipBytes,
@@ -73,6 +75,14 @@ export type LoadedGame = {
   cookComplexCollision?: (guid: string) => CollisionTriangleMesh | null;
   navmeshBytes: Map<string, Uint8Array>;
   audioReverbBytes: Map<string, Uint8Array>;
+  /**
+   * Texture, Model source and MSDF atlas bytes as installed Blobs, keyed like
+   * `textureBytes`, `modelBytes` and `fontMsdfPng`: installed once per loaded
+   * payload and dropped with it, so every view and acquisition shares them
+   * instead of copying and hashing the bytes again. Textures and atlases carry
+   * their catalog revision, the SHA-256 the load verified, as their identity.
+   */
+  installed: { textures: Map<string, Blob>; models: Map<string, Blob>; fontMsdfPng: Map<string, Blob> };
 };
 
 function textFromFiles(files: Map<string, Uint8Array>, name: string): string {
@@ -118,6 +128,7 @@ export async function loadGameFromFiles(
   const complexMeshes = new Map<string, CollisionTriangleMesh>();
   const navmeshBytes = new Map<string, Uint8Array>();
   const audioReverbBytes = new Map<string, Uint8Array>();
+  const installed: LoadedGame["installed"] = { textures: new Map(), models: new Map(), fontMsdfPng: new Map() };
 
   const manifestLength = files.get(GAME_MANIFEST_FILE)?.byteLength ?? 0;
   const readMetrics: StorageReadMetrics = { operations: 1, fullReads: 1, rangeReads: 0, requestedBytes: manifestLength, actualBytesRead: manifestLength };
@@ -183,6 +194,9 @@ export async function loadGameFromFiles(
     let decodedBytes = document === undefined ? 0 : bytes.byteLength * 2;
     let install = () => {};
     let model: PreparedAsset["model"];
+    // A cached payload publishes for each consumer that acquires it; it installs once.
+    let blob: Blob | undefined;
+    const installTexture = () => blob ??= installAssetBytes(bytes, textureSourceMime(bytes), entry.revision);
     // Exported sidecars always carry their prefixed identity (`navmesh:<scene>`).
     const sidecarOwner = (guid: string | null) => {
       if (!guid) throw new Error(`Invalid ${entry.type} asset identity: ${entry.guid}`);
@@ -190,7 +204,7 @@ export async function loadGameFromFiles(
     };
     if (entry.type === "Scene") { const value = normalizeScene(document); install = () => { scenes.set(entry.guid, value); }; }
     else if (entry.type === "SceneLayer") { const value = normalizeSceneLayer(document); install = () => { sceneLayers.set(entry.guid, value); }; }
-    else if (entry.type === "Texture") install = () => { textureBytes.set(entry.guid, bytes); };
+    else if (entry.type === "Texture") install = () => { textureBytes.set(entry.guid, bytes); installed.textures.set(entry.guid, installTexture()); };
     else if (entry.type === AREA_EMISSION_EXPORT_TYPE) {
       const guid = textureGuidFromAreaEmissionExport(entry.guid);
       if (!guid) throw new Error(`Invalid area emission asset identity: ${entry.guid}`);
@@ -202,7 +216,11 @@ export async function loadGameFromFiles(
       if (!value) throw new Error(`Model ${entry.guid} is not a packed Model asset.`);
       // Complex Collision is a separate representation, cooked in prepare() only when needed.
       model = value;
-      install = () => { modelBytes.set(entry.guid, value.source); modelPayloads.set(entry.guid, value.payload); };
+      install = () => {
+        modelBytes.set(entry.guid, value.source);
+        modelPayloads.set(entry.guid, value.payload);
+        installed.models.set(entry.guid, blob ??= installAssetBytes(value.source, "model/gltf-binary"));
+      };
     } else if (entry.type === "Font") install = () => {
       // A Font without a source file has only sidecars; no FontFace loads from it.
       if (bytes.byteLength > 0) fontBytes.set(entry.guid, bytes);
@@ -210,7 +228,7 @@ export async function loadGameFromFiles(
     };
     else if (entry.type === FONT_FACETYPE_EXPORT_TYPE) { const guid = sidecarOwner(fontGuidFromFontFacetypeExport(entry.guid)); install = () => { fontFacetypeBytes.set(guid, bytes); }; }
     else if (entry.type === FONT_MSDF_EXPORT_TYPE) { const guid = sidecarOwner(fontGuidFromFontMsdfExport(entry.guid)); install = () => { fontMsdfJson.set(guid, bytes); }; }
-    else if (entry.type === FONT_MSDF_ATLAS_EXPORT_TYPE) { const guid = sidecarOwner(fontGuidFromFontMsdfAtlasExport(entry.guid)); install = () => { fontMsdfPng.set(guid, bytes); }; }
+    else if (entry.type === FONT_MSDF_ATLAS_EXPORT_TYPE) { const guid = sidecarOwner(fontGuidFromFontMsdfAtlasExport(entry.guid)); install = () => { fontMsdfPng.set(guid, bytes); installed.fontMsdfPng.set(guid, installTexture()); }; }
     else if (entry.type === "Audio") {
       const value = peekPackedAudioPayload(bytes);
       if (!value) throw new Error(`Audio ${entry.guid} is not a packed Audio asset.`);
@@ -236,14 +254,14 @@ export async function loadGameFromFiles(
       if (index >= 0) scripts.splice(index, 1);
     }
     decodedPayloads.delete(entry.guid);
-    for (const map of [scenes, sceneLayers, textureBytes, modelBytes, modelPayloads, fontBytes, audioPayloads]) map.delete(entry.guid);
+    for (const map of [scenes, sceneLayers, textureBytes, modelBytes, modelPayloads, fontBytes, audioPayloads, installed.textures, installed.models]) map.delete(entry.guid);
     const owner = entry.guid.slice(entry.guid.indexOf(":") + 1);
     if (entry.type === AREA_EMISSION_EXPORT_TYPE) areaEmissions.delete(owner);
     if (entry.type === NAVMESH_EXPORT_TYPE) navmeshBytes.delete(owner);
     if (entry.type === AUDIO_REVERB_EXPORT_TYPE) audioReverbBytes.delete(owner);
     if (entry.type === FONT_FACETYPE_EXPORT_TYPE) fontFacetypeBytes.delete(owner);
     if (entry.type === FONT_MSDF_EXPORT_TYPE) fontMsdfJson.delete(owner);
-    if (entry.type === FONT_MSDF_ATLAS_EXPORT_TYPE) fontMsdfPng.delete(owner);
+    if (entry.type === FONT_MSDF_ATLAS_EXPORT_TYPE) { fontMsdfPng.delete(owner); installed.fontMsdfPng.delete(owner); }
     if (entry.type === "Audio") {
       audioBytes.delete(entry.guid);
       for (const key of audioBytes.keys()) if (key.startsWith(`${entry.guid}:`)) audioBytes.delete(key);
@@ -292,6 +310,7 @@ export async function loadGameFromFiles(
     complexMeshes,
     navmeshBytes,
     audioReverbBytes,
+    installed,
   };
   // The cooked mesh is its own cached representation and can outlive the
   // Model's trimmed source bytes.

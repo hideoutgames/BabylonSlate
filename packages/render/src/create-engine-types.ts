@@ -409,7 +409,7 @@ export interface CreateEngineOptions {
   /** MSDF bmfont JSON keyed by Font asset guid (overlay 2D Text). */
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
   /** MSDF atlas PNG keyed by Font asset guid. */
-  fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
+  fontMsdfPng?: ReadonlyMap<string, Uint8Array | Blob>;
   /** CSS font stack when no Font is picked. */
   fontCssStack?: string;
   /** Per-Font compiled CSS stacks for Bitmap 2D Text. */
@@ -418,6 +418,8 @@ export interface CreateEngineOptions {
   fontFaceEntries?: readonly FontAssetEntry[];
   /** Model source bytes keyed by Model asset guid. */
   modelBytes?: ReadonlyMap<string, Uint8Array>;
+  /** The same Model sources already installed (`installAssetBytes`), for every guid in `modelBytes`; installed from `modelBytes` when absent. */
+  modelSources?: ReadonlyMap<string, Blob>;
   /** Model payloads (material slots / clip names) keyed by Model asset guid. */
   modelPayloads?: ReadonlyMap<
     string,
