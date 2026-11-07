@@ -9,7 +9,7 @@ import type { Nullable } from "@babylonjs/core/types";
  * viewport, depth/cull, stencil, alpha and colour write. Reusable, so passes that run every frame save without
  * allocating.
  */
-export interface EngineDrawingState {
+interface EngineDrawingState {
   viewport: Nullable<IViewportLike>;
   width: number;
   height: number;

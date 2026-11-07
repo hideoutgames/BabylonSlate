@@ -2,9 +2,9 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { engineFrameMarkers, type FrameMarker } from "./gpu-busy-probe";
 
 /** How many rendered frames may be queued on the GPU at once (`framesinflight`); "off" renders every admitted frame. */
-export type FramesInFlight = "off" | 2 | 3;
+type FramesInFlight = "off" | 2 | 3;
 
-export const DEFAULT_FRAMES_IN_FLIGHT: FramesInFlight = 2;
+const DEFAULT_FRAMES_IN_FLIGHT: FramesInFlight = 2;
 
 export interface FrameBackpressureStats {
   mode: FramesInFlight;

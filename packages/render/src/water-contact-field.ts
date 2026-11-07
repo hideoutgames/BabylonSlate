@@ -935,7 +935,7 @@ function contactScratch(size: number): Float32Array {
 }
 
 /** Two separable box blurs of radius `r` over a `width` × `height` grid in place, clamped at its edges. Allocation-free once grown. */
-export function smoothContacts(values: Float32Array, width: number, height: number, r: number): void {
+function smoothContacts(values: Float32Array, width: number, height: number, r: number): void {
   const size = Math.max(width, height);
   if (smoothLine.length < size) smoothLine = new Float32Array(size);
   for (let n = 0; n < 2; n++) { boxPass(values, width, height, width, 1, r); boxPass(values, height, width, 1, width, r); }

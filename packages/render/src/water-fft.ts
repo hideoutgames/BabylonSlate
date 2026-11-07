@@ -87,7 +87,7 @@ export const WATER_FFT_IDLE_RUNS = 120;
  * Observer runs a simulation must go unrequested before another spectrum takes over its storage while a new one could
  * still be allocated: bodies viewed in turn keep their own simulations instead of trading one back and forth.
  */
-export const WATER_FFT_RECYCLE_RUNS = 60;
+const WATER_FFT_RECYCLE_RUNS = 60;
 /**
  * Simulations per Scene. Further spectra take over the longest-idle simulation, or stay analytic while every
  * simulation is in view, so repeated wave edits never pile up storage.

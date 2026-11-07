@@ -73,7 +73,6 @@ import type { MaterialParameterValue } from "@haptic/bridge";
 import { SharedOutlineIdentityBlock, SharedOutlineOutputBlock } from "./shared-outline-output-block";
 import { TextMaterialBlock } from "./text-material-block";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
-export { createSurfacePlumbing } from "./surface-material-plumbing";
 import { createGeometryCaptureOutput } from "./geometry-capture-output";
 import { AuthoredShadowFragmentOutput, createAuthoredShadowVertexOutput } from "./authored-shadow-output";
 import { AuthoredShadowDepthWrapper } from "./authored-shadow-depth-wrapper";
@@ -102,7 +101,7 @@ const SURFACE_VARIANT_LABELS: Record<AuthoredSurfaceVariant, string> = {
   shadowDepth: "Shadow depth",
 };
 
-export interface CompileMaterialOptions {
+interface CompileMaterialOptions {
   /** SceneLayer surfaces bind independent tint/opacity and retain smooth transparency. */
   overlay?: boolean;
   /** Internal coverage variant; retains authored deformation and alpha discard. */
@@ -152,12 +151,12 @@ export interface CompiledMaterial {
   whenReleased: () => Promise<void>;
 }
 
-export interface FailedMaterial {
+interface FailedMaterial {
   ok: false;
   diagnostics: MaterialDiagnostic[];
 }
 
-export type CompileMaterialResult = CompiledMaterial | FailedMaterial;
+type CompileMaterialResult = CompiledMaterial | FailedMaterial;
 
 const materialBuilds = new WeakMap<NodeMaterial, Promise<readonly MaterialDiagnostic[]>>();
 export interface AuthoredMaterialVariant {
@@ -195,10 +194,6 @@ export function waterVariantBase(material: Material | null): Material | null;
 export function waterVariantBase(material: Material | null): Material | null {
   return material ? waterVariantBases.get(material) ?? material : null;
 }
-/** Whether `material` is a water variant (`acquireWaterVariant`). */
-export function isWaterVariant(material: Material | null | undefined): boolean {
-  return !!material && waterVariantBases.has(material);
-}
 /** Enable final-position shadows when a mesh acquires a runtime deformer. */
 export function ensureAuthoredShadowDepthWrapper(source: Material): boolean {
   const install = authoredShadowFactories.get(source);
@@ -207,7 +202,7 @@ export function ensureAuthoredShadowDepthWrapper(source: Material): boolean {
   return true;
 }
 /** A Material's registered variants (`registerAuthoredVariants`): its shadow wrapper's release, and unregistration. */
-export interface AuthoredVariantRegistration {
+interface AuthoredVariantRegistration {
   /** Settles once every shadow wrapper this registration installed has released its variant. */
   shadowReleased: () => Promise<void>;
   /** Forgets the variants and releases the shadow wrapper. Idempotent. */
@@ -1339,7 +1334,7 @@ const particlePrograms = new WeakMap<AbstractEngine, Map<string, Map<string, num
  * Materials do not share: Babylon creates a pass's Effect a tick after registering its source, and a pass's cleanup
  * (`OwnedPostProcess`) or a rebuild deletes the sources by that name, which another Material's pass would still read.
  */
-export function shareParticleProgram(material: NodeMaterial, key: string): void {
+function shareParticleProgram(material: NodeMaterial, key: string): void {
   const engine = material.getScene().getEngine();
   let byKey = particlePrograms.get(engine);
   if (!byKey) particlePrograms.set(engine, (byKey = new Map()));

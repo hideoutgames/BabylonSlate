@@ -28,7 +28,7 @@ export const WATER_OWNERSHIP_UNIFORMS = [
   "slateWaterOwnClass", "slateWaterOwnInfo",
 ];
 /** Floats `blendOwnership` writes: the uniforms above in order, four per vector. */
-export const WATER_OWNERSHIP_FLOATS = WATER_OWNERSHIP_UNIFORMS.length * 4;
+const WATER_OWNERSHIP_FLOATS = WATER_OWNERSHIP_UNIFORMS.length * 4;
 
 const footprintCode = (kind: string) => kind === "global" ? 0 : kind === "ocean" ? 1 : kind === "lake" || kind === "puddle" ? 2 : -1;
 const smoothstep = (a: number, b: number, x: number) => {
@@ -73,38 +73,9 @@ export function blendOwnership(index: WaterBlendIndex, self: number, out: Float3
   return data;
 }
 
-/** Bank distance in world metres of participant `k` at world X/Z: the cut's `swOwnEdge`, as `waterFootprint` and `waterBankDistance` give it. */
-function ownEdge(data: Float32Array, k: number, x: number, z: number): number {
-  const o = k * 12, sx = data[o + 2]!, sz = data[o + 3]!, kind = data[o + 8]!, hw = data[o + 9]!, hl = data[o + 10]!;
-  if (kind < 0.5) return 1e6;
-  const dx = x - data[o]!, dz = z - data[o + 1]!;
-  const lx = (dx * data[o + 4]! + dz * data[o + 5]!) / sx, lz = (dx * data[o + 6]! + dz * data[o + 7]!) / sz;
-  if (kind < 1.5) {
-    const ex = hw - Math.abs(lx), ez = hl - Math.abs(lz);
-    return ex < ez ? ex * sx : ez * sz;
-  }
-  const radius = Math.hypot(lx / hw, lz / hl), gx = lx / (hw * hw), gz = lz / (hl * hl), gradient = Math.hypot(gx, gz);
-  if (gradient <= 1e-6) return Math.min(hw, hl) * sx;
-  return (1 - radius) * radius / gradient / Math.hypot(gx / gradient / sx, gz / gradient / sz);
-}
-
-/** The per-pixel margin the cut computes at world X/Z (own share − the strongest other's; −1 where nobody has water). */
-export function blendOwnershipAt(data: Float32Array, x: number, z: number): number {
-  const classes = WATER_OWNERSHIP_PARTICIPANTS * 12, half = data[classes + 4]!;
-  const phi: number[] = [];
-  for (let k = 0; k < WATER_OWNERSHIP_PARTICIPANTS; k++) phi.push(smoothstep(-half, half, ownEdge(data, k, x, z)) * data[k * 12 + 11]!);
-  const raw = phi.map((value, a) => {
-    let share = value;
-    for (let b = 0; b < WATER_OWNERSHIP_PARTICIPANTS; b++) if (b !== a && data[classes + b]! > data[classes + a]! + 0.5) share *= 1 - phi[b]!;
-    return share;
-  });
-  const total = raw.reduce((sum, value) => sum + value, 0);
-  return total > 0 ? (raw[0]! - Math.max(raw[1]!, raw[2]!, raw[3]!)) / total : -1;
-}
-
 /**
- * The cut's GLSL-shaped ownership (`swOwnership(p)`, the margin `blendOwnershipAt` computes at world X/Z `p`), unrolled
- * over the participants. `bind` translates it for WGSL.
+ * The cut's GLSL-shaped ownership (`swOwnership(p)`: at world X/Z `p`, the margin own share − the strongest other's, −1
+ * where nobody has water), unrolled over the participants. `bind` translates it for WGSL.
  */
 export function ownershipSource(): string {
   const n = WATER_OWNERSHIP_PARTICIPANTS, k = Array.from({ length: n }, (_, i) => i), c = "xyzw";

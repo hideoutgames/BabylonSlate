@@ -31,6 +31,7 @@ import { applyEnvironmentLighting } from "./environment-lighting";
 import { sceneClearColor } from "./editor-clear-color";
 import { syncEngineDefaultMaterialEmission } from "./default-material";
 import { setSceneEffectsAssets, updateSceneRenderingSettings } from "./render-settings";
+import { asNumber } from "./as-number";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
 export const AUTHORED_CAMERA_PREFIX = "authoredCamera:";
@@ -93,10 +94,6 @@ function asRgb(value: unknown): Color3 {
     return new Color3(Number(value[0]) || 0, Number(value[1]) || 0, Number(value[2]) || 0);
   }
   return Color3.White();
-}
-
-function asNumber(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 function degreesToRadians(degrees: unknown, fallback: number): number {
@@ -232,7 +229,7 @@ export function composeAuthoredComponentTransform(
   return { position: composed.position.clone(), rotation: composed.rotation.clone() };
 }
 
-export function actorForwardFromRotation(rotation: {
+function actorForwardFromRotation(rotation: {
   x: number;
   y: number;
   z: number;
@@ -243,7 +240,7 @@ export function actorForwardFromRotation(rotation: {
   );
 }
 
-export function actorUpFromRotation(rotation: {
+function actorUpFromRotation(rotation: {
   x: number;
   y: number;
   z: number;
@@ -307,7 +304,7 @@ export function createPlayLight(scene: Scene, name: string, kind: string, proper
   return light;
 }
 
-export const CAMERA_LENS_FALLBACK_ASPECT = 16 / 9;
+const CAMERA_LENS_FALLBACK_ASPECT = 16 / 9;
 
 const authoredCameraAspects = new WeakMap<Camera, number>();
 

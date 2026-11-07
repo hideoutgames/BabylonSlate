@@ -3,7 +3,8 @@ import { BoundingInfo, Matrix, Mesh, MeshBuilder, MultiMaterial, NullEngine, PBR
 import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
 import { LatticeDeformerPlugin } from "./lattice-deformer-native";
-import { bindMeshLatticeDeformer, disposeMeshLatticeDeformer, flushSceneLatticeDeformers, hasMeshLatticeDeformer, markLatticeComponentRoot, refreshMeshLatticeDeformer, setMeshLatticeDeformer, type LatticeDeformerConfig } from "./lattice-deformer";
+import { disposeMeshLatticeDeformer, flushSceneLatticeDeformers, markLatticeComponentRoot, refreshMeshLatticeDeformer, setMeshLatticeDeformer, type LatticeDeformerConfig } from "./lattice-deformer";
+import { bindMeshLatticeDeformer, hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { applyMaterialBounds, setMaterialBoundsExpansion, updateDynamicMaterialBounds } from "./material-bounds";
 import { managedRenderReservations } from "./managed-render-resources";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";

@@ -19,7 +19,7 @@ export { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME };
 export const CAMERA_BOUNDS_LINE_WIDTH = 2;
 const CAMERA_BOUNDS_COLOR = new Color3(0.9, 0.7, 0.2);
 /** Transparent sort: grid draws first among world-group alpha so helpers can sit on top. */
-export const GRID_ALPHA_INDEX = 0;
+const GRID_ALPHA_INDEX = 0;
 
 const GRID_SHADER_NAME = "editorGrid";
 const BOUNDS_SHADER_NAME = "editorCameraBounds";
@@ -65,7 +65,7 @@ const GRID_HEIGHT_FADE_END = 100;
 /** 3D: the fade never starts closer than this many major cells, even with the eye on the plane. */
 const GRID_MIN_FADE_CELLS = 24;
 
-export interface EditorGridOptions {
+interface EditorGridOptions {
   mode?: ViewportMode;
   /** Editor camera the plane follows; omit only in unit tests without a camera. */
   camera?: Pick<
@@ -80,7 +80,7 @@ export interface EditorGridOptions {
   minorColor?: Color3;
 }
 
-export interface GridCoverageCamera {
+interface GridCoverageCamera {
   radius: number;
   orthoTop: number | null;
   orthoRight: number | null;

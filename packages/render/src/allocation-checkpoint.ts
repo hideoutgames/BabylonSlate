@@ -1,7 +1,7 @@
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import type { Scene } from "@babylonjs/core/scene";
 
-export type AllocationRollback = (options?: {
+type AllocationRollback = (options?: {
   /** Owner-specific release that runs first; its failures are collected too. */
   before?: (attempt: (release: () => void) => void) => void;
   /** Which new Scene textures the owner releases; all when omitted. */

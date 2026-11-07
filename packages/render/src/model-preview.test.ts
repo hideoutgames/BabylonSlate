@@ -22,7 +22,7 @@ import {
   embedGlbExternalImages,
   encodeHasset,
 } from "@haptic/assets";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { isEngineDefaultMaterial } from "./default-material";
 import {
   encodeTriangleGlb,

@@ -11,7 +11,7 @@ export const EFFECT_BRIDGE_MS = 120_000;
  * Feature Test scenes' Play programs (a large level links about 100, a light one about 50). An Effect holds its
  * program and, on WebGPU, its pipelines, never a texture or render target, so the bound is a count of programs.
  */
-export const PLAY_EFFECT_KEEP_BUDGET = 256;
+const PLAY_EFFECT_KEEP_BUDGET = 256;
 
 type Bridge = { effects: Effect[]; timer: ReturnType<typeof setTimeout> };
 const bridges = new WeakMap<AbstractEngine, Bridge>();
@@ -171,7 +171,7 @@ function take(keep: Keep, effect: Effect, session: Session): void {
  * programs then survive Stop and the editor's reload, so the next Play finds those it draws again in the Engine's
  * Effect cache, and a load that releases a program and asks for it again (a graph rebuilt during the load, an
  * environment filter run twice) links it once. One reference each, taken once the program has compiled (`take`), at
- * most `PLAY_EFFECT_KEEP_BUDGET` Effects (`budget`), the least recently returned released first. The keep goes with
+ * most `PLAY_EFFECT_KEEP_BUDGET` Effects (`budget`, which only tests lower), the least recently returned released first. The keep goes with
  * the Engine and with a lost context. Stopping clears a kept Effect's compile callbacks, which belong to whoever first
  * created it, so a kept Effect holds no closed Play's Scene. Stopping with `discard` (a view whose construction
  * failed) instead releases the Effects this call took, leaving the keep as it found it.
@@ -200,7 +200,10 @@ function forgetCreator(effect: Effect): void {
   effect.onError = null;
 }
 
-/** Ends `engine`'s keep: Effects nothing else holds are released. */
+/**
+ * Ends `engine`'s keep: Effects nothing else holds are released. Test seam: production ends it through the Engine's
+ * dispose and context-lost observers.
+ */
 export function releaseKeptEffects(engine: AbstractEngine): void {
   const keep = keeps.get(engine);
   if (keep) releaseKept(keep);
@@ -210,7 +213,7 @@ function releaseKept(keep: Keep): void {
   for (const effect of [...keep.effects]) drop(keep, effect);
 }
 
-/** How many Effects `engine` keeps for Play. */
+/** How many Effects `engine` keeps for Play. Test seam: production code does not call it. */
 export function keptEffectCount(engine: AbstractEngine): number {
   return keeps.get(engine)?.effects.size ?? 0;
 }

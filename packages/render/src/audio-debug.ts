@@ -32,7 +32,7 @@ function formatVoice(voice: AudioDebugVoiceSnapshot): string {
   return parts.join(" ");
 }
 
-export function formatAudioDebugOverlay(
+function formatAudioDebugOverlay(
   voices: readonly AudioDebugVoiceSnapshot[],
 ): string {
   if (voices.length === 0) return "No playing voices";

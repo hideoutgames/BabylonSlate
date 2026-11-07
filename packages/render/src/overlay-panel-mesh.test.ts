@@ -1,7 +1,7 @@
 import { VertexBuffer } from "@babylonjs/core";
 import { isUnlitMaterial } from "./unlit-material";
 import { afterEach, describe, expect, it } from "vitest";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { createOverlayPanelMesh } from "./overlay-panel-mesh";
 
 describe("createOverlayPanelMesh", () => {

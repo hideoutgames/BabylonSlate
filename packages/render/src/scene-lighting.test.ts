@@ -4,9 +4,8 @@ import {
   syncDirectionalLightPolicy,
   syncForwardLightPolicy,
 } from "./light-policy";
-import { deviceProfile } from "./device-profile";
 import { HapticLightingBlock } from "./haptic-lighting-block";
-import { hapticLightBuffer, selectHapticLights } from "./haptic-lights";
+import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer, selectHapticLights } from "./haptic-lights";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { createRenderDiagnostics } from "./render-diagnostics";
@@ -123,7 +122,7 @@ describe("scene material lighting", () => {
     (mode) => {
       const scene = host(false);
       updateSceneRenderingSettings(scene, { mode });
-      const maximum = deviceProfile().lightMaximum.point;
+      const maximum = HAPTIC_LIGHT_MAXIMUM.point;
       const lamps = lights(scene, maximum + 8);
       const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
       if (!lowered.ok) throw new Error("Fixture material did not lower");

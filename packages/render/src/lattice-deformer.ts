@@ -22,7 +22,7 @@ import { materialBaseBounds, setMaterialBoundsExpansion } from "./material-bound
 import { ensureLatticeShadowAdapter, isLatticeComponentRoot, latticeMarksRevision, markLatticeComponentRoot, meshLatticeBinding, releaseLatticeShadowAdapter, setLatticeBinding } from "./lattice-deformer-binding";
 import { ensureLatticeDeformerPlugin } from "./lattice-deformer-native";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
-export { markLatticeComponentRoot, hasMeshLatticeDeformer, bindMeshLatticeDeformer } from "./lattice-deformer-binding";
+export { markLatticeComponentRoot } from "./lattice-deformer-binding";
 
 export interface LatticeDeformerConfig {
   enabled: boolean;
@@ -73,7 +73,7 @@ export function disposeMeshLatticeDeformer(root: AbstractMesh): void {
 }
 
 /** Meshes a cage on `root` deforms: its subtree and detached LODs, stopping at other component roots. */
-export function latticePartMeshes(root: AbstractMesh): AbstractMesh[] {
+function latticePartMeshes(root: AbstractMesh): AbstractMesh[] {
   const found: AbstractMesh[] = [];
   const visit = (node: Node) => {
     if (node !== root && isLatticeComponentRoot(node)) return;

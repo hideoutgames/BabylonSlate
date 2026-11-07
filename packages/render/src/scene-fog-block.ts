@@ -18,7 +18,7 @@ import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
 import "@babylonjs/core/ShadersWGSL/ShadersInclude/helperFunctions";
 
 /** The scene's fog (mode, start, end, density), for Babylon's fog factor (`emitSceneFogFactor`). */
-export const SCENE_FOG_UNIFORM = "sceneFogInfo";
+const SCENE_FOG_UNIFORM = "sceneFogInfo";
 /** The scene's fog colour, linear, as surfaces mix toward it. */
 export const SCENE_FOG_COLOR_UNIFORM = "sceneFogColor";
 const linearFog = new Color3();

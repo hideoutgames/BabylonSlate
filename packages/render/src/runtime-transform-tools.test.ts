@@ -1,7 +1,7 @@
 import { FreeCamera, MeshBuilder, Quaternion, Vector3 } from "@babylonjs/core";
 import type { RuntimeObjectIdentity } from "@haptic/bridge";
 import { afterEach, expect, it, vi } from "vitest";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import * as gizmoModule from "./gizmo-host";
 import { createRuntimeTransformTools, type RuntimeTransformChange } from "./runtime-transform-tools";
 

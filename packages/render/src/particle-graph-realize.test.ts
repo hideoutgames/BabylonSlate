@@ -14,7 +14,7 @@ import {
   type ParticleGraphSettings,
   type ParticleNumericType,
 } from "@haptic/particle-graph";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { PARTICLE_BLOCK_ADAPTERS, type ParticleBlockAdapter } from "./particle-graph-blocks";
 import { realizeParticleGraph, type RealizeParticleGraphResult } from "./particle-graph-realize";
 import { GlobalParameterSession, type GlobalParameterValueSource } from "./global-parameter-values";

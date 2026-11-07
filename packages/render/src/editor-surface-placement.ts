@@ -29,7 +29,7 @@ export interface SurfaceRest {
 const tuple = (v: Vector3): [number, number, number] => [v.x, v.y, v.z];
 
 /** Visible world geometry a placement may land on: no editor helpers, sky, lines or collider visuals. */
-export function isPlacementSurface(mesh: AbstractMesh): boolean {
+function isPlacementSurface(mesh: AbstractMesh): boolean {
   return (
     mesh.isEnabled() &&
     mesh.isVisible &&

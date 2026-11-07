@@ -2,7 +2,7 @@ import type { AbstractMesh } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
 import { createActor, createDefaultScene } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { applySceneToBabylonScene, editorComponentMeshName } from "./scene-loader";
 import { applyAssignMesh, createSnapshotSceneBinding, migratePlaySlotVisual } from "./snapshot-apply";

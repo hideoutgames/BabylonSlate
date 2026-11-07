@@ -246,24 +246,13 @@ export function resolveShadowSettings(
     ...normalizeShadowOverrides(scene),
   };
 }
-/** The largest shadow map edges a device class allocates, whatever the quality level asks for. */
-export interface ShadowMapSizeCap {
-  mapSize: number;
-  localMapSize: number;
-}
 export function effectiveShadowSettings(
   requested: ShadowSettings,
   supportsCascades = true,
   mode: "pbr" | "cel" = "pbr",
-  mapSizeCap: ShadowMapSizeCap | null = null,
 ): { settings: ShadowSettings; limits: string[] } {
   const settings = { ...requested };
   const limits: string[] = [];
-  if (mapSizeCap && (settings.mapSize > mapSizeCap.mapSize || settings.localMapSize > mapSizeCap.localMapSize)) {
-    settings.mapSize = Math.min(settings.mapSize, mapSizeCap.mapSize);
-    settings.localMapSize = Math.min(settings.localMapSize, mapSizeCap.localMapSize);
-    limits.push(`shadow maps: at most ${mapSizeCap.mapSize} directional, ${mapSizeCap.localMapSize} local on this device class`);
-  }
   if (settings.localLightMode === "auto")
     settings.maxLocalLights =
       SHADOW_CAPACITY_PROFILES[settings.profile].autoLocalLights;

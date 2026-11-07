@@ -3,7 +3,7 @@
  * `water-material.ts` re-exports the public names.
  */
 import {
-  WATER_BLEND_COLOR_PARTNERS, WATER_FFT_CASCADES_MAX, WATER_SPECTRUM_GRAVITY, waterFoamScale, waterFoamThreshold,
+  WATER_FFT_CASCADES_MAX, WATER_SPECTRUM_GRAVITY, waterFoamScale, waterFoamThreshold,
   waterSpectrum, type WaterDefinition, type WaterShadingDetail, type WaterSpectrum,
 } from "@haptic/core";
 
@@ -55,17 +55,6 @@ export const WATER_DETAIL_LEVELS: Readonly<Record<WaterShadingDetail, number>> =
 export const WATER_NODE_BLEND_DEFINE = "SLATE_WATER_NODE_BLEND";
 /** Where a water node graph reads `slateWaterBlend`: its Water Waves node's blend scaling, or its Water Colors node's shares. */
 export const WATER_BLEND_ATTRIBUTE_CONDITION = `defined(${WATER_BLEND_DEFINE}) || defined(${WATER_NODE_BLEND_DEFINE})`;
-/** Colour partners a blending surface mixes toward (`WaterNodeSurface.partners`). */
-export const BLEND_PARTNERS = WATER_BLEND_COLOR_PARTNERS;
-/**
- * The colours a blending surface mixes toward, per partner (`WaterNodeSurface.partners`), each by its per-vertex
- * colour share: partner k's uniforms are `slateWaterBlendShallow${k}` and so on, in `COLOR_UNIFORMS` order.
- */
-export const BLEND_COLOR_UNIFORMS = Array.from({ length: BLEND_PARTNERS }, (_, k) =>
-  ["slateWaterBlendShallow", "slateWaterBlendDeep", "slateWaterBlendFoam", "slateWaterBlendAbsorb", "slateWaterBlendThrough"].map((name) => `${name}${k}`)).flat();
-/** Per-asset colour uniforms the fragment reads through blended locals (`blendColors`), in `BLEND_COLOR_UNIFORMS` order. */
-export const COLOR_UNIFORMS = ["slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterAbsorb", "slateWaterThrough"] as const;
-export const COLOR_LOCALS = ["swShallowU", "swDeepU", "swFoamU", "swAbsorbU", "swThroughU"] as const;
 /** The reflection march's step count define (Reflection Steps, a compile-time loop bound). */
 export const SSR_STEPS = "SLATE_WATER_SSR_STEPS";
 /** Binary refinement steps after the march's first hit. */
@@ -98,7 +87,6 @@ export const WATER_FFT_DEFINE = "SLATE_WATER_FFT";
 export const WATER_FFT_SAMPLER = "slateWaterFftSampler";
 /** The spectrum's persistent turbulence (one layer per cascade), which the fragment's foam reads. */
 export const WATER_FOAM_SAMPLER = "slateWaterFoamSampler";
-export const FFT = WATER_FFT_DEFINE;
 /**
  * Per cascade c, (1 / patch size, uv offset x, uv offset z, 0): the uv offset is fract(R(−θ_c)·floating origin / patch
  * size) + 0.5 / N from the CPU in float64, so eye-relative rest points sample the world-anchored spectrum without large
@@ -170,7 +158,7 @@ export const SPECTRUM_FOAM_SCALE = 2.4;
 export const EDGE_FOAM_CALM = -0.5;
 
 /** Share of the wind sea's peak phase speed at which foam patterns drift downwind, as foam on a real sea does. */
-export const FOAM_DRIFT_SHARE = 0.03;
+const FOAM_DRIFT_SHARE = 0.03;
 /**
  * Velocity (metres per second of water time, world x and z) at which a body's foam patterns drift with its waves: along
  * Wave Direction, `FOAM_DRIFT_SHARE` of the peak wave's phase speed at Wave Speed, scaled by Wave Scale up to 1, so calm

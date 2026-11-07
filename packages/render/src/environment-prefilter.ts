@@ -12,7 +12,7 @@ import {
 } from "./managed-render-resources";
 
 /** Face size of a filtered environment: rough lighting needs no more, and it bounds the filter's GPU work. */
-export const FILTERED_ENVIRONMENT_SIZE = 256;
+const FILTERED_ENVIRONMENT_SIZE = 256;
 /**
  * Importance samples per texel; each reads the source mip matching its lobe, so
  * few are needed. Babylon's real-time filtering calls 64 high quality.

@@ -1,22 +1,18 @@
-import { GLTF_MESH_DECODER_RELATIVE_FILES } from "@haptic/assets";
-
-export { GLTF_MESH_DECODER_RELATIVE_FILES };
-
 /**
  * Self-hosted Draco / meshopt decoder URLs for Babylon's glTF loader.
  * Never point at a CDN — editor and exports must work offline.
  */
 
-export const DEFAULT_DRACO_PUBLIC_BASE = "/draco/";
-export const DEFAULT_MESHOPT_PUBLIC_BASE = "/meshopt/";
+const DEFAULT_DRACO_PUBLIC_BASE = "/draco/";
+const DEFAULT_MESHOPT_PUBLIC_BASE = "/meshopt/";
 
-export interface DracoDecoderUrls {
+interface DracoDecoderUrls {
   wasmUrl: string;
   wasmBinaryUrl: string;
   fallbackUrl: string;
 }
 
-export interface GltfMeshDecoderUrls {
+interface GltfMeshDecoderUrls {
   draco: DracoDecoderUrls;
   meshopt: { url: string };
 }
@@ -31,11 +27,11 @@ export type DracoDecoderConfigHost = {
   ResetDefault?: (skipDispose?: boolean) => void;
 };
 
-export type MeshoptCompressionHost = {
+type MeshoptCompressionHost = {
   Configuration: { decoder: { url: string } };
 };
 
-export type GltfMeshDecoderOptions = {
+type GltfMeshDecoderOptions = {
   dracoBasePath?: string;
   meshoptBasePath?: string;
   /**
@@ -49,7 +45,7 @@ function slashTerminated(basePath: string): string {
   return basePath.endsWith("/") ? basePath : `${basePath}/`;
 }
 
-export function gltfMeshDecoderUrls(
+function gltfMeshDecoderUrls(
   dracoBasePath: string = DEFAULT_DRACO_PUBLIC_BASE,
   meshoptBasePath: string = DEFAULT_MESHOPT_PUBLIC_BASE,
 ): GltfMeshDecoderUrls {

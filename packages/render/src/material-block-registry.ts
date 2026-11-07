@@ -119,7 +119,7 @@ export interface MaterialPlumbing {
   clipPosition?: NodeMaterialConnectionPoint;
 }
 
-export interface BlockAdapterContext {
+interface BlockAdapterContext {
   operation: MaterialOperation;
   /** Unique, stable block name prefix derived from the operation id. */
   name: string;
@@ -128,9 +128,9 @@ export interface BlockAdapterContext {
   plumbing: MaterialPlumbing;
 }
 
-export type BlockAdapter = (context: BlockAdapterContext) => BlockRealization;
+type BlockAdapter = (context: BlockAdapterContext) => BlockRealization;
 
-export function babylonTypeFor(
+function babylonTypeFor(
   type: MaterialValueType,
 ): NodeMaterialBlockConnectionPointTypes {
   switch (type) {
@@ -149,7 +149,7 @@ export function babylonTypeFor(
 }
 
 /** Build the Babylon value object a constant InputBlock expects. */
-export function babylonValueFor(
+function babylonValueFor(
   type: MaterialValueType,
   components: readonly number[],
   asColor: boolean,

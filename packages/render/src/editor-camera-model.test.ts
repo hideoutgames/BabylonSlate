@@ -1,7 +1,7 @@
 import { Mesh, Ray, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, identitySerializedTransform, type SerializedActor } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { createEditorCamera } from "./editor-camera";
 import { createEditorCameraModel } from "./editor-camera-model";
 import { EditorSceneSync } from "./editor-scene-sync";

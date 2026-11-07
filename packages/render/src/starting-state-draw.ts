@@ -6,12 +6,12 @@ import { DriverCompileWatch } from "./driver-compile";
  * The starting state's draw times out after this long without drawing everything, unless a shader finished meanwhile:
  * compile progress grants another budget (as loading waits renew), within `STARTING_STATE_CEILING_MS`.
  */
-export const STARTING_STATE_DRAW_MS = 10_000;
+const STARTING_STATE_DRAW_MS = 10_000;
 /**
  * The draw ends this long after its first frame, whatever remains, and the loading frames then present: it leaves room
  * inside the first presentation's own compile watch (`SCENE_PREPARATION_CEILING_MS`, 300 s).
  */
-export const STARTING_STATE_CEILING_MS = 120_000;
+const STARTING_STATE_CEILING_MS = 120_000;
 
 export interface StartingStateDraw {
   /** It has drawn everything (or ended), and a loading frame has followed. */

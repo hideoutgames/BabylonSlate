@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Animation, FreeCamera, InstancedMesh, Mesh, StandardMaterial, Vector3, type AnimationGroup } from "@babylonjs/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { encodeAnimatedLimbGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { sceneInstancePool, setSceneInstancing } from "./instance-pool";
 import { loadModelContainer, modelMaterialIndexOf } from "./model-container";

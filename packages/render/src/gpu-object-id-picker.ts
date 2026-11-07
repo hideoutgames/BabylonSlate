@@ -18,21 +18,21 @@ import { isRevealPending } from "./reveal-pending";
 import { onSceneReadinessDirty, pinFloatingOrigin } from "./scene-readiness-signal";
 
 /** Mesh hit by a GPU pick; `null` is background, `undefined` means use CPU picking. */
-export type GpuPickResult = AbstractMesh | null | undefined;
+type GpuPickResult = AbstractMesh | null | undefined;
 
 const READY_TIMEOUT_MS = 1000;
 const READY_POLL_MS = 16;
 const PICK_TARGET_SIZE = { width: 1, height: 1 } as const;
 
 /** Same eligibility as Babylon's default `scene.pick` predicate, without a mesh a world view does not draw yet. */
-export function gpuPickableMeshes(scene: Scene): AbstractMesh[] {
+function gpuPickableMeshes(scene: Scene): AbstractMesh[] {
   return scene.meshes.filter(
     (mesh) => mesh.isPickable && mesh.isVisible && mesh.isEnabled() && mesh.getTotalVertices() > 0 && !isRevealPending(mesh),
   );
 }
 
 /** Decode the RGB 24-bit id written by Babylon's `encodeObjectId`. */
-export function decodeObjectId(pixel: ArrayLike<number>): number {
+function decodeObjectId(pixel: ArrayLike<number>): number {
   return ((pixel[0] ?? 0) << 16) | ((pixel[1] ?? 0) << 8) | (pixel[2] ?? 0);
 }
 

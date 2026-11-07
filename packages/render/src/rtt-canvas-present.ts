@@ -18,6 +18,9 @@ export type RttCanvasPresent = {
   readbackMs: () => number | null;
 };
 
+/** The RTT's longest edge in pixels. */
+const RTT_MAX_SIZE = 2048;
+
 /**
  * Present a Scene onto a 2D canvas via RTT so it does not steal the shared
  * Engine default framebuffer (Scene viewport / Play overlay).
@@ -25,10 +28,9 @@ export type RttCanvasPresent = {
 export function createRttCanvasPresent(
   scene: Scene,
   canvas: HTMLCanvasElement,
-  options: { name?: string; maxSize?: number } = {},
+  options: { name?: string } = {},
 ): RttCanvasPresent {
   const name = options.name ?? "rttCanvas";
-  const maxSize = options.maxSize ?? 2048;
   let rtt: RenderTargetTexture | null = null;
   let blitInFlight: Promise<void> | null = null;
   let generation = new AbortController();
@@ -55,7 +57,7 @@ export function createRttCanvasPresent(
     const rawH = Math.floor(canvas.clientHeight || 0);
     if (rawW <= 0 || rawH <= 0) return;
     const longest = Math.max(rawW, rawH);
-    const scale = Math.min(1 / Math.max(1, scene.getEngine().getHardwareScalingLevel()), maxSize / longest);
+    const scale = Math.min(1 / Math.max(1, scene.getEngine().getHardwareScalingLevel()), RTT_MAX_SIZE / longest);
     const width = Math.max(1, Math.floor(rawW * scale));
     const height = Math.max(1, Math.floor(rawH * scale));
     const current = rtt?.getSize();

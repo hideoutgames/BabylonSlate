@@ -19,7 +19,6 @@ import {
   sceneLayerCanvasToLayer,
   sceneLayerOrthoBounds,
   sceneLayerViewBounds,
-  walkOverlayPointerHits,
   SCENE_LAYER_DEFAULT_CAMERA,
   type OverlayPointerHit,
   type SceneLayerCamera,
@@ -584,46 +583,6 @@ export class SceneLayerCompositor {
       }
     }
     return hits;
-  }
-
-  pickAt(
-    canvasX: number,
-    canvasY: number,
-    options?: { minTargetPx?: number; canvasCssHeight?: number },
-  ): {
-    layerId: string;
-    meshName: string;
-    slotId: number | null;
-    actorGuid: string | null;
-    hitTest: SceneLayerHitTest;
-    blocked: boolean;
-    targets: OverlayPointerHit[];
-  } | null {
-    const hits = this.pickHits(canvasX, canvasY, options);
-    const walked = walkOverlayPointerHits(hits);
-    const first = walked.targets[0];
-    if (!first) {
-      return walked.blocked
-        ? {
-            layerId: "",
-            meshName: "",
-            slotId: null,
-            actorGuid: null,
-            hitTest: "block",
-            blocked: true,
-            targets: walked.targets,
-          }
-        : null;
-    }
-    return {
-      layerId: first.layerId,
-      meshName: first.actorGuid,
-      slotId: null,
-      actorGuid: first.actorGuid,
-      hitTest: first.hitTest,
-      blocked: walked.blocked,
-      targets: walked.targets,
-    };
   }
 
   dispose(): Promise<void> {

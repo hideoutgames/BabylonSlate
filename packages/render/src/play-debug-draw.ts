@@ -11,6 +11,7 @@ import { CreateGreasedLine } from "@babylonjs/core/Meshes/Builders/greasedLineBu
 import type { CommandMessage, DebugDrawCommand } from "@haptic/bridge";
 import { eulerDegreesToQuaternion } from "@haptic/core";
 import { markPlayDebugOverlay } from "./play-debug-overlay";
+import { asNumber } from "./as-number";
 
 export const PLAY_DEBUG_DRAW_PREFIX = "playDebugDraw:";
 
@@ -69,10 +70,6 @@ type DrawEntry = {
 
 /** Thin polylines of one draw command, grouped by kind and color. */
 type LineBatch = Map<string, { kind: string; color: Color3; lines: Vector3[][] }>;
-
-function asNumber(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
 
 function asVec3(
   value: unknown,

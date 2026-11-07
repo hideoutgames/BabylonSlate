@@ -357,8 +357,6 @@ function projectEngineOptions(): EngineOptions {
   };
 }
 
-export { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting };
-
 /** Frames with no layer still presenting share this set instead of building one. */
 const NO_PRESENTING_LAYERS: ReadonlySet<string> = new Set();
 
@@ -808,7 +806,7 @@ function initializeEngine(
   const sharedCache = resourceCacheForEngine(engine);
   const cacheBinding = bindResourceCacheToHandle(sharedCache);
   const resourceCache = cacheBinding.cache;
-  const nativePreparation = nativePreparationForEngine(engine, options.nativePreparation);
+  const nativePreparation = nativePreparationForEngine(engine);
   onRollback(() => cacheBinding.dispose());
   onRollback(() => { if (!scene.isDisposed) scene.dispose(); });
   if (typeof options.textureByteCeiling === "number") {
@@ -3257,22 +3255,8 @@ function initializeEngine(
         },
       };
     },
-    renderingPipeline: () => sceneRenderingPipeline(scene),
     scalabilityStatus: () => lastScalabilityStatus,
     accountedGeometryBytes: () => accountedGeometryBytesForScene(scene),
-    pickAt: (x, y) => {
-      const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
-      const canvasSize = pointerCanvas();
-      const overlayHit = sceneLayerCompositor?.pickAt(mapped.x, mapped.y, {
-        minTargetPx: options.touchMinTargetPx ?? 44,
-        canvasCssHeight: canvasSize.height,
-      });
-      if (overlayHit?.blocked || overlayHit?.actorGuid) {
-        return { meshName: overlayHit.meshName, slotId: overlayHit.slotId };
-      }
-      const hit = pickAtCanvas(scene, mapped.x, mapped.y);
-      return hit ? { meshName: hit.meshName, slotId: hit.slotId } : null;
-    },
     lastActorPositions: () => lastPositions,
     ...createPlayHandleInspection(binding),
     registerFonts: async (entries) => {
@@ -3406,13 +3390,8 @@ function initializeEngine(
         preparation?.signal?.removeEventListener("abort", cancel);
       }
     },
-    nativePreparationStats: () => nativePreparation.snapshot(),
     spawnableWarmStats: () => spawnableWarm,
     releaseInitialSources,
-    setSourceLibraries: (libraries) => {
-      if (libraries.audioLibrary) audioService?.setLibrary(libraries.audioLibrary, true);
-      if (libraries.particleLibrary) particleService?.setLibrary(libraries.particleLibrary);
-    },
     applySceneEnvironment: (sceneData: SerializedScene) => {
       if (!options.editor) {
         playVisuals.setStaticActors(reflectionProbeStaticActors(sceneData.actors));

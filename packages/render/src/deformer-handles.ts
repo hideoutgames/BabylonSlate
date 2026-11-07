@@ -1,36 +1,28 @@
-import type { Camera } from "@babylonjs/core/Cameras/camera";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLayerRenderer";
 import type { Scene } from "@babylonjs/core/scene";
 import { parseDeformerProperties, type DeformerProperties } from "@haptic/core";
 import { latticeFitBounds, setMeshLatticeDeformer } from "./lattice-deformer";
-import { createShapeHandles, type ShapeHandlesHost, type ShapeHandlesOptions, type ShapeHandleTarget, type ShapePoint } from "./shape-handles";
+import { cameraFacingConstraint, createShapeHandles, type ShapeHandlesHost, type ShapeHandlesOptions, type ShapeHandleTarget, type ShapePoint } from "./shape-handles";
 
-const FORWARD = new Vector3();
-const FALLBACK_FORWARD = Vector3.Forward();
 /** Babylon's Lattice keeps every axis at least this long. */
 const MIN_CAGE_SIZE = 0.0001;
 const POINT_COLOR = new Color3(1, 0.72, 0.28);
 
-function cameraForward(camera: Camera): Vector3 {
-  const m = camera.getWorldMatrix().m;
-  return FORWARD.set(m[8]!, m[9]!, m[10]!).normalize();
-}
-
-export interface DeformerHandleTarget extends ShapeHandleTarget {
+interface DeformerHandleTarget extends ShapeHandleTarget {
   /** The component is the target's applied cage, so handle drags deform the mesh live. */
   preview: boolean;
 }
 
 /** Authored properties plus the cage box the renderer uses, in the target's local space. */
-export interface DeformerHandleBody extends DeformerProperties {
+interface DeformerHandleBody extends DeformerProperties {
   cageMin: ShapePoint;
   cageMax: ShapePoint;
   preview: boolean;
 }
 
-export interface DeformerHandle {
+interface DeformerHandle {
   id: string;
   kind: "point";
   position: ShapePoint;
@@ -61,7 +53,7 @@ function gridOf(body: DeformerHandleBody, index: number): [number, number, numbe
 }
 
 /** One handle per control at its rest position plus its authored offset (Strength is not applied). */
-export function deformerHandles(body: DeformerHandleBody): DeformerHandle[] {
+function deformerHandles(body: DeformerHandleBody): DeformerHandle[] {
   const [rx, ry, rz] = body.resolution;
   const handles: DeformerHandle[] = [];
   for (let index = 0; index < rx * ry * rz; index++) {
@@ -84,14 +76,14 @@ export function deformerOutline(body: DeformerHandleBody): ShapePoint[][] {
   return lines;
 }
 
-export function dragDeformerHandle(body: DeformerHandleBody, index: number, local: ShapePoint): { offsets: number[] } {
+function dragDeformerHandle(body: DeformerHandleBody, index: number, local: ShapePoint): { offsets: number[] } {
   const rest = restPosition(body, ...gridOf(body, index));
   const offsets = [...body.offsets];
   for (let axis = 0; axis < 3; axis++) offsets[index * 3 + axis] = local[axis]! - rest[axis]!;
   return { offsets };
 }
 
-export function resetDeformerHandle(body: DeformerHandleBody, index: number): { offsets: number[] } | null {
+function resetDeformerHandle(body: DeformerHandleBody, index: number): { offsets: number[] } | null {
   if ([0, 1, 2].every((axis) => body.offsets[index * 3 + axis] === 0)) return null;
   const offsets = [...body.offsets];
   offsets.fill(0, index * 3, index * 3 + 3);
@@ -137,7 +129,7 @@ export function createDeformerHandles(layer: UtilityLayerRenderer, scene: Scene,
     drag: (body, handle, local) => dragDeformerHandle(body, handle.index, local),
     insert: () => null,
     remove: (body, handle) => resetDeformerHandle(body, handle.index),
-    constraint: (_handle, _world, camera) => ({ dragPlaneNormal: camera ? cameraForward(camera) : FALLBACK_FORWARD }),
+    constraint: cameraFacingConstraint,
     color: () => POINT_COLOR,
     selectable: () => true,
   }, options);

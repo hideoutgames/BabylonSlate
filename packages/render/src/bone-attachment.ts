@@ -8,7 +8,7 @@ import type { CommandMessage } from "@haptic/bridge";
 import { isRigJointNode } from "./skeleton-preview";
 import type { SampledAudioPose } from "./snapshot-sync";
 
-export type BoneAttachmentCommand = Extract<CommandMessage, { type: "attachToBone" }>;
+type BoneAttachmentCommand = Extract<CommandMessage, { type: "attachToBone" }>;
 export interface BoneAttachment {
   targetSlotId: number;
   boneName: string;
@@ -26,7 +26,7 @@ export interface BoneAttachment {
   resolved?: { node: TransformNode } | { bone: Bone; mesh: AbstractMesh };
 }
 
-export interface BoneAttachmentBinding {
+interface BoneAttachmentBinding {
   meshes: Map<number, Mesh>;
   boneAttachments: Map<number, BoneAttachment>;
 }

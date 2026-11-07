@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeParticleEmitterPayload, type ParticleLibrary, type ParticleLibraryEmitter } from "@haptic/assets";
 import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "@haptic/particle-graph";
 import { PARTICLE_UPDATE_SPEED } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { ParticleService, type ParticlePlaybackEndedReport } from "./particle-service";
 
 const cleanups: Array<() => void> = [];

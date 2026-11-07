@@ -16,7 +16,7 @@ import type { Nullable } from "@babylonjs/core/types";
  * they bind, so both run with the mesh's cube in place: each submesh compiles
  * for its own cube's format and box projection, and binds its own cube.
  */
-export type MeshEnvironmentResolver = (mesh: AbstractMesh) => BaseTexture | null;
+type MeshEnvironmentResolver = (mesh: AbstractMesh) => BaseTexture | null;
 
 const resolvers = new WeakMap<Scene, MeshEnvironmentResolver>();
 /** Bumped when a resolved cube's bound values (its projection box) change in place. */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Mesh, VertexBuffer } from "@babylonjs/core";
 import { encodeGlbJsonBin } from "@haptic/assets";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { loadModelContainer } from "./model-container";
 
 const FLOAT = 5126;

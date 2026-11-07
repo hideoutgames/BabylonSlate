@@ -19,7 +19,7 @@ export interface FontAssetEntry {
   style?: string;
 }
 
-export type FontRegistryWarning = {
+type FontRegistryWarning = {
   guid: string;
   family: string;
   message: string;

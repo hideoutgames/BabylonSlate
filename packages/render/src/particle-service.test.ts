@@ -7,7 +7,7 @@ import {
 } from "@haptic/assets";
 import { PARTICLE_CPU_CAPACITY_BUDGET, PARTICLE_UPDATE_SPEED } from "@haptic/core";
 import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "@haptic/particle-graph";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { ParticleService, particleStats, type ParticleMaterialOwner, type ParticleServiceDiagnostic } from "./particle-service";
 import type { ResourceLease } from "./resource-cache";
 import { admittedSceneParticles, createSceneStreamAdmission } from "./scene-stream-admission";

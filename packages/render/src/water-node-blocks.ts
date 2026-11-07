@@ -86,19 +86,19 @@ export function meshWaterNodeSurface(mesh: AbstractMesh | null | undefined): Wat
 }
 
 /** The pass drawn has the view's scene copy (Water Scene Color, Water Depth Fade and the reflection march sample it). */
-export const WATER_NODE_COPY_DEFINE = "SLATE_WATER_NODE_COPY";
+const WATER_NODE_COPY_DEFINE = "SLATE_WATER_NODE_COPY";
 /** Water Reflection marches the copy for scene objects; its value is the march's step count. */
-export const WATER_NODE_SSR_DEFINE = "SLATE_WATER_SSR_STEPS";
+const WATER_NODE_SSR_DEFINE = "SLATE_WATER_SSR_STEPS";
 /** Water Reflection samples an environment or skybox cube (`waterSkyCube`); otherwise it reflects the analytic sky. */
-export const WATER_NODE_ENV_DEFINE = "SLATE_WATER_NODE_ENV";
+const WATER_NODE_ENV_DEFINE = "SLATE_WATER_NODE_ENV";
 /** Water Reflection reads the view's planar mirror (Planar quality, a flat body, Object Reflections on). */
-export const WATER_NODE_PLANAR_DEFINE = "SLATE_WATER_NODE_PLANAR";
-export const WATER_NODE_SCENE_SAMPLER = "slateWaterSceneSampler";
+const WATER_NODE_PLANAR_DEFINE = "SLATE_WATER_NODE_PLANAR";
+const WATER_NODE_SCENE_SAMPLER = "slateWaterSceneSampler";
 const PLANAR_SAMPLER = "slateWaterNodePlanarSampler";
 /** (1 for this body's mirror, 1 for a display-encoded mirror, `PLANAR_REACH`, 0) and the mirror's view-projection. */
 const PLANAR_UNIFORM = "slateWaterNodePlanar";
 const PLANAR_MATRIX = "slateWaterNodePlanarMatrix";
-export const WATER_NODE_ENV_SAMPLER = "slateWaterNodeEnvSampler";
+const WATER_NODE_ENV_SAMPLER = "slateWaterNodeEnvSampler";
 const FIELD_SAMPLER = "slateWaterFieldSampler";
 const CONTACT_SAMPLER = "slateWaterContactSampler";
 const FIELD_UNIFORMS = ["slateWaterFieldBounds", "slateWaterFieldInfo", "slateWaterFieldStep", "slateWaterContactBounds", "slateWaterContactInfo"] as const;
@@ -354,7 +354,7 @@ const skyScans = new WeakMap<Scene, { count: number; stale: boolean; boxes: Abst
  * The cube Water Reflection samples: the scene's environment, else the visible skybox's reflection cube once it is
  * ready, else null (the analytic sky of `sceneWaterNodeLighting`). The mesh list is scanned only after it changed.
  */
-export function waterSkyCube(scene: Scene): BaseTexture | null {
+function waterSkyCube(scene: Scene): BaseTexture | null {
   const environment = scene.environmentTexture;
   if (environment) return environment.isCube ? environment : null;
   let scan = skyScans.get(scene);
@@ -855,7 +855,7 @@ swnSky = mix(swnSky, swnObj.rgb, swnObj.a);
 RegisterClass("BABYLON.WaterReflectionBlock", WaterReflectionBlock);
 
 /** Water Colors' uniforms, apart from every other water uniform (the Water Waves node's foam terms are `slateWaterNodeFoam`). */
-export const WATER_NODE_COLOR_UNIFORMS = ["slateWaterNodeShallowColor", "slateWaterNodeDeepColor", "slateWaterNodeFoamColor"] as const;
+const WATER_NODE_COLOR_UNIFORMS = ["slateWaterNodeShallowColor", "slateWaterNodeDeepColor", "slateWaterNodeFoamColor"] as const;
 const COLOR_UNIFORMS = WATER_NODE_COLOR_UNIFORMS;
 /** Partner k's colours (`WaterNodeSurface.partners`), in `COLOR_UNIFORMS` order: `slateWaterNodeShallowColor${k}` and so on. */
 const PARTNER_COLOR_UNIFORMS = Array.from({ length: WATER_BLEND_COLOR_PARTNERS }, (_, k) => COLOR_UNIFORMS.map((name) => `${name}${k}`));

@@ -118,9 +118,9 @@ export function planBitmapGlyphAtlas(
   return best;
 }
 
-export const DEFAULT_TEXT2D_FONT_STACK = "sans-serif";
+const DEFAULT_TEXT2D_FONT_STACK = "sans-serif";
 
-export function cssFontForText2D(style: RichTextStyle, stack: string): string {
+function cssFontForText2D(style: RichTextStyle, stack: string): string {
   const italic = style.italic ? "italic" : "normal";
   const weight = style.bold ? "700" : "400";
   const size = Math.max(1, Math.round(style.size));

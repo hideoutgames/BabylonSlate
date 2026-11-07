@@ -9,7 +9,7 @@ import {
 } from "./anim-apply";
 import { markInstanceSource } from "./instance-source";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import {
   accountedGeometryBytesForScene,
   adoptLoadedHierarchy,

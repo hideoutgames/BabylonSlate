@@ -51,7 +51,7 @@ const MAX_STEPS = 16;
  * render height times the projection's y scale), `ssTexel`, `ssCascadeEnds` and `ssCascadeCaps` (`screenShadowThicknessCaps`;
  * an unused cascade ends at -1). Derivatives come first: WGSL takes them in uniform control flow.
  */
-export function screenShadowsShader(wgsl: boolean): string {
+function screenShadowsShader(wgsl: boolean): string {
   const { v2, v3, v4, f, uv, u, decl, field, texture, sample, loop, output, main } = syntax(wgsl);
   const lit = (eye: string) => output(`${v4}(1.0, ${eye}, 0.0, 1.0)`);
   const header = `${wgsl ? "varying vUV: vec2f;" : "varying vec2 vUV;"}

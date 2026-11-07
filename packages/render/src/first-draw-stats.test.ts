@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArcRotateCamera, FresnelParameters, HemisphericLight, MeshBuilder, StandardMaterial, Vector3, type Scene } from "@babylonjs/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { FIRST_DRAW_STALL_MS, LONG_FRAMES_KEPT, openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 
 /** A Standard Material whose defines differ from a plain lit one's, so it compiles an Effect of its own. */

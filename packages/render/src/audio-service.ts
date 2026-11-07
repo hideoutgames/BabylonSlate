@@ -56,7 +56,7 @@ export type AudioLibrary = {
   sourceRevisions?: ReadonlyMap<string, string>;
 };
 
-export type AudioStats = {
+type AudioStats = {
   unlocked: boolean;
   queued: number;
   voices: number;

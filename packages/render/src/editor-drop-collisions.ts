@@ -32,7 +32,7 @@ type TriangleShape = {
 };
 type QueryShape =
   Exclude<ColliderShape, { kind: "convex" | "mesh" }> | TriangleShape;
-export type DropSurface = {
+type DropSurface = {
   actorId: string;
   shape: QueryShape;
   world: Matrix;

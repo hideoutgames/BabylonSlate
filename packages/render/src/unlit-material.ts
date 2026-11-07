@@ -111,7 +111,7 @@ function vertexAlpha(mesh: AbstractMesh): boolean {
  * Standard's alpha rules, per mesh: an unlit instance draws opaque, alpha-tested and blended meshes alike, and Babylon
  * reads these for each draw.
  */
-export function unlitNeedsBlending(mesh: AbstractMesh): boolean {
+function unlitNeedsBlending(mesh: AbstractMesh): boolean {
   const binding = unlitBinding(mesh);
   const style = overlayVisualStyle(mesh);
   if (style.opacity * style.tint[3] < 1) return true;

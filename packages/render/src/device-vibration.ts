@@ -1,7 +1,7 @@
 /** `navigator.vibrate`, absent on iOS, desktop browsers and some embedded views. */
 type Vibrator = { vibrate?: (pattern: number) => boolean } | undefined;
 
-export type DeviceVibrationCommand = { durationMs: number };
+type DeviceVibrationCommand = { durationMs: number };
 
 /**
  * Vibrate the device for `durationMs`, or stop it at 0. Where the browser has

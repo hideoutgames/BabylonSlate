@@ -57,7 +57,7 @@ function installFileReaderPolyfill(): void {
   });
 }
 
-export interface ConvertObjToGlbOptions {
+interface ConvertObjToGlbOptions {
   engine?: AbstractEngine;
   fileName?: string;
   sidecars?: Array<{ name: string; bytes: Uint8Array }>;
@@ -155,7 +155,7 @@ function containerDispose(scene: Scene): void {
 }
 
 /** The GLB an OBJ converts to, in the OBJ's folder of the batch (a ZIP import keeps folders). */
-export function glbFileNameFromObj(objName: string): string {
+function glbFileNameFromObj(objName: string): string {
   return objName.replace(/\.obj$/i, ".glb");
 }
 

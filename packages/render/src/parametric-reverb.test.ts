@@ -70,7 +70,7 @@ describe("parametric reverb topology", () => {
     );
   });
 
-  it("wires dry unity plus Schroeder comb feedback and all-pass feedforward", () => {
+  it("wires Schroeder comb feedback and all-pass feedforward", () => {
     const graph = mockAudioGraph();
     const input = graph.nodes.find((node) => node.kind === "input")!;
     const output = graph.nodes.find((node) => node.kind === "output")!;
@@ -105,11 +105,9 @@ describe("parametric reverb topology", () => {
     expect(input.connections).toEqual([output]);
   });
 
-  it("skips a second dry path when the host already routes the send bus", () => {
+  it("adds no dry path, as the host already routes the send bus to the main mix", () => {
     const graph = mockAudioGraph();
-    connectParametricReverb(graph.context, graph.input, graph.output, {
-      dryPassThrough: false,
-    });
+    connectParametricReverb(graph.context, graph.input, graph.output);
     const input = graph.nodes.find((node) => node.kind === "input");
     const output = graph.nodes.find((node) => node.kind === "output");
     const duplicateDry = input?.connections.find(

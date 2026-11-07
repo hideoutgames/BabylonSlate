@@ -32,7 +32,7 @@ import {
   type SerializedScene,
 } from "@haptic/core";
 import type { ImageProcessingPostProcess } from "@babylonjs/core/PostProcesses/imageProcessingPostProcess";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { updateSceneRenderingSettings } from "./render-settings";
 import {
   CAMERA_PREVIEW_HEIGHT,

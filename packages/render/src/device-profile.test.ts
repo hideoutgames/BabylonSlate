@@ -23,12 +23,6 @@ it("lowers a texture budget above a phone or tablet's ceiling, and reports it", 
 });
 
 // The shadow atlas's ceiling on a phone: shadow-admission-plan.test.ts and shadow-controller.test.ts.
-it("gives a phone or tablet the desktop's shadow map and light limits, and keeps its texture ceiling", () => {
-  for (const nav of [IPAD, MAC])
-    expect(deviceProfile(nav)).toMatchObject({
-      shadowMapCap: null,
-      lightMaximum: { directional: 4, point: 32, spot: 16, rect: 4 },
-      areaEmissionLayers: 4,
-    });
+it("keeps a phone or tablet's texture ceiling", () => {
   expect(deviceProfile(IPAD).textureByteCeiling).toBe(768 * 1024 * 1024);
 });

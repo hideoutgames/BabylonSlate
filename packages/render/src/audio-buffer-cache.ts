@@ -1,6 +1,6 @@
 import { AUDIO_DECODED_PCM_LRU_BYTES } from "@haptic/assets";
 
-export interface AudioBufferCacheOptions {
+interface AudioBufferCacheOptions {
   byteCeiling?: number;
   budgetEnabled?: boolean;
   onEvict?: (assetGuid: string, reason: string) => void;

@@ -5,14 +5,14 @@
  * probes instead of calling a missing method.
  */
 
-export interface TextureDisposeProbe {
+interface TextureDisposeProbe {
   isDisposed?: unknown;
   uniqueId?: number;
   getScene?: () => { isDisposed?: boolean } | null;
   _engine?: unknown;
 }
 
-export interface MaterialDisposeProbe {
+interface MaterialDisposeProbe {
   isDisposed?: unknown;
 }
 

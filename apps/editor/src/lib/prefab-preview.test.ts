@@ -3,10 +3,10 @@ import { Mesh, Vector3, VertexBuffer } from "@babylonjs/core";
 import {
   EditorSceneSync,
   applySceneToBabylonScene,
-  createTestEngine,
   editorComponentMeshName,
   editorMeshName,
 } from "@haptic/render";
+import { createTestEngine } from "@haptic/render/test-engine";
 // The renderer draws lit surfaces on the light block, as a shipped Engine does.
 import "@haptic/render/light-block-engine";
 import {

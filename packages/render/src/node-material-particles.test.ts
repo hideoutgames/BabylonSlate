@@ -1,7 +1,7 @@
 import { DrawWrapper, ParticleSystem, type Effect, type Scene } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { keepPlayEffects } from "./effect-bridge";
 import { MaterialLibrary, materialUnavailable } from "./material-library";
 import { bindParticleMaterial } from "./particle-system-factory";

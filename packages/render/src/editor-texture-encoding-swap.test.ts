@@ -3,7 +3,7 @@ import { TextureBlock, type NodeMaterial, type Texture } from "@babylonjs/core";
 import { createDefaultSpritePayload } from "@haptic/assets";
 import { createActor, createDefaultScene, createMeshComponent, type SerializedScene } from "@haptic/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { MaterialLibrary } from "./material-library";
 import { installTextureBytes, type MeshAssetContext } from "./mesh-assets";

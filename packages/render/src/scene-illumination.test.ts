@@ -20,7 +20,7 @@ import {
   createDefaultScene,
   type SerializedScene,
 } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
 import { managedRenderReservations } from "./managed-render-resources";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator } from "./shadow-atlas";

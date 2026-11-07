@@ -80,7 +80,7 @@ export function applyWorldDeltaToMesh(
   mesh.scaling.copyFrom(scratchScale);
 }
 
-export interface GizmoMultiSelectFollower {
+interface GizmoMultiSelectFollower {
   mesh: AbstractMesh;
   startWorld: Matrix;
 }

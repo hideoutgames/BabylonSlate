@@ -5,7 +5,7 @@ import {
   createRichText2DComponent,
   createText2DComponent,
 } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { unlitBinding } from "./unlit-material-blocks";
 import {
   actorVisualFingerprint,

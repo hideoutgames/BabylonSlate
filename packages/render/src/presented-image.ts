@@ -5,7 +5,7 @@
  */
 
 /** A pixel is near-black when its brightest channel, weighted by its alpha, is at most this (of 255). */
-export const PRESENTED_IMAGE_BLACK_LEVEL = 12;
+const PRESENTED_IMAGE_BLACK_LEVEL = 12;
 
 /** The downsampled image's longer edge, in pixels. */
 const SAMPLE_EDGE = 64;

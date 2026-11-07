@@ -94,7 +94,7 @@ function callArguments(source: string, start: number): string[] {
  * What a Class the load cannot see may spawn, listed in its place: a point and a spot light, each with and without
  * shadows (a Spawn Actor's Class is taken never to carry a directional or hemispheric light).
  */
-export const UNSEEN_CLASS_LIGHTS: ReadonlyMap<string, SpawnableLight> = new Map([
+const UNSEEN_CLASS_LIGHTS: ReadonlyMap<string, SpawnableLight> = new Map([
   ["unseen Class|point", { kind: "point", properties: {} }],
   ["unseen Class|point with shadows", { kind: "point", properties: { castShadows: true } }],
   ["unseen Class|spot", { kind: "spot", properties: {} }],

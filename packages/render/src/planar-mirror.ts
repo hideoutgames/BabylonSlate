@@ -94,7 +94,7 @@ export interface PlanarMirrorTargetState {
   type: number;
 }
 
-export function planarMirrorTargetBytes(width: number, height: number, type: number): number {
+function planarMirrorTargetBytes(width: number, height: number, type: number): number {
   return renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_RGBA, type }) +
     // Conservative depth bound; actual WebGL renderbuffers and WebGPU depth textures commit their real size.
     renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH32FLOAT_STENCIL8, renderbuffer: true });

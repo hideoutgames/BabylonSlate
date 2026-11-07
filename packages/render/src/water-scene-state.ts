@@ -103,7 +103,7 @@ export type WaterLighting = {
   haze: Float64Array;
 };
 
-export const linearScratch = new Color3(), gammaScratch = new Color3();
+const linearScratch = new Color3(), gammaScratch = new Color3();
 /**
  * A Shallow Color channel's relative absorption through clear water (`waterAbsorption`): the optical
  * depth that leaves the channel at its share of the brightest, over a small common floor. A cyan Shallow Color thus
@@ -180,7 +180,7 @@ const waterAmbient = new Float64Array(3);
  * How strongly the scene lights a water body's own colour (Deep Color and its subsurface light), from the ambient light
  * the water sees (`withWaterEnvironment`) and the sun: a dim scene keeps a dim sea. 0.05 to 1.6.
  */
-export function waterBodyLight(ambient: ArrayLike<number>, light: Pick<WaterLighting, "sun" | "sunColor">): number {
+function waterBodyLight(ambient: ArrayLike<number>, light: Pick<WaterLighting, "sun" | "sunColor">): number {
   const luminance = (r: number, g: number, b: number) => r * 0.3 + g * 0.59 + b * 0.11;
   const sun = light.sun, color = light.sunColor;
   const lit = luminance(ambient[0]!, ambient[1]!, ambient[2]!) * 1.4 + luminance(color[0]!, color[1]!, color[2]!) * sun[3]! * Math.max(sun[1]!, 0) * 0.35;
@@ -195,7 +195,7 @@ export function sceneWaterBodyLight(scene: Scene, water: WaterDefinition, reflec
   return waterBodyLight(withWaterEnvironment(lighting, water.reflectionStrength, reflective), lighting);
 }
 
-export function withWaterEnvironment(light: WaterLighting, environmentStrength: number, reflective: boolean): Float64Array {
+function withWaterEnvironment(light: WaterLighting, environmentStrength: number, reflective: boolean): Float64Array {
   const out = waterAmbient, extra = reflective ? 0.45 * environmentStrength : 0;
   out[0] = light.ambient[0]! + 0.8 * extra; out[1] = light.ambient[1]! + 0.9 * extra; out[2] = light.ambient[2]! + extra;
   if (out[0] + out[1] + out[2] < 0.25) { out[0] = Math.max(out[0], 0.08); out[1] = Math.max(out[1], 0.08); out[2] = Math.max(out[2], 0.08); }

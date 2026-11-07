@@ -68,8 +68,6 @@ import type { MaterialPlumbing } from "./material-block-registry";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import { sceneViewRenderSize } from "./scene-output-scale";
 
-export { isMirrorSurfaceMesh } from "./mirror-surface-state";
-
 const DRAW_POLICY = { restoreAlpha: true, wrapDrawFailure: false, message: "Mirror reflection failed." };
 
 /** Counters for proofs and tests; null when the scene has no Mirror surface. */
@@ -449,7 +447,7 @@ function ownerFor(scene: Scene): SceneMirrors {
  * add none to the reflection): a geometry pass binds every attachment for it, and a draw that leaves one unwritten is
  * a WebGL error that fails the session's next scene presentation.
  */
-export function builtInMirrorMaterial(scene: Scene): NodeMaterial {
+function builtInMirrorMaterial(scene: Scene): NodeMaterial {
   const existing = builtInMaterials.get(scene);
   if (existing) return existing;
   const material = new NodeMaterial("mirrorSurface", scene, {

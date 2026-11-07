@@ -54,7 +54,7 @@ export type FirstDrawStats = {
   longest: LongFrame[];
 };
 
-export type FirstDrawSession = {
+type FirstDrawSession = {
   /** Counts from now, against the Effects the Engine holds now. */
   resume(): void;
   /** Stops counting (a world load's frames are not gameplay); totals are kept. */

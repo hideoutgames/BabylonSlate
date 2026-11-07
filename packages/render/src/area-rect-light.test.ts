@@ -2,7 +2,7 @@ import { Matrix, NullEngine, Quaternion, RawTexture2DArray, Scene, Vector3, type
 import { areaLightLtcTexture } from "./area-light-resources";
 import { areaRectLightBindings, identitySerializedTransform } from "@haptic/core";
 import { describe, expect, it, vi } from "vitest";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { AreaRectLightGroup, AreaRectLightOwner } from "./area-rect-light";
 import { managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission } from "@haptic/assets";
