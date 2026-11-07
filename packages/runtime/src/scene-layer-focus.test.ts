@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ClassRegistry, World } from "@haptic/object-model";
 import { InputResolver, type InputMappings, type RawInputEvent } from "@haptic/input";
 import type { FocusNavigationSettings } from "@haptic/core";
@@ -242,5 +242,32 @@ describe("SceneLayer focus navigation", () => {
     f.tick([...tap("KeyL"), ...tap("KeyF")]);
     expect(f.navigation.getFocused()).toBe(b.component);
     expect(f.events).toContain("b-focus:onClick");
+  });
+
+  it("resolves the built-in bindings only while an input they stand in for is unset, and nothing while turned off", () => {
+    const resolve = vi.spyOn(InputResolver.prototype, "resolve");
+    try {
+      // The fixture's own resolver stands for the project's inputs; every other call is the built-in fallback.
+      const fallbackCalls = (f: ReturnType<typeof fixture>) => resolve.mock.contexts.filter((context) => context !== f.resolver).length;
+      const custom = fixture({ navigationInputGuid: "nav", activateInputGuid: "accept" });
+      custom.add("a", 0, 0, { focusInitial: true });
+      custom.tick();
+      custom.tick([...tap("ArrowRight"), ...tap("Enter")]);
+      expect(fallbackCalls(custom)).toBe(0);
+      expect(custom.navigation.getFocused()).toBe(custom.world.findActor("a")!.components[0]);
+      resolve.mockClear();
+      const off = fixture({ enabled: false });
+      off.add("a", 0, 0, { focusInitial: true });
+      off.tick([...tap("ArrowRight"), ...tap("Enter")]);
+      expect(fallbackCalls(off)).toBe(0);
+      expect(off.navigation.getFocused()).toBeNull();
+      expect(off.events).toEqual([]);
+      resolve.mockClear();
+      const partial = fixture({ navigationInputGuid: "nav" });
+      partial.tick();
+      expect(fallbackCalls(partial)).toBe(1);
+    } finally {
+      resolve.mockRestore();
+    }
   });
 });

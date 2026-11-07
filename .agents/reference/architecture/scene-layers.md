@@ -53,7 +53,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 - Layer Scenes batch their unlit draws where the image cannot change ([render.md](render.md#draw-batching)): the compositor turns it on at `create`; Play's world Scene and the editor tab never batch.
 - Overlay identity is `sceneLayerId` / `SNAPSHOT_FLAG_OVERLAY` / overlay-only mesh kind. Overlay visuals never instantiate on the world Scene; leftover `actor-*` world copies are disposed.
 - `2DTexture` / `2DMaterial` share the Engine `ResourceCache`; overlay sampling must not steal a world texture wrapper. Overlay materials compile scene-local unlit (separate cache key).
-- `SceneLayerOverlay` re-indexes only when `World.structuralRevision` changes; `SceneLayerLayoutGate` skips layout unless a recorded input changed.
+- `SceneLayerOverlay` reads each layer's actors from the shared per-revision `sceneLayerActors` index ([`world-layer-index.ts`](../../../packages/runtime/src/world-layer-index.ts)), which layer physics reads too, and builds a guid index only when a virtualized container needs its ancestors (once per structural revision; `SceneLayerVirtualization.sync` reads it before it spawns or removes anything). Focus navigation resolves ancestors through `World.findActor`. `SceneLayerLayoutGate` skips layout unless a recorded input changed.
 
 ## Physics and input
 
@@ -61,7 +61,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 - Physics is opt-in per asset. Each enabled instance gets its own Rapier 2D world, independent of the world and other layers; disabled layers have no world (bodies, colliders and overlap events do nothing).
 - Traces, sweeps and overlaps answer from the caller's world; `showcollision` draws layer colliders in that layer's own scene.
 - Picking walks layers high → low `zOrder`, honoring Hit Test (Ignore / Block / Pass Through), then the world. `2DButton` opts an actor into pointer events and is the only source of pointer graph events (no `onTouch*` nodes). Engine Settings `touchMinTargetPx` widens pick AABBs, not visuals.
-- Focus navigation uses project Input assets; focus state is session-only and never saved.
+- Focus navigation uses project Input assets; focus state is session-only and never saved. Its settings are fixed for the session, so turned-off focus does no work per tick, and the built-in bindings resolve only while Navigation or Activate input is unset.
 
 ## Components with fixed contracts
 

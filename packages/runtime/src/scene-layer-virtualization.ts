@@ -6,14 +6,20 @@ type Pool = { layerId: string; owner: Actor; classId: string; actors: Map<number
 export class SceneLayerVirtualization {
   private readonly pools = new Map<string, Pool>();
 
-  /** `byId` is a guid index of `actors` as of this call; a caller that already has one passes it. */
+  /**
+   * `guidIndex` returns a guid index of `actors` (a caller that already keeps one returns it). It is read only when
+   * a virtualized container needs its ancestors, and at most once per call, before this call spawns or removes
+   * anything: lookups answer as of the start of the call.
+   */
   sync(layerId: string, actors: readonly Actor[], entries: ReadonlyMap<string, OverlayLayoutEntry>,
     spawn: (parent: Actor, classId: string, defaults: Record<string, unknown>) => Actor | null,
     remove: (actor: Actor) => void,
-    byId: ReadonlyMap<string, Actor> = new Map(actors.map(actor => [actor.guid, actor]))): boolean {
+    guidIndex: () => ReadonlyMap<string, Actor> = () => new Map(actors.map(actor => [actor.guid, actor]))): boolean {
     let changed = false;
     const live = new Set<string>();
+    let byId: ReadonlyMap<string, Actor> | undefined;
     const ancestry = (actor: Actor): { depth: number; classes: Set<string> } => {
+      byId ??= guidIndex();
       let parent: Actor | undefined = actor, depth = 0;
       const seen = new Set<string>(), classes = new Set<string>();
       while (parent && !seen.has(parent.guid)) {

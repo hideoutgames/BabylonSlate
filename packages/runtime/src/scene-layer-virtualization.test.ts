@@ -104,4 +104,29 @@ describe("virtualized SceneLayer actor ownership", () => {
     f.list.setVariable("itemClassId", "Item"); f.list.setVariable("itemCount", 0);
     f.update(); expect(f.items()).toHaveLength(0);
   });
+
+  it("asks for the guid index only when a container needs its ancestors, once, before it spawns", () => {
+    const f = fixture();
+    const plain = new SceneLayerVirtualization();
+    const indexes: number[] = [];
+    const guidIndex = () => {
+      indexes.push(f.world.getActors().length);
+      return new Map(f.world.getActors().map(actor => [actor.guid, actor]));
+    };
+    const spawn = () => { throw new Error("nothing to spawn"); };
+    // A layer whose actors own no virtualized container never needs ancestors.
+    f.layout.update("layer", f.world.getActors(), 100);
+    expect(plain.sync("other-layer", f.world.getActors(), f.layout.entries("layer"), spawn, () => {}, guidIndex)).toBe(false);
+    expect(indexes).toEqual([]);
+    let spawned = 0;
+    const changed = plain.sync("layer", f.world.getActors(), f.layout.entries("layer"), (parent, classId, defaults) => {
+      const item = f.world.createActor({ guid: `late-${++spawned}`, classId, sceneLayerId: parent.sceneLayerId, variables: { ...defaults, parentId: parent.guid } });
+      f.world.spawnActorNow(item);
+      return item;
+    }, () => {}, guidIndex);
+    expect(changed).toBe(true);
+    expect(spawned).toBe(4);
+    // Read once, with only the list's owner present.
+    expect(indexes).toEqual([1]);
+  });
 });

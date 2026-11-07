@@ -4,7 +4,7 @@ import {
 } from "@haptic/core";
 import { Actor, ActorComponent, type World } from "@haptic/object-model";
 import { InputResolver, type AxisBinding, type RawInputEvent, type ResolvedInputTick } from "@haptic/input";
-import { actorParentGuid, actorWorldTransform, composeParentChildTransform, actorGuidIndex } from "./actor-world-transform";
+import { actorParentGuid, actorWorldTransform, composeParentChildTransform, type ActorLookup } from "./actor-world-transform";
 
 /** x/y are the rectangle center in the owning layer's design coordinates. */
 export interface FocusBounds { x: number; y: number; width: number; height: number }
@@ -23,7 +23,6 @@ interface Candidate {
 /** Scene Layer actors with focus-target components, in world order, for one world structure revision. */
 interface FocusTargets {
   revision: number;
-  byGuid: Map<string, Actor>;
   entries: Array<{ actor: Actor; components: ActorComponent[] }>;
 }
 
@@ -70,8 +69,13 @@ function available(object: Actor | ActorComponent): boolean {
 /** Runtime-owned focus; no browser DOM, rendering dependency, or gameplay-input consumption. */
 export class SceneLayerFocusNavigation {
   private readonly defaults = fallbackResolver();
-  private readonly settings: FocusNavigationSettings;
+  private readonly settings: Readonly<FocusNavigationSettings>;
   private readonly world: World;
+  /**
+   * Ancestors by guid through the World's own registry. Building candidates
+   * changes no structure, so it answers as an index of the actors would.
+   */
+  private readonly actors: ActorLookup;
   private readonly host: FocusNavigationHost;
   private focused: Candidate | null = null;
   private pressed: Candidate | null = null;
@@ -83,6 +87,7 @@ export class SceneLayerFocusNavigation {
 
   constructor(world: World, settings: Partial<FocusNavigationSettings> | undefined, host: FocusNavigationHost) {
     this.world = world;
+    this.actors = { get: (guid) => world.findActor(guid) };
     this.host = host;
     this.settings = normalizeFocusNavigationSettings(settings);
   }
@@ -96,14 +101,13 @@ export class SceneLayerFocusNavigation {
   private focusTargets(): FocusTargets {
     const revision = this.world.structuralRevision;
     if (this.targets?.revision === revision) return this.targets;
-    const actors = this.world.getActors();
     const entries: FocusTargets["entries"] = [];
-    for (const actor of actors) {
+    for (const actor of this.world.getActors()) {
       if (!actor.sceneLayerId) continue;
       const components = actor.components.filter((component) => isFocusTargetClass(component.classId));
       if (components.length > 0) entries.push({ actor, components });
     }
-    this.targets = { revision, byGuid: actorGuidIndex(actors), entries };
+    this.targets = { revision, entries };
     return this.targets;
   }
 
@@ -128,7 +132,8 @@ export class SceneLayerFocusNavigation {
     // Focus targets live only on Scene Layer actors; a world without a live layer has none to walk.
     const liveLayers = this.world.getSceneLayers().filter((layer) => !layer.destroyed);
     if (liveLayers.length === 0) return [];
-    const { byGuid, entries } = this.focusTargets();
+    const { entries } = this.focusTargets();
+    const byGuid = this.actors;
     const result: Candidate[] = [];
     for (const { actor, components } of entries) {
       if (!available(actor) || !this.host.canRun(actor)) continue;
@@ -286,18 +291,22 @@ export class SceneLayerFocusNavigation {
   }
 
   tick(events: readonly RawInputEvent[], input: ResolvedInputTick, dt: number): void {
-    const defaults = this.defaults.resolve(events, dt);
-    const candidates = this.refreshed();
+    // Settings are normalized once and never change, so turned-off focus never
+    // needs its candidates (there are none, and nothing is focused), and the
+    // fallback bindings resolve only while an input they stand in for is unset.
     if (!this.settings.enabled) return;
+    const { navigationInputGuid, activateInputGuid } = this.settings;
+    const defaults = navigationInputGuid && activateInputGuid ? null : this.defaults.resolve(events, dt);
+    const candidates = this.refreshed();
     const layer = candidates[0]?.actor.sceneLayerId ?? null;
     if (layer !== this.initialLayer) {
       this.initialLayer = layer;
       const initial = candidates.find((entry) => entry.properties.focusInitial);
       if (initial) this.transition(initial);
     }
-    const navigate = this.settings.navigationInputGuid
-      ? input.inputs[this.settings.navigationInputGuid]
-      : defaults.inputs.focusNavigate;
+    const navigate = navigationInputGuid
+      ? input.inputs[navigationInputGuid]
+      : defaults?.inputs.focusNavigate;
     const direction = directionOf(navigate?.held ? navigate.value : undefined);
     const pulse = !navigate?.held && navigate?.started ? directionOf(navigate.activeValue) : null;
     if (pulse) this.move(pulse);
@@ -312,9 +321,9 @@ export class SceneLayerFocusNavigation {
         this.repeatRemaining = this.settings.repeatInterval;
       }
     }
-    const activate = this.settings.activateInputGuid
-      ? input.inputs[this.settings.activateInputGuid]
-      : defaults.inputs.focusActivate;
+    const activate = activateInputGuid
+      ? input.inputs[activateInputGuid]
+      : defaults?.inputs.focusActivate;
     // A release and repress between ticks ends the previous press first.
     // Keep a final held press pending; a completed tap still ends this tick.
     const releaseBeforeStart = activate?.started && activate.released && (activate.held || this.pressed !== null);

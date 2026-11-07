@@ -10,11 +10,13 @@ import {
 import type { Actor } from "@haptic/object-model";
 
 export type ActorTransformMap = ReadonlyMap<string, Transform>;
+/** Actors by guid: a guid index, or a live registry such as `World.findActor` behind `get`. */
+export type ActorLookup = Pick<ReadonlyMap<string, Actor>, "get">;
 
 /** Resolve one current pose without caching transforms changed by this tick's scripts. */
 export function actorWorldTransform(
   actor: Actor,
-  actorsByGuid: ReadonlyMap<string, Actor>,
+  actorsByGuid: ActorLookup,
 ): Transform | null {
   const chain = [actor.transform];
   let parentId = actorParentGuid(actor);
