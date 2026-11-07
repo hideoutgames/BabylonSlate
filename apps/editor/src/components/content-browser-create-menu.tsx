@@ -25,6 +25,7 @@ import {
 import { createDataTreeAsset } from "@haptic/core";
 import {
   buildMaterialInstanceAssetResult,
+  buildSheetSpriteAnimationAssetResult,
   buildSpriteAnimationAssetResult,
   buildTilesetAssetResult,
   classIdFromClassAsset,
@@ -76,6 +77,7 @@ export type ContentBrowserCreateItem = {
     | "create-material-instance"
     | "create-sprite"
     | "create-sprite-animation"
+    | "create-sheet-animation"
     | "create-tileset"
     | "create-material"
     | "create-tilemap"
@@ -243,6 +245,20 @@ export function contentBrowserCreateMenuItems(deps: ContentBrowserCreateMenuDeps
         for (const texture of targets("Texture")) {
           created.push(await writeBeside(registry, texture, "Sprite", texture.header.name, (guid, name) =>
             buildSpriteAssetResult(texture.header.guid, guid, name)));
+        }
+        return created;
+      }),
+    },
+    {
+      id: "create-sheet-animation",
+      label: "Create Sheet Animation",
+      icon: <FilmIcon />,
+      onSelect: () => run(async (registry) => {
+        // One Sheet animation per Texture, each beside its Texture, cutting a frame from each of its cells.
+        const created: IndexedAsset[] = [];
+        for (const texture of targets("Texture")) {
+          created.push(await writeBeside(registry, texture, "SpriteAnimation", spriteAnimationNameFor(texture.header.name), (guid, name) =>
+            buildSheetSpriteAnimationAssetResult({ guid: texture.header.guid, payload: texture.header.payload }, guid, name)));
         }
         return created;
       }),

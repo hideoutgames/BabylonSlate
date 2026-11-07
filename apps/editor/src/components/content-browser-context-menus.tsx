@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useRef, type Dispatch, type SetStateAction } from "react";
-import { FolderPlusIcon, PlusIcon, UploadIcon } from "lucide-react";
+import { FolderPlusIcon, Grid2x2Icon, PlusIcon, UploadIcon } from "lucide-react";
 import { useContextMenu, type ContextMenuItem } from "@haptic/editor-kit";
 import {
   canRetargetSelectedAssets,
   classDocumentShowsPrefab,
   classIdFromClassAsset,
   contentBrowserContextActions,
+  CONVERT_TO_2D_ACTIONS,
   isFolderTreeRoot,
 } from "../lib/content-browser-helpers";
 import { isNewClassParentAllowed } from "../lib/create-project-asset";
@@ -29,6 +30,28 @@ export interface ContentBrowserContextMenusDeps extends ContentBrowserTileMenuDe
  * The asset and folder context menus, the empty-grid menu (right-click or
  * long press), and the selection actions the keyboard shortcuts run.
  */
+/**
+ * Convert to 2D, for Textures alone: a Sprite per Texture, one Sprite Animation with a frame per Texture (in name
+ * order), and a Sheet Sprite Animation per Texture.
+ */
+function convertTo2DSubmenu(items: readonly ContextMenuItem[], count: number): ContextMenuItem {
+  const labels: Record<(typeof CONVERT_TO_2D_ACTIONS)[number], string> = {
+    "create-sprite": count > 1 ? "Create Sprites" : "Create Sprite",
+    "create-sprite-animation": "Create Animation",
+    "create-sheet-animation": count > 1 ? "Create Sheet Animations" : "Create Sheet Animation",
+  };
+  return {
+    type: "submenu",
+    id: "convert-to-2d",
+    label: "Convert to 2D",
+    icon: <Grid2x2Icon />,
+    items: CONVERT_TO_2D_ACTIONS.flatMap((id) => {
+      const item = items.find((entry) => entry.id === id);
+      return item && item.type !== "submenu" && item.type !== "separator" && item.type !== "checkbox" ? [{ ...item, label: labels[id] }] : [];
+    }),
+  };
+}
+
 export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDeps) {
   const {
     menuTargetGuidsRef,
@@ -253,14 +276,17 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
       menuTargetGuidsRef.current = guids;
       menuTargetFoldersRef.current = folders;
       const actionIds = selectionActionIds(guids, folders);
-      const items: ContextMenuItem[] = tileContextItems.filter((item) =>
-        actionIds.has(item.id),
-      ).map((item) => {
-        if (item.id === "generate-thumbnail") return { ...item, label: guids.length === 1 ? "Generate Thumbnail" : "Generate Thumbnails" };
-        // One Sprite per Texture; one Material per name group.
-        if (item.id === "create-sprite" && guids.length > 1) return { ...item, label: "Create Sprites" };
-        return item;
-      });
+      const items: ContextMenuItem[] = [];
+      for (const item of tileContextItems) {
+        // Textures alone gather their 2D conversions in one submenu, where the first of them would stand.
+        if (item.id === CONVERT_TO_2D_ACTIONS[0] && actionIds.has("convert-to-2d")) {
+          items.push(convertTo2DSubmenu(tileContextItems, guids.length));
+          continue;
+        }
+        if (!actionIds.has(item.id)) continue;
+        if (item.id === "generate-thumbnail") items.push({ ...item, label: guids.length === 1 ? "Generate Thumbnail" : "Generate Thumbnails" });
+        else items.push(item);
+      }
       const deleteIndex = items.findIndex((item) => item.id === "delete");
       if (deleteIndex > 0)
         items.splice(deleteIndex, 0, { type: "separator", id: "delete-separator" });
