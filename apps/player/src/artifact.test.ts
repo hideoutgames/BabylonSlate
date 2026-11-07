@@ -43,9 +43,26 @@ describe("loadGameFromFiles", () => {
       const path = new URL(String(input)).pathname.slice(1);
       requested.push(path);
       return new Response(body(exported.value.files.get(path)));
-    }, undefined, (manifest) => seen.push({ physicsWorld: manifest.physicsWorld, requested: [...requested] }));
+    }, undefined, { onManifest: (manifest) => seen.push({ physicsWorld: manifest.physicsWorld, requested: [...requested] }) });
     expect(seen).toEqual([{ physicsWorld: "2d", requested: [GAME_MANIFEST_FILE] }]);
     expect(requested).toHaveLength(2);
+    game.dispose!();
+  });
+  it("asks for the decoders a loaded KTX2 Texture needs as soon as its bytes are read, and none for a plain Model", async () => {
+    const { encodePackedModelAsset } = await import("@haptic/assets");
+    const texture = new Uint8Array(64);
+    texture.set([0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
+    texture[44] = 2;
+    const model = encodePackedModelAsset({ importScale: 1, clipNames: [], materialSlots: [], skeletonGuid: null }, new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3]));
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+      { guid: "scene", type: "Scene", sceneGuid: "scene", requiredDependencies: ["texture", "model"], bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
+      { guid: "texture", type: "Texture", sceneGuid: "scene", bytes: texture },
+      { guid: "model", type: "Model", sceneGuid: "scene", bytes: model },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const needed: string[] = [];
+    const game = await loadGameFromFiles(exported.value.files, { onDecoderNeeded: (decoder) => needed.push(decoder) });
+    expect(needed).toEqual(["ktx2-zstd"]);
     game.dispose!();
   });
   it("keeps deferred compiled Class code unread and releases it after its final source owner", async () => {

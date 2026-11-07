@@ -40,6 +40,7 @@ import {
   decodeAreaEmission,
   type AreaEmissionPixels,
 } from "@haptic/assets";
+import { modelDecoders, textureDecoder, type PlayerDecoder } from "./decoder-paths";
 
 const decoder = new TextDecoder();
 
@@ -106,6 +107,8 @@ export async function loadGameFromFiles(
     fetchImpl?: typeof fetch; baseUrl?: string; signal?: AbortSignal; readFile?: (path: string, signal: AbortSignal) => Promise<Uint8Array>;
     /** Runs once the catalog is read, before any asset loads. */
     onManifest?: (manifest: GameManifest) => void;
+    /** Runs for each loaded Texture or Model that a decoder runtime will decode, as soon as its bytes are read. */
+    onDecoderNeeded?: (decoder: PlayerDecoder) => void;
   } = {},
 ): Promise<LoadedGame> {
   // Invoke native fetch as a function, never as an options-object method: a
@@ -209,8 +212,11 @@ export async function loadGameFromFiles(
     };
     if (entry.type === "Scene") { const value = normalizeScene(document); install = () => { scenes.set(entry.guid, value); }; }
     else if (entry.type === "SceneLayer") { const value = normalizeSceneLayer(document); install = () => { sceneLayers.set(entry.guid, value); }; }
-    else if (entry.type === "Texture") install = () => { textureBytes.set(entry.guid, bytes); installed.textures.set(entry.guid, installTexture()); };
-    else if (entry.type === AREA_EMISSION_EXPORT_TYPE) {
+    else if (entry.type === "Texture") {
+      const needed = options.onDecoderNeeded && textureDecoder(bytes);
+      if (needed) options.onDecoderNeeded!(needed);
+      install = () => { textureBytes.set(entry.guid, bytes); installed.textures.set(entry.guid, installTexture()); };
+    } else if (entry.type === AREA_EMISSION_EXPORT_TYPE) {
       const guid = textureGuidFromAreaEmissionExport(entry.guid);
       if (!guid) throw new Error(`Invalid area emission asset identity: ${entry.guid}`);
       const value = await decodeAreaEmission(bytes);
@@ -219,6 +225,7 @@ export async function loadGameFromFiles(
     } else if (entry.type === "Model") {
       const value = decodePackedModelAsset(bytes);
       if (!value) throw new Error(`Model ${entry.guid} is not a packed Model asset.`);
+      if (options.onDecoderNeeded) for (const needed of modelDecoders(value.source)) options.onDecoderNeeded(needed);
       // Complex Collision is a separate representation, cooked in prepare() only when needed.
       model = value;
       install = () => {
@@ -498,12 +505,12 @@ export async function loadGameFromHttp(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
-  onManifest?: (manifest: GameManifest) => void,
+  hooks: Pick<NonNullable<Parameters<typeof loadGameFromFiles>[1]>, "onManifest" | "onDecoderNeeded"> = {},
 ): Promise<LoadedGame> {
   const manifestUrl = new URL(GAME_MANIFEST_FILE, baseUrl).href;
   const manifestRes = await fetchImpl(manifestUrl, { signal });
   if (!manifestRes.ok) throw new Error("Export is missing game.json");
   const manifestBytes = new Uint8Array(await manifestRes.arrayBuffer());
   const files = new Map<string, Uint8Array>([[GAME_MANIFEST_FILE, manifestBytes]]);
-  return loadGameFromFiles(files, { fetchImpl, baseUrl, signal, onManifest });
+  return loadGameFromFiles(files, { fetchImpl, baseUrl, signal, ...hooks });
 }

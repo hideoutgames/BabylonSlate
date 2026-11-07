@@ -7,6 +7,7 @@ import { audioStats, particleStats } from "@haptic/render";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayerWithBackend } from "./player-backend";
 import { prewarmPlayerWorker, type PrewarmedPlayerWorker } from "./worker-host";
+import { createDecoderPrefetch } from "./decoder-paths";
 import { previewConsoleCatalog } from "./console-catalog";
 import type { PlayerTestHandle } from "./boot";
 import { mountPlayerHud, mountPlayerDebuggerOverlays, type PlayerHudStats } from "./hud";
@@ -93,7 +94,7 @@ async function launchFromPreview(files: Map<string, Uint8Array>, traceByteBudget
   const worker = prewarmPlayerWorker(startupAbort.signal);
   try {
     const game = await loadGameFromFiles(files, { signal: startupAbort.signal, readFile: source.readFile,
-      onManifest: (manifest) => worker?.preloadPhysics(manifest.physicsWorld) });
+      onManifest: (manifest) => worker?.preloadPhysics(manifest.physicsWorld), onDecoderNeeded: createDecoderPrefetch() });
     const dispose = game.dispose;
     game.dispose = () => { try { dispose?.(); } finally { startupAbort.signal.removeEventListener("abort", release); release(); } };
     try { await launchLoaded(game, traceByteBudget, worker); } catch (error) { game.dispose(); throw error; }
@@ -105,8 +106,11 @@ async function launchFromHttp(): Promise<void> {
   // Started before the catalog request: the worker loads while the game downloads.
   const worker = prewarmPlayerWorker(startupAbort.signal);
   try {
-    const game = await loadGameFromHttp(document.baseURI, fetch, startupAbort.signal,
-      (manifest) => worker?.preloadPhysics(manifest.physicsWorld));
+    const game = await loadGameFromHttp(document.baseURI, fetch, startupAbort.signal, {
+      onManifest: (manifest) => worker?.preloadPhysics(manifest.physicsWorld),
+      // The decoders the game's Textures and Models need download meanwhile too.
+      onDecoderNeeded: createDecoderPrefetch(),
+    });
     try { await launchLoaded(game, undefined, worker); } catch (error) { game.dispose?.(); throw error; }
   } finally { worker?.release(); }
 }
