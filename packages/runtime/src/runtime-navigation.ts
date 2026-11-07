@@ -19,8 +19,9 @@ import {
 import {
   actorChainWorldTransform,
   actorParentGuid,
-  composeActorWorldTransforms,
   actorWorldTransforms,
+  WorldTransformComposer,
+  type ActorTransformMap,
 } from "./actor-world-transform";
 import { ParsedComponentProperties } from "./parsed-component-properties";
 import { actorLocalPhysicsTransform, type PhysicsWorldSync } from "./physics-sync";
@@ -77,6 +78,17 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   private readonly navSteeredActors = new Set<string>();
   private readonly navPhysicalAgents = new Set<string>();
   private readonly navAgentActors: Actor[] = [];
+  // Crowd-tick scratch, rewritten each tick; none of it outlives `tickCrowd`.
+  private readonly navPosedActors: Actor[] = [];
+  private readonly navPosedDepth = new Map<Actor, number>();
+  private readonly navAgentPoint: NavPoint = { x: 0, y: 0, z: 0 };
+  private readonly navAgentVelocity: NavPoint = { x: 0, y: 0, z: 0 };
+  private readonly navParentWorld = new Map<string, Transform>();
+  private readonly navAgentPoses = new WorldTransformComposer();
+  private readonly navCostVolumePoses = new WorldTransformComposer();
+  /** The crowd tick's frame index, which `navFrameLookup` resolves through. */
+  private navFrameIndex: ReadonlyMap<string, Actor> = NO_ACTORS;
+  private readonly navFrameLookup = (guid: string): Actor | undefined => this.navFrameActor(this.navFrameIndex, guid);
   /** Rigid Body → whether its `motionType` parses as dynamic; re-parsed only when that variable changes. */
   private readonly dynamicRigidBodies = new WeakMap<ActorComponent, { motionType: unknown; dynamic: boolean }>();
   /** Nav Agent → its parsed `height`; re-parsed only when that variable changes. */
@@ -408,27 +420,26 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     return world.findActor(guid);
   }
 
-  /** Compose NavAgent actors and their ancestors, not the whole world. */
-  private navAgentWorldTransforms(index: ReadonlyMap<string, Actor>): Map<string, Transform> {
+  /**
+   * Compose NavAgent actors and their ancestors through the crowd tick's
+   * frame index, not the whole world. The poses belong to the composer and
+   * change on the next tick.
+   */
+  private navAgentWorldTransforms(): ActorTransformMap {
     const agents = this.navAgentActors;
     agents.length = 0;
     for (const actor of componentOwners(this.host.world(), "NavAgentComponent")) {
-      for (const component of actor.components) {
-        if (component.classId === "NavAgentComponent" && !component.destroyed) {
-          agents.push(actor);
-          break;
-        }
-      }
+      if (hasLiveNavAgent(actor)) agents.push(actor);
     }
     try {
-      return composeActorWorldTransforms((guid) => this.navFrameActor(index, guid), agents);
+      return this.navAgentPoses.compose(this.navFrameLookup, agents);
     } finally {
       agents.length = 0;
     }
   }
 
   registerAgents(
-    transforms = actorWorldTransforms(this.host.world().getActors()),
+    transforms: ActorTransformMap = actorWorldTransforms(this.host.world().getActors()),
   ): void {
     if (!this.nav) return;
     // Only a NavAgentComponent owner can register, and the index lists those in world order.
@@ -596,7 +607,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   }
 
   /** Moving dynamic cost blockers restamp from their current world pose. */
-  private syncNavCostVolumes(index: ReadonlyMap<string, Actor>): void {
+  private syncNavCostVolumes(): void {
     if (!this.nav) return;
     const moving: Array<{ actor: Actor; props: NavMeshBlockerProperties }> = [];
     for (const actor of componentOwners(this.host.world(), "NavMeshBlockerComponent")) {
@@ -605,10 +616,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
       if (props?.area === "cost" && props.dynamic) moving.push({ actor, props });
     }
     if (moving.length === 0) return;
-    const transforms = composeActorWorldTransforms(
-      (guid) => this.navFrameActor(index, guid),
-      moving.map((entry) => entry.actor),
-    );
+    const transforms = this.navCostVolumePoses.compose(this.navFrameLookup, moving.map((entry) => entry.actor));
     for (const { actor, props } of moving) {
       this.applyCostVolume(actor, props, transforms.get(actor.guid) ?? actor.transform);
     }
@@ -617,19 +625,30 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   /** One crowd step; `dtSeconds` is the tick's captured step. */
   tickCrowd(actors: ReadonlyMap<string, Actor>, dtSeconds: number): void {
     if (!this.nav) return;
+    this.navFrameIndex = actors;
+    try {
+      this.stepCrowd(this.nav, actors, dtSeconds);
+    } finally {
+      this.navFrameIndex = NO_ACTORS;
+      this.navPosedActors.length = 0;
+      this.navPosedDepth.clear();
+      this.navParentWorld.clear();
+    }
+  }
+
+  private stepCrowd(nav: NavigationBackend, actors: ReadonlyMap<string, Actor>, dtSeconds: number): void {
     this.syncNavBlockers(actors);
-    this.syncNavCostVolumes(actors);
-    const worldTransforms = this.navAgentWorldTransforms(actors);
+    this.syncNavCostVolumes();
+    const worldTransforms = this.navAgentWorldTransforms();
     this.registerAgents(worldTransforms);
     const physicalAgents = this.navPhysicalAgents;
     physicalAgents.clear();
     let removed = false;
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = this.navFrameActor(actors, actorGuid);
-      if (!actor || actor.destroyed || !this.host.streamActorReady(actor) || !actor.components.some((component) =>
-        component.classId === "NavAgentComponent" && !component.destroyed)) {
+      if (!actor || actor.destroyed || !this.host.streamActorReady(actor) || !hasLiveNavAgent(actor)) {
         this.stopAgent(actorGuid);
-        this.nav.removeAgent(agentId);
+        nav.removeAgent(agentId);
         this.navAgentByActor.delete(actorGuid);
         this.navFacingRequests.delete(actorGuid);
         removed = true;
@@ -637,12 +656,12 @@ export class RuntimeNavigation implements RuntimeSubsystem {
       }
       if (!this.isDynamicNavActor(actor)) continue;
       const position = worldTransforms.get(actorGuid)?.position ?? actor.transform.position;
-      if (this.nav.syncAgentPosition(agentId, position)) {
+      if (nav.syncAgentPosition(agentId, position)) {
         physicalAgents.add(actorGuid);
       } else {
         // Physics may carry an actor away from the mesh (for example a jump).
         // Reattach with the pending target once its physical pose is reachable.
-        this.nav.removeAgent(agentId);
+        nav.removeAgent(agentId);
         this.navAgentByActor.delete(actorGuid);
         removed = true;
         if (this.navSteeredActors.delete(actorGuid)) {
@@ -650,32 +669,37 @@ export class RuntimeNavigation implements RuntimeSubsystem {
         }
       }
     }
-    this.nav.stepCrowd(dtSeconds);
-    const posed: Actor[] = [];
+    nav.stepCrowd(dtSeconds);
+    const posed = this.navPosedActors;
+    const velocity = this.navAgentVelocity;
+    let parented = false;
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = this.navFrameActor(actors, actorGuid);
       if (!actor || actor.destroyed) continue;
       if (physicalAgents.has(actorGuid)) {
         if (this.navTargetByActor.has(actorGuid)) {
-          const velocity = this.nav.agentVelocity(agentId) ?? { x: 0, y: 0, z: 0 };
+          if (!nav.agentVelocityInto(agentId, velocity)) setNavPoint(velocity, 0, 0, 0);
           this.host.physics().setActorLinearVelocity(actorGuid, { x: velocity.x, z: velocity.z });
           this.navSteeredActors.add(actorGuid);
         }
         continue;
       }
       posed.push(actor);
+      if (actorParentGuid(actor)) parented = true;
     }
-    const lookup = (guid: string) => this.navFrameActor(actors, guid);
+    const lookup = this.navFrameLookup;
     // Parents first, so a child agent resolves against its parent's new pose.
-    if (posed.length > 1) {
-      const depth = new Map(posed.map((actor) => [actor, ancestorCount(actor, lookup)] as const));
+    // Root agents all have depth 0, and the sort is stable, so they keep their order unsorted.
+    if (posed.length > 1 && parented) {
+      const depth = this.navPosedDepth;
+      for (const actor of posed) depth.set(actor, ancestorCount(actor, lookup));
       posed.sort((a, b) => depth.get(a)! - depth.get(b)!);
     }
+    const point = this.navAgentPoint;
     for (const actor of posed) {
       const agentId = this.navAgentByActor.get(actor.guid)!;
-      const position = this.nav.agentPosition(agentId);
-      if (!position) continue;
-      const velocity = this.nav.agentVelocity(agentId) ?? { x: 0, y: 0, z: 0 };
+      if (!nav.agentPositionInto(agentId, point)) continue;
+      if (!nav.agentVelocityInto(agentId, velocity)) setNavPoint(velocity, 0, 0, 0);
       // Agents face their movement; an idle agent keeps its facing unless Rotate To Face asked.
       const heading = this.movementHeading(velocity) ?? this.navFacingRequests.get(actor.guid);
       this.navFacingRequests.delete(actor.guid);
@@ -687,10 +711,15 @@ export class RuntimeNavigation implements RuntimeSubsystem {
         : parentWorld
           ? actorChainWorldTransform(actor, lookup)?.rotation ?? actor.transform.rotation
           : actor.transform.rotation;
+      let parentTransforms: ActorTransformMap = NO_TRANSFORMS;
+      if (parentId && parentWorld) {
+        this.navParentWorld.clear();
+        parentTransforms = this.navParentWorld.set(parentId, parentWorld);
+      }
       const local = actorLocalPhysicsTransform(
-        { position: this.fromNav(position), rotation },
+        { position: this.fromNav(point), rotation },
         actor,
-        parentId && parentWorld ? new Map([[parentId, parentWorld]]) : NO_TRANSFORMS,
+        parentTransforms,
       );
       Object.assign(actor.transform.position, local.position);
       if (heading !== undefined) Object.assign(actor.transform.rotation, local.rotation);
@@ -824,6 +853,21 @@ export class RuntimeNavigation implements RuntimeSubsystem {
 }
 
 const NO_TRANSFORMS: ReadonlyMap<string, Transform> = new Map();
+const NO_ACTORS: ReadonlyMap<string, Actor> = new Map();
+
+/** Whether the actor still has a live Nav Agent. */
+function hasLiveNavAgent(actor: Actor): boolean {
+  for (const component of actor.components) {
+    if (component.classId === "NavAgentComponent" && !component.destroyed) return true;
+  }
+  return false;
+}
+
+function setNavPoint(point: NavPoint, x: number, y: number, z: number): void {
+  point.x = x;
+  point.y = y;
+  point.z = z;
+}
 /** Quaternion components below this count as no tilt off the walk plane. */
 const UPRIGHT_EPSILON = 1e-5;
 /** Position (3), rotation (4) and scale (3). */

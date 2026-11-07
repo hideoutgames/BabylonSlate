@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createActor } from "@haptic/core";
+import { EngineObject } from "@haptic/object-model";
 import type { GraphEdge, GraphNode } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
+import { LatentDelays } from "./latent-delays";
 import { compileClassScript, graphNode, startGraphScenario, wire } from "./testing/graph-scenario";
 
 const registry = createDefaultNodeRegistry();
@@ -92,5 +94,29 @@ describe("script Delay", () => {
       expect(scenario.logs("Waits").slice(6)).toEqual(["done", "done"]);
       expect(scenario.diagnostics()).toEqual([]);
     } finally { scenario.stop(); }
+  });
+
+  it("resumes due Delays in the order they were added and keeps the waiting ones in theirs", () => {
+    const order: string[] = [];
+    const paused = new EngineObject({ classId: "Object" });
+    const doomed = new EngineObject({ classId: "Object" });
+    let blocked: EngineObject | null = paused;
+    const delays = new LatentDelays({ canRunActions: (owner) => owner !== blocked }, () => 0);
+    delays.add(0.5, () => order.push("a"));
+    delays.add(0.25, () => order.push("b"), paused);
+    delays.add(0.25, () => order.push("c"));
+    delays.add(5, () => order.push("d"), doomed);
+    delays.add(0.75, () => order.push("e"));
+
+    delays.advance(0.25);
+    expect(order).toEqual(["c"]);
+    // The paused owner's time did not run; a destroyed owner's Delay resumes at once.
+    blocked = null;
+    doomed.destroyed = true;
+    delays.advance(0.25);
+    expect(order).toEqual(["c", "a", "b", "d"]);
+    delays.advance(0.25);
+    delays.advance(0.25);
+    expect(order).toEqual(["c", "a", "b", "d", "e"]);
   });
 });

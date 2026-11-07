@@ -214,7 +214,7 @@ export class ScriptRuntime {
         this.applyClassDefaults(self);
         this.admission.runCreation(self, () => scripts().hooksFor(self.classId)?.onCreation?.(self));
       },
-      onTick: (self, ctx) => this.admission.guard(() => scripts().hooksFor(self.classId)?.onTick?.(self, ctx)),
+      onTick: (self, ctx) => this.admission.guardTick(scripts().hooksFor(self.classId), self, ctx),
       onDestroyed: (self) => this.admission.runDestroyed(self, () => scripts().hooksFor(self.classId)?.onDestroyed?.(self)),
     };
   }
@@ -266,7 +266,7 @@ export class ScriptRuntime {
       // Resolved per call, like a Scene script's, so replaced sources apply.
       hooks: {
         onCreation: (self) => this.admission.runCreation(self, () => scripts().hooksFor(self.classId)?.onCreation?.(self)),
-        onTick: (self, ctx) => this.admission.guard(() => scripts().hooksFor(self.classId)?.onTick?.(self, ctx)),
+        onTick: (self, ctx) => this.admission.guardTick(scripts().hooksFor(self.classId), self, ctx),
       },
     });
     scripts().bindInterfaceHandlers(object);
@@ -420,10 +420,7 @@ export class ScriptRuntime {
         const hooks = this.host.scriptHost().hooksFor(classId);
         this.admission.runCreation(self, () => hooks?.onCreation?.(self));
       },
-      onTick: (self, ctx) => {
-        const hooks = this.host.scriptHost().hooksFor(classId);
-        this.admission.guard(() => hooks?.onTick?.(self, ctx));
-      },
+      onTick: (self, ctx) => this.admission.guardTick(this.host.scriptHost().hooksFor(classId), self, ctx),
       onGameEnd: (self) => {
         this.admission.guard(() =>
           this.host.scriptHost().invokeGameShutdownEvent(classId, "onEnd", self),
@@ -472,8 +469,7 @@ export class ScriptRuntime {
         this.host.scriptHost().bindInterfaceHandlers(self);
         this.admission.runCreation(self, () => this.host.scriptHost().hooksFor(classId)?.onCreation?.(self));
       },
-      onTick: (self, ctx) =>
-        this.admission.guard(() => this.host.scriptHost().hooksFor(classId)?.onTick?.(self, ctx)),
+      onTick: (self, ctx) => this.admission.guardTick(this.host.scriptHost().hooksFor(classId), self, ctx),
       onEnd: (self) => {
         this.subsystemMatches.clear();
         this.admission.drop(self);

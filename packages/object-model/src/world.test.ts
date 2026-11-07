@@ -8,6 +8,7 @@ import {
   type GameSubsystem,
   type SceneSubsystemHooks,
   type Subsystem,
+  type TickContext,
 } from "./objects";
 import { TICK_PHASES } from "./tick";
 import { DuplicateActorGuidError, World } from "./world";
@@ -107,6 +108,36 @@ describe("World tick", () => {
     second.destroyed = true;
     world.tick();
     expect(order).toEqual(["actor", "component", "first", "late", "physics"]);
+  });
+
+  it("hands every phase of a tick one context and builds a new one for the next tick", () => {
+    const seen: Array<{ phase: string; ctx: TickContext }> = [];
+    const world = new World({
+      seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(),
+      onPhysics: (ctx) => { seen.push({ phase: "physics", ctx }); },
+    });
+    world.setInputProvider({ isActionHeld: (action) => action === "Jump" });
+    world.setGameInstance(new GameInstance({ classId: "GameInstance", hooks: { onTick: (_self, ctx) => { seen.push({ phase: "gi", ctx }); } } }));
+    const actor = world.createActor({ classId: "Actor", hooks: { onTick: (_self, ctx) => { seen.push({ phase: "actor", ctx }); } } });
+    actor.attachComponent(world.createComponent({ classId: "ActorComponent", hooks: { onTick: (_self, ctx) => { seen.push({ phase: "component", ctx }); } } }));
+    world.spawnActorNow(actor);
+    world.addTickingObject(world.createObject({ classId: "Object", hooks: { onTick: (_self, ctx) => { seen.push({ phase: "object", ctx }); } } }));
+
+    world.tick();
+    const first = seen.splice(0);
+    expect(first.map((entry) => entry.phase)).toEqual(["gi", "actor", "component", "object", "physics"]);
+    expect(new Set(first.map((entry) => entry.ctx)).size).toBe(1);
+    expect(first[0]!.ctx).toMatchObject({ dt: 1 / 60, tickIndex: 0, world });
+    expect(first[0]!.ctx.isActionHeld?.("Jump")).toBe(true);
+
+    world.tick();
+    const second = seen.splice(0);
+    expect(second).toHaveLength(5);
+    expect(new Set(second.map((entry) => entry.ctx)).size).toBe(1);
+    // A latent script keeps its tick's context, so a later tick never rewrites it.
+    expect(second[0]!.ctx).not.toBe(first[0]!.ctx);
+    expect(first[0]!.ctx.tickIndex).toBe(0);
+    expect(second[0]!.ctx.tickIndex).toBe(1);
   });
 
   it("keeps Game Instance ticking while scene phases are suspended and resumes those phases later", () => {

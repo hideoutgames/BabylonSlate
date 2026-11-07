@@ -90,7 +90,7 @@ export class ActorRealization {
       onCreation: (self) => this.admission.runCreation(self, () => hooks?.onCreation?.(self)),
       // Logic-free actors (Prefabs, scriptless classes) add no per-frame call.
       onTick: hooks?.onTick
-        ? (self, ctx) => this.admission.guard(() => hooks.onTick?.(self, ctx))
+        ? (self, ctx) => this.admission.guardTick(hooks, self, ctx)
         : undefined,
       onDestroyed: (self) => {
         this.host.overlay().retireSwitcher(self);
@@ -112,8 +112,7 @@ export class ActorRealization {
       // per-frame script lookup; project components keep it for reloads.
       onTick: isLockedEngineClassId(classId)
         ? undefined
-        : (self, ctx) =>
-            this.admission.guard(() => this.host.scripts().hooksFor(classId)?.onTick?.(self, ctx)),
+        : (self, ctx) => this.admission.guardTick(this.host.scripts().hooksFor(classId), self, ctx),
       onDestroyed: (self) => {
         this.admission.runDestroyed(self, () => this.host.scripts().hooksFor(classId)?.onDestroyed?.(self));
         this.host.dynamicMeshes().remove(self);
@@ -171,7 +170,7 @@ export class ActorRealization {
         onCreation: (self) => this.admission.runCreation(self, () => hooks.onCreation?.(self)),
         // Like scene actors, a class without a tick hook adds no per-frame call.
         onTick: hooks.onTick
-          ? (self, ctx) => this.admission.guard(() => hooks.onTick?.(self, ctx))
+          ? (self, ctx) => this.admission.guardTick(hooks, self, ctx)
           : undefined,
         onDestroyed: (self) =>
           this.admission.runDestroyed(self, () => hooks.onDestroyed?.(self)),

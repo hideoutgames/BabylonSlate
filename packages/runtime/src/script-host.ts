@@ -59,6 +59,14 @@ function sameModule(a: Pick<CompiledScript, "source" | "entryPoints">, b: Pick<C
     a.entryPoints.every((point, index) => point.name === b.entryPoints[index]!.name);
 }
 
+/** An entry point `dispatchEvent` can run, with its export. */
+type IndexedEntryPoint = {
+  point: CompiledScript["entryPoints"][number];
+  fn: (ctx: ScriptContext) => unknown;
+};
+
+const NO_ENTRY_POINTS: readonly IndexedEntryPoint[] = [];
+
 /**
  * Loads compiled graph modules and binds their entry points to actor
  * lifecycle hooks. One host per runtime session.
@@ -84,6 +92,11 @@ export class ScriptHost {
    * a reload reaches actors that captured their hooks at creation.
    */
   private readonly lifecycleScriptsByClassId = new Map<string, Map<string, LoadedScript[] | null>>();
+  /**
+   * Each loaded module's dispatchable entry points by event, in declaration
+   * order, built on its first dispatch. A reload loads new `LoadedScript`s.
+   */
+  private readonly entryPointsByEvent = new WeakMap<LoadedScript, Map<string, readonly IndexedEntryPoint[]>>();
   private readonly flowStates = new WeakMap<
     EngineObject,
     Map<string, Record<string, unknown>>
@@ -661,13 +674,10 @@ export class ScriptHost {
   ): { error: unknown } | null {
     let failure: { error: unknown } | null = null;
     for (const entry of loaded) {
-      for (const point of entry.script.entryPoints) {
-        if (point.event !== event) continue;
+      for (const { point, fn } of this.entryPointsFor(entry, event)) {
         if (!entryMatchesComponentInvoke(point.componentId, componentId, self)) {
           continue;
         }
-        const fn = entry.exports[point.name];
-        if (typeof fn !== "function") continue;
         // Every call runs, also while an earlier run of a latent entry still waits: each waits on its own.
         const ctx = this.createContext(
           self,
@@ -679,7 +689,7 @@ export class ScriptHost {
           entry.script.assetGuid,
         );
         try {
-          const result = this.invokeEntry(self, entry.script, point.name, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
+          const result = this.invokeEntry(self, entry.script, point.name, () => fn(ctx));
           if (result instanceof Promise) void result.catch((error) => this.reportLatentError(error, self));
         } catch (error) {
           this.services.reportError(error);
@@ -689,6 +699,23 @@ export class ScriptHost {
       }
     }
     return failure;
+  }
+
+  /** `entry`'s entry points for `event` whose export is a function. */
+  private entryPointsFor(entry: LoadedScript, event: string): readonly IndexedEntryPoint[] {
+    let byEvent = this.entryPointsByEvent.get(entry);
+    if (!byEvent) {
+      const index = new Map<string, IndexedEntryPoint[]>();
+      for (const point of entry.script.entryPoints) {
+        const fn = entry.exports[point.name];
+        if (point.event === undefined || typeof fn !== "function") continue;
+        const points = index.get(point.event) ?? [];
+        points.push({ point, fn: fn as (ctx: ScriptContext) => unknown });
+        index.set(point.event, points);
+      }
+      this.entryPointsByEvent.set(entry, byEvent = index);
+    }
+    return byEvent.get(event) ?? NO_ENTRY_POINTS;
   }
 
   private clearFlowState(self: EngineObject | null | undefined): void {

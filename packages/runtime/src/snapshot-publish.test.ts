@@ -15,9 +15,12 @@ import {
   type SerializedSceneLayer,
 } from "@haptic/core";
 import { generateNavMesh, initNavigation } from "@haptic/navigation";
-import type { Actor } from "@haptic/object-model";
+import { ClassRegistry, World, type Actor } from "@haptic/object-model";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
+import { RenderSlots } from "./render-slots";
+import { RuntimeSubsystems } from "./runtime-subsystems";
 import type { CompiledScript } from "./script-host";
+import { SnapshotPublisher } from "./snapshot-publisher";
 
 type Vec3 = [number, number, number];
 
@@ -392,5 +395,74 @@ describe("snapshot publishing", () => {
       deferred.runtime.stop();
       perTick.runtime.stop();
     }
+  });
+});
+
+describe("snapshot removal pass", () => {
+  function publisher() {
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const slots = new RenderSlots(new RuntimeSubsystems(), {
+      ensureCapacity: () => {},
+      findActor: (guid) => world.findActor(guid),
+    });
+    const despawns: string[] = [];
+    const snapshots = new SnapshotPublisher(4, world, slots, {
+      stopped: () => false,
+      frameId: () => 0,
+      lastScriptMs: () => 0,
+      lastPhysicsMs: () => 0,
+      canPublish: () => true,
+      cameraActor: () => null,
+      layerCameraCentre: () => null,
+      applyOverlayLayouts: () => {},
+      retireDetachedStreams: () => {},
+      removedActors: () => {},
+      recorder: () => null,
+      profilePublish: () => {},
+      reportLog: () => {},
+      reportError: (error) => { throw error; },
+      emit: (command) => { if (command.type === "despawn") despawns.push(command.actorGuid); },
+    }, () => 0);
+    const actor = (guid: string) => {
+      const created = world.createActor({ classId: "Actor", guid });
+      slots.allocate(created);
+      return created;
+    };
+    return { world, snapshots, despawns, actor };
+  }
+
+  it("checks no slot while neither the World structure nor the slot table changed", () => {
+    const { world, snapshots, despawns, actor } = publisher();
+    world.spawnActorNow(actor("still"));
+    world.spawnActorNow(actor("doomed"));
+    snapshots.publish();
+    const lookups = vi.spyOn(world, "findActor");
+    snapshots.publish();
+    snapshots.publish();
+    expect(lookups).not.toHaveBeenCalled();
+
+    world.destroyActor("doomed");
+    world.flushPending();
+    snapshots.publish();
+    expect(despawns).toEqual(["doomed"]);
+    // Its own release changed the slot table, so the next publish checks once more, then stops.
+    snapshots.publish();
+    lookups.mockClear();
+    snapshots.publish();
+    expect(lookups).not.toHaveBeenCalled();
+  });
+
+  it("keeps checking a spawn-queued actor's slot, so a cancelled spawn despawns without a structural change", () => {
+    const { world, snapshots, despawns, actor } = publisher();
+    world.spawnActorNow(actor("still"));
+    const queued = world.spawnActor(actor("queued"));
+    snapshots.publish();
+    expect(despawns).toEqual([]);
+
+    const structure = world.structuralRevision;
+    world.destroyActorInstance(queued);
+    expect(world.structuralRevision).toBe(structure);
+    snapshots.publish();
+    expect(despawns).toEqual(["queued"]);
   });
 });
