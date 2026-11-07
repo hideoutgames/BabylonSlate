@@ -1,7 +1,7 @@
 /**
  * New Asset document factories: the `ImportResult` each creatable asset type
  * starts as, and Material Instances made from a parent Material.
- * `content-browser-helpers.ts` re-exports the public names.
+ * `content-browser-helpers.ts` re-exports the names its importers use.
  */
 import {
   createDataDefinitionAsset,

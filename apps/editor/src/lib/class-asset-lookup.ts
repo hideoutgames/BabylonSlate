@@ -2,7 +2,7 @@
  * Class-asset id and ancestry helpers that app boot (document-context, project
  * service) needs. They live apart from `content-browser-helpers`, whose asset
  * factories pull in every graph package, so the boot path can import them
- * without that module. `content-browser-helpers` re-exports everything here.
+ * without that module. `content-browser-helpers` re-exports the names its importers use.
  */
 import type { AssetRegistry } from "@haptic/assets";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";

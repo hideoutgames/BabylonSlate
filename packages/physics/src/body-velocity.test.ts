@@ -7,7 +7,7 @@ describe.each([
   { name: "software", kind: "3d" as const, preferSoftware: true },
 ])("$name body velocity", ({ kind, preferSoftware }) => {
   it("reports owned velocity values, spins through simulation, and resets angular velocity on teleport", async () => {
-    const backend = await createPhysicsBackend({ kind, preferSoftware, allowSoftwareFallback: false, gravity: { x: 0, y: 0, z: 0 } });
+    const backend = await createPhysicsBackend({ kind, preferSoftware, gravity: { x: 0, y: 0, z: 0 } });
     const pose = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
     try {
       backend.createBody({ id: "body", actorId: "actor", motionType: "dynamic", mass: 1,
@@ -35,7 +35,7 @@ describe.each([
   });
 
   it("keeps a locked body upright and spins it again once the lock is released", async () => {
-    const backend = await createPhysicsBackend({ kind, preferSoftware, allowSoftwareFallback: false, gravity: { x: 0, y: 0, z: 0 } });
+    const backend = await createPhysicsBackend({ kind, preferSoftware, gravity: { x: 0, y: 0, z: 0 } });
     const pose = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
     try {
       backend.createBody({ id: "body", actorId: "actor", motionType: "dynamic", mass: 1,

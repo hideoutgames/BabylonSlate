@@ -67,7 +67,7 @@ const everyBackend = [
   { backend: "Havok", kind: "3d" as const },
 ];
 const nativeBackend = (kind: "2d" | "3d", gravity = 0) =>
-  createPhysicsBackend({ kind, gravity: { x: 0, y: gravity, z: 0 }, allowSoftwareFallback: false });
+  createPhysicsBackend({ kind, gravity: { x: 0, y: gravity, z: 0 } });
 const backendFor = (name: string, kind: "2d" | "3d", gravity: number): Promise<PhysicsBackend> | PhysicsBackend =>
   name === "software"
     ? createSoftwarePhysicsBackend(kind, { x: 0, y: gravity, z: 0 })

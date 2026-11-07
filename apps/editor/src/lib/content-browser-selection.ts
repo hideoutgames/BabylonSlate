@@ -1,7 +1,7 @@
 /**
  * Content Browser grid and tree selection: exclusive, additive and range
  * selects, paint-select, and the pointer hit-tests behind them.
- * `content-browser-helpers.ts` re-exports the public names.
+ * `content-browser-helpers.ts` re-exports the names its importers use.
  */
 import { rangeSelectTreeIds } from "@haptic/editor-kit";
 import { parentFolderPath, type ContentBrowserTreeRow } from "./content-browser-tree";

@@ -799,7 +799,7 @@ export class AssetRegistry {
 
   /**
    * Re-queue textures that fell back when the transcoder was unavailable, or
-   * whose `pending` / `encoding` job an earlier session left behind. A Texture
+   * whose `pending` job an earlier session left behind. A Texture
    * the queue already holds a job for is left to it (a remount rescans).
    */
   requeueUncompressedTextures(): Promise<number> {

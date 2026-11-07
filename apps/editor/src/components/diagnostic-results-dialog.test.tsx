@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { PERFORMANCE_TICK_COLUMNS_V1, PerformanceRecorder, type PerformanceProfile } from "@haptic/debugger";
+import { PerformanceRecorder, type PerformanceProfile } from "@haptic/debugger";
 import { serializeRenderFrameReport, type RenderFrameReport } from "@haptic/render";
 import { DiagnosticResultsStore } from "../services/diagnostic-results-store";
 import DiagnosticResultsDialog, { PerformanceSummary } from "./diagnostic-results-dialog";
@@ -45,30 +45,18 @@ it("compares two recordings side by side, marking each percentile that got slowe
   // No distribution bars while comparing.
   expect(screen.queryByRole("columnheader", { name: "Distribution" })).toBeNull();
 });
-/** The same ticks as a version 1 file holds them: script and physics, no phases. */
-function versionOne(profile: PerformanceProfile): PerformanceProfile {
-  return { ...profile, version: 1, ticks: { columns: PERFORMANCE_TICK_COLUMNS_V1, count: 1, chunks: [Float64Array.of(0, 0, 1, 2, 0.25, 0)] } };
-}
-it("lists the script phases of a version 2 recording, and none for a version 1 file", () => {
-  const { unmount } = render(<PerformanceSummary profile={recording()} />);
+it("lists the script phases of each runtime tick", () => {
+  render(<PerformanceSummary profile={recording()} />);
   expect(screen.getByText("Actors Phase")).toBeTruthy();
   expect(screen.getByText("Scene Systems Phase")).toBeTruthy();
   expect(screen.getByText("Worker Physics Phase")).toBeTruthy();
-  unmount();
-  render(<PerformanceSummary profile={versionOne(recording())} />);
-  expect(screen.queryByText("Actors Phase")).toBeNull();
-  expect(screen.getByText("Worker Script Phase")).toBeTruthy();
 });
-it("stacks runtime ticks by phase, or by script and physics for a version 1 file", () => {
-  const { unmount } = render(<PerformanceTimeline profile={recording()} />);
-  const legend = () => screen.getByText(/Ticks are placed on the frames/).parentElement!;
-  expect(legend().textContent).toContain("Tick Phases");
-  expect(legend().textContent).toContain("Actors");
-  expect(legend().textContent).toContain("Scene Systems");
-  unmount();
-  render(<PerformanceTimeline profile={versionOne(recording())} />);
-  expect(legend().textContent).toContain("Script + Physics");
-  expect(legend().textContent).not.toContain("Actors");
+it("stacks runtime ticks by phase", () => {
+  render(<PerformanceTimeline profile={recording()} />);
+  const legend = screen.getByText(/Ticks are placed on the frames/).parentElement!;
+  expect(legend.textContent).toContain("Tick Phases");
+  expect(legend.textContent).toContain("Actors");
+  expect(legend.textContent).toContain("Scene Systems");
 });
 it("shows a frame with the tick it presents, and a tick with the first frame presenting it", () => {
   render(<PerformanceTimeline profile={recording()} />);
@@ -167,13 +155,6 @@ it("lists script costs by Class and opens an entry's graph at its entry node", a
   fireEvent.click(screen.getByRole("button", { name: "Event Tick" }));
   expect(opened).toEqual([expect.objectContaining({ assetGuid: "Door.class", graphId: "event-graph", nodeId: "tick" })]);
   await waitFor(() => expect(screen.getByText("The asset is no longer in the project.")).toBeTruthy());
-});
-it("says a recording made before script costs has none", () => {
-  const store = new DiagnosticResultsStore();
-  store.importResult({ kind: "profile", profile: { ...recording(), version: 3 } });
-  act(() => { store.open(); store.selectView("scripts"); });
-  render(<DiagnosticResultsDialog store={store} />);
-  expect(screen.getByText("No Script Costs")).toBeTruthy();
 });
 it("opens an exported frame report again without replacing the recording", async () => {
   const report: RenderFrameReport = {

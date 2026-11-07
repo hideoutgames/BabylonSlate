@@ -26,13 +26,13 @@ describe("viewport Texture keys", () => {
     const key = (asset: IndexedAsset) => sceneViewportAssetKey(null, [asset]);
     const before = key(queued);
 
-    const encoding = await indexed("Texture", "tex", { usage: "albedo", compressionState: "encoding" }, [sourceChunk("a")]);
+    const fallback = await indexed("Texture", "tex", { usage: "albedo", compressionState: "fallback_uncompressed" }, [sourceChunk("a")]);
     const failed = await indexed("Texture", "tex", { usage: "albedo", compressionState: "encode_failed", encodeError: "boom" }, [sourceChunk("a")]);
     const committed = await indexed("Texture", "tex", {
       usage: "albedo", compressionState: "compressed", encodeWallMs: 40, ktx2ChunkId: "ktx2:abc",
       ktx2Width: 4, ktx2Height: 4, ktx2BlockAlign: 4, ktx2Sha256: "k",
     }, [sourceChunk("a"), ktx2Chunk("k")]);
-    expect([encoding, failed, committed].map(key)).toEqual([before, before, before]);
+    expect([fallback, failed, committed].map(key)).toEqual([before, before, before]);
 
     const reimported = await indexed("Texture", "tex", { usage: "albedo", compressionState: "pending" }, [sourceChunk("b")]);
     const retuned = await indexed("Texture", "tex", { usage: "normal", compressionState: "pending" }, [sourceChunk("a")]);
@@ -114,9 +114,9 @@ describe("viewport Texture encodings", () => {
     const unused = await indexed("Texture", "unused", { compressionState: "pending" }, [sourceChunk("d")]);
     const applied = sceneViewportTextureEncodings([source, other]);
 
-    // Progress rewrites the header without changing how the Texture is stored.
-    const encoding = await indexed("Texture", "tex", { compressionState: "encoding" }, [sourceChunk("a")]);
-    expect(changedTextureEncodings(applied, sceneViewportTextureEncodings([encoding, other, unused]))).toEqual([]);
+    // A failed encode rewrites the header without changing how the Texture is stored.
+    const failed = await indexed("Texture", "tex", { compressionState: "encode_failed", encodeError: "boom" }, [sourceChunk("a")]);
+    expect(changedTextureEncodings(applied, sceneViewportTextureEncodings([failed, other, unused]))).toEqual([]);
 
     const committed = await indexed("Texture", "tex", { compressionState: "compressed", ktx2ChunkId: "ktx2:abc" }, [sourceChunk("a"), ktx2Chunk("k")]);
     const unusedCommit = await indexed("Texture", "unused", { compressionState: "compressed", ktx2ChunkId: "ktx2:abc" }, [sourceChunk("d"), ktx2Chunk("k")]);

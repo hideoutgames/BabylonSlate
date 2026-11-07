@@ -2,7 +2,7 @@
  * Content Browser move, copy and tree-drop rules: valid destinations, content
  * root and name collision checks, Move dialog labels, and the moves a
  * selection or a tree drop makes.
- * `content-browser-helpers.ts` re-exports the public names.
+ * `content-browser-helpers.ts` re-exports the names its importers use.
  */
 import type { TreeDropPlacement } from "@haptic/editor-kit";
 import {

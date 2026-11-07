@@ -5,7 +5,7 @@ import type { IndexedAsset } from "@haptic/assets";
 import { loadFixtureExportDocuments } from "../testing/export-document-fixtures";
 import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 import { importEnvironmentTexture, AREA_EMISSION_EDGE, areaEmissionChunkId, encodeAreaEmission } from "@haptic/assets";
-import { assetHeaderDependencies } from "../lib/content-browser-helpers";
+import { assetHeaderDependencies } from "../lib/asset-header-dependencies";
 
 function textureAsset(): IndexedAsset {
   return {

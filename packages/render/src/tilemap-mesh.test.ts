@@ -4,9 +4,19 @@ import {
   createDefaultTilemapPayload,
   normalizeTilesetPayload,
   setTile,
+  tilesetAtlasColumns,
+  tilesetAtlasRows,
   type TilemapPayload,
+  type TilesetPayload,
 } from "@haptic/assets";
 import { createTilemapMeshes, updateSceneTilemapAnimations, updateSceneTilemapParallax } from "./tilemap-mesh";
+
+/** A map listing `tileset` from GID 1, so each GID is that tile's local id. */
+function listing(tileset: TilesetPayload): TilemapPayload {
+  const tileCount = tilesetAtlasColumns(tileset) * tilesetAtlasRows(tileset);
+  return { ...createDefaultTilemapPayload(), tilesets: [{ guid: "atlas", firstGid: 1, tileCount }] };
+}
+const atlas = (tileset: TilesetPayload) => new Map([["atlas", tileset]]);
 
 describe("createTilemapMeshes", () => {
   let engine: NullEngine;
@@ -35,10 +45,10 @@ describe("createTilemapMeshes", () => {
       tileWidth: 16,
       tileHeight: 16,
     });
-    let tilemap = createDefaultTilemapPayload();
+    let tilemap = listing(tileset);
     tilemap = { ...tilemap, chunkSize: 2 };
     tilemap = setTile(tilemap, "layer-1", 0, 0, 1);
-    const root = createTilemapMeshes(scene, "actor-0", tilemap, tileset, 1, 1);
+    const root = createTilemapMeshes(scene, "actor-0", tilemap, atlas(tileset), 1, 1);
     expect(root.name).toBe("actor-0");
     expect(root.getChildren()).toHaveLength(1);
     const child = root.getChildren()[0] as unknown as {
@@ -57,7 +67,7 @@ describe("createTilemapMeshes", () => {
       tileWidth: 16,
       tileHeight: 16,
     });
-    let tilemap = createDefaultTilemapPayload();
+    let tilemap = listing(tileset);
     tilemap = { ...tilemap, chunkSize: 2 };
     tilemap = {
       ...tilemap,
@@ -68,7 +78,7 @@ describe("createTilemapMeshes", () => {
       })),
     };
     tilemap = setTile(tilemap, "layer-1", 0, 0, 1);
-    const root = createTilemapMeshes(scene, "actor-0", tilemap, tileset, 1, 1);
+    const root = createTilemapMeshes(scene, "actor-0", tilemap, atlas(tileset), 1, 1);
     const child = root.getChildMeshes()[0]!;
     expect(child.renderingGroupId).toBe(1);
     expect(child.alphaIndex).toBeGreaterThan(0);
@@ -86,11 +96,11 @@ describe("createTilemapMeshes", () => {
         { id: 2, animation: [2, 1] },
       ],
     });
-    let tilemap = createDefaultTilemapPayload();
+    let tilemap = listing(tileset);
     tilemap = { ...tilemap, chunkSize: 2 };
     tilemap = setTile(tilemap, "layer-1", 0, 0, 1);
     tilemap = setTile(tilemap, "layer-1", 1, 0, 2);
-    const root = createTilemapMeshes(scene, "actor-0", tilemap, tileset, 1, 1);
+    const root = createTilemapMeshes(scene, "actor-0", tilemap, atlas(tileset), 1, 1);
     const names = root.getChildMeshes().map((mesh) => mesh.name);
     expect(names.some((name) => name.endsWith(":anim"))).toBe(true);
     expect(names.some((name) => !name.endsWith(":anim"))).toBe(true);
@@ -121,7 +131,7 @@ describe("createTilemapMeshes", () => {
       tileWidth: 16,
       tileHeight: 16,
     });
-    let tilemap = createDefaultTilemapPayload();
+    let tilemap = listing(tileset);
     tilemap = { ...tilemap, chunkSize: 2 };
     tilemap = {
       ...tilemap,
@@ -133,7 +143,7 @@ describe("createTilemapMeshes", () => {
     };
     tilemap = setTile(tilemap, "layer-1", 0, 0, 1);
     tilemap = setTile(tilemap, "layer-2", 0, 0, 1);
-    const root = createTilemapMeshes(scene, "actor-0", tilemap, tileset, 1, 1);
+    const root = createTilemapMeshes(scene, "actor-0", tilemap, atlas(tileset), 1, 1);
     const [child, vertical] = root.getChildMeshes();
     expect(child!.metadata?.tilemapParallax).toEqual({ x: 0.5, y: 0.25 });
     updateSceneTilemapParallax(scene, { x: 10, y: 4 });
@@ -154,14 +164,14 @@ describe("createTilemapMeshes", () => {
 
   it("sits an unbounded map's pivot on the root, negative chunks included, with parallax and sorting still applied", () => {
     const tileset = normalizeTilesetPayload({ atlasWidth: 16, atlasHeight: 16, tileWidth: 16, tileHeight: 16 });
-    let tilemap: TilemapPayload = { ...createDefaultTilemapPayload(), chunkSize: 2, unbounded: true, pivot: { x: -1.5, y: 2 } };
+    let tilemap: TilemapPayload = { ...listing(tileset), chunkSize: 2, unbounded: true, pivot: { x: -1.5, y: 2 } };
     tilemap = {
       ...tilemap,
       layers: tilemap.layers.map((layer) => ({ ...layer, sortingLayer: "Foreground", parallax: { x: 0.5, y: 1 } })),
     };
     // Cell (-3, 1): chunk (-2, 0).
     tilemap = setTile(tilemap, "layer-1", -3, 1, 1);
-    const root = createTilemapMeshes(scene, "actor-0", tilemap, tileset, 2, 3);
+    const root = createTilemapMeshes(scene, "actor-0", tilemap, atlas(tileset), 2, 3);
     root.position.set(10, 20, 0);
     const chunk = root.getChildMeshes().find((mesh) => mesh.name === "actor-0:layer-1:-2:0")!;
     expect(chunk).toBeTruthy();
@@ -187,14 +197,14 @@ describe("createTilemapMeshes", () => {
       tileWidth: 16,
       tileHeight: 16,
     });
-    let tilemap = createDefaultTilemapPayload();
+    let tilemap = listing(tileset);
     tilemap = { ...tilemap, chunkSize: 2 };
     tilemap = {
       ...tilemap,
       layers: tilemap.layers.map((layer) => ({ ...layer, visible: false })),
     };
     tilemap = setTile(tilemap, "layer-1", 0, 0, 1);
-    const root = createTilemapMeshes(scene, "actor-0", tilemap, tileset, 1, 1);
+    const root = createTilemapMeshes(scene, "actor-0", tilemap, atlas(tileset), 1, 1);
     expect(root.getChildMeshes()).toHaveLength(0);
   });
 

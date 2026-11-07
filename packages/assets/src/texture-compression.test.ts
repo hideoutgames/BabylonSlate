@@ -764,13 +764,12 @@ describe("registry encode pipeline", () => {
     expect(attempts).toBe(2);
   });
 
-  it("retries pending and interrupted encoding textures", async () => {
+  it("retries pending textures", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("pending.hproject");
     await storage.mkdir("assets", true);
     for (const [guid, name, state] of [
       ["pend-tex", "Pend", "pending"],
-      ["enc-tex", "Enc", "encoding"],
     ] as const) {
       const bytes = await encodeHasset({
         header: {
@@ -807,18 +806,14 @@ describe("registry encode pipeline", () => {
     await registry.mountRoot(projectContentRoot());
 
     expect(await registry.retryTextureEncoding("pend-tex")).toBe(true);
-    expect(await registry.retryTextureEncoding("enc-tex")).toBe(true);
     await vi.waitFor(() => {
       expect(
         registry.getByGuid("pend-tex")!.header.payload.compressionState,
       ).toBe("compressed");
-      expect(
-        registry.getByGuid("enc-tex")!.header.payload.compressionState,
-      ).toBe("compressed");
     });
   });
 
-  it("requeues pending and encoding textures on remount", async () => {
+  it("requeues pending textures on remount", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("requeue.hproject");
     await storage.mkdir("assets", true);
@@ -833,7 +828,7 @@ describe("registry encode pipeline", () => {
         mode: "thin",
         dependencies: [],
         parentClass: null,
-        payload: { compressionState: "encoding", usage: "albedo" },
+        payload: { compressionState: "pending", usage: "albedo" },
       },
       chunks: [
         {
@@ -878,7 +873,7 @@ describe("registry encode pipeline", () => {
         mode: "thin",
         dependencies: [],
         parentClass: null,
-        payload: { compressionState: "encoding", usage: "albedo" },
+        payload: { compressionState: "pending", usage: "albedo" },
       },
       chunks: [
         {
@@ -967,7 +962,7 @@ describe("registry encode pipeline", () => {
     );
   });
 
-  it("does not let a slow encoding write clobber encode_failed", async () => {
+  it("does not let a slow pending write clobber encode_failed", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("race.hproject");
     await storage.mkdir("assets", true);
@@ -1009,11 +1004,11 @@ describe("registry encode pipeline", () => {
       return originalWrite(path, data);
     };
 
-    const encoding = registry.setCompressionState("race-tex", "encoding");
+    const pending = registry.setCompressionState("race-tex", "pending");
     const failed = registry.setCompressionState("race-tex", "encode_failed");
     await Promise.resolve();
     releaseFirst();
-    await Promise.all([encoding, failed]);
+    await Promise.all([pending, failed]);
     expect(
       registry.getByGuid("race-tex")!.header.payload.compressionState,
     ).toBe("encode_failed");

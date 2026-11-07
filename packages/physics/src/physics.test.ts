@@ -21,7 +21,7 @@ it.each(["software", "rapier"] as const)("%s applies an off-centre impulse as tr
   const gravity = { x: 0, y: 0, z: 0 };
   const backend = kind === "software"
     ? createSoftwarePhysicsBackend("3d", gravity)
-    : await createPhysicsBackend({ kind: "2d", gravity, allowSoftwareFallback: false });
+    : await createPhysicsBackend({ kind: "2d", gravity });
   try {
     backend.createBody({
       id: "body", actorId: "actor", motionType: "dynamic", mass: 2,
@@ -50,7 +50,7 @@ it.each(["software", "rapier", "havok"] as const)("%s reads a body pose into a c
   const gravity = { x: 0, y: 0, z: 0 };
   const backend = kind === "software"
     ? createSoftwarePhysicsBackend("3d", gravity)
-    : await createPhysicsBackend({ kind: kind === "rapier" ? "2d" : "3d", gravity, allowSoftwareFallback: false });
+    : await createPhysicsBackend({ kind: kind === "rapier" ? "2d" : "3d", gravity });
   try {
     const quarterTurn = backend.kind === "2d"
       ? { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }
@@ -81,7 +81,6 @@ it("keeps Rapier teleport/target rotation consistent in body readback", async ()
   const backend = await createPhysicsBackend({
     kind: "2d",
     gravity: { x: 0, y: 0, z: 0 },
-    allowSoftwareFallback: false,
   });
   try {
     const quarterTurn = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 };
@@ -138,7 +137,6 @@ it("retires Rapier trigger pairs when both colliders are removed before polling 
   const backend = await createPhysicsBackend({
     kind: "2d",
     gravity: { x: 0, y: 0, z: 0 },
-    allowSoftwareFallback: false,
   });
   const collider = (id: string) => ({
     id,
@@ -565,7 +563,7 @@ describe("@haptic/physics", () => {
 
   it("Rapier gives a dynamic body its authored mass, whatever its colliders' area", async () => {
     const backend = await createPhysicsBackend({
-      kind: "2d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+      kind: "2d", gravity: { x: 0, y: 0, z: 0 },
     });
     try {
       backend.createBody({
@@ -793,7 +791,7 @@ describe("@haptic/physics", () => {
     const gravity = { x: 0, y: 0, z: 0 };
     const backend = kind === "software"
       ? createSoftwarePhysicsBackend("3d", gravity)
-      : await createPhysicsBackend({ kind: "2d", gravity, allowSoftwareFallback: false });
+      : await createPhysicsBackend({ kind: "2d", gravity });
     const pose = (x: number, y: number) => ({ position: { x, y, z: 0 }, rotation: identityRotation() });
     const sphere = { kind: "sphere" as const, radius: 0.25 };
     try {

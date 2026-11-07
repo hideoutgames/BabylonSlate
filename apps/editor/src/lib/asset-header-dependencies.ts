@@ -1,7 +1,7 @@
 /**
  * Header `dependencies[]` and typed reference collection for asset payloads,
  * and the dependency map that adds already-loaded edits of open documents.
- * `content-browser-helpers.ts` re-exports the public names.
+ * `content-browser-helpers.ts` re-exports the names its importers use.
  */
 import {
   collectAssetDependencyMetadata,

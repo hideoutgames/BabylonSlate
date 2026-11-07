@@ -533,8 +533,7 @@ export class ProjectTextureEncoding {
       if (
         state === "encode_failed" ||
         state === "fallback_uncompressed" ||
-        state === "pending" ||
-        state === "encoding"
+        state === "pending"
       ) {
         if (await this.trackTextureStateWrite(registry.retryTextureEncoding(asset.header.guid))) {
           count += 1;

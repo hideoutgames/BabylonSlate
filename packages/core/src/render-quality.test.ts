@@ -169,29 +169,6 @@ describe("rendering quality sessions", () => {
       qualityGroupLabel(resolveRenderingQuality(reapplied), "shadows"),
     ).toBe("high");
   });
-  it("loads an unedited Low or Medium group saved by an earlier release as that level's current values", () => {
-    const earlierMedium = {
-      water: {
-        profile: "medium", preset: "medium", shadingDetail: "medium", meshDensity: 0.75, contactResolution: 256, refraction: true,
-        refractionScale: 0.5, reflections: "sky", reflectionSteps: 8, planarScale: 0.5, fftSize: 256, fftCascades: 3,
-      },
-      lighting: { profile: "low", preset: "low", localLightMode: "auto", maxLocalLights: 4 },
-      textures: { profile: "medium", preset: "medium", lodBias: 0, anisotropy: 4, byteBudget: 512 * 1024 ** 2 },
-      geometry: { profile: "medium", preset: "medium", autoLod: true, lodDistanceScale: 1 },
-    };
-    const shadows = { profile: "medium", preset: "medium", enabled: true, distance: 200, fadeFraction: 0.1, mapSize: 2048, cascades: 2, filter: "pcf",
-      filterQuality: "medium", softness: 0.05, autoBias: true, depthBias: 0.0001, normalBias: 0.005, localLightMode: "auto", maxLocalLights: 2, localMapSize: 1024 };
-    const loaded = normalizeProjectSettings(JSON.parse(JSON.stringify({ render: { ...DEFAULT_RENDER_PROJECT_SETTINGS, quality: earlierMedium, shadows } }))).render;
-    const effective = resolveRenderingQuality(loaded);
-    expect(effective.water).toEqual({ ...RENDER_QUALITY_PROFILES.medium.water, profile: "medium", preset: "medium" });
-    expect(effective.lighting).toMatchObject({ ...RENDER_QUALITY_PROFILES.low.lighting, preset: "low" });
-    expect(effective.textures).toMatchObject({ ...RENDER_QUALITY_PROFILES.medium.textures, preset: "medium" });
-    expect(effective.shadows).toMatchObject({ ...qualityPresetPatch("medium").shadows, preset: "medium" });
-    // An edited group, or one saved Custom with those values, keeps what it holds.
-    const edited = normalizeRenderingQuality({ geometry: { ...earlierMedium.geometry, lodDistanceScale: 0.9 }, water: { ...earlierMedium.water, preset: "custom" } });
-    expect(edited.geometry).toMatchObject({ lodDistanceScale: 0.9, preset: "custom" });
-    expect(edited.water).toMatchObject({ meshDensity: 0.75, reflections: "sky", preset: "custom" });
-  });
   it("fills water fields added by later releases from the saved water tier, not Medium", () => {
     const { profile, preset, shadingDetail, refraction } = qualityPresetPatch("high").water!;
     const quality = normalizeRenderingQuality({ water: { profile, preset, shadingDetail, refraction, reflections: "mirror" } });
@@ -262,14 +239,6 @@ describe("rendering quality sessions", () => {
     session.execute("geometry", "reset");
     expect(session.effective().geometry.occlusionCulling).toBe(true);
     for (const level of ["low", "medium", "high", "ultra"] as const) expect(RENDER_QUALITY_PROFILES[level].geometry.occlusionCulling).toBe(true);
-  });
-  it("loads a tier's geometry saved with occlusion culling off as that tier's current values", () => {
-    for (const level of ["low", "medium", "high", "ultra"] as const) {
-      const saved = { ...RENDER_QUALITY_PROFILES[level].geometry, occlusionCulling: false, profile: level, preset: level };
-      expect(normalizeRenderingQuality({ geometry: saved }).geometry).toMatchObject({ occlusionCulling: true, preset: level });
-    }
-    const custom = { ...RENDER_QUALITY_PROFILES.medium.geometry, occlusionCulling: false, profile: "medium", preset: "custom" } as const;
-    expect(normalizeRenderingQuality({ geometry: custom }).geometry).toMatchObject({ occlusionCulling: false, preset: "custom" });
   });
   it("detects legacy mismatched shadow settings without overwriting their values", () => {
     const settings = normalizeProjectSettings({

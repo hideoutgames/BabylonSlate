@@ -56,7 +56,7 @@ const box = (
   },
 ];
 const nativeBackend = (kind: "2d" | "3d", gravity = 0) =>
-  createPhysicsBackend({ kind, gravity: { x: 0, y: gravity, z: 0 }, allowSoftwareFallback: false });
+  createPhysicsBackend({ kind, gravity: { x: 0, y: gravity, z: 0 } });
 
 describe("static bodies follow their actor", () => {
   it("keeps a 2D static body's authored depth and tilt across Rapier steps", async () => {

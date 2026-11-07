@@ -291,7 +291,6 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       kind: this.worldKind,
       gravity: vec3(this.currentGravity),
       havokWasmUrl: this.havokWasmUrl,
-      allowSoftwareFallback: false,
     });
     if (!current()) {
       backend.dispose();
@@ -354,7 +353,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
 
   /** Native backend for a Scene's main world; `installScene` adopts it. */
   acquireNative(kind: PhysicsWorldKind, gravity: readonly number[]): Promise<PhysicsBackend> {
-    return createPhysicsBackend({ kind, gravity: vec3(gravity), havokWasmUrl: this.havokWasmUrl, allowSoftwareFallback: false });
+    return createPhysicsBackend({ kind, gravity: vec3(gravity), havokWasmUrl: this.havokWasmUrl });
   }
 
   /**

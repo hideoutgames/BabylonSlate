@@ -1,4 +1,4 @@
-import type { IndexedAsset } from "@haptic/assets";
+import type { IndexedAsset, TextureCompressionState as SavedTextureCompressionState } from "@haptic/assets";
 import {
   normalizeAnimationPayload,
   contentEntryNameError,
@@ -28,39 +28,31 @@ import { joinAssetFolderPath } from "./content-browser-tree";
 import { isMaterialAssetType } from "./material-asset-filters";
 import { shownCompressionState } from "./texture-encode-state";
 
-// Boot-path consumers import these from `class-asset-lookup` directly; the
-// re-export keeps every other importer of this module unchanged.
+// Boot-path consumers import these from `class-asset-lookup` directly; other
+// importers use them through this module.
 export {
-  ENGINE_BASE_CLASSES,
   classDocumentShowsPrefab,
   classIdFromClassAsset,
   classParentLookup,
   newAssetFileName,
   newAssetFileSuffix,
-  registryClassParentLookup,
-  type ClassAssetRef,
 } from "./class-asset-lookup";
 
 // Content paths and folder trees, selection, search and sort, moves, New Asset
 // factories, header dependencies and Material filters live in sibling
-// modules; the re-exports keep every importer of this module unchanged.
+// modules; this module re-exports the names its importers use.
 export {
   ASSETS_ROOT,
   isFolderTreeRoot,
-  collectFolderGuids,
   type MoveKind,
-  type FlattenedFolderRow,
   parentFolderPath,
   filterFolderTreeRows,
   type ContentBrowserTreeRow,
-  listChildFolders,
   listChildFoldersFromTrees,
   collectFolderGuidsFromTrees,
   flattenFolderForest,
   flattenContentBrowserForest,
-  nestedFolderPaths,
   withAutoCollapsedNestedFolders,
-  flattenContentBrowserTree,
   flattenFolderTree,
   joinAssetFolderPath,
 } from "./content-browser-tree";
@@ -68,8 +60,6 @@ export {
   type ContentBrowserPaintHit,
   type ContentBrowserSelection,
   isContentBrowserEmptyGridDoubleClickTarget,
-  exclusiveSelectAsset,
-  exclusiveSelectFolder,
   applyContentBrowserTileSelect,
   applyContentBrowserTreeSelect,
   paintSelectTiles,
@@ -84,7 +74,6 @@ export {
   uniqueAssetTypes,
 } from "./content-browser-filter-sort";
 export {
-  isValidMoveDestination,
   contentBrowserSelectionMoves,
   moveNameCollision,
   contentBrowserMoveDialogTitle,
@@ -94,7 +83,6 @@ export {
   remapPathAfterFolderMove,
   type ContentBrowserDropMove,
   isCrossRootMove,
-  contentBrowserMoveFromDrop,
   contentBrowserTreeDropMoves,
 } from "./content-browser-moves";
 export {
@@ -104,35 +92,26 @@ export {
   buildSpriteAnimationAssetResult,
   buildTilesetAssetResult,
   derivedAssetNameFor,
-  materialInstanceNameFor,
   spriteAnimationNameFor,
 } from "./new-asset-result";
 export {
   materialAssetDependencies,
   assetHeaderDependencyMetadata,
-  assetHeaderDependencies,
   assetDependenciesIncludingOpenDocuments,
 } from "./asset-header-dependencies";
 export {
-  materialHeaderMeta,
   isMaterialSamplerTextureAsset,
   isMaterialAssetType,
-  isPostProcessMaterialAsset,
-  isParticleMaterialAsset,
   isPostProcessMaterialForPicker,
   isParticleMaterialForPicker,
   materialDomainsFromAssets,
   filterInspectorPinPickerAssets,
 } from "./material-asset-filters";
 
-export type TextureCompressionState =
-  | "pending"
-  | "encoding"
-  | "compressed"
-  | "fallback_uncompressed"
-  | "encode_failed";
+/** A saved state, or `encoding` while the editor runs the Texture's encode (`shownCompressionState`). */
+type TextureCompressionState = SavedTextureCompressionState | "encoding";
 
-export const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
+const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
   "pending",
   "encoding",
   "fallback_uncompressed",
@@ -140,7 +119,7 @@ export const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
 ];
 
 
-export type ParentClassTreeRow = {
+type ParentClassTreeRow = {
   id: string;
   parentClassId: string | null;
   depth: number;
@@ -287,7 +266,7 @@ export const CREATABLE_ASSET_TYPES = [
 
 export type CreatableAssetType = (typeof CREATABLE_ASSET_TYPES)[number];
 
-export type CreatableAssetTypeGroup = {
+type CreatableAssetTypeGroup = {
   id: string;
   label: string;
   types: readonly CreatableAssetType[];
@@ -426,7 +405,7 @@ export function compressionBadgeLabel(state: TextureCompressionState): string {
   }
 }
 
-export type ContentBrowserContextAction =
+type ContentBrowserContextAction =
   | "open"
   | "generate-thumbnail"
   | "import-msdf-atlas"
