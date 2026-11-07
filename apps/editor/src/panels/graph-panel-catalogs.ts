@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { SaveGameDefinition } from "@haptic/core";
+import type { DocumentKind, SaveGameDefinition } from "@haptic/core";
 import {
   useDocumentActions,
   useProjectState,
@@ -13,14 +13,16 @@ import { inputAssetCatalog } from "../lib/input-asset-catalog";
 import { collectDataGraphAssets } from "../lib/data-graph";
 import {
   collectGraphTypeAssets,
-  collectSceneDocumentsForPalette,
   collectScriptInterfacesForPalette,
   collectSubsystemClassesForPalette,
   functionLibrariesFromHeaders,
+  sceneDocumentsFromHeaders,
   typeSchemasFromGraphAssets,
   withOpenClassGraphs,
   withOpenFunctionLibraries,
+  withOpenSceneDocuments,
 } from "../lib/logic-graph-document";
+import { useStableBy } from "../lib/use-stable-by";
 import { useClassHeaderGraphs } from "../lib/use-class-header-graphs";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -40,6 +42,34 @@ const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
 const INPUT_KINDS = ["input-action", "input-axis"] as const;
 const DATA_KINDS = ["data-tree"] as const;
 const SAVE_GAME_KINDS = ["save-game"] as const;
+
+type ClipInput = { ref: { kind: DocumentKind; path: string }; content: unknown };
+
+/**
+ * What `projectTimelineClips` reads from an open document, captured now (open
+ * documents are updated in place): a Scene's or Scene Layer's clips, or a clip
+ * asset's content.
+ */
+function timelineClipInput(doc: { ref: { kind: DocumentKind; path: string }; content: unknown }): ClipInput {
+  const ref = { kind: doc.ref.kind, path: doc.ref.path };
+  if (!doc.content) return { ref, content: null };
+  return doc.ref.kind === "scene" || doc.ref.kind === "scene-layer"
+    ? { ref, content: { timelineClips: (doc.content as { timelineClips?: unknown }).timelineClips } }
+    : { ref, content: doc.content };
+}
+
+const clipInputValue = (input: ClipInput) =>
+  input.content !== null && (input.ref.kind === "scene" || input.ref.kind === "scene-layer")
+    ? (input.content as { timelineClips?: unknown }).timelineClips
+    : input.content;
+
+function sameTimelineClipInputs(previous: readonly ClipInput[], next: readonly ClipInput[]): boolean {
+  return previous.length === next.length && previous.every((input, index) => {
+    const other = next[index]!;
+    return input.ref.kind === other.ref.kind && input.ref.path === other.ref.path &&
+      (input.content === null) === (other.content === null) && clipInputValue(input) === clipInputValue(other);
+  });
+}
 
 /**
  * The project-wide catalogs a Class or Animation Graph panel builds its
@@ -123,13 +153,15 @@ export function useGraphPanelCatalogs() {
       classIdForPath: classIdForGraphPath,
     });
   }, [assetRegistry, openClassPaths, parentOf, registryEpoch]);
-  const sceneDocuments = useMemo(() => {
+  // Saved Scenes change only with the registry; a Scene edit re-reads only that open Scene, once for every panel.
+  const sceneHeaders = useMemo(() => {
     void registryEpoch;
-    return collectSceneDocumentsForPalette({
-      assets: assetRegistry?.list() ?? [],
-      openDocuments: sceneDocumentsOpen,
-    });
-  }, [assetRegistry, registryEpoch, sceneDocumentsOpen]);
+    return sceneDocumentsFromHeaders(assetRegistry?.list() ?? []);
+  }, [assetRegistry, registryEpoch]);
+  const sceneDocuments = useMemo(
+    () => withOpenSceneDocuments(sceneHeaders, sceneDocumentsOpen),
+    [sceneDocumentsOpen, sceneHeaders],
+  );
   const scriptInterfaces = useMemo(() => {
     void registryEpoch;
     return collectScriptInterfacesForPalette({
@@ -174,13 +206,15 @@ export function useGraphPanelCatalogs() {
     return collectDataGraphAssets(assetRegistry?.list() ?? [], dataDocuments);
   }, [assetRegistry, dataDocuments, registryEpoch]);
   // Timeline Assets and the clips bound to them; open Scenes, Scene Layers and clip assets, saved or not, win.
-  // Kept by value, so a scene edit that leaves every clip's name and events alone keeps the palette.
+  // Kept by value, so a scene edit that leaves every clip's name and events alone keeps the palette; an
+  // edit that keeps a Scene's clips (the same `timelineClips`) does not rebuild the index at all.
   const clipDocuments = useOpenDocumentsOfKinds(CLIP_DOCUMENT_KINDS);
+  const clipInputs = useStableBy(clipDocuments.map(timelineClipInput), sameTimelineClipInputs);
   const timelineSignature = useMemo(() => {
     void registryEpoch;
     const assets = assetRegistry?.list() ?? [];
-    return JSON.stringify(timelineScriptAssets(assets, projectTimelineClips(assets, clipDocuments)));
-  }, [assetRegistry, clipDocuments, registryEpoch]);
+    return JSON.stringify(timelineScriptAssets(assets, projectTimelineClips(assets, clipInputs)));
+  }, [assetRegistry, clipInputs, registryEpoch]);
   const timelineAssets = useMemo(() => JSON.parse(timelineSignature) as TimelineScriptAsset[], [timelineSignature]);
 
   return {

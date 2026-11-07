@@ -610,40 +610,72 @@ function paletteSceneFromContent(
   };
 }
 
-export function collectSceneDocumentsForPalette(options: {
-  assets: ReadonlyArray<{
-    path: string;
-    header: {
-      guid?: string;
-      type: string;
-      name: string;
-      payload?: Record<string, unknown>;
-    };
-  }>;
-  openDocuments: ReadonlyArray<{
-    ref: { kind: string; path: string };
-    content: unknown;
-  }>;
-}): PaletteSceneDocument[] {
+/**
+ * Palette views by Scene content object. Headers and open Scene contents are
+ * replaced, never mutated, so every graph panel shares one view per content
+ * and a Scene edit normalizes only the edited Scene, once.
+ */
+const paletteScenes = new WeakMap<object, { guid: string; fallbackName: string; scene: PaletteSceneDocument }>();
+
+function cachedPaletteScene(guid: string, content: unknown, fallbackName: string): PaletteSceneDocument {
+  if (!isRecord(content)) return paletteSceneFromContent(guid, content, fallbackName);
+  const cached = paletteScenes.get(content);
+  if (cached && cached.guid === guid && cached.fallbackName === fallbackName) return cached.scene;
+  const scene = paletteSceneFromContent(guid, content, fallbackName);
+  paletteScenes.set(content, { guid, fallbackName, scene });
+  return scene;
+}
+
+type SceneHeaderAssets = ReadonlyArray<{
+  path: string;
+  header: {
+    guid?: string;
+    type: string;
+    name: string;
+    payload?: Record<string, unknown>;
+  };
+}>;
+
+/** Saved Scenes by guid from their headers, plus each asset's guid by path for the open tabs. */
+export type PaletteSceneHeaders = {
+  byGuid: ReadonlyMap<string, PaletteSceneDocument>;
+  guidByPath: ReadonlyMap<string, string | undefined>;
+};
+
+/** The header part of the Scene palette; it changes only with the registry. */
+export function sceneDocumentsFromHeaders(assets: SceneHeaderAssets): PaletteSceneHeaders {
   const byGuid = new Map<string, PaletteSceneDocument>();
-  for (const asset of options.assets) {
+  const guidByPath = new Map<string, string | undefined>();
+  for (const asset of assets) {
+    if (!guidByPath.has(asset.path)) guidByPath.set(asset.path, asset.header.guid);
     if (asset.header.type !== "Scene") continue;
     const guid = asset.header.guid?.trim();
     if (!guid) continue;
-    byGuid.set(
-      guid,
-      paletteSceneFromContent(guid, asset.header.payload ?? {}, asset.header.name),
-    );
+    byGuid.set(guid, cachedPaletteScene(guid, asset.header.payload ?? {}, asset.header.name));
   }
-  for (const doc of options.openDocuments) {
+  return { byGuid, guidByPath };
+}
+
+/** Header Scenes with each open Scene tab's unsaved actors winning. */
+export function withOpenSceneDocuments(
+  headers: PaletteSceneHeaders,
+  openDocuments: GraphDocuments,
+): PaletteSceneDocument[] {
+  const byGuid = new Map(headers.byGuid);
+  for (const doc of openDocuments) {
     if (doc.ref.kind !== "scene") continue;
-    const guid = options.assets.find(
-      (asset) => asset.path === doc.ref.path,
-    )?.header.guid;
+    const guid = headers.guidByPath.get(doc.ref.path);
     if (!guid) continue;
-    byGuid.set(guid, paletteSceneFromContent(guid, doc.content, guid));
+    byGuid.set(guid, cachedPaletteScene(guid, doc.content, guid));
   }
   return [...byGuid.values()];
+}
+
+export function collectSceneDocumentsForPalette(options: {
+  assets: SceneHeaderAssets;
+  openDocuments: GraphDocuments;
+}): PaletteSceneDocument[] {
+  return withOpenSceneDocuments(sceneDocumentsFromHeaders(options.assets), options.openDocuments);
 }
 
 type LogicGraphCommit =

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, renderHook } from "@testing-library/react";
+import { createActor, createDefaultScene, createTimelineClip, type SerializedScene } from "@haptic/core";
 import { useGraphPanelCatalogs } from "./graph-panel-catalogs";
 import { indexedAssetRegistry } from "../testing/indexed-asset-registry";
 
@@ -84,4 +85,51 @@ it("overlays an edited Class tab without re-reading any Class header", () => {
   expect(list).not.toHaveBeenCalled();
   // Subsystems read only which Classes are open, so an edit keeps them.
   expect(result.current.subsystemClasses).toBe(subsystems);
+});
+
+it("re-reads no registry and normalizes only the edited Scene, once for every panel, when an open Scene is edited", () => {
+  const sceneAsset = (name: string) => ({
+    rootId: "project",
+    path: `assets/${name}.scene.hasset`,
+    header: { guid: `${name}-guid`, type: "Scene", name, payload: { name, actors: [] } },
+  });
+  const registry = indexedAssetRegistry([sceneAsset("Cave"), sceneAsset("Town")]);
+  const list = vi.spyOn(registry, "list");
+  docs.assetRegistry = registry;
+  const sceneTab = (name: string, content: SerializedScene) => ({
+    id: `scene:assets/${name}.scene.hasset`,
+    ref: { kind: "scene", path: `assets/${name}.scene.hasset`, label: name },
+    content,
+    layout: null,
+    dirty: false,
+  });
+  const cave: SerializedScene = { ...createDefaultScene(), name: "Cave", actors: [createActor("door", "Door")] };
+  const town: SerializedScene = { ...createDefaultScene(), name: "Town" };
+  docs.openDocuments = [sceneTab("Cave", cave), sceneTab("Town", town)];
+  revisions.documentRevisions = { scene: 1 };
+  // Two graph panels, as an event graph and a function graph tab mount.
+  const first = renderHook(() => useGraphPanelCatalogs());
+  const second = renderHook(() => useGraphPanelCatalogs());
+  const townView = first.result.current.sceneDocuments.find((scene) => scene.guid === "Town-guid");
+  const timelineAssets = first.result.current.timelineAssets;
+  list.mockClear();
+
+  // A Details edit: a new Cave scene whose clips are untouched.
+  docs.openDocuments = [sceneTab("Cave", { ...cave, actors: [{ ...cave.actors[0]!, name: "Gate" }] }), sceneTab("Town", town)];
+  revisions.documentRevisions = { scene: 2 };
+  first.rerender();
+  second.rerender();
+  const caveView = first.result.current.sceneDocuments.find((scene) => scene.guid === "Cave-guid");
+  expect(caveView?.actors.map((actor) => actor.name)).toEqual(["Gate"]);
+  expect(second.result.current.sceneDocuments.find((scene) => scene.guid === "Cave-guid")).toBe(caveView);
+  expect(first.result.current.sceneDocuments.find((scene) => scene.guid === "Town-guid")).toBe(townView);
+  // Neither the saved Scenes nor the Timeline index is rebuilt.
+  expect(list).not.toHaveBeenCalled();
+  expect(first.result.current.timelineAssets).toBe(timelineAssets);
+
+  // A clip edit does rebuild the index.
+  docs.openDocuments = [sceneTab("Cave", { ...cave, timelineClips: [createTimelineClip("intro", "Intro")] }), sceneTab("Town", town)];
+  revisions.documentRevisions = { scene: 3 };
+  first.rerender();
+  expect(list).toHaveBeenCalled();
 });
