@@ -1,6 +1,6 @@
 import { act, fireEvent, render, cleanup, screen, waitFor } from "@testing-library/react";
 import { useReactFlow, useStore } from "@xyflow/react";
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useEffect, useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DRAG_ARM_MS, EditorReadOnlyContext, TagProvider } from "@haptic/editor-kit";
 import {
@@ -21,6 +21,15 @@ import { basicParticleStageRole } from "@haptic/ui/lib/data-types";
 import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import { getAddNodeHistory } from "./add-node-history";
 import { useGraphEditorContext } from "./graph-editor-context";
+
+/** The read-only pin defaults preference, provided as the editor's app settings provide it. */
+function PinDefaultsPreference({ readOnly = true, children }: { readOnly?: boolean; children: ReactNode }) {
+  return (
+    <GraphInteractionSettingsContext.Provider value={{ assistantEnabled: true, assistantDistance: 48, shakeEnabled: true, readOnlyPinDefaults: readOnly }}>
+      {children}
+    </GraphInteractionSettingsContext.Provider>
+  );
+}
 
 afterEach(() => {
   cleanup();
@@ -2502,7 +2511,7 @@ describe("GraphEditor", () => {
       edges: [],
     };
 
-    const { container } = render(<GraphEditor initialGraph={graph} readOnlyPinDefaults />);
+    const { container } = render(<PinDefaultsPreference><GraphEditor initialGraph={graph} /></PinDefaultsPreference>);
     const handle = container.querySelector(
       '[data-id="branch"] [data-handleid="condition"]',
     );
@@ -2605,17 +2614,20 @@ describe("GraphEditor", () => {
     };
     const onChange = vi.fn();
     const { container, rerender } = render(
-      <GraphEditor initialGraph={graph} pinTypeNames={{ mode: "Movement Mode" }} onChange={onChange} readOnlyPinDefaults />,
+      <PinDefaultsPreference>
+        <GraphEditor initialGraph={graph} pinTypeNames={{ mode: "Movement Mode" }} onChange={onChange} />
+      </PinDefaultsPreference>,
     );
     const preview = () => container.querySelector('[data-pin-default="enumRef"]');
     expect(preview()?.textContent).toBe("Walk");
     rerender(
-      <GraphEditor
-        initialGraph={{ ...graph, nodes: [{ ...graph.nodes[0]!, data: { ...graph.nodes[0]!.data, "default:a": "runFast" } }] }}
-        pinTypeNames={{ mode: "Movement Mode" }}
-        onChange={onChange}
-        readOnlyPinDefaults
-      />,
+      <PinDefaultsPreference>
+        <GraphEditor
+          initialGraph={{ ...graph, nodes: [{ ...graph.nodes[0]!, data: { ...graph.nodes[0]!.data, "default:a": "runFast" } }] }}
+          pinTypeNames={{ mode: "Movement Mode" }}
+          onChange={onChange}
+        />
+      </PinDefaultsPreference>,
     );
     await waitFor(() => expect(preview()?.textContent).toBe("Run Fast"));
     expect(onChange).not.toHaveBeenCalled();
@@ -2695,7 +2707,7 @@ describe("GraphEditor", () => {
       edges: [],
     };
 
-    const { container } = render(<GraphEditor initialGraph={graph} readOnlyPinDefaults />);
+    const { container } = render(<PinDefaultsPreference><GraphEditor initialGraph={graph} /></PinDefaultsPreference>);
     const preview = container.querySelector(
       '[data-id="log"] [data-pin-default="string"]',
     );
@@ -5690,7 +5702,11 @@ describe("inline pin editing", () => {
         return null;
       }
       const renderBody = () => <CaptureCommit />;
-      const { rerender } = render(<GraphEditor initialGraph={graph} onChange={onChange} renderNodeBody={renderBody} />);
+      const { rerender } = render(
+        <PinDefaultsPreference readOnly={false}>
+          <GraphEditor initialGraph={graph} onChange={onChange} renderNodeBody={renderBody} />
+        </PinDefaultsPreference>,
+      );
       const pendingCommit = commit!;
       expect(pendingCommit).toBeTypeOf("function");
       const next = structuredClone(graph);
@@ -5704,13 +5720,16 @@ describe("inline pin editing", () => {
         id: "value", name: "Value", kind: "data", direction: "in",
         type: guard === "ordinary-struct" ? { kind: "structRef", guid: "custom-struct" } : { kind: "transform" },
       }];
-      rerender(<GraphEditor
-        initialGraph={next}
-        onChange={onChange}
-        renderNodeBody={renderBody}
-        readOnly={guard === "graph-readonly"}
-        readOnlyPinDefaults={guard === "preference-readonly"}
-      />);
+      rerender(
+        <PinDefaultsPreference readOnly={guard === "preference-readonly"}>
+          <GraphEditor
+            initialGraph={next}
+            onChange={onChange}
+            renderNodeBody={renderBody}
+            readOnly={guard === "graph-readonly"}
+          />
+        </PinDefaultsPreference>,
+      );
       act(() => pendingCommit("sink", "value", "Late Edit"));
       expect(onChange).not.toHaveBeenCalled();
     },
