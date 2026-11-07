@@ -38,7 +38,7 @@ const harness = vi.hoisted(() => ({
   scene: null as SerializedScene | null,
   assets: [] as Array<{
     path: string;
-    header: { type: string; name: string; guid?: string };
+    header: { type: string; name: string; guid?: string; parentClass?: string; payload?: Record<string, unknown> };
   }>,
 }));
 
@@ -252,6 +252,44 @@ describe("SceneOutlinerPanel menus", () => {
     const written = applySceneChange.mock.calls.at(-1)?.[1] as SerializedScene;
     expect(written.name).toBe("Edited While Loading");
     expect(written.actors).toHaveLength(2);
+  });
+  it("lists and places Classes from their headers, loading a graph only for a Class whose header lists no components", async () => {
+    harness.scene = createDefaultScene();
+    harness.assets = [
+      { path: "assets/Hero.class.hasset", header: { type: "Class", name: "Hero", guid: "hero-class", parentClass: "Actor", payload: {
+        components: [{ id: "body", classId: "MeshComponent", name: "Body", properties: { meshKind: "sphere" }, parentId: null }],
+      } } },
+      { path: "assets/Ghost.class.hasset", header: { type: "Class", name: "Ghost", guid: "ghost-class", parentClass: "Actor", payload: { components: [] } } },
+    ];
+    const loads: string[] = [];
+    harness.loadGraphDocument = async (path) => {
+      loads.push(path);
+      return { nodes: [], edges: [], members: [], components: [] };
+    };
+    const panel = () => (
+      <SceneEditingProvider>
+        <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+      </SceneEditingProvider>
+    );
+    render(panel());
+    const pick = async (testId: string) => {
+      fireEvent.click(screen.getByTestId("outliner-add-actor"));
+      fireEvent.click(screen.getByTestId("place-actors-catalog-category-Project"));
+      fireEvent.click(screen.getByTestId(testId));
+      await waitFor(() => expect(screen.queryByTestId("place-actors-catalog")).toBeNull());
+    };
+
+    // Opening Place Actors and placing a Class with header rows reads no Class from disk.
+    await pick("place-actors-item-asset-hero-class");
+    const hero = (applySceneChange.mock.calls.at(-1)?.[1] as SerializedScene).actors.at(-1)!;
+    expect(hero.components.map((component) => [component.classId, component.sourceId])).toEqual([["MeshComponent", "body"]]);
+    expect(loads).toEqual([]);
+
+    // An authored empty list is not in the header: placing loads that one graph and adds no starter box.
+    await pick("place-actors-item-asset-ghost-class");
+    await waitFor(() => expect(applySceneChange).toHaveBeenCalledTimes(2));
+    expect(loads).toEqual(["assets/Ghost.class.hasset"]);
+    expect((applySceneChange.mock.calls.at(-1)?.[1] as SerializedScene).actors.at(-1)!.components).toEqual([]);
   });
   it("lists assets added to the registry while Place Actors was closed when it reopens", async () => {
     const scene = createDefaultScene();

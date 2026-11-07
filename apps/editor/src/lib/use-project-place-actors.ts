@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import type { SerializedGraph } from "@haptic/core";
-import { useDocumentActions, useRegistryState } from "../context/document-context";
+import { useRegistryState } from "../context/document-context";
+import { classGraphFromHeaderPayload } from "./logic-graph-document";
 import {
   prefabComponentsResolver,
   projectPlaceActors,
@@ -15,42 +16,30 @@ const PREFAB_KINDS = ["prefab"] as const;
 /**
  * The project's placeable assets for a Scene (`overlay: false`) or Scene
  * Layer (`overlay: true`), each Class carrying its Prefab components from its
- * open tab or, while `enabled`, its graph on disk. Every placeable asset and
- * Class graph is covered, so nothing is built or loaded while disabled:
- * `items` is then null. `graphForPath` reads the same open and loaded graphs.
+ * open tab or its registry header, the same rows Prefab sync reads. A Class
+ * whose header lists no components resolves its graph when placed. Nothing is
+ * built while disabled: `items` is then null. `graphForPath` reads the same
+ * open tabs and headers.
  */
 export function useProjectPlaceActors(options: { enabled: boolean; overlay: boolean }): {
   items: PlaceActorItem[] | null;
   graphForPath: (path: string) => SerializedGraph | undefined;
 } {
   const { enabled, overlay } = options;
-  const { loadGraphDocument } = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const prefabDocuments = useOpenDocumentsOfKinds(PREFAB_KINDS);
-  const [diskGraphs, setDiskGraphs] = useState<Map<string, SerializedGraph>>(() => new Map());
 
-  // Loaded once per enable; a Class added later resolves its graph when placed.
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    const assets = assetRegistry?.list() ?? [];
-    void (async () => {
-      // Load the Classes together, so the slowest one sets the wait, not the sum.
-      const loaded = await Promise.all(
-        assets
-          .filter((asset) => asset.header.type === "Class" && asset.path)
-          .map(async (asset) => [asset.path, await loadGraphDocument(asset.path)] as const),
-      );
-      if (cancelled) return;
-      const next = new Map<string, SerializedGraph>();
-      for (const [path, graph] of loaded) if (graph) next.set(path, graph);
-      setDiskGraphs(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [assetRegistry, enabled, loadGraphDocument]);
+  // Closed Classes by path, from their headers: no Class is read from disk to list or place them.
+  const headerGraphs = useMemo(() => {
+    if (!enabled) return null;
+    void registryEpoch; // Registry headers mutate without replacing the registry.
+    const graphs = new Map<string, SerializedGraph>();
+    for (const asset of assetRegistry?.list() ?? []) {
+      if (asset.header.type === "Class" && asset.path) graphs.set(asset.path, classGraphFromHeaderPayload(asset.header.payload));
+    }
+    return graphs;
+  }, [assetRegistry, enabled, registryEpoch]);
 
   const openClassDocuments = useMemo(() => {
     const byPath = new Map<string, (typeof classDocuments)[number]>();
@@ -64,9 +53,9 @@ export function useProjectPlaceActors(options: { enabled: boolean; overlay: bool
     (path: string): SerializedGraph | undefined => {
       const open = openClassDocuments.get(path);
       if (open?.content) return open.content as SerializedGraph;
-      return diskGraphs.get(path);
+      return headerGraphs?.get(path);
     },
-    [diskGraphs, openClassDocuments],
+    [headerGraphs, openClassDocuments],
   );
 
   const items = useMemo(() => {
