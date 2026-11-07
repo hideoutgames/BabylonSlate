@@ -629,8 +629,20 @@ describe("ParticleService", () => {
     service.dispose();
   });
 
+  it("takes a playing GPU Basic slot's drain lifetime from its applied plan, not from the native system each frame", async () => {
+    const { scene, service, assign, frame, state } = host({ gpu: true });
+    service.setLibrary(library({ "em-1": basic() }));
+    assign();
+    const system = scene.particleSystems[0] as GPUParticleSystem;
+    await vi.waitFor(() => expect(state()).toBe("playing"));
+    const gradients = vi.spyOn(system, "getLifeTimeGradients");
+    for (let i = 0; i < 5; i += 1) frame();
+    expect(gradients).not.toHaveBeenCalled();
+    service.dispose();
+  });
+
   it("keeps preview stats out of the Play stats hook", () => {
-    Object.assign(particleStats, { systems: 0, playing: 0, gpu: false, gpuSystems: 0, graphSystems: 0 });
+    const play = host();
     const { service, assign } = host({ statsScope: "local" });
     service.setLibrary(library({ "em-1": basic() }));
     assign();
@@ -638,6 +650,21 @@ describe("ParticleService", () => {
     expect(particleStats.systems).toBe(0);
     expect(service.previewStats()).toMatchObject({ capacity: 256, backend: "cpu", approximate: false });
     service.dispose();
+    play.service.dispose();
+  });
+
+  it("counts the Play stats hook when it is read, not on each change", () => {
+    const { service, assign } = host();
+    const stats = vi.spyOn(service, "stats");
+    service.setLibrary(library({ "em-1": basic() }));
+    assign();
+    service.handleCommand({ type: "setParticlePlaying", actorGuid: "fx", playing: false });
+    assign();
+    expect(stats).not.toHaveBeenCalled();
+    // A read reports the newest live Play service's systems then, and the object serialises like plain data.
+    expect(JSON.parse(JSON.stringify(particleStats))).toEqual({ systems: 1, playing: 1, gpu: false, gpuSystems: 0, graphSystems: 0 });
+    service.dispose();
+    expect(particleStats.systems).toBe(0);
   });
   it("plays a GPU Basic slot beside a CPU Particle Graph slot in one System", async () => {
     const { scene, service, assign } = host({ gpu: true });

@@ -1,4 +1,4 @@
-import { MeshBuilder, NodeMaterial, NodeMaterialModes, NullEngine, ParticleSystem, Scene } from "@babylonjs/core";
+import { MeshBuilder, NodeMaterial, NodeMaterialModes, NullEngine, ParticleSystem, Scene, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeParticleEmitterPayload, type ParticleLibrary, type ParticleLibraryEmitter } from "@haptic/assets";
 import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "@haptic/particle-graph";
@@ -946,7 +946,11 @@ describe("Spawn Emitter", () => {
     await until(scene, frame, () => spawnedNodes(scene).length === 1);
     const [node] = spawnedNodes(scene);
     const start = node!.position.clone();
+    // The node moves in place: no scaled velocity vector is allocated per frame.
+    const scale = vi.spyOn(Vector3.prototype, "scale");
     await run(scene, frame, 5);
+    expect(scale).not.toHaveBeenCalled();
+    scale.mockRestore();
     expect(node!.position.subtract(start).length()).toBeGreaterThan(0);
     expect(scene.particleSystems.length).toBe(2);
   });

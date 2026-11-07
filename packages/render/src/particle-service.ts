@@ -93,7 +93,26 @@ export type ParticleServiceDiagnostic = {
   pinId?: string;
 };
 export type ParticleStats = { systems: number; playing: number; gpu: boolean; gpuSystems: number; graphSystems: number };
-export const particleStats: ParticleStats = { systems: 0, playing: 0, gpu: false, gpuSystems: 0, graphSystems: 0 };
+/** Live global-scope services (Play, the player), oldest first: the stats hook reads the newest. */
+const globalServices = new Set<ParticleService>();
+/** What the last global-scope service reported when it was disposed, until another starts. */
+let retiredStats: ParticleStats = { systems: 0, playing: 0, gpu: false, gpuSystems: 0, graphSystems: 0 };
+function currentParticleStats(): ParticleStats {
+  let newest: ParticleService | undefined;
+  for (const service of globalServices) newest = service;
+  return newest?.stats() ?? retiredStats;
+}
+/**
+ * Play's and the player's particle counts, for the test-mode hatch: each read counts the newest live global-scope
+ * service's systems then, so spawns and disposals pay nothing. Own enumerable getters, so the object serialises.
+ */
+export const particleStats: Readonly<ParticleStats> = Object.defineProperties({} as ParticleStats, {
+  systems: { enumerable: true, get: () => currentParticleStats().systems },
+  playing: { enumerable: true, get: () => currentParticleStats().playing },
+  gpu: { enumerable: true, get: () => currentParticleStats().gpu },
+  gpuSystems: { enumerable: true, get: () => currentParticleStats().gpuSystems },
+  graphSystems: { enumerable: true, get: () => currentParticleStats().graphSystems },
+});
 /** GPU `active` is the claimed slot ring, not a live count, so it is marked approximate. */
 export type ParticlePreviewStats = {
   active: number;
@@ -221,6 +240,8 @@ type Spawned = {
   run: number;
   stopped: boolean;
   pending: number;
+  /** Set when it leaves its entry's `spawned` list (`disposeSpawned`): its per-frame observer then does nothing. */
+  disposed: boolean;
   cancel: Array<() => void>;
 };
 /** The library entries a bundle was prepared from, including skipped slots. */
@@ -278,6 +299,15 @@ const slotsDrained = (records: readonly SlotRecord[]): boolean => records.every(
     ? record.system.getActiveCount() === 0 || record.drainedTime > record.lifetime
     : record.system.getActiveCount() === 0));
 const liveKey = (actorGuid: string, componentId: string): string => `${actorGuid}:${componentId}`;
+/**
+ * A Basic slot's drain wait after a plan is applied: the longest lifetime any of its plans allowed. Only an applied
+ * plan changes the native lifetimes (the emission driver samples the plan's curve, within its bound), so the bound is
+ * read here rather than from the native system each frame; a bound that is not finite fails the slot.
+ */
+function drainLifetime(previous: number, bound: number): number {
+  if (!Number.isFinite(bound) || bound < 0) throw new Error("Particle lifetime must be finite and nonnegative.");
+  return Math.max(previous, bound);
+}
 const TIER_ORDER: readonly ParticleEmitterChangeTier[] = ["none", "live", "respawn", "rebuild"];
 const maxTier = (a: ParticleEmitterChangeTier, b: ParticleEmitterChangeTier): ParticleEmitterChangeTier =>
   TIER_ORDER.indexOf(a) >= TIER_ORDER.indexOf(b) ? a : b;
@@ -361,7 +391,7 @@ export class ParticleService {
     onPlaybackEnded?: (report: ParticlePlaybackEndedReport) => void;
     /** The project's ordered sorting layers, read when a system is built; `DEFAULT_SORTING_LAYERS` when unset. */
     sortingLayers?: () => readonly string[] | undefined;
-    /** "global" (Play, player) publishes `particleStats`; "local" (previews) only serves `stats()`. */
+    /** "global" (Play, player) is what `particleStats` reads; "local" (previews) only serves `stats()`. */
     statsScope?: "global" | "local";
     /** Whether a system's programs have drawn on the Engine; defaults to the Engine's tracked draws. */
     programsDrawn?: (system: IParticleSystem) => boolean;
@@ -392,7 +422,7 @@ export class ParticleService {
       this.scene.onDisposeObservable.remove(observer);
       this.scene.onBeforeRenderObservable.remove(frames);
     };
-    this.publishStats();
+    if (this.statsScope === "global") globalServices.add(this);
   }
 
   /** Play: replaces the library for later preparations and leaves running bundles alone. */
@@ -423,7 +453,6 @@ export class ParticleService {
         this.prepare(entry);
       } else this.applyInPlace(entry);
     }
-    this.publishStats();
     return { tier: applied };
   }
 
@@ -474,7 +503,6 @@ export class ParticleService {
   retireSlots(matches: (slotId: number) => boolean): void {
     for (const entry of this.live.values()) if (matches(entry.command.slotId)) this.retire(entry);
     for (const slot of this.slotMeshes.keys()) if (matches(slot)) this.slotMeshes.delete(slot);
-    this.publishStats();
   }
 
   setPaused(paused: boolean): void {
@@ -506,7 +534,6 @@ export class ParticleService {
     // Speeds and the graph flag are restored first: CPU prewarm runs inside `start()`
     // (and skips a paused system), GPU prewarm on the first render.
     for (const entry of [...this.live.values()]) if (entry.state === "playing") this.startSystems(entry);
-    this.publishStats();
   }
 
   /**
@@ -547,7 +574,6 @@ export class ParticleService {
         if (command.playing) this.play(entry, command.restart === true ? "restart" : entry.command.retrigger ?? "overlap", command.restart === true);
         else this.stop(entry);
       }
-      this.publishStats();
     }
   }
 
@@ -584,14 +610,18 @@ export class ParticleService {
     let playing = 0;
     let gpuSystems = 0;
     let graphSystems = 0;
-    for (const entry of this.live.values()) {
-      if (entry.warm) continue;
-      const records = allRecords(entry);
+    const count = (records: readonly SlotRecord[]) => {
       systems += records.length;
       for (const record of records) {
         if (record.gpu) gpuSystems += 1;
         if (record.kind === "graph") graphSystems += 1;
       }
+    };
+    for (const entry of this.live.values()) {
+      if (entry.warm) continue;
+      count(entry.systems);
+      for (const ghost of entry.ghosts) count(ghost.records);
+      for (const spawned of entry.spawned) count(spawned.records);
       if (entry.desiredPlaying && (entry.state === "preparing" || entry.state === "playing")) playing += 1;
     }
     const gpu = gpuSystems > 0 || gpuParticlesSupported(this.scene.getEngine(), this.gpuRequested);
@@ -656,7 +686,6 @@ export class ParticleService {
       this.live.set(entry.key, entry);
       this.prepare(entry);
     }
-    this.publishStats();
   }
 
   /** Whether a system `prepareSpawnableSystems` prepared is still preparing. */
@@ -742,7 +771,6 @@ export class ParticleService {
     this.timeScale = 1;
     this.releaseRetainedPrograms();
     this.slotMeshes.clear();
-    this.publishStats();
   }
 
   dispose(): void {
@@ -750,6 +778,7 @@ export class ParticleService {
     this.disposed = true;
     this.cancelSceneDispose();
     this.resetSession();
+    if (globalServices.delete(this) && !globalServices.size) retiredStats = this.stats();
     this.library = emptyLibrary();
     for (const texture of this.noiseTextures.values()) texture.cancel();
     this.noiseTextures.clear();
@@ -908,7 +937,8 @@ export class ParticleService {
     node.position.copyFrom(request.position);
     const emitter = trigger.emitter;
     const run = emitter.kind === "graph" ? emitter.document.settings.duration : emitter.payload.emitter.duration;
-    const spawned: Spawned = { trigger, host, records: [], node, velocity: request.velocity, elapsed: 0, run, stopped: false, pending: 0, cancel: [] };
+    const spawned: Spawned = { trigger, host, records: [], node, velocity: request.velocity, elapsed: 0, run, stopped: false, pending: 0,
+      disposed: false, cancel: [] };
     // Spawned emitters simulate on the CPU in World space, at the node's position.
     const context: SlotContext = { ...trigger.context, node, backend: "cpu", space: "world" };
     const record = this.createSpawnedRecord(spawned, context);
@@ -922,7 +952,6 @@ export class ParticleService {
     const after = host.onAfterRenderObservable.add(() => this.advanceSpawned(entry, spawned));
     const disposing = host.onDisposeObservable.addOnce(() => this.disposeSpawned(entry, spawned));
     spawned.cancel.push(() => host.onAfterRenderObservable.remove(after), () => host.onDisposeObservable.remove(disposing));
-    this.publishStats();
   }
 
   /** The spawned emitter's native system, through the same Material and build path as a slot. */
@@ -984,7 +1013,7 @@ export class ParticleService {
    * Times are simulated seconds, so pause and time dilation hold it like any slot.
    */
   private advanceSpawned(entry: LiveComponent, spawned: Spawned): void {
-    if (spawned.pending || this.halted || !entry.spawned.includes(spawned)) return;
+    if (spawned.pending || this.halted || spawned.disposed) return;
     for (const record of spawned.records) {
       if (record.started) continue;
       record.started = true;
@@ -994,7 +1023,7 @@ export class ParticleService {
     const ratio = spawned.host.getAnimationRatio() || 1;
     const dt = (spawned.records[0]?.system.updateSpeed ?? 0) * ratio;
     spawned.elapsed += dt;
-    if (spawned.velocity) spawned.node.position.addInPlace(spawned.velocity.scale(dt));
+    if (spawned.velocity) spawned.velocity.scaleAndAddToRef(dt, spawned.node.position);
     for (const record of spawned.records) if (record.kind === "basic" && !record.stopped) record.driver.advance(dt);
     if (!spawned.stopped && spawned.elapsed >= spawned.run) {
       spawned.stopped = true;
@@ -1011,11 +1040,11 @@ export class ParticleService {
   private disposeSpawned(entry: LiveComponent, spawned: Spawned): void {
     const index = entry.spawned.indexOf(spawned);
     if (index < 0) return;
+    spawned.disposed = true;
     entry.spawned.splice(index, 1);
     spawned.trigger.live -= 1;
     for (const cancel of spawned.cancel.splice(0)) cancel();
     this.disposeRecords(spawned.records, spawned.node);
-    this.publishStats();
   }
 
   private disposeAllSpawned(entry: LiveComponent): void {
@@ -1027,10 +1056,9 @@ export class ParticleService {
     const previous = this.live.get(key);
     if (previous) this.retire(previous);
     const guid = command.particleSystemGuid?.trim();
-    if (!guid) { this.publishStats(); return; }
+    if (!guid) return;
     if (!this.library.systems.has(guid)) {
       this.onDiagnostic?.({ code: "particle.unknown_system", message: "Particle System asset is missing; playback skipped.", assetGuid: guid });
-      this.publishStats();
       if (command.play !== false) this.report(command, command.generation ?? 0, "failed");
       return;
     }
@@ -1042,7 +1070,6 @@ export class ParticleService {
       source: null, cancel: [], building: false };
     this.live.set(key, entry);
     this.prepare(entry);
-    this.publishStats();
   }
 
   private hostFor(entry: LiveComponent): Scene | null {
@@ -1125,11 +1152,6 @@ export class ParticleService {
           entry.parametersDirty = false;
           for (const record of entry.systems) this.applySlotParameters(entry, record);
         }
-        try {
-          for (const record of entry.systems) {
-            if (record.kind === "basic" && record.gpu) record.lifetime = Math.max(record.lifetime, particleLifetimeBound(record.system));
-          }
-        } catch (error) { this.fail(entry, generation, error); }
       });
       const after = host.onAfterRenderObservable.add(() => {
         if (!this.current(entry, generation)) return;
@@ -1287,7 +1309,7 @@ export class ParticleService {
       return { record: { kind: "basic", index: slot.index, emitterGuid: slot.guid, system, lease, gpu, backend: context.backend,
         payload, basePlan, appliedPlan: plan, driver: createBasicEmissionDriver(system, plan.schedule), prewarmPending: gpu && plan.preWarmCycles > 0,
         pending: 0, updateSpeed: plan.updateSpeed, started: false, stopped: false, once: payload.emitter.loop === "once",
-        lifetime: plan.lifetimeBound, drainedTime: 0, lastFrame: -1, cancel: [] } };
+        lifetime: drainLifetime(0, plan.lifetimeBound), drainedTime: 0, lastFrame: -1, cancel: [] } };
     } catch (error) {
       system.dispose();
       throw error;
@@ -1356,7 +1378,6 @@ export class ParticleService {
     entry.preparationCheck?.(); entry.preparationCheck = undefined;
     entry.state = entry.desiredPlaying ? "playing" : "ready-stopped";
     if (entry.desiredPlaying) this.startSystems(entry);
-    this.publishStats();
   }
 
   /**
@@ -1390,6 +1411,8 @@ export class ParticleService {
   /** Each frame admits `FIRST_DRAWS_PER_FRAME` new systems, then starts the entries that waited, in order. */
   private startWaitingSystems(): void {
     this.firstDrawBudget = FIRST_DRAWS_PER_FRAME.webgl2;
+    // Most frames nothing waits. Otherwise iterate a copy: starting an entry can delete and re-add it.
+    if (!this.waitingToStart.size) return;
     for (const entry of [...this.waitingToStart]) {
       if (this.live.get(entry.key) !== entry) this.waitingToStart.delete(entry);
       else this.startSystems(entry);
@@ -1461,7 +1484,6 @@ export class ParticleService {
     entry.ghosts.splice(index, 1);
     for (const cancel of ghost.cancel.splice(0)) cancel();
     this.disposeRecords(ghost.records, ghost.node);
-    this.publishStats();
   }
 
   private disposeGhosts(entry: LiveComponent): void {
@@ -1498,7 +1520,6 @@ export class ParticleService {
       record.system.manualEmitCount = 0;
       record.system.stop();
     }
-    this.publishStats();
   }
 
   private finishDrain(entry: LiveComponent, generation: number): void {
@@ -1506,7 +1527,6 @@ export class ParticleService {
     if (!slotsDrained(entry.systems)) return;
     this.releaseBundle(entry);
     entry.state = "ready-stopped";
-    this.publishStats();
     this.report(entry.command, entry.playGeneration, entry.endReason ?? "finished", entry);
   }
 
@@ -1529,7 +1549,6 @@ export class ParticleService {
     entry.state = "failed";
     this.diagnose(entry, { code: "particle.apply_failed", assetGuid: entry.command.particleSystemGuid ?? undefined,
       message: describeParticleThrow(error) });
-    this.publishStats();
     this.reportFailed(entry);
   }
 
@@ -1538,7 +1557,6 @@ export class ParticleService {
     if (!this.current(entry, generation) || !entry.systems.includes(record)) return;
     entry.preparationFailed = true;
     this.removeSlot(entry, record, { code: "particle.apply_failed", assetGuid: record.emitterGuid, message: describeParticleThrow(error) });
-    this.publishStats();
   }
 
   /** Disposes one slot of a live bundle and marks it skipped, so the next edit to its source prepares it again. */
@@ -1630,7 +1648,7 @@ export class ParticleService {
         const plan = this.basicParameterPlan(entry, record.index, next.payload, basePlan);
         applyBasicEmitterPlan(record.system, plan, tier === "respawn" ? "respawn" : "live");
         record.driver.setSchedule(plan.schedule);
-        record.lifetime = Math.max(record.lifetime, plan.lifetimeBound);
+        record.lifetime = drainLifetime(record.lifetime, plan.lifetimeBound);
         record.payload = next.payload;
         record.basePlan = basePlan;
         record.appliedPlan = plan;
@@ -1696,7 +1714,7 @@ export class ParticleService {
       const plan = this.basicParameterPlan(entry, record.index, record.payload, record.basePlan);
       applyBasicParameterPlan(record.system, plan, record.appliedPlan);
       record.driver.setSchedule(plan.schedule);
-      record.lifetime = Math.max(record.lifetime, plan.lifetimeBound);
+      record.lifetime = drainLifetime(record.lifetime, plan.lifetimeBound);
       record.appliedPlan = plan;
     } catch (error) {
       this.failSlot(entry, record, entry.generation, error);
@@ -1796,10 +1814,5 @@ export class ParticleService {
     this.disposeGhosts(entry);
     this.disposeAllSpawned(entry);
     this.releaseBundle(entry);
-    this.publishStats();
-  }
-
-  private publishStats(): void {
-    if (this.statsScope === "global") Object.assign(particleStats, this.stats());
   }
 }
