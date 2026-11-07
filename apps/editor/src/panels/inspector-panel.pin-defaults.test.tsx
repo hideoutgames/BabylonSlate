@@ -7,6 +7,7 @@ import { assetRef, classRef, pin } from "@haptic/scripting";
 import { InspectorPanel } from "./inspector-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
+import { indexedAssetRegistry } from "../testing/indexed-asset-registry";
 
 if (
   typeof window !== "undefined" &&
@@ -72,8 +73,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   ],
   applyGraphChange,
   projectDocument: { settings: {} },
-  assetRegistry: {
-    list: () => [
+  assetRegistry: indexedAssetRegistry(() => [
       {
         header: {
           guid: "audio-2",
@@ -83,8 +83,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         },
         path: "assets/Hit.audio.hasset",
       },
-    ],
-  },
+  ]),
 })));
 
 vi.mock("../context/validation-context", () => ({

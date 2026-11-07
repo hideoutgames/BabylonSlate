@@ -845,7 +845,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           ? playSceneFromOpenDocuments([simulationRef.current.baseline], simulationRef.current.baseline.id) : null;
         const effectiveGuid = resolvePreviewStartupGuid({
           playFromScene: simulating || playFromScene,
-          openSceneGuid: baselineScene ? canonicalPlaySceneGuid(baselineScene, path => assetRegistry.list().find(asset => asset.path === path)?.header.guid ?? null) : openPlaySceneGuid,
+          openSceneGuid: baselineScene ? canonicalPlaySceneGuid(baselineScene, path => assetRegistry.getByPath(path)?.header.guid ?? null) : openPlaySceneGuid,
           startupSceneGuid: projectDocument.settings.startupSceneGuid ?? null,
         });
         if (!effectiveGuid) { setStartupAlertOpen(true); return; }

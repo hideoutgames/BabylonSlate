@@ -5,13 +5,14 @@ import type { SerializedGraph } from "@haptic/core";
 import { InspectorPanel } from "./inspector-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
+import { indexedAssetRegistry } from "../testing/indexed-asset-registry";
 
 const state = vi.hoisted(() => ({ graph: { nodes: [], edges: [] } as SerializedGraph }));
 vi.mock("../context/document-workspace-context", () => ({ useDocumentWorkspace: () => ({ documentId: "graph:assets/Test.class.hasset" }) }));
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [{ id: "graph:assets/Test.class.hasset", ref: { kind: "graph", path: "assets/Test.class.hasset", label: "Test" }, content: state.graph, layout: null, dirty: false }],
   projectDocument: { settings: {} },
-  assetRegistry: { list: () => [] },
+  assetRegistry: indexedAssetRegistry([]),
 })));
 vi.mock("../context/validation-context", () => ({ useValidation: () => ({ focusDiagnostic: null, setFocusDiagnostic: vi.fn() }) }));
 vi.mock("../context/play-context", () => ({ usePlay: () => ({ focusedNodeId: null }),

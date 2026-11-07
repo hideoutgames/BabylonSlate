@@ -8,6 +8,7 @@ import { InspectorPanel } from "./inspector-panel";
 import { AnimGraphEditingProvider, useAnimGraphEditing } from "../context/anim-graph-editing-context";
 import { GraphEditingProvider, useGraphEditing } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
+import { indexedAssetRegistry } from "../testing/indexed-asset-registry";
 
 const DOC_ID = "anim-graph:assets/Loco.anim.hasset";
 const store = vi.hoisted(() => {
@@ -62,7 +63,7 @@ vi.mock("../context/document-context", async () => {
       animEditorMode: store.mode(),
       applyAssetDocumentChange: store.applyAssetDocumentChange,
       projectDocument: { settings: {} },
-      assetRegistry: { list: () => [] },
+      assetRegistry: indexedAssetRegistry([]),
     };
   });
 });

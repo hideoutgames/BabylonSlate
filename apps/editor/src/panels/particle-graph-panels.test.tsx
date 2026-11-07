@@ -61,8 +61,8 @@ const store = vi.hoisted(() => {
 vi.mock("../context/play-context", () => ({ useOptionalPlay: () => null }));
 vi.mock("../context/document-context", async () => {
   const { useSyncExternalStore } = await import("react");
-  const assetRegistry = {
-    list: () => [
+  const { indexedAssetRegistry } = await import("../testing/indexed-asset-registry");
+  const assetRegistry = indexedAssetRegistry([
       {
         header: { guid: "mat-surface", name: "Rock", type: "Material", payload: { domain: "surface" } },
         path: "assets/Rock.material.hasset",
@@ -75,8 +75,7 @@ vi.mock("../context/document-context", async () => {
       { header: { guid: "model-statue", name: "Statue", type: "Model", payload: {} }, path: "assets/Statue.glb" },
       { header: { guid: "em-spark", name: "Spark", type: "ParticleEmitter", payload: {} }, path: "assets/Spark.emitter.hasset" },
       { header: { guid: "pg-smoke", name: "Smoke", type: "ParticleGraph", payload: {} }, path: "assets/Smoke.particlegraph.hasset" },
-    ],
-  };
+  ]);
   return (await import("../testing/document-context-mock")).documentContextMock(() => {
     const content = useSyncExternalStore(store.subscribe, store.getSnapshot);
     return {

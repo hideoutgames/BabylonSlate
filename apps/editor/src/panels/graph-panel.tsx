@@ -158,9 +158,7 @@ export function GraphPanel(
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_DOCUMENT_KINDS);
   const indexed = useMemo(() => {
     void registryEpoch;
-    return (assetRegistry?.list() ?? []).find(
-      (asset) => asset.path === doc?.ref.path,
-    );
+    return doc?.ref.path ? assetRegistry?.getByPath(doc.ref.path) : undefined;
   }, [assetRegistry, registryEpoch, doc?.ref.path]);
   // A Scene or Scene Layer edits its embedded script as `Scene:<guid>` / `SceneLayer:<guid>`.
   const { classId, parentClass } = logicGraphHostClass(doc?.ref.kind, doc?.ref.path, indexed, classIdForGraphPath);

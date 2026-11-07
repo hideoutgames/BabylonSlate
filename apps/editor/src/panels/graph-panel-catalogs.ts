@@ -61,7 +61,8 @@ export function useGraphPanelCatalogs() {
   const saveGameGuid = projectDocument?.settings.saveGame?.definitionGuid;
   const saveGameAssets = useMemo(() => {
     void registryEpoch;
-    return (assetRegistry?.list() ?? []).filter((asset) => asset.header.guid === saveGameGuid && asset.header.type === "SaveGame");
+    const asset = saveGameGuid ? assetRegistry?.getByGuid(saveGameGuid) : undefined;
+    return asset?.header.type === "SaveGame" ? [asset] : [];
   }, [saveGameGuid, assetRegistry, registryEpoch]);
   const openSaveDefinition = saveGameDocuments.find((doc) => doc.ref.path === saveGameAssets[0]?.path);
   const [loadedSaveDefinition, setLoadedSaveDefinition] = useState<{

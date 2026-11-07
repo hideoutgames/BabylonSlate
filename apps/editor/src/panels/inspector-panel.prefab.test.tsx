@@ -7,6 +7,7 @@ import { InspectorPanel } from "./inspector-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
+import { indexedAssetRegistry } from "../testing/indexed-asset-registry";
 
 if (
   typeof window !== "undefined" &&
@@ -67,8 +68,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     },
   ],
   applyGraphChange,
-  assetRegistry: {
-    list: () => [
+  assetRegistry: indexedAssetRegistry(() => [
       {
         path: "assets/Hero.class.hasset",
         header: {
@@ -82,8 +82,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         path: "assets/Quiet.class.hasset",
         header: { type: "Class", name: "Quiet", parentClass: "Actor", guid: "quiet-1" },
       },
-    ],
-  },
+  ]),
   projectDocument: {
     settings: {
       twoD: { sortingLayers: ["Default"] },
