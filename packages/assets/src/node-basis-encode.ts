@@ -98,23 +98,3 @@ export function createNodeBasisEncodeFn(
     );
   };
 }
-
-/** Deterministic checkerboard RGBA for CI encode smoke (ignores PNG bytes). */
-export function syntheticRgbaForSize(size: number): {
-  rgba: Uint8Array;
-  width: number;
-  height: number;
-} {
-  const rgba = new Uint8Array(size * size * 4);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const i = (y * size + x) * 4;
-      const on = ((x >> 3) ^ (y >> 3)) & 1;
-      rgba[i] = on ? 220 : 40;
-      rgba[i + 1] = on ? 40 : 180;
-      rgba[i + 2] = on ? 40 : 220;
-      rgba[i + 3] = 255;
-    }
-  }
-  return { rgba, width: size, height: size };
-}

@@ -15,42 +15,33 @@ const CLASS_FIELDS = new Set([
   "gameInstanceClass", "editorUtilityObjects",
 ]);
 
-/** Finds actual Class identifiers without matching display names or source text. */
-export function findClassAssetReferences(
-  value: unknown,
-  classes: readonly ClassAssetReference[],
-  definitionFields?: DataDefinitionFieldsResolver,
-): string[] {
-  return transform(value, classes, false, definitionFields).references;
-}
-
-/** Rewrites references once, preserving unrelated values and serialized instances. */
+/**
+ * Rewrites actual Class identifiers once, without matching display names or source text, and
+ * preserves unrelated values and serialized instances.
+ */
 export function replaceClassAssetReferences<T>(
   value: T,
   replacements: readonly ClassAssetReplacement[],
   definitionFields?: DataDefinitionFieldsResolver,
 ): { value: T; changed: boolean } {
-  const result = transform(value, replacements, true, definitionFields);
-  return { value: result.value, changed: result.value !== value };
+  const next = transform(value, replacements, definitionFields);
+  return { value: next, changed: next !== value };
 }
 
 function transform<T>(
   value: T,
-  classes: readonly (ClassAssetReference & { replacement?: ClassAssetReference | null })[],
-  replace: boolean,
+  classes: readonly ClassAssetReplacement[],
   definitionFields?: DataDefinitionFieldsResolver,
-): { value: T; references: string[] } {
+): T {
   const guids = new Map(classes.map((entry) => [entry.guid, entry]));
   const names = new Map(classes.map((entry) => [entry.classId, entry]));
-  const references = new Set<string>();
   const walk = (current: unknown, key?: string, owner?: Record<string, unknown>, pinDefaults: ReadonlySet<string> = new Set()): unknown => {
     if (isDataGraphNodePayload(current)) {
       return mapDataGraphReferences(current, (reference, kind) => {
         const byGuid = guids.get(reference);
         const match = byGuid ?? (kind === "class" ? names.get(reference) : undefined);
         if (!match) return reference;
-        references.add(match.guid);
-        return !replace ? reference : match.replacement ? (byGuid ? match.replacement.guid : match.replacement.classId) : null;
+        return match.replacement ? (byGuid ? match.replacement.guid : match.replacement.classId) : null;
       }, definitionFields);
     }
     if (isDataAssetPayload(current)) {
@@ -58,8 +49,6 @@ function transform<T>(
         const byGuid = guids.get(reference);
         const match = byGuid ?? (kind === "class" ? names.get(reference) : undefined);
         if (!match) return reference;
-        references.add(match.guid);
-        if (!replace) return reference;
         return match.replacement ? (byGuid ? match.replacement.guid : match.replacement.classId) : null;
       }, definitionFields);
     }
@@ -69,8 +58,6 @@ function transform<T>(
       const typedDefault = key === "defaultValue" && owner?.typeId === "class";
       const match = byGuid ?? (field && (CLASS_FIELDS.has(field) || typedDefault || pinDefaults.has(key!)) ? names.get(current) : undefined);
       if (!match) return current;
-      references.add(match.guid);
-      if (!replace) return current;
       if (match.replacement) return byGuid ? match.replacement.guid : match.replacement.classId;
       if (key === "parentClass") return "Object";
       if (key === "classId" && owner) {
@@ -97,8 +84,7 @@ function transform<T>(
         const byGuid = guids.get(reference);
         const match = byGuid ?? (kind === "class" ? names.get(reference) : undefined);
         if (!match) return reference;
-        references.add(match.guid);
-        return !replace ? reference : match.replacement ? (byGuid ? match.replacement.guid : match.replacement.classId) : null;
+        return match.replacement ? (byGuid ? match.replacement.guid : match.replacement.classId) : null;
       }, definitionFields);
       const localDefaults = new Set(pinDefaults);
       if (Array.isArray(record.pins)) for (const pin of record.pins) {
@@ -129,5 +115,5 @@ function transform<T>(
     }
     return current;
   };
-  return { value: walk(value) as T, references: [...references].sort() };
+  return walk(value) as T;
 }

@@ -199,13 +199,6 @@ export function copyTilemapCells(map: TilemapPayload, rect: TilemapCellRect, lay
   return { width, height, chunkSize: size, layers, tilesets: map.tilesets, allLayers: layerId === null };
 }
 
-/** How many non-empty cells a clip holds, over every layer. */
-export function tilemapClipTileCount(clip: TilemapClip): number {
-  let count = 0;
-  for (const layer of clip.layers) for (const chunk of layer.chunks) count += chunkTileCount(chunk.tiles);
-  return count;
-}
-
 const chunkCounts = new WeakMap<readonly number[], number>();
 
 /** Non-empty cells of one chunk's `tiles`, cached on the array (arrays are never changed in place). */

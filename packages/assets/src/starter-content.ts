@@ -6,7 +6,6 @@ import {
   encodePluginSettingsDocument,
 } from "./plugin-settings";
 
-export const STARTER_CONTENT_FOLDER = "starter-content";
 export const STARTER_CONTENT_DISPLAY_NAME = "Starter Content";
 export const STARTER_CONTENT_PLUGIN_GUID =
   "c0ffee00-0000-4000-8000-000000000001";

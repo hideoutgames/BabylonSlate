@@ -8,7 +8,7 @@ import {
   isAssetDocumentPath,
   readAssetDocumentHeader,
 } from "./asset-document";
-import { createMemoryBlobStore, createVfsBlobStore } from "./blob-store";
+import { createVfsBlobStore } from "./blob-store";
 import { decodeHasset, encodeHasset } from "./hasset";
 import { BLOBS_DIR } from "./hproject";
 import { sha256Hex } from "./bytes";
@@ -238,7 +238,9 @@ describe("asset documents", () => {
 
   it("externalises large chunks to the blob store and reads them back", async () => {
     const big = "x".repeat(100 * 1024);
-    const blobs = createMemoryBlobStore();
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Blobs.hproject");
+    const blobs = createVfsBlobStore(storage);
     const bytes = await encodeAssetDocument(
       { ...scene, payload: { notes: big } },
       { blobs },
@@ -288,8 +290,8 @@ describe("vfs blob store", () => {
   });
 
   it("reports missing blobs", async () => {
-    const blobs = createMemoryBlobStore();
-    await expect(blobs.readBlob("nope")).rejects.toThrow(/Blob not found/);
+    const blobs = createVfsBlobStore(await boundStorage());
+    await expect(blobs.readBlob("nope")).rejects.toThrow(`File not found: ${BLOBS_DIR}/nope`);
   });
 
   it("keeps unchanged large chunks out of a re-save", async () => {
