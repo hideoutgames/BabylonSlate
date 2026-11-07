@@ -1,5 +1,6 @@
 import type { HassetHeader, ChunkEntry } from "./hasset";
 import { isEnvironmentTexturePayload } from "./environment-texture";
+import { isKtx2Bytes } from "./ktx2-identifier";
 
 export interface TextureChunkSelection {
   chunk: ChunkEntry;
@@ -62,18 +63,8 @@ export function selectTextureChunk(
   return { chunk: source, kind: "source", reason: ktx2 ? "transcoder-unavailable" : "no-ktx2-chunk" };
 }
 
-/** KTX2 identifier (`«KTX 20»` plus the standard control bytes). */
-const KTX2_IDENTIFIER = new Uint8Array([
-  0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
-]);
-
-export function isKtx2Bytes(bytes: Uint8Array): boolean {
-  if (bytes.length < KTX2_IDENTIFIER.length) return false;
-  for (let i = 0; i < KTX2_IDENTIFIER.length; i++) {
-    if (bytes[i] !== KTX2_IDENTIFIER[i]) return false;
-  }
-  return true;
-}
+// Its own module, so installing a Texture does not bring in the chunk selection and transcoder lists.
+export { isKtx2Bytes } from "./ktx2-identifier";
 
 /**
  * Browser-decodable MIME for raster bytes (skybox overlay, blob URLs).

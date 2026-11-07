@@ -1,6 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { environmentTextureContainer, readEnvironmentTextureInfo, type EnvironmentTextureInfo } from "./environment-texture";
-import { isKtx2Bytes } from "./texture-loader";
+import { isKtx2Bytes } from "./ktx2-identifier";
 
 const identities = new WeakMap<Blob, string>();
 const headers = new WeakMap<Blob, Uint8Array>();
