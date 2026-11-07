@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { Actor, ActorComponent, ClassRegistry, World } from "@haptic/object-model";
-import { createDefaultWaterDefinition, eulerDegreesToQuaternion, normalizeWaterBody } from "@haptic/core";
+import { createDefaultWaterDefinition, eulerDegreesToQuaternion, normalizeWaterBody, normalizeWaterBuoyancy } from "@haptic/core";
+import type { PhysicsBackend } from "@haptic/physics";
 import { composeActorWorldTransformsInto } from "./actor-world-transform";
 import { WaterWorld } from "./water-world";
 
 // Pass-through spies: count how often the worker normalizes water components and composes actor poses.
 vi.mock("@haptic/core", async (importOriginal) => {
   const core = await importOriginal<typeof import("@haptic/core")>();
-  return { ...core, normalizeWaterBody: vi.fn(core.normalizeWaterBody) };
+  return { ...core, normalizeWaterBody: vi.fn(core.normalizeWaterBody), normalizeWaterBuoyancy: vi.fn(core.normalizeWaterBuoyancy) };
 });
 vi.mock("./actor-world-transform", async (importOriginal) => {
   const transforms = await importOriginal<typeof import("./actor-world-transform")>();
@@ -100,5 +101,63 @@ describe("Water world caching", () => {
     expect(water.query(actors, 0, { x: 24, y: -1, z: 0 }).found).toBe(true);
     expect(water.query(actors, 0, { x: 4, y: -1, z: 0 }).found).toBe(false);
     expect(guidReads).toBe(0);
+  });
+
+  it("walks only the actors that own a class water reacts to, and none while the world has no water surface", () => {
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const water = new WaterWorld((actors) => actors === world.getActors() ? world : null);
+    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
+    let walks = 0;
+    const watched = (actor: Actor) => {
+      const components = actor.components;
+      Object.defineProperty(actor, "components", { get: () => (walks++, components) });
+      return world.spawnActorNow(actor);
+    };
+    for (let index = 0; index < 10; index++) watched(new Actor({ guid: `prop-${index}`, classId: "Actor" }));
+    // Far from the lake, so its terrain cuts none of the water sampled below.
+    const shore = new Actor({ guid: "shore", classId: "Actor" });
+    shore.transform.position.x = 500;
+    shore.attachComponent(new ActorComponent({ classId: "LandscapeComponent" }));
+    watched(shore);
+    const point = { x: 4, y: -1, z: 0 };
+    const evaluate = (time: number) => { water.update(world.getActors(), time); return water.sample(point).found; };
+    expect(evaluate(0)).toBe(false);
+    walks = 0;
+    // A landscape alone holds no water: the evaluation walks nothing.
+    expect(evaluate(1 / 60)).toBe(false);
+    expect(walks).toBe(0);
+    const lake = world.spawnActorNow(new Actor({ guid: "lake", classId: "Actor" }));
+    lake.attachComponent(new ActorComponent({ classId: "WaterLakeComponent", variables: { assetGuid: "water", width: 10, length: 10 } }));
+    expect(evaluate(2 / 60)).toBe(true);
+    walks = 0;
+    // With water, of the watched actors only the landscape, a cutter, is walked.
+    expect(evaluate(3 / 60)).toBe(true);
+    expect(walks).toBe(1);
+  });
+
+  it("normalizes a float's buoyancy only when its variables change", () => {
+    const normalize = vi.mocked(normalizeWaterBuoyancy);
+    const sea = new Actor({ guid: "sea", classId: "Actor" });
+    sea.attachComponent(new ActorComponent({ classId: "WaterOceanComponent", variables: { assetGuid: "water" } }));
+    const float = new Actor({ guid: "float", classId: "Actor" });
+    const buoyancy = new ActorComponent({ classId: "WaterBuoyancyComponent", variables: { drag: 4 } });
+    float.attachComponent(buoyancy);
+    const actors = [sea, float], water = new WaterWorld();
+    water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
+    const lift: number[] = [];
+    const backend = {
+      kind: "3d",
+      getBodyTransform: () => ({ position: { x: 0, y: -0.1, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } }),
+      getBodyVelocity: () => ({ linear: { x: 0, y: 0, z: 0 }, angular: { x: 0, y: 0, z: 0 } }),
+      addImpulseAtPoint: (_bodyId: string, impulse: { y: number }) => { lift.push(impulse.y); },
+    } as unknown as PhysicsBackend;
+    water.update(actors, 0);
+    normalize.mockClear();
+    for (let step = 0; step < 4; step++) water.applyBuoyancy(float, "body", backend, 1, 9.81, 1 / 60);
+    expect(normalize).toHaveBeenCalledTimes(1);
+    expect(lift.some((y) => y > 0)).toBe(true);
+    buoyancy.setVariable("drag", 6);
+    water.applyBuoyancy(float, "body", backend, 1, 9.81, 1 / 60);
+    expect(normalize).toHaveBeenCalledTimes(2);
   });
 });

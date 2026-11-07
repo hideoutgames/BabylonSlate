@@ -7,9 +7,10 @@ import { sameDescriptor } from "./physics-preparation";
 /**
  * How Movement moves an actor. `dynamic`: it steers the velocity of the actor's
  * dynamic Rigid Body. Otherwise a kinematic capsule is moved by a character
- * controller, and `mass` scales impulses into velocity.
+ * controller, and `mass` scales impulses into velocity. `rigid` is the actor's
+ * first live Rigid Body, which decided the mode; undefined without one.
  */
-export type MovementDrive = { component: ActorComponent; dynamic: boolean; mass: number };
+export type MovementDrive = { component: ActorComponent; dynamic: boolean; mass: number; rigid?: ActorComponent };
 
 /**
  * Which component makes an actor a body, and how that body moves. The per-tick
@@ -21,9 +22,14 @@ export type MovementDrive = { component: ActorComponent; dynamic: boolean; mass:
 export class PhysicsBodyClassifier {
   private readonly kind: PhysicsWorldKind;
   private readonly meshes: Pick<MeshColliders, "resolvedMeshCollisions" | "dynamicMeshPhysicsComponents">;
+  /**
+   * Each Rigid Body's parsed properties, the values they were parsed from and the variables revision those were
+   * last confirmed at: an unchanged revision proves no variable was written, so nothing is read again.
+   */
   private readonly rigidProperties = new WeakMap<
     ActorComponent,
     {
+      revision: number;
       descriptor: readonly unknown[];
       value: ReturnType<typeof parseRigidBodyProperties>;
     }
@@ -163,7 +169,7 @@ export class PhysicsBodyClassifier {
     if (!rigid) return { component: movement, dynamic: false, mass: 1 };
     const props = this.rigidProps(rigid);
     return props.motionType === "static" ? undefined
-      : { component: movement, dynamic: props.motionType === "dynamic", mass: Math.max(props.mass, MIN_MOVEMENT_MASS) };
+      : { component: movement, dynamic: props.motionType === "dynamic", mass: Math.max(props.mass, MIN_MOVEMENT_MASS), rigid };
   }
 
   rigidComponent(actor: Actor): ActorComponent | undefined {
@@ -175,18 +181,23 @@ export class PhysicsBodyClassifier {
   rigidProps(
     component: ActorComponent,
   ): ReturnType<typeof parseRigidBodyProperties> {
+    const revision = component.variablesRevision;
+    const old = this.rigidProperties.get(component);
+    if (old?.revision === revision) return old.value;
     const current = this.rigidScratch;
     for (let index = 0; index < RIGID_BODY_VARIABLES.length; index++)
       current[index] = component.getVariable(RIGID_BODY_VARIABLES[index]);
-    const old = this.rigidProperties.get(component);
-    if (old && sameDescriptor(old.descriptor, current)) return old.value;
+    if (old && sameDescriptor(old.descriptor, current)) {
+      old.revision = revision;
+      return old.value;
+    }
     const descriptor = current.slice();
     const value = parseRigidBodyProperties(
       Object.fromEntries(
         RIGID_BODY_VARIABLES.map((name, index) => [name, descriptor[index]]),
       ),
     );
-    this.rigidProperties.set(component, { descriptor, value });
+    this.rigidProperties.set(component, { revision, descriptor, value });
     return value;
   }
 }

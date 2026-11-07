@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createDefaultWaterDefinition, identityTransform } from "@haptic/core";
 import { ClassRegistry, World } from "@haptic/object-model";
 import { createPhysicsBackend } from "@haptic/physics";
@@ -187,5 +187,28 @@ describe("Water buoyancy with native collision response", { timeout: 30_000 }, (
       expect(cargo.transform.position.y).toBeGreaterThan(boat.transform.position.y + 0.65);
       expect(Math.abs(boat.transform.rotation.z)).toBeGreaterThan(0.001);
     } finally { backend.dispose(); }
+  });
+
+  it("applies buoyancy only to the bodies of actors that own Water Buoyancy", async () => {
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const sync = new PhysicsWorldSync(backend);
+    const sea = world.createActor({ classId: "Actor", guid: "sea" });
+    sea.attachComponent(world.createComponent({ classId: "WaterOceanComponent" }));
+    world.spawnActorNow(sea);
+    for (let index = 0; index < 4; index++) {
+      const crate = world.createActor({ classId: "Actor", guid: `crate-${index}`, transform: { ...identityTransform(), position: { x: index * 3, y: 2, z: 5 } } });
+      crate.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { mass: 2 } }));
+      crate.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: { shape: { kind: "box", halfExtents: { x: 0.4, y: 0.4, z: 0.4 } } } }));
+      world.spawnActorNow(crate);
+    }
+    const float = world.createActor({ classId: "Actor", guid: "float" });
+    float.attachComponent(world.createComponent({ classId: "WaterBuoyancyComponent" }));
+    world.spawnActorNow(float);
+    const buoyancy = vi.spyOn(sync.water, "applyBuoyancy");
+    try {
+      for (let i = 0; i < 3; i++) sync.step(1 / 60, world, i / 60);
+      expect(buoyancy.mock.calls.map(([actor]) => actor.guid)).toEqual(["float", "float", "float"]);
+    } finally { sync.dispose(); }
   });
 });

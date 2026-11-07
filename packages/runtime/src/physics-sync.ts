@@ -34,6 +34,7 @@ import type { ModelContent } from "./physics-mesh-colliders";
 import { PhysicsQueryChannels } from "./physics-query-channels";
 import { PhysicsReadback, actorLocalPhysicsTransform } from "./physics-readback";
 import type { SpriteClipPlayback, SpriteContent, TileContent } from "./physics-sprite-tile-colliders";
+import { componentOwners } from "./world-component-index";
 
 export { actorLocalPhysicsTransform } from "./physics-readback";
 
@@ -371,7 +372,8 @@ export class PhysicsWorldSync {
     const movement = source?.classId === "MovementComponent" ? source : null;
     const drive = movement ? this.classifier.movementDrive(actor) : undefined;
     const steered = drive?.dynamic === true;
-    const rigid = movement ? (steered ? this.classifier.rigidComponent(actor) ?? null : null) : source;
+    // A steered body is the Rigid Body the drive resolved, as `rigidComponent` would find it again.
+    const rigid = movement ? (steered ? drive!.rigid ?? null : null) : source;
     if (
       this.bodyOwnerByActor.has(actor.guid) &&
       this.bodyOwnerByActor.get(actor.guid) !== actor
@@ -602,11 +604,14 @@ export class PhysicsWorldSync {
     if (this.skipEmptySteps && this.bodyByActor.size === 0 && this.characterByActor.size === 0) return;
     if (this.backend.kind === "3d") {
       this.water.update(this.actors, time);
-      if (this.water.hasBodies) for (const [actorId, bodyId] of this.bodyByActor) {
+      // Only an actor owning Water Buoyancy can float; each body's impulses are its own, so any order gives the same
+      // result. A destroyed actor has no components left, so the owners of the current structure are all there is.
+      if (this.water.hasBodies) for (const actor of componentOwners(world, "WaterBuoyancyComponent")) {
         // The body's own actor: a step hook may have replaced the guid's holder.
-        const actor = this.bodyOwnerByActor.get(actorId);
-        const tuning = this.appliedBodyProperties.get(actorId)?.value;
-        if (actor && tuning?.motionType === "dynamic")
+        if (this.bodyOwnerByActor.get(actor.guid) !== actor) continue;
+        const bodyId = this.bodyByActor.get(actor.guid);
+        const tuning = this.appliedBodyProperties.get(actor.guid)?.value;
+        if (bodyId !== undefined && tuning?.motionType === "dynamic")
           this.water.applyBuoyancy(actor, bodyId, this.backend, tuning.mass, gravity, dt);
       }
     }

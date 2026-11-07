@@ -577,3 +577,30 @@ it("rejects stale component and pre-sync successor commands before they mutate a
     sync.dispose();
   }
 });
+
+it("reads a collision component's and a Rigid Body's variables again only after one was written", () => {
+  const { world, actor, collider, backend, sync } = fixture();
+  const rigid = actor.components.find((component) => component.classId === "RigidBodyComponent")!;
+  const commit = vi.spyOn(backend, "applyColliderChanges");
+  try {
+    sync.syncFromWorld(world);
+    const colliderReads = vi.spyOn(collider, "getVariable");
+    const rigidReads = vi.spyOn(rigid, "getVariable");
+    const read = (spy: typeof colliderReads, names: readonly string[]) =>
+      names.filter((name) => spy.mock.calls.some(([variable]) => variable === name));
+    const descriptorNames = ["friction", "restitution", "layer", "mask", "collisionPreset", "radius"];
+    commit.mockClear();
+    for (let pass = 0; pass < 3; pass++) sync.syncFromWorld(world);
+    expect(read(colliderReads, descriptorNames)).toEqual([]);
+    expect(read(rigidReads, ["motionType", "mass"])).toEqual([]);
+    expect(commit).not.toHaveBeenCalled();
+    collider.setVariable("friction", 0.8);
+    rigid.setVariable("linearDamping", 0.5);
+    sync.syncFromWorld(world);
+    expect(read(colliderReads, descriptorNames)).toEqual(descriptorNames);
+    expect(read(rigidReads, ["motionType", "mass"])).toEqual(["motionType", "mass"]);
+    expect(commit).toHaveBeenCalledTimes(1);
+  } finally {
+    sync.dispose();
+  }
+});

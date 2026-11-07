@@ -160,9 +160,11 @@ function reactsToClass(classId: string): boolean {
 
 /** Component attachments have the same transform meaning in physics and rendering. */
 function componentWorldTransform(component: ActorComponent, actor: Actor, world: Transform): Transform {
+  // An unattached component composes once, as the chain below would.
+  if (!component.parentId) return composeParentChildTransform(world, component.transform);
   const chain = [component.transform];
   const seen = new Set([component.guid]);
-  let parentId = component.parentId;
+  let parentId: string | null = component.parentId;
   while (parentId && !seen.has(parentId)) {
     seen.add(parentId);
     const parent = actor.components.find((c) => c.guid === parentId && !c.destroyed);
@@ -173,6 +175,42 @@ function componentWorldTransform(component: ActorComponent, actor: Actor, world:
   let result = world;
   for (let i = chain.length - 1; i >= 0; i--) result = composeParentChildTransform(result, chain[i]!);
   return result;
+}
+
+/** The world up axis a support's vertical impulse response is measured along. */
+const UP: Readonly<Vec3> = Object.freeze({ x: 0, y: 1, z: 0 });
+
+/**
+ * Fixed storage for one buoyancy solve: a body has at most four supports, so the solve rows (4×4) and every
+ * per-support value live in typed arrays instead of per-step objects.
+ */
+class BuoyancySupports {
+  /** Each corner's world point, in corner order. */
+  readonly points: Vec3[] = Array.from({ length: 4 }, () => ({ x: 0, y: 0, z: 0 }));
+  /** Per support (a submerged corner, in corner order): its corner, sample and water body. */
+  readonly corner = new Int8Array(4);
+  readonly samples: Array<WaterWorldSample | null> = [null, null, null, null];
+  readonly waters: Array<WaterBody | null> = [null, null, null, null];
+  readonly submerged = new Float64Array(4);
+  readonly rx = new Float64Array(4);
+  readonly rz = new Float64Array(4);
+  readonly drag = new Float64Array(4);
+  readonly stiffness = new Float64Array(4);
+  readonly maximumLift = new Float64Array(4);
+  readonly responseLinear = new Float64Array(4);
+  readonly responseAngularX = new Float64Array(4);
+  readonly responseAngularZ = new Float64Array(4);
+  readonly solveLinear = new Float64Array(16);
+  readonly solveAngular = new Float64Array(16);
+  readonly freeLinear = new Float64Array(4);
+  readonly freeAngular = new Float64Array(4);
+  readonly impulses = new Float64Array(4);
+
+  /** Drop the samples and water bodies, so the scratch keeps no evaluation alive. */
+  release(): void {
+    this.samples.fill(null);
+    this.waters.fill(null);
+  }
 }
 
 export class WaterWorld {
@@ -211,11 +249,15 @@ export class WaterWorld {
     this.lookupWorld ? this.lookupWorld.findActor(guid) : this.byGuid.get(guid);
   private readonly defaultWater = createDefaultWaterDefinition();
   private readonly worldOf: (actors: readonly Actor[]) => World | null;
-  /** The world structure last scanned for components water reacts to, and whether it held any. */
+  /** The world structure last scanned for components water reacts to, and its actors that own one, in world order. */
   private scannedIndex: WorldComponentIndex | null = null;
-  private scannedReactive = true;
+  private reactiveActors: readonly Actor[] = [];
   /** Per buoyancy component: each support's recent peak submersion, which weights its horizontal drag. */
   private readonly wetness = new WeakMap<ActorComponent, Float64Array>();
+  private readonly normalizedBuoyancy = new WeakMap<ActorComponent, Normalized<ReturnType<typeof normalizeWaterBuoyancy>>>();
+  /** `applyBuoyancy`'s per-body scratch: never kept past one call, which nothing re-enters. */
+  private readonly supports = new BuoyancySupports();
+  private readonly bodyPose: Transform = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } };
   private readonly drift = { x: 0, z: 0 };
   private readonly bankGain = new Float64Array(2);
   /** Water Blend Distance (project setting): bodies this close blend, for the step and script queries alike. */
@@ -323,8 +365,15 @@ export class WaterWorld {
     const { bodies, removals, landscapes } = state;
     const { sourceActors, sourceComponents, sourceBodies, composed } = this;
     bodies.length = removals.length = landscapes.length = 0;
+    const world = this.worldOf(actors);
+    if (world && !this.hasSurfaces(world)) {
+      // No surface, enabled or not, so the walk would find no water to sample: the same empty evaluation, unwalked.
+      state.transforms.clear();
+      state.blend.update(bodies, this.blendDistance);
+      return;
+    }
     let water = false;
-    for (const actor of this.mayReact(actors) ? actors : []) {
+    for (const actor of world ? this.reactiveActorsOf(world) : actors) {
       const surfaces = !actor.destroyed && !actor.sceneLayerId;
       for (const component of actor.components) {
         if (component.destroyed) continue;
@@ -379,21 +428,22 @@ export class WaterWorld {
   }
 
   /**
-   * False only for a world's own actor list when no actor owns a class the walk reacts to,
-   * so the walk would collect nothing. The answer follows the world structure.
+   * The actors of a world's own list that own a component class the walk reacts to, in world order: every other
+   * actor would collect nothing. Rebuilt in one pass whenever the world structure changes.
    */
-  private mayReact(actors: readonly Actor[]): boolean {
-    const world = this.worldOf(actors);
-    if (!world) return true;
+  private reactiveActorsOf(world: World): readonly Actor[] {
     const index = worldComponentIndex(world);
     if (index !== this.scannedIndex) {
       this.scannedIndex = index;
-      this.scannedReactive = false;
-      for (const classId of index.classIds()) {
-        if (reactsToClass(classId)) { this.scannedReactive = true; break; }
+      const reactive: Actor[] = [];
+      for (const actor of world.getActors()) {
+        for (const component of actor.components) {
+          if (reactsToClass(component.classId)) { reactive.push(actor); break; }
+        }
       }
+      this.reactiveActors = reactive;
     }
-    return this.scannedReactive;
+    return this.reactiveActors;
   }
 
   /**
@@ -443,33 +493,38 @@ export class WaterWorld {
    */
   applyBuoyancy(actor: Actor, bodyId: string, backend: PhysicsBackend, mass: number, gravity: number, dt: number): void {
     if (backend.kind !== "3d" || dt <= 0 || mass <= 0) return;
-    const component = actor.components.find((c) => c.classId === "WaterBuoyancyComponent" && !c.destroyed && c.getVariable("enabled") !== false);
+    let component: ActorComponent | undefined;
+    for (const candidate of actor.components) {
+      if (candidate.classId === "WaterBuoyancyComponent" && !candidate.destroyed && candidate.getVariable("enabled") !== false) { component = candidate; break; }
+    }
     if (!component) return;
-    const props = normalizeWaterBuoyancy(Object.fromEntries(component.variables));
+    const variables = component.variables;
+    const props = normalized(this.normalizedBuoyancy, component, "buoyancy", () => normalizeWaterBuoyancy(Object.fromEntries(variables)));
     const actorTransform = this.stepState.transforms.get(actor.guid);
     const pose = backend.getBodyTransform(bodyId), velocity = backend.getBodyVelocity(bodyId);
     if (!actorTransform || !pose || !velocity) return;
-    const transform = componentWorldTransform(component, actor, { ...actorTransform, ...pose });
+    // The actor's scale with the body's pose (as `{ ...actorTransform, ...pose }`); composition only reads it.
+    const bodyPose = this.bodyPose;
+    bodyPose.position = pose.position; bodyPose.rotation = pose.rotation; bodyPose.scale = actorTransform.scale;
+    const transform = componentWorldTransform(component, actor, bodyPose);
     const height = props.height * Math.abs(transform.scale.y);
     if (height < 1e-6) return;
-    const supports: Array<{
-      point: Vec3; r: Vec3; sample: WaterWorldSample; drag: number; stiffness: number; maximumLift: number;
-      response: { linear: Vec3; angular: Vec3 };
-    }> = [];
-    const wetted: Array<{ point: Vec3; sample: WaterWorldSample; water: WaterBody; submerged: number; index: number }> = [];
+    const s = this.supports;
     let wetness = this.wetness.get(component);
     const fresh = !wetness;
     wetness ??= new Float64Array(4);
     this.wetness.set(component, wetness);
-    let index = -1;
-    for (const x of [-0.5, 0.5]) for (const z of [-0.5, 0.5]) {
-      index++;
+    // The four corner supports; `wetted` lists the submerged ones by corner, and each becomes a support.
+    let wetted = 0;
+    for (let index = 0; index < 4; index++) {
+      const x = index < 2 ? -0.5 : 0.5, z = index % 2 ? 0.5 : -0.5;
       const offset = quatRotateVector(transform.rotation, {
         x: (props.offset[0] + x * props.width) * transform.scale.x,
         y: props.offset[1] * transform.scale.y,
         z: (props.offset[2] + z * props.length) * transform.scale.z,
       });
-      const point = { x: transform.position.x + offset.x, y: transform.position.y + offset.y, z: transform.position.z + offset.z };
+      const point = s.points[index]!;
+      point.x = transform.position.x + offset.x; point.y = transform.position.y + offset.y; point.z = transform.position.z + offset.z;
       const sample = this.stepState.sample(point, props.waterActorId);
       const found = sample.found && this.stepState.sampled !== null && sample.depth <= sample.waterDepth + height / 2;
       const submerged = found ? Math.max(0, Math.min(sample.waterDepth, sample.depth + height / 2) - Math.max(0, sample.depth - height / 2)) / height : 0;
@@ -477,14 +532,20 @@ export class WaterWorld {
       // wave periods: the instantaneous value would correlate with the orbital velocity and push hulls along the waves.
       const previous = wetness[index]!;
       wetness[index] = fresh ? submerged : Math.max(submerged, previous + (submerged - previous) * Math.min(1, dt / WATER_DRAG_WETNESS_SECONDS));
-      if (submerged > 0) wetted.push({ point, sample, water: this.stepState.sampled!, submerged, index });
+      if (submerged > 0) {
+        s.corner[wetted] = index; s.samples[wetted] = sample; s.waters[wetted] = this.stepState.sampled!; s.submerged[wetted] = submerged;
+        wetted++;
+      }
     }
     // The hull relaxes toward the water's horizontal velocity at this rate (1/s): each wetted support pulls with
     // min(1, drag·dt)·wetness / 4 of the body's momentum per step. The waves' mean drift at that coupling
     // (`waterSpectrumDrift`) is added back, so hulls with any drag rock in place and only the current carries them; it
     // fades with the horizontal offset toward a finite body's banks.
-    const coupling = wetted.reduce((sum, entry) => sum + wetness[entry.index]!, 0) * Math.min(1, props.drag * dt) / (4 * dt);
-    for (const { point, sample, water, submerged, index } of wetted) {
+    let wetSum = 0;
+    for (let n = 0; n < wetted; n++) wetSum = wetSum + wetness[s.corner[n]!]!;
+    const coupling = wetSum * Math.min(1, props.drag * dt) / (4 * dt);
+    for (let n = 0; n < wetted; n++) {
+      const index = s.corner[n]!, point = s.points[index]!, sample = s.samples[n]!, water = s.waters[n]!, submerged = s.submerged[n]!;
       const drift = waterSpectrumDrift(waterSpectrum(water.definition), water.body.waveScale, coupling, this.drift);
       let fade = 1;
       if (water.body.kind !== "global") {
@@ -493,62 +554,71 @@ export class WaterWorld {
       }
       sample.velocity.x += drift.x * fade; sample.velocity.z += drift.z * fade;
       const volume = props.volume > 0 ? props.volume * Math.abs(transform.scale.x * transform.scale.y * transform.scale.z) : 2 * mass / sample.density;
-      const response = backend.getBodyImpulseResponse?.(bodyId, { x: 0, y: 1, z: 0 }, point);
+      const response = backend.getBodyImpulseResponse?.(bodyId, UP, point);
       const center = response?.centerOfMass ?? pose.position;
-      const r = { x: point.x - center.x, y: point.y - center.y, z: point.z - center.z };
+      const rx = point.x - center.x, ry = point.y - center.y, rz = point.z - center.z;
       const a = velocity.angular, v = velocity.linear;
       const drag = mass * Math.min(1, props.drag * dt) * submerged / 4;
       const spin = props.angularDrag;
       const lift = sample.density * volume * Math.max(0, gravity) / 4;
-      supports.push({ point, r, sample, drag, stiffness: lift / height,
-        maximumLift: lift * Math.min(1, sample.waterDepth / height, (sample.waterDepth - sample.depth + height / 2) / height) * dt,
-        // Custom backends without inertia queries retain unit-inertia behavior.
-        response: response ?? { linear: { x: 0, y: 1 / mass, z: 0 }, angular: { x: -r.z / mass, y: 0, z: r.x / mass } },
-      });
+      s.rx[n] = rx; s.rz[n] = rz; s.drag[n] = drag; s.stiffness[n] = lift / height;
+      s.maximumLift[n] = lift * Math.min(1, sample.waterDepth / height, (sample.waterDepth - sample.depth + height / 2) / height) * dt;
+      // Custom backends without inertia queries retain unit-inertia behavior.
+      if (response) {
+        s.responseLinear[n] = response.linear.y; s.responseAngularX[n] = response.angular.x; s.responseAngularZ[n] = response.angular.z;
+      } else {
+        s.responseLinear[n] = 1 / mass; s.responseAngularX[n] = -rz / mass; s.responseAngularZ[n] = rx / mass;
+      }
       const sideways = mass * Math.min(1, props.drag * dt) * wetness[index]! / 4;
       backend.addImpulseAtPoint(bodyId, {
-        x: (sample.velocity.x - v.x - spin * (a.y * r.z - a.z * r.y)) * sideways,
+        x: (sample.velocity.x - v.x - spin * (a.y * rz - a.z * ry)) * sideways,
         y: 0,
-        z: (sample.velocity.z - v.z - spin * (a.x * r.y - a.y * r.x)) * sideways,
+        z: (sample.velocity.z - v.z - spin * (a.x * ry - a.y * rx)) * sideways,
       }, point);
     }
-    if (!supports.length) return;
+    const count = wetted;
+    if (!count) { s.release(); return; }
     const afterDrag = backend.getBodyVelocity(bodyId)!;
     // All four springs share the same body's translation and rotation. Solve them
     // together using collider inertia; independent springs can flip a light hull.
-    const solve = supports.map(({ r }) => supports.map(({ response }) => ({
-      linear: response.linear.y, angular: response.angular.z * r.x - response.angular.x * r.z,
-    })));
-    const free = supports.map(({ r, sample }) => ({
-      linear: afterDrag.linear.y - sample.velocity.y - Math.max(0, gravity) * dt,
-      angular: afterDrag.angular.z * r.x - afterDrag.angular.x * r.z,
-    }));
-    const impulses = supports.map(() => 0);
+    // Row i, column j: support j's response seen from support i's offset.
+    const { solveLinear, solveAngular, freeLinear, freeAngular, impulses } = s;
+    for (let i = 0; i < count; i++) {
+      for (let j = 0; j < count; j++) {
+        solveLinear[i * 4 + j] = s.responseLinear[j]!;
+        solveAngular[i * 4 + j] = s.responseAngularZ[j]! * s.rx[i]! - s.responseAngularX[j]! * s.rz[i]!;
+      }
+      freeLinear[i] = afterDrag.linear.y - s.samples[i]!.velocity.y - Math.max(0, gravity) * dt;
+      freeAngular[i] = afterDrag.angular.z * s.rx[i]! - afterDrag.angular.x * s.rz[i]!;
+      impulses[i] = 0;
+    }
     // Projected Gauss-Seidel for the dry, surface and fully immersed branches.
     // The implicit solve bounds high-stiffness response without capping capacity.
     for (let iteration = 0; iteration < 32; iteration++) {
       let change = 0;
-      for (let n = 0; n < supports.length; n++) {
-        const i = iteration % 2 ? supports.length - n - 1 : n;
-        const support = supports[i]!, row = solve[i]!;
-        let relative = free[i]!.linear + free[i]!.angular;
-        let dragVelocity = free[i]!.linear + props.angularDrag * free[i]!.angular;
-        for (let j = 0; j < supports.length; j++) if (j !== i) {
-          relative += (row[j]!.linear + row[j]!.angular) * impulses[j]!;
-          dragVelocity += (row[j]!.linear + props.angularDrag * row[j]!.angular) * impulses[j]!;
+      for (let n = 0; n < count; n++) {
+        const i = iteration % 2 ? count - n - 1 : n;
+        const row = i * 4;
+        let relative = freeLinear[i]! + freeAngular[i]!;
+        let dragVelocity = freeLinear[i]! + props.angularDrag * freeAngular[i]!;
+        for (let j = 0; j < count; j++) if (j !== i) {
+          relative += (solveLinear[row + j]! + solveAngular[row + j]!) * impulses[j]!;
+          dragVelocity += (solveLinear[row + j]! + props.angularDrag * solveAngular[row + j]!) * impulses[j]!;
         }
-        const dragFactor = 1 + support.drag * (row[i]!.linear + props.angularDrag * row[i]!.angular);
-        const dragImpulse = -support.drag * dragVelocity;
+        const supportDrag = s.drag[i]!, stiffness = s.stiffness[i]!;
+        const dragFactor = 1 + supportDrag * (solveLinear[row + i]! + props.angularDrag * solveAngular[row + i]!);
+        const dragImpulse = -supportDrag * dragVelocity;
         const next = Math.max(dragImpulse / dragFactor, Math.min(
-          (support.maximumLift + dragImpulse) / dragFactor,
-          (support.stiffness * dt * (support.sample.depth + height / 2 - relative * dt) + dragImpulse)
-            / (dragFactor + support.stiffness * dt * dt * (row[i]!.linear + row[i]!.angular)),
+          (s.maximumLift[i]! + dragImpulse) / dragFactor,
+          (stiffness * dt * (s.samples[i]!.depth + height / 2 - relative * dt) + dragImpulse)
+            / (dragFactor + stiffness * dt * dt * (solveLinear[row + i]! + solveAngular[row + i]!)),
         ));
         change = Math.max(change, Math.abs(next - impulses[i]!));
         impulses[i] = next;
       }
       if (change < mass * 1e-7) break;
     }
-    supports.forEach(({ point }, i) => backend.addImpulseAtPoint(bodyId, { x: 0, y: impulses[i]!, z: 0 }, point));
+    for (let i = 0; i < count; i++) backend.addImpulseAtPoint(bodyId, { x: 0, y: impulses[i]!, z: 0 }, s.points[s.corner[i]!]!);
+    s.release();
   }
 }

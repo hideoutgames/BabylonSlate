@@ -16,7 +16,7 @@ import {
   type Vec3,
 } from "@haptic/physics";
 import type { Actor, ActorComponent } from "@haptic/object-model";
-import { actorParentGuid, inverseQuaternion, rotateVector } from "./actor-world-transform";
+import { actorParentGuid, inverseQuaternionInto, rotateVector, rotateVectorInto } from "./actor-world-transform";
 import { dynamicMeshCollisionDescriptor } from "./dynamic-mesh-collision";
 import { parsedMovementProperties } from "./movement-settings";
 import type { MovementDrive } from "./physics-body-classification";
@@ -56,6 +56,15 @@ export class PhysicsColliderSets implements MeshCollidersHost, SpriteTileCollide
   >();
   private readonly hostedScratch = new Map<string, ColliderDesc>();
   private readonly collisionScratch = new DescriptorScratch();
+  /**
+   * Each live collision component's descriptor variables and the variables revision they were read at. An
+   * unchanged revision proves none was written, so the values are pushed again without a read; the descriptor
+   * stays value-based, so a write that keeps every value still matches. NaN (variables without a revision)
+   * never matches and always reads.
+   */
+  private readonly descriptorVariables = new WeakMap<ActorComponent, { revision: number; values: unknown[] }>();
+  /** `describe`'s capsule rotation, pushed as numbers and never kept. */
+  private readonly capsuleRotation: PhysicsTransform["rotation"] = { x: 0, y: 0, z: 0, w: 1 };
   private readonly onPublished: ((actor: Actor) => void) | undefined;
 
   constructor(
@@ -332,7 +341,7 @@ export class PhysicsColliderSets implements MeshCollidersHost, SpriteTileCollide
     descriptor.begin();
     descriptor.push(actor);
     if (drive) {
-      const rotation = uprightCapsuleRotation(world.rotation);
+      const rotation = uprightCapsuleRotationInto(world.rotation, this.capsuleRotation);
       // Movement's capsule is a fixed world size. Visual frames, local component
       // transforms, and scale cannot change it.
       descriptor.push(drive.component);
@@ -375,14 +384,8 @@ export class PhysicsColliderSets implements MeshCollidersHost, SpriteTileCollide
       if (component.classId === "DynamicRuntimeMeshComponent")
         for (const value of dynamicMeshCollisionDescriptor(component))
           descriptor.push(value);
-      for (const name of COLLISION_DESCRIPTOR_VARIABLES)
-        descriptor.push(component.getVariable(name));
-      if (component.classId === "LandscapeComponent") {
-        descriptor.push(component.getVariable("collisionsEnabled"));
-        descriptor.push(component.getVariable("depth"));
-        descriptor.push(component.getVariable("subdivisions"));
-        descriptor.push(component.getVariable("heights"));
-      }
+      // Landscape's four extra variables follow the shared ones.
+      for (const value of this.descriptorValues(component)) descriptor.push(value);
       if (component.classId === "MeshComponent")
         this.meshes.pushMeshDescriptor(descriptor, component);
       if (component.classId === "TilemapComponent")
@@ -390,6 +393,20 @@ export class PhysicsColliderSets implements MeshCollidersHost, SpriteTileCollide
       if (component.classId === "SpriteComponent")
         this.tiles.pushSpriteDescriptor(descriptor, actor, component);
     }
+  }
+
+  /** The component's `COLLISION_DESCRIPTOR_VARIABLES` (and Landscape's), read again only after a variable was written. */
+  private descriptorValues(component: ActorComponent): readonly unknown[] {
+    const revision = component.variablesRevision;
+    let cached = this.descriptorVariables.get(component);
+    if (cached?.revision === revision) return cached.values;
+    const names = component.classId === "LandscapeComponent" ? LANDSCAPE_DESCRIPTOR_VARIABLES : COLLISION_DESCRIPTOR_VARIABLES;
+    if (!cached) this.descriptorVariables.set(component, cached = { revision, values: [] });
+    cached.revision = revision;
+    const values = cached.values;
+    values.length = names.length;
+    for (let index = 0; index < names.length; index++) values[index] = component.getVariable(names[index]!);
+    return values;
   }
 
   private collectBlockingVolumeCollider(
@@ -484,13 +501,31 @@ const COLLISION_DESCRIPTOR_VARIABLES = [
   "radius",
 ] as const;
 
+const LANDSCAPE_DESCRIPTOR_VARIABLES = [
+  ...COLLISION_DESCRIPTOR_VARIABLES,
+  "collisionsEnabled",
+  "depth",
+  "subdivisions",
+  "heights",
+] as const;
+
 /** An upright capsule needs an axis correction, never a twist around that axis. */
 function uprightCapsuleRotation(rotation: PhysicsTransform["rotation"]): PhysicsTransform["rotation"] {
-  const up = rotateVector(inverseQuaternion(rotation), { x: 0, y: 1, z: 0 });
+  return uprightCapsuleRotationInto(rotation, { x: 0, y: 0, z: 0, w: 1 });
+}
+
+const WORLD_UP: Readonly<Vec3> = Object.freeze({ x: 0, y: 1, z: 0 });
+const capsuleInverse: PhysicsTransform["rotation"] = { x: 0, y: 0, z: 0, w: 1 };
+const capsuleUp: Vec3 = { x: 0, y: 0, z: 0 };
+
+/** `uprightCapsuleRotation` written into `out`, through module scratch (never re-entered). */
+function uprightCapsuleRotationInto(rotation: PhysicsTransform["rotation"], out: PhysicsTransform["rotation"]): PhysicsTransform["rotation"] {
+  const up = rotateVectorInto(inverseQuaternionInto(rotation, capsuleInverse), WORLD_UP, capsuleUp);
   const length = Math.hypot(up.x, up.y, up.z);
-  if (length === 0) return { x: 0, y: 0, z: 0, w: 1 };
+  if (length === 0) { out.x = 0; out.y = 0; out.z = 0; out.w = 1; return out; }
   const x = up.z / length, z = -up.x / length, w = 1 + up.y / length;
   const norm = Math.hypot(x, z, w);
-  if (norm < 1e-8) return { x: 1, y: 0, z: 0, w: 0 };
-  return { x: x === 0 ? 0 : x / norm, y: 0, z: z === 0 ? 0 : z / norm, w: w / norm };
+  if (norm < 1e-8) { out.x = 1; out.y = 0; out.z = 0; out.w = 0; return out; }
+  out.x = x === 0 ? 0 : x / norm; out.y = 0; out.z = z === 0 ? 0 : z / norm; out.w = w / norm;
+  return out;
 }
