@@ -380,6 +380,10 @@ export class RenderTargetCaptures {
       // A published output keeps what its last capture showed; capture views prepare in the starting state.
       if (rehearsal && (target.published || target.view)) continue;
       if (rehearsal) this.pendingRehearsals.add(guid);
+      // A manual colour capture keeps its request through the frame a shadow atlas resize frees the old atlas: no map
+      // exists to draw it with until a later frame builds the new one, and it would keep that image without shadows.
+      if (!rehearsal && !settings.captureEveryFrame && !target.depth && !target.normals &&
+        findSceneShadowController(this.scene)?.atlasResizing()) continue;
       if (target.view) {
         // Here, before the scene view's graph runs: a new map dirties lighting
         // state the graph's own frame must not see change.

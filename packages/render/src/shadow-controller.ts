@@ -81,8 +81,8 @@ import {
 } from "./shadow-map-factory";
 import { ShadowViewMaps, type ViewShadows } from "./shadow-view-maps";
 import {
-  AtlasCascadedShadowGenerator, AtlasShadowGenerator, releaseEmptyShadowAtlas, SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasBytes,
-  shadowAtlasRenderTarget,
+  AtlasCascadedShadowGenerator, AtlasShadowGenerator, liveShadowAtlasEdge, releaseEmptyShadowAtlas, SHADOW_ATLAS_BYTES_PER_TEXEL,
+  shadowAtlasBytes, shadowAtlasRenderTarget,
 } from "./shadow-atlas";
 import { ShadowCasterVariants } from "./shadow-caster-variants";
 import { shadowMapChanges } from "./shadow-change-journal";
@@ -168,6 +168,11 @@ export class SceneShadowController {
   private selectionCamera: Camera | null = null;
   /** The effective settings the last sync admitted by. */
   private planSettings: ShadowSettings | null = null;
+  /**
+   * The Engine frame (`engine.frameId`) in which a sync released the atlas for one of another edge, or -1: no map is
+   * built until a later frame, so the old and the resized atlas never live in the same frame.
+   */
+  private atlasReleasedFrame = -1;
   /** Per-map closures read their current owner; a local map can move between lights. */
   private readonly slots = new WeakMap<ShadowGenerator, ShadowMapSlot>();
   private readonly refresh = new ShadowMapRefresh((mesh) =>
@@ -395,6 +400,13 @@ export class SceneShadowController {
   /** Whether `camera` holds sun maps of its own (`attachView`): none while no sun map is admitted or the atlas refuses them. */
   viewHoldsMaps(camera: Camera): boolean {
     return this.views.holdsMaps(camera);
+  }
+  /**
+   * Whether this Engine frame is the one a sync freed the atlas in for one of another edge: every planned map waits
+   * `budget-limited` for `shadow atlas resizing`, and none exists until a later frame builds the new atlas.
+   */
+  atlasResizing(): boolean {
+    return this.atlasReleasedFrame === this.scene.getEngine().frameId;
   }
   /**
    * Applies the scene view's refresh policy to `camera`'s own sun maps (a planar reflection's, drawn by `drawViewMaps`
@@ -645,7 +657,9 @@ export class SceneShadowController {
     };
     // Release incompatible and retired maps before reserving/constructing their
     // replacements; old and new sets must never overlap outside this envelope.
-    // A local map that only lost camera admission stays allocated for reuse.
+    // A local map that only lost camera admission stays allocated for reuse,
+    // unless it is in an atlas of another edge: it serves no planned map there and would keep that atlas alive.
+    const heldEdge = liveShadowAtlasEdge(scene);
     const donors: Entry[] = [];
     for (const entry of this.entries.values()) {
       if (entry.status === "active" && entry.generator &&
@@ -659,12 +673,24 @@ export class SceneShadowController {
         continue;
       }
       if (entry.status !== "active" && entry.generator instanceof AtlasShadowGenerator &&
-        !entry.resetAllocation)
+        !entry.resetAllocation && entry.key?.atlasEdge === atlasEdge)
         donors.push(entry);
       else release(entry);
     }
     // The views' atlas mirrors of maps released above go too, before a replacement could need their tiles.
     this.views.prune();
+    // An atlas of another edge (another quality level's, or a sun's growth coming or going) is empty now and goes in
+    // this frame; the maps planned into the new one wait `budget-limited` until a later Engine frame builds it, so the
+    // two never live in the same frame. WebGPU destroys a disposed texture only at the frame's end, and a GPU process
+    // that frees storage once the frame's commands finish would otherwise hold both.
+    const engine = scene.getEngine();
+    if (heldEdge !== 0 && heldEdge !== atlasEdge) {
+      releaseEmptyShadowAtlas(scene);
+      // An atlas a tile still holds stays, and the first new map's allocation fails on it, rather than every map
+      // waiting for it.
+      if (liveShadowAtlasEdge(scene) === 0) this.atlasReleasedFrame = engine.frameId;
+    }
+    const atlasResizing = this.atlasResizing();
     // Hand a retained map to a same-kind winner instead of constructing one.
     // Farther donors are least likely to return.
     donors.sort((a, b) => b.distanceSquared - a.distanceSquared);
@@ -773,9 +799,9 @@ export class SceneShadowController {
         maintainCascades(entry);
         continue;
       }
-      if (atlasRefused) {
+      if (atlasRefused || atlasResizing) {
         entry.status = "budget-limited";
-        entry.reason = "shadow atlas space";
+        entry.reason = atlasResizing ? "shadow atlas resizing" : "shadow atlas space";
         continue;
       }
       // The first map reads caster state, bounds and spatial queries from here on.

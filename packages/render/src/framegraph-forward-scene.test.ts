@@ -3,6 +3,7 @@ import { beginRenderFrameCapture } from "./render-frame-report";
 import {
   type AbstractEngine,
   Animation,
+  Constants,
   DirectionalLight,
   Effect,
   PrecisionDate,
@@ -184,6 +185,38 @@ it("draws a multisampled world view into its own scene targets, copies them to t
   expect(fxaa.tasks).toContain("Scene Effects FXAA");
   graph.dispose();
 });
+
+it.each(["legacyDisplay", "sceneLinear"] as const)(
+  "merges bloom over the multisampled %s scene colour into a single-sample target of its type",
+  async (mode) => {
+    const { engine, scene, camera } = host();
+    engine.getCaps().maxMSAASamples = 4;
+    allowSceneScreenShadows(scene, () => false);
+    sceneRenderingSettings(scene).qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing: "msaa4" });
+    // No spatial stage before bloom: it reads the objects' own scene colour.
+    updateSceneRenderingSettings(scene, {
+      mode: "pbr",
+      effects: {
+        ...DEFAULT_RENDER_EFFECTS,
+        colorPipeline: { version: 1, mode },
+        bloom: { enabled: true, threshold: 0.8, weight: 0.2, kernel: 16, scale: 0.5 },
+      },
+    });
+    const graph = new ForwardSceneFrameGraph(scene);
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const frame = captureRenderFrame(engine, () => graph.render(camera));
+    expect(frame.value).toEqual({ path: "frameGraph" });
+    const resource = (handle: number | undefined) => frame.report.resources.find((entry) => entry.handle === handle);
+    const clear = frame.report.tasks.find((task) => task.name === "Forward clear")!;
+    const sceneColor = resource(clear.passes[0]?.colorTargets?.[0]);
+    const bloom = frame.report.tasks.find((task) => task.name === "Scene Effects Bloom")!;
+    const merge = resource(bloom.passes.find((pass) => pass.name.endsWith("Merge"))?.colorTargets?.[0]);
+    const type = mode === "sceneLinear" ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
+    expect(sceneColor).toMatchObject({ samples: 4, types: [type] });
+    expect(merge).toMatchObject({ samples: 1, types: [type], width: sceneColor!.width, height: sceneColor!.height });
+    graph.dispose();
+  },
+);
 
 it("retains the previous graph's tasks during a settings transaction, frees its targets, and releases superseded candidates", async () => {
   const { engine, scene, camera } = host();
