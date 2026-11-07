@@ -215,7 +215,7 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
 
 /**
  * The scene renderer: a Forward FrameGraph drawing to the backbuffer or an
- * explicit 2D color/depth target. The caller retains its existing frame
+ * explicit 2D color target (with or without depth). The caller retains its existing frame
  * scheduler and calls render instead of Scene.render, exactly once per frame.
  * prepare only builds/probes effects; it never presents or consumes a frame.
  * A scene the graph cannot draw fails preparation; there is no native fallback.
@@ -1022,16 +1022,11 @@ export class ForwardSceneFrameGraph {
     if (scene.getEngine()._currentRenderTarget)
       return "A caller-bound render target is not supported.";
     const target = camera.outputRenderTarget;
-    // An auxiliary view draws into its own scene targets and copies colour
-    // only, so its output needs no depth attachment.
-    if (
-      target &&
-      (target.isCube ||
-        target.is2DArray ||
-        target.samples !== 1 ||
-        (!target.depthStencilTexture && !this.auxiliary))
-    )
-      return "FrameGraph output requires a single-sample 2D color/depth texture.";
+    // An output without a depth texture (an auxiliary view's, a post-processed
+    // SceneLayer's) is drawn through a chain's scene targets or the view's own,
+    // which the output copy leaves as colour only.
+    if (target && (target.isCube || target.is2DArray || target.samples !== 1))
+      return "FrameGraph output requires a single-sample 2D color texture.";
     // Post-processing runs as graph tasks attached through attachPostProcess.
     if (camera._postProcesses.some(Boolean) || scene.postProcesses.length)
       return "Native camera post-processes are not supported; attach them to the render coordinator.";
@@ -1158,9 +1153,9 @@ export class ForwardSceneFrameGraph {
         };
         // An auxiliary view without a chain still draws offscreen: only the
         // final copy writes its output, which a material in view may sample.
-        // So does a scaled view (the copy fills its full-size output), and a multisampled one: the output (the
-        // backbuffer, created without antialiasing) is single-sample.
-        if ((this.auxiliary || output.scale !== 1 || samples > 1) && !this.postProcessGraph && !effectsPlan)
+        // So does a scaled view (the copy fills its full-size output), a multisampled one (the output, the
+        // backbuffer created without antialiasing, is single-sample), and one whose output target has no depth.
+        if ((this.auxiliary || output.scale !== 1 || samples > 1 || (output.color && !output.depth)) && !this.postProcessGraph && !effectsPlan)
           this.ownScene = this.declareOwnSceneTargets(this.graph, renderSize.width, renderSize.height, samples);
         if (effectsPlan) {
           this.effectsGraph = new SceneEffectsGraph({
@@ -1191,9 +1186,10 @@ export class ForwardSceneFrameGraph {
           color;
         this.clear.depthTexture = this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture ??
           this.ownScene?.depth ?? depth;
-        // Every auxiliary path (own targets, an authored or a settings chain) has its own depth.
-        if (this.auxiliary && this.clear.depthTexture === depth)
-          throw new Error("An auxiliary view requires its own scene depth.");
+        // Every auxiliary path, and every one into a target without depth (own targets, an authored or a settings
+        // chain), has its own depth: the backbuffer's is not the target's.
+        if ((this.auxiliary || (output.color && !output.depth)) && this.clear.depthTexture === depth)
+          throw new Error("A view drawing into a target without depth requires its own scene depth.");
         // The authored clear color is display-space; a Scene Linear scene
         // color holds linear HDR that the Display Color stage encodes once.
         this.clear.convertColorToLinearSpace = effectsPlan?.sceneLinear === true;

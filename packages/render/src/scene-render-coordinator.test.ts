@@ -723,7 +723,8 @@ it("rejects a changed output the graph cannot draw without drawing a frame", asy
   const pending = renderer.prepare();
   const settled = pending.then(() => undefined, (error: unknown) => error);
   await started;
-  const target = new RenderTargetTexture("color-only target", 32, scene);
+  const target = new RenderTargetTexture("multisampled target", 32, scene);
+  vi.spyOn(target, "samples", "get").mockReturnValue(4);
   camera.outputRenderTarget = target;
   const frame = vi.fn();
   scene.onAfterRenderObservable.add(frame);
@@ -733,7 +734,7 @@ it("rejects a changed output the graph cannot draw without drawing a frame", asy
   } finally {
     release();
   }
-  expect(String(await settled)).toContain("color/depth");
+  expect(String(await settled)).toContain("single-sample 2D color texture");
   expect(frame).not.toHaveBeenCalled();
   expect(camera.outputRenderTarget).toBe(target);
   renderer.dispose();

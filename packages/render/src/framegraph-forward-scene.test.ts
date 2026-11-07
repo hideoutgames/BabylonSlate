@@ -427,9 +427,15 @@ it("rejects unmanaged shadows, native passes, unsupported targets and frozen que
     reason: expect.stringContaining("Native camera post-processes"),
   });
   external.dispose(camera);
-  const target = new RenderTargetTexture("shared view", 32, scene);
+  const target = new RenderTargetTexture("shared view", 32, scene, { generateMipMaps: false, generateDepthBuffer: false });
   camera.outputRenderTarget = target;
-  await expect(graph.prepare(camera)).rejects.toThrow("color/depth texture");
+  // A target without depth draws through the view's own scene colour and depth, then copies colour into it.
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.taskNames()).toEqual(expect.arrayContaining(["Forward clear", "Forward objects", "Capture output"]));
+  const multisampled = new RenderTargetTexture("multisampled view", 32, scene);
+  vi.spyOn(multisampled, "samples", "get").mockReturnValue(4);
+  camera.outputRenderTarget = multisampled;
+  await expect(graph.prepare(camera)).rejects.toThrow("single-sample 2D color texture");
   camera.outputRenderTarget = null;
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
