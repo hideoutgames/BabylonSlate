@@ -18,7 +18,7 @@ import {
   SNAPSHOT_FLAG_VISIBLE,
   type ActorSlot,
 } from "./snapshot-buffer";
-import { readActorSlot } from "./test-support/actor-slot";
+import { readActorSlot } from "./test-support/read-actor-slot";
 import type { CommandMessage } from "./channels";
 import { dispatchCommandBatch } from "./command-batch";
 import { SeqLockSnapshotPair } from "./seq-lock";

@@ -5,7 +5,7 @@ import {
   type ActorSlot,
   type CommandMessage,
 } from "@haptic/bridge";
-import { readActorSlot } from "../../bridge/src/test-support/actor-slot";
+import { readActorSlot } from "@haptic/bridge/read-actor-slot";
 import {
   createActor,
   createDefaultSceneLayer,

@@ -11,7 +11,7 @@ import {
   readSnapshotHeader,
   snapshotFloatCount,
 } from "@haptic/bridge";
-import { readActorSlot } from "../../bridge/src/test-support/actor-slot";
+import { readActorSlot } from "@haptic/bridge/read-actor-slot";
 import { ClassRegistry, World } from "@haptic/object-model";
 import { PhysicsWorldSync } from "./physics-sync";
 import { createInProcessRuntime } from "./driver";

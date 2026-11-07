@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent } from "@haptic/core";
 import { readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
-import { readActorSlot } from "../../bridge/src/test-support/actor-slot";
+import { readActorSlot } from "@haptic/bridge/read-actor-slot";
 import { createInProcessRuntime } from "./driver";
 
 function controlledYields() {

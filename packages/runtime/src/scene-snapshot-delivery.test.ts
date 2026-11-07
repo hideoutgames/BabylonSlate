@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createActor, createDefaultScene } from "@haptic/core";
 import { snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
-import { readActorSlot } from "../../bridge/src/test-support/actor-slot";
+import { readActorSlot } from "@haptic/bridge/read-actor-slot";
 import { createInProcessRuntime } from "./driver";
 import { createSceneSnapshotDelivery } from "./scene-snapshot-delivery";
 
