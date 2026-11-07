@@ -14,22 +14,44 @@ import {
   solidBlockerMesh,
   type NavCostVolume,
 } from "@haptic/navigation";
-import { actorGuidIndex, actorWorldTransform } from "./actor-world-transform";
+import { actorGuidIndex, actorWorldTransform, WorldTransformComposer } from "./actor-world-transform";
 import { createInProcessRuntime } from "./driver";
 
 const costVolumesReceived = vi.hoisted(() => [] as NavCostVolume[]);
+/** Calls to the backend's agent reads: the allocating ones and the ones that write into a caller's point. */
+const agentReads = vi.hoisted(() => ({ agentPosition: 0, agentVelocity: 0, agentPositionInto: 0, agentVelocityInto: 0 }));
 
 vi.mock("@haptic/navigation", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@haptic/navigation")>();
   return {
     ...actual,
-    // The real backend, with each cost volume the runtime hands it recorded.
+    // The real backend, with each cost volume the runtime hands it and each agent read recorded.
     createNavigationBackend: () => {
       const backend = actual.createNavigationBackend();
       const applyCostVolume = backend.applyCostVolume.bind(backend);
       backend.applyCostVolume = (volume) => {
         costVolumesReceived.push(structuredClone(volume));
         applyCostVolume(volume);
+      };
+      const agentPosition = backend.agentPosition.bind(backend);
+      const agentVelocity = backend.agentVelocity.bind(backend);
+      const agentPositionInto = backend.agentPositionInto.bind(backend);
+      const agentVelocityInto = backend.agentVelocityInto.bind(backend);
+      backend.agentPosition = (id) => {
+        agentReads.agentPosition += 1;
+        return agentPosition(id);
+      };
+      backend.agentVelocity = (id) => {
+        agentReads.agentVelocity += 1;
+        return agentVelocity(id);
+      };
+      backend.agentPositionInto = (id, out) => {
+        agentReads.agentPositionInto += 1;
+        return agentPositionInto(id, out);
+      };
+      backend.agentVelocityInto = (id, out) => {
+        agentReads.agentVelocityInto += 1;
+        return agentVelocityInto(id, out);
       };
       return backend;
     },
@@ -82,6 +104,13 @@ async function play(actors: SerializedActor[], bytes: Uint8Array, viewportMode: 
   return runtime;
 }
 
+function resetAgentReads(): void {
+  agentReads.agentPosition = 0;
+  agentReads.agentVelocity = 0;
+  agentReads.agentPositionInto = 0;
+  agentReads.agentVelocityInto = 0;
+}
+
 /** Rotation about one axis, in degrees, of an actor's quaternion. */
 function turn(rotation: { x: number; y: number; z: number; w: number }, axis: "y" | "z"): number {
   return (2 * Math.atan2(rotation[axis], rotation.w) * 180) / Math.PI;
@@ -94,6 +123,7 @@ describe("RuntimeNavigation", () => {
 
   beforeEach(() => {
     costVolumesReceived.length = 0;
+    resetAgentReads();
   });
 
   it("keeps an idle agent's facing and turns a moving 2D agent toward its velocity", async () => {
@@ -131,6 +161,82 @@ describe("RuntimeNavigation", () => {
       expect(follower.position.x).toBeCloseTo(-4, 2);
       expect(follower.position.z).toBeCloseTo(-1, 2);
     } finally {
+      runtime.stop();
+    }
+  });
+
+  it("reads crowd poses into reused points and composes agents and cost blockers through reused composers", async () => {
+    // Allocation savings of the crowd tick: the per-agent reads write into the
+    // tick's own points, and each composer keeps one pose map across ticks.
+    const passes: Array<{ composer: WorldTransformComposer; guids: string; poses: ReadonlyMap<string, unknown> }> = [];
+    const compose = WorldTransformComposer.prototype.compose;
+    const spy = vi.spyOn(WorldTransformComposer.prototype, "compose").mockImplementation(
+      function (this: WorldTransformComposer, lookup, selected, onShear) {
+        // Copy the selection first: the crowd tick empties its reused agent list afterwards.
+        const actors = [...selected];
+        const poses = compose.call(this, lookup, actors, onShear);
+        passes.push({ composer: this, guids: actors.map((actor) => actor.guid).sort().join(","), poses });
+        return poses;
+      },
+    );
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: scene([
+        createActor("floor", "Floor", {
+          transform: { position: [0, -0.5, 0], rotation: [0, 0, 0, 1], scale: [20, 1, 20] },
+          components: [{ id: "floor-body", classId: "BlockingVolumeComponent", properties: {} }],
+        }),
+        // Posed from its crowd agent each tick.
+        agent("walker", [-4, 0, -4]),
+        // Steered by velocity on its physics body.
+        agent("runner", [-4, 0, 4], {
+          components: [
+            { id: "runner-nav", classId: "NavAgentComponent", properties: { radius: 0.5, height: 2, maxSpeed: 3.5 } },
+            { id: "runner-body", classId: "RigidBodyComponent", properties: { motionType: "dynamic" } },
+            {
+              id: "runner-collider",
+              classId: "ColliderComponent",
+              properties: { shape: { kind: "sphere", radius: 0.5 }, friction: 0 },
+              transform: { position: [0, 0.5, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+            },
+          ],
+        }),
+        blocker("mud", { dynamic: true, kind: "box", area: "cost", cost: 10 }, {
+          position: [0, 1, 0], rotation: [0, 0, 0, 1], scale: [2, 2, 2],
+        }),
+      ]),
+    });
+    try {
+      await runtime.loadNavMesh(await generateNavMesh(ground));
+      runtime.start();
+      runtime.realizePlayWorld();
+      expect(runtime.setNavAgentTarget("walker", { x: 4, y: 0, z: -4 })).toBe(true);
+      expect(runtime.setNavAgentTarget("runner", { x: 4, y: 0, z: 4 })).toBe(true);
+      runtime.tick();
+      const walker = runtime.getWorld().findActor("walker")!;
+      const runner = runtime.getWorld().findActor("runner")!;
+      const walkerX = walker.transform.position.x;
+      const runnerX = runner.transform.position.x;
+      resetAgentReads();
+      passes.length = 0;
+
+      const ticks = 30;
+      for (let tick = 0; tick < ticks; tick++) runtime.tick();
+      // Both agents walked on what the reads returned.
+      expect(walker.transform.position.x).toBeGreaterThan(walkerX + 0.2);
+      expect(runner.transform.position.x).toBeGreaterThan(runnerX + 0.2);
+      expect(agentReads.agentPosition).toBe(0);
+      expect(agentReads.agentVelocity).toBe(0);
+      // The walker reads its position and velocity each tick, the runner its velocity.
+      expect(agentReads.agentPositionInto).toBeGreaterThanOrEqual(ticks);
+      expect(agentReads.agentVelocityInto).toBeGreaterThanOrEqual(2 * ticks);
+      for (const guids of ["runner,walker", "mud"]) {
+        const crowd = passes.filter((pass) => pass.guids === guids);
+        expect(crowd).toHaveLength(ticks);
+        expect(new Set(crowd.map((pass) => pass.composer)).size).toBe(1);
+        expect(new Set(crowd.map((pass) => pass.poses)).size).toBe(1);
+      }
+    } finally {
+      spy.mockRestore();
       runtime.stop();
     }
   });
