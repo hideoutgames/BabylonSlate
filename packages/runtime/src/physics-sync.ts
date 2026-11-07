@@ -77,6 +77,8 @@ export class PhysicsWorldSync {
   private readonly passSources = new Map<Actor, ActorComponent | null>();
   private readonly liveActors = new Set<string>();
   private readonly poseScratch: unknown[] = [];
+  /** The kinematic target each sync writes; backends copy a target, never keep it. */
+  private readonly targetScratch: PhysicsTransform = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
   /** Reused by every pre-step composition; readback recomposes into its own. */
   private readonly composition = new PhysicsCompositionScratch();
   private actors: readonly Actor[] = [];
@@ -384,12 +386,12 @@ export class PhysicsWorldSync {
       const pose = world(actor);
       if (movement && !steered) {
         this.applyBodyPolicy(actor.guid, bodyId, movement, MOVEMENT_BODY_PROPERTIES);
-        this.backend.setBodyTargetTransform(bodyId, physicsPose(pose));
+        this.backend.setBodyTargetTransform(bodyId, physicsPoseInto(pose, this.targetScratch));
       } else if (rigid) {
         const props = this.classifier.rigidProps(rigid);
         this.applyBodyPolicy(actor.guid, bodyId, rigid, props, steered);
         if (props.motionType === "kinematic") {
-          this.backend.setBodyTargetTransform(bodyId, physicsPose(pose));
+          this.backend.setBodyTargetTransform(bodyId, physicsPoseInto(pose, this.targetScratch));
         } else if (props.motionType === "static") {
           this.syncStaticPose(actor, bodyId, pose);
         }
@@ -980,6 +982,18 @@ function physicsPose(world: Transform): PhysicsTransform {
     position: { ...world.position },
     rotation: { ...world.rotation },
   };
+}
+
+/** `physicsPose` written into `out`. */
+function physicsPoseInto(world: Transform, out: PhysicsTransform): PhysicsTransform {
+  out.position.x = world.position.x;
+  out.position.y = world.position.y;
+  out.position.z = world.position.z;
+  out.rotation.x = world.rotation.x;
+  out.rotation.y = world.rotation.y;
+  out.rotation.z = world.rotation.z;
+  out.rotation.w = world.rotation.w;
+  return out;
 }
 
 /** Ground probe: shapes start this far above their pose and reach Ground Snap Distance plus the margin below it. */

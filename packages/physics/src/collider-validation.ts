@@ -13,10 +13,8 @@ function finiteVector(value: Vec3): boolean {
   );
 }
 
-/** Copies and normalizes at the command boundary; caller mutations cannot change pending work. */
-export function normalizedPhysicsPose(
-  pose: PhysicsTransform,
-): PhysicsTransform {
+/** The quaternion's length, or a throw unless the position is finite and the quaternion nonzero. */
+function validPoseRotationLength(pose: PhysicsTransform): number {
   const q = pose.rotation;
   const length = Math.hypot(q.x, q.y, q.z, q.w);
   if (
@@ -28,6 +26,15 @@ export function normalizedPhysicsPose(
       "Physics pose must contain a finite position and a nonzero quaternion",
     );
   }
+  return length;
+}
+
+/** Copies and normalizes at the command boundary; caller mutations cannot change pending work. */
+export function normalizedPhysicsPose(
+  pose: PhysicsTransform,
+): PhysicsTransform {
+  const q = pose.rotation;
+  const length = validPoseRotationLength(pose);
   return {
     position: { ...pose.position },
     rotation: {
@@ -37,6 +44,26 @@ export function normalizedPhysicsPose(
       w: q.w / length,
     },
   };
+}
+
+/**
+ * `normalizedPhysicsPose` written into `out`, for a command applied at once
+ * every step; it validates the same way. Returns `out`.
+ */
+export function normalizePhysicsPoseInto(
+  pose: PhysicsTransform,
+  out: PhysicsTransform,
+): PhysicsTransform {
+  const length = validPoseRotationLength(pose);
+  const { position, rotation: q } = pose;
+  out.position.x = position.x;
+  out.position.y = position.y;
+  out.position.z = position.z;
+  out.rotation.x = q.x / length;
+  out.rotation.y = q.y / length;
+  out.rotation.z = q.z / length;
+  out.rotation.w = q.w / length;
+  return out;
 }
 
 /**
