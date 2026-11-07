@@ -2,6 +2,7 @@ import { setFogVolumesVisible } from "./fog-volumes";
 import { sampleSceneWaterFrame } from "./water-mesh";
 import { sampleCableFrame } from "./cable-mesh";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
 import {
@@ -250,19 +251,25 @@ function snapshotSlotWantsOverlay(
 }
 
 /**
- * A world Scene's overlay-leftover sweeps: the overlay slots the last snapshot held, and the Scene's mesh additions
- * now and at the last sweep. A world copy of an overlay slot only appears as a mesh added to the Scene (visuals are
- * built, and rebuilt on migration, under their final `actor-N` names), so a snapshot whose overlay slots the previous
- * one also held, with no mesh added since the last sweep, has no leftover to find.
+ * A world Scene's overlay-leftover sweeps: the overlay slots the last snapshot held, and the Scene's newest mesh when
+ * the last sweep ran. A world copy of an overlay slot only appears as a mesh added to the Scene (visuals are built, and
+ * rebuilt on migration, under their final `actor-N` names), and Babylon appends added meshes and removes them in order,
+ * so while that newest mesh is still last and was never removed no mesh has joined since. (Its mesh-added observable
+ * notifies a task later, too late for the snapshot applied in the same frame.) A snapshot whose overlay slots the
+ * previous one also held, with no mesh added since the last sweep, has no leftover to find.
  */
-type OverlaySweep = { held: Set<number>; next: Set<number>; added: number; sweptAt: number };
+type OverlaySweep = { held: Set<number>; next: Set<number>; swept: boolean; newest: AbstractMesh | undefined; newestRemoved: boolean };
 const overlaySweeps = new WeakMap<Scene, OverlaySweep>();
 
 function overlaySweepOf(scene: Scene): OverlaySweep {
   let sweep = overlaySweeps.get(scene);
   if (!sweep) {
-    const created: OverlaySweep = { held: new Set(), next: new Set(), added: 0, sweptAt: -1 };
-    scene.onNewMeshAddedObservable.add(() => { created.added++; });
+    const created: OverlaySweep = { held: new Set(), next: new Set(), swept: false, newest: undefined, newestRemoved: false };
+    scene.onMeshRemovedObservable.add((mesh) => {
+      if (mesh !== created.newest) return;
+      created.newestRemoved = true;
+      created.newest = undefined;
+    });
     overlaySweeps.set(scene, (sweep = created));
   }
   return sweep;
@@ -271,14 +278,17 @@ function overlaySweepOf(scene: Scene): OverlaySweep {
 /** Drops world copies of the snapshot's overlay slots (`sweep.next`) when one joined them or a mesh joined the Scene. */
 function sweepWorldOverlayLeftovers(scene: Scene, sweep: OverlaySweep): void {
   const slots = sweep.next;
-  let found = sweep.added !== sweep.sweptAt;
+  let found = !sweep.swept || sweep.newestRemoved || scene.meshes.at(-1) !== sweep.newest;
   if (!found) for (const slotId of slots) if (!sweep.held.has(slotId)) { found = true; break; }
   // The held set becomes this snapshot's, so a slot that leaves the overlay and returns joins it again.
   sweep.next = sweep.held;
   sweep.held = slots;
   if (!found || !slots.size) return;
-  sweep.sweptAt = sweep.added;
   disposeWorldOverlayLeftoverSlots(scene, slots);
+  // Read after the sweep, which may have disposed the newest mesh.
+  sweep.swept = true;
+  sweep.newest = scene.meshes.at(-1);
+  sweep.newestRemoved = false;
 }
 
 /** Resolve ownership and membership before the pose-only pass. */
