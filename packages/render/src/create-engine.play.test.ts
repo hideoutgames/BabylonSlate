@@ -4,6 +4,8 @@ import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Material, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, TransformNode, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type AbstractMesh, type Effect, type Mesh } from "@babylonjs/core";
 import { HapticLightingBlock } from "./haptic-lighting-block";
+// Render pipeline counts come from the WebGPU code, which a WebGPU Engine loads first.
+import "./webgpu-registrations";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import {

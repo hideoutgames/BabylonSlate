@@ -22,7 +22,7 @@ it("retains a live instance mask program across pruning and releases it with its
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
   view.setContribution("actor", { kind: "component", targets: [{ key: "actor", meshes: [instance] }],
     color: [1, 0, 0], width: 1 });
-  registerSharedOutlineShaders();
+  registerSharedOutlineShaders(false);
   const objects = new ObjectRenderer("mask", scene);
   objects.activeCamera = camera;
   objects.renderList = [instance];
@@ -66,7 +66,7 @@ it("masks a Mirror surface with the built-in mirror material as opaque coverage"
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
   view.setContribution("actor", { kind: "component", targets: [{ key: "actor", meshes: [outlined] }],
     color: [1, 0, 0], width: 1 });
-  registerSharedOutlineShaders();
+  registerSharedOutlineShaders(false);
   const objects = new ObjectRenderer("mask", scene);
   objects.activeCamera = camera;
   objects.renderList = [outlined, mirror];
@@ -95,7 +95,7 @@ it("revalidates coverage edited after a drawn mask pass for readiness and the ne
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
   view.setContribution("actor", { kind: "component", targets: [{ key: "actor", meshes: [instance] }],
     color: [1, 0, 0], width: 1 });
-  registerSharedOutlineShaders();
+  registerSharedOutlineShaders(false);
   const objects = new ObjectRenderer("mask", scene);
   objects.activeCamera = camera;
   objects.renderList = [instance];
@@ -152,7 +152,7 @@ it("releases the authored coverage variants of pruned and disposed mask programs
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
   view.setContribution("actors", { kind: "component", targets: meshes.map((mesh) => ({ key: mesh.name, meshes: [mesh] })),
     color: [1, 0, 0], width: 1 });
-  registerSharedOutlineShaders();
+  registerSharedOutlineShaders(false);
   const objects = new ObjectRenderer("mask", scene);
   objects.activeCamera = camera;
   objects.renderList = meshes;

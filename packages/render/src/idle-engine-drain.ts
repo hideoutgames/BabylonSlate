@@ -1,5 +1,5 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
-import { pruneWebGpuCachesNow } from "./webgpu-cache-pruning";
+import { pruneWebGpuCachesNow } from "./webgpu-on-demand";
 
 /**
  * End frames to run once the release settles: `DrawWrapper.dispose(false)`

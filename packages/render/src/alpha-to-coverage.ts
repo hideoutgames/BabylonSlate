@@ -11,7 +11,6 @@ import { NodeMaterialBlockTargets as Targets } from "@babylonjs/core/Materials/N
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { RegisterEnginesExtensionsEngineAlphaToCoverage } from "@babylonjs/core/Engines/Extensions/engine.alphaToCoverage.pure";
-import { RegisterEnginesWebGPUExtensionsEngineAlphaToCoverage } from "@babylonjs/core/Engines/WebGPU/Extensions/engine.alphaToCoverage.pure";
 
 /**
  * Alpha-to-coverage for alpha-tested surfaces under MSAA. A colour draw of a registered Material
@@ -51,8 +50,8 @@ export function drawsAlphaCoverage(engine: AbstractEngine, material: Material | 
 function install(): void {
   if (installed) return;
   installed = true;
+  // WebGL2's half; the WebGPU Engine's code registers its own as it loads (webgpu-registrations).
   RegisterEnginesExtensionsEngineAlphaToCoverage();
-  RegisterEnginesWebGPUExtensionsEngineAlphaToCoverage();
   // Every Material's bind ends here, once per draw: each draw sets the state its own Material needs.
   type AfterBind = (this: Material, mesh?: AbstractMesh, effect?: Effect | null, subMesh?: unknown) => void;
   const prototype = Material.prototype as unknown as { _afterBind: AfterBind };

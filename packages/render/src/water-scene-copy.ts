@@ -23,9 +23,8 @@ import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/
 import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToTextureTask";
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import "@babylonjs/core/Shaders/postprocess.vertex";
-import "@babylonjs/core/ShadersWGSL/postprocess.vertex";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
-import "@babylonjs/core/ShadersWGSL/ShadersInclude/helperFunctions";
+// The WGSL twins register with the WebGPU Engine's code (webgpu-registrations).
 import { ManagedShadowObjectRendererTask } from "./framegraph-managed-shadows";
 import { LightNeutralObjectRendererTask } from "./light-neutral-tasks";
 import {

@@ -132,7 +132,8 @@ export type { SceneSourceAssets } from "./scene-source-assets";
 export { spawnableLightsFromScripts, spawnableLightsOfLoad, spawnsLights2D, spawnsUnseenClasses, type SpawnableLight, type SpawnableLightLoad } from "./spawnable-lights";
 export { NativePreparationScheduler, nativePreparationForEngine } from "./native-preparation";
 export type { NativePreparationLimits, NativePreparationPriority, NativePreparationRequest } from "./native-preparation";
-export { createAppWebGpuEngine, type WebGpuDeviceLoss } from "./webgpu-engine";
+export type { WebGpuDeviceLoss } from "./webgpu-engine";
+export { createAppWebGpuEngine } from "./webgpu-on-demand";
 export { createBackendEngineSession, type BackendEngineSession, type BackendEngineSessionOptions } from "./backend-engine-session";
 export { webGpuMaterialCompatibilityReason } from "./material-backend-compatibility";
 

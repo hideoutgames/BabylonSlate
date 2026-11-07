@@ -76,7 +76,7 @@ import { qualitySettingsFingerprint, qualityValuesKey, resolveRenderingQuality }
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
-import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
+import { webGpuPipelineCacheMisses } from "./webgpu-on-demand";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureContainer2";
@@ -2233,13 +2233,13 @@ function initializeEngine(
         // Staged meshes are shown only for the starting-state frames, which are never presented.
         if (key === "world") releaseStaged();
         pending.copied = false;
-        const pipelinesBefore = WebGPUCacheRenderPipeline.NumCacheMiss;
+        const pipelinesBefore = webGpuPipelineCacheMisses();
         const submission = submitPresentedFrame(engine, () => {
           pending.attempts += 1;
           const rendered = draw();
           pending.rendered = rendered && presentationReady(pending);
         }, { errorStateKnownClear: pending.errorsCleared });
-        pending.pipelines = WebGPUCacheRenderPipeline.NumCacheMiss - pipelinesBefore;
+        pending.pipelines = webGpuPipelineCacheMisses() - pipelinesBefore;
         pending.submission = submission;
         // Unproven until this attempt's own fence-time read; a cancelled attempt leaves it unread.
         pending.errorsCleared = false;

@@ -1,6 +1,7 @@
 import type { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 import { WebGPUCacheBindGroups } from "@babylonjs/core/Engines/WebGPU/webgpuCacheBindGroups";
 import { WebGPUCacheRenderPipelineTree } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipelineTree";
+import { registerWebGpuCachePruner, type WebGpuCacheCounts } from "./webgpu-on-demand";
 
 /**
  * Babylon 9.29 keeps two process-wide WebGPU caches that never forget an
@@ -39,8 +40,6 @@ type ReleasingEngine = {
   _releaseTexture(texture: unknown): void;
   _releaseEffect(effect: unknown): void;
 };
-
-export type WebGpuCacheCounts = { bindGroups: number; pipelines: number };
 
 function bindGroupRoot(): BindGroupNode {
   return (WebGPUCacheBindGroups as unknown as { _Cache: BindGroupNode })._Cache;
@@ -112,13 +111,6 @@ function prunePipelines(node: PipelineNode, effects: ReadonlySet<number>, depth:
   return removed;
 }
 
-const pruners = new WeakMap<object, () => WebGpuCacheCounts>();
-
-/** Prune everything `engine` released so far now (an idle drain); nothing for other Engines. */
-export function pruneWebGpuCachesNow(engine: object): WebGpuCacheCounts | null {
-  return pruners.get(engine)?.() ?? null;
-}
-
 /**
  * Track what `engine` releases and drop the matching entries from Babylon's
  * global WebGPU caches at a frame end, once enough have accumulated.
@@ -172,6 +164,6 @@ export function pruneReleasedWebGpuCacheEntries(engine: WebGPUEngine): () => Web
     framesSincePrune = 0;
     prune();
   });
-  pruners.set(engine, prune);
+  registerWebGpuCachePruner(engine, prune);
   return prune;
 }

@@ -13,9 +13,8 @@ import { GetFogState } from "@babylonjs/core/Materials/materialHelper.functions"
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import "@babylonjs/core/Shaders/ShadersInclude/fogFragmentDeclaration";
-import "@babylonjs/core/ShadersWGSL/ShadersInclude/fogFragmentDeclaration";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
-import "@babylonjs/core/ShadersWGSL/ShadersInclude/helperFunctions";
+// The WGSL twins register with the WebGPU Engine's code (webgpu-registrations).
 
 /** The scene's fog (mode, start, end, density), for Babylon's fog factor (`emitSceneFogFactor`). */
 const SCENE_FOG_UNIFORM = "sceneFogInfo";
