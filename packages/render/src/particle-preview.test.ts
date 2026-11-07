@@ -1,4 +1,8 @@
-import { ParticleSystem, Vector3 } from "@babylonjs/core";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+// The particle shaders, which a system otherwise loads asynchronously: the test skips readiness and draws at once.
+import "@babylonjs/core/Shaders/particles.vertex";
+import "@babylonjs/core/Shaders/particles.fragment";
 import { afterEach, describe, expect, it } from "vitest";
 import { PARTICLE_UPDATE_SPEED } from "@haptic/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";

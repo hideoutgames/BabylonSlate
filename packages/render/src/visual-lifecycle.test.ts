@@ -1,5 +1,9 @@
 import { installAssetBytes } from "@haptic/assets";
-import { Mesh, NullEngine, Scene, StandardMaterial, VertexBuffer } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@haptic/assets";
 import { createActor, createDefaultScene, createMeshComponent, parseOverlayPanelProperties, parseText2DProperties } from "@haptic/core";
 import { afterEach, describe, expect, it, vi } from "vitest";

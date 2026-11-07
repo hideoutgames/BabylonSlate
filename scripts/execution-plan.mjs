@@ -21,7 +21,8 @@ export async function resolveExecutionPlan(profile, env = process.env) {
     lowMemory,
     workers: profile === "build" ? 1 : workers,
     browserWorkers,
-    workspaceConcurrency: 1,
+    // Each tsc program is single threaded; locally the workspaces run one at a time.
+    workspaceConcurrency: hosted ? 4 : 1,
     retries: hosted ? 2 : 0,
     // Consume the legacy queue's complete slot budget in low-memory mode. This
     // also prevents older worktrees from admitting light work beside this root.

@@ -2,16 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  Camera,
-  InstancedMesh,
-  Mesh,
-  MeshBuilder,
-  ShaderMaterial,
-  StandardMaterial,
-  Vector3,
-  VertexBuffer,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { embedGlbExternalImages, encodeGlbJsonBin } from "@haptic/assets";
 import {
   createActor,

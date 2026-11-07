@@ -1,13 +1,11 @@
-import {
-  AbstractEngine,
-  Camera,
-  CascadedShadowGenerator,
-  DirectionalLight,
-  NullEngine,
-  Scene,
-  UniversalCamera,
-  Vector3,
-} from "@babylonjs/core";
+import { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { normalizeShadowSettings, type ShadowProfile } from "@haptic/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { cascadeSplit, type CascadeSplitInput } from "./cascade-split";

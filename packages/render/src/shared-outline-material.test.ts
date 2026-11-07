@@ -1,5 +1,12 @@
 import { afterEach, expect, it } from "vitest";
-import { MeshBuilder, NullEngine, Scene, ShadowGenerator, SpotLight, Vector3, type AbstractMesh, type Effect } from "@babylonjs/core";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { acquireAuthoredMaterialVariant, acquireAuthoredOutlineVariant, compileMaterialPlan, ensureAuthoredShadowDepthWrapper } from "./material-compiler";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";

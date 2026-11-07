@@ -1,11 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  ArcRotateCamera,
-  NullEngine,
-  RenderTargetTexture,
-  Scene,
-  Vector3,
-} from "@babylonjs/core";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
 import { mockDepthTextureIO } from "./texture-test-fixtures";
 

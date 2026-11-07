@@ -1,4 +1,9 @@
-import { Animation, AnimationGroup, NullEngine, Scene, TransformNode, VertexBuffer } from "@babylonjs/core";
+import { Animation } from "@babylonjs/core/Animations/animation";
+import { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   applyAnimStateToScene,

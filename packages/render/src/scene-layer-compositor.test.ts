@@ -1,4 +1,13 @@
-import { Camera, Constants, InternalTexture, InternalTextureSource, MeshBuilder, Matrix, NullEngine, PickingInfo, RenderTargetTexture, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PickingInfo } from "@babylonjs/core/Collisions/pickingInfo";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sceneLayerCanvasToLayer } from "@haptic/core";
 import { SceneLayerCompositor } from "./scene-layer-compositor";

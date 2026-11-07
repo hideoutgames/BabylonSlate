@@ -1,13 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  HemisphericLight,
-  type Mesh,
-  NullEngine,
-  Scene,
-  StandardMaterial,
-  Vector3,
-  type NodeMaterial,
-} from "@babylonjs/core";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import {
   ENGINE_DEFAULT_CHECKER_GREYS,

@@ -1,4 +1,9 @@
-import { DirectionalLight, Mesh, PointLight, Texture, TransformNode, Vector3 } from "@babylonjs/core";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createActor, normalizeShadowSettings } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";

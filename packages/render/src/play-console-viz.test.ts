@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { Matrix, Mesh, MeshBuilder, Scene, StandardMaterial, VertexBuffer, type Material } from "@babylonjs/core";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { Material } from "@babylonjs/core/Materials/material";
 import { createTestEngine } from "./test-support/test-engine";
 import {
   applyPlayShowBounds,

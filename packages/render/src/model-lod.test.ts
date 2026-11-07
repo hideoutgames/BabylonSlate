@@ -1,19 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  Bone,
-  Camera,
-  FreeCamera,
-  Matrix,
-  Mesh,
-  MorphTarget,
-  MorphTargetManager,
-  Skeleton,
-  StandardMaterial,
-  TransformNode,
-  Vector3,
-  VertexBuffer,
-  type Scene,
-} from "@babylonjs/core";
+import { Bone } from "@babylonjs/core/Bones/bone";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MorphTarget } from "@babylonjs/core/Morph/morphTarget";
+import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { encodeTriangleGlb, encodeUvSphereGlb } from "./glb-test-fixtures";

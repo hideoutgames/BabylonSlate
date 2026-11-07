@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import {
   verificationPolicy,
@@ -74,4 +78,61 @@ test("every pull-request job tests the head merged with the base branch as it is
       name,
     );
   }
+});
+
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+
+async function verifyWorkflow() {
+  return parse(
+    await readFile(
+      new URL("../.github/workflows/verify.yml", import.meta.url),
+      "utf8",
+    ),
+  );
+}
+
+test("the browser cache is keyed on the installed Playwright release, not the whole lockfile", async () => {
+  const { steps } = (await verifyWorkflow()).jobs.e2e;
+  const cache = steps.find((step) => step.with?.path === "~/.cache/ms-playwright");
+  assert.ok(cache, "e2e restores the Playwright browser cache");
+  const key = /^playwright-\$\{\{ runner\.os \}\}-\$\{\{ steps\.([\w-]+)\.outputs\.version \}\}$/.exec(
+    cache.with.key,
+  );
+  assert.ok(key, `unexpected cache key ${cache.with.key}`);
+  const version = steps.find((step) => step.id === key[1]);
+  assert.ok(
+    steps.indexOf(version) > steps.findIndex((step) => step.run === "pnpm install") &&
+      steps.indexOf(version) < steps.indexOf(cache),
+    "the version is read after install and before the cache is restored",
+  );
+  // The step writes one Node expression's value as its `version` output. Evaluate that expression with this Node,
+  // without a POSIX shell (Windows hosts run the tooling suite too), and compare with the release that installs the
+  // browsers.
+  const step = /^echo "version=\$\(node -p "([^"]+)"\)" >> "\$GITHUB_OUTPUT"$/.exec(version.run.trim());
+  assert.ok(step, `unexpected version step ${version.run}`);
+  const reported = execFileSync(process.execPath, ["-p", step[1]], { cwd: repoRoot, encoding: "utf8" });
+  const installed = createRequire(join(repoRoot, "package.json"))(
+    "@playwright/test/package.json",
+  ).version;
+  assert.match(installed, /^\d+\.\d+\.\d+/);
+  assert.equal(reported, `${installed}\n`);
+});
+
+test("static restores ESLint's cache only for the same lockfile and saves it only from main", async () => {
+  const { steps } = (await verifyWorkflow()).jobs.static;
+  const lint = steps.findIndex((step) => step.run === "pnpm lint");
+  const restore = steps.findIndex((step) => step.uses?.startsWith("actions/cache/restore@"));
+  const save = steps.findIndex((step) => step.uses?.startsWith("actions/cache/save@"));
+  assert.ok(restore >= 0 && restore < lint && lint < save, "restore, lint, then save");
+  const lockfile = "${{ hashFiles('pnpm-lock.yaml') }}";
+  for (const step of [steps[restore], steps[save]]) {
+    // The directory the lint runner passes as --cache-location.
+    assert.equal(step.with.path, ".cache/eslint");
+    // ESLint's per-file check covers the config but not plugin code, so a dependency change must miss.
+    assert.ok(step.with.key.includes(lockfile), step.with.key);
+    assert.ok(step.with.key.includes("${{ hashFiles('eslint.config.js') }}"), step.with.key);
+  }
+  assert.equal(steps[save].with.key, steps[restore].with.key);
+  assert.equal(steps[restore].with["restore-keys"], `eslint-\${{ runner.os }}-${lockfile}-`);
+  assert.equal(steps[save].if, "github.event_name == 'push'");
 });

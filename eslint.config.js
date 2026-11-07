@@ -29,7 +29,8 @@ function boundary(name, files, groups, paths = []) {
 
 /**
  * Babylon marks every index barrel side-effectful, so one value import from the `@babylonjs/core` root bundles
- * all of Babylon. Production code imports Babylon by module; type imports are erased, and tests keep the root.
+ * all of Babylon. Code imports Babylon by module; type imports are erased. Tests follow the same rule: in a test the
+ * root costs each isolated file about a second of loading and registers what production code would have to import.
  */
 const BABYLON_ROOT_VALUE_IMPORT = {
   name: "@babylonjs/core",
@@ -38,15 +39,9 @@ const BABYLON_ROOT_VALUE_IMPORT = {
     "Import Babylon values from their module (@babylonjs/core/<Path>/<module>), not the package root, which bundles all of Babylon.",
 };
 
-/**
- * A boundary for code that may import Babylon: its production files also reject value imports from the package
- * root. Its test files get the same groups without that path, because a later block replaces an earlier one's options.
- */
+/** A boundary for code that may import Babylon: it also rejects value imports from the package root. */
 function babylonBoundary(name, files, groups) {
-  return [
-    { ...boundary(name, files, groups, [BABYLON_ROOT_VALUE_IMPORT]), ignores: ["**/*.test.{ts,tsx}"] },
-    boundary(`${name}:tests`, files.map((glob) => glob.replace("*.{ts,tsx}", "*.test.{ts,tsx}")), groups),
-  ];
+  return boundary(name, files, groups, [BABYLON_ROOT_VALUE_IMPORT]);
 }
 
 const PURE_PACKAGE_GROUPS = [
@@ -293,6 +288,13 @@ export default defineConfig(
       "apps/docs/.vitepress/dist",
       "apps/player/dist",
       "apps/editor/dist",
+      // Vendored decoder builds: no rule applies to them, and parsing them costs seconds per run.
+      "apps/editor/public/basis/basis_encoder.js",
+      "apps/editor/public/draco/draco_decoder_gltf.js",
+      "apps/editor/public/draco/draco_wasm_wrapper_gltf.js",
+      "apps/editor/public/ktx2/babylon.ktx2Decoder.js",
+      "apps/editor/public/ktx2/msc_basis_transcoder.js",
+      "apps/editor/public/meshopt/meshopt_decoder.js",
     ],
   },
   {
@@ -325,14 +327,14 @@ export default defineConfig(
   },
   pureNoReactNoBabylon,
   debuggerTypesFromBridge,
-  ...physicsNoReactNoCapacitor,
+  physicsNoReactNoCapacitor,
   navigationNoReactNoBabylon,
   vfsNoReactNoBabylon,
-  ...renderNoReact,
+  renderNoReact,
   ...renderConstructionBans,
   uiNoBabylonNoCapacitor,
-  ...appNoCapacitor,
-  ...playerNoReactNoCapacitor,
+  appNoCapacitor,
+  playerNoReactNoCapacitor,
   {
     files: ["apps/desktop/**/*.ts", "apps/player/vite.config.ts", "apps/editor/vite-player-host.ts"],
     languageOptions: { globals: globals.node },

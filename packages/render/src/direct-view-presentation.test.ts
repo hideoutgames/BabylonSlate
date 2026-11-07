@@ -1,4 +1,5 @@
-import { NullEngine, type EngineView } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import type { EngineView } from "@babylonjs/core/Engines/AbstractEngine/abstractEngine.views";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setDirectViewPresentationEnabled, syncDirectViewCanvas, type HeldImageStore } from "./direct-view-presentation";
 import { admitRegisteredViewFrames, setHeldImageStoreFactoryForTests, setRegisteredViewEnabled } from "./registered-view-admission";

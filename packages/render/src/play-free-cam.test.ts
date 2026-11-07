@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { UniversalCamera, Vector3 } from "@babylonjs/core";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { createTestEngine } from "./test-support/test-engine";
 import {
   PLAY_FREE_CAM_NAME,

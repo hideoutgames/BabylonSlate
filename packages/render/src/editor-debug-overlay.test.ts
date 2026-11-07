@@ -1,21 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  FreeCamera,
-  ImageProcessingConfiguration,
-  MeshBuilder,
-  NullEngine,
-  PointLight,
-  Quaternion,
-  RenderTargetTexture,
-  Scene,
-  StandardMaterial,
-  TransformNode,
-  Vector3,
-  VertexBuffer,
-  Viewport,
-  type Camera,
-  type LinesMesh,
-} from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Viewport } from "@babylonjs/core/Maths/math.viewport";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import {
   createDefaultAudioPayload,

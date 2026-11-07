@@ -1,4 +1,4 @@
-import { Constants } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { describe, expect, it } from "vitest";
 import { estimateTextureBytes } from "./texture-memory-estimate";
 

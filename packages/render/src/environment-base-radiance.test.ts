@@ -1,5 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { Constants, CubeTexture, NullEngine, Viewport } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import { keepPlayEffects } from "./effect-bridge";
 import { readEnvironmentBaseRadiance } from "./environment-base-radiance";
 

@@ -1,4 +1,8 @@
-import { Mesh, Ray, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DynamicRuntimeMeshGeometry, identitySerializedTransform } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";

@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { NullEngine, type Effect } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";
 import { bridgeEngineEffects, EFFECT_BRIDGE_MS, holdCompiledEffects, keepPlayEffects, keptEffectCount, releaseBridgedEffects } from "./effect-bridge";
 

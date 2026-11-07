@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { FreeCamera, NullEngine, PointerDragBehavior, Scene, UtilityLayerRenderer, Vector3 } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PointerDragBehavior } from "@babylonjs/core/Behaviors/Meshes/pointerDragBehavior";
+import { Scene } from "@babylonjs/core/scene";
+import { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLayerRenderer";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { createDefaultWaterDefinition, normalizeWaterBody, waterHorizontalEnvelope } from "@haptic/core";
 import { createWaterMesh, updateWaterMeshBody } from "./water-mesh";
 import { createWaterHandles, dragWaterHandle, insertRiverPoint, removeRiverPoint, waterHandles } from "./water-handles";

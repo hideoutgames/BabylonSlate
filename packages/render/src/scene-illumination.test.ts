@@ -1,19 +1,16 @@
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { normalizeShadowSettings } from "@haptic/core";
-import {
-  Camera,
-  DirectionalLight,
-  HemisphericLight,
-  MeshBuilder,
-  PointLight,
-  RectAreaLight,
-  Quaternion,
-  Scene,
-  ShadowGenerator,
-  SpotLight,
-  UniversalCamera,
-  Vector3,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { RectAreaLight } from "@babylonjs/core/Lights/rectAreaLight";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Scene } from "@babylonjs/core/scene";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createActor,

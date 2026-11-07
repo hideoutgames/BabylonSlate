@@ -1,4 +1,6 @@
-import { Mesh, NullEngine, Scene } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
 import { describe, expect, it } from "vitest";
 import { SlotRootMap } from "./snapshot-binding";
 

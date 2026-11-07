@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine, Observable, type Effect } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Observable } from "@babylonjs/core/Misc/observable";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import { collectEffectRequests, countEffectCompiles } from "./effect-requests";
 
 describe("Effect request collection", () => {

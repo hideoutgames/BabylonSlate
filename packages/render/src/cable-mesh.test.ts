@@ -1,4 +1,10 @@
-import { Mesh, Ray, StandardMaterial, TransformNode, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene, identitySerializedTransform, parseCableProperties, type SerializedScene } from "@haptic/core";
 import { SNAPSHOT_FLAG_VISIBLE } from "@haptic/bridge";

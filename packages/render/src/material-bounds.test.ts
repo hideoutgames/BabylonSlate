@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { MeshBuilder, NullEngine, Scene, StandardMaterial } from "@babylonjs/core";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { applyMaterialBounds } from "./material-bounds";
 
 describe("material displacement bounds", () => {

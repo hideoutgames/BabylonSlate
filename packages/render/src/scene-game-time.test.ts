@@ -1,4 +1,10 @@
-import { ActionManager, ExecuteCodeAction, FreeCamera, MeshBuilder, NullEngine, Scene, Vector3 } from "@babylonjs/core";
+import { ActionManager } from "@babylonjs/core/Actions/actionManager";
+import { ExecuteCodeAction } from "@babylonjs/core/Actions/directActions";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, expect, it, vi } from "vitest";
 import { renderSceneWithGameTime, setSceneGameTimePaused } from "./scene-game-time";
 

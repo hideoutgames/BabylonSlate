@@ -1,4 +1,6 @@
-import { NodeMaterial, ParticleSystem, Scene } from "@babylonjs/core";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import { Scene } from "@babylonjs/core/scene";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeParticleEmitterPayload } from "@haptic/assets";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";

@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DirectionalLight, NullEngine, PointLight, Scene, SpotLight, Vector3, type AbstractEngine } from "@babylonjs/core";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { Scene } from "@babylonjs/core/scene";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { normalizeShadowSettings, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_TILE_CASCADES, type ShadowProfile } from "@haptic/core";
 import { planShadowAdmission, type ShadowAdmissionBudget, type ShadowAdmissionDecision } from "./shadow-admission-plan";
 import { cascadeTileSizes, SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge, shadowAtlasEdgeLimit } from "./shadow-atlas";

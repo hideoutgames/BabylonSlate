@@ -1,12 +1,10 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { afterEach, expect, it, vi } from "vitest";
-import {
-  Constants,
-  NullEngine,
-  Scene,
-  type Texture,
-  type CubeTexture,
-} from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { acquireTextureVariant, ResourceCache } from "./resource-cache";
 
 it("cancels a pending upload after its final owner releases it and ignores a late native failure", async () => {

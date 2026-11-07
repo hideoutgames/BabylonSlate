@@ -1,11 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  InputBlock,
-  Mesh,
-  NodeMaterial,
-  NullEngine,
-  Scene,
-} from "@babylonjs/core";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
 import type { CommandMessage } from "@haptic/bridge";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { MaterialLibrary } from "./material-library";

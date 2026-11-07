@@ -1,8 +1,11 @@
 import { afterEach, expect, it } from "vitest";
-import {
-  DirectionalLight, NullEngine, RawTexture, RenderTargetTexture,
-  Scene, ShadowGenerator, Vector3,
-} from "@babylonjs/core";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import {
   DEFAULT_RENDER_EFFECTS, normalizeCelShadingSettings, normalizeRenderingQuality, qualityPresetPatch, qualitySettingPatch, RENDER_QUALITY_PROFILES, ScalabilitySession, type QualityLevel,
 } from "@haptic/core";

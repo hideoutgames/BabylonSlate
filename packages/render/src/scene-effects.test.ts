@@ -1,4 +1,5 @@
-import { ImageProcessingConfiguration, type BaseTexture } from "@babylonjs/core";
+import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import {
   DEFAULT_RENDER_EFFECTS,
   normalizeRenderEffectsSettings,

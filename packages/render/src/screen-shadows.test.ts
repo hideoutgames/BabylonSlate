@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { DirectionalLight, FreeCamera, NullEngine, Scene, Vector3 } from "@babylonjs/core";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { createAtlasCascadedShadowGenerator } from "./shadow-atlas";
 import { screenShadowThicknessCaps } from "./screen-shadows";
 

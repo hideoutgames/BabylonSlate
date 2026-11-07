@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Constants, NullEngine, PBRMaterial, Texture } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import {
   bindResourceCacheToHandle,
   describeEngineTexture,

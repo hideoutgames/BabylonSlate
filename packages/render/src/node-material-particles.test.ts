@@ -1,4 +1,7 @@
-import { DrawWrapper, ParticleSystem, type Effect, type Scene } from "@babylonjs/core";
+import { DrawWrapper } from "@babylonjs/core/Materials/drawWrapper";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Scene } from "@babylonjs/core/scene";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createTestEngine } from "./test-support/test-engine";

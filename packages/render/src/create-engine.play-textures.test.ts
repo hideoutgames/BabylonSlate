@@ -2,7 +2,7 @@ import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import {
   SNAPSHOT_FLAG_VISIBLE,
   snapshotFloatCount,

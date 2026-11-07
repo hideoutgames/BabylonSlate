@@ -1,4 +1,7 @@
-import { Matrix, Mesh, StandardMaterial, type Effect } from "@babylonjs/core";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultMaterialDocument, lowerMaterialDocument, setMaterialDomain } from "@haptic/shader-graph";
 import { createActor, createText2DComponent, parseText2DProperties } from "@haptic/core";

@@ -1,19 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  BakedVertexAnimationManager,
-  Material,
-  MaterialPluginBase,
-  MeshBuilder,
-  MorphTargetManager,
-  NodeMaterial,
-  NullEngine,
-  PBRMaterial,
-  ShadowDepthWrapper,
-  Skeleton,
-  StandardMaterial,
-  Scene,
-  Texture,
-} from "@babylonjs/core";
+import { BakedVertexAnimationManager } from "@babylonjs/core/BakedVertexAnimation/bakedVertexAnimationManager";
+import { Material } from "@babylonjs/core/Materials/material";
+import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { ShadowDepthWrapper } from "@babylonjs/core/Materials/shadowDepthWrapper";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Scene } from "@babylonjs/core/scene";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,

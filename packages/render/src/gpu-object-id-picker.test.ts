@@ -1,19 +1,16 @@
-import {
-  FreeCamera,
-  MaterialHelperGeometryRendering,
-  Matrix,
-  Mesh,
-  MeshBuilder,
-  MorphTargetManager,
-  NullEngine,
-  Scene,
-  Skeleton,
-  StandardMaterial,
-  Vector3,
-  VertexBuffer,
-  Viewport,
-  type AbstractMesh,
-} from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { MaterialHelperGeometryRendering } from "@babylonjs/core/Materials/materialHelper.geometryrendering";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Viewport } from "@babylonjs/core/Maths/math.viewport";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest";

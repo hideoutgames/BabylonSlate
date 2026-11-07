@@ -1,4 +1,8 @@
-import { Mesh, NullEngine, Quaternion, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Scene } from "@babylonjs/core/scene";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { afterEach, describe, expect, it } from "vitest";
 import { createGameCameraPilot, type GameCameraPilotTarget } from "./game-camera-pilot";
 

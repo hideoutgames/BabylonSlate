@@ -1,5 +1,9 @@
 import { afterEach, expect, it } from "vitest";
-import { NullEngine, PBRMaterial, Scene, ShadowDepthWrapper, StandardMaterial } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { Scene } from "@babylonjs/core/scene";
+import { ShadowDepthWrapper } from "@babylonjs/core/Materials/shadowDepthWrapper";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { ensureNativeLatticeShadowDepthWrapper, releaseNativeLatticeShadowDepthWrapper } from "./native-lattice-shadow";
 
 const engines: NullEngine[] = [];

@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  NullEngine,
-  type AbstractEngine,
-  type ShadowGenerator,
-} from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
 
 // The GPU boundary models independent WebGL2 read/draw bindings and attachment

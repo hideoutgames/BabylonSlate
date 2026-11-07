@@ -1,17 +1,15 @@
 import { afterEach, expect, it, vi } from "vitest";
-import {
-  CubeTexture,
-  Effect,
-  FreeCamera,
-  MeshBuilder,
-  NullEngine,
-  PBRMaterial,
-  Scene,
-  SphericalPolynomial,
-  Vector3,
-  type BaseTexture,
-  type Mesh,
-} from "@babylonjs/core";
+import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { Effect } from "@babylonjs/core/Materials/effect";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { Scene } from "@babylonjs/core/scene";
+import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { setMeshEnvironmentResolver } from "./mesh-environment";
 
 const disposers: Array<() => void> = [];

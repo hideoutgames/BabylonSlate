@@ -1,25 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  CascadedShadowGenerator,
-  DirectionalLight,
-  Material,
-  Matrix,
-  Mesh,
-  MeshBuilder,
-  MorphTargetManager,
-  NullEngine,
-  NullEngineOptions,
-  PointLight,
-  Scene,
-  Skeleton,
-  StandardMaterial,
-  TransformNode,
-  SubMesh,
-  UniversalCamera,
-  Vector3,
-  VertexBuffer,
-  VertexData,
-} from "@babylonjs/core";
+import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { Material } from "@babylonjs/core/Materials/material";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
+import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { Scene } from "@babylonjs/core/scene";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { SubMesh } from "@babylonjs/core/Meshes/subMesh";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+// Registers thin instances, which the fixture adds.
+import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { DynamicRuntimeMeshGeometry, normalizeShadowSettings, SHADOW_FAR_CASTER_MIN_TEXELS } from "@haptic/core";
 import { applyDynamicRuntimeMeshUpdate, createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
 import { sceneShadowController } from "./shadow-controller";

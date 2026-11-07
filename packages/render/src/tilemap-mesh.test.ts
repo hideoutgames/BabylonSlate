@@ -1,4 +1,6 @@
-import { NullEngine, Scene, VertexBuffer } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createDefaultTilemapPayload,

@@ -1,5 +1,7 @@
 import { expect, it } from "vitest";
-import { MeshBuilder, NullEngine, Scene } from "@babylonjs/core";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
 
 it("partitions a large static ground without changing its geometry, UVs or face order", () => {

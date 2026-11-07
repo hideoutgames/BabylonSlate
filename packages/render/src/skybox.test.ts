@@ -1,11 +1,9 @@
-import {
-  Mesh,
-  SphericalPolynomial,
-  PBRMaterial,
-  Texture,
-  UniversalCamera,
-  Vector3,
-} from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createActor,

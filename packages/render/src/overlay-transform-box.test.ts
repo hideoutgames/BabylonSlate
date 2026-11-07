@@ -1,16 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  Camera,
-  FreeCamera,
-  MeshBuilder,
-  PointerDragBehavior,
-  Quaternion,
-  Scene,
-  UtilityLayerRenderer,
-  Vector3,
-  VertexBuffer,
-  type AbstractMesh,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { PointerDragBehavior } from "@babylonjs/core/Behaviors/Meshes/pointerDragBehavior";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Scene } from "@babylonjs/core/scene";
+import { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLayerRenderer";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { createTestEngine } from "./test-support/test-engine";
 import { createGizmoHost } from "./gizmo-host";
 import {

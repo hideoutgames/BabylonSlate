@@ -1,4 +1,5 @@
-import { NullEngine, type Effect } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   admitSteadyFirstDraws, FIRST_DRAWS_PER_FRAME, registerPipelineWarmPasses, withPipelineWarmupRound,

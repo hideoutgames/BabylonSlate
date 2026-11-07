@@ -1,4 +1,10 @@
-import { Camera, Mesh, MeshBuilder, StandardMaterial, TransformNode, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene, createMeshComponent, identitySerializedTransform, resolveOverlayLayout } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";

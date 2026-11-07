@@ -1,4 +1,14 @@
-import { Color3, Constants, DirectionalLight, FreeCamera, MeshBuilder, NullEngine, RenderTargetTexture, Scene, StandardMaterial, Texture, Vector3 } from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, expect, it, vi } from "vitest";
 import { DEFAULT_RENDER_EFFECTS, normalizeShadowSettings, parseMirrorProperties } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";

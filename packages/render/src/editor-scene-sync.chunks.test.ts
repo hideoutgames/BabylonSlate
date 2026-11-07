@@ -9,7 +9,9 @@ import {
 } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync, type EditorSceneSyncOptions } from "./editor-scene-sync";
-import { DirectionalLight, Mesh, StandardMaterial } from "@babylonjs/core";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { sceneShadowController } from "./shadow-controller";
 import { AtlasCascadedShadowGenerator } from "./shadow-atlas";
 import { updateSceneRenderingSettings } from "./render-settings";

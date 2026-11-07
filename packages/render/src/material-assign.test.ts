@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { NullEngine, Scene, StandardMaterial } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import {
   applyAssignMaterial,
   applyAssignMesh,

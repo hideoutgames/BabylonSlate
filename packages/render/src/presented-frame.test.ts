@@ -1,4 +1,4 @@
-import { NullEngine } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { presentationFencePending, submitPresentedFrame, whenPresentationFenceClear } from "./presented-frame";
 

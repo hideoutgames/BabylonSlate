@@ -1,18 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  Constants,
-  DirectionalLight,
-  FreeCamera,
-  Light,
-  MeshBuilder,
-  NullEngine,
-  NullEngineOptions,
-  PointLight,
-  Scene,
-  SpotLight,
-  StandardMaterial,
-  Vector3,
-} from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Light } from "@babylonjs/core/Lights/light";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { Scene } from "@babylonjs/core/scene";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";

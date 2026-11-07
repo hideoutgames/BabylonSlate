@@ -1,4 +1,10 @@
-import { Bone, Matrix, Mesh, Quaternion, Skeleton, SpotLight, TransformNode, UniversalCamera, Vector3 } from "@babylonjs/core";
+import { Bone } from "@babylonjs/core/Bones/bone";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { afterEach, describe, expect, it } from "vitest";
 import { isPlayEngineCommandType, readSnapshotHeader, snapshotFloatCount, SNAPSHOT_FLAG_VISIBLE, type ActorSlot } from "@haptic/bridge";
 import { readActorSlot } from "@haptic/bridge/read-actor-slot";

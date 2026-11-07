@@ -1,4 +1,7 @@
-import { LinesMesh, Mesh, Vector3, VertexBuffer } from "@babylonjs/core";
+import { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestEngine } from "./test-support/test-engine";
 import {

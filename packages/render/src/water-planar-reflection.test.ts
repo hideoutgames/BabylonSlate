@@ -1,8 +1,22 @@
 import { setSceneOutputScale } from "./scene-output-scale";
-import {
-  Color3, Constants, CreateLines, DirectionalLight, FreeCamera, Matrix, MeshBuilder, NullEngine, NullEngineOptions, ObjectRenderer, RawTexture, RenderTargetTexture,
-  Scene, StandardMaterial, Vector3, Viewport, type AbstractMesh, type Camera, type Material, type Mesh,
-} from "@babylonjs/core";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { CreateLines } from "@babylonjs/core/Meshes/Builders/linesBuilder";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
+import { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Viewport } from "@babylonjs/core/Maths/math.viewport";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { Material } from "@babylonjs/core/Materials/material";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { afterEach, expect, it, vi } from "vitest";
 import {

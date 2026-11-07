@@ -1,4 +1,9 @@
-import { GPUParticleSystem, NullEngine, Scene, Vector3 } from "@babylonjs/core";
+import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+// Registers the WebGL2 simulation, which GPUParticleSystem looks up by class name, as particle-system-factory.ts does.
+import "@babylonjs/core/Particles/webgl2ParticleSystem";
 import { afterEach, expect, it, vi } from "vitest";
 
 const engines: NullEngine[] = [];

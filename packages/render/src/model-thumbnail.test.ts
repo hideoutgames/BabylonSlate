@@ -1,4 +1,6 @@
-import { NodeMaterial, RenderTargetTexture, type Mesh } from "@babylonjs/core";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine as createNullTestEngine } from "./test-support/test-engine";

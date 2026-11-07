@@ -1,5 +1,12 @@
 import { afterEach, expect, it } from "vitest";
-import { Mesh, MeshBuilder, Matrix, NullEngine, Scene, ScenePerformancePriority, Skeleton } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene, ScenePerformancePriority } from "@babylonjs/core/scene";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+// Registers thin instances, which the fixture adds.
+import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { drawWhateverTheView, installPlayViewCulling, settlePlayViewCulling } from "./play-view-culling";
 
 const engines: NullEngine[] = [];

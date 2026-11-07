@@ -1,5 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { ArcRotateCamera, FreeCamera, Matrix, type Mesh, MeshBuilder, NullEngine, Quaternion, Ray, Scene, StandardMaterial, type NodeMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import {
   createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, DEFAULT_WATER_BLEND_DISTANCE, evaluateWaterBlend, evaluateWaterVertex,
   normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, WaterBlendIndex,

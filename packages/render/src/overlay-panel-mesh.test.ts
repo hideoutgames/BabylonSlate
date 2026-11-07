@@ -1,4 +1,4 @@
-import { VertexBuffer } from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { isUnlitMaterial } from "./unlit-material";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestEngine } from "./test-support/test-engine";

@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FreeCamera, NullEngine, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { createDefaultWaterDefinition, normalizeWaterBody } from "@haptic/core";
 import { waterVariantBase } from "./material-compiler";
 import { createWaterMesh, isBuiltInWaterMesh } from "./water-mesh";

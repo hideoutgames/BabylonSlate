@@ -1,15 +1,13 @@
-import {
-  type Camera,
-  DirectionalLight,
-  FreeCamera,
-  NullEngine,
-  PointLight,
-  Scene,
-  SpotLight,
-  TransformNode,
-  Vector3,
-  type Effect,
-} from "@babylonjs/core";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { Scene } from "@babylonjs/core/scene";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import { DEFAULT_RENDER_EFFECTS, type VolumetricLightingSettings } from "@haptic/core";
 import { expect, it, vi } from "vitest";
 import { hapticLightBuffer } from "./haptic-lights";

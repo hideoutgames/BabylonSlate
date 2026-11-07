@@ -1,19 +1,15 @@
 import { afterEach, expect, it, vi } from "vitest";
-import {
-  CubeTexture,
-  FreeCamera,
-  MeshBuilder,
-  NullEngine,
-  NullEngineOptions,
-  PBRMaterial,
-  Quaternion,
-  Scene,
-  SphericalPolynomial,
-  TransformNode,
-  Vector3,
-  type Mesh,
-  type RenderTargetWrapper,
-} from "@babylonjs/core";
+import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Scene } from "@babylonjs/core/scene";
+import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
 import { REFLECTION_PROBE_CLASS_ID, reflectionProbeBindings } from "@haptic/core";
 import { environmentPolynomial } from "./environment-irradiance";
 import { createFilteredEnvironmentTarget, filterEnvironment } from "./environment-prefilter";

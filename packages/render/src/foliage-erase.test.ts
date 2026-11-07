@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Matrix, Quaternion, Vector3 } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { parseFoliageProperties } from "@haptic/core";
 import { FoliageEraseSession } from "./foliage-erase";
 

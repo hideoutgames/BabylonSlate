@@ -1,4 +1,7 @@
-import { Matrix, NullEngine, Quaternion, Scene, Vector3, type NodeMaterial } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { createDefaultSpritePayload } from "@haptic/assets";
 import { parseLight2DProperties, type Light2DProperties } from "@haptic/core";
 import { afterEach, describe, expect, it } from "vitest";

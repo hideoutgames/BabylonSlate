@@ -1,4 +1,11 @@
-import { BoundingBox, Camera, FreeCamera, Frustum, Matrix, NullEngine, Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { BoundingBox } from "@babylonjs/core/Culling/boundingBox";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { fogVolumeBindings, identitySerializedTransform, type SerializedComponent } from "@haptic/core";
 import { afterEach, expect, it, vi } from "vitest";
 import {

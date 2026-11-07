@@ -1,4 +1,5 @@
-import { Mesh, VertexBuffer } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { isUnlitMaterial } from "./unlit-material";
 import { unlitBinding } from "./unlit-material-blocks";
 import type { IFontData } from "@babylonjs/core/Meshes/Builders/textBuilder";

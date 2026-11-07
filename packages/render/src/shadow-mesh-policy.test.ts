@@ -1,13 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  BakedVertexAnimationManager,
-  MeshBuilder,
-  MorphTargetManager,
-  NullEngine,
-  Scene,
-  Skeleton,
-  Vector3,
-} from "@babylonjs/core";
+import { BakedVertexAnimationManager } from "@babylonjs/core/BakedVertexAnimation/bakedVertexAnimationManager";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { casterWithinShadowRange } from "./shadow-mesh-policy";
 
 const light = Vector3.Zero();

@@ -1,16 +1,14 @@
-import {
-  Camera,
-  MeshBuilder,
-  NullEngine,
-  Scene,
-  StandardMaterial,
-  TransformNode,
-  UniversalCamera,
-  Vector3,
-  type AbstractMesh,
-  type Effect,
-  type Mesh,
-} from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { trackFirstDraws } from "./first-draw-stats";
 import { markEditorHelperMesh } from "./helper-mesh";

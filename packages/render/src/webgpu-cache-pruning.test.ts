@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Observable } from "@babylonjs/core";
+import { Observable } from "@babylonjs/core/Misc/observable";
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 import { WebGPUCacheBindGroups } from "@babylonjs/core/Engines/WebGPU/webgpuCacheBindGroups";
 import { WebGPUCacheRenderPipelineTree } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipelineTree";
