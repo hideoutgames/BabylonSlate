@@ -543,6 +543,11 @@ describe("packedContentFromGame", () => {
     expect(content.postProcessStack.map((entry) => entry.materialGuid)).toEqual([
       "mat-bloom",
     ]);
+    // The player never edits a loaded payload, so a source refresh keeps each normalized
+    // document, and with it the Material's cached lowering.
+    const refreshed = packedContentFromGame(game);
+    expect(refreshed.materialDocuments.get("mat-rock")).toBe(content.materialDocuments.get("mat-rock"));
+    expect(refreshed.materialFunctions.get("fn-tint")).toBe(content.materialFunctions.get("fn-tint"));
   });
 
   it("hydrates packed Basic emitter, Particle Graph and Particle System payloads", async () => {

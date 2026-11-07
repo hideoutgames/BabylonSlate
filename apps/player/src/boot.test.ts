@@ -3,6 +3,7 @@ import { createDefaultWaterDefinition, createDefaultScene, createDefaultRenderTa
   SaveGameService, createSaveStorageClient, type SaveGameConfiguration, type SaveGameStorage } from "@haptic/core";
 import { encodePackedAudioAsset } from "@haptic/assets";
 import { exportGame } from "@haptic/exporter";
+import { createDefaultMaterialDocument, createDefaultMaterialFunctionDocument } from "@haptic/shader-graph";
 import * as rendering from "@haptic/render";
 import * as runtimes from "@haptic/runtime";
 import type { BridgeHostMessage, BridgeWorkerMessage } from "@haptic/bridge";
@@ -12,6 +13,8 @@ import { startPlayer, type PlayerBootHandle } from "./boot";
 import { startPlayerWithBackend } from "./player-backend";
 import * as inputs from "./input";
 import * as workerHosts from "./worker-host";
+// Lowering validates its Material first, wherever it runs and whatever caches it: counts real lowerings.
+import * as materialValidation from "../../../packages/shader-graph/src/validate";
 const attachInputCapture = inputs.attachInputCapture;
 
 class TestWorker {
@@ -73,13 +76,14 @@ function publishedState(worker: TestWorker, guid: string) {
   return state;
 }
 
-/** `withAudio` adds a "jump" Audio asset outside the startup closure. */
-async function fixture(withWater = false, saveGame?: SaveGameConfiguration, withAudio = false) {
+/** `withAudio` adds a "jump" Audio asset outside the startup closure; `startupAssets` join the startup Scene's closure. */
+async function fixture(withWater = false, saveGame?: SaveGameConfiguration, withAudio = false, startupAssets: Array<{ guid: string; type: string; bytes: Uint8Array }> = []) {
   const scene = { ...createDefaultScene(), actors: [] };
   const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [], renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
     ...(saveGame ? { saveGame, physicsWorld: "2d" as const } : {}),
-    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", name: "World", assetPath: "assets/Levels/World.scene.hasset", requiredDependencies: withWater ? ["water"] : [], bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition())) }] : []),
-      ...(withAudio ? [{ guid: "jump", type: "Audio", sceneGuid: "world", bytes: encodePackedAudioAsset({ volume: 1 }, new Uint8Array([1, 2, 3, 4])) }] : [])] });
+    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", name: "World", assetPath: "assets/Levels/World.scene.hasset", requiredDependencies: [...(withWater ? ["water"] : []), ...startupAssets.map(asset => asset.guid)], bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition())) }] : []),
+      ...(withAudio ? [{ guid: "jump", type: "Audio", sceneGuid: "world", bytes: encodePackedAudioAsset({ volume: 1 }, new Uint8Array([1, 2, 3, 4])) }] : []),
+      ...startupAssets.map(asset => ({ ...asset, sceneGuid: "world" }))] });
   if (!packed.ok) throw new Error("Fixture export failed");
   const game = await loadGameFromFiles(packed.value.files);
   const root = document.createElement("div");
@@ -112,8 +116,8 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration, with
   return { game, canvas, root, handle, input: () => input!, fireEndFrame };
 }
 
-async function backendFixture() {
-  const value = await fixture();
+async function backendFixture(...args: Parameters<typeof fixture>) {
+  const value = await fixture(...args);
   const owner: rendering.BackendEngineSession = {
     engine: { runRenderLoop: vi.fn(), stopRenderLoop: vi.fn() } as unknown as AbstractEngine,
     requestedBackend: "webgl2",
@@ -546,6 +550,27 @@ describe("player startup and Stop ownership", () => {
     worker.command({ channel: "command", payload: { type: "sceneSourceRequested", requestId: 1, assetGuid: "world", consumer: "transition" } });
     await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "sceneSourceResponse", requestId: 1, scene: game.scenes.get("world") } }));
     expect(handle.acquireSceneSources).toHaveBeenCalledTimes(3);
+  });
+
+  it("lowers a loaded Material once across the WebGPU check, the parameter catalog and a source refresh that keeps its Material Functions", async () => {
+    const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
+    const { game, canvas } = await backendFixture(false, undefined, true, [
+      { guid: "rock", type: "Material", bytes: encode(createDefaultMaterialDocument("Rock")) },
+      { guid: "tint", type: "MaterialFunction", bytes: encode(createDefaultMaterialFunctionDocument("Tint")) },
+    ]);
+    game.manifest.render = { ...game.manifest.render, gpuBackend: "webgpu" };
+    const validate = vi.spyOn(materialValidation, "validateMaterialDocument");
+    sessions.push(await startPlayerWithBackend({ game, canvas }));
+    const worker = TestWorker.instances[0]!;
+    const catalogs = () => worker.messages.flatMap((message) => message.channel === "control" && message.payload.type === "loadSceneContent"
+      ? [Object.keys(message.payload.materialParameterCatalog ?? {})] : []);
+    const load = worker.messages.flatMap((message) => message.channel === "control" && message.payload.type === "load" ? [message.payload] : [])[0];
+    expect(Object.keys(load?.materialParameterCatalog ?? {})).toEqual(["rock"]);
+    // Loading an asset outside the startup closure changes the loaded sources and refreshes the union.
+    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "jump", ownerId: "actor", assetGuids: ["jump"], priority: "preload" } });
+    await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "jump", success: true, progress: 1 } }));
+    expect(catalogs()).toEqual([["rock"]]);
+    expect(validate.mock.calls.filter(([document]) => document.name === "Rock")).toHaveLength(1);
   });
 
   it("does not rebuild or repost the source union when an acquire leaves the loaded sources unchanged", async () => {
