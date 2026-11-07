@@ -6,14 +6,13 @@ import {
   encodePluginSettingsDocument,
 } from "./plugin-settings";
 
-export const STARTER_CONTENT_FOLDER = "starter-content";
 export const STARTER_CONTENT_DISPLAY_NAME = "Starter Content";
 export const STARTER_CONTENT_PLUGIN_GUID =
   "c0ffee00-0000-4000-8000-000000000001";
 export const STARTER_ACTOR_GUID = "c0ffee00-0000-4000-8000-000000000002";
 export const STARTER_ACTOR_CLASS_NAME = "StarterActor";
-export const STARTER_CONTENT_SETTINGS_FILE = "starter-content.plugin.hasset";
-export const STARTER_ACTOR_FILE = "assets/StarterActor.class.hasset";
+const STARTER_CONTENT_SETTINGS_FILE = "starter-content.plugin.hasset";
+const STARTER_ACTOR_FILE = "assets/StarterActor.class.hasset";
 
 /** Directory-form Starter Content files (no plugin.json; discovery uses PluginSettings). */
 export async function buildStarterContentFiles(): Promise<ProjectTreeFile[]> {

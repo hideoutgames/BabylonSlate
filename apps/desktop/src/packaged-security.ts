@@ -85,7 +85,7 @@ export function externalOpenUrl(rawUrl: string): string | null {
 }
 
 /** Where Clerk returns the system browser after a third-party sign-in. */
-export const AUTH_CALLBACK_URL = "haptic://sso-callback";
+const AUTH_CALLBACK_URL = "haptic://sso-callback";
 /** Sign-in pages of the social providers the editor offers. */
 const AUTH_PROVIDER_HOSTS = new Set(["github.com", "discord.com", "accounts.google.com"]);
 

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./read-actor-slot": "./src/test-support/read-actor-slot.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

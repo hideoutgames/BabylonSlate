@@ -21,7 +21,7 @@ import {
 
 export const AUDIO_REVERB_CHUNK_ID = "audioReverb";
 export const AUDIO_REVERB_VERSION = 2;
-export const AUDIO_OCCLUSION_WALLS_TO_SATURATE = 2;
+const AUDIO_OCCLUSION_WALLS_TO_SATURATE = 2;
 export const AUDIO_MUFFLE_LOWPASS_HZ = 700;
 
 const MAGIC = new TextEncoder().encode("BSAR");
@@ -75,7 +75,7 @@ export type AudioReverbGeometry = {
   triangles: AudioReverbTriangle[];
 };
 
-export type AudioReverbOccupancyGrid = {
+type AudioReverbOccupancyGrid = {
   sizeX: number;
   sizeY: number;
   sizeZ: number;

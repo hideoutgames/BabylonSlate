@@ -38,7 +38,7 @@ export interface CatalogCardProps
 }
 
 /** Type icon size in a compact card's well. */
-export const CATALOG_CARD_COMPACT_ICON_SIZE = 28;
+const CATALOG_CARD_COMPACT_ICON_SIZE = 28;
 
 // `Card size="sm"` sets its title to text-sm through a group variant; override at that variant.
 const CARD_TITLE = "text-xs group-data-[size=sm]/card:text-xs";

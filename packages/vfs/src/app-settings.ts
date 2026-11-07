@@ -10,7 +10,7 @@ import {
 /** Each undo step retains a document snapshot; keep the history bounded. */
 export const MAX_UNDO_HISTORY_LENGTH = 1000;
 /** Placement trace reach for new actors; short, so far surfaces do not grab them. */
-export const DEFAULT_EDITOR_PLACEMENT_DISTANCE = 25;
+const DEFAULT_EDITOR_PLACEMENT_DISTANCE = 25;
 
 const MEBIBYTE = 1024 * 1024;
 /** Per-document Undo memory limit, in bytes (Undo Memory Limit preference). */
@@ -28,14 +28,14 @@ export const DEFAULT_CAMERA_PREVIEW_FRAME_RATE = 30;
 export const MIN_HARDWARE_SCALING_LEVEL = 1;
 export const MAX_HARDWARE_SCALING_LEVEL = 4;
 /** Linked Inspector Scale fields remembered on this device; linking another forgets the oldest. */
-export const MAX_LINKED_SCALE_KEYS = 1000;
+const MAX_LINKED_SCALE_KEYS = 1000;
 
 /**
  * Focus keep-list defaults: one key per dock document kind (plus the Scene
  * Landscape / Foliage modes and Animation Graph Object), each keeping that
  * editor's primary panel.
  */
-export const DEFAULT_FOCUS_KEEP_PANELS = {
+const DEFAULT_FOCUS_KEEP_PANELS = {
   scene: ["viewport"],
   sceneLandscape: ["viewport"],
   sceneFoliage: ["viewport"],
@@ -112,7 +112,7 @@ const focusKeepPanelsShape = Object.fromEntries(
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
 /** A user-made editor theme; colors map token names (no `--`) to `#rrggbb`. */
-export const customEditorThemeSchema = z.object({
+const customEditorThemeSchema = z.object({
   id: z.string().min(1),
   name: z.string().trim().min(1),
   colors: z

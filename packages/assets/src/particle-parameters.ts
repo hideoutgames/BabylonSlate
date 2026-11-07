@@ -40,7 +40,7 @@ export type ParticleBasicBinding = {
 };
 
 /** A parameter one emitter declares. */
-export type ParticleEmitterParameter = { name: string; type: ParticleParameterType; defaultValue: number[] };
+type ParticleEmitterParameter = { name: string; type: ParticleParameterType; defaultValue: number[] };
 
 function isTarget(value: unknown): value is ParticleBasicBindingTarget {
   return typeof value === "string" && Object.hasOwn(PARTICLE_BASIC_BINDING_TARGETS, value);
@@ -92,7 +92,7 @@ export function normalizeParticleParameterValues(value: unknown): Record<string,
 }
 
 /** The parameters an emitter reads: a graph's declarations, or a Basic emitter's bound names (first binding's default). */
-export function particleEmitterParameters(emitter: ParticleLibraryEmitter): ParticleEmitterParameter[] {
+function particleEmitterParameters(emitter: ParticleLibraryEmitter): ParticleEmitterParameter[] {
   if (emitter.kind === "graph") return graphParameters(emitter.document);
   const parameters = new Map<string, ParticleEmitterParameter>();
   for (const binding of emitter.payload.bindings) {

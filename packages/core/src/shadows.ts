@@ -113,7 +113,7 @@ export const SHADOW_LIMITS = {
  * is a Custom choice no quality level makes, as its cascades need a 16384 shadow atlas; a point light's six faces
  * could not take 8192 tiles there.
  */
-export const SHADOW_MAP_SIZE_MAX = { mapSize: 8192, localMapSize: 4096 } as const;
+const SHADOW_MAP_SIZE_MAX = { mapSize: 8192, localMapSize: 4096 } as const;
 export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
   if (!value || typeof value !== "object") return {};
   const source = value as Record<string, unknown>;

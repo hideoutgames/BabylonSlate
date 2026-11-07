@@ -1,7 +1,7 @@
 import { componentAttachmentTransforms } from "./component-attachment";
 import type { SerializedComponent, SerializedTransform } from "./scene";
 
-export const AREA_RECT_LIGHT_CLASS_ID = "AreaRectLightComponent";
+const AREA_RECT_LIGHT_CLASS_ID = "AreaRectLightComponent";
 
 /** Typed emission references in scenes, component templates and native variable pins. */
 export function areaEmissionTextureGuids(value: unknown): string[] {

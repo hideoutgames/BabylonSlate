@@ -8,10 +8,8 @@ export interface TextureChunkSelection {
 }
 
 export interface SelectTextureChunkOptions {
-  /** When false, force source bytes (transcoder unavailable / empty formats). */
+  /** When false, force source bytes (transcoder unavailable). */
   transcoderAvailable?: boolean;
-  /** Device reports no compressed GPU formats. */
-  supportedFormatsEmpty?: boolean;
   /** Prefer this `ktx2:<hash>` chunk (authored encode settings). */
   preferredChunkId?: string;
 }
@@ -50,9 +48,8 @@ export function selectTextureChunk(
   }
 
   const transcoderAvailable = options.transcoderAvailable !== false;
-  const formatsEmpty = options.supportedFormatsEmpty === true;
 
-  if (ktx2 && transcoderAvailable && !formatsEmpty) {
+  if (ktx2 && transcoderAvailable) {
     return { chunk: ktx2, kind: "ktx2", reason: "ktx2-preferred" };
   }
 
@@ -62,12 +59,7 @@ export function selectTextureChunk(
     );
   }
 
-  let reason = "source-default";
-  if (!ktx2) reason = "no-ktx2-chunk";
-  else if (!transcoderAvailable) reason = "transcoder-unavailable";
-  else if (formatsEmpty) reason = "supported-formats-empty";
-
-  return { chunk: source, kind: "source", reason };
+  return { chunk: source, kind: "source", reason: ktx2 ? "transcoder-unavailable" : "no-ktx2-chunk" };
 }
 
 /** KTX2 identifier (`«KTX 20»` plus the standard control bytes). */

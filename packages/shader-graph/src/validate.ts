@@ -79,7 +79,7 @@ const DEFAULT_CAPABILITIES: Required<MaterialCapabilities> = {
   customGlsl: true,
 };
 
-export function customGlslBody(node: MaterialGraphNode): string {
+function customGlslBody(node: MaterialGraphNode): string {
   return typeof node.properties.body === "string" ? node.properties.body : "";
 }
 
@@ -162,7 +162,7 @@ function definitionForNode(
 }
 
 /** Call node pins mirror the target function's declared interface. */
-export function functionCallDefinition(
+function functionCallDefinition(
   node: MaterialGraphNode,
   functions: Record<string, MaterialFunctionDocument>,
 ): MaterialNodeDefinition | undefined {
@@ -177,7 +177,7 @@ export function functionCallDefinition(
  * Unlike the resolver's plumbing pins, these carry no declared defaults, so a
  * declared default never satisfies an unwired texture Function Output pin.
  */
-export function functionPlumbingDefinition(
+function functionPlumbingDefinition(
   type: "function.input" | "function.output",
   fn: MaterialFunctionDocument | undefined,
 ): MaterialNodeDefinition | undefined {

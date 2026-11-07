@@ -46,13 +46,13 @@ function color(value: unknown): PainterColor {
   const values = Array.isArray(value) ? value : [source?.x, source?.y, source?.z, source?.w];
   return [0, 1, 2, 3].map((i) => Math.max(0, Math.min(1, finite(values[i], 1)))) as PainterColor;
 }
-export function parsePainterStyle(value: unknown): PainterStyle {
+function parsePainterStyle(value: unknown): PainterStyle {
   const p = (value ?? {}) as Record<string, unknown>;
   return { fillColor: color(p.fillColor), strokeColor: color(p.strokeColor), strokeWidth: Math.max(0, finite(p.strokeWidth, 0.02)),
     lineCap: p.lineCap === "round" || p.lineCap === "square" ? p.lineCap : "butt",
     lineJoin: p.lineJoin === "round" || p.lineJoin === "bevel" ? p.lineJoin : "miter" };
 }
-export function parsePainterPath(value: unknown): PainterPathSegment[] {
+function parsePainterPath(value: unknown): PainterPathSegment[] {
   if (!Array.isArray(value) || value.length > PAINTER_MAX_PATH_SEGMENTS) return [];
   const path: PainterPathSegment[] = [];
   for (const raw of value) {
@@ -71,7 +71,7 @@ export function parsePainterPath(value: unknown): PainterPathSegment[] {
   }
   return path;
 }
-export function parsePainterCommands(value: unknown): PainterCommand[] {
+function parsePainterCommands(value: unknown): PainterCommand[] {
   if (!Array.isArray(value) || value.length > PAINTER_MAX_COMMANDS) return [];
   const commands: PainterCommand[] = [];
   let depth = 0;

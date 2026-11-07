@@ -5,7 +5,7 @@ export const SPRING_ARM_COMPONENT_CLASS_ID = "SpringArmComponent";
 export const SPRING_ARM_LENGTH_LIMITS = [0, 1000] as const;
 export const SPRING_ARM_LAG_SPEED_LIMITS = [0.1, 100] as const;
 /** Longest frame step the lag integrates; longer stalls resume without a jump. */
-export const SPRING_ARM_MAX_LAG_STEP_SECONDS = 0.1;
+const SPRING_ARM_MAX_LAG_STEP_SECONDS = 0.1;
 
 export interface SpringArmProperties {
   /** Distance from the arm pivot to the socket that children attach to. */
@@ -73,7 +73,7 @@ export interface SpringArmPose {
 }
 
 /** Fraction of the remaining gap closed in `dtSeconds` by an exponential approach at `speed`. */
-export function springArmLagAlpha(speed: number, dtSeconds: number): number {
+function springArmLagAlpha(speed: number, dtSeconds: number): number {
   if (!(dtSeconds > 0) || !(speed > 0)) return 0;
   return 1 - Math.exp(-speed * Math.min(dtSeconds, SPRING_ARM_MAX_LAG_STEP_SECONDS));
 }

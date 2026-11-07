@@ -17,10 +17,6 @@ export interface PropertyClipboardEntry {
 /** The editor-wide copied property, shared by every PropertyGrid for the session. */
 let copied: PropertyClipboardEntry | null = null;
 
-export function propertyClipboardEntry(): PropertyClipboardEntry | null {
-  return copied;
-}
-
 /** A row's value cannot be copied when it shows several values (a mixed selection). */
 export function canCopyPropertyRow(row: PropertyRow): boolean {
   if (row.mixed) return false;
@@ -33,7 +29,7 @@ function assetTypeOf(row: Extract<PropertyRow, { kind: "asset" }>): string | und
 }
 
 /** The value as plain text for the system clipboard, so it can also go outside the editor. */
-export function propertyRowText(row: PropertyRow): string {
+function propertyRowText(row: PropertyRow): string {
   switch (row.kind) {
     case "number":
     case "slider":

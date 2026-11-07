@@ -33,7 +33,7 @@ export const PARTICLE_CURVE_MAX_KEYS = 8;
 /** Seconds per animation-ratio unit, so rates are /s and lifetimes are s. */
 export const PARTICLE_UPDATE_SPEED = 1 / 60;
 export const PARTICLE_PREWARM_MAX_SECONDS = 10;
-export const PARTICLE_PREWARM_CYCLES_MAX = 60;
+const PARTICLE_PREWARM_CYCLES_MAX = 60;
 
 /**
  * Babylon prewarm steps that simulate `seconds` at `PARTICLE_UPDATE_SPEED`:

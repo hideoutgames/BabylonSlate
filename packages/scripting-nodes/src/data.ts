@@ -1,6 +1,6 @@
 import { arrayOf, assetRef, BOOL, EXEC, pin, STRING, structRef, type NodeDefinition } from "@haptic/scripting";
 
-export function dataDefinitionGuidOf(properties: Record<string, unknown>): string {
+function dataDefinitionGuidOf(properties: Record<string, unknown>): string {
   return typeof properties.definitionGuid === "string" ? properties.definitionGuid.trim() : "";
 }
 

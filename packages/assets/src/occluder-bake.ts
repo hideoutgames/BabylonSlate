@@ -47,7 +47,7 @@ export function bakeGltfOccluder(bytes: Uint8Array, importScale: number): ModelO
 }
 
 /** Voxels along the model's longest side. */
-export const OCCLUDER_BAKE_RESOLUTION = 32;
+const OCCLUDER_BAKE_RESOLUTION = 32;
 /** A box thinner than this many voxels on any side is not worth an occluder. */
 const MIN_BOX_VOXELS = 2;
 

@@ -1,6 +1,6 @@
 import type { SerializedComponent } from "./scene";
 
-export const OUTLINE_COMPONENT_CLASS_ID = "OutlineComponent";
+const OUTLINE_COMPONENT_CLASS_ID = "OutlineComponent";
 export const OUTLINE_WIDTH_LIMITS = [0.25, 8] as const;
 
 export interface OutlineProperties {

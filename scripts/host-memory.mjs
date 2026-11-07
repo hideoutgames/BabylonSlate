@@ -4,7 +4,7 @@ import { freemem, totalmem } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const execute = promisify(execFile);
-export function positiveReading(value) {
+function positiveReading(value) {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 

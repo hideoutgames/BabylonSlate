@@ -11,7 +11,6 @@ import {
   buildStarterContentFiles,
   encodeProjectZip,
   STARTER_ACTOR_GUID,
-  STARTER_CONTENT_FOLDER,
   STARTER_CONTENT_PLUGIN_GUID,
 } from "@haptic/assets";
 import { unpackEnginePluginZip } from "../../../../packages/assets/src/test-support/engine-plugins";
@@ -405,7 +404,7 @@ describe("ProjectService plugin roots", () => {
     await unpackEnginePluginZip(
       engine,
       encodeProjectZip(await buildStarterContentFiles()),
-      STARTER_CONTENT_FOLDER,
+      "starter-content",
     );
     service.setEnginePluginStorage(engine);
     await service.applyPluginOverrides({
@@ -449,7 +448,7 @@ describe("ProjectService plugin roots", () => {
     await unpackEnginePluginZip(
       engine,
       encodeProjectZip(await buildStarterContentFiles()),
-      STARTER_CONTENT_FOLDER,
+      "starter-content",
     );
     return engine;
   }

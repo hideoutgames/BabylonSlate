@@ -37,7 +37,7 @@ import {
 } from "./particle-values";
 
 /** Payload field; never a top-level `version` (the project service strips it). */
-export const PARTICLE_EMITTER_SCHEMA_VERSION = 2 as const;
+const PARTICLE_EMITTER_SCHEMA_VERSION = 2 as const;
 export const PARTICLE_BURST_MAX_ENTRIES = 8;
 
 /** Authoring bounds shared by the normalizer and the Details panel. */
@@ -475,7 +475,7 @@ export function normalizeParticleEmitterPayload(
 }
 
 /** The CPU fallback caps capacity at `PARTICLE_CPU_CAPACITY_BUDGET`; the GPU keeps the authored value. */
-export function resolveParticleEmitterCapacity(
+function resolveParticleEmitterCapacity(
   capacity: number,
   gpuSupported: boolean,
 ): number {

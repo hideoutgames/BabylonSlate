@@ -21,7 +21,8 @@ import {
   SetSceneNameCommand,
 } from "@haptic/edit";
 import { FakeLockProvider } from "@haptic/source-control";
-import { MemorySecretStore, MemoryStorageAdapter } from "@haptic/vfs";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import { MemorySecretStore } from "../../../../packages/vfs/src/test-support/memory-secret-store";
 import { JournalBuffer } from "../lib/journal-buffer";
 import { DocumentEditingService } from "./document-editing-service";
 import { DocumentService } from "./document-service";

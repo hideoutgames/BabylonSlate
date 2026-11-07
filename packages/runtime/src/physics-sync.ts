@@ -36,7 +36,6 @@ import { PhysicsReadback, actorLocalPhysicsTransform } from "./physics-readback"
 import type { SpriteClipPlayback, SpriteContent, TileContent } from "./physics-sprite-tile-colliders";
 
 export { actorLocalPhysicsTransform } from "./physics-readback";
-export type { MovementDrive } from "./physics-body-classification";
 
 /**
  * Keeps `@haptic/physics` bodies in sync with World actors that carry

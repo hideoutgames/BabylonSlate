@@ -1,6 +1,6 @@
 import { newGuid } from "@haptic/core";
 
-export const PREVIEW_DIAGNOSTIC_MESSAGE = "haptic-preview-diagnostic-control";
+const PREVIEW_DIAGNOSTIC_MESSAGE = "haptic-preview-diagnostic-control";
 export type PreviewDiagnosticOperation = "profile-start" | "profile-stop" | "frame" | "input";
 export type PreviewDiagnosticSettings = { durationMs?: number; byteBudget?: number; inputSuppressed?: boolean; gpuTiming?: boolean };
 export type PreviewDiagnosticResult = { success: boolean; reason?: string; result?: unknown };

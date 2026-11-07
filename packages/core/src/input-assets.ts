@@ -2,7 +2,7 @@ import type { InputKey } from "./input-keys";
 /** Input asset data is shared by authoring, workers, and exported games. */
 export const INPUT_ASSET_TYPES = ["InputAction", "InputAxis"] as const;
 export type InputAssetType = (typeof INPUT_ASSET_TYPES)[number];
-export const INPUT_DEVICES = [
+const INPUT_DEVICES = [
   "key",
   "mouseButton",
   "gamepadButton",

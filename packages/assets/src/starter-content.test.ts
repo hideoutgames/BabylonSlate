@@ -12,7 +12,6 @@ import {
   STARTER_ACTOR_CLASS_NAME,
   STARTER_ACTOR_GUID,
   STARTER_CONTENT_DISPLAY_NAME,
-  STARTER_CONTENT_FOLDER,
   STARTER_CONTENT_PLUGIN_GUID,
   buildStarterContentFiles,
 } from "./starter-content";
@@ -60,10 +59,10 @@ describe("buildStarterContentFiles", () => {
     const storage = new MemoryStorageAdapter("opfs");
     await storage.openDocumentsProject("engine-plugins");
     const files = await buildStarterContentFiles();
-    await storage.mkdir(`${STARTER_CONTENT_FOLDER}/assets`, true);
+    await storage.mkdir("starter-content/assets", true);
     for (const file of files) {
       await storage.writeBinary(
-        `${STARTER_CONTENT_FOLDER}/${file.path}`,
+        `starter-content/${file.path}`,
         file.data,
       );
     }
@@ -73,13 +72,13 @@ describe("buildStarterContentFiles", () => {
     expect(discovered[0]!.pluginGuid).toBe(STARTER_CONTENT_PLUGIN_GUID);
     expect(discovered[0]!.source).toBe("engine");
     expect(discovered[0]!.readOnly).toBe(true);
-    expect(discovered[0]!.folderPath).toBe(STARTER_CONTENT_FOLDER);
+    expect(discovered[0]!.folderPath).toBe("starter-content");
     expect(discovered[0]!.settings.enabledByDefault).toBe(false);
   });
 
   it("matches the committed engine-plugins/starter-content directory", async () => {
     const files = await buildStarterContentFiles();
-    const dir = join(REPO_ROOT, "engine-plugins", STARTER_CONTENT_FOLDER);
+    const dir = join(REPO_ROOT, "engine-plugins", "starter-content");
     if (UPDATE) {
       for (const file of files) {
         const path = join(dir, file.path);

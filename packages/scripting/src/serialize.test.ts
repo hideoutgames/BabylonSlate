@@ -139,7 +139,7 @@ describe("diagnostics helpers", () => {
 });
 
 describe("node registry", () => {
-  it("registers and lists by category", () => {
+  it("registers definitions once and lists them", () => {
     const registry = new NodeRegistry();
     registry.register({
       id: "t.one",
@@ -149,7 +149,7 @@ describe("node registry", () => {
       codegen: () => undefined,
     });
     expect(registry.get("t.one")?.title).toBe("One");
-    expect(registry.listByCategory("test")).toHaveLength(1);
+    expect(registry.list().map((definition) => definition.id)).toEqual(["t.one"]);
     expect(() =>
       registry.register({
         id: "t.one",

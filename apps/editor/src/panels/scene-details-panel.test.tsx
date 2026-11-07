@@ -24,7 +24,7 @@ import { AssetCreateProvider } from "@haptic/editor-kit";
 import { SceneDetailsPanel } from "./scene-details-panel";
 import { RENDERING_SETTINGS_SECTIONS } from "../components/rendering-settings-sections";
 import { AppSettingsProvider } from "../context/app-settings-context";
-import { MemoryAppSettingsStore } from "@haptic/vfs";
+import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import { diffSceneCommands, EditSession } from "@haptic/edit";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";

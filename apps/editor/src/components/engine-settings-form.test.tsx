@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { defaultEngineSettings, MemoryAppSettingsStore } from "@haptic/vfs";
+import { defaultEngineSettings } from "@haptic/vfs";
+import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
 import { getAddNodeHistory, GraphEditor, type GraphDocument } from "@haptic/graph-ui";
 import { TagProvider } from "@haptic/editor-kit";
 import { EngineSettingsForm } from "./engine-settings-form";

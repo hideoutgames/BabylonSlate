@@ -14,7 +14,7 @@ export interface AuthBrowser {
 }
 
 /** The Electron preload bridge: main opens the system browser and receives the deep link. */
-export interface ElectronAuthBrowserBridge {
+interface ElectronAuthBrowserBridge {
   open(url: string, callbackUrl: string): Promise<string | null>;
 }
 

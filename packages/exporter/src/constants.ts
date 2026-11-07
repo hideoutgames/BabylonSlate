@@ -11,19 +11,19 @@ export const DEFAULT_FILE_COUNT_FAIL = DEFAULT_EXPORT_FILE_COUNT_FAIL;
 
 export const GAME_MANIFEST_FILE = "game.json";
 export const NAVMESH_EXPORT_TYPE = "NavMesh";
-export const NAVMESH_EXPORT_GUID_PREFIX = "navmesh:";
+const NAVMESH_EXPORT_GUID_PREFIX = "navmesh:";
 export const AUDIO_REVERB_EXPORT_TYPE = "AudioReverb";
-export const AUDIO_REVERB_EXPORT_GUID_PREFIX = "audioReverb:";
+const AUDIO_REVERB_EXPORT_GUID_PREFIX = "audioReverb:";
 export const FONT_FACETYPE_EXPORT_TYPE = "FontFacetype";
 export const AREA_EMISSION_EXPORT_TYPE = "AreaEmission";
 const AREA_EMISSION_EXPORT_PREFIX = "area-emission:";
 export const areaEmissionExportGuid = (guid: string): string => `${AREA_EMISSION_EXPORT_PREFIX}${guid}`;
 export const textureGuidFromAreaEmissionExport = (guid: string): string | null => guid.startsWith(AREA_EMISSION_EXPORT_PREFIX) ? guid.slice(AREA_EMISSION_EXPORT_PREFIX.length) : null;
-export const FONT_FACETYPE_EXPORT_GUID_PREFIX = "font-facetype:";
+const FONT_FACETYPE_EXPORT_GUID_PREFIX = "font-facetype:";
 export const FONT_MSDF_EXPORT_TYPE = "FontMsdf";
-export const FONT_MSDF_EXPORT_GUID_PREFIX = "font-msdf:";
+const FONT_MSDF_EXPORT_GUID_PREFIX = "font-msdf:";
 export const FONT_MSDF_ATLAS_EXPORT_TYPE = "FontMsdfAtlas";
-export const FONT_MSDF_ATLAS_EXPORT_GUID_PREFIX = "font-msdf-png:";
+const FONT_MSDF_ATLAS_EXPORT_GUID_PREFIX = "font-msdf-png:";
 
 export function navmeshExportGuid(sceneGuid: string): string {
   return `${NAVMESH_EXPORT_GUID_PREFIX}${sceneGuid}`;

@@ -1,6 +1,7 @@
 import {
   delegateOf,
   EXEC,
+  jsIdent,
   objectRef,
   pin,
   pinTypeForVariable,
@@ -12,7 +13,6 @@ import {
 import {
   CALL_PIN_IDS,
   dataMemberPins,
-  jsIdent,
   memberPinRows,
   memberTargetPin,
   type MemberPinRow,
@@ -20,7 +20,7 @@ import {
 import { selfPin, subject } from "./self-pin";
 
 /** Add Node and Class window category of the Event Dispatcher nodes. */
-export const EVENT_DISPATCHER_CATEGORY = "eventDispatchers";
+const EVENT_DISPATCHER_CATEGORY = "eventDispatchers";
 
 /** Catalog ids of the four nodes bound to one Event Dispatcher member. */
 export const DISPATCHER_NODE_TYPE_IDS = {

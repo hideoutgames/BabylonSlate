@@ -427,13 +427,13 @@ function formatParam(param: CommandParameter): string {
   return `  ${param.name}: ${type}${optional}`;
 }
 
-export function formatCommandHelp(command: RegisteredCommand): string {
+function formatCommandHelp(command: RegisteredCommand): string {
   const header = `${command.name} — ${command.description}`;
   if (command.parameters.length === 0) return header;
   return [header, ...command.parameters.map(formatParam)].join("\n");
 }
 
-export function formatCommandList(
+function formatCommandList(
   commands: readonly RegisteredCommand[],
 ): string {
   const groups = new Map<string, RegisteredCommand[]>();

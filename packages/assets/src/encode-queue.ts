@@ -93,7 +93,7 @@ export type EncodeFn = (
   signal?: AbortSignal,
 ) => Promise<{ ktx2: Uint8Array; wallMs: number }>;
 
-export const DEFAULT_ENCODE_JOB_TIMEOUT_MS = 120_000;
+const DEFAULT_ENCODE_JOB_TIMEOUT_MS = 120_000;
 
 export interface EncodeQueueOptions {
   encode?: EncodeFn;

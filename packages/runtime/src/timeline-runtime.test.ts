@@ -437,7 +437,6 @@ describe("Timeline Clip asset instances", () => {
     expect(idle.destroyed).toBe(true);
     expect(playing.destroyed).toBe(false);
     expect(held.destroyed).toBe(false);
-    expect(runtime.liveInstances()).toEqual([playing, held]);
     // Once it finishes, nothing keeps it.
     runtime.advance(5, [], () => true);
     collector.collect([holder]);

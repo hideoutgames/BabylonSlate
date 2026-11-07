@@ -10,7 +10,7 @@ export interface EnvironmentLightingSettings {
 
 export type EnvironmentLightingOverrides = Partial<EnvironmentLightingSettings>;
 
-export const DEFAULT_ENVIRONMENT_LIGHTING: Readonly<EnvironmentLightingSettings> =
+const DEFAULT_ENVIRONMENT_LIGHTING: Readonly<EnvironmentLightingSettings> =
   {
     enabled: true,
     intensity: 1,

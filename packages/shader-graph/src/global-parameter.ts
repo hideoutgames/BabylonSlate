@@ -1,7 +1,6 @@
 import {
-  GLOBAL_PARAMETER_TYPE_LABELS,
-  findGlobalParameter,
-  isGlobalParameterType,
+  globalParameterNodeWarning,
+  globalParameterSelection,
   type GlobalParameterCatalog,
   type GlobalParameterType,
 } from "@haptic/core";
@@ -11,29 +10,6 @@ import type { MaterialDiagnostic } from "./validate";
 
 /** The Material **Global Parameter** node: one parameter of a Global Parameter Collection. */
 export const MATERIAL_GLOBAL_PARAMETER_NODE_TYPE = "global.parameter";
-
-/**
- * The parameter a Global Parameter node reads. `valueType` is the parameter's type when it was
- * picked; the node's output and the compiled program follow it.
- */
-export interface MaterialGlobalParameterSelection {
-  collectionGuid: string;
-  parameterId: string;
-  valueType: GlobalParameterType;
-}
-
-const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
-
-/** The node's selection, or null while it has no collection, parameter or valid type. */
-export function materialGlobalParameterSelection(
-  properties: Readonly<Record<string, unknown>>,
-): MaterialGlobalParameterSelection | null {
-  const collectionGuid = text(properties.collectionGuid);
-  const parameterId = text(properties.parameterId);
-  const valueType = properties.valueType;
-  if (!collectionGuid || !parameterId || !isGlobalParameterType(valueType)) return null;
-  return { collectionGuid, parameterId, valueType };
-}
 
 const OUTPUTS: Readonly<Record<GlobalParameterType, readonly MaterialPinDefinition[]>> = {
   float: [{ id: "out", name: "Out", type: { kind: "float" } }],
@@ -51,22 +27,8 @@ export function materialGlobalParameterDefinition(
   node: Pick<MaterialGraphNode, "properties">,
   base: MaterialNodeDefinition,
 ): MaterialNodeDefinition {
-  const selection = materialGlobalParameterSelection(node.properties);
+  const selection = globalParameterSelection(node.properties);
   return { ...base, outputs: selection ? OUTPUTS[selection.valueType] : [] };
-}
-
-/** "<name> (Global <Type>)" when `catalog` holds the parameter, else "Global Parameter". */
-export function materialGlobalParameterTitle(
-  properties: Readonly<Record<string, unknown>>,
-  catalog: Readonly<GlobalParameterCatalog> | undefined,
-): string {
-  const selection = materialGlobalParameterSelection(properties);
-  const parameter = selection && catalog
-    ? findGlobalParameter(catalog, selection.collectionGuid, selection.parameterId)
-    : null;
-  return selection && parameter
-    ? `${parameter.name} (Global ${GLOBAL_PARAMETER_TYPE_LABELS[selection.valueType]})`
-    : "Global Parameter";
 }
 
 /**
@@ -93,21 +55,13 @@ export function selectMaterialGlobalParameter<T extends { nodes: MaterialGraphNo
 }
 
 /**
- * Warnings for Global Parameter nodes: one without a parameter, and, given the project's
+ * The warning for a Global Parameter node: one without a parameter, and, given the project's
  * `catalog`, one whose parameter is gone or has changed type since it was picked.
  */
 export function validateMaterialGlobalParameter(
   node: MaterialGraphNode,
   catalog: Readonly<GlobalParameterCatalog> | undefined,
 ): MaterialDiagnostic | null {
-  const selection = materialGlobalParameterSelection(node.properties);
-  const warn = (message: string): MaterialDiagnostic => ({ code: "material.globalParameter", message, severity: "warning", nodeId: node.id });
-  if (!selection) return warn("Global Parameter has no parameter selected");
-  if (!catalog) return null;
-  if (!catalog[selection.collectionGuid]) return warn("Global Parameter's collection is missing; it reads 0");
-  const parameter = findGlobalParameter(catalog, selection.collectionGuid, selection.parameterId);
-  if (!parameter) return warn("Global Parameter's parameter is no longer in its collection; it reads 0");
-  return parameter.type === selection.valueType
-    ? null
-    : warn(`"${parameter.name}" is now a ${GLOBAL_PARAMETER_TYPE_LABELS[parameter.type]} parameter; select it again to update this node`);
+  const message = globalParameterNodeWarning(node.properties, catalog);
+  return message === null ? null : { code: "material.globalParameter", message, severity: "warning", nodeId: node.id };
 }

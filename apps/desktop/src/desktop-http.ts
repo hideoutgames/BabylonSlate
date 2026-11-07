@@ -17,7 +17,7 @@ export type DesktopHttpRequest = {
 };
 
 /** Writes the upload as one `multipart/form-data` part under a fresh boundary. */
-export function encodeMultipartImage(upload: DesktopHttpImageUpload) {
+function encodeMultipartImage(upload: DesktopHttpImageUpload) {
   const boundary = `----haptic-${randomUUID()}`;
   const head =
     `--${boundary}\r\n` +
@@ -34,7 +34,7 @@ export function encodeMultipartImage(upload: DesktopHttpImageUpload) {
 }
 
 /** LFS lock pages and account JSON are small; larger bodies never reach the renderer. */
-export const MAX_DESKTOP_HTTP_RESPONSE_BYTES = 16 * 1024 * 1024;
+const MAX_DESKTOP_HTTP_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 function responseTooLarge(): Error {
   return new Error("Response body is too large");

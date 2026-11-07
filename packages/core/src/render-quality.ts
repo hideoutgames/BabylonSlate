@@ -110,7 +110,7 @@ const WATER_QUALITY_FIELD_SET: Record<WaterQualityField, true> = {
 /** Every value field, in display order; also the console names for `quality water <field> <value>`. */
 export const WATER_QUALITY_FIELDS = Object.keys(WATER_QUALITY_FIELD_SET) as readonly WaterQualityField[];
 /** Strict console parsing: out-of-range or non-integer values are rejected, never clamped. */
-export function parseWaterQualitySetting(field: string, value: string): Partial<WaterQuality> | undefined {
+function parseWaterQualitySetting(field: string, value: string): Partial<WaterQuality> | undefined {
   const lower = value.toLowerCase();
   const numeric = value.trim() === "" ? NaN : Number(value);
   const within = (min: number, max: number, integer = false) =>
@@ -191,7 +191,7 @@ export type EffectiveRenderingQuality = RenderingQuality & {
 };
 const MIB = 1024 * 1024;
 /** Authored targets only; neither these counts nor the labels certify a device. */
-export const LOCAL_LIGHT_QUALITY_CAPACITY: Record<QualityLevel, number> = {
+const LOCAL_LIGHT_QUALITY_CAPACITY: Record<QualityLevel, number> = {
   low: 6,
   medium: 32,
   high: 64,

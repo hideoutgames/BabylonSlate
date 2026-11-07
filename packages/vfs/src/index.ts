@@ -15,7 +15,6 @@ export * from "./memory-adapter";
 export * from "./mounted-storage";
 export * from "./http-catalog-storage";
 export * from "./read-only-storage";
-export * from "./memory-app-settings";
 export * from "./mobile-storage-adapter";
 export * from "./platform";
 export * from "./preferences-app-settings";

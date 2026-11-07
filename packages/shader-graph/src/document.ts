@@ -1,3 +1,4 @@
+import { normalizeGraphPinEdges } from "@haptic/core";
 import type { MaterialDomain } from "./catalog";
 import {
   materialNodeDefinition,
@@ -148,27 +149,6 @@ function normalizeNodes(value: unknown): MaterialGraphNode[] {
         type,
         position: asPosition(record.position),
         properties: normalizeNodeProperties(type, asRecord(record.properties)),
-      },
-    ];
-  });
-}
-
-function normalizeEdges(value: unknown): MaterialGraphEdge[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry, index) => {
-    const record = asRecord(entry);
-    const sourceNodeId = asString(record.sourceNodeId, "");
-    const sourcePinId = asString(record.sourcePinId, "");
-    const targetNodeId = asString(record.targetNodeId, "");
-    const targetPinId = asString(record.targetPinId, "");
-    if (!sourceNodeId || !sourcePinId || !targetNodeId || !targetPinId) return [];
-    return [
-      {
-        id: asString(record.id, `edge-${index}`),
-        sourceNodeId,
-        sourcePinId,
-        targetNodeId,
-        targetPinId,
       },
     ];
   });
@@ -484,7 +464,7 @@ export function normalizeMaterialDocument(
     ...(asNumber(record.boundsPadding, 0) > 0 ? { boundsPadding: asNumber(record.boundsPadding, 0) } : {}),
     preview: normalizeMaterialPreviewSettings(record.preview),
     nodes,
-    edges: normalizeEdges(record.edges),
+    edges: normalizeGraphPinEdges(record.edges),
   };
 }
 
@@ -574,7 +554,7 @@ export function normalizeMaterialFunctionDocument(
     inputs: normalizeFunctionPins(record.inputs, "in"),
     outputs: normalizeFunctionPins(record.outputs, "out"),
     nodes: withPlumbing,
-    edges: normalizeEdges(record.edges),
+    edges: normalizeGraphPinEdges(record.edges),
   };
 }
 

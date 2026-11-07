@@ -1,5 +1,6 @@
+import { globalParameterSelection } from "@haptic/core";
 import type { ParticleGraphNode } from "./document";
-import { PARTICLE_GLOBAL_PARAMETER_NODE_TYPE, particleGlobalParameterSelection } from "./global-parameter";
+import { PARTICLE_GLOBAL_PARAMETER_NODE_TYPE } from "./global-parameter";
 import {
   resizeParticleValue,
   type ParticleNumericType,
@@ -979,7 +980,7 @@ export function particleNodeDefinitionFor(
   const definition = BY_TYPE.get(node.type);
   if (!definition) return undefined;
   // A Global Parameter node has an output only once it reads a parameter.
-  if (node.type === PARTICLE_GLOBAL_PARAMETER_NODE_TYPE && !particleGlobalParameterSelection(node.properties)) {
+  if (node.type === PARTICLE_GLOBAL_PARAMETER_NODE_TYPE && !globalParameterSelection(node.properties)) {
     return { ...definition, outputs: [] };
   }
   if (particleNodeAngleUnit(node.type, node.properties) === "degrees") {

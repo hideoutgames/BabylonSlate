@@ -31,7 +31,6 @@ export { evaluateBehaviourTree } from "./evaluate";
 export { btNodeStatuses, type BtNodeStatus } from "./status";
 export { builtinClassId, BT_CLASS_ALIASES } from "./builtins";
 export {
-  BT_COMPARE_OPS,
   BT_COMPOSITE_CATALOG,
   BT_DECORATOR_CATALOG,
   BT_SERVICE_CATALOG,
@@ -50,7 +49,6 @@ export {
   addService,
   canReparentNode,
   deleteSubtree,
-  duplicateSubtree,
   duplicateSubtrees,
   moveAttachment,
   removeAttachment,
@@ -58,23 +56,14 @@ export {
 } from "./edit";
 export {
   BT_CHILDREN_HANDLE,
-  BT_CHILDREN_PIN,
-  BT_DUPLICATE_OFFSET,
-  BT_LAYOUT_NODE_HEIGHT,
-  BT_LAYOUT_NODE_WIDTH,
   BT_NODE_TYPE,
   BT_PARENT_HANDLE,
-  BT_PARENT_PIN,
   applyNodePositions,
   arrangeBehaviourTree,
   behaviourTreeToSerialized,
   btEdgeId,
   hydrateBehaviourTreeForEditor,
-  keepEditorPositionsFor,
-  layoutBehaviourTree,
   pinsForBtKind,
-  reorderSiblingsByPosition,
   serializedToBehaviourTree,
-  withEditorPositions,
   type BtPin,
 } from "./serialize";

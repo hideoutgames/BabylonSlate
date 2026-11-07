@@ -160,7 +160,7 @@ function navmeshArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 }
 
 /** Models this source set's Scenes, SceneLayers and Classes simulate with Use Complex Collision. */
-export function gameComplexCollisionModelGuids(game: GameSourceContent): Set<string> {
+function gameComplexCollisionModelGuids(game: GameSourceContent): Set<string> {
   return complexCollisionModelGuids([
     ...game.scenes.values(), ...game.sceneLayers.values(), ...game.scripts, ...(game.decodedPayloads?.values() ?? []),
   ]);

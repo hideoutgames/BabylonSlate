@@ -72,7 +72,7 @@ const RESERVED = new Set([
  * True when `name` can be an Execute JavaScript parameter or output `let`
  * in the generated strict-mode function.
  */
-export function isValidJsIdentifier(name: string): boolean {
+function isValidJsIdentifier(name: string): boolean {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) && !RESERVED.has(name);
 }
 

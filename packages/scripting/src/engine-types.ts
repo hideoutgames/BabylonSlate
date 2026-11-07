@@ -27,13 +27,13 @@ import { structRef } from "./types";
 export const ENGINE_TAG_CONTAINER_STRUCT_ID = "engine:TagContainer";
 export const TAG_CONTAINER = structRef(ENGINE_TAG_CONTAINER_STRUCT_ID);
 
-export const ENGINE_INPUT_TYPE_STRUCT_ID = "engine:InputType";
-export const ENGINE_INPUT_BINDING_STRUCT_ID = "engine:InputBinding";
-export const ENGINE_KEY_ENUM_ID = "engine:Key";
-export const ENGINE_INPUT_COMPONENT_ENUM_ID = "engine:InputComponent";
+const ENGINE_INPUT_TYPE_STRUCT_ID = "engine:InputType";
+const ENGINE_INPUT_BINDING_STRUCT_ID = "engine:InputBinding";
+const ENGINE_KEY_ENUM_ID = "engine:Key";
+const ENGINE_INPUT_COMPONENT_ENUM_ID = "engine:InputComponent";
 export const ENGINE_TOUCH_STRUCT_ID = "engine:Touch";
 export const ENGINE_TOUCH_PHASE_ENUM_ID = "engine:TouchPhase";
-export const ENGINE_TOUCH_TYPE_ENUM_ID = "engine:TouchType";
+const ENGINE_TOUCH_TYPE_ENUM_ID = "engine:TouchType";
 export const ENGINE_SCENE_STREAMING_STATE_ENUM_ID = "engine:SceneStreamingState";
 export const ENGINE_ASSET_LOAD_STATE_ENUM_ID = "engine:AssetLoadState";
 export const ENGINE_ASSET_LOAD_HANDLE_STATE_ENUM_ID = "engine:AssetLoadHandleState";
@@ -51,9 +51,9 @@ export const ENGINE_ROTATOR_RANGE_STRUCT_ID = "engine:RotatorRange";
 export const ENGINE_FLOAT_CURVE_STRUCT_ID = "engine:FloatCurve";
 export const ENGINE_VECTOR_CURVE_STRUCT_ID = "engine:VectorCurve";
 export const ENGINE_COLOR_CURVE_STRUCT_ID = "engine:ColorCurve";
-export const ENGINE_FLOAT_CURVE_KEY_STRUCT_ID = "engine:FloatCurveKey";
-export const ENGINE_VECTOR_CURVE_KEY_STRUCT_ID = "engine:VectorCurveKey";
-export const ENGINE_COLOR_CURVE_KEY_STRUCT_ID = "engine:ColorCurveKey";
+const ENGINE_FLOAT_CURVE_KEY_STRUCT_ID = "engine:FloatCurveKey";
+const ENGINE_VECTOR_CURVE_KEY_STRUCT_ID = "engine:VectorCurveKey";
+const ENGINE_COLOR_CURVE_KEY_STRUCT_ID = "engine:ColorCurveKey";
 
 /** Range Structures by the value kind their Min and Max hold (`RangeKind` in core). */
 export const ENGINE_RANGE_STRUCT_IDS = {

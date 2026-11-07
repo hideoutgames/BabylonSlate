@@ -1,4 +1,4 @@
-import { err, ok, classIdForAssetPath, DEFAULT_LOOP_COUNT, normalizeSceneLayer, DEFAULT_SORTING_LAYERS, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, type Result } from "@haptic/core";
+import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, type Result } from "@haptic/core";
 import { collectAssetDependencyMetadata, decodePackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@haptic/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
@@ -17,19 +17,6 @@ import type {
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-
-function normalizeSortingLayers(value: unknown): string[] {
-  const layers = Array.isArray(value) ? value.filter((layer): layer is string => typeof layer === "string" && layer.trim().length > 0) : [];
-  return layers.length > 0 ? [...new Set(layers)] : [...DEFAULT_SORTING_LAYERS];
-}
-
-function clampAudioScale(value: unknown, fallback = 1): number {
-  const n =
-    typeof value === "number" && Number.isFinite(value) ? value : fallback;
-  if (n < 0) return 0;
-  if (n > 2) return 2;
-  return n;
-}
 
 const JSON_TYPES = new Set<string>([
   "InputAction", "InputAxis",

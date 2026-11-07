@@ -105,7 +105,7 @@ function parseUv(value: unknown): TileUv | undefined {
   return { u0: uv.u0 as number, v0: uv.v0 as number, u1: uv.u1 as number, v1: uv.v1 as number };
 }
 
-export function parseSpriteAnimationFrame(
+function parseSpriteAnimationFrame(
   value: unknown,
 ): SpriteAnimationFrame {
   const defaults = defaultFrame("frames");
@@ -137,7 +137,7 @@ export function parseSpriteAnimationFrame(
   return frame;
 }
 
-export function parseSpriteAnimationSheet(value: unknown): SpriteAnimationSheet {
+function parseSpriteAnimationSheet(value: unknown): SpriteAnimationSheet {
   const defaults = createDefaultSpriteAnimationSheet();
   const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   return {

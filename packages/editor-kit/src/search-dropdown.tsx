@@ -28,8 +28,6 @@ export interface SearchDropdownProps {
   children: ReactElement;
   /** When true, outside clicks are captured so chrome behind the menu is not hit. Default false so canvas pickers do not paint an iPad WKWebView black overlay. */
   modal?: boolean;
-  /** Size classes for the menu; the header stays fixed and only the results scroll. Default max-h-96. */
-  contentClassName?: string;
   /** Viewport point to open at instead of the trigger (a double-tap on empty space). */
   anchor?: { x: number; y: number } | null;
   "data-testid"?: string;
@@ -54,7 +52,6 @@ export function SearchDropdown({
   emptyLabel = "No matches",
   children,
   modal = false,
-  contentClassName,
   anchor,
   "data-testid": testId,
 }: SearchDropdownProps) {
@@ -109,7 +106,7 @@ export function SearchDropdown({
         // scroller, so no row can slide behind or above the search field.
         className={cn(
           "flex flex-col overflow-hidden p-0",
-          contentClassName ?? "max-h-96 w-max min-w-52 max-w-sm",
+          "max-h-96 w-max min-w-52 max-w-sm",
         )}
         data-testid={testId}
       >

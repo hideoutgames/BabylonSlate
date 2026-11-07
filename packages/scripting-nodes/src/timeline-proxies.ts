@@ -14,7 +14,7 @@ export const TIMELINE_PROXY_GET_NODE_ID = "timelineProxy.get";
 export const TIMELINE_PROXY_UNBIND_ALL_NODE_ID = "timelineProxy.unbindAll";
 
 /** The proxy nodes that pick one proxy of one clip asset. */
-export const TIMELINE_PROXY_PICKER_NODE_IDS: readonly string[] = [
+const TIMELINE_PROXY_PICKER_NODE_IDS: readonly string[] = [
   TIMELINE_PROXY_BIND_ACTOR_NODE_ID,
   TIMELINE_PROXY_BIND_COMPONENT_NODE_ID,
   TIMELINE_PROXY_UNBIND_NODE_ID,

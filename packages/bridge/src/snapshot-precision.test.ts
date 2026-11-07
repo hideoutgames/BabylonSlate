@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { snapshotFloatCount } from "./layout";
 import {
-  readActorSlot,
   readSnapshotHeader,
   writeActorSlot,
   writeSnapshotHeader,
 } from "./snapshot-buffer";
+import { readActorSlot } from "./test-support/read-actor-slot";
 
 describe("large-coordinate snapshot transport", () => {
   it("preserves sub-unit positions with atomic origin metadata and unchanged buffer size", () => {

@@ -40,7 +40,7 @@ import {
   type ReactNode,
 } from "react";
 import { pinDefaultPropertyKey } from "@haptic/scripting";
-import { PinDefaultEditorContext, type PinDefaultEditorRenderer } from "./pin-default-editor-context";
+import { PinDefaultEditorContext } from "./pin-default-editor-context";
 import { inlinePinDefaultStorageValue } from "./pin-default-value";
 import { ClipboardPasteIcon, CopyIcon, PlusIcon, Trash2Icon, UnlinkIcon, WaypointsIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
@@ -74,7 +74,6 @@ import {
   graphChangeKindFromNodeChanges,
   isProtectedNode,
   isDisabledNode,
-  lockNodeDragAxis,
   allocateGraphDragTransaction,
   nodeChangesMutateGraph,
   replaceChangesAsSelection,
@@ -178,8 +177,6 @@ export { selectVisibleGraphElements } from "./graph-virtualize";
 
 export interface GraphEditorProps {
   renderNodeBody?: (nodeId: string, data: Record<string, unknown>) => React.ReactNode;
-  /** Catalog-backed literal editors. Defaults to PinDefaultEditorContext. */
-  renderPinDefaultEditor?: PinDefaultEditorRenderer;
   initialGraph: GraphDocument;
   onChange?: (graph: GraphDocument, meta?: GraphChangeMeta) => void;
   /**
@@ -235,8 +232,6 @@ export interface GraphEditorProps {
   describeNode?: (nodeType: string, data: Record<string, unknown>) => string | undefined;
   /** Pan/zoom only: no connect, node drag, palette, or Cut/Paste/Delete/Format. */
   readOnly?: boolean;
-  /** Locks inline values without disabling node movement or graph connections. */
-  readOnlyPinDefaults?: boolean;
   /** Override or extend the default pin/log node components. */
   nodeTypes?: NodeTypes;
   edgeTypes?: EdgeTypes;
@@ -252,8 +247,6 @@ export interface GraphEditorProps {
   selectedAttachmentId?: string | null;
   onAttachmentSelect?: (id: string | null) => void;
   hiddenToolbarActions?: Array<"copy" | "paste" | "delete" | "breakLinks" | "format">;
-  /** Lock node drag to one axis (optional host constraint). */
-  lockNodeDragAxis?: "x" | "y";
   /**
    * CSS selector stamped onto each XYFlow node as `dragHandle`.
    * XYFlow 12 has no canvas-level `nodeDragHandle` prop. Attachments can use
@@ -722,7 +715,6 @@ function GraphEditorCanvas({
   onNodeDoubleClick,
   onEdgeDoubleClick,
   renderNodeBody,
-  renderPinDefaultEditor: renderPinDefaultEditorProp,
   onEdgeSelectionChange,
   paletteNodes,
   onPaletteOpenChange,
@@ -734,7 +726,6 @@ function GraphEditorCanvas({
   runTrace,
   breakpoints,
   describeNode,
-  readOnlyPinDefaults: readOnlyPinDefaultsProp,
   onPinSelect,
   nodeTypes: nodeTypesProp,
   edgeTypes,
@@ -745,7 +736,6 @@ function GraphEditorCanvas({
   selectedAttachmentId = null,
   onAttachmentSelect,
   hiddenToolbarActions = NO_HIDDEN_TOOLBAR_ACTIONS,
-  lockNodeDragAxis: lockDragAxis,
   nodeDragHandle,
   connectEndMode = "default",
   pinDrop,
@@ -775,9 +765,8 @@ function GraphEditorCanvas({
   const nodesDraggable = !readOnly && (nodesDraggableProp ?? true);
   const interactions = useContext(GraphInteractionSettingsContext);
   const keybinds = useContext(GraphKeybindsContext);
-  const inheritedPinEditor = useContext(PinDefaultEditorContext);
-  const renderPinDefaultEditor = renderPinDefaultEditorProp ?? inheritedPinEditor;
-  const pinDefaultsDisabled = readOnly || (readOnlyPinDefaultsProp ?? interactions.readOnlyPinDefaults ?? false);
+  const renderPinDefaultEditor = useContext(PinDefaultEditorContext);
+  const pinDefaultsDisabled = readOnly || (interactions.readOnlyPinDefaults ?? false);
   const pinDefaultsDisabledRef = useRef(pinDefaultsDisabled);
   useLayoutEffect(() => {
     pinDefaultsDisabledRef.current = pinDefaultsDisabled;
@@ -1056,9 +1045,7 @@ function GraphEditorCanvas({
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
       setNodes((current) => {
-        const constrained = replaceChangesAsSelection(
-          lockNodeDragAxis(changes, current, lockDragAxis),
-        );
+        const constrained = replaceChangesAsSelection(changes);
         const applied = readOnly
           ? constrained.filter(
               (change) => change.type === "select" || change.type === "dimensions",
@@ -1086,7 +1073,7 @@ function GraphEditorCanvas({
         return next;
       });
     },
-    [commitPositionsOnDragEnd, emitChange, lockDragAxis, readOnly],
+    [commitPositionsOnDragEnd, emitChange, readOnly],
   );
 
   const handleEdgesChange = useCallback(

@@ -1,7 +1,7 @@
 const numericVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const exactSha = /^[a-f0-9]{40}$/;
 
-export const PLATFORM_CHOICES = ["all", "desktop", "mobile", "ipados", "android", "windows", "macos", "linux"];
+const PLATFORM_CHOICES = ["all", "desktop", "mobile", "ipados", "android", "windows", "macos", "linux"];
 export const GITHUB_RELEASE_PLATFORMS = ["windows", "macos", "linux", "android"];
 const platforms = ["android", "ipados", "linux", "macos", "windows"];
 

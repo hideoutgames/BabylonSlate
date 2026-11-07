@@ -6,7 +6,6 @@ import {
   deletableNodeIds,
   isDisabledNode,
   graphChangeKindFromNodeChanges,
-  lockNodeDragAxis,
   nodeChangesMutateGraph,
   reconcileCanvasGraph,
   shouldEmitNodeChanges,
@@ -562,16 +561,5 @@ describe("deletableNodeIds", () => {
         { id: "math", selected: true, type: "math.add" },
       ]),
     ).toEqual(["math"]);
-  });
-});
-
-describe("lockNodeDragAxis", () => {
-  it("keeps Y when locking to X", () => {
-    const next = lockNodeDragAxis(
-      [{ type: "position", id: "a", position: { x: 40, y: 99 } }],
-      [{ id: "a", position: { x: 0, y: 12 } }],
-      "x",
-    );
-    expect(next[0]?.position).toEqual({ x: 40, y: 12 });
   });
 });

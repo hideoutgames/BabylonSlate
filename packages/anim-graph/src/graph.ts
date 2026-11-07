@@ -8,7 +8,7 @@ export const ANIM_EVENT_UPDATE_TYPE = "anim.event.update";
 export const ANIM_RULE_ENTER_TYPE = "anim.rule.enterState";
 export const ANIM_RULE_EXIT_TYPE = "anim.rule.exitState";
 export const ANIM_RULE_ENTER_NODE_ID = "enter-state";
-export const ANIM_RULE_EXIT_NODE_ID = "exit-state";
+const ANIM_RULE_EXIT_NODE_ID = "exit-state";
 /** Rule-graph query that fires when the clip crosses an exit time. */
 export const ANIM_EXIT_TIME_REACHED_TYPE = "anim.state.exitTimeReached";
 
@@ -145,7 +145,7 @@ export function animRuleScriptClassId(
   return `AnimRule:${guid}:${transitionId}`;
 }
 
-export const ANIM_STATE_LAYOUT_ORIGIN = { x: 80, y: 80 };
+const ANIM_STATE_LAYOUT_ORIGIN = { x: 80, y: 80 };
 export const ANIM_STATE_LAYOUT_GAP_X = 280;
 
 export function defaultAnimStatePosition(index: number): { x: number; y: number } {

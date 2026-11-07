@@ -1,6 +1,6 @@
 import { isMobilePlatform } from "./platform";
 
-export type AppState = { isActive: boolean };
+type AppState = { isActive: boolean };
 
 export function initializeCapacitorLifecycle(): () => void {
   if (!isMobilePlatform()) {

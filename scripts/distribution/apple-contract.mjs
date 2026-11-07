@@ -11,7 +11,7 @@ export function exportOptions(teamId, profileUuid) {
   return { method: "app-store-connect", destination: "export", signingStyle: "manual", signingCertificate: "Apple Distribution", teamID: teamId, provisioningProfiles: { [APPLE_BUNDLE_ID]: profileUuid }, manageAppVersionAndBuildNumber: false, testFlightInternalTestingOnly: false, uploadSymbols: false };
 }
 
-export function validateAppleMemoryEntitlements(entitlements) {
+function validateAppleMemoryEntitlements(entitlements) {
   if (entitlements?.["com.apple.developer.kernel.increased-memory-limit"] !== true || entitlements?.["com.apple.developer.kernel.extended-virtual-addressing"] !== true) throw new Error("Apple memory entitlements are missing or invalid");
 }
 

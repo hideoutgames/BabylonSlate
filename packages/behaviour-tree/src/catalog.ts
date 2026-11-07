@@ -32,7 +32,7 @@ export type BtPropertyField = {
   blackboardKeyKinds?: readonly PinType["kind"][];
 };
 
-export const BT_COMPARE_OPS: Array<{ value: string; label: string }> = [
+const BT_COMPARE_OPS: Array<{ value: string; label: string }> = [
   { value: "eq", label: "Equal" },
   { value: "neq", label: "Not Equal" },
   { value: "gt", label: "Greater" },
