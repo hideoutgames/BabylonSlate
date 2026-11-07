@@ -111,7 +111,7 @@ export function textureEncodePadding(
 }
 
 /** Round each edge up to a multiple of `align` (no-op when unset or <= 1). */
-export function alignEncodeSize(
+function alignEncodeSize(
   width: number,
   height: number,
   align?: number,

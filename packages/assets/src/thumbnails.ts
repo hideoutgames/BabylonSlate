@@ -3,7 +3,7 @@ import { derivedDataRoot } from "./derived-data";
 
 export const DEFAULT_THUMBNAIL_MAX_EDGE = 128;
 
-export function thumbnailsDir(projectGuid: string): string {
+function thumbnailsDir(projectGuid: string): string {
   return `${derivedDataRoot(projectGuid)}/thumbnails`;
 }
 

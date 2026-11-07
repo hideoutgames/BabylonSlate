@@ -17,7 +17,7 @@ const mirrorBlur = (index: number, size: number) => {
 
 type Raster = { pixels: Uint8Array; width: number; height: number };
 
-export const AREA_EMISSION_INTERIOR = AREA_EMISSION_EDGE * 0.75;
+const AREA_EMISSION_INTERIOR = AREA_EMISSION_EDGE * 0.75;
 
 /** Area averaging for minification; mirrored linear sampling for magnification. */
 async function resampleAxis(source: Raster, horizontal: boolean, checkpoint: Checkpoint): Promise<Raster> {

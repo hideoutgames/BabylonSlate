@@ -8,9 +8,9 @@ import {
 } from "./tileset-payload";
 import { tilesetTerrainStamp } from "./tileset-terrain";
 
-export const DEFAULT_TILEMAP_CHUNK_SIZE = 32;
-export const DEFAULT_TILEMAP_WIDTH = 64;
-export const DEFAULT_TILEMAP_HEIGHT = 64;
+const DEFAULT_TILEMAP_CHUNK_SIZE = 32;
+const DEFAULT_TILEMAP_WIDTH = 64;
+const DEFAULT_TILEMAP_HEIGHT = 64;
 
 export interface TilemapChunk {
   cx: number;
