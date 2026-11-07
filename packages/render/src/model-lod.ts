@@ -159,8 +159,14 @@ function levelData(prepared: PreparedMesh, level: LodLevelIndices): LodLevelData
   return { coverage: autoLodCoverage(level.screenSize), indices, subMeshes, triangles: level.triangles };
 }
 
-let workerQueue: Promise<unknown> = Promise.resolve();
-let queuedJobs = 0;
+/**
+ * Runs `work` under the native-preparation admission a model's level
+ * generation needs (its vertex copies and simplification), or directly.
+ */
+export type ModelLodAdmission = <T>(work: () => Promise<T>) => Promise<T>;
+
+let lodTurns: Promise<unknown> = Promise.resolve();
+let queuedTurns = 0;
 let lodWorker: Worker | null = null;
 
 function releaseWorker(): void {
@@ -169,12 +175,22 @@ function releaseWorker(): void {
 }
 
 /**
- * Models simplify one at a time in a shared worker. It exits when the queue
- * drains, returning the simplifier's heap, or after any failure.
+ * Models generate levels one at a time, in a shared worker that exits when the
+ * line drains, returning the simplifier's heap, or after any failure. A model
+ * takes its admission and copies its vertex streams only in its own turn, so
+ * one waiting in line holds neither memory nor a preparation slot.
  */
+function inLodTurn<T>(work: () => Promise<T>): Promise<T> {
+  queuedTurns++;
+  const turn = lodTurns.then(work).finally(() => {
+    if (--queuedTurns === 0) releaseWorker();
+  });
+  lodTurns = turn.catch(() => {});
+  return turn;
+}
+
 function simplifyInWorker(meshes: LodSimplifyInput[]): Promise<LodLevelIndices[][]> {
-  queuedJobs++;
-  const job = workerQueue.then(() => new Promise<LodLevelIndices[][]>((resolve, reject) => {
+  return new Promise<LodLevelIndices[][]>((resolve, reject) => {
     const worker = lodWorker ??= new Worker(new URL("./model-lod.worker.ts", import.meta.url), { type: "module" });
     const finish = (settle: () => void, failed: boolean) => {
       clearTimeout(timeout);
@@ -193,11 +209,7 @@ function simplifyInWorker(meshes: LodSimplifyInput[]): Promise<LodLevelIndices[]
     worker.onmessageerror = () => fail("invalid worker reply");
     // Structured cloning leaves these inputs intact for the main-thread fallback.
     worker.postMessage({ meshes } satisfies ModelLodWorkerRequest);
-  })).finally(() => {
-    if (--queuedJobs === 0) releaseWorker();
   });
-  workerQueue = job.catch(() => {});
-  return job;
 }
 
 const yieldToFrames = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -253,19 +265,22 @@ function touchModel(cached: CachedModel): void {
   generatedModels.set(cached.key, cached);
 }
 
-function acquireModel(key: string, generate: () => Promise<ModelLevels>): CachedModel {
-  let cached = generatedModels.get(key);
-  if (!cached) {
-    const created: CachedModel = { key, levels: generate(), users: 0 };
-    created.levels.catch(() => {
-      if (generatedModels.get(key) === created) generatedModels.delete(key);
-    });
-    generatedModels.set(key, created);
-    cached = created;
-  }
+/** The cached generation for `key`, now used once more. */
+function useCachedModel(key: string): CachedModel | undefined {
+  const cached = generatedModels.get(key);
+  if (!cached) return undefined;
   cached.users++;
   touchModel(cached);
   return cached;
+}
+
+function cacheModel(key: string, levels: Promise<ModelLevels>): CachedModel {
+  const created: CachedModel = { key, levels, users: 1 };
+  levels.catch(() => {
+    if (generatedModels.get(key) === created) generatedModels.delete(key);
+  });
+  generatedModels.set(key, created);
+  return created;
 }
 
 function releaseModel(cached: CachedModel): void {
@@ -285,22 +300,34 @@ function releaseModel(cached: CachedModel): void {
  * Simplify every eligible mesh of a decoded model. Levels are index buffers
  * over the source vertices, so skinning, morph targets, tangents and extra UV
  * sets stay valid. `cacheKey` identifies the model bytes, so other Scenes that
- * load the same model reuse the generated indices.
+ * load the same model reuse the generated indices, waiting for a generation in
+ * progress without a turn or admission of their own. `admit` wraps the work of
+ * the model's turn.
  */
 export async function generateModelLods(
   container: Pick<AssetContainer, "meshes">,
   assertCurrent: () => void = () => {},
   cacheKey?: string,
+  admit: ModelLodAdmission = (work) => work(),
 ): Promise<ModelLodSet> {
   const candidates = container.meshes.flatMap((mesh, index) => eligible(mesh) ? [{ mesh, index }] : []);
   let models: ModelLevels = new Map();
   let cached: CachedModel | undefined;
+  // Low-poly models never load the simplifier.
   if (candidates.length) {
-    // Low-poly models never load the simplifier.
-    const generate = () => generateLevels(candidates.flatMap(({ mesh, index }) => prepareMesh(mesh, index) ?? []));
-    if (cacheKey) cached = acquireModel(cacheKey, generate);
     try {
-      models = await (cached?.levels ?? generate());
+      cached = cacheKey ? useCachedModel(cacheKey) : undefined;
+      models = await (cached?.levels ?? inLodTurn(async () => {
+        assertCurrent();
+        // Another Scene may have generated these levels while this one waited.
+        cached = cacheKey ? useCachedModel(cacheKey) : undefined;
+        if (cached) return cached.levels;
+        return admit(async () => {
+          const levels = generateLevels(candidates.flatMap(({ mesh, index }) => prepareMesh(mesh, index) ?? []));
+          if (cacheKey) cached = cacheModel(cacheKey, levels);
+          return levels;
+        });
+      }));
       assertCurrent();
     } catch (error) {
       if (cached) releaseModel(cached);
