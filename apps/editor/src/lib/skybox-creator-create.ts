@@ -10,7 +10,7 @@ import {
   type SkyboxCreatorPayload,
 } from "@haptic/assets";
 
-export function relativePathUnderPrefix(
+function relativePathUnderPrefix(
   path: string,
   pathPrefix: string,
 ): string {

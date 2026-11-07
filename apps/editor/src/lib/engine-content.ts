@@ -59,7 +59,7 @@ export async function tryReadRepoFile(relativePath: string): Promise<Uint8Array 
 }
 
 /** Public URL for a repository `engine-content/...` path ("Holiday Pack" has a space). */
-export function engineContentUrl(relativePath: string): string {
+function engineContentUrl(relativePath: string): string {
   return publicAssetUrl(relativePath.split("/").map(encodeURIComponent).join("/"));
 }
 

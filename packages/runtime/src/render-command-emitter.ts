@@ -2,6 +2,9 @@ import type { CommandMessage } from "@haptic/bridge";
 import {
   componentCastsShadows,
   areaRectLightBindings,
+  light2DBindings,
+  LIGHT_2D_CLASS_ID,
+  parseSurfaceShadingMode,
   deformerBindings,
   DEFORMER_PROPERTY_KEYS,
   fogVolumeBindings,
@@ -176,6 +179,15 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
       (lights) => this.host.emit({ type: "setAreaLights", slotId, lights }));
   }
 
+  /** The actor's 2D lights; a Scene Layer draws unlit, so its actors send none. */
+  private emitActorLights2D(actor: Actor, slotId: number): void {
+    this.emitComponentBindings(slotId, this.state.light2DSlots, !actor.sceneLayerId && hasLiveComponent(actor, LIGHT_2D_CLASS_ID),
+      () => light2DBindings(liveBindingInputs(actor, LIGHT_2D_CLASS_ID, (component) => Object.fromEntries(
+        ["enabled", "lightKind", "color", "intensity", "radius", "innerRadius", "outerAngle", "innerAngle"].map((key) =>
+          [key, key === "color" ? rgbTuple(component.getVariable(key)) : component.getVariable(key)])))),
+      (lights) => this.host.emit({ type: "setLights2D", slotId, lights }));
+  }
+
   /** Send the slot's bindings when it `has` any, or the empty list when its last send (in `slots`) had some. */
   private emitComponentBindings<T>(slotId: number, slots: Set<number>, has: boolean, bind: () => T[], emit: (bindings: T[]) => void): void {
     if (!has && !slots.has(slotId)) return;
@@ -230,6 +242,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
     this.emitActorFogVolumes(actor, slotId);
     this.emitActorReflectionProbes(actor, slotId);
     this.emitActorAreaLights(actor, slotId);
+    this.emitActorLights2D(actor, slotId);
     const skipButtonMesh =
       overlayButtonHasSiblingVisual(actor) ||
       overlayButtonHasParentVisual(actor, this.host.world());
@@ -323,7 +336,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
           : {}),
         ...(supportsOverlayVisualStyle(primary.classId) ? { overlayStyle: parseOverlayVisualStyle(Object.fromEntries(primary.variables)) } : {}),
         ...(meshKind === "sprite" || meshKind === "tilemap"
-          ? playSortingOf(primary)
+          ? { ...playSortingOf(primary), ...playShadingOf(primary) }
           : {}),
         ...(actor.sceneLayerId
           ? {
@@ -634,6 +647,13 @@ function playSortingOf(component: ActorComponent): {
   };
 }
 
+/** A sprite or tilemap's Shading Mode when it is not the default 2D; a Scene Layer draws unlit, so its actors send none. */
+function playShadingOf(component: ActorComponent): { shadingMode?: "3d" | "unlit" } {
+  if (component.owner?.sceneLayerId) return {};
+  const mode = parseSurfaceShadingMode(component.getVariable("shadingMode"));
+  return mode === "2d" ? {} : { shadingMode: mode };
+}
+
 function playMeshKindOf(component: ActorComponent): string | null {
   if (isUIControl2DClass(component.classId)) return "2dcontrol";
   if (isOverlayLayoutClass(component.classId)) return "2dlayout";
@@ -832,7 +852,7 @@ function playMeshPartOf(
       : {}),
     ...(component.classId === "SpriteComponent" ||
     component.classId === "TilemapComponent"
-      ? playSortingOf(component)
+      ? { ...playSortingOf(component), ...playShadingOf(component) }
       : {}),
     ...(component.classId === SPRING_ARM_COMPONENT_CLASS_ID
       ? { springArm: springArmAssignPayload(component) }

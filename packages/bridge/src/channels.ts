@@ -635,6 +635,7 @@ export type CommandMessage =
   /** Recapture every reflection probe of the play world once its scene settles. */
   | { type: "recaptureReflectionProbes" }
   | { type: "setAreaLights"; slotId: number; lights: import("@haptic/core").AreaRectLightBinding[] }
+  | { type: "setLights2D"; slotId: number; lights: import("@haptic/core").Light2DBinding[] }
   | { type: "snapshotLayout"; capacity: number; generation: number }
   | {
       type: "spawn";
@@ -692,6 +693,8 @@ export type CommandMessage =
       sortingLayer?: string;
       /** Sprite / tilemap order within that sorting layer. */
       orderInLayer?: number;
+      /** Sprite / tilemap Shading Mode; absent is 2D. */
+      shadingMode?: import("@haptic/core").SurfaceShadingMode;
       /** The optimized actor mesh's shadow participation (no `parts`): its component's resolved Cast/Receive Shadows. */
       castShadows?: boolean;
       receiveShadows?: boolean;
@@ -771,6 +774,8 @@ export type CommandMessage =
         };
         sortingLayer?: string;
         orderInLayer?: number;
+        /** Sprite / tilemap Shading Mode; absent is 2D. */
+        shadingMode?: import("@haptic/core").SurfaceShadingMode;
       }>;
       skybox?: {
         size: number;

@@ -10,7 +10,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Scene } from "@babylonjs/core/scene";
 import {
-  isOverlayLayoutClass, isUIControl2DClass, MIRROR_CLASS_ID, normalizeWaterBody, overlayPanelDestFromScale,
+  isOverlayLayoutClass, isUIControl2DClass, LIGHT_2D_CLASS_ID, MIRROR_CLASS_ID, parseSurfaceShadingMode, normalizeWaterBody, overlayPanelDestFromScale,
   parseCableProperties, parseMirrorProperties, parseOverlayLayoutProperties, parseOverlayPanelProperties,
   parseSpringArmProperties, SPRING_ARM_COMPONENT_CLASS_ID, supportsOverlayVisualStyle, waterKindForClass,
   type SerializedActor, type SerializedComponent,
@@ -20,7 +20,7 @@ import { parseColliderProperties } from "@haptic/physics";
 import { createCableMesh } from "./cable-mesh";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
-import { applyEditorBillboardFromActor, applyEditorBillboardPass, createEditorBillboard, lightBillboardIcon } from "./editor-billboard";
+import { applyEditorBillboardFromActor, applyEditorBillboardPass, createEditorBillboard, light2DBillboardIcon, lightBillboardIcon } from "./editor-billboard";
 import { createEditorCameraModel } from "./editor-camera-model";
 import {
   BLOCKING_VOLUME_COLOR,
@@ -164,7 +164,7 @@ export function createSpriteComponentMesh(
   const mesh = payload
     ? createSpriteQuad(scene, name, payload, payload.pixelsPerUnit ?? assets?.pixelsPerUnit)
     : createPrimitiveMesh(scene, name, "sprite");
-  applyAlbedoTexture(mesh, scene, payload?.textureGuid, assets);
+  applyAlbedoTexture(mesh, scene, payload?.textureGuid, assets, { shadingMode: parseSurfaceShadingMode(component.properties.shadingMode) });
   applyAuthoredComponentSorting(mesh, component, assets?.sortingLayers);
   return mesh;
 }
@@ -188,7 +188,7 @@ export function createTilemapComponentMesh(
       size.width,
       size.height,
     );
-    applyTilemapAlbedoTextures(mesh, scene, assets);
+    applyTilemapAlbedoTextures(mesh, scene, assets, undefined, parseSurfaceShadingMode(component.properties.shadingMode));
     applyAuthoredComponentSorting(mesh, component, assets?.sortingLayers);
     // Live edits of this Tilemap find their chunk meshes by it (`patchTilemapComponentMesh`).
     mesh.metadata = { ...(mesh.metadata ?? {}), tilemapAssetGuid: mapGuid };
@@ -216,7 +216,7 @@ export function patchTilemapComponentMesh(
   const made = patchTilemapMeshes(mesh.getScene(), mesh, previous, next, tilesets, size.width, size.height);
   if (!made) return false;
   if (made.length > 0) {
-    applyTilemapAlbedoTextures(mesh, mesh.getScene(), assets, made);
+    applyTilemapAlbedoTextures(mesh, mesh.getScene(), assets, made, parseSurfaceShadingMode(component.properties.shadingMode));
     applyAuthoredComponentSorting(mesh, component, assets.sortingLayers);
   }
   return true;
@@ -290,6 +290,11 @@ function createComponentMesh(
       name,
       lightBillboardIcon(component.properties.lightKind),
     );
+    applyEditorBillboardFromActor(mesh, actor);
+    return mesh;
+  }
+  if (component.classId === LIGHT_2D_CLASS_ID) {
+    const mesh = createEditorBillboard(scene, name, light2DBillboardIcon(component.properties.lightKind));
     applyEditorBillboardFromActor(mesh, actor);
     return mesh;
   }

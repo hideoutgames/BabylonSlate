@@ -24,7 +24,7 @@ it.each(["havok", "rapier", "software3d", "software2d"] as const)(
     const gravity = { x: 0, y: -9.81, z: 0 };
     const backend = kind.startsWith("software")
       ? createSoftwarePhysicsBackend(worldKind, gravity)
-      : await createPhysicsBackend({ kind: worldKind, gravity, allowSoftwareFallback: false });
+      : await createPhysicsBackend({ kind: worldKind, gravity });
     const dt = 1 / 60;
     try {
       body(backend, "floor", { x: 0, y: -0.5, z: 0 });
@@ -81,7 +81,7 @@ it.each(["havok", "rapier", "software3d", "software2d"] as const)(
 );
 
 it("Havok uses authored capsule height and radius for collision and releases controller shapes", async () => {
-  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
   try {
     body(backend, "floor", { x: 0, y: -0.5, z: 0 });
     box(backend, "floor", { x: 8, y: 0.5, z: 8 });
@@ -102,7 +102,7 @@ it("Havok uses authored capsule height and radius for collision and releases con
 });
 
 it.each(["havok", "rapier"] as const)("%s emits one overlap lifetime while its capsule enters, stays and leaves", async (kind) => {
-  const backend = await createPhysicsBackend({ kind: kind === "havok" ? "3d" : "2d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+  const backend = await createPhysicsBackend({ kind: kind === "havok" ? "3d" : "2d", gravity: { x: 0, y: 0, z: 0 } });
   try {
     body(backend, "trigger", { x: 0, y: 0, z: 0 });
     box(backend, "trigger", { x: 0.5, y: 2, z: 2 }, true);
@@ -131,7 +131,7 @@ it.each(["havok", "rapier", "software3d", "software2d"] as const)("%s snaps a gr
   const worldKind = kind === "rapier" || kind === "software2d" ? "2d" : "3d";
   const gravity = { x: 0, y: 0, z: 0 };
   const backend = kind.startsWith("software") ? createSoftwarePhysicsBackend(worldKind, gravity)
-    : await createPhysicsBackend({ kind: worldKind, gravity, allowSoftwareFallback: false });
+    : await createPhysicsBackend({ kind: worldKind, gravity });
   try {
     body(backend, "floor", { x: 0, y: -0.5, z: 0 });
     box(backend, "floor", { x: 8, y: 0.5, z: 8 });
@@ -168,7 +168,7 @@ async function characterBackend(kind: "havok" | "rapier" | "software3d" | "softw
   const gravity = { x: 0, y: 0, z: 0 };
   return kind.startsWith("software")
     ? createSoftwarePhysicsBackend(worldKind, gravity)
-    : createPhysicsBackend({ kind: worldKind, gravity, allowSoftwareFallback: false });
+    : createPhysicsBackend({ kind: worldKind, gravity });
 }
 
 function capsule(backend: PhysicsBackend, id: string, layer = 1, mask = 0xffffffff) {

@@ -1111,7 +1111,7 @@ function sameDiagnostic(a: ParticleGraphDiagnostic, b: ParticleGraphDiagnostic):
 }
 
 /** Validation and build diagnostics; tapping a row focuses its node. */
-export function ParticleGraphCompilerResults({
+function ParticleGraphCompilerResults({
   document,
   rows,
   onFocusNode,

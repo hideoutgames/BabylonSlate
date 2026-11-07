@@ -9,7 +9,7 @@ import {
   type ClassAssetRef,
 } from "./class-asset-lookup";
 
-export function editorClassRegistryFromAssets(
+function editorClassRegistryFromAssets(
   assets: ReadonlyArray<ClassAssetRef>,
 ): ClassRegistry {
   const registry = new ClassRegistry();

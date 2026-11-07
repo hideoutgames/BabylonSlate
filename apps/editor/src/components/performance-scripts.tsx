@@ -55,12 +55,6 @@ export function PerformanceScripts({ profile, onOpen }: {
       return entries.length ? [{ ...row, entries }] : [];
     });
   }, [classes, query]);
-  if (profile.version < 4) return <Empty>
-    <EmptyHeader>
-      <EmptyTitle>No Script Costs</EmptyTitle>
-      <EmptyDescription>This recording was made before the Profiler measured scripts. Record again to see them.</EmptyDescription>
-    </EmptyHeader>
-  </Empty>;
   if (!classes.length) return <Empty>
     <EmptyHeader>
       <EmptyTitle>No Scripts Ran</EmptyTitle>

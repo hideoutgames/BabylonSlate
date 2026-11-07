@@ -35,7 +35,7 @@ import { stressPoint, type FeatureTestZoneId } from "./layout";
 const FOLDER = "Physics";
 
 /** Project collision layer names; bit `1 << index` is the Inspector's Layer value. */
-export const FEATURE_TEST_COLLISION_LAYERS = ["Default", "Dynamic", "Trigger", "Water", "Ghost"] as const;
+const FEATURE_TEST_COLLISION_LAYERS = ["Default", "Dynamic", "Trigger", "Water", "Ghost"] as const;
 const LAYER = { default: 1, dynamic: 2, trigger: 4, water: 8, ghost: 16 } as const;
 const ALL_LAYERS = 0xffffffff;
 const GHOST_PASS_PRESET = "ghost-pass";
@@ -64,7 +64,7 @@ const SWEEPER_RING_RADIUS = 3.3;
  * as a staggered grid (0.25 m gaps) over a kinematic sweeper, ragdolls and a
  * hanging ball-socket chain.
  */
-export const FEATURE_TEST_PHYSICS_STRESS = {
+const FEATURE_TEST_PHYSICS_STRESS = {
   columns: 8,
   rows: 8,
   layers: 5,

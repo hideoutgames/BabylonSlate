@@ -70,7 +70,6 @@ const TICK_PHASE_COLOR: Readonly<Record<TickTimingPhase, string>> = {
 };
 const COLOR_CLASS: Readonly<Record<string, string>> = {
   "--trace-script": "bg-trace-script",
-  "--trace-physics": "bg-trace-physics",
   "--tick-game-instance": "bg-tick-game-instance",
   "--tick-scene-subsystems": "bg-tick-scene-subsystems",
   "--tick-actors": "bg-tick-actors",
@@ -108,14 +107,11 @@ const rowFacts = (stream: PerformanceStream, row: number) => {
 const segment = (stream: PerformanceStream, label: string, column: string, color: string): ProfilerSegment =>
   ({ label, columns: [column], color, values: streamColumn(stream, column) });
 
-/** The ticks' stacked parts: every timed phase (version 2), else script and physics (version 1), or the one column the metric picks. */
+/** The ticks' stacked parts: every timed phase, or the one column the metric picks. */
 function tickSegments(stream: PerformanceStream, metric: Metric): ProfilerSegment[] {
   if (metric === "script") return [segment(stream, "Script", "scriptMs", "--trace-script")];
   if (metric === "physics") return [segment(stream, "Physics", "physicsMs", "--tick-physics")];
-  if (stream.columns.includes("actorsMs")) {
-    return TICK_TIMING_PHASES.map((phase) => segment(stream, TICK_TIMING_PHASE_LABELS[phase], `${phase}Ms`, TICK_PHASE_COLOR[phase]));
-  }
-  return [segment(stream, "Script", "scriptMs", "--trace-script"), segment(stream, "Physics", "physicsMs", "--trace-physics")];
+  return TICK_TIMING_PHASES.map((phase) => segment(stream, TICK_TIMING_PHASE_LABELS[phase], `${phase}Ms`, TICK_PHASE_COLOR[phase]));
 }
 
 /**
@@ -240,8 +236,7 @@ export function PerformanceTimeline({ profile }: { profile: PerformanceProfile }
         aria-label={`Performance timeline: ${profile.frames.count} frames, ${profile.ticks.count} ticks${profile.gpu.count ? `, ${profile.gpu.count} GPU queries` : ""}${profile.memory.count ? `, ${profile.memory.count} memory samples` : ""}`}
       />
       <TimelineLegend tracks={tracks} budget={budget} metric={metric}
-        // Version 3 names what its host recorded; an earlier recording had no long tasks to report.
-        longTasksUnreported={profile.version >= 3 && !profile.identity.enabledDiagnostics.includes("long-tasks")} />
+        longTasksUnreported={!profile.identity.enabledDiagnostics.includes("long-tasks")} />
       {range ? <RangeSummary profile={profile} tracks={tracks} times={times} range={range} onClear={() => setRange(null)} /> : null}
     </> : null}
     {stream.count ? <div className="flex min-h-64 flex-1 flex-col lg:flex-row">
@@ -291,7 +286,7 @@ function TimelineLegend({ tracks, budget, metric, longTasksUnreported }: {
 }) {
   const ticks = tracks.find((track) => track.id === "ticks")!;
   return <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 border-b px-2 py-1 text-[11px] text-muted-foreground">
-    <span className="font-medium text-foreground">{ticks.segments.length > 2 ? "Tick Phases" : ticks.segments.length === 2 ? "Script + Physics" : METRICS.find((entry) => entry.value === metric)?.label}</span>
+    <span className="font-medium text-foreground">{ticks.segments.length > 1 ? "Tick Phases" : METRICS.find((entry) => entry.value === metric)?.label}</span>
     {ticks.segments.length > 1 ? ticks.segments.map((segment) => <span key={segment.label} className="flex items-center gap-1">
       <span className={cn("size-2", COLOR_CLASS[segment.color])} />{segment.label}
     </span>) : null}

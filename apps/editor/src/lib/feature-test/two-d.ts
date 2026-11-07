@@ -44,6 +44,8 @@ import {
 import {
   createDefaultScene,
   DEFAULT_TWO_D_PROJECT_SETTINGS,
+  parseLight2DProperties,
+  type Light2DProperties,
   type ProjectSettings,
   type SerializedComponent,
   type SerializedGraph,
@@ -64,13 +66,13 @@ import {
 import { PLATFORMER_TILE_PX, ROBOT_FRAMES, type RobotFrame } from "./engine-content-files";
 
 /** Folder under `assets/FeatureTest/` for every 2D asset (the scene goes to `Scenes`). */
-export const FEATURE_TEST_TWO_D_FOLDER = "TwoD";
+const FEATURE_TEST_TWO_D_FOLDER = "TwoD";
 
 /** The 2D world scene (`FeatureTest/Scenes/FT_2D`): open its tab and press Play. */
-export const FEATURE_TEST_TWO_D_SCENE_NAME = "FT_2D";
+const FEATURE_TEST_TWO_D_SCENE_NAME = "FT_2D";
 
 /** Asset names, so sibling FeatureTest modules and docs can find them by path. */
-export const FEATURE_TEST_TWO_D_NAMES = {
+const FEATURE_TEST_TWO_D_NAMES = {
   robotIdleSprite: "FT_2DRobotIdleSprite",
   robotJumpSprite: "FT_2DRobotJumpSprite",
   robotFallSprite: "FT_2DRobotFallSprite",
@@ -93,7 +95,7 @@ export const FEATURE_TEST_TWO_D_NAMES = {
 export const FEATURE_TEST_TWO_D_CHARACTERS_LAYER = "Characters";
 
 /** Project sorting layers FT_2D uses, back to front; missing ones are merged in. */
-export const FEATURE_TEST_TWO_D_SORTING_LAYERS = [
+const FEATURE_TEST_TWO_D_SORTING_LAYERS = [
   "Background",
   "Default",
   FEATURE_TEST_TWO_D_CHARACTERS_LAYER,
@@ -160,6 +162,7 @@ const FOLDERS = {
   bodies: { id: "ft-2d-folder-bodies", name: "Falling Bodies" },
   animation: { id: "ft-2d-folder-animation", name: "Sprite Animation" },
   pendulum: { id: "ft-2d-folder-pendulum", name: "Hinge Pendulum" },
+  lights: { id: "ft-2d-folder-lights", name: "2D Lights" },
 } as const;
 
 const CENTER_PIVOT = { x: 0.5, y: 0.5 } as const;
@@ -219,6 +222,7 @@ export async function buildFeatureTestTwoD(ctx: FeatureTestContext): Promise<voi
   const { tilemap, skyIsland } = await buildTilemap(ctx);
   const cameraProbe = (await saveCameraProbe(ctx)).classId;
   const scene = buildScene(ctx, { sprites, graph, torchGraph, tilemap, skyIsland, cameraProbe });
+  placeThreeDShadedSprite(ctx, sprites);
   await ctx.addSceneDocument({
     kind: "scene",
     folder: "Scenes",
@@ -227,6 +231,26 @@ export async function buildFeatureTestTwoD(ctx: FeatureTestContext): Promise<voi
     order: SCENE_SAVE_ORDER.scene,
   });
   ctx.patchSettings((settings) => withTwoDSortingLayers(settings));
+}
+
+/**
+ * A robot Sprite with Shading Mode 3D in the main scene's Lights And Shadows zone, between the colour lights: the 3D
+ * lights and the sun light it and it casts a shadow, as a lit Material surface does.
+ */
+function placeThreeDShadedSprite(ctx: FeatureTestContext, sprites: SpriteGuids): void {
+  const zone = ctx.zone("lights");
+  ctx.addActor(actor("ft-2d-lit-3d-sprite", "3D Shaded Sprite", tf(zone.at(-3, 1, 7.5)), [
+    comp("ft-2d-lit-3d-sprite-sprite", "SpriteComponent", {
+      assetGuid: sprites.robotIdle, sortingLayer: "Default", orderInLayer: 0, shadingMode: "3d", castShadows: true,
+    }),
+  ], { folderId: zone.folderId }), { zone: "lights" });
+}
+
+/** A 2D Light actor in FT_2D's 2D Lights folder. */
+function light2D(id: string, name: string, position: Vec3, properties: Partial<Light2DProperties>, rotationDeg?: Vec3) {
+  return actor(id, name, tf(position, rotationDeg ? { rotationDeg } : {}), [
+    comp(`${id}-light`, "Light2DComponent", { ...parseLight2DProperties(properties) }),
+  ], { folderId: FOLDERS.lights.id });
 }
 
 // ---------------------------------------------------------------------------
@@ -1010,8 +1034,9 @@ function buildScene(
 
   // Feet on the left cliff top (row 3) and on the plateau (dropped 0.3 units).
   const robotHalfHeight = ROBOT_FRAME_PX.height / PPU / 2;
+  // The mascot stays Unlit: full brightness in the 2D-lit scene, as a HUD-like figure.
   add("animation", "ft-2d-anim-mascot", "Robot Mascot", [tileCenterX(0), tileBottomY(4) + robotHalfHeight, 0], [
-    sprite("ft-2d-anim-mascot-sprite", refs.sprites.robotIdle, "UI", 0),
+    sprite("ft-2d-anim-mascot-sprite", refs.sprites.robotIdle, "UI", 0, { shadingMode: "unlit" }),
     comp("ft-2d-anim-mascot-graph", "AnimationGraphComponent", { graphGuid: refs.graph }),
   ]);
   add("animation", "ft-2d-anim-body", "Walking Robot", [tileCenterX(14), tileBottomY(4) + robotHalfHeight + 0.3, 0], [
@@ -1025,6 +1050,19 @@ function buildScene(
     sprite("ft-2d-anim-torch-sprite", refs.sprites.robotIdle, "UI", 1),
     comp("ft-2d-anim-torch-graph", "AnimationGraphComponent", { graphGuid: refs.torchGraph }),
   ]);
+
+  // 2D lighting: a dim blue Global light keeps the map readable, a warm Point light glows around the sheet torch, and
+  // a cone lamp above the pendulum points down (+Y turned 180 degrees). Their Shading Mode 2D Sprites and Tilemaps
+  // draw lit; the mascot is Unlit.
+  ctx.addActor(light2D("ft-2d-light-ambient", "Ambient 2D Light", [0, 0, 0], {
+    lightKind: "global", color: [0.7, 0.78, 1], intensity: 0.65,
+  }), { scene });
+  ctx.addActor(light2D("ft-2d-light-torch", "Torch 2D Light", [tileCenterX(2), tileBottomY(4) + TILE / 2, 0], {
+    lightKind: "point", color: [1, 0.72, 0.38], intensity: 1.4, radius: 3.5, innerRadius: 0.4,
+  }), { scene });
+  ctx.addActor(light2D("ft-2d-light-lamp", "Lamp 2D Light", [7.9, 6.2, 0], {
+    lightKind: "point", color: [0.75, 0.9, 1], intensity: 1.2, radius: 6, innerRadius: 1, outerAngle: 70, innerAngle: 40,
+  }, [0, 0, 180]), { scene });
 
   // Released horizontally above the plateau, the bob swings under the pivot without touching it or the walker.
   const pivot: Vec3 = [7.9, 3.6, 0];
@@ -1051,8 +1089,8 @@ function buildScene(
   return scene;
 }
 
-function sprite(id: string, assetGuid: string, sortingLayer: string, orderInLayer: number): SerializedComponent {
-  return comp(id, "SpriteComponent", { assetGuid, sortingLayer, orderInLayer });
+function sprite(id: string, assetGuid: string, sortingLayer: string, orderInLayer: number, extra: Record<string, unknown> = {}): SerializedComponent {
+  return comp(id, "SpriteComponent", { assetGuid, sortingLayer, orderInLayer, ...extra });
 }
 
 function rigidBody(

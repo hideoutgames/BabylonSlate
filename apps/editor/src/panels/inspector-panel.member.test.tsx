@@ -26,6 +26,11 @@ const applyGraphChange = vi.hoisted(() =>
   ),
 );
 
+const HEAL_PINS = vi.hoisted(() => [
+  { name: "Amount", typeId: "float", direction: "in" as const },
+  { name: "Healed", typeId: "bool", direction: "out" as const },
+]);
+
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
     documentId: "graph:assets/Hero.class.hasset",
@@ -165,6 +170,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
             defaultValue: [{ key: "a", value: 1 }],
           },
           { id: "fn-1", kind: "function", name: "Jump", pins: [] },
+          { id: "fn-heal", kind: "function", name: "Heal", pins: HEAL_PINS },
           { id: "fn-record", kind: "function", name: "Use Item", pins: [
             { name: "Item", typeId: "struct", direction: "in" },
             { name: "Result", typeId: "struct", direction: "out" },
@@ -193,6 +199,15 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
             assetGuid: "",
           },
         ],
+        functionGraphs: {
+          "fn-heal": {
+            nodes: [
+              { id: "fn-heal-input", type: "flow.function.input", position: { x: 0, y: 0 }, data: { title: "Input", pins: HEAL_PINS } },
+              { id: "fn-heal-output", type: "flow.function.output", position: { x: 300, y: 0 }, data: { title: "Output", pins: HEAL_PINS } },
+            ],
+            edges: [],
+          },
+        },
       },
       layout: null,
       dirty: false,
@@ -271,6 +286,17 @@ function renderMemberInspector(memberId: string, includeClassPanel = false) {
   );
 }
 
+/** The Heal function's tab with its Input or Output node selected. */
+function renderFunctionNodeInspector(nodeId: string) {
+  return render(
+    <PrefabEditingProvider initialSelectedId={null}>
+      <GraphEditingProvider initialActiveFunctionId="fn-heal" initialSelectedNodeIds={[nodeId]}>
+        <InspectorPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>
+    </PrefabEditingProvider>,
+  );
+}
+
 afterEach(() => {
   cleanup();
   applyGraphChange.mockClear();
@@ -325,6 +351,40 @@ describe("Inspector class member details", () => {
     expect(screen.getByTestId("class-fn-in-add")).toBeTruthy();
     expect(screen.getByTestId("class-fn-out-add")).toBeTruthy();
     expect(screen.getByTestId("property-overridable")).toBeTruthy();
+  });
+
+  it.each([
+    ["Input", "fn-heal-input", "in", "out"],
+    ["Output", "fn-heal-output", "out", "in"],
+  ] as const)("shows only the function's matching pin list for its selected %s node", (_title, nodeId, shown, hidden) => {
+    renderFunctionNodeInspector(nodeId);
+    expect(screen.getByTestId(`class-fn-${shown}-add`)).toBeTruthy();
+    expect(screen.getByTestId(`class-fn-${shown}-row-fn-heal-${shown}-0`)).toBeTruthy();
+    expect(screen.queryByTestId(`class-fn-${hidden}-add`)).toBeNull();
+    expect(screen.queryByTestId(`class-fn-${hidden}-row-fn-heal-${hidden}-0`)).toBeNull();
+  });
+
+  it("adds a function input from its Input node onto the function and both endpoint nodes", async () => {
+    renderFunctionNodeInspector("fn-heal-input");
+    fireEvent.click(screen.getByTestId("class-fn-in-add"));
+    fireEvent.click(await screen.findByTestId("search-item-int"));
+    await waitFor(() => expect(applyGraphChange).toHaveBeenCalled());
+    const next = applyGraphChange.mock.calls.at(-1)![1];
+    const pins = [
+      { name: "Amount", typeId: "float", direction: "in" },
+      { name: "NewInput", typeId: "int", direction: "in" },
+      { name: "Healed", typeId: "bool", direction: "out" },
+    ];
+    expect(next.members?.find((member) => member.id === "fn-heal")?.pins).toEqual(pins);
+    expect(next.functionGraphs?.["fn-heal"]?.nodes.map((node) => node.data.pins)).toEqual([pins, pins]);
+  });
+
+  it("removes a function output from its Output node and keeps its inputs", () => {
+    renderFunctionNodeInspector("fn-heal-output");
+    fireEvent.click(screen.getByTestId("class-fn-out-fn-heal-out-0-remove"));
+    expect(applyGraphChange.mock.calls.at(-1)![1].members?.find((member) => member.id === "fn-heal")?.pins).toEqual([
+      { name: "Amount", typeId: "float", direction: "in" },
+    ]);
   });
 
   it("commits a normalized Category for functions and variables", () => {

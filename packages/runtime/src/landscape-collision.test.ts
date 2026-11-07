@@ -16,7 +16,7 @@ function worldWithLandscape() {
 
 it("creates opt-in Havok terrain that follows sculpting and transforms, reuses geometry, and retires cleanly", async () => {
   const { world, actor, component } = worldWithLandscape();
-  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
   const sync = new PhysicsWorldSync(backend);
   const publish = vi.spyOn(backend, "applyColliderChanges");
   const trace = (x = 14.25, z = 0.25) => backend.lineTrace({ x, y: 20, z }, { x, y: -20, z });
@@ -74,7 +74,7 @@ it.each([false, true])("a falling Havok body lands only when Landscape Collision
   ball.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: "dynamic", mass: 1 } }));
   ball.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: { shape: { kind: "sphere", radius: 0.5 } } }));
   world.spawnActorNow(ball);
-  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
+  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
   const sync = new PhysicsWorldSync(backend);
   try {
     for (let i = 0; i < 180; i++) sync.step(1 / 60, world);

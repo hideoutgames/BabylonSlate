@@ -1,6 +1,7 @@
 import {
   createDataTreeEntry,
   buildDataTreeIndex,
+  dataFieldIdentity,
   hardLoadingProperty,
   type DataFieldSnapshot,
   type DataTreeEntry,
@@ -88,11 +89,6 @@ function stableJson(value: unknown): string {
 
 function scalarField(field: StructField): StructField {
   return { ...field, container: "single" };
-}
-
-/** Legacy IDs derive from the original name; editors persist them before renaming. */
-export function dataFieldIdentity(field: Pick<StructField, "id" | "name">): string {
-  return field.id || `legacy:${field.name}`;
 }
 
 /** Snapshot only nested records which own values, never all paths through a schema DAG. */

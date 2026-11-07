@@ -22,7 +22,7 @@ import {
 } from "./context";
 
 /** Folder under `assets/FeatureTest/` for every Material, Material Function and Material Instance. */
-export const FEATURE_TEST_MATERIALS_FOLDER = "Materials";
+const FEATURE_TEST_MATERIALS_FOLDER = "Materials";
 
 /** Asset names, so sibling FeatureTest modules can look the assets up by path. */
 export const FEATURE_TEST_MATERIAL_NAMES = {

@@ -40,9 +40,9 @@ import {
   type MaterialFunctionDocument,
 } from "@haptic/shader-graph";
 import { MemoryStorageAdapter } from "@haptic/vfs";
+import { ENGINE_BASE_CLASSES } from "../lib/class-asset-lookup";
 import {
   CREATABLE_ASSET_TYPES,
-  ENGINE_BASE_CLASSES,
   isMaterialSamplerTextureAsset,
 } from "../lib/content-browser-helpers";
 import { loadOptionalEngineContent } from "../lib/engine-content";

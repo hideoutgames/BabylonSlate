@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   acquireResources,
+  capacity,
   publish,
   workloadFor,
   claimInheritedLease,
@@ -205,12 +206,14 @@ test("a fitting older ticket retains priority even when its owner is not polling
   const options = await fixture(t);
   const queue = join(options.directory, "queue");
   await mkdir(queue, { recursive: true });
-  // Older agents publish this shape without a bypass counter.
+  // A waiting ticket as acquireResources publishes it, whose owner is not polling.
   await publish(join(queue, "0000000000000000-older.json"), {
     pid: process.pid,
     token: "older",
     request: small,
     active: false,
+    bypasses: 0,
+    policy: { capacity, maxHeavy: 3, maxRoots: 3, maxBypasses: 3 },
   });
   await assert.rejects(
     acquireResources(workloadFor("tooling", {}), {
@@ -389,28 +392,6 @@ for (const scenario of [
     assert.deepEqual(await readdir(join(options.directory, "queue")), []);
   });
 }
-
-test("legacy waiting tickets use standard headroom rather than a newer caller's capacity", async (t) => {
-  const options = await fixture(t);
-  const queue = join(options.directory, "queue");
-  await mkdir(queue, { recursive: true });
-  const older = join(queue, "0000000000000000-older.json");
-  await publish(older, {
-    pid: process.pid,
-    token: "older",
-    request: workloadFor("build", {}),
-    active: false,
-  });
-  const light = await acquireResources(workloadFor("tooling", {}), {
-    ...options,
-    capacity: { workers: 3, browsers: 1, memoryGiB: 6, reserveGiB: 3 },
-    freeMemory: () => 5 * 1024 ** 3,
-    timeoutMs: 3000,
-  });
-  await light.release();
-  await rm(older);
-  assert.deepEqual(await readdir(queue), []);
-});
 
 test("a queued browser cannot exceed the browser cap and cancellation releases its ticket", async (t) => {
   const options = await fixture(t);

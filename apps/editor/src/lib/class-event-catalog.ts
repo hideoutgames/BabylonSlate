@@ -133,7 +133,7 @@ const EDITOR_UTILITY_EVENT_TYPES = [
 
 const EDITOR_BEGIN_PLAY_EVENT = "flow.event.editorBeginPlay";
 
-export const OVERLAY_MOUSE_EVENT_TYPE_IDS = [
+const OVERLAY_MOUSE_EVENT_TYPE_IDS = [
   "flow.event.onMouseEnter",
   "flow.event.onMouseLeave",
   "flow.event.onClick",
@@ -216,7 +216,7 @@ function isSubsystemChain(chain: readonly string[]): boolean {
 }
 
 /** Lineage lifecycle events (Game Instance / subsystem) a class chain handles. */
-export function lineageNativeEventTypes(
+function lineageNativeEventTypes(
   chain: readonly string[],
 ): ReadonlySet<string> {
   const types = new Set(engineNativeEventsFor(chain).map((event) => event.eventType));

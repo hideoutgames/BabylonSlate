@@ -12,6 +12,7 @@ import {
 } from "@haptic/assets";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
+import { textureEncodeQueue } from "../testing/texture-encode-queue";
 
 /** KTX2 identifier plus pixelWidth / pixelHeight. */
 function ktx2Header(width: number, height: number): Uint8Array {
@@ -100,7 +101,7 @@ function recordTextureWrites(storage: MemoryStorageAdapter, path?: string): Text
 
 /** Resolves once no admitted write (an encode's follow-up writes included) is still running. */
 async function writesSettled(service: ProjectService): Promise<void> {
-  await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
+  await vi.waitFor(() => expect(textureEncodeQueue(service).depth).toBe(0));
   const lease = service.lockAuthoringWrites("Checking for unfinished writes");
   try {
     expect(await lease.ready).toBe(true);
@@ -290,7 +291,7 @@ describe("texture encode state writes", () => {
     await service.closeProject();
     expect(service.textureEncodingGuids.size).toBe(0);
     calls[0]!.finish();
-    await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
+    await vi.waitFor(() => expect(textureEncodeQueue(service).depth).toBe(0));
     expect(service.textureEncodingGuids.size).toBe(0);
   });
 });

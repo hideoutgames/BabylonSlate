@@ -73,6 +73,7 @@ import {
   pinRowIdsFor,
   type CommittedPinRowIds,
 } from "./inspector-member-rows";
+import { FunctionPinListEditors } from "./inspector-function-pins";
 import type { InspectorCatalogs } from "./use-inspector-catalogs";
 
 /** The pin whose default the Class picker fills, and the base Class it allows. */
@@ -97,6 +98,8 @@ export interface GraphNodeDetailsProps {
   activeFunctionId: string | null;
   /** The inspected document's path; a renamed event's Calls are scoped to its Class. */
   docPath: string | undefined;
+  /** The graph's host class id, so a function signature edit reaches only its own Calls. */
+  classId?: string;
   /** The focused diagnostic's line in an Execute JavaScript body. */
   focusBodyLine?: number;
   catalogs: InspectorCatalogs;
@@ -125,6 +128,7 @@ export function GraphNodeDetails({
   selectedNode,
   activeFunctionId,
   docPath,
+  classId,
   focusBodyLine,
   catalogs,
   persistGraph,
@@ -222,6 +226,14 @@ export function GraphNodeDetails({
         ? { signature: (pin as { signature?: PinListRow["signature"] }).signature ?? [] }
         : {}),
     }));
+  // A function's Input node edits its Inputs, its Output node its Outputs.
+  const functionEndpoint =
+    selectedNode.type === "flow.function.input" ? "in"
+      : selectedNode.type === "flow.function.output" ? "out"
+        : null;
+  const endpointFunction = functionEndpoint && activeFunctionId
+    ? (graph.members ?? []).find((member) => member.kind === "function" && member.id === activeFunctionId)
+    : undefined;
   // Wired to a delegate input, a custom event takes that delegate's signature (as in Unreal).
   const eventSignatureFrom = isCustomEvent ? customEventSignatureSource(graph, selectedNode.id) : null;
   const title =
@@ -407,6 +419,18 @@ export function GraphNodeDetails({
         ) : null}
         {dataLiteralDefaults.length > 0 ? <GraphDataLiteralDefaults entries={dataLiteralDefaults}
           nodeData={selectedNode.data} onPatch={updateNodeData} /> : null}
+        {functionEndpoint && endpointFunction ? (
+          <FunctionPinListEditors
+            graph={graph}
+            member={endpointFunction}
+            only={functionEndpoint}
+            classEntries={objectClassEntries}
+            typeAssets={typeAssets}
+            classId={classId}
+            delegateSignatures={delegateSignatures}
+            onChange={persistGraph}
+          />
+        ) : null}
         {isExecJs ? (
           <>
             <PinListEditor

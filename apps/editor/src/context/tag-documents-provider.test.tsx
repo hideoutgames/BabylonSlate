@@ -5,10 +5,10 @@ import {
   installMemoryOpfs,
   unmountDocumentProvider,
 } from "../testing/real-document-provider";
+import { useDocumentStateProbe, type DocumentStateProbe } from "../testing/document-state-probe";
 import {
   DocumentProvider,
   useDocumentActions,
-  useDocuments,
   type DocumentActions,
 } from "./document-context";
 import { TagDocumentsProvider } from "./tag-documents-provider";
@@ -41,16 +41,15 @@ vi.mock("@haptic/render/scene-load-readiness", async (importOriginal) => ({
   waitForSceneLoadingPaint: async () => {},
 }));
 
-type Documents = ReturnType<typeof useDocuments>;
 const seen: {
   actions: DocumentActions | null;
-  documents: Documents | null;
+  documents: DocumentStateProbe | null;
   tags: TagApi | null;
 } = { actions: null, documents: null, tags: null };
 
 function Probe() {
   seen.actions = useDocumentActions();
-  seen.documents = useDocuments();
+  seen.documents = useDocumentStateProbe();
   seen.tags = useTags();
   return null;
 }

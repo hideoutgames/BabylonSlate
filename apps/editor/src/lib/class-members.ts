@@ -35,12 +35,10 @@ export {
   GET_GAME_INSTANCE_NODE_ID,
   LINEAGE_NATIVE_EVENT_TYPES,
   NATIVE_CLASS_EVENT_TYPES,
-  OVERLAY_MOUSE_EVENT_TYPE_IDS,
   isEditorUtilityChain,
   isLineageNativeEventAllowed,
   isScriptCatalogNodeAllowed,
   lineageNativeEventBases,
-  lineageNativeEventTypes,
   nativeEventStubs,
   nativeEventTitle,
   nativeStubId,
@@ -48,19 +46,13 @@ export {
   type ClassEventOptions,
 } from "./class-event-catalog";
 export {
-  NEW_MEMBER_NAMES,
   blueprintSectionsForClass,
   classAllowsMemberKind,
   functionLibraryShowsEventGraphEmpty,
   nextNewMemberName,
   variableFieldsForPickerType,
-  type BlueprintSection,
-  type ClassBlueprintMemberKind,
 } from "./class-member-sections";
 export {
-  addCallEventNode,
-  addCallFunctionNode,
-  addDispatcherNodes,
   createEventNodeData,
   dispatcherEventNodeData,
   dispatcherEventPins,
@@ -71,15 +63,11 @@ export {
   isObjectInstanceVariableType,
   patchVariableAccessNode,
   syncVariableAccessNodes,
-  type GraphSpawnOptions,
   type VariableAccessKind,
 } from "./class-member-nodes";
 export {
-  callParentDisplayTitle,
-  callParentNodeId,
   ensureCallParentForEvent,
   ensureEventNodeOnGraph,
-  eventDataPinsFromNode,
   inheritedCustomEventSeeds,
 } from "./class-event-nodes";
 export {
@@ -88,16 +76,10 @@ export {
   droppedRowsNotice,
   dropVariableBinding,
   joinNames,
-  placeClassMemberDrop,
   resolveClassMemberDrop,
-  variableAccessAllowed,
-  type ClassMemberDropKind,
-  type ClassMemberDropResult,
   type ClassMemberDropRow,
   type GraphDropPoint,
 } from "./class-member-drop";
-
-export type { GraphClassMember, GraphClassMemberKind, GraphClassMemberPin };
 
 export const DEFAULT_FUNCTION_PINS: GraphClassMemberPin[] = [
   { name: "exec", typeId: "exec", direction: "in" },
@@ -283,7 +265,7 @@ function syncFunctionGraphPins(
 }
 
 /** The open Class and its ancestry, so member edits can tell its own Call Function nodes from others. */
-export type ClassMemberEditContext = {
+type ClassMemberEditContext = {
   /** This document's class id; Call Function nodes stamped with it, or with none, are its own. */
   classId?: string;
   parentClass?: string | null;

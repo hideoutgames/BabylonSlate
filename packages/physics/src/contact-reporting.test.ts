@@ -25,7 +25,7 @@ function spawn(
 
 /** A ball held against a floor by a constant downward speed, so it stays awake and in contact. */
 async function ballOnFloor(floor: boolean | undefined, ball: boolean | undefined) {
-  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
   spawn(backend, "floor", "static", { x: 0, y: -0.5, z: 0 }, { kind: "box", halfExtents: { x: 5, y: 0.5, z: 5 } }, { reportContacts: floor });
   spawn(backend, "ball", "dynamic", { x: 0, y: 0.24, z: 0 }, { kind: "sphere", radius: 0.25 }, { reportContacts: ball });
   return backend;
@@ -73,7 +73,7 @@ describe("Havok contact reporting", () => {
   });
 
   it("changes a body's reporting only after its open trigger overlap ends", async () => {
-    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
     try {
       spawn(backend, "zone", "static", { x: 0, y: 0, z: 0 }, { kind: "box", halfExtents: { x: 1, y: 1, z: 1 } }, { isTrigger: true });
       spawn(backend, "wall", "static", { x: 4, y: 0, z: 0 }, { kind: "box", halfExtents: { x: 0.5, y: 2, z: 2 } }, { reportContacts: false });
@@ -97,7 +97,7 @@ describe("Havok contact reporting", () => {
   });
 
   it("keeps overlap begin and end events when no body reports contacts", async () => {
-    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
     try {
       spawn(backend, "zone", "static", { x: 0, y: 0, z: 0 }, { kind: "box", halfExtents: { x: 1, y: 1, z: 1 } },
         { reportContacts: false, isTrigger: true });

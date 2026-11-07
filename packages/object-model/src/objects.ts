@@ -465,8 +465,8 @@ export type GameInstanceHooks = LifecycleHooks<GameInstance> & {
   onSceneExit?: (self: GameInstance, sceneName: string) => void;
 };
 
-export const LAYER_CAMERA_CLASS_ID = "LayerCamera";
-export const SCENE_CAMERA_MANAGER_CLASS_ID = "SceneCameraManager";
+const LAYER_CAMERA_CLASS_ID = "LayerCamera";
+const SCENE_CAMERA_MANAGER_CLASS_ID = "SceneCameraManager";
 
 /**
  * The 2D orthographic camera a Scene or one Scene Layer instance owns. It

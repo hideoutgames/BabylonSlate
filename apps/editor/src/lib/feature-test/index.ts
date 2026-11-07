@@ -38,7 +38,7 @@ import { buildFeatureTestOcclusion } from "./occlusion";
 
 export type { FeatureTestHost } from "./context";
 
-export interface FeatureTestScaffoldResult {
+interface FeatureTestScaffoldResult {
   /** Apply FeatureTest project settings (class ids, guids, render, tags) to the scaffolded project. */
   applySettings(settings: ProjectSettings): ProjectSettings;
 }

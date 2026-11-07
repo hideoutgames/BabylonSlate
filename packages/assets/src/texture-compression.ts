@@ -1,7 +1,9 @@
-/** Texture compression states (engineplan §3.5). */
+/**
+ * Saved Texture compression states (engineplan §3.5). A running encode is not one:
+ * the file stays `pending` until the encode commits, and only the editor shows `encoding`.
+ */
 export type TextureCompressionState =
   | "pending"
-  | "encoding"
   | "compressed"
   | "fallback_uncompressed"
   | "encode_failed";

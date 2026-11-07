@@ -392,7 +392,7 @@ describe("Particle preview recovery", () => {
     view.rerender(preview());
     harness.textures.set(
       "tex-1",
-      savedTexture({ usage: "albedo", ktx2ChunkId: "ktx2-1x1", compressionState: "encoding" }, ["ktx2-1x1"]),
+      savedTexture({ usage: "albedo", ktx2ChunkId: "ktx2-1x1", compressionState: "pending" }, ["ktx2-1x1"]),
     );
     harness.registryEpoch += 1;
     view.rerender(preview());

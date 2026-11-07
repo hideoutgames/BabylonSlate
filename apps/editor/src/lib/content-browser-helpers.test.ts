@@ -13,21 +13,17 @@ import {
 import {
   CREATABLE_ASSET_TYPES,
   CREATABLE_ASSET_TYPE_GROUPS,
-  ENGINE_BASE_CLASSES,
   buildParentClassTreeRows,
   isContentBrowserEmptyGridDoubleClickTarget,
   buildNewAssetResult,
   openSceneViewportMode,
   classDocumentShowsPrefab,
-  collectFolderGuids,
-  contentBrowserMoveFromDrop,
   contentBrowserSelectionMoves,
   contentBrowserTreeDropMoves,
   filterAssets,
   sortAssets,
   sortChildFolders,
   flattenContentBrowserForest,
-  flattenContentBrowserTree,
   flattenFolderTree,
   withAutoCollapsedNestedFolders,
   filterFolderTreeRows,
@@ -38,36 +34,26 @@ import {
   isFolderTreeRoot,
   isNewAssetNameTaken,
   isRenameNameTaken,
-  isValidMoveDestination,
   contentBrowserContextActions,
   buildMaterialInstanceAssetResult,
   buildSpriteAnimationAssetResult,
   buildTilesetAssetResult,
-  materialInstanceNameFor,
   spriteAnimationNameFor,
   canRetargetSelectedAssets,
   guidsOutsideSelectedFolders,
   rootSelectedFolderPaths,
-  listChildFolders,
   newAssetFileName,
   remapPathAfterFolderMove,
   visualForIndexedAsset,
   materialAssetDependencies,
-  assetHeaderDependencies,
-  materialHeaderMeta,
   isMaterialSamplerTextureAsset,
-  isPostProcessMaterialAsset,
   isPostProcessMaterialForPicker,
-  isParticleMaterialAsset,
   isParticleMaterialForPicker,
   materialDomainsFromAssets,
   filterInspectorPinPickerAssets,
   classIdConflict,
   classIdFromClassAsset,
   classParentLookup,
-  registryClassParentLookup,
-  exclusiveSelectAsset,
-  exclusiveSelectFolder,
   paintSelectTiles,
   resolveContentBrowserPaintHit,
   applyContentBrowserTreeSelect,
@@ -75,6 +61,13 @@ import {
   runWithContentBrowserImportBusy,
   type ContentBrowserTreeRow,
 } from "./content-browser-helpers";
+import { assetHeaderDependencies } from "./asset-header-dependencies";
+import { ENGINE_BASE_CLASSES, registryClassParentLookup } from "./class-asset-lookup";
+import { contentBrowserMoveFromDrop, isValidMoveDestination } from "./content-browser-moves";
+import { exclusiveSelectAsset, exclusiveSelectFolder } from "./content-browser-selection";
+import { collectFolderGuids, flattenContentBrowserTree, listChildFolders } from "./content-browser-tree";
+import { isParticleMaterialAsset, isPostProcessMaterialAsset, materialHeaderMeta } from "./material-asset-filters";
+import { materialInstanceNameFor } from "./new-asset-result";
 import { resolveTypeVisual } from "@haptic/editor-kit";
 
 it("detects rename collisions with Unicode stems and compound asset suffixes", () => {

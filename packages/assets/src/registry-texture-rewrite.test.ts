@@ -53,7 +53,7 @@ describe("Texture state writes", () => {
     const reads = vi.spyOn(storage, "readBinary");
     const writes = vi.spyOn(storage, "writeBinary");
 
-    await registry.setCompressionState("tex-1", "encoding");
+    await registry.setCompressionState("tex-1", "pending");
 
     // Neither the file nor the pixels blob was read whole, and the blob was not stored again.
     expect(reads).not.toHaveBeenCalled();
@@ -62,7 +62,7 @@ describe("Texture state writes", () => {
     reads.mockRestore();
 
     const header = registry.getByGuid("tex-1")!.header;
-    expect(header.payload).toMatchObject({ compressionState: "encoding", ktx2ChunkId: "ktx2:old", ktx2Width: 1, ktx2Height: 1 });
+    expect(header.payload).toMatchObject({ compressionState: "pending", ktx2ChunkId: "ktx2:old", ktx2Width: 1, ktx2Height: 1 });
     expect(header.payload.ktx2Sha256).toBe(header.chunks.find((entry) => entry.id === "ktx2:old")!.sha256);
     // The rewritten file still verifies every chunk against its digest.
     const decoded = await decodeHasset(await storage.readBinary(PATH), (sha256) => blobs.readBlob(sha256));
@@ -76,7 +76,7 @@ describe("Texture state writes", () => {
     await storage.remove(pixelsBlob);
     const before = await storage.readBinary(PATH);
 
-    await expect(registry.setCompressionState("tex-1", "encoding")).rejects.toThrow();
+    await expect(registry.setCompressionState("tex-1", "pending")).rejects.toThrow();
 
     expect(await storage.readBinary(PATH)).toEqual(before);
   });

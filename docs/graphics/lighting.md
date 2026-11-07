@@ -7,7 +7,7 @@ Lights, environment lighting and the light budget decide how lit surfaces look i
 1. Open **Place Actors** and choose **Lights**.
 2. Pick **Point Light**, **Directional Light**, **Spot Light** or **Hemispheric Fill**.
 
-You can also select an actor and use **Add Component > Rendering** to add **Light**, **Rectangular Area Light** or **Hemispheric Fill Light**.
+You can also select an actor and use **Add Component > Rendering** to add **Light**, **Rectangular Area Light** or **Hemispheric Fill Light**. For 2D games, **Place Actors > Lights** also has **2D Point Light** and **2D Global Light** ([2D Light](../components/light-2d.md)).
 
 New 3D scenes already contain a warm **Directional Light** with **Cast Shadows** on, a Skybox that also provides [environment lighting](#environment-lighting), and a Camera. The light starts about 45° above the horizon and to the left of the camera, so surfaces facing the camera are well lit and their shadows stay crisp. A PBR scene with no lights and no environment lighting renders dark, including meshes with no Material, which draw a [grey checker](models.md#materials) only while a light reaches them. A **Blank** project's first scene is empty, so add a light before you place meshes.
 
@@ -20,6 +20,7 @@ New 3D scenes already contain a warm **Directional Light** with **Cast Shadows**
 | [Light](../components/light.md), Directional | The sun or moon | Parallel light from one direction. Position does not matter. |
 | [Hemispheric Fill Light](../components/hemispheric-fill-light.md) | Soft sky and ground fill | **Color** from above, **Ground Color** from below. Never casts shadows. |
 | [Rectangular Area Light](../components/area-rect-light.md) | Windows, screens, light panels | **Width** by **Height** emitter. Unshadowed, so it lights through walls. |
+| [2D Light](../components/light-2d.md) | 2D torches, lamps and ambient light | Lights only Sprites and Tilemaps whose **Shading Mode** is **2D**; 3D lights do not light those. See [2D lighting](../2d/index.md#2d-lighting). |
 
 Spot, directional and area lights shine along the actor's forward (+Z) axis: rotate the actor to aim them. Scale does not change a light; use **Range** instead.
 

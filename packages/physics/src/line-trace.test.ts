@@ -13,7 +13,6 @@ describe("Line Trace actor exclusions", () => {
     const backend = await createPhysicsBackend({
       ...options,
       gravity: { x: 0, y: 0, z: 0 },
-      allowSoftwareFallback: false,
     });
     try {
       for (const [index, y] of [8, 6, 4].entries()) {
@@ -118,7 +117,7 @@ describe("Line Trace exclusions after collider changes", () => {
     { label: "Havok 3D", preferSoftware: false },
   ])("$label masks hosted, retyped and recreated shapes added after earlier queries", async (options) => {
     const backend = await createPhysicsBackend({
-      ...options, kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+      ...options, kind: "3d", gravity: { x: 0, y: 0, z: 0 },
     });
     const body = (id: string, y: number) => backend.createBody({ id, actorId: `${id}-actor`, motionType: "static", mass: 0,
       linearDamping: 0, angularDamping: 0, gravityScale: 0,
@@ -168,7 +167,7 @@ describe("Trigger-only queries", () => {
     { label: "Rapier 2D", kind: "2d" as const, preferSoftware: false },
   ])("$label hit only trigger shapes, past every solid shape in front of them", async (options) => {
     const backend = await createPhysicsBackend({
-      ...options, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+      ...options, gravity: { x: 0, y: 0, z: 0 },
     });
     const body = (id: string, y: number) => backend.createBody({ id, actorId: id, motionType: "static", mass: 0,
       linearDamping: 0, angularDamping: 0, gravityScale: 0,
@@ -229,7 +228,7 @@ describe("Line Trace surface normals", () => {
     { label: "Rapier 2D", kind: "2d" as const, preferSoftware: false },
   ])("$label returns the contacted face normal", async (options) => {
     const backend = await createPhysicsBackend({
-      ...options, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+      ...options, gravity: { x: 0, y: 0, z: 0 },
     });
     try {
       backend.createBody({ id: "box", actorId: "box", motionType: "static", mass: 0,
@@ -263,7 +262,7 @@ describe("Sphere Overlap", () => {
     { label: "Rapier 2D", kind: "2d" as const, preferSoftware: false },
   ])("$label lists each body and shape owner once and skips triggers on request", async (options) => {
     const backend = await createPhysicsBackend({
-      ...options, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+      ...options, gravity: { x: 0, y: 0, z: 0 },
     });
     const body = (id: string, x: number) => backend.createBody({ id, actorId: id, motionType: "static", mass: 0,
       linearDamping: 0, angularDamping: 0, gravityScale: 0,
@@ -298,7 +297,7 @@ describe("Sphere Overlap", () => {
 
   it("Havok 3D lists the bodies it finds in creation order, a recreated body last", async () => {
     const backend = await createPhysicsBackend({
-      kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+      kind: "3d", gravity: { x: 0, y: 0, z: 0 },
     });
     const spawn = (id: string) => {
       backend.createBody({ id, actorId: `actor-${id}`, motionType: "static", mass: 0,
@@ -327,7 +326,7 @@ describe("Sphere Overlap", () => {
     { label: "Rapier 2D", kind: "2d" as const },
   ])("$label tests collider shapes, not their bounds", async (options) => {
     const backend = await createPhysicsBackend({
-      ...options, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+      ...options, gravity: { x: 0, y: 0, z: 0 },
     });
     const angle = Math.PI / 4;
     try {

@@ -2,7 +2,7 @@
  * Content paths and folder-tree shape for the Content Browser: the assets
  * root, parent and joined folder paths, folder guid collection, and the
  * flattened folder and asset rows the tree views render.
- * `content-browser-helpers.ts` re-exports the public names.
+ * `content-browser-helpers.ts` re-exports the names its importers use.
  */
 import type { IndexedAsset } from "@haptic/assets";
 

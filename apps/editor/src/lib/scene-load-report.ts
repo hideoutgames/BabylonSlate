@@ -4,7 +4,7 @@ import type { HostMemoryStats } from "@haptic/vfs";
 import { collectDiagnosticEnvironment, describeError, formatDiagnosticEnvironment, recentDiagnosticLog, type DiagnosticEnvironment } from "./diagnostic-info";
 
 /** Report lines for the WebGL call trace, or how to turn it on. */
-export function graphicsErrorTraceLines(): string[] {
+function graphicsErrorTraceLines(): string[] {
   if (!glErrorTraceActive()) return ["Graphics error trace: off (Engine Settings → Debugger → Trace Graphics Errors)"];
   const count = glErrorTraceEntries().length;
   return count

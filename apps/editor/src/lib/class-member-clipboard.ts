@@ -51,7 +51,7 @@ const FUNCTION_OUTPUT = "flow.function.output";
  * `functionId` of its source function; a component variable carries the
  * component it stands for, because the variable itself is not stored.
  */
-export type ClipboardVariable = {
+type ClipboardVariable = {
   member: GraphClassMember;
   component?: SerializedComponent;
   /** The Class whose names its function bodies were written against. */
@@ -59,7 +59,7 @@ export type ClipboardVariable = {
 };
 
 /** A copied function: signature, local variables and the whole function graph. */
-export type ClipboardFunction = {
+type ClipboardFunction = {
   member: GraphClassMember;
   locals: GraphClassMember[];
   nodes: GraphNode[];
@@ -68,7 +68,7 @@ export type ClipboardFunction = {
 };
 
 /** A copied event: the event node alone, never the nodes it runs. */
-export type ClipboardEvent = {
+type ClipboardEvent = {
   node: GraphNode;
   /** A custom event the Class does not own (an override, a component event). An override keeps its binding; a component event pastes unbound. */
   bound: boolean;
@@ -76,7 +76,7 @@ export type ClipboardEvent = {
 };
 
 /** A copied Event Dispatcher: the member alone (its name and inputs). */
-export type ClipboardDispatcher = {
+type ClipboardDispatcher = {
   member: GraphClassMember;
   sourceClassId?: string;
 };
@@ -100,7 +100,7 @@ export type ClassMemberCopyRow = {
   functionId?: string;
 };
 
-export type ClassMemberCopySource = {
+type ClassMemberCopySource = {
   graph: SerializedGraph;
   classId?: string;
   /** Class graphs by class id, where rows inherited from a parent are read. */
@@ -224,7 +224,7 @@ export function classAncestorGraphs(options: {
   });
 }
 
-export type ClassMemberPasteOptions = {
+type ClassMemberPasteOptions = {
   graph: SerializedGraph;
   clipboard: ClassMemberClipboard;
   /** The target Class's id; its own Call nodes carry it. */
@@ -240,7 +240,7 @@ export type ClassMemberPasteOptions = {
   idFactory?: () => string;
 };
 
-export type PastedClassMember = {
+type PastedClassMember = {
   kind: "variable" | "function" | "event" | "dispatcher";
   id: string;
   name: string;
@@ -250,7 +250,7 @@ export type PastedClassMember = {
   functionId?: string;
 };
 
-export type SkippedClassMember = {
+type SkippedClassMember = {
   kind: "variable" | "function" | "event" | "dispatcher";
   name: string;
   /**
@@ -260,7 +260,7 @@ export type SkippedClassMember = {
   reason: "kind" | "unavailable" | "present" | "function";
 };
 
-export type ClassMemberPasteResult = {
+type ClassMemberPasteResult = {
   graph: SerializedGraph;
   pasted: PastedClassMember[];
   skipped: SkippedClassMember[];

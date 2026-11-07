@@ -31,12 +31,7 @@ import {
   type MixerChannelPickTarget,
 } from "../lib/audio-mixer-edit";
 import { soundAttenuationDetailRows } from "../lib/sound-attenuation-rows";
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
+import { asRecord } from "../lib/as-record";
 
 function pickerAssets(
   list: ReadonlyArray<{

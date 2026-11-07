@@ -82,8 +82,8 @@ interface EditCommand<TDoc = unknown> {
 
 ## Document revisions and subscriptions
 
-- Documents mutate in place; `DocumentService.getRevisions()` keeps one revision per document kind plus `tabsRevision`, drawn from one service-wide sequence.
-- Components read the narrowest hook: `useDocumentActions()` (stable for the provider lifetime), `useOpenDocument(id)`, `useDocumentDirty(id)`, `useOpenDocumentsOfKinds(kinds)`, `useOpenDocumentTabs()`, `useRegistryState()`, `useSaveState()`. `useDocuments()` is deprecated.
+- Documents mutate in place; `DocumentService.getRevisions()` keeps one revision per document kind, drawn from one service-wide sequence.
+- Components read the narrowest hook: `useDocumentActions()` (stable for the provider lifetime), `useOpenDocument(id)`, `useDocumentDirty(id)`, `useOpenDocumentsOfKinds(kinds)`, `useOpenDocumentTabs()`, `useRegistryState()`, `useSaveState()` and the other state slices. There is no aggregate hook: a component calls one hook per piece of state it renders, so it re-renders only when that state changes.
 - Memos that read the registry key on `[assetRegistry, registryEpoch]`; memos that read other open documents key on `useOpenDocumentsOfKinds`. Edits never advance `registryEpoch`.
 - Code that runs after render (handlers, async work) reads `getOpenDocuments()` at call time, never a render snapshot.
 

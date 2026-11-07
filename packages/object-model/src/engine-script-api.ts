@@ -610,6 +610,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
         propertyKey: "assetGuid",
       },
       ...SORTING_VARIABLES,
+      { name: "Shading Mode", typeId: "string", propertyKey: "shadingMode" },
     ],
   },
   {
@@ -622,6 +623,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
         propertyKey: "assetGuid",
       },
       ...SORTING_VARIABLES,
+      { name: "Shading Mode", typeId: "string", propertyKey: "shadingMode" },
     ],
   },
   {
@@ -666,6 +668,19 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Color", typeId: "color", propertyKey: "color" },
       { name: "Ground Color", typeId: "color", propertyKey: "groundColor" },
       { name: "Intensity", typeId: "float", propertyKey: "intensity" },
+    ],
+  },
+  {
+    classId: "Light2DComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Kind", typeId: "string", propertyKey: "lightKind" },
+      { name: "Color", typeId: "color", propertyKey: "color" },
+      { name: "Intensity", typeId: "float", propertyKey: "intensity" },
+      { name: "Radius", typeId: "float", propertyKey: "radius" },
+      { name: "Inner Radius", typeId: "float", propertyKey: "innerRadius" },
+      { name: "Outer Angle", typeId: "float", propertyKey: "outerAngle" },
+      { name: "Inner Angle", typeId: "float", propertyKey: "innerAngle" },
     ],
   },
   {

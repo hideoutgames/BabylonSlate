@@ -20,14 +20,14 @@ describe("formatFeatureTestCheckReport", () => {
       scenes: [{
         name: "main", path: "assets/main.scene.hasset", passed: false,
         problems: ["Play did not finish loading in 120 s (stuck at Loading Models 45%)."],
-        editor: { status: "ready", ms: 4200, phase: null, frames: { frames: 180, durationMs: 3000, fps: 60, p95Ms: 18, maxMs: 40, stalls: 0 }, error: null, gpu: null },
+        editor: { status: "ready", ms: 4200, phase: null, frames: { frames: 180, durationMs: 3000, fps: 60, medianMs: 16.7, meanMs: 3000 / 180, vsync: [1, 0, 0, 0], p95Ms: 18, maxMs: 40, stalls: 0 }, error: null, gpu: null },
         play: { status: "timeout", ms: 120_000, phase: "Loading Models 45%", frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [], benchmark: [],
           logs: [{ severity: "error", message: "Material FT_Glass failed to compile" }] },
         session: { diagnostics: [], droppedDiagnostics: 0, runtimeMode: "worker", textures: { before: 55, after: 55, leak: false, quarantined: false } },
       }, {
         name: "FT_2D", path: "assets/FeatureTest/Scenes/FT_2D.scene.hasset", passed: true, problems: [],
         editor: { status: "ready", ms: 900, phase: null, frames: null, error: null, gpu: null },
-        play: { status: "loaded", ms: 3000, phase: null, frames: { frames: 300, durationMs: 5000, fps: 60, p95Ms: 17, maxMs: 25, stalls: 0 }, runtimeFps: 60,
+        play: { status: "loaded", ms: 3000, phase: null, frames: { frames: 300, durationMs: 5000, fps: 60, medianMs: 16.7, meanMs: 5000 / 300, vsync: [1, 0, 0, 0], p95Ms: 17, maxMs: 25, stalls: 0 }, runtimeFps: 60,
           snapshot: { drawCalls: 42, meshes: 80, textures: 30, accountedBytes: 8 * 1048576, rendering },
           presentation: {
             frames: { drawn: 280, held: 4, skipped: 16, heldReasons: { "Render pipelines are compiling.": 1, "Scene is not ready to render.": 3 } },
@@ -62,7 +62,7 @@ describe("formatFeatureTestCheckReport", () => {
 
   it("recommends the highest quality tier every benchmarked scene holds at 60 and 30 fps", () => {
     const sample = (label: string, fps: number, p95Ms: number): FeatureTestBenchmarkSample => ({
-      label, frames: { frames: fps * 5, durationMs: 5000, fps, p95Ms, maxMs: p95Ms, stalls: 0 }, runtimeFps: fps,
+      label, frames: { frames: fps * 5, durationMs: 5000, fps, medianMs: 1000 / fps, meanMs: 1000 / fps, vsync: [1, 0, 0, 0], p95Ms, maxMs: p95Ms, stalls: 0 }, runtimeFps: fps,
       cpuMs: 4, gpuMs: null, drawCalls: 100, resolution: "1280x720@1.00", failed: [],
     });
     const scene = (name: string, benchmark: FeatureTestBenchmarkSample[]): FeatureTestCheckSceneResult => ({
@@ -84,9 +84,9 @@ describe("formatFeatureTestCheckReport", () => {
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     expect(lines).toContain("Benchmark: highest tier every benchmarked scene holds at 60 fps: low · at 30 fps: medium (2/2 scenes benchmarked)");
     expect(lines).toContain("  Highest tier at 60 fps: high · at 30 fps: ultra");
-    // Each scene's header states the GPU backpressure it ran under; a report from before it says so.
+    // Each scene's header states the GPU backpressure it ran under, or that its samples did not measure it.
     expect(lines.filter((line) => line.startsWith("  Frames in flight: "))).toEqual([
-      "  Frames in flight: 2 (12 renders skipped while sampling)", "  Frames in flight: unknown (older report)",
+      "  Frames in flight: 2 (12 renders skipped while sampling)", "  Frames in flight: not measured",
     ]);
   });
 
@@ -305,7 +305,7 @@ describe("formatFeatureTestCheckReport", () => {
     const passes = { objects: 420, geometry: 40, shadows: 140, captures: 90, post: 12, other: 2 };
     const sample = (label: string, meanMs: number, cpuMs: number, extra: Partial<FeatureTestBenchmarkSample> = {}): FeatureTestBenchmarkSample => ({
       label, baseline: label.startsWith("baseline"),
-      frames: { frames: 100, durationMs: meanMs * 100, fps: 1000 / meanMs, medianMs: meanMs, meanMs, p95Ms: meanMs + 8, maxMs: meanMs + 20, stalls: 0 },
+      frames: { frames: 100, durationMs: meanMs * 100, fps: 1000 / meanMs, medianMs: meanMs, meanMs, vsync: [1, 0, 0, 0], p95Ms: meanMs + 8, maxMs: meanMs + 20, stalls: 0 },
       runtimeFps: null, cpuMs, gpuMs: null, drawCalls: 704, draws: { median: 704, min: 704, max: 704, samples: 10 },
       resolution: "1180x788@1.00", failed: [], settings, unsettled: { firstDraws: 0, compiling: 0, settleMs: 3000 }, drawPasses: passes,
       presentation: { drawn: 40, held: 0, ms: 5000, heldReasons: {} }, ...extra,
@@ -404,7 +404,7 @@ describe("formatFeatureTestCheckReport", () => {
           snapshot: { drawCalls: 605, meshes: 80, textures: 30, accountedBytes: 0, rendering: null },
           counters: { draws: { median: 575, min: 544, max: 605, samples: 10 }, cpuMs: null, gpuMs: null }, presentation: null, firstDraws: null, commands: [],
           benchmark: [{
-            label: "baseline", frames: { frames: 100, durationMs: 4000, fps: 25, medianMs: 40, p95Ms: 46, maxMs: 50, stalls: 0 },
+            label: "baseline", frames: { frames: 100, durationMs: 4000, fps: 25, medianMs: 40, meanMs: 40, vsync: [0, 0, 1, 0], p95Ms: 46, maxMs: 50, stalls: 0 },
             runtimeFps: null, cpuMs: 14.2, gpuMs: null, drawCalls: 575, draws: { median: 575, min: 544, max: 605, samples: 10 },
             cpu: { median: 14.2, min: 13.1, max: 16.0, samples: 10 },
             resolution: "1180x788@1.00", failed: [],

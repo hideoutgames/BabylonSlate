@@ -19,6 +19,14 @@ export interface DataFieldSnapshot {
   loading?: "hard";
 }
 
+/**
+ * A field's stable identity: its persisted `id`, or `legacy:<name>` for a field declared without one (the engine's
+ * built-in Structures). Editors persist the derived id before renaming such a field.
+ */
+export function dataFieldIdentity(field: Pick<DataFieldSnapshot, "id" | "name">): string {
+  return field.id || `legacy:${field.name}`;
+}
+
 /** Independent authoring schema; no Structure asset is required. */
 export interface DataDefinitionField extends DataFieldSnapshot {
   id: string;

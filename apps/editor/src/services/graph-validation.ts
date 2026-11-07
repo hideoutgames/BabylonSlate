@@ -70,7 +70,7 @@ export {
   knownClassIdSet,
   scriptPinCompatibility,
 } from "./graph-class-symbols";
-export type { HydrateGraphOptions, InputPaletteAsset } from "./graph-node-refresh";
+export type { HydrateGraphOptions } from "./graph-node-refresh";
 export {
   bindUnboundComponentEvents,
   hydrateSerializedGraphForEditor,
@@ -84,12 +84,6 @@ export {
   ScriptPaletteCache,
   scriptPaletteInjectorKey,
   scriptPaletteNodes,
-} from "./script-palette";
-export type {
-  PaletteOwnedActor,
-  PaletteSceneDocument,
-  ScriptPaletteBuildOptions,
-  ScriptPaletteOptions,
 } from "./script-palette";
 
 export type ValidateSerializedGraphOptions = {

@@ -8,7 +8,7 @@ import type { CustomEditorTheme, EngineSettings } from "@haptic/vfs";
 
 export const DEFAULT_EDITOR_THEME_ID = "default";
 
-export const EDITOR_THEME_FILE_FORMAT = "haptic-editor-theme";
+const EDITOR_THEME_FILE_FORMAT = "haptic-editor-theme";
 const EDITOR_THEME_FILE_VERSION = 1;
 
 /** Haptic Dark's `.dark` token values as sRGB hex; a test keeps them in sync. */
@@ -104,7 +104,7 @@ export type ThemeColors = Record<ThemeColorKey, string>;
 
 export const THEME_COLOR_KEYS = Object.keys(DEFAULT_COLORS) as ThemeColorKey[];
 
-export interface ThemeColorGroup {
+interface ThemeColorGroup {
   id: string;
   label: string;
   colors: { key: ThemeColorKey; label: string }[];
@@ -248,7 +248,7 @@ export const THEME_COLOR_GROUPS: ThemeColorGroup[] = [
   },
 ];
 
-export interface EditorTheme {
+interface EditorTheme {
   id: string;
   name: string;
   /** Built-in themes are never edited; editing one forks a custom theme. */
@@ -638,7 +638,7 @@ export const BUILT_IN_EDITOR_THEMES: readonly EditorTheme[] = [
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
 /** Known keys with valid colors; anything missing falls back to Haptic Dark. */
-export function completeThemeColors(colors: Record<string, unknown>): ThemeColors {
+function completeThemeColors(colors: Record<string, unknown>): ThemeColors {
   const complete = { ...DEFAULT_COLORS } as ThemeColors;
   for (const key of THEME_COLOR_KEYS) {
     const value = colors[key];
@@ -647,7 +647,7 @@ export function completeThemeColors(colors: Record<string, unknown>): ThemeColor
   return complete;
 }
 
-export function customToEditorTheme(theme: CustomEditorTheme): EditorTheme {
+function customToEditorTheme(theme: CustomEditorTheme): EditorTheme {
   return { id: theme.id, name: theme.name, builtIn: false, colors: completeThemeColors(theme.colors) };
 }
 
@@ -694,7 +694,7 @@ export function themeColorOverrides(colors: ThemeColors): Partial<ThemeColors> {
 }
 
 /** A new custom theme copied from `base`, named after it. */
-export function forkEditorTheme(
+function forkEditorTheme(
   base: EditorTheme,
   takenNames: Iterable<string>,
   colors: ThemeColors = base.colors,
@@ -789,7 +789,7 @@ export function editorThemeFileName(theme: EditorTheme): string {
   return `${stem || "theme"}.haptic-theme.json`;
 }
 
-export type ParsedThemeFile =
+type ParsedThemeFile =
   | { ok: true; name: string; colors: ThemeColors }
   | { ok: false; error: string };
 

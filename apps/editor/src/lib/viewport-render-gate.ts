@@ -5,7 +5,7 @@ import { editorQuiet } from "./editor-quiet";
 
 export { ENGINE_SETTINGS_CHANGED_EVENT };
 
-export const BLOCKING_OVERLAY_SELECTOR = [
+const BLOCKING_OVERLAY_SELECTOR = [
   '[data-slot="dialog-overlay"]',
   '[data-slot="alert-dialog-overlay"]',
   '[data-slot="sheet-overlay"]',
@@ -18,13 +18,13 @@ const OVERLAY_MUTATION_OPTIONS: MutationObserverInit = {
   attributeFilter: ["data-open", "data-closed", "hidden", "data-slot"],
 };
 
-export type ViewportRenderTarget = {
+type ViewportRenderTarget = {
   setVisible: (value: boolean) => void;
   setObstructed: (value: boolean) => void;
   setFrameCap: (fps: number) => void;
 };
 
-export type LiveEngineSettingsTarget = {
+type LiveEngineSettingsTarget = {
   scaling?: {
     setLevel: (level: number) => void;
     setSettingsLevel?: (level: number) => void;
@@ -206,20 +206,20 @@ function overlayIsOpen(el: Element): boolean {
   return !el.hasAttribute("data-closed") && !el.hasAttribute("hidden");
 }
 
-export type EditorCanvasRect = {
+type EditorCanvasRect = {
   left: number;
   top: number;
   right: number;
   bottom: number;
 };
 
-export type EditorViewportSize = {
+type EditorViewportSize = {
   width: number;
   height: number;
 };
 
 /** True when any pixel of the canvas rect overlaps the window. */
-export function canvasRectIsOnScreen(
+function canvasRectIsOnScreen(
   rect: EditorCanvasRect,
   viewport: EditorViewportSize,
 ): boolean {

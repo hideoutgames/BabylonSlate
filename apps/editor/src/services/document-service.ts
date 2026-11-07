@@ -116,10 +116,6 @@ export function documentKindsRevision(
   return latest;
 }
 
-function sameIds(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((id, index) => id === b[index]);
-}
-
 function sameLayout(
   a: Record<string, unknown> | null,
   b: Record<string, unknown> | null,
@@ -144,8 +140,6 @@ function sameSceneContent(left: unknown, right: unknown): boolean {
  */
 export type DirtyUpdate = "edit" | "compare";
 
-type TabsSnapshot = { order: readonly string[]; foreground: readonly string[]; active: string | null };
-
 export class DocumentService {
   private readonly savedScenes = new WeakMap<OpenDocument, SerializedScene>();
   private readonly assetScopes = new Map<string, AssetLoadScope>();
@@ -156,7 +150,6 @@ export class DocumentService {
   private authoringLock: DocumentAuthoringLock = Object.freeze({ readOnly: false, reason: null, revision: 0 });
   private revisionSequence = 0;
   private revisions: DocumentRevisions = initialDocumentRevisions();
-  private tabsRevision = 0;
   /** Weak keys follow tab renames without retaining closed project content. */
   private readonly savedContent = new WeakMap<OpenDocument, string>();
 
@@ -265,14 +258,6 @@ export class DocumentService {
     return this.revisions;
   }
 
-  /**
-   * Advances when the open set, the tab order or the active tab changes.
-   * Drawn from the same sequence as the per-kind revisions.
-   */
-  getTabsRevision(): number {
-    return this.tabsRevision;
-  }
-
   private advanceKinds(kinds: Iterable<DocumentKind>): void {
     const unique = new Set(kinds);
     if (unique.size === 0) return;
@@ -280,26 +265,6 @@ export class DocumentService {
     const revisions: Record<string, number> = { ...this.revisions };
     for (const kind of unique) revisions[kind] = next;
     this.revisions = revisions as DocumentRevisions;
-  }
-
-  /** The tabs before a mutation, for `advanceTabsIfChanged` after it. */
-  private tabsSnapshot(): TabsSnapshot {
-    return {
-      order: [...this.state.tabOrder],
-      foreground: this.state.tabOrder.filter((id) => !this.state.openDocuments.get(id)?.background),
-      active: this.state.activeDocumentId,
-    };
-  }
-
-  private advanceTabsIfChanged(before: TabsSnapshot): void {
-    if (
-      before.active === this.state.activeDocumentId &&
-      sameIds(before.order, this.state.tabOrder) &&
-      sameIds(before.foreground, this.state.tabOrder.filter((id) => !this.state.openDocuments.get(id)?.background))
-    ) {
-      return;
-    }
-    this.tabsRevision = ++this.revisionSequence;
   }
 
   private state: DocumentRegistryState = {
@@ -320,12 +285,6 @@ export class DocumentService {
       .filter((doc): doc is OpenDocument => doc !== undefined);
   }
 
-  getClosableDocumentsOrdered(): OpenDocument[] {
-    return this.getOpenDocumentsOrdered().filter(
-      (doc) => doc.ref.kind !== "content-browser",
-    );
-  }
-
   getScrollableDocumentsOrdered(): OpenDocument[] {
     return this.getOpenDocumentsOrdered().filter(
       (doc) =>
@@ -342,16 +301,9 @@ export class DocumentService {
     return this.assetScopes.get(id);
   }
 
-  getActiveDocument(): OpenDocument | undefined {
-    if (!this.state.activeDocumentId) return undefined;
-    return this.state.openDocuments.get(this.state.activeDocumentId);
-  }
-
   ensureContentBrowserTab(): void {
-    const tabs = this.tabsSnapshot();
     if (this.state.openDocuments.has(CONTENT_BROWSER_ID)) {
       this.pinStickyTabs();
-      this.advanceTabsIfChanged(tabs);
       return;
     }
 
@@ -370,7 +322,6 @@ export class DocumentService {
       this.state.activeDocumentId = CONTENT_BROWSER_ID;
     }
     this.advanceKinds(["content-browser"]);
-    this.advanceTabsIfChanged(tabs);
   }
 
   private pinStickyTabs(): void {
@@ -408,7 +359,6 @@ export class DocumentService {
     const closedKinds = [...this.state.openDocuments.values()].map(
       (doc) => doc.ref.kind,
     );
-    const tabs = this.tabsSnapshot();
     this.state = {
       openDocuments: new Map(),
       tabOrder: [],
@@ -418,7 +368,6 @@ export class DocumentService {
     };
     // Every previous tab closed; each restored one advances its kind on open.
     this.advanceKinds(closedKinds);
-    this.advanceTabsIfChanged(tabs);
 
     this.ensureContentBrowserTab();
 
@@ -460,13 +409,11 @@ export class DocumentService {
 
     sceneLoadOptions?.signal?.throwIfAborted();
     if (this.authoringLock !== authoringLock) throw new Error("Project initialization crossed an authoring lock.");
-    const restored = this.tabsSnapshot();
     this.pinStickyTabs();
 
     // Always land on the Content Browser when opening a project so users
     // don't get dropped into an empty black viewport tab.
     this.state.activeDocumentId = CONTENT_BROWSER_ID;
-    this.advanceTabsIfChanged(restored);
   }
 
   async openDocument(
@@ -483,12 +430,10 @@ export class DocumentService {
       throw new Error("Scene workspaces and Content Browser cannot be background documents.");
     }
     if (ref.kind === "content-browser") {
-      const tabs = this.tabsSnapshot();
       this.ensureContentBrowserTab();
       if (setActive) {
         this.state.activeDocumentId = CONTENT_BROWSER_ID;
       }
-      this.advanceTabsIfChanged(tabs);
       return CONTENT_BROWSER_ID;
     }
 
@@ -498,7 +443,6 @@ export class DocumentService {
     if (existing && existing.content !== null) {
       options?.beforeCommit?.(ref);
       options?.signal?.throwIfAborted();
-      const tabs = this.tabsSnapshot();
       if (!options?.background) this.promoteDocument(existing);
       if (!options?.background && activate()) {
         this.state.activeDocumentId = id;
@@ -507,7 +451,6 @@ export class DocumentService {
         this.closeOtherSceneDocuments(id);
       }
       this.pinStickyTabs();
-      this.advanceTabsIfChanged(tabs);
       return id;
     }
 
@@ -559,7 +502,6 @@ export class DocumentService {
       }
       // Another opener may have committed and been edited while this read was
       // pending. Keep that tab's identity, layout, content, and dirty revision.
-      const tabs = this.tabsSnapshot();
       const current = this.state.openDocuments.get(id);
       const alreadyOpened = current !== undefined && current.content !== null;
       if (!alreadyOpened) {
@@ -582,7 +524,6 @@ export class DocumentService {
       if (!options?.background && activate()) {
         this.state.activeDocumentId = id;
       }
-      this.advanceTabsIfChanged(tabs);
       if (!alreadyOpened) this.emitIdentity({ type: "opened", id });
       return id;
     } finally {
@@ -616,7 +557,6 @@ export class DocumentService {
     this.assetScopes.get(id)?.dispose();
     this.assetScopes.delete(id);
 
-    const tabs = this.tabsSnapshot();
     const closed = this.state.openDocuments.get(id);
     this.state.openDocuments.delete(id);
     this.state.tabOrder = this.state.tabOrder.filter((tabId) => tabId !== id);
@@ -626,7 +566,6 @@ export class DocumentService {
     }
     this.pinStickyTabs();
     if (closed) this.advanceKinds([closed.ref.kind]);
-    this.advanceTabsIfChanged(tabs);
   }
 
   /**
@@ -681,7 +620,6 @@ export class DocumentService {
       this.assetScopes.delete(oldId);
       this.assetScopes.set(newId, scope);
     }
-    const tabs = this.tabsSnapshot();
     this.state.openDocuments.delete(oldId);
     const next: OpenDocument = {
       ...doc,
@@ -706,7 +644,6 @@ export class DocumentService {
       delete this.state.panelPlacements[oldId];
     }
     this.advanceKinds([kind]);
-    this.advanceTabsIfChanged(tabs);
   }
 
   setActiveDocument(id: string): void {
@@ -715,10 +652,8 @@ export class DocumentService {
       if (doc.ref.kind !== "content-browser" && doc.content === null) {
         throw new Error("Open the restored document asynchronously before activating it");
       }
-      const tabs = this.tabsSnapshot();
       this.promoteDocument(doc);
       this.state.activeDocumentId = id;
-      this.advanceTabsIfChanged(tabs);
     }
   }
 
@@ -754,7 +689,6 @@ export class DocumentService {
       return;
     }
 
-    const tabs = this.tabsSnapshot();
     const next = [...this.state.tabOrder];
     const [moved] = next.splice(fromIndex, 1);
     next.splice(toIndex, 0, moved);
@@ -763,7 +697,6 @@ export class DocumentService {
     // Readers of the moved document's kind see its documents in a new order.
     const movedKind = this.state.openDocuments.get(moved)?.ref.kind;
     if (movedKind) this.advanceKinds([movedKind]);
-    this.advanceTabsIfChanged(tabs);
   }
 
   updateScene(id: string, scene: SerializedScene, update: DirtyUpdate = "edit"): void {
@@ -844,13 +777,6 @@ export class DocumentService {
     documentId: string,
   ): Record<string, PanelPlacement> {
     return this.state.panelPlacements[documentId] ?? {};
-  }
-
-  replacePanelPlacements(
-    documentId: string,
-    placements: Record<string, PanelPlacement>,
-  ): void {
-    this.state.panelPlacements[documentId] = { ...placements };
   }
 
   /** Clear only revisions whose content was actually written by this save. */

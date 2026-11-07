@@ -5,9 +5,14 @@ import { describe, expect, it, vi } from "vitest";
 import { AssetRegistry, STARTER_CONTENT_PLUGIN_GUID, buildStarterContentFiles, discoverEnginePlugins } from "@haptic/assets";
 import type { HttpStorageCatalog } from "@haptic/vfs";
 import { enginePluginsVitePlugin } from "../../vite-engine-plugins";
-import { ensureEnginePluginStorage, loadEnginePluginStorage } from "./engine-plugins";
 
-describe("loadEnginePluginStorage", () => {
+/** A fresh module, so no catalog an earlier test loaded is cached. */
+async function freshEnginePlugins() {
+  vi.resetModules();
+  return import("./engine-plugins");
+}
+
+describe("ensureEnginePluginStorage", () => {
   it("mounts bundled catalogs without downloading archives or unused document chunks", async () => {
     const directory = mkdtempSync(join(tmpdir(), "engine-catalog-"));
     try {
@@ -27,7 +32,8 @@ describe("loadEnginePluginStorage", () => {
         requests.push(file);
         return new Response(new Uint8Array(readFileSync(join(publicDir, file))));
       };
-      const storage = await loadEnginePluginStorage({ fetch: fetchFn, baseUrl: "/" });
+      const { ensureEnginePluginStorage } = await freshEnginePlugins();
+      const storage = await ensureEnginePluginStorage({ fetch: fetchFn, baseUrl: "/" });
       expect(requests).toEqual(["index.json"]);
       const discovered = await discoverEnginePlugins(storage);
       expect(discovered.map(entry => entry.pluginGuid)).toEqual([STARTER_CONTENT_PLUGIN_GUID]);
@@ -47,13 +53,13 @@ describe("loadEnginePluginStorage", () => {
   });
 
   it("returns empty storage when the index is missing", async () => {
-    const storage = await loadEnginePluginStorage({ fetch: async () => new Response("missing", { status: 404 }), baseUrl: "/" });
+    const { ensureEnginePluginStorage } = await freshEnginePlugins();
+    const storage = await ensureEnginePluginStorage({ fetch: async () => new Response("missing", { status: 404 }), baseUrl: "/" });
     expect(await discoverEnginePlugins(storage)).toEqual([]);
   });
-});
 
-describe("ensureEnginePluginStorage", () => {
   it("keeps a successfully loaded catalog that lists no plugins instead of fetching it again", async () => {
+    const { ensureEnginePluginStorage } = await freshEnginePlugins();
     let indexRequests = 0;
     const fetchFn: typeof fetch = async () => {
       indexRequests++;
@@ -65,8 +71,7 @@ describe("ensureEnginePluginStorage", () => {
   });
 
   it("shares the first index load between concurrent callers", async () => {
-    vi.resetModules();
-    const fresh = await import("./engine-plugins");
+    const fresh = await freshEnginePlugins();
     let indexRequests = 0;
     const fetchFn: typeof fetch = async () => {
       indexRequests++;

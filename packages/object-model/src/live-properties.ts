@@ -16,7 +16,7 @@ export const LIVE_SCALAR_TYPE_IDS: ReadonlySet<string> = new Set([
 
 const LIVE_COMPONENTS = new Set([
   "MeshComponent", "DynamicRuntimeMeshComponent", "CameraComponent", "LightComponent",
-  "HemisphericFillLightComponent", "OutlineComponent", "RigidBodyComponent", "ColliderComponent", "NavAgentComponent",
+  "HemisphericFillLightComponent", "Light2DComponent", "OutlineComponent", "RigidBodyComponent", "ColliderComponent", "NavAgentComponent",
 ]);
 const MESH_COMPONENTS = new Set(["MeshComponent", "DynamicRuntimeMeshComponent"]);
 const LIVE_MESH_PROPERTIES = new Set(["castShadows", "receiveShadows", "materialGuid"]);

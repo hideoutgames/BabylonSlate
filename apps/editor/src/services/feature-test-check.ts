@@ -15,7 +15,7 @@ export const FEATURE_TEST_CHECK_SCENES = [
 ] as const;
 
 /** Console commands each scene runs in Play; the main scene exercises the full set. */
-export function featureTestCheckCommands(sceneName: string, mode: FeatureTestCheckMode): string[] {
+function featureTestCheckCommands(sceneName: string, mode: FeatureTestCheckMode): string[] {
   if (sceneName === "main" && mode === "full") return ["ft_stats", "ft_spawn 10", "ft_stats", "ft_stream", "ft_cel", "ft_pbr"];
   // Occlusion Culling is on at every tier; the yardstick turns it on in case the project turned it off.
   if (sceneName === "FT_Occlusion") return ["ft_stats", "ft_occlusion"];
@@ -376,10 +376,9 @@ export function breakdownSkip(
   return `already ${fields.map((field) => `${field} ${settings[field] ?? "-"}`).join(", ")}`;
 }
 
-/** Whether a sample is a Breakdown baseline (reports saved before `baseline` name theirs "baseline" and "baseline again"). */
+/** Whether a sample is a Breakdown baseline (never a warm-up window). */
 export function isBreakdownBaseline(sample: FeatureTestBenchmarkSample): boolean {
-  if (sample.warmup) return false;
-  return sample.baseline ?? (sample.label === "baseline" || sample.label === "baseline again");
+  return !sample.warmup && sample.baseline === true;
 }
 
 /**
@@ -393,11 +392,10 @@ function breakdownValue(sample: FeatureTestBenchmarkSample, gpu: boolean): numbe
 /**
  * A sample's mean frame interval: the window over its frames. The median snaps to a multiple of the display's refresh
  * interval (a vsync-paced frame lasts 16.7, 33.3 or 50 ms, nothing between), so a few frames moving between two of
- * them jump it by a whole interval; the mean moves in proportion. Reports saved before `meanMs` fall back to it here.
+ * them jump it by a whole interval; the mean moves in proportion.
  */
 export function meanFrameMs(frames: FrameStats | null): number | null {
-  if (!frames) return null;
-  return frames.meanMs ?? (frames.frames > 0 ? frames.durationMs / frames.frames : frames.medianMs ?? null);
+  return frames?.meanMs ?? null;
 }
 
 /** A change against baselines: in ms, and as a share of them. */
@@ -411,7 +409,7 @@ export interface BaselineDelta {
  * and after it), or null when it or they are unmeasured. A baseline's change is against its view's first baseline:
  * its drift. Warm-up windows have none and are never references.
  */
-export function deltaAroundBaselines(
+function deltaAroundBaselines(
   samples: readonly FeatureTestBenchmarkSample[],
   sample: FeatureTestBenchmarkSample,
   value: (entry: FeatureTestBenchmarkSample) => number | null,
@@ -557,7 +555,7 @@ export function breakdownSaturation(samples: readonly FeatureTestBenchmarkSample
   let frames = 0;
   let saturated = 0;
   for (const sample of samples) {
-    if (!isBreakdownBaseline(sample) || !sample.frames?.vsync) continue;
+    if (!isBreakdownBaseline(sample) || !sample.frames) continue;
     frames += sample.frames.frames;
     saturated += sample.frames.vsync[3] * sample.frames.frames;
   }
@@ -624,18 +622,18 @@ export interface FeatureTestBenchmarkSample {
   label: string;
   frames: FrameStats | null;
   runtimeFps: number | null;
-  /** Median CPU and GPU frame cost while sampling (the mean in reports saved before `cpu`); GPU is null where timer queries are unavailable. */
+  /** Median CPU and GPU frame cost while sampling; GPU is null where timer queries are unavailable. */
   cpuMs: number | null;
   gpuMs: number | null;
-  /** Median draw calls per frame while sampling (the frame at the end of the sample in reports saved before `draws`). */
+  /** Median draw calls per frame while sampling, or the last frame's where the counters were not read. */
   drawCalls: number;
-  /** The per-frame counters while sampling; absent in reports saved before they were recorded. */
+  /** The per-frame counters while sampling; `draws` is absent, and `cpu` and `gpu` null, where they were not read. */
   draws?: CounterStats;
   cpu?: CounterStats | null;
   gpu?: CounterStats | null;
   resolution: string | null;
   failed: string[];
-  /** A Breakdown baseline; absent in reports saved before interleaved baselines. */
+  /** Whether a Breakdown sample is a baseline; absent outside a Breakdown. */
   baseline?: boolean;
   /** A Breakdown warm-up window at the baseline, before the steps (never a reference). */
   warmup?: boolean;
@@ -646,9 +644,9 @@ export interface FeatureTestBenchmarkSample {
    * occluder triangles rasterised and the culling's ms; absent while the view did not cull.
    */
   occlusion?: { tested: number; culled: number; triangles: number; ms: number };
-  /** GPU-busy time per frame from fences while sampled (`gpubusy`); absent where unmeasured or in older reports. */
+  /** GPU-busy time per frame from fences while sampled (`gpubusy`); absent where unmeasured. */
   gpuBusy?: NonNullable<RenderDiagnostics["gpuBusy"]>;
-  /** The Engine's GPU backpressure while sampled (`framesinflight`): its mode and the renders it skipped; absent in older reports. */
+  /** The Engine's GPU backpressure while sampled (`framesinflight`): its mode and the renders it skipped; absent where unmeasured. */
   framesInFlight?: { mode: "off" | 2 | 3; skipped: number };
   /** The step's render-settings fingerprint (`RenderDiagnostics.settings`) while sampled. */
   settings?: Record<string, string>;
@@ -739,12 +737,12 @@ export interface FrameStats {
   frames: number;
   durationMs: number;
   fps: number;
-  /** Median frame interval; absent in reports saved before it was recorded. */
-  medianMs?: number;
-  /** Mean frame interval (durationMs / frames); absent in reports saved before it was recorded. */
-  meanMs?: number;
-  /** Shares of frames lasting about 1, 2, 3 and 4 or more 60 Hz intervals; absent in reports saved before it was recorded. */
-  vsync?: [number, number, number, number];
+  /** Median frame interval. */
+  medianMs: number;
+  /** Mean frame interval (durationMs / frames). */
+  meanMs: number;
+  /** Shares of frames lasting about 1, 2, 3 and 4 or more 60 Hz intervals. */
+  vsync: [number, number, number, number];
   p95Ms: number;
   maxMs: number;
   /** Frame intervals longer than 100 ms. */
@@ -779,7 +777,7 @@ export interface FeatureTestCheckSceneResult {
     frames: FrameStats | null;
     runtimeFps: number | null;
     snapshot: ReturnType<PlayProbe["snapshot"]> | null;
-    /** Play's per-frame counters while it was sampled; absent in reports saved before they were recorded. */
+    /** Play's per-frame counters while it was sampled; absent when Play did not load. */
     counters?: PlayCounters | null;
     /** What Play presented while it was measured: frames drawn, held and skipped, context losses and image samples. */
     presentation: PlayPresentation | null;
@@ -918,7 +916,7 @@ export interface FeatureTestCheckTimeouts {
   profileWarmupWindowMs: number;
 }
 
-export const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
+const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
   sceneOpenMs: 120_000,
   playLoadMs: 120_000,
   playCloseMs: 30_000,
@@ -1198,7 +1196,7 @@ const PRESENTED_IMAGE_WAIT_MS = 5_000;
  * An image sample is black when at least this share of it is near-black. Every Feature Test scene shows a lit sky or
  * backdrop, which samples none; a black world under main's HUD still leaves most of the image black.
  */
-export const BLACK_IMAGE_SHARE = 0.6;
+const BLACK_IMAGE_SHARE = 0.6;
 
 function presentationCounts(play: PlayProbe): {
   drawn: number; held: number; skipped: number; contextLosses: number; heldReasons: Readonly<Record<string, number>>;

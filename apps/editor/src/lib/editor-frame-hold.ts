@@ -17,7 +17,7 @@ function publish(held: boolean): void {
 }
 
 /** Hold the editor viewports' frames until the returned release is called; releasing twice is a no-op. */
-export function holdEditorViewportFrames(): () => void {
+function holdEditorViewportFrames(): () => void {
   holds += 1;
   if (holds === 1) publish(true);
   let released = false;
@@ -37,10 +37,6 @@ export async function withEditorViewportFramesHeld<T>(work: () => Promise<T>): P
   } finally {
     release();
   }
-}
-
-export function editorViewportFramesHeld(): boolean {
-  return holds > 0;
 }
 
 /** Called with the current state now, then each time the frames become held or free. */

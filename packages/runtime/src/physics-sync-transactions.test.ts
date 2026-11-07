@@ -193,7 +193,7 @@ describe("atomic runtime collider publication", () => {
     }));
     world.spawnActorNow(actor);
     const sync = new PhysicsWorldSync(await createPhysicsBackend({
-      kind, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+      kind, gravity: { x: 0, y: 0, z: 0 },
     }));
     try {
       sync.step(1 / 60, world);

@@ -6,7 +6,7 @@ import { attachLifecyclePause } from "../services/lifecycle-pause";
 /** Inactive chrome tabs stay mounted this long after last being active. */
 export const DOCUMENT_IDLE_UNMOUNT_MS = 120_000;
 /** Active + recently inactive non-Content-Browser workspaces. */
-export const MAX_WARM_DOCUMENT_WORKSPACES = 3;
+const MAX_WARM_DOCUMENT_WORKSPACES = 3;
 
 export type DocumentWorkingSetInput = {
   tabIds: readonly string[];

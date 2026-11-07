@@ -23,6 +23,9 @@ import type { SceneLoadProgress, SpawnableLight } from "@haptic/render";
 import type { RenderDiagnostics } from "@haptic/render";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
+  clampRenderResolution,
+  pixelatedExtend,
+  playFramebufferSize,
   resolveRenderingQuality,
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
@@ -73,13 +76,7 @@ import { playConsoleCommands } from "../lib/play-console";
 import { nextPlayInspectorOpen, profileDefaultsFromSettings } from "../lib/play-debugger-defaults";
 import { runProfilerConsoleCommand, withProfilerHelp } from "../lib/profiler-console";
 import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry, type SessionPauseCause } from "@haptic/bridge";
-import {
-  applyPlayPreviewCanvasLayout,
-  clampRenderResolution,
-  pixelatedExtend,
-  playFramebufferSize,
-  playOverlayContainer,
-} from "../lib/play-preview-aspect";
+import { applyPlayPreviewCanvasLayout, playOverlayContainer } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
 import type {
   SpriteAnimationPayload,

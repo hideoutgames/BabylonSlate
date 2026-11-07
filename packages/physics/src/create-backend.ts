@@ -3,13 +3,8 @@ import type { PhysicsBackendOptions, PhysicsWorldKind, Vec3 } from "./types";
 import { SoftwarePhysicsBackend } from "./software-backend";
 
 export type CreatePhysicsBackendOptions = PhysicsBackendOptions & {
-  /**
-   * Force the deterministic software backend (no wasm). Used by unit tests
-   * and as a fallback when a wasm engine fails to load.
-   */
+  /** Force the deterministic software backend (no wasm). Used by unit tests. */
   preferSoftware?: boolean;
-  /** Set false for Play so a failed engine load cannot change collision behavior. */
-  allowSoftwareFallback?: boolean;
 };
 
 /** Tracks which heavy backends were dynamically imported (lazy-load tests). */
@@ -26,6 +21,7 @@ export function resetLoadedBackendModules(): void {
 /**
  * Lazy factory: only dynamic-imports the engine matching `options.kind`.
  * A 3D scene never downloads Rapier; a 2D scene never downloads Havok.
+ * A failed engine load rejects: it never falls back to software, so it cannot change collision behavior.
  */
 export async function createPhysicsBackend(
   options: CreatePhysicsBackendOptions,
@@ -35,34 +31,16 @@ export async function createPhysicsBackend(
   }
 
   if (options.kind === "3d") {
-    try {
-      const { HavokPhysicsBackend } = await import("./havok-backend");
-      const backend = await HavokPhysicsBackend.create(options);
-      loadedBackendModules.havok = true;
-      return backend;
-    } catch (error) {
-      if (options.allowSoftwareFallback === false) throw error;
-      console.warn(
-        "[physics] Havok failed to load; falling back to software backend",
-        error,
-      );
-      return new SoftwarePhysicsBackend("3d", options.gravity);
-    }
+    const { HavokPhysicsBackend } = await import("./havok-backend");
+    const backend = await HavokPhysicsBackend.create(options);
+    loadedBackendModules.havok = true;
+    return backend;
   }
 
-  try {
-    const { Rapier2DPhysicsBackend } = await import("./rapier-backend");
-    const backend = await Rapier2DPhysicsBackend.create(options);
-    loadedBackendModules.rapier = true;
-    return backend;
-  } catch (error) {
-    if (options.allowSoftwareFallback === false) throw error;
-    console.warn(
-      "[physics] Rapier2D failed to load; falling back to software backend",
-      error,
-    );
-    return new SoftwarePhysicsBackend("2d", options.gravity);
-  }
+  const { Rapier2DPhysicsBackend } = await import("./rapier-backend");
+  const backend = await Rapier2DPhysicsBackend.create(options);
+  loadedBackendModules.rapier = true;
+  return backend;
 }
 
 /**

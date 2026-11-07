@@ -167,7 +167,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
         ? `${delta.ms >= 0 ? "+" : ""}${delta.ms.toFixed(1)}ms ${delta.percent >= 0 ? "+" : ""}${delta.percent.toFixed(0)}%${delta.basis === "frame" ? "*" : ""}`
         : "-";
       const mean = meanFrameMs(sample.frames);
-      const vsync = sample.frames?.vsync?.map((share) => (share * 100).toFixed(0)).join("/") ?? "-";
+      const vsync = sample.frames?.vsync.map((share) => (share * 100).toFixed(0)).join("/") ?? "-";
       const busy = sample.gpuBusy ? `${sample.gpuBusy.medianMs.toFixed(1)} (${sample.gpuBusy.p95Ms.toFixed(0)})` : "-";
       const viewFirst = play.benchmark.find((entry) => isBreakdownBaseline(entry) && entry.view === sample.view) ?? first;
       const notes = [
@@ -180,7 +180,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
   } else if (play.benchmark.length) {
     lines.push("  Benchmark (frame cap lifted):", `  Frames in flight: ${framesInFlightText(play.benchmark)}`, `    ${pad("Profile", 18)}${pad("fps", 6)}${pad("p95", 8)}${pad("cpu", 20)}${pad("gpu", 20)}${pad("draws", 14)}resolution`);
     for (const sample of play.benchmark) {
-      lines.push(`    ${pad(sample.label, 18)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(msText(sample.cpu, sample.cpuMs), 20)}${pad(msText(sample.gpu, sample.gpuMs), 20)}${pad(sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${sample.resolution ?? "-"}`);
+      lines.push(`    ${pad(sample.label, 18)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(msText(sample.cpu), 20)}${pad(msText(sample.gpu), 20)}${pad(sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${sample.resolution ?? "-"}`);
     }
     lines.push(`  Highest tier at 60 fps: ${bestProfile([play.benchmark], SMOOTH) ?? "none"} · at 30 fps: ${bestProfile([play.benchmark], PLAYABLE) ?? "none"}`);
   }
@@ -429,9 +429,9 @@ function rangeText(stats: CounterStats, digits: number): string {
   return stats.min === stats.max ? text(stats.median) : `${text(stats.median)} (${text(stats.min)}-${text(stats.max)})`;
 }
 
-/** A frame cost's median and range in ms, or the one value in reports saved before the range. */
-function msText(stats: CounterStats | null | undefined, value: number | null): string {
-  return stats ? `${rangeText(stats, 1)}ms` : ms(value);
+/** A frame cost's median and range in ms, or "-" where it was not measured. */
+function msText(stats: CounterStats | null | undefined): string {
+  return stats ? `${rangeText(stats, 1)}ms` : "-";
 }
 
 function ms(value: number | null): string {
@@ -567,7 +567,7 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
 /** The GPU backpressure mode the samples ran under (`framesinflight`) and the renders it skipped while they sampled. */
 function framesInFlightText(samples: readonly { framesInFlight?: { mode: "off" | 2 | 3; skipped: number } }[]): string {
   const measured = samples.filter((sample) => sample.framesInFlight);
-  if (!measured.length) return "unknown (older report)";
+  if (!measured.length) return "not measured";
   const modes = [...new Set(measured.map((sample) => String(sample.framesInFlight!.mode)))];
   const skipped = measured.reduce((sum, sample) => sum + sample.framesInFlight!.skipped, 0);
   return `${modes.join(", ")} (${skipped} renders skipped while sampling)`;

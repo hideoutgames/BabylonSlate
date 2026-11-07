@@ -4,7 +4,7 @@ import { createPhysicsBackend, createSoftwarePhysicsBackend } from "./index";
 it.each(["havok", "software"] as const)("%s predicts off-centre impulse response without changing the body", async (kind) => {
   const gravity = { x: 0, y: 0, z: 0 };
   const backend = kind === "software" ? createSoftwarePhysicsBackend("3d", gravity)
-    : await createPhysicsBackend({ kind: "3d", gravity, allowSoftwareFallback: false });
+    : await createPhysicsBackend({ kind: "3d", gravity });
   try {
     backend.createBody({ id: "body", actorId: "actor", motionType: "dynamic", mass: 2.5,
       linearDamping: 0, angularDamping: 0, gravityScale: 0,

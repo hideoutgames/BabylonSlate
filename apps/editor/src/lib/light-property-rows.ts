@@ -1,4 +1,4 @@
-import { parseAreaRectLightProperties, type SerializedComponent } from "@haptic/core";
+import { parseAreaRectLightProperties, parseLight2DProperties, type SerializedComponent } from "@haptic/core";
 import type { PropertyRow } from "@haptic/editor-kit";
 import {
   asNumber,
@@ -135,6 +135,87 @@ export function lightPropertyRows(
       ]),
     ),
   );
+  return rows;
+}
+
+export function light2DPropertyRows(
+  actorId: string,
+  component: SerializedComponent,
+  update: ComponentPropertyUpdate,
+): PropertyRow[] {
+  const properties = parseLight2DProperties(component.properties);
+  const rows: PropertyRow[] = [
+    {
+      kind: "boolean",
+      id: rowId(actorId, component.id, "enabled"),
+      label: "Enabled",
+      value: properties.enabled,
+      onChange: (next) => update("enabled", next),
+    },
+    {
+      kind: "enum",
+      id: rowId(actorId, component.id, "lightKind"),
+      label: "Light Kind",
+      value: properties.lightKind,
+      options: [
+        { value: "point", label: "Point" },
+        { value: "global", label: "Global" },
+      ],
+      onChange: (next) => update("lightKind", next),
+    },
+    {
+      kind: "color",
+      id: rowId(actorId, component.id, "color"),
+      label: "Color",
+      value: properties.color,
+      onChange: (next) => update("color", next),
+    },
+    sliderRow(actorId, component.id, "intensity", "Intensity", properties.intensity, 0, 16, update),
+  ];
+  if (properties.lightKind === "point") {
+    rows.push(
+      {
+        kind: "number",
+        id: rowId(actorId, component.id, "radius"),
+        label: "Radius",
+        value: properties.radius,
+        min: 0.01,
+        onChange: (next) => update("radius", next),
+      },
+      {
+        kind: "number",
+        id: rowId(actorId, component.id, "innerRadius"),
+        label: "Inner Radius",
+        value: properties.innerRadius,
+        min: 0,
+        max: properties.radius,
+        onChange: (next) => update("innerRadius", next),
+      },
+      {
+        kind: "number",
+        id: rowId(actorId, component.id, "outerAngle"),
+        label: "Outer Angle",
+        description: "The cone points along the actor's up (+Y); 360 lights every direction.",
+        unit: "deg",
+        value: properties.outerAngle,
+        min: 1,
+        max: 360,
+        onChange: (next) => update("outerAngle", next),
+      },
+      {
+        kind: "number",
+        id: rowId(actorId, component.id, "innerAngle"),
+        label: "Inner Angle",
+        unit: "deg",
+        value: properties.innerAngle,
+        min: 0,
+        max: properties.outerAngle,
+        onChange: (next) => update("innerAngle", next),
+      },
+    );
+  }
+  rows.push(...genericRows(actorId, component, update,
+    new Set(["enabled", "lightKind", "color", "intensity", "radius", "innerRadius", "outerAngle", "innerAngle"])));
   return rows;
 }
 

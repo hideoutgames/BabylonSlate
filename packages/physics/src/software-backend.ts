@@ -404,7 +404,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     if (![impulse.x, impulse.y, impulse.z, point.x, point.y, point.z].every(Number.isFinite)) return;
     this.addImpulse(bodyId, impulse);
     if (body.desc.lockRotation) return;
-    // The software fallback uses unit diagonal inertia; native backends use collider inertia.
+    // The software backend uses unit diagonal inertia; native backends use collider inertia.
     const r = { x: point.x - body.transform.position.x, y: point.y - body.transform.position.y, z: point.z - body.transform.position.z };
     const mass = Math.max(body.desc.mass, 1e-6);
     if (this.kind === "3d") {

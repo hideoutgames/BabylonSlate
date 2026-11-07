@@ -6,7 +6,7 @@ Tileset and Tilemap assets, chunked geometry, merged chain collision, animated t
 
 - Not Babylon `SpriteMap`: that format cannot golden-test geometry or emit collision chains.
 - Geometry and collision builders in `@haptic/assets` are pure and Babylon-free; callers pass world tile size (`px / pixelsPerUnit`) so assets never read project settings.
-- Atlas materials stay unlit, double-sided and alpha-tested (same path as sprites) in both 2D and 3D; they disable fog and image processing. Switching to blend needs an on-device fill-rate measurement.
+- Atlas materials are double-sided and alpha-tested (same path as sprites) in both 2D and 3D, unlit unless the Tilemap's Shading Mode lights them ([sprites.md](sprites.md)); they disable fog and, unlit or 2D-lit, image processing (3D-lit takes the Scene's). An atlas without a texture stays unlit. Switching to blend needs an on-device fill-rate measurement.
 - Autotile terrains resolve into ordinary GIDs: render, physics, nav bake and the runtime never see terrain data, and a stored map stays valid whatever its Tilesets do.
 - Maps also store, per Tileset ref, the stamp of the terrain data their cells were resolved against; every load re-resolves the cells of a Tileset whose stamp moved (`refreshStaleTilemapTerrains`). Reason: Tileset edits reach every map without rewriting closed files, and every consumer derives the same cells from (stored map, current Tilesets).
 - The author picks the autotile style per terrain (`sides` or `blob`) rather than per Tileset, so one sheet can mix a 4-side strip set and a blob ground set.

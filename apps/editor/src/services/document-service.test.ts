@@ -16,6 +16,11 @@ import {
 } from "./document-service";
 import { ProjectService } from "./project-service";
 
+function activeDocument(service: DocumentService) {
+  const id = service.getState().activeDocumentId;
+  return id ? service.getDocument(id) : undefined;
+}
+
 function createMockProjectService(
   overrides: Partial<{
     loadDocument: ProjectService["loadDocument"];
@@ -211,19 +216,16 @@ describe("DocumentService", () => {
     const edited = { ...original, entries: [{ ...original.entries[0]!, values: { Price: 12 } }] };
     service.updateAssetDocument(id, edited);
     expect(service.getOpenDocumentsOrdered()).toContain(working);
-    expect(service.getClosableDocumentsOrdered()).toContain(working);
     expect(service.getDirtyDocuments()).toEqual([working]);
     expect(service.getScrollableDocumentsOrdered()).toEqual([]);
     expect(service.getState().activeDocumentId).toBe(CONTENT_BROWSER_ID);
     expect(service.buildLayouts()).toMatchObject({ documents: {}, tabOrder: [CONTENT_BROWSER_ID] });
     expect(service.buildLayouts().panelPlacements?.[id]).toBeUndefined();
-    const tabsRevision = service.getTabsRevision();
     if (action === "open") await service.openDocument(project, ref);
     else service.setActiveDocument(id);
     expect(service.getDocument(id)).toBe(working);
     expect(working).toMatchObject({ content: edited, dirty: true });
     expect(working.background).not.toBe(true);
-    expect(service.getTabsRevision()).toBeGreaterThan(tabsRevision);
     expect(service.getState().activeDocumentId).toBe(id);
     expect(service.buildLayouts().tabOrder).toEqual([CONTENT_BROWSER_ID, id]);
     service.markAllClean(service.getDirtyDocuments().map((doc) => ({ ...doc })));
@@ -346,12 +348,12 @@ describe("DocumentService", () => {
     expect(loadDocument).not.toHaveBeenCalled();
     paint();
     await vi.waitFor(() => expect(loadDocument).toHaveBeenCalledOnce());
-    expect(service.getActiveDocument()?.id).toBe(documentId(previous));
+    expect(activeDocument(service)?.id).toBe(documentId(previous));
     expect(beforeCommit).not.toHaveBeenCalled();
     read({ ...createDefaultScene(), name: "Next" });
     await opened;
     expect(beforeCommit).toHaveBeenCalledOnce();
-    expect(service.getActiveDocument()?.content).toMatchObject({ name: "Next" });
+    expect(activeDocument(service)?.content).toMatchObject({ name: "Next" });
     expect(service.getDocument(documentId(previous))).toBeUndefined();
   });
 
@@ -367,7 +369,7 @@ describe("DocumentService", () => {
       { kind: "scene", path: "assets/Missing.scene.hasset", label: "Missing" }, null, true, { beforeCommit },
     )).rejects.toBe(failure);
     expect(beforeCommit).not.toHaveBeenCalled();
-    expect(service.getActiveDocument()).toMatchObject({ id: documentId(previous), dirty: true, content: edited });
+    expect(activeDocument(service)).toMatchObject({ id: documentId(previous), dirty: true, content: edited });
   });
 
   it("does not let a cancelled late read replace a newer exclusive scene", async () => {
@@ -385,7 +387,7 @@ describe("DocumentService", () => {
     finishOldRead({ ...createDefaultScene(), name: "Old" });
     await rejected;
     expect(beforeCommit).not.toHaveBeenCalled();
-    expect(service.getActiveDocument()?.id).toBe(documentId(next));
+    expect(activeDocument(service)?.id).toBe(documentId(next));
     expect(service.getOpenDocumentsOrdered().filter((doc) => doc.ref.kind === "scene")).toHaveLength(1);
   });
 
@@ -446,7 +448,7 @@ describe("DocumentService", () => {
     expect(service.getDocument(sceneId)?.content).toBeNull();
     const restoredLabels = [sceneId, graphId].map((id) => service.getDocument(id)?.ref.label);
     await service.openDocument(projectService, service.getDocument(sceneId)!.ref);
-    expect(service.getActiveDocument()?.content).toMatchObject({ name: "Main" });
+    expect(activeDocument(service)?.content).toMatchObject({ name: "Main" });
     expect(service.getDocument(graphId)?.content).toBeNull();
     expect(projectService.loadDocument).toHaveBeenCalledOnce();
     await service.openDocument(projectService, service.getDocument(graphId)!.ref);
@@ -1125,96 +1127,82 @@ describe("DocumentService revisions", () => {
     setup?: (f: Fixture) => unknown;
     act: (f: Fixture) => unknown;
     kinds: string[];
-    tabs: boolean;
   }> = [
-    { name: "a Class edit", act: (f) => f.service.updateGraph(f.hero, editedGraph), kinds: ["graph"], tabs: false },
+    { name: "a Class edit", act: (f) => f.service.updateGraph(f.hero, editedGraph), kinds: ["graph"] },
     {
       name: "Undo back to an earlier content object",
       setup: (f) => f.service.updateGraph(f.hero, editedGraph),
       act: (f) => f.service.updateGraph(f.hero, f.heroContent as never),
       kinds: ["graph"],
-      tabs: false,
     },
     {
       name: "a Scene edit",
       act: (f) => f.service.updateScene(f.scene, { ...createDefaultScene(), name: "Edited" }),
       kinds: ["scene"],
-      tabs: false,
     },
     {
       name: "a Material edit",
       act: (f) => f.service.updateAssetDocument(f.stone, { domain: "postProcess" }),
       kinds: ["material"],
-      tabs: false,
     },
     {
       name: "a quiet patch",
       act: (f) => f.service.patchLoadedContent(f.scene, { ...createDefaultScene(), name: "Synced" }),
       kinds: ["scene"],
-      tabs: false,
     },
     {
       name: "a reload from disk",
       act: (f) => f.service.replaceLoadedContent(f.hero, { nodes: [], edges: [] }),
       kinds: ["graph"],
-      tabs: false,
     },
-    { name: "a layout capture", act: (f) => f.service.setLayout(f.hero, { grid: {} }), kinds: ["graph"], tabs: false },
+    { name: "a layout capture", act: (f) => f.service.setLayout(f.hero, { grid: {} }), kinds: ["graph"] },
     {
       name: "capturing an equal layout again",
       setup: (f) => f.service.setLayout(f.hero, { grid: { root: "graph" } }),
       act: (f) => f.service.setLayout(f.hero, { grid: { root: "graph" } }),
       kinds: [],
-      tabs: false,
     },
     {
       name: "Save clearing an edit",
       setup: (f) => f.service.updateGraph(f.hero, editedGraph),
       act: (f) => f.service.markAllClean(f.service.getDirtyDocuments().map((doc) => ({ ...doc }))),
       kinds: ["graph"],
-      tabs: false,
     },
-    { name: "Save with nothing dirty", act: (f) => f.service.markAllClean([]), kinds: [], tabs: false },
+    { name: "Save with nothing dirty", act: (f) => f.service.markAllClean([]), kinds: [] },
     {
       name: "opening a tab",
       act: (f) => f.service.openDocument(f.project, { kind: "enum", path: "assets/Mood.enum.hasset", label: "Mood" }),
       kinds: ["enum"],
-      tabs: true,
     },
     {
       name: "opening an already open tab",
       act: (f) => f.service.openDocument(f.project, { kind: "graph", path: HERO, label: "Hero" }),
       kinds: [],
-      tabs: true,
     },
-    { name: "closing a tab", act: (f) => f.service.closeDocument(f.helper), kinds: ["graph"], tabs: true },
+    { name: "closing a tab", act: (f) => f.service.closeDocument(f.helper), kinds: ["graph"] },
     {
       name: "a rename",
       act: (f) => f.service.repathDocument("graph", HERO, "assets/Champion.class.hasset"),
       kinds: ["graph"],
-      tabs: true,
     },
-    { name: "switching tabs", act: (f) => f.service.setActiveDocument(f.hero), kinds: [], tabs: true },
-    { name: "selecting the active tab", act: (f) => f.service.setActiveDocument(f.stone), kinds: [], tabs: false },
+    { name: "switching tabs", act: (f) => f.service.setActiveDocument(f.hero), kinds: [] },
+    { name: "selecting the active tab", act: (f) => f.service.setActiveDocument(f.stone), kinds: [] },
     // Scrollable tabs are Hero, Helper, Stone: the Material moves first.
-    { name: "moving a tab", act: (f) => f.service.reorderClosableTabs(2, 0), kinds: ["material"], tabs: true },
-    { name: "a refused move of the pinned scene", act: (f) => f.service.reorderTabs(1, 2), kinds: [], tabs: false },
+    { name: "moving a tab", act: (f) => f.service.reorderClosableTabs(2, 0), kinds: ["material"] },
+    { name: "a refused move of the pinned scene", act: (f) => f.service.reorderTabs(1, 2), kinds: [] },
     {
       name: "opening another project",
       act: (f) => f.service.initializeFromProject(f.project, createEmptyProject("Next"), createEmptyLayouts()),
       kinds: ["content-browser", "graph", "material", "scene"],
-      tabs: true,
     },
   ];
 
-  it.each(cases)("$name advances exactly the kinds it changes", async ({ setup, act, kinds, tabs }) => {
+  it.each(cases)("$name advances exactly the kinds it changes", async ({ setup, act, kinds }) => {
     const fixture = await openFixture();
     await setup?.(fixture);
     const revisions = fixture.service.getRevisions();
-    const tabsRevision = fixture.service.getTabsRevision();
     await act(fixture);
     expect(changedKinds(revisions, fixture.service.getRevisions())).toEqual(kinds);
-    expect(fixture.service.getTabsRevision() !== tabsRevision).toBe(tabs);
     if (kinds.length === 0) expect(fixture.service.getRevisions()).toBe(revisions);
   });
 

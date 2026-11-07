@@ -72,7 +72,7 @@ it("Havok preserves authored facing and one overlap lifetime while Movement turn
     isTrigger: true, shape: { kind: "box", halfExtents: { x: 1, y: 2, z: 2 } },
   } }));
   world.spawnActorNow(trigger);
-  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
   const sync = new PhysicsWorldSync(backend);
   const events: string[] = [];
   const step = (x: number) => {
@@ -119,7 +119,7 @@ it("Rapier preserves the Movement capsule's overlap while sprite frames and visu
     { textureGuid: "texture", durationMs: 100, pivot: { x: 0.5, y: 0.5 }, collision: { x: 0, y: 0, width: 1, height: 1 }, width: 100, height: 100 },
     { textureGuid: "texture", durationMs: 100, pivot: { x: 0.25, y: 0.5 }, collision: { x: 0, y: 0, width: 0.5, height: 1 }, width: 200, height: 100 },
   ];
-  const backend = await createPhysicsBackend({ kind: "2d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+  const backend = await createPhysicsBackend({ kind: "2d", gravity: { x: 0, y: 0, z: 0 } });
   const sync = new PhysicsWorldSync(backend);
   sync.setSpriteContent({ sprites: new Map(), spriteAnimations: new Map([["walk", animation]]) });
   const events: string[] = [];
@@ -169,7 +169,7 @@ it.each(["3d", "2d"] as const)("native %s Movement follows parent translation wi
     shape: kind === "3d" ? { kind: "box", halfExtents: { x: 10, y: 2, z: 2 } } : { kind: "box2d", halfExtents: { x: 10, y: 2 } },
   } }));
   world.spawnActorNow(trigger);
-  const backend = await createPhysicsBackend({ kind, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+  const backend = await createPhysicsBackend({ kind, gravity: { x: 0, y: 0, z: 0 } });
   const sync = new PhysicsWorldSync(backend);
   let velocityX: number | undefined;
   const events: string[] = [];

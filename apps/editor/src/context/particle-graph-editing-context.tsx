@@ -49,12 +49,11 @@ export interface ParticleGraphEditingValue {
   /**
    * What the Preview builds: `document` while it validates, else the last
    * valid graph this tab rendered, with the current Material; null before
-   * any valid graph. Identity only changes with `previewKey`.
+   * any valid graph. Identity only changes with its position-free key
+   * (compile key plus Material, `particleLibraryEmitterKey`).
    */
   previewDocument: ParticleGraphDocument | null;
-  /** Position-free key of `previewDocument` (compile key plus Material). */
-  previewKey: string | null;
-  /** Accepts a Preview build report only for the current `previewKey`. */
+  /** Accepts a Preview build report only when `key` is the current `previewDocument`'s key. */
   reportBuildDiagnostics: (
     key: string,
     diagnostics: readonly ParticleGraphBuildDiagnostic[],
@@ -246,7 +245,6 @@ export function ParticleGraphEditingProvider({
       buildDiagnostics,
       errorCount,
       previewDocument,
-      previewKey,
       reportBuildDiagnostics,
       selectedNodeId,
       setSelectedNodeId,
@@ -263,7 +261,6 @@ export function ParticleGraphEditingProvider({
       focusNode,
       focusedNodeId,
       previewDocument,
-      previewKey,
       reportBuildDiagnostics,
       selectedNodeId,
     ],

@@ -15,6 +15,8 @@ import { skyboxMeshPreparation } from "./skybox";
 import { foliagePreparation } from "./foliage-mesh";
 import { authoredMaterialInstancePreparation } from "./authored-material-instance";
 import { setUnlitMaterial, unlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
+import { onScene2DLightingChanged, scene2DLighting } from "./lights-2d";
+import type { SurfaceShadingMode } from "@haptic/core";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
@@ -270,6 +272,8 @@ interface AlbedoBinding {
   material: NodeMaterial | null;
   /** The mesh's unlit key: a sprite's, or a tilemap chunk's (both sides, no fog, the atlas's image processing). */
   key: UnlitMaterialKey;
+  /** A Sprite or Tilemap's Shading Mode, which picks the key's lit variant (`drawnAlbedoKey`); other surfaces have none. */
+  shading?: SurfaceShadingMode;
   /** What the unlit Material samples for the mesh. */
   unlit: UnlitBinding;
   /** Smooth alpha animation must not discard pixels below the cutout threshold. */
@@ -306,7 +310,7 @@ export function ownedVisualTexturePreparation(root: AbstractMesh): Promise<void>
  * for a mesh of its own under the visual, which draws the visual's binding.
  */
 function drawAlbedo(mesh: AbstractMesh, binding: AlbedoBinding): NodeMaterial {
-  const material = setUnlitMaterial(mesh, binding.key, binding.unlit);
+  const material = setUnlitMaterial(mesh, drawnAlbedoKey(mesh, binding), binding.unlit);
   if (pooledLeafOf(mesh)) {
     const own = setActorMeshMaterial(mesh, material);
     if (own) applyMaterialBounds(own);
@@ -318,6 +322,41 @@ function drawAlbedo(mesh: AbstractMesh, binding: AlbedoBinding): NodeMaterial {
 const SPRITE_MATERIAL: UnlitMaterialKey = { textured: true, backFaceCulling: true, fog: true, role: "world" };
 /** A tilemap chunk's: readable from either side, without fog, in the atlas's exact display colours. */
 const TILEMAP_MATERIAL: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: false, role: "world", imageProcessing: "atlas" };
+
+/** Each base key's lit variants: 2D-lit keeps the base's look; 3D-lit goes through the Scene's image processing. */
+const LIT_KEYS = new Map<UnlitMaterialKey, { "2d": UnlitMaterialKey; "3d": UnlitMaterialKey }>([
+  [SPRITE_MATERIAL, { "2d": { ...SPRITE_MATERIAL, lighting: "2d" }, "3d": { ...SPRITE_MATERIAL, lighting: "3d" } }],
+  [TILEMAP_MATERIAL, { "2d": { ...TILEMAP_MATERIAL, lighting: "2d" }, "3d": { ...TILEMAP_MATERIAL, imageProcessing: "scene", lighting: "3d" } }],
+]);
+
+/**
+ * The key `mesh` draws its albedo with: its base key unlit (no Shading Mode, Unlit, or 2D in a Scene without 2D
+ * lighting), else the base's 2D- or 3D-lit variant.
+ */
+function drawnAlbedoKey(mesh: AbstractMesh, binding: AlbedoBinding): UnlitMaterialKey {
+  const shading = binding.shading;
+  if (!shading || shading === "unlit" || (shading === "2d" && !scene2DLighting(mesh.getScene()))) return binding.key;
+  return LIT_KEYS.get(binding.key)?.[shading] ?? binding.key;
+}
+
+const followedScenes = new WeakSet<Scene>();
+
+/**
+ * Redraws the Scene's 2D-shaded albedo surfaces when its 2D lighting turns on or off (an editor edit adding the first
+ * 2D Light or removing the last); Play decides it at load, before its surfaces exist.
+ */
+function follow2DLighting(scene: Scene): void {
+  if (followedScenes.has(scene)) return;
+  followedScenes.add(scene);
+  onScene2DLightingChanged(scene, () => {
+    for (const mesh of scene.meshes) {
+      const binding = albedoBindings.get(mesh);
+      if (binding?.shading !== "2d" || !binding.material || mesh.material !== binding.material) continue;
+      binding.material = drawAlbedo(mesh, binding);
+    }
+    markSceneReadinessDirty(scene);
+  });
+}
 
 /**
  * The sprite's cutout: discarded below 0.4, unless it always blends (smooth alpha animation). A fractional visibility
@@ -352,7 +391,7 @@ export function applyAlbedoTexture(
   _scene: Scene,
   textureGuid: string | null | undefined,
   assets?: MeshAssetContext,
-  options: { alwaysBlend?: boolean; tilemap?: boolean } = {},
+  options: { alwaysBlend?: boolean; tilemap?: boolean; shadingMode?: SurfaceShadingMode } = {},
 ): void {
   const scene = mesh.getScene();
   let binding = albedoBindings.get(mesh);
@@ -367,10 +406,16 @@ export function applyAlbedoTexture(
   }
   binding.alwaysBlend = options.alwaysBlend === true;
   if (options.tilemap) binding.key = TILEMAP_MATERIAL;
+  if (options.shadingMode && binding.shading !== options.shadingMode) {
+    binding.shading = options.shadingMode;
+    follow2DLighting(scene);
+    // A published draw moves to its new key now; one still loading picks it up when it publishes.
+    if (binding.material && mesh.material === binding.material) binding.material = drawAlbedo(mesh, binding);
+  }
   /** Rebinds the mesh's unlit values: its draw when it draws them, otherwise only the values a restore reapplies. */
   const rebind = (texture: Texture | CubeTexture | null) => {
     binding!.unlit = albedoUnlitBinding(texture, binding!.alwaysBlend);
-    if (binding!.material && mesh.material === binding!.material) binding!.material = setUnlitMaterial(mesh, binding!.key, binding!.unlit);
+    if (binding!.material && mesh.material === binding!.material) binding!.material = setUnlitMaterial(mesh, drawnAlbedoKey(mesh, binding!), binding!.unlit);
   };
   if (binding.unlit.blend !== binding.alwaysBlend) rebind(binding.unlit.texture as Texture | CubeTexture | null);
   if (!textureGuid) {
@@ -413,7 +458,7 @@ export function applyAlbedoTexture(
     // Preparation may finish after an authored assignment. Update only our
     // retained binding in that case; the borrowed material remains attached.
     // Otherwise the borrowed material keeps drawing; `restoreAlbedoMaterial` reapplies these values.
-    binding.material = publishToMesh ? drawAlbedo(mesh, binding) : unlitMaterial(scene, binding.key);
+    binding.material = publishToMesh ? drawAlbedo(mesh, binding) : unlitMaterial(scene, drawnAlbedoKey(mesh, binding));
     const previous = binding.lease;
     binding.lease = next; binding.pending = undefined;
     previous?.release();
@@ -456,7 +501,7 @@ export function refreshAlbedoTextures(
     const binding = albedoBindings.get(mesh);
     if (!binding?.guid || !changed.has(binding.guid)) continue;
     const before = binding.preparation;
-    applyAlbedoTexture(mesh, mesh.getScene(), binding.guid, assets, { alwaysBlend: binding.alwaysBlend, tilemap: binding.key === TILEMAP_MATERIAL });
+    applyAlbedoTexture(mesh, mesh.getScene(), binding.guid, assets, { alwaysBlend: binding.alwaysBlend, tilemap: binding.key === TILEMAP_MATERIAL, shadingMode: binding.shading });
     if (binding.preparation && binding.preparation !== before) pending.push(binding.preparation);
   }
   return pending;
@@ -471,6 +516,7 @@ export function applyTilemapAlbedoTextures(
   scene: Scene,
   assets?: MeshAssetContext,
   children: readonly AbstractMesh[] = mesh.getChildMeshes(),
+  shadingMode: SurfaceShadingMode = "2d",
 ): void {
   for (const child of children) {
     const guid = child.metadata?.tilemapTextureGuid as string | null | undefined;
@@ -483,6 +529,6 @@ export function applyTilemapAlbedoTextures(
       continue;
     }
     // Tilemaps remain readable from either side, including inside 3D actors.
-    applyAlbedoTexture(child, scene, guid, assets, { tilemap: true });
+    applyAlbedoTexture(child, scene, guid, assets, { tilemap: true, shadingMode });
   }
 }

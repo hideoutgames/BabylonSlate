@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { classHeaderMeta, type GraphClassMember, type SerializedGraph } from "@haptic/core";
 import { delegateOf, FLOAT, STRING } from "@haptic/scripting";
+import { addDispatcherNodes } from "./class-member-nodes";
 import {
-  addDispatcherNodes,
   adoptBoundEventSignatures,
   completeClassMemberDrop,
   patchClassMember,

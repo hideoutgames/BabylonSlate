@@ -8,7 +8,7 @@ import { PhysicsWorldSync } from "./physics-sync";
 // instrumentation that outlasts the default 5 s.
 describe("Water buoyancy with native collision response", { timeout: 30_000 }, () => {
   it("uses explicit cubic metres for carrying capacity, live edits and scale", async () => {
-    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const sync = new PhysicsWorldSync(backend);
     sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
@@ -38,7 +38,7 @@ describe("Water buoyancy with native collision response", { timeout: 30_000 }, (
   });
 
   it.each([{ dt: 1 / 60, tilt: 0 }, { dt: 1 / 30, tilt: 0 }, { dt: 1 / 60, tilt: Math.PI / 12 }])("keeps a light body stable entering water with a large explicit volume ($dt, $tilt)", async ({ dt, tilt }) => {
-    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
     const world = new World({ seed: 1, dt, classRegistry: new ClassRegistry() });
     const sync = new PhysicsWorldSync(backend);
     sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
@@ -68,7 +68,7 @@ describe("Water buoyancy with native collision response", { timeout: 30_000 }, (
   });
 
   it("creates a collidable body from buoyancy alone and follows moving waves", async () => {
-    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const sync = new PhysicsWorldSync(backend);
     const sea = world.createActor({ classId: "Actor", guid: "sea" });
@@ -98,7 +98,7 @@ describe("Water buoyancy with native collision response", { timeout: 30_000 }, (
     } finally { sync.dispose(); }
   });
   it.each([{ drag: 2.5 }, { drag: 20 }])("rocks a hull in place for a minute instead of drifting with the waves (drag $drag)", async ({ drag }) => {
-    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const sync = new PhysicsWorldSync(backend);
     // Default water: the Realistic spectrum sea (Steepness 0.5), its wind sea heading 25° from +X.
@@ -125,7 +125,7 @@ describe("Water buoyancy with native collision response", { timeout: 30_000 }, (
     } finally { sync.dispose(); }
   });
   it.each([{ blend: 8, steepest: 0.25 }, { blend: 0, steepest: Infinity }])("rides a river's current into a lake across the seam (Water Blend Distance $blend)", async ({ blend, steepest }) => {
-    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const sync = new PhysicsWorldSync(backend);
     sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });
@@ -156,7 +156,7 @@ describe("Water buoyancy with native collision response", { timeout: 30_000 }, (
     } finally { sync.dispose(); }
   });
   it("floats a body, dips under a falling rigid body, and retains its added load", async () => {
-    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const sync = new PhysicsWorldSync(backend);
     sync.water.setContent({ water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } });

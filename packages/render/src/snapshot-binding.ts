@@ -23,6 +23,7 @@ import type {
 import type { BoneAttachment } from "./bone-attachment";
 import type { MaterialResolveOptions } from "./material-library";
 import { AreaRectLightGroup } from "./area-rect-light";
+import type { Light2DGroup } from "./light-2d-group";
 
 export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
 export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
@@ -36,6 +37,8 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   reflectionProbes: Map<number, { actorId: string; bindings: import("@haptic/core").ReflectionProbeBinding[] }>;
   onVisualChanged?: (slotId: number) => void;
   areaLights: Map<number, AreaRectLightGroup>;
+  /** Each slot's 2D lights, posed from its root like its area lights. */
+  lights2D: Map<number, Light2DGroup>;
   meshes: SlotRootMap;
   boneAttachments: Map<number, BoneAttachment>;
   lights: Map<number, Light>;
@@ -65,7 +68,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   meshAssetGuids: Map<number, string | null>;
   /** Extra component parts from assignMesh, keyed by slotId. */
   meshParts: Map<number, NonNullable<AssignMeshCommand["parts"]>>;
-  meshSorting: Map<number, Pick<AssignMeshCommand, "actorGuid" | "sortingLayer" | "orderInLayer" | "castShadows" | "receiveShadows">>;
+  meshSorting: Map<number, Pick<AssignMeshCommand, "actorGuid" | "sortingLayer" | "orderInLayer" | "castShadows" | "receiveShadows" | "shadingMode">>;
   /** Second sprite mesh used for two-layer clip crossfades. */
   spriteOverlays?: Map<number, Mesh>;
   /** Per-slot AnimationGroups keyed after model load (not the global scene list). */
@@ -229,6 +232,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     cameras: new Map(),
     lightProps: new Map(),
     areaLights: new Map(),
+    lights2D: new Map(),
     cameraProps: new Map(),
     skyboxProps: new Map(),
     text3dProps: new Map(),

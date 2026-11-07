@@ -437,7 +437,8 @@ function normalizeComponent(
       source.classId === "FogVolumeComponent" ? { ...parseFogVolumeProperties(source.properties) } :
       source.classId === "ReflectionProbeComponent" ? { ...parseReflectionProbeProperties(source.properties) } :
       source.classId === "DeformerComponent" ? { ...parseDeformerProperties(source.properties) } :
-      source.classId === "AreaRectLightComponent" ? { ...parseAreaRectLightProperties(source.properties) } : source.classId === "OutlineComponent" ? { ...parseOutlineProperties(source.properties) } : source.classId === SPRING_ARM_COMPONENT_CLASS_ID ? { ...parseSpringArmProperties(source.properties) } : typeof source.properties === "object" && source.properties !== null
+      source.classId === "AreaRectLightComponent" ? { ...parseAreaRectLightProperties(source.properties) } :
+      source.classId === LIGHT_2D_CLASS_ID ? { ...parseLight2DProperties(source.properties) } : source.classId === "OutlineComponent" ? { ...parseOutlineProperties(source.properties) } : source.classId === SPRING_ARM_COMPONENT_CLASS_ID ? { ...parseSpringArmProperties(source.properties) } : typeof source.properties === "object" && source.properties !== null
         ? { ...(source.properties as Record<string, unknown>) }
         : {},
     parentId: typeof source.parentId === "string" ? source.parentId : null,
@@ -929,6 +930,7 @@ export function wouldCreateComponentCycle(
   return false;
 }
 import { parseAreaRectLightProperties } from "./area-rect-light";
+import { LIGHT_2D_CLASS_ID, parseLight2DProperties } from "./light-2d";
 import { parseFogVolumeProperties } from "./fog-volume";
 import { parseReflectionProbeProperties } from "./reflection-probe";
 import { parseOutlineProperties } from "./outline-component";

@@ -5,6 +5,7 @@ import {
   assetVariableGuidsFromGraph,
   buildDataTreeIndex,
   carriesLoadingPolicy,
+  dataFieldIdentity,
   hardLoadingProperty,
   isDataTreeAsset,
   isHardLoading,
@@ -13,6 +14,7 @@ import {
   parseMapDefaultEntries,
   renderTargetAssetGuidsFromGraph,
   richTextImageGuids,
+  type DataFieldSnapshot,
   type GraphClassMember,
   type SerializedGraph,
 } from "@haptic/core";
@@ -136,7 +138,7 @@ const COMPONENT_ASSET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "2DJoystickComponent": ["backgroundMaterialGuid", "joystickMaterialGuid", "backgroundTextureGuid", "joystickTextureGuid"],
 };
 
-const fieldIdentity = (field: Row): string => String(field.id || `legacy:${field.name}`);
+const fieldIdentity = (field: Row): string => String(dataFieldIdentity(field as Pick<DataFieldSnapshot, "id" | "name">));
 
 /** Copy each stored field's Loading from the declaration with the same identity, when it still exists. */
 function declaredLoading(stored: Row[], declared: readonly unknown[] | undefined): Row[] {

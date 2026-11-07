@@ -23,29 +23,22 @@ export const TICK_TIMING_PHASE_LABELS: Readonly<Record<TickTimingPhase, string>>
   sceneSystems: "Scene Systems",
   garbageCollection: "Garbage Collection",
 };
-/** Version 1 tick rows: script is every phase but physics. */
-export const PERFORMANCE_TICK_COLUMNS_V1 = [
-  "tickId", "elapsedMs", "scriptMs", "physicsMs", "publishMs", "otherMs",
+/** The timed phases each tick row adds after its totals; physics already has its column. */
+export const PERFORMANCE_TICK_PHASE_COLUMNS = [
+  "gameInstanceMs", "sceneSubsystemsMs", "actorsMs", "componentsMs", "postPhysicsMs", "sceneSystemsMs", "objectsMs",
+  "garbageCollectionMs",
 ] as const;
-/** The phases version 2 adds; physics already has its column. */
-export const PERFORMANCE_TICK_PHASE_COLUMNS_V2 = [
-  "gameInstanceMs", "sceneSubsystemsMs", "actorsMs", "componentsMs", "postPhysicsMs", "sceneSystemsMs",
+/** Tick rows: the totals (script is every phase but physics), then the phases. */
+export const PERFORMANCE_TICK_COLUMNS = [
+  "tickId", "elapsedMs", "scriptMs", "physicsMs", "publishMs", "otherMs", ...PERFORMANCE_TICK_PHASE_COLUMNS,
 ] as const;
-/** Version 5 adds the Objects phase after the version 2 phases. */
-export const PERFORMANCE_TICK_PHASE_COLUMNS_V5 = [...PERFORMANCE_TICK_PHASE_COLUMNS_V2, "objectsMs"] as const;
-/** Version 6 adds the end-of-tick object collection pass. */
-export const PERFORMANCE_TICK_PHASE_COLUMNS = [...PERFORMANCE_TICK_PHASE_COLUMNS_V5, "garbageCollectionMs"] as const;
-/** Versions 2 to 4 keep version 1's columns first (script still sums every phase but physics). */
-export const PERFORMANCE_TICK_COLUMNS_V2 = [...PERFORMANCE_TICK_COLUMNS_V1, ...PERFORMANCE_TICK_PHASE_COLUMNS_V2] as const;
-export const PERFORMANCE_TICK_COLUMNS_V5 = [...PERFORMANCE_TICK_COLUMNS_V1, ...PERFORMANCE_TICK_PHASE_COLUMNS_V5] as const;
-export const PERFORMANCE_TICK_COLUMNS = [...PERFORMANCE_TICK_COLUMNS_V1, ...PERFORMANCE_TICK_PHASE_COLUMNS] as const;
 export const PERFORMANCE_GPU_COLUMNS = ["observedAtMs", "durationMs", "querySequence", "coalescedQueries"] as const;
-/** Version 3: the host's accounted texture and geometry memory, sampled while recording. */
+/** The host's accounted texture and geometry memory, sampled while recording. */
 export const PERFORMANCE_MEMORY_COLUMNS = ["sampledAtMs", "textureBytes", "geometryBytes"] as const;
-/** Version 3: main-thread tasks of 50 ms or more, where the browser reports them (not Safari). */
+/** Main-thread tasks of 50 ms or more, where the browser reports them (not Safari). */
 export const PERFORMANCE_LONG_TASK_COLUMNS = ["startedAtMs", "durationMs"] as const;
 /**
- * Version 4: per tick, one row for each script entry point that ran: how often and for how long, not
+ * Per tick, one row for each script entry point that ran: how often and for how long, not
  * counting the entry points it called. `entry` indexes the profile's `scriptEntries`.
  */
 export const PERFORMANCE_SCRIPT_COLUMNS = ["tickId", "entry", "calls", "totalMs"] as const;
@@ -104,13 +97,8 @@ export type PerformanceStream = {
   chunks: Float64Array[];
 };
 export type PerformanceProfile = {
-  /**
-   * Version 1 profiles keep their tick rows (`PERFORMANCE_TICK_COLUMNS_V1`); version 2 adds the tick phases;
-   * version 3 adds memory and long tasks; version 4 adds script costs; version 5 adds the Objects phase;
-   * recordings write version 6, which adds the Garbage Collection phase. Each addition is empty when opening
-   * an earlier version.
-   */
-  kind: "haptic-performance"; version: 1 | 2 | 3 | 4 | 5 | 6;
+  /** The only version recordings write and `parsePerformanceProfile` opens. */
+  kind: "haptic-performance"; version: 6;
   identity: PerformanceIdentity;
   requestedDurationMs: number; durationMs: number;
   byteBudget: number;
@@ -321,7 +309,7 @@ export function serializePerformanceProfile(profile: PerformanceProfile): string
 export function parsePerformanceProfile(value: unknown): PerformanceProfile | null {
   if (!value || typeof value !== "object") return null;
   const data = value as PerformanceProfile;
-  if (data.kind !== "haptic-performance" || ![1, 2, 3, 4, 5, 6].includes(data.version) || !validIdentity(data.identity) ||
+  if (data.kind !== "haptic-performance" || data.version !== 6 || !validIdentity(data.identity) ||
     data.identity.mode === "simulate" || !finite(data.durationMs) || !finite(data.requestedDurationMs) ||
     data.requestedDurationMs < 1000 || data.requestedDurationMs > 60_000 ||
     !safeId(data.byteBudget) || data.byteBudget > MAX_PROFILE_BYTE_BUDGET || !safeId(data.retainedBytes) ||
@@ -345,18 +333,14 @@ export function parsePerformanceProfile(value: unknown): PerformanceProfile | nu
       ? chunk : Float64Array.from(chunk, (number) => number === null ? NaN : Number(number))) };
   };
   const frames = parseStream(data.frames, PERFORMANCE_FRAME_COLUMNS);
-  const tickColumns = data.version === 1 ? PERFORMANCE_TICK_COLUMNS_V1 : data.version < 5 ? PERFORMANCE_TICK_COLUMNS_V2
-    : data.version === 5 ? PERFORMANCE_TICK_COLUMNS_V5 : PERFORMANCE_TICK_COLUMNS;
-  const ticks = frames && parseStream(data.ticks, tickColumns);
+  const ticks = frames && parseStream(data.ticks, PERFORMANCE_TICK_COLUMNS);
   const gpu = ticks && parseStream(data.gpu, PERFORMANCE_GPU_COLUMNS);
-  // Earlier versions recorded neither, so they open with both empty.
-  const emptyStream = (columns: readonly string[]): PerformanceStream => ({ columns, count: 0, chunks: [] });
-  const memory = gpu && (data.version >= 3 ? parseStream(data.memory, PERFORMANCE_MEMORY_COLUMNS) : emptyStream(PERFORMANCE_MEMORY_COLUMNS));
-  const longTasks = memory && (data.version >= 3 ? parseStream(data.longTasks, PERFORMANCE_LONG_TASK_COLUMNS) : emptyStream(PERFORMANCE_LONG_TASK_COLUMNS));
-  const entries = data.version >= 4 ? data.scriptEntries : [];
+  const memory = gpu && parseStream(data.memory, PERFORMANCE_MEMORY_COLUMNS);
+  const longTasks = memory && parseStream(data.longTasks, PERFORMANCE_LONG_TASK_COLUMNS);
+  const entries = data.scriptEntries;
   if (!Array.isArray(entries) || entries.length > MAX_PERFORMANCE_SCRIPT_ENTRIES || !entries.every(validScriptEntry)) return null;
   bytes += entries.reduce((sum, entry) => sum + scriptEntryBytes(entry), 0);
-  const scripts = longTasks && (data.version >= 4 ? parseStream(data.scripts, PERFORMANCE_SCRIPT_COLUMNS) : emptyStream(PERFORMANCE_SCRIPT_COLUMNS));
+  const scripts = longTasks && parseStream(data.scripts, PERFORMANCE_SCRIPT_COLUMNS);
   if (!frames || !ticks || !gpu || !memory || !longTasks || !scripts || bytes > data.retainedBytes ||
     (gpu.count > 0 && data.identity.gpuTiming !== "unpaired") || !scriptRowsNameEntries(scripts, entries.length)) return null;
   return { kind: "haptic-performance", version: data.version, identity: copyIdentity(data.identity),

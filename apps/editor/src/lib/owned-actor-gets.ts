@@ -51,7 +51,7 @@ export function ownedTimelineClipsOfScene(
 }
 
 /** Node properties naming a Timeline Clip. */
-export function ownedTimelineClipNodeProperties(clip: Pick<OwnedTimelineClipEntry, "id" | "name" | "classId">): Record<string, string> {
+function ownedTimelineClipNodeProperties(clip: Pick<OwnedTimelineClipEntry, "id" | "name" | "classId">): Record<string, string> {
   return { sceneTimelineClipId: clip.id, sceneTimelineClipName: clip.name, sceneTimelineClipClassId: clip.classId };
 }
 

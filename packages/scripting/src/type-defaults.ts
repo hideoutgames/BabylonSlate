@@ -2,7 +2,7 @@ import { defaultJsValue } from "./pin-defaults";
 import type { PinType } from "./types";
 import { pinTypeForMember, pinTypeForVariable } from "./member-pin-type";
 import { ENGINE_ENUMS, ENGINE_STRUCTS, rangeKindForStruct } from "./engine-types";
-import { normalizeRange } from "@haptic/core";
+import { dataFieldIdentity, normalizeRange } from "@haptic/core";
 import type { EnumMember, StructField } from "./type-assets";
 import type { DataFieldSnapshot } from "@haptic/core";
 import { defaultFieldSnapshot, projectStoredDataDefault } from "./data-default-projection";
@@ -116,7 +116,7 @@ function defaultValueForStructField(
   // Structure defaults are persisted JSON, matching Class Map default entries.
   if (type.kind === "map") return { value: [], snapshot };
   if (type.kind === "structRef" && type.guid) {
-    if (type.guid === "engine:TagContainer") return { value: { Tags: [] }, snapshot: { ...snapshot, fields: [{ id: "legacy:Tags", name: "Tags", typeId: "tag", container: "array" }] } };
+    if (type.guid === "engine:TagContainer") return { value: { Tags: [] }, snapshot: { ...snapshot, fields: [{ id: dataFieldIdentity({ name: "Tags" }), name: "Tags", typeId: "tag", container: "array" }] } };
     if (visiting.has(type.guid)) return { value: {}, snapshot };
     const nested = schemas?.structs[type.guid];
     if (!nested) return { value: {}, snapshot };

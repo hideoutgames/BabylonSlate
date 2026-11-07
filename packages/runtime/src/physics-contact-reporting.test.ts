@@ -33,7 +33,7 @@ const box = (x: number, y = x, z = x): Components[number] => [
   "ColliderComponent", { shape: { kind: "box", halfExtents: { x, y, z } } },
 ];
 const nativeBackend = async (gravity = 0) =>
-  (await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: gravity, z: 0 }, allowSoftwareFallback: false })) as HavokPhysicsBackend;
+  (await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: gravity, z: 0 } })) as HavokPhysicsBackend;
 
 describe("contact reporting follows the actors that can observe contacts", () => {
   it("asks Havok for contact events only on bodies an observer can reach, including a host of one", async () => {

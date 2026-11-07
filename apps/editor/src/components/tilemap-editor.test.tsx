@@ -128,7 +128,7 @@ function TilemapHarness({
 }) {
   const [payload, setPayload] = useState(initial);
   const commit = (next: Record<string, unknown>, mergeKey?: string) => {
-    // DocumentContext publishes a new open-documents list with every edit.
+    // Every edit advances the document revisions; the mock advances them when the open-documents list is replaced.
     documentApi.openDocuments = [
       ...documentApi.openDocuments.filter((doc) => doc.id !== "map"),
       { id: "map", ref: { kind: "tilemap", path: MAP_PATH }, content: next },

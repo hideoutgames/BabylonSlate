@@ -54,7 +54,7 @@ const FOLDER = "AI";
 const ZONE = "ai" as const;
 
 /** Asset and Class names (Class ids are the file stems). */
-export const FEATURE_TEST_AI_NAMES = {
+const FEATURE_TEST_AI_NAMES = {
   guardBlackboard: "FT_AIGuardBlackboard",
   alertBlackboard: "FT_AIAlertBlackboard",
   patrolTree: "FT_AIPatrolTree",

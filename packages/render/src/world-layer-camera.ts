@@ -11,7 +11,7 @@ import {
   type LayerCameraState,
 } from "@haptic/core";
 
-export const WORLD_LAYER_CAMERA_NAME = "playLayerCamera";
+const WORLD_LAYER_CAMERA_NAME = "playLayerCamera";
 
 /** The default Layer Camera Width × Height of a Scene (`createDefaultSceneSettings().cameraBounds2D`). */
 const DEFAULT_BOUNDS = { width: 16, height: 9 };

@@ -5,7 +5,7 @@ describe("32-bit collision membership and masks", () => {
   it.each(["rapier", "software"] as const)("%s applies both masks to contacts and trigger pairs, including high bits", async (kind) => {
     for (const isTrigger of [false, true]) {
       const backend = kind === "rapier"
-        ? await createPhysicsBackend({ kind: "2d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false })
+        ? await createPhysicsBackend({ kind: "2d", gravity: { x: 0, y: 0, z: 0 } })
         : createSoftwarePhysicsBackend("2d", { x: 0, y: 0, z: 0 });
       try {
         for (const id of ["a", "b"]) backend.createBody({ id, actorId: id, motionType: id === "a" ? "dynamic" : "static",
@@ -27,9 +27,9 @@ describe("32-bit collision membership and masks", () => {
   });
 
   const create = (kind: "rapier" | "software" | "havok") => kind === "rapier"
-    ? createPhysicsBackend({ kind: "2d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false })
+    ? createPhysicsBackend({ kind: "2d", gravity: { x: 0, y: 0, z: 0 } })
     : kind === "havok"
-      ? createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false })
+      ? createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } })
       : Promise.resolve(createSoftwarePhysicsBackend("2d", { x: 0, y: 0, z: 0 }));
   const pair = async (kind: "rapier" | "software" | "havok", b: Partial<ColliderDesc>) => {
     const backend = await create(kind);
