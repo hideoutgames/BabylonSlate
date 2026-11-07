@@ -6,10 +6,10 @@ import {
   normalizeSuppressedComponentSourceIds,
   type MaterialInstanceOverrides,
   type ScenePostProcessEntry,
-  SCENE_LAYER_DEFAULT_CAMERA,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
+  layerCameraStartState,
   supportsOverlayVisualStyle,
-  type SceneLayerCamera,
+  type LayerCameraState,
   type Guid,
   type InputKey,
   type TouchInput,
@@ -465,14 +465,61 @@ export type GameInstanceHooks = LifecycleHooks<GameInstance> & {
   onSceneExit?: (self: GameInstance, sceneName: string) => void;
 };
 
+const LAYER_CAMERA_CLASS_ID = "LayerCamera";
+const SCENE_CAMERA_MANAGER_CLASS_ID = "SceneCameraManager";
+
+/**
+ * The 2D orthographic camera a Scene or one Scene Layer instance owns. It
+ * starts on the document's Camera Location; scripts move, turn and zoom it
+ * through the runtime (`setLayerCamera`), never by writing `state` directly.
+ * It lives exactly as long as its owner: it reads as destroyed once the
+ * owner is.
+ */
+export class LayerCamera extends EngineObject {
+  readonly owner: EngineObject;
+  state: LayerCameraState;
+
+  constructor(owner: EngineObject, location?: readonly [number, number] | null) {
+    super({ classId: LAYER_CAMERA_CLASS_ID, guid: `${owner.guid}:layerCamera` });
+    this.owner = owner;
+    this.state = layerCameraStartState(location);
+    // Validity follows the owner, whichever route ends it.
+    Object.defineProperty(this, "destroyed", {
+      get: () => owner.destroyed,
+      set: () => {},
+      enumerable: true,
+      configurable: true,
+    });
+  }
+
+  /** Camera Location, Rotation and Zoom read the live pose; nothing else is stored. */
+  override getVariable(name: string): unknown {
+    if (name === "location") return { x: this.state.x, y: this.state.y };
+    if (name === "rotation") return this.state.rotation;
+    if (name === "zoom") return this.state.zoom;
+    return super.getVariable(name);
+  }
+}
+
+/**
+ * The session's one Scene Camera Manager: what the main Scene's view looks
+ * through. Its Layer Camera, Camera Actor and Camera Component are read live
+ * by the runtime; it stores nothing itself. Scene Layers never use it.
+ */
+export class SceneCameraManager extends EngineObject {
+  constructor() {
+    super({ classId: SCENE_CAMERA_MANAGER_CLASS_ID, guid: "scene-camera-manager" });
+  }
+}
+
 export class SceneLayer extends EngineObject {
   assetGuid: string;
   zOrder: number;
   ownerSceneGuid: string | null;
   postProcessStack: ScenePostProcessEntry[];
   layerBounds: { width: number; height: number };
-  /** Its Play camera; every instance starts at the default and scripts move it. */
-  camera: SceneLayerCamera = { ...SCENE_LAYER_DEFAULT_CAMERA };
+  /** Its Play camera: every instance starts on the asset's Camera Location and scripts move it. */
+  readonly camera: LayerCamera;
 
   constructor(options: {
     classId?: string;
@@ -483,6 +530,7 @@ export class SceneLayer extends EngineObject {
     ownerSceneGuid?: string | null;
     postProcessStack?: ScenePostProcessEntry[];
     layerBounds?: { width: number; height: number };
+    cameraLocation?: readonly [number, number] | null;
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }) {
@@ -505,12 +553,15 @@ export class SceneLayer extends EngineObject {
         ? options.layerBounds.height
         : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.height,
     };
+    this.camera = new LayerCamera(this, options.cameraLocation);
   }
 }
 
 export class Scene extends EngineObject {
   assetGuid: string;
   postProcessStack: ScenePostProcessEntry[];
+  /** The Layer Camera Play looks through while no camera actor is possessed; starts on the Scene's Layer Camera Location. */
+  readonly camera: LayerCamera;
 
   constructor(options: {
     classId?: string;
@@ -519,6 +570,7 @@ export class Scene extends EngineObject {
     assetGuid: string;
     sceneName: string;
     postProcessStack?: ScenePostProcessEntry[];
+    cameraLocation?: readonly [number, number] | null;
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }) {
@@ -535,6 +587,7 @@ export class Scene extends EngineObject {
     });
     this.assetGuid = options.assetGuid;
     this.postProcessStack = normalizeScenePostProcessStack(options.postProcessStack);
+    this.camera = new LayerCamera(this, options.cameraLocation);
   }
 }
 

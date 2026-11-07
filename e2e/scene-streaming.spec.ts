@@ -88,7 +88,7 @@ async function streamingProject() {
   const scene = createDefaultScene();
   scene.settings.environmentSource = "none";
   scene.settings.shadowOverrides = { enabled: false };
-  scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.mainCameraActorId);
+  scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.defaultCameraActorId);
   scene.actors[0]!.transform = { ...identitySerializedTransform(), position: [1.5, 1, -15] };
   scene.actors.push(createActor("parent-box", "Parent Box", {
     transform: { ...identitySerializedTransform(), position: [0, -2, 0] },

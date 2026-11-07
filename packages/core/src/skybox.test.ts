@@ -83,7 +83,7 @@ describe("createDefaultScene skybox", () => {
 
   it("lights upright surfaces that face the default camera from above and at a wide angle", () => {
     const scene = createDefaultScene();
-    const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
+    const camera = scene.actors.find((actor) => actor.id === scene.settings.defaultCameraActorId)!;
     const sun = scene.actors.find((actor) => actor.id === "actor-sun")!;
     const [qx, qy, qz, qw] = sun.transform.rotation;
     // Directional lights shine along actor rotation × (0, 0, 1).

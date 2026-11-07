@@ -8,6 +8,7 @@ import {
   SCENE_LAYER_SWITCHER_SCRIPT_API,
 } from "./scene-layer-switcher-api";
 import { TIMELINE_CLIP_SCRIPT_API } from "./timeline-clip-api";
+import { LAYER_CAMERA_SCRIPT_API, SCENE_CAMERA_MANAGER_SCRIPT_API } from "./camera-script-api";
 
 export type EngineScriptPin = {
   name: string;
@@ -363,6 +364,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   SCENE_LAYER_ACTOR_SCRIPT_API,
   SCENE_LAYER_SWITCHER_SCRIPT_API,
   TIMELINE_CLIP_SCRIPT_API,
+  LAYER_CAMERA_SCRIPT_API,
+  SCENE_CAMERA_MANAGER_SCRIPT_API,
   ...OVERLAY_LAYOUT_CLASSES.map((classId): EngineClassScriptApi => ({ classId, variables: [
     ...overlayContainerScriptVariables(classId),
     ...["width", "height", "fillWeight", "gap", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "scrollX", "scrollY"].map(propertyKey => ({ name: propertyKey.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()), typeId: "float", propertyKey })),

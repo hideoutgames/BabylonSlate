@@ -205,9 +205,6 @@ export function retirePlaySlot(
   binding.lights.delete(slotId);
   binding.cameras.get(slotId)?.dispose();
   binding.cameras.delete(slotId);
-  if (binding.defaultCameraSlotId === slotId) {
-    binding.defaultCameraSlotId = null;
-  }
   if (binding.possessedCameraSlotId === slotId) {
     binding.possessedCameraSlotId = null;
   }
@@ -239,7 +236,6 @@ export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
     if (!binding.isOverlaySlot?.(slotId)) binding.seenSlots.delete(slotId);
   }
   binding.possessedCameraSlotId = null;
-  binding.defaultCameraSlotId = null;
 }
 
 function snapshotSlotWantsOverlay(
@@ -491,7 +487,6 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.primaryComponentIds.clear();
   binding.overlayStyles.clear();
   forgetVisualAssignments(binding);
-  binding.defaultCameraSlotId = null;
   binding.possessedCameraSlotId = null;
 }
 

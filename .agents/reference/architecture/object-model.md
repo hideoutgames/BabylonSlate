@@ -17,6 +17,7 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 | `Actor` | Transform plus ordered components. Writing `parentId` / `name` through `variables` bumps `World.structuralRevision`. |
 | `ActorComponent` | Own variables and interfaces; Begin Play after owner spawn. `attachComponent` throws on a destroyed actor. |
 | `Scene` | Live Play scene, `classId` `Scene:{assetGuid}`, running its SceneScript; `sceneName`, `assetGuid` (Get-only), `gravity` (Get/Set). Not spawnable. |
+| `LayerCamera` / `SceneCameraManager` | Locked engine objects, never creatable or collected. A `LayerCamera` (guid `<owner>:layerCamera`) belongs to one Scene or SceneLayer and reads as destroyed with it; `getVariable` reads its live `state` (location, rotation, zoom), and writes go through the runtime. The World holds one `SceneCameraManager` (fixed guid `scene-camera-manager`), whose Layer Camera / Camera Actor / Camera Component the runtime reads live. |
 | `SceneLayer` / `SceneLayerActor` | Overlay session instance (not an Actor; `classId` `SceneLayer:{assetGuid}`, running its SceneLayerScript) / overlay actor tagged `sceneLayerId`, same World tick. |
 | `GameInstance` | Session singleton. |
 | `Subsystem` → `GameSubsystem`, `SceneSubsystem` | Hidden abstract base (never in pickers) → session-lifetime / main-Scene-lifetime singletons. ClassKind stays `object`. |

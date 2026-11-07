@@ -20,11 +20,13 @@ import { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { actorsHaveLights2D, LIGHT_2D_CLASS_ID, light2DBindings, type SerializedActor, type SerializedComponent, type SerializedScene } from "@haptic/core";
 import {
+  actorCameraComponent,
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   identitySerializedTransform,
   areaRectLightBindings,
   normalizeSceneFogSettings,
+  sceneDefaultCameraActor,
   sceneEnvironmentTextureGuid,
   REFLECTION_PROBE_CLASS_ID,
 } from "@haptic/core";
@@ -59,7 +61,6 @@ export type AuthoredCameraProperties = {
   orthographicSize?: number;
   nearClip?: number;
   farClip?: number;
-  isDefault?: boolean;
 };
 
 export type SyncIlluminationOptions = {
@@ -369,6 +370,11 @@ const lensExtents = new WeakMap<Scene, number>();
  * Sets how much more world a Scene's cameras show vertically than the authored lens frames: a pixelated framebuffer
  * extended past the design size keeps the design size's scale and shows more of the scene in the extra rows.
  */
+/** How much more world the Scene's cameras show vertically than their authored lens frames (`setSceneCameraLensExtent`). */
+export function sceneCameraLensExtent(scene: Scene): number {
+  return lensExtents.get(scene) ?? 1;
+}
+
 export function setSceneCameraLensExtent(scene: Scene, extent: number): void {
   const value = Number.isFinite(extent) && extent > 1 ? extent : 1;
   if ((lensExtents.get(scene) ?? 1) === value) return;
@@ -657,14 +663,9 @@ export function applySceneEnvironment(
 }
 
 function resolveDefaultCameraKey(sceneData: SerializedScene): string | null {
-  const actorId = sceneData.settings.mainCameraActorId;
-  const componentId = sceneData.settings.mainCameraComponentId;
-  if (!actorId || !componentId) return null;
-  const actor = sceneData.actors.find((entry) => entry.id === actorId);
-  const component = actor?.components.find(
-    (entry) => entry.id === componentId && entry.classId === "CameraComponent",
-  );
-  return component ? authoredComponentKey(actorId, component.id) : null;
+  const actor = sceneDefaultCameraActor(sceneData);
+  const component = actor ? actorCameraComponent(actor) : null;
+  return actor && component ? authoredComponentKey(actor.id, component.id) : null;
 }
 
 /**

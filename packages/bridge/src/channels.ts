@@ -1,4 +1,4 @@
-import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, SceneLayerCamera } from "@haptic/core";
+import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, LayerCameraState } from "@haptic/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
 import type { ActorDefaults, CollisionTriangleMesh, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@haptic/core";
@@ -100,7 +100,6 @@ export interface PlayCameraProperties {
   orthographicSize?: number;
   nearClip?: number;
   farClip?: number;
-  isDefault?: boolean;
 }
 
 /** Source anchor mapping a generated line back to a graph node. */
@@ -835,7 +834,8 @@ export type CommandMessage =
         destHeight?: number;
       };
     }
-  | { type: "possessCamera"; slotId: number }
+  /** View through this slot's camera; null returns the view to the main Scene's Layer Camera. */
+  | { type: "possessCamera"; slotId: number | null }
   | { type: "sceneLoading"; sceneAssetGuid: string; sceneLoadId: number }
   | { type: "sceneStreamLoading"; actorGuid: string; streamLoadId: number }
   /** A blocking Scene load or asset load holds the simulation; the host pauses render game time to match. */
@@ -1206,6 +1206,8 @@ export type CommandMessage =
       ownerSceneGuid: string | null;
       postProcessStack: ScenePostProcessEntry[];
       layerBounds?: { width: number; height: number };
+      /** The instance's Layer Camera pose at creation (the asset's Camera Location); absent is the default pose. */
+      camera?: LayerCameraState;
     }
   | { type: "sceneLayerRemove"; layerId: string }
   | { type: "sceneLayerClear" }
@@ -1217,8 +1219,14 @@ export type CommandMessage =
     }
   /** The current Scene's post-process passes after Register or Unregister Scene Post-Processing. */
   | { type: "scenePostProcess"; postProcessStack: ScenePostProcessEntry[] }
-  /** A Scene Layer instance's camera moved, turned or zoomed (scripts only; every layer is created with the default camera). */
-  | { type: "sceneLayerCamera"; layerId: string; camera: SceneLayerCamera };
+  /** A Scene Layer instance's camera moved, turned or zoomed (scripts only; `sceneLayerCreate` carries its start pose). */
+  | { type: "sceneLayerCamera"; layerId: string; camera: LayerCameraState }
+  /**
+   * The main Scene's Layer Camera: its pose and its Layer Camera Width ×
+   * Height. Sent when each main Scene starts (on its Layer Camera Location)
+   * and whenever a script moves, turns or zooms it.
+   */
+  | { type: "sceneCamera"; camera: LayerCameraState; bounds: { width: number; height: number } };
 
 export type BridgeHostMessage =
   | { channel: "control"; payload: ControlMessage }

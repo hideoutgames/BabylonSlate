@@ -72,7 +72,7 @@ interface SceneRealizerHost {
   realizeActor(actor: Actor, checkpoint: () => void): void;
   breakParentCycles(actors: Iterable<Actor>): void;
   /** The authored opt-in camera possession, after every actor has spawned. */
-  possessViewTarget(): void;
+  possessStartCamera(): void;
   publishSnapshot(): void;
   /** Remove an actor instance the way the driver removes any owned actor. */
   removeActor(actor: Actor): void;
@@ -434,10 +434,12 @@ export class SceneRealizer implements RuntimeSubsystem {
       this.host.setWorldGravity(gravity);
       // The Scene object runs its SceneScript: Begin Play once the Scene is ready.
       work.sceneInstance = world.createScene({ assetGuid: guid, sceneName: name,
-        postProcessStack: scene.settings.postProcessStack, variables: { gravity }, hooks: this.host.embeddedScriptHooks() });
+        postProcessStack: scene.settings.postProcessStack, cameraLocation: scene.settings.cameraLocation2D,
+        variables: { gravity }, hooks: this.host.embeddedScriptHooks() });
       this.host.recordSimulationStart({ sceneAssetGuid: guid, sceneInstanceId: work.sceneInstance.guid, sceneLoadId: loadId });
       checkpoint();
       this.host.emit({ type: "activeScene", sceneAssetGuid: guid, sceneLoadId: loadId });
+      this.host.emit({ type: "sceneCamera", camera: { ...work.sceneInstance.camera.state }, bounds: { ...scene.settings.cameraBounds2D } });
       checkpoint();
       for (const serialized of scene.actors) {
         checkpoint();
@@ -461,7 +463,7 @@ export class SceneRealizer implements RuntimeSubsystem {
     checkpoint();
     this.host.navigation().registerAgents();
     this.host.navigation().registerObstacles();
-    this.host.possessViewTarget();
+    this.host.possessStartCamera();
     checkpoint();
     yield* this.spawnOwnedSceneLayers(work);
     checkpoint();

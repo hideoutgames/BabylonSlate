@@ -55,7 +55,7 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
   await showOverlayButtons(page, ["console"]);
   await openMainScene(page);
   const scene = await page.evaluate(() => (window as unknown as { __hapticTest: { activeSceneContent(): SerializedScene } }).__hapticTest.activeSceneContent());
-  const camera = scene.actors.find(actor => actor.id === scene.settings.mainCameraActorId)!;
+  const camera = scene.actors.find(actor => actor.id === scene.settings.defaultCameraActorId)!;
   // The template Mannequin faces the default camera (-Z); frame its front, which the sun lights at a wide angle.
   camera.transform.position = [0, 1.9, -5.5];
   camera.transform.rotation = lookAtRotation([0, 1.9, -5.5], [0, 1.35, 0]);

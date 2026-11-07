@@ -1167,8 +1167,7 @@ export class ProjectService {
     if (kind === "blank") {
       scene.actors = [];
       scene.settings.environmentSource = "none";
-      scene.settings.mainCameraActorId = null;
-      scene.settings.mainCameraComponentId = null;
+      scene.settings.defaultCameraActorId = null;
     }
     await this.storage.mkdir("assets/.blobs", true);
     await this.storage.mkdir("plugins", true);

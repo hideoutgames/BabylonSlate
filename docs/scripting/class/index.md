@@ -562,6 +562,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Get Field Of View](get-field-of-view.md) | Returns a camera's field of view in degrees. |
 | [Get Orthographic Size](get-orthographic-size.md) | Returns half the height of an orthographic camera's view, in world units. |
+| [Get Scene Camera Manager](get-scene-camera-manager.md) | Returns the Scene Camera Manager, which reports what the Scene's view looks through. |
 | [Possess Camera](possess-camera.md) | Makes the camera on an actor the view the player sees. |
 | [Set Field Of View](set-field-of-view.md) | Sets a camera's field of view in degrees. |
 | [Set Orthographic Size](set-orthographic-size.md) | Sets half the height of an orthographic camera's view, in world units. |
@@ -694,18 +695,11 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
-| [Add Scene Layer Camera Offset](add-scene-layer-camera-offset.md) | Moves a Scene Layer's camera by an amount from where it is now. |
 | [Clear Scene Layer](clear-scene-layer.md) | Removes every Scene Layer and all of their actors. |
 | [Create Scene Layer](create-scene-layer.md) | Creates a Scene Layer from an asset and waits until it is ready. |
 | [Get Owning Scene Layer](get-owning-scene-layer.md) | Returns the Scene Layer an actor belongs to. |
-| [Get Scene Layer Camera Location](get-scene-layer-camera-location.md) | Returns the point of a Scene Layer at the centre of its camera's view. |
-| [Get Scene Layer Camera Rotation](get-scene-layer-camera-rotation.md) | Returns the angle of a Scene Layer's camera, in degrees. |
-| [Get Scene Layer Camera Zoom](get-scene-layer-camera-zoom.md) | Returns the zoom of a Scene Layer's camera. |
 | [Register Scene Layer Post-Processing](register-scene-layer-post-processing.md) | Adds a post-process Material to the effects applied to a Scene Layer and returns the new pass's Material Object. |
 | [Remove Scene Layer](remove-scene-layer.md) | Removes a Scene Layer and all of its actors. |
-| [Set Scene Layer Camera Location](set-scene-layer-camera-location.md) | Moves a Scene Layer's camera so the view is centred on a point of the layer. |
-| [Set Scene Layer Camera Rotation](set-scene-layer-camera-rotation.md) | Turns a Scene Layer's camera around the centre of its view. |
-| [Set Scene Layer Camera Zoom](set-scene-layer-camera-zoom.md) | Zooms a Scene Layer's camera in or out around the centre of its view. |
 | [Unregister Scene Layer Post-Processing](unregister-scene-layer-post-processing.md) | Removes a post-process Material from the effects applied to a Scene Layer. |
 
 ## Render
@@ -830,12 +824,12 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Tween Component Transform](tween-component-transform.md) | Moves, rotates and scales a component from Transform A to Transform B together. |
 | [Tween Float](tween-float.md) | Animates a Float variable from A to B over Duration seconds. |
 | [Tween Integer](tween-integer.md) | Animates an Integer variable from A to B in whole-number steps. |
+| [Tween Layer Camera Location](tween-layer-camera-location.md) | Pans a Layer Camera from location A to location B over Duration seconds. |
+| [Tween Layer Camera Rotation](tween-layer-camera-rotation.md) | Turns a Layer Camera from angle A to angle B over Duration seconds. |
+| [Tween Layer Camera Zoom](tween-layer-camera-zoom.md) | Zooms a Layer Camera from A to B over Duration seconds. |
 | [Tween Layout Size](tween-layout-size.md) | Resizes a 2D layout component from size A to size B over Duration seconds. |
 | [Tween Quaternion](tween-quaternion.md) | Animates a Quaternion variable from A to B along the shortest rotation. |
 | [Tween Rotator](tween-rotator.md) | Animates a Rotator variable from A to B by blending pitch, yaw and roll. |
-| [Tween Scene Layer Camera Location](tween-scene-layer-camera-location.md) | Pans a Scene Layer's camera from location A to location B over Duration seconds. |
-| [Tween Scene Layer Camera Rotation](tween-scene-layer-camera-rotation.md) | Turns a Scene Layer's camera from angle A to angle B over Duration seconds. |
-| [Tween Scene Layer Camera Zoom](tween-scene-layer-camera-zoom.md) | Zooms a Scene Layer's camera from A to B over Duration seconds. |
 | [Tween Scroll Offset](tween-scroll-offset.md) | Scrolls a 2D Scroll Box from offset A to offset B over Duration seconds. |
 | [Tween Text Color](tween-text-color.md) | Blends the text colour of a 2D text component from A to B over Duration seconds. |
 | [Tween Text Font Size](tween-text-font-size.md) | Changes the font size of a 2D text component from A to B over Duration seconds. |

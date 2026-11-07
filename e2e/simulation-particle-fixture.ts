@@ -33,8 +33,7 @@ export async function simulationParticleProject() {
   const scene = createDefaultScene();
   scene.settings.environmentColor = [0, 0, 0];
   scene.settings.grid.showGrid = false;
-  scene.settings.mainCameraActorId = cameraId;
-  scene.settings.mainCameraComponentId = "lens";
+  scene.settings.defaultCameraActorId = cameraId;
   const cube = createMeshComponent("control-mesh", "box");
   cube.properties.materialGuid = blueMaterialGuid;
   scene.actors = [

@@ -97,7 +97,7 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an obj
   const sceneFile = files.get(MAIN_SCENE_FILE)!;
   const decoded = await decodeAssetDocument(sceneFile);
   const scene = decoded.payload as unknown as SerializedScene;
-  const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
+  const camera = scene.actors.find((actor) => actor.id === scene.settings.defaultCameraActorId)!;
   camera.transform = { ...identitySerializedTransform(), position: [0, 2, -4] };
   const box = createMeshComponent("red-box-mesh", "box");
   // Static unlit Text 3D beside the box, inside the reflection: it must not keep the reflection redrawing.
@@ -196,7 +196,7 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws only w
   const sceneFile = files.get(MAIN_SCENE_FILE)!;
   const decoded = await decodeAssetDocument(sceneFile);
   const scene = decoded.payload as unknown as SerializedScene;
-  const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
+  const camera = scene.actors.find((actor) => actor.id === scene.settings.defaultCameraActorId)!;
   camera.transform = { ...identitySerializedTransform(), position: [0, 2, -4] };
   const box = (id: string, position: [number, number, number], scale: number) => createActor(id, id, {
     transform: { ...identitySerializedTransform(), position, scale: [scale, scale, scale] },
@@ -255,7 +255,7 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror keeps its re
   const sceneFile = files.get(MAIN_SCENE_FILE)!;
   const decoded = await decodeAssetDocument(sceneFile);
   const scene = decoded.payload as unknown as SerializedScene;
-  const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
+  const camera = scene.actors.find((actor) => actor.id === scene.settings.defaultCameraActorId)!;
   camera.transform = { ...identitySerializedTransform(), position: [0, 2, -4] };
   const box = (id: string, position: [number, number, number], scale: [number, number, number]) => createActor(id, id, {
     transform: { ...identitySerializedTransform(), position, scale },
@@ -344,7 +344,7 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows the su
   const sceneFile = files.get(MAIN_SCENE_FILE)!;
   const decoded = await decodeAssetDocument(sceneFile);
   const scene = decoded.payload as unknown as SerializedScene;
-  const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
+  const camera = scene.actors.find((actor) => actor.id === scene.settings.defaultCameraActorId)!;
   camera.transform = { ...identitySerializedTransform(), position: [0, 2, -4] };
   const box = (id: string, position: [number, number, number], scale: [number, number, number], materialGuid?: string) => {
     const mesh = createMeshComponent(`${id}-mesh`, "box");

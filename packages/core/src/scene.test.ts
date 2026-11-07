@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultScene } from "./project";
 import {
+  actorCameraComponent,
   actorSubtree,
   createActor,
+  createDefaultSceneSettings,
   createMeshComponent,
   findActor,
   folderSubtree,
   nextFolderId,
   normalizeScene,
+  sceneDefaultCameraActor,
   sceneEnvironmentTextureGuid,
+  sceneLayerCameraFrame,
   normalizeTransform,
   wouldCreateComponentCycle,
   wouldCreateCycle,
@@ -333,8 +337,8 @@ describe("scene schema", () => {
     expect(settings.fogEnd).toBe(100);
     expect(settings.environmentTextureGuid).toBeNull();
     expect(settings.environmentSource).toBe("none");
-    expect(settings.mainCameraActorId).toBeNull();
-    expect(settings.mainCameraComponentId).toBeNull();
+    expect(settings.defaultCameraActorId).toBeNull();
+    expect(settings.cameraLocation2D).toEqual([0, 0]);
   });
 
   it("keeps a chosen environment source and its kept texture, and rejects unknown sources", () => {
@@ -352,7 +356,7 @@ describe("scene schema", () => {
     expect(createDefaultScene("2d").settings.environmentSource).toBe("none");
   });
 
-  it("keeps authored fog, IBL, and Default Camera ids", () => {
+  it("keeps authored fog, IBL, the Default Camera actor and the Layer Camera location", () => {
     const settings = normalizeScene({
       settings: {
         fogEnabled: true,
@@ -360,8 +364,8 @@ describe("scene schema", () => {
         fogStart: 4,
         fogEnd: 40,
         environmentTextureGuid: "env-1",
-        mainCameraActorId: "cam-actor",
-        mainCameraComponentId: "cam-comp",
+        defaultCameraActorId: "cam-actor",
+        cameraLocation2D: [3, -4.5],
       },
     }).settings;
     expect(settings.fogEnabled).toBe(true);
@@ -372,8 +376,8 @@ describe("scene schema", () => {
     expect(settings.environmentTextureGuid).toBe("env-1");
     // Scenes saved before Environment Source keep lighting from their texture.
     expect(settings.environmentSource).toBe("texture");
-    expect(settings.mainCameraActorId).toBe("cam-actor");
-    expect(settings.mainCameraComponentId).toBe("cam-comp");
+    expect(settings.defaultCameraActorId).toBe("cam-actor");
+    expect(settings.cameraLocation2D).toEqual([3, -4.5]);
   });
 
   it.each(["exponential", "exponentialSquared"])(
@@ -426,15 +430,42 @@ describe("scene schema", () => {
     expect(settings.fogEnd).toBeGreaterThan(settings.fogStart);
   });
 
-  it("drops a Default Camera pick unless both actor and component ids are strings", () => {
+  it("drops a non-string Default Camera and a non-finite Layer Camera location axis", () => {
     const settings = normalizeScene({
       settings: {
-        mainCameraActorId: "cam-actor",
-        mainCameraComponentId: 12,
+        defaultCameraActorId: 12,
+        cameraLocation2D: [Number.NaN, 7],
       },
     }).settings;
-    expect(settings.mainCameraActorId).toBeNull();
-    expect(settings.mainCameraComponentId).toBeNull();
+    expect(settings.defaultCameraActorId).toBeNull();
+    expect(settings.cameraLocation2D).toEqual([0, 7]);
+  });
+
+  it("draws the orange outline on the Layer Camera unless a world Scene starts on a Default Camera actor", () => {
+    const camera = createActor("rig", "Rig", { components: [{ id: "lens", classId: "CameraComponent", properties: {} }] });
+    const settings = { ...createDefaultSceneSettings(), cameraBounds2D: { width: 20, height: 10 }, cameraLocation2D: [4, -1] as [number, number] };
+    expect(sceneLayerCameraFrame({ actors: [camera], settings })).toEqual({ width: 20, height: 10, center: [4, -1] });
+    expect(sceneLayerCameraFrame({ actors: [camera], settings: { ...settings, defaultCameraActorId: "rig" } })).toBeNull();
+    // A Default Camera without a Camera component starts Play on the Layer Camera, so the outline stays.
+    const prop = createActor("prop", "Prop", { components: [] });
+    expect(sceneLayerCameraFrame({ actors: [prop], settings: { ...settings, defaultCameraActorId: "prop" } })).not.toBeNull();
+    // A Scene Layer's canvas always shows.
+    expect(sceneLayerCameraFrame({ actors: [camera], settings: { ...settings, defaultCameraActorId: "rig" }, overlayEditor: true }))
+      .toEqual({ width: 20, height: 10, center: [4, -1] });
+  });
+
+  it("resolves the Default Camera only to a placed actor with a Camera component", () => {
+    const camera = createActor("rig", "Rig", { components: [
+      { id: "mesh", classId: "MeshComponent", properties: {} },
+      { id: "lens", classId: "CameraComponent", properties: {} },
+    ] });
+    const prop = createActor("prop", "Prop", { components: [{ id: "mesh", classId: "MeshComponent", properties: {} }] });
+    const scene = (id: string | null) => ({ actors: [camera, prop], settings: { ...createDefaultSceneSettings(), defaultCameraActorId: id } });
+    expect(sceneDefaultCameraActor(scene("rig"))).toBe(camera);
+    expect(actorCameraComponent(camera)?.id).toBe("lens");
+    expect(sceneDefaultCameraActor(scene("prop"))).toBeNull();
+    expect(sceneDefaultCameraActor(scene("gone"))).toBeNull();
+    expect(sceneDefaultCameraActor(scene(null))).toBeNull();
   });
 
   it("rejects non-positive 2D camera bounds and fractional subdivisions", () => {

@@ -206,11 +206,9 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
   }
 
   private cameraAssignPayload(
-    actor: Actor,
     camera: ActorComponent,
   ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["camera"]> {
     const projection = camera.getVariable("projectionMode");
-    const settings = this.host.playScene()?.settings;
     return {
       projectionMode:
         projection === "orthographic" ? "orthographic" : "perspective",
@@ -218,9 +216,6 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
       orthographicSize: Number(camera.getVariable("orthographicSize") ?? 5),
       nearClip: Number(camera.getVariable("nearClip") ?? 0.1),
       farClip: Number(camera.getVariable("farClip") ?? 1000),
-      isDefault:
-        settings?.mainCameraActorId === actor.guid &&
-        settings.mainCameraComponentId === camera.guid,
     };
   }
 
@@ -317,7 +312,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
               ...(component.classId === "2DPainterComponent" ? { painter: this.host.painters().payload(component) } : {}),
               ...(component.classId === "DynamicRuntimeMeshComponent" ? { dynamicMesh: this.host.dynamicMeshes().assign(component) } : {}),
               ...(component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" ? { light: lightAssignPayload(component) } : {}),
-              ...(component.classId === "CameraComponent" ? { camera: this.cameraAssignPayload(actor, component) } : {}),
+              ...(component.classId === "CameraComponent" ? { camera: this.cameraAssignPayload(component) } : {}),
               parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds),
             };
           })
@@ -333,8 +328,8 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
           component.classId === "2DTextComponent" ||
           component.classId === "2DRichTextComponent",
       );
-      const cameras = renderables.filter(component => component.classId === "CameraComponent");
-      const camera = cameras.find(component => this.cameraAssignPayload(actor, component).isDefault) ?? cameras[0];
+      // An actor is looked through its first Camera component.
+      const camera = renderables.find(component => component.classId === "CameraComponent");
       const light = renderables.find(component => component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent");
       this.host.emit({
         type: "assignMesh",
@@ -374,7 +369,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
           : {}),
         ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp,
           text2dComp.classId === "2DRichTextComponent" ? this.host.textAppear().progress(text2dComp) : 1) } : {}),
-        ...(camera ? { camera: this.cameraAssignPayload(actor, camera) } : {}),
+        ...(camera ? { camera: this.cameraAssignPayload(camera) } : {}),
         ...(light ? { light: lightAssignPayload(light) } : {}),
         ...(overlayPanel ? { overlayPanel } : {}),
         ...(parts ? { parts } : {}),

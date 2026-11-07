@@ -993,8 +993,7 @@ export function createDefaultScene(
       ...(viewportMode === "3d"
         ? { environmentColor: DEFAULT_3D_ENVIRONMENT_COLOR, environmentSource: "skybox" as const, fogColor: DEFAULT_3D_FOG_COLOR }
         : {}),
-      mainCameraActorId: camera.id,
-      mainCameraComponentId: DEFAULT_SCENE_CAMERA_COMPONENT_ID,
+      defaultCameraActorId: camera.id,
     },
     folders: [],
     actors,

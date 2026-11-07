@@ -1,5 +1,6 @@
 import { timelineClipControl, timelineProxyControl } from "./timeline-runtime";
 import type { CommandMessage } from "@haptic/bridge";
+import { createDefaultSceneSettings } from "@haptic/core";
 import type { Actor, ClassRegistry, EngineObject } from "@haptic/object-model";
 import { RuntimeAssetCatalog } from "./asset-catalog";
 import { createAudioHostBindings } from "./audio-particle-emitter";
@@ -23,6 +24,7 @@ import { createTimingHostBindings } from "./runtime-host-timing";
 import { flushPainters, flushTextAppear, timelineOwners } from "./runtime-tick-phases";
 import { createSceneLayerOverlayHostBindings } from "./scene-layer-overlay";
 import { createSceneLayerHostBindings } from "./scene-layers";
+import { createCameraHostBindings } from "./runtime-host-camera";
 import { createScenePostProcessHostBindings } from "./scene-post-process";
 import { createSceneStreamHostBindings } from "./scene-streams";
 import { ScriptHost } from "./script-host";
@@ -196,6 +198,13 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
       rt.sceneRealizer.change(scene);
     },
     ...createSceneLayerHostBindings({ layers: rt.layers }),
+    ...createCameraHostBindings({
+      world: () => rt.world,
+      layers: rt.layers,
+      camera: rt.camera,
+      sceneCameraBounds: () => rt.playScene?.settings.cameraBounds2D ?? createDefaultSceneSettings().cameraBounds2D,
+      emit,
+    }),
     ...createScenePostProcessHostBindings({ world: () => rt.world, emit, frameId }),
     ...createSceneLayerOverlayHostBindings({ overlay: rt.overlay }),
   });

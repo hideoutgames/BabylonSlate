@@ -1,4 +1,4 @@
-import { deformerBindings } from "@haptic/core";
+import { deformerBindings, sceneDefaultCameraActor } from "@haptic/core";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SceneOutlineHost } from "./scene-outline-host";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
@@ -401,12 +401,8 @@ export function createEditorViewportTools({
     target: () => {
       if (!previewGameCamera || options.editorFlyEnabled?.() === false) return null;
       const sceneData = editorSync.serializedScene();
-      const actorId = sceneData?.settings.mainCameraActorId;
-      const componentId = sceneData?.settings.mainCameraComponentId;
-      const actor = actorId ? sceneData?.actors.find((entry) => entry.id === actorId) : undefined;
-      if (!actor || actor.locked || !actor.components.some(
-        (component) => component.id === componentId && component.classId === "CameraComponent",
-      )) return null;
+      const actor = sceneData ? sceneDefaultCameraActor(sceneData) : null;
+      if (!actor || actor.locked) return null;
       const mesh = editorSync.meshForActor(actor.id);
       const camera = scene.activeCamera;
       if (!mesh || !camera || camera === cameraController.camera) return null;

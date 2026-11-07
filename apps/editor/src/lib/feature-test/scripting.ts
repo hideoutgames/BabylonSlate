@@ -1764,8 +1764,7 @@ async function addStreamedRoom(ctx: FeatureTestContext, spinner: PlacedClass, fo
   const room = createDefaultScene("3d");
   room.name = STREAMED_ROOM_NAME;
   room.actors = [];
-  room.settings.mainCameraActorId = null;
-  room.settings.mainCameraComponentId = null;
+  room.settings.defaultCameraActorId = null;
   const add = (entry: SerializedActor) => ctx.addActor(entry, { scene: room });
   add(actor("ft-scripting-room-platform", "Room Platform", tf([0, 0.15, 0], { scale: [5, 0.2, 5] }), [
     meshComp("ft-scripting-room-platform-mesh", "box", { collision: "simple" }),

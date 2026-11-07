@@ -30,13 +30,14 @@ Clear the selection to show **Scene Settings** in the **Inspector**.
 | Physics World | **3D (Havok)** or **2D (Rapier)**. A Scene uses one or the other. Changing Viewport does not change it. |
 | Environment | Background colour. |
 | Fog | Turns on distance fog. Shows **Fog Mode** (**Linear**, **Exponential** or **Exponential Squared**) and **Fog Color**, then **Fog Start** and **Fog End** for Linear, or **Fog Density** for the others. |
-| Default Camera | The camera Play looks through. |
+| Default Camera | The placed actor Play looks through when the Scene starts. **None** starts on the Layer Camera. |
 | Joystick | Shows the on-screen joystick for the editor camera. |
 | Gravity | Default 0, −9.81, 0. |
 | Snap Step | Movement increment for the snap grid. Default 1. |
 | Tile Size | Spacing of the visible grid cells. Default 1. |
 | Tile Subdivisions | Minor lines per grid cell. Default 4. |
-| 2D Camera Width, 2D Camera Height | Size of the orange guide frame drawn in 2D. Default 16 × 9. |
+| Layer Camera Location | Where the Scene's Layer Camera starts, and the centre of the orange outline drawn in 2D. Default 0, 0. |
+| Layer Camera Width, Layer Camera Height | The area the Layer Camera frames, and the size of the orange outline. Default 16 × 9. |
 
 Below the settings are collapsible sections:
 

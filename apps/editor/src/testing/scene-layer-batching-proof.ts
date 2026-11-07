@@ -7,7 +7,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
-import type { SceneLayerCamera } from "@haptic/core";
+import type { LayerCameraState } from "@haptic/core";
 import { createAppWebGpuEngine } from "@haptic/render";
 import { readEngineDrawCalls } from "../../../../packages/render/src/draw-calls";
 import { setSceneDrawBatching } from "../../../../packages/render/src/overlay-draw-batcher";
@@ -19,7 +19,7 @@ const WIDTH = 960;
 const HEIGHT = 540;
 const BACKGROUND = new Color4(0.05, 0.07, 0.11, 1);
 
-const CAMERAS: Array<{ name: string; camera: SceneLayerCamera }> = [
+const CAMERAS: Array<{ name: string; camera: LayerCameraState }> = [
   { name: "default", camera: { x: 0, y: 0, rotation: 0, zoom: 1 } },
   { name: "panned and zoomed", camera: { x: 1.37, y: -0.61, rotation: 0, zoom: 1.15 } },
   { name: "turned", camera: { x: -0.4, y: 0.25, rotation: 4, zoom: 0.9 } },

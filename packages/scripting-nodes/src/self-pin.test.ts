@@ -37,11 +37,12 @@ const CASES = [
   { typeId: "component.get", title: "Get Component", pin: "actor", label: "Actor", method: "getComponent", pure: true },
   { typeId: "component.has", title: "Has Component", pin: "actor", label: "Actor", method: "getComponent", pure: true },
   { typeId: "component.add", title: "Add Component", pin: "actor", label: "Actor", method: "addComponent", pure: false },
-  { typeId: "camera.possess", title: "Possess Camera", pin: "target", label: "Target", method: "possessCamera", pure: false },
   { typeId: "transform.setLocation", title: "Set Actor Location", pin: "target", label: "Target", method: "setActorLocation", pure: false },
   { typeId: "physics.addImpulse", title: "Add Impulse", pin: "target", label: "Target", method: "addImpulse", pure: false },
   { typeId: "navigation.moveTo", title: "Move To", pin: "target", label: "Target", method: "moveTo", pure: false },
   { typeId: "actor.getOwner", title: "Get Owner", pin: "target", label: "Target", method: "getOwner", pure: true },
+  // A wired None is the request itself (back to the Layer Camera), so this node is never skipped for it.
+  { typeId: "camera.possess", title: "Possess Camera", pin: "target", label: "Target", method: "possessCamera", pure: false, noneIsInput: true },
 ] as const;
 
 /** Begin Play into the node, or into Print when the node is a pure value. */
@@ -111,12 +112,19 @@ describe("optional Actor pins that read Self", () => {
     expect(missing).toEqual([]);
   });
 
-  it.each(CASES)("$typeId does nothing and reports the null access when its wired reference is empty", (testCase) => {
+  it.each(CASES.filter((testCase) => !("noneIsInput" in testCase)))("$typeId does nothing and reports the null access when its wired reference is empty", (testCase) => {
     const { calls, logged, printed } = runBeginPlay(registry, testCase, true);
     // A wired empty reference never becomes Self: the node is skipped.
     expect(calls).toEqual([]);
     expect(logged).toEqual([`Hero: ${testCase.title} (${testCase.label}) tried to access null.`]);
     // A pure node still yields its output default.
     if (testCase.pure) expect(printed).toEqual([testCase.typeId === "component.has" ? false : null]);
+  });
+
+  it("Possess Camera passes a wired None on without a null access, so the view returns to the Layer Camera", () => {
+    const testCase = CASES.find((entry) => entry.typeId === "camera.possess")!;
+    const { calls, logged } = runBeginPlay(registry, testCase, true);
+    expect(calls).toEqual([[null]]);
+    expect(logged).toEqual([]);
   });
 });

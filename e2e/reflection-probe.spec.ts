@@ -42,7 +42,7 @@ function room(probe: boolean): SerializedScene {
   scene.settings.environmentColor = [0, 0, 0];
   scene.settings.grid.showGrid = false;
   scene.settings.shadowOverrides = { enabled: false };
-  const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
+  const camera = scene.actors.find((actor) => actor.id === scene.settings.defaultCameraActorId)!;
   camera.transform = { position: EYE, rotation: lookAtRotation(EYE, BALL), scale: [1, 1, 1] };
   const wall = (id: string, position: [number, number, number], scale: [number, number, number]) =>
     createActor(id, id, { transform: { ...identitySerializedTransform(), position, scale }, components: [createMeshComponent(`${id}-mesh`, "box")] });
