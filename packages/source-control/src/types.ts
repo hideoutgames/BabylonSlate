@@ -59,7 +59,7 @@ export interface GitConfigPrefill {
   branch: string;
 }
 
-export const SOURCE_CONTROL_SECRET_PREFIX = "source-control:";
+const SOURCE_CONTROL_SECRET_PREFIX = "source-control:";
 
 export function sourceControlSecretKey(projectGuid: string): string {
   return `${SOURCE_CONTROL_SECRET_PREFIX}${projectGuid}`;
