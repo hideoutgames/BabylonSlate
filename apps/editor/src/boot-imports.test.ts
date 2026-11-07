@@ -46,8 +46,9 @@ describe("editor boot imports", () => {
     expect(closure.filter((file) => file === "lib/content-browser-helpers.ts" || file === "lib/new-asset-result.ts")).toEqual([]);
   });
 
-  it("keep CodeMirror out of the editor route, which loads it with the first code body shown", () => {
-    const closure = staticClosure("routes/editor-route.tsx");
+  it("keep CodeMirror out of the editor route and the asset editor families, which load it with the first code body shown", () => {
+    const families = readdirSync(join(SRC, "shell/asset-panels")).map((file) => `shell/asset-panels/${file}`);
+    const closure = [...new Set(["routes/editor-route.tsx", ...families].flatMap((entry) => staticClosure(entry)))];
     // Every screen that shows code is reached, so an empty result is a finding.
     for (const screen of ["panels/graph-panel.tsx", "panels/inspector-graph-node-details.tsx", "components/material-editor.tsx",
       "components/material-custom-glsl.tsx", "components/project-extension-dialogs.tsx", "components/lazy-code-editors.tsx"])
