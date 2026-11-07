@@ -15,7 +15,7 @@ import { isAppOwnedFolder } from "./library-folders";
 const PROJECTS_ROOT = "BabylonSlate/projects";
 
 /** Files-visible Documents on iPad; app-private Data on Android, whose public Documents needs a picker. */
-export function mobileDocumentsDirectory(platform: HostPlatform = getHostPlatform()): Directory {
+function mobileDocumentsDirectory(platform: HostPlatform = getHostPlatform()): Directory {
   return platform === "android" ? Directory.Data : Directory.Documents;
 }
 
