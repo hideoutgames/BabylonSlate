@@ -260,5 +260,28 @@ describe("raise backoff", () => {
     for (let i = 0; i < 31; i++) scaling.noteFramePressure(sample(16.7, 4));
     expect(scaling.getLevel()).toBe(1);
   });
+
+  it("reads each sample's values when noted, so the caller may reuse one sample object", () => {
+    const scaling = controller();
+    const reused = sample(33, 4);
+    for (let i = 0; i < 4; i++) scaling.noteFramePressure(reused);
+    // Four heavy frames and one light one: the window's median is still heavy.
+    Object.assign(reused, sample(16.7, 4));
+    scaling.noteFramePressure(reused);
+    expect(scaling.getLevel()).toBe(1.25);
+  });
+
+  it("decides without allocating or sorting arrays on each frame", () => {
+    const scaling = controller({ initialLevel: 2 });
+    const sort = vi.spyOn(Array.prototype, "sort");
+    const map = vi.spyOn(Array.prototype, "map");
+    // Over a full window, through a raise (the climb back) and the GPU median it reads.
+    for (let i = 0; i < 15; i++) scaling.noteFramePressure(sample(16.7, 4, i % 2 ? 4 : null));
+    expect(scaling.getLevel()).toBe(1);
+    expect(sort).not.toHaveBeenCalled();
+    expect(map).not.toHaveBeenCalled();
+    sort.mockRestore();
+    map.mockRestore();
+  });
 });
 
