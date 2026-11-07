@@ -5,7 +5,7 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`a Sprite's 2D and 3D Shading Modes compile and light it, on ${backend}`, async ({ page }) => {
+  test(`a Sprite's 2D and 3D Shading Modes compile and light it, and 2D casters shadow it, on ${backend}`, async ({ page }) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -22,6 +22,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(result.twoDNear, "2D near").toBeGreaterThan(200);
     expect(result.twoDFar, "2D far").toBeGreaterThan(15);
     expect(result.twoDFar, "2D far").toBeLessThan(40);
+    // A caster between the light and a pixel leaves only the Global light there; the same distance in the open is lit.
+    expect(result.twoDShadowed, "2D behind a caster").toBeLessThan(40);
+    expect(result.twoDBeside, "2D beside a caster").toBeGreaterThan(100);
     // 3D: the point light brightens the sprite's facing side and leaves its far edge unlit.
     expect(result.threeDNear, "3D near").toBeGreaterThan(result.threeDFar + 60);
   });

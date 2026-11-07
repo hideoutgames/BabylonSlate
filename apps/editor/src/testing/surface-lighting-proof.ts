@@ -1,7 +1,7 @@
 /**
  * Test-build-only check that a Sprite's lit Shading Modes draw on a real Engine: a quad on the unlit Material's 2D-lit
  * variant under a 2D Point light and a dim Global light, and a quad on its 3D-lit variant under a 3D point light. Each
- * quad is read back near its light and past the light's reach.
+ * quad is read back near its light and past the light's reach; the 2D quad also behind a 2D shadow caster and beside it.
  */
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
@@ -17,7 +17,7 @@ import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderEffectsSettings, parseLight2DProperties } from "@haptic/core";
 import { createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
-import { add2DLight } from "../../../../packages/render/src/lights-2d";
+import { add2DLight, add2DOccluder } from "../../../../packages/render/src/lights-2d";
 import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "../../../../packages/render/src/unlit-material";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
@@ -25,8 +25,9 @@ const WIDTH = 96;
 const HEIGHT = 48;
 const SPRITE: UnlitMaterialKey = { textured: true, backFaceCulling: true, fog: true, role: "world" };
 
-/** The canvas column of world X on the orthographic view (-8 to 8). */
+/** The canvas column of world X and row of world Y on the orthographic view (-8 to 8, -4 to 4). */
 const column = (x: number) => Math.round((x + 8) / 16 * WIDTH);
+const row = (y: number) => Math.round((y + 4) / 8 * HEIGHT);
 
 export async function runSurfaceLightingProof(backend: "webgl2" | "webgpu" = "webgl2") {
   const canvas = document.createElement("canvas");
@@ -55,6 +56,8 @@ export async function runSurfaceLightingProof(backend: "webgl2" | "webgpu" = "we
     setUnlitMaterial(twoD, { ...SPRITE, lighting: "2d" }, binding);
     add2DLight(scene, { properties: parseLight2DProperties({ radius: 4 }), x: -7, y: 0, directionX: 0, directionY: 1 });
     add2DLight(scene, { properties: parseLight2DProperties({ lightKind: "global", intensity: 0.1 }), x: 0, y: 0, directionX: 0, directionY: 1 });
+    // A thin wall right of the light: (-4.8, 0) lies behind it, (-7, 2.2) as far from the light in the open.
+    add2DOccluder(scene, { shapes: [{ closed: true, points: [-6, -0.3, -5.6, -0.3, -5.6, 0.3, -6, 0.3] }], x: 0, y: 0, angle: 0, dirty: true, world: [] });
 
     // Right: 3D-lit, a point light in front of its left edge reaching 4 units.
     const threeD = MeshBuilder.CreatePlane("three-d", { width: 7, height: 6 }, scene);
@@ -84,11 +87,11 @@ export async function runSurfaceLightingProof(backend: "webgl2" | "webgpu" = "we
     }
     const raw = await engine.readPixels(0, 0, WIDTH, HEIGHT);
     const pixels = toRgbaPixels(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength), readbackChannelOrder(engine.isWebGPU));
-    const red = (x: number) => pixels[((HEIGHT / 2) * WIDTH + column(x)) * 4]!;
+    const red = (x: number, y = 0) => pixels[(row(y) * WIDTH + column(x)) * 4]!;
     graph.dispose();
     await graph.whenReleased();
     return {
-      twoDNear: red(-6.8), twoDFar: red(-1),
+      twoDNear: red(-6.8), twoDFar: red(-1), twoDShadowed: red(-4.8), twoDBeside: red(-7, 2.2),
       threeDNear: red(1.6), threeDFar: red(7),
     };
   } finally {

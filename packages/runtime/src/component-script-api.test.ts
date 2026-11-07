@@ -212,6 +212,30 @@ describe("component script API", () => {
       expect(lights().at(-1)?.lights[0]?.properties.intensity).toBe(3);
     } finally { runtime.stop(); }
   });
+  it("sends a 2D body's solid collider outlines as its 2D shadow casters, and none for a trigger", () => {
+    const commands: CommandMessage[] = [];
+    const scene = sceneOf([
+      createActor("crate", "Crate", { components: [
+        { id: "body", classId: "RigidBodyComponent", properties: { motionType: "static" } },
+        { id: "box", classId: "ColliderComponent", properties: { shape: { kind: "box2d", halfExtents: { x: 1, y: 0.5 } } } },
+      ] }),
+      createActor("zone", "Zone", { components: [
+        { id: "body", classId: "RigidBodyComponent", properties: { motionType: "static" } },
+        { id: "trigger", classId: "ColliderComponent", properties: { shape: { kind: "box2d", halfExtents: { x: 1, y: 1 } }, isTrigger: true } },
+      ] }),
+    ]);
+    scene.settings.physicsWorld = "2d";
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, physicsWorld: "2d",
+      playScene: scene, onCommand: (command) => commands.push(command) });
+    try {
+      runtime.realizePlayWorld();
+      runtime.start();
+      runtime.tick();
+      const sent = commands.filter((command): command is Extract<CommandMessage, { type: "setOccluders2D" }> => command.type === "setOccluders2D");
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.shapes).toEqual([{ closed: true, points: [-1, -0.5, 1, -0.5, 1, 0.5, -1, 0.5] }]);
+    } finally { runtime.stop(); }
+  });
   it("Set Text updates the component text, refreshes the mesh, and fires On Text Changed", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
