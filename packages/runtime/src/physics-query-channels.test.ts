@@ -202,6 +202,24 @@ describe("channel ignore lists", () => {
     } finally { sync.dispose(); }
   });
 
+  it("hands each query the cached list itself, beside the caller's own ignores", () => {
+    const { backend, sync, world, spawn } = channelWorld();
+    const overlap = vi.spyOn(backend, "sphereOverlap");
+    try {
+      spawn("rock", 2, [rigid("static"), collider]);
+      spawn("pallet", 6, [rigid("dynamic"), collider]);
+      sync.syncFromWorld(world);
+      const origin = { x: 0, y: 0, z: 0 };
+      expect(sync.sphereOverlap(origin, 100, { channel: "Dynamic" }).actorIds).toEqual(["pallet"]);
+      expect(sync.sphereOverlap(origin, 100, { channel: "Dynamic", ignoreActorIds: ["pallet"] }).actorIds).toEqual([]);
+      const [first, second] = overlap.mock.calls.map(([, , options]) => options!);
+      expect([...first!.ignoreActorSet!]).toEqual(["rock"]);
+      expect(second!.ignoreActorSet).toBe(first!.ignoreActorSet);
+      expect(first!.ignoreActorIds).toBeUndefined();
+      expect(second!.ignoreActorIds).toEqual(["pallet"]);
+    } finally { sync.dispose(); }
+  });
+
   it("follows a body's motion type", () => {
     const { sync, world, spawn, found } = channelWorld();
     try {

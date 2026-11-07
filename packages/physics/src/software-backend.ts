@@ -44,6 +44,18 @@ function vec(x = 0, y = 0, z = 0): Vec3 {
   return { x, y, z };
 }
 
+const NONE_IGNORED = (): boolean => false;
+
+/** Whether a query skips an actor's colliders: its own ids (hashed once per query) or a caller's set, read in place. */
+function ignoredActors(options: LineTraceOptions | undefined): (actorId: string) => boolean {
+  const own = options?.ignoreActorIds?.length ? new Set(options.ignoreActorIds) : null;
+  const set = options?.ignoreActorSet?.size ? options.ignoreActorSet : null;
+  if (own && set) return (actorId) => own.has(actorId) || set.has(actorId);
+  if (own) return (actorId) => own.has(actorId);
+  if (set) return (actorId) => set.has(actorId);
+  return NONE_IGNORED;
+}
+
 function cloneTransform(t: PhysicsTransform): PhysicsTransform {
   return {
     position: { ...t.position },
@@ -684,14 +696,14 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
 
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {
     const dir = vec(end.x - start.x, end.y - start.y, end.z - start.z);
-    const ignored = new Set(options?.ignoreActorIds);
+    const ignored = ignoredActors(options);
     let bestT = Infinity;
     let best: HitResult = miss();
     for (const collider of this.colliders.values()) {
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body) continue;
       const actorId = collider.desc.actorId ?? body.desc.actorId;
-      if (ignored.has(actorId) || !queryAdmitsShape(collider.desc.isTrigger, options)) continue;
+      if (ignored(actorId) || !queryAdmitsShape(collider.desc.isTrigger, options)) continue;
       const box = aabbForCollider(collider.desc, body.transform);
       const intersection = rayAabb(start, dir, box.min, box.max);
       if (!intersection) continue;
@@ -716,7 +728,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
   }
 
   sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult {
-    const ignored = new Set(options?.ignoreActorIds);
+    const ignored = ignoredActors(options);
     const actorIds: string[] = [];
     const bodyIds: string[] = [];
     // A body reports each shape owner once, however many of its shapes overlap.
@@ -725,7 +737,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body) continue;
       const actorId = collider.desc.actorId ?? body.desc.actorId;
-      if (ignored.has(actorId) || !queryAdmitsShape(collider.desc.isTrigger, options)) continue;
+      if (ignored(actorId) || !queryAdmitsShape(collider.desc.isTrigger, options)) continue;
       const box = aabbForCollider(collider.desc, body.transform);
       const cx = Math.max(box.min.x, Math.min(center.x, box.max.x));
       const cy = Math.max(box.min.y, Math.min(center.y, box.max.y));
@@ -761,7 +773,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     const from = sweep.start.position;
     const extents = aabbForShape(shape, vec(), sweep.start.rotation);
     const dir = vec(sweep.end.x - from.x, sweep.end.y - from.y, sweep.end.z - from.z);
-    const ignored = new Set(options?.ignoreActorIds);
+    const ignored = ignoredActors(options);
     const axes = this.kind === "3d" ? AXES_3D : AXES_2D;
     let bestT = Infinity;
     let best: HitResult = miss();
@@ -769,7 +781,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body) continue;
       const actorId = collider.desc.actorId ?? body.desc.actorId;
-      if (ignored.has(actorId) || !queryAdmitsShape(collider.desc.isTrigger, options)) continue;
+      if (ignored(actorId) || !queryAdmitsShape(collider.desc.isTrigger, options)) continue;
       const box = aabbForCollider(collider.desc, body.transform);
       const grown = {
         min: vec(box.min.x - extents.max.x, box.min.y - extents.max.y, box.min.z - extents.max.z),

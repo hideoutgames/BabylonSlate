@@ -31,7 +31,7 @@ export class PhysicsQueryChannels {
    * `channelEpoch` for body creation and retirement, a motion change, hosting and ragdolls (`invalidate`), and
    * for Character the World's `structuralRevision`, which a Movement component joining or leaving bumps.
    */
-  private readonly channelIgnores = new Map<string, { epoch: number; revision: number; ids: readonly string[] }>();
+  private readonly channelIgnores = new Map<string, { epoch: number; revision: number; ids: ReadonlySet<string> }>();
   private channelEpoch = 0;
   private channelRebuilds = 0;
 
@@ -69,10 +69,10 @@ export class PhysicsQueryChannels {
       case "Static":
       case "Dynamic":
       case "Character": {
+        // The cached set goes beside the caller's own ignores, so no query copies or re-hashes it.
         const ids = this.channelIgnoreList(channel);
-        if (!ids.length) return options;
-        const own = options?.ignoreActorIds;
-        return { ...options, ignoreActorIds: own?.length ? [...own, ...ids] : ids };
+        if (!ids.size) return options;
+        return { ...options, ignoreActorSet: ids };
       }
       default:
         this.warnUnknownChannel(channel);
@@ -96,7 +96,7 @@ export class PhysicsQueryChannels {
    * Built on the first query after any of them changed (`invalidate`, plus the World's structure for
    * Character, whose Movement component has no hook) and reused until then, so a query walks no bodies.
    */
-  private channelIgnoreList(channel: "Static" | "Dynamic" | "Character"): readonly string[] {
+  private channelIgnoreList(channel: "Static" | "Dynamic" | "Character"): ReadonlySet<string> {
     const revision = channel === "Character" ? this.host.structuralRevision() : 0;
     const cached = this.channelIgnores.get(channel);
     if (cached && cached.epoch === this.channelEpoch && cached.revision === revision) return cached.ids;
@@ -115,8 +115,7 @@ export class PhysicsQueryChannels {
       if (!matches(host)) ignored.add(actorId);
     // An active ragdoll's bones are dynamic and no Movement drives them: Dynamic (and All) keep them.
     if (channel !== "Dynamic") for (const actorId of this.host.ragdollActors.keys()) ignored.add(actorId);
-    const ids = Object.freeze([...ignored]);
-    this.channelIgnores.set(channel, { epoch: this.channelEpoch, revision, ids });
-    return ids;
+    this.channelIgnores.set(channel, { epoch: this.channelEpoch, revision, ids: ignored });
+    return ignored;
   }
 }

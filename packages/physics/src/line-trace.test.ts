@@ -57,6 +57,11 @@ describe("Line Trace actor exclusions", () => {
       expect(backend.lineTrace(start, end, {
         ignoreActorIds: ["actor-0", "actor-1", "actor-2"],
       }).hit).toBe(false);
+      // A caller's set excludes as the ids do, alone or beside them, and is left as it was.
+      const kept = new Set(["actor-0"]);
+      expect(backend.lineTrace(start, end, { ignoreActorSet: kept }).actorId).toBe("actor-1");
+      expect(backend.lineTrace(start, end, { ignoreActorSet: kept, ignoreActorIds: ["actor-1"] }).actorId).toBe("actor-2");
+      expect([...kept]).toEqual(["actor-0"]);
       expect(backend.lineTrace(start, end).actorId).toBe("actor-0");
     } finally {
       backend.dispose();
@@ -79,6 +84,8 @@ describe("Line Trace actor exclusions", () => {
       const havok = (backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings })._hknp;
       const setFilterInfo = vi.spyOn(havok, "HP_Shape_SetFilterInfo");
       expect(backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: 0, z: 0 }, { ignoreActorIds: ignored }).actorId)
+        .toBe("target");
+      expect(backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: 0, z: 0 }, { ignoreActorSet: new Set(ignored) }).actorId)
         .toBe("target");
       expect(setFilterInfo).not.toHaveBeenCalled();
       setFilterInfo.mockRestore();

@@ -70,7 +70,10 @@ export class HavokQueries {
   private readonly host: HavokQueryHost;
   /** Shapes a running query filter masked and their memberships; empty between queries. */
   private readonly queryMemberships = new Map<PhysicsShape, number>();
-  /** The running query's `ignoreActorIds`, peeled as the query reaches them; null between queries and when none. */
+  /**
+   * The running query's ignored actors (`ignoreActorIds` and `ignoreActorSet`), peeled as the query reaches them; null
+   * between queries and when none.
+   */
   private queryIgnores: ReadonlySet<string> | null = null;
   private readonly sphereSweeps = new Set<SphereSweepQuery>();
   /** Native shapes for primitive `shapeSweep` casts by kind and dimensions, least recently used first (`reusableQueryShape`). */
@@ -162,11 +165,14 @@ export class HavokQueries {
     // static or dynamic actor) is masked only as the query reaches each owner (`peelHit`). This synchronous query
     // restores every mask afterwards.
     try {
-      const ignored = options?.ignoreActorIds;
-      if (ignored?.length && this.ignoredShapeCount(ignored) > EAGER_IGNORED_SHAPES) this.queryIgnores = new Set(ignored);
-      else if (ignored) {
-        for (const actorId of ignored)
-          for (const collider of this.host.collidersByOwner.get(actorId) ?? []) for (const shape of colliderShapes(collider)) this.maskQueryShape(shape);
+      const own = options?.ignoreActorIds;
+      const set = options?.ignoreActorSet;
+      if ((own?.length || set?.size) && this.ignoredShapeCount(own, set) > EAGER_IGNORED_SHAPES) {
+        // A caller's set is read in place; only the caller's own ids are hashed, as always.
+        this.queryIgnores = !own?.length ? set! : !set?.size ? new Set(own) : new Set([...own, ...set]);
+      } else {
+        if (own) for (const actorId of own) this.maskOwnerShapes(actorId);
+        if (set) for (const actorId of set) this.maskOwnerShapes(actorId);
       }
       if (!queryHitsTriggers(options)) {
         for (const collider of this.host.triggerColliders) this.maskQueryShape(collider.shape);
@@ -185,15 +191,30 @@ export class HavokQueries {
   }
 
   /** The shapes the ignored actors own, counted only until it passes `EAGER_IGNORED_SHAPES`. */
-  private ignoredShapeCount(actorIds: readonly string[]): number {
+  private ignoredShapeCount(own: readonly string[] | undefined, set: ReadonlySet<string> | undefined): number {
     let count = 0;
-    for (const actorId of actorIds) {
-      for (const collider of this.host.collidersByOwner.get(actorId) ?? []) {
-        count += collider.proxy ? 2 : 1;
-        if (count > EAGER_IGNORED_SHAPES) return count;
-      }
+    if (own) for (const actorId of own) {
+      count = this.countOwnerShapes(actorId, count);
+      if (count > EAGER_IGNORED_SHAPES) return count;
+    }
+    if (set) for (const actorId of set) {
+      count = this.countOwnerShapes(actorId, count);
+      if (count > EAGER_IGNORED_SHAPES) return count;
     }
     return count;
+  }
+
+  /** `count` plus the shapes `actorId` owns, stopping once it passes `EAGER_IGNORED_SHAPES`. */
+  private countOwnerShapes(actorId: string, count: number): number {
+    for (const collider of this.host.collidersByOwner.get(actorId) ?? []) {
+      count += collider.proxy ? 2 : 1;
+      if (count > EAGER_IGNORED_SHAPES) return count;
+    }
+    return count;
+  }
+
+  private maskOwnerShapes(actorId: string): void {
+    for (const collider of this.host.collidersByOwner.get(actorId) ?? []) for (const shape of colliderShapes(collider)) this.maskQueryShape(shape);
   }
 
   private maskQueryShape(shape: PhysicsShape): void {
