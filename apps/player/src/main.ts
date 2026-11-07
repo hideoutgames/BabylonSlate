@@ -4,10 +4,8 @@ import {
   type HostMemoryStats,
 } from "@haptic/vfs/device-memory";
 import { audioStats, particleStats } from "@haptic/render";
-import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
-import { startPlayerWithBackend } from "./player-backend";
-import { prewarmPlayerWorker, type PrewarmedPlayerWorker } from "./worker-host";
-import { createDecoderPrefetch } from "./decoder-paths";
+import type { LoadedGame } from "./artifact";
+import { launchGame, type BootLoadedGame } from "./launch";
 import { previewConsoleCatalog } from "./console-catalog";
 import type { PlayerTestHandle } from "./boot";
 import { mountPlayerHud, mountPlayerDebuggerOverlays, type PlayerHudStats } from "./hud";
@@ -90,35 +88,23 @@ async function launchFromPreview(files: Map<string, Uint8Array>, traceByteBudget
   window.addEventListener("message", receive);
   const release = () => { source.dispose(); window.removeEventListener("message", receive); };
   startupAbort.signal.addEventListener("abort", release, { once: true });
-  // The player takes the worker at boot; one it never took (a failed launch) goes here.
-  const worker = prewarmPlayerWorker(startupAbort.signal);
   try {
-    const game = await loadGameFromFiles(files, { signal: startupAbort.signal, readFile: source.readFile,
-      onManifest: (manifest) => worker?.preloadPhysics(manifest.physicsWorld), onDecoderNeeded: createDecoderPrefetch() });
-    const dispose = game.dispose;
-    game.dispose = () => { try { dispose?.(); } finally { startupAbort.signal.removeEventListener("abort", release); release(); } };
-    try { await launchLoaded(game, traceByteBudget, worker); } catch (error) { game.dispose(); throw error; }
+    await launchGame({ signal: startupAbort.signal, source: { files, readFile: source.readFile }, start: (game, boot) => {
+      const dispose = game.dispose;
+      game.dispose = () => { try { dispose?.(); } finally { startupAbort.signal.removeEventListener("abort", release); release(); } };
+      return launchLoaded(game, boot, traceByteBudget);
+    } });
   } catch (error) { startupAbort.signal.removeEventListener("abort", release); release(); throw error; }
-  finally { worker?.release(); }
 }
 
 async function launchFromHttp(): Promise<void> {
-  // Started before the catalog request: the worker loads while the game downloads.
-  const worker = prewarmPlayerWorker(startupAbort.signal);
-  try {
-    const game = await loadGameFromHttp(document.baseURI, fetch, startupAbort.signal, {
-      onManifest: (manifest) => worker?.preloadPhysics(manifest.physicsWorld),
-      // The decoders the game's Textures and Models need download meanwhile too.
-      onDecoderNeeded: createDecoderPrefetch(),
-    });
-    try { await launchLoaded(game, undefined, worker); } catch (error) { game.dispose?.(); throw error; }
-  } finally { worker?.release(); }
+  await launchGame({ signal: startupAbort.signal, source: { baseUrl: document.baseURI, fetchImpl: fetch }, start: (game, boot) => launchLoaded(game, boot) });
 }
 
 async function launchLoaded(
-  game: Awaited<ReturnType<typeof loadGameFromFiles>>,
+  game: LoadedGame,
+  boot: BootLoadedGame,
   traceByteBudget?: number,
-  worker?: PrewarmedPlayerWorker,
 ): Promise<void> {
   startupAbort.signal.throwIfAborted();
   const canvas = canvasEl();
@@ -185,11 +171,8 @@ async function launchLoaded(
     if (errors.length) throw new AggregateError(errors, "Player page cleanup failed.");
   };
 
-  const session = await startPlayerWithBackend({
-    signal: startupAbort.signal,
+  const session = await boot({
     canvas,
-    game,
-    takePrewarmedWorker: worker?.take,
     saveStorage: previewSaves?.storage,
     traceByteBudget,
     previewDiagnostics: previewHosted,
