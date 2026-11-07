@@ -197,6 +197,29 @@ describe("createPlayMesh", () => {
     expect(a.computeWorldMatrix(true).getTranslation().x).toBeCloseTo(2);
   });
 
+  it("keeps the slot's visual for a re-sent equal assignMesh without serializing either command, and rebuilds for a changed one", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    // The runtime re-sends an actor's visual with every component property write, as a fresh structured clone.
+    const command = () => ({ type: "assignMesh" as const, slotId: 0, meshKind: "box", meshAssetGuid: null,
+      parts: [{ componentId: "visual", meshKind: "box", position: [1, 0, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number] }] });
+    applyAssignMesh(scene, binding, command());
+    const shown = binding.meshes.get(0)!;
+    const stringify = vi.spyOn(JSON, "stringify");
+    applyAssignMesh(scene, binding, command());
+    expect(stringify).not.toHaveBeenCalled();
+    expect(binding.meshes.get(0)).toBe(shown);
+    expect(shown.isDisposed()).toBe(false);
+    stringify.mockRestore();
+    const moved = command();
+    moved.parts[0]!.position = [2, 0, 0];
+    applyAssignMesh(scene, binding, moved);
+    expect(binding.meshes.get(0)).not.toBe(shown);
+  });
+
   describe("component Material assignment", () => {
     function materialFixture() {
       const handle = createTestEngine();
@@ -2194,6 +2217,23 @@ describe("createPlayMesh", () => {
     expect(scene.getMeshByName("actor-4")).toBeNull();
     expect(stray.isDisposed()).toBe(true);
     overlay.dispose();
+  });
+
+  it("poses actors without per-actor fog volume, area light or 2D lighting lookups when the binding holds none", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    for (const slotId of [1, 2]) binding.meshKinds.set(slotId, "box");
+    const pose = (frameId: number, x: number) => ({ frameId, tickIndex: frameId, actorCount: 2, actors: [1, 2].map((slotId) => ({
+      slotId, flags: SNAPSHOT_FLAG_VISIBLE, position: { x: x + slotId, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } })) });
+    applySnapshotToScene(scene, binding, pose(1, 0));
+    const gets = [binding.fogVolumes, binding.areaLights, binding.lights2D, binding.occluders2D].map((map) => vi.spyOn(map, "get"));
+    applySnapshotToScene(scene, binding, pose(2, 10));
+    expect(binding.meshes.get(1)?.position.x).toBeCloseTo(11);
+    expect(binding.meshes.get(2)?.position.x).toBeCloseTo(12);
+    for (const get of gets) expect(get).not.toHaveBeenCalled();
   });
 
   it("disposes world leftovers of every overlay slot in a snapshot but not names that merely share a prefix", () => {

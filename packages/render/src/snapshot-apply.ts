@@ -320,19 +320,24 @@ export function applySnapshotToScene(
   sampleSceneWaterFrame(scene, snapshot.frameId);
   reconcileSnapshotVisuals(scene, binding, snapshot);
   const count = snapshot.actorCount ?? snapshot.actors.length;
-  // Without any light or camera there is nothing to look up for each actor.
+  // Without any light or camera there is nothing to look up for each actor; the same holds for each map below.
   const hasLightsOrCameras = binding.lights.size > 0 || binding.cameras.size > 0;
+  const hasFogVolumes = binding.fogVolumes.size > 0;
+  const hasAreaLights = binding.areaLights.size > 0;
+  const has2DLighting = binding.lights2D.size > 0 || binding.occluders2D.size > 0;
   for (let i = 0; i < count; i++) {
     const actor = snapshot.actors[i]!;
     const mesh = binding.snapshotMeshes[i];
     if (!mesh) continue;
     writeActorTransform(mesh, actor);
-    const fogVolumes = binding.fogVolumes.get(actor.slotId);
+    const fogVolumes = hasFogVolumes ? binding.fogVolumes.get(actor.slotId) : undefined;
     if (fogVolumes) setFogVolumesVisible(scene, fogVolumes.actorId,
       (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE);
-    binding.areaLights.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
-    binding.lights2D.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
-    binding.occluders2D.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
+    if (hasAreaLights) binding.areaLights.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
+    if (has2DLighting) {
+      binding.lights2D.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
+      binding.occluders2D.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
+    }
     setPlayVisualVisibility(
       binding,
       mesh,

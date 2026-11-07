@@ -148,6 +148,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
    * collider outline or grid neither darkens ambient occlusion, reflects, nor blocks Screen-Space Shadows' march.
    */
   readonly worldObjectList: FrameGraphObjectList = { meshes: this.world, particleSystems: null };
+  /** Whether a spatial geometry pass reads `worldObjectList`; without one the cull publishes no world list. */
+  private publishesWorld = false;
   /** A world view's occlusion culling, and the colour pass whose first draws keep a mesh in the list. */
   occlusion: { view: ViewOcclusion; colourPass: () => number } | null = null;
 
@@ -178,6 +180,13 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
     this.publishWorld();
   }
 
+  /** Turning the world list off empties it, so it holds no meshes (disposed ones included) until a pass reads it again. */
+  setPublishesWorld(publishes: boolean): void {
+    if (publishes === this.publishesWorld) return;
+    this.publishesWorld = publishes;
+    if (!publishes) this.world.length = 0;
+  }
+
   /** Leaves out the meshes hidden behind occluders, into the view's own list (the frustum's output stays as it was). */
   private occlude(): void {
     const occlusion = this.occlusion, meshes = this.outputObjectList.meshes;
@@ -186,6 +195,7 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   }
 
   private publishWorld(): void {
+    if (!this.publishesWorld) return;
     const world = this.world;
     world.length = 0;
     for (const mesh of this.outputObjectList.meshes ?? []) if (!isEditorHelperMesh(mesh)) world.push(mesh);
@@ -1695,10 +1705,12 @@ export class ForwardSceneFrameGraph {
       geometry.objectList = this.cull!.outputObjectList;
       geometry.camera = this.objects!.camera;
     }
-    if (this.effectsGraph?.spatial) {
-      this.effectsGraph.spatial.geometry.objectList = this.cull!.worldObjectList;
-      this.effectsGraph.spatial.geometry.camera = this.objects!.camera;
+    const spatial = this.effectsGraph?.spatial;
+    if (spatial) {
+      spatial.geometry.objectList = this.cull!.worldObjectList;
+      spatial.geometry.camera = this.objects!.camera;
     }
+    this.cull!.setPublishesWorld(!!spatial);
   }
 
   private releasePostProcessOwner(): void {

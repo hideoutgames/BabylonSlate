@@ -44,6 +44,7 @@ import {
 } from "@haptic/core";
 import { upsertFogVolumes } from "./fog-volumes";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
+import { markEditorHelperMesh } from "./helper-mesh";
 import { setSceneOutputScale } from "./scene-output-scale";
 import { ParticleService } from "./particle-service";
 import {
@@ -1054,6 +1055,38 @@ it("clears the spatial geometry attachments on their own target, never the backb
     expect(graph.render(camera)).toEqual({ path: "frameGraph" });
     expect(backbufferLayouts).toEqual([]);
     expect(farClears).toEqual([true]);
+  } finally {
+    graph.dispose();
+  }
+});
+
+it("lists the helper-free world meshes only for a spatial geometry pass, which draws no editor helpers", async () => {
+  const { engine, scene, camera } = host();
+  Object.assign(engine.getCaps(), {
+    maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
+    textureHalfFloatRender: true, textureFloatRender: true, texelFetch: true,
+  });
+  const ground = MeshBuilder.CreateBox("ground", {}, scene);
+  const grid = MeshBuilder.CreateBox("grid", {}, scene);
+  markEditorHelperMesh(grid);
+  const graph = new ForwardSceneFrameGraph(scene);
+  // The cull task is internal; its world list is what the spatial geometry pass draws.
+  const worldList = () => (graph as unknown as { graph: { tasks: FrameGraphTask[] } }).graph.tasks
+    .map((task) => (task as unknown as { worldObjectList?: { meshes: unknown[] } }).worldObjectList)
+    .find((list) => list)!.meshes;
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    // No pass reads it: the cull does not walk its output to build one.
+    expect(worldList()).toEqual([]);
+    updateSceneRenderingSettings(scene, {
+      mode: "pbr",
+      effects: { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } },
+    });
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(worldList()).toContain(ground);
+    expect(worldList()).not.toContain(grid);
   } finally {
     graph.dispose();
   }
