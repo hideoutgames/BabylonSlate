@@ -21,6 +21,8 @@ import type { WaterField } from "./water-field";
 import { placeholderField, waterGridOffset } from "./water-material";
 import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
 import { builtInWaterMaterial } from "./water-template";
+// The WGSL cases fake a WebGPU Engine, whose code registers the WGSL includes Haptic's blocks emit as it loads.
+import "./webgpu-registrations";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });

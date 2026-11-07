@@ -31,6 +31,8 @@ import {
   type MaterialDocument,
 } from "@haptic/shader-graph";
 import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
+// The WGSL fog cases fake a WebGPU Engine, whose code registers the WGSL includes Haptic's blocks emit as it loads.
+import "./webgpu-registrations";
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { sceneInstancePool, setMeshShadowFlags } from "./instance-pool";
 import { isDisposedGpuTexture, isDisposedNodeMaterial } from "./gpu-resource-live";

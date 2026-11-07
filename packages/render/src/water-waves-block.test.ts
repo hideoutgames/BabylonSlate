@@ -18,6 +18,8 @@ import { waterFftCycle, waterFftSynthesize, waterSpectrumInitial, waterSpectrumL
 import { WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM, WATER_VERTEX_WAVE_UNIFORMS, waterFoamDrift, waterWaveBlockSource } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { materialHasWaterWaves } from "./water-waves-block";
+// The WGSL cases fake a WebGPU Engine, whose code registers the WGSL includes Haptic's blocks emit as it loads.
+import "./webgpu-registrations";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
