@@ -7,7 +7,7 @@ const NAME_MAX = 64;
 type GraphDocument = { nodes: MaterialGraphNode[]; edges: MaterialGraphEdge[] };
 
 /** Parameter node types by value type, and the Constant each converts to and from. */
-export const MATERIAL_PARAMETER_TYPES = {
+const MATERIAL_PARAMETER_TYPES = {
   float: "param.float",
   vec2: "param.vec2",
   vec3: "param.vec3",

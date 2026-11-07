@@ -10,7 +10,7 @@ import {
 } from "./document";
 import { isMaterialParameterNode, materialParameterName } from "./parameters";
 
-export const MATERIAL_INSTANCE_SCHEMA_VERSION = 1;
+const MATERIAL_INSTANCE_SCHEMA_VERSION = 1;
 /** Parent chains deeper than this are rejected as authoring mistakes. */
 export const MATERIAL_INSTANCE_MAX_DEPTH = 16;
 
