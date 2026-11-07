@@ -83,8 +83,8 @@ const handler = (recastHostedWasmVitePlugin().transform as { handler: Handler })
 const context = { error: (message: string): never => { throw new Error(message); }, emitFile: () => "ref" };
 
 describe("recastHostedWasmVitePlugin", () => {
-  // The editor builds at the site root (or a deployment base), the player relative to its own folder.
-  it.each(["/", "./"])("ships Recast's wasm once per build, unchanged, instead of a base64 copy in every bundle (base %s)", { timeout: 120_000 }, async (base) => {
+  // The editor builds at the site root or a deployment base (Pages), the player relative to its own folder.
+  it.each(["/", "/BabylonSlate/", "./"])("ships Recast's wasm once per build, unchanged, instead of a base64 copy in every bundle (base %s)", { timeout: 120_000 }, async (base) => {
     // Without the plugin the page's and the worker's Recast chunks each carry the whole wasm as base64.
     const embedded = await bundled(base, () => []);
     expect(wasmFiles(embedded)).toEqual([]);
@@ -96,8 +96,9 @@ describe("recastHostedWasmVitePlugin", () => {
     expect(wasm?.fileName).toBe(RECAST_WASM_FILE);
     expect(Buffer.from(wasm!.source as Uint8Array).equals(PACKAGE_WASM)).toBe(true);
     expect(scripts(hosted).filter(embedsWasm)).toEqual([]);
-    // The page and the worker both fetch that one file.
-    expect(scripts(hosted).map(wasmUrl).filter(Boolean)).toEqual([`${HOST}${RECAST_WASM_FILE}`, `${HOST}${RECAST_WASM_FILE}`]);
+    // The page and the worker both fetch that one file, where the build is served.
+    const served = new URL(RECAST_WASM_FILE, new URL(base === "./" ? "/" : base, HOST)).href;
+    expect(scripts(hosted).map(wasmUrl).filter(Boolean)).toEqual([served, served]);
   });
 
   it("names the hosted wasm so every export keeps it, 2D or 3D", () => {
