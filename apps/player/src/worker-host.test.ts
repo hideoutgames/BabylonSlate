@@ -99,11 +99,12 @@ describe("prewarmed player worker", () => {
   const controls = (worker: FakeWorker) => worker.messages.flatMap((message) => message.channel === "control" ? [message.payload] : []);
 
   it("loads the game's physics engine once per world and hands the same worker to the player", () => {
+    vi.stubGlobal("document", { baseURI: "https://game.example/my-game/index.html" });
     const prewarmed = prewarmPlayerWorker(new AbortController().signal)!;
     const worker = FakeWorker.instance;
     prewarmed.preloadPhysics("3d");
     prewarmed.preloadPhysics("3d");
-    expect(controls(worker)).toEqual([{ type: "preloadPhysics", physicsWorld: "3d", havokWasmUrl: new URL("./havok/HavokPhysics.wasm", document.baseURI).href }]);
+    expect(controls(worker)).toEqual([{ type: "preloadPhysics", physicsWorld: "3d", havokWasmUrl: "https://game.example/my-game/havok/HavokPhysics.wasm" }]);
     const host = prewarmed.take();
     expect(host).toBeDefined();
     expect(prewarmed.take()).toBeUndefined();
