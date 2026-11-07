@@ -304,7 +304,7 @@ describe("Play createEngine view", () => {
       handle.resourceCache.flushUnreferenced();
       expect(handle.resourceCache.resourceStats().wrappers).toBe(wrappers);
       expect(handle.accountedGeometryBytes()).toBe(0);
-      expect(handle.nativePreparationStats()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
+      expect(nativePreparationForEngine(engine).snapshot()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
     } finally {
       watched.restore();
     }
@@ -335,7 +335,7 @@ describe("Play createEngine view", () => {
       handle.resourceCache.flushUnreferenced();
       expect(handle.resourceCache.resourceStats().wrappers).toBe(wrappers);
       expect(handle.scene.materials.some((material) => material.name.includes("cancelled-material"))).toBe(false);
-      expect(handle.nativePreparationStats()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
+      expect(nativePreparationForEngine(engine).snapshot()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
     } finally {
       spy.mockRestore();
     }
