@@ -32,7 +32,7 @@ export const PERFORMANCE_TICK_PHASE_COLUMNS = [
 export const PERFORMANCE_TICK_COLUMNS = [
   "tickId", "elapsedMs", "scriptMs", "physicsMs", "publishMs", "otherMs", ...PERFORMANCE_TICK_PHASE_COLUMNS,
 ] as const;
-export const PERFORMANCE_GPU_COLUMNS = ["observedAtMs", "durationMs", "querySequence", "coalescedQueries"] as const;
+const PERFORMANCE_GPU_COLUMNS = ["observedAtMs", "durationMs", "querySequence", "coalescedQueries"] as const;
 /** The host's accounted texture and geometry memory, sampled while recording. */
 export const PERFORMANCE_MEMORY_COLUMNS = ["sampledAtMs", "textureBytes", "geometryBytes"] as const;
 /** Main-thread tasks of 50 ms or more, where the browser reports them (not Safari). */
@@ -45,8 +45,8 @@ export const PERFORMANCE_SCRIPT_COLUMNS = ["tickId", "entry", "calls", "totalMs"
 /** The most script entries a profile names. */
 export const MAX_PERFORMANCE_SCRIPT_ENTRIES = 1024;
 export const DEFAULT_PROFILE_DURATION_MS = 10_000;
-export const DEFAULT_PROFILE_BYTE_BUDGET = 16 * 1024 * 1024;
-export const MAX_PROFILE_BYTE_BUDGET = 64 * 1024 * 1024;
+const DEFAULT_PROFILE_BYTE_BUDGET = 16 * 1024 * 1024;
+const MAX_PROFILE_BYTE_BUDGET = 64 * 1024 * 1024;
 const CHUNK_RECORDS = 256;
 const MAX_METADATA_BYTES = 64 * 1024;
 
