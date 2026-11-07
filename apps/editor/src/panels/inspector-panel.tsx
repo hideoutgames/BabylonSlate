@@ -59,11 +59,12 @@ import { physicsWorldFromOpenDocuments, prefabComponentLabel } from "./add-compo
 import {
   applyLogicGraphCommit,
   commitLogicGraph,
-  collectClassGraphsForPalette,
   collectScriptInterfacesForPalette,
   logicGraphEditMergeKey,
   serializedGraphFromDocument,
+  withOpenClassGraphs,
 } from "../lib/logic-graph-document";
+import { useClassHeaderGraphs } from "../lib/use-class-header-graphs";
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
 import { isDataGraphNode } from "../lib/data-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
@@ -245,6 +246,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   ));
   // Reuse editor metadata when present. Loaded graphs without pins share one
   // hydrated view across selection changes; edits still persist the raw graph.
+  const classHeaderGraphs = useClassHeaderGraphs();
   const hydratedInspectGraph = useMemo(() => {
     if (!needsPinHydration || !inspectGraph) return null;
     void registryEpoch; // Registry headers mutate without replacing the registry.
@@ -255,11 +257,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
       enums: typeSchemas.enums,
       dataAssets,
       classId: graphClassId,
-      otherClassGraphs: collectClassGraphsForPalette({
-        assets: assetRegistry?.list() ?? [],
-        openDocuments: classDocuments,
-        classIdForPath: classIdForGraphPath,
-      }),
+      otherClassGraphs: withOpenClassGraphs(classHeaderGraphs, classDocuments, classIdForGraphPath),
       functionGraphs: graph?.functionGraphs,
       scriptInterfaces: collectScriptInterfacesForPalette({
         assets: assetRegistry?.list() ?? [],
@@ -269,6 +267,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   }, [
     assetRegistry,
     classDocuments,
+    classHeaderGraphs,
     graphClassId,
     graph?.functionGraphs,
     inspectGraph,
@@ -281,15 +280,10 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   ]);
   // Event Dispatchers of every Class, for a Delegate type's Signature: the open one first.
   const delegateSignatures = useMemo(() => {
-    void registryEpoch;
-    const graphs = collectClassGraphsForPalette({
-      assets: assetRegistry?.list() ?? [],
-      openDocuments: classDocuments,
-      classIdForPath: classIdForGraphPath,
-    });
+    const graphs = withOpenClassGraphs(classHeaderGraphs, classDocuments, classIdForGraphPath);
     if (graph && graphClassId) graphs[graphClassId] = graph;
     return delegateSignatureEntries(graphs, graphClassId);
-  }, [assetRegistry, classDocuments, graph, graphClassId, registryEpoch]);
+  }, [classDocuments, classHeaderGraphs, graph, graphClassId]);
   const selectedNode = hydratedInspectGraph
     ? hydratedInspectGraph.nodes.find(
         (node) => node.id === selectedSerializedNode?.id,

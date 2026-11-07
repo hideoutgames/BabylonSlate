@@ -28,6 +28,7 @@ import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-suppor
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import { diffSceneCommands, EditSession } from "@haptic/edit";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";
+import { mergedPrefabComponentsForClass, prefabAssetTemplates } from "../lib/prefab-instance-sync";
 
 if (
   typeof window !== "undefined" &&
@@ -65,6 +66,16 @@ const harness = vi.hoisted(() => ({
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: harness.documentId }),
 }));
+
+// Counted, so a test can tell which Prefab templates the panel builds.
+vi.mock("../lib/prefab-instance-sync", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/prefab-instance-sync")>();
+  return {
+    ...actual,
+    mergedPrefabComponentsForClass: vi.fn(actual.mergedPrefabComponentsForClass),
+    prefabAssetTemplates: vi.fn(actual.prefabAssetTemplates),
+  };
+});
 
 vi.mock("../context/scene-editing-context", () => ({
   useSceneEditing: () => ({
@@ -178,7 +189,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
             },
             path: "assets/Rock.model.hasset",
           }
-        : undefined,
+        : harness.createdAssets.find((asset) => asset.header.guid === guid),
   },
 })));
 
@@ -195,6 +206,8 @@ beforeEach(() => {
   harness.prefabComponents = [];
   harness.createdAssets = [];
   harness.applySceneChange.mockClear();
+  vi.mocked(mergedPrefabComponentsForClass).mockClear();
+  vi.mocked(prefabAssetTemplates).mockClear();
 });
 
 afterEach(() => {
@@ -1423,6 +1436,53 @@ describe("SceneDetailsPanel authoring", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset Appear Modes" }));
     const next = harness.applySceneChange.mock.calls.at(-1)![1];
     expect(next.actors[0]?.components[0]?.properties.appearModes).toEqual(["fade"]);
+  });
+
+  it("builds only the selected Class actor's Prefab template, and none with nothing selected", () => {
+    const prefab = createRichText2DComponent("prefab-rich");
+    harness.prefabComponents = [prefab];
+    harness.createdAssets = [
+      { header: { guid: "class-badge", name: "Badge", type: "Class", parentClass: "Actor", payload: { components: [prefab] } }, path: "assets/Badge.class.hasset" },
+      { header: { guid: "prefab-sign", name: "Sign", type: "Prefab", payload: { components: [prefab] } }, path: "assets/Sign.prefab.hasset" },
+    ];
+    scene().actors = [createActor("hud", "Rich", {
+      classId: "RichLabel",
+      components: [{ ...prefab, id: "rich", sourceId: "prefab-rich" }],
+    })];
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(mergedPrefabComponentsForClass).not.toHaveBeenCalled();
+    expect(prefabAssetTemplates).not.toHaveBeenCalled();
+
+    harness.selectedActorIds = ["hud"];
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    // This fixture's registry is new on every render, so count which Classes are merged, not how often.
+    expect(new Set(vi.mocked(mergedPrefabComponentsForClass).mock.calls.map(([options]) => options.classId))).toEqual(new Set(["RichLabel"]));
+    expect(prefabAssetTemplates).not.toHaveBeenCalled();
+  });
+
+  it("resets an override to the selected actor's Prefab asset, reading only that Prefab", () => {
+    const prefab = createRichText2DComponent("prefab-rich");
+    prefab.properties.appearModes = ["fade"];
+    const other = createRichText2DComponent("prefab-other");
+    harness.createdAssets = [
+      { header: { guid: "prefab-sign", name: "Sign", type: "Prefab", payload: { components: [prefab] } }, path: "assets/Sign.prefab.hasset" },
+      { header: { guid: "prefab-banner", name: "Banner", type: "Prefab", payload: { components: [other] } }, path: "assets/Banner.prefab.hasset" },
+    ];
+    scene().actors = [createActor("hud", "Sign", {
+      prefabGuid: "prefab-sign",
+      components: [{
+        ...prefab, id: "rich", sourceId: "prefab-rich", overrideKeys: ["appearModes"],
+        properties: { ...prefab.properties, appearModes: ["scale"] },
+      }],
+    })];
+    harness.selectedActorIds = ["hud"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Reset Appear Modes" }));
+    const next = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(next.actors[0]?.components[0]?.properties.appearModes).toEqual(["fade"]);
+    const read = vi.mocked(prefabAssetTemplates).mock.calls.flatMap(([options]) => options.assets.map((asset) => asset.header.guid));
+    expect(new Set(read)).toEqual(new Set(["prefab-sign"]));
+    expect(mergedPrefabComponentsForClass).not.toHaveBeenCalled();
   });
 
   it("opens markup tag suggestions for 2D Rich Text in the modal editor", () => {

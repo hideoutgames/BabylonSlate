@@ -18,10 +18,11 @@ import { useTypeAssetEditing } from "../context/type-asset-editing-context";
 import { patchScriptInterfaceMethod } from "../lib/asset-settings";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import {
-  collectClassGraphsForPalette,
   collectGraphTypeAssets,
   typeAssetPickerEntries,
+  withOpenClassGraphs,
 } from "../lib/logic-graph-document";
+import { useClassHeaderGraphs } from "../lib/use-class-header-graphs";
 import { delegateSignatureEntries } from "../lib/delegate-signatures";
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
@@ -38,7 +39,7 @@ export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange } = useDocumentActions();
-  const { assetRegistry, registryEpoch } = useRegistryState();
+  const { assetRegistry } = useRegistryState();
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const { selectedMemberId, selectedPinId, setSelectedPinId } =
@@ -67,14 +68,11 @@ export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
     }));
   }, [method, selectedIndex]);
   // Event Dispatchers of every Class, for a Delegate pin's Signature.
-  const delegateSignatures = useMemo(() => {
-    void registryEpoch;
-    return delegateSignatureEntries(collectClassGraphsForPalette({
-      assets: assetRegistry?.list() ?? [],
-      openDocuments: classDocuments,
-      classIdForPath: classIdForGraphPath,
-    }));
-  }, [assetRegistry, classDocuments, registryEpoch]);
+  const classHeaderGraphs = useClassHeaderGraphs();
+  const delegateSignatures = useMemo(
+    () => delegateSignatureEntries(withOpenClassGraphs(classHeaderGraphs, classDocuments, classIdForGraphPath)),
+    [classDocuments, classHeaderGraphs],
+  );
 
   if (!method || selectedIndex === null) {
     return (

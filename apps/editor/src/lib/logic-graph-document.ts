@@ -84,7 +84,7 @@ export function replaceSerializedGraphInDocument(
   return next;
 }
 
-type FunctionLibraryPaletteEntry = {
+export type FunctionLibraryPaletteEntry = {
   classId: string;
   parentClass?: string | null;
   functions: Array<{ name: string; pins?: GraphClassMemberPin[] }>;
@@ -164,24 +164,54 @@ function normalizeHeaderSignature(value: unknown): DelegateSignatureType[] {
   });
 }
 
-/** Closed FunctionLibrary assets use header.payload.functions; open docs prefer members. */
-export function collectFunctionLibrariesForPalette(options: {
-  assets: ReadonlyArray<{
-    path: string;
-    header: {
-      type: string;
-      name: string;
-      parentClass?: string | null;
-      payload?: Record<string, unknown>;
-    };
-  }>;
-  openDocuments: ReadonlyArray<{
-    ref: { kind: string; path: string };
-    content: unknown;
-  }>;
+type FunctionLibraryAssets = ReadonlyArray<{
+  path: string;
+  header: {
+    type: string;
+    name: string;
+    parentClass?: string | null;
+    payload?: Record<string, unknown>;
+  };
+}>;
+
+type GraphDocuments = ReadonlyArray<{
+  ref: { kind: string; path: string };
+  content: unknown;
+}>;
+
+/**
+ * The Function Library Classes the registry headers list, in asset order,
+ * each with its header functions. It reads only headers, so it changes only
+ * with the registry; `withOpenFunctionLibraries` adds the open tabs.
+ */
+export function functionLibrariesFromHeaders(options: {
+  assets: FunctionLibraryAssets;
   parentOf: (id: string) => string | null | undefined;
   classIdForPath: (path: string) => string;
 }): FunctionLibraryPaletteEntry[] {
+  const libraries: FunctionLibraryPaletteEntry[] = [];
+  const seen = new Set<string>();
+  for (const asset of options.assets) {
+    if (asset.header.type !== "Class") continue;
+    const classId = options.classIdForPath(asset.path);
+    const parentClass = asset.header.parentClass;
+    if (seen.has(classId)) continue;
+    if (!isFunctionLibraryClass(classId, options.parentOf) && !isFunctionLibraryClass(parentClass, options.parentOf)) continue;
+    seen.add(classId);
+    libraries.push({ classId, parentClass, functions: functionsFromHeaderPayload(asset.header.payload) });
+  }
+  return libraries;
+}
+
+/** Header Function Libraries with each open tab's members winning, then open Libraries no header lists. */
+export function withOpenFunctionLibraries(
+  headerLibraries: readonly FunctionLibraryPaletteEntry[],
+  options: {
+    openDocuments: GraphDocuments;
+    parentOf: (id: string) => string | null | undefined;
+    classIdForPath: (path: string) => string;
+  },
+): FunctionLibraryPaletteEntry[] {
   const openByClassId = new Map<string, SerializedGraph>();
   for (const doc of options.openDocuments) {
     if (doc.ref.kind !== "graph") continue;
@@ -189,48 +219,30 @@ export function collectFunctionLibrariesForPalette(options: {
     if (!graph) continue;
     openByClassId.set(options.classIdForPath(doc.ref.path), graph);
   }
-
-  const libraries: FunctionLibraryPaletteEntry[] = [];
   const seen = new Set<string>();
-  const consider = (
-    classId: string,
-    parentClass: string | null | undefined,
-    headerFunctions: FunctionLibraryPaletteEntry["functions"],
-  ) => {
-    if (seen.has(classId)) return;
-    if (
-      !isFunctionLibraryClass(classId, options.parentOf) &&
-      !isFunctionLibraryClass(parentClass, options.parentOf)
-    ) {
-      return;
-    }
-    seen.add(classId);
-    const open = openByClassId.get(classId);
-    libraries.push({
-      classId,
-      parentClass,
-      functions: open ? functionsFromMembers(open.members) : headerFunctions,
-    });
-  };
-
-  for (const asset of options.assets) {
-    if (asset.header.type !== "Class") continue;
-    consider(
-      options.classIdForPath(asset.path),
-      asset.header.parentClass,
-      functionsFromHeaderPayload(asset.header.payload),
-    );
-  }
-
+  const libraries = headerLibraries.map((entry) => {
+    seen.add(entry.classId);
+    const open = openByClassId.get(entry.classId);
+    return open ? { ...entry, functions: functionsFromMembers(open.members) } : entry;
+  });
   for (const [classId, graph] of openByClassId) {
-    consider(
-      classId,
-      options.parentOf(classId) ?? null,
-      functionsFromMembers(graph.members),
-    );
+    if (seen.has(classId)) continue;
+    const parentClass = options.parentOf(classId) ?? null;
+    if (!isFunctionLibraryClass(classId, options.parentOf) && !isFunctionLibraryClass(parentClass, options.parentOf)) continue;
+    seen.add(classId);
+    libraries.push({ classId, parentClass, functions: functionsFromMembers(graph.members) });
   }
-
   return libraries;
+}
+
+/** Closed FunctionLibrary assets use header.payload.functions; open docs prefer members. */
+export function collectFunctionLibrariesForPalette(options: {
+  assets: FunctionLibraryAssets;
+  openDocuments: GraphDocuments;
+  parentOf: (id: string) => string | null | undefined;
+  classIdForPath: (path: string) => string;
+}): FunctionLibraryPaletteEntry[] {
+  return withOpenFunctionLibraries(functionLibrariesFromHeaders(options), options);
 }
 
 export type SubsystemClassEntry = {
@@ -519,36 +531,50 @@ export function collectScriptInterfacesForPalette(options: {
   return [...byGuid.values()];
 }
 
-/** Closed Class headers plus open documents, keyed by class id. */
-export function collectClassGraphsForPalette(options: {
-  assets: ReadonlyArray<{
-    path: string;
-    header: {
-      type: string;
-      name: string;
-      parentClass?: string | null;
-      payload?: Record<string, unknown>;
-    };
-  }>;
-  openDocuments: ReadonlyArray<{
-    ref: { kind: string; path: string };
-    content: unknown;
-  }>;
+/**
+ * Closed Class graphs rebuilt from registry headers, keyed by class id. It
+ * reads only headers, so it changes only with the registry; overlay the open
+ * tabs with `withOpenClassGraphs`.
+ */
+export function classGraphsFromHeaders(options: {
+  assets: FunctionLibraryAssets;
   classIdForPath: (path: string) => string;
-}): Record<string, SerializedGraph> {
+}): Readonly<Record<string, SerializedGraph>> {
   const graphs: Record<string, SerializedGraph> = {};
   for (const asset of options.assets) {
     if (asset.header.type !== "Class") continue;
     graphs[options.classIdForPath(asset.path)] = classGraphFromHeaderPayload(asset.header.payload);
   }
-  for (const doc of options.openDocuments) {
+  return graphs;
+}
+
+/**
+ * Header graphs with each open Class tab's unsaved graph winning: a new
+ * record on every call, so a caller may add to it without touching the
+ * shared header graphs.
+ */
+export function withOpenClassGraphs(
+  headerGraphs: Readonly<Record<string, SerializedGraph>>,
+  openDocuments: GraphDocuments,
+  classIdForPath: (path: string) => string,
+): Record<string, SerializedGraph> {
+  const graphs: Record<string, SerializedGraph> = { ...headerGraphs };
+  for (const doc of openDocuments) {
     if (doc.ref.kind !== "graph") continue;
     const graph = serializedGraphFromDocument(doc.ref.kind, doc.content);
     if (!graph) continue;
-    const classId = options.classIdForPath(doc.ref.path);
-    graphs[classId] = graph;
+    graphs[classIdForPath(doc.ref.path)] = graph;
   }
   return graphs;
+}
+
+/** Closed Class headers plus open documents, keyed by class id. */
+export function collectClassGraphsForPalette(options: {
+  assets: FunctionLibraryAssets;
+  openDocuments: GraphDocuments;
+  classIdForPath: (path: string) => string;
+}): Record<string, SerializedGraph> {
+  return withOpenClassGraphs(classGraphsFromHeaders(options), options.openDocuments, options.classIdForPath);
 }
 
 export type PaletteSceneDocument = {

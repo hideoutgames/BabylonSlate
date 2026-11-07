@@ -4,7 +4,8 @@ import { useDocumentActions, useOpenDocument, useRegistryState } from "./documen
 import { useDocumentWorkspace } from "./document-workspace-context";
 import { useSceneTools } from "./scene-tools-context";
 import { registryClassParentLookup } from "../lib/class-asset-lookup";
-import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { withOpenClassGraphs } from "../lib/logic-graph-document";
+import { useClassHeaderGraphs } from "../lib/use-class-header-graphs";
 import type { TimelinePropertyContext } from "../lib/timeline-property-catalog";
 import { withTimelineClip } from "../lib/timeline-track-edits";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
@@ -55,15 +56,19 @@ export function useTimelineClip() {
 export function useTimelinePropertyContext(): Omit<TimelinePropertyContext, "classLabel"> & { classLabel: (classId: string) => string | undefined } {
   const { assetRegistry, registryEpoch } = useRegistryState();
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
-  return useMemo(() => {
+  const classHeaderGraphs = useClassHeaderGraphs();
+  // Names and parents change only with the registry; a Class edit overlays its open tab.
+  const registryPart = useMemo(() => {
     void registryEpoch;
-    const assets = assetRegistry?.list() ?? [];
     const names = new Map<string, string>();
-    for (const asset of assets) if (asset.header.type === "Class" && asset.path) names.set(classIdForGraphPath(asset.path), asset.header.name);
+    for (const asset of assetRegistry?.list() ?? []) if (asset.header.type === "Class" && asset.path) names.set(classIdForGraphPath(asset.path), asset.header.name);
     return {
-      graphs: collectClassGraphsForPalette({ assets, openDocuments: classDocuments, classIdForPath: classIdForGraphPath }),
       parentOf: registryClassParentLookup(assetRegistry),
       classLabel: (classId: string) => names.get(classId),
     };
-  }, [assetRegistry, classDocuments, registryEpoch]);
+  }, [assetRegistry, registryEpoch]);
+  return useMemo(() => ({
+    graphs: withOpenClassGraphs(classHeaderGraphs, classDocuments, classIdForGraphPath),
+    ...registryPart,
+  }), [classDocuments, classHeaderGraphs, registryPart]);
 }

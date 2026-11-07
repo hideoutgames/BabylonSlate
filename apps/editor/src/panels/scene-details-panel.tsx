@@ -90,12 +90,13 @@ import {
   fontAssetHasMsdfJson,
   fontAssetHasMsdfPng,
 } from "../lib/play-fonts";
-import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { withOpenClassGraphs } from "../lib/logic-graph-document";
+import { useClassHeaderGraphs } from "../lib/use-class-header-graphs";
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
+  mergedPrefabComponentsForClass,
+  prefabAssetTemplateKey,
   prefabAssetTemplates,
-  prefabTemplateKey,
-  prefabTemplatesByClassId,
 } from "../lib/prefab-instance-sync";
 import { physicsConstraintTargets } from "../lib/physics-constraint-targets";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
@@ -307,27 +308,26 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   );
   const pickingCableTarget = actor?.components.find((component) => component.id === constraintTargetPick?.componentId)?.classId === "CableComponent";
   const particleParameters = useParticleSystemParameters(particleSystemGuidsOf(actor));
-  const classSaveGraphs = useMemo(() => {
-    void registryEpoch;
-    return collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments: classDocuments, classIdForPath: classIdForGraphPath });
-  }, [assetRegistry, classDocuments, registryEpoch]);
-  const prefabTemplates = useMemo(() => {
+  const classHeaderGraphs = useClassHeaderGraphs();
+  const classSaveGraphs = useMemo(
+    () => withOpenClassGraphs(classHeaderGraphs, classDocuments, classIdForGraphPath),
+    [classDocuments, classHeaderGraphs],
+  );
+  // Only the selected actor's Prefab template: its Prefab asset's components, else its Class's merged up the ancestry.
+  const actorClassId = actor?.classId;
+  const actorPrefabGuid = actor?.prefabGuid;
+  const actorTemplate = useMemo(() => {
     void registryEpoch; // Registry headers mutate without replacing the registry.
-    const assets = assetRegistry?.list() ?? [];
-    const graphs = collectClassGraphsForPalette({
-      assets,
-      openDocuments: classDocuments,
-      classIdForPath: classIdForGraphPath,
-    });
-    return {
-      ...prefabTemplatesByClassId({
-        classIds: Object.keys(graphs),
-        parentOf: classParentLookup(assets),
-        graphs,
-      }),
-      ...prefabAssetTemplates({ assets, openDocuments: prefabDocuments }),
-    };
-  }, [assetRegistry, classDocuments, prefabDocuments, registryEpoch]);
+    if (actorClassId === undefined) return undefined;
+    if (actorPrefabGuid) {
+      const asset = assetRegistry?.getByGuid?.(actorPrefabGuid);
+      return prefabAssetTemplates({ assets: asset ? [asset] : [], openDocuments: prefabDocuments })[
+        prefabAssetTemplateKey(actorPrefabGuid)
+      ];
+    }
+    if (!Object.hasOwn(classSaveGraphs, actorClassId)) return undefined;
+    return mergedPrefabComponentsForClass({ classId: actorClassId, parentOf, graphs: classSaveGraphs }) ?? undefined;
+  }, [actorClassId, actorPrefabGuid, assetRegistry, classSaveGraphs, parentOf, prefabDocuments, registryEpoch]);
 
   const mutate = useCallback(
     (next: SerializedScene) => {
@@ -519,7 +519,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
       const nameParts = prefabComponentLabelParts(component, assetLabel);
       const title = nameParts.detail ? `${nameParts.name} ${nameParts.detail}` : nameParts.name;
       const template = component.sourceId
-        ? prefabTemplates[prefabTemplateKey(actor)]?.find(
+        ? actorTemplate?.find(
             (entry) => entry.id === component.sourceId,
           )
         : undefined;

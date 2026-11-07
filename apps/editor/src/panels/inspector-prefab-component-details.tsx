@@ -39,7 +39,8 @@ import {
   type ComponentPropertyUpdate,
 } from "../lib/component-property-rows";
 import { materialDomainsFromAssets } from "../lib/content-browser-helpers";
-import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { withOpenClassGraphs } from "../lib/logic-graph-document";
+import { useClassHeaderGraphs } from "../lib/use-class-header-graphs";
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -107,10 +108,11 @@ export function PrefabComponentDetails({
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_KINDS);
   // Kept across renders, so a gizmo drag does not walk every Class again.
-  const classGraphs = useMemo(() => {
-    void registryEpoch;
-    return collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments: classDocuments, classIdForPath: classIdForGraphPath });
-  }, [assetRegistry, classDocuments, registryEpoch]);
+  const classHeaderGraphs = useClassHeaderGraphs();
+  const classGraphs = useMemo(
+    () => withOpenClassGraphs(classHeaderGraphs, classDocuments, classIdForGraphPath),
+    [classDocuments, classHeaderGraphs],
+  );
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   // An open Material tab's unsaved domain wins over its saved header.
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);

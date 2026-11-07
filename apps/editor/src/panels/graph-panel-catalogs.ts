@@ -12,14 +12,16 @@ import {
 import { inputAssetCatalog } from "../lib/input-asset-catalog";
 import { collectDataGraphAssets } from "../lib/data-graph";
 import {
-  collectClassGraphsForPalette,
-  collectFunctionLibrariesForPalette,
   collectGraphTypeAssets,
   collectSceneDocumentsForPalette,
   collectScriptInterfacesForPalette,
   collectSubsystemClassesForPalette,
+  functionLibrariesFromHeaders,
   typeSchemasFromGraphAssets,
+  withOpenClassGraphs,
+  withOpenFunctionLibraries,
 } from "../lib/logic-graph-document";
+import { useClassHeaderGraphs } from "../lib/use-class-header-graphs";
 import {
   MATERIAL_DOCUMENT_KINDS,
   useOpenDocumentsOfKinds,
@@ -88,32 +90,39 @@ export function useGraphPanelCatalogs() {
     void registryEpoch;
     return classParentLookup(assetRegistry?.list() ?? []);
   }, [assetRegistry, registryEpoch]);
-  const otherClassGraphs = useMemo(() => {
+  // Header-derived parts change only with the registry; a Class edit overlays its open tab.
+  const classHeaderGraphs = useClassHeaderGraphs();
+  const otherClassGraphs = useMemo(
+    () => withOpenClassGraphs(classHeaderGraphs, classDocuments, classIdForGraphPath),
+    [classDocuments, classHeaderGraphs],
+  );
+  const headerFunctionLibraries = useMemo(() => {
     void registryEpoch;
-    return collectClassGraphsForPalette({
+    return functionLibrariesFromHeaders({
       assets: assetRegistry?.list() ?? [],
-      openDocuments: classDocuments,
-      classIdForPath: classIdForGraphPath,
-    });
-  }, [assetRegistry, classDocuments, registryEpoch]);
-  const functionLibraries = useMemo(() => {
-    void registryEpoch;
-    return collectFunctionLibrariesForPalette({
-      assets: assetRegistry?.list() ?? [],
-      openDocuments: classDocuments,
       parentOf,
       classIdForPath: classIdForGraphPath,
     });
-  }, [assetRegistry, classDocuments, parentOf, registryEpoch]);
+  }, [assetRegistry, parentOf, registryEpoch]);
+  const functionLibraries = useMemo(
+    () => withOpenFunctionLibraries(headerFunctionLibraries, {
+      openDocuments: classDocuments,
+      parentOf,
+      classIdForPath: classIdForGraphPath,
+    }),
+    [classDocuments, headerFunctionLibraries, parentOf],
+  );
+  // Subsystems read only which Classes are open and their parents, never content, so an edit keeps them.
+  const openClassPaths = classDocuments.map((doc) => doc.ref.path).join("\n");
   const subsystemClasses = useMemo(() => {
     void registryEpoch;
     return collectSubsystemClassesForPalette({
       assets: assetRegistry?.list() ?? [],
-      openDocuments: classDocuments,
+      openDocuments: openClassPaths ? openClassPaths.split("\n").map((path) => ({ ref: { kind: "graph", path } })) : [],
       parentOf,
       classIdForPath: classIdForGraphPath,
     });
-  }, [assetRegistry, classDocuments, parentOf, registryEpoch]);
+  }, [assetRegistry, openClassPaths, parentOf, registryEpoch]);
   const sceneDocuments = useMemo(() => {
     void registryEpoch;
     return collectSceneDocumentsForPalette({
