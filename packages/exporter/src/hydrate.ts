@@ -151,14 +151,6 @@ function asSpriteAnimationPayload(
   return parseSpriteAnimationPayload(value);
 }
 
-function navmeshArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const copy = bytes.slice();
-  return copy.buffer.slice(
-    copy.byteOffset,
-    copy.byteOffset + copy.byteLength,
-  ) as ArrayBuffer;
-}
-
 /** Models this source set's Scenes, SceneLayers and Classes simulate with Use Complex Collision. */
 function gameComplexCollisionModelGuids(game: GameSourceContent): Set<string> {
   return complexCollisionModelGuids([
@@ -471,12 +463,9 @@ export function packedPlayControls(content: PackedGameContent): ControlMessage[]
         : {}),
     });
   }
-  if (content.navmeshBytes && content.navmeshBytes.byteLength > 0) {
-    controls.push({
-      type: "loadNavMesh",
-      bytes: navmeshArrayBuffer(content.navmeshBytes),
-    });
-  }
+  // The host's load already carries the startup Scene's mesh in `sceneNavmeshBytes`:
+  // the worker imports that catalog entry instead of a second copy.
+  if (content.navmeshBytes && content.navmeshBytes.byteLength > 0) controls.push({ type: "loadNavMesh" });
   return controls;
 }
 

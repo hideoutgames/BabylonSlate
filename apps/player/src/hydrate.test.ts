@@ -297,7 +297,8 @@ describe("packedContentFromGame", () => {
     expect(controls.find((entry) => entry.type === "loadWater")).toMatchObject({ waters: [{ guid: "water-1", document: { waveHeight: 1.2 } }] });
     expect(controls.some((entry) => entry.type === "loadSprites")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadTilemaps")).toBe(true);
-    expect(controls.some((entry) => entry.type === "loadNavMesh")).toBe(true);
+    // The host's load carries the startup mesh in `sceneNavmeshBytes`; this control only asks the worker to import it.
+    expect(controls.filter((entry) => entry.type === "loadNavMesh")).toEqual([{ type: "loadNavMesh" }]);
     expect(controls.some((entry) => entry.type === "loadAnimGraphs")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadBehaviourTrees")).toBe(true);
   });

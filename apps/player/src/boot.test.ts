@@ -450,6 +450,17 @@ describe("player startup and Stop ownership", () => {
     ]);
   });
 
+  it("sends the startup Scene's navmesh to the worker once, in the load", async () => {
+    const { game, canvas } = await fixture();
+    game.navmeshBytes.set("world", new Uint8Array([4, 5, 6]));
+    sessions.push(startPlayer({ game, canvas }));
+    const controls = TestWorker.instances[0]!.messages.flatMap((message) => message.channel === "control" ? [message.payload] : []);
+    const load = controls.find((control) => control.type === "load");
+    expect(load?.type === "load" && load.sceneNavmeshBytes).toEqual({ world: new Uint8Array([4, 5, 6]) });
+    // The worker imports the load's catalog entry; no second copy follows.
+    expect(controls.filter((control) => control.type === "loadNavMesh")).toEqual([{ type: "loadNavMesh" }]);
+  });
+
   it("keys the worker Class lookup by class id only", async () => {
     const { game, canvas } = await fixture();
     // A display name equal to another Class id must not take over that id.

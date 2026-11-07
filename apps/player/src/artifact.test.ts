@@ -6,7 +6,7 @@ import {
 } from "@haptic/core";
 import { exportGame, GAME_MANIFEST_FILE, AREA_EMISSION_EXPORT_TYPE, areaEmissionExportGuid, FONT_FACETYPE_EXPORT_TYPE, FONT_MSDF_EXPORT_TYPE, FONT_MSDF_ATLAS_EXPORT_TYPE, fontFacetypeExportGuid, fontMsdfExportGuid, fontMsdfAtlasExportGuid } from "@haptic/exporter";
 import { AREA_EMISSION_EDGE, encodeAreaEmission } from "@haptic/assets";
-import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
+import { createGameAudioSourceLoader, loadGameFromFiles, loadGameFromHttp } from "./artifact";
 
 const encoder = new TextEncoder();
 /** Response bodies need ArrayBuffer-backed views; exported bytes never use SharedArrayBuffer. */
@@ -109,6 +109,37 @@ describe("loadGameFromFiles", () => {
     expect(game.fontMsdfPng.has("font")).toBe(false);
     // MSDF text without an atlas draws Bitmap in the Font's own face.
     expect(game.fontBytes.has("font")).toBe(true);
+    game.dispose!();
+  });
+  it("holds a Font that only Scene text names, and each closure asset once, with exact progress", async () => {
+    const scene = { ...createDefaultScene(), actors: [{ classId: "Actor", components: [{ classId: "2DTextComponent", properties: { fontAssetGuid: "font", renderer: "bitmap" } }] }] };
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+      { guid: "scene", type: "Scene", sceneGuid: "scene", requiredDependencies: [], bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
+      { guid: "texture", type: "Texture", sceneGuid: "level", bytes: new Uint8Array([1]) },
+      { guid: "level", type: "Scene", sceneGuid: "level", requiredDependencies: ["texture"], bytes: encoder.encode(JSON.stringify(scene)) },
+      { guid: "font", type: "Font", name: "Body", sceneGuid: "level", bytes: new Uint8Array([7]) },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const game = await loadGameFromFiles(exported.value.files);
+    const progress: Array<{ completed: number; total: number }> = [];
+    const level = await game.acquireAssets!(["level"], { consumer: "level", signal: new AbortController().signal, onProgress: (value) => progress.push(value) });
+    // level and texture from the closure, then the Font's catalog entry and its Bitmap source, which only the text names.
+    expect(progress).toEqual([{ completed: 2, total: 4 }, { completed: 3, total: 4 }, { completed: 4, total: 4 }]);
+    expect([...level.assetGuids!].sort()).toEqual(["font", "level", "texture"]);
+    expect(game.fontBytes.get("font")).toEqual(new Uint8Array([7]));
+    level.release();
+    game.dispose!();
+  });
+  it("checks an audio request's source revision against the exported catalog", async () => {
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+      { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const game = await loadGameFromFiles(exported.value.files);
+    const load = createGameAudioSourceLoader(game);
+    await expect(load({ assetGuid: "scene", chunkId: "source", revision: "stale" })).rejects.toThrow(/scene source revision is no longer available/);
+    const revision = exported.value.manifest.assets.find(asset => asset.guid === "scene")!.revision;
+    await expect(load({ assetGuid: "scene", chunkId: "source", revision })).resolves.toBeNull();
     game.dispose!();
   });
   it("does not read the default Font's facetype for 3D Text without a Font", async () => {
