@@ -34,6 +34,14 @@
     "files": ["meshoptimizer-license.txt"]
   },
   {
+    "name": "shadcn/ui stylesheet",
+    "version": "4.16.2",
+    "license": "MIT",
+    "source": "https://github.com/shadcn-ui/ui",
+    "scopes": ["editor"],
+    "files": ["shadcn-license.txt"]
+  },
+  {
     "name": "coi-serviceworker",
     "version": "0.1.7",
     "license": "MIT",

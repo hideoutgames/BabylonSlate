@@ -737,7 +737,7 @@
    "text": 50
   },
   {
-   "name": "shadcn",
+   "name": "shadcn/ui stylesheet",
    "version": "4.16.2",
    "license": "MIT",
    "source": "https://github.com/shadcn-ui/ui",
