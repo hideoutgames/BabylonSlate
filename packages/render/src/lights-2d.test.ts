@@ -50,9 +50,9 @@ describe("pack2DLights", () => {
     const out = words();
     const packed = pack2DLights([...far, wide, near], { ...lit, camera: { x: 0, y: 0 } }, out);
     expect(packed.count).toBe(LIGHT_2D_MAXIMUM);
-    // The wide light reaches the camera, so it outranks the near one; the farthest small light is left out.
+    // The wide light reaches the camera, so it outranks the near one; the two farthest small lights are left out.
     expect([out[0], out[12]]).toEqual([150, 2]);
-    expect(packed.limited).toEqual([far.at(-1)]);
+    expect(packed.limited).toEqual(far.slice(-2));
   });
 
   it("packs a white ambient and no lights while the Scene's lights are off (the Unlit viewport)", () => {

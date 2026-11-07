@@ -206,7 +206,8 @@ describe("component script API", () => {
         enabled: true, lightKind: "point", color: [1, 1, 1], intensity: 1, radius: 4, innerRadius: 0, outerAngle: 90, innerAngle: 90,
       } }]);
       const sprite = commands.find((command): command is Extract<CommandMessage, { type: "assignMesh" }> => command.type === "assignMesh");
-      expect(sprite?.parts?.find((part) => part.componentId === "sprite")?.shadingMode).toBe("3d");
+      // The sprite is the actor's one visual (a 2D Light is not one), so the mode rides on the command itself.
+      expect(sprite).toMatchObject({ meshKind: "sprite", shadingMode: "3d" });
       runtime.invokeScriptEvent("Hero", "Update", runtime.getWorld().findActor("lamp")!);
       expect(lights().at(-1)?.lights[0]?.properties.intensity).toBe(3);
     } finally { runtime.stop(); }
