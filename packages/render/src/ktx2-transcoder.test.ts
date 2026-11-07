@@ -49,6 +49,17 @@ describe("ktx2 transcoder config", () => {
     expect(cancelled).toHaveBeenCalledTimes(gets.length);
   });
 
+  it("asks for every transcoder file at once rather than one after another", async () => {
+    const pending: Array<(response: Response) => void> = [];
+    const fetchImpl = vi.fn(() => new Promise<Response>((resolve) => { pending.push(resolve); }));
+    const probe = probeKtx2TranscoderAvailable("/ktx2/", fetchImpl as unknown as typeof fetch);
+    await Promise.resolve();
+    // The ten files: decoder, Basis transcoder JS and wasm, six UASTC targets and zstd.
+    expect(fetchImpl).toHaveBeenCalledTimes(10);
+    for (const resolve of pending) resolve(new Response(null, { status: 200 }));
+    await expect(probe).resolves.toBe(true);
+  });
+
   it("treats a missing wasm module as unavailable even when the JS decoder exists", async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

@@ -77,9 +77,10 @@ vi.mock("../lib/engine-extension-library", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/engine-extension-library")>()),
   ensureEngineExtensionLibrary: (await provider()).emptyEngineLibrary,
 }));
+const transcoderProbe = vi.hoisted(() => ({ answer: (): Promise<boolean> => Promise.resolve(false) }));
 vi.mock("@haptic/render/ktx2-transcoder", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@haptic/render/ktx2-transcoder")>()),
-  probeKtx2TranscoderAvailable: async () => false,
+  probeKtx2TranscoderAvailable: () => transcoderProbe.answer(),
 }));
 vi.mock("@haptic/render/scene-load-readiness", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@haptic/render/scene-load-readiness")>()),
@@ -201,6 +202,19 @@ afterEach(async () => {
 });
 
 describe("DocumentProvider actions and route", () => {
+  it("finishes opening a project while the KTX2 transcoder check is still out", async () => {
+    let answer!: (available: boolean) => void;
+    transcoderProbe.answer = () => new Promise((resolve) => { answer = resolve; });
+    try {
+      await openProject();
+      expect(documents().route).toBe("editor");
+      expect(answer).toBeTypeOf("function");
+    } finally {
+      answer?.(false);
+      transcoderProbe.answer = () => Promise.resolve(false);
+    }
+  });
+
   it("clears a recovered journal that returns to saved content without another Save", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));

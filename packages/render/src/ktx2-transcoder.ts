@@ -146,16 +146,17 @@ export async function probeKtx2TranscoderAvailable(
   fetchImpl: typeof fetch = fetch,
 ): Promise<boolean> {
   const urls = Object.values(ktx2TranscoderUrls(basePath));
+  // Every file is asked at once: one round trip, not one per file.
+  const available = async (url: string) => {
+    const head = await fetchImpl(url, { method: "HEAD" });
+    if (head.ok) return true;
+    if (head.status === 404) return false;
+    const get = await fetchImpl(url, { method: "GET", headers: { Range: "bytes=0-0" } });
+    void get.body?.cancel().catch(() => {});
+    return get.ok;
+  };
   try {
-    for (const url of urls) {
-      const head = await fetchImpl(url, { method: "HEAD" });
-      if (head.ok) continue;
-      if (head.status === 404) return false;
-      const get = await fetchImpl(url, { method: "GET", headers: { Range: "bytes=0-0" } });
-      void get.body?.cancel().catch(() => {});
-      if (!get.ok) return false;
-    }
-    return true;
+    return (await Promise.all(urls.map(available))).every(Boolean);
   } catch {
     return false;
   }

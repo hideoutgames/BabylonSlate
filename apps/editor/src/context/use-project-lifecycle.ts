@@ -22,7 +22,7 @@ import { ensureEngineExtensionStorage } from "../lib/engine-extensions";
 import { ensureEngineExtensionLibrary } from "../lib/engine-extension-library";
 import { ensureEnginePluginLibrary } from "../lib/engine-plugin-library";
 import type { CreateProjectOptions } from "../lib/create-project";
-import { editorKtx2PublicBase } from "../lib/public-engine-assets";
+import { applyEditorKtx2TranscoderAvailability } from "../lib/ktx2-transcoder-availability";
 import type { ProjectSaveState } from "../lib/project-save-state";
 import {
   EDITOR_UTILITY_EVENTS,
@@ -206,10 +206,14 @@ export function useProjectLifecycle({
       const { probeKtx2TranscoderAvailable } = await import(
         "@haptic/render/ktx2-transcoder"
       );
-      const transcoderOk = await probeKtx2TranscoderAvailable(
-        editorKtx2PublicBase(),
-      );
-      await projectService.setTranscoderAvailable(transcoderOk);
+      // Thumbnails, the project list and the change snapshot do not wait for
+      // the transcoder probe; its answer applies when it comes.
+      void applyEditorKtx2TranscoderAvailability(
+        probeKtx2TranscoderAvailable,
+        (available) => projectService.setTranscoderAvailable(available),
+      ).catch((error: unknown) => {
+        console.error("[editor] The KTX2 transcoder check failed.", error);
+      });
       projectService.setDerivedStorage(derived);
       await refreshProjectList();
       await captureMtimeSnapshot();
