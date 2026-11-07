@@ -63,7 +63,7 @@ import { spawnsLights2D, type SpawnableLight } from "./spawnable-lights";
 import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
 import { estimateTextureMemory } from "./texture-memory-estimate";
 import { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting } from "./preserve-drawing-buffer-setting";
-import { nativePreparationForEngine } from "./native-preparation";
+import { nativePreparationForEngine, prepareTogether } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { Camera } from "@babylonjs/core/Cameras/camera";
 import type { EngineView } from "@babylonjs/core/Engines/AbstractEngine/abstractEngine.views";
@@ -3323,29 +3323,32 @@ function initializeEngine(
       preparation?.signal?.addEventListener("abort", cancel, { once: true });
       try {
         installOwnedSources();
-        for (const font of sources.fonts ?? []) {
-          const registered = await nativePreparation.schedule({ label: `Font ${font.guid}`,
-            temporaryBytes: Math.max(1024, font.bytes.byteLength * 4), signal: preparation?.signal,
-            priority: preparation?.priority }, () => fontRegistry.registerAll([font]));
-          if (!registered) {
-            const reason = [...fontRegistry.getWarnings()].reverse().find((warning) => warning.guid === font.guid)?.message;
-            throw new Error(`${(reason ?? `Font "${font.family}" failed to load`).replace(/\.?$/, ".")} Inspect the source and family of Font ${font.guid}.`);
-          }
-        }
+        // Each group (fonts, textures, Materials, models) is scheduled at once: the
+        // Engine's queue, shared by simultaneous source scopes and scene-specific
+        // model containers, bounds its concurrency and temporary memory. A job
+        // pushes its release before it first awaits, and a group settles before it
+        // rethrows, so `cancel` always sees every release a failed scope acquired.
+        const fonts = sources.fonts ?? [];
+        if (fonts.length) await prepareTogether(preparation?.signal, fonts.map((font) => (signal) => nativePreparation.schedule({
+          label: `Font ${font.guid}`, temporaryBytes: Math.max(1024, font.bytes.byteLength * 4), signal, priority: preparation?.priority,
+        }, async () => {
+          if (await fontRegistry.registerAll([font])) return;
+          const reason = [...fontRegistry.getWarnings()].reverse().find((warning) => warning.guid === font.guid)?.message;
+          throw new Error(`${(reason ?? `Font "${font.family}" failed to load`).replace(/\.?$/, ".")} Inspect the source and family of Font ${font.guid}.`);
+        })));
         if (preparation?.prepare) {
           preparation.signal?.throwIfAborted();
           const prepared = sourceOwners.get(owner)!;
           const check = () => { preparation.signal?.throwIfAborted(); if (disposed) throw new Error("The render Scene is disposed."); };
-          // The queue belongs to the Engine, so simultaneous source scopes and
-          // scene-specific model containers share the same admission budget.
-          for (const [guid, bytes] of prepared.assets?.textureBytes ?? []) {
-            check();
+          const textures = [...prepared.assets?.textureBytes ?? []];
+          if (textures.length) check();
+          await prepareTogether(preparation.signal, textures.map(([guid, bytes]) => (signal) => {
             const size = prepared.assets?.texturePixelSizes?.get(guid);
             const sourceSize = bytes instanceof Blob ? bytes.size : bytes.byteLength;
             const isCube = bytes instanceof Blob
               ? bytes.type === "application/vnd.babylon.env" || bytes.type === "image/vnd-ms.dds"
               : environmentTextureContainer(bytes) !== null;
-            await nativePreparation.schedule({ label: `Texture ${guid}`, signal: preparation.signal, priority: preparation.priority,
+            return nativePreparation.schedule({ label: `Texture ${guid}`, signal, priority: preparation.priority,
               temporaryBytes: sourceSize + (size ? size.width * size.height * 8 * (isCube ? 6 : 1) : Math.max(1024 * 1024, sourceSize * 16)),
             }, async () => {
               check();
@@ -3354,13 +3357,11 @@ function initializeEngine(
               nativeReleases.push(() => lease.release());
               await lease.ready;
             });
-          }
-          const spawnableMaterials: Material[] = [];
-          const spawnableContainers: AssetContainer[] = [];
-          for (const [guid, document] of prepared.materialDocuments ?? []) {
-            check();
-            await nativePreparation.schedule({ label: `Material ${guid}`, signal: preparation.signal,
-              priority: preparation.priority, temporaryBytes: 1024 * 1024 }, async () => {
+          }));
+          const materials = [...prepared.materialDocuments ?? []];
+          if (materials.length) check();
+          const spawnableMaterials = (await prepareTogether(preparation.signal, materials.map(([guid, document]) => (signal) =>
+            nativePreparation.schedule({ label: `Material ${guid}`, signal, priority: preparation.priority, temporaryBytes: 1024 * 1024 }, async () => {
               check();
               const material = materialLibrary.acquire(scene, guid, document);
               if (!material.ok) throw new Error(`Material ${guid}: ${material.diagnostics.map((entry) => entry.message).join("; ")}`);
@@ -3368,16 +3369,19 @@ function initializeEngine(
               const diagnostics = await material.ready;
               if (diagnostics.some((entry) => entry.severity === "error"))
                 throw new Error(`Material ${guid}: ${diagnostics.map((entry) => entry.message).join("; ")}`);
-              if (document.domain === "surface") spawnableMaterials.push(material.material);
-            });
-          }
-          for (const [guid, source] of prepared.assets?.modelSources ?? []) {
-            check();
+              return document.domain === "surface" ? material.material : null;
+            })))).filter((material): material is Material => material !== null);
+          const models = [...prepared.assets?.modelSources ?? []];
+          if (models.length) check();
+          const spawnableContainers: AssetContainer[] = await prepareTogether(preparation.signal, models.map(([guid, source]) => (signal) => {
             const lease = acquireGlbContainer(scene, guid, source, preparation.priority);
             nativeReleases.push(() => lease.release());
-            spawnableContainers.push(await lease.load);
-            await lease.lods();
-          }
+            // A failed or cancelled group stops waiting: releasing a model no other scope holds retires its decode.
+            signal.addEventListener("abort", () => lease.release(), { once: true });
+            // Levels never gate a source: they generate on the held lease, and spawns attach them once ready.
+            if (prepared.assets?.modelPayloads?.get(guid)?.autoLod !== false) void lease.lods();
+            return lease.load;
+          }));
           // What a latent spawn (Spawn Actor, a Class load) prepared compiles now, against the current lighting,
           // so it resolves with the actor's variants ready; anything this misses is hidden per mesh until it compiles.
           if (options.playMode && preparation.warm)
