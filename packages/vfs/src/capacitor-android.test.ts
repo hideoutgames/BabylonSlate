@@ -57,6 +57,10 @@ const plugins = [
     typescript: "device-memory.ts",
   },
   {
+    className: "BabylonSlateFileExportPlugin",
+    typescript: "capacitor-file-export.ts",
+  },
+  {
     className: "BabylonSlateAuthSessionPlugin",
     typescript: "auth-browser.ts",
   },

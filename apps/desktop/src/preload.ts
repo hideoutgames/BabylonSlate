@@ -31,6 +31,10 @@ contextBridge.exposeInMainWorld("haptic", {
   http: {
     fetch: (request: unknown) => ipcRenderer.invoke("lfs:fetch", request),
   },
+  // Exports: the main process asks where to save and writes the file.
+  files: {
+    save: (name: string, data: ArrayBuffer) => ipcRenderer.invoke("file:save", name, data),
+  },
   // Opens a provider sign-in page in the system browser; resolves with the callback deep link or null.
   authBrowser: {
     open: (url: string, callbackUrl: string) =>

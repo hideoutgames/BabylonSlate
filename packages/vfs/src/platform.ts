@@ -122,6 +122,16 @@ export function getElectronAccountSecretsBridge(): ElectronSecretsBridge | null 
   return host.haptic?.accountSecrets ?? null;
 }
 
+/** The desktop save dialog: writes `data` where the user chooses; false when they cancel. */
+export interface ElectronFileBridge {
+  save(name: string, data: ArrayBuffer): Promise<boolean>;
+}
+
+export function getElectronFileBridge(): ElectronFileBridge | null {
+  const host = globalThis as { haptic?: { files?: ElectronFileBridge } };
+  return host.haptic?.files ?? null;
+}
+
 export function getElectronHttpBridge(): ElectronHttpBridge | null {
   const host = globalThis as {
     haptic?: { http?: ElectronHttpBridge };

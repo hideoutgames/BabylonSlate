@@ -51,7 +51,7 @@ See [Plugin Settings](../assets/plugin-settings.md) for the asset itself.
 
 ## Share plugins
 
-- **Export > Export To Download** saves a `.hplugin` file.
+- **Export > Export To File** saves a `.hplugin` file. See [Saving exported files](index.md#saving-exported-files).
 - **Import Plugin** adds a `.hplugin` file to the project. If the same plugin and version is already installed, choose **Keep** or **Replace**. A different version updates the installed plugin.
 - **Export > Export To Engine Plugins** adds the plugin to your Engine Plugins on this device.
 
