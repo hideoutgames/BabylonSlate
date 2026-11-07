@@ -1112,6 +1112,30 @@ describe("shared shadow lifecycle", () => {
     expect(dispose).not.toHaveBeenCalled();
   });
 
+  it("serialises the shadow settings once per change, not at each sync that compares them with a standby map's or the caster variants' maps", async () => {
+    // The break: every sync deriving new effective settings, which the standby map's retention and the caster
+    // variants' maps then compare by serialising both (`qualityValuesKey`, a JSON.stringify), at each of a Play frame's
+    // syncs.
+    const { scene, controller, shadowed, generator, dispose } = forwardDroppedStandby();
+    controller.warmCasterVariants();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.sync();
+    const stringify = vi.spyOn(JSON, "stringify");
+    for (let frame = 0; frame < 3; frame++) {
+      controller.sync("admission");
+      controller.sync();
+    }
+    expect(stringify).not.toHaveBeenCalled();
+    // New settings of the same values (a label change) are serialised once, and keep the maps.
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ ...sceneRenderingSettings(scene).shadows, preset: "custom" }) });
+    stringify.mockClear();
+    controller.sync();
+    controller.sync("admission");
+    expect(stringify).toHaveBeenCalledOnce();
+    expect([controller.generator(shadowed), shadowed.getShadowGenerator()]).toEqual([null, generator]);
+    expect(dispose).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["a withdrawn shadow request", ({ controller, shadowed }: ReturnType<typeof forwardDroppedStandby>) =>
       controller.register(shadowed, false)],
