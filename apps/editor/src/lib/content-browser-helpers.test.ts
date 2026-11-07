@@ -36,7 +36,9 @@ import {
   isRenameNameTaken,
   contentBrowserContextActions,
   buildMaterialInstanceAssetResult,
+  buildSheetSpriteAnimationAssetResult,
   buildSpriteAnimationAssetResult,
+  sheetAnimationCell,
   buildTilesetAssetResult,
   spriteAnimationNameFor,
   canRetargetSelectedAssets,
@@ -1749,16 +1751,22 @@ describe("content-browser-helpers", () => {
     });
   });
 
-  it("offers Create Sprite Animation for Textures and Sprites, and Create Tileset for one Texture", () => {
+  it("gathers Textures' 2D conversions in Convert to 2D, offers Create Sprite Animation with Sprites, and Create Tileset for one Texture", () => {
     const actions = (assetTypes: string[], folderCount = 0) =>
       contentBrowserContextActions({ assetCount: assetTypes.length, folderCount, assetTypes, singleAssetType: assetTypes.length === 1 ? assetTypes[0] : undefined });
-    expect(actions(["Texture"])).toEqual(expect.arrayContaining(["create-sprite-animation", "create-tileset"]));
+    expect(actions(["Texture"])).toEqual(expect.arrayContaining(["convert-to-2d", "create-tileset"]));
+    expect(actions(["Texture", "Texture"])).toContain("convert-to-2d");
+    // Its submenu holds the Sprite and Sprite Animation actions, so they do not also stand alone.
+    expect(actions(["Texture"])).not.toContain("create-sprite");
+    expect(actions(["Texture"])).not.toContain("create-sprite-animation");
+    expect(actions(["Texture", "Sprite"])).not.toContain("convert-to-2d");
     expect(actions(["Sprite"])).toContain("create-sprite-animation");
     expect(actions(["Sprite"])).not.toContain("create-tileset");
     expect(actions(["Texture", "Sprite", "Texture"])).toContain("create-sprite-animation");
     expect(actions(["Texture", "Texture"])).not.toContain("create-tileset");
     expect(actions(["Texture", "Material"])).not.toContain("create-sprite-animation");
-    expect(actions(["Texture"], 1)).not.toContain("create-sprite-animation");
+    expect(actions(["Texture", "Material"])).not.toContain("convert-to-2d");
+    expect(actions(["Texture"], 1)).not.toContain("convert-to-2d");
     expect(contentBrowserContextActions({ assetCount: 1, folderCount: 0 })).not.toContain("create-sprite-animation");
   });
 
@@ -1771,8 +1779,8 @@ describe("content-browser-helpers", () => {
         singleAssetType: assetTypes.length === 1 ? assetTypes[0] : undefined,
         canCreateChildClass: extra.canCreateChildClass,
       }).filter((action) => action.startsWith("create-"));
-    expect(creates(["Texture"])).toEqual(["create-sprite", "create-sprite-animation", "create-tileset", "create-material"]);
-    expect(creates(["Texture", "Texture"])).toEqual(["create-sprite", "create-sprite-animation", "create-material"]);
+    expect(creates(["Texture"])).toEqual(["create-tileset", "create-material"]);
+    expect(creates(["Texture", "Texture"])).toEqual(["create-material"]);
     expect(creates(["Tileset", "Tileset"])).toEqual(["create-tilemap"]);
     expect(creates(["Model", "Model"])).toEqual(["create-prefab", "create-actor"]);
     expect(creates(["Model", "Sprite", "ParticleSystem"])).toEqual(["create-actor"]);
@@ -1786,6 +1794,25 @@ describe("content-browser-helpers", () => {
     expect(creates(["RenderTarget"])).toEqual(["create-render-target-texture"]);
     expect(creates(["Structure", "Structure"])).toEqual([]);
     expect(creates(["Model"], { folderCount: 1 })).toEqual([]);
+  });
+
+  it.each([
+    ["a horizontal strip", 128, 32, { width: 32, height: 32 }],
+    ["a vertical strip", 16, 64, { width: 16, height: 16 }],
+    ["one square image", 40, 40, { width: 40, height: 40 }],
+    ["an image that is no strip", 50, 30, { width: 50, height: 30 }],
+    ["an unknown size", 0, 32, null],
+  ])("starts a Sheet animation of %s with its cell", (_label, width, height, cell) => {
+    expect(sheetAnimationCell(width, height)).toEqual(cell);
+  });
+
+  it("builds a Sheet Sprite Animation with a frame per cell of its Texture, in reading order", () => {
+    const sheet = buildSheetSpriteAnimationAssetResult({ guid: "run", payload: { width: 96, height: 32 } }, "anim", "Run");
+    expect(sheet).toMatchObject({
+      type: "SpriteAnimation", dependencies: ["run"],
+      payload: { source: "sheet", sheet: { textureGuid: "run", cellWidth: 32, cellHeight: 32, margin: 0, spacing: 0 }, durationMs: 300 },
+    });
+    expect((sheet.payload.frames as Array<{ cell: number }>).map((frame) => frame.cell)).toEqual([1, 2, 3]);
   });
 
   it("builds a Sprite Animation with a frame per Texture or Sprite, and a Tileset sized from its Texture", () => {

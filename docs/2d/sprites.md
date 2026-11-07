@@ -28,8 +28,8 @@ The [Sprite](../components/sprite.md) component has **Asset**, **Sorting Layer**
 ## Make a Sprite Animation
 
 1. Import each frame as its own Texture, or the whole sprite sheet as one Texture.
-2. In the **Content Browser**, select the frames' Textures or Sprites, right-click one and choose **Create Sprite Animation**. The animation opens with one frame per asset, in name order.
-3. For a sprite sheet, select its Texture and choose **Create Sprite Animation**, then set **Source** to **Sheet** and set **Cell Width** and **Cell Height**. Choose **Use All Cells**, or pick each frame's **Cell**.
+2. In the **Content Browser**, select the frames' Textures, right-click one and choose **Convert to 2D > Create Animation** (with Sprites among them, **Create Sprite Animation**). The animation opens with one frame per asset, in name order.
+3. For a sprite sheet, select its Texture and choose **Convert to 2D > Create Sheet Animation**. It starts with square cells along a strip; adjust **Cell Width** and **Cell Height** for other grids, then choose **Use All Cells**, or pick each frame's **Cell**.
 
 Under **Animation** in the **Inspector**, **Frame Duration** sets the length of every frame in milliseconds (default 100). **Add Frame** adds a frame and the remove button deletes the selected one. Each frame has its own **Pivot** and **Collision**, and **Frame Duration Override** gives that frame its own duration.
 
