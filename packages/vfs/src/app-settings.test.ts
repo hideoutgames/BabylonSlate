@@ -3,7 +3,7 @@ import {
   defaultEngineSettings,
   engineSettingsSchema,
 } from "./app-settings";
-import { MemoryAppSettingsStore } from "./memory-app-settings";
+import { MemoryAppSettingsStore } from "./test-support/memory-app-settings";
 import { WebAppSettingsStore } from "./web-app-settings";
 
 describe("app settings", () => {

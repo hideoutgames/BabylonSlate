@@ -4,10 +4,10 @@ import {
   type SerializedScene,
 } from "./scene";
 
-export const DEFAULT_TEXT3D_TEXT = "Text";
-export const DEFAULT_TEXT3D_SIZE = 1;
-export const DEFAULT_TEXT3D_COLOR: [number, number, number] = [1, 1, 1];
-export const DEFAULT_TEXT3D_ALIGNMENT = "left" as const;
+const DEFAULT_TEXT3D_TEXT = "Text";
+const DEFAULT_TEXT3D_SIZE = 1;
+const DEFAULT_TEXT3D_COLOR: [number, number, number] = [1, 1, 1];
+const DEFAULT_TEXT3D_ALIGNMENT = "left" as const;
 
 export const TEXT3D_ALIGNMENTS = ["left", "center", "right"] as const;
 export type Text3DAlignment = (typeof TEXT3D_ALIGNMENTS)[number];

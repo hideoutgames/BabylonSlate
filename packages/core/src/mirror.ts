@@ -1,7 +1,7 @@
 export const MIRROR_CLASS_ID = "MirrorComponent";
 
 /** Lowest Resolution Scale: below it a reflection is too coarse to read as a mirror. */
-export const MIN_MIRROR_RESOLUTION_SCALE = 0.1;
+const MIN_MIRROR_RESOLUTION_SCALE = 0.1;
 
 /** Authored data only. The reflection target, mirror camera and surface mesh belong to the view. */
 export type MirrorProperties = {

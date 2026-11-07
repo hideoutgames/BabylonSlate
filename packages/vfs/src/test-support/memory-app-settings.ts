@@ -5,7 +5,7 @@ import {
   type AppSettingsMutation,
   type EngineSettings,
   runSerializedAppSettingsUpdate,
-} from "./app-settings";
+} from "../app-settings";
 
 /**
  * In-memory app settings for tests.

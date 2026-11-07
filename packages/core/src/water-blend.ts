@@ -18,7 +18,7 @@ export const waterBlendVerticalTolerance = (distance: number) => Math.max(0.25, 
  * Bodies lie over the classes below them: Global Water Volume 0, Ocean 1, Lake 2, River 3, Puddle 4. Inside a higher
  * body the lower one gives way, so a river keeps its current into a lake and a lake keeps its colour inside an ocean.
  */
-export function waterBlendClass(kind: WaterKind): number {
+function waterBlendClass(kind: WaterKind): number {
   switch (kind) {
     case "global": return 0;
     case "ocean": return 1;
@@ -29,7 +29,7 @@ export function waterBlendClass(kind: WaterKind): number {
 }
 
 /** Whether two definitions make the same waves (physics and the vertex waves): every field of their spectrum matches. */
-export function sameWaterWaves(a: WaterDefinition, b: WaterDefinition): boolean {
+function sameWaterWaves(a: WaterDefinition, b: WaterDefinition): boolean {
   return a === b || (a.waveHeight === b.waveHeight && a.waveLength === b.waveLength && a.waveSpeed === b.waveSpeed
     && a.waveDirection === b.waveDirection && a.waveSpread === b.waveSpread && a.swellHeight === b.swellHeight
     && a.swellLength === b.swellLength && a.swellDirection === b.swellDirection && a.steepness === b.steepness
@@ -97,7 +97,7 @@ export const waterBlendReach = (distance: number) => distance;
 export const WATER_BLEND_COLOR_PARTNERS = 3;
 
 /** Smooth maximum with blend radius `k`: max(a, b) plus up to k/4 where a and b are within k of each other. */
-export function waterSmoothMax(a: number, b: number, k: number): number {
+function waterSmoothMax(a: number, b: number, k: number): number {
   if (a === Infinity || b === Infinity) return Infinity;
   const h = Math.max(k - Math.abs(a - b), 0) / k;
   return Math.max(a, b) + h * h * k / 4;
@@ -471,7 +471,7 @@ function outranks(bodies: readonly PreparedWaterBlendBody[], a: number, b: numbe
 }
 
 /** Rest-space step (metres) of the central differences blended queries take for slopes and the offset gain. */
-export const BLEND_DERIVATIVE_STEP = 0.05;
+const BLEND_DERIVATIVE_STEP = 0.05;
 
 /** The most stencils (`BlendStencil`) one blended query builds: its rest point is solved against each in turn. */
 const BLEND_MAX_STENCILS = 2;

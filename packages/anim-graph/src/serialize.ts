@@ -23,7 +23,7 @@ export type AnimGraphPin = {
   type: { kind: "exec" };
 };
 
-export const ANIM_STATE_PINS: AnimGraphPin[] = ANIM_STATE_SIDES.flatMap(
+const ANIM_STATE_PINS: AnimGraphPin[] = ANIM_STATE_SIDES.flatMap(
   (side) => [
     {
       id: `${side}-in`,
@@ -72,7 +72,7 @@ const ANIM_STATE_HANDLE = /^(top|right|bottom|left)-(?:in|out)$/;
  * start or end on either plate of a side (`left-in` as a source becomes
  * `left-out`). A missing or unknown id uses the default `right-out` / `left-in`.
  */
-export function animStateHandle(
+function animStateHandle(
   handle: string | null | undefined,
   direction: "in" | "out",
 ): string {
@@ -116,7 +116,7 @@ export function findReverseTransition(
   );
 }
 
-export function visualTransitions(
+function visualTransitions(
   transitions: readonly AnimTransition[],
 ): AnimTransition[] {
   const skip = new Set<string>();

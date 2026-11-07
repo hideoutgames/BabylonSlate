@@ -4,11 +4,9 @@ import {
   createTag,
   findTag,
   isValidTagPath,
-  matchesTag,
   normalizeTag,
   normalizeTagContainer,
   normalizeTagRegistry,
-  type TagRegistry,
 } from "./tags";
 
 describe("Tags", () => {
@@ -69,7 +67,6 @@ describe("Tags", () => {
       { id: 8, path: "State.Blocked" },
       { id: 8, path: "State.Ready" },
     ] });
-    expect(matchesTag(registry, 9, 8)).toBe(false);
     expect(findTag(registry, "State.Blocked")).toBe(0);
     expect(registry.tags).toEqual([
       { id: 9, path: "State.Ready.Running", parentId: 11 },
@@ -97,8 +94,7 @@ describe("Tags", () => {
         { id: 6, path: "state", parentId: 4 },
       ],
     });
-    expect(matchesTag(registry, 9, 4)).toBe(true);
-    expect(matchesTag(registry, 9, 6)).toBe(false);
+    expect(registry.tags.find((tag) => tag.id === 9)?.parentId).toBe(4);
     expect(createTag(registry, "state.Ready").tag).toBe(10);
     expect(registry.tags.find((tag) => tag.id === 4)?.parentId).toBe(0);
   });
@@ -125,28 +121,6 @@ describe("Tags", () => {
     ] });
     expect(registry.tags).toEqual([{ id: 3, path: "Safe", parentId: 0 }]);
     expect(() => createTag(registry, "New")).toThrow(RangeError);
-  });
-
-  const registry: TagRegistry = {
-    tags: [
-      { id: 1, path: "State", parentId: 0 },
-      { id: 2, path: "State.Ready", parentId: 1 },
-      { id: 3, path: "State.Ready.Running", parentId: 2 },
-      { id: 4, path: "State.Readiness", parentId: 1 },
-      { id: 5, path: "Damage", parentId: 0 },
-    ],
-    nextId: 6,
-  };
-
-  it("matches children against ancestors without matching siblings, parents against children, or unknown values", () => {
-    expect(matchesTag(registry, 3, 1)).toBe(true);
-    expect(matchesTag(registry, 3, 2)).toBe(true);
-    expect(matchesTag(registry, 3, 2, true)).toBe(false);
-    expect(matchesTag(registry, 3, 3, true)).toBe(true);
-    expect(matchesTag(registry, 1, 3)).toBe(false);
-    expect(matchesTag(registry, 4, 2)).toBe(false);
-    expect(matchesTag(registry, 0, 0)).toBe(false);
-    expect(matchesTag(registry, 999, 999, true)).toBe(false);
   });
 
   it("normalizes structure values", () => {

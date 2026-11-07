@@ -17,7 +17,7 @@ import { decodeRadianceHdr, readRadianceHeader, type RadianceImage } from "./rad
 export const HDR_ENVIRONMENT_FACE_SIZES = [128, 256, 512] as const;
 export type HdrEnvironmentFaceSize = (typeof HDR_ENVIRONMENT_FACE_SIZES)[number];
 /** Babylon's ENV standard; image-based lighting rarely gains from larger faces. */
-export const DEFAULT_HDR_ENVIRONMENT_FACE_SIZE: HdrEnvironmentFaceSize = 256;
+const DEFAULT_HDR_ENVIRONMENT_FACE_SIZE: HdrEnvironmentFaceSize = 256;
 /** Chunk keeping the imported `.hdr` beside the converted cube, so it can be converted again. */
 export const HDR_SOURCE_CHUNK_ID = "hdr";
 export const HDR_SOURCE_MIME = "image/vnd.radiance";
@@ -329,7 +329,7 @@ const float32 = new Float32Array(1);
 const uint32 = new Uint32Array(float32.buffer);
 
 /** IEEE half with round-to-nearest-even; negatives and NaN become 0, overflow the largest half. */
-export function toHalfFloat(value: number): number {
+function toHalfFloat(value: number): number {
   if (!(value > 0)) return 0;
   if (value >= HALF_MAX) return 0x7bff;
   float32[0] = value;
@@ -353,7 +353,7 @@ export function toHalfFloat(value: number): number {
 }
 
 /** Uncompressed RGBA16F (FourCC 113) cube DDS: faces in order, each with its full mip chain. */
-export function encodeHalfFloatDdsCube(levels: CubeFaces[], size: number): Uint8Array<ArrayBuffer> {
+function encodeHalfFloatDdsCube(levels: CubeFaces[], size: number): Uint8Array<ArrayBuffer> {
   let texels = 0;
   for (let level = 0; level < levels.length; level++) texels += (size >> level) ** 2;
   const bytes = new Uint8Array(128 + texels * 6 * 8);

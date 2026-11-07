@@ -42,7 +42,7 @@ export function knownGuidsFromSchemas(schemas: TypeSchemas): Set<string> {
   return new Set([...Object.keys(schemas.enums), ...Object.keys(schemas.structs)]);
 }
 
-export function firstEnumMemberName(schema: EnumSchema | undefined): string {
+function firstEnumMemberName(schema: EnumSchema | undefined): string {
   const name = schema?.members.find((member) => member.name.trim())?.name;
   return name ?? "";
 }

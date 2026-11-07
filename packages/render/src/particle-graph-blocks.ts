@@ -70,14 +70,14 @@ import type { Particle } from "@babylonjs/core/Particles/particle";
 import type { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 import {
   PARTICLE_UPDATE_SPEED,
+  globalParameterSelection,
   particlePrewarmSteps,
+  type GlobalParameterSelection,
   type ParticleSpace,
 } from "@haptic/core";
 import {
-  particleGlobalParameterSelection,
   particleSpriteSheetSettings,
   resizeParticleValue,
-  type ParticleGlobalParameterSelection,
   type ParticleGradientStop,
   type ParticleGraphParameter,
   type ParticleGraphSettings,
@@ -289,11 +289,11 @@ export function setParticleInputBlockValue(block: ParticleInputBlock, type: Part
  * global parameter changes every running emitter that reads it, with no rebuild.
  */
 class GlobalParameterInputBlock extends ParticleInputBlock {
-  private readonly selection: ParticleGlobalParameterSelection;
+  private readonly selection: GlobalParameterSelection;
   private readonly source: GlobalParameterValueSource;
   private revision = Number.NaN;
 
-  constructor(name: string, selection: ParticleGlobalParameterSelection, source: GlobalParameterValueSource) {
+  constructor(name: string, selection: GlobalParameterSelection, source: GlobalParameterValueSource) {
     super(name, BABYLON_TYPES[selection.valueType]);
     this.selection = selection;
     this.source = source;
@@ -639,7 +639,7 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
   "const.color": constant("color"),
   "global.parameter": ({ name, operation, globalParameters }): ParticleBlockRealization => {
     // Without a parameter the node has no output, so nothing reads it.
-    const selection = particleGlobalParameterSelection(operation.properties);
+    const selection = globalParameterSelection(operation.properties);
     if (!selection) return { blocks: [], inputs: {}, outputs: {} };
     const block = new GlobalParameterInputBlock(name, selection, globalParameters ?? globalParameterDefaults);
     return { blocks: [block], inputs: {}, outputs: { out: block.output } };

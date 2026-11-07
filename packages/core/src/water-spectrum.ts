@@ -21,28 +21,28 @@ export const WATER_SPECTRUM_GRAVITY = 9.81;
 /** Seconds (at Wave Speed 1) after which the whole spectrum repeats exactly. */
 export const WATER_SPECTRUM_PERIOD = 1024;
 /** Cascades every spectrum layout partitions its band into (the renderer draws the first `fftCascades` of them). */
-export const WATER_SPECTRUM_CASCADES = 3;
+const WATER_SPECTRUM_CASCADES = 3;
 /** Patch size ratio between consecutive cascades: irrational, so cascades never repeat in step. */
-export const WATER_SPECTRUM_RATIO = 4 + 2 * Math.SQRT2;
+const WATER_SPECTRUM_RATIO = 4 + 2 * Math.SQRT2;
 /** First cascade's patch in multiples of the dominant (longest) peak wavelength. */
-export const WATER_SPECTRUM_PATCH = 9;
+const WATER_SPECTRUM_PATCH = 9;
 /** Cascade c > 0 starts this many bins from its own centre, where cascade c − 1 hands over. */
-export const WATER_SPECTRUM_LOW_BIN = 6;
+const WATER_SPECTRUM_LOW_BIN = 6;
 /**
  * Each cascade's frame is turned this far (radians) from the world's, so the cascades' periodic patches tile along
  * different axes and never line up into one rectangular repeat.
  */
 export const WATER_SPECTRUM_TURNS = [0, 0.5411, 1.0297] as const;
 /** CPU physics grid per side of the first cascade (the second uses half): their lowest modes are what physics reads. */
-export const WATER_SPECTRUM_PHYSICS_SIZE = 64;
+const WATER_SPECTRUM_PHYSICS_SIZE = 64;
 /** Horizontal displacement (choppiness λ) per unit of Steepness. */
-export const WATER_SPECTRUM_CHOP = 2;
+const WATER_SPECTRUM_CHOP = 2;
 /**
  * Largest λ times the sea's RMS slope (`waterSpectrumSlope`). The offset's divergence has the slope's variance, so the
  * share of the surface that folds into foam is about Φ(−bias / (λ·slope)): at this limit at most about a quarter, however
  * tall Wave Height is for its Wave Length. Every preset sea lies below it, so only impossibly steep seas are limited.
  */
-export const WATER_SPECTRUM_FOLD_LIMIT = 0.5;
+const WATER_SPECTRUM_FOLD_LIMIT = 0.5;
 /**
  * Weight of each cascade's foam turbulence (1 − its persistent Jacobian) in the whitecap sum: whitecaps are the dominant
  * waves breaking, so the long cascade counts fully and the shorter ones, whose ripples fold far more often, much less.
@@ -280,7 +280,7 @@ const SLOPE_RINGS = 160, SLOPE_ANGLES = 32;
  * RMS slope of the sea at Wave Scale 1, √∫∫ k²·Ψ dkx dkz, over the band a 256-texel FFT draws: from the first cascade's
  * lowest mode to the last cascade's Nyquist radius. Log-spaced rings, each spectrum ring evaluated once.
  */
-export function waterSpectrumSlope(spectrum: WaterSpectrum): number {
+function waterSpectrumSlope(spectrum: WaterSpectrum): number {
   return bandSlope(spectrum, TAU / spectrum.patchSizes[0]!, Math.PI * 256 / spectrum.patchSizes[spectrum.patchSizes.length - 1]!);
 }
 
@@ -303,7 +303,7 @@ function bandSlope(spectrum: WaterSpectrum, kMin: number, kMax: number): number 
 const dispersion = (k: number) => Math.sqrt(WATER_SPECTRUM_GRAVITY * k);
 
 /** The mode's frequency as a whole multiple of 2π / `WATER_SPECTRUM_PERIOD`. */
-export function waterSpectrumFrequencyMultiple(k: number): number {
+function waterSpectrumFrequencyMultiple(k: number): number {
   return Math.round(dispersion(k) * WATER_SPECTRUM_PERIOD / TAU);
 }
 
@@ -406,7 +406,7 @@ export class WaterSpectrumModes {
 }
 
 /** Position of simulation time `time` within the spectrum's repeat period at Wave Speed `speed`, in [0, 1). */
-export function waterSpectrumCycle(time: number, speed: number): number {
+function waterSpectrumCycle(time: number, speed: number): number {
   const cycle = (time * speed / WATER_SPECTRUM_PERIOD) % 1;
   return cycle < 0 ? cycle + 1 : cycle;
 }
@@ -654,7 +654,7 @@ export class WaterSpectrumField {
 
 /** Slots of `WaterSpectrumField.sample`. */
 const F_H = 0, F_DX = 1, F_DZ = 2, F_HT = 3, F_DXT = 4, F_DZT = 5, F_HX = 6, F_JXX = 8, F_JXZ = 9, F_JZX = 10, F_JZZ = 11;
-export const WATER_SPECTRUM_SAMPLE_SIZE = 12;
+const WATER_SPECTRUM_SAMPLE_SIZE = 12;
 const sampleScratch = new Float64Array(FIELDS * 3);
 
 /**
@@ -692,7 +692,7 @@ function derivatives(t: number, out: Float64Array): Float64Array {
 
 const fields = new WeakMap<WaterSpectrum, WaterSpectrumField>();
 /** The spectrum's CPU field, built on first use (two M×M mode sets). */
-export function waterSpectrumField(spectrum: WaterSpectrum): WaterSpectrumField {
+function waterSpectrumField(spectrum: WaterSpectrum): WaterSpectrumField {
   let field = fields.get(spectrum);
   if (!field) fields.set(spectrum, field = new WaterSpectrumField(spectrum));
   return field;

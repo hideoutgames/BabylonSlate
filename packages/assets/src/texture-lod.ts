@@ -1,6 +1,6 @@
 export const TEXTURE_LOD_FLOOR = 256;
-export const TEXTURE_LOD_QUALITY_MIN = 0.25;
-export const TEXTURE_LOD_QUALITY_MAX = 1;
+const TEXTURE_LOD_QUALITY_MIN = 0.25;
+const TEXTURE_LOD_QUALITY_MAX = 1;
 
 export const TEXTURE_DOWNSAMPLE_OPTIONS = [1, 2, 4, 8, 16] as const;
 export type TextureDownsample = (typeof TEXTURE_DOWNSAMPLE_OPTIONS)[number];
@@ -9,7 +9,7 @@ export function isTextureLodExemptUsage(usage: string): boolean {
   return usage === "skybox" || usage === "pixelArt" || usage === "colorGrading";
 }
 
-export function normalizeTextureDownsample(value: unknown): TextureDownsample {
+function normalizeTextureDownsample(value: unknown): TextureDownsample {
   const parsed = typeof value === "number" ? value : Number(value);
   if (TEXTURE_DOWNSAMPLE_OPTIONS.includes(parsed as TextureDownsample)) {
     return parsed as TextureDownsample;

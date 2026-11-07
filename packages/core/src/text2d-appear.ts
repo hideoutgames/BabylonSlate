@@ -30,8 +30,8 @@ export const TEXT2D_APPEAR_START_LABELS: Record<Text2DAppearStart, string> = {
   revealed: "Fully Revealed", hidden: "Hidden", play: "Play On Start",
 };
 
-export const DEFAULT_TEXT2D_APPEAR_INTERVAL = 0.1;
-export const DEFAULT_TEXT2D_APPEAR_DURATION = 0.3;
+const DEFAULT_TEXT2D_APPEAR_INTERVAL = 0.1;
+const DEFAULT_TEXT2D_APPEAR_DURATION = 0.3;
 
 export type Text2DAppearProperties = {
   appearModes: Text2DAppearMode[];
@@ -43,14 +43,14 @@ export type Text2DAppearProperties = {
   appearProgress?: number;
 };
 
-export function parseText2DAppearModes(value: unknown): Text2DAppearMode[] {
+function parseText2DAppearModes(value: unknown): Text2DAppearMode[] {
   if (!Array.isArray(value)) return [];
   if (value.includes("instant")) return ["instant"];
   return [...new Set(value.filter((mode): mode is Text2DAppearMode =>
     TEXT2D_APPEAR_MODES.includes(mode as Text2DAppearMode)))];
 }
 
-export function parseText2DAppearTransition(value: unknown): Text2DAppearTransition {
+function parseText2DAppearTransition(value: unknown): Text2DAppearTransition {
   return TEXT2D_APPEAR_TRANSITIONS.includes(value as Text2DAppearTransition)
     ? value as Text2DAppearTransition
     : "cubicOut";

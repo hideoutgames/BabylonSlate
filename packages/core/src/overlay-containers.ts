@@ -1,7 +1,7 @@
 /** Container dimensions use SceneLayer world units, including manual safe insets. */
 export const OVERLAY_CONTAINER_CLASSES = ["2DVirtualizedListComponent", "2DVirtualizedGridComponent", "2DMaskPanelComponent", "2DMaskComponent", "2DSafeAreaComponent"] as const;
 /** Resource ceiling per virtual container, including overscan. */
-export const OVERLAY_VIRTUAL_ITEM_LIMIT = 2048;
+const OVERLAY_VIRTUAL_ITEM_LIMIT = 2048;
 export type OverlaySafeAreaInsets = { left: number; right: number; top: number; bottom: number };
 export type VirtualizedItem = { containerId: string; index: number };
 export function isVirtualizedOverlayClass(classId: string): boolean {

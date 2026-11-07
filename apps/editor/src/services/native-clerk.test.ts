@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  MemorySecretStore,
   type NativeHttpRequest,
   type NativeHttpResponse,
 } from "@haptic/vfs";
+import { MemorySecretStore } from "../../../../packages/vfs/src/test-support/memory-secret-store";
 import { createNativeClerkClient, NativeClerkClient } from "./native-clerk";
 
 afterEach(() => vi.unstubAllGlobals());

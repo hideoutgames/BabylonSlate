@@ -9,103 +9,39 @@ export {
 } from "./stack";
 export { EditSession, DEFAULT_EDIT_BYTE_BUDGET } from "./session";
 export {
-  AddEdgeCommand,
-  AddNodeCommand,
-  MoveNodeCommand,
-  RemoveEdgeCommand,
-  RemoveNodeCommand,
-  SetGraphMembersCommand,
-  SetGraphComponentsCommand,
-  SetGraphFunctionGraphsCommand,
-  SetGraphActorDefaultsCommand,
-  SetGraphOverlayDesignCommand,
   SetNodeDataCommand,
-  createMoveNodeCommandFromJson,
-  createAddEdgeCommandFromJson,
-  createRemoveEdgeCommandFromJson,
-  createSetNodeDataCommandFromJson,
-  createAddNodeCommandFromJson,
-  createRemoveNodeCommandFromJson,
-  createSetGraphMembersCommandFromJson,
-  createSetGraphComponentsCommandFromJson,
-  createSetGraphFunctionGraphsCommandFromJson,
-  createSetGraphActorDefaultsCommandFromJson,
-  createSetGraphOverlayDesignCommandFromJson,
 } from "./commands/graph";
 export { diffGraphCommands } from "./commands/graph-diff";
 export {
-  AddActorCommand,
-  AddComponentCommand,
   RemoveActorCommand,
-  RemoveComponentCommand,
-  RenameActorCommand,
-  ReorderActorCommand,
-  ReorderComponentCommand,
-  ReparentActorCommand,
-  ReparentComponentCommand,
-  SetActorFlagsCommand,
   SetActorTransformCommand,
   SetActorsTransformsCommand,
-  SetComponentPropertyCommand,
-  SetComponentLinkageCommand,
-  SetComponentTransformCommand,
   SetSceneNameCommand,
-  SetSceneSettingCommand,
   SetViewportModeCommand,
-  AddFolderCommand,
-  RemoveFolderCommand,
-  RenameFolderCommand,
-  ReparentFolderCommand,
-  SetActorFolderCommand,
   SCENE_COMMAND_TYPES,
   type ActorFlags,
   type ActorTransformEntry,
   type SceneEditCommand,
 } from "./commands/scene";
 export { diffSceneCommands, planSceneChange } from "./commands/scene-diff";
-export {
-  ReorderFolderCommand,
-  SetActorClassCommand,
-  SetActorPropertiesCommand,
-  SetComponentClassCommand,
-  SetComponentNameCommand,
-  SetComponentTransformPresenceCommand,
-  SetSceneOverlayEditorCommand,
-  SetSceneScriptCommand,
-} from "./commands/scene-fields";
-export {
-  AddTimelineClipCommand,
-  RemoveTimelineClipCommand,
-  ReorderTimelineClipCommand,
-  SetTimelineClipCommand,
-} from "./commands/scene-timeline";
-export { ReplaceSceneCommand, createReplaceSceneCommandFromJson } from "./commands/replace-scene";
-export { SetActorSuppressedComponentsCommand, SetComponentMaterialInstanceCommand } from "./commands/scene-instance";
+export { ReplaceSceneCommand } from "./commands/replace-scene";
 export {
   type JournalLine,
-  JOURNAL_REPATH_TYPE,
-  JOURNAL_DISCARD_TYPE,
   JOURNAL_CHECKPOINT_TYPE,
   journalCheckpointLine,
   journalDiscardLine,
   journalRepathLine,
   parseJournalLine,
-  registerCommandReviver,
   reviveCommand,
   serializeJournalLine,
   commandToJournalPayload,
   coalesceJournalLines,
-  registerGraphCommandRevivers,
-  registerSceneCommandRevivers,
-  registerAssetDocumentCommandRevivers,
 } from "./journal";
 export {
   SetAssetDocumentCommand,
-  createSetAssetDocumentCommandFromJson,
 } from "./commands/asset-document";
 export {
   PatchTilemapDocumentCommand,
-  createPatchTilemapDocumentCommandFromJson,
   diffTilemapDocument,
   type TilemapChunkPatch,
   type TilemapDocumentDelta,

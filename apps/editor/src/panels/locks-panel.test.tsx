@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
 import { FakeLockProvider } from "@haptic/source-control";
-import { MemorySecretStore } from "@haptic/vfs";
+import { MemorySecretStore } from "../../../../packages/vfs/src/test-support/memory-secret-store";
 import { SourceControlService } from "../services/source-control-service";
 import { LocksPanelContents } from "./locks-panel";
 

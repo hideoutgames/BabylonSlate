@@ -32,7 +32,7 @@ function isOverflowScroll(el: Element): boolean {
 }
 
 /** ScrollArea viewport if present; otherwise nearest overflow-y auto/scroll ancestor. */
-export function findWindowedListScrollParent(
+function findWindowedListScrollParent(
   el: Element | null,
 ): HTMLElement | null {
   if (!el) return null;

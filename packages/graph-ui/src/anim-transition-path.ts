@@ -1,6 +1,6 @@
 import { Position } from "@xyflow/react";
 
-export const ANIM_TRANSITION_CURVATURE = 0.85;
+const ANIM_TRANSITION_CURVATURE = 0.85;
 export const ANIM_TRANSITION_MIN_STUB = 64;
 
 export type AnimTransitionPathParams = {

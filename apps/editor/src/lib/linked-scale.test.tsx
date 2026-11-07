@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PropertyGrid } from "@haptic/editor-kit";
-import { MemoryAppSettingsStore } from "@haptic/vfs";
+import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
 import { AppSettingsProvider } from "../context/app-settings-context";
 import { scaleLinkKey, useLinkedScale } from "./linked-scale";
 

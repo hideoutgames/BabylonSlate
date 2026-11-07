@@ -13,7 +13,7 @@ const CHECKERBOARD =
 
 export type Rgba = readonly [number, number, number, number];
 
-export function cssRgba([r, g, b, a]: Rgba): string {
+function cssRgba([r, g, b, a]: Rgba): string {
   const channel = (value: number) => Math.round(clampNumber(value, 0, 1) * 255);
   return `rgb(${channel(r)} ${channel(g)} ${channel(b)} / ${clampNumber(a, 0, 1)})`;
 }

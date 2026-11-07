@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultMaterialDocument, createTypeResolver, hydrateMaterialGraphForEditor, materialGraphToSerialized, validateMaterialDocument } from "./index";
+import { createDefaultMaterialDocument, hydrateMaterialGraphForEditor, materialGraphToSerialized, validateMaterialDocument } from "./index";
+import { createTypeResolver } from "./resolve";
 
 function graph(type: string, properties: Record<string, unknown>) {
   const doc = createDefaultMaterialDocument();

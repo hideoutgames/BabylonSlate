@@ -1,10 +1,6 @@
 export {
   MATERIAL_CATALOG,
   materialNodeDefinition,
-  materialPaletteEntries,
-  nodeIsLegalInDomain,
-  nodeIsLegalInStage,
-  terminalNodeTypeFor,
   type MaterialCapability,
   parseMaterialDomain,
   type MaterialDomain,
@@ -14,9 +10,7 @@ export {
   type MaterialStage,
 } from "./catalog";
 export {
-  MATERIAL_FUNCTION_SCHEMA_VERSION,
   MATERIAL_PREVIEW_MESHES,
-  MATERIAL_SCHEMA_VERSION,
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   createImportedMaterialDocument,
@@ -24,7 +18,6 @@ export {
   missingPackedMaterialTextureGuids,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
-  normalizeMaterialPreviewSettings,
   setMaterialDomain,
   type MaterialBlendMode,
   type MaterialDependencies,
@@ -39,7 +32,6 @@ export {
 } from "./document";
 export {
   lowerMaterialDocument,
-  materialCompileKey,
   materialCompileKeyFromLowering,
   type MaterialBuildPlan,
   type MaterialBufferRequirements,
@@ -53,7 +45,7 @@ export {
   type MaterialTextureFilter,
 } from "./lower";
 export { createWaterMaterialDocument } from "./water-materials";
-export { createTypeResolver, type TypeResolver } from "./resolve";
+export type { TypeResolver } from "./resolve";
 export {
   hydrateMaterialGraphForEditor,
   materialGraphToSerialized,
@@ -70,26 +62,16 @@ export {
   asNumberArray,
   listUnconnectedMaterialPinDefaults,
   materialPinDefaultPropertyKey,
-  readMaterialPinDefault,
-  resolveMaterialPinDefault,
   type MaterialPinDefault,
   type MaterialPinDefaultContext,
 } from "./pin-defaults";
 export {
   componentCount,
-  conversionFor,
-  convertMaterialValue,
-  isNumericType,
-  materialTypeLabel,
-  resolveGenericType,
-  typesAreAssignable,
   type MaterialConversion,
   type MaterialNumericType,
   type MaterialValueType,
 } from "./types";
 export {
-  collectFunctionDependencies,
-  customGlslBody,
   validateMaterialDocument,
   validateMaterialFunctionDocument,
   type MaterialCapabilities,
@@ -110,7 +92,6 @@ export {
 } from "./preview-state";
 export { isMaterialParameterNode, isPerInstanceParameter, materialParameterName, validateMaterialParameterNames } from "./parameters";
 export {
-  MATERIAL_PARAMETER_TYPES,
   canConvertMaterialConstantToParameter,
   canConvertMaterialParameterToConstant,
   convertMaterialConstantToParameter,
@@ -119,10 +100,9 @@ export {
   nameNewMaterialParameters,
   renameMaterialParameter,
   retypeMaterialParameter,
-  uniqueMaterialParameterName,
   type MaterialParameterValueType,
 } from "./parameter-authoring";
-export { customGlslInterface, customGlslInterfaceError, customGlslFunctionBodyError, newCustomGlslProperties, type CustomGlslPin } from "./custom-glsl";
+export { customGlslInterface, customGlslInterfaceError, newCustomGlslProperties, type CustomGlslPin } from "./custom-glsl";
 export { materialGradientStops, type MaterialGradientStop } from "./gradient";
 export * from "./vector-mask";
 export * from "./global-parameter";
@@ -131,7 +111,6 @@ export { buildMaterialParameterCatalog, materialParameterDefaults } from "./mate
 export { convertGlslToMaterial, type GlslToMaterialOptions, type GlslToMaterialResult } from "./glsl-to-material";
 export {
   MATERIAL_INSTANCE_MAX_DEPTH,
-  MATERIAL_INSTANCE_SCHEMA_VERSION,
   createDefaultMaterialInstanceDocument,
   isMaterialInstanceContent,
   materialInstanceDependencies,

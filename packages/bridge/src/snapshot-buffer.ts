@@ -141,16 +141,6 @@ export function writeActorSlot(
   buf[o + 15] = 0;
 }
 
-export function readActorSlot(buf: Float32Array, slotIndex: number): ActorSlot {
-  return readActorSlotInto(buf, slotIndex, {
-    slotId: 0,
-    position: { x: 0, y: 0, z: 0 },
-    rotation: { x: 0, y: 0, z: 0, w: 0 },
-    scale: { x: 0, y: 0, z: 0 },
-    flags: 0,
-  });
-}
-
 /** Decode one actor slot into caller-owned scratch without allocating. */
 export function readActorSlotInto(buf: Float32Array, slotIndex: number, out: ActorSlot): ActorSlot {
   const o = actorSlotOffset(slotIndex);

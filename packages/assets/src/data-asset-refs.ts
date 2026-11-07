@@ -172,7 +172,7 @@ export function mapDataGraphLiteralReferences<T>(value: T, map: ReferenceMapper,
 }
 
 /** Structure and Enum identity/type references also participate in a bundled import. */
-export function mapDataTypeReferences<T>(assetType: string, value: T, map: ReferenceMapper, definitionFields?: DataDefinitionFieldsResolver): T {
+function mapDataTypeReferences<T>(assetType: string, value: T, map: ReferenceMapper, definitionFields?: DataDefinitionFieldsResolver): T {
   if (assetType === "DataDefinition" || assetType === "DataTree") return mapDataAssetReferences(value, map, definitionFields);
   const payload = record(value);
   if (!payload || (assetType !== "Structure" && assetType !== "Enum")) return value;

@@ -38,7 +38,7 @@ export function resolvePaneMarqueePhase(options: {
   return "pending";
 }
 
-export function pointerMovedPastTolerance(
+function pointerMovedPastTolerance(
   from: { x: number; y: number },
   to: { x: number; y: number },
   tolerancePx = CONTEXT_MENU_MOVE_TOLERANCE_PX,
@@ -58,7 +58,7 @@ export function flowRectFromPoints(
   };
 }
 
-export function nodeMarqueeBox(node: MarqueeNode): FlowRect {
+function nodeMarqueeBox(node: MarqueeNode): FlowRect {
   return { x: node.position.x, y: node.position.y, ...graphNodeSize(node) };
 }
 

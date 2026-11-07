@@ -218,11 +218,6 @@ export class TimelineRuntime {
     if (object instanceof TimelineClipInstance) this.instances.delete(object);
   }
 
-  /** Live clip asset instances, in creation order. */
-  liveInstances(): TimelineClipInstance[] {
-    return [...this.instances].filter((instance) => !instance.destroyed);
-  }
-
   clip(owner: EngineObject | null | undefined, clipId: string): TimelineClipObject | null {
     if (!owner) return null;
     const clip = this.ensure(owner)?.get(clipId);

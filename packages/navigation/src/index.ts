@@ -9,7 +9,6 @@ export type {
   NavPoint,
   NavigationBackend,
 } from "./types";
-export { DEFAULT_NAV_MESH_SETTINGS } from "./types";
 export { recastToWorld, worldToRecast } from "./remap";
 export { facingYawFromVelocity } from "./facing";
 export {

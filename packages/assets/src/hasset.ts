@@ -18,14 +18,14 @@ export const DEFAULT_BLOB_THRESHOLD = 64 * 1024;
 /** Header dependency metadata layout this engine writes and reads. */
 export const ASSET_DEPENDENCY_METADATA_VERSION = 1;
 
-export const chunkLocatorSchema = z.union([
+const chunkLocatorSchema = z.union([
   z.object({
     inline: z.object({ offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), length: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) }),
   }),
   z.object({ blob: z.string().min(1) }),
 ]);
 
-export const chunkEntrySchema = z.object({
+const chunkEntrySchema = z.object({
   id: z.string(),
   kind: z.string(),
   mime: z.string(),
@@ -34,7 +34,7 @@ export const chunkEntrySchema = z.object({
   locator: chunkLocatorSchema,
 });
 
-export const hassetHeaderSchema = z.object({
+const hassetHeaderSchema = z.object({
   chunks: z.array(chunkEntrySchema),
   dependencies: z.array(z.string()),
   /** Complete references above; only these edges prepare an immediate consumer. */

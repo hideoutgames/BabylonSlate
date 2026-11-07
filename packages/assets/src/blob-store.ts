@@ -52,31 +52,3 @@ export function createVfsBlobStore(
     },
   };
 }
-
-/**
- * In-memory blob store for tests and headless tooling. It keeps its own copy
- * and returns copies, so no caller can change a stored blob after its hash.
- */
-export function createMemoryBlobStore(): BlobStore {
-  const blobs = new Map<string, Uint8Array>();
-  return {
-    async writeBlob(sha256, data) {
-      if (!blobs.has(sha256)) blobs.set(sha256, data.slice());
-    },
-    async readBlob(sha256, options) {
-      options?.signal?.throwIfAborted();
-      const data = blobs.get(sha256);
-      if (!data) throw new Error(`Blob not found: ${sha256}`);
-      return data.slice();
-    },
-    async hasBlob(sha256) {
-      return blobs.has(sha256);
-    },
-    async blobByteLength(sha256, options) {
-      options?.signal?.throwIfAborted();
-      const data = blobs.get(sha256);
-      if (!data) throw new Error(`Blob not found: ${sha256}`);
-      return data.byteLength;
-    },
-  };
-}

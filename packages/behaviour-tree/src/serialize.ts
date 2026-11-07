@@ -15,10 +15,10 @@ export const BT_NODE_TYPE = "bt.node";
 export const BT_PARENT_HANDLE = "parent";
 export const BT_CHILDREN_HANDLE = "children";
 /** Card width (224px, `TreeNode`) plus a sibling gap. */
-export const BT_LAYOUT_NODE_WIDTH = 248;
+const BT_LAYOUT_NODE_WIDTH = 248;
 export const BT_LAYOUT_NODE_HEIGHT = 180;
 /** Each decorator/service row is a 44px touch target on the host node. */
-export const BT_LAYOUT_ATTACHMENT_ROW = 44;
+const BT_LAYOUT_ATTACHMENT_ROW = 44;
 export const BT_DUPLICATE_OFFSET: BtEditorPosition = { x: 40, y: 40 };
 
 export type BtPin = {
@@ -29,7 +29,7 @@ export type BtPin = {
   type: { kind: "exec" };
 };
 
-export const BT_PARENT_PIN: BtPin = {
+const BT_PARENT_PIN: BtPin = {
   id: BT_PARENT_HANDLE,
   name: "parent",
   kind: "exec",
@@ -37,7 +37,7 @@ export const BT_PARENT_PIN: BtPin = {
   type: { kind: "exec" },
 };
 
-export const BT_CHILDREN_PIN: BtPin = {
+const BT_CHILDREN_PIN: BtPin = {
   id: BT_CHILDREN_HANDLE,
   name: "children",
   kind: "exec",

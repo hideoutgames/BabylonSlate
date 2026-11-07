@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   SeqLockSnapshotPair,
   TransferablePingPong,
-  readActorSlot,
   readSnapshotHeader,
   snapshotFloatCount,
   writeActorSlot,
   writeSnapshotHeader,
 } from "@haptic/bridge";
+import { readActorSlot } from "@haptic/bridge/read-actor-slot";
 import { createInProcessRuntime } from "@haptic/runtime";
 
 /**

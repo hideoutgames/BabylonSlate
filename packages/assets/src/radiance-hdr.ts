@@ -15,7 +15,7 @@ const MAX_HEADER_BYTES = 64 * 1024;
 const MAX_EDGE = 0x7fff;
 
 /** Radiance files start with `#?` and a program name such as `RADIANCE` or `RGBE`. */
-export function isRadianceHdr(bytes: Uint8Array): boolean {
+function isRadianceHdr(bytes: Uint8Array): boolean {
   return bytes.length >= 2 && bytes[0] === 0x23 && bytes[1] === 0x3f;
 }
 

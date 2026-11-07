@@ -81,17 +81,15 @@ export interface KeyframeTimelineProps {
   fitToken?: number;
   /** Above the track list, beside the ruler (a filter field). */
   header?: ReactNode;
-  /** Below the last track list row (Add Track). */
-  footer?: ReactNode;
   /** Track list and lane row height; 24 px by default, 44 for touch. */
   rowHeight?: number;
-  trackListWidth?: number;
   "aria-label": string;
   className?: string;
   "data-testid"?: string;
 }
 
 const RULER_PX = 24;
+const TRACK_LIST_WIDTH_PX = 264;
 const DRAG_PX = 4;
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_SLOP_PX = 8;
@@ -139,9 +137,7 @@ export function KeyframeTimeline({
   onLengthChange,
   fitToken,
   header,
-  footer,
   rowHeight = 24,
-  trackListWidth = 264,
   "aria-label": ariaLabel,
   className,
   "data-testid": testId,
@@ -582,7 +578,7 @@ export function KeyframeTimeline({
 
   const endX = timeToX(view, length);
   const playheadX = timeToX(view, time);
-  const gridStyle: CSSProperties = { gridTemplateColumns: `${trackListWidth}px minmax(0, 1fr)` };
+  const gridStyle: CSSProperties = { gridTemplateColumns: `${TRACK_LIST_WIDTH_PX}px minmax(0, 1fr)` };
 
   return (
     <div className={cn("grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] bg-background text-xs", className)} style={gridStyle} data-testid={testId}>
@@ -661,7 +657,6 @@ export function KeyframeTimeline({
                 onContextMenu={onRowContextMenu}
               />
             ))}
-            {footer}
           </div>
           <div
             ref={lanesRef}

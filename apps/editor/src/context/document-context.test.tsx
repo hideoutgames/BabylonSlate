@@ -18,11 +18,11 @@ import {
 } from "@haptic/core";
 import {
   DEFAULT_UNDO_BYTE_BUDGET,
-  MemorySecretStore,
   OpfsStorageAdapter,
   createAppSettingsStore,
   createDerivedStorage,
 } from "@haptic/vfs";
+import { MemorySecretStore } from "../../../../packages/vfs/src/test-support/memory-secret-store";
 import { FakeLockProvider } from "@haptic/source-control";
 import { createFakeWebLocks } from "../../../../packages/vfs/src/test-support/fake-web-locks";
 import { appendJournalLines, readJournalLines, sealJournalForRecovery } from "@haptic/assets";

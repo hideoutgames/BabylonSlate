@@ -40,17 +40,14 @@ export async function addMaterialPaletteNode(
   }
 }
 
-/** Imports an `e2e/fixtures` albedo PNG; `albedo.png` is a 1×1 pure red. */
-export async function importAlbedoTexture(
-  page: Page,
-  fixture = "albedo.png",
-): Promise<string> {
-  const assetPath = `assets/${path.basename(fixture, ".png")}.hasset`;
+/** Imports `e2e/fixtures/albedo.png`, a 1×1 pure red. */
+export async function importAlbedoTexture(page: Page): Promise<string> {
+  const assetPath = "assets/albedo.hasset";
   await openContentBrowser(page);
   await selectContentBrowserAssetsFolder(page);
   await page
     .getByTestId("content-browser-import-input")
-    .setInputFiles([path.join(process.cwd(), "e2e/fixtures", fixture)]);
+    .setInputFiles([path.join(process.cwd(), "e2e/fixtures/albedo.png")]);
   await expect(page.locator(`[data-asset-path="${assetPath}"]`)).toBeVisible({
     timeout: 15_000,
   });

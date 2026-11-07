@@ -175,22 +175,3 @@ export function normalizeTagContainer(value: unknown): TagContainer {
   }
   return { Tags: [...tags] };
 }
-
-/** A child matches its ancestors. None and unknown IDs never match. */
-export function matchesTag(
-  registry: TagRegistry,
-  value: Tag,
-  query: Tag,
-  exact = false,
-): boolean {
-  const { byId } = tagIndex(registry);
-  if (!query || !byId.has(query)) return false;
-  let current = byId.get(value);
-  if (exact) return current?.id === query;
-  // The bound also makes hand-authored cyclic parent tables fail safely.
-  for (let remaining = byId.size; current && remaining > 0; remaining--) {
-    if (current.id === query) return true;
-    current = byId.get(current.parentId);
-  }
-  return false;
-}

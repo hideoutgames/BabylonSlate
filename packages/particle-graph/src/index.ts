@@ -14,14 +14,9 @@ export {
   PARTICLE_RANDOM_LOCKS,
   PARTICLE_UNSUPPORTED_V1_TYPES,
   PARTICLE_VALUE_TYPE_OPTIONS,
-  isParticleSpineRole,
-  particleAngleUnitPin,
-  particleDegreesToRadians,
   particleNodeAngleUnit,
   particleNodeDefinitionFor,
   particleNodeValueType,
-  particlePaletteEntries,
-  particleRadiansToDegrees,
   type ParticleAngleUnit,
   type ParticleConditionTest,
   type ParticleLocalVariableScope,
@@ -34,16 +29,12 @@ export {
 } from "./catalog";
 export {
   PARTICLE_GRAPH_LIMITS,
-  PARTICLE_PARAMETER_NAME_MAX,
-  PARTICLE_GRAPH_SCHEMA_VERSION,
   PARTICLE_SPRITE_SHEET_LIMITS,
   createDefaultParticleGraphDocument,
   createDefaultParticleGraphSettings,
   newParticleNodeProperties,
   normalizeParticleGraphDocument,
   normalizeParticleGraphSettings,
-  normalizeParticleGraphParameters,
-  normalizeParticleNodeProperties,
   normalizeParticleParameterName,
   particleGraphDependencies,
   particleGraphMeshModels,
@@ -51,7 +42,6 @@ export {
   particleSpriteSheetSettings,
   setParticleNodeAngleUnit,
   setParticleNodeValueType,
-  syncParameterNodeTypes,
   type ParticleGraphDependencies,
   type ParticleGraphDocument,
   type ParticleGraphEdge,
@@ -61,7 +51,6 @@ export {
   type ParticleSpriteSheetSettings,
 } from "./document";
 export {
-  DEFAULT_PARTICLE_SPAWN,
   PARTICLE_SPAWN_LIMITS,
   PARTICLE_SPAWN_PRESETS,
   particleGraphSpawnEmitters,
@@ -71,8 +60,6 @@ export {
   type ParticleSpawnSettings,
 } from "./spawn";
 export {
-  canonicalParticleGradientStops,
-  defaultParticleGradientStops,
   particleGradientStops,
   type ParticleGradientStop,
 } from "./gradient";
@@ -90,50 +77,33 @@ export {
   clampParticlePinValue,
   listUnconnectedParticlePinDefaults,
   particlePinDefaultPropertyKey,
-  readParticlePinDefault,
-  resolveParticlePinDefault,
   type ParticlePinDefault,
 } from "./pin-defaults";
-export {
-  createParticleTypeResolver,
-  particleGenericGroup,
-  type ParticleTypeResolver,
+export type {
+  ParticleTypeResolver,
 } from "./resolve";
 export {
-  PARTICLE_CONSTANT_NODE_TYPES,
   convertParticleConstantToParameter,
   convertParticleParameterToConstant,
   particleConstantValueType,
-  particleParameterSnapshot,
-  particleParameterStartValue,
   reconcileParticleParameters,
   uniqueParticleParameterName,
   withParticleParameter,
   type ParticleParameterSnapshot,
 } from "./parameter-nodes";
 export {
-  PARTICLE_PARAMETER_CATEGORY,
-  PARTICLE_PARAMETER_SNAPSHOT_KEY,
   hydrateParticleGraphForEditor,
   particleConnectionIsAllowed,
   particleGraphToSerialized,
-  particleNodePropertiesFromData,
   particlePaletteNodes,
   particleParameterSnapshots,
   particlePinsAreCompatible,
-  pinsForParticleNode,
   serializedToParticleGraph,
   type ParticleGraphPin,
   type ParticlePaletteNode,
 } from "./serialize-particle-graph";
 export {
-  PARTICLE_NUMERIC_TYPES,
-  isParticleNumericType,
-  particleConversionFor,
-  particleTypeLabel,
-  particleTypesAreAssignable,
   resizeParticleValue,
-  resolveParticleGenericType,
   type ParticleConversion,
   type ParticleGenericResolution,
   type ParticleNumericType,

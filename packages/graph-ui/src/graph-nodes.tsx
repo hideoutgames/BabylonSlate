@@ -618,7 +618,7 @@ export function BlueprintNodeShell({
   );
 }
 
-export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
+function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
   const { renderNodeBody } = useGraphEditorContext();
   const nodeMenu = useNodeMenu(id);
   const pins = hasSerializedPins(data) ? data.__pins : [];

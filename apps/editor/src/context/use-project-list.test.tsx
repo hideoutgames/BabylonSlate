@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectFolderHandle } from "@haptic/core";
-import { MemoryAppSettingsStore } from "@haptic/vfs";
+import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
 import type { ProjectService } from "../services/project-service";
 import { useProjectList } from "./use-project-list";
 

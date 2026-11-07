@@ -44,7 +44,7 @@ export interface AutotilePieceSet {
 }
 
 /** Whether a tile membership is one of the set's pieces. */
-export function autotilePieceSetHas(set: AutotilePieceSet, terrain: TilesetTileTerrain | undefined): boolean {
+function autotilePieceSetHas(set: AutotilePieceSet, terrain: TilesetTileTerrain | undefined): boolean {
   return terrain?.id === set.terrainId && terrain.border === set.border;
 }
 

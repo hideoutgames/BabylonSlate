@@ -23,7 +23,7 @@ export function castDefaultClassId(
   return typeof keyed === "string" && keyed.trim() ? keyed.trim() : "Object";
 }
 
-export function castResultPinType(
+function castResultPinType(
   properties: Record<string, unknown>,
 ): PinType {
   return objectRef(castDefaultClassId(properties));

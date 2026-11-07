@@ -97,7 +97,7 @@ export function createDefaultRenderTargetCaptureProperties(): RenderTargetCaptur
     quality: "fast",
   };
 }
-export function normalizeRenderTargetCaptureQuality(value: unknown): RenderTargetCaptureQuality {
+function normalizeRenderTargetCaptureQuality(value: unknown): RenderTargetCaptureQuality {
   return (RENDER_TARGET_CAPTURE_QUALITIES as readonly unknown[]).includes(value)
     ? value as RenderTargetCaptureQuality : "fast";
 }

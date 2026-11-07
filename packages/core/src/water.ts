@@ -225,7 +225,7 @@ export const emptyWaterSample = (): WaterSample => ({
 });
 
 /** Newton steps after the Picard start when a query inverts world X/Z to its rest point. Fixed, so every host agrees. */
-export const WATER_WAVE_NEWTON_STEPS = 4;
+const WATER_WAVE_NEWTON_STEPS = 4;
 /** Inversion stops once the displaced rest point lands within this distance (metres) of the queried X/Z. */
 export const WATER_WAVE_INVERT_TOLERANCE = 1e-6;
 /**
@@ -233,7 +233,7 @@ export const WATER_WAVE_INVERT_TOLERANCE = 1e-6;
  * (`waterBankFadeLength`), so the rendered edge stays on the rest edge against walls and docks and the surface
  * covers exactly the rest footprint.
  */
-export const WATER_BANK_FADE_ENVELOPES = 4;
+const WATER_BANK_FADE_ENVELOPES = 4;
 
 /**
  * Slots of the `out` array written by `evaluateWaterSpectrum` (0-10 and 13) and `invertWaterWaves` (0-13). Derivatives
@@ -244,7 +244,7 @@ export const WaterWaveSlot = {
   height: 0, offsetX: 1, offsetZ: 2, slopeX: 3, slopeZ: 4, jacobianXX: 5, jacobianXZ: 6, jacobianZZ: 7,
   heightRate: 8, offsetRateX: 9, offsetRateZ: 10, restX: 11, restZ: 12, jacobianZX: 13,
 } as const;
-export const WATER_WAVE_OUTPUT_SIZE = 14;
+const WATER_WAVE_OUTPUT_SIZE = 14;
 /** Reusable output for `evaluateWaterSpectrum` and `invertWaterWaves`. */
 export const createWaterWaveOutput = (): Float64Array => new Float64Array(WATER_WAVE_OUTPUT_SIZE);
 

@@ -18,7 +18,7 @@ function savePinType(type: string, typeClassId: unknown): PinType {
  * Stable field ids are authored in nodes; display names may change freely. `typeClassId` names a Structure
  * field's Structure or an Enum field's Enum; a Map field's key uses `keyTypeId` and `keyTypeClassId` the same way.
  */
-export function saveFieldPinType(properties: Record<string, unknown>): PinType {
+function saveFieldPinType(properties: Record<string, unknown>): PinType {
   if (typeof properties.typeId !== "string") return BOXED_WILDCARD;
   const base = savePinType(properties.typeId, properties.typeClassId);
   if (properties.container === "array") return arrayOf(base);

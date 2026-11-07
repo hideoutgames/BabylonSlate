@@ -107,8 +107,6 @@ export class TickPipeline {
   /** Every timed phase but physics. */
   get lastScriptMs(): number { return this._lastScriptMs; }
   get lastPhysicsMs(): number { return this._lastPhysicsMs; }
-  /** The last tick's milliseconds per `TICK_TIMING_PHASES` entry; read it, never keep it. */
-  get lastPhaseMs(): Readonly<Float64Array> { return this._lastPhaseMs; }
   get recorder(): RuntimeDiagnosticRecorder | null { return this.diagnosticRecorder; }
   get lastTrace(): TracePayload | null { return this._lastTrace; }
 

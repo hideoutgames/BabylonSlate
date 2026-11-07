@@ -125,10 +125,6 @@ export class NodeRegistry {
   list(): NodeDefinition[] {
     return [...this.defs.values()];
   }
-
-  listByCategory(category: string): NodeDefinition[] {
-    return this.list().filter((d) => d.category === category);
-  }
 }
 
 export function pin(

@@ -141,7 +141,7 @@ export function unitProfile(args) {
   return args.length ? "focused" : "dom";
 }
 
-export async function editorTests(options = {}) {
+async function editorTests(options = {}) {
   await vitest(["--project", "node", "apps/editor"], {
     ...options,
     profile: "unit",
@@ -181,7 +181,7 @@ export async function editorTests(options = {}) {
   }
 }
 
-export async function fullVerification(options = {}) {
+async function fullVerification(options = {}) {
   const phase = (id, command, execute, scope) =>
     cachedVerificationPhase({ id, command, scope }, execute, {
       env: { ...process.env, ...options.env },

@@ -17,8 +17,8 @@ import {
   placeTilemapClip,
   retargetTilemapClip,
   tilemapClipLostTiles,
-  tilemapClipTileCount,
   tilemapSelectionExtent,
+  type TilemapClip,
 } from "./tilemap-selection";
 
 /** A bounded map of `width` × `height` with layers "a" and "b", chunks of 4 so blocks cross chunk borders. */
@@ -37,6 +37,11 @@ function twoLayerMap(width = 12, height = 6): TilemapPayload {
 function paint(map: TilemapPayload, layerId: string, rows: readonly string[], left = 0, top = rows.length - 1): TilemapPayload {
   const writes = rows.flatMap((row, at) => [...row].map((char, x) => ({ x: left + x, y: top - at, id: char === "." ? 0 : Number(char) })));
   return setTiles(map, layerId, writes);
+}
+
+/** The non-empty cells a clip carries, over every layer. */
+function clipTiles(clip: TilemapClip): number {
+  return clip.layers.reduce((sum, layer) => sum + layer.chunks.reduce((cells, chunk) => cells + chunk.tiles.filter((gid) => gid !== 0).length, 0), 0);
 }
 
 /** One layer's cells `left`..`left + width - 1` × `bottom`..`top`, drawn top to bottom. */
@@ -78,11 +83,11 @@ describe("copyTilemapCells", () => {
     map = paint(map, "b", ["5.."], 3, 3);
     const one = copyTilemapCells(map, { minX: 3, minY: 3, maxX: 5, maxY: 4 }, "a");
     expect([one.width, one.height, one.allLayers, one.layers.map((layer) => layer.layerId)]).toEqual([3, 2, false, ["a"]]);
-    expect(tilemapClipTileCount(one)).toBe(4);
+    expect(clipTiles(one)).toBe(4);
     // Placed on an empty map at 0, 0, the clip draws the block as it was.
     expect(draw(placeTilemapClip(twoLayerMap(), one, { x: 0, y: 0 }), "a", { width: 4, top: 1 })).toEqual(["12..", ".34."]);
     const all = copyTilemapCells(map, { minX: 3, minY: 3, maxX: 5, maxY: 4 }, null);
-    expect([all.allLayers, all.layers.map((layer) => layer.layerId), tilemapClipTileCount(all)]).toEqual([true, ["a", "b"], 5]);
+    expect([all.allLayers, all.layers.map((layer) => layer.layerId), clipTiles(all)]).toEqual([true, ["a", "b"], 5]);
   });
 
   it("takes whole chunks of a rect on the chunk grid as they are, without reading their cells", () => {
@@ -90,7 +95,7 @@ describe("copyTilemapCells", () => {
     const source = map.layers[0]!.chunks.find((chunk) => chunk.cx === 1 && chunk.cy === 0)!;
     const clip = copyTilemapCells(map, { minX: 4, minY: 0, maxX: 11, maxY: 5 }, "a");
     expect(clip.layers[0]!.chunks.map((chunk) => [chunk.cx, chunk.cy, chunk.tiles === source.tiles])).toEqual([[0, 0, true]]);
-    expect(tilemapClipTileCount(clip)).toBe(16);
+    expect(clipTiles(clip)).toBe(16);
   });
 });
 
@@ -199,14 +204,14 @@ describe("selections of every layer with a hidden layer", () => {
     const { hidden } = maps();
     expect(tilemapSelectionExtent(hidden, null)).toEqual({ minX: 0, minY: 0, maxX: 1, maxY: 0 });
     const clip = copyTilemapCells(hidden, rect, null);
-    expect([clip.allLayers, clip.layers.map((layer) => layer.layerId), tilemapClipTileCount(clip)]).toEqual([true, ["a"], 2]);
+    expect([clip.allLayers, clip.layers.map((layer) => layer.layerId), clipTiles(clip)]).toEqual([true, ["a"], 2]);
     const moved = moveTilemapCells(hidden, rect, null, { x: 3, y: 2 });
     expect(draw(moved, "a", { width: 6, top: 2 })).toEqual(["...12.", "......", "......"]);
     expect(moved.layers[1]).toBe(hidden.layers[1]);
     const erased = eraseTilemapCells(hidden, rect, null);
     expect([draw(erased, "a", { width: 3, top: 0 }), erased.layers[1]]).toEqual([["..."], hidden.layers[1]]);
     // One layer still acts on a hidden paint layer.
-    expect(tilemapClipTileCount(copyTilemapCells(hidden, rect, "b"))).toBe(2);
+    expect(clipTiles(copyTilemapCells(hidden, rect, "b"))).toBe(2);
   });
 
   it("pastes a clip of every layer into the visible layers only, and counts only their tiles as cut off", () => {

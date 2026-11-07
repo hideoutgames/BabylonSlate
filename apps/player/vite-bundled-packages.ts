@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Plugin } from "vite";
 
 /** npm package that owns a bundled module id, from its last `node_modules/` segment. */
-export function packageOfModuleId(id: string): string | null {
+function packageOfModuleId(id: string): string | null {
   const normalized = id.replace(/\\/g, "/").replace(/^\0/, "");
   const at = normalized.lastIndexOf("node_modules/");
   if (at < 0) return null;

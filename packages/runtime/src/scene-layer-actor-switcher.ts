@@ -1,6 +1,6 @@
 import { Actor, SceneLayerActorSwitcher, type ClassRegistry } from "@haptic/object-model";
 
-export type SceneLayerActorEntry = { classId: string; defaults: Record<string, unknown> };
+type SceneLayerActorEntry = { classId: string; defaults: Record<string, unknown> };
 
 /** Strings remain convenient graph array inputs; authored entries carry defaults. */
 function actorEntry(value: unknown): SceneLayerActorEntry | null {

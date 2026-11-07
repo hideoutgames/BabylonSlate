@@ -7,7 +7,7 @@ import tseslint from "typescript-eslint";
 
 const REACT_PATTERNS = ["react", "react/*", "react-dom", "react-dom/*"];
 const BABYLON_PATTERNS = ["@babylonjs/*", "@babylonjs/**"];
-const CAPACITOR_PATTERNS = ["@capacitor/*", "@capacitor/**", "@daniele-rolli/*"];
+const CAPACITOR_PATTERNS = ["@capacitor/*", "@capacitor/**"];
 
 /**
  * Import-boundary rules from engineplan section 2.2. Patterns are used rather
@@ -136,8 +136,8 @@ const physicsNoReactNoCapacitor = babylonBoundary(
 
 /**
  * Navigation may load Recast wasm (`@recast-navigation/core` / `generators`)
- * but must not import React, Babylon, Capacitor, or the editor-only
- * `@recast-navigation/babylon` helper (engineplan section 2.2 / §14.2).
+ * but must not import React, Babylon, Capacitor, or `@recast-navigation/babylon`,
+ * which is not a published package and must not be added (engineplan section 2.2 / §14.2).
  */
 const navigationNoReactNoBabylon = boundary(
   "boundary/navigation",
@@ -155,7 +155,7 @@ const navigationNoReactNoBabylon = boundary(
     {
       group: ["@recast-navigation/babylon", "@recast-navigation/babylon/*"],
       message:
-        "@recast-navigation/babylon is editor-only debug draw; keep it out of packages/navigation.",
+        "@recast-navigation/babylon is not a published package and must not be added (engineplan section 2.2).",
     },
     {
       group: CAPACITOR_PATTERNS,

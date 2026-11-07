@@ -79,13 +79,13 @@ export interface JournalLine {
   command: { type: string; [key: string]: unknown };
 }
 
-export type CommandReviver = (
+type CommandReviver = (
   payload: Record<string, unknown>,
 ) => EditCommand<unknown>;
 
 const commandRevivers = new Map<string, CommandReviver>();
 
-export function registerCommandReviver(
+function registerCommandReviver(
   type: string,
   reviver: CommandReviver,
 ): void {
@@ -380,7 +380,7 @@ function coalesceActorsTransformsLines(
   return { ...next, command: { ...next.command, entries } };
 }
 
-export function registerGraphCommandRevivers(): void {
+function registerGraphCommandRevivers(): void {
   registerCommandReviver("graph.moveNode", createMoveNodeCommandFromJson);
   registerCommandReviver("graph.addEdge", createAddEdgeCommandFromJson);
   registerCommandReviver("graph.removeEdge", createRemoveEdgeCommandFromJson);
@@ -409,7 +409,7 @@ export function registerGraphCommandRevivers(): void {
   );
 }
 
-export function registerSceneCommandRevivers(): void {
+function registerSceneCommandRevivers(): void {
   registerCommandReviver("scene.setActorSuppressedComponents", createSetActorSuppressedComponentsCommandFromJson);
   registerCommandReviver("scene.setComponentMaterialInstance", createSetComponentMaterialInstanceCommandFromJson);
   registerCommandReviver("scene.setActorProperties", createSetActorPropertiesCommandFromJson);
@@ -504,7 +504,7 @@ export function registerSceneCommandRevivers(): void {
   );
 }
 
-export function registerAssetDocumentCommandRevivers(): void {
+function registerAssetDocumentCommandRevivers(): void {
   registerCommandReviver(
     "asset.setDocument",
     createSetAssetDocumentCommandFromJson,
