@@ -880,7 +880,7 @@ function buildScene(
     grid: { ...scene.settings.grid, tileSize: TILE },
   };
   scene.folders.push(...Object.values(FOLDERS).map((folder) => ({ ...folder, parentFolderId: null })));
-  const camera = scene.actors.find((entry) => entry.id === scene.settings.mainCameraActorId);
+  const camera = scene.actors.find((entry) => entry.id === scene.settings.defaultCameraActorId);
   const lens = camera?.components.find((component) => component.classId === "CameraComponent");
   if (!camera || !lens) throw new Error("FeatureTest FT_2D needs the default 2D camera.");
   lens.properties.orthographicSize = (MAP_H * TILE) / 2;

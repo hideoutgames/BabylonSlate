@@ -189,7 +189,6 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
     camera: ActorComponent,
   ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["camera"]> {
     const projection = camera.getVariable("projectionMode");
-    const settings = this.host.playScene()?.settings;
     return {
       projectionMode:
         projection === "orthographic" ? "orthographic" : "perspective",
@@ -197,9 +196,6 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
       orthographicSize: Number(camera.getVariable("orthographicSize") ?? 5),
       nearClip: Number(camera.getVariable("nearClip") ?? 0.1),
       farClip: Number(camera.getVariable("farClip") ?? 1000),
-      isDefault:
-        settings?.mainCameraActorId === actor.guid &&
-        settings.mainCameraComponentId === camera.guid,
     };
   }
 
@@ -310,8 +306,8 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
           component.classId === "2DTextComponent" ||
           component.classId === "2DRichTextComponent",
       );
-      const cameras = renderables.filter(component => component.classId === "CameraComponent");
-      const camera = cameras.find(component => this.cameraAssignPayload(actor, component).isDefault) ?? cameras[0];
+      // An actor is looked through its first Camera component.
+      const camera = renderables.find(component => component.classId === "CameraComponent");
       const light = renderables.find(component => component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent");
       this.host.emit({
         type: "assignMesh",

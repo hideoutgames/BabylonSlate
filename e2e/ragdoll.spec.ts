@@ -71,7 +71,7 @@ test("a UI-authored ragdoll articulates the real Mannequin in worker Play and st
   floor.transform.position = [0, -0.5, 0];
   floor.transform.scale = [20, 1, 20];
   scene.actors.push(floor);
-  const camera = scene.actors.find(entry => entry.id === scene.settings.mainCameraActorId)!;
+  const camera = scene.actors.find(entry => entry.id === scene.settings.defaultCameraActorId)!;
   camera.transform.position = [6, 5, 9];
   camera.transform.rotation = lookAtRotation([6, 5, 9], [0, 2, 0]);
   camera.components.find(component => component.classId === "CameraComponent")!.properties.fieldOfView = 50;

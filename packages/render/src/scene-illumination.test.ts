@@ -515,7 +515,7 @@ describe("syncAuthoredIllumination", () => {
         cameraActor("named", { projectionMode: "perspective" }),
       ],
       {
-        mainCameraActorId: "named",
+        defaultCameraActorId: "named",
         mainCameraComponentId: "named-camera",
       },
     );
@@ -532,7 +532,7 @@ describe("syncAuthoredIllumination", () => {
       { id: "fill", classId: HEMISPHERIC_FILL_LIGHT_CLASS_ID, properties: { intensity: 0.3 } },
       { id: "wide", classId: "CameraComponent", properties: { fieldOfView: 80 } },
       { id: "detail", classId: "CameraComponent", properties: { fieldOfView: 35 }, transform: { position: [5, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
-    ] })], { mainCameraActorId: "rig", mainCameraComponentId: "detail" });
+    ] })], { defaultCameraActorId: "rig", mainCameraComponentId: "detail" });
     syncAuthoredIllumination(scene, data, { stealActiveCamera: true });
     expect(scene.lights.filter(light => light.name.startsWith(AUTHORED_LIGHT_PREFIX))).toHaveLength(2);
     const selected = scene.activeCamera!;
@@ -554,7 +554,7 @@ describe("syncAuthoredIllumination", () => {
     syncAuthoredIllumination(
       scene,
       sceneWith([cameraActor("rig", { projectionMode: "perspective" })], {
-        mainCameraActorId: "gone",
+        defaultCameraActorId: "gone",
         mainCameraComponentId: "gone-camera",
       }),
       { stealActiveCamera: true },

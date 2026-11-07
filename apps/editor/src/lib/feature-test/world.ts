@@ -423,7 +423,7 @@ function createWorldScene(): SerializedScene {
   scene.name = FEATURE_TEST_WORLD_SCENE;
   // Basic 3D's empty placeholder actor has no role here.
   scene.actors = scene.actors.filter((entry) => entry.components.length > 0);
-  const camera = scene.actors.find((entry) => entry.id === scene.settings.mainCameraActorId);
+  const camera = scene.actors.find((entry) => entry.id === scene.settings.defaultCameraActorId);
   if (camera) {
     camera.transform = tf(WORLD_CAMERA.position, {
       rotation: lookAtRotation(WORLD_CAMERA.position, WORLD_CAMERA.target),

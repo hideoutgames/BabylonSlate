@@ -23,9 +23,8 @@ import { normalizeTimelineClips, type SerializedTimelineClip } from "./timeline-
  * (missing keys normalize to true). `grid.showGrid` is additive (missing keys
  * normalize to true so older scenes keep the editor grid). `showNavmesh` is
  * additive (missing keys normalize to false). Fog color/start/end,
- * `environmentTextureGuid`, `environmentSource`, and Default Camera ids are additive on v3 (missing
- * keys normalize to defaults; a Default Camera pick requires both actor and
- * component ids). v4 distinguishes automatic shadow capacity from a saved
+ * `environmentTextureGuid` and `environmentSource` are additive on v3 (missing
+ * keys normalize to defaults). v4 distinguishes automatic shadow capacity from a saved
  * manual local-light limit. Fog mode/density are additive on v4; missing mode
  * preserves linear fog in existing scenes.
  */
@@ -136,7 +135,7 @@ export interface SceneGridSettings {
   showGrid: boolean;
 }
 
-/** Rectangle the game camera frames in 2D, drawn as bounds in the viewport. */
+/** Rectangle a Layer Camera frames at zoom 1, drawn as the orange outline in the 2D viewport. */
 export interface SceneCameraBounds2D {
   width: number;
   height: number;
@@ -167,9 +166,12 @@ export interface SceneSettings {
   /** IBL cube texture asset guid; used only when `environmentSource` is `"texture"`, kept otherwise. */
   environmentTextureGuid: string | null;
   environmentLighting?: EnvironmentLightingOverrides;
-  /** Default Camera actor id; both ids required to resolve. */
-  mainCameraActorId: string | null;
-  mainCameraComponentId: string | null;
+  /**
+   * Default Camera: the placed actor Play possesses when the Scene starts. Play
+   * looks through its first Camera component; None, a missing actor or one
+   * without a Camera component leaves Play on the Scene's Layer Camera.
+   */
+  defaultCameraActorId: string | null;
   gravity: [number, number, number];
   fixedTimestepMs: number;
   /**
@@ -178,7 +180,10 @@ export interface SceneSettings {
    */
   physicsWorld: PhysicsWorldKind;
   grid: SceneGridSettings;
+  /** The Layer Camera's view at zoom 1 (Scene Layers: Layer Width and Height, the design canvas). */
   cameraBounds2D: SceneCameraBounds2D;
+  /** Where the Layer Camera starts: the XY centre of its view and of the orange outline. */
+  cameraLocation2D: [number, number];
   /** Editor viewport on-screen stick for flying/panning the camera. */
   editorJoystickEnabled: boolean;
   /** Editor viewport navmesh debug overlay. Missing keys normalize to false. */
@@ -286,8 +291,7 @@ export function createDefaultSceneSettings(
     environmentSource: "none",
     environmentTextureGuid: null,
     environmentLighting: {},
-    mainCameraActorId: null,
-    mainCameraComponentId: null,
+    defaultCameraActorId: null,
     gravity: [0, -9.81, 0],
     fixedTimestepMs: 16.6667,
     physicsWorld: viewportMode === "2d" ? "2d" : "3d",
@@ -301,6 +305,7 @@ export function createDefaultSceneSettings(
       showGrid: true,
     },
     cameraBounds2D: { width: 16, height: 9 },
+    cameraLocation2D: [0, 0],
     editorJoystickEnabled: true,
     showNavmesh: false,
     postProcessStack: [],
@@ -591,16 +596,31 @@ export function assertUniqueSceneActorIds(
   }
 }
 
-function normalizeMainCamera(
-  actorId: unknown,
-  componentId: unknown,
-): { mainCameraActorId: string | null; mainCameraComponentId: string | null } {
-  const mainCameraActorId = asNullableString(actorId);
-  const mainCameraComponentId = asNullableString(componentId);
-  if (!mainCameraActorId || !mainCameraComponentId) {
-    return { mainCameraActorId: null, mainCameraComponentId: null };
-  }
-  return { mainCameraActorId, mainCameraComponentId };
+/** A Camera Location: two finite numbers; anything else is the origin. */
+export function normalizeCameraLocation2D(value: unknown): [number, number] {
+  if (!Array.isArray(value)) return [0, 0];
+  const [x, y] = value as unknown[];
+  return [
+    typeof x === "number" && Number.isFinite(x) ? x : 0,
+    typeof y === "number" && Number.isFinite(y) ? y : 0,
+  ];
+}
+
+/**
+ * The Default Camera actor Play possesses at the start of the Scene, or null
+ * when it is None, missing, or has no Camera component (Play then stays on the
+ * Layer Camera).
+ */
+export function sceneDefaultCameraActor(scene: Pick<SerializedScene, "actors" | "settings">): SerializedActor | null {
+  const id = scene.settings.defaultCameraActorId;
+  if (!id) return null;
+  const actor = scene.actors.find((entry) => entry.id === id);
+  return actor && actorCameraComponent(actor) ? actor : null;
+}
+
+/** The Camera component an actor is looked through: its first one. */
+export function actorCameraComponent<T extends { classId: string }>(actor: { components: readonly T[] }): T | null {
+  return actor.components.find((component) => component.classId === "CameraComponent") ?? null;
 }
 
 /** Keep authored fog safe for both document loading and live viewport edits. */
@@ -657,10 +677,7 @@ export function normalizeSceneSettings(
     ...normalizeSceneFogSettings(source),
     ...normalizeEnvironmentSource(source.environmentSource, source.environmentTextureGuid),
     environmentLighting: normalizeEnvironmentLightingOverrides(source.environmentLighting),
-    ...normalizeMainCamera(
-      source.mainCameraActorId,
-      source.mainCameraComponentId,
-    ),
+    defaultCameraActorId: asNullableString(source.defaultCameraActorId),
     gravity: asNumberTuple3(source.gravity, defaults.gravity),
     fixedTimestepMs:
       typeof source.fixedTimestepMs === "number"
@@ -699,6 +716,7 @@ export function normalizeSceneSettings(
           ? bounds.height
           : defaults.cameraBounds2D.height,
     },
+    cameraLocation2D: normalizeCameraLocation2D(source.cameraLocation2D),
     editorJoystickEnabled: source.editorJoystickEnabled !== false,
     showNavmesh: source.showNavmesh === true,
     postProcessStack: normalizeScenePostProcessStack(source.postProcessStack),

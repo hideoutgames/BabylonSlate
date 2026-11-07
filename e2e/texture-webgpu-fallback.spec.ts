@@ -151,7 +151,7 @@ async function fixture(backend: Backend): Promise<Map<string, Uint8Array>> {
       components: [createMeshComponent("plain-mesh", "box")],
     }),
     sun,
-    ...scene.actors.filter((actor) => actor.id === scene.settings.mainCameraActorId),
+    ...scene.actors.filter((actor) => actor.id === scene.settings.defaultCameraActorId),
   ];
   files.set(MAIN_SCENE_FILE, await encodeAssetDocument({
     guid: startupSceneGuid, type: "Scene", name: "Main",

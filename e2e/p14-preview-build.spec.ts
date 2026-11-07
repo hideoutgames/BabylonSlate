@@ -57,7 +57,7 @@ async function coldFontProject(fontBytes: Uint8Array) {
   files.set("assets/ColdFont.scenelayer.hasset", await encodeAssetDocument({ guid: layerGuid, type: "SceneLayer", name: "ColdFont",
     version: versions.currentVersion("SceneLayer"), payload: layer as unknown as Record<string, unknown> }));
   const scene = createDefaultScene();
-  scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.mainCameraActorId);
+  scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.defaultCameraActorId);
   scene.settings.sceneLayers = [{ assetGuid: layerGuid, zOrder: 0, enabled: true }];
   files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ guid: "00000000-0000-4000-8000-000000000001", type: "Scene", name: "Main",
     version: versions.currentVersion("Scene"), payload: scene as unknown as Record<string, unknown> }));

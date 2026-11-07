@@ -15,6 +15,7 @@ import {
   GameSubsystem,
   Scene,
   SceneLayer,
+  SceneCameraManager,
   SceneStreamingActor,
   SceneLayerActorSwitcher,
   SceneSubsystem,
@@ -129,6 +130,8 @@ export class World {
 
   gameInstance: GameInstance | null = null;
   currentScene: Scene | null = null;
+  /** The session's Scene Camera Manager (fixed guid, never from `guidFactory`). */
+  readonly sceneCameraManager = new SceneCameraManager();
   /** Session GameSubsystems in class-id order. */
   private gameSubsystems: GameSubsystem[] = [];
   /** Current main Scene's SceneSubsystems in class-id order. */
@@ -545,6 +548,7 @@ export class World {
     ownerSceneGuid?: string | null;
     postProcessStack?: ScenePostProcessEntry[];
     layerBounds?: { width: number; height: number };
+    cameraLocation?: readonly [number, number] | null;
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }): SceneLayer {
@@ -595,6 +599,7 @@ export class World {
     assetGuid: string;
     sceneName: string;
     postProcessStack?: ScenePostProcessEntry[];
+    cameraLocation?: readonly [number, number] | null;
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }): Scene {

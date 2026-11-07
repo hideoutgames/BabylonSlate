@@ -117,7 +117,7 @@ function placeHub(ctx: FeatureTestContext): void {
 function createStressScene(): SerializedScene {
   const scene = createDefaultScene("3d");
   scene.name = "FT_Stress";
-  const camera = scene.actors.find((entry) => entry.id === scene.settings.mainCameraActorId);
+  const camera = scene.actors.find((entry) => entry.id === scene.settings.defaultCameraActorId);
   if (camera) {
     camera.transform = tf(FEATURE_TEST_STRESS_CAMERA.position, {
       rotation: lookAtRotation(FEATURE_TEST_STRESS_CAMERA.position, FEATURE_TEST_STRESS_CAMERA.target),

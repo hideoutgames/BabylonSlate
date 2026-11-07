@@ -407,9 +407,9 @@ export function captureSimulationScene(input: SimulationSceneCaptureInput): Simu
     };
     checkParents(actors, "scene.actors");
     for (const actor of actors) checkParents(actor.components, actor.id);
-    // A deleted default camera has the scene schema's documented None value.
-    if (scene.settings.mainCameraActorId && !actors.some((actor) => actor.id === scene.settings.mainCameraActorId && actor.components.some((component) => component.id === scene.settings.mainCameraComponentId))) {
-      scene.settings.mainCameraActorId = null; scene.settings.mainCameraComponentId = null;
+    // A deleted Default Camera actor has the scene schema's documented None value.
+    if (scene.settings.defaultCameraActorId && !actors.some((actor) => actor.id === scene.settings.defaultCameraActorId)) {
+      scene.settings.defaultCameraActorId = null;
     }
     // Exact final JSON accounting without materializing a full JSON string.
     const measured = new Budget(budget.maxBytes, budget.maxNodes);

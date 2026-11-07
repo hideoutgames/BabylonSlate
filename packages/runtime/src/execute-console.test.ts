@@ -147,10 +147,10 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.stop();
   });
 
-  it("projects the cursor from the remaining camera after the possessed actor slot is reused", async () => {
+  it("projects the cursor from the Layer Camera after the possessed actor's slot is reused", async () => {
     const commands: CommandMessage[] = [];
     const scene = createDefaultScene();
-    scene.settings.mainCameraActorId = "fallback";
+    scene.settings.defaultCameraActorId = "fallback";
     scene.actors = [
       createActor("selected", "Selected", {
         transform: { position: [20, 0, -10], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
@@ -188,8 +188,10 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
       commands.length = 0;
       runtime.resume();
       runtime.tick();
+      // Losing the possessed actor returns the view to the Scene's Layer Camera, not to the Default Camera
+      // it replaced, and never to the actor that now holds the old slot.
       expect(commands.some((command) => command.type === "debugDraw" &&
-        command.kind === "line" && command.start !== undefined && command.start.x > 2 && command.start.x < 4)).toBe(true);
+        command.kind === "line" && command.start !== undefined && command.start.z === -500)).toBe(true);
     } finally {
       runtime.stop();
     }

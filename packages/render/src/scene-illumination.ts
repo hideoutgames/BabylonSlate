@@ -593,7 +593,7 @@ export function applySceneEnvironment(
 }
 
 function resolveDefaultCameraKey(sceneData: SerializedScene): string | null {
-  const actorId = sceneData.settings.mainCameraActorId;
+  const actorId = sceneData.settings.defaultCameraActorId;
   const componentId = sceneData.settings.mainCameraComponentId;
   if (!actorId || !componentId) return null;
   const actor = sceneData.actors.find((entry) => entry.id === actorId);

@@ -107,8 +107,7 @@ describe("project schema", () => {
       DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
     );
     expect(cameraComponent?.properties.projectionMode).toBe("perspective");
-    expect(scene.settings.mainCameraActorId).toBe(camera!.id);
-    expect(scene.settings.mainCameraComponentId).toBe(cameraComponent!.id);
+    expect(scene.settings.defaultCameraActorId).toBe(camera!.id);
     expect(camera!.transform.position[2]).toBeLessThan(0);
     expect(camera!.transform.position[1]).toBeGreaterThan(0);
     expect(camera!.transform.rotation).toEqual([0, 0, 0, 1]);
@@ -130,7 +129,7 @@ describe("project schema", () => {
       camera!.components[0]?.properties.attemptPossessViewTarget,
     ).toBe(true);
     expect(camera!.components[0]?.properties.projectionMode).toBe("orthographic");
-    expect(scene.settings.mainCameraActorId).toBe(camera!.id);
+    expect(scene.settings.defaultCameraActorId).toBe(camera!.id);
   });
 
   it("normalizes missing 2D settings and drops duplicate sorting layers", () => {

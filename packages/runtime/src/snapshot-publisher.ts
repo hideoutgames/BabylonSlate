@@ -23,6 +23,8 @@ interface SnapshotPublisherHost {
   canPublish(): boolean;
   /** The actor the Play camera follows; its position moves the floating origin. */
   cameraActor(): Actor | null;
+  /** The main Scene's Layer Camera centre, which the floating origin follows while no camera actor is in view. */
+  layerCameraCentre(): { x: number; y: number } | null;
   applyOverlayLayouts(): void;
   retireDetachedStreams(): void;
   /** The removal pass despawned at least one actor. */
@@ -225,7 +227,9 @@ export class SnapshotPublisher {
     const findActor = this.findActor;
     const worldTransforms = this.poses.compose(findActor, actors, this.reportShearedActor);
     const cameraActor = this.host.cameraActor();
-    const cameraPosition = cameraActor ? worldTransforms.get(cameraActor.guid)?.position : undefined;
+    const layerCentre = cameraActor ? null : this.host.layerCameraCentre();
+    const cameraPosition = cameraActor ? worldTransforms.get(cameraActor.guid)?.position
+      : layerCentre ? { x: layerCentre.x, y: layerCentre.y, z: 0 } : undefined;
     if (cameraPosition) {
       const next = { x: Math.floor(cameraPosition.x / 1024) * 1024, y: Math.floor(cameraPosition.y / 1024) * 1024, z: Math.floor(cameraPosition.z / 1024) * 1024 };
       if (next.x !== this.origin.x || next.y !== this.origin.y || next.z !== this.origin.z) { this.origin = next; this.originGeneration++; }

@@ -13,7 +13,7 @@ import { setPreviewScene } from "./preview-parity";
 function localLightRoom(kind: "point" | "spot", count: number) {
   const scene = { ...createDefaultScene(), name: `Rendering Baseline ${kind}` };
   scene.actors = scene.actors.filter(
-    (actor) => actor.id === scene.settings.mainCameraActorId,
+    (actor) => actor.id === scene.settings.defaultCameraActorId,
   );
   const box = (
     id: string,

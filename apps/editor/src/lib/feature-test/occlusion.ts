@@ -31,7 +31,7 @@ export async function buildFeatureTestOcclusion(ctx: FeatureTestContext): Promis
   const scene: SerializedScene = createDefaultScene("3d");
   scene.name = OCCLUSION_SCENE;
   scene.actors = scene.actors.filter((entry) => entry.components.length > 0);
-  const camera = scene.actors.find((entry) => entry.id === scene.settings.mainCameraActorId);
+  const camera = scene.actors.find((entry) => entry.id === scene.settings.defaultCameraActorId);
   if (camera) camera.transform = tf(STREET_CAMERA.position, { rotation: lookAtRotation(STREET_CAMERA.position, STREET_CAMERA.target) });
   const add = (entry: SerializedActor) => ctx.addActor(entry, { scene });
 

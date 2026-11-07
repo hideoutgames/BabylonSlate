@@ -663,8 +663,7 @@ describe("component script API", () => {
   it("Possess on a CameraComponent emits possessCamera for the owner", async () => {
     const commands: CommandMessage[] = [];
     const settings = createDefaultSceneSettings();
-    settings.mainCameraActorId = "rig";
-    settings.mainCameraComponentId = "cam-1";
+    settings.defaultCameraActorId = "rig";
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,

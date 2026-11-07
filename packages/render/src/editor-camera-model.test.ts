@@ -121,7 +121,7 @@ describe("editor camera model", () => {
     const other = cameraActor("other");
     other.transform.position = [0, 0, 4];
     const data = { ...createDefaultScene(), actors: [primary, other] };
-    data.settings.mainCameraActorId = "primary";
+    data.settings.defaultCameraActorId = "primary";
     data.settings.mainCameraComponentId = "camera";
     sync.apply(data);
     const model = scene.getMeshByName(editorComponentMeshName("other", "camera")) as Mesh;

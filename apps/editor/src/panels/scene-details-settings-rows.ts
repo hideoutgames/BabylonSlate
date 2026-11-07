@@ -265,7 +265,7 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
       value: scene.settings.mainCameraComponentId,
       displayLabel: sceneComponentDisplayLabel(
         scene,
-        scene.settings.mainCameraActorId,
+        scene.settings.defaultCameraActorId,
         scene.settings.mainCameraComponentId,
       ),
       displayType: scene.settings.mainCameraComponentId
@@ -281,7 +281,7 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
           ...scene,
           settings: {
             ...scene.settings,
-            mainCameraActorId: null,
+            defaultCameraActorId: null,
             mainCameraComponentId: null,
           },
         }),

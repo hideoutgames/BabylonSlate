@@ -16,8 +16,11 @@ import {
   Actor,
   ActorComponent,
   EngineObject,
+  LayerCamera,
   MaterialObject,
   Scene,
+  SceneCameraManager,
+  SceneLayer,
   dispatchInterface,
   type InterfaceDispatchTarget,
   type TickContext,
@@ -231,6 +234,16 @@ export function createScriptContext(
       if (object instanceof ActorComponent && object.classId === "RenderTargetCaptureComponent" && name === "actorIds") {
         return host.canInvokeOwner(object) ? captureActorReferences(object, (id) => services.findActor?.(id)) : [];
       }
+      if (object instanceof SceneCameraManager) {
+        if (name === "layerCamera") return services.getMainSceneCamera?.() ?? null;
+        if (name === "cameraActor") return services.getCameraActor?.() ?? null;
+        if (name === "cameraComponent") return services.getCameraComponent?.() ?? null;
+      }
+      if (name === "layerCamera") {
+        // A Scene Layer's own camera, or the camera of the layer a Scene Layer Actor belongs to.
+        if (object instanceof SceneLayer) return object.camera;
+        if (object instanceof Actor) return services.getOwningSceneLayer?.(object)?.camera ?? null;
+      }
       return object?.getVariable(name);
     };
     context.setVariableOn = (object, name, value) => {
@@ -246,6 +259,11 @@ export function createScriptContext(
         if (host.canInvokeOwner(object) && setCaptureProperty(object, name as RenderTargetCaptureProperty, value, (id) => services.findActor?.(id))) {
           host.applyComponentVariable(object, name, value);
         }
+        return;
+      }
+      if (object instanceof LayerCamera && (name === "location" || name === "rotation" || name === "zoom")) {
+        const vector = value as { x?: unknown; y?: unknown } | null | undefined;
+        services.setLayerCamera?.(object, name === "location" ? { x: vector?.x, y: vector?.y } : { [name]: value });
         return;
       }
       if (object instanceof Scene && String(name ?? "") === "gravity") {

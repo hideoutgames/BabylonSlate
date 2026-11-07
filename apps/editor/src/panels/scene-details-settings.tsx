@@ -498,7 +498,7 @@ export function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
             ...scene,
             settings: {
               ...scene.settings,
-              mainCameraActorId: ref?.actorId ?? null,
+              defaultCameraActorId: ref?.actorId ?? null,
               mainCameraComponentId: ref?.componentId ?? null,
             },
           });

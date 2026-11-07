@@ -401,7 +401,7 @@ export function createEditorViewportTools({
     target: () => {
       if (!previewGameCamera || options.editorFlyEnabled?.() === false) return null;
       const sceneData = editorSync.serializedScene();
-      const actorId = sceneData?.settings.mainCameraActorId;
+      const actorId = sceneData?.settings.defaultCameraActorId;
       const componentId = sceneData?.settings.mainCameraComponentId;
       const actor = actorId ? sceneData?.actors.find((entry) => entry.id === actorId) : undefined;
       if (!actor || actor.locked || !actor.components.some(

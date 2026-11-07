@@ -11,7 +11,6 @@ import type {
   ScalabilityRequest,
   ScalabilityResult,
   ScalabilitySnapshot,
-  SceneLayerCamera,
   SceneStreamingState,
   WaterSample,
 } from "@haptic/core";
@@ -22,9 +21,11 @@ import type {
   ClassRegistry,
   EngineObject,
   InterfaceRegistry,
+  LayerCamera,
   MaterialInstanceObject,
   PostProcessMaterialObject,
   Scene,
+  SceneCameraManager,
   SceneLayer,
   TimelineClipInstance,
   TimelineClipObject,
@@ -264,10 +265,20 @@ export interface ScriptHostServices {
   registerScenePostProcess?(materialGuid: string): RegisteredPostProcess<Scene> | null;
   /** Unregister Scene Post-Processing on the current Scene. */
   unregisterScenePostProcess?(materialGuid: string): void;
-  /** A live Scene Layer instance's camera; null once the layer is gone. */
-  getSceneLayerCamera?(layerGuid: string): SceneLayerCamera | null;
-  /** Change any of a layer camera's centre, roll and zoom; values that are not finite numbers keep the current ones. */
-  setSceneLayerCamera?(layerGuid: string, changes: { x?: unknown; y?: unknown; rotation?: unknown; zoom?: unknown }): void;
+  /**
+   * Change any of a Layer Camera's centre, roll and zoom (a Scene Layer
+   * instance's or the main Scene's); values that are not finite numbers keep
+   * the current ones, and a destroyed camera ignores it.
+   */
+  setLayerCamera?(camera: LayerCamera, changes: { x?: unknown; y?: unknown; rotation?: unknown; zoom?: unknown }): void;
+  /** The session's Scene Camera Manager. */
+  getSceneCameraManager?(): SceneCameraManager | null;
+  /** The main Scene's Layer Camera; null between Scenes. */
+  getMainSceneCamera?(): LayerCamera | null;
+  /** The possessed actor the main Scene's view looks through; null while its Layer Camera is in view. */
+  getCameraActor?(): Actor | null;
+  /** That actor's Camera component in view; null while the Layer Camera is in view. */
+  getCameraComponent?(): ActorComponent | null;
   /** The live Scene Layer an actor (or a component's actor) belongs to; null for world actors. */
   getOwningSceneLayer?(target: EngineObject | null): SceneLayer | null;
   playSound?(

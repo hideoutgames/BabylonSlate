@@ -2,7 +2,7 @@ import {
   isOverlayLayoutClass, parseOverlayLayoutProperties, supportsOverlayVisualStyle,
   type TweenValueType,
 } from "@haptic/core";
-import { Actor, ActorComponent, EngineObject, SceneLayer, engineScriptApiFor } from "@haptic/object-model";
+import { Actor, ActorComponent, EngineObject, LayerCamera, engineScriptApiFor } from "@haptic/object-model";
 import type { ScriptHostServices } from "./script-host";
 import type { TweenReference } from "./tween-runtime";
 import { applyTweenTransform, tweenWorldTransformDepth, type TweenTransformChannel } from "./tween-transforms";
@@ -15,8 +15,8 @@ const propertyTypes: Record<string, TweenValueType> = {
   "text.color": "color", "text.outline": "float", "text.outlineColor": "color", "text.wrapSize": "vec2",
 };
 
-const sceneLayerCameraTypes: Record<string, TweenValueType> = {
-  "sceneLayer.cameraLocation": "vec2", "sceneLayer.cameraRotation": "float", "sceneLayer.cameraZoom": "float",
+const layerCameraTypes: Record<string, TweenValueType> = {
+  "layerCamera.location": "vec2", "layerCamera.rotation": "float", "layerCamera.zoom": "float",
 };
 
 /** Preserve native array storage while user variables retain their authored value shape. */
@@ -67,14 +67,14 @@ export function propertyTweenReference(
       },
     };
   }
-  if (kind === "sceneLayer") {
-    if (!(target instanceof SceneLayer) || sceneLayerCameraTypes[property] !== type) return null;
+  if (kind === "layerCamera") {
+    if (!(target instanceof LayerCamera) || layerCameraTypes[property] !== type) return null;
+    // The same channel as a Tween on its Get Camera Location / Rotation / Zoom, so the newer one wins.
     return {
-      identity: target, property, owner: target, channels: [property],
+      identity: target, property, owner: target, channels: [`variable:${channel}`],
       set(value) {
         const vector = value as { x: number; y: number };
-        services.setSceneLayerCamera?.(target.guid, channel === "cameraLocation" ? { x: vector.x, y: vector.y }
-          : channel === "cameraRotation" ? { rotation: value } : { zoom: value });
+        services.setLayerCamera?.(target, channel === "location" ? { x: vector.x, y: vector.y } : { [channel!]: value });
       },
     };
   }

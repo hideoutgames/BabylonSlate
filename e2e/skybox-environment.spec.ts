@@ -34,7 +34,7 @@ function skyLitScene(environmentSource: EnvironmentSource) {
   scene.settings.environmentSource = environmentSource;
   scene.settings.grid.showGrid = false;
   scene.settings.shadowOverrides = { enabled: false };
-  const camera = scene.actors.find((actor) => actor.id === scene.settings.mainCameraActorId)!;
+  const camera = scene.actors.find((actor) => actor.id === scene.settings.defaultCameraActorId)!;
   camera.transform = { ...identitySerializedTransform(), position: [0, 0, -4] };
   scene.actors = [
     camera,

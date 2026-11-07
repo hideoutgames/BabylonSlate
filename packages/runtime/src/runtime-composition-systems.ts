@@ -118,11 +118,11 @@ export function createCamera(rt: RuntimeComposition, options: RuntimeDriverOptio
     slot: (actor) => rt.actorSlot(actor),
     slotOwner: (slotId) => rt.renderSlots.owner(slotId),
     guidSlot: (guid) => rt.guidSlot(guid),
-    streams: () => rt.streams,
     cursor: () => rt.resolvedInput.cursor,
     touches: () => rt.resolvedInput.touches,
     overlay: () => rt.overlay,
     physics: () => rt.physics,
+    warn: (message) => rt.reportLog(message, "warning", "Camera"),
     emit: (command) => rt.emit(command),
   });
 }
@@ -320,6 +320,7 @@ export function createSnapshots(rt: RuntimeComposition, options: RuntimeDriverOp
     lastPhysicsMs: () => rt.ticks.lastPhysicsMs,
     canPublish: () => rt.admission.canTickScene() || rt.admission.hasReadyLayers(),
     cameraActor: () => rt.camera.cameraActor(),
+    layerCameraCentre: () => rt.world.currentScene?.camera.state ?? null,
     applyOverlayLayouts: () => rt.overlay.applyLayouts(),
     retireDetachedStreams: () => rt.streams.retireDetached(),
     removedActors: () => rt.behaviourTrees.emitSnapshot(true),
