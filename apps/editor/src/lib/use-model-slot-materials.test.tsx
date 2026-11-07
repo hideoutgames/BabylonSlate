@@ -20,10 +20,11 @@ afterEach(() => {
 describe("useModelSlotMaterials", () => {
   it("reads the saved Material key from the registry once per registry change, not on every render", () => {
     const hostRef = { current: null };
+    type Slot = { index: number; name: string; materialGuid: string | null };
     const { rerender } = renderHook(
-      ({ slots }: { slots: Array<{ index: number; name: string; materialGuid: string | null }> }) =>
+      ({ slots }: { slots: Slot[] }) =>
         useModelSlotMaterials({ hostRef, engine: null, slots, generation: 0, onApplied: () => {} }),
-      { initialProps: { slots: [{ index: 0, name: "Body", materialGuid: null }] } },
+      { initialProps: { slots: [{ index: 0, name: "Body", materialGuid: null }] as Slot[] } },
     );
     expect(registry.list).toHaveBeenCalledTimes(1);
 

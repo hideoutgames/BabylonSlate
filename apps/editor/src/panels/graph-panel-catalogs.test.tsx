@@ -80,7 +80,7 @@ it("overlays an edited Class tab without re-reading any Class header", () => {
   revisions.documentRevisions = { graph: 2 };
   rerender();
   // The open tab wins with its unsaved members; every header graph is the one already parsed.
-  expect(result.current.otherClassGraphs.Door?.members.map((member) => member.name)).toEqual(["Open", "Locked"]);
+  expect(result.current.otherClassGraphs.Door?.members?.map((member) => member.name)).toEqual(["Open", "Locked"]);
   expect(result.current.otherClassGraphs.Lamp).toBeDefined();
   expect(list).not.toHaveBeenCalled();
   // Subsystems read only which Classes are open, so an edit keeps them.
