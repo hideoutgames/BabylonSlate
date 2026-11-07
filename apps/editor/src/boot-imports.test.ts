@@ -18,10 +18,13 @@ function resolveModule(from: string, specifier: string): string | null {
   return null;
 }
 
-/** Editor modules `main.tsx` reaches through static relative imports. */
-function bootClosure(): Set<string> {
+/** Static imports of CodeMirror and its Lezer parsers. */
+const CODE_EDITOR_IMPORT = /^\s*(?:import|export)\s+(?!type\b)(?:[^'"]*?\sfrom\s+)?["']@(?:codemirror|lezer)\//m;
+
+/** Editor modules `entry` reaches through static relative imports. */
+function staticClosure(entry: string): Set<string> {
   const seen = new Set<string>();
-  const stack = [join(SRC, "main.tsx")];
+  const stack = [join(SRC, entry)];
   while (stack.length > 0) {
     const file = stack.pop()!;
     if (seen.has(file)) continue;
@@ -36,10 +39,20 @@ function bootClosure(): Set<string> {
 
 describe("editor boot imports", () => {
   it("keep the Content Browser helpers barrel and its New Asset factories out of the Homepage preload", () => {
-    const closure = [...bootClosure()].map((file) => relative(SRC, file));
+    const closure = [...staticClosure("main.tsx")].map((file) => relative(SRC, file));
     // The audit follows the provider's services, so an empty result is a finding.
     expect(closure).toContain("services/project-service.ts");
     expect(closure).toContain("services/play-content-service.ts");
     expect(closure.filter((file) => file === "lib/content-browser-helpers.ts" || file === "lib/new-asset-result.ts")).toEqual([]);
+  });
+
+  it("keep CodeMirror out of the editor route, which loads it with the first code body shown", () => {
+    const closure = [...staticClosure("routes/editor-route.tsx")];
+    const relativeClosure = closure.map((file) => relative(SRC, file));
+    // Every screen that shows code is reached, so an empty result is a finding.
+    for (const screen of ["panels/graph-panel.tsx", "panels/inspector-graph-node-details.tsx", "components/material-editor.tsx",
+      "components/material-custom-glsl.tsx", "components/project-extension-dialogs.tsx", "components/lazy-code-editors.tsx"])
+      expect(relativeClosure).toContain(screen);
+    expect(closure.filter((file) => CODE_EDITOR_IMPORT.test(readFileSync(file, "utf8"))).map((file) => relative(SRC, file))).toEqual([]);
   });
 });

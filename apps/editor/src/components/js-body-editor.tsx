@@ -38,10 +38,6 @@ function changedSpan(current: string, next: string): { from: number; to: number;
   return { from, to: currentEnd, insert: next.slice(from, nextEnd) };
 }
 
-export function JsBodyEditor(props: JsBodyEditorProps) {
-  return <CodeBodyEditor {...props} language="javascript" />;
-}
-
 const ACCESSORY = [
   "{",
   "}",
@@ -59,8 +55,8 @@ const ACCESSORY = [
 ] as const;
 
 /**
- * Touch-friendly ExecuteJavaScript body editor (CodeMirror 6).
- * Loaded only when the Details panel needs it.
+ * Touch-friendly code body editor (CodeMirror 6). Screens render it through
+ * `LazyCodeBodyEditor`, so CodeMirror loads only when a code body is shown.
  */
 export function CodeBodyEditor({ value, onChange, bodyLine, language, names = [], ariaLabel, readOnly: readOnlyProp = false }: JsBodyEditorProps & { language: "javascript" | "glsl" }) {
   const inheritedReadOnly = useEditorReadOnly();
