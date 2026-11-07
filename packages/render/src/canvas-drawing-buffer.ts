@@ -1,4 +1,4 @@
-export type CssSizedCanvas = {
+type CssSizedCanvas = {
   clientWidth: number;
   clientHeight: number;
   width: number;

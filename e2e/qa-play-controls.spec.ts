@@ -13,8 +13,7 @@ test("D780: Inspector switches cameras and destroys only the live actor while pa
     transform: { position: [index * 5, 2, -10], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
     components: [{ id: `${id}-lens`, classId: "CameraComponent", properties: {} }],
   }));
-  scene.settings.mainCameraActorId = "camera-a";
-  scene.settings.mainCameraComponentId = "camera-a-lens";
+  scene.settings.defaultCameraActorId = "camera-a";
   await setPreviewScene(page, scene);
   await expect(page.getByTestId("tree-row-actor:camera-a")).toContainText("Camera (camera-a)");
   await expect(page.getByTestId("tree-row-actor:camera-b")).toContainText("Camera (camera-b)");

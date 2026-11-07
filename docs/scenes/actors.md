@@ -74,7 +74,7 @@ Some components work only in world scenes and others only in [Scene Layers](scen
 
 ## Actors in scripts
 
-- [Spawn Actor](../scripting/class/spawn-actor.md) and [Destroy Actor](../scripting/class/destroy-actor.md) create and remove actors during Play.
+- [Spawn Actor (Async)](../scripting/class/spawn-actor-async.md) or [Spawn Actor (Blocking)](../scripting/class/spawn-actor-blocking.md) create actors during Play, and [Destroy Actor](../scripting/class/destroy-actor.md) removes them.
 - [Get Actor Of Class](../scripting/class/get-actor-of-class.md) and [Get All Actors Of Class](../scripting/class/get-all-actors-of-class.md) find placed actors.
 - [Set Actor Location](../scripting/class/set-actor-location.md) and [Attach Actor](../scripting/class/attach-actor.md) move and parent them.
 

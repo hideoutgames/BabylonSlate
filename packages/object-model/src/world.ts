@@ -15,6 +15,7 @@ import {
   GameSubsystem,
   Scene,
   SceneLayer,
+  SceneCameraManager,
   SceneStreamingActor,
   SceneLayerActorSwitcher,
   SceneSubsystem,
@@ -129,6 +130,8 @@ export class World {
 
   gameInstance: GameInstance | null = null;
   currentScene: Scene | null = null;
+  /** The session's Scene Camera Manager (fixed guid, never from `guidFactory`). */
+  readonly sceneCameraManager = new SceneCameraManager();
   /** Session GameSubsystems in class-id order. */
   private gameSubsystems: GameSubsystem[] = [];
   /** Current main Scene's SceneSubsystems in class-id order. */
@@ -545,6 +548,7 @@ export class World {
     ownerSceneGuid?: string | null;
     postProcessStack?: ScenePostProcessEntry[];
     layerBounds?: { width: number; height: number };
+    cameraLocation?: readonly [number, number] | null;
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }): SceneLayer {
@@ -595,6 +599,7 @@ export class World {
     assetGuid: string;
     sceneName: string;
     postProcessStack?: ScenePostProcessEntry[];
+    cameraLocation?: readonly [number, number] | null;
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }): Scene {
@@ -788,7 +793,12 @@ export class World {
     }
   }
 
-  private phaseContext(tickIndex: number): TickContext {
+  /**
+   * One context per tick, shared by every phase: `dt` and the input provider
+   * are fixed for the tick. Latent script contexts keep it, so it is never reused
+   * for a later tick.
+   */
+  private tickContext(tickIndex: number): TickContext {
     return {
       dt: this.clock.dt,
       tickIndex,
@@ -802,10 +812,9 @@ export class World {
     return !this.ended && this.canTickScene();
   }
 
-  private runPhase(phase: TickPhase, tickIndex: number): void {
+  private runPhase(phase: TickPhase, ctx: TickContext): void {
     if (phase !== "gameInstance" && !this.canTickScene()) return;
-    this.onPhase?.(phase, this.clock.dt, tickIndex);
-    const ctx = this.phaseContext(tickIndex);
+    this.onPhase?.(phase, this.clock.dt, ctx.tickIndex);
 
     this.ticking = true;
     try {
@@ -913,9 +922,10 @@ export class World {
     try {
       this.flushDeferred();
       const tickIndex = this.clock.advance();
+      const ctx = this.tickContext(tickIndex);
       for (const phase of TICK_PHASES) {
         if (this.ended) break;
-        this.runPhase(phase, tickIndex);
+        this.runPhase(phase, ctx);
       }
       return tickIndex;
     } finally {

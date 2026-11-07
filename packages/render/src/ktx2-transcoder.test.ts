@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureContainer2";
+import { playerFilesHaveKtx2Transcoder } from "@haptic/assets";
 import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
-  playerFilesHaveKtx2Transcoder,
   probeKtx2TranscoderAvailable,
   shouldPackKtx2ForPreviewBuild,
 } from "./ktx2-transcoder";

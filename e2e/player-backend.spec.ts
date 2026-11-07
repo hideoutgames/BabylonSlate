@@ -83,6 +83,8 @@ for (const backend of ["webgpu"] as const) {
       expect(await root.getAttribute("data-ticks")).toBe(ticks);
       expect(errors).toEqual([]);
       expect(external).toEqual([]);
+      // The WebGPU code is a file of its own that only a WebGPU game fetches (p14-export.spec.ts: WebGL2 never does).
+      expect(server.requests.filter((request) => request.path === "player-webgpu.js").map((request) => request.status)).toEqual([200]);
     } finally {
       try {
         const canvas = page.getByTestId("player-canvas");

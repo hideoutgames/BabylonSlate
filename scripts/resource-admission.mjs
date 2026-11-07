@@ -226,19 +226,6 @@ export async function withAdmissionLock(directory, check, operation) {
 /** Per-user admission shared by every worktree. Limits are reservations, not OS quotas. */
 export async function acquireResources(request, options = {}) {
   const directory = options.directory ?? admissionDirectory;
-  if (!options.directory && process.platform === "win32") {
-    const legacy = resolve(tmpdir(), "haptic-test-admission-v1", "queue");
-    if (legacy.toLowerCase() !== join(directory, "queue").toLowerCase()) {
-      const entries = await readdir(legacy).catch((error) => {
-        if (error.code === "ENOENT") return [];
-        throw error;
-      });
-      if (entries.some((file) => file.endsWith(".json")))
-        throw new Error(
-          "A different TEMP directory contains legacy admission tickets; quiesce those runs before using the canonical per-user queue",
-        );
-    }
-  }
   const config =
     options.config ??
     (options.capacity
@@ -344,7 +331,7 @@ export async function acquireResources(request, options = {}) {
           const policies = [
             candidatePolicy,
             currentConfig,
-            ...active.map((row) => row.policy ?? standardPolicy),
+            ...active.map((row) => row.policy),
           ];
           return {
             capacity: {
@@ -403,22 +390,19 @@ export async function acquireResources(request, options = {}) {
         if (
           older.length &&
           (isHeavy(request) ||
-            older.some((row) => {
-              // Waiting commands retain the policy they started with. Tickets
-              // from older schedulers used the standard four-GiB headroom.
-              const olderPolicy = row.policy ?? standardPolicy;
-              return (
-                fits(row.request, olderPolicy) ||
-                (row.bypasses ?? 0) >= olderPolicy.maxBypasses
-              );
-            }))
+            // Waiting commands retain the policy they started with.
+            older.some(
+              (row) =>
+                fits(row.request, row.policy) ||
+                row.bypasses >= row.policy.maxBypasses,
+            ))
         )
           return false;
         // Only light work may use otherwise idle capacity. Charge every older
         // ticket before admission so independent processes share starvation protection.
         for (const row of older) {
           const { path, ...value } = row;
-          await publish(path, { ...value, bypasses: (row.bypasses ?? 0) + 1 });
+          await publish(path, { ...value, bypasses: row.bypasses + 1 });
         }
         await publish(ticket, {
           pid: process.pid,

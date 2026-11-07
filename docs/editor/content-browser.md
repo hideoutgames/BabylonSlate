@@ -55,8 +55,10 @@ New assets are named after their source. If that name is taken by an asset of th
 | Item | Takes | Makes |
 | --- | --- | --- |
 | Create Instance | One Material or Material Instance | A [Material Instance](../assets/material-instance.md) of it, named `<Name>_Instance`. |
-| Create Sprite / Create Sprites | Textures | One [Sprite](../assets/sprite.md) per Texture, showing the whole image with the default pivot and collision box. |
-| Create Sprite Animation | Textures and Sprites, mixed | One [Sprite Animation](../assets/sprite-animation.md) with a frame per asset, in name order (`Run_2` before `Run_10`), named after the first without its trailing number (`Run_1` makes `Run`). |
+| Convert to 2D > Create Sprite / Create Sprites | Textures | One [Sprite](../assets/sprite.md) per Texture, showing the whole image with the default pivot and collision box. |
+| Convert to 2D > Create Animation | Textures | One [Sprite Animation](../assets/sprite-animation.md) with a frame per Texture, in name order (`Run_2` before `Run_10`), named after the first without its trailing number (`Run_1` makes `Run`). |
+| Convert to 2D > Create Sheet Animation / Create Sheet Animations | Textures | One Sheet [Sprite Animation](../assets/sprite-animation.md) per Texture, with a frame per cell. A Texture whose width is a whole multiple of its height is cut into square cells side by side (stacked when its height is a multiple of its width); any other Texture is one frame. |
+| Create Sprite Animation | Sprites, or Textures and Sprites mixed | One Sprite Animation with a frame per asset, in name order, named as Create Animation names it. |
 | Create Tileset | One Texture | A [Tileset](../assets/tileset.md) of it, sized from the Texture. |
 | Create Material | Textures | A [Material](../assets/material.md) per group of Textures that share a name before a map suffix (below). |
 | Create Tilemap | Tilesets | One [Tilemap](../assets/tilemap.md) with every selected Tileset in its Palette, using the first Tileset's tile size. |

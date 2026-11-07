@@ -73,7 +73,7 @@ export function reflectionProbeBindings(components: readonly SerializedComponent
 const STATIC_COMPONENTS: ReadonlySet<string> = new Set([
   "MeshComponent", "LandscapeComponent", "FoliageComponent", "Text3DComponent", "SpriteComponent",
   "TilemapComponent", "SkyboxComponent", "LightComponent", "AreaRectLightComponent",
-  "HemisphericFillLightComponent", "FogVolumeComponent", "OutlineComponent", "ColliderComponent",
+  "HemisphericFillLightComponent", "Light2DComponent", "FogVolumeComponent", "OutlineComponent", "ColliderComponent",
   "BlockingVolumeComponent", "NavMeshComponent", "NavMeshBlockerComponent", "AudioComponent",
   "SplineComponent", "CameraComponent", "RenderTargetCaptureComponent", "SaveGameComponent",
   REFLECTION_PROBE_CLASS_ID,

@@ -12,7 +12,7 @@ import {
   createDefaultScene,
   createSkyboxComponent,
 } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import {
   applyActorTransform,

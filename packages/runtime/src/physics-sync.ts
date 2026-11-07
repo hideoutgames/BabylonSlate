@@ -4,6 +4,7 @@ import {
   multiplyQuat,
   parseRigidBodyProperties,
   rotateQuatVec,
+  type ColliderDesc,
   type LineTraceOptions,
   type PhysicsBackend,
   type PhysicsTransform,
@@ -35,7 +36,6 @@ import { PhysicsReadback, actorLocalPhysicsTransform } from "./physics-readback"
 import type { SpriteClipPlayback, SpriteContent, TileContent } from "./physics-sprite-tile-colliders";
 
 export { actorLocalPhysicsTransform } from "./physics-readback";
-export type { MovementDrive } from "./physics-body-classification";
 
 /**
  * Keeps `@haptic/physics` bodies in sync with World actors that carry
@@ -77,6 +77,8 @@ export class PhysicsWorldSync {
   private readonly passSources = new Map<Actor, ActorComponent | null>();
   private readonly liveActors = new Set<string>();
   private readonly poseScratch: unknown[] = [];
+  /** The kinematic target each sync writes; backends copy a target, never keep it. */
+  private readonly targetScratch: PhysicsTransform = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
   /** Reused by every pre-step composition; readback recomposes into its own. */
   private readonly composition = new PhysicsCompositionScratch();
   private actors: readonly Actor[] = [];
@@ -129,6 +131,8 @@ export class PhysicsWorldSync {
        * names one takes its layer and mask. Omitted: every collider keeps its own.
        */
       collisionPresets?: readonly Pick<CollisionPreset, "id" | "layer" | "mask" | "overlapMask">[];
+      /** Told when an actor's published collider set changes or its body retires (`publishedColliders`). */
+      onCollidersPublished?: (actor: Actor) => void;
     },
   ) {
     this.backend = backend;
@@ -136,7 +140,7 @@ export class PhysicsWorldSync {
     this.skipEmptySteps = options?.skipEmptySteps ?? false;
     this.actorsOf = options?.actorsOf;
     this.actorFilter = options?.actorFilter ?? (() => true);
-    this.colliders = new PhysicsColliderSets(backend, options?.collisionPresets);
+    this.colliders = new PhysicsColliderSets(backend, options?.collisionPresets, options?.onCollidersPublished);
     this.classifier = new PhysicsBodyClassifier(backend.kind, this.colliders.meshes);
     // Hosts read reassigned state (`actors`, `world`, `worldTransforms`, the
     // hosting map) through closures, never as captured values.
@@ -210,6 +214,11 @@ export class PhysicsWorldSync {
     if ((this.contactReporting.get(actor.guid) ?? true) === wants) return;
     this.contactReporting.set(actor.guid, wants);
     this.backend.setContactReporting(actor.guid, wants);
+  }
+
+  /** The collider set last published for `actor`'s body, or undefined while it has none. */
+  publishedColliders(actor: Actor): ReadonlyMap<string, ColliderDesc> | undefined {
+    return this.colliders.publishedColliders(actor);
   }
 
   /** An articulated ragdoll replaces the actor's ordinary body and colliders. */
@@ -377,12 +386,12 @@ export class PhysicsWorldSync {
       const pose = world(actor);
       if (movement && !steered) {
         this.applyBodyPolicy(actor.guid, bodyId, movement, MOVEMENT_BODY_PROPERTIES);
-        this.backend.setBodyTargetTransform(bodyId, physicsPose(pose));
+        this.backend.setBodyTargetTransform(bodyId, physicsPoseInto(pose, this.targetScratch));
       } else if (rigid) {
         const props = this.classifier.rigidProps(rigid);
         this.applyBodyPolicy(actor.guid, bodyId, rigid, props, steered);
         if (props.motionType === "kinematic") {
-          this.backend.setBodyTargetTransform(bodyId, physicsPose(pose));
+          this.backend.setBodyTargetTransform(bodyId, physicsPoseInto(pose, this.targetScratch));
         } else if (props.motionType === "static") {
           this.syncStaticPose(actor, bodyId, pose);
         }
@@ -973,6 +982,18 @@ function physicsPose(world: Transform): PhysicsTransform {
     position: { ...world.position },
     rotation: { ...world.rotation },
   };
+}
+
+/** `physicsPose` written into `out`. */
+function physicsPoseInto(world: Transform, out: PhysicsTransform): PhysicsTransform {
+  out.position.x = world.position.x;
+  out.position.y = world.position.y;
+  out.position.z = world.position.z;
+  out.rotation.x = world.rotation.x;
+  out.rotation.y = world.rotation.y;
+  out.rotation.z = world.rotation.z;
+  out.rotation.w = world.rotation.w;
+  return out;
 }
 
 /** Ground probe: shapes start this far above their pose and reach Ground Snap Distance plus the margin below it. */

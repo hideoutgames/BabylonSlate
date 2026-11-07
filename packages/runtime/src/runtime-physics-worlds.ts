@@ -16,6 +16,8 @@ import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
   loadRapier2DBackendFactory,
+  occluder2DShapes,
+  type Occluder2DShape,
   preloadPhysicsEngine,
   SoftwarePhysicsBackend,
   type PhysicsBackend,
@@ -48,6 +50,8 @@ interface RuntimePhysicsWorldsHost {
   frameId(): number;
   recordDiagnostic(diagnostic: RuntimeDiagnostic): void;
   emit(command: CommandMessage): void;
+  /** A main-Scene body's 2D collider set changed or retired: its 2D light shadow casters follow (`occluders2D`). */
+  occludersChanged?(actor: Actor): void;
 }
 
 interface RuntimePhysicsWorldsOptions {
@@ -147,6 +151,10 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     return handled;
   };
   private readonly host: RuntimePhysicsWorldsHost;
+  /** Only a 2D world's shapes cast 2D light shadows. */
+  private readonly occludersChanged = (actor: Actor): void => {
+    if (this.worldKind === "2d") this.host.occludersChanged?.(actor);
+  };
 
   constructor(host: RuntimePhysicsWorldsHost, options: RuntimePhysicsWorldsOptions) {
     this.host = host;
@@ -165,11 +173,18 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
         actorFilter: (actor) => actor.sceneLayerId == null && this.host.mainActorReady(actor),
         observesContacts: this.observesContacts,
         collisionPresets: this.collisionPresets,
+        onCollidersPublished: this.occludersChanged,
         deferUnsupportedConstraints: !this.preferSoftwarePhysics,
       },
     );
     this.mainSync.setMissingComplexMeshHandler(this.missingComplexMesh);
     this.mainSync.water.setBlendDistance(this.waterBlendDistance);
+  }
+
+  /** The outlines a main-Scene body's 2D colliders cast 2D light shadows with, in its body's frame; none in a 3D world. */
+  occluders2D(actor: Actor): Occluder2DShape[] {
+    const colliders = this.worldKind === "2d" ? this.mainSync.publishedColliders(actor) : undefined;
+    return colliders ? occluder2DShapes(colliders.values()) : [];
   }
 
   /** Main-Scene physics; replaced by `load`, `installScene` and `prepareScene`. */
@@ -291,7 +306,6 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       kind: this.worldKind,
       gravity: vec3(this.currentGravity),
       havokWasmUrl: this.havokWasmUrl,
-      allowSoftwareFallback: false,
     });
     if (!current()) {
       backend.dispose();
@@ -320,6 +334,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       actorFilter: (actor) => actor.sceneLayerId == null && this.host.mainActorReady(actor),
       observesContacts: this.observesContacts,
       collisionPresets: this.collisionPresets,
+      onCollidersPublished: this.occludersChanged,
     });
     this.nativeLayerBackend = layerBackend;
     // Layer worlds already created move to native worlds with their own gravity.
@@ -354,7 +369,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
 
   /** Native backend for a Scene's main world; `installScene` adopts it. */
   acquireNative(kind: PhysicsWorldKind, gravity: readonly number[]): Promise<PhysicsBackend> {
-    return createPhysicsBackend({ kind, gravity: vec3(gravity), havokWasmUrl: this.havokWasmUrl, allowSoftwareFallback: false });
+    return createPhysicsBackend({ kind, gravity: vec3(gravity), havokWasmUrl: this.havokWasmUrl });
   }
 
   /**
@@ -370,6 +385,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
         actorFilter: (actor) => actor.sceneLayerId == null && this.host.mainActorReady(actor),
         observesContacts: this.observesContacts,
         collisionPresets: this.collisionPresets,
+        onCollidersPublished: this.occludersChanged,
         deferUnsupportedConstraints: !this.preferSoftwarePhysics && backend instanceof SoftwarePhysicsBackend,
       });
       this.bindContent(sync);

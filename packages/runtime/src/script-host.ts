@@ -33,7 +33,7 @@ import type { ScriptHostServices } from "./script-host-services";
 import { ScriptMaterialOwnership } from "./script-material-ownership";
 import { RuntimeContinuationCancelled } from "./simulation-waits";
 
-export type { AnimGraphControl, ScriptAssetLoadResult, ScriptColor, ScriptHostServices } from "./script-host-services";
+export type { AnimGraphControl, ScriptAssetLoadResult, ScriptColor, ScriptHostServices, SpawnActorOptions } from "./script-host-services";
 export type {
   CompiledScript,
   HostContextKey,
@@ -58,6 +58,14 @@ function sameModule(a: Pick<CompiledScript, "source" | "entryPoints">, b: Pick<C
   return a.source === b.source && a.entryPoints.length === b.entryPoints.length &&
     a.entryPoints.every((point, index) => point.name === b.entryPoints[index]!.name);
 }
+
+/** An entry point `dispatchEvent` can run, with its export. */
+type IndexedEntryPoint = {
+  point: CompiledScript["entryPoints"][number];
+  fn: (ctx: ScriptContext) => unknown;
+};
+
+const NO_ENTRY_POINTS: readonly IndexedEntryPoint[] = [];
 
 /**
  * Loads compiled graph modules and binds their entry points to actor
@@ -84,7 +92,11 @@ export class ScriptHost {
    * a reload reaches actors that captured their hooks at creation.
    */
   private readonly lifecycleScriptsByClassId = new Map<string, Map<string, LoadedScript[] | null>>();
-  private readonly pending = new WeakMap<EngineObject, Set<string>>();
+  /**
+   * Each loaded module's dispatchable entry points by event, in declaration
+   * order, built on its first dispatch. A reload loads new `LoadedScript`s.
+   */
+  private readonly entryPointsByEvent = new WeakMap<LoadedScript, Map<string, readonly IndexedEntryPoint[]>>();
   private readonly flowStates = new WeakMap<
     EngineObject,
     Map<string, Record<string, unknown>>
@@ -435,9 +447,11 @@ export class ScriptHost {
   /**
    * Report a latent script failure. A continuation cancelled because `owner`
    * was destroyed (a counting Delay, or one Pause or a blocking load held)
-   * ends that owner's graph quietly, like a cancelled tween.
+   * ends that owner's graph quietly, like a cancelled tween, and so does one
+   * a later call of its Retriggerable Delay replaced.
    */
   private reportLatentError(error: unknown, owner: EngineObject | null): void {
+    if (error instanceof RuntimeContinuationCancelled && error.reason === "retriggered") return;
     if (owner?.destroyed && error instanceof RuntimeContinuationCancelled && error.reason === "ownerDestroyed") return;
     this.services.reportError(error);
   }
@@ -660,16 +674,11 @@ export class ScriptHost {
   ): { error: unknown } | null {
     let failure: { error: unknown } | null = null;
     for (const entry of loaded) {
-      for (const point of entry.script.entryPoints) {
-        if (point.event !== event) continue;
+      for (const { point, fn } of this.entryPointsFor(entry, event)) {
         if (!entryMatchesComponentInvoke(point.componentId, componentId, self)) {
           continue;
         }
-        const fn = entry.exports[point.name];
-        if (typeof fn !== "function") continue;
-        // Only a latent entry point is checked for a pending run; the synchronous common path builds no key.
-        const latentKey = self && point.isAsync ? `${entry.script.assetGuid}:${point.name}` : undefined;
-        if (self && latentKey !== undefined && this.isPending(self, latentKey)) continue;
+        // Every call runs, also while an earlier run of a latent entry still waits: each waits on its own.
         const ctx = this.createContext(
           self,
           deltaSeconds,
@@ -680,16 +689,8 @@ export class ScriptHost {
           entry.script.assetGuid,
         );
         try {
-          const result = this.invokeEntry(self, entry.script, point.name, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
-          if (result instanceof Promise) {
-            const key = latentKey ?? `${entry.script.assetGuid}:${point.name}`;
-            if (self) this.markPending(self, key);
-            void result
-              .catch((error) => this.reportLatentError(error, self))
-              .finally(() => {
-                if (self) this.clearPending(self, key);
-              });
-          }
+          const result = this.invokeEntry(self, entry.script, point.name, () => fn(ctx));
+          if (result instanceof Promise) void result.catch((error) => this.reportLatentError(error, self));
         } catch (error) {
           this.services.reportError(error);
           if (isInfiniteLoopError(error)) throw error;
@@ -700,18 +701,21 @@ export class ScriptHost {
     return failure;
   }
 
-  private isPending(self: EngineObject, key: string): boolean {
-    return this.pending.get(self)?.has(key) ?? false;
-  }
-
-  private markPending(self: EngineObject, key: string): void {
-    const set = this.pending.get(self) ?? new Set<string>();
-    set.add(key);
-    this.pending.set(self, set);
-  }
-
-  private clearPending(self: EngineObject, key: string): void {
-    this.pending.get(self)?.delete(key);
+  /** `entry`'s entry points for `event` whose export is a function. */
+  private entryPointsFor(entry: LoadedScript, event: string): readonly IndexedEntryPoint[] {
+    let byEvent = this.entryPointsByEvent.get(entry);
+    if (!byEvent) {
+      const index = new Map<string, IndexedEntryPoint[]>();
+      for (const point of entry.script.entryPoints) {
+        const fn = entry.exports[point.name];
+        if (point.event === undefined || typeof fn !== "function") continue;
+        const points = index.get(point.event) ?? [];
+        points.push({ point, fn: fn as (ctx: ScriptContext) => unknown });
+        index.set(point.event, points);
+      }
+      this.entryPointsByEvent.set(entry, byEvent = index);
+    }
+    return byEvent.get(event) ?? NO_ENTRY_POINTS;
   }
 
   private clearFlowState(self: EngineObject | null | undefined): void {

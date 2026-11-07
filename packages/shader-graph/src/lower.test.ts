@@ -6,8 +6,10 @@ import {
   type MaterialDocument,
 } from "./document";
 import { newCustomGlslProperties } from "./custom-glsl";
-import { lowerMaterialDocument, materialCompileKey } from "./lower";
+import { lowerMaterialDocument, materialCompileKeyFromLowering } from "./lower";
 import { isPerInstanceParameter } from "./parameters";
+
+const materialCompileKey = (document: MaterialDocument) => materialCompileKeyFromLowering(document, lowerMaterialDocument(document));
 
 function surfaceWithMultiply(): MaterialDocument {
   const doc = createDefaultMaterialDocument();

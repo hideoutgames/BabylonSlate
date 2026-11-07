@@ -26,8 +26,8 @@ Every platform opens the same project format, so you can move a project between 
 
 | Platform | Sign-in |
 | --- | --- |
-| Web and desktop | Optional. You can create and open projects as a guest. |
-| iPad, iPhone and Android | Required before the project list appears. Sign in with your email address and a verification code. |
+| Web and desktop | Optional. You can create and open projects as a guest, or sign in with GitHub, Discord, Google or an email code. |
+| iPad, iPhone and Android | Required before the project list appears. Sign in with GitHub, Discord or Google when they are offered, or with your email address and a verification code. |
 
 The mobile apps keep you signed in across restarts and app updates until you sign out or your session expires. Your projects stay on the device.
 

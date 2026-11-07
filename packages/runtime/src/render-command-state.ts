@@ -9,6 +9,10 @@ import type { RuntimeSubsystem } from "./runtime-subsystems";
 export class RenderCommandState implements RuntimeSubsystem {
   /** Slots whose last `setAreaLights` sent lights. */
   readonly areaLightSlots = new Set<number>();
+  /** Slots whose last `setLights2D` sent lights. */
+  readonly light2DSlots = new Set<number>();
+  /** Slots whose last `setOccluders2D` sent shapes. */
+  readonly occluder2DSlots = new Set<number>();
   /** Slots whose last `setActorOutlines` sent outlines. */
   readonly outlineSlots = new Set<number>();
   /** Last `setActorDeformers` payload per slot, serialized. */
@@ -28,6 +32,8 @@ export class RenderCommandState implements RuntimeSubsystem {
 
   releaseSlot(slotId: number, owner: Actor | undefined): void {
     this.areaLightSlots.delete(slotId);
+    this.light2DSlots.delete(slotId);
+    this.occluder2DSlots.delete(slotId);
     this.outlineSlots.delete(slotId);
     this.deformerSnapshots.delete(slotId);
     if (owner) {

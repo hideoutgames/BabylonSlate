@@ -396,6 +396,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   }
   get snapshotCapacity(): number { return this.snapshots.capacity; }
   get snapshotGeneration(): number { return this.snapshots.generation; }
+  get snapshotSerial(): number { return this.snapshots.writes; }
 
   /**
    * Builds the session in phases. Subsystem constructors build only their own
@@ -434,7 +435,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.renderSlots = createRenderSlots(this);
     this.renderEmitter = createRenderEmitter(this);
     this.audioParticles = createAudioParticles(this);
-    this.delays = new LatentDelays(this.admission);
+    this.delays = new LatentDelays(this.admission, () => this.world.clock.tickIndex);
     this.navigation = createNavigation(this);
     this.streams = createStreams(this);
     this.sceneRealizer = createSceneRealizer(this);

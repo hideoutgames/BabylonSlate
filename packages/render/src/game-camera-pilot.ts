@@ -4,7 +4,7 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { ViewportMode } from "@haptic/core";
 
 /** How long input must pause before a pilot gesture becomes one document edit. */
-export const GAME_CAMERA_PILOT_COMMIT_DELAY_MS = 350;
+const GAME_CAMERA_PILOT_COMMIT_DELAY_MS = 350;
 
 /** World units a pinch or wheel zoom factor of e (2.718…) dollies the camera. */
 const PILOT_DOLLY_PER_LOG = 4;
@@ -17,7 +17,7 @@ export interface GameCameraPilotTarget {
   camera: Camera;
 }
 
-export interface GameCameraPilotOptions {
+interface GameCameraPilotOptions {
   /** The camera actor to steer, or null when Game Camera is off or the actor cannot be edited. */
   target: () => GameCameraPilotTarget | null;
   /** In 2D, fly moves along the view plane and look and zoom do nothing. */
@@ -39,7 +39,7 @@ export interface GameCameraPilotFraming {
   rotation: Quaternion;
 }
 
-export interface GameCameraPilot {
+interface GameCameraPilot {
   active: () => boolean;
   look: (deltaYaw: number, deltaPitch: number) => void;
   fly: (forward: number, right: number) => void;

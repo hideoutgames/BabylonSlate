@@ -56,7 +56,7 @@ function notePrimitives(container: Pick<AssetContainer, "meshes">, json: GltfJso
  * reads as zero, which lights nothing: the mesh draws black. Indexed meshes are unfolded into faces; unindexed ones
  * already are. A hidden mesh (points or lines) keeps its buffers.
  */
-export function addMissingFlatNormals(container: Pick<AssetContainer, "meshes">): void {
+function addMissingFlatNormals(container: Pick<AssetContainer, "meshes">): void {
   for (const mesh of container.meshes) {
     if (!(mesh instanceof Mesh) || !mesh.isVisible || mesh.isVerticesDataPresent(VertexBuffer.NormalKind)) continue;
     const positions = mesh.getVerticesData(VertexBuffer.PositionKind);

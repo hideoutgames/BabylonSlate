@@ -8,10 +8,10 @@ import {
   identityTransform,
 } from "@haptic/core";
 import {
-  readActorSlot,
   readSnapshotHeader,
   snapshotFloatCount,
 } from "@haptic/bridge";
+import { readActorSlot } from "@haptic/bridge/read-actor-slot";
 import { ClassRegistry, World } from "@haptic/object-model";
 import { PhysicsWorldSync } from "./physics-sync";
 import { createInProcessRuntime } from "./driver";

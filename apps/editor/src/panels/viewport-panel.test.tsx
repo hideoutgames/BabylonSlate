@@ -1020,7 +1020,10 @@ describe("ViewportPanel engine", () => {
       settings: {
         grid: { tileSize: 4, tileSubdivisions: 4, snapTranslate: 0.5 },
         cameraBounds2D: { width: 32, height: 18 },
+        cameraLocation2D: [2, -1],
+        defaultCameraActorId: null,
       },
+      overlayEditor: true,
       actors: [],
       folders: [],
     };
@@ -1040,7 +1043,8 @@ describe("ViewportPanel engine", () => {
       expect(handle.editor.setGridSettings).toHaveBeenCalledWith(
         expect.objectContaining({
           tileSize: 4,
-          cameraBounds2D: { width: 32, height: 18 },
+          // The outline is centred on the layer's Camera Location.
+          cameraBounds2D: { width: 32, height: 18, center: [2, -1] },
         }),
       );
       // Grid is applied during construction; snap follows the engineEpoch effect.
@@ -1204,8 +1208,8 @@ describe("ViewportPanel engine", () => {
     const libraries = documents.collectPlayMaterialLibrary.mock.calls.length;
     const reads = documents.collectPlayTextureBytes.mock.calls.length;
 
-    // Encode progress rewrites the header without touching what the viewport shows.
-    asset = await texture({ usage: "albedo", compressionState: "encoding" }, [chunk("pixels", "pixels", "a")]);
+    // A failed encode rewrites the header without touching what the viewport shows.
+    asset = await texture({ usage: "albedo", compressionState: "encode_failed", encodeError: "Encoder failed." }, [chunk("pixels", "pixels", "a")]);
     documents.registryEpoch += 1;
     refresh();
     await act(async () => {});

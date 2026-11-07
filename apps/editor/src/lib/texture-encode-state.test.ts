@@ -39,7 +39,6 @@ describe("unfinishedTextureEncodePaths", () => {
   it("lists Textures still waiting for or running an encode, including a re-encode of a compressed one", () => {
     const assets = [
       indexed("queued", "Texture", { compressionState: "pending" }),
-      indexed("interrupted", "Texture", { compressionState: "encoding" }),
       indexed("reencoding", "Texture", { compressionState: "compressed" }),
       indexed("done", "Texture", { compressionState: "compressed" }),
       indexed("failed", "Texture", { compressionState: "encode_failed" }),
@@ -48,7 +47,6 @@ describe("unfinishedTextureEncodePaths", () => {
     ];
     expect(unfinishedTextureEncodePaths(assets, new Set(["reencoding"]))).toEqual([
       "assets/queued.hasset",
-      "assets/interrupted.hasset",
       "assets/reencoding.hasset",
     ]);
   });

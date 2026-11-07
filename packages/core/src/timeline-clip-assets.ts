@@ -35,7 +35,7 @@ export interface TimelineProxy {
   tracks: TimelinePropertyTrack[];
 }
 
-export const TIMELINE_PROXY_REPRESENTATIONS = ["shape", "model", "material", "texture", "class"] as const;
+const TIMELINE_PROXY_REPRESENTATIONS = ["shape", "model", "material", "texture", "class"] as const;
 export type TimelineProxyRepresentation = (typeof TIMELINE_PROXY_REPRESENTATIONS)[number];
 export type TimelineProxyPreviewAs = "relative" | "absolute";
 /** The representations that draw a picked asset. */

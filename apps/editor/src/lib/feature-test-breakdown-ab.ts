@@ -6,6 +6,7 @@ import {
   type FeatureTestCheckReport,
 } from "../services/feature-test-check";
 import { annotateSavedCheck, loadSavedCheck, saveFinishedCheck } from "./feature-test-check-record";
+import { BREAKDOWN_RESUME_KEY } from "./feature-test-breakdown-marker";
 
 /**
  * The Breakdown's preserveDrawingBuffer A/B. The attribute is fixed when the project Engine is created, so after the
@@ -13,7 +14,6 @@ import { annotateSavedCheck, loadSavedCheck, saveFinishedCheck } from "./feature
  * Home reopens the project, the dialog measures the same scenes again and writes one report of both passes, and the
  * user's setting is stored again.
  */
-const KEY = "haptic:feature-test-check:breakdown-resume";
 const VERSION = 1;
 /** A marker older than this is stale: the reload and reopen it waits for take a minute or two. */
 export const BREAKDOWN_RESUME_MAX_AGE_MS = 30 * 60_000;
@@ -54,16 +54,16 @@ const onOff = (enabled: boolean) => (enabled ? "on" : "off");
 
 function saveMarker(marker: BreakdownResumeMarker): boolean {
   try {
-    localStorage.setItem(KEY, JSON.stringify(marker));
-    return localStorage.getItem(KEY) !== null;
+    localStorage.setItem(BREAKDOWN_RESUME_KEY, JSON.stringify(marker));
+    return localStorage.getItem(BREAKDOWN_RESUME_KEY) !== null;
   } catch {
     return false;
   }
 }
 
-export function clearBreakdownResume(): void {
+function clearBreakdownResume(): void {
   try {
-    localStorage.removeItem(KEY);
+    localStorage.removeItem(BREAKDOWN_RESUME_KEY);
   } catch {
     // Unavailable storage holds no marker.
   }
@@ -85,7 +85,7 @@ function isBreakdownReport(value: unknown): value is FeatureTestCheckReport & { 
 function readMarker(now: number): MarkerRead {
   let raw: string | null;
   try {
-    raw = localStorage.getItem(KEY);
+    raw = localStorage.getItem(BREAKDOWN_RESUME_KEY);
   } catch {
     return { kind: "none" };
   }
@@ -116,7 +116,7 @@ function withNotes(report: FeatureTestCheckReport, notes: readonly string[]): Fe
 }
 
 /** The note that the user's setting is stored again: the live Engine keeps the switched one until it is next created. */
-export function restoredNote(original: boolean): string {
+function restoredNote(original: boolean): string {
   return `preserveDrawingBuffer is stored as ${onOff(original)} again, as before the A/B; it applies when the editor next reloads or the project is reopened.`;
 }
 

@@ -5,8 +5,7 @@ import { markSceneReadinessDirty, notifySceneReceiversChanged } from "./scene-re
 import type { Light } from "@babylonjs/core/Lights/light";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
-import { deviceProfile } from "./device-profile";
-import { hapticLightLimits, selectHapticLights, writeHapticLights } from "./haptic-lights";
+import { HAPTIC_LIGHT_MAXIMUM, hapticLightLimits, selectHapticLights, writeHapticLights } from "./haptic-lights";
 
 type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => string[] };
 
@@ -139,7 +138,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
         .map((light) => light.name)
         .join(", ")}${admission.limited.length > 16 ? ", …" : ""}`;
       const local = sceneRenderingSettings(scene).localLightBudget;
-      const maximum = deviceProfile().lightMaximum;
+      const maximum = HAPTIC_LIGHT_MAXIMUM;
       return [
         `Light block: ${admission.admitted}/${admission.requested} requested lights admitted; ${local} scalability local lights; this device draws at most ${maximum.point} point, ${maximum.spot} spot, ${maximum.rect} rect area and ${maximum.directional} directional lights and one fill. ${limited}`,
       ];

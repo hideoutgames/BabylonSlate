@@ -10,7 +10,7 @@ import { findSceneShadowController, type ViewShadows } from "./shadow-controller
  * (`ReflectionSunShadows.releaseIdle`): a mirror out of view holds no atlas tiles for long, and one glanced away from
  * does not rebuild them.
  */
-export const REFLECTION_SHADOW_IDLE_RENDERS = 120;
+const REFLECTION_SHADOW_IDLE_RENDERS = 120;
 
 /** Whether `scene`'s planar reflections draw the sun's shadow from maps of their own (Reflection Shadows, shadows on). */
 export function reflectionShadowsEnabled(scene: Scene): boolean {

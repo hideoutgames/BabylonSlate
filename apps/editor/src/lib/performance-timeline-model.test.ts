@@ -3,7 +3,7 @@ import {
   PERFORMANCE_FRAME_COLUMNS,
   PERFORMANCE_LONG_TASK_COLUMNS,
   PERFORMANCE_MEMORY_COLUMNS,
-  PERFORMANCE_TICK_COLUMNS_V1,
+  PERFORMANCE_TICK_COLUMNS,
   type PerformanceProfile,
   type PerformanceStream,
 } from "@haptic/debugger";
@@ -21,7 +21,7 @@ const tick = (tickId: number, elapsedMs: number, scriptMs = 1) => ({ tickId, ela
 function profile(frames: Record<string, number>[], ticks: Record<string, number>[], longTasks: Record<string, number>[] = []): PerformanceProfile {
   return {
     frames: stream(PERFORMANCE_FRAME_COLUMNS, frames),
-    ticks: stream(PERFORMANCE_TICK_COLUMNS_V1, ticks),
+    ticks: stream(PERFORMANCE_TICK_COLUMNS, ticks),
     gpu: { columns: [], count: 0, chunks: [] },
     memory: { columns: PERFORMANCE_MEMORY_COLUMNS, count: 0, chunks: [] },
     longTasks: stream(PERFORMANCE_LONG_TASK_COLUMNS, longTasks),

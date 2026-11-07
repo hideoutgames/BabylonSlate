@@ -48,8 +48,8 @@ export function gChain(...ids: string[]): GraphEdge[] {
   return edges;
 }
 
-export const EXEC_IN: GraphClassMemberPin = { name: "exec", typeId: "exec", direction: "in" };
-export const EXEC_OUT: GraphClassMemberPin = { name: "then", typeId: "exec", direction: "out" };
+const EXEC_IN: GraphClassMemberPin = { name: "exec", typeId: "exec", direction: "in" };
+const EXEC_OUT: GraphClassMemberPin = { name: "then", typeId: "exec", direction: "out" };
 
 /** Variable member. */
 export function varMember(

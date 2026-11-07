@@ -451,9 +451,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     if (!context || !busOut || !mainIn) return;
     // Add a wet send only. Disconnecting AudioV2's private ports hung Play Stop.
     try {
-      this.reverbGraph = connectParametricReverb(context, busOut, mainIn, {
-        dryPassThrough: false,
-      });
+      this.reverbGraph = connectParametricReverb(context, busOut, mainIn);
     } catch {
       this.reverbGraph = null;
     }

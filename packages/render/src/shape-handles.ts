@@ -70,6 +70,15 @@ export interface ShapeHandlesAdapter<Body extends object, Handle extends ShapeHa
 }
 
 const OUTLINE_COLOR = new Color3(0.42, 0.78, 1);
+const FORWARD = new Vector3();
+const FALLBACK_FORWARD = Vector3.Forward();
+
+/** A handle drags in the plane facing the camera (world forward without one), for an adapter's `constraint`. */
+export function cameraFacingConstraint(_handle: unknown, _world: Matrix, camera: Camera | null): { dragPlaneNormal: Vector3 } {
+  if (!camera) return { dragPlaneNormal: FALLBACK_FORWARD };
+  const m = camera.getWorldMatrix().m;
+  return { dragPlaneNormal: FORWARD.set(m[8]!, m[9]!, m[10]!).normalize() };
+}
 
 /** Shared water/spline/deformer handle lifecycle. Preview edits stay local until one release commit. */
 export function createShapeHandles<Body extends object, Handle extends ShapeHandle, Target extends ShapeHandleTarget>(

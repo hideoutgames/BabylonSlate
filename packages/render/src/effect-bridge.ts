@@ -11,7 +11,7 @@ export const EFFECT_BRIDGE_MS = 120_000;
  * Feature Test scenes' Play programs (a large level links about 100, a light one about 50). An Effect holds its
  * program and, on WebGPU, its pipelines, never a texture or render target, so the bound is a count of programs.
  */
-export const PLAY_EFFECT_KEEP_BUDGET = 256;
+const PLAY_EFFECT_KEEP_BUDGET = 256;
 
 type Bridge = { effects: Effect[]; timer: ReturnType<typeof setTimeout> };
 const bridges = new WeakMap<AbstractEngine, Bridge>();
@@ -28,13 +28,7 @@ const watched = new WeakSet<AbstractEngine>();
  */
 export function bridgeEngineEffects(engine: AbstractEngine): void {
   if (engine.isDisposed) return;
-  const compiled = (engine as unknown as { _compiledEffects?: Record<string, unknown> })._compiledEffects ?? {};
-  const effects: Effect[] = [];
-  for (const effect of Object.values(compiled)) {
-    if (!(effect instanceof Effect) || effect.isDisposed) continue;
-    effect._refCount += 1;
-    effects.push(effect);
-  }
+  const effects = takeCompiledEffects(engine);
   // Retained before the earlier bridge lets go, so an Effect both hold never reaches zero in between.
   const previous = bridges.get(engine);
   if (!watched.has(engine)) {
@@ -43,6 +37,37 @@ export function bridgeEngineEffects(engine: AbstractEngine): void {
   }
   bridges.set(engine, { effects, timer: setTimeout(() => releaseBridgedEffects(engine), EFFECT_BRIDGE_MS) });
   if (previous) release(previous);
+}
+
+/** One reference on each Effect in `engine`'s cache, returned. */
+function takeCompiledEffects(engine: AbstractEngine): Effect[] {
+  const compiled = (engine as unknown as { _compiledEffects?: Record<string, unknown> })._compiledEffects ?? {};
+  const effects: Effect[] = [];
+  for (const effect of Object.values(compiled)) {
+    if (!(effect instanceof Effect) || effect.isDisposed) continue;
+    effect._refCount += 1;
+    effects.push(effect);
+  }
+  return effects;
+}
+
+/**
+ * Holds one reference on every Effect compiled on `engine` now, until the returned release, the Engine's disposal or a
+ * lost context (a WebGL2 restore relinks every Effect left in the cache). For a switch that stops drawing programs the
+ * view draws again once switched back (Play's `postprocessing off`): they stay in the Effect cache meanwhile, so
+ * switching back links none of them again, whatever the Play keep's budget let go.
+ */
+export function holdCompiledEffects(engine: AbstractEngine): () => void {
+  if (engine.isDisposed) return () => {};
+  const effects = takeCompiledEffects(engine);
+  const release = () => {
+    engine.onDisposeObservable.remove(disposed);
+    engine.onContextLostObservable.remove(lost);
+    for (const effect of effects.splice(0)) effect.dispose();
+  };
+  const disposed = engine.onDisposeObservable.addOnce(release);
+  const lost = engine.onContextLostObservable.add(release);
+  return release;
 }
 
 /** Ends `engine`'s bridge: Effects no view draws any more are released. */
@@ -146,7 +171,7 @@ function take(keep: Keep, effect: Effect, session: Session): void {
  * programs then survive Stop and the editor's reload, so the next Play finds those it draws again in the Engine's
  * Effect cache, and a load that releases a program and asks for it again (a graph rebuilt during the load, an
  * environment filter run twice) links it once. One reference each, taken once the program has compiled (`take`), at
- * most `PLAY_EFFECT_KEEP_BUDGET` Effects (`budget`), the least recently returned released first. The keep goes with
+ * most `PLAY_EFFECT_KEEP_BUDGET` Effects (`budget`, which only tests lower), the least recently returned released first. The keep goes with
  * the Engine and with a lost context. Stopping clears a kept Effect's compile callbacks, which belong to whoever first
  * created it, so a kept Effect holds no closed Play's Scene. Stopping with `discard` (a view whose construction
  * failed) instead releases the Effects this call took, leaving the keep as it found it.
@@ -175,7 +200,10 @@ function forgetCreator(effect: Effect): void {
   effect.onError = null;
 }
 
-/** Ends `engine`'s keep: Effects nothing else holds are released. */
+/**
+ * Ends `engine`'s keep: Effects nothing else holds are released. Test seam: production ends it through the Engine's
+ * dispose and context-lost observers.
+ */
 export function releaseKeptEffects(engine: AbstractEngine): void {
   const keep = keeps.get(engine);
   if (keep) releaseKept(keep);
@@ -185,7 +213,7 @@ function releaseKept(keep: Keep): void {
   for (const effect of [...keep.effects]) drop(keep, effect);
 }
 
-/** How many Effects `engine` keeps for Play. */
+/** How many Effects `engine` keeps for Play. Test seam: production code does not call it. */
 export function keptEffectCount(engine: AbstractEngine): number {
   return keeps.get(engine)?.effects.size ?? 0;
 }

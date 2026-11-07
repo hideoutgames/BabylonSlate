@@ -9,7 +9,7 @@ const report: FeatureTestCheckReport = {
     name: "main", path: "assets/main.scene.hasset", passed: false, problems: [],
     editor: { status: "ready", ms: 4200, phase: null, frames: null, error: null, gpu: null },
     play: { status: "loaded", ms: 9000, phase: null, frames: null, runtimeFps: 60, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
-      benchmark: [{ label: "low", frames: { frames: 300, durationMs: 5000, fps: 60, p95Ms: 17, maxMs: 20, stalls: 0 }, runtimeFps: 60,
+      benchmark: [{ label: "low", frames: { frames: 300, durationMs: 5000, fps: 60, medianMs: 16.7, meanMs: 5000 / 300, vsync: [1, 0, 0, 0], p95Ms: 17, maxMs: 20, stalls: 0 }, runtimeFps: 60,
         cpuMs: 4, gpuMs: null, drawCalls: 100, resolution: "1180x820@1.00", failed: [] }] },
     session: null,
   }],
@@ -17,6 +17,8 @@ const report: FeatureTestCheckReport = {
 const sample = (atMs: number, step: string, textureMb: number) => ({
   atMs, step, effects: 300, compiling: atMs > 30_000 ? 40 : 0, textures: 120, textureBytes: textureMb * 1048576,
   playFrames: { drawn: 900, held: atMs > 30_000 ? 120 : 0, contextLosses: atMs > 30_000 ? 1 : 0 }, jsHeapBytes: null, appFootprintBytes: 1500 * 1048576,
+  // The device's free memory falls as the web content and GPU processes grow; the app's headroom is unreported here.
+  deviceAvailableBytes: (atMs > 30_000 ? 300 : 900) * 1048576, appAvailableBytes: null,
 });
 
 describe("the unfinished Feature Test Check", () => {
@@ -46,8 +48,8 @@ describe("the unfinished Feature Test Check", () => {
     expect(lines[2]).toBe("Did not finish: the app stopped (a crash or reload) while main: benchmarking high.");
     expect(lines.slice(-3)).toEqual([
       "Resources before it stopped (last 2 samples, oldest first):",
-      "  30.0 s   300 shaders · Play drawn 900, held 0 · 120 textures (400 MB) · app 1500 MB · main: benchmarking medium",
-      "  40.0 s   300 shaders (40 compiling) · Play drawn 900, held 120, CONTEXT LOST 1x · 120 textures (900 MB) · app 1500 MB · main: benchmarking high",
+      "  30.0 s   300 shaders · Play drawn 900, held 0 · 120 textures (400 MB) · app 1500 MB · device free 900 MB · main: benchmarking medium",
+      "  40.0 s   300 shaders (40 compiling) · Play drawn 900, held 120, CONTEXT LOST 1x · 120 textures (900 MB) · app 1500 MB · device free 300 MB · main: benchmarking high",
     ]);
     clearUnfinishedCheck();
     expect(loadSavedCheck()).toBeNull();
@@ -61,9 +63,17 @@ describe("the unfinished Feature Test Check", () => {
     expect(loadCheckEnded()).toBeNull();
   });
 
-  it("ignores a record it cannot read, and runs on without storage", () => {
+  it("ignores a record it cannot read, discarding a report with incomplete frame statistics, and runs on without storage", () => {
     store.set("haptic:feature-test-check:unfinished", "{not json");
     expect(loadSavedCheck()).toBeNull();
+    // A sample's frames without their mean, median and pacing would format as a missing field.
+    const { frames, durationMs, fps, p95Ms, maxMs, stalls } = report.scenes[0]!.play.benchmark[0]!.frames!;
+    const partial = { frames, durationMs, fps, p95Ms, maxMs, stalls };
+    const incomplete = { ...report, scenes: [{ ...report.scenes[0]!, play: { ...report.scenes[0]!.play,
+      benchmark: [{ ...report.scenes[0]!.play.benchmark[0]!, frames: partial }] } }] };
+    store.set("haptic:feature-test-check:unfinished", JSON.stringify({ finished: true, report: incomplete }));
+    expect(loadSavedCheck()).toBeNull();
+    expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
     vi.stubGlobal("localStorage", { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("full"); }, removeItem: () => { throw new Error("denied"); } });
     expect(() => saveUnfinishedCheck({ step: "x", report, resources: [] })).not.toThrow();
     expect(loadSavedCheck()).toBeNull();

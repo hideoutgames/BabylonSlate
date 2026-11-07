@@ -4,7 +4,8 @@ import type { GpuBackend } from "@haptic/core";
 import { createAppEngine, type CreateEngineOptions } from "./create-engine";
 import { allowDirectViewPresentation } from "./direct-view-presentation";
 import { releaseResourceCacheForEngine } from "./resource-cache";
-import { createAppWebGpuEngine, whenWebGpuDeviceLost, type WebGpuDeviceLoss } from "./webgpu-engine";
+import type { WebGpuDeviceLoss } from "./webgpu-engine";
+import { loadWebGpuEngineModule } from "./webgpu-on-demand";
 
 export interface BackendEngineSession {
   engine: AbstractEngine;
@@ -48,8 +49,11 @@ export async function createBackendEngineSession(
     const canvas = options.createCanvas();
     let engine: AbstractEngine | undefined;
     try {
-      engine = backend === "webgpu"
-        ? await createAppWebGpuEngine(canvas, options.decoders, signal)
+      // WebGPU code loads only here, so a WebGL2 session never fetches it; a failed load falls back like a failed start.
+      const webgpu = backend === "webgpu" ? await loadWebGpuEngineModule() : null;
+      signal?.throwIfAborted();
+      engine = webgpu
+        ? await webgpu.createAppWebGpuEngine(canvas, options.decoders, signal)
         : createAppEngine(canvas, options.decoders);
       signal?.throwIfAborted();
       if (backend === "webgl2" && "webGLVersion" in engine && engine.webGLVersion !== 2) {
@@ -58,7 +62,7 @@ export async function createBackendEngineSession(
       const ownedEngine = engine;
       setEngineBackendStatus(ownedEngine, { requestedBackend, effectiveBackend: backend, fallbackReason });
       if (options.presentViewsDirectly) allowDirectViewPresentation(ownedEngine);
-      const deviceLost = backend === "webgpu" ? whenWebGpuDeviceLost(ownedEngine) : null;
+      const deviceLost = webgpu ? webgpu.whenWebGpuDeviceLost(ownedEngine) : null;
       let disposed = false;
       return {
         engine: ownedEngine,

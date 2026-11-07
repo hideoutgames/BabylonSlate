@@ -32,7 +32,6 @@ export {
   STATS_COMMAND_INTERVAL_MS,
   TICK_BUDGET_MS,
   createMessageRateMeter,
-  formatStatBytes,
   isStatGroup,
   isTickOverBudget,
   nextStatGroups,
@@ -48,7 +47,6 @@ export {
 export {
   DEFAULT_INFINITE_LOOP_COUNT,
   INFINITE_LOOP_DIAGNOSTIC_CODE,
-  INFINITE_LOOP_ERROR_MESSAGE,
   InfiniteLoopError,
   createInfiniteLoopGuard,
   instrumentJsLoops,

@@ -17,6 +17,8 @@ const LIGHT_VALUE_PROPERTIES: ReadonlyMap<string, readonly string[]> = new Map([
   ["LightComponent", ["color", "intensity", "range", "innerAngle", "outerAngle"]],
   ["HemisphericFillLightComponent", ["color", "groundColor", "intensity"]],
   ["AreaRectLightComponent", ["color", "intensity", "width", "height"]],
+  // 2D lights are data in their own block: even Enabled chooses no variant. Kind changes the billboard's icon.
+  ["Light2DComponent", ["enabled", "color", "intensity", "radius", "innerRadius", "outerAngle", "innerAngle", "castShadows"]],
 ]);
 
 /** Light values changed and nothing else; EditorSceneSync still applies them in place. */

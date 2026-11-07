@@ -2,8 +2,10 @@ import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Material, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type AbstractMesh, type Effect, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, GPUParticleSystem, InputBlock, KhronosTextureContainer2, Material, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, PointLight, RawTexture, RenderTargetTexture, Scene, TransformNode, UniversalCamera, Vector3, WebGPUCacheRenderPipeline, type AbstractMesh, type Effect, type Mesh } from "@babylonjs/core";
 import { HapticLightingBlock } from "./haptic-lighting-block";
+// Render pipeline counts come from the WebGPU code, which a WebGPU Engine loads first.
+import "./webgpu-registrations";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import {
@@ -38,11 +40,14 @@ import {
 } from "@haptic/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createEngine, PIPELINE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
+import { AUTHORED_CAMERA_PREFIX } from "./scene-illumination";
 import { sceneOutputScale } from "./scene-output-scale";
 import type { RenderPerformanceSample } from "./render-performance";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@haptic/assets";
-import { encodeTriangleGlb } from "./glb-test-fixtures";
+import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload, type ParticleLibraryEmitter } from "@haptic/assets";
+import { createDefaultParticleGraphDocument } from "@haptic/particle-graph";
+import { encodeTriangleGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
+import { nativePreparationForEngine } from "./native-preparation";
 import { acquireMaterialTexture, ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { encodeRgbaPng } from "./png-encode";
 import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
@@ -269,6 +274,107 @@ describe("Play createEngine view", () => {
     handle.resourceCache.flushUnreferenced();
     expect(handle.accountedGeometryBytes()).toBe(0);
     expect(isDisposedGpuTexture(cube)).toBe(true);
+  });
+
+  /** Records how many preparation jobs the Engine's queue is running when each job is scheduled. */
+  function watchPreparation(engine: NullEngine) {
+    const scheduler = nativePreparationForEngine(engine);
+    const schedule = scheduler.schedule.bind(scheduler);
+    const activeAtSchedule = new Map<string, number>();
+    const spy = vi.spyOn(scheduler, "schedule").mockImplementation(((request, prepare) => {
+      activeAtSchedule.set(request.label, scheduler.snapshot().active);
+      return schedule(request, prepare);
+    }) as typeof scheduler.schedule);
+    return { activeAtSchedule, restore: () => spy.mockRestore() };
+  }
+
+  it("prepares a scope's textures together and releases everything it acquired when a model fails", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    const watched = watchPreparation(engine);
+    try {
+      const wrappers = handle.resourceCache.resourceStats().wrappers;
+      const png = (value: number) => encodeRgbaPng(2, 2, new Uint8Array(16).fill(value));
+      await expect(handle.acquireSceneSources({ assets: {
+        textureBytes: new Map([["albedo-a", png(255)], ["albedo-b", png(128)]]),
+        modelBytes: new Map([["model-good", encodeTriangleGlb()], ["model-broken", new Uint8Array([1, 2, 3, 4])]]),
+      } }, { prepare: true })).rejects.toThrow("Unsupported model content");
+      // The second texture was scheduled while the first was still being prepared.
+      expect(watched.activeAtSchedule.get("Texture albedo-a")).toBe(0);
+      expect(watched.activeAtSchedule.get("Texture albedo-b")).toBe(1);
+      handle.resourceCache.flushUnreferenced();
+      expect(handle.resourceCache.resourceStats().wrappers).toBe(wrappers);
+      expect(handle.accountedGeometryBytes()).toBe(0);
+      expect(nativePreparationForEngine(engine).snapshot()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
+    } finally {
+      watched.restore();
+    }
+  });
+
+  it("cancels a scope mid-preparation with the caller's reason, starting nothing more and keeping nothing", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    const controller = new AbortController();
+    const scheduler = nativePreparationForEngine(engine);
+    const schedule = scheduler.schedule.bind(scheduler);
+    const started: string[] = [];
+    // The scope is cancelled as its third texture is queued behind the two being prepared.
+    const spy = vi.spyOn(scheduler, "schedule").mockImplementation(((request, prepare) => {
+      const job = schedule(request, () => { started.push(request.label); return prepare(); });
+      if (request.label === "Texture albedo-c") controller.abort(new Error("Scene unloaded"));
+      return job;
+    }) as typeof scheduler.schedule);
+    try {
+      const wrappers = handle.resourceCache.resourceStats().wrappers;
+      const png = (value: number) => encodeRgbaPng(2, 2, new Uint8Array(16).fill(value));
+      await expect(handle.acquireSceneSources({
+        assets: { textureBytes: new Map([["albedo-a", png(255)], ["albedo-b", png(128)], ["albedo-c", png(64)]]) },
+        materialDocuments: new Map([["cancelled-material", createDefaultMaterialDocument("Cancelled Material")]]),
+      }, { prepare: true, signal: controller.signal })).rejects.toThrow("Scene unloaded");
+      expect(started).toEqual(["Texture albedo-a", "Texture albedo-b"]);
+      handle.resourceCache.flushUnreferenced();
+      expect(handle.resourceCache.resourceStats().wrappers).toBe(wrappers);
+      expect(handle.scene.materials.some((material) => material.name.includes("cancelled-material"))).toBe(false);
+      expect(nativePreparationForEngine(engine).snapshot()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("resolves a prepared scope while its Auto LOD levels still generate, and generates none for a model without Auto LOD", async () => {
+    const replies: Array<() => void> = [];
+    let terminated = 0;
+    class HeldWorker {
+      onmessage: ((event: { data: unknown }) => void) | null = null;
+      onerror: unknown = null;
+      onmessageerror: unknown = null;
+      terminate() { terminated++; }
+      postMessage(message: { meshes: unknown[] }) {
+        replies.push(() => this.onmessage?.({ data: { levels: message.meshes.map(() => []) } }));
+      }
+    }
+    vi.stubGlobal("Worker", HeldWorker);
+    try {
+      const engine = sharedEngine();
+      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+      handles.push(handle);
+      const payload = { materialSlots: [], clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [] };
+      const release = await handle.acquireSceneSources({ assets: {
+        modelBytes: new Map([["dense-lod", encodeUvSphereGlb()], ["dense-full", encodeUvSphereGlb()]]),
+        modelPayloads: new Map([["dense-lod", { ...payload, autoLod: true }], ["dense-full", { ...payload, autoLod: false }]]),
+      } }, { prepare: true });
+      // Generation started on the held lease; the scope did not wait for it.
+      await vi.waitFor(() => expect(replies).toHaveLength(1));
+      replies[0]!();
+      // The worker exits once no model is left to simplify.
+      await vi.waitFor(() => expect(terminated).toBe(1));
+      expect(replies).toHaveLength(1);
+      release();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("installs collected editor assets and materials without replaying the previous document", async () => {
@@ -871,6 +977,77 @@ describe("Play createEngine view", () => {
     expect(presentation()).toMatchObject({ drawn: drawn + 1, held: held + 2, heldReasons: { "Scene is not ready to render.": 2 } });
   });
 
+  it("keeps the frames in which a Spawn Emitter creates and disposes its Emitters, after the world has drawn", async () => {
+    // The Feature Test main scene's surface sparks play a flash from each dying particle (Spawn Emitter). The particle
+    // service creates each spawned Emitter, and disposes a drained one, in the Scene's after-render observers: after the
+    // world's graph has drawn, so they cannot change that frame's image, and must not discard it ("World readiness
+    // changed during the draw.").
+    const engine = sharedEngine();
+    // A 100 ms frame clock, so a spawned Emitter runs its Duration and drains within a few frames.
+    vi.spyOn(engine, "getDeltaTime").mockReturnValue(100);
+    const graph = createDefaultParticleGraphDocument();
+    graph.materialGuid = "sparks";
+    // A Spawn Emitter whose Condition always fires, spliced into the default graph's spine.
+    graph.nodes.push(
+      { id: "spawn", type: "trigger.spawn", position: { x: 0, y: 0 }, properties: { emitterGuid: "flash", limit: 2, minInterval: 0, inheritVelocity: false } },
+      { id: "one", type: "const.float", position: { x: 0, y: 0 }, properties: { value: [1] } },
+    );
+    graph.edges = graph.edges.filter((edge) => edge.id !== "e-velocity-color");
+    graph.edges.push(
+      { id: "e-velocity-spawn", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "spawn", targetPinId: "particle" },
+      { id: "e-spawn-color", sourceNodeId: "spawn", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
+      { id: "e-one-spawn", sourceNodeId: "one", sourcePinId: "out", targetNodeId: "spawn", targetPinId: "condition" },
+    );
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true,
+      materialDocuments: new Map([["sparks", createDefaultMaterialDocument("Sparks", "particle")]]),
+      particleLibrary: {
+        emitters: new Map<string, ParticleLibraryEmitter>([
+          ["surface", { kind: "graph", document: graph }],
+          ["flash", { kind: "basic", payload: normalizeParticleEmitterPayload({
+            emitter: { loop: "once", duration: 0.2, capacity: 16 }, spawn: { rate: { mode: "constant", value: 30 } },
+            initialize: { lifetime: { mode: "constant", value: 0.1 } }, render: { materialGuid: "sparks" },
+          }) }],
+        ]),
+        systems: new Map([["system", { ...createDefaultParticleSystemPayload(), emitterGuids: ["surface"] }]]),
+      },
+    });
+    handles.push(handle);
+    handle.applyCommand({ type: "spawn", slotId: 1, actorGuid: "surface", classId: "Actor" });
+    handle.applyCommand({ type: "assignParticle", slotId: 1, actorGuid: "surface", componentId: "particle", particleSystemGuid: "system" });
+    const frame = async () => {
+      handle.scheduler.invalidate("manual");
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      // Material bindings settle between frames.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    await handle.prewarmSceneMaterials();
+    let presented = false;
+    const pending = handle.presentFirstFrame().then(() => { presented = true; });
+    for (let index = 0; index < 20 && !presented; index++) await frame();
+    await pending;
+    const spawns = () => handle.scene.meshes.filter((mesh) => mesh.name.startsWith("particleSpawn:"));
+    // Steady frames until the surface plays (its Material binds after the load) and spawns its first flash.
+    for (let index = 0; index < 20 && !spawns().length; index++) await frame();
+    const presentation = () => handle.renderDiagnostics().presentation!;
+    const before = presentation();
+    let spawned = 0;
+    let disposed = 0;
+    let live = new Set<AbstractMesh>(spawns());
+    for (let index = 0; index < 30; index++) {
+      await frame();
+      const now = new Set(spawns());
+      for (const mesh of now) if (!live.has(mesh)) spawned++;
+      for (const mesh of live) if (!now.has(mesh)) disposed++;
+      live = now;
+    }
+    const after = presentation();
+    expect({ spawned: spawned > 1, disposed: disposed > 1, drawn: after.drawn - before.drawn, held: after.held - before.held, heldReasons: after.heldReasons })
+      .toEqual({ spawned: true, disposed: true, drawn: 30, held: 0, heldReasons: before.heldReasons });
+  });
+
   it("does not pause Play for a hold that ends within the pause delay, and restarts the delay for the next one", async () => {
     const { handle, holds, set, frame, clock, presentFirstFrame } = playViewWithCompilingEffect();
     await presentFirstFrame();
@@ -1441,22 +1618,63 @@ describe("Play createEngine view", () => {
     expect(handle.scene.frameGraph).toBeNull();
   });
 
-  it("keeps the shared Engine frame loop running when a presented Play frame's readiness probe fails", async () => {
+  /** A presented Play view whose first frame confirmed its starting settings, with an Engine frame as the browser runs it. */
+  async function presentedPlay() {
     const engine = sharedEngine();
-    const { handle } = playHandle(engine);
+    const acknowledged: number[] = [];
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true, onScalabilityApplied: (acknowledgement) => acknowledged.push(acknowledgement.revision),
+    });
+    handles.push(handle);
     await handle.prewarmSceneMaterials();
+    const frame = async () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderViews(engine);
+      engine.onEndFrameObservable.notifyObservers(engine);
+      // Past the frame cap's interval, so every call draws and presents.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    };
     const presented = handle.presentFirstFrame();
-    renderViews(engine);
-    engine.onEndFrameObservable.notifyObservers(engine);
+    await frame();
     await presented;
+    for (let i = 0; i < 8 && acknowledged.length === 0; i++) await frame();
+    expect(acknowledged).toEqual([0]);
+    return { engine, handle, acknowledged, frame };
+  }
+
+  it("keeps the shared Engine frame loop running when a presented Play frame's readiness probe fails", async () => {
+    const { engine, handle } = await presentedPlay();
     // A stored preparation failure rethrows from readiness; the frame loop
-    // must survive it.
+    // must survive it. The probe runs for the frame that confirms a transaction.
     const probe = vi.spyOn(SceneRenderCoordinator.prototype, "isReady").mockImplementation(() => {
       throw new Error("Scene rendering preparation timed out.");
     });
     try {
+      handle.applyCommand(scalabilityCommand({}));
+      engine.onBeginFrameObservable.notifyObservers(engine);
       renderViews(engine);
       expect(() => engine.onEndFrameObservable.notifyObservers(engine)).not.toThrow();
+      expect(probe).toHaveBeenCalled();
+    } finally {
+      probe.mockRestore();
+    }
+  });
+
+  it("probes readiness after a presented Play frame only while a scalability transaction awaits that frame", async () => {
+    const { handle, acknowledged, frame } = await presentedPlay();
+    const probe = vi.spyOn(SceneRenderCoordinator.prototype, "isReady");
+    try {
+      // Steady frames confirm nothing: none walks the frame path again after it presented.
+      for (let i = 0; i < 4; i++) await frame();
+      expect(probe).not.toHaveBeenCalled();
+      // The frame that confirms a transaction probes, and acknowledges it; then probing stops again.
+      handle.applyCommand(scalabilityCommand({}));
+      for (let i = 0; i < 8 && acknowledged.length === 1; i++) await frame();
+      expect(acknowledged).toEqual([0, 1]);
+      const confirming = probe.mock.calls.length;
+      expect(confirming).toBeGreaterThan(0);
+      for (let i = 0; i < 4; i++) await frame();
+      expect(probe).toHaveBeenCalledTimes(confirming);
     } finally {
       probe.mockRestore();
     }
@@ -2687,6 +2905,57 @@ describe("Play createEngine view", () => {
     }
   });
 
+  it("moves a bone-attached camera with its bone on running frames that bring no new pose, without re-applying the snapshot", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+    const frame = () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderLoop();
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    const apply = vi.spyOn(snapshotApply, "applySnapshotToScene");
+    try {
+      handle.applyCommand({ type: "assignMesh", slotId: 0, meshKind: "box", meshAssetGuid: null });
+      handle.applyCommand({
+        type: "assignMesh", slotId: 1, meshKind: "camera", meshAssetGuid: null,
+        camera: { projectionMode: "perspective", fieldOfView: 60 },
+      });
+      // The runtime possesses the Scene's Default Camera when it starts.
+      handle.applyCommand({ type: "possessCamera", slotId: 1 });
+      // The host animates this joint between poses, as Babylon does a model's bones.
+      const head = new TransformNode("Head", handle.scene);
+      head.parent = handle.scene.getMeshByName("actor-0")!;
+      head.position.y = 2;
+      handle.applyCommand({ type: "attachToBone", slotId: 1, targetSlotId: 0, boneName: "Head" });
+      const snapshot = new Float32Array(snapshotFloatCount(8));
+      writeSnapshotHeader(snapshot, { frameId: 1, tickIndex: 1, actorCount: 2, scriptMs: 0, physicsMs: 0 });
+      for (const slotId of [0, 1]) {
+        writeActorSlot(snapshot, slotId, {
+          slotId, position: { x: 10, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+          flags: SNAPSHOT_FLAG_VISIBLE,
+        });
+      }
+      handle.pushSnapshot(snapshot);
+      frame();
+      const camera = handle.scene.getCameraByName(`${AUTHORED_CAMERA_PREFIX}1`)!;
+      expect(handle.scene.activeCamera).toBe(camera);
+      expect(camera.position.asArray()).toEqual([10, 2, 0]);
+      head.position.y = 5;
+      frame();
+      expect(camera.position.asArray()).toEqual([10, 5, 0]);
+      expect(apply).toHaveBeenCalledTimes(1);
+      // A paused session's frames apply nothing: the camera holds until the next pose.
+      handle.setGameTimePaused(true);
+      head.position.y = 7;
+      frame();
+      expect(camera.position.asArray()).toEqual([10, 5, 0]);
+    } finally {
+      apply.mockRestore();
+    }
+  });
+
   it("publishes actor positions as each snapshot lands, not only when it is applied", () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
@@ -2763,11 +3032,14 @@ describe("Play createEngine view", () => {
         renderLoop();
         engine.onEndFrameObservable.notifyObservers(engine);
       };
+      handle.applyCommand({ type: "sceneCamera", camera: { x: 3, y: -1, rotation: 0, zoom: 1 }, bounds: { width: 16, height: 9 } });
       handle.pushSnapshot(actorSnapshot(1, 0));
       engine.onBeginFrameObservable.notifyObservers(engine);
       await handle.prewarmSceneMaterials();
       frame();
       expect(listener).toHaveBeenCalledTimes(1);
+      // The Layer Camera in view hears from its centre on the XY plane, not from 500 units in front of it.
+      expect(listener.mock.calls[0]![0]).toMatchObject({ x: 3, y: -1, z: 0 });
       expect(handle.scheduler.stats().renderedFrames).toBe(1);
 
       // The 1 fps cap refuses the next draw, but the applied snapshot still
@@ -4020,7 +4292,6 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 1 });
@@ -4062,7 +4333,6 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 1 });
@@ -4103,7 +4373,7 @@ describe("Play createEngine view", () => {
     expect(handle.assignedMaterialGuids()).toEqual(["mat-rock"]);
   });
 
-  it("draws the post-process stack from the authored Default Camera", async () => {
+  it("draws the post-process stack from the Layer Camera, then from a possessed camera", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -4117,8 +4387,7 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     await handle.prewarmSceneMaterials();
-    const fallback = handle.scene.getCameraByName("camera");
-    expect(handle.scene.activeCamera).toBe(fallback);
+    expect(handle.scene.activeCamera?.name).toBe("playLayerCamera");
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
 
     handle.applyCommand({
@@ -4126,8 +4395,9 @@ describe("Play createEngine view", () => {
       slotId: 1,
       meshKind: "camera",
       meshAssetGuid: null,
-      camera: { isDefault: true, projectionMode: "perspective" },
+      camera: { projectionMode: "perspective" },
     });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
     const buf = new Float32Array(snapshotFloatCount(8));
     writeSnapshotHeader(buf, {
       frameId: 1,
@@ -4152,7 +4422,7 @@ describe("Play createEngine view", () => {
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
   });
 
-  it("keeps the post-process stack on the fallback camera after Default Camera despawn", async () => {
+  it("keeps the post-process stack on the Layer Camera after the possessed camera despawns", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -4171,8 +4441,9 @@ describe("Play createEngine view", () => {
       slotId: 1,
       meshKind: "camera",
       meshAssetGuid: null,
-      camera: { isDefault: true, projectionMode: "perspective" },
+      camera: { projectionMode: "perspective" },
     });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
     const spawn = new Float32Array(snapshotFloatCount(8));
     writeSnapshotHeader(spawn, {
       frameId: 1,
@@ -4206,9 +4477,9 @@ describe("Play createEngine view", () => {
     callback?.();
 
     await handle.prewarmSceneMaterials();
-    const fallback = handle.scene.getCameraByName("camera");
-    expect(handle.scene.activeCamera).toBe(fallback);
-    expect(fallback?.isDisposed()).toBe(false);
+    const layerCamera = handle.scene.getCameraByName("playLayerCamera");
+    expect(handle.scene.activeCamera).toBe(layerCamera);
+    expect(layerCamera?.isDisposed()).toBe(false);
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
   });
 
@@ -4268,7 +4539,23 @@ describe("Play createEngine view", () => {
     return buf;
   }
 
-  it("lets the destination Default Camera win after play loadScene", () => {
+  it("views through the Scene's Layer Camera until a camera is possessed, and moves it on sceneCamera", () => {
+    const { handle } = playHandle(sharedEngine());
+    const layerCamera = handle.scene.getCameraByName("playLayerCamera");
+    expect(handle.scene.activeCamera).toBe(layerCamera);
+    handle.applyCommand({ type: "sceneCamera", camera: { x: 3, y: -1, rotation: 0, zoom: 2 }, bounds: { width: 20, height: 10 } });
+    expect(layerCamera?.position.asArray()).toEqual([3, -1, -500]);
+    expect(layerCamera?.orthoTop).toBeCloseTo(2.5);
+    handle.applyCommand({ type: "spawn", slotId: 1, actorGuid: "cam", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 1, meshKind: "camera", meshAssetGuid: null, camera: { projectionMode: "perspective" } });
+    expect(handle.scene.activeCamera).toBe(layerCamera);
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
+    expect(handle.scene.activeCamera?.name).toBe("authoredCamera:1");
+    handle.applyCommand({ type: "possessCamera", slotId: null });
+    expect(handle.scene.activeCamera).toBe(layerCamera);
+  });
+
+  it("drops the previous Scene's possession on play loadScene and lets the destination's win", () => {
     const { handle } = playHandle(sharedEngine());
     handle.applyCommand({
       type: "spawn",
@@ -4284,13 +4571,13 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: false,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 1 });
     expect(handle.scene.activeCamera?.name).toBe("authoredCamera:1");
 
     handle.loadScene(createDefaultScene());
+    expect(handle.scene.activeCamera?.name).toBe("playLayerCamera");
     handle.applyCommand({
       type: "spawn",
       slotId: 2,
@@ -4305,9 +4592,9 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
+    handle.applyCommand({ type: "possessCamera", slotId: 2 });
     expect(handle.scene.activeCamera?.name).toBe("authoredCamera:2");
     expect(handle.scene.getCameraByName("authoredCamera:1")).toBeFalsy();
   });
@@ -4337,7 +4624,6 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 1 });
@@ -4360,7 +4646,6 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 2 });
@@ -4387,7 +4672,6 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 1 });
@@ -4629,7 +4913,6 @@ describe("Play createEngine view", () => {
       camera: {
         projectionMode: "perspective",
         fieldOfView: 60,
-        isDefault: true,
       },
     });
     handle.applyCommand({ type: "possessCamera", slotId: 1 });
@@ -5020,7 +5303,7 @@ describe("Play createEngine view", () => {
       expect(handle.scene.getMeshByName(guideName)).toBe(guide);
       expect(handle.postProcessPassCount()).toBe(1);
       expect(created).toEqual(passes);
-      expect(selectFogVolumes(handle.scene, probe, 50)[0]?.properties).toMatchObject(properties);
+      expect(selectFogVolumes(handle.scene, probe)[0]?.properties).toMatchObject(properties);
     }
     data = structuredClone(data);
     Object.assign(data.actors[0]!.components[0]!.properties, { shape: "sphere", size: [4, 6, 8] });
@@ -5029,7 +5312,7 @@ describe("Play createEngine view", () => {
     expect(reshaped).not.toBe(guide);
     expect(guide.isDisposed()).toBe(true);
     expect(reshaped.getBoundingInfo().boundingBox.maximum.y).toBeCloseTo(3);
-    expect(selectFogVolumes(handle.scene, probe, 50)[0]?.properties).toMatchObject({ shape: "sphere", size: [4, 6, 8] });
+    expect(selectFogVolumes(handle.scene, probe)[0]?.properties).toMatchObject({ shape: "sphere", size: [4, 6, 8] });
     data = structuredClone(data);
     data.actors[0]!.components[0]!.properties.enabled = false;
     handle.loadScene(data);
@@ -5061,10 +5344,10 @@ describe("Play createEngine view", () => {
     expect(hasFogVolumes(handle.scene)).toBe(false);
     const assign = { type: "assignMesh" as const, slotId: 4, actorGuid: "mist", meshAssetGuid: null, meshKind: null };
     handle.applyCommand(assign);
-    expect(selectFogVolumes(handle.scene, camera, 50)).toHaveLength(1);
+    expect(selectFogVolumes(handle.scene, camera)).toHaveLength(1);
     expect(sceneRenderingSettings(handle.scene).effectsPlan?.volumetricLighting?.density).toBe(0);
     handle.applyCommand({ ...assign, meshKind: "box" });
-    expect(selectFogVolumes(handle.scene, camera, 50)).toHaveLength(1);
+    expect(selectFogVolumes(handle.scene, camera)).toHaveLength(1);
     setSceneEffectsEnabled(handle.scene, false);
     expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
     setSceneEffectsEnabled(handle.scene, true);
@@ -5542,7 +5825,7 @@ describe("Play createEngine view", () => {
     ).toBe(false);
   });
 
-  it("keeps the Default Camera active after a perspective-to-ortho switch and refreshes ortho on setSize", () => {
+  it("keeps a possessed camera active after a perspective-to-ortho switch and refreshes ortho on setSize", () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);
     handle.applyCommand({
@@ -5551,12 +5834,12 @@ describe("Play createEngine view", () => {
       meshKind: "camera",
       meshAssetGuid: null,
       camera: {
-        isDefault: true,
         projectionMode: "perspective",
         fieldOfView: 60,
         orthographicSize: 5,
       },
     });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
     const camera = handle.scene.getCameraByName(
       "authoredCamera:1",
     ) as UniversalCamera;
@@ -5567,7 +5850,6 @@ describe("Play createEngine view", () => {
       meshKind: "camera",
       meshAssetGuid: null,
       camera: {
-        isDefault: true,
         projectionMode: "orthographic",
         fieldOfView: 60,
         orthographicSize: 5,

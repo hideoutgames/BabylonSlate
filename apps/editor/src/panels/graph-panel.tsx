@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { GlslCodePreview } from "../components/glsl-code-preview";
+import { LazyGlslCodePreview } from "../components/lazy-code-editors";
 import {
   canBreakOnNode,
   canvasNodeTitle,
@@ -133,6 +133,7 @@ export function GraphPanel(
   const { focusedNodeId, openSessionSource } = usePlay();
   const {
     setSelectedNodeIds,
+    setSelectedMemberId,
     activeFunctionId: focusedFunctionId,
     setActiveFunctionId,
     releaseActiveFunctionId,
@@ -706,7 +707,7 @@ export function GraphPanel(
       if (type === CREATE_EVENT_NODE_TYPE_ID) return renderCreateEventBody(nodeId, data);
       return type === "debug.executeJavaScript" ? (
         <div className="w-88 border-t px-3 py-2">
-          <GlslCodePreview
+          <LazyGlslCodePreview
             value={String(data.body ?? "")}
             language="javascript"
           />
@@ -847,6 +848,8 @@ export function GraphPanel(
             onCanvasApi={setCanvasApi}
             onNavigateRequest={onNavigateRequest}
             onSelectionChange={setSelectedNodeIds}
+            // An empty click in a function's tab selects the function itself.
+            onEmptyCanvasClick={functionMember ? () => setSelectedMemberId(functionMember.id) : undefined}
             contextMenuItemsForNode={contextMenuItemsForNode}
             preparePaste={preparePaste}
             onChange={(next) => {

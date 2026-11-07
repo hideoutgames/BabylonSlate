@@ -4,8 +4,8 @@ import {
 } from "@haptic/assets";
 
 /** Fixed Schroeder delay taps (seconds). Lengths are the P16 comb / all-pass counts. */
-export const PARAMETRIC_REVERB_COMB_DELAYS = [0.0297, 0.0371, 0.0411, 0.0437];
-export const PARAMETRIC_REVERB_ALLPASS_DELAYS = [0.005, 0.0017];
+const PARAMETRIC_REVERB_COMB_DELAYS = [0.0297, 0.0371, 0.0411, 0.0437];
+const PARAMETRIC_REVERB_ALLPASS_DELAYS = [0.005, 0.0017];
 
 export type ParametricReverbGraph = {
   setProfile: (profile: {
@@ -21,12 +21,12 @@ function clamp01(value: number): number {
 }
 
 /** Comb feedback from baked decay (0..1). */
-export function reverbCombFeedbackFromDecay(decay: number): number {
+function reverbCombFeedbackFromDecay(decay: number): number {
   return 0.35 + clamp01(decay) * 0.55;
 }
 
 /** Low-pass Hz from baked damping (0..1, higher = duller). */
-export function reverbLowpassFromDamping(damping: number): number {
+function reverbLowpassFromDamping(damping: number): number {
   return 200 + (1 - clamp01(damping)) * 9800;
 }
 
@@ -67,41 +67,21 @@ function schroederAllpass(
   return output;
 }
 
-export type ParametricReverbOptions = {
-  /**
-   * When true (default), also connect a unity dry path. Skip this when the
-   * host already routes the send bus to the main mix (Babylon AudioV2).
-   */
-  dryPassThrough?: boolean;
-};
-
 /**
- * Dry pass-through plus one shared delay/comb/all-pass wet branch.
- * `input` is the reverb-send bus output; `output` is the main mix.
+ * One shared delay/comb/all-pass wet branch, added as a send only: the host already routes the send bus to the main
+ * mix (Babylon AudioV2). `input` is the reverb-send bus output; `output` is the main mix.
  */
 export function connectParametricReverb(
   context: BaseAudioContext,
   input: AudioNode,
   output: AudioNode,
-  options?: ParametricReverbOptions,
 ): ParametricReverbGraph {
   const { combDelays, allpassDelays } = parametricReverbTopology();
   const nodes: AudioNode[] = [];
-  /** Edges from the caller's send bus; `node.disconnect()` cannot remove them. */
-  const sends: AudioNode[] = [];
   const wet = context.createGain();
   wet.gain.value = 0;
   input.connect(wet);
-  sends.push(wet);
   nodes.push(wet);
-  if (options?.dryPassThrough !== false) {
-    const dry = context.createGain();
-    dry.gain.value = 1;
-    input.connect(dry);
-    sends.push(dry);
-    dry.connect(output);
-    nodes.push(dry);
-  }
 
   const combOut = context.createGain();
   combOut.gain.value = 1 / Math.max(1, combDelays.length);
@@ -141,10 +121,8 @@ export function connectParametricReverb(
       for (const node of combFilters) node.frequency.value = frequency;
     },
     dispose: () => {
-      // Remove only this graph's edges from the send bus; its other routes stay.
-      for (const node of sends) {
-        try { input.disconnect(node); } catch { /* Already disconnected. */ }
-      }
+      // Remove only this graph's edge from the send bus (`node.disconnect()` cannot); its other routes stay.
+      try { input.disconnect(wet); } catch { /* Already disconnected. */ }
       for (const node of nodes) node.disconnect();
     },
   };

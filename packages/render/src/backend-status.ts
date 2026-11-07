@@ -1,7 +1,7 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { GpuBackend } from "@haptic/core";
 
-export interface EngineBackendStatus {
+interface EngineBackendStatus {
   requestedBackend: GpuBackend;
   effectiveBackend: "webgl2" | "webgpu";
   fallbackReason?: string;

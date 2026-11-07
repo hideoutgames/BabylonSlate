@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Constants, FreeCamera, MeshBuilder, NullEngine, Scene, Vector3 } from "@babylonjs/core";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
+import { managedRenderReservations } from "./managed-render-resources";
 import { SharedOutlineOwner } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 
@@ -11,7 +12,8 @@ afterEach(() => {
   while (disposers.length) disposers.pop()!();
 });
 
-it("draws every strict occluder in a frame without view culling, and only those that can affect it otherwise", async () => {
+/** A 16 × 8 graph holding only a shared outline task, outlining one box. */
+async function outlineGraph() {
   const engine = adaptNullEngineFrameGraph(new NullEngine());
   Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, textureFloatRender: true, textureHalfFloatRender: true, blendFloat: true });
   const scene = new Scene(engine);
@@ -31,6 +33,18 @@ it("draws every strict occluder in a frame without view culling, and only those 
   });
   graph.addTask(task);
   await graph.buildAsync(false);
+  return { engine, scene, view, task };
+}
+
+it("gives the through and selection masks one depth target, since the compose samples only the strict group's", async () => {
+  const { engine, task } = await outlineGraph();
+  task.reconcileResources();
+  // Two DEPTH32F targets of 16 × 8 texels for the three groups: the strict group's and one the other two draw into in turn.
+  expect(managedRenderReservations(engine).categoryBytes.depth).toBe(2 * 16 * 8 * 4);
+});
+
+it("draws every strict occluder in a frame without view culling, and only those that can affect it otherwise", async () => {
+  const { scene, view, task } = await outlineGraph();
   const narrowed = vi.spyOn(view, "strictOccludersFor");
   // A steady frame narrows the strict occluders to those near a member on screen.
   task.onBeforeTaskExecute.notifyObservers(task);

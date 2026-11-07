@@ -229,19 +229,10 @@ function compileFingerprint(document: MaterialDocument): string {
 }
 
 /**
- * Preview/compile cache key. Node positions are excluded so layout drags do
- * not rebuild GPU materials. Invalid graphs still get a stable key.
- */
-export function materialCompileKey(
-  document: MaterialDocument,
-  context?: MaterialLowerContext,
-): string {
-  return materialCompileKeyFromLowering(document, lowerMaterialDocument(document, context));
-}
-
-/**
- * The key `materialCompileKey` returns, from a lowering the caller already holds
- * for the same document and context, so an edit lowers the graph once.
+ * Preview/compile cache key, from a lowering the caller already holds for the
+ * same document and context, so an edit lowers the graph once. Node positions
+ * are excluded so layout drags do not rebuild GPU materials. Invalid graphs
+ * still get a stable key.
  */
 export function materialCompileKeyFromLowering(
   document: MaterialDocument,

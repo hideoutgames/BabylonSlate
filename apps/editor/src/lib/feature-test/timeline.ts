@@ -44,8 +44,8 @@ import { classGraph, gChain, gNode, gWire, getVar, printString, setVar, varMembe
  */
 
 const FOLDER = "Timeline";
-export const FEATURE_TEST_TIMELINE_ASSET = "FT_Timeline";
-export const FEATURE_TEST_TIMELINE_LISTENER = "FT_TimelineListener";
+const FEATURE_TEST_TIMELINE_ASSET = "FT_Timeline";
+const FEATURE_TEST_TIMELINE_LISTENER = "FT_TimelineListener";
 
 /** Landscape-local pavilion origin (x, z), on the south slope in front of the world camera. */
 export const TIMELINE_PAVILION = { x: -4, z: -24, radius: 5 } as const;
@@ -59,7 +59,7 @@ const CLIP_NAME = "Door Loop";
 const DOOR_OPEN_EVENT = "On Door Open";
 const DOOR_OPEN_TIME = 1;
 const ANGLE_INPUT = "Angle";
-export const FEATURE_TEST_SWING_DOOR = "FT_SwingDoor";
+const FEATURE_TEST_SWING_DOOR = "FT_SwingDoor";
 const DOOR_SWING = "FT_DoorSwing";
 const SWING_OPEN_EVENT = "On Swing Open";
 const HUD_PULSE = "FT_HudPulse";

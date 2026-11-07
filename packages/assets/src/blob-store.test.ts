@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@haptic/vfs";
-import { createMemoryBlobStore, createVfsBlobStore } from "./blob-store";
+import { createVfsBlobStore } from "./blob-store";
 import { sha256Hex } from "./bytes";
 
 describe("createVfsBlobStore", () => {
@@ -19,17 +19,5 @@ describe("createVfsBlobStore", () => {
     const write = vi.spyOn(storage, "writeBinary");
     await blobs.writeBlob(hash, bytes);
     expect(write).not.toHaveBeenCalled();
-  });
-});
-
-describe("createMemoryBlobStore", () => {
-  it("keeps stored bytes independent of the arrays callers write and read", async () => {
-    const blobs = createMemoryBlobStore();
-    const bytes = new Uint8Array([1, 2, 3]);
-    await blobs.writeBlob("hash", bytes);
-    bytes[0] = 9;
-    const read = await blobs.readBlob("hash");
-    read[1] = 9;
-    expect(await blobs.readBlob("hash")).toEqual(new Uint8Array([1, 2, 3]));
   });
 });

@@ -19,9 +19,8 @@ import {
   type SaveGameValue,
 } from "./save-game";
 
-/** Version 2 added Structure fields; version 1 saves still load (their fields are a subset). */
+/** The only save file format version the service writes and reads. */
 const FORMAT_VERSION = 2;
-const READABLE_FORMAT_VERSIONS: ReadonlySet<number> = new Set([1, 2]);
 const MAX_SAVE_BYTES = 16 * 1024 * 1024;
 const generationNames = ["generation-a.save", "generation-b.save"] as const;
 interface SaveBody extends SaveGameMigrationData {
@@ -332,7 +331,7 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
     let outer: unknown;
     try { outer = JSON.parse(text); } catch { throw new SaveGameError("corrupt", "Save file is not valid JSON."); }
     if (!isSaveGameRecord(outer) || !Number.isSafeInteger(outer.formatVersion)) throw new SaveGameError("corrupt", "Save envelope is invalid.");
-    if (!READABLE_FORMAT_VERSIONS.has(outer.formatVersion as number)) throw new SaveGameError("incompatible", "This save uses an unsupported format version.");
+    if (outer.formatVersion !== FORMAT_VERSION) throw new SaveGameError("incompatible", "This save uses an unsupported format version.");
     if (typeof outer.payload !== "string" || typeof outer.checksum !== "string" || !/^[a-f0-9]{64}$/.test(outer.checksum)) throw new SaveGameError("corrupt", "Save checksum is missing or invalid.");
     let hash: string;
     try { hash = await checksum(outer.payload); }

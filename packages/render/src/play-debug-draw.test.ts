@@ -1,7 +1,7 @@
 import { PointLight, Vector3, type LinesMesh } from "@babylonjs/core";
 import { describe, expect, it, vi } from "vitest";
 import type { CommandMessage, DebugDrawCommand } from "@haptic/bridge";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { createPlayDebugDraw, PLAY_DEBUG_DRAW_PREFIX } from "./play-debug-draw";
 import { RENDERING_GROUP } from "./sorting";
 import { setupDefaultViewport } from "./viewport";

@@ -1,11 +1,6 @@
-/**
- * Babylon 9 tracks per-frame draws on `engine._drawCalls` (a PerfCounter).
- * There is no public `engine.drawCalls` number — reading that always yields
- * `undefined`, which Play previously coalesced to 0.
- */
+/** Babylon 9 tracks per-frame draws on `engine._drawCalls` (a PerfCounter); it has no public `engine.drawCalls`. */
 
 export type DrawCallEngine = {
-  drawCalls?: number;
   _drawCalls?: {
     current: number;
     fetchNewFrame?: () => void;
@@ -17,14 +12,8 @@ export function beginEngineDrawCallFrame(engine: DrawCallEngine): void {
   engine._drawCalls?.fetchNewFrame?.();
 }
 
-/**
- * Last-frame draw calls. Prefers `_drawCalls.current`; `drawCalls` is a
- * fallback for engines that expose a number.
- */
+/** Last-frame draw calls from `_drawCalls.current`, or 0 without a finite count. */
 export function readEngineDrawCalls(engine: DrawCallEngine): number {
-  const fromPerf = engine._drawCalls?.current;
-  if (typeof fromPerf === "number" && Number.isFinite(fromPerf)) {
-    return fromPerf;
-  }
-  return engine.drawCalls ?? 0;
+  const current = engine._drawCalls?.current;
+  return typeof current === "number" && Number.isFinite(current) ? current : 0;
 }

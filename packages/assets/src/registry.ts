@@ -376,13 +376,6 @@ export class AssetRegistry {
     return this.loader.loadChunk(locator, entry, this.blobsForAsset(asset), this.storageForAsset(asset), options);
   }
 
-  /** Reserve memory before reading: every chunk records its length. */
-  async getChunkByteLength(guid: string, chunkId: string, expectedRevision?: string, options: StorageReadOptions = {}): Promise<number> {
-    const locator = await this.getAssetLocator(guid, options);
-    options.signal?.throwIfAborted();
-    return this.chunkByteLength(guid, chunkId, locator, expectedRevision);
-  }
-
   /** Size a chunk of a catalog snapshot the caller has just resolved, without refreshing it again. */
   async chunkByteLength(guid: string, chunkId: string, locator: AssetSourceLocator, expectedRevision?: string): Promise<number> {
     if (expectedRevision !== undefined && locator.revision !== expectedRevision) throw new SourceRevisionChangedError(`Asset changed before estimating chunk ${chunkId}: ${guid}`);
@@ -799,7 +792,7 @@ export class AssetRegistry {
 
   /**
    * Re-queue textures that fell back when the transcoder was unavailable, or
-   * whose `pending` / `encoding` job an earlier session left behind. A Texture
+   * whose `pending` job an earlier session left behind. A Texture
    * the queue already holds a job for is left to it (a remount rescans).
    */
   requeueUncompressedTextures(): Promise<number> {

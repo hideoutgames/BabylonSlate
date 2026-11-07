@@ -1,6 +1,6 @@
 import { Color3, Constants, DirectionalLight, FreeCamera, MeshBuilder, NullEngine, RenderTargetTexture, Scene, StandardMaterial, Texture, Vector3 } from "@babylonjs/core";
 import { afterEach, expect, it, vi } from "vitest";
-import { normalizeShadowSettings, parseMirrorProperties } from "@haptic/core";
+import { DEFAULT_RENDER_EFFECTS, normalizeShadowSettings, parseMirrorProperties } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { createMirrorSurfaceMesh, mirrorDiagnostics } from "./mirrors";
@@ -31,14 +31,15 @@ function host() {
     target.texture!.format = Constants.TEXTUREFORMAT_RGBA;
     return target;
   });
-  const passes: { target: string; meshes: string[]; eye: Vector3; active: boolean }[][] = [];
+  const passes: { target: string; meshes: string[]; eye: Vector3; active: boolean; size: [number, number] }[][] = [];
   vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
   vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
     const camera = this.activeCamera;
     if (!camera) return;
+    const { width, height } = this.getSize();
     passes.at(-1)!.push({
       target: this.name, meshes: (this.renderList ?? []).map((mesh) => mesh.name), eye: camera.globalPosition.clone(),
-      active: this.getScene()!.activeCamera === camera,
+      active: this.getScene()!.activeCamera === camera, size: [width, height],
     });
   });
   const scene = new Scene(engine);
@@ -87,6 +88,22 @@ it("draws at most two visible, facing mirrors per render, an imageless one first
   expect(near.eye.subtract(new Vector3(0, 1, 6)).length()).toBeLessThan(1e-6);
   expect(near.meshes).toContain("box");
   for (const pass of passes.flat()) expect(pass.meshes.filter((name) => name !== "box")).toEqual([]);
+});
+
+it("sizes each reflection by Resolution Scale of the size the view draws at, which FSR Upscaling lowers", () => {
+  const { scene, passes, frame } = host();
+  mirror(scene, "full", new Vector3(0, 1, 3));
+  const half = createMirrorSurfaceMesh(scene, "half", parseMirrorProperties({ width: 2, height: 2, resolutionScale: 0.5 }));
+  half.position.set(-2, 1, 5);
+  const sizes = () => Object.fromEntries(passes.at(-1)!.map((pass) => [pass.target, pass.size]));
+  // The NullEngine view draws at its 512 × 256 output.
+  frame();
+  expect(sizes()).toEqual({ "mirror:full": [512, 256], "mirror:half": [256, 128] });
+  updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, upscaling: { enabled: true, renderScale: 0.5, sharpness: 0.2 } } });
+  // The view's scene now draws at 256 × 128 and upscales: each reflection resizes and draws again.
+  frame();
+  expect(sizes()).toEqual({ "mirror:full": [256, 128], "mirror:half": [128, 64] });
+  expect(frame()).toEqual([]);
 });
 
 /** A static view of one mirror reflecting a box, its first draw settled. */

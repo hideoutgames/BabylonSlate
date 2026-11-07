@@ -1,6 +1,6 @@
 import { MeshBuilder } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { waitForPreviewMeshesReady, waitUntilReady } from "./preview-readiness";
 import { createHeldThreadBudget, SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
@@ -59,11 +59,11 @@ describe("waitUntilReady", () => {
     const held = 10_000;
     const budget = createHeldThreadBudget();
     const hold = () => { clock.advance(held); return false; };
-    expect(await waitUntilReady(hold, () => true, undefined, budget)).toBe(false);
+    expect(await waitUntilReady(hold, () => true, budget)).toBe(false);
     const spentFirst = clock.elapsed();
     expect(spentFirst).toBeGreaterThan(SCENE_THREAD_HELD_BUDGET_MS);
     // Nothing is left to credit: the next wait ends at its bound, within the one probe that crossed it.
-    expect(await waitUntilReady(hold, () => true, undefined, budget)).toBe(false);
+    expect(await waitUntilReady(hold, () => true, budget)).toBe(false);
     expect(clock.elapsed() - spentFirst).toBeLessThanOrEqual(SCENE_SHADER_WARM_TIMEOUT_MS + held);
   });
 

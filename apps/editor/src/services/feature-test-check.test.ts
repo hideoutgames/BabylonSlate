@@ -36,6 +36,7 @@ function fakeEditor(
   /** The Play view's presentation counts at a time, after the given commands. */
   presentation?: (now: number, commands: readonly string[]) => {
     drawn: number; held: number; contextLosses?: number; skipped?: number; heldReasons?: Record<string, number>;
+    rendererWork?: RenderDiagnostics["rendererWork"];
   },
 ) {
   let now = 0;
@@ -71,8 +72,9 @@ function fakeEditor(
           drawCalls: 10, meshes: 20, textures: 5, accountedBytes: 0,
           rendering: presentation
             ? ({
-              ...(({ skipped, ...counts }) => ({
+              ...(({ skipped, rendererWork, ...counts }) => ({
                 presentation: { contextLosses: 0, heldReasons: {}, ...counts }, frameBackpressure: { mode: 2, inFlight: 0, skipped: skipped ?? 0 },
+                ...(rendererWork ? { rendererWork } : {}),
               }))(presentation(now, commands)),
               cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1,
               pipeline: { effective: { gpuBackend: "webgl2" } },
@@ -111,7 +113,7 @@ function fakeEditor(
     sampleFrames: async () => {
       // The command a sample follows, past the Breakdown's per-sample `gpubusy on`.
       sampled.push({ now, after: commands.filter((line) => line !== "gpubusy on").at(-1) ?? null });
-      return { frames: 60, durationMs: 1000, fps: 60, p95Ms: 17, maxMs: 20, stalls: 0 };
+      return { frames: 60, durationMs: 1000, fps: 60, medianMs: 1000 / 60, meanMs: 1000 / 60, vsync: [1, 0, 0, 0], p95Ms: 17, maxMs: 20, stalls: 0 };
     },
     now: () => now,
     sleep: async (ms, signal) => {
@@ -454,7 +456,7 @@ describe("runFeatureTestCheck", () => {
         sampleFrames: async () => {
           // Only the Breakdown's own samples, after its frame cap.
           const durationMs = editor.commands.includes("framecap 60") ? durations(window++) : 1000;
-          return { frames: 60, durationMs, fps: 60_000 / durationMs, p95Ms: 17, maxMs: 20, stalls: 0 };
+          return { frames: 60, durationMs, fps: 60_000 / durationMs, medianMs: durationMs / 60, meanMs: durationMs / 60, vsync: [1, 0, 0, 0], p95Ms: 17, maxMs: 20, stalls: 0 };
         },
       };
       const report = await runFeatureTestCheck({
@@ -665,7 +667,7 @@ describe("draw sampling", () => {
 describe("breakdownDelta", () => {
   const sample = (label: string, meanMs?: number, baseline = label.startsWith("baseline")): FeatureTestBenchmarkSample => ({
     label, baseline,
-    frames: meanMs === undefined ? null : { frames: 100, durationMs: meanMs * 100, fps: 1000 / meanMs, medianMs: 33.3, meanMs, p95Ms: 46, maxMs: 50, stalls: 0 },
+    frames: meanMs === undefined ? null : { frames: 100, durationMs: meanMs * 100, fps: 1000 / meanMs, medianMs: 33.3, meanMs, vsync: [0, 1, 0, 0], p95Ms: 46, maxMs: 50, stalls: 0 },
     runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null, failed: [],
   });
 
@@ -716,21 +718,12 @@ describe("breakdownDelta", () => {
     expect(breakdownDelta(samples, samples[3]!)!.ms).toBe(0);
     expect(breakdownDelta(samples, samples[5]!)!.ms).toBe(1);
   });
-
-  it("reads reports saved before interleaved baselines and mean frame times", () => {
-    const old = (label: string, medianMs: number): FeatureTestBenchmarkSample => ({
-      label, frames: { frames: 0, durationMs: 0, fps: 0, medianMs, p95Ms: 46, maxMs: 50, stalls: 0 },
-      runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null, failed: [],
-    });
-    const samples = [old("baseline", 38), old("shadows off", 30), old("baseline again", 42)];
-    expect(breakdownDelta(samples, samples[1]!)).toEqual({ ms: -10, percent: -25, basis: "frame" });
-  });
 });
 
 describe("breakdown verdicts", () => {
   const sample = (label: string, busyMs: number, extra: Partial<FeatureTestBenchmarkSample> = {}): FeatureTestBenchmarkSample => ({
     label, baseline: label.includes("baseline"),
-    frames: { frames: 100, durationMs: 3330, fps: 30, meanMs: 33.3, p95Ms: 34, maxMs: 40, stalls: 0, vsync: [0, 1, 0, 0] },
+    frames: { frames: 100, durationMs: 3330, fps: 30, medianMs: 33.3, meanMs: 33.3, p95Ms: 34, maxMs: 40, stalls: 0, vsync: [0, 1, 0, 0] },
     runtimeFps: null, cpuMs: 8, gpuMs: null, drawCalls: 0, resolution: null, failed: [],
     gpuBusy: { frames: 100, medianMs: busyMs, p95Ms: busyMs + 2, pollMs: 4, skipped: 0 }, ...extra,
   });
@@ -766,7 +759,7 @@ describe("breakdown verdicts", () => {
   it("is OVER CAP when an add-one baseline passes the cap, in GPU-busy time where measured, else mean frame time", () => {
     const run = [
       sample("baseline 1", ADD_ONE_CAP_MS), sample("MSAA 4x", 45), sample("baseline 2", 31),
-      sample("baseline 3", 0, { gpuBusy: undefined, frames: { frames: 100, durationMs: 3500, fps: 28, meanMs: 35, p95Ms: 40, maxMs: 50, stalls: 0 } }),
+      sample("baseline 3", 0, { gpuBusy: undefined, frames: { frames: 100, durationMs: 3500, fps: 28, medianMs: 35, meanMs: 35, vsync: [0, 1, 0, 0], p95Ms: 40, maxMs: 50, stalls: 0 } }),
       sample("warm-up 1", 40, { baseline: false, warmup: true }),
     ];
     // At the cap is not over it; the step and the warm-up window are not baselines.
@@ -782,7 +775,7 @@ describe("breakdown verdicts", () => {
 
   it("is SATURATED when most baseline frames lasted four or more display intervals, weighted by frames", () => {
     const paced = (label: string, frames: number, fourPlus: number) =>
-      sample(label, 20, { frames: { frames, durationMs: frames * 70, fps: 14, p95Ms: 80, maxMs: 90, stalls: 0, vsync: [0, 0, 1 - fourPlus, fourPlus] } });
+      sample(label, 20, { frames: { frames, durationMs: frames * 70, fps: 14, medianMs: 70, meanMs: 70, p95Ms: 80, maxMs: 90, stalls: 0, vsync: [0, 0, 1 - fourPlus, fourPlus] } });
     // (100 x 0.8 + 50 x 0.2) / 150 = 0.6; the step's own frames do not count.
     const run = [paced("baseline 1", 100, 0.8), paced("shadows off", 100, 0), paced("baseline 2", 50, 0.2)];
     expect(breakdownSaturation(run)).toBeCloseTo(0.6);
@@ -1052,6 +1045,46 @@ describe("Profile", () => {
     // later one a 2 s window within 25% + 15 points, then the 3 s.
     const profileWaits = waits.filter((wait) => /: (warming up|measuring (?!Play|the editor))/.test(wait.step));
     expect(profileWaits.map((wait) => wait.ms)).toEqual([13_000, ...samples.slice(1).map(() => 5_000)]);
+  });
+
+  it("records the world renderer's work each row did while sampled, and the native memory as it ended", async () => {
+    // Two strict readiness checks and one shadow admission per attempt, three times as many while shadows are off.
+    let attempts = 0;
+    const work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 0, outlineReadinessChecks: 0 };
+    const editor = fakeEditor({}, undefined, (now, commands) => {
+      for (; attempts < Math.floor(now / 25); attempts++) {
+        const scale = shadowsOff(commands) ? 3 : 1;
+        work.strictReadinessChecks += 2 * scale;
+        work.shadowAdmissions += scale;
+      }
+      return { drawn: attempts, held: 0, rendererWork: { ...work } };
+    });
+    const MIB = 1048576;
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      sampleFrames: async (ms, signal) => {
+        const stats = await editor.deps.sampleFrames(ms, signal);
+        await editor.deps.sleep(ms, signal);
+        return stats;
+      },
+      // The device has 1 GiB free, 2 GiB while shadows are off; the app's headroom is unreported.
+      hostMemory: async () => ({ deviceAvailableBytes: (shadowsOff(editor.commands) ? 2048 : 1024) * MIB, appAvailableBytes: null }),
+    };
+    const report = await runFeatureTestCheck({
+      mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, timeouts: { commandMs: 0 }, signal: new AbortController().signal,
+    });
+    const row = (label: string) => report.scenes[0]!.play.benchmark.find((sample) => sample.label === label)!;
+    // Each row keeps the memory as its sample ended, before the step is undone.
+    expect([row("baseline 1").memory, row("shadows off").memory]).toEqual([
+      { deviceAvailableBytes: 1024 * MIB, appAvailableBytes: null }, { deviceAvailableBytes: 2048 * MIB, appAvailableBytes: null },
+    ]);
+    const perDrawn = (label: string) => {
+      const { work: sampled, presentation } = row(label);
+      return { readiness: sampled!.strictReadinessChecks / presentation!.drawn, admissions: sampled!.shadowAdmissions / presentation!.drawn };
+    };
+    expect(perDrawn("baseline 1")).toEqual({ readiness: 2, admissions: 1 });
+    expect(perDrawn("shadows off")).toEqual({ readiness: 6, admissions: 3 });
+    expect(perDrawn("baseline 2")).toEqual({ readiness: 2, admissions: 1 });
   });
 
   it("samples a step that raises the hold rate past the margin once the wait's bound passes, says so, and goes on", async () => {

@@ -77,12 +77,12 @@ export { syncMeshCollisionDashes } from "./mesh-collision-dashes";
 export const EDITOR_ACTOR_MESH_PREFIX = "editorActor:";
 
 /** Child visual meshes: `editorActor:<actorId>|<componentId>`. */
-export const EDITOR_COMPONENT_MESH_SEP = "|";
+const EDITOR_COMPONENT_MESH_SEP = "|";
 
 /** Hidden volumetric collider on origin-root actors so tap pick hits a volume, not a thin billboard. */
-export const EDITOR_ORIGIN_PICK_DIAMETER = 0.75;
+const EDITOR_ORIGIN_PICK_DIAMETER = 0.75;
 
-export const EDITOR_HELPER_BILLBOARD_ID = "billboard";
+const EDITOR_HELPER_BILLBOARD_ID = "billboard";
 
 export function editorMeshName(actorId: string): string {
   return `${EDITOR_ACTOR_MESH_PREFIX}${actorId}`;

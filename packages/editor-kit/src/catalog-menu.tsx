@@ -18,8 +18,8 @@ import { WindowedList } from "./windowed-list";
 import "./styles/catalog-menu.css";
 
 /** Compact rows match `--chrome-row`; the touch layout uses `--touch-target`. */
-export const CATALOG_MENU_ROW_HEIGHT = 28;
-export const CATALOG_MENU_TOUCH_ROW_HEIGHT = 44;
+const CATALOG_MENU_ROW_HEIGHT = 28;
+const CATALOG_MENU_TOUCH_ROW_HEIGHT = 44;
 
 const POPUP_WIDTH = 360;
 const POPUP_HEIGHT = 460;

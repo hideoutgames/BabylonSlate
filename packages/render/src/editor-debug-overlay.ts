@@ -44,6 +44,7 @@ import { withSceneReadinessState } from "./scene-perf";
 import { isRenderTargetCaptureCandidate } from "./render-target-capture";
 import { admittedSceneMeshes } from "./scene-stream-admission";
 import type { AudioLibrary } from "./audio-service";
+import { asNumber } from "./as-number";
 
 /** Lens preview redraws per second unless the editor sets its own rate. */
 export const DEFAULT_CAMERA_PREVIEW_FRAME_RATE = 30;
@@ -60,7 +61,7 @@ function lensPreviewSize(aspect: number): { width: number; height: number } {
   return { width: Math.max(1, Math.round(CAMERA_PREVIEW_HEIGHT * aspect)), height: CAMERA_PREVIEW_HEIGHT };
 }
 
-export type LightDebugKind = "point" | "spot" | "directional" | "area";
+type LightDebugKind = "point" | "spot" | "directional" | "area";
 
 type OverlaySync = {
   sceneData: SerializedScene | null;
@@ -69,7 +70,7 @@ type OverlaySync = {
   audioLibrary?: Pick<AudioLibrary, "audio" | "attenuations">;
 };
 
-export type EditorDebugOverlayOptions = {
+type EditorDebugOverlayOptions = {
   /** Test clock; the overlay then ticks only when the caller asks. */
   now?: () => number;
   /** Installed Render Target assets; a selected capture takes its aspect from its target. */
@@ -96,10 +97,6 @@ const DEBUG_FAR_NEAR_SCALE = 40;
 
 function debugFarDistance(nearClip: number, farClip: number): number {
   return Math.min(farClip, Math.max(DEBUG_FAR_MIN, nearClip * DEBUG_FAR_NEAR_SCALE));
-}
-
-function asNumber(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 /** Every guide path gets 64 dashes, so the pattern scales with the path's length. */

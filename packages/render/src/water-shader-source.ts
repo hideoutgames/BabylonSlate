@@ -219,8 +219,8 @@ export function waterWaveNodeSources(language: ShaderLanguage): WaterWaveNodeSou
     const fragmentBind = (code: string) => stripShaderComments(bindFragmentSource(wgsl ? toWgsl(code) : code, wgsl));
     sources = {
       // The block declares the samplers itself, once per stage.
-      vertexHelpers: guard(fftHelpers(wgsl, false)),
-      fragmentHelpers: guard(fftHelpers(wgsl, false) + spectrumHelpers(wgsl, false)),
+      vertexHelpers: guard(fftHelpers(wgsl)),
+      fragmentHelpers: guard(fftHelpers(wgsl) + spectrumHelpers(wgsl)),
       varying: (out) => vertexBind(nodeVaryingSource(out)),
       fragment: (rest, base, varying) => fragmentBind(nodeFragmentSource(rest, base, varying)),
     };

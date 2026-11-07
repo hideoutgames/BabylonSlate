@@ -15,6 +15,7 @@ import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
 import type { Node } from "@babylonjs/core/node";
@@ -380,6 +381,10 @@ export class RenderTargetCaptures {
       // A published output keeps what its last capture showed; capture views prepare in the starting state.
       if (rehearsal && (target.published || target.view)) continue;
       if (rehearsal) this.pendingRehearsals.add(guid);
+      // A manual colour capture keeps its request through the frame a shadow atlas resize frees the old atlas: no map
+      // exists to draw it with until a later frame builds the new one, and it would keep that image without shadows.
+      if (!rehearsal && !settings.captureEveryFrame && !target.depth && !target.normals &&
+        findSceneShadowController(this.scene)?.atlasResizing()) continue;
       if (target.view) {
         // Here, before the scene view's graph runs: a new map dirties lighting
         // state the graph's own frame must not see change.
@@ -420,7 +425,7 @@ export class RenderTargetCaptures {
         for (const mesh of meshes) target.pendingOverrides.add(mesh);
         target.usedNormalSources.clear();
         for (const mesh of target.overrides) if (!target.pendingOverrides.has(mesh) && !mesh.isDisposed()) target.texture.setMaterialForRendering(mesh, undefined);
-        for (const mesh of meshes) target.texture.setMaterialForRendering(mesh, this.normalMeshMaterial(target, mesh));
+        for (const mesh of meshes) this.overrideMaterial(target, mesh);
         const previousOverrides = target.overrides;
         target.overrides = target.pendingOverrides;
         target.pendingOverrides = previousOverrides;
@@ -811,6 +816,37 @@ export class RenderTargetCaptures {
     }
     return true;
   }
+  /**
+   * Points `mesh`'s pass at its depth or normal variant (`normalMeshMaterial`, which also records the sources in use).
+   * Babylon resets the pass's draw wrappers on every set, so a steady frame sets nothing and keeps their programs and
+   * defines. A slot container whose children changed is the same Material: its submeshes' wrappers hold the old
+   * children's programs, so it is set again (Babylon's `SubMesh.getMaterial` also drops every pass's wrappers of a
+   * MultiMaterial mesh whenever its effective sub-material changes, as it does when the main and capture passes alternate).
+   *
+   * A kept wrapper still prepares its defines on each capture, as no dirty call is sure to reach it: `Material.markDirty`,
+   * the define-dirty marks and `NodeMaterial.build` touch only submeshes whose material in the current pass (the main
+   * pass, where they run) is theirs, never a variant's, and on WebGPU only wrappers holding that material's context. A
+   * frozen variant (the editor freezes library Materials) would otherwise answer from its last readiness after a define
+   * input changed in place, such as a lattice cage attaching to or leaving the mesh, and draw the old program.
+   * Unchanged defines cost no new Effect.
+   */
+  private overrideMaterial(target: Target, mesh: AbstractMesh): void {
+    const slots = target.normalSlots.get(mesh);
+    const children = slots?.subMaterials;
+    const material = this.normalMeshMaterial(target, mesh);
+    const pass = target.texture.renderPassId;
+    // An instance draws its source's pass material and submeshes.
+    const source = mesh.isAnInstance ? (mesh as InstancedMesh).sourceMesh : mesh;
+    if (source.getMaterialForRenderPass(pass) !== material || (material === slots && slots.subMaterials !== children)) {
+      target.texture.setMaterialForRendering(mesh, material);
+      return;
+    }
+    for (const subMesh of source.subMeshes ?? []) {
+      const wrapper = subMesh._getDrawWrapper(pass);
+      if (wrapper) wrapper._wasPreviouslyReady = false;
+    }
+  }
+  /** The mesh's depth or normal variant: its source's, or a per-mesh slot container of its sub-materials' (null when blended). */
   private normalMeshMaterial(target: Target, mesh: AbstractMesh): Material {
     const source = mesh.material;
     if (!(source instanceof MultiMaterial)) return this.normalMaterial(target, source);

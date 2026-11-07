@@ -156,7 +156,7 @@ describe("ScriptContext shape", () => {
     "flowState", "reportCommand", "random", "getVariable", "variableReference", "tweenValue", "tweenProperty",
     "setVariable", "getVariableFrom", "setVariableOn", "setMeshMaterialAsync", "setMaterialTextureParameterAsync",
     "destroyActor", "setActorLocation", "addActorWorldOffset", "setActorRotation", "setActorScale",
-    "setActorTransform", "attachToBone", "executeConsoleCommandAsync", "delay", "callInterface", "getComponent",
+    "setActorTransform", "attachToBone", "executeConsoleCommandAsync", "delay", "delayOneTick", "retriggerableDelay", "callInterface", "getComponent",
     "getComponentById", "getOwnedActor", "getOwnedTimelineClip", "getOwnedComponent", "callComponentFunction", "addComponent", "spawnActor", "spawnActorAsync",
     "beginDeferredSpawnActorAsync", "finishDeferredSpawnActor",
     "requestAssetLoad", "requestClassLoad", "waitForAssetLoad", "unloadAsset", "prepareAssets",
@@ -203,14 +203,15 @@ describe("ScriptContext shape", () => {
 });
 
 describe("ScriptContext captured by a pending latent run", () => {
-  it("keeps its own self, delta, tick index and input while other dispatches run, and skips its own re-entry", async () => {
+  it("keeps its own self, delta, tick index and input while other dispatches run, including its own re-entry", async () => {
     const gates: Array<() => void> = [];
     const host = new ScriptHost(services({ delay: () => new Promise<void>((resolve) => { gates.push(resolve); }) }));
     await host.load(script("Hero", [
       "export async function onTick(ctx) {",
       "  ctx.self.setVariable('runs', (ctx.self.getVariable('runs') ?? 0) + 1);",
       "  await ctx.delay(1);",
-      "  ctx.self.setVariable('resumed', [ctx.self.guid, ctx.deltaSeconds, ctx.tickIndex, ctx.getVariable('tag'), ctx.isActionHeld('Jump')]);",
+      "  const resumed = [ctx.self.guid, ctx.deltaSeconds, ctx.tickIndex, ctx.getVariable('tag'), ctx.isActionHeld('Jump')];",
+      "  ctx.self.setVariable('resumed', [...(ctx.self.getVariable('resumed') ?? []), resumed]);",
       "}",
     ].join("\n"), { entryPoints: [{ name: "onTick", event: "onTick", isAsync: true }] }));
     const a = new Actor({ classId: "Hero", guid: "a" });
@@ -223,19 +224,15 @@ describe("ScriptContext captured by a pending latent run", () => {
     hooks.onTick!(b, tickWith(0.2, 2, false));
     hooks.onTick!(a, tickWith(0.3, 3, false));
 
-    // Actor a's latent run is still pending, so its next tick starts nothing; b is independent.
-    expect(gates).toHaveLength(2);
-    expect(a.getVariable("runs")).toBe(1);
+    // Actor a's second tick starts its own run while the first still waits.
+    expect(gates).toHaveLength(3);
+    expect(a.getVariable("runs")).toBe(2);
     expect(b.getVariable("runs")).toBe(1);
 
     for (const open of gates) open();
     await flush();
 
-    expect(a.getVariable("resumed")).toEqual(["a", 0.1, 1, "A", true]);
-    expect(b.getVariable("resumed")).toEqual(["b", 0.2, 2, "B", false]);
-
-    hooks.onTick!(a, tickWith(0.4, 4, false));
-    expect(a.getVariable("runs")).toBe(2);
-    expect(gates).toHaveLength(3);
+    expect(a.getVariable("resumed")).toEqual([["a", 0.1, 1, "A", true], ["a", 0.3, 3, "A", false]]);
+    expect(b.getVariable("resumed")).toEqual([["b", 0.2, 2, "B", false]]);
   });
 });

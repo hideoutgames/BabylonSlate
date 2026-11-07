@@ -7,7 +7,7 @@ import {
   DisclosureSection,
   NumberField,
   PropertyGrid,
-  SceneComponentPicker,
+  SceneActorPicker,
   assetRowIdentity,
   selectedPickerIdentity,
   type AssetPickerEntry,
@@ -39,7 +39,7 @@ import {
   FieldLabel,
 } from "@haptic/ui/components/field";
 import { IconActionButton } from "../components/icon-action-button";
-import { sceneComponentEntries } from "../lib/scene-component-entries";
+import { sceneDefaultCameraEntries } from "../lib/scene-actor-entries";
 import { ENVIRONMENT_ROW_IDS, sceneDetailsSettingsRows } from "./scene-details-settings-rows";
 
 function PostProcessEntryId({ id, index }: { id: string; index: number }) {
@@ -486,21 +486,16 @@ export function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
         }}
         data-testid="scene-post-process-picker"
       />
-      <SceneComponentPicker
+      <SceneActorPicker
         open={cameraPickerOpen}
         onOpenChange={setCameraPickerOpen}
-        components={sceneComponentEntries(scene, ["CameraComponent"])}
-        allowedClassIds={["CameraComponent"]}
+        actors={sceneDefaultCameraEntries(scene)}
         title="Pick Default Camera"
         allowNone
-        onPick={(ref) => {
+        onPick={(defaultCameraActorId) => {
           mutate({
             ...scene,
-            settings: {
-              ...scene.settings,
-              mainCameraActorId: ref?.actorId ?? null,
-              mainCameraComponentId: ref?.componentId ?? null,
-            },
+            settings: { ...scene.settings, defaultCameraActorId },
           });
           setCameraPickerOpen(false);
         }}

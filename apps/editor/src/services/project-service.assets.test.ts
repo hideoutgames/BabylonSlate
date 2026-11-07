@@ -54,6 +54,7 @@ import { MANNEQUIN_CLASS_FILE } from "../lib/scaffold-empty-3d";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { collectAudioReverbFlushScenes, createAudioReverbBakeController } from "../lib/audio-reverb-bake";
 import { loadExportDocuments } from "./export-game-inputs";
+import { pauseTextureEncodes, textureEncodeQueue } from "../testing/texture-encode-queue";
 
 const DEFAULT_3D_CLASS_FILE = `assets/${MANNEQUIN_CLASS_FILE}`;
 
@@ -888,13 +889,13 @@ describe("project documents as .hasset", () => {
       return [payload.compressionState, payload.ktx2Width, payload.ktx2Height, payload.ktx2BlockAlign];
     };
 
-    service.pauseTextureEncodeQueue();
+    const resumeEncodes = pauseTextureEncodes(service);
     const [texture] = await registry.importFile("project", "", "odd.png", pngHeader(1, 1));
     const tilesetPath = "assets/Ground.tileset.hasset";
     await service.saveDocument("tileset", tilesetPath, { ...createDefaultTilesetPayload(), textureGuid: texture!.header.guid });
     expect(readAssetDocumentHeader(await storage.readBinary(tilesetPath)).payload.atlasTextures).toEqual([texture!.header.guid]);
     // The import encode was queued padded, before the Tileset used the texture.
-    service.resumeTextureEncodeQueue();
+    resumeEncodes();
     await vi.waitFor(() => expect(encoded()).toEqual(["compressed", 1, 1, undefined]));
 
     await registry.deleteAsset(service.guidForPath(tilesetPath)!);
@@ -982,7 +983,7 @@ describe("project documents as .hasset", () => {
     expect(await service.reconcileTextureAlignment()).toBe(0);
     await service.remountRegistry();
     expect(await service.reconcileTextureAlignment()).toBe(0);
-    expect(service.textureEncodeQueue.depth).toBe(0);
+    expect(textureEncodeQueue(service).depth).toBe(0);
     expect(encode).not.toHaveBeenCalled();
     // So Texture Details offers Retry Encoding for both.
     expect(await service.textureAlignmentStale("retried")).toBe(true);
@@ -1082,11 +1083,11 @@ describe("project documents as .hasset", () => {
     await storage.writeBinary(path, committedInGit);
 
     // Returning to the app remounts metadata; a requested pass still respects the revert.
-    service.pauseTextureEncodeQueue();
+    const resumeEncodes = pauseTextureEncodes(service);
     await service.remountRegistry();
     expect(await service.reconcileTextureAlignment()).toBe(0);
-    expect(service.textureEncodeQueue.depth).toBe(0);
-    service.resumeTextureEncodeQueue();
+    expect(textureEncodeQueue(service).depth).toBe(0);
+    resumeEncodes();
     expect(encode).toHaveBeenCalledTimes(1);
     expect(payload()).toMatchObject({ compressionState: "compressed", ktx2ChunkId: KTX2_KEY_MAX_1 });
     expect(payload()).not.toHaveProperty("ktx2Width");
@@ -1109,15 +1110,15 @@ describe("project documents as .hasset", () => {
     service.setSourceControlEnabled(true);
     // A Tileset picks it while the queue is paused: the padding is this
     // session's own, so a re-encode at its own size is queued.
-    service.pauseTextureEncodeQueue();
+    const resumeEncodes = pauseTextureEncodes(service);
     await service.saveDocument("tileset", "assets/Ground.tileset.hasset", { ...createDefaultTilesetPayload(), textureGuid: "odd" });
-    await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(1));
+    await vi.waitFor(() => expect(textureEncodeQueue(service).depth).toBe(1));
     // A git client restores the committed file; the window only lost focus, so nothing rescans.
     await nextMillisecond();
     await storage.writeBinary(path, committedInGit);
 
-    service.resumeTextureEncodeQueue();
-    await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
+    resumeEncodes();
+    await vi.waitFor(() => expect(textureEncodeQueue(service).depth).toBe(0));
     expect(encode).toHaveBeenCalledTimes(2);
     expect(await storage.readBinary(path)).toEqual(committedInGit);
   });
@@ -1140,7 +1141,7 @@ describe("project documents as .hasset", () => {
     await vi.waitFor(() => expect(encoded()).toEqual(["compressed", 4, 4, 4]));
 
     // Texture Details sets Usage to Normal without saving; its encode is queued padded.
-    service.pauseTextureEncodeQueue();
+    const resumeEncodes = pauseTextureEncodes(service);
     tabUsages.set(guid, "normal");
     await service.retryTextureEncoding(guid, { force: true, usage: "normal" });
     // A Tileset picks the texture while that encode waits: the pass leaves a pending encode alone.
@@ -1151,7 +1152,7 @@ describe("project documents as .hasset", () => {
       expect(service.textureAlignmentState.pending).toBe(0);
     });
     expect(encoded()[0]).toBe("pending");
-    service.resumeTextureEncodeQueue();
+    resumeEncodes();
 
     await vi.waitFor(() => expect(encoded()).toEqual(["compressed", 1, 1, undefined]));
   });
@@ -1178,7 +1179,7 @@ describe("project documents as .hasset", () => {
     service.setSourceControlEnabled(false);
     await service.reconcileTextureAlignment();
     await vi.waitFor(() => {
-      expect(service.textureEncodeQueue.depth).toBe(0);
+      expect(textureEncodeQueue(service).depth).toBe(0);
       for (const path of paths) expect(service.registry!.getByPath(path)!.header.payload.ktx2Width).toBe(4);
     });
     for (const path of paths) expect((await storage.stat(path)).mtime).not.toBe(atOpen[path]);
@@ -1224,7 +1225,7 @@ describe("project documents as .hasset", () => {
     // Project Settings turns source control on while the first re-encode runs.
     service.setSourceControlEnabled(true);
     releaseFirst();
-    await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
+    await vi.waitFor(() => expect(textureEncodeQueue(service).depth).toBe(0));
     // The running one's failure is not written, and the waiting one never starts.
     expect(encode).toHaveBeenCalledTimes(1);
     for (const path of paths) {
@@ -1239,7 +1240,7 @@ describe("project documents as .hasset", () => {
     const next = new ProjectService(storage, { encode });
     await next.loadCurrentProject();
     expect(await next.reconcileTextureAlignment()).toBe(0);
-    expect(next.textureEncodeQueue.depth).toBe(0);
+    expect(textureEncodeQueue(next).depth).toBe(0);
     expect(encode).toHaveBeenCalledTimes(1);
   });
 
@@ -1276,13 +1277,13 @@ describe("project documents as .hasset", () => {
     await vi.waitFor(() => expect(offered).toEqual({ "odd-0": false, "odd-1": false }));
     // Project Settings turns source control on while the first encodes; the page is then hidden.
     service.setSourceControlEnabled(true);
-    service.pauseTextureEncodeQueue();
+    const resumeEncodes = pauseTextureEncodes(service);
     releaseFirst();
     // The first one's commit is refused.
     await vi.waitFor(() => expect(offered["odd-0"]).toBe(true));
     expect(offered["odd-1"]).toBe(false);
     // The waiting one is dropped once the page shows again.
-    service.resumeTextureEncodeQueue();
+    resumeEncodes();
     await vi.waitFor(() => expect(offered["odd-1"]).toBe(true));
     expect(encode).toHaveBeenCalledTimes(1);
   });
@@ -1335,7 +1336,7 @@ describe("project documents as .hasset", () => {
       expect(readAssetDocumentHeader(await storage.readBinary(path)).payload.compressionState).toBe("compressed");
       releaseScan();
       await remount;
-      await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
+      await vi.waitFor(() => expect(textureEncodeQueue(service).depth).toBe(0));
       expect(service.registry).not.toBe(previous);
       const current = service.registry!.getByGuid(guid)!;
       expect(current.header.payload).toMatchObject({ compressionState: "compressed", ktx2Width: 4, ktx2Height: 4 });
@@ -1371,7 +1372,7 @@ describe("project documents as .hasset", () => {
     const settled = () => vi.waitFor(() => expect(service.textureAlignmentState.pending).toBe(0));
 
     // The page is hidden: requested alignment re-encodes and an import wait in the queue.
-    service.pauseTextureEncodeQueue();
+    const resumeEncodes = pauseTextureEncodes(service);
     await service.loadCurrentProject();
     await service.reconcileTextureAlignment();
     await settled();
@@ -1383,18 +1384,18 @@ describe("project documents as .hasset", () => {
     await service.remountRegistry();
     await service.remountRegistry();
     await settled();
-    expect(service.textureEncodeQueue.depth).toBe(3);
+    expect(textureEncodeQueue(service).depth).toBe(3);
 
     // A re-encode runs first, still `compressed` on disk, and a remount lands while it runs.
-    service.resumeTextureEncodeQueue();
+    resumeEncodes();
     await vi.waitFor(() => expect(encode).toHaveBeenCalledTimes(1));
     await service.remountRegistry();
     await settled();
-    expect(service.textureEncodeQueue.depth).toBe(3);
+    expect(textureEncodeQueue(service).depth).toBe(3);
     releaseFirst();
 
     await vi.waitFor(() => {
-      expect(service.textureEncodeQueue.depth).toBe(0);
+      expect(textureEncodeQueue(service).depth).toBe(0);
       for (const path of [...paths, imported!.path]) {
         expect(payload(path)).toMatchObject({ compressionState: "compressed", ktx2Width: 4, ktx2Height: 4 });
       }

@@ -1,7 +1,7 @@
 import { Mesh, Ray, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, identitySerializedTransform, type SerializedActor } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { createEditorCamera } from "./editor-camera";
 import { createEditorCameraModel } from "./editor-camera-model";
 import { EditorSceneSync } from "./editor-scene-sync";
@@ -121,8 +121,7 @@ describe("editor camera model", () => {
     const other = cameraActor("other");
     other.transform.position = [0, 0, 4];
     const data = { ...createDefaultScene(), actors: [primary, other] };
-    data.settings.mainCameraActorId = "primary";
-    data.settings.mainCameraComponentId = "camera";
+    data.settings.defaultCameraActorId = "primary";
     sync.apply(data);
     const model = scene.getMeshByName(editorComponentMeshName("other", "camera")) as Mesh;
     // The editor never freezes its active queue; collect the current frame's members.

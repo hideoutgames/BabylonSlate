@@ -10,7 +10,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
-import "@babylonjs/core/ShadersWGSL/ShadersInclude/helperFunctions";
+// The WGSL twin registers with the WebGPU Engine's code (webgpu-registrations).
 import { existingMirrorFallbackTexture, isMirrorSurfaceMesh, mirrorReflectionBinding } from "./mirror-surface-state";
 
 const scratchOffset = new Matrix();

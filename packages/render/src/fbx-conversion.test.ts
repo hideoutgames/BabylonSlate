@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseGlbForBrowse, splitGlbJsonBin } from "@haptic/assets";
 import { convertFbxToGlb } from "./fbx-conversion";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { loadModelContainer } from "./model-container";
 
 const fixture = (name: string) => ({

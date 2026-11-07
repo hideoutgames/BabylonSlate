@@ -2,6 +2,7 @@ import type { SerializedGraph } from "./project";
 import type { SerializedTimelineClip } from "./timeline-clips";
 import {
   createDefaultSceneSettings,
+  normalizeCameraLocation2D,
   normalizeScene,
   normalizeSceneLayerSpawnList,
   normalizeScenePostProcessStack,
@@ -13,6 +14,7 @@ import {
   type SerializedScene,
 } from "./scene";
 import { SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS } from "./engine-components";
+import { DEFAULT_LAYER_CAMERA_STATE, type LayerCameraState } from "./layer-camera";
 
 export { normalizeSceneLayerSpawnList, type SceneLayerSpawnEntry };
 export { SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS } from "./engine-components";
@@ -47,7 +49,7 @@ export interface SceneLayerActorDesign {
   rootAnchor: SceneLayerAnchor;
 }
 
-export const SCENE_LAYER_ACTOR_DEFAULT_CUSTOM_SIZE_PX = { width: 400, height: 300 } as const;
+const SCENE_LAYER_ACTOR_DEFAULT_CUSTOM_SIZE_PX = { width: 400, height: 300 } as const;
 
 export function normalizeSceneLayerActorDesign(value: unknown): SceneLayerActorDesign {
   const source = (value ?? {}) as Record<string, unknown>;
@@ -97,7 +99,7 @@ export function sceneLayerActorFrameBounds(
  * Centre of a `width` × `height` frame whose `anchor` point sits on the
  * origin (+X right, +Y up).
  */
-export function sceneLayerAnchoredFrameCenter(
+function sceneLayerAnchoredFrameCenter(
   anchor: SceneLayerAnchor,
   width: number,
   height: number,
@@ -121,6 +123,8 @@ export interface SceneLayerSettings {
   postProcessStack: ScenePostProcessEntry[];
   /** Orange editor outline / 2DAnchor design canvas. Default 32×18. */
   layerBounds: SceneCameraBounds2D;
+  /** Where each instance's Layer Camera starts, and the centre of the orange outline. Default (0, 0). */
+  cameraLocation: [number, number];
   /**
    * Each instance simulates in its own 2D physics world with `gravity`. Off
    * (the default): the layer gets no physics world, so its bodies neither move
@@ -181,6 +185,7 @@ export function createDefaultSceneLayerSettings(): SceneLayerSettings {
     fixedTimestepMs: defaults.fixedTimestepMs,
     postProcessStack: [],
     layerBounds: { ...SCENE_LAYER_DEFAULT_LAYER_BOUNDS },
+    cameraLocation: [0, 0],
     physicsEnabled: false,
   };
 }
@@ -236,6 +241,7 @@ export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
         sourceSettings.postProcessStack ?? scene.settings.postProcessStack,
       ),
       layerBounds,
+      cameraLocation: normalizeCameraLocation2D(sourceSettings.cameraLocation),
       physicsEnabled: sourceSettings.physicsEnabled === true,
     },
     actors: scene.actors.map(stripDeniedComponents),
@@ -261,8 +267,8 @@ export function parseSceneLayerHitTest(
 }
 
 /** Ortho half-height used by Play overlay cameras (frustum height 9). */
-export const SCENE_LAYER_ORTHO_HALF_HEIGHT = 4.5;
-export const SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT =
+const SCENE_LAYER_ORTHO_HALF_HEIGHT = 4.5;
+const SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT =
   SCENE_LAYER_ORTHO_HALF_HEIGHT * 2;
 
 const ANCHOR_ORIGIN: Record<SceneLayerAnchor, readonly [number, number]> = {
@@ -388,44 +394,6 @@ export function sceneLayerViewBounds(
 }
 
 /**
- * A Scene Layer instance's Play camera, set by scripts: the layer-space point
- * at the centre of the view, its roll in degrees (positive turns the camera
- * counter-clockwise, so content turns clockwise on screen) and its zoom (2
- * shows half the view bounds at twice the size). Session state, never saved.
- */
-export interface SceneLayerCamera {
-  x: number;
-  y: number;
-  rotation: number;
-  zoom: number;
-}
-
-export const SCENE_LAYER_DEFAULT_CAMERA: Readonly<SceneLayerCamera> = Object.freeze({ x: 0, y: 0, rotation: 0, zoom: 1 });
-
-/** Zoom never reaches 0, where the view would have no size (an overshooting tween can ask for less). */
-export const SCENE_LAYER_CAMERA_MIN_ZOOM = 0.01;
-
-/**
- * `camera` with `changes` applied: non-finite values keep the current one and
- * zoom is raised to {@link SCENE_LAYER_CAMERA_MIN_ZOOM}.
- */
-export function updateSceneLayerCamera(
-  camera: Readonly<SceneLayerCamera>,
-  changes: { x?: unknown; y?: unknown; rotation?: unknown; zoom?: unknown },
-): SceneLayerCamera {
-  const pick = (value: unknown, current: number) => {
-    const number = Number(value);
-    return value !== undefined && value !== null && Number.isFinite(number) ? number : current;
-  };
-  return {
-    x: pick(changes.x, camera.x),
-    y: pick(changes.y, camera.y),
-    rotation: pick(changes.rotation, camera.rotation),
-    zoom: Math.max(SCENE_LAYER_CAMERA_MIN_ZOOM, pick(changes.zoom, camera.zoom)),
-  };
-}
-
-/**
  * A Play canvas pixel (Y down) in a Scene Layer's space (Y up): through the
  * view bounds, then the camera's zoom, roll and centre, as the compositor
  * draws and picks the layer.
@@ -436,7 +404,7 @@ export function sceneLayerCanvasToLayer(
   canvasWidth: number,
   canvasHeight: number,
   view: { width: number; height: number },
-  camera: Readonly<SceneLayerCamera> = SCENE_LAYER_DEFAULT_CAMERA,
+  camera: Readonly<LayerCameraState> = DEFAULT_LAYER_CAMERA_STATE,
 ): { x: number; y: number } {
   const viewX = (canvasX / Math.max(1, canvasWidth) - 0.5) * view.width / camera.zoom;
   const viewY = (0.5 - canvasY / Math.max(1, canvasHeight)) * view.height / camera.zoom;
@@ -541,6 +509,7 @@ export function editorSceneToSceneLayer(
       fixedTimestepMs: scene.settings.fixedTimestepMs,
       postProcessStack: scene.settings.postProcessStack,
       layerBounds: scene.settings.cameraBounds2D,
+      cameraLocation: scene.settings.cameraLocation2D,
       physicsEnabled: scene.settings.layerPhysicsEnabled === true,
     },
     actors: scene.actors,
@@ -566,6 +535,7 @@ export function sceneLayerToEditorScene(
       fixedTimestepMs: layer.settings.fixedTimestepMs,
       postProcessStack: layer.settings.postProcessStack,
       cameraBounds2D: { ...layer.settings.layerBounds },
+      cameraLocation2D: [...layer.settings.cameraLocation],
       layerPhysicsEnabled: layer.settings.physicsEnabled,
     },
     actors: layer.actors,

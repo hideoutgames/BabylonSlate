@@ -104,7 +104,7 @@ function parseKind(value: unknown): ModelSimpleColliderKind {
 }
 
 /** Center and half extents of the box around a point cloud. */
-export function boundsBoxFromPoints(points: readonly HullVec3[]): {
+function boundsBoxFromPoints(points: readonly HullVec3[]): {
   center: [number, number, number];
   halfExtents: { x: number; y: number; z: number };
 } {
@@ -164,7 +164,7 @@ export function createDefaultSimpleCollider(
   }
 }
 
-export function normalizeModelSimpleCollider(value: unknown): ModelSimpleCollider {
+function normalizeModelSimpleCollider(value: unknown): ModelSimpleCollider {
   const record = asRecord(value);
   const kind = parseKind(record.kind);
   const id =
@@ -273,7 +273,7 @@ export function cookGeneratedCollisionFromGltf(
   });
 }
 
-export function coneConvexPoints(
+function coneConvexPoints(
   radius: number,
   height: number,
   segments = 12,

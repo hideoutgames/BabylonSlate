@@ -71,7 +71,7 @@ const NO_MESHES: ReadonlySet<AbstractMesh> = new Set();
 
 /** The FrameGraph is the only scene renderer; a frame it cannot draw is skipped. */
 export type ForwardSceneGraphResult = { path: "frameGraph" };
-export type ForwardSceneFrameGraphOptions = {
+type ForwardSceneFrameGraphOptions = {
   /**
    * An auxiliary view (a High or Full Quality Render Target Capture) drawn inside the
    * scene's own view frame. It executes its graph without Scene.render, so no
@@ -298,6 +298,8 @@ export class ForwardSceneFrameGraph {
   private probedOutlineSources = 0;
   private outlineChecks = 0;
   private readinessRevision = 0;
+  /** The readiness revision as the current `render`'s graph finished drawing (`endDraw`); undefined until it has. */
+  private drawnRevision: number | undefined;
   private readonly membership: number[] = [];
   private membershipRecorded = false;
   private strictChecks = 0;
@@ -316,8 +318,10 @@ export class ForwardSceneFrameGraph {
   private graphRender: Scene["customRenderFunction"];
   // Scene.render already updates the selected camera. The pinned graph
   // function would update every scene camera a second time if passed true.
-  private readonly pinnedGraphRender = (_update: boolean, ignoreAnimations: boolean) =>
+  private readonly pinnedGraphRender = (_update: boolean, ignoreAnimations: boolean) => {
     this.graphRender!.call(this.scene, false, ignoreAnimations);
+    this.endDraw();
+  };
   private readonly readinessDetach: (() => void)[] = [];
   private readonly meshMaterialObservers = new Map<AbstractMesh, Observer<AbstractMesh>>();
   private readonly lightEnabledObservers = new Map<Light, Observer<boolean>>();
@@ -519,7 +523,7 @@ export class ForwardSceneFrameGraph {
    * complete frame since the graph was prepared or invalidated, and has not
    * been idle since (`noteCompleteFrame`): a frame may then present it without
    * a draw for a few frames. Before that, its draws (a new graph, an effect
-   * switched on, a Fog Volume coming within reach, a first view of anything)
+   * switched on, a Fog Volume coming into view, a first view of anything)
    * can miss every mesh's pipeline at once.
    */
   omitsGeometryPass(renderPassId: number): boolean {
@@ -539,7 +543,10 @@ export class ForwardSceneFrameGraph {
     return this.water?.diagnostics() ?? null;
   }
 
-  /** Hold the current valid graph while the view prepares a replacement. Superseded candidates are not retained. */
+  /**
+   * Hold the current valid graph's tasks while the view prepares a replacement; a replaced graph's render targets are
+   * freed when it is replaced (`releaseGraphResources`). Superseded candidates are not retained.
+   */
   retainResources(): () => void {
     const graph = this.graph;
     if (!graph || this.disposed) return () => {};
@@ -907,12 +914,13 @@ export class ForwardSceneFrameGraph {
     try {
       this.renderingCamera = camera;
       const revision = this.readinessRevision;
+      this.drawnRevision = undefined;
       const capture = activeRenderFrameCapture(engine);
       if (this.auxiliary) {
         // Inside the owning view's frame: its Scene.render already stepped
         // animation and particles and ran the render observers this frame.
         this.scene.activeCamera = camera;
-        const execute = () => graph.execute();
+        const execute = () => { graph.execute(); this.endDraw(); };
         if (capture) capture.frameGraph(this.scene, graph, this.work.graphBuilds, execute);
         else execute();
       } else {
@@ -924,8 +932,11 @@ export class ForwardSceneFrameGraph {
           () => renderSceneWithGameTime(this.scene, updateCameras));
         else renderSceneWithGameTime(this.scene, updateCameras);
       }
+      // What Scene.render's after-render observers changed stales the next frame's probe, not this frame.
       this.syncMembership();
-      return { path: "frameGraph", ...(revision === this.readinessRevision ? {} : { rendered: false }) };
+      // A Scene.render that never ran the graph's render function has no draw end: the whole call is the window.
+      const drawn = this.drawnRevision ?? this.readinessRevision;
+      return { path: "frameGraph", ...(revision === drawn ? {} : { rendered: false }) };
     } finally {
       if (!this.auxiliary) this.scene.frameGraph = null;
       this.scene.activeCamera = this.auxiliary ? previousCamera : camera;
@@ -939,6 +950,18 @@ export class ForwardSceneFrameGraph {
       this.renderingCamera = undefined;
       endGraphCameraWrite(this.scene);
     }
+  }
+
+  /**
+   * The graph has drawn this frame's image. A readiness change from here to the end of `render` (Scene.render's
+   * after-render observers: a Spawn Emitter creating or disposing its Emitters, a drained effect retiring) cannot alter
+   * that image, so the frame stays rendered; it still marks readiness dirty, so the next frame probes before it draws.
+   * Babylon defers the observables of an added mesh or Material, so membership is compared here: what was added before
+   * or during the draw holds the frame.
+   */
+  private endDraw(): void {
+    this.syncMembership();
+    this.drawnRevision = this.readinessRevision;
   }
 
   /** Releases only this coordinator's tasks and graph, never the scene/Engine. */
@@ -1034,11 +1057,11 @@ export class ForwardSceneFrameGraph {
       syncSceneLighting(this.scene);
       // Admission needs no caster state; ManagedShadowsTask walks the casters
       // once, right before it consumes each map's refresh.
-      controller?.sync("admission");
       // Allocation/participation changes alter the material shadow layout.
       // Commit that layout before probing effects, so onBeforeRender cannot
       // invalidate the variants we just declared ready for the first frame.
-      syncSceneLighting(this.scene);
+      // An admission that changed neither leaves the first sync current.
+      if (controller?.sync("admission")) syncSceneLighting(this.scene);
     });
     if (this.measureWork) this.work.shadowAdmissionMs += performance.now() - started;
   }
@@ -1725,8 +1748,15 @@ export class ForwardSceneFrameGraph {
       }
     };
     const retained = graph && this.retainedGraphs.get(graph);
-    if (retained && !this.disposed) retained.release = release;
-    else release();
+    if (retained && !this.disposed) {
+      // Replaced, the graph never executes again, and the view keeps its last image without it: its passes' render
+      // targets and every texture it allocated go now, so the replacement allocates into their room instead of beside
+      // them. Its tasks, and the Effects their draw wrappers and passes hold, stay until the retain ends, so the
+      // replacement's identical programs come from the Effect cache instead of compiling again; their leases stay
+      // reserved until then too.
+      graph.clear();
+      retained.release = release;
+    } else release();
     this.postProcessGraph = undefined;
     this.effectsGraph = undefined;
     this.outlineTask = undefined;

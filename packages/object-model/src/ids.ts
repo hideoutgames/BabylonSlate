@@ -19,6 +19,8 @@ export const SCENE_SUBSYSTEM_CLASS_ID = "SceneSubsystem";
 export const ENGINE_BASE_CLASS_IDS = [
   "Object",
   "MaterialObject",
+  "LayerCamera",
+  "SceneCameraManager",
   "FloatCurveObject",
   "VectorCurveObject",
   "ColorCurveObject",
@@ -50,7 +52,7 @@ export const ENGINE_BASE_CLASS_IDS = [
  * Engine bases that stay locked and known to validation but are never offered
  * in parent, type or Cast pickers.
  */
-export const HIDDEN_ENGINE_BASE_CLASS_IDS = [SUBSYSTEM_CLASS_ID] as const;
+const HIDDEN_ENGINE_BASE_CLASS_IDS = [SUBSYSTEM_CLASS_ID] as const;
 
 export function isHiddenEngineBaseClassId(classId: string): boolean {
   return (HIDDEN_ENGINE_BASE_CLASS_IDS as readonly string[]).includes(classId);

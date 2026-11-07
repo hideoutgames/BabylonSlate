@@ -34,7 +34,8 @@ export function ProgressDialogContent({
         "bg-popover/30 data-open:duration-250 data-open:delay-300 data-open:fill-mode-both data-closed:duration-150",
         overlayClassName,
       )}
-      bodyClassName={cn("gap-3 p-4", bodyClassName)}
+      // One column no wider than the dialog: long text truncates instead of widening every row (and clipping the count).
+      bodyClassName={cn("grid-cols-[minmax(0,1fr)] gap-3 p-4", bodyClassName)}
       className={cn(
         "data-open:duration-250 data-open:delay-300 data-open:fill-mode-both data-closed:duration-150 data-open:zoom-in-[0.98]",
         failed ? "sm:max-w-sm" : "sm:max-w-xs",
@@ -91,8 +92,9 @@ export function ProgressDialogStatus({
       <Progress
         value={value}
         {...progressProps}
+        // No wrap: a wrapping column sizes its rows to their text, so the phase never truncated.
         className={cn(
-          "flex-col gap-2 [&>[data-slot=progress-track]]:-order-1",
+          "flex-col flex-nowrap gap-2 [&>[data-slot=progress-track]]:-order-1",
           progressProps?.className,
         )}
       >

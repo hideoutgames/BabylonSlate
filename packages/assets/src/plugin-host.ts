@@ -49,7 +49,7 @@ export type PluginGraphInput = Pick<
   "pluginGuid" | "settings"
 >;
 
-export function pluginCompatibilityDiagnostics(
+function pluginCompatibilityDiagnostics(
   plugin: PluginGraphInput,
   plugins: readonly PluginGraphInput[],
   engineVersion: string = ENGINE_VERSION,

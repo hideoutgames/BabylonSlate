@@ -20,7 +20,7 @@ import {
   createDefaultScene,
   type SerializedScene,
 } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
 import { managedRenderReservations } from "./managed-render-resources";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator } from "./shadow-atlas";
@@ -514,10 +514,7 @@ describe("syncAuthoredIllumination", () => {
         cameraActor("first", { projectionMode: "perspective" }),
         cameraActor("named", { projectionMode: "perspective" }),
       ],
-      {
-        mainCameraActorId: "named",
-        mainCameraComponentId: "named-camera",
-      },
+      { defaultCameraActorId: "named" },
     );
     syncAuthoredIllumination(scene, data, { stealActiveCamera: true });
     expect(scene.activeCamera?.name).toBe(`${AUTHORED_CAMERA_PREFIX}named`);
@@ -532,15 +529,19 @@ describe("syncAuthoredIllumination", () => {
       { id: "fill", classId: HEMISPHERIC_FILL_LIGHT_CLASS_ID, properties: { intensity: 0.3 } },
       { id: "wide", classId: "CameraComponent", properties: { fieldOfView: 80 } },
       { id: "detail", classId: "CameraComponent", properties: { fieldOfView: 35 }, transform: { position: [5, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
-    ] })], { mainCameraActorId: "rig", mainCameraComponentId: "detail" });
+    ] })], { defaultCameraActorId: "rig" });
     syncAuthoredIllumination(scene, data, { stealActiveCamera: true });
     expect(scene.lights.filter(light => light.name.startsWith(AUTHORED_LIGHT_PREFIX))).toHaveLength(2);
-    const selected = scene.activeCamera!;
-    expect(selected.fov).toBeCloseTo(35 * Math.PI / 180);
-    expect(selected.position.asArray()).toEqual([5, 0, 0]);
+    // The Default Camera actor is looked through its first Camera component.
+    const wide = scene.activeCamera!;
+    expect(wide.fov).toBeCloseTo(80 * Math.PI / 180);
     data.actors[0]!.components.reverse();
     syncAuthoredIllumination(scene, data, { stealActiveCamera: true });
-    expect(scene.activeCamera).toBe(selected);
+    const selected = scene.activeCamera!;
+    expect(selected).not.toBe(wide);
+    expect(scene.cameras).toContain(wide);
+    expect(selected.fov).toBeCloseTo(35 * Math.PI / 180);
+    expect(selected.position.asArray()).toEqual([5, 0, 0]);
     const pivot = MeshBuilder.CreateBox("pivot", {}, scene);
     pivot.position.x = 10;
     syncAuthoredCamerasFromMeshes(scene, data, () => pivot);
@@ -553,10 +554,7 @@ describe("syncAuthoredIllumination", () => {
     const orbit = scene.activeCamera;
     syncAuthoredIllumination(
       scene,
-      sceneWith([cameraActor("rig", { projectionMode: "perspective" })], {
-        mainCameraActorId: "gone",
-        mainCameraComponentId: "gone-camera",
-      }),
+      sceneWith([cameraActor("rig", { projectionMode: "perspective" })], { defaultCameraActorId: "gone" }),
       { stealActiveCamera: true },
     );
     expect(scene.activeCamera).toBe(orbit);
@@ -988,6 +986,7 @@ describe("syncAuthoredIllumination", () => {
         child("lamp", "parent", "LightComponent", { lightKind: "spot" }),
         child("rig", "parent", "CameraComponent"),
         child("orphan", "missing", "LightComponent", { lightKind: "point" }),
+        child("orphan2D", "missing", "Light2DComponent"),
       ]),
       { stealActiveCamera: false, onDiagnostic: (message) => diagnostics.push(message) },
     );
@@ -1000,6 +999,10 @@ describe("syncAuthoredIllumination", () => {
     expect(Vector3.Distance(rig.getDirection(Vector3.Forward()), new Vector3(1, 0, 0))).toBeCloseTo(0);
     // An unresolved attachment keeps its local pose and reports why.
     expect((scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}orphan`) as PointLight).position.x).toBeCloseTo(1);
-    expect(diagnostics).toEqual([expect.stringMatching(/^Light orphan: .*Missing actor attachment/)]);
+    // A 2D Light on one is reported too, and the sync goes on.
+    expect(diagnostics).toEqual([
+      expect.stringMatching(/^Light orphan: .*Missing actor attachment/),
+      expect.stringMatching(/^2D Light orphan2D: .*Missing actor attachment/),
+    ]);
   });
 });

@@ -12,7 +12,7 @@ import {
   type AtlasTileMark,
   BindingCodePicker,
   ClassPicker,
-  SceneComponentPicker,
+  SceneActorPicker,
   NamedListEditor,
   EntryListEditor,
   ArrayProperty,
@@ -146,7 +146,7 @@ export function GalleryComposites() {
   const [atlasTileId, setAtlasTileId] = useState(1);
   const [atlasHoverId, setAtlasHoverId] = useState(0);
   const atlasRef = useRef<AtlasTileGridHandle>(null);
-  const [sceneComponentPickerOpen, setSceneComponentPickerOpen] =
+  const [sceneActorPickerOpen, setSceneActorPickerOpen] =
     useState(false);
   const [namePromptOpen, setNamePromptOpen] = useState(false);
   const [layers, setLayers] = useState(["Default", "Foreground"]);
@@ -680,15 +680,15 @@ export function GalleryComposites() {
         <Button
           variant="outline"
           className="h-auto"
-          onClick={() => setSceneComponentPickerOpen(true)}
+          onClick={() => setSceneActorPickerOpen(true)}
         >
           {selectedPickerIdentity(
             {
-              displayLabel: "Hero Camera",
-              displayType: "CameraComponent",
-              visual: { classId: "CameraComponent", family: "class" },
+              displayLabel: "Hero",
+              displayType: "Player",
+              visual: { classId: "Player", family: "class" },
             },
-            "Open scene component picker",
+            "Open scene actor picker",
           )}
         </Button>
         <Button variant="outline" onClick={() => setNamePromptOpen(true)}>
@@ -798,21 +798,15 @@ export function GalleryComposites() {
           data-testid="gallery-class-picker"
         />
       </AssetCreateProvider>
-      <SceneComponentPicker
-        open={sceneComponentPickerOpen}
-        onOpenChange={setSceneComponentPickerOpen}
-        components={[
-          {
-            actorId: "hero",
-            componentId: "hero-cam",
-            actorName: "Hero",
-            componentTitle: "Camera",
-            classId: "CameraComponent",
-          },
+      <SceneActorPicker
+        open={sceneActorPickerOpen}
+        onOpenChange={setSceneActorPickerOpen}
+        actors={[
+          { actorId: "hero", actorName: "Hero", classId: "Player", group: "Camera Actors" },
+          { actorId: "lamp", actorName: "Lamp", classId: "Actor", group: "Other Actors" },
         ]}
-        allowedClassIds={["CameraComponent"]}
         onPick={() => {}}
-        data-testid="gallery-scene-component-picker"
+        data-testid="gallery-scene-actor-picker"
       />
       <NamePromptDialog
         open={namePromptOpen}

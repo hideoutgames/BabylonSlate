@@ -1,4 +1,4 @@
-import type { FeatureTestCheckReport, FeatureTestCheckResources } from "../services/feature-test-check";
+import type { FeatureTestCheckReport, FeatureTestCheckResources, FrameStats } from "../services/feature-test-check";
 
 /**
  * The running check's report, kept in this browser after every step and resource sample, so a check the app stops
@@ -47,9 +47,25 @@ export function clearUnfinishedCheck(): void {
   }
 }
 
+/** Whether `stats` is null (no frames sampled) or holds every frame statistic a report reads. */
+function completeFrames(stats: unknown): boolean {
+  if (stats === null) return true;
+  const frames = stats as Partial<FrameStats> | undefined;
+  return typeof frames?.medianMs === "number" && typeof frames.meanMs === "number" && Array.isArray(frames.vsync);
+}
+
+/** Whether every scene of a stored report holds complete frame statistics, so formatting it reads no missing field. */
+function completeReport(report: FeatureTestCheckReport): boolean {
+  return report.scenes.every((scene) => {
+    const { editor, play } = scene as Partial<typeof scene>;
+    return completeFrames(editor?.frames) && completeFrames(play?.frames) &&
+      Array.isArray(play?.benchmark) && play.benchmark.every((sample) => completeFrames(sample.frames));
+  });
+}
+
 /**
  * The report kept here: a check the app stopped during (with its last step and samples in `unfinished`), or a
- * finished one waiting to be shown; null when none was left.
+ * finished one waiting to be shown; null when none was left. A stored report this build cannot read is discarded.
  */
 export function loadSavedCheck(): FeatureTestCheckReport | null {
   try {
@@ -57,6 +73,10 @@ export function loadSavedCheck(): FeatureTestCheckReport | null {
     if (!raw) return null;
     const check = JSON.parse(raw) as Partial<UnfinishedCheck> & Partial<FinishedCheck>;
     if (!check.report || !Array.isArray(check.report.scenes)) return null;
+    if (!completeReport(check.report)) {
+      clearUnfinishedCheck();
+      return null;
+    }
     if (check.finished === true) return check.report;
     if (typeof check.step !== "string") return null;
     return { ...check.report, unfinished: { step: check.step, resources: Array.isArray(check.resources) ? check.resources : [] } };

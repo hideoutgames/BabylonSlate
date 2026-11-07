@@ -26,4 +26,4 @@ Lists the Class assets of a chosen Class, and optionally of Classes that inherit
 
 - Nothing is loaded; the lookup uses the catalog only.
 - With **Include Subclasses** on, Classes that inherit from **Class** are listed too.
-- **Classes** holds the same Classes as Class values, so a Class that inherits from Actor can feed [**Spawn Actor**](spawn-actor.md).
+- **Classes** holds the same Classes as Class values, so a Class that inherits from Actor can feed [**Spawn Actor (Async)**](spawn-actor-async.md) or [**Spawn Actor (Blocking)**](spawn-actor-blocking.md).

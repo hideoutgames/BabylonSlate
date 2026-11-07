@@ -101,9 +101,10 @@ function depthTarget(name: string, edge: number, scene: Scene): RenderTargetText
 
 /**
  * The Scene's atlas at `edge` texels, made with its first tile and disposed with the Scene, or replaced once no tile
- * is left in it (a quality level of another edge rebuilds every atlas map, whose allocation keys carry the edge). A
- * shadow allocation that fails disposes the textures it made, the atlas among them when that tile was its first: the
- * next tile makes it again.
+ * is left in it (a quality level of another edge rebuilds every atlas map, whose allocation keys carry the edge; the
+ * shadow controller releases the old atlas an Engine frame before it builds into the new one, so this replaces only
+ * an atlas it did not). A shadow allocation that fails disposes the textures it made, the atlas among them when that
+ * tile was its first: the next tile makes it again.
  */
 function sceneAtlas(scene: Scene, edge: number): Atlas {
   let atlas = atlases.get(scene);
@@ -127,10 +128,14 @@ export function releaseEmptyShadowAtlas(scene: Scene): void {
   if (atlas?.tiles.empty) atlas.target.dispose();
 }
 
+/** The edge of the Scene's atlas while it exists, else 0. */
+export function liveShadowAtlasEdge(scene: Scene): number {
+  return atlases.get(scene)?.tiles.edge ?? 0;
+}
+
 /** The bytes the Scene's atlas holds: none until its first tile. */
 export function shadowAtlasBytes(scene: Scene): number {
-  const edge = atlases.get(scene)?.tiles.edge ?? 0;
-  return edge ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL;
+  return liveShadowAtlasEdge(scene) ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL;
 }
 
 /** The render target every tile of the Scene's atlas draws into, or null before its first tile. */

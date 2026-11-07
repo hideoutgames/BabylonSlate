@@ -7,9 +7,10 @@ import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
 import { WATER_FIELD_SHORE_RANGE as SHORE } from "./water-field";
 import { WATER_SCENE_COPY_SKY_DEPTH } from "./water-scene-copy";
 import {
-  f, FFT, FFT_CASCADE_UNIFORMS, OPEN_EDGE_FADE,
+  f, FFT_CASCADE_UNIFORMS, OPEN_EDGE_FADE,
   OPEN_EDGE_FADE_TERRAIN, PIXEL_SLOPE_CAP, PIXEL_SLOPE_FILTER, SOFT_SHORE_DEPTH, SPECTRUM_FOAM_SCALE, SSR_REFINE_STEPS,
-  SSR_STEPS, SSR_THICKNESS, TURBIDITY, WATER_BLEND_DEFINE, WATER_DETAIL_DEFINE, WATER_FFT_SAMPLER, WATER_FOAM_SAMPLER,
+  SSR_STEPS, SSR_THICKNESS, TURBIDITY, WATER_BLEND_DEFINE, WATER_DETAIL_DEFINE, WATER_FFT_DEFINE, WATER_FFT_SAMPLER,
+  WATER_FOAM_SAMPLER,
 } from "./water-shader-defines";
 
 /**
@@ -194,22 +195,17 @@ export function planarLookupSource(position: string, eye: string, ray: string, o
 }
 
 /** `code` only when the spectrum's cascade `cascades` is compiled in; every directive on its own line. */
-export const ifFft = (code: string, cascades: number) => `\n#if ${FFT} >= ${cascades}${code}\n#endif`;
+export const ifFft = (code: string, cascades: number) => `\n#if ${WATER_FFT_DEFINE} >= ${cascades}${code}\n#endif`;
 
 /**
- * The spectrum's samplers and taps, per language, for either stage: `swFftTapLod` at an explicit level (legal in any
- * control flow and in the vertex stage), and in the fragment `swSpecTap` and `swFoamTap` with implicit derivatives
- * (mipmapped). Both stages declare the same binding (one WebGL2 texture unit, one WebGPU binding visible to both). GLSL
- * ES has no default precision for array samplers.
+ * The spectrum's tap at an explicit level, per language, for either stage: `swFftTapLod`, legal in any control flow and
+ * in the vertex stage. The caller declares the sampler (one WebGL2 texture unit, one WebGPU binding visible to both
+ * stages).
  */
-export function fftHelpers(wgsl: boolean, declare = true): string {
-  const declaration = !declare ? "" : wgsl ? `
-var ${WATER_FFT_SAMPLER}Sampler: sampler;
-var ${WATER_FFT_SAMPLER}: texture_2d_array<f32>;` : `
-uniform highp sampler2DArray ${WATER_FFT_SAMPLER};`;
-  return wgsl ? `${declaration}
+export function fftHelpers(wgsl: boolean): string {
+  return wgsl ? `
 fn swFftTapLod(uv: vec2f, layer: f32, lod: f32) -> vec4f { return textureSampleLevel(${WATER_FFT_SAMPLER}, ${WATER_FFT_SAMPLER}Sampler, uv, i32(layer), lod); }
-` : `${declaration}
+` : `
 vec4 swFftTapLod(vec2 uv, float layer, float lod) { return textureLod(${WATER_FFT_SAMPLER}, vec3(uv, layer), lod); }
 `;
 }
@@ -408,19 +404,16 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
 }
 
 /**
- * The spectrum's samplers for the fragment stage: the FFT ocean and its persistent foam,
- * sampled with implicit derivatives so their mips filter far water (normals and foam fade into their averages instead
- * of aliasing). Only called from the shader's top level (uniform control flow), as implicit derivatives require.
+ * The spectrum's taps for the fragment stage: `swSpecTap` (the FFT ocean) and `swFoamTap` (its persistent foam), sampled
+ * with implicit derivatives so their mips filter far water (normals and foam fade into their averages instead of
+ * aliasing). Only called from the shader's top level (uniform control flow), as implicit derivatives require. The caller
+ * declares the samplers.
  */
-export function spectrumHelpers(wgsl: boolean, declare = true): string {
-  const declaration = !declare ? "" : wgsl ? `
-var ${WATER_FOAM_SAMPLER}Sampler: sampler;
-var ${WATER_FOAM_SAMPLER}: texture_2d_array<f32>;` : `
-uniform highp sampler2DArray ${WATER_FOAM_SAMPLER};`;
-  return wgsl ? `${declaration}
+export function spectrumHelpers(wgsl: boolean): string {
+  return wgsl ? `
 fn swSpecTap(uv: vec2f, layer: f32) -> vec4f { return textureSample(${WATER_FFT_SAMPLER}, ${WATER_FFT_SAMPLER}Sampler, uv, i32(layer)); }
 fn swFoamTap(uv: vec2f, layer: f32) -> vec4f { return textureSample(${WATER_FOAM_SAMPLER}, ${WATER_FOAM_SAMPLER}Sampler, uv, i32(layer)); }
-` : `${declaration}
+` : `
 vec4 swSpecTap(vec2 uv, float layer) { return texture(${WATER_FFT_SAMPLER}, vec3(uv, layer)); }
 vec4 swFoamTap(vec2 uv, float layer) { return texture(${WATER_FOAM_SAMPLER}, vec3(uv, layer)); }
 `;

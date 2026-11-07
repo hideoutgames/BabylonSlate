@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  readActorSlot,
   readSnapshotHeader,
   snapshotFloatCount,
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
   type CommandMessage,
 } from "@haptic/bridge";
+import { readActorSlot } from "@haptic/bridge/read-actor-slot";
 import {
   createActor,
   createDefaultScene,
@@ -222,10 +222,10 @@ export function Probe(ctx) {
   ctx.setVariable("cursor", ctx.projectCursorToScene(undefined, { drawDebug: false }));
 }
 export function TurnLayerCamera(ctx) {
-  const layer = ctx.getOwningSceneLayer(ctx.self);
-  ctx.setSceneLayerCameraLocation(layer, { x: 2, y: 0 });
-  ctx.setSceneLayerCameraRotation(layer, 180);
-  ctx.setSceneLayerCameraZoom(layer, 2);
+  const camera = ctx.getVariableFrom(ctx.self, "layerCamera");
+  ctx.setVariableOn(camera, "location", { x: 2, y: 0 });
+  ctx.setVariableOn(camera, "rotation", 180);
+  ctx.setVariableOn(camera, "zoom", 2);
 }`;
 
 /**
@@ -578,20 +578,22 @@ describe("SceneLayer runtime compositor", () => {
     runtime.stop();
   });
 
-  it("moves, turns and zooms a layer camera from a script, sending each change once", async () => {
+  it("moves, turns and zooms a layer's Layer Camera from a script, sending each change once", async () => {
     const { runtime, commands, actor } = await tickLayerRuntime(`
       const layer = ctx.createSceneLayer('hud', 0);
-      ctx.setSceneLayerCameraLocation(layer, { x: 3, y: -1 });
-      ctx.addSceneLayerCameraOffset(layer, { x: 1, y: 1 });
-      ctx.setSceneLayerCameraRotation(layer, 30);
-      ctx.setSceneLayerCameraZoom(layer, 2);
-      ctx.setSceneLayerCameraZoom(layer, 2);
-      ctx.setSceneLayerCameraLocation(layer, { x: Number.NaN, y: 5 });
-      ctx.setVariable("camera", [ctx.getSceneLayerCameraLocation(layer), ctx.getSceneLayerCameraRotation(layer), ctx.getSceneLayerCameraZoom(layer)]);
+      const camera = ctx.getVariableFrom(layer, "layerCamera");
+      ctx.setVariableOn(camera, "location", { x: 3, y: -1 });
+      ctx.callComponentFunction(camera, "addLayerCameraOffset", { delta: { x: 1, y: 1 } });
+      ctx.setVariableOn(camera, "rotation", 30);
+      ctx.setVariableOn(camera, "zoom", 2);
+      ctx.setVariableOn(camera, "zoom", 2);
+      ctx.setVariableOn(camera, "location", { x: Number.NaN, y: 5 });
+      ctx.setVariable("camera", [ctx.getVariableFrom(camera, "location"), ctx.getVariableFrom(camera, "rotation"), ctx.getVariableFrom(camera, "zoom")]);
       ctx.setVariable("owning", ctx.getOwningSceneLayer(ctx.self));
+      ctx.setVariable("worldActorCamera", ctx.getVariableFrom(ctx.self, "layerCamera"));
       ctx.removeSceneLayer(layer);
-      ctx.setSceneLayerCameraZoom(layer, 3);
-      ctx.setVariable("removedZoom", ctx.getSceneLayerCameraZoom(layer));`);
+      ctx.setVariableOn(camera, "zoom", 3);
+      ctx.setVariable("removedCameraDestroyed", camera.destroyed);`);
     try {
       expect(commands.flatMap((command) => command.type === "sceneLayerCamera" ? [command.camera] : [])).toEqual([
         { x: 3, y: -1, rotation: 0, zoom: 1 },
@@ -601,9 +603,25 @@ describe("SceneLayer runtime compositor", () => {
         { x: 4, y: 5, rotation: 30, zoom: 2 },
       ]);
       expect(actor!.getVariable("camera")).toEqual([{ x: 4, y: 5 }, 30, 2]);
-      // A world actor belongs to no layer; a removed layer reads the default camera.
+      // A world actor belongs to no layer, so it has no Layer Camera; a removed layer's camera is destroyed.
       expect(actor!.getVariable("owning")).toBeNull();
-      expect(actor!.getVariable("removedZoom")).toBe(1);
+      expect(actor!.getVariable("worldActorCamera")).toBeNull();
+      expect(actor!.getVariable("removedCameraDestroyed")).toBe(true);
+    } finally { runtime.stop(); }
+  });
+
+  it("starts each layer instance's camera on the asset's Camera Location", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1, preferSoftwarePhysics: true, seedDemoActors: false, playScene: worldScene("A"),
+      sceneLayerLibrary: { hud: { ...overlayLayer(), settings: { ...overlayLayer().settings, cameraLocation: [6, -2] } } },
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      runtime.realizePlayWorld();
+      const layer = runtime.createSceneLayer("hud", 0);
+      expect(layer?.camera.state).toEqual({ x: 6, y: -2, rotation: 0, zoom: 1 });
+      expect(commands.find((command) => command.type === "sceneLayerCreate")).toMatchObject({ camera: { x: 6, y: -2, rotation: 0, zoom: 1 } });
     } finally { runtime.stop(); }
   });
 

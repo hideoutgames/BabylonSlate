@@ -14,6 +14,8 @@ import { MOTION_CODES, MotionInput } from "./motion";
 
 /** Recognized controls that last one tick. */
 const PULSE_CODES: readonly string[] = [...TOUCH_PULSE_GESTURES, MOTION_CODES.shake];
+/** A pad that never reported a control has no keys. */
+const NO_PAD_KEYS: readonly string[] = [];
 import { InputBindingProfile } from "./input-bindings";
 import type {
   ActionBinding,
@@ -205,6 +207,15 @@ function contactPressure(pressure: number | undefined, fallback: number): number
     : fallback;
 }
 
+/** Whether every recognized control reads the same value from both maps. */
+function sameRecognizedValues(a: ReadonlyMap<string, number>, b: ReadonlyMap<string, number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [code, value] of a) {
+    if (!Object.is(b.get(code), value)) return false;
+  }
+  return true;
+}
+
 function sameMembers(a: ReadonlySet<number>, b: ReadonlySet<number>): boolean {
   if (a.size !== b.size) return false;
   for (const value of a) if (!b.has(value)) return false;
@@ -248,6 +259,15 @@ export class InputResolver {
   private tickSeconds = 0;
   private mappings: InputMappings;
   private inputStates: Record<string, InputValueState> = {};
+  /** `mappingKeysShared` for the mappings object it was computed from; a binding change replaces that object. */
+  private keysSharedFor: InputMappings | null = null;
+  private keysShared = false;
+  /** A gamepad's `${pad}:${index}` control keys by index, made once per pad and index. */
+  private readonly padKeys = new Map<number, string[]>();
+  // Scratch `resolve` rewrites each tick; none of it leaves the resolver.
+  private readonly heldNow = new Set<string>();
+  private readonly heldByName = new Map<string, boolean>();
+  private readonly axisValues: Axis2DValue[] = [];
   readonly bindings: InputBindingProfile;
 
   constructor(mappings: InputMappings) {
@@ -344,18 +364,27 @@ export class InputResolver {
     // Name lookups (`isActionHeld("Jump")`) cover every asset with that display
     // name; `inputs` keeps each asset's own state.
     const actions: Record<string, ActionState> = {};
-    const heldNow = new Set(this.state.previousHeldActions);
-    const heldByName = new Map<string, boolean>();
+    const heldNow = this.heldNow;
+    heldNow.clear();
+    for (const name of this.state.previousHeldActions) heldNow.add(name);
+    const heldByName = this.heldByName;
     // Each axis mapping's clamped value at the latest sample; `axes` reuses it.
-    const axisValues = this.mappings.axes.map(() => ({ x: 0, y: 0 }));
+    // Every sample writes every entry before anything reads it.
+    const axisValues = this.axisValues;
+    while (axisValues.length < this.mappings.axes.length) axisValues.push({ x: 0, y: 0 });
+    axisValues.length = this.mappings.axes.length;
     // One pass reads every binding once and updates both per-asset `inputs` and
     // name-keyed `actions`.
     const sample = () => {
       heldByName.clear();
       for (const mapping of this.mappings.actions) {
-        const held = mapping.bindings.some((binding) =>
-          actionBindingHeld(binding, this.state),
-        );
+        let held = false;
+        for (const binding of mapping.bindings) {
+          if (actionBindingHeld(binding, this.state)) {
+            held = true;
+            break;
+          }
+        }
         heldByName.set(mapping.name, heldByName.get(mapping.name) === true || held);
         recordInput(mapping, "button", held);
       }
@@ -389,9 +418,13 @@ export class InputResolver {
     // Pulse gestures last one tick. Releasing them before the first sample
     // lets a pulse on the very next tick start the input again.
     for (const code of PULSE_CODES) this.state.recognizedValues.delete(code);
+    // With no events, the first sample would read what the last one reads
+    // unless recognition changes a value, so it waits for that answer. Shared
+    // keys fold again on every sample, so they always take both.
+    const idle = events.length === 0 && !this.mappingKeysShared();
     // A mapping change can release an action before the first new event arrives.
     // Observe that boundary so a fresh press of the replacement key keeps its edge.
-    sample();
+    if (!idle) sample();
     // Each event samples on its own so a press and release in one tick both
     // edge. An event that left every control `sample` reads unchanged (pointer
     // move, key repeat, steady stick) is skipped: a repeat sample rewrites the
@@ -469,7 +502,7 @@ export class InputResolver {
             connections.push({ gamepadIndex: pad, connected: true });
           }
           for (let i = 0; i < event.buttons.length; i++) {
-            const key = `${pad}:${i}`;
+            const key = this.padKey(pad, i);
             if ((event.buttons[i] ?? 0) > 0.5) {
               if (!this.state.heldGamepadButtons.has(key)) {
                 pressed("gamepadButton", key);
@@ -481,7 +514,7 @@ export class InputResolver {
             }
           }
           for (let i = 0; i < event.axes.length; i++) {
-            const key = `${pad}:${i}`;
+            const key = this.padKey(pad, i);
             const value = event.axes[i] ?? 0;
             const previous = this.state.gamepadAxes.get(key);
             if (Math.abs(value) > 0.5 && Math.abs(previous ?? 0) <= 0.5)
@@ -490,20 +523,13 @@ export class InputResolver {
             this.state.gamepadAxes.set(key, value);
           }
           // A sample is the pad's whole state: controls it omits are at rest.
-          const prefix = `${pad}:`;
-          const sampled = (key: string, count: number) =>
-            !key.startsWith(prefix) || Number(key.slice(prefix.length)) < count;
-          for (const key of [...this.state.heldGamepadButtons]) {
-            if (!sampled(key, event.buttons.length)) {
-              this.state.heldGamepadButtons.delete(key);
-              dirty = true;
-            }
+          // Every control key of this pad came from `padKey`, so its key list covers them.
+          const keys = this.padKeys.get(pad) ?? NO_PAD_KEYS;
+          for (let i = event.buttons.length; i < keys.length; i++) {
+            if (this.state.heldGamepadButtons.delete(keys[i]!)) dirty = true;
           }
-          for (const key of [...this.state.gamepadAxes.keys()]) {
-            if (!sampled(key, event.axes.length)) {
-              this.state.gamepadAxes.delete(key);
-              dirty = true;
-            }
+          for (let i = event.axes.length; i < keys.length; i++) {
+            if (this.state.gamepadAxes.delete(keys[i]!)) dirty = true;
           }
           break;
         }
@@ -512,17 +538,9 @@ export class InputResolver {
           if (!this.state.connectedPads.delete(pad)) break;
           connections.push({ gamepadIndex: pad, connected: false });
           // The pad's last sample must not keep actions held or sticks deflected.
-          for (const key of [...this.state.heldGamepadButtons]) {
-            if (key.startsWith(`${pad}:`)) {
-              this.state.heldGamepadButtons.delete(key);
-              dirty = true;
-            }
-          }
-          for (const key of [...this.state.gamepadAxes.keys()]) {
-            if (key.startsWith(`${pad}:`)) {
-              this.state.gamepadAxes.delete(key);
-              dirty = true;
-            }
+          for (const key of this.padKeys.get(pad) ?? NO_PAD_KEYS) {
+            if (this.state.heldGamepadButtons.delete(key)) dirty = true;
+            if (this.state.gamepadAxes.delete(key)) dirty = true;
           }
           break;
         }
@@ -551,13 +569,16 @@ export class InputResolver {
       .sort((a, b) => a.Finger - b.Finger);
     const recognized = this.gestures.step(touchEvents, touches, inputDt);
     for (const [code, value] of this.motion.step(inputDt)) recognized.set(code, value);
+    // Recognition neither reads nor writes what `sample` does, so an idle
+    // tick's first sample can run here, still reading the earlier values.
+    if (idle && !sameRecognizedValues(this.state.recognizedValues, recognized)) sample();
     this.state.recognizedValues = recognized;
     sample();
-    this.state.previousHeldActions = new Set(
-      this.mappings.actions
-        .filter((mapping) => heldNow.has(mapping.name))
-        .map((mapping) => mapping.name),
-    );
+    const previousHeld = this.state.previousHeldActions;
+    previousHeld.clear();
+    for (const mapping of this.mappings.actions) {
+      if (heldNow.has(mapping.name)) previousHeld.add(mapping.name);
+    }
 
     // Assets sharing a display name add up like the bindings of one asset.
     const sums1D = new Map<string, number>();
@@ -703,8 +724,20 @@ export class InputResolver {
    * other's entry within one sample, so a repeat sample would change it.
    */
   private mappingKeysShared(): boolean {
-    const rows = [...this.mappings.actions, ...this.mappings.axes];
-    return new Set(rows.map((row) => inputMappingKey(row))).size !== rows.length;
+    if (this.keysSharedFor !== this.mappings) {
+      const rows = [...this.mappings.actions, ...this.mappings.axes];
+      this.keysShared = new Set(rows.map((row) => inputMappingKey(row))).size !== rows.length;
+      this.keysSharedFor = this.mappings;
+    }
+    return this.keysShared;
+  }
+
+  /** The `${pad}:${index}` key of a gamepad control; the pad's list grows to hold every index below it. */
+  private padKey(pad: number, index: number): string {
+    let keys = this.padKeys.get(pad);
+    if (!keys) this.padKeys.set(pad, keys = []);
+    for (let i = keys.length; i <= index; i++) keys.push(`${pad}:${i}`);
+    return keys[index]!;
   }
 
   getInputState(input: InputTypeValue): InputValueState | null {

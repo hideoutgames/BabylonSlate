@@ -1,3 +1,5 @@
+import { engineContentUrl } from "../engine-content-url";
+
 const ENGINE_BILLBOARD_PUBLIC_DIR = "engine-content/billboards";
 
 export const ENGINE_BILLBOARD_FILES = [
@@ -11,24 +13,7 @@ export const ENGINE_BILLBOARD_FILES = [
   "navmesh.png",
 ] as const;
 
-function viteBaseUrl(): string {
-  if (typeof import.meta === "undefined") {
-    return "/";
-  }
-  const env = (import.meta as ImportMeta & { env?: { BASE_URL?: string } }).env;
-  return env?.BASE_URL ?? "/";
-}
-
-function withTrailingSlash(baseUrl: string): string {
-  if (!baseUrl || baseUrl === "") return "/";
-  return baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-}
-
 /** Public URL for an engine editor billboard PNG (`default`, `point_light`, …). */
-export function engineBillboardUrl(
-  name: string,
-  baseUrl = viteBaseUrl(),
-): string {
-  const file = name.endsWith(".png") ? name : `${name}.png`;
-  return `${withTrailingSlash(baseUrl)}${ENGINE_BILLBOARD_PUBLIC_DIR}/${file}`;
+export function engineBillboardUrl(name: string): string {
+  return engineContentUrl(ENGINE_BILLBOARD_PUBLIC_DIR, name.endsWith(".png") ? name : `${name}.png`);
 }

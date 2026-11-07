@@ -66,7 +66,7 @@ export const PARTICLE_SHAPE_LABELS: Record<ParticleShapeKind, string> = {
 };
 
 /** Up to two decimals without float noise (`0.30000000000000004` → `0.3`). */
-export function formatParticleNumber(value: number): string {
+function formatParticleNumber(value: number): string {
   const rounded = Math.round(value * 100) / 100;
   return String(Object.is(rounded, -0) ? 0 : rounded);
 }
@@ -76,7 +76,7 @@ function withUnit(text: string, unit: string | undefined): string {
 }
 
 /** `20 /s`, `0.8–1.2 s`, or `Curve`, in display units. */
-export function particleScalarSummary(
+function particleScalarSummary(
   value: ParticleScalarValue,
   display: ParticleValueDisplay = { scale: 1 },
 ): string {

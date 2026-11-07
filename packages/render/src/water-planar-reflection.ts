@@ -52,13 +52,14 @@ import {
   disposePlanarMirrorTarget, drawPlanarMirrorPass, planarMirrorTargetSize, PlanarMirrorMath, releasePlanarMirrorStorage,
   resizePlanarMirrorTarget, type MirrorPlane, type PlanarMirrorTargetState,
 } from "./planar-mirror";
-import { sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
+import { sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
 import { ReflectedContent } from "./reflected-content";
 import { reflectionShadowsEnabled } from "./reflection-sun-shadows";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources } from "./render-target-resource-cost";
 import { waterMeshReflectsObjects, waterMeshRestVaries } from "./water-mesh";
 import { sceneViewRenderSize } from "./scene-output-scale";
+import { upscaledRenderSize } from "./scene-effects";
 import { enterDrawPass, leaveDrawPass } from "./draw-passes";
 
 /** One view's planar reflection, valid for the scene render in which it was returned. */
@@ -373,7 +374,10 @@ class WaterPlanarReflections {
     const planeY = this.planeY;
     const maxSize = engine.getCaps().maxTextureSize;
     const type = linear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
-    const target = this.ensureTarget(view, planarMirrorTargetSize(viewWidth, scale, maxSize), planarMirrorTargetSize(viewHeight, scale, maxSize), type);
+    // The target follows the size the view's scene draws at: its output's, or less under FSR Upscaling's render scale.
+    const drawn = upscaledRenderSize(sceneRenderingSettings(scene).effectsPlan, viewSize.width, viewSize.height);
+    const target = this.ensureTarget(view, planarMirrorTargetSize(drawn.width * camera.viewport.width, scale, maxSize),
+      planarMirrorTargetSize(drawn.height * camera.viewport.height, scale, maxSize), type);
     if (!target) return false;
     // In use (drawn or waiting for shaders) keeps the storage; only an unused target is released.
     view.active = tick;

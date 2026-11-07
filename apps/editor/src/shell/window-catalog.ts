@@ -108,13 +108,13 @@ export function isDockviewDocumentKind(
   return kind !== undefined && DOCKVIEW_KINDS.has(kind as DockviewDocumentKind);
 }
 
-export const CLASS_PANEL_TITLE = "Class";
+const CLASS_PANEL_TITLE = "Class";
 /** Primary Class graph tab; function graphs open as tabs beside it. */
-export const EVENT_GRAPH_TITLE = "Event Graph";
+const EVENT_GRAPH_TITLE = "Event Graph";
 /** About half the left stack so Class is not a 180px stub under Components. */
-export const CLASS_PANEL_INITIAL_HEIGHT = 400;
+const CLASS_PANEL_INITIAL_HEIGHT = 400;
 /** About 25% of a typical editor so the Material graph keeps ~75% width. */
-export const MATERIAL_SIDE_STACK_WIDTH = 360;
+const MATERIAL_SIDE_STACK_WIDTH = 360;
 
 export type DockWindowOptions = {
   /** Actor-lineage class documents get Prefab + Components. Default true. */

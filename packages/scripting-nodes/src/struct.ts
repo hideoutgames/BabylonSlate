@@ -13,14 +13,14 @@ import {
 import { memberArgPinId, objectLiteralKey } from "./member-pins";
 import { titleCaseEnumMember } from "./enum";
 
-export function structGuidOf(properties: Record<string, unknown>): string {
+function structGuidOf(properties: Record<string, unknown>): string {
   return typeof properties.structGuid === "string" &&
     properties.structGuid.trim()
     ? properties.structGuid.trim()
     : "";
 }
 
-export function structFieldsOf(
+function structFieldsOf(
   properties: Record<string, unknown>,
 ): StructField[] {
   if (!Array.isArray(properties.fields)) return [];

@@ -26,10 +26,10 @@ import { ownedActorProbeScript } from "./scene-scripts";
 import { withFeatureTestHudPulse } from "./timeline";
 
 /** Folder under `assets/FeatureTest/` for the Scene Layers and their SceneLayerActor Classes. */
-export const FEATURE_TEST_SCENE_LAYERS_FOLDER = "SceneLayers";
+const FEATURE_TEST_SCENE_LAYERS_FOLDER = "SceneLayers";
 
 /** Asset names (Classes are `FT_UI*`, so their class ids never collide with other areas). */
-export const FEATURE_TEST_SCENE_LAYER_NAMES = {
+const FEATURE_TEST_SCENE_LAYER_NAMES = {
   /** Every 2D overlay widget, spawned over the main scene at z-order 10. */
   hud: "FT_HUD",
   /** Small physics-enabled layer (own 2D world), spawned over the main scene at z-order 5. */
@@ -49,7 +49,7 @@ export const FEATURE_TEST_SCENE_LAYER_NAMES = {
  * overscan (about 10 list rows and 24 grid cells), so the item counts change
  * scroll range rather than per-frame cost.
  */
-export const FEATURE_TEST_SCENE_LAYER_KNOBS = {
+const FEATURE_TEST_SCENE_LAYER_KNOBS = {
   listItemCount: 10_000,
   gridItemCount: 400,
   scrollRows: 10,
@@ -777,38 +777,79 @@ async function savePitCounter(ctx: FeatureTestContext, refs: ClassBase): Promise
 }
 
 /**
- * Begin Play moves this layer's camera through every Scene Layer camera node:
- * it tweens the location, zoom and rotation from their current values (Get
- * nodes into A), then sets them back so the pit ends where it was authored.
+ * Begin Play moves this layer's Layer Camera (Get Layer Camera on Self)
+ * through each of its members: it tweens Camera Location, Zoom and Rotation
+ * from their current values (Get nodes into A), then sets them back and adds
+ * a Camera Offset so the pit ends where it was authored.
  */
 async function saveCameraRig(ctx: FeatureTestContext): Promise<PlacedClass> {
   const seconds = { "default:duration": KNOBS.cameraTweenSeconds, "default:curve": "sineInOut" };
+  const offset = engineFunction("LayerCamera", "Add Camera Offset");
   const graph = classGraph({
     nodes: [
       gNode("begin", "flow.event.beginPlay", 0, 0),
-      gNode("layer", "scene-layer.getOwningSceneLayer", 0, 200),
-      gNode("location", "scene-layer.getCameraLocation", 240, 300),
-      gNode("zoom", "scene-layer.getCameraZoom", 480, 300),
-      gNode("rotation", "scene-layer.getCameraRotation", 720, 300),
-      gNode("pan", "tween.sceneLayerCameraLocation", 240, 0, { ...seconds, "default:b": { x: 0, y: -0.6 } }),
-      gNode("zoom-in", "tween.sceneLayerCameraZoom", 480, 0, { ...seconds, "default:b": 1.15 }),
-      gNode("turn", "tween.sceneLayerCameraRotation", 720, 0, { ...seconds, "default:b": 4 }),
-      gNode("reset-rotation", "scene-layer.setCameraRotation", 960, 0, { "default:rotation": 0 }),
-      gNode("reset-zoom", "scene-layer.setCameraZoom", 1200, 0, { "default:zoom": 1 }),
-      gNode("reset-location", "scene-layer.setCameraLocation", 1440, 0, { "default:location": { x: 0, y: -0.3 } }),
-      gNode("offset", "scene-layer.addCameraOffset", 1680, 0, { "default:delta": { x: 0, y: 0.3 } }),
+      layerCameraNode("camera", 0, 200),
+      cameraVariableNode("location", "get", "location", 240, 300),
+      cameraVariableNode("zoom", "get", "zoom", 480, 300),
+      cameraVariableNode("rotation", "get", "rotation", 720, 300),
+      gNode("pan", "tween.layerCameraLocation", 240, 0, { ...seconds, "default:b": { x: 0, y: -0.6 } }),
+      gNode("zoom-in", "tween.layerCameraZoom", 480, 0, { ...seconds, "default:b": 1.15 }),
+      gNode("turn", "tween.layerCameraRotation", 720, 0, { ...seconds, "default:b": 4 }),
+      cameraVariableNode("reset-rotation", "set", "rotation", 960, 0, { "default:value": 0 }),
+      cameraVariableNode("reset-zoom", "set", "zoom", 1200, 0, { "default:value": 1 }),
+      cameraVariableNode("reset-location", "set", "location", 1440, 0, { "default:value": { x: 0, y: -0.3 } }),
+      gNode("offset", "functions.call", 1680, 0, {
+        functionName: offset.name,
+        classId: "LayerCamera",
+        pins: offset.pins.map((pin) => ({ ...pin })),
+        runtime: offset.runtime,
+        "default:delta": { x: 0, y: 0.3 },
+      }),
     ],
     edges: [
-      ...gChain("begin", "pan", "zoom-in", "turn", "reset-rotation", "reset-zoom", "reset-location", "offset"),
-      ...["location", "zoom", "rotation", "reset-rotation", "reset-zoom", "reset-location", "offset"]
-        .map((target) => gWire("layer", "out", target, "layer")),
-      ...["pan", "zoom-in", "turn"].map((target) => gWire("layer", "out", target, "target")),
-      gWire("location", "out", "pan", "a"),
-      gWire("zoom", "out", "zoom-in", "a"),
-      gWire("rotation", "out", "turn", "a"),
+      ...gChain("begin", "pan", "zoom-in", "turn", "reset-rotation", "reset-zoom", "reset-location"),
+      gWire("reset-location", "execOut", "offset", "exec"),
+      ...["location", "zoom", "rotation", "reset-rotation", "reset-zoom", "reset-location", "offset", "pan", "zoom-in", "turn"]
+        .map((target) => gWire("camera", "value", target, "target")),
+      gWire("location", "value", "pan", "a"),
+      gWire("zoom", "value", "zoom-in", "a"),
+      gWire("rotation", "value", "turn", "a"),
     ],
   });
   return saveOverlayClass(ctx, NAMES.cameraRig, "SceneLayerActor", [], graph);
+}
+
+/** Get of the inherited SceneLayerActor `Layer Camera` on Self: its own layer's camera. */
+function layerCameraNode(id: string, x: number, y: number): GraphNode {
+  const variable = engineScriptApiFor("SceneLayerActor")?.variables?.find((entry) => entry.propertyKey === "layerCamera");
+  if (!variable) throw new Error("SceneLayerActor has no Layer Camera variable.");
+  return gNode(id, "variables.get", x, y, {
+    variableName: variable.name,
+    variableId: `engine:SceneLayerActor:var:${variable.propertyKey}`,
+    scope: "member",
+    implicitSelf: true,
+    typeId: variable.typeId,
+    typeClassId: variable.typeClassId,
+    classId: "SceneLayerActor",
+    propertyKey: variable.propertyKey,
+    getOnly: true,
+  });
+}
+
+/** Get or Set of a Layer Camera's Camera Location, Rotation or Zoom; its Target is the Layer Camera. */
+function cameraVariableNode(id: string, access: "get" | "set", propertyKey: string, x: number, y: number,
+  extra: Record<string, unknown> = {}): GraphNode {
+  const variable = engineScriptApiFor("LayerCamera")?.variables?.find((entry) => entry.propertyKey === propertyKey);
+  if (!variable) throw new Error(`LayerCamera has no ${propertyKey} variable.`);
+  return gNode(id, access === "get" ? "variables.get" : "variables.set", x, y, {
+    variableName: variable.name,
+    variableId: `engine:LayerCamera:var:${variable.propertyKey}`,
+    scope: "member",
+    typeId: variable.typeId,
+    classId: "LayerCamera",
+    propertyKey: variable.propertyKey,
+    ...extra,
+  });
 }
 
 function body(id: string, motionType: "static" | "dynamic"): SerializedComponent {

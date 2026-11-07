@@ -130,7 +130,7 @@ export type LoopStructuredFlowMeta = Extract<
   }
 >;
 
-export function isLoopKind(kind: StructuredFlowKind | undefined): boolean {
+function isLoopKind(kind: StructuredFlowKind | undefined): boolean {
   return (
     kind === "forLoop" ||
     kind === "forLoopWithBreak" ||

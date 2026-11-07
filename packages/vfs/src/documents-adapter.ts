@@ -10,11 +10,12 @@ import type {
 import { Directory, Filesystem } from "@capacitor/filesystem";
 import { getHostPlatform, type HostPlatform } from "./platform";
 import { projectFolderName, projectRelativePath } from "./project-path";
+import { isAppOwnedFolder } from "./library-folders";
 
 const PROJECTS_ROOT = "BabylonSlate/projects";
 
 /** Files-visible Documents on iPad; app-private Data on Android, whose public Documents needs a picker. */
-export function mobileDocumentsDirectory(platform: HostPlatform = getHostPlatform()): Directory {
+function mobileDocumentsDirectory(platform: HostPlatform = getHostPlatform()): Directory {
   return platform === "android" ? Directory.Data : Directory.Documents;
 }
 
@@ -141,6 +142,27 @@ export class DocumentsStorageAdapter implements ProjectStorage {
       const info = await this.fs.stat({ path, directory: this.directory });
       if (info.type !== "directory") throw error;
     }
+  }
+
+  /**
+   * Permanently deletes a project folder. The app-owned folders beside
+   * projects (libraries, derived data) are refused; a missing folder is done.
+   */
+  async deleteProject(handle: ProjectFolderHandle): Promise<void> {
+    if (handle.tier !== "documents" || !handle.id.startsWith("documents:")) {
+      throw new Error(`Documents adapter cannot delete project ${handle.id}`);
+    }
+    const name = projectFolderName(handle.id.slice("documents:".length));
+    if (isAppOwnedFolder(name)) throw new Error(`${name} is not a project`);
+    const path = `${PROJECTS_ROOT}/${name}`;
+    try {
+      const info = await this.fs.stat({ path, directory: this.directory });
+      if (info.type !== "directory") throw new Error("Project folder is not a directory.");
+      await this.fs.rmdir({ path, directory: this.directory, recursive: true });
+    } catch (error) {
+      if (!hasFilesystemCode(error, "OS-PLUG-FILE-0008")) throw error;
+    }
+    if (this.folder?.id === `documents:${name}`) this.folder = null;
   }
 
   getCurrentFolder(): ProjectFolderHandle | null {

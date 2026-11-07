@@ -1,14 +1,12 @@
 import { isProjectOpenElsewhere, SourceRevisionChangedError } from "@haptic/core";
 import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
-import { DERIVED_STORAGE_ROOT, getHostPlatform, pickImportFiles, TEMPLATE_LIBRARY_FOLDER } from "@haptic/vfs";
-import type { DockviewApi } from "dockview-react";
+import { getHostPlatform, isAppOwnedFolder, pickImportFiles } from "@haptic/vfs";
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@haptic/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
 import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
 import { guardProjectAssetRegistry } from "./project-authoring-ports";
-import { ENGINE_EXTENSION_LIBRARY_ROOT } from "../lib/engine-extension-library";
 import { isExtensionPackagePath, isAssetSourceRevisionChanged, type AssetDocument } from "@haptic/assets";
 import type {
   DocumentKind,
@@ -72,7 +70,6 @@ import {
   AUDIO_REVERB_CHUNK_ID,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   DOCUMENT_CHUNK_ID,
-  EncodeQueue,
   encodeAssetDocument,
   audioClipChunk,
   audioClipChunkToDrop,
@@ -110,7 +107,6 @@ import {
   searchNodeTitles,
 } from "../lib/search-catalog";
 import { isPluginDocumentReadOnly } from "../lib/plugin-ui";
-import { ENGINE_PLUGIN_LIBRARY_ROOT } from "../lib/engine-plugin-library";
 import {
   normalizeProjectFolderName,
   type BuiltInStarterKind,
@@ -414,10 +410,6 @@ export class ProjectService {
     });
   }
 
-  get textureEncodeQueue(): EncodeQueue {
-    return this.textures.publicQueue;
-  }
-
   onRegistryChange(listener: () => void): () => void {
     this.registryListeners.add(listener);
     return () => {
@@ -439,15 +431,6 @@ export class ProjectService {
     return () => {
       this.ownWriteListeners.delete(listener);
     };
-  }
-
-  /** Pause encode jobs while Preview runs (engineplan §3.5). */
-  pauseTextureEncodeQueue(): void {
-    this.textures.pause();
-  }
-
-  resumeTextureEncodeQueue(): void {
-    this.textures.resume();
   }
 
   async retryTextureEncoding(
@@ -564,12 +547,6 @@ export class ProjectService {
     this.extensions.setEngineStorage(storage);
   }
 
-  setPluginOverrides(
-    overrides: Record<string, PluginEnableOverride>,
-  ): void {
-    this.projectPlugins.setOverrides(overrides);
-  }
-
   get searchIndex(): ProjectSearchIndex | null {
     return this.projectSearchIndex;
   }
@@ -604,14 +581,13 @@ export class ProjectService {
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
-    return (await this.storage.listProjects()).filter(
-      (folder) => folder.name !== ENGINE_PLUGIN_LIBRARY_ROOT && folder.name !== ENGINE_EXTENSION_LIBRARY_ROOT &&
-        folder.name !== TEMPLATE_LIBRARY_FOLDER && folder.name !== DERIVED_STORAGE_ROOT,
-    );
+    return (await this.storage.listProjects()).filter((folder) => !isAppOwnedFolder(folder.name));
   }
 
+  /** Permanently deletes a project in the app's own storage; chosen folders are never deleted. */
   async deleteListedProject(handle: ProjectFolderHandle): Promise<void> {
-    await this.storage.deleteProject?.(handle);
+    if (!this.storage.deleteProject) throw new Error("This storage cannot delete projects");
+    await this.storage.deleteProject(handle);
   }
 
   async openProject(
@@ -1191,8 +1167,7 @@ export class ProjectService {
     if (kind === "blank") {
       scene.actors = [];
       scene.settings.environmentSource = "none";
-      scene.settings.mainCameraActorId = null;
-      scene.settings.mainCameraComponentId = null;
+      scene.settings.defaultCameraActorId = null;
     }
     await this.storage.mkdir("assets/.blobs", true);
     await this.storage.mkdir("plugins", true);
@@ -2031,16 +2006,6 @@ export class ProjectService {
     }
 
     return createEmptyLayouts();
-  }
-
-  captureLayout(api: DockviewApi): Record<string, unknown> {
-    return api.toJSON() as unknown as Record<string, unknown>;
-  }
-
-  restoreLayout(api: DockviewApi, layout: Record<string, unknown> | null): void {
-    if (layout) {
-      api.fromJSON(layout as never);
-    }
   }
 }
 

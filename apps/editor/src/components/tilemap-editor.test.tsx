@@ -20,7 +20,8 @@ import {
   type TilesetPayload,
 } from "@haptic/assets";
 import { AssetOpenProvider, setTouchUi } from "@haptic/editor-kit";
-import { defaultEngineSettings, MemoryAppSettingsStore, type EngineSettings } from "@haptic/vfs";
+import { defaultEngineSettings, type EngineSettings } from "@haptic/vfs";
+import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import { KeybindProvider } from "../context/keybind-context";
@@ -128,7 +129,7 @@ function TilemapHarness({
 }) {
   const [payload, setPayload] = useState(initial);
   const commit = (next: Record<string, unknown>, mergeKey?: string) => {
-    // DocumentContext publishes a new open-documents list with every edit.
+    // Every edit advances the document revisions; the mock advances them when the open-documents list is replaced.
     documentApi.openDocuments = [
       ...documentApi.openDocuments.filter((doc) => doc.id !== "map"),
       { id: "map", ref: { kind: "tilemap", path: MAP_PATH }, content: next },

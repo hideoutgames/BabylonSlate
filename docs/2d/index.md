@@ -15,7 +15,19 @@ See [Your First Project](../start/first-project.md) and [Scenes](../scenes/index
 - Drag to pan and pinch or scroll to zoom. Hold, then drag, to box-select.
 - The gizmo moves on X and Y, rotates around Z and scales X and Y.
 - The **Inspector** shows Position X and Y, **Z-Order**, Rotation Z and Scale X and Y.
-- The orange frame is a guide sized by **2D Camera Width** and **2D Camera Height** in **Scene Settings** (default 16 × 9). It does not change what the game camera shows.
+- The orange outline shows what the scene's Layer Camera frames when Play starts: **Layer Camera Width** × **Layer Camera Height** (default 16 × 9) centred on **Layer Camera Location**, in **Scene Settings**. It is hidden while the scene starts on a Default Camera actor.
+
+## 2D lighting
+
+Sprites and Tilemaps draw unlit until a scene holds a [2D Light](../components/light-2d.md). Add one from **Place Actors > Lights** (**2D Point Light** or **2D Global Light**) and the scene's Sprites and Tilemaps are lit by its 2D lights, with a **Global** light setting how dark the rest is.
+
+Each Sprite and Tilemap has a **Shading Mode**:
+
+| Mode | Lit by |
+| --- | --- |
+| 2D | The scene's 2D Lights. Unlit while the scene has none. Default. |
+| 3D | 3D lights and environment lighting, as a Material surface is. Use it for 2D elements in a 3D game. |
+| Unlit | Nothing: always drawn as it is, for glowing items, backdrops or HUD-like figures. |
 
 ## Units and pixels
 
@@ -41,7 +53,9 @@ Sprite, Tilemap layers and Particle components each have a **Sorting Layer** and
 
 ## The game camera
 
-The game looks through the scene's **Default Camera**. For 2D, set its **Projection Mode** to **Orthographic**; **Orthographic Size** is half the view height in world units (default 5). The camera in a new 2D scene is already set up this way. See [Cameras](../graphics/cameras.md).
+A 2D game can look through the scene's **Layer Camera**: set **Default Camera** to **None** in **Scene Settings**, then set **Layer Camera Location**, **Layer Camera Width** and **Layer Camera Height**. Scripts move, turn and zoom it through [Get Scene Camera Manager](../scripting/class/get-scene-camera-manager.md) and **Get Layer Camera**.
+
+A camera actor works too. The camera in a new 2D scene is the Default Camera and is already orthographic; **Orthographic Size** is half the view height in world units (default 5). See [Cameras](../graphics/cameras.md).
 
 ## 2D physics
 

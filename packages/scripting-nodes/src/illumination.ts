@@ -7,7 +7,7 @@ import {
   COLOR,
   objectRef,
 } from "@haptic/scripting";
-import { selfActorPin, subject } from "./self-pin";
+import { subject } from "./self-pin";
 
 const CAMERA = objectRef("CameraComponent");
 const LIGHT = objectRef("LightComponent");
@@ -17,14 +17,25 @@ export const illuminationNodes: NodeDefinition[] = [
     id: "camera.possess",
     title: "Possess Camera",
     category: "camera",
+    description: "Views the Scene through Target's first Camera component. None, or an actor without a Camera component, returns the view to the Scene's Layer Camera.",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      selfActorPin("target"),
+      // Self while unwired; a wired None reaches the runtime instead of being skipped as a missing subject.
+      { ...pin("target", "target", "in", objectRef("Actor"), "data", true), selfWhenUnwired: true },
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.possessCamera(${ctx.input("target")});`);
     },
+  },
+  {
+    id: "camera.getSceneCameraManager",
+    title: "Get Scene Camera Manager",
+    category: "camera",
+    pure: true,
+    description: "The Scene's camera view: its Layer Camera, and the Camera Actor and Camera Component in view (None while the Layer Camera is in view).",
+    pins: () => [pin("out", "Scene Camera Manager", "out", objectRef("SceneCameraManager"))],
+    codegen: () => ({ out: "ctx.getSceneCameraManager()" }),
   },
   {
     id: "camera.getFieldOfView",

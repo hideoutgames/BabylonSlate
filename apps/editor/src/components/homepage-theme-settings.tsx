@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { pickImportFiles, saveFile } from "@haptic/vfs";
 import {
   ColorField,
@@ -38,7 +38,7 @@ import {
   SelectValue,
 } from "@haptic/ui/components/select";
 import { useAppSettings } from "../context/app-settings-context";
-import { ThemePreview } from "./editor-theme-preview";
+import { ThemePreviewFrame } from "./editor-theme-preview-frame";
 import { savedFileNotice } from "../lib/file-export";
 import {
   editorThemeFileName,
@@ -55,6 +55,11 @@ import {
 } from "../lib/editor-themes";
 
 type Notice = { tone: "info" | "error"; text: string };
+
+// The miniature editor brings Dockview and the graph editor, so the Homepage loads it when Theme Settings first shows.
+const ThemePreview = lazy(() =>
+  import("./editor-theme-preview").then((module) => ({ default: module.ThemePreview })),
+);
 
 /** Theme picker, read-only built-ins, custom theme Style editing, import and export. */
 export function ThemeSettingsFields() {
@@ -108,7 +113,9 @@ export function ThemeSettingsFields() {
       <LabelHint hint="Changing a Style color of a built-in theme creates a custom theme from it. Export a theme to share or back it up.">
         <FieldLegend>Theme</FieldLegend>
       </LabelHint>
-      <ThemePreview colors={active.colors} />
+      <Suspense fallback={<ThemePreviewFrame colors={active.colors} />}>
+        <ThemePreview colors={active.colors} />
+      </Suspense>
       <Field>
         <FieldLabel htmlFor="application-theme-select" className="sr-only">
           Theme

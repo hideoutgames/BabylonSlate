@@ -62,9 +62,26 @@ type Caster = {
 type SeenCaster = { revision: number; level: number | undefined; stamp: number; bounded: boolean; readonly box: Float64Array };
 
 /**
+ * Whether a world sphere may touch the light-space rectangle of one cascade (its transform matrix, with the world
+ * scales of its x and y axes at `2 * cascade` of `scales`). Depth is ignored: casters toward the light are clamped
+ * into the map.
+ */
+function reachesCascadeRectangle(
+  m: ArrayLike<number>,
+  scales: Float64Array,
+  cascade: number,
+  center: Vector3,
+  radius: number,
+): boolean {
+  const x = center.x * m[0]! + center.y * m[4]! + center.z * m[8]! + m[12]!;
+  const y = center.x * m[1]! + center.y * m[5]! + center.z * m[9]! + m[13]!;
+  // Negated so a non-finite value stays inside, never wrongly outside.
+  return !(Math.abs(x) > 1 + radius * scales[2 * cascade]! || Math.abs(y) > 1 + radius * scales[2 * cascade + 1]!);
+}
+
+/**
  * Whether a world sphere may touch the light-space rectangle of any cascade
  * (given as transform matrices with the world scale of their x and y axes).
- * Depth is ignored: casters toward the light are clamped into the map.
  */
 function reachesCascade(
   matrices: readonly ArrayLike<number>[],
@@ -72,19 +89,15 @@ function reachesCascade(
   center: Vector3,
   radius: number,
 ): boolean {
-  for (let cascade = 0; cascade < matrices.length; cascade++) {
-    const m = matrices[cascade]!;
-    const x = center.x * m[0]! + center.y * m[4]! + center.z * m[8]! + m[12]!;
-    const y = center.x * m[1]! + center.y * m[5]! + center.z * m[9]! + m[13]!;
-    // Negated so a non-finite value stays inside, never wrongly outside.
-    if (!(Math.abs(x) > 1 + radius * scales[2 * cascade]! || Math.abs(y) > 1 + radius * scales[2 * cascade + 1]!)) return true;
-  }
+  for (let cascade = 0; cascade < matrices.length; cascade++)
+    if (reachesCascadeRectangle(matrices[cascade]!, scales, cascade, center, radius)) return true;
   return false;
 }
 
 /**
  * Whether a caster's bounding sphere reaches a cascade that draws it: the first whatever its size, a later one when it
- * is not too small for its texels (`castsIntoCascade`, the caster list's own test).
+ * is not too small for its texels (`castsIntoCascade`, the caster list's own test). Run per caster and cascade each
+ * frame, so it allocates nothing.
  */
 function drawnIntoCascade(
   matrices: readonly ArrayLike<number>[],
@@ -96,7 +109,7 @@ function drawnIntoCascade(
 ): boolean {
   if (!minTexels) return reachesCascade(matrices, scales, center, radius);
   for (let cascade = 0; cascade < matrices.length; cascade++)
-    if (reachesCascade([matrices[cascade]!], scales.subarray(2 * cascade), center, radius) &&
+    if (reachesCascadeRectangle(matrices[cascade]!, scales, cascade, center, radius) &&
       (cascade === 0 || castsIntoCascade(matrices[cascade]!, radius, sizes[cascade]!, minTexels))) return true;
   return false;
 }

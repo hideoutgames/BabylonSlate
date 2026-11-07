@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type SerializedComponent,
   createActor,
   createDefaultScene,
   createMeshComponent,
@@ -426,6 +427,37 @@ describe("stampUserComponentOverrides", () => {
     expect(stamped.actors[0]).not.toBe(next.actors[0]);
     expect(stamped.actors[0]!.components[0]!.overrideKeys).toContain("meshKind");
     expect(stamped.actors[1]).toBe(previous.actors[1]);
+  });
+
+  it("walks only the edited actor's edited component, reading no other actor or component", () => {
+    const prefab = [createMeshComponent("prefab-body", "box"), createMeshComponent("prefab-head", "sphere")];
+    const previous = createDefaultScene();
+    previous.actors = Array.from({ length: 50 }, (_, index) => createActor(`hero-${index}`, `Hero ${index}`, {
+      classId: "Hero", components: instantiatePrefabComponents(prefab, `hero-${index}`),
+    }));
+    // Every untouched actor counts reads of its components, and the edited actor's untouched component of its properties.
+    let reads = 0;
+    const counted = <T extends object>(target: T, key: keyof T) => {
+      const value = target[key];
+      Object.defineProperty(target, key, { enumerable: true, configurable: true, get: () => { reads += 1; return value; } });
+    };
+    for (const actor of previous.actors.slice(1)) counted(actor, "components");
+    const edited = previous.actors[0]!;
+    const [body, head] = edited.components as [SerializedComponent, SerializedComponent];
+    counted(head, "properties");
+    const next = {
+      ...previous,
+      actors: [
+        { ...edited, components: [{ ...body, properties: { ...body.properties, meshKind: "cylinder" } }, head] },
+        ...previous.actors.slice(1),
+      ],
+    };
+    reads = 0;
+    const stamped = stampUserComponentOverrides(previous, next, { Hero: prefab });
+    expect(reads).toBe(0);
+    stamped.actors.slice(1).forEach((actor, index) => expect(actor).toBe(previous.actors[index + 1]));
+    expect(stamped.actors[0]!.components[0]!.overrideKeys).toEqual(["meshKind"]);
+    expect(stamped.actors[0]!.components[1]).toBe(head);
   });
 
   it("keeps explicit model None across prefab material edits and resumes inheritance after reset", () => {

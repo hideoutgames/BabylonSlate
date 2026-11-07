@@ -37,6 +37,7 @@ export type PlaceActorKind =
   | { type: "shape"; meshKind: string }
   | { type: "light"; lightKind: string }
   | { type: "hemispheric-fill" }
+  | { type: "light-2d"; lightKind: "point" | "global" }
   | { type: "camera" }
   | { type: "render-target-capture" }
   | { type: "skybox" }
@@ -139,6 +140,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     category: "Lights",
     kind: { type: "hemispheric-fill" as const },
   },
+  ...(["point", "global"] as const).map((lightKind) => ({
+    id: `light-2d-${lightKind}`,
+    title: `2D ${lightKind === "point" ? "Point" : "Global"} Light`,
+    category: "Lights",
+    kind: { type: "light-2d" as const, lightKind },
+  })),
   {
     id: "camera",
     title: "Camera",
@@ -276,6 +283,7 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
       (item) =>
         item.kind.type !== "light" &&
         item.kind.type !== "hemispheric-fill" &&
+        item.kind.type !== "light-2d" &&
         item.kind.type !== "camera" &&
         item.kind.type !== "skybox" && item.kind.type !== "water" &&
         item.kind.type !== "cable" &&
@@ -289,7 +297,7 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
 }
 
 /** Place Actors' default page, in display order; ids absent from the host are skipped. */
-export const FEATURED_PLACE_ACTOR_IDS: readonly string[] = [
+const FEATURED_PLACE_ACTOR_IDS: readonly string[] = [
   "empty",
   "shape-box",
   "shape-sphere",
@@ -347,7 +355,7 @@ export function featuredPlaceActors(
   });
 }
 
-export const PLACEABLE_PROJECT_TYPES = new Set([
+const PLACEABLE_PROJECT_TYPES = new Set([
   "Class",
   "Prefab",
   "Model",
@@ -501,6 +509,7 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
       family: "class",
     });
   }
+  if (kind.type === "light-2d") return resolveTypeVisual({ classId: "Light2DComponent", family: "class" });
   if (kind.type === "camera") {
     return resolveTypeVisual({ classId: "CameraComponent", family: "class" });
   }
@@ -616,6 +625,18 @@ export function spawnPlacedActor(
             ...defaultPropertiesFor("LightComponent"),
             lightKind: kind.lightKind,
           },
+        },
+      ],
+    }));
+  }
+  if (kind.type === "light-2d") {
+    return finish(createActor(id, item.title, {
+      transform,
+      components: [
+        {
+          id: `${id}-light2d`,
+          classId: "Light2DComponent",
+          properties: { ...defaultPropertiesFor("Light2DComponent"), lightKind: kind.lightKind },
         },
       ],
     }));

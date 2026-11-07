@@ -13,7 +13,7 @@ export function previewMeshesReady(root: AbstractMesh): boolean {
 
 /**
  * Poll `probe` every 16 ms while `keepWaiting` holds. False once the wait is
- * abandoned or `boundMs` runs out without the probe succeeding. Time the probe
+ * abandoned or `SCENE_SHADER_WARM_TIMEOUT_MS` runs out without the probe succeeding. Time the probe
  * itself holds the thread is not charged against the bound, up to `budget`
  * (a fresh `SCENE_THREAD_HELD_BUDGET_MS` unless a capture shares one across its
  * waits): where links are synchronous one probe links every effect before it
@@ -26,11 +26,10 @@ export function previewMeshesReady(root: AbstractMesh): boolean {
 export async function waitUntilReady(
   probe: () => boolean,
   keepWaiting: () => boolean,
-  boundMs: number = SCENE_SHADER_WARM_TIMEOUT_MS,
   budget?: HeldThreadBudget,
   compiles?: DriverCompileWatch,
 ): Promise<boolean> {
-  const bound = createHeldThreadBound(boundMs, budget, compiles && renewOnCompileProgress(compiles));
+  const bound = createHeldThreadBound(SCENE_SHADER_WARM_TIMEOUT_MS, budget, compiles && renewOnCompileProgress(compiles));
   while (keepWaiting()) {
     if (probe()) return true;
     if (bound.expired()) return false;
@@ -49,5 +48,5 @@ export function waitForPreviewMeshesReady(
   compiles: DriverCompileWatch = new DriverCompileWatch(root.getEngine()),
   current: () => boolean = () => true,
 ): Promise<boolean> {
-  return waitUntilReady(() => previewMeshesReady(root), () => !root.isDisposed() && current(), undefined, budget, compiles);
+  return waitUntilReady(() => previewMeshesReady(root), () => !root.isDisposed() && current(), budget, compiles);
 }

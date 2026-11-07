@@ -14,7 +14,7 @@ import type { EditorExtensionService } from "../services/editor-extension-servic
 import { ensureEngineExtensionLibrary, type EngineExtensionEntry } from "../lib/engine-extension-library";
 import { saveExtensionArchive } from "../lib/extension-download";
 import { PLUGIN_ICON_OPTIONS } from "../lib/plugin-icons";
-import { CodeBodyEditor } from "./js-body-editor";
+import { LazyCodeBodyEditor } from "./lazy-code-editors";
 
 function useExtensionAction() {
   const pending = useRef(false);
@@ -53,7 +53,7 @@ export function ExtensionCommandDialog({ command, service, onClose }: {
           <FieldLabel htmlFor={`extension-command-${field.id}`}>{field.label}{field.required ? " *" : ""}</FieldLabel>
           {field.type === "multiline" && command.id === "glsl-to-material" && field.id === "source" ?
             <div className="h-64 min-h-0 overflow-hidden rounded-md border border-border" role="group" aria-label={field.label}>
-              <CodeBodyEditor language="glsl" ariaLabel={field.label} value={values[field.id] ?? ""} onChange={(value) => setValue(field.id, value)} />
+              <LazyCodeBodyEditor language="glsl" ariaLabel={field.label} value={values[field.id] ?? ""} onChange={(value) => setValue(field.id, value)} />
             </div> : field.type === "multiline" ?
               <Textarea id={`extension-command-${field.id}`} value={values[field.id] ?? ""} disabled={busy} onChange={(event) => setValue(field.id, event.target.value)} /> :
               <Input id={`extension-command-${field.id}`} value={values[field.id] ?? ""} disabled={busy} onChange={(event) => setValue(field.id, event.target.value)} />}
@@ -112,7 +112,7 @@ export function ExtensionEditorDialog({ entry, entries, initialSource, service, 
           </SearchDropdown>
         </FieldSet>
         <Field><LabelHint hint="Export activate(api). Module imports are not supported."><FieldLabel>Entry Source</FieldLabel></LabelHint><FieldDescription>{settings.entryPoint}</FieldDescription>
-          <div className="h-72 min-h-0 overflow-hidden rounded-md border border-border" role="group" aria-label="Extension Source"><CodeBodyEditor language="javascript" ariaLabel="Extension Source" value={source} onChange={setSource} /></div>
+          <div className="h-72 min-h-0 overflow-hidden rounded-md border border-border" role="group" aria-label="Extension Source"><LazyCodeBodyEditor language="javascript" ariaLabel="Extension Source" value={source} onChange={setSource} /></div>
         </Field>
       </FieldGroup>
       <ActionError message={error} />

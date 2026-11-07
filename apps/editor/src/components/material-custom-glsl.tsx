@@ -2,8 +2,7 @@ import { useState } from "react";
 import { LabelHint, MultilineTextField, PinListEditor, PropertyGrid, type PinListRow } from "@haptic/editor-kit";
 import { Field, FieldLabel, FieldDescription } from "@haptic/ui/components/field";
 import { customGlslInterface, customGlslInterfaceError, type CustomGlslPin, type MaterialGraphNode } from "@haptic/shader-graph";
-import { CodeBodyEditor } from "./js-body-editor";
-import { GlslCodePreview } from "./glsl-code-preview";
+import { LazyCodeBodyEditor, LazyGlslCodePreview } from "./lazy-code-editors";
 
 const TYPES = ["float", "vec2", "vec3", "vec4"] as const;
 const INPUT_TYPES = [...TYPES, "texture"] as const;
@@ -40,8 +39,8 @@ export function MaterialCustomGlsl({ node, setProperties, bodyLine }: {
       </LabelHint>
       <MultilineTextField code id="material-node-glsl" title="GLSL Function Body"
         value={body} onChange={(body) => setProperties({ body })} data-testid="material-node-glsl"
-        renderPreview={(value) => <GlslCodePreview value={value} />}
-        renderEditor={(value, onChange) => <CodeBodyEditor value={value} onChange={onChange} language="glsl" bodyLine={bodyLine} names={[...pins.inputs, ...pins.outputs.slice(1)].map((pin) => pin.name)} />}
+        renderPreview={(value) => <LazyGlslCodePreview value={value} />}
+        renderEditor={(value, onChange) => <LazyCodeBodyEditor value={value} onChange={onChange} language="glsl" bodyLine={bodyLine} names={[...pins.inputs, ...pins.outputs.slice(1)].map((pin) => pin.name)} />}
       />
       <FieldDescription data-testid="material-node-glsl-signature" className="sr-only">{GLSL_SIGNATURE_HINT}</FieldDescription>
       {error ? <FieldDescription role="alert">{error}</FieldDescription> : null}

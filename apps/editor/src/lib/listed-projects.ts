@@ -45,12 +45,12 @@ export function recentProjectsWithOpenedProject(
   ].slice(0, 20);
 }
 
-/** Web OPFS has no user-visible folder; removing from the list deletes the project. */
-export function shouldDeleteOpfsOnRemove(
-  platform: string,
-  tier: StorageTier,
-): boolean {
-  return platform === "web" && tier === "opfs";
+/**
+ * Removing a project in the app's own storage (browser storage, App Documents,
+ * the desktop Projects Folder) deletes it; a chosen folder only leaves the list.
+ */
+export function removeDeletesProject(tier: StorageTier): boolean {
+  return tier !== "external";
 }
 
 export function listedProjectsFromRecents(

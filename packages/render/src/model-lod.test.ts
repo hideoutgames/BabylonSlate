@@ -15,7 +15,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import { normalizeRenderingQuality } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { encodeTriangleGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
 import { loadModelContainer } from "./model-container";
 import { setSceneInstancing } from "./instance-pool";

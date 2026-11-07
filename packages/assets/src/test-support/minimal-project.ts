@@ -35,7 +35,7 @@ export async function minimalProjectFiles(
       components: [createMeshComponent("mesh-1", "box")],
     }),
     ...scene.actors.filter(
-      (actor) => actor.id === scene.settings.mainCameraActorId,
+      (actor) => actor.id === scene.settings.defaultCameraActorId,
     ),
   ];
   const graph = {

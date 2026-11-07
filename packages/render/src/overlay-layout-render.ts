@@ -1,3 +1,4 @@
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
@@ -63,35 +64,78 @@ export function overlayClipAllowsPoint(mesh: AbstractMesh, x: number, y: number)
 const scratchViewport = new Viewport(0, 0, 1, 1);
 const scratchCorner = new Vector3();
 const scratchProjected = new Vector3();
+/** Meshes drawing through a clip's scissor hooks (`installClip`): one before-bind and one after-render observer. */
+const clipHooked = new WeakSet<AbstractMesh>();
+
+/** Babylon 9.29 WebGPU scissor state: the rect asked for, and how draws reach the render pass. */
+type WebGpuScissorInternals = {
+  compatibilityMode: boolean;
+  _bundleList: unknown;
+  _currentRenderPass: unknown;
+  _applyScissor(bundleList: unknown): void;
+};
+
+/**
+ * Ends a clip's scissor. On WebGPU, Babylon's `disableScissor` forgets the rect without resetting the render pass's,
+ * whose later draws then stay clipped to it: the pass gets the whole target's rect first.
+ */
+export function disableOverlayClipScissor(engine: AbstractEngine): void {
+  if (engine.isWebGPU) {
+    const gpu = engine as unknown as WebGpuScissorInternals;
+    if (gpu._currentRenderPass || !gpu.compatibilityMode) {
+      engine.enableScissor(0, 0, engine.getRenderWidth(), engine.getRenderHeight());
+      gpu._applyScissor(gpu.compatibilityMode ? null : gpu._bundleList);
+    }
+  }
+  engine.disableScissor();
+}
+
+/** Scissors the next draws of `scene` to `clip`'s projected rectangle; false when nothing was enabled (no camera). */
+export function enableOverlayClipScissor(scene: Scene, clip: OverlayLayoutRect): boolean {
+  const camera = scene.activeCamera;
+  if (!camera) return false;
+  const engine = scene.getEngine(), width = engine.getRenderWidth(), height = engine.getRenderHeight();
+  camera.viewport.toGlobalToRef(width, height, scratchViewport);
+  // All four corners: a turned Scene Layer camera puts any of them at the screen extremes.
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let corner = 0; corner < 4; corner++) {
+    scratchCorner.set(clip.x + (corner & 1 ? 1 : -1) * clip.width / 2, clip.y + (corner & 2 ? 1 : -1) * clip.height / 2, 0);
+    const projected = Vector3.ProjectToRef(scratchCorner, Matrix.IdentityReadOnly, scene.getTransformMatrix(), scratchViewport, scratchProjected);
+    minX = Math.min(minX, projected.x); maxX = Math.max(maxX, projected.x);
+    minY = Math.min(minY, projected.y); maxY = Math.max(maxY, projected.y);
+  }
+  const x = Math.max(0, Math.min(width, Math.floor(minX)));
+  const top = Math.max(0, Math.min(height, Math.floor(minY)));
+  const right = Math.max(x, Math.min(width, Math.ceil(maxX)));
+  const bottom = Math.max(top, Math.min(height, Math.ceil(maxY)));
+  const empty = clip.width <= 0 || clip.height <= 0;
+  // Babylon's canvas scissor uses a bottom-left origin on both backends.
+  // WebGPU RTTs also flip geometry Y, so their unflipped scissor has the same
+  // coordinates for the layer's ordinary render targets.
+  engine.enableScissor(empty ? 1 : x, height - bottom, empty ? 0 : right - x, empty ? 0 : bottom - top);
+  return true;
+}
+
+/**
+ * How `mesh`'s draws are clipped: undefined when it has no clip hooks, else the clip they scissor to now (null: none,
+ * as for a mesh whose clip owner went away until the next refresh). Meshes clipped by the same container share the
+ * clip object, so one scissor serves a draw batch of them.
+ */
+export function overlayDrawClip(mesh: AbstractMesh): OverlayLayoutRect | null | undefined {
+  return clipHooked.has(mesh) ? inheritedClip(mesh) : undefined;
+}
+
 function installClip(mesh: Mesh): () => void {
   let scissored = false;
   const beforeBind = mesh.onBeforeBindObservable.add(() => {
-    const clip = inheritedClip(mesh), scene = mesh.getScene(), camera = scene.activeCamera;
-    if (!clip || !camera) return;
-    const engine = scene.getEngine(), width = engine.getRenderWidth(), height = engine.getRenderHeight();
-    camera.viewport.toGlobalToRef(width, height, scratchViewport);
-    // All four corners: a turned Scene Layer camera puts any of them at the screen extremes.
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (let corner = 0; corner < 4; corner++) {
-      scratchCorner.set(clip.x + (corner & 1 ? 1 : -1) * clip.width / 2, clip.y + (corner & 2 ? 1 : -1) * clip.height / 2, 0);
-      const projected = Vector3.ProjectToRef(scratchCorner, Matrix.IdentityReadOnly, scene.getTransformMatrix(), scratchViewport, scratchProjected);
-      minX = Math.min(minX, projected.x); maxX = Math.max(maxX, projected.x);
-      minY = Math.min(minY, projected.y); maxY = Math.max(maxY, projected.y);
-    }
-    const x = Math.max(0, Math.min(width, Math.floor(minX)));
-    const top = Math.max(0, Math.min(height, Math.floor(minY)));
-    const right = Math.max(x, Math.min(width, Math.ceil(maxX)));
-    const bottom = Math.max(top, Math.min(height, Math.ceil(maxY)));
-    const empty = clip.width <= 0 || clip.height <= 0;
-    // Babylon's canvas scissor uses a bottom-left origin on both backends.
-    // WebGPU RTTs also flip geometry Y, so their unflipped scissor has the same
-    // coordinates for the layer's ordinary render targets.
-    engine.enableScissor(empty ? 1 : x, height - bottom, empty ? 0 : right - x, empty ? 0 : bottom - top);
-    scissored = true;
+    const clip = inheritedClip(mesh);
+    if (clip && enableOverlayClipScissor(mesh.getScene(), clip)) scissored = true;
   });
-  const resetScissor = () => { if (scissored) { mesh.getScene().getEngine().disableScissor(); scissored = false; } };
+  const resetScissor = () => { if (scissored) { disableOverlayClipScissor(mesh.getScene().getEngine()); scissored = false; } };
   const afterRender = mesh.onAfterRenderObservable.add(resetScissor);
+  clipHooked.add(mesh);
   return () => {
+    clipHooked.delete(mesh);
     mesh.onBeforeBindObservable.remove(beforeBind);
     mesh.onAfterRenderObservable.remove(afterRender);
     resetScissor();

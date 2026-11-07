@@ -75,7 +75,6 @@ import {
   CompileStateContext,
   DockWindowTickContext,
   DocumentActionsContext,
-  DocumentContext,
   DocumentSubscriptionsContext,
   EditorShellStateContext,
   ProjectStateContext,
@@ -119,7 +118,6 @@ export {
   useDocumentActions,
   useDocumentDirty,
   useDocumentKindsRevision,
-  useDocuments,
   useEditorShellState,
   useOpenDocument,
   useOpenDocumentTabs,
@@ -184,8 +182,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [migrationPending, setMigrationPending] = useState<MigrationPending[]>(
     [],
   );
-  /** Re-derives the context value after service state it reads changed (edits, tabs, saves). */
-  const [contextTick, setContextTick] = useState(0);
+  /** Re-renders the provider after service state its slices read changed (edits, tabs, saves). */
+  const [, setContextTick] = useState(0);
   /** Registry-adjacent changes outside the registry itself; part of `registryEpoch`. */
   const registryTickRef = useRef(0);
   const [registryTick, setRegistryTick] = useRefState(registryTickRef);
@@ -888,10 +886,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   // other layout effect in the commit.
   const {
     documentRevisions,
-    tabsRevision,
-    tabOrder,
-    openDocuments,
-    dirtyDocuments,
     stableDirtyDocuments,
     subscriptions,
     activeDocumentState,
@@ -905,6 +899,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentRevisions,
     GRAPH_SIGNATURE_KINDS,
   );
+  // Open-graph compile fingerprint (node positions omitted), recomputed only
+  // when Class graph or Input Action / Axis documents change or the registry
+  // epoch advances.
   const currentGraphSignature = useMemo(() => {
     void graphSignatureRevision;
     void registryEpoch;
@@ -942,15 +939,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     () => ({ dirtyDocuments: stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable }),
     [stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable],
   );
+  const graphsNeedCompile = compileSignatureIsStale(
+    currentGraphSignature,
+    lastCompiledSignature,
+  );
   const compileState = useMemo<CompileState>(
-    () => ({
-      graphsNeedCompile: compileSignatureIsStale(
-        currentGraphSignature,
-        lastCompiledSignature,
-      ),
-      currentGraphSignature,
-    }),
-    [currentGraphSignature, lastCompiledSignature],
+    () => ({ graphsNeedCompile }),
+    [graphsNeedCompile],
   );
   const editorShellState = useMemo<EditorShellState>(
     () => ({
@@ -970,50 +965,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [listedProjects, needsReconnect, recoveryAvailable, migrationPending, migrationPromptRequest, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, thumbnailVersions, thumbnailsEnabled],
   );
 
-  /** The `useDocuments()` facade: the stable actions plus per-edit state. */
-  const value = useMemo<DocumentContextValue>(
-    () => {
-      // Service state read below (undo stacks, layouts) changed.
-      void contextTick;
-      return {
-        ...actions,
-        ...projectState,
-        ...registryState,
-        ...activeDocumentState,
-        ...compileState,
-        ...editorShellState,
-        ...sourceControlState,
-        route,
-        openDocuments,
-        documentRevisions,
-        tabsRevision,
-        tabOrder,
-        // Unlike the save slice's list, recomputed on every revision.
-        dirtyDocuments,
-        projectDirty,
-        autoSaveStatus,
-      };
-    },
-    [
-      actions,
-      contextTick,
-      projectState,
-      registryState,
-      activeDocumentState,
-      compileState,
-      editorShellState,
-      sourceControlState,
-      route,
-      openDocuments,
-      documentRevisions,
-      tabsRevision,
-      tabOrder,
-      dirtyDocuments,
-      projectDirty,
-      autoSaveStatus,
-    ],
-  );
-
   return (
     <DocumentActionsContext.Provider value={actions}>
       <AppRouteContext.Provider value={route}>
@@ -1025,7 +976,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                   <CompileStateContext.Provider value={compileState}>
                     <EditorShellStateContext.Provider value={editorShellState}>
                       <SourceControlStateContext.Provider value={sourceControlState}>
-                        <DocumentContext.Provider value={value}>
                           <DockWindowTickContext.Provider value={dockWindowTick}>
                             {children}
                           </DockWindowTickContext.Provider>
@@ -1048,7 +998,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                             testId="document-open-error"
                             dismissTestId="document-open-error-dismiss"
                           />
-                        </DocumentContext.Provider>
                       </SourceControlStateContext.Provider>
                     </EditorShellStateContext.Provider>
                   </CompileStateContext.Provider>

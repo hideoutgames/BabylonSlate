@@ -80,13 +80,9 @@ export class ClassRegistry {
       variables: [],
       implementedInterfaces: [],
     });
-    this.register({
-      id: "MaterialObject",
-      parentClassId: "Object",
-      kind: "object",
-      variables: [],
-      implementedInterfaces: [],
-    });
+    for (const id of ["MaterialObject", "LayerCamera", "SceneCameraManager"]) {
+      this.register({ id, parentClassId: "Object", kind: "object", variables: [], implementedInterfaces: [] });
+    }
     for (const id of ["FloatCurveObject", "VectorCurveObject", "ColorCurveObject", "TimelineClip", "Timeline"]) {
       this.register({ id, parentClassId: "Object", kind: "object", variables: [], implementedInterfaces: [] });
     }

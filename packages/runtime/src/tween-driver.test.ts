@@ -27,42 +27,56 @@ function floatScript(): CompiledScript {
 const flush = async () => { for (let index = 0; index < 8; index++) await Promise.resolve(); };
 
 /**
- * A layer actor's Begin Play through every Scene Layer camera node: set and
- * offset the location (doubling it from Get), set roll and zoom, then tween
- * each from its current value and log once the last finishes.
+ * A layer actor's Begin Play through its Layer Camera: Get Layer Camera on
+ * Self, Set Camera Location, Add Camera Offset (doubling it from Get Camera
+ * Location), Set Camera Rotation and Zoom, then tween each from its current
+ * value and log once the last finishes.
  */
 function cameraRigScript(): CompiledScript {
   const registry = createDefaultNodeRegistry();
   const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode =>
     ({ id, typeId, properties, pins: registry.get(typeId)!.pins(properties), position: { x: 0, y: 0 } });
-  const exec = (from: string, to: string, pin = "execOut") =>
-    ({ id: `${from}-${to}`, sourceNodeId: from, sourcePinId: pin, targetNodeId: to, targetPinId: "execIn" });
-  const data = (from: string, to: string, pin: string) =>
-    ({ id: `${from}-${to}-${pin}`, sourceNodeId: from, sourcePinId: "out", targetNodeId: to, targetPinId: pin });
-  const steps = ["set", "offset", "roll", "zoom", "tweenRoll", "tweenZoom", "tweenLocation", "done"];
+  const cameraVariable = (name: string, typeId: string, propertyKey: string, extra: Record<string, unknown> = {}) =>
+    ({ variableName: name, typeId, classId: "LayerCamera", propertyKey, scope: "member", ...extra });
+  const exec = (from: string, to: string, fromPin = "execOut", toPin = "execIn") =>
+    ({ id: `${from}-${to}`, sourceNodeId: from, sourcePinId: fromPin, targetNodeId: to, targetPinId: toPin });
+  const data = (from: string, fromPin: string, to: string, pin: string) =>
+    ({ id: `${from}-${to}-${pin}`, sourceNodeId: from, sourcePinId: fromPin, targetNodeId: to, targetPinId: pin });
   const graph: LogicGraph = { id: "camera", kind: "event", nodes: [
     node("begin", "flow.event.beginPlay"),
-    node("owner", "scene-layer.getOwningSceneLayer"),
-    node("location", "scene-layer.getCameraLocation"),
-    node("rotation", "scene-layer.getCameraRotation"),
-    node("zoomValue", "scene-layer.getCameraZoom"),
-    node("set", "scene-layer.setCameraLocation", { "default:location": { x: 2, y: 1 } }),
-    node("offset", "scene-layer.addCameraOffset"),
-    node("roll", "scene-layer.setCameraRotation", { "default:rotation": 30 }),
-    node("zoom", "scene-layer.setCameraZoom", { "default:zoom": 2 }),
-    node("tweenRoll", "tween.sceneLayerCameraRotation", { "default:b": 90, "default:duration": 1 }),
-    node("tweenZoom", "tween.sceneLayerCameraZoom", { "default:b": 4, "default:duration": 1 }),
-    node("tweenLocation", "tween.sceneLayerCameraLocation", { "default:b": { x: 0, y: 0 }, "default:duration": 1 }),
+    node("self", "actor.getSelf"),
+    node("camera", "variables.get", { variableName: "Layer Camera", typeId: "object", typeClassId: "LayerCamera",
+      classId: "SceneLayerActor", propertyKey: "layerCamera", scope: "member", getOnly: true }),
+    node("location", "variables.get", cameraVariable("Camera Location", "vec2", "location")),
+    node("rotation", "variables.get", cameraVariable("Camera Rotation", "float", "rotation")),
+    node("zoomValue", "variables.get", cameraVariable("Camera Zoom", "float", "zoom")),
+    node("set", "variables.set", cameraVariable("Camera Location", "vec2", "location", { "default:value": { x: 2, y: 1 } })),
+    node("offset", "functions.call", { functionName: "Add Camera Offset", runtime: "addLayerCameraOffset", classId: "LayerCamera", pins: [
+      { name: "exec", typeId: "exec", direction: "in" }, { name: "then", typeId: "exec", direction: "out" },
+      { name: "delta", typeId: "vec2", direction: "in" },
+    ] }),
+    node("roll", "variables.set", cameraVariable("Camera Rotation", "float", "rotation", { "default:value": 30 })),
+    node("zoom", "variables.set", cameraVariable("Camera Zoom", "float", "zoom", { "default:value": 2 })),
+    node("tweenRoll", "tween.layerCameraRotation", { "default:b": 90, "default:duration": 1 }),
+    node("tweenZoom", "tween.layerCameraZoom", { "default:b": 4, "default:duration": 1 }),
+    node("tweenLocation", "tween.layerCameraLocation", { "default:b": { x: 0, y: 0 }, "default:duration": 1 }),
     node("done", "debug.log", { "default:message": "camera done" }),
   ], edges: [
     exec("begin", "set"),
-    ...steps.slice(1).map((step, index) => exec(steps[index]!, step)),
-    ...["set", "offset", "roll", "zoom", "location", "rotation", "zoomValue"].map((to) => data("owner", to, "layer")),
-    ...["tweenRoll", "tweenZoom", "tweenLocation"].map((to) => data("owner", to, "target")),
-    data("location", "offset", "delta"),
-    data("rotation", "tweenRoll", "a"),
-    data("zoomValue", "tweenZoom", "a"),
-    data("location", "tweenLocation", "a"),
+    exec("set", "offset", "execOut", "exec"),
+    exec("offset", "roll", "then"),
+    exec("roll", "zoom"),
+    exec("zoom", "tweenRoll"),
+    exec("tweenRoll", "tweenZoom"),
+    exec("tweenZoom", "tweenLocation"),
+    exec("tweenLocation", "done"),
+    data("self", "out", "camera", "target"),
+    ...["set", "offset", "roll", "zoom", "location", "rotation", "zoomValue", "tweenRoll", "tweenZoom", "tweenLocation"]
+      .map((to) => data("camera", "value", to, "target")),
+    data("location", "value", "offset", "delta"),
+    data("rotation", "value", "tweenRoll", "a"),
+    data("zoomValue", "value", "tweenZoom", "a"),
+    data("location", "value", "tweenLocation", "a"),
   ] };
   const compiled = compileGraph(graph, { registry, assetGuid: "rig" });
   return { classId: "CameraRig", parentClassId: "SceneLayerActor", assetGuid: "rig", source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints };
@@ -142,7 +156,7 @@ describe("Tween runtime integration", () => {
     } finally { runtime.stop(); }
   });
 
-  it("runs the Scene Layer camera nodes from a layer actor's graph", async () => {
+  it("runs the Layer Camera members and tweens from a layer actor's graph", async () => {
     const layer = createDefaultSceneLayer();
     layer.actors = [createActor("rig", "Rig", { classId: "CameraRig" })];
     const commands: CommandMessage[] = [];
@@ -158,21 +172,21 @@ describe("Tween runtime integration", () => {
         { x: 4, y: 2, rotation: 30, zoom: 1 },
         { x: 4, y: 2, rotation: 30, zoom: 2 },
       ]);
-      expect(liveLayer.camera).toEqual({ x: 0, y: 0, rotation: 90, zoom: 4 });
+      expect(liveLayer.camera.state).toEqual({ x: 0, y: 0, rotation: 90, zoom: 4 });
       expect(commands.filter(command => command.type === "log" && command.message === "camera done")).toHaveLength(1);
     } finally { runtime.stop(); }
   });
 
-  it("tweens a layer actor's own Scene Layer camera location, roll and zoom together", async () => {
+  it("tweens a layer actor's own Layer Camera location, roll and zoom together", async () => {
     const layer = createDefaultSceneLayer();
     layer.actors = [createActor("rig", "Rig", { classId: "CameraRig" })];
     const script: CompiledScript = { classId: "CameraRig", parentClassId: "SceneLayerActor", assetGuid: "rig", anchors: [],
       entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: true }],
       source: `export async function onBeginPlay(ctx) {
-        const layer = ctx.getOwningSceneLayer(ctx.self);
-        const moved = ctx.tweenProperty(layer, "sceneLayer.cameraLocation", "vec2", {x:0,y:0}, {x:4,y:2}, 2, "linear");
-        const turned = ctx.tweenProperty(layer, "sceneLayer.cameraRotation", "float", 0, 90, 2, "linear");
-        const zoomed = await ctx.tweenProperty(layer, "sceneLayer.cameraZoom", "float", 1, 3, 2, "linear");
+        const camera = ctx.getVariableFrom(ctx.self, "layerCamera");
+        const moved = ctx.tweenProperty(camera, "layerCamera.location", "vec2", {x:0,y:0}, {x:4,y:2}, 2, "linear");
+        const turned = ctx.tweenProperty(camera, "layerCamera.rotation", "float", 0, 90, 2, "linear");
+        const zoomed = await ctx.tweenProperty(camera, "layerCamera.zoom", "float", 1, 3, 2, "linear");
         if (zoomed && await moved && await turned) ctx.log("log", "Tween", "camera complete");
       }`,
     };
@@ -187,7 +201,7 @@ describe("Tween runtime integration", () => {
       runtime.tick();
       expect(cameras().at(-1)).toEqual({ x: 1, y: 0.5, rotation: 22.5, zoom: 1.5 });
       runtime.tick(); runtime.tick(); runtime.tick(); await flush();
-      expect(liveLayer.camera).toEqual({ x: 4, y: 2, rotation: 90, zoom: 3 });
+      expect(liveLayer.camera.state).toEqual({ x: 4, y: 2, rotation: 90, zoom: 3 });
       expect(commands.filter(command => command.type === "log" && command.message === "camera complete")).toHaveLength(1);
     } finally { runtime.stop(); }
   });

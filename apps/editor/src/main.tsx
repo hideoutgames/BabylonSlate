@@ -44,6 +44,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/anti-aliasing-proof").then(({ runAntiAliasingProof, runAntiAliasingHaloProof }) => Object.assign(window, { __antiAliasingProof: runAntiAliasingProof, __antiAliasingHaloProof: runAntiAliasingHaloProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("hapticLightProof")) {
   void import("./testing/haptic-light-proof").then(({ runHapticLightProof }) => Object.assign(window, { __hapticLightProof: runHapticLightProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("surfaceLightingProof")) {
+  void import("./testing/surface-lighting-proof").then(({ runSurfaceLightingProof }) => Object.assign(window, { __surfaceLightingProof: runSurfaceLightingProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("unlitParityProof")) {
   void import("./testing/unlit-parity-proof").then(({ runUnlitParityProof }) => Object.assign(window, { __unlitParityProof: runUnlitParityProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("lightLoopProof")) {
@@ -59,6 +61,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/instance-parameters-proof").then(({ runInstanceParametersProof }) => Object.assign(window, { __instanceParametersProof: runInstanceParametersProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("pooledLodProof")) {
   void import("./testing/pooled-lod-proof").then(({ runPooledLodProof }) => Object.assign(window, { __pooledLodProof: runPooledLodProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("sceneLayerBatchingProof")) {
+  void import("./testing/scene-layer-batching-proof").then(({ runSceneLayerBatchingProof }) => Object.assign(window, { __sceneLayerBatchingProof: runSceneLayerBatchingProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("instancingParityProof")) {
   void import("./testing/instancing-parity-proof").then(({ runInstancingParityProof }) => Object.assign(window, { __instancingParityProof: runInstancingParityProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("shadowFilterProof")) {

@@ -22,11 +22,6 @@ type SheetSystem = Pick<ParticleSystem, "spriteCellWidth" | "spriteCellHeight" |
 
 const sheetSystem = (system: unknown) => system as SheetSystem;
 
-/** The sheet a Sprite Sheet node set on `system`, if any. */
-export function particleSpriteSheetOf(system: ParticleSystem): ParticleSpriteSheetSettings | null {
-  return sheetSystem(system)._slateSpriteSheet ?? null;
-}
-
 /**
  * The cell Animate Sprite Sheet shows `age` seconds into a particle's life that began on
  * `firstCell`: Frames Per Second cells a second from there through End Cell, then round to

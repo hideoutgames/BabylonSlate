@@ -8,13 +8,13 @@ import { actor, meshComp, requireRef, SCENE_SAVE_ORDER, tf, type FeatureTestCont
  * baked box occludes). The main camera stands in the street; `Rooms Camera` stands in a doorway (`possess "Rooms
  * Camera"`). The check runs `ft_occlusion`, so it culls even where the project turned Occlusion Culling off.
  */
-export const OCCLUSION_SCENE = "FT_Occlusion";
+const OCCLUSION_SCENE = "FT_Occlusion";
 const SCENES_FOLDER = "Scenes";
 /** Buildings per side of the street, and the yard props behind each. */
-export const OCCLUSION_BLOCKS = 6;
+const OCCLUSION_BLOCKS = 6;
 const YARD_ROWS = 3, YARD_COLUMNS = 4;
 /** Rooms per side of the indoor building, each with its props. */
-export const OCCLUSION_ROOMS = 3;
+const OCCLUSION_ROOMS = 3;
 const STREET_CAMERA = { position: [0, 1.7, -6] as Vec3, target: [0, 1.5, 40] as Vec3 };
 const ROOMS_CAMERA = { position: [64, 1.6, 2] as Vec3, target: [64, 1.4, 20] as Vec3 };
 /** Box primitives are 1.5 m; scales are in that unit. */
@@ -31,7 +31,7 @@ export async function buildFeatureTestOcclusion(ctx: FeatureTestContext): Promis
   const scene: SerializedScene = createDefaultScene("3d");
   scene.name = OCCLUSION_SCENE;
   scene.actors = scene.actors.filter((entry) => entry.components.length > 0);
-  const camera = scene.actors.find((entry) => entry.id === scene.settings.mainCameraActorId);
+  const camera = scene.actors.find((entry) => entry.id === scene.settings.defaultCameraActorId);
   if (camera) camera.transform = tf(STREET_CAMERA.position, { rotation: lookAtRotation(STREET_CAMERA.position, STREET_CAMERA.target) });
   const add = (entry: SerializedActor) => ctx.addActor(entry, { scene });
 

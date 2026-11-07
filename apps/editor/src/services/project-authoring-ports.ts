@@ -1,5 +1,5 @@
 import type { ProjectStorage } from "@haptic/core";
-import type { AssetRegistry, BlobStore, ContentRoot, EncodeQueue } from "@haptic/assets";
+import type { AssetRegistry, BlobStore, ContentRoot } from "@haptic/assets";
 import { admitOwnerWrites, guardProjectStorage, type ProjectWriteAdmission } from "./project-write-admission";
 
 /** Guard handles returned to editor utilities without changing internal owners. */
@@ -41,21 +41,6 @@ export function guardProjectAssetRegistry(registry: AssetRegistry, admission: Pr
     get(target, key) {
       if (Object.prototype.hasOwnProperty.call(exposed, key)) return Reflect.get(exposed, key);
       return Reflect.get(target, key);
-    },
-  });
-}
-
-/** Public queue access cannot restart a locked project's encoder or add work. */
-export function guardProjectEncodeQueue(queue: EncodeQueue, admission: ProjectWriteAdmission): EncodeQueue {
-  const owner = admitOwnerWrites(queue, admission, ["enqueueDerived"]);
-  return new Proxy(owner, {
-    get(target, key) {
-      const value: unknown = Reflect.get(target, key);
-      if (typeof value !== "function" || (key !== "enqueue" && key !== "resume")) return value;
-      return (...args: unknown[]) => {
-        admission.assertAdmission();
-        return Reflect.apply(value, target, args);
-      };
     },
   });
 }

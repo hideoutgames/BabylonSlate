@@ -636,6 +636,49 @@ describe("Havok explicit native motion", () => {
       backend.dispose();
     }
   });
+
+  it("applies kinematic targets through reused native vectors, copies a target queued while stepping, and rejects a bad one", async () => {
+    const backend = await create();
+    body(backend);
+    backend.createCollider(box());
+    body(backend, "moving", "dynamic", pose(0.5));
+    backend.createCollider({ ...box("moving-shape"), bodyId: "moving" });
+    body(backend, "lift", "kinematic", pose(0, 0, 20));
+    backend.createCollider({ ...box("lift-shape"), bodyId: "lift" });
+    body(backend, "platform", "kinematic", pose(0, 0, 40));
+    backend.createCollider({ ...box("platform-shape"), bodyId: "platform" });
+    try {
+      const lift = vi.spyOn(native(backend, "lift"), "setTargetTransform");
+      const platform = vi.spyOn(native(backend, "platform"), "setTargetTransform");
+      // One caller-owned pose serves both bodies, as the runtime's sync does (moves stay under Havok's speed cap).
+      const target = pose(1, 0, 20);
+      backend.setBodyTargetTransform("lift", target);
+      target.position.x = 1.5;
+      target.position.z = 40;
+      backend.setBodyTargetTransform("platform", target);
+      expect(platform.mock.calls[0]![0]).toBe(lift.mock.calls[0]![0]);
+      expect(platform.mock.calls[0]![1]).toBe(lift.mock.calls[0]![1]);
+      // A contact callback runs while stepping: its target waits for the step and keeps the values it was given.
+      const queued = pose(2, 0, 20);
+      const observer = backend.plugin.onCollisionObservable.add(() => {
+        if (queued.position.x !== 2) return;
+        backend.setBodyTargetTransform("lift", queued);
+        queued.position.x = 3;
+      });
+      backend.step(1 / 60);
+      backend.plugin.onCollisionObservable.remove(observer);
+      expect(queued.position.x).toBe(3);
+      expect(backend.getBodyTransform("lift")!.position.x).toBeCloseTo(1);
+      expect(backend.getBodyTransform("platform")!.position).toMatchObject({ x: expect.closeTo(1.5), z: expect.closeTo(40) });
+      backend.step(1 / 60);
+      expect(backend.getBodyTransform("lift")!.position.x).toBeCloseTo(2);
+      expect(() => backend.setBodyTargetTransform("lift", pose(Number.NaN))).toThrow("finite position");
+      expect(() => backend.setBodyTargetTransform("lift", { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 0 } }))
+        .toThrow("nonzero quaternion");
+    } finally {
+      backend.dispose();
+    }
+  });
 });
 
 describe("Havok contact reports", () => {

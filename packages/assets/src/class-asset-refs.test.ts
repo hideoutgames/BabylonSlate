@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findClassAssetReferences, replaceClassAssetReferences } from "./class-asset-refs";
+import { replaceClassAssetReferences } from "./class-asset-refs";
 
 const hero = { guid: "hero-guid", classId: "Hero" };
 const replacement = { guid: "npc-guid", classId: "NPC" };
@@ -12,7 +12,6 @@ describe("Class reference replacement", () => {
       nodes: [{ data: { class: "Hero", typeClassId: "Hero", assetGuid: "hero-guid", text: "Hero" } }],
       parentClass: "Hero", dependencies: ["hero-guid", "keep"],
     };
-    expect(findClassAssetReferences(value, [hero])).toEqual(["hero-guid"]);
     expect(replaceClassAssetReferences(value, [{ ...hero, replacement }]).value).toEqual({
       actors: [{ id: "one", name: "Hero", classId: "NPC", components: [] },
         { id: "two", classId: "NPC", components: [] }],
@@ -43,7 +42,6 @@ describe("Class reference replacement", () => {
 
   it("does not rewrite class-looking text or mutate an unrelated payload", () => {
     const value = { name: "Hero", source: "new Hero()", note: "prefix-hero-guid", classId: "Keep" };
-    expect(findClassAssetReferences(value, [hero])).toEqual([]);
     expect(replaceClassAssetReferences(value, [{ ...hero, replacement }])).toEqual({ value, changed: false });
     expect(replaceClassAssetReferences(value, [{ ...hero, replacement }]).value).toBe(value);
   });

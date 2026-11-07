@@ -4,7 +4,8 @@ A 2D clip, played by an Animation Graph. Its frames are Textures or Sprites, or 
 
 ## Create
 
-- In the **Content Browser**, select one or more Textures and Sprites (you can mix them), then right-click or long-press one and choose **Create Sprite Animation**. The new animation has one frame per asset in name order (`Run_2` before `Run_10`), sits beside the first one and opens. It is named after the first asset without its trailing number: `Run_1` makes `Run`.
+- In the **Content Browser**, select one or more Textures, right-click or long-press one and choose **Convert to 2D > Create Animation**; for Sprites, or Textures and Sprites mixed, choose **Create Sprite Animation**. The new animation has one frame per asset in name order (`Run_2` before `Run_10`), sits beside the first one and opens. It is named after the first asset without its trailing number: `Run_1` makes `Run`.
+- For a sprite sheet, select its Texture and choose **Convert to 2D > Create Sheet Animation**: it cuts a frame from every cell (see [Create from assets](../editor/content-browser.md#create-from-assets) for the starting cell size).
 - Or choose **New Asset > Animation > Sprite Animation**.
 
 Import each image as a Texture first. See [Importing](../editor/importing.md).

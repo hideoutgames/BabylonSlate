@@ -11,7 +11,7 @@ import {
   normalizeTilesetPayload,
   setTile,
 } from "@haptic/assets";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { isUnlitMaterial } from "./unlit-material";
 import { unlitBinding } from "./unlit-material-blocks";
 import { ResourceCache } from "./resource-cache";
@@ -231,8 +231,7 @@ describe("authored mesh content", () => {
         ],
       }),
     ]);
-    data.settings.mainCameraActorId = "cam";
-    data.settings.mainCameraComponentId = "camera";
+    data.settings.defaultCameraActorId = "cam";
     applySceneToBabylonScene(scene, data);
     expect(scene.activeCamera?.name).toBe("authoredCamera:cam");
   });

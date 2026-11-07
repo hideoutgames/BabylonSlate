@@ -234,13 +234,13 @@ function allowedMode(
     : null;
 }
 
-export function cloneScalarValue(value: ParticleScalarValue): ParticleScalarValue {
+function cloneScalarValue(value: ParticleScalarValue): ParticleScalarValue {
   if (value.mode === "constant") return { mode: "constant", value: value.value };
   if (value.mode === "range") return { mode: "range", min: value.min, max: value.max };
   return { mode: "curve", keys: value.keys.map((key) => ({ ...key })) };
 }
 
-export function cloneColorValue(value: ParticleColorValue): ParticleColorValue {
+function cloneColorValue(value: ParticleColorValue): ParticleColorValue {
   if (value.mode === "constant") return { mode: "constant", color: [...value.color] };
   if (value.mode === "range") {
     return { mode: "range", min: [...value.min], max: [...value.max] };

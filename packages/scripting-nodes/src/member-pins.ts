@@ -54,11 +54,6 @@ export function memberTargetPin(
     : subject(pin("target", name, "in", objectRef(classId)));
 }
 
-export function jsIdent(name: string): string {
-  const cleaned = name.replace(/[^A-Za-z0-9_$]/g, "_");
-  return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
-}
-
 /**
  * Property key for an object literal or destructuring pattern. `__proto__`
  * is computed, because a plain or quoted `__proto__` key in a literal sets

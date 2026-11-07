@@ -154,6 +154,21 @@ export class SceneEffectsGraph {
           plan.bloom.scale,
         );
         bloom.sourceTexture = source;
+        // Babylon 9.29's bloom task gives its merge output the source's creation options, samples included, so over
+        // the multisampled scene colour (no spatial stage before it) it would be a full-size MSAA target. It merges
+        // into a single-sample one of the scene colour's type instead, as every later stage reads.
+        if (source === this.sceneColorTexture && samples > 1)
+          bloom.targetTexture = graph.textureManager.createRenderTargetTexture("Scene Effects Bloom Merge", {
+            size: { width: options.width, height: options.height },
+            sizeIsPercentage: false,
+            options: {
+              createMipMaps: false,
+              types: [plan.sceneLinear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE],
+              formats: [Constants.TEXTUREFORMAT_RGBA],
+              samples: 1,
+              useSRGBBuffers: [false],
+            },
+          });
         this.tasks.push(bloom);
         source = bloom.outputTexture;
       }

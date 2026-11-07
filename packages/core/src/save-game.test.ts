@@ -419,7 +419,7 @@ describe("SaveGameService schema upgrades and portability", () => {
     expect(generateSaveGameTypes(structured)).toContain('"SpawnCount": Record<string, unknown>;');
   });
 
-  it("writes format version 2 and still loads saves written in format version 1", async () => {
+  it("writes format version 2 and refuses a save written in format version 1", async () => {
     const storage = new FaultStorage();
     const service = make(storage);
     service.getSaveData().coins = 12;
@@ -433,8 +433,7 @@ describe("SaveGameService schema upgrades and portability", () => {
     envelope.formatVersion = 1;
     storage.files.set(key, JSON.stringify(envelope));
     const reloaded = make(storage);
-    expect(await reloaded.loadGame()).toMatchObject({ ok: true });
-    expect(reloaded.getSaveData().coins).toBe(12);
+    expect(await reloaded.loadGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
   });
 
   it("validates field types, array entries, reserved keys and independent defaults before persistence", async () => {

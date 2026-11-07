@@ -8,6 +8,7 @@ import {
   SCENE_LAYER_SWITCHER_SCRIPT_API,
 } from "./scene-layer-switcher-api";
 import { TIMELINE_CLIP_SCRIPT_API } from "./timeline-clip-api";
+import { LAYER_CAMERA_SCRIPT_API, SCENE_CAMERA_MANAGER_SCRIPT_API } from "./camera-script-api";
 
 export type EngineScriptPin = {
   name: string;
@@ -146,7 +147,7 @@ const PARTICLES_FINISHED: EngineScriptEvent = {
   exportName: "onParticlesFinished",
 };
 
-export const BUTTON_MOUSE_EVENTS: readonly EngineScriptEvent[] = [
+const BUTTON_MOUSE_EVENTS: readonly EngineScriptEvent[] = [
   {
     name: "On Mouse Enter",
     eventType: "flow.event.onMouseEnter",
@@ -190,7 +191,7 @@ const FOCUS_FUNCTIONS: readonly EngineScriptFunction[] = [
   { name: "Clear Focus", runtime: "clearFocusTarget", pins: [EXEC_IN, EXEC_OUT] },
 ];
 
-export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
+const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
   { name: "On Hit", eventType: "flow.event.hit", exportName: "onHit" },
   {
     name: "On Begin Overlap",
@@ -204,7 +205,7 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
   },
 ];
 
-export const MOVEMENT_EVENTS: readonly EngineScriptEvent[] = [
+const MOVEMENT_EVENTS: readonly EngineScriptEvent[] = [
   { name: "On Movement Started", eventType: "flow.event.movementStarted", exportName: "onMovementStarted" },
   { name: "On Movement Stopped", eventType: "flow.event.movementStopped", exportName: "onMovementStopped" },
   { name: "On Movement Jumped", eventType: "flow.event.movementJumped", exportName: "onMovementJumped" },
@@ -363,6 +364,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   SCENE_LAYER_ACTOR_SCRIPT_API,
   SCENE_LAYER_SWITCHER_SCRIPT_API,
   TIMELINE_CLIP_SCRIPT_API,
+  LAYER_CAMERA_SCRIPT_API,
+  SCENE_CAMERA_MANAGER_SCRIPT_API,
   ...OVERLAY_LAYOUT_CLASSES.map((classId): EngineClassScriptApi => ({ classId, variables: [
     ...overlayContainerScriptVariables(classId),
     ...["width", "height", "fillWeight", "gap", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "scrollX", "scrollY"].map(propertyKey => ({ name: propertyKey.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()), typeId: "float", propertyKey })),
@@ -607,6 +610,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
         propertyKey: "assetGuid",
       },
       ...SORTING_VARIABLES,
+      { name: "Shading Mode", typeId: "string", propertyKey: "shadingMode" },
     ],
   },
   {
@@ -619,6 +623,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
         propertyKey: "assetGuid",
       },
       ...SORTING_VARIABLES,
+      { name: "Shading Mode", typeId: "string", propertyKey: "shadingMode" },
     ],
   },
   {
@@ -663,6 +668,20 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Color", typeId: "color", propertyKey: "color" },
       { name: "Ground Color", typeId: "color", propertyKey: "groundColor" },
       { name: "Intensity", typeId: "float", propertyKey: "intensity" },
+    ],
+  },
+  {
+    classId: "Light2DComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Kind", typeId: "string", propertyKey: "lightKind" },
+      { name: "Color", typeId: "color", propertyKey: "color" },
+      { name: "Intensity", typeId: "float", propertyKey: "intensity" },
+      { name: "Radius", typeId: "float", propertyKey: "radius" },
+      { name: "Inner Radius", typeId: "float", propertyKey: "innerRadius" },
+      { name: "Outer Angle", typeId: "float", propertyKey: "outerAngle" },
+      { name: "Inner Angle", typeId: "float", propertyKey: "innerAngle" },
+      { name: "Cast Shadows", typeId: "bool", propertyKey: "castShadows" },
     ],
   },
   {

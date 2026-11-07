@@ -20,3 +20,15 @@ export type LibraryFolder = (typeof LIBRARY_FOLDERS)[number];
 export function isLibraryFolder(value: unknown): value is LibraryFolder {
   return typeof value === "string" && (LIBRARY_FOLDERS as readonly string[]).includes(value);
 }
+
+/** Folder name of the app-private derived-data store; never a project. */
+export const DERIVED_STORAGE_ROOT = "__haptic_derived__";
+
+/**
+ * An app-owned folder in the default project tier: a user library or the
+ * derived-data store. On mobile they sit beside projects, so listing hides
+ * them and project deletion refuses them.
+ */
+export function isAppOwnedFolder(name: string): boolean {
+  return isLibraryFolder(name) || name === DERIVED_STORAGE_ROOT;
+}

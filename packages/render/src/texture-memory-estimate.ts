@@ -48,7 +48,7 @@ function bytesPerChannel(type: number): number {
 }
 
 /** Bytes per texel of one uncompressed or compressed level-0 texel (an estimate for compressed formats). */
-export function textureBytesPerTexel(format: number, type: number): number {
+function textureBytesPerTexel(format: number, type: number): number {
   switch (format) {
     case Constants.TEXTUREFORMAT_DEPTH16:
       return 2;

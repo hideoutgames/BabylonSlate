@@ -51,6 +51,50 @@ describe("tile-cache obstacles and static carve", () => {
     expect(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 })).toHaveLength(2);
   });
 
+  it("keeps a resting physical agent's projection until its body, its crowd pose or the navmesh moves", async () => {
+    const nav = createNavigationBackend();
+    nav.importNavMesh(await generateNavMesh({ ...groundPrism(), settings: { supportDynamicObstacles: true } }));
+    const queries = vi.spyOn(NavMeshQuery.prototype, "findClosestPoint");
+    try {
+      const id = nav.addAgent({ x: -4, y: 0, z: 0 });
+      const body = { x: -4, y: 0, z: 0 };
+      const sync = () => {
+        expect(nav.syncAgentPosition(id, body)).toBe(true);
+        return nav.agentPosition(id)!;
+      };
+      queries.mockClear();
+      sync();
+      nav.stepCrowd(1 / 60);
+      sync();
+      nav.stepCrowd(1 / 60);
+      expect(sync()).toMatchObject({ x: expect.closeTo(-4), z: expect.closeTo(0) });
+      expect(queries).toHaveBeenCalledTimes(1);
+
+      body.x = -3.5;
+      expect(sync().x).toBeCloseTo(-3.5);
+      expect(queries).toHaveBeenCalledTimes(2);
+
+      // A carve under the resting body moves its projection out of the hole.
+      expect(nav.addObstacle("box", { x: -3.5, y: 1, z: 0 }, { x: 2, y: 2, z: 2 })).not.toBe("");
+      const carved = sync();
+      expect(queries).toHaveBeenCalledTimes(3);
+      expect(Math.hypot(carved.x + 3.5, carved.z)).toBeGreaterThan(0.9);
+      sync();
+      expect(queries).toHaveBeenCalledTimes(3);
+
+      // A steered agent's crowd step moves npos away from the body it was synced to.
+      expect(nav.setAgentTarget(id, { x: 4, y: 0, z: 4 })).toBe(true);
+      for (let step = 0; step < 5; step++) nav.stepCrowd(1 / 60);
+      queries.mockClear();
+      expect(Math.hypot(carved.x - nav.agentPosition(id)!.x, carved.z - nav.agentPosition(id)!.z)).toBeGreaterThan(0);
+      expect(sync()).toMatchObject({ x: expect.closeTo(carved.x), z: expect.closeTo(carved.z) });
+      expect(queries).toHaveBeenCalledTimes(1);
+    } finally {
+      queries.mockRestore();
+      nav.dispose();
+    }
+  });
+
   it("gives no obstacle id on a solo mesh, which cannot carve", async () => {
     const bytes = await generateNavMesh(groundPrism());
     const nav = createNavigationBackend();

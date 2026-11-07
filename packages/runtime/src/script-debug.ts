@@ -41,7 +41,7 @@ export interface ScriptDebugTrace {
 }
 
 /** Longest value text sent to the editor, as in the trace snapshot preview. */
-export const DEBUG_VALUE_MAX_CHARS = 100;
+const DEBUG_VALUE_MAX_CHARS = 100;
 /** Entries of a collection shown before it is cut off. */
 const DEBUG_VALUE_MAX_ENTRIES = 16;
 const DEBUG_VALUE_MAX_DEPTH = 4;
@@ -357,7 +357,7 @@ function collectInstances(world: World, target: DebugObserveTarget, limit: numbe
 }
 
 /** The first live instances of `target`, in world order. */
-export function debugInstancesOf(world: World, target: DebugObserveTarget, limit = DEBUG_ROSTER_LIMIT): DebugInstance[] {
+function debugInstancesOf(world: World, target: DebugObserveTarget, limit = DEBUG_ROSTER_LIMIT): DebugInstance[] {
   const instances: DebugInstance[] = [];
   collectInstances(world, target, limit, (object, kind, owner) => {
     // A Behaviour Tree or Animation Graph component has no name worth showing: it is the actor's.

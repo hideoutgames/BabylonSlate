@@ -14,11 +14,9 @@ import {
   sceneLayerRelativeAnchorWorldPosition,
   sceneLayerViewBounds,
   sceneLayerToEditorScene,
-  updateSceneLayerCamera,
   walkOverlayPointerHits,
-  SCENE_LAYER_CAMERA_MIN_ZOOM,
-  SCENE_LAYER_DEFAULT_CAMERA,
 } from "./scene-layer";
+import { DEFAULT_LAYER_CAMERA_STATE, LAYER_CAMERA_MIN_ZOOM, layerCameraStartState, updateLayerCameraState } from "./layer-camera";
 import { createActor, createDefaultSceneSettings, normalizeScene } from "./scene";
 import { createDefaultScene } from "./project";
 
@@ -126,22 +124,27 @@ describe("SceneLayer schema", () => {
     expect(scene.overlayEditor).toBe(true);
   });
 
-  it("round-trips layer bounds through the editor scene as the orange camera frame", () => {
+  it("round-trips layer bounds and Camera Location through the editor scene as the orange camera frame", () => {
     const layer = normalizeSceneLayer({
       name: "HUD",
-      settings: { layerBounds: { width: 20, height: 10 } },
+      settings: { layerBounds: { width: 20, height: 10 }, cameraLocation: [6, -1] },
     });
     expect(layer.settings.layerBounds).toEqual({ width: 20, height: 10 });
+    expect(layer.settings.cameraLocation).toEqual([6, -1]);
     const scene = sceneLayerToEditorScene(layer);
     expect(scene.settings.cameraBounds2D).toEqual({ width: 20, height: 10 });
+    expect(scene.settings.cameraLocation2D).toEqual([6, -1]);
     const restored = editorSceneToSceneLayer({
       ...scene,
       settings: {
         ...scene.settings,
         cameraBounds2D: { width: 24, height: 12 },
+        cameraLocation2D: [-2, 3],
       },
     });
     expect(restored.settings.layerBounds).toEqual({ width: 24, height: 12 });
+    expect(restored.settings.cameraLocation).toEqual([-2, 3]);
+    expect(normalizeSceneLayer({}).settings.cameraLocation).toEqual([0, 0]);
   });
 
   it("keeps an Outliner anchor pose-free without consuming its layout offsets on save", () => {
@@ -265,9 +268,14 @@ describe("SceneLayer anchors and hit tests", () => {
 
   it("keeps the current camera value for non-finite changes and never zooms to 0", () => {
     const camera = { x: 1, y: 2, rotation: 30, zoom: 1.5 };
-    expect(updateSceneLayerCamera(camera, { x: Number.NaN, y: null, rotation: "45", zoom: undefined }))
+    expect(updateLayerCameraState(camera, { x: Number.NaN, y: null, rotation: "45", zoom: undefined }))
       .toEqual({ x: 1, y: 2, rotation: 45, zoom: 1.5 });
-    expect(updateSceneLayerCamera(SCENE_LAYER_DEFAULT_CAMERA, { zoom: -3 }).zoom).toBe(SCENE_LAYER_CAMERA_MIN_ZOOM);
+    expect(updateLayerCameraState(DEFAULT_LAYER_CAMERA_STATE, { zoom: -3 }).zoom).toBe(LAYER_CAMERA_MIN_ZOOM);
+  });
+
+  it("starts a Layer Camera on its authored location, unrolled at zoom 1", () => {
+    expect(layerCameraStartState([4, -2])).toEqual({ x: 4, y: -2, rotation: 0, zoom: 1 });
+    expect(layerCameraStartState([Number.NaN, 3])).toEqual({ x: 0, y: 3, rotation: 0, zoom: 1 });
   });
 
   it("walks overlay hits high-to-low, skipping Ignore and stopping on Block", () => {

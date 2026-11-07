@@ -1,4 +1,4 @@
-export const INFINITE_LOOP_ERROR_MESSAGE = "Infinite loop detected";
+const INFINITE_LOOP_ERROR_MESSAGE = "Infinite loop detected";
 export const INFINITE_LOOP_DIAGNOSTIC_CODE = "runtime.infinite_loop";
 export const DEFAULT_INFINITE_LOOP_COUNT = 1_000_000;
 

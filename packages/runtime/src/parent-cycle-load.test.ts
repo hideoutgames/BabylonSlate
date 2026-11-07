@@ -6,7 +6,8 @@ import {
   type SerializedComponent,
   type SerializedScene,
 } from "@haptic/core";
-import { readActorSlot, readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
+import { readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
+import { readActorSlot } from "@haptic/bridge/read-actor-slot";
 import type { Actor } from "@haptic/object-model";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 

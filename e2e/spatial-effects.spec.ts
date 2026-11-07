@@ -170,6 +170,21 @@ for (const backend of ["webgl2"] as const) {
       expect(pixelDifference(off, capture.disabled), "disabled local sources restore scene color").toBeLessThan(1);
       expect(pixelDifference(off, capture.removed), "removing the final source restores scene color").toBeLessThan(1);
       expect(fogDarkening(capture.insideOff, capture.inside, 48, 36), "camera inside a volume sees fog").toBeGreaterThan(30);
+      // With scene-wide fog on, the volume's samples stay on the volume: its fog does not shift as the camera walks.
+      const walked = capture.walk.map(({ clear, fogged }) => fogDarkening(clear, fogged, 48, 36));
+      expect(Math.min(...walked), "the volume fogs the view with scene-wide fog on").toBeGreaterThan(30);
+      expect(Math.max(...walked) - Math.min(...walked), "the volume's fog holds still as the camera moves").toBeLessThan(3);
+      expect(fogDarkening(capture.beyondClear, capture.beyond, 48, 36), "Volumetric Distance does not cut Fog Volumes")
+        .toBeGreaterThan(30);
+      const nested = capture.nestedWalk.map(({ clear, fogged }) => fogDarkening(clear, fogged, 48, 36));
+      expect(Math.min(...nested), "the nested volumes fog the view").toBeGreaterThan(30);
+      expect(Math.max(...nested) - Math.min(...nested), "a short volume inside a long one keeps its own samples").toBeLessThan(3);
+      // Transmittances multiply, also after the display encoding: both = scene × volume / clear.
+      const { clear, sceneFog, volumeFog, both } = capture.composition;
+      const at = (pixels: number[]) => fogDarkening(pixels, new Array<number>(pixels.length).fill(0), 48, 36);
+      expect(at(clear) - at(sceneFog), "scene-wide fog darkens the view").toBeGreaterThan(5);
+      expect(Math.abs(at(both) - at(sceneFog) * at(volumeFog) / at(clear)), "scene-wide fog and a Fog Volume darken together")
+        .toBeLessThan(3);
     }
   });
 }

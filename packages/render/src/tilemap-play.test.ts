@@ -1,7 +1,7 @@
 import { VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { applyAssignMesh, applySnapshotToScene, createSnapshotSceneBinding, migratePlaySlotVisual } from "./snapshot-apply";
 
 describe("Tilemap Play presentation", () => {

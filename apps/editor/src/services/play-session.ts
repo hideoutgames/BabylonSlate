@@ -96,16 +96,13 @@ export {
   applyWorkerPlayStats,
   applyPlayFpsSample,
 } from "./play-session-helpers";
-export type { PlaySessionStepTarget, PlaySessionGraphDebugTarget } from "./play-session-helpers";
 export { applyPlayActiveScene } from "./play-scene-readiness";
 export { playSessionBootControls, previewFixtureThrowHint } from "./play-session-boot";
 export type {
   PlaySessionResult,
   PlaySession,
-  PlaySourcePreparation,
   PlaySceneSourceLoader,
   PlayAssetSourceLoader,
-  PlayPrintEntry,
   PlayHudStats,
 } from "./play-session-types";
 
@@ -118,6 +115,16 @@ const WORKER_STOP_TIMEOUT_MS = 3000;
  */
 export function startPlaySession(options: PlaySessionOptions): PlaySession {
   options = { ...options };
+  // Every host-side Play log (diagnostics, captured console output, uncaught
+  // errors) reaches the Output Log as well as the Debug Console. Runtime log
+  // commands carry their own category and report both themselves.
+  const reportConsoleLog = options.onLog;
+  const reportOutputLog = options.onRuntimeLog;
+  if (reportConsoleLog || reportOutputLog)
+    options.onLog = (message, severity) => {
+      reportConsoleLog?.(message, severity);
+      reportOutputLog?.({ category: "Play", severity, message });
+    };
   const { canvas, sharedEngine } = options;
   const texturesBefore = new Set(sharedEngine.getLoadedTexturesCache());
   const textureCountBefore = texturesBefore.size;
@@ -530,8 +537,14 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
   };
   const reportRuntimeLog = (command: Extract<CommandMessage, { type: "log" }>) => {
     const severity = command.severity ?? "log";
-    options.onLog?.(command.message, severity);
-    options.onRuntimeLog?.({ category: command.category, severity, message: command.message });
+    reportConsoleLog?.(command.message, severity);
+    reportOutputLog?.({ category: command.category, severity, message: command.message });
+  };
+  // A script error log or failed assert already reached the Output Log as its log line.
+  const reportDiagnosticLog = (command: Extract<CommandMessage, { type: "diagnostic" }>) => {
+    const severity = command.severity ?? "error";
+    if (command.code === "runtime.log" || command.code === "runtime.assert") reportConsoleLog?.(command.message, severity);
+    else options.onLog?.(command.message, severity);
   };
   const onCommand = (command: CommandMessage) => {
     // Diagnostics finish their final recording while the session stops.
@@ -551,7 +564,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       if (command.type === "saveStorageRequest") saveServer.receive(command.request);
       else if (command.type === "runtimeStopped") finishWorkerStop?.();
       else if (command.type === "log") reportRuntimeLog(command);
-      else if (command.type === "diagnostic") options.onLog?.(command.message, command.severity ?? "error");
+      else if (command.type === "diagnostic") reportDiagnosticLog(command);
       return;
     }
     if (command.type === "sessionEnded") {
@@ -624,7 +637,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       );
     }
     if (command.type === "diagnostic") {
-      options.onLog?.(command.message, command.severity ?? "error");
+      reportDiagnosticLog(command);
       const diagnostic = diagnosticFromCommand(command);
       if (diagnostic) workerDiagnostics.push(diagnostic);
       if (isFatalPlayDiagnostic(command.code)) {

@@ -65,7 +65,7 @@ export interface FeatureTestHost {
   readonly modelImportScale: number;
 }
 
-export type FeatureTestMaterialKey =
+type FeatureTestMaterialKey =
   /** Lit PBR surface sampling the colormap, tinted by a Material Function, with parameters. */
   | "surface"
   /** Material Instance of `surface` with parameter overrides. */

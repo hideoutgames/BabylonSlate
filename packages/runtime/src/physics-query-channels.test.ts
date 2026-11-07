@@ -46,7 +46,7 @@ describe("script physics query channels", () => {
   it.each(["software", "rapier", "havok"] as const)("%s filters candidates before selecting hits", async (kind) => {
     const dimension = kind === "rapier" ? "2d" : "3d";
     const backend = kind === "software" ? createSoftwarePhysicsBackend(dimension, { x: 0, y: 0, z: 0 })
-      : await createPhysicsBackend({ kind: dimension, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+      : await createPhysicsBackend({ kind: dimension, gravity: { x: 0, y: 0, z: 0 } });
     const sync = new PhysicsWorldSync(backend);
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     try {
@@ -96,7 +96,7 @@ describe("script physics query channels", () => {
   });
 
   it("classifies the bones of an active ragdoll as dynamic, never static or character", async () => {
-    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
     const sync = new PhysicsWorldSync(backend);
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const commands: CommandMessage[] = [];

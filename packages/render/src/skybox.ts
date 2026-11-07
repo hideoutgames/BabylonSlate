@@ -44,7 +44,7 @@ export function isSkyboxMesh(mesh: AbstractMesh): boolean {
   return Boolean((mesh.metadata as { skybox?: boolean } | null)?.skybox);
 }
 
-export function createEngineDefaultCubeTexture(scene: Scene, cache: TextureResources = resourceCacheForEngine(scene.getEngine())): ResourceLease<CubeTexture> {
+function createEngineDefaultCubeTexture(scene: Scene, cache: TextureResources = resourceCacheForEngine(scene.getEngine())): ResourceLease<CubeTexture> {
   return cache.acquireCubeTextureFromImages(ENGINE_DEFAULT_SKYBOX_GUID, scene, SKYBOX_FACE_KEYS.map((face) => engineDefaultSkyboxFaceUrl(face)));
 }
 

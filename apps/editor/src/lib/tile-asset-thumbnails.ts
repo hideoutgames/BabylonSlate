@@ -157,7 +157,7 @@ export function tilemapThumbnailPlan(
 }
 
 /** A plan drawn on an `OffscreenCanvas` as PNG bytes, or `null` where the host has no 2D canvas. */
-export async function encodeThumbnailPlan(plan: ThumbnailPlan): Promise<Uint8Array | null> {
+async function encodeThumbnailPlan(plan: ThumbnailPlan): Promise<Uint8Array | null> {
   if (typeof OffscreenCanvas === "undefined") return null;
   const canvas = new OffscreenCanvas(plan.width, plan.height);
   const ctx = canvas.getContext("2d");

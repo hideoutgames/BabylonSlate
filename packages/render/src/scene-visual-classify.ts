@@ -8,7 +8,7 @@ import {
   type SerializedComponent, type SerializedTransform,
 } from "@haptic/core";
 import { authoredComponentActorTransform } from "./authored-transform-matrices";
-import { lightBillboardIcon, type EditorBillboardIcon } from "./editor-billboard";
+import { light2DBillboardIcon, lightBillboardIcon, type EditorBillboardIcon } from "./editor-billboard";
 import { isAuthoredLightClassId } from "./scene-illumination";
 
 export function stringProp(value: unknown): string | null {
@@ -30,6 +30,7 @@ export const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "TilemapComponent",
   "LightComponent",
   "HemisphericFillLightComponent",
+  "Light2DComponent",
   "CameraComponent",
   "RenderTargetCaptureComponent",
   SPRING_ARM_COMPONENT_CLASS_ID,
@@ -259,6 +260,8 @@ export function helperBillboardIconOf(
     (component) => component.classId === "LightComponent",
   );
   if (light) return lightBillboardIcon(light.properties.lightKind);
+  const light2D = actor.components.find((component) => component.classId === "Light2DComponent");
+  if (light2D) return light2DBillboardIcon(light2D.properties.lightKind);
   if (actor.components.some((component) => component.classId === "CameraComponent" || component.classId === "RenderTargetCaptureComponent")) {
     return "camera";
   }

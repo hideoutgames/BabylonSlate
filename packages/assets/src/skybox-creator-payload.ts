@@ -429,7 +429,7 @@ function fillPixel(
   dest[destIndex + 3] = color[3];
 }
 
-export function skyboxCreatorFaceSize(
+function skyboxCreatorFaceSize(
   sourceWidth: number,
   sourceHeight: number,
 ): number {

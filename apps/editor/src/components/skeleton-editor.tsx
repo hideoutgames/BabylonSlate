@@ -28,12 +28,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useModelSourceBytes } from "../lib/use-model-source-bytes";
 import { ModelSourceReadError } from "./model-editor";
 import { SkeletonPreviewCanvas } from "./skeleton-preview-canvas";
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
+import { asRecord } from "../lib/as-record";
 
 export function SkeletonPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -62,7 +57,7 @@ export function SkeletonDetailsPanel(_props: IDockviewPanelProps) {
   );
 }
 
-export function SkeletonPreview({
+function SkeletonPreview({
   payload,
   sourceBytes = null,
   sourceError = null,
@@ -100,7 +95,7 @@ export function SkeletonPreview({
   );
 }
 
-export function SkeletonEditor({ payload }: { payload: Record<string, unknown> }) {
+function SkeletonEditor({ payload }: { payload: Record<string, unknown> }) {
   const skeleton = normalizeSkeletonPayload(payload);
   const { assetRegistry } = useRegistryState();
   const assets = assetRegistry?.list() ?? [];

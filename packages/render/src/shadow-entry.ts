@@ -3,7 +3,7 @@ import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGener
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
-import type { ShadowSettings } from "@haptic/core";
+import { qualityValuesKey, type ShadowSettings } from "@haptic/core";
 
 export type ShadowLight = DirectionalLight | PointLight | SpotLight;
 /** A light whose map is a local atlas map, which can move between lights of its kind. */
@@ -136,4 +136,17 @@ export function allocationRequestKey(light: ShadowLight, settings: ShadowSetting
     light instanceof DirectionalLight ? settings.cascades : 1,
     settings.profile,
   ]);
+}
+
+const shadowSettingsKeys = new WeakMap<ShadowSettings, string>();
+/**
+ * `settings` serialised without the level label (`qualityValuesKey`): equal keys draw the same. Effective shadow
+ * settings are never changed in place (each change is a new object), so the key is made once per object, not at every
+ * sync that compares them.
+ */
+export function shadowSettingsKey(settings: ShadowSettings | null): string {
+  if (!settings) return qualityValuesKey(settings);
+  let key = shadowSettingsKeys.get(settings);
+  if (key === undefined) shadowSettingsKeys.set(settings, (key = qualityValuesKey(settings)));
+  return key;
 }

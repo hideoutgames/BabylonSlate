@@ -87,7 +87,7 @@ export function inspectorLiteralPinDefaults(
   );
 }
 
-export const LOG_SEVERITY_OPTIONS = [
+const LOG_SEVERITY_OPTIONS = [
   { value: "verbose", label: "Verbose" },
   { value: "log", label: "Log" },
   { value: "warning", label: "Warning" },

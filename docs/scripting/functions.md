@@ -12,7 +12,7 @@ Select a function in the **Class** window to reopen its tab. Renaming a function
 
 ## Settings
 
-Select the function in the **Class** window to edit it in the **Inspector**.
+Select the function in the **Class** window, or click an empty part of its graph, to edit it in the **Inspector**.
 
 | Setting | Description |
 | --- | --- |
@@ -23,6 +23,8 @@ Select the function in the **Class** window to edit it in the **Inspector**.
 | Outputs | Values returned. They appear as inputs of the **Output** node and as outputs of each Call node. |
 
 Move a pin up or down in **Inputs** or **Outputs** to reorder it on the nodes.
+
+Select the **Input** node in the function's graph to edit **Inputs** in the **Inspector**, or the **Output** node to edit **Outputs**, without leaving the graph.
 
 You can also add a pin from the graph. Drag a wire from an output pin onto the body of the **Output** node, or from an input pin onto the body of the **Input** node. A **+ Add Pin** label appears; release to add an output or input of the wire's type and connect it. The pin is named after its type, such as **Float**, then **Float_1** and **Float_2** when that name is taken by another input or output. Exec wires connect to the node's exec pin instead. Wires whose type is still open, such as an unconnected Wildcard, and Map wires add nothing, and neither does an Interface implementation, whose inputs and outputs come from its Script Interface.
 

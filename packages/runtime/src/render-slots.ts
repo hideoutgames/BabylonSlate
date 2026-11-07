@@ -21,6 +21,7 @@ export class RenderSlots {
   private readonly byActor = new WeakMap<Actor, number>();
   private readonly free: number[] = [];
   private nextUnused = 0;
+  private _revision = 0;
   private readonly subsystems: RuntimeSubsystems;
   private readonly host: RenderSlotsHost;
 
@@ -36,6 +37,7 @@ export class RenderSlots {
     if (slotId === this.nextUnused) this.nextUnused += 1;
     this.owners.set(slotId, actor);
     this.byActor.set(actor, slotId);
+    this._revision += 1;
     return slotId;
   }
 
@@ -49,6 +51,7 @@ export class RenderSlots {
     if (owner && this.byActor.get(owner) === slotId) this.byActor.delete(owner);
     this.owners.delete(slotId);
     this.free.push(slotId);
+    this._revision += 1;
   }
 
   /** The render slot this actor's own commands target. */
@@ -70,6 +73,11 @@ export class RenderSlots {
 
   owner(slotId: number): Actor | undefined {
     return this.owners.get(slotId);
+  }
+
+  /** Advances whenever a slot is allocated or released. */
+  get revision(): number {
+    return this._revision;
   }
 
   /** Slots in use (stats `liveActors`). */

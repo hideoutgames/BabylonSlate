@@ -4,7 +4,7 @@ import { unlitBinding } from "./unlit-material-blocks";
 import type { IFontData } from "@babylonjs/core/Meshes/Builders/textBuilder";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createText3DComponent } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { bundledAsciiTypeFace } from "./default-typeface";
 import {
   actorVisualFingerprint,

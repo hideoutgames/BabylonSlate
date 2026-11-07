@@ -38,7 +38,7 @@ function keepsVertices(mesh: AbstractMesh, material: Material): boolean {
  * instance draws its source's geometry through its own world matrix, so its source decides the
  * rest; a batch draws only the instances (and source) submitted, so each certifies its own.
  */
-export function boundsCertifyDrawnGeometry(mesh: AbstractMesh): boolean {
+function boundsCertifyDrawnGeometry(mesh: AbstractMesh): boolean {
   if (mesh.doNotSyncBoundingInfo || mesh._masterMesh || mesh instanceof LinesMesh) return false;
   const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
   if (source instanceof Mesh && (source.hasThinInstances || source.getLODLevels().length > 0)) return false;

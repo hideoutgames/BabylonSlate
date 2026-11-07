@@ -38,6 +38,7 @@ import type {
 import {
   copyColliderDesc,
   identityColliderPose,
+  normalizePhysicsPoseInto,
   normalizedPhysicsPose,
   sameColliderGeometry,
   sameColliderPose,
@@ -106,6 +107,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private readonly bodyIdByPhysicsBody = new Map<PhysicsBody, string>();
   private readonly tmpImpulse = new Vector3();
   private readonly tmpLocation = new Vector3();
+  /** A kinematic target applied at once; Babylon copies it into the native call. */
+  private readonly targetPose: PhysicsTransform = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
+  private readonly targetPosition = new Vector3();
+  private readonly targetRotation = new Quaternion();
   private disposed = false;
   private stepping = false;
   private pendingMutations: Array<() => void> = [];
@@ -373,21 +378,23 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   }
 
   setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void {
-    const pose = normalizedPhysicsPose(transform);
     if (this.stepping) {
+      // Queued work keeps its own copy: the caller may reuse `transform`.
+      const pose = normalizedPhysicsPose(transform);
       this.pendingMutations.push(() =>
         this.setBodyTargetTransform(bodyId, pose),
       );
       return;
     }
+    const { position, rotation } = normalizePhysicsPoseInto(transform, this.targetPose);
     const record = this.bodies.get(bodyId);
     if (!record) return;
     this.assertHealthy(record);
     if (record.desc.motionType !== "kinematic")
       throw new Error("Only kinematic bodies accept motion targets");
     record.body.setTargetTransform(
-      toVector3(pose.position),
-      toQuaternion(pose.rotation),
+      this.targetPosition.set(position.x, position.y, position.z),
+      this.targetRotation.set(rotation.x, rotation.y, rotation.z, rotation.w),
     );
   }
 

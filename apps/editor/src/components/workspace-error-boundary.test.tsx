@@ -42,6 +42,8 @@ describe("WorkspaceErrorBoundary", () => {
     expect(screen.getByTestId("workspace-error").textContent).toContain(
       "scene settings.grid is missing",
     );
+    // Reloading cannot repair a document's own data; only a chunk that didn't load offers it.
+    expect(screen.queryByRole("button", { name: "Reload Editor" })).toBeNull();
     spy.mockRestore();
   });
 });

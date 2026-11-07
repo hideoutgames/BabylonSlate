@@ -2,7 +2,7 @@ import { Matrix, Mesh, StandardMaterial, type Effect } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultMaterialDocument, lowerMaterialDocument, setMaterialDomain } from "@haptic/shader-graph";
 import { createActor, createText2DComponent, parseText2DProperties } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { unlitBinding } from "./unlit-material-blocks";
 import { MaterialLibrary } from "./material-library";
 import { createText2DMesh, refreshText2DMaterials, updateText2DAppear } from "./text2d-mesh";

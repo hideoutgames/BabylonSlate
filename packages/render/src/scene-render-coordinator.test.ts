@@ -1,7 +1,7 @@
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { MaterialLibrary } from "./material-library";
-import { Color3, DirectionalLight, Effect, FreeCamera, HemisphericLight, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, SpotLight, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Color3, DirectionalLight, Effect, FreeCamera, HemisphericLight, Mesh, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, SpotLight, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { SceneOutlineHost } from "./scene-outline-host";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
@@ -398,7 +398,7 @@ it("keeps parent graph frames rendering while streamed resources and fog wait fo
   expect(child.isEnabled()).toBe(false);
   expect(hasFogVolumes(scene)).toBe(false);
   expect(sceneRenderingSettings(scene).effectsPlan).toBeNull();
-  expect(selectFogVolumes(scene, camera, 50)).toHaveLength(0);
+  expect(selectFogVolumes(scene, camera)).toHaveLength(0);
   expect(renderer.render().rendered).toBe(true);
   // A normal parent-world spawn remains admitted while the stream is pending.
   const ordinary = MeshBuilder.CreateBox("normal-spawn", {}, scene);
@@ -409,7 +409,7 @@ it("keeps parent graph frames rendering while streamed resources and fog wait fo
   textureReady.mockReturnValue(true);
   admission.publish([2], identity);
   expect(child.isEnabled()).toBe(true);
-  expect(selectFogVolumes(scene, camera, 50)).toHaveLength(1);
+  expect(selectFogVolumes(scene, camera)).toHaveLength(1);
   await renderer.prepare();
   expect(renderer.render().rendered).toBe(true);
   retirePlaySlot(binding, 2);
@@ -1135,7 +1135,7 @@ it("holds frames when light admission invalidates its cached shader readiness", 
   renderer.dispose();
 });
 
-it("holds a frame invalidated during its render callbacks", async () => {
+it("holds a frame invalidated before its graph draws, and keeps one invalidated after, probing again next frame", async () => {
   const { scene, renderer } = host();
   const path = "frameGraph";
   await renderer.prepare();
@@ -1145,6 +1145,21 @@ it("holds a frame invalidated during its render callbacks", async () => {
   scene.onBeforeRenderObservable.addOnce(() => { ready = false; markSceneReadinessDirty(scene); });
   expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
   expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
+  ready = true;
+  expect(renderer.render()).toMatchObject({ path, rendered: true, readyForPresentation: true });
+  // A node added before the draw: Babylon announces it only after the frame, so its count alone holds the frame.
+  scene.onBeforeRenderObservable.addOnce(() => { new Mesh("added before the draw", scene); });
+  expect(renderer.render()).toMatchObject({ rendered: false });
+  expect(renderer.render()).toMatchObject({ path, rendered: true });
+  // After the graph has drawn (a Spawn Emitter's spawned Emitter, a drained one's disposal), a change cannot alter the
+  // image: the frame stays drawn, though not presentable, and the next frame probes again before it draws.
+  scene.onAfterRenderObservable.addOnce(() => {
+    new Mesh("added after the draw", scene);
+    ready = false;
+    markSceneReadinessDirty(scene);
+  });
+  expect(renderer.render()).toMatchObject({ path, rendered: true, readyForPresentation: false });
+  expect(renderer.render()).toMatchObject({ rendered: false, reason: "Scene is not ready to render." });
   ready = true;
   expect(renderer.render()).toMatchObject({ path, rendered: true, readyForPresentation: true });
   renderer.dispose();

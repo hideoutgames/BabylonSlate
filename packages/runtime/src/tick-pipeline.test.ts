@@ -22,7 +22,14 @@ describe("tick phase timing", () => {
 
   it("keeps each phase's time apart and counts every phase but physics as script", () => {
     let now = 0;
-    const pipeline = new TickPipeline({ clock: { tickIndex: 0 } } as never, {} as never, {} as never, {} as never,
+    const emitted: unknown[] = [];
+    const host = {
+      emit: (command: unknown) => emitted.push(command),
+      frameId: () => 0,
+      liveActors: () => 0,
+      objectLifetime: () => ({ collectable: 0, lastPassMs: null }),
+    };
+    const pipeline = new TickPipeline({ clock: { tickIndex: 0 } } as never, { lastPublishMs: 0, capacity: 0 } as never, {} as never, host as never,
       { dt: 1 / 60, seed: 1, generation: 1, mode: "play", diagnosticsEnabled: false }, () => now);
     pipeline.beginPhaseTiming();
     const spend = (phase: (typeof TICK_TIMING_PHASES)[number], ms: number) => { pipeline.markPhase(phase); now += ms; };
@@ -34,9 +41,13 @@ describe("tick phase timing", () => {
     spend("sceneSystems", 4);
     spend("garbageCollection", 0.5);
     pipeline.closePhaseTiming();
-    expect(Object.fromEntries(TICK_TIMING_PHASES.map((phase, index) => [phase, pipeline.lastPhaseMs[index]]))).toEqual({
+    pipeline.finishTick(0, [], 1);
+    const [stats] = emitted as Array<{ type: string; phaseMs: number[]; scriptMs: number; physicsMs: number }>;
+    expect(stats?.type).toBe("stats");
+    expect(Object.fromEntries(TICK_TIMING_PHASES.map((phase, index) => [phase, stats?.phaseMs[index]]))).toEqual({
       gameInstance: 0.5, sceneSubsystems: 0, actors: 2, components: 0, objects: 0.25, physics: 3, postPhysics: 1, sceneSystems: 4, garbageCollection: 0.5,
     });
+    expect([stats?.scriptMs, stats?.physicsMs]).toEqual([8.25, 3]);
     expect(pipeline.lastScriptMs).toBe(8.25);
     expect(pipeline.lastPhysicsMs).toBe(3);
   });

@@ -14,12 +14,7 @@ import "@babylonjs/core/Shaders/ShadersInclude/shadowMapVertexMetric";
 import "@babylonjs/core/Shaders/ShadersInclude/shadowMapFragmentExtraDeclaration";
 import "@babylonjs/core/Shaders/ShadersInclude/shadowMapFragmentSoftTransparentShadow";
 import "@babylonjs/core/Shaders/ShadersInclude/shadowMapFragment";
-import "@babylonjs/core/ShadersWGSL/ShadersInclude/shadowMapVertexExtraDeclaration";
-import "@babylonjs/core/ShadersWGSL/ShadersInclude/shadowMapVertexNormalBias";
-import "@babylonjs/core/ShadersWGSL/ShadersInclude/shadowMapVertexMetric";
-import "@babylonjs/core/ShadersWGSL/ShadersInclude/shadowMapFragmentExtraDeclaration";
-import "@babylonjs/core/ShadersWGSL/ShadersInclude/shadowMapFragmentSoftTransparentShadow";
-import "@babylonjs/core/ShadersWGSL/ShadersInclude/shadowMapFragment";
+// The WGSL twins register with the WebGPU Engine's code (webgpu-registrations).
 
 // ShadowDepthWrapper supplies these values from the native ShadowGenerator.
 // doNotInjectCode keeps the wrapper from registering them on our behalf.

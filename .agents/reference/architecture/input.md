@@ -46,7 +46,7 @@ Input Action / Input Axis assets, the `@haptic/input` mapping model and resolver
 
 ## Resolver semantics
 
-- `resolve(events)` folds one tick's events. A complete tap between ticks reports both pressed and released; multiple bindings combine, so releasing one while another is held keeps the action held.
+- `resolve(events)` folds one tick's events. A complete tap between ticks reports both pressed and released; multiple bindings combine, so releasing one while another is held keeps the action held. A tick samples its bindings before its events (so a mapping change edges first), after each event that changed a control, and once more after recognition. With no events and no two mappings sharing an `inputs` key the first sample would equal the last unless recognition changed a gesture or motion value, so it runs only then, after recognition and before the new values apply; the results are identical. Gamepad control keys (`${pad}:${index}`) are made once per pad and index.
 - Event pins: Started, Held (every tick including the first), Released, Value, Held Seconds, Last Held Seconds. Pausing does not advance held time. A release/repress in one tick emits Released, Started, then Held.
 - Axes keep an internal `activeValue` (last nonzero sample in the tick) so SceneLayer focus sees quick taps.
 - Gamepad samples carry the whole pad state (omitted buttons count as released). Hosts push `gamepadDisconnect` when a pad disappears; the resolver reports one `connected: false` and drops its held state.

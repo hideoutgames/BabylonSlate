@@ -86,7 +86,7 @@ export function ensureEventNodeOnGraph(
 }
 
 /** Data output pins stored on an event node (custom Outputs or catalog). */
-export function eventDataPinsFromNode(
+function eventDataPinsFromNode(
   graph: SerializedGraph,
   eventNodeId: string,
 ): GraphClassMemberPin[] {
@@ -100,7 +100,7 @@ export function eventDataPinsFromNode(
   return [];
 }
 
-export function callParentNodeId(
+function callParentNodeId(
   eventType: string,
   eventName?: string,
 ): string {
@@ -114,7 +114,7 @@ export function callParentNodeId(
   return `call-parent-${eventType.replace(/\./g, "-")}`;
 }
 
-export function callParentDisplayTitle(
+function callParentDisplayTitle(
   eventType: string,
   eventName?: string,
 ): string {

@@ -167,7 +167,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
         ? `${delta.ms >= 0 ? "+" : ""}${delta.ms.toFixed(1)}ms ${delta.percent >= 0 ? "+" : ""}${delta.percent.toFixed(0)}%${delta.basis === "frame" ? "*" : ""}`
         : "-";
       const mean = meanFrameMs(sample.frames);
-      const vsync = sample.frames?.vsync?.map((share) => (share * 100).toFixed(0)).join("/") ?? "-";
+      const vsync = sample.frames?.vsync.map((share) => (share * 100).toFixed(0)).join("/") ?? "-";
       const busy = sample.gpuBusy ? `${sample.gpuBusy.medianMs.toFixed(1)} (${sample.gpuBusy.p95Ms.toFixed(0)})` : "-";
       const viewFirst = play.benchmark.find((entry) => isBreakdownBaseline(entry) && entry.view === sample.view) ?? first;
       const notes = [
@@ -180,7 +180,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
   } else if (play.benchmark.length) {
     lines.push("  Benchmark (frame cap lifted):", `  Frames in flight: ${framesInFlightText(play.benchmark)}`, `    ${pad("Profile", 18)}${pad("fps", 6)}${pad("p95", 8)}${pad("cpu", 20)}${pad("gpu", 20)}${pad("draws", 14)}resolution`);
     for (const sample of play.benchmark) {
-      lines.push(`    ${pad(sample.label, 18)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(msText(sample.cpu, sample.cpuMs), 20)}${pad(msText(sample.gpu, sample.gpuMs), 20)}${pad(sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${sample.resolution ?? "-"}`);
+      lines.push(`    ${pad(sample.label, 18)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(msText(sample.cpu), 20)}${pad(msText(sample.gpu), 20)}${pad(sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${sample.resolution ?? "-"}`);
     }
     lines.push(`  Highest tier at 60 fps: ${bestProfile([play.benchmark], SMOOTH) ?? "none"} · at 30 fps: ${bestProfile([play.benchmark], PLAYABLE) ?? "none"}`);
   }
@@ -212,6 +212,8 @@ function resourceLine(sample: FeatureTestCheckResources): string {
     `${sample.textures} textures (${mb(sample.textureBytes)})`,
     ...(sample.jsHeapBytes !== null ? [`JS heap ${mb(sample.jsHeapBytes)}`] : []),
     ...(sample.appFootprintBytes !== null ? [`app ${mb(sample.appFootprintBytes)}`] : []),
+    ...(sample.deviceAvailableBytes != null ? [`device free ${mb(sample.deviceAvailableBytes)}`] : []),
+    ...(sample.appAvailableBytes != null ? [`app headroom ${mb(sample.appAvailableBytes)}`] : []),
   ];
   return `  ${pad(s(sample.atMs), 9)}${memory.join(" · ")} · ${clip(sample.step, 80)}`;
 }
@@ -301,6 +303,34 @@ function occlusionText(sample: FeatureTestBenchmarkSample): string {
     : "";
 }
 
+/**
+ * A Profile row's world renderer work per drawn frame while sampled (`work`): strict readiness checks, outline-only
+ * checks and shadow admissions with their time, and the graph builds in the window; the counters that grew.
+ */
+function workText(sample: FeatureTestBenchmarkSample): string {
+  const work = sample.work;
+  const drawn = sample.presentation?.drawn;
+  if (!work || !drawn) return "";
+  const perFrame = (value: number) => (value / drawn).toFixed(1);
+  const parts = [
+    work.strictReadinessChecks ? `${perFrame(work.strictReadinessChecks)} readiness checks` : "",
+    work.outlineReadinessChecks ? `${perFrame(work.outlineReadinessChecks)} outline checks` : "",
+    work.shadowAdmissions ? `${perFrame(work.shadowAdmissions)} shadow admissions (${perFrame(work.shadowAdmissionMs)} ms)` : "",
+  ].filter(Boolean);
+  const builds = work.graphBuilds ? `${work.graphBuilds} graph ${work.graphBuilds === 1 ? "build" : "builds"}` : "";
+  return [parts.length ? `work/frame: ${parts.join(", ")}` : "", builds].filter(Boolean).join(" · ");
+}
+
+/** A Profile row's native memory counters as it ended (`memory`): the device's free memory and the app's headroom. */
+function memoryText(sample: FeatureTestBenchmarkSample): string {
+  const memory = sample.memory;
+  if (!memory) return "";
+  return [
+    memory.deviceAvailableBytes !== null ? `device free ${mb(memory.deviceAvailableBytes)}` : "",
+    memory.appAvailableBytes !== null ? `app headroom ${mb(memory.appAvailableBytes)}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
 /** Reasons a Profile row prints for its held frames. */
 const PROFILE_ROW_HELD_REASONS = 2;
 
@@ -314,7 +344,7 @@ function profileNotes(sample: FeatureTestBenchmarkSample, first: FeatureTestBenc
   const reasons = sample.presentation?.held ? heldReasonsText(sample.presentation.heldReasons, PROFILE_ROW_HELD_REASONS) : "";
   return [
     sample.warmup ? "warm-up" : "", ...settingNotes(sample, first, step?.fields ?? []), step?.overlaps ? "overlaps" : "",
-    occlusionText(sample), reasons ? `held: ${reasons}` : "",
+    occlusionText(sample), workText(sample), memoryText(sample), reasons ? `held: ${reasons}` : "",
   ].filter(Boolean).join(" · ");
 }
 
@@ -361,7 +391,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
     profile?.endChanges
       ? profile.endChanges.length ? `  NOT RESTORED at the end: ${profile.endChanges.join(", ")}` : "  Restored: every setting as before the first step"
       : "  Restored: not checked",
-    "  Legend: mean, p95 = frame time · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · frame, cpu change = against the baselines around the step (a baseline's: against the first) · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED and UNSETTLED mark a row not to trust",
+    "  Legend: mean, p95 = frame time · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · work/frame = the world renderer's strict readiness checks, outline checks and shadow admissions (their ms) per drawn frame, and its graph builds while sampled · device free, app headroom = the device's free and inactive memory (it falls as the web content and GPU processes grow) and what the app process may still allocate, as the sample ended · frame, cpu change = against the baselines around the step (a baseline's: against the first) · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED and UNSETTLED mark a row not to trust",
     `  Timing: ${timed?.gpuBusy ? `gpu busy polled every ${timed.gpuBusy.pollMs.toFixed(1)} ms (each frame up to one poll late)` : "no gpu busy (no fences)"}`,
     `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("cpu", 8)}${pad("gpu busy", 14)}${pad("bound", 6)}${pad("draws", 14)}${pad("held", 6)}${pad("frame change", 16)}${pad("cpu change", 16)}notes`,
   ];
@@ -399,9 +429,9 @@ function rangeText(stats: CounterStats, digits: number): string {
   return stats.min === stats.max ? text(stats.median) : `${text(stats.median)} (${text(stats.min)}-${text(stats.max)})`;
 }
 
-/** A frame cost's median and range in ms, or the one value in reports saved before the range. */
-function msText(stats: CounterStats | null | undefined, value: number | null): string {
-  return stats ? `${rangeText(stats, 1)}ms` : ms(value);
+/** A frame cost's median and range in ms, or "-" where it was not measured. */
+function msText(stats: CounterStats | null | undefined): string {
+  return stats ? `${rangeText(stats, 1)}ms` : "-";
 }
 
 function ms(value: number | null): string {
@@ -537,7 +567,7 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
 /** The GPU backpressure mode the samples ran under (`framesinflight`) and the renders it skipped while they sampled. */
 function framesInFlightText(samples: readonly { framesInFlight?: { mode: "off" | 2 | 3; skipped: number } }[]): string {
   const measured = samples.filter((sample) => sample.framesInFlight);
-  if (!measured.length) return "unknown (older report)";
+  if (!measured.length) return "not measured";
   const modes = [...new Set(measured.map((sample) => String(sample.framesInFlight!.mode)))];
   const skipped = measured.reduce((sum, sample) => sum + sample.framesInFlight!.skipped, 0);
   return `${modes.join(", ")} (${skipped} renders skipped while sampling)`;

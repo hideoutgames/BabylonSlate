@@ -172,7 +172,7 @@ function progressFieldDefinitions(speedMode: string): DataDefinitionField[] {
  * `FT_GlobalParams`: one parameter of each type. The Data Probe sets and reads Wind Strength;
  * Materials and Particle Graphs read the others.
  */
-export const FEATURE_TEST_GLOBAL_PARAMETERS = {
+const FEATURE_TEST_GLOBAL_PARAMETERS = {
   parameters: [
     { id: "ft-global-wind-strength", name: "Wind Strength", type: "float", defaultValue: [1] },
     { id: "ft-global-uv-offset", name: "UV Offset", type: "vec2", defaultValue: [0, 0] },
@@ -634,7 +634,7 @@ const LIB_WAVE = fnMember("ft-script-fn-lib-wave", "Wave", [
 const SCORE = varMember("ft-game-var-score", "Score", "int", 0, { category: "Score" });
 const ADD_SCORE = fnMember("ft-game-fn-add-score", "AddScore", [{ name: "Amount", typeId: "int", direction: "in" }]);
 const GI_BOOTED = varMember("ft-game-var-booted", "Booted", "bool", false);
-/** Set by the Game Instance's Deferred Spawn Actor before Begin Play; `ft_spawn` keeps the default. */
+/** Set by the Game Instance's Spawn Actor Deferred (Async) before Begin Play; `ft_spawn` keeps the default. */
 const SPAWNED_BY = varMember("ft-script-var-spawned-by", "SpawnedBy", "string", "ft_spawn");
 const GI_OBJECT_CLASS = varMember("ft-game-var-object-class", "ObjectClass", "class", CLASS.dataObject, {
   typeClassId: CLASS.dataObject,
@@ -792,7 +792,7 @@ async function savePulseComponent(ctx: FeatureTestContext): Promise<void> {
   await saveClass(ctx, CLASS.pulseComponent, "ActorComponent", graph);
 }
 
-/** Spawn target (the Game Instance's Deferred Spawn Actor and `ft_spawn`); Begin Play prints who set it up. */
+/** Spawn target (the Game Instance's Spawn Actor Deferred (Async) and `ft_spawn`); Begin Play prints who set it up. */
 async function saveSpawned(ctx: FeatureTestContext, materialGuid: string | null): Promise<void> {
   const graph = classGraph({
     members: [SPAWNED_BY],
@@ -1103,8 +1103,8 @@ async function saveSceneWatcher(ctx: FeatureTestContext): Promise<void> {
 
 /**
  * Game Instance (Project Settings): On Init flags Booted; On First Scene
- * Loaded prints the scene, spawns `FT_ScriptSpawned` with Deferred Spawn
- * Actor (setting its SpawnedBy before Begin Play) when the Scripting zone
+ * Loaded prints the scene, spawns `FT_ScriptSpawned` with Spawn Actor
+ * Deferred (Async) (setting its SpawnedBy before Begin Play) when the Scripting zone
  * exists and runs the `ft_stats` console command. On Game Loaded prints once
  * a Load Game, such as the Save Probe's, has restored the saved state.
  */
@@ -1764,8 +1764,7 @@ async function addStreamedRoom(ctx: FeatureTestContext, spinner: PlacedClass, fo
   const room = createDefaultScene("3d");
   room.name = STREAMED_ROOM_NAME;
   room.actors = [];
-  room.settings.mainCameraActorId = null;
-  room.settings.mainCameraComponentId = null;
+  room.settings.defaultCameraActorId = null;
   const add = (entry: SerializedActor) => ctx.addActor(entry, { scene: room });
   add(actor("ft-scripting-room-platform", "Room Platform", tf([0, 0.15, 0], { scale: [5, 0.2, 5] }), [
     meshComp("ft-scripting-room-platform-mesh", "box", { collision: "simple" }),

@@ -43,7 +43,7 @@ export function workerImportOptions(options: ImportOptions): WorkerImportOptions
  * view one buffer (a GLB's embedded images), and a buffer listed twice cannot
  * be transferred.
  */
-export function importResultTransferList(results: readonly ImportResult[]): ArrayBuffer[] {
+function importResultTransferList(results: readonly ImportResult[]): ArrayBuffer[] {
   const buffers = new Set<ArrayBuffer>();
   for (const result of results)
     for (const chunk of result.chunks)

@@ -35,6 +35,11 @@ contextBridge.exposeInMainWorld("haptic", {
   files: {
     save: (name: string, data: ArrayBuffer) => ipcRenderer.invoke("file:save", name, data),
   },
+  // Opens a provider sign-in page in the system browser; resolves with the callback deep link or null.
+  authBrowser: {
+    open: (url: string, callbackUrl: string) =>
+      ipcRenderer.invoke("auth:open-browser", url, callbackUrl),
+  },
   project: {
     pickProjectFolder: () => ipcRenderer.invoke("project:pickFolder"),
     openDocumentsProject: (name: string) =>
@@ -42,6 +47,8 @@ contextBridge.exposeInMainWorld("haptic", {
     openKnownFolder: (handle: unknown) =>
       ipcRenderer.invoke("project:openKnown", handle),
     listProjects: () => ipcRenderer.invoke("project:list"),
+    deleteProject: (handle: unknown) =>
+      ipcRenderer.invoke("project:delete", handle),
     releaseFolder: () => ipcRenderer.invoke("project:release"),
     readBinary: (path: string) => ipcRenderer.invoke("project:readBinary", path),
     readBinaryRange: (path: string, offset: number, length: number, revision?: string) =>

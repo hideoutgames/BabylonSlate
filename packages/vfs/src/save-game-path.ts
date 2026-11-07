@@ -23,7 +23,7 @@ export function decodeSaveGameSegment(segment: string): string | null {
   } catch { return null; }
 }
 
-export function saveGameErrorCode(error: unknown): string {
+function saveGameErrorCode(error: unknown): string {
   return String((error as { code?: unknown } | null)?.code ?? "");
 }
 

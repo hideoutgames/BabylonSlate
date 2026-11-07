@@ -28,6 +28,7 @@ const bindings = new WeakMap<AbstractMesh, TextMaterialBinding>();
 export function bindTextMaterialGlyph(mesh: Mesh, binding: TextMaterialBinding): void {
   bindings.set(mesh, binding);
 }
+/** The glyph binding `bindTextMaterialGlyph` set on `mesh`. Test seam: production code does not call it. */
 export function textMaterialGlyphBinding(mesh: Mesh): TextMaterialBinding | undefined {
   return bindings.get(mesh);
 }

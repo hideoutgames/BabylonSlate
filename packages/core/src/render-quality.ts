@@ -110,7 +110,7 @@ const WATER_QUALITY_FIELD_SET: Record<WaterQualityField, true> = {
 /** Every value field, in display order; also the console names for `quality water <field> <value>`. */
 export const WATER_QUALITY_FIELDS = Object.keys(WATER_QUALITY_FIELD_SET) as readonly WaterQualityField[];
 /** Strict console parsing: out-of-range or non-integer values are rejected, never clamped. */
-export function parseWaterQualitySetting(field: string, value: string): Partial<WaterQuality> | undefined {
+function parseWaterQualitySetting(field: string, value: string): Partial<WaterQuality> | undefined {
   const lower = value.toLowerCase();
   const numeric = value.trim() === "" ? NaN : Number(value);
   const within = (min: number, max: number, integer = false) =>
@@ -191,7 +191,7 @@ export type EffectiveRenderingQuality = RenderingQuality & {
 };
 const MIB = 1024 * 1024;
 /** Authored targets only; neither these counts nor the labels certify a device. */
-export const LOCAL_LIGHT_QUALITY_CAPACITY: Record<QualityLevel, number> = {
+const LOCAL_LIGHT_QUALITY_CAPACITY: Record<QualityLevel, number> = {
   low: 6,
   medium: 32,
   high: 64,
@@ -257,63 +257,6 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     postprocessing: { resolutionScale: 1, antiAliasing: "msaa4", ambientOcclusion: true, reflections: true, volumetricLighting: true },
   },
 };
-type QualityValues<G extends keyof RenderingQuality> = Omit<RenderingQuality[G], keyof QualitySelection>;
-/**
- * Values earlier releases gave a level. A saved group still labelled with that level whose values equal one of these
- * was never edited, so it loads as the level's current values instead of turning Custom.
- */
-const SUPERSEDED_QUALITY_PROFILES: { [L in QualityLevel]?: { [G in keyof RenderingQuality]?: readonly Partial<QualityValues<G>>[] } } = {
-  low: {
-    lighting: [{ localLightMode: "auto", maxLocalLights: 4 }],
-    resolution: [{ scale: 0.75, dynamic: true, minScale: 0.5, targetFps: 60 }],
-    textures: [{ lodBias: 1, anisotropy: 2, byteBudget: 256 * MIB }],
-    geometry: [
-      { autoLod: true, lodDistanceScale: 0.5 },
-      { autoLod: true, lodDistanceScale: 0.75, occlusionCulling: false },
-    ],
-    water: [128, 64].map((fftSize) => ({
-      shadingDetail: "low", meshDensity: 0.5, contactResolution: 256,
-      refraction: false, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
-      planarScale: 0.5, fftSize, fftCascades: fftSize === 64 ? 2 : 3,
-    }) as const),
-    postprocessing: [{ resolutionScale: 0.5, ambientOcclusion: false, reflections: false, volumetricLighting: false }],
-  },
-  medium: {
-    lighting: [{ localLightMode: "auto", maxLocalLights: 16 }],
-    textures: [{ lodBias: 0, anisotropy: 4, byteBudget: 512 * MIB }],
-    geometry: [
-      { autoLod: true, lodDistanceScale: 1 },
-      { autoLod: true, lodDistanceScale: 1.25, occlusionCulling: false },
-    ],
-    water: [256, 128].map((fftSize) => ({
-      shadingDetail: "medium", meshDensity: 0.75, contactResolution: 256,
-      refraction: true, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
-      planarScale: 0.5, fftSize, fftCascades: 3,
-    }) as const),
-    postprocessing: [{ resolutionScale: 0.75, ambientOcclusion: true, reflections: false, volumetricLighting: false }],
-  },
-  high: {
-    geometry: [{ autoLod: true, lodDistanceScale: 1.5, occlusionCulling: false }],
-    water: [{
-      shadingDetail: "high", meshDensity: 1, contactResolution: 1024,
-      refraction: true, refractionScale: 0.75, reflections: "screenSpace", reflectionSteps: 16,
-      planarScale: 0.5, fftSize: 256, fftCascades: 3,
-    }],
-  },
-  ultra: {
-    geometry: [{ autoLod: true, lodDistanceScale: 2, occlusionCulling: false }],
-  },
-};
-/** `value` (labelled Custom) as its saved level's current values when it holds that level's values from an earlier release. */
-function upgradeSupersededQuality<G extends keyof RenderingQuality>(group: G, value: RenderingQuality[G], saved: QualitySelection | undefined): RenderingQuality[G] {
-  const level = saved?.preset;
-  if (value.preset !== "custom" || !isQualityLevel(level)) return value;
-  const values = value as unknown as Record<string, unknown>;
-  const superseded = SUPERSEDED_QUALITY_PROFILES[level]?.[group] ?? [];
-  return superseded.some((old) => Object.entries(old).every(([key, expected]) => values[key] === expected))
-    ? { ...RENDER_QUALITY_PROFILES[level][group], profile: level, preset: level }
-    : value;
-}
 export function isQualityLevel(value: unknown): value is QualityLevel {
   return QUALITY_LEVELS.includes(value as QualityLevel);
 }
@@ -430,7 +373,6 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
     "lighting",
   ] as const) {
     normalized[group].preset = qualityValueLabel(normalized[group], group);
-    Object.assign(normalized, { [group]: upgradeSupersededQuality(group, normalized[group], source[group]) });
   }
   return normalized;
 }
@@ -843,6 +785,14 @@ export class RenderingQualitySession {
         .join("\n"),
     };
   }
+}
+
+/**
+ * `settings` (a quality group, shadow settings or a whole render block) serialised without the `preset` labels, which
+ * only name the level the values match: equal keys draw the same. `profile` stays, since it sizes shadow capacity.
+ */
+export function qualityValuesKey(settings: unknown): string {
+  return JSON.stringify(settings, (key, value: unknown) => key === "preset" ? undefined : value) ?? "";
 }
 
 /**

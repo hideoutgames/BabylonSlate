@@ -23,7 +23,7 @@ export interface GameSessionStopResult {
   readonly released: Promise<{ quarantined: boolean }>;
 }
 
-export class GameSessionCancelledError extends Error {
+class GameSessionCancelledError extends Error {
   constructor() {
     super("Game session preparation was cancelled.");
     this.name = "AbortError";

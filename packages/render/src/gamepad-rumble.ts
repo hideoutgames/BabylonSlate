@@ -9,7 +9,7 @@ type RumbleActuator = {
 
 type RumblePad = { index: number; vibrationActuator?: RumbleActuator | null } | null;
 
-export type GamepadRumbleCommand = {
+type GamepadRumbleCommand = {
   gamepadIndex: number;
   intensity: number;
   durationMs: number;

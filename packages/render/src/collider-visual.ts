@@ -9,9 +9,9 @@ import type { ColliderShape } from "@haptic/physics";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
 import { RENDERING_GROUP } from "./sorting";
 
-export const COLLIDER_DASH_SIZE = 0.12;
-export const COLLIDER_GAP_SIZE = 0.08;
-export const COLLIDER_DASH_THICKNESS = 0.018;
+const COLLIDER_DASH_SIZE = 0.12;
+const COLLIDER_GAP_SIZE = 0.08;
+const COLLIDER_DASH_THICKNESS = 0.018;
 export const COLLIDER_COLOR = new Color3(0.85, 0.9, 0.4);
 /** Solid dashes from both sides; editor helpers draw without fog. */
 const COLLIDER_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: false, role: "helper" };

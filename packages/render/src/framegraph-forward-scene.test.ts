@@ -3,6 +3,7 @@ import { beginRenderFrameCapture } from "./render-frame-report";
 import {
   type AbstractEngine,
   Animation,
+  Constants,
   DirectionalLight,
   Effect,
   PrecisionDate,
@@ -56,6 +57,7 @@ import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneShadowController } from "./shadow-controller";
 import { AtlasCascadedShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
 import { HAPTIC_SHADOW_ATLAS } from "./haptic-lighting-shader";
+import { hapticLightBuffer, hapticShadowedSun } from "./haptic-lights";
 import { VOLUME_SHADOW_CODE } from "./volumetric-lights";
 import { configureCutoutSorting } from "./sorting";
 
@@ -185,14 +187,59 @@ it("draws a multisampled world view into its own scene targets, copies them to t
   graph.dispose();
 });
 
-it("retains the previous graph during a settings transaction and releases superseded candidates", async () => {
-  const { scene, camera } = host();
+it.each(["legacyDisplay", "sceneLinear"] as const)(
+  "merges bloom over the multisampled %s scene colour into a single-sample target of its type",
+  async (mode) => {
+    const { engine, scene, camera } = host();
+    engine.getCaps().maxMSAASamples = 4;
+    allowSceneScreenShadows(scene, () => false);
+    sceneRenderingSettings(scene).qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing: "msaa4" });
+    // No spatial stage before bloom: it reads the objects' own scene colour.
+    updateSceneRenderingSettings(scene, {
+      mode: "pbr",
+      effects: {
+        ...DEFAULT_RENDER_EFFECTS,
+        colorPipeline: { version: 1, mode },
+        bloom: { enabled: true, threshold: 0.8, weight: 0.2, kernel: 16, scale: 0.5 },
+      },
+    });
+    const graph = new ForwardSceneFrameGraph(scene);
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const frame = captureRenderFrame(engine, () => graph.render(camera));
+    expect(frame.value).toEqual({ path: "frameGraph" });
+    const resource = (handle: number | undefined) => frame.report.resources.find((entry) => entry.handle === handle);
+    const clear = frame.report.tasks.find((task) => task.name === "Forward clear")!;
+    const sceneColor = resource(clear.passes[0]?.colorTargets?.[0]);
+    const bloom = frame.report.tasks.find((task) => task.name === "Scene Effects Bloom")!;
+    const merge = resource(bloom.passes.find((pass) => pass.name.endsWith("Merge"))?.colorTargets?.[0]);
+    const type = mode === "sceneLinear" ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
+    expect(sceneColor).toMatchObject({ samples: 4, types: [type] });
+    expect(merge).toMatchObject({ samples: 1, types: [type], width: sceneColor!.width, height: sceneColor!.height });
+    graph.dispose();
+  },
+);
+
+it("retains the previous graph's tasks during a settings transaction, frees its targets, and releases superseded candidates", async () => {
+  const { engine, scene, camera } = host();
+  // 4x MSAA: the view draws into its own multisampled scene colour and depth.
+  engine.getCaps().maxMSAASamples = 4;
+  allowSceneScreenShadows(scene, () => false);
+  sceneRenderingSettings(scene).qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing: "msaa4" });
+  updateSceneRenderingSettings(scene);
+  const live = () => engine.getLoadedTexturesCache().filter((texture) => texture._references > 0);
+  // The light block's one-texel atlas stand-in, which the first lighting sync makes and the Scene keeps, is not the graph's.
+  shadowAtlasTexture(scene);
+  const before = live();
   const graph = new ForwardSceneFrameGraph(scene);
   await graph.prepare(camera);
+  const targets = live().filter((texture) => !before.includes(texture));
+  expect(targets).toHaveLength(2);
   const release = vi.spyOn(FrameGraphObjectRendererTask.prototype, "dispose");
   const releasePrevious = graph.retainResources();
   setTierFxaa(scene, true);
   await graph.prepare(camera);
+  // Its targets went before the replacement allocated; its tasks (and the Effects they hold) wait for the retain.
+  expect(live().filter((texture) => targets.includes(texture))).toEqual([]);
   expect(release).not.toHaveBeenCalled();
   expect(graph.taskNames()).toContain("Scene Effects FXAA");
   // A cancelled intermediate build must not accumulate another retained graph.
@@ -1258,6 +1305,24 @@ it("keeps drawing a running fog march in the frame in which shadow admission dro
   expect(skipped()).toEqual([]);
   expect(bindings.shadow(0)).toEqual([[VOLUME_SHADOW_CODE.none, 0]]);
   expect(graph.diagnostics().graphBuilds).toBe(builds);
+  graph.dispose();
+});
+
+it("writes the light block once per readiness while shadow admission changes nothing, and again after it drops a map", async () => {
+  const { scene, camera, graph, sun, controller } = await shadowedFogHost();
+  expect(graph.readiness(camera)).not.toMatchObject({ preparationRequired: true });
+  const writes = vi.spyOn(hapticLightBuffer(scene), "update");
+  // A steady frame's readiness: the lighting sync before admission is the only write.
+  for (let frame = 0; frame < 3; frame += 1) graph.readiness(camera);
+  expect(writes).toHaveBeenCalledTimes(3);
+  expect(hapticShadowedSun(scene)).toBe(sun);
+  // Admission drops the sun's map inside the readiness: the block is written again, without its sun shadow.
+  writes.mockClear();
+  controller.register(sun, false);
+  graph.readiness(camera);
+  expect(controller.generator(sun)).toBeNull();
+  expect(writes).toHaveBeenCalledTimes(2);
+  expect(hapticShadowedSun(scene)).toBeNull();
   graph.dispose();
 });
 

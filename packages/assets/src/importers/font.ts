@@ -55,7 +55,7 @@ function hasFacetypeShape(parsed: Record<string, unknown>): boolean {
  * that should already exist rather than a new asset; matched by filename
  * convention or, failing that, by the shape those generators write.
  */
-export function isFontRepresentationFile(fileName: string, bytes: Uint8Array): boolean {
+function isFontRepresentationFile(fileName: string, bytes: Uint8Array): boolean {
   if (extensionOf(fileName) !== "json") return false;
   if (/msdf|facetype/i.test(fileName)) return true;
   const parsed = parseJsonObject(bytes);

@@ -19,7 +19,7 @@ import { RENDERING_GROUP } from "./sorting";
 
 export const NAV_BLOCKER_VOLUME_COLOR = new Color3(1, 0.45, 0.15);
 export const BLOCKING_VOLUME_COLOR = new Color3(0.35, 0.55, 1);
-export const NAVMESH_DEBUG_BLOCKER_COLOR = new Color3(0.1, 0.45, 0.18);
+const NAVMESH_DEBUG_BLOCKER_COLOR = new Color3(0.1, 0.45, 0.18);
 
 export type EditorVolumeKind = "box" | "cylinder";
 
@@ -123,5 +123,3 @@ export function applyVolumeFillMaterial(mesh: AbstractMesh): void {
     texture: null, color: [0, 0, 0], alpha: 0, cutoff: 0, blend: true, textureAlpha: false, twoSided: false,
   });
 }
-
-export { COLLIDER_COLOR };

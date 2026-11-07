@@ -168,7 +168,7 @@ export function createHeldThreadBound(
 }
 
 /** How often a `HeldThreadTimer` checks its bound, so a held gap is seen on the first tick after it. */
-export const HELD_THREAD_CHECKPOINT_MS = 250;
+const HELD_THREAD_CHECKPOINT_MS = 250;
 
 export interface HeldThreadTimer {
   /** Start a fresh bound of `ms` (the timer's own bound when omitted), keeping the shared held-thread budget. */

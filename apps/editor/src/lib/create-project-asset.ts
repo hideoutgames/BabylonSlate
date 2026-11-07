@@ -132,7 +132,7 @@ export function isPickerCreatableAssetType(
 }
 
 /** Class ids are file stems, so picker-created Class names use only `[A-Za-z0-9_]`. */
-export function sanitizeClassName(name: string): string {
+function sanitizeClassName(name: string): string {
   return name
     .trim()
     .replace(/[^A-Za-z0-9_]+/g, "_")
@@ -215,7 +215,7 @@ export type PickerCreateFolder = {
  * plugin's `plugins/Foo/Foo.plugin.hasset` beside `plugins/Foo/assets`) uses
  * that root. Otherwise (engine plugins, the project, no document): `assets`.
  */
-export function pickerCreateFolder(
+function pickerCreateFolder(
   ownerPath: string | null | undefined,
   roots: ReadonlyArray<{ id: string; pathPrefix: string; readOnly?: boolean }>,
 ): PickerCreateFolder {

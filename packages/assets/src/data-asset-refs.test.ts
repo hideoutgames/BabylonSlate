@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { clearDeletedAssetRefs } from "./clear-asset-refs";
-import { findClassAssetReferences, replaceClassAssetReferences } from "./class-asset-refs";
+import { replaceClassAssetReferences } from "./class-asset-refs";
 import { dataAssetDependencies, dataGraphAssetDependencies } from "./data-asset-refs";
 import { remapImportResultGuids } from "./importers/guid-remap";
 import type { ImportResult } from "./importers/types";
@@ -205,7 +205,6 @@ describe("Data Definition and owned entry reference lifecycle", () => {
     } }] });
     expect(cleared.value.entries[0]!.schema[6]).not.toHaveProperty("typeClassId");
     const hero = { guid: "hero", classId: "Hero" };
-    expect(findClassAssetReferences(source, [hero])).toEqual(["hero"]);
     const replaced = replaceClassAssetReferences(source, [{ ...hero, replacement: { guid: "npc", classId: "NPC" } }]);
     expect(replaced.value.entries[0]).toMatchObject({ id: "texture", parentId: null, name: "hero", values: { Spawn: "NPC", ClassText: "Hero", ClassGuidText: "hero" } });
     expect(replaced.value.entries[0]!.schema[5]!.typeClassId).toBe("NPC");

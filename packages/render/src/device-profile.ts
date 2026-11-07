@@ -1,4 +1,3 @@
-import type { ShadowMapSizeCap } from "@haptic/core";
 import { TEXTURE_BYTE_CEILING } from "./perf-ceilings";
 
 type DeviceNavigator = Pick<Navigator, "userAgent" | "maxTouchPoints">;
@@ -6,23 +5,14 @@ type DeviceNavigator = Pick<Navigator, "userAgent" | "maxTouchPoints">;
 const MIB = 1024 * 1024;
 
 /** What a device class allows at most, whatever the project or quality level asks for. */
-export interface DeviceProfile {
+interface DeviceProfile {
   /** A phone or tablet (`isMobileGpuDevice`). */
   mobile: boolean;
-  /** Shadow map edge ceiling (`effectiveShadowSettings`'s `mapSizeCap`), or null for none. */
-  shadowMapCap: ShadowMapSizeCap | null;
   /**
    * Texture cache ceiling: a quality level's, the Engine Settings' or a view's larger budget is lowered to it. With
    * the texture budget turned off in Engine Settings nothing is evicted, here too: that is the user's choice.
    */
   textureByteCeiling: number;
-  /** Distinct rect area light emission textures the light block holds at once (5.3 MiB each). */
-  areaEmissionLayers: number;
-  /**
-   * The most lights of each type the light block draws at once (at most `HAPTIC_LIGHT_MAXIMUM`): every
-   * lit pixel loops over the lights in use. Lights past it are ranked out as the Local Light Budget ranks them.
-   */
-  lightMaximum: { directional: number; point: number; spot: number; rect: number };
   /** The shadow atlas edge ceiling in texels (`shadowAtlasEdge`), or null for none. */
   shadowAtlasCap: number | null;
 }
@@ -30,16 +20,13 @@ export interface DeviceProfile {
 /** Desktops and laptops. */
 const DESKTOP: DeviceProfile = {
   mobile: false,
-  shadowMapCap: null,
   textureByteCeiling: TEXTURE_BYTE_CEILING,
-  areaEmissionLayers: 4,
-  lightMaximum: { directional: 4, point: 32, spot: 16, rect: 4 },
   shadowAtlasCap: null,
 };
 
 /**
- * Phones and tablets: the desktop's shadow and light limits, so the quality level alone sizes their shadows and
- * lights. Only textures stay lower: WKWebView kills a page past its memory limit, and the texture cache is the
+ * Phones and tablets: the desktop's shadow map sizes and light limits (`HAPTIC_LIGHT_MAXIMUM`), so the quality level
+ * alone sizes their shadows and lights. Only textures stay lower: WKWebView kills a page past its memory limit, and the texture cache is the
  * largest share a scene holds. For the same reason the shadow atlas stops at 8192, every quality level's own edge:
  * a Custom 8192 Directional Map Size's 16384 atlas (1 GiB) falls back to 4096 maps there.
  */
@@ -60,9 +47,17 @@ export function isMobileGpuDevice(nav: DeviceNavigator | undefined = globalThis.
   return /iPhone|iPad|iPod|Android/i.test(agent) || (/Macintosh/.test(agent) && (nav.maxTouchPoints ?? 0) > 1);
 }
 
-/** This device's profile; the one place render code tells device classes apart. */
-export function deviceProfile(nav?: DeviceNavigator): DeviceProfile {
-  return isMobileGpuDevice(nav) ? MOBILE : DESKTOP;
+/** The navigator last profiled and its profile: a navigator's user agent and touch points do not change. */
+let profiled: { nav: DeviceNavigator; profile: DeviceProfile } | null = null;
+
+/**
+ * This device's profile; the one place render code tells device classes apart. Read many times a frame, so the
+ * user agent is classed once per navigator.
+ */
+export function deviceProfile(nav: DeviceNavigator | undefined = globalThis.navigator): DeviceProfile {
+  if (!nav) return DESKTOP;
+  if (profiled?.nav !== nav) profiled = { nav, profile: isMobileGpuDevice(nav) ? MOBILE : DESKTOP };
+  return profiled.profile;
 }
 
 /** The limit a texture budget of `requested` bytes meets on this device, for `qualityLimits`. */

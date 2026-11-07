@@ -33,10 +33,10 @@ import { featureTestGlobalParameterCollection } from "./scripting";
 import { FEATURE_TEST_TWO_D_CHARACTERS_LAYER } from "./two-d";
 
 /** Folder under `assets/FeatureTest/` for every Particle Emitter, Particle Graph and Particle System. */
-export const FEATURE_TEST_PARTICLES_FOLDER = "Particles";
+const FEATURE_TEST_PARTICLES_FOLDER = "Particles";
 
 /** Asset names, so sibling FeatureTest modules can look the assets up by path. */
-export const FEATURE_TEST_PARTICLE_NAMES = {
+const FEATURE_TEST_PARTICLE_NAMES = {
   fountainEmitter: "FT_FxFountainEmitter",
   sparksEmitter: "FT_FxSparksEmitter",
   smokeEmitter: "FT_FxSmokeEmitter",
@@ -83,7 +83,7 @@ const STRESS_GRID: ReadonlyArray<readonly [number, number]> = [
 ];
 
 /** Guid of a particle asset this module created. */
-export function featureTestParticleAssetGuid(
+function featureTestParticleAssetGuid(
   ctx: FeatureTestContext,
   type: Extract<CreatableAssetType, "ParticleEmitter" | "ParticleGraph" | "ParticleSystem">,
   name: string,

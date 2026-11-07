@@ -156,7 +156,7 @@ export class GpuBusyProbe {
 }
 
 /** A WebGL2 fence marker, submitted at once and polled without blocking (`clientWaitSync` with a zero timeout). */
-export function fenceFrameMarker(gl: FenceContext, submitted: number): FrameMarker | null {
+function fenceFrameMarker(gl: FenceContext, submitted: number): FrameMarker | null {
   const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
   if (!sync) return null;
   // Submit the fence now, so it can signal before the browser's end-of-task flush.
@@ -173,7 +173,7 @@ export function fenceFrameMarker(gl: FenceContext, submitted: number): FrameMark
 }
 
 /** A WebGPU marker: `queue.onSubmittedWorkDone`, stamped when it settles (`onSettled` then runs); never awaited. */
-export function queueFrameMarker(
+function queueFrameMarker(
   queue: { onSubmittedWorkDone(): Promise<unknown> }, submitted: number, now: () => number, onSettled?: () => void,
 ): FrameMarker {
   const marker: FrameMarker = { submitted, done: () => (marker.settledAt === undefined ? false : true), dispose: () => {} };

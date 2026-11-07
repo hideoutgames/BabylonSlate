@@ -1,7 +1,7 @@
 import type { CommandMessage } from "./channels";
 
 /** Worker/runtime commands the Play/player Babylon handle must apply. */
-export const PLAY_ENGINE_COMMAND_TYPES = [
+const PLAY_ENGINE_COMMAND_TYPES = [
   "assignMesh",
   "setPainter2D",
   "setUIControl2D",
@@ -10,6 +10,8 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "setComponentTransforms",
   "dynamicMeshUpdate",
   "setAreaLights",
+  "setLights2D",
+  "setOccluders2D",
   "setActorOutlines",
   "setActorDeformers",
   "setFogVolumes",
@@ -79,6 +81,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "sceneLayerPostProcess",
   "scenePostProcess",
   "sceneLayerCamera",
+  "sceneCamera",
 ] as const satisfies readonly CommandMessage["type"][];
 
 export type PlayEngineCommandType = (typeof PLAY_ENGINE_COMMAND_TYPES)[number];

@@ -95,14 +95,6 @@ export const SHADOW_PROFILES = {
   ShadowProfile,
   Omit<ShadowSettings, "profile" | "preset">
 >;
-/**
- * Values earlier releases gave a level. Saved settings still labelled with that level and holding exactly these were
- * never edited, so they load as the level's current values instead of turning Custom.
- */
-const SUPERSEDED_SHADOW_PROFILES: Partial<Record<ShadowProfile, Omit<ShadowSettings, "profile" | "preset">>> = {
-  low: { ...SHADOW_PROFILE_COMMON, distance: 80, mapSize: 1024, cascades: 1, filterQuality: "low", localMapSize: 512, maxLocalLights: 1, screenShadows: "off", reflections: false },
-  medium: { ...SHADOW_PROFILE_COMMON, distance: 200, mapSize: 2048, cascades: 2, filterQuality: "medium", localMapSize: 1024, maxLocalLights: 2, screenShadows: "off", reflections: false },
-};
 export const DEFAULT_SHADOW_SETTINGS: Readonly<ShadowSettings> = {
   profile: "medium",
   ...SHADOW_PROFILES.medium,
@@ -121,7 +113,7 @@ export const SHADOW_LIMITS = {
  * is a Custom choice no quality level makes, as its cascades need a 16384 shadow atlas; a point light's six faces
  * could not take 8192 tiles there.
  */
-export const SHADOW_MAP_SIZE_MAX = { mapSize: 8192, localMapSize: 4096 } as const;
+const SHADOW_MAP_SIZE_MAX = { mapSize: 8192, localMapSize: 4096 } as const;
 export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
   if (!value || typeof value !== "object") return {};
   const source = value as Record<string, unknown>;
@@ -230,11 +222,6 @@ export function normalizeShadowSettings(value: unknown): ShadowSettings {
                 settings[key as keyof ShadowSettings] === expected,
             ),
         ) ?? "custom");
-  const saved = clean.preset;
-  const superseded = saved && saved !== "custom" && saved === settings.profile ? SUPERSEDED_SHADOW_PROFILES[saved] : undefined;
-  if (settings.preset === "custom" && superseded &&
-    Object.entries(superseded).every(([key, expected]) => settings[key as keyof ShadowSettings] === expected))
-    return { ...settings, ...SHADOW_PROFILES[saved as ShadowProfile], preset: saved };
   return settings;
 }
 export function resolveShadowSettings(
@@ -246,24 +233,13 @@ export function resolveShadowSettings(
     ...normalizeShadowOverrides(scene),
   };
 }
-/** The largest shadow map edges a device class allocates, whatever the quality level asks for. */
-export interface ShadowMapSizeCap {
-  mapSize: number;
-  localMapSize: number;
-}
 export function effectiveShadowSettings(
   requested: ShadowSettings,
   supportsCascades = true,
   mode: "pbr" | "cel" = "pbr",
-  mapSizeCap: ShadowMapSizeCap | null = null,
 ): { settings: ShadowSettings; limits: string[] } {
   const settings = { ...requested };
   const limits: string[] = [];
-  if (mapSizeCap && (settings.mapSize > mapSizeCap.mapSize || settings.localMapSize > mapSizeCap.localMapSize)) {
-    settings.mapSize = Math.min(settings.mapSize, mapSizeCap.mapSize);
-    settings.localMapSize = Math.min(settings.localMapSize, mapSizeCap.localMapSize);
-    limits.push(`shadow maps: at most ${mapSizeCap.mapSize} directional, ${mapSizeCap.localMapSize} local on this device class`);
-  }
   if (settings.localLightMode === "auto")
     settings.maxLocalLights =
       SHADOW_CAPACITY_PROFILES[settings.profile].autoLocalLights;

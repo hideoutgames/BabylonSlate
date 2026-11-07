@@ -39,7 +39,6 @@ export default function HomepageDesktopAccount({
       publishableKey={publishableKey}
       onRetry={() => setAttempt((current) => current + 1)}
       frame={DesktopAccountFrame}
-      optional
     >
       <DesktopIdentity onAuthenticated={onAuthenticated} />
     </HomepageNativeAccount>

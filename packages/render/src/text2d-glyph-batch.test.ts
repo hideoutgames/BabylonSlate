@@ -1,6 +1,6 @@
 import { Matrix, Quaternion, Vector3, VertexBuffer, type Mesh } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { unlitBinding } from "./unlit-material-blocks";
 import { writeOverlayBoxTransform } from "./overlay-transform-box";
 import { textMaterialGlyphBinding } from "./text-material-block";

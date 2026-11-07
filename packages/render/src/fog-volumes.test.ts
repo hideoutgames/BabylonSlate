@@ -44,7 +44,7 @@ it("preserves the full parent/component transform and updates moving or degenera
   upsertFogVolumes(scene, "actor", root, fogVolumeBindings([
     component("fog", [1, 0, 0], { size: [2, 4, 6] }),
   ]));
-  const volume = selectFogVolumes(scene, camera, 30)[0]!;
+  const volume = selectFogVolumes(scene, camera)[0]!;
   const localX = Vector3.TransformCoordinates(new Vector3(2 * Math.SQRT2, Math.SQRT2, 10), volume.inverseWorld);
   expect(localX.x).toBeCloseTo(1);
   expect(localX.y).toBeCloseTo(0);
@@ -55,54 +55,54 @@ it("preserves the full parent/component transform and updates moving or degenera
 
   // A second view or editor edit can request fog again within the same frame.
   parent.position.x = 1;
-  const moved = selectFogVolumes(scene, camera, 30)[0]!;
+  const moved = selectFogVolumes(scene, camera)[0]!;
   const point = Vector3.TransformCoordinates(new Vector3(1 + 2 * Math.SQRT2, Math.SQRT2, 10), moved.inverseWorld);
   expect(point.x).toBeCloseTo(1);
   expect(point.y).toBeCloseTo(0);
   root.scaling.x = 0;
-  expect(selectFogVolumes(scene, camera, 30)).toHaveLength(0);
+  expect(selectFogVolumes(scene, camera)).toHaveLength(0);
   root.scaling.x = 1;
-  expect(selectFogVolumes(scene, camera, 30)).toHaveLength(1);
+  expect(selectFogVolumes(scene, camera)).toHaveLength(1);
 });
 
-it("admits the nearest eight visible volumes and rejects disabled, invalid and distant sources", () => {
+it("admits the nearest eight visible volumes and rejects disabled, invalid and out-of-view sources", () => {
   const { scene, camera, root } = fixture();
   const components = Array.from({ length: 10 }, (_, index) => component(`fog-${10 - index}`, [0, 0, 10 - index]));
   components.push(
     component("offscreen", [100, 0, 1]),
     component("behind", [0, 0, -2]),
+    // In view, but ranked out by the nearer ten.
     component("distant", [0, 0, 90]),
+    component("past-far", [0, 0, 103]),
     component("disabled", [0, 0, 0.5], { enabled: false }),
     component("empty", [0, 0, 0.5], { density: 0 }),
     { ...component("bad-parent", [0, 0, 0.5]), parentId: "missing" },
   );
   upsertFogVolumes(scene, "actor", root, fogVolumeBindings(components));
-  expect(selectFogVolumes(scene, camera, 20).map((entry) => entry.id)).toEqual([
+  expect(selectFogVolumes(scene, camera).map((entry) => entry.id)).toEqual([
     "fog-1", "fog-2", "fog-3", "fog-4", "fog-5", "fog-6", "fog-7", "fog-8",
   ]);
   root.setEnabled(false);
-  expect(selectFogVolumes(scene, camera, 20)).toHaveLength(0);
+  expect(selectFogVolumes(scene, camera)).toHaveLength(0);
 });
 
-it.each([false, true])("keeps camera-containing and orthographic edge volumes without out-of-range crowding (right handed: %s)", (rightHanded) => {
+it.each([false, true])("ranks a camera-containing volume first and keeps volumes far beyond Volumetric Distance (right handed: %s)", (rightHanded) => {
   // Babylon captures the scene's forward axis when it constructs the camera.
   const { scene, camera, root } = fixture(rightHanded);
   camera.setTarget(Vector3.Forward());
   upsertFogVolumes(scene, "actor", root, fogVolumeBindings([
+    component("far", [0, 0, 95]),
     component("inside", [0, 0, 0], { size: [4, 4, 4], shape: "sphere" }),
     component("edge", [50, 0, 5], { shape: "sphere" }),
-    // A sliver lies within minZ + Maximum Distance, despite its center being
-    // farther away. These off-center rays must survive the eight-volume limit.
-    component("range-edge", [50, 0, 10.5]),
-    ...Array.from({ length: 8 }, (_, index) => component(`too-deep-${index}`, [0, 0, 20 + index])),
   ]));
-  expect(selectFogVolumes(scene, camera, 10).map((entry) => entry.id)).toEqual(["inside"]);
+  // The march fogs a volume up to the visible surface, so one 95 m away is still drawn.
+  expect(selectFogVolumes(scene, camera).map((entry) => entry.id)).toEqual(["inside", "far"]);
   camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
   camera.orthoLeft = -60;
   camera.orthoRight = 60;
   camera.orthoBottom = -10;
   camera.orthoTop = 10;
-  expect(selectFogVolumes(scene, camera, 10).map((entry) => entry.id)).toEqual(["inside", "edge", "range-edge"]);
+  expect(selectFogVolumes(scene, camera).map((entry) => entry.id)).toEqual(["inside", "edge", "far"]);
 });
 
 it("retains registry ownership across root replacement and releases fog demand on hide/removal/disposal", () => {
@@ -112,15 +112,15 @@ it("retains registry ownership across root replacement and releases fog demand o
   expect(hasFogVolumes(scene)).toBe(true);
   expect(sceneRenderingSettings(scene).effectsPlan?.volumetricLighting).toMatchObject({ density: 0 });
   setFogVolumesVisible(scene, "actor", false);
-  expect(selectFogVolumes(scene, camera, 20)).toHaveLength(0);
+  expect(selectFogVolumes(scene, camera)).toHaveLength(0);
   expect(hasFogVolumes(scene)).toBe(false);
   const replacement = new TransformNode("replacement", scene);
   upsertFogVolumes(scene, "actor", replacement, bindings);
   root.dispose();
   expect(hasFogVolumes(scene)).toBe(false);
-  expect(selectFogVolumes(scene, camera, 20)).toHaveLength(0);
+  expect(selectFogVolumes(scene, camera)).toHaveLength(0);
   setFogVolumesVisible(scene, "actor", true);
-  expect(selectFogVolumes(scene, camera, 20)).toHaveLength(1);
+  expect(selectFogVolumes(scene, camera)).toHaveLength(1);
   expect(removeFogVolumes(scene, "actor")).toBe(true);
   expect(hasFogVolumes(scene)).toBe(false);
   upsertFogVolumes(scene, "actor", replacement, bindings);
@@ -162,7 +162,7 @@ it.each(roots)("selects exactly the volumes whose corners are in the frustum, fo
   const verdicts = new Set<boolean>();
   for (const position of frustumLattice()) {
     upsertFogVolumes(scene, "actor", root, fogVolumeBindings([component("fog", position, { size: [2, 2, 2] })]));
-    const selected = selectFogVolumes(scene, camera, 1e6).length === 1;
+    const selected = selectFogVolumes(scene, camera).length === 1;
     const expected = insideFrustum(camera, root, position, 1);
     expect(selected, `position ${position.join(",")}`).toBe(expected);
     verdicts.add(expected);
@@ -170,16 +170,16 @@ it.each(roots)("selects exactly the volumes whose corners are in the frustum, fo
   expect([...verdicts].sort()).toEqual([false, true]);
 });
 
-it("selects exactly the volumes in an orthographic view that also overlap its depth range", () => {
+it("selects exactly the volumes in an orthographic view between its near and far planes", () => {
   const { scene, camera, root } = fixture();
   camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
   camera.orthoLeft = -10; camera.orthoRight = 10; camera.orthoBottom = -10; camera.orthoTop = 10;
-  const maxDistance = 50;
   const verdicts = new Set<boolean>();
   for (const [x, y, z] of frustumLattice().map(([px, py, pz]) => [px / 4, py / 4, pz] as [number, number, number])) {
     upsertFogVolumes(scene, "actor", root, fogVolumeBindings([component("fog", [x, y, z], { size: [2, 2, 2] })]));
-    const selected = selectFogVolumes(scene, camera, maxDistance).length === 1;
-    const expected = insideFrustum(camera, root, [x, y, z], 1) && z + 1 > camera.minZ && z - 1 < camera.minZ + maxDistance;
+    const selected = selectFogVolumes(scene, camera).length === 1;
+    // The orthographic frustum's near and far planes are the march's depth range.
+    const expected = insideFrustum(camera, root, [x, y, z], 1);
     expect(selected, `position ${[x, y, z].join(",")}`).toBe(expected);
     verdicts.add(expected);
   }
@@ -191,13 +191,13 @@ it("settles volumes clear of the frustum or wholly inside it without the corner 
   const cornerTest = vi.spyOn(BoundingBox.prototype, "isInFrustum");
   const offscreen = Array.from({ length: 40 }, (_, index) => component(`away-${index}`, [1000 + index, 0, 20]));
   upsertFogVolumes(scene, "actor", root, fogVolumeBindings(offscreen));
-  expect(selectFogVolumes(scene, camera, 1e6)).toHaveLength(0);
+  expect(selectFogVolumes(scene, camera)).toHaveLength(0);
   expect(cornerTest).not.toHaveBeenCalled();
   upsertFogVolumes(scene, "actor", root, fogVolumeBindings([component("centre", [0, 0, 20])]));
-  expect(selectFogVolumes(scene, camera, 1e6).map((entry) => entry.id)).toEqual(["centre"]);
+  expect(selectFogVolumes(scene, camera).map((entry) => entry.id)).toEqual(["centre"]);
   expect(cornerTest).not.toHaveBeenCalled();
   // At depth 20 the right side plane is near x = 8.46, so this volume crosses it.
   upsertFogVolumes(scene, "actor", root, fogVolumeBindings([component("edge", [8.4, 0, 20], { size: [2, 2, 2] })]));
-  expect(selectFogVolumes(scene, camera, 1e6).map((entry) => entry.id)).toEqual(["edge"]);
+  expect(selectFogVolumes(scene, camera).map((entry) => entry.id)).toEqual(["edge"]);
   expect(cornerTest).toHaveBeenCalledTimes(1);
 });

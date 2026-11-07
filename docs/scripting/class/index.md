@@ -524,10 +524,9 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Attach Actor](attach-actor.md) | Makes an actor a child of another actor so it follows its parent. |
 | [Attach To Bone](attach-to-bone.md) | Attaches an actor to a named bone of another actor's model so it follows that bone. |
-| [Deferred Spawn Actor](deferred-spawn-actor.md) | Creates a new actor from a Class without starting it, so you can set it up before its **Event Begin Play** runs. |
 | [Destroy Actor](destroy-actor.md) | Removes an actor, and all of its components, from the game. |
 | [Detach Actor](detach-actor.md) | Removes an actor's parent so it no longer follows another actor. |
-| [Finish Deferred Spawn Actor](finish-deferred-spawn-actor.md) | Puts an actor created by **Deferred Spawn Actor** into the game, running its **Event Begin Play**. |
+| [Finish Deferred Spawn Actor](finish-deferred-spawn-actor.md) | Puts an actor created by **Spawn Actor Deferred (Async)** or **Spawn Actor Deferred (Blocking)** into the game, running its **Event Begin Play**. |
 | [Get Actor Name](get-actor-name.md) | Returns the name of an actor as text. |
 | [Get Actor Of Class](get-actor-of-class.md) | Returns one actor of a Class, or an empty reference when none exists. |
 | [Get All Actors Of Class](get-all-actors-of-class.md) | Returns every actor in the game that is an instance of a Class. |
@@ -536,7 +535,10 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Self](get-self.md) | Returns a reference to the actor that is running this graph. |
 | [Is Valid](is-valid.md) | Returns true when an object reference points to an object, and false when it is empty. |
 | [Set Owner](set-owner.md) | Records an actor as the owner of another actor, without attaching or moving it. |
-| [Spawn Actor](spawn-actor.md) | Creates a new actor from a Class and returns a reference to it. |
+| [Spawn Actor (Async)](spawn-actor-async.md) | Creates a new actor from a Class and returns a reference to it, while the game keeps running. |
+| [Spawn Actor (Blocking)](spawn-actor-blocking.md) | Creates a new actor from a Class and returns a reference to it, pausing the game until it exists. |
+| [Spawn Actor Deferred (Async)](spawn-actor-deferred-async.md) | Creates a new actor from a Class without starting it, so you can set it up before its **Event Begin Play** runs. The game keeps running while the Class loads. |
+| [Spawn Actor Deferred (Blocking)](spawn-actor-deferred-blocking.md) | Creates a new actor from a Class without starting it, so you can set it up before its **Event Begin Play** runs. The game pauses until the actor exists. |
 
 ## Object
 
@@ -562,6 +564,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Get Field Of View](get-field-of-view.md) | Returns a camera's field of view in degrees. |
 | [Get Orthographic Size](get-orthographic-size.md) | Returns half the height of an orthographic camera's view, in world units. |
+| [Get Scene Camera Manager](get-scene-camera-manager.md) | Returns the Scene Camera Manager, which reports what the Scene's view looks through. |
 | [Possess Camera](possess-camera.md) | Makes the camera on an actor the view the player sees. |
 | [Set Field Of View](set-field-of-view.md) | Sets a camera's field of view in degrees. |
 | [Set Orthographic Size](set-orthographic-size.md) | Sets half the height of an orthographic camera's view, in world units. |
@@ -694,18 +697,11 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
-| [Add Scene Layer Camera Offset](add-scene-layer-camera-offset.md) | Moves a Scene Layer's camera by an amount from where it is now. |
 | [Clear Scene Layer](clear-scene-layer.md) | Removes every Scene Layer and all of their actors. |
 | [Create Scene Layer](create-scene-layer.md) | Creates a Scene Layer from an asset and waits until it is ready. |
 | [Get Owning Scene Layer](get-owning-scene-layer.md) | Returns the Scene Layer an actor belongs to. |
-| [Get Scene Layer Camera Location](get-scene-layer-camera-location.md) | Returns the point of a Scene Layer at the centre of its camera's view. |
-| [Get Scene Layer Camera Rotation](get-scene-layer-camera-rotation.md) | Returns the angle of a Scene Layer's camera, in degrees. |
-| [Get Scene Layer Camera Zoom](get-scene-layer-camera-zoom.md) | Returns the zoom of a Scene Layer's camera. |
 | [Register Scene Layer Post-Processing](register-scene-layer-post-processing.md) | Adds a post-process Material to the effects applied to a Scene Layer and returns the new pass's Material Object. |
 | [Remove Scene Layer](remove-scene-layer.md) | Removes a Scene Layer and all of its actors. |
-| [Set Scene Layer Camera Location](set-scene-layer-camera-location.md) | Moves a Scene Layer's camera so the view is centred on a point of the layer. |
-| [Set Scene Layer Camera Rotation](set-scene-layer-camera-rotation.md) | Turns a Scene Layer's camera around the centre of its view. |
-| [Set Scene Layer Camera Zoom](set-scene-layer-camera-zoom.md) | Zooms a Scene Layer's camera in or out around the centre of its view. |
 | [Unregister Scene Layer Post-Processing](unregister-scene-layer-post-processing.md) | Removes a post-process Material from the effects applied to a Scene Layer. |
 
 ## Render
@@ -811,6 +807,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | Node | Description |
 | --- | --- |
 | [Delay](delay.md) | Waits for a number of seconds, then continues. |
+| [Delay One Tick](delay-one-tick.md) | Waits until the next tick, then continues. |
+| [Retriggerable Delay](retriggerable-delay.md) | Waits for a number of seconds after its latest call, then continues once. |
 
 ## Tween
 
@@ -830,12 +828,12 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Tween Component Transform](tween-component-transform.md) | Moves, rotates and scales a component from Transform A to Transform B together. |
 | [Tween Float](tween-float.md) | Animates a Float variable from A to B over Duration seconds. |
 | [Tween Integer](tween-integer.md) | Animates an Integer variable from A to B in whole-number steps. |
+| [Tween Layer Camera Location](tween-layer-camera-location.md) | Pans a Layer Camera from location A to location B over Duration seconds. |
+| [Tween Layer Camera Rotation](tween-layer-camera-rotation.md) | Turns a Layer Camera from angle A to angle B over Duration seconds. |
+| [Tween Layer Camera Zoom](tween-layer-camera-zoom.md) | Zooms a Layer Camera from A to B over Duration seconds. |
 | [Tween Layout Size](tween-layout-size.md) | Resizes a 2D layout component from size A to size B over Duration seconds. |
 | [Tween Quaternion](tween-quaternion.md) | Animates a Quaternion variable from A to B along the shortest rotation. |
 | [Tween Rotator](tween-rotator.md) | Animates a Rotator variable from A to B by blending pitch, yaw and roll. |
-| [Tween Scene Layer Camera Location](tween-scene-layer-camera-location.md) | Pans a Scene Layer's camera from location A to location B over Duration seconds. |
-| [Tween Scene Layer Camera Rotation](tween-scene-layer-camera-rotation.md) | Turns a Scene Layer's camera from angle A to angle B over Duration seconds. |
-| [Tween Scene Layer Camera Zoom](tween-scene-layer-camera-zoom.md) | Zooms a Scene Layer's camera from A to B over Duration seconds. |
 | [Tween Scroll Offset](tween-scroll-offset.md) | Scrolls a 2D Scroll Box from offset A to offset B over Duration seconds. |
 | [Tween Text Color](tween-text-color.md) | Blends the text colour of a 2D text component from A to B over Duration seconds. |
 | [Tween Text Font Size](tween-text-font-size.md) | Changes the font size of a 2D text component from A to B over Duration seconds. |

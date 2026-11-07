@@ -51,7 +51,7 @@ for (const mode of ["Play"] as const) {
     files.set("assets/Controls.scenelayer.hasset", await encodeAssetDocument({ guid: layerGuid, type: "SceneLayer", name: "Controls",
       version: versions.currentVersion("SceneLayer"), payload: layer as unknown as Record<string, unknown> }));
     const scene = createDefaultScene();
-    scene.actors = scene.actors.filter(actor => actor.id === scene.settings.mainCameraActorId);
+    scene.actors = scene.actors.filter(actor => actor.id === scene.settings.defaultCameraActorId);
     scene.settings.environmentColor = [0, 0, 0];
     scene.settings.sceneLayers = [{ assetGuid: layerGuid, zOrder: 0, enabled: true }];
     files.set(MAIN_SCENE_FILE, await encodeAssetDocument({ guid: "00000000-0000-4000-8000-000000000001", type: "Scene", name: "Main",

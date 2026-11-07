@@ -38,6 +38,15 @@ export interface NativeClerkChallenge {
   emailAddressId?: string;
 }
 
+/** A sign-in started with a social provider, waiting for the browser to return. */
+export interface NativeClerkOAuth {
+  signInId: string;
+  /** The provider page to open in the system browser. */
+  url: string;
+  /** Where Clerk sends the browser back, with the rotating token nonce. */
+  redirectUrl: string;
+}
+
 const messages: Record<string, string> = {
   configuration_error:
     "Account sign-in configuration is unavailable in this build.",
@@ -68,6 +77,11 @@ const messages: Record<string, string> = {
     "For your security, sign out and sign in again, then try once more.",
   reverification_unavailable:
     "This account cannot be verified with an email code in the app. Sign in on the web to delete it.",
+  oauth_access_denied: "You did not grant access to your account.",
+  oauth_callback_failed:
+    "Sign-in with that account could not be completed. Please try again.",
+  oauth_sign_up_incomplete:
+    "That account is missing details this app cannot collect yet. Use your email instead.",
   name_required: "Enter the missing name and try again.",
   first_name_too_long: "That first name is too long.",
   last_name_too_long: "That last name is too long.",
@@ -76,6 +90,13 @@ const messages: Record<string, string> = {
     "That picture type is not supported. Choose a JPG, PNG, GIF or WEBP image.",
   avatar_file_unreadable: "That picture could not be read. Choose another file.",
 };
+
+/** Callback codes that only say the sign-in continues as a sign-up, or the reverse. */
+const OAUTH_CONTINUATIONS = new Set([
+  "external_account_not_found",
+  "external_account_exists",
+]);
+const OAUTH_STRATEGY = /^oauth_[a-z0-9_]{1,64}$/;
 
 /** Frontend API codes for rejected names; sign-in forms have no name fields to fix. */
 const NAME_ERRORS: Record<string, string> = {
@@ -221,6 +242,10 @@ export class NativeClerkClient {
     errors?: Record<string, string>;
     /** Drops the client token on success instead of keeping the rotated one. */
     endsSession?: boolean;
+    /** Extra query parameters, such as the OAuth `rotating_token_nonce`. */
+    query?: Record<string, string>;
+    /** Returns the whole payload, for endpoints (`/environment`) without a `response` envelope. */
+    raw?: boolean;
   }): Promise<Record<string, unknown>> {
     const { path, body, upload, failure = "authentication_failed" } = options;
     const method = options.method ?? (body || upload ? "POST" : "GET");
@@ -234,6 +259,8 @@ export class NativeClerkClient {
         url.searchParams.set("_method", method);
       if (options.sessionId)
         url.searchParams.set("_clerk_session_id", options.sessionId);
+      for (const [name, value] of Object.entries(options.query ?? {}))
+        url.searchParams.set(name, value);
       let response;
       try {
         response = await this.http({
@@ -288,7 +315,7 @@ export class NativeClerkClient {
         );
       }
       if (options.endsSession) await this.saveToken(null);
-      return record(payload.response);
+      return record(options.raw ? payload : payload.response);
     });
     this.requests = operation.catch(() => undefined);
     return operation;
@@ -317,6 +344,114 @@ export class NativeClerkClient {
     }
   }
 
+  /** Sign-in attempts need a client; the first request creates one and its token. */
+  private async ensureClient(): Promise<void> {
+    if (await this.storedToken()) return;
+    await this.request("", {});
+    if (!(await this.storedToken()))
+      throw new NativeClerkError("authentication_failed");
+  }
+
+  /** The social strategies (`oauth_github`, …) Clerk enables for signing in. */
+  async socialStrategies(): Promise<string[]> {
+    const environment = await this.fapi({ path: "/environment", raw: true });
+    const social = record(record(environment.user_settings).social);
+    return Object.values(social)
+      .map(record)
+      .filter(
+        (entry) =>
+          entry.enabled === true &&
+          entry.authenticatable === true &&
+          typeof entry.strategy === "string" &&
+          OAUTH_STRATEGY.test(entry.strategy),
+      )
+      .map((entry) => entry.strategy as string)
+      .sort();
+  }
+
+  /** Starts a social sign-in; open `url` in the system browser next. */
+  async beginOAuth(
+    strategy: string,
+    redirectUrl: string,
+  ): Promise<NativeClerkOAuth> {
+    if (!OAUTH_STRATEGY.test(strategy))
+      throw new NativeClerkError("authentication_failed");
+    await this.ensureClient();
+    const attempt = await this.request("/sign_ins", {
+      strategy,
+      redirect_url: redirectUrl,
+    });
+    const url = record(attempt.first_factor_verification)
+      .external_verification_redirect_url;
+    if (typeof url !== "string" || !url.startsWith("https://"))
+      throw new NativeClerkError("oauth_callback_failed");
+    return { signInId: resourceId(attempt.id), url, redirectUrl };
+  }
+
+  /**
+   * Finishes a social sign-in from the browser's redirect. A first-time
+   * account comes back transferable and becomes a sign-up, as in Clerk's SDKs.
+   */
+  async completeOAuth(
+    oauth: NativeClerkOAuth,
+    callbackUrl: string,
+  ): Promise<NativeClerkSession> {
+    let callback: URL;
+    let expected: URL;
+    try {
+      callback = new URL(callbackUrl);
+      expected = new URL(oauth.redirectUrl);
+    } catch {
+      throw new NativeClerkError("oauth_callback_failed");
+    }
+    if (
+      callback.protocol !== expected.protocol ||
+      callback.host !== expected.host
+    )
+      throw new NativeClerkError("oauth_callback_failed");
+    const params = callback.searchParams;
+    const errorCode = params.get("__clerk_error_code") ?? "oauth_callback_failed";
+    if (
+      params.get("__clerk_status") === "failed" &&
+      !OAUTH_CONTINUATIONS.has(errorCode)
+    )
+      throw new NativeClerkError(
+        errorCode === "oauth_access_denied" ? errorCode : "oauth_callback_failed",
+      );
+    const nonce = params.get("rotating_token_nonce");
+    const attempt = await this.fapi({
+      path: `/client/sign_ins/${resourceId(oauth.signInId)}`,
+      ...(nonce ? { query: { rotating_token_nonce: nonce } } : {}),
+    });
+    let createdSessionId: unknown;
+    if (attempt.status === "complete") {
+      createdSessionId = attempt.created_session_id;
+    } else if (
+      record(attempt.first_factor_verification).status === "transferable"
+    ) {
+      const signUp = await this.request("/sign_ups", { transfer: "true" });
+      if (signUp.status !== "complete")
+        throw new NativeClerkError(
+          signUp.status === "missing_requirements"
+            ? "oauth_sign_up_incomplete"
+            : "additional_verification_required",
+        );
+      createdSessionId = signUp.created_session_id;
+    } else {
+      throw new NativeClerkError(
+        attempt.status === "needs_second_factor"
+          ? "additional_verification_required"
+          : "oauth_callback_failed",
+      );
+    }
+    const session = activeSession(
+      await this.request(""),
+      resourceId(createdSessionId),
+    );
+    if (!session) throw new NativeClerkError("session_unavailable");
+    return session;
+  }
+
   async beginEmail(
     email: string,
     kind: NativeClerkChallenge["kind"],
@@ -324,11 +459,7 @@ export class NativeClerkClient {
     const address = email.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address))
       throw new NativeClerkError("invalid_email");
-    if (!(await this.storedToken())) {
-      await this.request("", {});
-      if (!(await this.storedToken()))
-        throw new NativeClerkError("authentication_failed");
-    }
+    await this.ensureClient();
     const attempt = await this.request(
       kind === "sign-in" ? "/sign_ins" : "/sign_ups",
       kind === "sign-in" ? { identifier: address } : { email_address: address },

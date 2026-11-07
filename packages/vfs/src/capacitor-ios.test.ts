@@ -51,6 +51,10 @@ const fileExportPlugin = readFileSync(
   join(repoRoot, "apps/editor/ios/App/App/BabylonSlateFileExportPlugin.swift"),
   "utf8",
 );
+const authSessionPlugin = readFileSync(
+  join(repoRoot, "apps/editor/ios/App/App/BabylonSlateAuthSessionPlugin.swift"),
+  "utf8",
+);
 
 const skippedDirectories = new Set([
   "public",
@@ -192,6 +196,11 @@ describe("Capacitor 8 iOS host", () => {
     expect(iosSyncScript).toMatch(
       /packageClassList\.add\("BabylonSlateFileExportPlugin"\)/,
     );
+    expect(iosSyncScript).toMatch(
+      /packageClassList\.add\("BabylonSlateAuthSessionPlugin"\)/,
+    );
+    expect(authSessionPlugin).toContain("ASWebAuthenticationSession");
+    expect(authSessionPlugin).toContain('jsName = "BabylonSlateAuthSession"');
     expect(audioLifecyclePlugin).toContain("AVAudioSession");
     expect(audioLifecyclePlugin).toContain("interruptionNotification");
     expect(audioLifecyclePlugin).toContain("routeChangeNotification");
@@ -223,6 +232,10 @@ describe("Capacitor 8 iOS host", () => {
     expect(pbxproj).toMatch(/BabylonSlateFileExportPlugin\.swift in Sources/);
     expect(pbxproj).toMatch(
       /BabylonSlateFileExportPlugin\.swift \*\/ = \{isa = PBXFileReference/,
+    );
+    expect(pbxproj).toMatch(/BabylonSlateAuthSessionPlugin\.swift in Sources/);
+    expect(pbxproj).toMatch(
+      /BabylonSlateAuthSessionPlugin\.swift \*\/ = \{isa = PBXFileReference/,
     );
     expect(pbxproj).not.toContain("CODE_SIGN_IDENTITY");
 

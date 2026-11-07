@@ -1823,15 +1823,6 @@ svg.homepage-profile-menu-avatar {
   color: var(--muted-foreground);
   font-size: 13px;
 }
-.homepage-native-auth-icon {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
-}
 .homepage-native-auth-form {
   display: flex;
   flex-direction: column;
@@ -1860,6 +1851,34 @@ svg.homepage-profile-menu-avatar {
 }
 .homepage-native-auth-actions[data-layout="split"] {
   justify-content: space-between;
+}
+/* Social sign-in: one row of provider buttons above the email form. */
+.homepage-native-auth-providers {
+  display: flex;
+  gap: 8px;
+}
+.homepage-native-auth-providers [data-slot="button"] {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.homepage-native-auth-providers [data-slot="button"] svg {
+  width: 14px;
+  height: 14px;
+}
+.homepage-native-auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -4px 0;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.homepage-native-auth-divider::before,
+.homepage-native-auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
 }
 /* "Secured by Clerk": a darker footer band across the bottom of the sheet or
    dialog, set apart from the form. The lock's base sits on the text baseline. */

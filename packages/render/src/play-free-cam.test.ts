@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { UniversalCamera, Vector3 } from "@babylonjs/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import {
   PLAY_FREE_CAM_NAME,
   applyPlayFreeCamCommand,

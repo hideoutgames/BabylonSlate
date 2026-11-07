@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createGl, createGpu, releaseCache } = vi.hoisted(() => ({
+const { createGl, createGpu, loadWebGpu, releaseCache } = vi.hoisted(() => ({
   createGl: vi.fn(),
   createGpu: vi.fn(),
+  loadWebGpu: vi.fn(),
   releaseCache: vi.fn(),
 }));
 vi.mock("./create-engine", () => ({ createAppEngine: createGl }));
-vi.mock("./webgpu-engine", () => ({ createAppWebGpuEngine: createGpu }));
+// The on-demand WebGPU code (a separate chunk in the player) is the boundary: loading it is a fetch.
+vi.mock("./webgpu-on-demand", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./webgpu-on-demand")>(),
+  loadWebGpuEngineModule: loadWebGpu,
+}));
 vi.mock("./resource-cache", () => ({ releaseResourceCacheForEngine: releaseCache }));
 import { createBackendEngineSession } from "./backend-engine-session";
 import { directViewPresentationAllowed } from "./direct-view-presentation";
@@ -24,6 +29,7 @@ describe("backend Engine session", () => {
     };
     createGl.mockReturnValue(engine);
     createGpu.mockResolvedValue(engine);
+    loadWebGpu.mockResolvedValue({ createAppWebGpuEngine: createGpu, whenWebGpuDeviceLost: () => null });
     return {
       engine, canvases, released,
       options: {
@@ -58,6 +64,33 @@ describe("backend Engine session", () => {
     expect(h.engine.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it("loads the WebGPU code only for a WebGPU attempt", async () => {
+    const h = host();
+    for (const requestedBackend of ["webgl2", "auto"] as const) {
+      const session = await createBackendEngineSession({ ...h.options, requestedBackend });
+      expect(session.effectiveBackend).toBe("webgl2");
+      session.dispose();
+    }
+    expect(loadWebGpu).not.toHaveBeenCalled();
+    const session = await createBackendEngineSession(h.options);
+    expect(session.effectiveBackend).toBe("webgpu");
+    expect(loadWebGpu).toHaveBeenCalledTimes(1);
+    session.dispose();
+  });
+
+  it("falls back to WebGL2 on a fresh canvas when the WebGPU code fails to load", async () => {
+    const h = host();
+    loadWebGpu.mockRejectedValue(new Error("Failed to fetch dynamically imported module"));
+    const session = await createBackendEngineSession(h.options);
+    expect(createGpu).not.toHaveBeenCalled();
+    expect(session.requestedBackend).toBe("webgpu");
+    expect(session.effectiveBackend).toBe("webgl2");
+    expect(session.fallbackReason).toBe("WebGPU initialization failed: Failed to fetch dynamically imported module Using WebGL2.");
+    expect(h.canvases).toHaveLength(2);
+    expect(h.released).toEqual([h.canvases[0]]);
+    session.dispose();
+  });
+
   it("lets views present directly only on a session that asks for it, so the player's views keep receiving copies", async () => {
     const player = host();
     const copying = await createBackendEngineSession(player.options);
@@ -69,12 +102,14 @@ describe("backend Engine session", () => {
   it("disposes a superseded completion and never starts fallback after cancellation", async () => {
     const h = host();
     const controller = new AbortController();
+    // The WebGPU code loads before the Engine starts, so the abort lands after this call returns its promise.
+    const closed = new Error("Project closed");
     createGpu.mockImplementation(async () => {
-      controller.abort(new Error("Project closed"));
+      controller.abort(closed);
       return h.engine;
     });
     await expect(createBackendEngineSession({ ...h.options, signal: controller.signal }))
-      .rejects.toBe(controller.signal.reason);
+      .rejects.toBe(closed);
     expect(createGl).not.toHaveBeenCalled();
     expect(h.engine.isDisposed).toBe(true);
     expect(h.released).toEqual(h.canvases);
@@ -113,8 +148,9 @@ describe("backend Engine session", () => {
     const controller = new AbortController();
     const disposeFailure = new Error("Device release failed");
     const canvasFailure = new Error("Canvas release failed");
+    const superseded = new Error("Superseded");
     createGpu.mockImplementation(async () => {
-      controller.abort(new Error("Superseded"));
+      controller.abort(superseded);
       return h.engine;
     });
     h.engine.dispose.mockImplementation(() => { throw disposeFailure; });
@@ -122,7 +158,7 @@ describe("backend Engine session", () => {
       ...h.options, signal: controller.signal,
       releaseCanvas: () => { throw canvasFailure; },
     });
-    await expect(operation).rejects.toMatchObject({ errors: [controller.signal.reason, disposeFailure, canvasFailure] });
+    await expect(operation).rejects.toMatchObject({ errors: [superseded, disposeFailure, canvasFailure] });
     expect(createGl).not.toHaveBeenCalled();
     expect(h.canvases).toHaveLength(1);
   });

@@ -10,7 +10,7 @@ import { ThinSSRBlurPostProcess } from "@babylonjs/core/PostProcesses/thinSSRBlu
 import { ThinSSRBlurCombinerPostProcess } from "@babylonjs/core/PostProcesses/thinSSRBlurCombinerPostProcess";
 // The stages' vertex shader, from the shader store.
 import "@babylonjs/core/Shaders/postprocess.vertex";
-import "@babylonjs/core/ShadersWGSL/postprocess.vertex";
+// The WGSL twin registers with the WebGPU Engine's code (webgpu-registrations).
 import type { SceneEffectsPlan } from "./scene-effects";
 import {
   sceneRenderingSettings,
@@ -178,13 +178,13 @@ type VolumetricPlan = NonNullable<SceneEffectsPlan["volumetricLighting"]>;
  * Without scene density the volumetric march only fogs authored Fog Volumes: none in front of this camera leaves
  * every pixel unfogged, whatever the lights.
  */
-export function volumetricMarchIdle(
+function volumetricMarchIdle(
   scene: Scene,
   camera: Camera,
   volume: VolumetricPlan,
   localVolumes = hasFogVolumes(scene),
 ): boolean {
-  return volume.density <= 0 && (!localVolumes || selectFogVolumes(scene, camera, volume.maxDistance).length === 0);
+  return volume.density <= 0 && (!localVolumes || selectFogVolumes(scene, camera).length === 0);
 }
 
 /**
@@ -496,9 +496,10 @@ export function createSpatialStages(
           );
           // Selected as the march draws: the frame has moved the camera (inputs, animation) and drawn its shadow
           // maps by now, so the nearest lights and their maps are this frame's.
-          fillVolumetricSlots(slots, scene, camera, volume);
+          // Lights near a Fog Volume past Volumetric Distance still light it.
+          const fogReach = localVolumes ? bindFogVolumes(effect, scene, camera) : 0;
+          fillVolumetricSlots(slots, scene, camera, volume, Math.max(volume.maxDistance, fogReach));
           bindVolumetricLights(effect, scene, camera, slots, slotCount, scratch);
-          if (localVolumes) bindFogVolumes(effect, scene, camera, volume.maxDistance);
         },
       });
       const scale = Math.max(0.25, volume.resolutionScale * quality);

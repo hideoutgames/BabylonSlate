@@ -34,6 +34,7 @@ import {
 } from "@haptic/render";
 import { normalizeShadowSettings } from "@haptic/core";
 import { unlitBinding } from "../../../../packages/render/src/unlit-material-blocks";
+import { createAppWebGpuEngine as createLoadedWebGpuEngine } from "../../../../packages/render/src/webgpu-engine";
 import {
   proveWebGpuGeometrySpawn, proveWebGpuVariantSwap,
 } from "./webgpu-variant-swap-proof";
@@ -64,11 +65,14 @@ export async function runWebGpuProof() {
       const controller = new AbortController();
       const reason = new Error("Superseded during device initialization");
       const before = EngineStore.Instances.length;
-      const pending = createAppWebGpuEngine(
+      // The loaded WebGPU code, not the on-demand wrapper, whose module load would take the abort before any Engine
+      // exists: this constructs the Engine synchronously, so the abort supersedes it during device initialization.
+      const pending = createLoadedWebGpuEngine(
         pendingCanvas,
         {},
         controller.signal,
       );
+      const constructed = EngineStore.Instances.length === before + 1;
       controller.abort(reason);
       try {
         await pending;
@@ -76,6 +80,8 @@ export async function runWebGpuProof() {
       } catch (error) {
         if (error !== reason) throw error;
       }
+      if (!constructed)
+        throw new Error("Cancelled Engine was never constructed");
       cancelledEngineReleased = EngineStore.Instances.length === before;
     }
     const canvas = document.createElement("canvas");

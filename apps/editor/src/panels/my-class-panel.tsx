@@ -486,7 +486,7 @@ export function blueprintTreeNodes(
   return rows;
 }
 
-export function ClassMembersView({
+function ClassMembersView({
   graph,
   onGraphChange,
   selectedId,

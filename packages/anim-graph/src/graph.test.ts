@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   ANIM_EVENT_INITIALIZE_TYPE,
   ANIM_EVENT_UPDATE_TYPE,
-  ANIM_GRAPH_SCHEMA_VERSION,
   ANIM_RULE_ENTER_TYPE,
   ANIM_RULE_EXIT_TYPE,
+} from "./graph";
+import {
+  ANIM_GRAPH_SCHEMA_VERSION,
   ANIM_STATE_LAYOUT_GAP_X,
   clipForState,
   createDefaultAnimGraph,

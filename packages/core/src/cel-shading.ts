@@ -25,7 +25,7 @@ export interface CelShadingSettings {
 /** Missing scene keys inherit independently, including after project edits. */
 export type CelShadingOverrides = Partial<CelShadingSettings>;
 
-export const DEFAULT_CEL_SHADING_SETTINGS: Readonly<CelShadingSettings> = {
+const DEFAULT_CEL_SHADING_SETTINGS: Readonly<CelShadingSettings> = {
   shadowBands: 3,
   shadowThreshold: 0.5,
   shadowStrength: 0.65,

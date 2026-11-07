@@ -416,11 +416,15 @@ describe("Slate project browser", () => {
   });
 
   it.each([
-    ["web", "opfs", "Delete"],
-    ["ios", "documents", "Remove"],
+    ["web", "opfs", "Delete", "Delete"],
+    ["ios", "documents", "Delete", "Delete"],
+    ["android", "documents", "Delete", "Delete"],
+    ["electron", "documents", "Delete", "Delete"],
+    ["ios", "external", "Remove From List", "Remove"],
+    ["electron", "external", "Remove From List", "Remove"],
   ] as const)(
-    "confirms %s project removal before changing storage",
-    async (platform, tier, action) => {
+    "confirms %s %s project removal before changing storage",
+    async (platform, tier, item, action) => {
       getHostPlatform.mockReturnValue(platform);
       const onRemoveFromList = vi.fn(async () => {});
       renderHomepage({
@@ -430,6 +434,7 @@ describe("Slate project browser", () => {
       fireEvent.click(
         screen.getByRole("button", { name: "Project Actions for Game" }),
       );
+      expect(screen.getByTestId("homepage-project-remove").textContent).toBe(item);
       fireEvent.click(screen.getByTestId("homepage-project-remove"));
       expect(
         screen.getByTestId("homepage-remove-confirm").textContent,

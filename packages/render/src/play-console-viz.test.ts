@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Matrix, Mesh, MeshBuilder, Scene, StandardMaterial, VertexBuffer, type Material } from "@babylonjs/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import {
   applyPlayShowBounds,
   applyPlayWireframe,

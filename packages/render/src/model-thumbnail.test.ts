@@ -1,7 +1,7 @@
 import { NodeMaterial, RenderTargetTexture, type Mesh } from "@babylonjs/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTestEngine as createNullTestEngine } from "./create-null-engine";
+import { createTestEngine as createNullTestEngine } from "./test-support/test-engine";
 import { isEngineDefaultMaterial } from "./default-material";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 

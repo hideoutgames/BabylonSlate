@@ -55,17 +55,18 @@ import {
   allocationRequestKey,
   generatorPasses,
   matchesAllocationKey,
+  shadowSettingsKey,
   type EffectiveShadowBias,
   type LocalShadowLight,
   type ShadowEntry as Entry,
   type ShadowLightStatus,
 } from "./shadow-entry";
-import { deviceProfile } from "./device-profile";
 import {
   applyShadowAdmission,
   cameraDistanceSquared,
   planShadowAdmission,
   readShadowAdmissionBudget,
+  type ShadowAdmissionDecision,
 } from "./shadow-admission-plan";
 import {
   NEUTRAL_DARKNESS,
@@ -80,8 +81,8 @@ import {
 } from "./shadow-map-factory";
 import { ShadowViewMaps, type ViewShadows } from "./shadow-view-maps";
 import {
-  AtlasCascadedShadowGenerator, AtlasShadowGenerator, releaseEmptyShadowAtlas, SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasBytes,
-  shadowAtlasRenderTarget,
+  AtlasCascadedShadowGenerator, AtlasShadowGenerator, liveShadowAtlasEdge, releaseEmptyShadowAtlas, SHADOW_ATLAS_BYTES_PER_TEXEL,
+  shadowAtlasBytes, shadowAtlasRenderTarget,
 } from "./shadow-atlas";
 import { ShadowCasterVariants } from "./shadow-caster-variants";
 import { shadowMapChanges } from "./shadow-change-journal";
@@ -167,6 +168,18 @@ export class SceneShadowController {
   private selectionCamera: Camera | null = null;
   /** The effective settings the last sync admitted by. */
   private planSettings: ShadowSettings | null = null;
+  /**
+   * What `planSettings` were derived from (`effectiveSettings`): the requested settings, which a change replaces, the
+   * Engine's cascade support and the render mode. The same inputs keep the same settings object.
+   */
+  private effectiveFrom: { requested: ShadowSettings; cascades: boolean; mode: string } | null = null;
+  /** The decisions of each sync's admission plan, reused from one plan to the next. */
+  private readonly decisions: ShadowAdmissionDecision[] = [];
+  /**
+   * The Engine frame (`engine.frameId`) in which a sync released the atlas for one of another edge, or -1: no map is
+   * built until a later frame, so the old and the resized atlas never live in the same frame.
+   */
+  private atlasReleasedFrame = -1;
   /** Per-map closures read their current owner; a local map can move between lights. */
   private readonly slots = new WeakMap<ShadowGenerator, ShadowMapSlot>();
   private readonly refresh = new ShadowMapRefresh((mesh) =>
@@ -396,6 +409,13 @@ export class SceneShadowController {
     return this.views.holdsMaps(camera);
   }
   /**
+   * Whether this Engine frame is the one a sync freed the atlas in for one of another edge: every planned map waits
+   * `budget-limited` for `shadow atlas resizing`, and none exists until a later frame builds the new atlas.
+   */
+  atlasResizing(): boolean {
+    return this.atlasReleasedFrame === this.scene.getEngine().frameId;
+  }
+  /**
    * Applies the scene view's refresh policy to `camera`'s own sun maps (a planar reflection's, drawn by `drawViewMaps`
    * outside any frame graph): each draws again only when its fit, its light, its settings or a caster it draws changed,
    * and its passes describe where, as the scene view's maps' do, so they change no other reflection's image elsewhere.
@@ -503,6 +523,17 @@ export class SceneShadowController {
     // The atlas whole; its tiles hold none of their own.
     return { passes, bytes: shadowAtlasBytes(this.scene) };
   }
+  /**
+   * The effective settings for these inputs (`effectiveShadowSettings`): the last sync's object while they are the
+   * last sync's, so a sync's comparisons of settings find the same object and serialise nothing.
+   */
+  private effectiveSettings(requested: ShadowSettings, cascades: boolean, mode: "pbr" | "cel"): ShadowSettings {
+    const from = this.effectiveFrom;
+    if (this.planSettings && from && from.requested === requested && from.cascades === cascades && from.mode === mode)
+      return this.planSettings;
+    this.effectiveFrom = { requested, cascades, mode };
+    return effectiveShadowSettings(requested, cascades, mode).settings;
+  }
   /** Whether the Scene lists the mesh; only a mesh that has left needs the search. */
   private listed(mesh: AbstractMesh): boolean {
     return !this.departed.has(mesh) || this.scene.meshes.includes(mesh);
@@ -525,10 +556,14 @@ export class SceneShadowController {
    * "admission" leaves both to refreshShadowMaps(), which runs before every map
    * render; it still walks when it must read caster state itself (a new map or
    * a changed directional distance).
+   *
+   * Returns whether the sync changed shadow allocation or caster participation: a map built, released, moved, put on
+   * or taken off standby, a view's map built or dropped, caster flags or membership applied, or receiver defines
+   * dirtied. False means the lights, their maps and the receivers' defines are as the sync found them.
    */
-  sync(mode: "full" | "admission" = "full"): void {
+  sync(mode: "full" | "admission" = "full"): boolean {
     const scene = this.scene;
-    if (scene.isDisposed) return;
+    if (scene.isDisposed) return false;
     syncDirectionalLightPolicy(scene);
     // Babylon pushes a mesh synchronously but notifies it on a later task, and
     // a frame can render first. Removals notify synchronously, so a length
@@ -575,6 +610,7 @@ export class SceneShadowController {
     // Caster participation and receiveShadows changed material defines or map
     // membership; cached strict readiness no longer applies.
     if (hadPending) markSceneReadinessDirty(scene);
+    let changed = hadPending;
     // Without a map nothing reads caster state, so the walk waits for the first
     // allocation; kept snapshots make the late walk report only real changes.
     const holding = this.holdsGenerator();
@@ -591,12 +627,7 @@ export class SceneShadowController {
     const state = sceneRenderingSettings(scene);
     const requested = state.shadows;
     const engineSupportsCascades = scene.getEngine()._features.supportCSM;
-    const { settings } = effectiveShadowSettings(
-      requested,
-      engineSupportsCascades,
-      state.mode,
-      deviceProfile().shadowMapCap,
-    );
+    const settings = this.effectiveSettings(requested, engineSupportsCascades, state.mode);
     this.planSettings = settings;
     if (settings.enabled) this.casterVariants.follow(settings);
     else this.casterVariants.dispose();
@@ -614,7 +645,7 @@ export class SceneShadowController {
       at: selectionTime,
       budget,
       measure: (light) => cameraDistanceSquared(light, camera!),
-    });
+    }, this.decisions);
     applyShadowAdmission(plan);
     const { planned, admitted, atlasEdge } = plan;
     // CSM freezes caster bounds; retained owners refresh them every sync.
@@ -627,14 +658,15 @@ export class SceneShadowController {
           casterBounds.max,
         );
     };
-    // Only map moves and standby retention compare serialized settings.
-    let serializedSettings: string | undefined;
-    const settingsKey = () => (serializedSettings ??= JSON.stringify(settings));
+    // Only map moves and standby retention compare serialized settings, by value: a level label (Custom, then the
+    // level again) keeps every standby map.
+    const settingsKey = shadowSettingsKey(settings);
     const release = (entry: Entry) => {
       if (entry.generator) {
         entry.generator.dispose();
         markSceneReadinessDirty(scene);
         invalidateShadowReceiverHandoffs(scene);
+        changed = true;
       }
       entry.generator = null;
       entry.standby = false;
@@ -643,7 +675,9 @@ export class SceneShadowController {
     };
     // Release incompatible and retired maps before reserving/constructing their
     // replacements; old and new sets must never overlap outside this envelope.
-    // A local map that only lost camera admission stays allocated for reuse.
+    // A local map that only lost camera admission stays allocated for reuse,
+    // unless it is in an atlas of another edge: it serves no planned map there and would keep that atlas alive.
+    const heldEdge = liveShadowAtlasEdge(scene);
     const donors: Entry[] = [];
     for (const entry of this.entries.values()) {
       if (entry.status === "active" && entry.generator &&
@@ -653,16 +687,29 @@ export class SceneShadowController {
           entry.standby = false;
           entry.admittedAt = selectionTime;
           neutralUntilRendered(entry.generator);
+          changed = true;
         }
         continue;
       }
       if (entry.status !== "active" && entry.generator instanceof AtlasShadowGenerator &&
-        !entry.resetAllocation)
+        !entry.resetAllocation && entry.key?.atlasEdge === atlasEdge)
         donors.push(entry);
       else release(entry);
     }
     // The views' atlas mirrors of maps released above go too, before a replacement could need their tiles.
-    this.views.prune();
+    if (this.views.prune()) changed = true;
+    // An atlas of another edge (another quality level's, or a sun's growth coming or going) is empty now and goes in
+    // this frame; the maps planned into the new one wait `budget-limited` until a later Engine frame builds it, so the
+    // two never live in the same frame. WebGPU destroys a disposed texture only at the frame's end, and a GPU process
+    // that frees storage once the frame's commands finish would otherwise hold both.
+    const engine = scene.getEngine();
+    if (heldEdge !== 0 && heldEdge !== atlasEdge) {
+      releaseEmptyShadowAtlas(scene);
+      // An atlas a tile still holds stays, and the first new map's allocation fails on it, rather than every map
+      // waiting for it.
+      if (liveShadowAtlasEdge(scene) === 0) this.atlasReleasedFrame = engine.frameId;
+    }
+    const atlasResizing = this.atlasResizing();
     // Hand a retained map to a same-kind winner instead of constructing one.
     // Farther donors are least likely to return.
     donors.sort((a, b) => b.distanceSquared - a.distanceSquared);
@@ -677,9 +724,10 @@ export class SceneShadowController {
       const [donor] = donors.splice(index, 1) as [Entry];
       const generator = donor.generator as AtlasShadowGenerator;
       generator.moveTo(entry.light as LocalShadowLight);
+      changed = true;
       // Same-kind lights exchange shader light indices, so receivers keep their
       // defines and effects. Otherwise dirty them as construction/disposal would.
-      if (JSON.stringify(donor.settings) !== settingsKey() ||
+      if (shadowSettingsKey(donor.settings) !== settingsKey ||
         !exchangeShadowReceivers(scene, donor.light, entry.light)) {
         invalidateShadowReceiverHandoffs(scene);
         donor.light._markMeshesAsLightDirty();
@@ -725,7 +773,7 @@ export class SceneShadowController {
         (entry.status !== "outside-relevant-area" &&
           entry.status !== "budget-limited" &&
           !forwardLimited) ||
-        JSON.stringify(entry.settings) !== settingsKey() ||
+        shadowSettingsKey(entry.settings) !== settingsKey ||
         pooled >= settings.maxLocalLights ||
         admitted.bytes - (admitted.exempt ?? 0) > standbyBudget
       ) {
@@ -735,6 +783,7 @@ export class SceneShadowController {
       pooled++;
       if (entry.standby) continue;
       entry.standby = true;
+      changed = true;
       entry.effectiveBias.length = 0;
       generator.setDarkness(NEUTRAL_DARKNESS);
       setAwaitingFirstDraw(generator, false);
@@ -764,6 +813,7 @@ export class SceneShadowController {
             previousSettings?.fadeFraction !== settings.fadeFraction) ||
             (directionalLight && previousSettings?.autoBias !== settings.autoBias))) {
           materialsDirty = true;
+          changed = true;
           scene.markAllMaterialsAsDirty(Material.LightDirtyFlag);
           markSceneReadinessDirty(scene);
           invalidateShadowReceiverHandoffs(scene);
@@ -771,11 +821,13 @@ export class SceneShadowController {
         maintainCascades(entry);
         continue;
       }
-      if (atlasRefused) {
+      if (atlasRefused || atlasResizing) {
         entry.status = "budget-limited";
-        entry.reason = "shadow atlas space";
+        entry.reason = atlasResizing ? "shadow atlas resizing" : "shadow atlas space";
         continue;
       }
+      // A map is built here, or its allocation fails and its status says so.
+      changed = true;
       // The first map reads caster state, bounds and spatial queries from here on.
       currentCasters();
       // Halving is bounded by the normalized 8192 maximum and 256 floor. Failed
@@ -874,10 +926,11 @@ export class SceneShadowController {
         if (castersCurrent) this.refresh.apply(entry.generator);
       }
     // Views mirror the maps admitted above, after their releases and replacements.
-    this.views.sync(settings, () => {
+    if (this.views.sync(settings, () => {
       currentCasters();
       return casterBounds;
-    }, atlasEdge);
+    }, atlasEdge)) changed = true;
+    return changed;
   }
   /** Every allocated map: the scene view's (admitted or standby) and every view's own. */
   private forEachGenerator(action: (generator: ShadowGenerator) => void): void {

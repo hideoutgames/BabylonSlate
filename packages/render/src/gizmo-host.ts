@@ -19,8 +19,6 @@ import { createOverlayTransformBox } from "./overlay-transform-box";
 import { linkedAxisScale, type ScaleVector } from "./linked-axis-scale";
 import { ownedUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
 
-export { linkedAxisScale, type ScaleVector } from "./linked-axis-scale";
-
 export type GizmoTool = "none" | "translate" | "rotate" | "scale";
 
 /**
@@ -29,7 +27,7 @@ export type GizmoTool = "none" | "translate" | "rotate" | "scale";
  */
 export type GizmoSpace = "world" | "local";
 
-export type GizmoManipulator = "trs" | "overlay-box";
+type GizmoManipulator = "trs" | "overlay-box";
 
 export interface GizmoSnapSettings {
   enabled: boolean;
@@ -38,7 +36,7 @@ export interface GizmoSnapSettings {
   scale: number;
 }
 
-export interface GizmoHostOptions {
+interface GizmoHostOptions {
   mode?: ViewportMode;
   tool?: GizmoTool;
   space?: GizmoSpace;
@@ -107,7 +105,7 @@ export interface GizmoHost {
 }
 
 /** Screen-space scale: smaller visuals; pick size lives on collider scales. */
-export const DEFAULT_GIZMO_HANDLE_SCALE = 1.8;
+const DEFAULT_GIZMO_HANDLE_SCALE = 1.8;
 
 /** Invisible pick meshes, scaled independently of the thin visual shafts. */
 export const GIZMO_COLLIDER_SCALE = 2.5;
@@ -135,7 +133,7 @@ export const GIZMO_ROTATION_COLLIDER_THICKNESS = 8;
  * drag across half the view scales by roughly 3× (larger values compound per
  * pointer event and make the handle unusable).
  */
-export const GIZMO_SCALE_SENSITIVITY = 1.5;
+const GIZMO_SCALE_SENSITIVITY = 1.5;
 
 /** Visible translate cones and scale boxes only — not shafts. */
 export const GIZMO_END_CAP_SCALE = 1.6;
@@ -143,7 +141,7 @@ export const GIZMO_END_CAP_SCALE = 1.6;
 /** Thinner than Babylon's default shaft thickness of 1. */
 export const GIZMO_SHAFT_THICKNESS = 0.45;
 
-export const GIZMO_ROTATION_TESSELLATION = 64;
+const GIZMO_ROTATION_TESSELLATION = 64;
 
 export const GIZMO_PLANAR_IDLE_ALPHA = 0.16;
 
@@ -160,9 +158,9 @@ export const GIZMO_AXIS_COLORS = {
 } as const;
 
 /** Unlit center handle for uniform scale (Babylon octahedron). */
-export const GIZMO_UNIFORM_COLOR = new Color3(0.82, 0.84, 0.88);
+const GIZMO_UNIFORM_COLOR = new Color3(0.82, 0.84, 0.88);
 
-export interface GizmoAxisEnabledFlags {
+interface GizmoAxisEnabledFlags {
   position: {
     x: boolean;
     y: boolean;
@@ -225,14 +223,14 @@ export function clampGizmoScreenScale(
 }
 
 /** World axes a translate handle moves: an axis arrow one, a plane square two. */
-export type TranslateDragAxes = { x: boolean; y: boolean; z: boolean };
+type TranslateDragAxes = { x: boolean; y: boolean; z: boolean };
 
 /**
  * Move snap is grid-absolute: each axis the handle drags lands on a multiple
  * of `step` in world space, while the other axes keep their exact start value
  * (float drift from repeated world/local conversion never snaps them).
  */
-export function snapDraggedPositionToGrid(
+function snapDraggedPositionToGrid(
   free: { x: number; y: number; z: number },
   start: { x: number; y: number; z: number },
   step: number,

@@ -66,7 +66,7 @@ describe("dynamic runtime mesh component", () => {
     const component = world.createComponent({ classId: "DynamicRuntimeMeshComponent", guid: "mesh", parentId: "offset" });
     owner.attachComponent(parent); owner.attachComponent(component); world.spawnActorNow(owner);
     const meshes = new DynamicRuntimeMeshSync({ slot: () => 0, eligible: () => true, emit: () => {} });
-    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
     const physics = new PhysicsWorldSync(backend);
     const commit = vi.spyOn(backend, "applyColliderChanges");
     const trace = (x: number, y: number) => backend.lineTrace({ x, y, z: 5 }, { x, y, z: -5 });

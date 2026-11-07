@@ -10,12 +10,11 @@ import {
 import {
   DocumentProvider,
   useDocumentActions,
-  useDocuments,
   type DocumentActions,
 } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
-import { GraphEditingProvider } from "../context/graph-editing-context";
+import { GraphEditingProvider, useGraphEditing } from "../context/graph-editing-context";
 import type { GraphDebugStore } from "../services/graph-debug-store";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { ValidationProvider } from "../context/validation-context";
@@ -29,6 +28,7 @@ import {
   installMemoryOpfs,
   unmountDocumentProvider,
 } from "../testing/real-document-provider";
+import { useDocumentStateProbe, type DocumentStateProbe } from "../testing/document-state-probe";
 import { GraphPanel } from "./graph-panel";
 
 // jsdom has no PointerEvent; the palette's Base UI checkbox dispatches one on click.
@@ -76,15 +76,23 @@ const MAIN_CLASS_ID = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
 
 const seen: {
   actions: DocumentActions | null;
-  documents: ReturnType<typeof useDocuments> | null;
+  documents: DocumentStateProbe | null;
   panelProps: IDockviewPanelProps;
   graphId: string;
-} = { actions: null, documents: null, panelProps: {} as IDockviewPanelProps, graphId: MAIN_CLASS_ID };
+  selection: { nodeIds: string[]; memberId: string | null } | null;
+} = { actions: null, documents: null, panelProps: {} as IDockviewPanelProps, graphId: MAIN_CLASS_ID, selection: null };
+
+/** Records the shared graph selection the Inspector and Class window read. */
+function GraphSelectionProbe() {
+  const { selectedNodeIds, selectedMemberId } = useGraphEditing();
+  seen.selection = { nodeIds: selectedNodeIds, memberId: selectedMemberId };
+  return null;
+}
 
 /** The Class graph panel for `seen.graphId` (Main by default), mounted once its tab is open. */
 function MainClassGraph() {
   seen.actions = useDocumentActions();
-  seen.documents = useDocuments();
+  seen.documents = useDocumentStateProbe();
   const graphId = seen.graphId;
   if (!seen.documents.openDocuments.some((doc) => doc.id === graphId)) {
     return null;
@@ -92,6 +100,7 @@ function MainClassGraph() {
   return (
     <ValidationProvider>
       <GraphEditingProvider>
+        <GraphSelectionProbe />
         <DocumentWorkspaceProvider documentId={graphId}>
           <GraphPanel {...seen.panelProps} />
         </DocumentWorkspaceProvider>
@@ -114,6 +123,7 @@ afterEach(async () => {
   seen.documents = null;
   seen.panelProps = {} as IDockviewPanelProps;
   seen.graphId = MAIN_CLASS_ID;
+  seen.selection = null;
 });
 
 describe("Graph panel", () => {
@@ -320,6 +330,43 @@ describe("Graph panel", () => {
       ),
     );
     expect(panelApi.close).toHaveBeenCalled();
+  });
+
+  it("selects its function when the empty canvas of a function tab is clicked", async () => {
+    render(
+      <DocumentProvider>
+        <MainClassGraph />
+      </DocumentProvider>,
+    );
+    await waitFor(() => expect(seen.documents?.homepageReady).toBe(true));
+    const actions = seen.actions!;
+    await act(() => actions.createEmptyProject("Empty Click", { kind: "2d" }));
+    await act(() =>
+      actions.openDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }),
+    );
+    seen.panelProps = {
+      params: { functionId: "fn-jump" },
+      api: {
+        isActive: true,
+        isVisible: true,
+        title: "Jump",
+        onDidActiveChange: () => ({ dispose: () => {} }),
+        onDidVisibilityChange: () => ({ dispose: () => {} }),
+        setTitle: () => {},
+        close: () => {},
+      },
+    } as unknown as IDockviewPanelProps;
+    await act(() =>
+      actions.applyGraphChange(
+        MAIN_CLASS_ID,
+        addClassMember(openContent<SerializedGraph>(MAIN_CLASS_ID), "function", "Jump", () => "fn-jump"),
+      ),
+    );
+    fireEvent.click(document.querySelector('[data-id="fn-jump-input"]')!);
+    await waitFor(() => expect(seen.selection).toEqual({ nodeIds: ["fn-jump-input"], memberId: null }));
+
+    fireEvent.click(document.querySelector(".react-flow__pane")!);
+    await waitFor(() => expect(seen.selection).toEqual({ nodeIds: [], memberId: "fn-jump" }));
   });
 });
 

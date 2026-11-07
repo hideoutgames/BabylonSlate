@@ -41,6 +41,7 @@ export interface PhysicsBackend {
   createBody(desc: RigidBodyDesc): void;
   destroyBody(bodyId: string): void;
   teleportBody(bodyId: string, transform: PhysicsTransform, options?: TeleportOptions): void;
+  /** Copies `transform`, so per-step callers reuse one pose for every kinematic body. */
   setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void;
   getBodyTransform(bodyId: string): PhysicsTransform | null;
   /**

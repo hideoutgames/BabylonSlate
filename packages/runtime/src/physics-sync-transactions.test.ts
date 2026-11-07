@@ -180,6 +180,35 @@ describe("atomic runtime collider publication", () => {
     } finally { sync.dispose(); }
   });
 
+  it("writes every kinematic target of a sync through one reused pose, which the backend copies", () => {
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const platform = (guid: string) => {
+      const actor = world.createActor({ classId: "Actor", guid, transform: identityTransform() });
+      actor.attachComponent(world.createComponent({
+        classId: "RigidBodyComponent", variables: { motionType: "kinematic", mass: 1, gravityScale: 0 },
+      }));
+      collider(world, actor, `${guid}-collider`, 0);
+      world.spawnActorNow(actor);
+      return actor;
+    };
+    const lift = platform("lift");
+    const door = platform("door");
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    const target = vi.spyOn(backend, "setBodyTargetTransform");
+    try {
+      sync.syncFromWorld(world);
+      lift.transform.position.x = 2;
+      door.transform.position.z = -3;
+      target.mockClear();
+      sync.syncFromWorld(world);
+      expect(target.mock.calls.map(([bodyId]) => bodyId)).toEqual(["body:lift", "body:door"]);
+      expect(target.mock.calls[1]![1]).toBe(target.mock.calls[0]![1]);
+      expect(backend.getBodyTransform("body:lift")!.position).toEqual({ x: 2, y: 0, z: 0 });
+      expect(backend.getBodyTransform("body:door")!.position).toEqual({ x: 0, y: 0, z: -3 });
+    } finally { sync.dispose(); }
+  });
+
   it.each(["3d", "2d"] as const)("keeps a kinematic body at a pose written after its pre-step target (%s native)", async (kind) => {
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const actor = world.createActor({ classId: "Actor", guid: "platform", transform: identityTransform() });
@@ -193,7 +222,7 @@ describe("atomic runtime collider publication", () => {
     }));
     world.spawnActorNow(actor);
     const sync = new PhysicsWorldSync(await createPhysicsBackend({
-      kind, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+      kind, gravity: { x: 0, y: 0, z: 0 },
     }));
     try {
       sync.step(1 / 60, world);

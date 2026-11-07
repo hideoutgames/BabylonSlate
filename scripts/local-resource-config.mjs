@@ -18,7 +18,7 @@ function invalid(path, reason) {
   );
 }
 
-export function localResourceConfigPath(env = process.env) {
+function localResourceConfigPath(env = process.env) {
   if (hostedExecution(env)) return null;
   if (env.HAPTIC_LOCAL_RESOURCE_CONFIG === "")
     throw invalid(

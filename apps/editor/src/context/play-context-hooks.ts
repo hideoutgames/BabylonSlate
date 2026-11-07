@@ -10,7 +10,15 @@ import type {
 import type { GameSessionOwner, GameSessionState } from "../services/game-session-owner";
 import type { PlaySessionResult } from "../services/play-session";
 import type { SimulationViewport } from "../services/simulation-viewport";
-import type { DocumentContextValue } from "./document-context-types";
+import type { OpenDocument } from "../services/document-service";
+import type {
+  ActiveDocumentState,
+  CompileState,
+  EditorShellState,
+  ProjectState,
+  RegistryState,
+  SaveState,
+} from "./document-context-types";
 
 // The contexts `PlayProvider` fills, the hooks that read them, and the types
 // its hooks share.
@@ -69,13 +77,24 @@ export interface PlayContextValue {
   ) => Promise<SessionReportNavigationResult>;
 }
 
-/** What a Play or Preview Build request reads when it runs: the documents and Scenes as they were at the last render. */
-export type PlayRequestInputs = {
-  documents: DocumentContextValue;
-  openPlaySceneGuid: string | null;
-  openPlaySceneDocumentId: string | null;
-  hasStartupScene: boolean;
-};
+/**
+ * What a Play or Preview Build request reads when it runs: the project, save
+ * and compile state and the open Scenes as they were at the last render.
+ * Callbacks come from `useDocumentActions()`.
+ */
+export type PlayRequestInputs = Pick<ActiveDocumentState, "activeDocumentId">
+  & Pick<ProjectState, "projectDocument">
+  & Pick<RegistryState, "assetRegistry" | "projectGuid">
+  & Pick<SaveState, "dirtyDocuments" | "projectDirty">
+  & Pick<CompileState, "graphsNeedCompile">
+  & Pick<EditorShellState, "migrationPending">
+  & {
+    /** The open Scene documents in tab order. */
+    sceneDocuments: readonly OpenDocument[];
+    openPlaySceneGuid: string | null;
+    openPlaySceneDocumentId: string | null;
+    hasStartupScene: boolean;
+  };
 
 /** The Unsaved Changes prompt a Play or Preview Build request opens before it saves. */
 export type PlayUnsavedPrompt = {

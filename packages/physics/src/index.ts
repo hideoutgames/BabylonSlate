@@ -31,11 +31,7 @@ export type {
   DebugColliderPrimitive,
   DebugColliderShape,
 } from "./debug-colliders";
-export {
-  listDebugCollidersFromRecords,
-} from "./debug-colliders";
 export { SoftwarePhysicsBackend } from "./software-backend";
-export { colliderPairResponse } from "./collision-response";
 export {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
@@ -64,7 +60,6 @@ export {
   rotateQuatVec,
   multiplyQuat,
   quatToPlanarAngle,
-  isIdentityQuat,
   type ColliderLocalTransform,
 } from "./collider-bake";
 export {
@@ -77,3 +72,4 @@ export {
 
 export { prepareColliderShape } from "./collider-validation";
 export { RagdollPhysics } from "./ragdoll";
+export { occluder2DShapes, type Occluder2DShape } from "./occluder-2d";

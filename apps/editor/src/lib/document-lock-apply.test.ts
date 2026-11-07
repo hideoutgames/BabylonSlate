@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
 import { FakeLockProvider } from "@haptic/source-control";
-import { MemorySecretStore } from "@haptic/vfs";
+import { MemorySecretStore } from "../../../../packages/vfs/src/test-support/memory-secret-store";
 import { SourceControlService } from "../services/source-control-service";
 import {
   afterMutatingApply,

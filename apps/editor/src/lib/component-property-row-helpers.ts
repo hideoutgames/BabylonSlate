@@ -1,4 +1,4 @@
-import { componentCastsShadows, defaultCastShadows, parseSkyboxFaces, type CollisionPreset, type SerializedComponent, type SkyboxFaceKey } from "@haptic/core";
+import { componentCastsShadows, defaultCastShadows, parseSkyboxFaces, parseSurfaceShadingMode, type CollisionPreset, type SerializedComponent, type SkyboxFaceKey } from "@haptic/core";
 import type { ModelMaterialSlot } from "@haptic/assets";
 import { assetRowIdentity, type ClassPickerEntry, type PropertyRow } from "@haptic/editor-kit";
 
@@ -114,6 +114,24 @@ export function unlitCastShadowsRow(actorId: string, component: SerializedCompon
     defaultValue: defaultCastShadows(component.classId),
     description: "Unlit, so it casts no shadow unless turned on.",
     onChange: (value) => update("castShadows", value),
+  };
+}
+
+/** A Sprite or Tilemap's Shading Mode: lit by 2D Lights, lit by 3D lights, or always unlit. */
+export function shadingModeRow(actorId: string, component: SerializedComponent, update: ComponentPropertyUpdate): PropertyRow {
+  return {
+    kind: "enum",
+    id: rowId(actorId, component.id, "shadingMode"),
+    label: "Shading Mode",
+    value: parseSurfaceShadingMode(component.properties.shadingMode),
+    defaultValue: "2d",
+    description: "2D is lit by 2D Lights and unlit while the Scene has none; 3D is lit by 3D lights.",
+    options: [
+      { value: "2d", label: "2D" },
+      { value: "3d", label: "3D" },
+      { value: "unlit", label: "Unlit" },
+    ],
+    onChange: (next) => update("shadingMode", next),
   };
 }
 

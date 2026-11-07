@@ -99,14 +99,13 @@ export interface EditableNameProps {
   editing?: boolean;
   onEditingChange?: (editing: boolean) => void;
   disabled?: boolean;
-  placeholder?: string;
   className?: string;
   "aria-label"?: string;
   "data-testid"?: string;
 }
 
 /** Plain text name that becomes an `InlineRenameInput` on double-click, double-tap, or F2. */
-export function EditableName({ value, onRename, editing: controlled, onEditingChange, disabled = false, placeholder = "Unnamed", className, "aria-label": label, "data-testid": testId }: EditableNameProps) {
+export function EditableName({ value, onRename, editing: controlled, onEditingChange, disabled = false, className, "aria-label": label, "data-testid": testId }: EditableNameProps) {
   const [local, setLocal] = useState(false);
   const editing = !disabled && (controlled ?? local);
   const setEditing = (next: boolean) => {
@@ -125,7 +124,7 @@ export function EditableName({ value, onRename, editing: controlled, onEditingCh
   return <><span
     ref={textRef}
     tabIndex={disabled ? undefined : 0}
-    title={disabled ? value : `${value || placeholder} · Double-click to rename`}
+    title={disabled ? value : `${value || "Unnamed"} · Double-click to rename`}
     aria-label={label ? `${label}: ${value}` : undefined}
     data-testid={testId}
     data-editable-name=""
@@ -136,5 +135,5 @@ export function EditableName({ value, onRename, editing: controlled, onEditingCh
       if (disabled || event.nativeEvent.isComposing) return;
       if (event.key === "F2" || event.key === "Enter") { event.preventDefault(); event.stopPropagation(); setEditing(true); }
     }}
-  >{value || placeholder}</span><span className="min-w-0 flex-1" aria-hidden /></>;
+  >{value || "Unnamed"}</span><span className="min-w-0 flex-1" aria-hidden /></>;
 }

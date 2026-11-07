@@ -10,7 +10,6 @@ import {
   tilemapChunkDraws,
   decodeTileGid,
   tilemapCellKey,
-  tilemapTilesetGuids,
   tilesetAnimationFrame,
   tilesetTileUv,
   type TilemapChunk,
@@ -74,7 +73,7 @@ export function createTilemapMeshes(
   scene: Scene,
   name: string,
   tilemap: TilemapPayload,
-  tilesets: TilesetPayload | ReadonlyMap<string, TilesetPayload>,
+  tilesets: ReadonlyMap<string, TilesetPayload>,
   worldTileWidth: number,
   worldTileHeight: number,
 ): Mesh {
@@ -104,20 +103,12 @@ function chunkBuilder(
   scene: Scene,
   root: Mesh,
   tilemap: TilemapPayload,
-  tilesets: TilesetPayload | ReadonlyMap<string, TilesetPayload>,
+  tilesets: ReadonlyMap<string, TilesetPayload>,
   worldTileWidth: number,
   worldTileHeight: number,
 ): (layer: TilemapLayer, ordinal: number, chunk: TilemapChunk) => Mesh[] {
   const parent = tilemapChunkParent(root);
-  const atlasMap = asTilesetMap(tilemap, tilesets);
-  const legacyTileset = !isTilesetMap(tilesets) && tilemapTilesetGuids(tilemap).length === 0
-    ? [...atlasMap.entries()][0]!
-    : null;
-  const resolveGid = (gid: number) => {
-    const hit = decodeTileGid(tilemap, gid, atlasMap);
-    if (hit) return hit;
-    return legacyTileset ? { guid: legacyTileset[0], localId: gid, tileset: legacyTileset[1] } : null;
-  };
+  const resolveGid = (gid: number) => decodeTileGid(tilemap, gid, tilesets);
   return (layer, ordinal, chunk) => {
     const sorting = { name: layer.sortingLayer, order: layer.orderInLayer, ordinal };
     const meshes: Mesh[] = [];
@@ -221,24 +212,6 @@ export function patchTilemapMeshes(
   }
   const build = chunkBuilder(scene, root, next, tilesets, worldTileWidth, worldTileHeight);
   return rebuild.flatMap(({ layer, ordinal, chunk }) => build(layer, ordinal, chunk));
-}
-
-function asTilesetMap(
-  tilemap: TilemapPayload,
-  tilesets: TilesetPayload | ReadonlyMap<string, TilesetPayload>,
-): ReadonlyMap<string, TilesetPayload> {
-  if (isTilesetMap(tilesets)) return tilesets;
-  const guid = tilemapTilesetGuids(tilemap)[0] ?? "_";
-  return new Map([[guid, tilesets]]);
-}
-
-function isTilesetMap(
-  value: TilesetPayload | ReadonlyMap<string, TilesetPayload>,
-): value is ReadonlyMap<string, TilesetPayload> {
-  return (
-    typeof (value as ReadonlyMap<string, TilesetPayload>).get === "function" &&
-    !Array.isArray((value as TilesetPayload).tiles)
-  );
 }
 
 export function worldTileSize(

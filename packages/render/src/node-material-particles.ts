@@ -5,8 +5,8 @@ import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
 import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
 // Custom effects bypass GPUParticleSystem's default effect initializer, which
-// normally imports its WGSL vertex shader before requesting compilation.
-import "@babylonjs/core/ShadersWGSL/gpuRenderParticles.vertex";
+// normally imports its WGSL vertex shader before requesting compilation; the
+// WebGPU Engine's code registers it as it loads (webgpu-registrations).
 
 type NativeParticleBinder = (
   system: IParticleSystem, blend: number,

@@ -2,7 +2,7 @@ import type { EngineSettings } from "./app-settings";
 import { isAppleMobileOperatingSystem, isMobilePlatform } from "./platform";
 
 /** iOS, iPadOS or Android, in the native app or a mobile browser. */
-export function isMobileOperatingSystem(): boolean {
+function isMobileOperatingSystem(): boolean {
   if (isMobilePlatform() || isAppleMobileOperatingSystem()) return true;
   return typeof navigator !== "undefined" && /Android/.test(navigator.userAgent ?? "");
 }

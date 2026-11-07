@@ -3,7 +3,6 @@ export {
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
   GAME_SUBSYSTEM_CLASS_ID,
-  HIDDEN_ENGINE_BASE_CLASS_IDS,
   SCENE_SUBSYSTEM_CLASS_ID,
   SUBSYSTEM_CLASS_ID,
   isHiddenEngineBaseClassId,
@@ -18,9 +17,6 @@ export {
   SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
 } from "./ids";
 export {
-  BUTTON_MOUSE_EVENTS,
-  COLLIDER_EVENTS,
-  MOVEMENT_EVENTS,
   ENGINE_CLASS_SCRIPT_APIS,
   engineEventTypeClassIds,
   engineNativeEventsFor,
@@ -33,7 +29,6 @@ export {
   type EngineScriptPin,
   type EngineScriptVariable,
 } from "./engine-script-api";
-export { UI_CONTROL_2D_SCRIPT_APIS } from "./ui-controls2d-api";
 export {
   ClassRegistry,
   MAX_CLASS_INHERITANCE_DEPTH,
@@ -62,7 +57,9 @@ export {
   type MaterialInstanceObject,
   GameInstance,
   GameSubsystem,
+  LayerCamera,
   Scene,
+  SceneCameraManager,
   SceneLayer,
   SceneLayerActorSwitcher,
   SceneStreamingActor,
@@ -77,15 +74,12 @@ export {
 } from "./objects";
 export {
   TICK_PHASES,
-  TickClock,
   type PhaseHook,
   type TickPhase,
 } from "./tick";
 export {
   compareClassIds,
-  gameSubsystemGuid,
   instantiableSubsystemClassIds,
-  sceneSubsystemGuid,
   subsystemBaseClassIdOf,
   subsystemClassIdsForGet,
   type SubsystemBaseClassId,
@@ -141,8 +135,6 @@ export {
   TIMELINE_CLASS_ID,
   TIMELINE_REFIRED_CLIP_INPUT,
   TimelineObject,
-  isTimelineClassId,
-  timelineAssetGuidOf,
   timelineClassId,
   timelineRefiredDispatcherName,
 } from "./timeline-object";

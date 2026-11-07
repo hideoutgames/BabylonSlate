@@ -1,6 +1,6 @@
 import { Animation, AnimationGroup, Bone, Matrix, Mesh, Quaternion, Skeleton, TransformNode, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";

@@ -35,7 +35,7 @@ import {
   waterVariantBase,
 } from "./material-compiler";
 
-export interface AcquiredMaterial {
+interface AcquiredMaterial {
   ok: true;
   material: NodeMaterial;
   hash: string;
@@ -44,12 +44,12 @@ export interface AcquiredMaterial {
   ready: Promise<readonly MaterialDiagnostic[]>;
 }
 
-export interface UnavailableMaterial {
+interface UnavailableMaterial {
   ok: false;
   diagnostics: MaterialDiagnostic[];
 }
 
-export type MaterialAcquireResult = AcquiredMaterial | UnavailableMaterial;
+type MaterialAcquireResult = AcquiredMaterial | UnavailableMaterial;
 
 const ownedPreparations = new WeakMap<Material, () => Promise<readonly MaterialDiagnostic[]>>();
 
@@ -72,7 +72,7 @@ export function materialAvailable(
   return result.ok === true;
 }
 
-export type MaterialAcquireOptions = {
+type MaterialAcquireOptions = {
   logicalSceneBuffers?: boolean;
   unlit?: boolean;
   instanceKey?: string;
@@ -139,7 +139,7 @@ function documentForPlan(
   return { ...doc, shadingModel: "unlit" };
 }
 
-export interface MaterialLibraryOptions {
+interface MaterialLibraryOptions {
   particlePreview?: boolean;
   /** `filter` is a Texture Sample's Filter, which a host passes on as `materialTextureSampling(filter)`. */
   acquireTexture?: (guid: string, scene: Scene, filter?: MaterialTextureFilter) => ResourceLease<Texture> | null;

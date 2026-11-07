@@ -91,7 +91,7 @@ export function createSceneRealizer(rt: RuntimeComposition): SceneRealizer {
     createActor: (serialized) => createActorFromSerialized(rt.world, serialized, rt.actors.sceneActorHooks),
     realizeActor: (actor, checkpoint) => rt.actors.realize(actor, checkpoint),
     breakParentCycles: (actors) => rt.actors.breakLoadedParentCycles(actors),
-    possessViewTarget: () => rt.camera.possessViewTarget(),
+    possessStartCamera: () => rt.camera.possessStartCamera(),
     publishSnapshot: () => rt.snapshots.publish(),
     removeActor: (actor) => rt.actors.remove(actor),
     removeSceneLayer: (layerGuid) => rt.removeSceneLayer(layerGuid),

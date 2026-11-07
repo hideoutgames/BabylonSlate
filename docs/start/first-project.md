@@ -41,7 +41,7 @@ Change the resolution later in **Project Settings > Rendering**. See [Where Proj
 - Choose **Open** to open a project folder from elsewhere. On the web, **Open** offers **Import Folder** and **Import ZIP**, which copy the project into the browser.
 - Use **Search Projects…**, **Sort** and **View** (Large Cards, Small Cards or List) to find projects.
 
-Each card has a **Project Actions** button (also a long-press or right-click on the card) with **Open**, **Edit** (name, colour and picture) and **Remove From List**. On the web this item is **Delete**, which permanently deletes the project.
+Each card has a **Project Actions** button (also a long-press or right-click on the card) with **Open**, **Edit** (name, colour and picture) and **Delete**, which permanently deletes the project. For a project in a folder you chose yourself, this item is **Remove From List** instead, and the folder stays as it is.
 
 ## Play it
 

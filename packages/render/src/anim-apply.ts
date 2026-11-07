@@ -10,7 +10,7 @@ import type { SnapshotSceneBinding } from "./snapshot-apply";
  * Gameplay animation clock lives in the worker. Render only seeks; it never
  * lets Babylon auto-advance a gameplay-relevant clip (engineplan §2.3).
  */
-export interface SeekableAnimationGroup {
+interface SeekableAnimationGroup {
   from?: number;
   pause(): void;
   reset?(): void;
@@ -65,11 +65,11 @@ export function applySpriteAnimationAssetFrame(
   setSpriteQuadSize(mesh, (frame.width ?? 100) / ppu, (frame.height ?? 100) / ppu, frame.pivot);
 }
 
-export type AnimStateCommand = Extract<CommandMessage, { type: "animState" }>;
+type AnimStateCommand = Extract<CommandMessage, { type: "animState" }>;
 
 export type AnimClipLayer = NonNullable<AnimStateCommand["layers"]>[number];
 
-export interface SpriteAnimSlot {
+interface SpriteAnimSlot {
   mesh: Mesh;
   payload: SpritePayload;
   overlayMesh?: Mesh;
@@ -119,7 +119,7 @@ export function onceMissingClip(report: (info: MissingAnimClip) => void): (info:
   };
 }
 
-export interface SceneAnimHost {
+interface SceneAnimHost {
   isPhysicsDriven?(slotId: number): boolean;
   /** The slot's own groups; clips resolve only from these, never another actor's. */
   getAnimationGroups(slotId: number): readonly NamedSeekableGroup[];

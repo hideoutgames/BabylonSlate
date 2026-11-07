@@ -19,15 +19,15 @@ import {
   sceneLayerCanvasToLayer,
   sceneLayerOrthoBounds,
   sceneLayerViewBounds,
-  walkOverlayPointerHits,
-  SCENE_LAYER_DEFAULT_CAMERA,
+  DEFAULT_LAYER_CAMERA_STATE,
   type OverlayPointerHit,
-  type SceneLayerCamera,
+  type LayerCameraState,
   type SceneLayerHitTest,
   type ScenePostProcessEntry,
   type MaterialParameterValue,
 } from "@haptic/core";
 import { installEngineDefaultMaterial } from "./default-material";
+import { setSceneDrawBatching } from "./overlay-draw-batcher";
 import { isSceneFrameReady } from "./scene-perf";
 import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
@@ -59,7 +59,7 @@ export interface SceneLayerView {
   /** The ortho extent at zoom 1: Layer Width × Height widened to the output aspect. */
   viewBounds: { width: number; height: number };
   /** The camera centre, roll and zoom scripts set; with `viewBounds` it maps the canvas into the layer (`sceneLayerCanvasToLayer`). */
-  cameraState: SceneLayerCamera;
+  cameraState: LayerCameraState;
 }
 
 export interface SceneLayerCompositorOptions {
@@ -135,6 +135,8 @@ export class SceneLayerCompositor {
     const scene = this.ownScene(new Scene(this.engine));
     configureCutoutSorting(scene);
     installEngineDefaultMaterial(scene);
+    // HUD content is many small unlit draws: batched where the output cannot change (`overlay-draw-batcher.ts`).
+    setSceneDrawBatching(scene, true);
     scene.lightsEnabled = false;
     scene.skipPointerMovePicking = false;
     scene.autoClear = false;
@@ -157,7 +159,7 @@ export class SceneLayerCompositor {
       renderer: new SceneRenderCoordinator(scene),
       designBounds: sceneLayerOrthoBounds(command.layerBounds),
       viewBounds: sceneLayerViewBounds(command.layerBounds, this.outputAspect()),
-      cameraState: { ...SCENE_LAYER_DEFAULT_CAMERA },
+      cameraState: { ...(command.camera ?? DEFAULT_LAYER_CAMERA_STATE) },
       hudPose: null,
       postProcessStack: command.postProcessStack.map((entry) => ({ ...entry })),
       rtt: null,
@@ -229,7 +231,7 @@ export class SceneLayerCompositor {
   }
 
   /** Move, turn or zoom a layer's camera (`sceneLayerCamera`); the next pick and draw use it. */
-  setCamera(layerId: string, camera: Readonly<SceneLayerCamera>): void {
+  setCamera(layerId: string, camera: Readonly<LayerCameraState>): void {
     const layer = this.byId.get(layerId);
     if (!layer) return;
     layer.cameraState = { ...camera };
@@ -581,46 +583,6 @@ export class SceneLayerCompositor {
       }
     }
     return hits;
-  }
-
-  pickAt(
-    canvasX: number,
-    canvasY: number,
-    options?: { minTargetPx?: number; canvasCssHeight?: number },
-  ): {
-    layerId: string;
-    meshName: string;
-    slotId: number | null;
-    actorGuid: string | null;
-    hitTest: SceneLayerHitTest;
-    blocked: boolean;
-    targets: OverlayPointerHit[];
-  } | null {
-    const hits = this.pickHits(canvasX, canvasY, options);
-    const walked = walkOverlayPointerHits(hits);
-    const first = walked.targets[0];
-    if (!first) {
-      return walked.blocked
-        ? {
-            layerId: "",
-            meshName: "",
-            slotId: null,
-            actorGuid: null,
-            hitTest: "block",
-            blocked: true,
-            targets: walked.targets,
-          }
-        : null;
-    }
-    return {
-      layerId: first.layerId,
-      meshName: first.actorGuid,
-      slotId: null,
-      actorGuid: first.actorGuid,
-      hitTest: first.hitTest,
-      blocked: walked.blocked,
-      targets: walked.targets,
-    };
   }
 
   dispose(): Promise<void> {

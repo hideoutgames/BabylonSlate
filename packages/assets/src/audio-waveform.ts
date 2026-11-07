@@ -1,5 +1,5 @@
 /** Compact Audio preview draws this many PCM peak bars. */
-export const AUDIO_WAVEFORM_BARS = 128;
+const AUDIO_WAVEFORM_BARS = 128;
 
 export type AudioWaveformPeak = {
   min: number;

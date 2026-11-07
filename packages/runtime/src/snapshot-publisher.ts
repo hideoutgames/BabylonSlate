@@ -23,6 +23,8 @@ interface SnapshotPublisherHost {
   canPublish(): boolean;
   /** The actor the Play camera follows; its position moves the floating origin. */
   cameraActor(): Actor | null;
+  /** The main Scene's Layer Camera centre, which the floating origin follows while no camera actor is in view. */
+  layerCameraCentre(): { x: number; y: number } | null;
   applyOverlayLayouts(): void;
   retireDetachedStreams(): void;
   /** The removal pass despawned at least one actor. */
@@ -72,6 +74,8 @@ export class SnapshotPublisher {
   };
   /** Most recent publish: overlay layout and removal pass, composition and buffer write (stats `publishMs`). */
   private _lastPublishMs = 0;
+  /** Completed snapshot writes; unchanged while nothing (a tick, an edit, a realization) wrote a newer pose. */
+  private _writes = 0;
   /** True while `advance()` runs catch-up ticks; their snapshot writes wait for the burst to end. */
   private deferring = false;
   /** Header of the last tick that reached its publish point while writes were deferred. */
@@ -79,6 +83,8 @@ export class SnapshotPublisher {
   private writePending = false;
   /** Removal-pass time already spent on the pending publish. */
   private pendingPublishMs = 0;
+  /** The World structure and slot table the last removal pass checked, and whether it kept a spawn-queued actor's slot. */
+  private readonly removalPass = { structure: -1, slots: -1, queued: false };
   private readonly world: World;
   private readonly slots: RenderSlots;
   private readonly host: SnapshotPublisherHost;
@@ -96,6 +102,7 @@ export class SnapshotPublisher {
   get capacity(): number { return this.snapshots.maxActors; }
   get generation(): number { return this._generation; }
   get lastPublishMs(): number { return this._lastPublishMs; }
+  get writes(): number { return this._writes; }
 
   /** Grow the buffers to hold `required` slots and announce the new layout, or report and throw. */
   ensureCapacity(required: number): void {
@@ -205,13 +212,29 @@ export class SnapshotPublisher {
    * Retire detached streams, then despawn and release slots of actors no
    * longer in the World. An actor whose spawn is still queued (a Scene Layer
    * created mid-tick publishes before its actors commit) keeps its slot.
+   * After a pass every slot's actor is live or queued. A live actor leaves
+   * only through a destroy commit or a Scene change, both of which advance
+   * `structuralRevision`, but a queued spawn can be cancelled without one, so
+   * the slots are checked again unless neither the World structure nor the
+   * slot table changed and no slot was kept for a queued spawn.
    */
   private retireRemovedActors(): void {
     this.host.retireDetachedStreams();
+    const pass = this.removalPass;
+    const structure = this.world.structuralRevision;
+    const slots = this.slots.revision;
+    if (!pass.queued && pass.structure === structure && pass.slots === slots) return;
+    pass.structure = structure;
+    pass.slots = slots;
+    pass.queued = false;
     let removedActors = false;
     for (const [slotId, owner] of this.slots.entries()) {
       // The World's guid index answers whether this slot's own actor is still live.
-      if (this.world.findActor(owner.guid) === owner || this.world.isSpawnQueued(owner)) continue;
+      if (this.world.findActor(owner.guid) === owner) continue;
+      if (this.world.isSpawnQueued(owner)) {
+        pass.queued = true;
+        continue;
+      }
       this.host.emit({ type: "despawn", slotId, actorGuid: owner.guid });
       this.slots.release(slotId);
       removedActors = true;
@@ -225,7 +248,9 @@ export class SnapshotPublisher {
     const findActor = this.findActor;
     const worldTransforms = this.poses.compose(findActor, actors, this.reportShearedActor);
     const cameraActor = this.host.cameraActor();
-    const cameraPosition = cameraActor ? worldTransforms.get(cameraActor.guid)?.position : undefined;
+    const layerCentre = cameraActor ? null : this.host.layerCameraCentre();
+    const cameraPosition = cameraActor ? worldTransforms.get(cameraActor.guid)?.position
+      : layerCentre ? { x: layerCentre.x, y: layerCentre.y, z: 0 } : undefined;
     if (cameraPosition) {
       const next = { x: Math.floor(cameraPosition.x / 1024) * 1024, y: Math.floor(cameraPosition.y / 1024) * 1024, z: Math.floor(cameraPosition.z / 1024) * 1024 };
       if (next.x !== this.origin.x || next.y !== this.origin.y || next.z !== this.origin.z) { this.origin = next; this.originGeneration++; }
@@ -260,5 +285,6 @@ export class SnapshotPublisher {
       originGeneration: this.originGeneration,
     });
     this.snapshots.publish();
+    this._writes += 1;
   }
 }

@@ -280,7 +280,7 @@ export function animationGraphComponentOf(target: unknown): ActorComponent | nul
 }
 
 const CAMERA_CLASS_IDS: ReadonlySet<string> = new Set(["CameraComponent"]);
-const LIGHT_CLASS_IDS: ReadonlySet<string> = new Set(["LightComponent", "AreaRectLightComponent", "HemisphericFillLightComponent"]);
+const LIGHT_CLASS_IDS: ReadonlySet<string> = new Set(["LightComponent", "AreaRectLightComponent", "HemisphericFillLightComponent", "Light2DComponent"]);
 
 /** The target itself when it is a live component of these classes, else its actor's first live one. */
 function liveComponentOf(target: unknown, classIds: ReadonlySet<string>): ActorComponent | null {

@@ -17,7 +17,6 @@ import {
 import { processAreaEmissionInWorker } from "@haptic/assets/area-emission-client";
 import { convertHdrEnvironmentOffMainThread } from "@haptic/assets/import-worker-client";
 import { onEncodeQueuePause } from "./encode-queue-pause";
-import { guardProjectEncodeQueue } from "./project-authoring-ports";
 import type { ProjectWriteAdmission } from "./project-write-admission";
 import { committedKtx2Sha256 } from "./project-document-meta";
 import { isPluginDocumentReadOnly } from "../lib/plugin-ui";
@@ -57,9 +56,7 @@ export class ProjectTextureEncoding {
   private readonly encodingJobs = new Map<string, EncodeJob>();
   private encodingSnapshot: ReadonlySet<string> = new Set();
   private externalEncodePause = false;
-  private manualEncodePause = false;
   readonly queue: EncodeQueue;
-  readonly publicQueue: EncodeQueue;
   /** The encode result being committed, which Close Project lets finish in its own folder. */
   private textureCommit: Promise<unknown> | null = null;
   /**
@@ -209,12 +206,11 @@ export class ProjectTextureEncoding {
         host.emitRegistryChange();
       },
     });
-    this.publicQueue = guardProjectEncodeQueue(this.queue, writeAdmission);
     writeAdmission.subscribe(() => this.updateEncodePause());
   }
 
   private updateEncodePause(): void {
-    if (this.externalEncodePause || this.manualEncodePause || this.host.writeAdmission.locked) this.queue.pause();
+    if (this.externalEncodePause || this.host.writeAdmission.locked) this.queue.pause();
     else this.queue.resume();
   }
 
@@ -398,17 +394,6 @@ export class ProjectTextureEncoding {
     }
   }
 
-  /** Pause encode jobs while Preview runs (engineplan §3.5). */
-  pause(): void {
-    this.manualEncodePause = true;
-    this.updateEncodePause();
-  }
-
-  resume(): void {
-    this.manualEncodePause = false;
-    this.updateEncodePause();
-  }
-
   async retryTextureEncoding(
     guid: string,
     options?: { maxDimension?: number; force?: boolean; usage?: string },
@@ -548,8 +533,7 @@ export class ProjectTextureEncoding {
       if (
         state === "encode_failed" ||
         state === "fallback_uncompressed" ||
-        state === "pending" ||
-        state === "encoding"
+        state === "pending"
       ) {
         if (await this.trackTextureStateWrite(registry.retryTextureEncoding(asset.header.guid))) {
           count += 1;

@@ -9,7 +9,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
-import "@babylonjs/core/ShadersWGSL/ShadersInclude/helperFunctions";
+// The WGSL twin registers with the WebGPU Engine's code (webgpu-registrations).
 
 /** A Scene resource, deliberately separate from the existing 2D texture pins. */
 export class EnvironmentSampleBlock extends NodeMaterialBlock {

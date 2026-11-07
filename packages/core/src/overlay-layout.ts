@@ -44,7 +44,7 @@ export type OverlayLayoutEntry = {
 export type OverlayLayoutResult = { actors: SerializedActor[]; entries: Map<string, OverlayLayoutEntry> };
 export type OverlayLayoutOptions = { safeAreaInsets?: Partial<OverlaySafeAreaInsets>; virtualItems?: Readonly<Record<string, VirtualizedItem>>; pixelsPerUnit?: number; textureSize?: (guid: string) => { width: number; height: number } | undefined; /** Measure authored bounds even without layout components. */ includeUnmanagedBounds?: boolean };
 export const overlayLayoutKey = (actorId: string, componentId?: string): string => componentId ? `${actorId}/${componentId}` : actorId;
-export function intersectOverlayRects(a: OverlayLayoutRect | null, b: OverlayLayoutRect): OverlayLayoutRect {
+function intersectOverlayRects(a: OverlayLayoutRect | null, b: OverlayLayoutRect): OverlayLayoutRect {
   if (!a) return { ...b };
   const left = Math.max(a.x - a.width / 2, b.x - b.width / 2), right = Math.min(a.x + a.width / 2, b.x + b.width / 2);
   const bottom = Math.max(a.y - a.height / 2, b.y - b.height / 2), top = Math.min(a.y + a.height / 2, b.y + b.height / 2);

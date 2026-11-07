@@ -20,9 +20,9 @@ export interface DocumentStateSliceDeps {
 
 /**
  * The open-document state each provider render reads from DocumentService:
- * revisions, tab order, open and dirty documents, the narrow subscriptions
- * and the active-document slice. Call it after every other provider hook:
- * its layout effect publishes to the subscriptions last in each commit.
+ * revisions, the save slice's dirty documents, the narrow subscriptions and
+ * the active-document slice. Call it after every other provider hook: its
+ * layout effect publishes to the subscriptions last in each commit.
  */
 export function useDocumentStateSlices({
   documentService,
@@ -33,30 +33,6 @@ export function useDocumentStateSlices({
   // Every service mutation is followed by a context update, so reading the
   // revisions on each provider render sees the latest ones.
   const documentRevisions = documentService.getRevisions();
-  const tabsRevision = documentService.getTabsRevision();
-  const tabOrderRef = useRef<string[]>([]);
-  const tabOrder = useMemo(() => {
-    void tabsRevision;
-    const next = documentService.getState().tabOrder;
-    const previous = tabOrderRef.current;
-    // Switching tabs advances the tabs revision without moving any tab.
-    if (
-      previous.length === next.length &&
-      previous.every((id, index) => id === next[index])
-    ) {
-      return previous;
-    }
-    const copy = [...next];
-    tabOrderRef.current = copy;
-    return copy;
-  }, [documentService, tabsRevision]);
-  // Entries are mutated in place, so these follow the revisions rather than
-  // entry identity; registry-only and other unrelated updates keep them.
-  const openDocuments = useMemo(() => {
-    void documentRevisions;
-    void tabOrder;
-    return documentService.getOpenDocumentsOrdered();
-  }, [documentRevisions, documentService, tabOrder]);
   const dirtyDocuments = useMemo(() => {
     void documentRevisions;
     return documentService.getDirtyDocuments();
@@ -78,7 +54,7 @@ export function useDocumentStateSlices({
 
   // Narrow subscriptions: per-document hooks read the service through this
   // store, and every commit (each service mutation is followed by one) lets
-  // them compare their snapshots in the same frame as the provider's facade.
+  // them compare their snapshots in the same frame as the provider's slices.
   const subscriptions = useMemo(() => new DocumentSubscriptions(documentService), [documentService]);
   useLayoutEffect(() => {
     subscriptions.publish();
@@ -116,10 +92,6 @@ export function useDocumentStateSlices({
 
   return {
     documentRevisions,
-    tabsRevision,
-    tabOrder,
-    openDocuments,
-    dirtyDocuments,
     stableDirtyDocuments,
     subscriptions,
     activeDocumentState,

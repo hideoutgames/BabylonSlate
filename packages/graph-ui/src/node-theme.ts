@@ -143,7 +143,7 @@ export function nodeRoleClass(role: NodeVisualRole): string {
 }
 
 /** Exec wires and the Particle Graph spine use the heavy exec width. */
-export function edgeStrokeWidth(kind: string): number {
+function edgeStrokeWidth(kind: string): number {
   return kind === "exec" || kind === "particle" ? 5 : 4;
 }
 

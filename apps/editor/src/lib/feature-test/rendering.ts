@@ -225,7 +225,7 @@ export function monitorMaterial(name: string, textureGuid: string): Record<strin
  * Unlit surface showing a Mirror's reflection through a Mirror Reflection node, its Offset rippled by two drifting
  * Perlin noises (about 1% of the screen) and tinted cool, as water or warped glass would.
  */
-export function mirrorRippleMaterial(name: string): Record<string, unknown> {
+function mirrorRippleMaterial(name: string): Record<string, unknown> {
   const doc = createDefaultMaterialDocument(name);
   const output = doc.nodes.find((node) => node.type === "output.surface");
   if (!output) throw new Error("FeatureTest mirror Material has no surface output.");
@@ -652,19 +652,18 @@ function zoneAdder(ctx: FeatureTestContext, zone: FeatureTestZoneId) {
 function placeGlobals(ctx: FeatureTestContext, refs: RenderingRefs): void {
   const scene = ctx.mainScene;
   const previous = scene.actors.findIndex(
-    (entry) => entry.id === scene.settings.mainCameraActorId &&
+    (entry) => entry.id === scene.settings.defaultCameraActorId &&
       entry.components.some((component) => component.classId === "CameraComponent"),
   );
   if (previous >= 0) scene.actors.splice(previous, 1);
-  const { actorId, componentId } = FEATURE_TEST_MAIN_CAMERA;
+  const { actorId } = FEATURE_TEST_MAIN_CAMERA;
   const { pathActorId } = FEATURE_TEST_CAMERA_TOUR;
   ctx.addActor(actor(pathActorId, "Camera Tour Path", tf(), instanceComponents(pathActorId, refs.tourPath.components),
     { classId: refs.tourPath.ref.classId }));
   const start = cameraTourStart();
   ctx.addActor(actor(actorId, "Main Camera", tf(start.position, { rotation: lookAtRotation(start.position, start.ahead) }),
     instanceComponents(actorId, refs.cameraTour.components), { classId: refs.cameraTour.ref.classId }));
-  scene.settings.mainCameraActorId = actorId;
-  scene.settings.mainCameraComponentId = componentId;
+  scene.settings.defaultCameraActorId = actorId;
 
   // Exactly one skybox, drawn from the six imported face Textures.
   const faces = skyFaces(ctx);
@@ -992,7 +991,7 @@ async function addLightsScene(ctx: FeatureTestContext): Promise<void> {
   scene.name = "FT_Lights";
   // Basic 3D's empty placeholder actor has no role here.
   scene.actors = scene.actors.filter((entry) => entry.components.length > 0);
-  const camera = scene.actors.find((entry) => entry.id === scene.settings.mainCameraActorId);
+  const camera = scene.actors.find((entry) => entry.id === scene.settings.defaultCameraActorId);
   if (camera) {
     camera.transform = tf(LIGHT_GRID_CAMERA.position, {
       rotation: lookAtRotation(LIGHT_GRID_CAMERA.position, LIGHT_GRID_CAMERA.target),

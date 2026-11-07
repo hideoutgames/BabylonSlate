@@ -7,6 +7,7 @@ import { encodeAssetDocument, encodeHasset, decodeHasset } from "@haptic/assets"
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { ProjectService } from "./project-service";
 import { setEncodeQueuePauseReason } from "./encode-queue-pause";
+import { textureEncodeQueue } from "../testing/texture-encode-queue";
 import { DocumentService } from "./document-service";
 
 beforeEach(() => {
@@ -123,7 +124,7 @@ describe("ProjectService lifecycle", () => {
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
     }));
     await service.registry!.reindexPath("assets/test.hasset");
-    service.textureEncodeQueue.enqueue({ assetGuid: "encode-drain", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
+    textureEncodeQueue(service).enqueue({ assetGuid: "encode-drain", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
     await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
     const lease = service.lockAuthoringWrites("Read-only baseline");
     let ready = false;
@@ -161,7 +162,7 @@ describe("ProjectService lifecycle", () => {
       return write(path, bytes);
     });
     const release = vi.spyOn(storage, "releaseFolder");
-    service.textureEncodeQueue.enqueue({ assetGuid: "encode-close", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
+    textureEncodeQueue(service).enqueue({ assetGuid: "encode-close", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
     await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
     finishEncode({ ktx2: new Uint8Array([9, 8, 7]), wallMs: 1 });
     await started;
@@ -187,7 +188,7 @@ describe("ProjectService lifecycle", () => {
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
     }));
     await service.registry!.reindexPath("assets/test.hasset");
-    service.textureEncodeQueue.enqueue({ assetGuid: "encode-late", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
+    textureEncodeQueue(service).enqueue({ assetGuid: "encode-late", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
     await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
     await vi.waitFor(() => expect(service.textureEncodingGuids.has("encode-late")).toBe(true));
     const release = storage.releaseFolder.bind(storage);
@@ -206,7 +207,7 @@ describe("ProjectService lifecycle", () => {
     // The encode lands while the folder is being released and the old registry is still set.
     finishEncode({ ktx2: new Uint8Array([9, 8, 7]), wallMs: 1 });
     // The queue counts a job until its completion handler has finished.
-    await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
+    await vi.waitFor(() => expect(textureEncodeQueue(service).depth).toBe(0));
     resumeRelease();
     await closing;
     expect(writes).not.toHaveBeenCalled();
@@ -452,7 +453,7 @@ describe("ProjectService lifecycle", () => {
     const service = new ProjectService(new MemoryStorageAdapter("documents"), {
       createWorkerEncode: factory.create,
     });
-    const pause = vi.spyOn(service.textureEncodeQueue, "pause");
+    const pause = vi.spyOn(textureEncodeQueue(service), "pause");
 
     service.initialize();
     service.dispose();
@@ -905,7 +906,7 @@ describe("texture encode diagnostics", () => {
     const lines: string[] = [];
     service.onDiagnostic((line) => lines.push(line));
 
-    service.textureEncodeQueue.enqueue({
+    textureEncodeQueue(service).enqueue({
       assetGuid: "tex-guid-1",
       source: new Uint8Array([1, 2, 3]),
       mime: "image/png",

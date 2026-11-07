@@ -20,7 +20,7 @@ import {
 import { visualMeshes } from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
 
-export { applyMaterialToVisualMeshes, visualMeshes } from "./visual-meshes";
+export { visualMeshes } from "./visual-meshes";
 
 /**
  * Draw each of a Model's meshes with its slot's Material: the slot whose index is the glTF material its primitive

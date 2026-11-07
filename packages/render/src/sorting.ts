@@ -115,7 +115,7 @@ export function configureCutoutSorting(scene: Pick<Scene, "setRenderingOrder">):
   }
 }
 
-export function usesSpriteOrTilemapSorting(actor: {
+function usesSpriteOrTilemapSorting(actor: {
   components: ReadonlyArray<{ classId: string }>;
 }): boolean {
   return actor.components.some(

@@ -15,4 +15,4 @@ Returns values to the caller and ends the function.
 ## Notes
 
 - Every function graph has one. It cannot be added or deleted.
-- Add or edit the function's outputs in the **Inspector** while the function is selected.
+- Add, edit, reorder or remove the function's outputs under **Outputs** in the **Inspector** while this node or the function is selected.

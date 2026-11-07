@@ -28,10 +28,8 @@ import { REBUILT, RECENTRED, syncGlobalIndices, syncQuality, updateLayout } from
 import { centredGrid, restDataRange, uploadRestData } from "./water-mesh-rest-data";
 import { L_CX, L_CZ, LAYOUT_STATE, NO_PARTNERS, type Surface } from "./water-mesh-surface";
 import { advanceSceneWaterClock, deleteSceneWaterClock, sceneWaterTime } from "./water-scene-clock";
-export { WATER_BLEND_DEADLINE_MS, WATER_BLEND_FRAME_BUDGET_MS, WATER_BLEND_REFRESH_MS } from "./water-mesh-blend";
-export {
-  WATER_FINITE_CELL_BUDGET, WATER_GLOBAL_CELL_BUDGET, WATER_OCEAN_CELL_BUDGET, WATER_RIVER_COLUMN_BUDGET, WATER_RIVER_ROW_BUDGET,
-} from "./water-mesh-grid";
+export { WATER_BLEND_REFRESH_MS } from "./water-mesh-blend";
+export { WATER_FINITE_CELL_BUDGET, WATER_GLOBAL_CELL_BUDGET, WATER_OCEAN_CELL_BUDGET } from "./water-mesh-grid";
 export { sampleSceneWaterFrame, setSceneWaterTime } from "./water-scene-clock";
 
 let surfaceIds = 0;
@@ -45,7 +43,7 @@ const surfaceByMesh = new WeakMap<AbstractMesh, Surface>();
 const copyIntents = new WeakMap<Scene, { refracting: number; reflecting: number }>();
 
 /** Milliseconds a water surface stays disabled before it gives back its terrain and contact textures (GPU memory). */
-export const WATER_RELEASE_DISABLED_MS = 2000;
+const WATER_RELEASE_DISABLED_MS = 2000;
 /** Released surfaces that restore their terrain and contact textures in one frame when enabled again. */
 export const WATER_RESTORES_PER_FRAME = 2;
 

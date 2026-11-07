@@ -60,6 +60,31 @@ describe("ScriptHost nested dispatch", () => {
     expect(hero.getVariable("handler")).toEqual([0.25, 7, true]);
   });
 
+  it("indexes a module's entry points on its first dispatch instead of scanning them on every tick", async () => {
+    const host = new ScriptHost(services());
+    const points: CompiledScript["entryPoints"] = [
+      ...Array.from({ length: 4 }, (_, index) => ({ name: `OnCustom${index}`, event: `OnCustom${index}`, isAsync: false })),
+      { name: "onTick", event: "onTick", isAsync: false },
+      { name: "Helper", isAsync: false },
+    ];
+    const hero = script("Hero", [
+      ...points.filter((point) => point.name !== "onTick").map((point) => `export function ${point.name}(ctx) {}`),
+      "export function onTick(ctx) { ctx.self.setVariable('ticks', (ctx.self.getVariable('ticks') ?? 0) + 1); }",
+    ].join("\n"));
+    let reads = 0;
+    Object.defineProperty(hero, "entryPoints", { enumerable: true, get: () => { reads += 1; return points; } });
+    await host.load(hero);
+    const actor = new Actor({ classId: "Hero" });
+    const hooks = host.hooksFor("Hero")!;
+
+    hooks.onTick!(actor, tick);
+    const indexed = reads;
+    for (let index = 0; index < 5; index++) hooks.onTick!(actor, tick);
+
+    expect(actor.getVariable("ticks")).toBe(6);
+    expect(reads).toBe(indexed);
+  });
+
   it("aborts the tick when an interface handler or animation rule exceeds the loop guard", async () => {
     const reportError = vi.fn();
     const host = new ScriptHost(services({

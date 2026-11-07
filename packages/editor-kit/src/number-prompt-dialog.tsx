@@ -18,7 +18,6 @@ export interface NumberPromptDialogProps {
   title: string;
   label: string;
   description?: string;
-  confirmLabel?: string;
   initialValue: number;
   min?: number;
   onSubmit: (value: number) => void;
@@ -32,7 +31,6 @@ export function NumberPromptDialog({
   title,
   label,
   description,
-  confirmLabel = "Save",
   initialValue,
   min = 0.0001,
   onSubmit,
@@ -89,7 +87,7 @@ export function NumberPromptDialog({
               if (next !== undefined) submit(next);
             }}
           >
-            {confirmLabel}
+            Save
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

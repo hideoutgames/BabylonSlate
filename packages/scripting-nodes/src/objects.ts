@@ -2,7 +2,7 @@ import { EXEC, classRef, objectRef, pin, type NodeDefinition } from "@haptic/scr
 import { castDefaultClassId } from "./casting";
 
 export const CREATE_OBJECT_NODE_ID = "object.create";
-export const COLLECT_GARBAGE_NODE_ID = "object.collectGarbage";
+const COLLECT_GARBAGE_NODE_ID = "object.collectGarbage";
 
 /** Create Object and Collect Garbage: objects that live while a reference reaches them. */
 export const objectNodes: NodeDefinition[] = [

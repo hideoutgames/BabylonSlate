@@ -159,7 +159,7 @@ export async function resourceReport(options = {}) {
     flags,
     conflicts,
     waitingReason:
-      "Updated waiting tickets report their reason; older tickets may not contain one. Compare available memory with the next workload plus reserve.",
+      "A waiting ticket records its reason once it does not fit; one queued behind an older ticket records none. Compare available memory with the next workload plus reserve.",
     limitations: [
       "Read-only snapshot; PID liveness and complete owned process trees are not established.",
       "Reservations are estimates, not memory limits. No pressure watchdog in this revision.",

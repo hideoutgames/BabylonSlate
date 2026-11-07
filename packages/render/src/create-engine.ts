@@ -52,18 +52,18 @@ import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
-import { bridgeEngineEffects, keepPlayEffects, releaseBridgedEffects } from "./effect-bridge";
+import { bridgeEngineEffects, holdCompiledEffects, keepPlayEffects, releaseBridgedEffects } from "./effect-bridge";
 import { countEffectCompiles } from "./effect-requests";
 import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
 import { engineFrameBackpressure } from "./frame-backpressure";
 import { HELD_FRAME_LABELS, HELD_FRAME_OTHER, HeldFrameReasons } from "./held-frames";
-import type { SpawnableLight } from "./spawnable-lights";
+import { spawnsLights2D, type SpawnableLight } from "./spawnable-lights";
 import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
 import { estimateTextureMemory } from "./texture-memory-estimate";
 import { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting } from "./preserve-drawing-buffer-setting";
-import { nativePreparationForEngine } from "./native-preparation";
+import { nativePreparationForEngine, prepareTogether } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { Camera } from "@babylonjs/core/Cameras/camera";
 import type { EngineView } from "@babylonjs/core/Engines/AbstractEngine/abstractEngine.views";
@@ -72,11 +72,11 @@ import type { EngineOptions } from "@babylonjs/core/Engines/thinEngine";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import type { Material } from "@babylonjs/core/Materials/material";
 import type { AssetContainer } from "@babylonjs/core/assetContainer";
-import { qualitySettingsFingerprint, resolveRenderingQuality } from "@haptic/core";
+import { qualitySettingsFingerprint, qualityValuesKey, resolveRenderingQuality } from "@haptic/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
-import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
+import { webGpuPipelineCacheMisses } from "./webgpu-on-demand";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureContainer2";
@@ -129,10 +129,13 @@ import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-bu
 import {
   AUTHORED_LIGHT_PREFIX,
   applySceneEnvironment as applySerializedSceneEnvironment,
+  cameraRenderAspect,
   refreshAuthoredCameraLenses,
+  sceneCameraLensExtent,
   setSceneCameraLensExtent,
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
+import { createWorldLayerCamera } from "./world-layer-camera";
 import { RenderScheduler } from "./render-scheduler";
 import { CommandSourcePreparation } from "./command-source-preparation";
 import {
@@ -168,6 +171,8 @@ import {
 } from "./snapshot-sync";
 import {
   applySnapshotToScene,
+  applyHostClockPoses,
+  hasHostClockPoses,
   applyAssignMaterial,
   applyAttachToBone,
   applySetMaterialParameter,
@@ -356,8 +361,6 @@ function projectEngineOptions(): EngineOptions {
     useExactSrgbConversions: true,
   };
 }
-
-export { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting };
 
 /** Frames with no layer still presenting share this set instead of building one. */
 const NO_PRESENTING_LAYERS: ReadonlySet<string> = new Set();
@@ -808,7 +811,7 @@ function initializeEngine(
   const sharedCache = resourceCacheForEngine(engine);
   const cacheBinding = bindResourceCacheToHandle(sharedCache);
   const resourceCache = cacheBinding.cache;
-  const nativePreparation = nativePreparationForEngine(engine, options.nativePreparation);
+  const nativePreparation = nativePreparationForEngine(engine);
   onRollback(() => cacheBinding.dispose());
   onRollback(() => { if (!scene.isDisposed) scene.dispose(); });
   if (typeof options.textureByteCeiling === "number") {
@@ -889,6 +892,13 @@ function initializeEngine(
   binding.pixelsPerUnit = options.pixelsPerUnit;
   binding.sortingLayers = options.sortingLayers;
   binding.pixelPerfect = options.pixelPerfect === true;
+  // Play looks through the main Scene's Layer Camera until a camera actor is possessed.
+  const worldLayerCamera = options.playMode ? createWorldLayerCamera(scene) : null;
+  binding.layerCamera = worldLayerCamera?.camera ?? null;
+  if (worldLayerCamera) scene.activeCamera = worldLayerCamera.camera;
+  const fitWorldLayerCamera = () =>
+    worldLayerCamera?.fit(cameraRenderAspect(engine.getRenderWidth(), engine.getRenderHeight()), sceneCameraLensExtent(scene));
+  fitWorldLayerCamera();
   if (options.nearestTextures !== undefined) setNearestTextures(engine, options.nearestTextures);
   // The Engine's other views (the editor's settings) switch it too: this view redraws with the new sampling.
   const releaseNearestTextures = observeNearestTextures(engine, () => scheduler.invalidate("asset"));
@@ -1161,9 +1171,23 @@ function initializeEngine(
         : String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
     };
   };
+  // `postprocessing off` stops drawing the post-processing passes' programs and the Material variants they draw; they
+  // are held (`holdCompiledEffects`) until the view presents ready with post-processing on again, so turning it back on
+  // links none of them again.
+  let postProcessingPrograms: { release: () => void; releaseWhenReady: boolean } | null = null;
+  const releasePostProcessingPrograms = () => {
+    const held = postProcessingPrograms;
+    postProcessingPrograms = null;
+    held?.release();
+  };
+  onRollback(releasePostProcessingPrograms);
   const setPostProcessingEnabled = (enabled: boolean) => {
     // Unchanged: no stack rebuild (the Breakdown's add-one base turns it off again after every step).
     if (postProcessingEnabled === enabled) return;
+    if (enabled) {
+      if (postProcessingPrograms) postProcessingPrograms.releaseWhenReady = true;
+    } else if (postProcessingPrograms) postProcessingPrograms.releaseWhenReady = false;
+    else postProcessingPrograms = { release: holdCompiledEffects(engine), releaseWhenReady: false };
     postProcessingEnabled = enabled;
     setSceneEffectsEnabled(scene, enabled);
     rebuildPostProcessStack();
@@ -1193,11 +1217,13 @@ function initializeEngine(
     const quality = resolveSceneRenderingQuality(scene);
     const previous = appliedQuality;
     appliedQuality = quality;
-    if (JSON.stringify(previous?.resolution) !== JSON.stringify(quality.resolution)) {
+    // By value: a level label alone (Custom, then the level again) must not restart dynamic resolution at its floor,
+    // which would rebuild the view's graph at another size.
+    if (qualityValuesKey(previous?.resolution) !== qualityValuesKey(quality.resolution)) {
       scaling.configureQuality(effectiveResolution(quality.resolution));
       syncLockedViewSize();
     }
-    if (JSON.stringify(previous?.textures) !== JSON.stringify(quality.textures)) {
+    if (qualityValuesKey(previous?.textures) !== qualityValuesKey(quality.textures)) {
       resourceCache.setByteCeiling(quality.textures.byteBudget);
       for (const texture of scene.textures) applyTextureAnisotropy(texture);
     }
@@ -1657,7 +1683,7 @@ function initializeEngine(
       playViz?.applyCommand({ type: "setShowNav", enabled: false });
       // Play visuals come from assignMesh. Document illumination would plant a
       // second set of lights (`authoredLight:<actorId>`) on changescene.
-      applySerializedSceneEnvironment(scene, sceneData, { assets: binding });
+      applySerializedSceneEnvironment(scene, sceneData, { assets: binding, spawnsLights2D: !options.editor && spawnsLights2D(spawnableLights.values()) });
       rebuildPostProcessStack();
       scheduler.invalidate("asset");
       return;
@@ -1731,6 +1757,7 @@ function initializeEngine(
     sceneLayerCompositor?.resize();
     setSceneCameraLensExtent(scene, 1);
     refreshAuthoredCameraLenses(scene);
+    fitWorldLayerCamera();
     notifyOverlayResize();
   };
 
@@ -1769,6 +1796,7 @@ function initializeEngine(
       // A pixelated framebuffer extended past the design size shows more world in its extra rows, not a larger one.
       setSceneCameraLensExtent(scene, playOutput ? pixelatedLensExtent(playOutput, lockedViewSize) : 1);
       refreshAuthoredCameraLenses(scene);
+      fitWorldLayerCamera();
       notifyOverlayResize();
     };
 
@@ -1980,6 +2008,9 @@ function initializeEngine(
       appliedSnapshotIdentity.frameId === sampled.frameId &&
       appliedSnapshotIdentity.layoutGeneration === layoutGeneration
     ) {
+      // A running frame that brings no new pose still moves what follows the host's clock (animated bones,
+      // spring-arm lag); a paused session's frames hold it until the next pose.
+      if (!binding.paused && hasHostClockPoses(binding)) applyHostClockPoses(scene, binding);
       return sampled;
     }
     const previousCamera = scene.activeCamera;
@@ -1993,7 +2024,10 @@ function initializeEngine(
       const camera = simulationEditMode ? resolvePlayGameCamera(scene, binding) : scene.activeCamera;
       let listener: AudioPose | null = null;
       if (camera && !gameTimePaused) {
-        const pos = camera.globalPosition ?? camera.position;
+        // The Layer Camera hears from its centre on the XY plane, where 2D content lies, not from its depth.
+        const pos = camera === worldLayerCamera?.camera
+          ? { x: camera.position.x, y: camera.position.y, z: 0 }
+          : camera.globalPosition ?? camera.position;
         const rot = camera.absoluteRotation;
         // A fresh object per snapshot: the service keeps the previous listener
         // for Doppler until the next one arrives.
@@ -2199,13 +2233,13 @@ function initializeEngine(
         // Staged meshes are shown only for the starting-state frames, which are never presented.
         if (key === "world") releaseStaged();
         pending.copied = false;
-        const pipelinesBefore = WebGPUCacheRenderPipeline.NumCacheMiss;
+        const pipelinesBefore = webGpuPipelineCacheMisses();
         const submission = submitPresentedFrame(engine, () => {
           pending.attempts += 1;
           const rendered = draw();
           pending.rendered = rendered && presentationReady(pending);
         }, { errorStateKnownClear: pending.errorsCleared });
-        pending.pipelines = WebGPUCacheRenderPipeline.NumCacheMiss - pipelinesBefore;
+        pending.pipelines = webGpuPipelineCacheMisses() - pipelinesBefore;
         pending.submission = submission;
         // Unproven until this attempt's own fence-time read; a cancelled attempt leaves it unread.
         pending.errorsCleared = false;
@@ -2334,12 +2368,18 @@ function initializeEngine(
         try { sample = shown ? samplePresentedImage(shown) : null; } catch { sample = null; }
         answerPresentedImageRequests(sample);
       }
-      if (runtimeScalability && !worldLoading) {
+      // A strict probe walks the whole frame path (shadow admission, light block): only a frame that confirms a
+      // scalability transaction or releases post-processing programs asks; steady frames probe in their own readiness.
+      if ((runtimeScalability?.awaitsPresentation || postProcessingPrograms?.releaseWhenReady) && !worldLoading) {
         // A stored preparation failure rethrows until the coordinator's retry
         // succeeds. It must not escape endFrame and stop the shared Engine loop.
         let ready: boolean;
         try { ready = worldRenderer.isReady() && sceneLayerCompositor?.isReady() !== false; } catch { ready = false; }
-        if (ready) runtimeScalability.presented();
+        if (ready) {
+          runtimeScalability?.presented();
+          // The graphs drawn with post-processing on again hold their programs now.
+          if (postProcessingPrograms?.releaseWhenReady) releasePostProcessingPrograms();
+        }
       }
       const presentedAt = performance.now();
       // Only Play handles pace frames: their presented-frame interval measures
@@ -2512,6 +2552,7 @@ function initializeEngine(
       if (disposed) return;
       // The Engine's next view (Play after the editor's, the editor's after Play) draws mostly these Effects.
       if (!ownsEngine) bridgeEngineEffects(engine);
+      releasePostProcessingPrograms();
       stopKeepingEffects?.();
       // And, once released, the textures this view leases now (`handOverTextures`). A handover it claimed and has not
       // ended joins that hold; without one, it ends here.
@@ -2932,6 +2973,10 @@ function initializeEngine(
         sceneLayerCompositor?.setCamera(command.layerId, command.camera);
         scheduler.invalidate("camera");
       }
+      if (command.type === "sceneCamera") {
+        worldLayerCamera?.set(command.camera, command.bounds);
+        scheduler.invalidate("camera");
+      }
       audioService?.handleCommand(command);
       if (command.type === "configureRenderTargetCapture") {
         const transform = command.transform;
@@ -3236,22 +3281,8 @@ function initializeEngine(
         },
       };
     },
-    renderingPipeline: () => sceneRenderingPipeline(scene),
     scalabilityStatus: () => lastScalabilityStatus,
     accountedGeometryBytes: () => accountedGeometryBytesForScene(scene),
-    pickAt: (x, y) => {
-      const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
-      const canvasSize = pointerCanvas();
-      const overlayHit = sceneLayerCompositor?.pickAt(mapped.x, mapped.y, {
-        minTargetPx: options.touchMinTargetPx ?? 44,
-        canvasCssHeight: canvasSize.height,
-      });
-      if (overlayHit?.blocked || overlayHit?.actorGuid) {
-        return { meshName: overlayHit.meshName, slotId: overlayHit.slotId };
-      }
-      const hit = pickAtCanvas(scene, mapped.x, mapped.y);
-      return hit ? { meshName: hit.meshName, slotId: hit.slotId } : null;
-    },
     lastActorPositions: () => lastPositions,
     ...createPlayHandleInspection(binding),
     registerFonts: async (entries) => {
@@ -3311,29 +3342,32 @@ function initializeEngine(
       preparation?.signal?.addEventListener("abort", cancel, { once: true });
       try {
         installOwnedSources();
-        for (const font of sources.fonts ?? []) {
-          const registered = await nativePreparation.schedule({ label: `Font ${font.guid}`,
-            temporaryBytes: Math.max(1024, font.bytes.byteLength * 4), signal: preparation?.signal,
-            priority: preparation?.priority }, () => fontRegistry.registerAll([font]));
-          if (!registered) {
-            const reason = [...fontRegistry.getWarnings()].reverse().find((warning) => warning.guid === font.guid)?.message;
-            throw new Error(`${(reason ?? `Font "${font.family}" failed to load`).replace(/\.?$/, ".")} Inspect the source and family of Font ${font.guid}.`);
-          }
-        }
+        // Each group (fonts, textures, Materials, models) is scheduled at once: the
+        // Engine's queue, shared by simultaneous source scopes and scene-specific
+        // model containers, bounds its concurrency and temporary memory. A job
+        // pushes its release before it first awaits, and a group settles before it
+        // rethrows, so `cancel` always sees every release a failed scope acquired.
+        const fonts = sources.fonts ?? [];
+        if (fonts.length) await prepareTogether(preparation?.signal, fonts.map((font) => (signal) => nativePreparation.schedule({
+          label: `Font ${font.guid}`, temporaryBytes: Math.max(1024, font.bytes.byteLength * 4), signal, priority: preparation?.priority,
+        }, async () => {
+          if (await fontRegistry.registerAll([font])) return;
+          const reason = [...fontRegistry.getWarnings()].reverse().find((warning) => warning.guid === font.guid)?.message;
+          throw new Error(`${(reason ?? `Font "${font.family}" failed to load`).replace(/\.?$/, ".")} Inspect the source and family of Font ${font.guid}.`);
+        })));
         if (preparation?.prepare) {
           preparation.signal?.throwIfAborted();
           const prepared = sourceOwners.get(owner)!;
           const check = () => { preparation.signal?.throwIfAborted(); if (disposed) throw new Error("The render Scene is disposed."); };
-          // The queue belongs to the Engine, so simultaneous source scopes and
-          // scene-specific model containers share the same admission budget.
-          for (const [guid, bytes] of prepared.assets?.textureBytes ?? []) {
-            check();
+          const textures = [...prepared.assets?.textureBytes ?? []];
+          if (textures.length) check();
+          await prepareTogether(preparation.signal, textures.map(([guid, bytes]) => (signal) => {
             const size = prepared.assets?.texturePixelSizes?.get(guid);
             const sourceSize = bytes instanceof Blob ? bytes.size : bytes.byteLength;
             const isCube = bytes instanceof Blob
               ? bytes.type === "application/vnd.babylon.env" || bytes.type === "image/vnd-ms.dds"
               : environmentTextureContainer(bytes) !== null;
-            await nativePreparation.schedule({ label: `Texture ${guid}`, signal: preparation.signal, priority: preparation.priority,
+            return nativePreparation.schedule({ label: `Texture ${guid}`, signal, priority: preparation.priority,
               temporaryBytes: sourceSize + (size ? size.width * size.height * 8 * (isCube ? 6 : 1) : Math.max(1024 * 1024, sourceSize * 16)),
             }, async () => {
               check();
@@ -3342,13 +3376,11 @@ function initializeEngine(
               nativeReleases.push(() => lease.release());
               await lease.ready;
             });
-          }
-          const spawnableMaterials: Material[] = [];
-          const spawnableContainers: AssetContainer[] = [];
-          for (const [guid, document] of prepared.materialDocuments ?? []) {
-            check();
-            await nativePreparation.schedule({ label: `Material ${guid}`, signal: preparation.signal,
-              priority: preparation.priority, temporaryBytes: 1024 * 1024 }, async () => {
+          }));
+          const materials = [...prepared.materialDocuments ?? []];
+          if (materials.length) check();
+          const spawnableMaterials = (await prepareTogether(preparation.signal, materials.map(([guid, document]) => (signal) =>
+            nativePreparation.schedule({ label: `Material ${guid}`, signal, priority: preparation.priority, temporaryBytes: 1024 * 1024 }, async () => {
               check();
               const material = materialLibrary.acquire(scene, guid, document);
               if (!material.ok) throw new Error(`Material ${guid}: ${material.diagnostics.map((entry) => entry.message).join("; ")}`);
@@ -3356,16 +3388,19 @@ function initializeEngine(
               const diagnostics = await material.ready;
               if (diagnostics.some((entry) => entry.severity === "error"))
                 throw new Error(`Material ${guid}: ${diagnostics.map((entry) => entry.message).join("; ")}`);
-              if (document.domain === "surface") spawnableMaterials.push(material.material);
-            });
-          }
-          for (const [guid, source] of prepared.assets?.modelSources ?? []) {
-            check();
+              return document.domain === "surface" ? material.material : null;
+            })))).flatMap((material) => material ? [material] : []);
+          const models = [...prepared.assets?.modelSources ?? []];
+          if (models.length) check();
+          const spawnableContainers: AssetContainer[] = await prepareTogether(preparation.signal, models.map(([guid, source]) => (signal) => {
             const lease = acquireGlbContainer(scene, guid, source, preparation.priority);
             nativeReleases.push(() => lease.release());
-            spawnableContainers.push(await lease.load);
-            await lease.lods();
-          }
+            // A failed or cancelled group stops waiting: releasing a model no other scope holds retires its decode.
+            signal.addEventListener("abort", () => lease.release(), { once: true });
+            // Levels never gate a source: they generate on the held lease, and spawns attach them once ready.
+            if (prepared.assets?.modelPayloads?.get(guid)?.autoLod !== false) void lease.lods();
+            return lease.load;
+          }));
           // What a latent spawn (Spawn Actor, a Class load) prepared compiles now, against the current lighting,
           // so it resolves with the actor's variants ready; anything this misses is hidden per mesh until it compiles.
           if (options.playMode && preparation.warm)
@@ -3385,13 +3420,8 @@ function initializeEngine(
         preparation?.signal?.removeEventListener("abort", cancel);
       }
     },
-    nativePreparationStats: () => nativePreparation.snapshot(),
     spawnableWarmStats: () => spawnableWarm,
     releaseInitialSources,
-    setSourceLibraries: (libraries) => {
-      if (libraries.audioLibrary) audioService?.setLibrary(libraries.audioLibrary, true);
-      if (libraries.particleLibrary) particleService?.setLibrary(libraries.particleLibrary);
-    },
     applySceneEnvironment: (sceneData: SerializedScene) => {
       if (!options.editor) {
         playVisuals.setStaticActors(reflectionProbeStaticActors(sceneData.actors));

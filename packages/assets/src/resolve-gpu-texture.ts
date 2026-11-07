@@ -195,7 +195,7 @@ export async function resolveGpuTexture(
   };
 }
 
-export function authoredEncodeMaxDimension(
+function authoredEncodeMaxDimension(
   payload: Record<string, unknown>,
   projectMax: number,
   sourceEdge?: number,

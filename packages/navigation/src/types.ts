@@ -57,9 +57,17 @@ export type NavigationBackend = {
   removeAgent(id: string): void;
   agentPosition(id: string): NavPoint | null;
   agentVelocity(id: string): NavPoint | null;
+  /** `agentPosition` written into `out`, for per-tick readers; false, leaving `out` as it was, without the agent. */
+  agentPositionInto(id: string, out: NavPoint): boolean;
+  /** `agentVelocity` written into `out`; false, leaving `out` as it was, without the agent. */
+  agentVelocityInto(id: string, out: NavPoint): boolean;
   /** Actual crowd state and corridor corners; never a fresh path query. */
   agentDebugState(id: string): NavAgentDebugState | null;
-  /** Correct a physically resolved pose without clearing the path or velocity. */
+  /**
+   * Correct a physically resolved pose without clearing the path or velocity.
+   * The same position over an unchanged navmesh, with the crowd pose still
+   * where the last sync put it, keeps that projection without a new query.
+   */
   syncAgentPosition(id: string, position: NavPoint): boolean;
   setAgentTarget(id: string, target: NavPoint): boolean;
   stepCrowd(dtSeconds: number): void;

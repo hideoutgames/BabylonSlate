@@ -23,6 +23,7 @@ export const ENGINE_COMPONENT_DESCRIPTORS = [
   { classId: "OutlineComponent", placement: "world" },
   { classId: "DeformerComponent", placement: "world" },
   { classId: "HemisphericFillLightComponent", placement: "world" },
+  { classId: "Light2DComponent", placement: "world" },
   { classId: "SkyboxComponent", placement: "world" },
   { classId: "Text3DComponent", placement: "any" },
   { classId: "AudioComponent", placement: "any" },

@@ -4,8 +4,8 @@ import { openAssetFromBrowser } from "./open-test-project";
 import { acceptUnsavedPlayPrompts } from "./unsaved-play";
 
 /** Homepage starter id and the project name FeatureTest routes create. */
-export const FEATURE_TEST_STARTER_ID = "feature-test";
-export const FEATURE_TEST_PROJECT = "FeatureTest";
+const FEATURE_TEST_STARTER_ID = "feature-test";
+const FEATURE_TEST_PROJECT = "FeatureTest";
 
 /** FeatureTest scene documents that perf routes can open by name. */
 export const FEATURE_TEST_SCENES = {

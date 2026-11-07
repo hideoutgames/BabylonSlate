@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@haptic/bridge";
 import {
   SNAPSHOT_FLAG_VISIBLE,
-  readActorSlot,
   readSnapshotHeader,
   snapshotFloatCount,
 } from "@haptic/bridge";
+import { readActorSlot } from "@haptic/bridge/read-actor-slot";
 import {
   createActor,
   createDefaultScene,
@@ -564,21 +564,21 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it.each([true, false])("respects a valid Default Camera before opt-in possession (valid: %s)", async (valid) => {
+  it.each([true, false])("possesses a valid Default Camera before opt-in possession (valid: %s)", async (valid) => {
     const commands: CommandMessage[] = [];
     const scene = cameraPossessScene(true);
     scene.actors.push(createActor("default-camera", "Default Camera", {
-      components: [{ id: "default-camera-component", classId: "CameraComponent", properties: {} }],
+      components: [{ id: "default-camera-component", classId: valid ? "CameraComponent" : "MeshComponent", properties: {} }],
     }));
-    scene.settings.mainCameraActorId = "default-camera";
-    scene.settings.mainCameraComponentId = valid ? "default-camera-component" : "missing-component";
+    scene.settings.defaultCameraActorId = "default-camera";
     const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "cameras", scene },
       (command) => commands.push(command));
     try {
       await runtime.realizePlayWorld();
       const possessions = commands.filter((command) => command.type === "possessCamera");
-      if (valid) expect(possessions).toEqual([]);
-      else expect(possessions).toHaveLength(1);
+      const spawned = commands.find((command) => command.type === "spawn" && command.actorGuid === (valid ? "default-camera" : "cam"));
+      expect(spawned).toBeDefined();
+      expect(possessions).toEqual([{ type: "possessCamera", slotId: (spawned as { slotId: number }).slotId }]);
     } finally { runtime.stop(); }
   });
 
@@ -811,11 +811,10 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("emits light and Default Camera properties on assignMesh", async () => {
+  it("emits light and camera properties on assignMesh", async () => {
     const commands: CommandMessage[] = [];
     const settings = createDefaultSceneSettings();
-    settings.mainCameraActorId = "cam";
-    settings.mainCameraComponentId = "cam-comp";
+    settings.defaultCameraActorId = "cam";
     const runtime = createRuntimeFromLoad(
       {
         type: "load",
@@ -881,7 +880,6 @@ describe("p7-play-scene-load", () => {
         expect.objectContaining({
           meshKind: "camera",
           camera: expect.objectContaining({
-            isDefault: true,
             fieldOfView: 50,
             nearClip: 0.2,
             farClip: 800,
@@ -892,11 +890,10 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("keeps every light and camera component alongside mesh parts and selects the exact Default Camera", async () => {
+  it("keeps every light and camera component alongside mesh parts and looks through the first camera", async () => {
     const commands: CommandMessage[] = [];
     const scene = createDefaultScene();
-    scene.settings.mainCameraActorId = "rig";
-    scene.settings.mainCameraComponentId = "detail-camera";
+    scene.settings.defaultCameraActorId = "rig";
     scene.actors = [createActor("rig", "Rig", { components: [
       createMeshComponent("body", "box"),
       { id: "lamp", classId: "LightComponent", properties: { lightKind: "point", intensity: 2 } },
@@ -908,13 +905,13 @@ describe("p7-play-scene-load", () => {
     await runtime.realizePlayWorld();
     const assignment = commands.find(command => command.type === "assignMesh" && command.actorGuid === "rig");
     expect(assignment).toMatchObject({
-      meshKind: "box", camera: { fieldOfView: 35, isDefault: true },
+      meshKind: "box", camera: { fieldOfView: 80 },
       parts: [
         { componentId: "body", meshKind: "box" },
         { componentId: "lamp", meshKind: "light:point", light: { intensity: 2 } },
         { componentId: "fill", meshKind: "light:hemispheric", light: { intensity: 0.3 } },
-        { componentId: "wide-camera", camera: { fieldOfView: 80, isDefault: false } },
-        { componentId: "detail-camera", camera: { fieldOfView: 35, isDefault: true } },
+        { componentId: "wide-camera", camera: { fieldOfView: 80 } },
+        { componentId: "detail-camera", camera: { fieldOfView: 35 } },
       ],
     });
     runtime.stop();
@@ -1063,10 +1060,11 @@ describe("p7-play-scene-load", () => {
         componentId: "box-mesh",
       },
     ]);
-    expect(commands).toContainEqual(expect.objectContaining({
-      type: "assignMesh", meshKind: "camera", camera: expect.objectContaining({ isDefault: true }),
-    }));
-    expect(commands.some((command) => command.type === "possessCamera")).toBe(false);
+    const cameraAssignment = commands.find((command) => command.type === "assignMesh" && command.meshKind === "camera");
+    expect(cameraAssignment).toBeDefined();
+    // The default scene's camera is its Default Camera: Play possesses it at the start.
+    expect(commands.filter((command) => command.type === "possessCamera"))
+      .toEqual([{ type: "possessCamera", slotId: (cameraAssignment as { slotId: number }).slotId }]);
     runtime.stop();
   });
 

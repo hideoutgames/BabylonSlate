@@ -115,6 +115,26 @@ export class NodeStorageAdapter implements ProjectStorage {
       }));
   }
 
+  /**
+   * Permanently deletes a Documents project: a folder directly in the base
+   * folder, never a picked one. A link in its place is removed, not followed;
+   * a missing folder is done.
+   */
+  async deleteProject(handle: ProjectFolderHandle): Promise<void> {
+    const base = resolve(this.baseDir);
+    const root = handle.id.startsWith("node:") ? resolve(handle.id.slice("node:".length)) : null;
+    if (handle.tier !== "documents" || !root || dirname(root) !== base) {
+      throw new Error(`Node adapter cannot delete project ${handle.id}`);
+    }
+    projectFolderName(basename(root));
+    // Retries ride out a brief Windows lock (antivirus, indexing); a file held open still fails, and deleting again finishes.
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    if (this.root?.path === root) {
+      this.folder = null;
+      this.root = null;
+    }
+  }
+
   getCurrentFolder(): ProjectFolderHandle | null {
     return this.folder;
   }

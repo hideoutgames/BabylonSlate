@@ -20,7 +20,7 @@ import { registerPersistentMaterialPlugin } from "./material-plugin-registration
 import { applyMaterialTextureAnisotropy, sceneRenderingSettings } from "./render-settings";
 
 /** Implicit material samples may bias mip choice; explicit LOD and shadow samples remain authored. */
-export function textureLodSamplePattern(
+function textureLodSamplePattern(
   samplers: string,
   wgsl: boolean,
 ): string {

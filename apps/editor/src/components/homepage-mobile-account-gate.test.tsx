@@ -26,6 +26,10 @@ const auth = vi.hoisted(() => ({
   beginReverification: vi.fn(),
   completeReverification: vi.fn(),
   deleteAccount: vi.fn(),
+  socialStrategies: vi.fn(),
+  beginOAuth: vi.fn(),
+  completeOAuth: vi.fn(),
+  browser: { open: vi.fn() },
 }));
 const session = {
   id: "session_ada",
@@ -42,6 +46,8 @@ const challenge = {
 vi.mock("@haptic/vfs", async (original) => ({
   ...(await original<typeof import("@haptic/vfs")>()),
   getHostPlatform: () => auth.host,
+  // The system browser session is a native boundary.
+  createAuthBrowser: () => auth.browser,
 }));
 // The native auth adapter owns FAPI and secure storage; its protocol has separate tests.
 vi.mock("../services/native-clerk", () => ({
@@ -57,6 +63,7 @@ beforeEach(() => {
   auth.verifyCode.mockResolvedValue(session);
   auth.resendCode.mockResolvedValue(challenge);
   auth.signOut.mockResolvedValue(undefined);
+  auth.socialStrategies.mockResolvedValue([]);
 });
 afterEach(() => {
   cleanup();
@@ -105,6 +112,64 @@ describe("native mobile account requirement", () => {
       expect(auth.create).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    ["ios", ["Apple", "GitHub", "Discord"]],
+    ["android", ["GitHub", "Discord"]],
+  ])(
+    "offers on %s only the providers Clerk enables and the app can finish",
+    async (host, names) => {
+      auth.socialStrategies.mockResolvedValue(["oauth_discord", "oauth_github", "oauth_x"]);
+      renderMobile(host);
+      await screen.findByRole("button", { name: "GitHub" });
+      const providers = screen
+        .getAllByRole("button")
+        .filter((button) => button.closest(".homepage-native-auth-providers"));
+      expect(providers.map((button) => button.textContent)).toEqual(names);
+      // Sign in with Apple is not available yet: iOS shows it disabled.
+      expect(
+        providers.find((button) => button.textContent === "Apple")?.hasAttribute("disabled") ?? true,
+      ).toBe(true);
+      expect(screen.getByRole("heading", { name: "Sign In With" })).toBeTruthy();
+    },
+  );
+
+  it("signs in with a provider through the system browser", async () => {
+    const oauth = {
+      signInId: "sia_oauth",
+      url: "https://github.com/login/oauth/authorize",
+      redirectUrl: "haptic://sso-callback",
+    };
+    auth.socialStrategies.mockResolvedValue(["oauth_github"]);
+    auth.beginOAuth.mockResolvedValue(oauth);
+    auth.browser.open.mockResolvedValue("haptic://sso-callback?rotating_token_nonce=n1");
+    auth.completeOAuth.mockResolvedValue(session);
+    renderMobile("android");
+    fireEvent.click(await screen.findByRole("button", { name: "GitHub" }));
+    expect(await screen.findByRole("button", { name: "Create Project" })).toBeTruthy();
+    expect(auth.beginOAuth).toHaveBeenCalledWith("oauth_github", "haptic://sso-callback");
+    expect(auth.browser.open).toHaveBeenCalledWith(oauth.url, "haptic://sso-callback");
+    expect(auth.completeOAuth).toHaveBeenCalledWith(oauth, "haptic://sso-callback?rotating_token_nonce=n1");
+  });
+
+  it("stays on sign-in without an error when the browser is closed", async () => {
+    auth.socialStrategies.mockResolvedValue(["oauth_discord"]);
+    auth.beginOAuth.mockResolvedValue({
+      signInId: "sia_oauth",
+      url: "https://discord.com/oauth2/authorize",
+      redirectUrl: "haptic://sso-callback",
+    });
+    auth.browser.open.mockResolvedValue(null);
+    renderMobile("ios");
+    fireEvent.click(await screen.findByRole("button", { name: "Discord" }));
+    await waitFor(() => expect(auth.browser.open).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Discord" })).toHaveProperty("disabled", false),
+    );
+    expect(auth.completeOAuth).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
+  });
 
   it.each(["web", "electron"])(
     "keeps phone-sized %s project access available without an account",

@@ -60,6 +60,10 @@ const plugins = [
     className: "BabylonSlateFileExportPlugin",
     typescript: "capacitor-file-export.ts",
   },
+  {
+    className: "BabylonSlateAuthSessionPlugin",
+    typescript: "auth-browser.ts",
+  },
 ].map((plugin) => ({
   ...plugin,
   jsName: registeredPluginName(join(vfsDir, plugin.typescript)),

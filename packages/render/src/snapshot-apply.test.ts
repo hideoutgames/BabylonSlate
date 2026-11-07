@@ -9,7 +9,7 @@ import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@haptic/bridge";
 import { createDefaultSpritePayload, createDefaultTilemapPayload, decodeHasset, embedGlbExternalImages, encodeHasset, normalizeTilesetPayload, setTile } from "@haptic/assets";
 import { createDefaultWaterDefinition, DEFAULT_SORTING_LAYERS, identityTransform, normalizeWaterBody, parseText2DProperties } from "@haptic/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { isUnlitMaterial } from "./unlit-material";
 import { unlitBinding } from "./unlit-material-blocks";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb } from "./glb-test-fixtures";
@@ -33,6 +33,7 @@ import {
   type AssignMeshCommand,
 } from "./snapshot-apply";
 import { setupDefaultViewport } from "./viewport";
+import { createWorldLayerCamera } from "./world-layer-camera";
 
 /** PNG signature + IHDR width/height — CRC omitted. */
 function pngIhdr(width: number, height: number): Uint8Array {
@@ -931,12 +932,12 @@ describe("createPlayMesh", () => {
     const part = (componentId: string, meshKind: string, x: number) => ({ componentId, meshKind,
       position: [x, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number] });
     const command: AssignMeshCommand = { type: "assignMesh", slotId: 0, meshKind: "box", meshAssetGuid: modelGuid,
-      camera: { fieldOfView: 35, isDefault: true }, parts: [
+      camera: { fieldOfView: 80 }, parts: [
         { ...part("body", "box", 0), meshAssetGuid: modelGuid },
         { ...part("lamp", "light:point", 1), light: { color: [1, 0, 0], intensity: 2, enabled: true } },
         { ...part("fill", "light:hemispheric", 0), light: { color: [0, 0, 1], intensity: 0.3, enabled: true } },
-        { ...part("wide", "camera", 2), camera: { fieldOfView: 80, isDefault: false } },
-        { ...part("detail", "camera", 5), camera: { fieldOfView: 35, isDefault: true } },
+        { ...part("wide", "camera", 2), camera: { fieldOfView: 80 } },
+        { ...part("detail", "camera", 5), camera: { fieldOfView: 35 } },
       ] };
     applyAssignMesh(scene, binding, command);
     await binding.slotAnimLoads?.get(0);
@@ -954,13 +955,15 @@ describe("createPlayMesh", () => {
     expect(wide.position.asArray()).toEqual([14, 0, 0]);
     expect(detail.position.asArray()).toEqual([20, 0, 0]);
     expect(detail.fov).toBeCloseTo(35 * Math.PI / 180);
-    expect(scene.activeCamera).toBe(detail);
+    // Possessing the slot looks through the actor's first Camera component.
+    applyPossessCamera(scene, binding, 0);
+    expect(scene.activeCamera).toBe(wide);
     const visual = binding.meshes.get(0);
     const updated = { ...command, parts: command.parts!.map(p => p.componentId === "lamp" ? { ...p, light: { ...p.light!, intensity: 4 } } : p) };
     applyAssignMesh(scene, binding, updated);
     expect(binding.meshes.get(0)).toBe(visual);
     expect(lamp.intensity).toBe(4);
-    expect(scene.activeCamera).toBe(detail);
+    expect(scene.activeCamera).toBe(wide);
 
     applyAssignMesh(scene, binding, { ...updated, parts: updated.parts.filter(p => p.componentId !== "fill") });
     await binding.slotAnimLoads?.get(0);
@@ -1040,7 +1043,7 @@ describe("createPlayMesh", () => {
       slotId: 0,
       meshAssetGuid: null,
       meshKind: "camera",
-      camera: { isDefault: false, projectionMode: "perspective" },
+      camera: { projectionMode: "perspective" },
     });
     applySnapshotToScene(scene, binding, {
       frameId: 1,
@@ -1077,7 +1080,7 @@ describe("createPlayMesh", () => {
       slotId: 0,
       meshAssetGuid: null,
       meshKind: "camera",
-      camera: { isDefault: true, projectionMode: "perspective" },
+      camera: { projectionMode: "perspective" },
     });
     applyPossessCamera(scene, binding, 0);
     expect(binding.cameras.get(0)).toBeDefined();
@@ -1302,7 +1305,7 @@ describe("createPlayMesh", () => {
       slotId: 1,
       meshAssetGuid: null,
       meshKind: "camera",
-      camera: { isDefault: false, projectionMode: "perspective" },
+      camera: { projectionMode: "perspective" },
     });
     applyAssignMesh(scene, binding, {
       type: "assignMesh",
@@ -1348,7 +1351,7 @@ describe("createPlayMesh", () => {
       slotId: 1,
       meshAssetGuid: null,
       meshKind: "camera",
-      camera: { isDefault: true, projectionMode: "perspective" },
+      camera: { projectionMode: "perspective" },
     });
     applySnapshotToScene(scene, binding, {
       frameId: 1,
@@ -1379,7 +1382,7 @@ describe("createPlayMesh", () => {
       slotId: 1,
       meshAssetGuid: null,
       meshKind: "camera",
-      camera: { isDefault: true, projectionMode: "orthographic" },
+      camera: { projectionMode: "orthographic" },
     });
     applySnapshotToScene(scene, binding, {
       frameId: 1,
@@ -1417,7 +1420,7 @@ describe("createPlayMesh", () => {
       slotId: 2,
       meshAssetGuid: null,
       meshKind: "camera",
-      camera: { isDefault: true, projectionMode: "orthographic" },
+      camera: { projectionMode: "orthographic" },
     });
     const pose = (slotId: number, x: number, y: number) => ({
       slotId, flags: 1, position: { x, y, z: -8 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
@@ -1447,7 +1450,7 @@ describe("createPlayMesh", () => {
         light: { color: [1, 1, 1], intensity: 1, enabled: true } };
       applyAssignMesh(scene, binding, lightCommand);
       applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 1, meshAssetGuid: null, meshKind: "camera",
-        camera: { isDefault: false, projectionMode: "perspective" } });
+        camera: { projectionMode: "perspective" } });
       const light = binding.lights.get(0) as DirectionalLight;
       const camera = binding.cameras.get(1) as UniversalCamera;
       const lightWrites = vi.spyOn(light.position, "set");
@@ -1493,7 +1496,7 @@ describe("createPlayMesh", () => {
       const { scene } = handle;
       const binding = createSnapshotSceneBinding();
       applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshAssetGuid: null, meshKind: "camera", primaryComponentId: "cam",
-        camera: { isDefault: false, projectionMode: "perspective" } });
+        camera: { projectionMode: "perspective" } });
       applySnapshotToScene(scene, binding, frame(pose(0, 10)));
       const camera = binding.cameras.get(0) as UniversalCamera;
       expect(camera.position.x).toBeCloseTo(10);
@@ -1517,7 +1520,7 @@ describe("createPlayMesh", () => {
       binding.pixelPerfect = true;
       binding.pixelsPerUnit = 100;
       applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 1, meshAssetGuid: null, meshKind: "camera",
-        camera: { isDefault: true, projectionMode: "orthographic" } });
+        camera: { projectionMode: "orthographic" } });
       const camera = binding.cameras.get(1) as UniversalCamera;
 
       for (let applied = 0; applied < 2; applied++) {
@@ -1532,26 +1535,24 @@ describe("createPlayMesh", () => {
     });
   });
 
-  it("prefers a possessed camera over the Default Camera", () => {
+  /** Two camera slots posed in one snapshot, with Play's Layer Camera as the binding's fallback. */
+  function twoCameraSlots() {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
     setupDefaultViewport(scene);
     const binding = createSnapshotSceneBinding();
-    applyAssignMesh(scene, binding, {
-      type: "assignMesh",
-      slotId: 1,
-      meshAssetGuid: null,
-      meshKind: "camera",
-      camera: { isDefault: true, projectionMode: "perspective" },
-    });
-    applyAssignMesh(scene, binding, {
-      type: "assignMesh",
-      slotId: 2,
-      meshAssetGuid: null,
-      meshKind: "camera",
-      camera: { isDefault: false, projectionMode: "perspective" },
-    });
+    const layer = createWorldLayerCamera(scene);
+    binding.layerCamera = layer.camera;
+    for (const slotId of [1, 2]) {
+      applyAssignMesh(scene, binding, {
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: null,
+        meshKind: "camera",
+        camera: { projectionMode: "perspective" },
+      });
+    }
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
@@ -1564,45 +1565,21 @@ describe("createPlayMesh", () => {
         flags: 1,
       })),
     });
-    expect(scene.activeCamera?.name).toBe("authoredCamera:1");
+    return { scene, binding, layer };
+  }
 
+  it("views through the Layer Camera until a camera slot is possessed, and again after Possess Camera with None", () => {
+    const { scene, binding, layer } = twoCameraSlots();
+    expect(scene.activeCamera).toBe(layer.camera);
     applyPossessCamera(scene, binding, 2);
     expect(scene.activeCamera?.name).toBe("authoredCamera:2");
+    applyPossessCamera(scene, binding, null);
+    expect(scene.activeCamera).toBe(layer.camera);
   });
 
-  it("restores the Default Camera after a possessed camera despawns", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const { scene } = handle;
-    setupDefaultViewport(scene);
+  it("returns to the Layer Camera, not another camera slot, after a possessed camera despawns", () => {
+    const { scene, binding, layer } = twoCameraSlots();
     const fallback = scene.getCameraByName("camera");
-    const binding = createSnapshotSceneBinding();
-    applyAssignMesh(scene, binding, {
-      type: "assignMesh",
-      slotId: 1,
-      meshAssetGuid: null,
-      meshKind: "camera",
-      camera: { isDefault: true, projectionMode: "perspective" },
-    });
-    applyAssignMesh(scene, binding, {
-      type: "assignMesh",
-      slotId: 2,
-      meshAssetGuid: null,
-      meshKind: "camera",
-      camera: { isDefault: false, projectionMode: "perspective" },
-    });
-    applySnapshotToScene(scene, binding, {
-      frameId: 1,
-      tickIndex: 1,
-      actorCount: 2,
-      actors: [1, 2].map((slotId) => ({
-        slotId,
-        position: { x: slotId, y: 0, z: 0 },
-        rotation: { x: 0, y: 0, z: 0, w: 1 },
-        scale: { x: 1, y: 1, z: 1 },
-        flags: 1,
-      })),
-    });
     applyPossessCamera(scene, binding, 2);
     expect(scene.activeCamera?.name).toBe("authoredCamera:2");
 
@@ -1620,8 +1597,8 @@ describe("createPlayMesh", () => {
         },
       ],
     });
-    expect(scene.activeCamera).toBe(binding.cameras.get(1));
-    expect(scene.activeCamera?.name).toBe("authoredCamera:1");
+    expect(scene.activeCamera).toBe(layer.camera);
+    expect(scene.activeCamera).not.toBe(binding.cameras.get(1));
     expect(scene.activeCamera).not.toBe(fallback);
   });
 

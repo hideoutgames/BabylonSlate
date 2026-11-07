@@ -9,6 +9,7 @@ export {
   type EngineComponentPlacement,
 } from "./engine-components";
 export * from "./scene-layer";
+export * from "./layer-camera";
 export * from "./scene-streaming";
 export * from "./scene-streaming-actor";
 export * from "./skybox";
@@ -49,6 +50,7 @@ export * from "./trace";
 export * from "./map-default";
 export * from "./fnv1a";
 export * from "./graph-cycle";
+export * from "./graph-edges";
 export * from "./class-variable-references";
 export * from "./behaviour-tree-ids";
 export * from "./asset-variable-references";
@@ -81,6 +83,9 @@ export * from "./render-effects";
 
 export { normalizeMaterialParameterCatalog, type MaterialParameterCatalog } from "./material-parameter-catalog";
 export * from "./area-rect-light";
+export * from "./component-attachment";
+export * from "./light-2d";
+export * from "./surface-shading";
 export * from "./fog-volume";
 export * from "./mirror";
 export * from "./reflection-probe";

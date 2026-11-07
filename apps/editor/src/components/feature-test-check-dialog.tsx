@@ -3,7 +3,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { estimateTextureMemory } from "@haptic/render";
-import { getHostMemoryStats } from "@haptic/vfs";
+import { getHostMemoryStats, type HostMemoryStats } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
 import {
   Dialog,
@@ -38,6 +38,7 @@ import {
   type BreakdownResumeMarker,
 } from "../lib/feature-test-breakdown-ab";
 import { FEATURE_TEST_AB_DEPS } from "../lib/feature-test-ab-deps";
+import { FEATURE_TEST_CHECK_SCENES } from "../services/feature-test-check-scenes";
 import { FeatureTestCheckStatus } from "./feature-test-check-status";
 import { formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
 import { collectDiagnosticEnvironment, copyText } from "../lib/diagnostic-info";
@@ -47,7 +48,6 @@ import {
   FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD,
   FEATURE_TEST_BREAKDOWN_METHODS,
   type FeatureTestBreakdownMethod,
-  FEATURE_TEST_CHECK_SCENES,
   FEATURE_TEST_PROFILE_SCENES,
   frameStats,
   runFeatureTestCheck,
@@ -57,6 +57,7 @@ import {
   type FeatureTestCheckMode,
   type FeatureTestCheckReport,
   type FeatureTestCheckResources,
+  type HostMemory,
 } from "../services/feature-test-check";
 import {
   PLAY_PROBE_KEY,
@@ -152,7 +153,13 @@ async function sampleCheckResources(atMs: number, step: string): Promise<Feature
     playFrames: presentation ? { drawn: presentation.drawn, held: presentation.held, contextLosses: presentation.contextLosses } : null,
     jsHeapBytes: host?.jsHeapBytes ?? null,
     appFootprintBytes: host?.appFootprintBytes ?? null,
+    ...hostMemoryOf(host),
   };
+}
+
+/** The native host's memory counters in a check's terms. */
+function hostMemoryOf(host: HostMemoryStats | null): HostMemory {
+  return { deviceAvailableBytes: host?.systemAvailableBytes ?? null, appAvailableBytes: host?.appAvailableBytes ?? null };
 }
 
 type Phase = { kind: "idle" } | { kind: "running"; message: string } | { kind: "done"; text: string; report: FeatureTestCheckReport };
@@ -255,6 +262,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       onSessionClosed: onPlaySessionClosed,
       sampleFrames,
       compiling: compilingEffects,
+      hostMemory: async () => hostMemoryOf(await getHostMemoryStats()),
       now: () => performance.now(),
       sleep,
       onProgress: (message) => setPhase({ kind: "running", message }),

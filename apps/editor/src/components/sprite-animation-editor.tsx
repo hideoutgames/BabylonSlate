@@ -1,12 +1,9 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
-  type ReactNode,
 } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
@@ -46,6 +43,7 @@ import {
   useRegistryState,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOptionalSpriteAnimationEditing } from "../context/sprite-animation-editing-context";
 import { SpriteCollisionOverlay } from "./sprite-collision-overlay";
 import { objectContainRect } from "../lib/object-contain";
 import { IconActionButton } from "./icon-action-button";
@@ -66,33 +64,8 @@ const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 const CHECKERBOARD =
   "repeating-conic-gradient(var(--muted) 0% 25%, var(--background) 0% 50%)";
 
-type SpriteAnimationEditingValue = {
-  selectedFrameIndex: number;
-  setSelectedFrameIndex: (index: number) => void;
-};
-
-const SpriteAnimationEditingContext =
-  createContext<SpriteAnimationEditingValue | null>(null);
-
-export function SpriteAnimationEditingProvider({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  const [selectedFrameIndex, setSelectedFrameIndex] = useState(0);
-  const value = useMemo(
-    () => ({ selectedFrameIndex, setSelectedFrameIndex }),
-    [selectedFrameIndex],
-  );
-  return (
-    <SpriteAnimationEditingContext.Provider value={value}>
-      {children}
-    </SpriteAnimationEditingContext.Provider>
-  );
-}
-
 function useSpriteAnimationSelection(frameCount: number) {
-  const ctx = useContext(SpriteAnimationEditingContext);
+  const ctx = useOptionalSpriteAnimationEditing();
   const [localIndex, setLocalIndex] = useState(0);
   const selectedFrameIndex = ctx?.selectedFrameIndex ?? localIndex;
   const setSelectedFrameIndex = ctx?.setSelectedFrameIndex ?? setLocalIndex;

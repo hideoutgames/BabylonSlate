@@ -60,17 +60,14 @@ export function sceneViewportRenderSettings(
   };
 }
 
-export const SCENE_LOAD_PHASES = [
-  "Preparing Scene",
-  "Loading Document",
-  "Collecting Assets",
-  "Realizing Scene",
-  "Loading Models",
-  "Compiling Shaders",
-  "Presenting First Frame",
-] as const;
-
-export type SceneViewportLoadPhase = (typeof SCENE_LOAD_PHASES)[number];
+export type SceneViewportLoadPhase =
+  | "Preparing Scene"
+  | "Loading Document"
+  | "Collecting Assets"
+  | "Realizing Scene"
+  | "Loading Models"
+  | "Compiling Shaders"
+  | "Presenting First Frame";
 
 /** First open / viewport remount for this engine generation — not gizmo apply. */
 export function isSceneViewportRemountLoad(

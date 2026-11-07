@@ -4,6 +4,7 @@ import { ImageProcessingBlock } from "@babylonjs/core/Materials/Node/Blocks/Frag
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import { InstancesBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/instancesBlock";
 import { VertexOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/vertexOutputBlock";
+import { AddBlock } from "@babylonjs/core/Materials/Node/Blocks/addBlock";
 import { ColorMergerBlock } from "@babylonjs/core/Materials/Node/Blocks/colorMergerBlock";
 import { TransformBlock } from "@babylonjs/core/Materials/Node/Blocks/transformBlock";
 import {
@@ -12,6 +13,7 @@ import {
 import { NodeMaterialSystemValues } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialSystemValues";
 import { NodeMaterial, type NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration";
 import { Material } from "@babylonjs/core/Materials/material";
@@ -25,10 +27,11 @@ import { PrepareDefinesForPrePass } from "@babylonjs/core/Materials/materialHelp
 import { MaterialHelperGeometryRendering } from "@babylonjs/core/Materials/materialHelper.geometryrendering";
 import { AuthoredShadowFragmentOutput, createAuthoredShadowVertexOutput } from "./authored-shadow-output";
 import { createGeometryCaptureOutput } from "./geometry-capture-output";
+import { HapticLightingBlock, followLightingDefines } from "./haptic-lighting-block";
 import { applyLatticeDeformerPlumbing } from "./lattice-deformer-block";
 import type { MaterialPlumbing } from "./material-block-registry";
 import {
-  registerAuthoredVariants, shareCompiledProgram,
+  LinearSurfaceImageProcessingBlock, registerAuthoredVariants, shareCompiledProgram,
   type AuthoredMaterialVariant, type AuthoredSurfaceVariant, type CompiledMaterial,
 } from "./material-compiler";
 import { overlayVisualStyle } from "./overlay-visual-style";
@@ -40,6 +43,7 @@ import {
   UnlitFinishBlock, UnlitOutputBlock, UnlitSurfaceBlock, UnlitUvBlock, hasUnlitBinding,
   markPerMeshBindingMaterial, setMaterialUnlitBinding, setUnlitBinding, unlitBinding, type UnlitBinding,
 } from "./unlit-material-blocks";
+import { Light2DBlock, UnlitLinearColorBlock } from "./unlit-lighting-blocks";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import { registerAlphaToCoverage, samplesSteppedAlpha } from "./alpha-to-coverage";
 
@@ -66,6 +70,11 @@ export type UnlitMaterialKey = {
   imageProcessing?: "scene" | "atlas";
   /** Draws its triangles' edges (a debug overlay's). */
   wireframe?: boolean;
+  /**
+   * Lights the colour: by the Scene's 2D lights (`lights-2d.ts`), or by its 3D lights through the light block
+   * (`HapticLightingBlock`, a rough non-metal; Shading Mode 3D). Unset draws it unlit.
+   */
+  lighting?: "2d" | "3d";
 };
 
 /**
@@ -111,7 +120,7 @@ function vertexAlpha(mesh: AbstractMesh): boolean {
  * Standard's alpha rules, per mesh: an unlit instance draws opaque, alpha-tested and blended meshes alike, and Babylon
  * reads these for each draw.
  */
-export function unlitNeedsBlending(mesh: AbstractMesh): boolean {
+function unlitNeedsBlending(mesh: AbstractMesh): boolean {
   const binding = unlitBinding(mesh);
   const style = overlayVisualStyle(mesh);
   if (style.opacity * style.tint[3] < 1) return true;
@@ -128,15 +137,18 @@ function matrixInput(name: string, value: NodeMaterialSystemValues, blocks: Node
   return block;
 }
 
-/** What a surface samples: nothing, the bound texture, or the bound texture as an MSDF atlas. */
-type SurfaceKind = { textured: boolean; msdf: boolean };
+/** What a surface samples (nothing, the bound texture, or the bound texture as an MSDF atlas) and how it is lit. */
+type SurfaceKind = { textured: boolean; msdf: boolean; lighting: "2d" | "3d" | null };
 
 function surfaceKind(key: UnlitMaterialKey): SurfaceKind {
-  return { textured: key.textured, msdf: key.textured && key.msdf === true };
+  return { textured: key.textured, msdf: key.textured && key.msdf === true, lighting: key.lighting ?? null };
 }
 
-/** The surface's colour graph: position, UV and colour only; lattice-deformable through a constant normal. */
-function buildSurface(material: NodeMaterial, { textured, msdf }: SurfaceKind, blocks: NodeMaterialBlock[]): void {
+/**
+ * The surface's colour graph: position, UV and colour; lattice-deformable through a constant normal, or, lit in 3D,
+ * through the mesh's own.
+ */
+function buildSurface(material: NodeMaterial, { textured, msdf, lighting }: SurfaceKind, blocks: NodeMaterialBlock[]): void {
   const scene = material.getScene();
   const position = new InputBlock(`${NAME}_position`, undefined, Types.Vector3);
   position.setAsAttribute("position");
@@ -155,6 +167,16 @@ function buildSurface(material: NodeMaterial, { textured, msdf }: SurfaceKind, b
   normal.value = new Vector4(0, 1, 0, 0);
   blocks.push(position, color, instancesBlock, worldPosition, normal);
   const plumbing: MaterialPlumbing = { worldPosition: worldPosition.output, worldNormal4: normal.output };
+  if (lighting === "3d") {
+    const meshNormal = new InputBlock(`${NAME}_meshNormal`, undefined, Types.Vector3);
+    meshNormal.setAsAttribute("normal");
+    const worldNormal = new TransformBlock(`${NAME}_worldNormal`);
+    worldNormal.complementW = 0;
+    meshNormal.output.connectTo(worldNormal.vector);
+    instancesBlock.output.connectTo(worldNormal.transform);
+    blocks.push(meshNormal, worldNormal);
+    plumbing.worldNormal4 = worldNormal.output;
+  }
   applyLatticeDeformerPlumbing(NAME, blocks, plumbing, scene);
   const finalPosition = plumbing.worldPosition!;
   const clip = new TransformBlock(`${NAME}_clipPos`);
@@ -183,8 +205,9 @@ function buildSurface(material: NodeMaterial, { textured, msdf }: SurfaceKind, b
   finalPosition.connectTo(viewPosition.vector);
   view.output.connectTo(viewPosition.transform);
   const fog = new SceneFogBlock(`${NAME}_fog`);
-  fog.displaySpace = true;
-  surface.rgb.connectTo(fog.input);
+  // Unlit and 2D-lit colours stay in display space, as Standard's unlit pixels do; 3D-lit ones are linear.
+  fog.displaySpace = lighting !== "3d";
+  litColor(surface, finalPosition, plumbing, lighting, blocks).connectTo(fog.input);
   finalPosition.connectTo(fog.worldPosition);
   view.output.connectTo(fog.view);
   viewPosition.output.connectTo(fog.viewPosition);
@@ -192,8 +215,9 @@ function buildSurface(material: NodeMaterial, { textured, msdf }: SurfaceKind, b
   const merge = new ColorMergerBlock(`${NAME}_rgba`);
   fog.output.connectTo(merge.rgbIn);
   surface.a.connectTo(merge.a);
-  const imageProcessing = new ImageProcessingBlock(`${NAME}_imageProcessing`);
-  imageProcessing.convertInputToLinearSpace = true;
+  // A 3D-lit colour is linear: it goes through image processing as a lit Material surface's does.
+  const imageProcessing = lighting === "3d" ? new LinearSurfaceImageProcessingBlock(`${NAME}_imageProcessing`) : new ImageProcessingBlock(`${NAME}_imageProcessing`);
+  imageProcessing.convertInputToLinearSpace = lighting !== "3d";
   merge.rgba.connectTo(imageProcessing.color);
   const finish = new UnlitFinishBlock(`${NAME}_finish`);
   imageProcessing.output.connectTo(finish.input);
@@ -207,6 +231,51 @@ function buildSurface(material: NodeMaterial, { textured, msdf }: SurfaceKind, b
   blocks.push(surface, fog, merge, imageProcessing, finish, output, viewPosition, camera);
   material.addOutputNode(vertexOutput);
   material.addOutputNode(output);
+}
+
+/**
+ * The surface's colour as lit: unlit as it is; 2D-lit times the Scene's 2D light at its XY (display space); 3D-lit as a
+ * rough non-metal through the light block, from its colour decoded to linear (the light block's direct and environment
+ * light summed).
+ */
+function litColor(
+  surface: UnlitSurfaceBlock, worldPosition: NodeMaterialConnectionPoint, plumbing: MaterialPlumbing,
+  lighting: SurfaceKind["lighting"], blocks: NodeMaterialBlock[],
+): NodeMaterialConnectionPoint {
+  if (lighting === "2d") {
+    const light = new Light2DBlock(`${NAME}_light2D`);
+    surface.rgb.connectTo(light.color);
+    worldPosition.connectTo(light.worldPosition);
+    blocks.push(light);
+    return light.output;
+  }
+  if (lighting !== "3d") return surface.rgb;
+  const linear = new UnlitLinearColorBlock(`${NAME}_linearColor`);
+  surface.rgb.connectTo(linear.input);
+  const camera = new InputBlock(`${NAME}_cameraPosition`, undefined, Types.Vector3);
+  camera.setAsSystemValue(NodeMaterialSystemValues.CameraPosition);
+  const metallic = new InputBlock(`${NAME}_metallic`, undefined, Types.Float);
+  metallic.value = 0;
+  const roughness = new InputBlock(`${NAME}_roughness`, undefined, Types.Float);
+  roughness.value = 1;
+  const lightingBlock = new HapticLightingBlock(`${NAME}_lighting`);
+  worldPosition.connectTo(lightingBlock.worldPosition);
+  plumbing.worldNormal4!.connectTo(lightingBlock.worldNormal);
+  camera.output.connectTo(lightingBlock.cameraPosition);
+  linear.output.connectTo(lightingBlock.baseColor);
+  metallic.output.connectTo(lightingBlock.metallic);
+  roughness.output.connectTo(lightingBlock.roughness);
+  const direct = new AddBlock(`${NAME}_direct`);
+  lightingBlock.diffuseDirect.connectTo(direct.left);
+  lightingBlock.specularDirect.connectTo(direct.right);
+  const indirect = new AddBlock(`${NAME}_indirect`);
+  lightingBlock.diffuseIndirect.connectTo(indirect.left);
+  lightingBlock.specularIndirect.connectTo(indirect.right);
+  const total = new AddBlock(`${NAME}_lit`);
+  direct.output.connectTo(total.left);
+  indirect.output.connectTo(total.right);
+  blocks.push(linear, camera, metallic, roughness, lightingBlock, direct, indirect, total);
+  return total.output;
 }
 
 /** A pass variant's graph: the coverage of the surface (its texture, alpha and cutoff) over the shared surface plumbing. */
@@ -264,26 +333,33 @@ function createNodeMaterial(scene: Scene, name: string): NodeMaterial {
   return material;
 }
 
-/** Rebinds per-mesh blocks for each draw of a frozen material, which Babylon skips when another mesh shared the effect. */
+/**
+ * Rebinds per-mesh blocks for each draw of a frozen material, which Babylon skips when another mesh shared the effect:
+ * the surface, the lattice, the 2D light block's binding point and the light block's receiver terms.
+ */
 function rebindPerMesh(material: NodeMaterial): void {
-  const perMesh = material.attachedBlocks.filter((block) => block instanceof UnlitSurfaceBlock || block.getClassName() === "LatticeDeformerBlock");
+  const perMesh = material.attachedBlocks.filter((block) =>
+    block instanceof UnlitSurfaceBlock || block instanceof Light2DBlock || block.getClassName() === "LatticeDeformerBlock");
+  const lighting = material.attachedBlocks.filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock);
   material.onBindObservable.add((mesh) => {
     if (!material.isFrozen) return;
     const effect = material.getEffect();
-    if (effect) for (const block of perMesh) block.bind(effect, material, mesh as Mesh);
+    if (!effect) return;
+    for (const block of perMesh) block.bind(effect, material, mesh as Mesh);
+    for (const block of lighting) block.bindReceiver(effect, mesh);
   });
 }
 
 /**
  * Babylon sets NORMAL, TANGENT, UV1 to UV6 and VERTEXCOLOR_NME from each mesh's attributes, which would split one unlit
- * program by vertex layout. The surface reads none but UV1 (when textured) and the vertex colour.
+ * program by vertex layout. The surface reads none but UV1 (when textured), the vertex colour and, lit in 3D, the normal.
  */
-function pinAttributeDefines(material: NodeMaterial, textured: boolean): void {
+function pinAttributeDefines(material: NodeMaterial, textured: boolean, normals = false): void {
   const scene = material.getScene();
   (material as unknown as { _prepareDefinesForAttributes: (mesh: AbstractMesh, defines: NodeMaterialDefines) => void })
     ._prepareDefinesForAttributes = (mesh, defines) => {
       const before = ["NORMAL", "TANGENT", "VERTEXCOLOR_NME", "UV1", "UV2", "UV3", "UV4", "UV5", "UV6"].map((name) => defines[name]);
-      defines["NORMAL"] = false;
+      defines["NORMAL"] = normals && mesh.isVerticesDataPresent(VertexBuffer.NormalKind);
       defines["TANGENT"] = false;
       defines["VERTEXCOLOR_NME"] = mesh.useVertexColors && mesh.isVerticesDataPresent(VertexBuffer.ColorKind);
       defines["UV1"] = textured && mesh.isVerticesDataPresent(VertexBuffer.UVKind);
@@ -323,11 +399,11 @@ function createVariant(owner: NodeMaterial, surface: SurfaceKind, kind: Authored
 }
 
 function instanceId(key: UnlitMaterialKey): string {
-  return JSON.stringify([key.textured, key.msdf === true, key.backFaceCulling, key.fog, key.role, key.imageProcessing ?? "scene", key.wireframe === true]);
+  return JSON.stringify([key.textured, key.msdf === true, key.backFaceCulling, key.fog, key.role, key.imageProcessing ?? "scene", key.wireframe === true, key.lighting ?? null]);
 }
 
 function createInstance(scene: Scene, key: UnlitMaterialKey, owned = false): UnlitInstance {
-  const material = createNodeMaterial(scene, `unlit:${key.role}${key.msdf ? ":msdf" : key.textured ? ":textured" : ""}${key.fog ? "" : ":noFog"}${key.backFaceCulling ? "" : ":twoSided"}`);
+  const material = createNodeMaterial(scene, `unlit:${key.role}${key.msdf ? ":msdf" : key.textured ? ":textured" : ""}${key.fog ? "" : ":noFog"}${key.backFaceCulling ? "" : ":twoSided"}${key.lighting ? `:lit${key.lighting.toUpperCase()}` : ""}`);
   const instance: UnlitInstance = { material, key: { ...key }, meshes: new Set() };
   if (!owned) {
     // Shared by every mesh with its key: a mesh disposed with its materials (`dispose(false, true)`) leaves it to the
@@ -358,12 +434,14 @@ function createInstance(scene: Scene, key: UnlitMaterialKey, owned = false): Unl
   };
   const hasTexture = material.hasTexture.bind(material);
   material.hasTexture = (texture: BaseTexture) => hasTexture(texture) || [...instance.meshes].some((mesh) => unlitBinding(mesh).texture === texture);
-  pinAttributeDefines(material, key.textured);
+  pinAttributeDefines(material, key.textured, key.lighting === "3d");
   const blocks: NodeMaterialBlock[] = [];
   const kind = surfaceKind(key);
   buildSurface(material, kind, blocks);
   rebindPerMesh(material);
-  shareCompiledProgram(material, JSON.stringify([NAME, "surface", kind.textured, kind.msdf, material.shaderLanguage]));
+  // CEL and Screen-Space Shadows are the light block's scene-level defines, set from the Scene's settings.
+  if (kind.lighting === "3d") followLightingDefines(material);
+  shareCompiledProgram(material, JSON.stringify([NAME, "surface", kind.textured, kind.msdf, kind.lighting, material.shaderLanguage]));
   // Opaque unlit meshes keep the cached stock shadow path. Registered with the build's final id (the build finishes
   // once its blocks' shader code has loaded), after the bind observers it snapshots.
   material.onBuildObservable.addOnce(() => registerCacheableShadowMaterial(material));

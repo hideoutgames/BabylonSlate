@@ -4,7 +4,8 @@ import {
   createAccountSecretStore,
   createSecretStore,
 } from "./create-secret-store";
-import { MemorySecretStore, UnavailableSecretStore } from "./secret-store";
+import { UnavailableSecretStore } from "./secret-store";
+import { MemorySecretStore } from "./test-support/memory-secret-store";
 import { CapacitorSecretStore } from "./capacitor-secret-store";
 
 describe("SecretStore", () => {

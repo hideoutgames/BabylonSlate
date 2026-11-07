@@ -17,6 +17,7 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 | `Actor` | Transform plus ordered components. Writing `parentId` / `name` through `variables` bumps `World.structuralRevision`. |
 | `ActorComponent` | Own variables and interfaces; Begin Play after owner spawn. `attachComponent` throws on a destroyed actor. |
 | `Scene` | Live Play scene, `classId` `Scene:{assetGuid}`, running its SceneScript; `sceneName`, `assetGuid` (Get-only), `gravity` (Get/Set). Not spawnable. |
+| `LayerCamera` / `SceneCameraManager` | Locked engine objects, never creatable or collected. A `LayerCamera` (guid `<owner>:layerCamera`) belongs to one Scene or SceneLayer and reads as destroyed with it; `getVariable` reads its live `state` (location, rotation, zoom), and writes go through the runtime. The World holds one `SceneCameraManager` (fixed guid `scene-camera-manager`), whose Layer Camera / Camera Actor / Camera Component the runtime reads live. |
 | `SceneLayer` / `SceneLayerActor` | Overlay session instance (not an Actor; `classId` `SceneLayer:{assetGuid}`, running its SceneLayerScript) / overlay actor tagged `sceneLayerId`, same World tick. |
 | `GameInstance` | Session singleton. |
 | `Subsystem` → `GameSubsystem`, `SceneSubsystem` | Hidden abstract base (never in pickers) → session-lifetime / main-Scene-lifetime singletons. ClassKind stays `object`. |
@@ -37,6 +38,8 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 1. `gameInstance`: GameInstance `onTick`, then live GameSubsystems in class-id order.
 2. `sceneSubsystems`: main Scene's SceneSubsystems; gated by `canTickScene` then `canTickSceneSubsystem`.
 3. `actors` (spawn order) → 4. `components` (attach order) → 5. `objects` (`addTickingObject` order: Create Object objects with Tickable Object; destroyed ones are dropped in place, ones added during the phase tick next tick; the list is not a root) → 6. `physics` (backend `step` + write-back, filled by `@haptic/physics`) → 7. `postPhysics` (boundary only).
+
+Every phase of a tick receives the same `TickContext` (`dt`, `tickIndex`, World and the input provider's members), built once per `tick()`; a new one is built each tick because latent script contexts keep theirs.
 
 `WorldOptions.canTickScene` suspends phases 2–7 during cooperative scene preparation while the Game Instance keeps ticking; `canTickActor` gates individual owners and SceneLayers. Both are rechecked mid-tick.
 

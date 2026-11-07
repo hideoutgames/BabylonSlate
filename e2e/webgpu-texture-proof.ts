@@ -75,7 +75,7 @@ export type Tone = "red" | "green";
 export type PreviewSample = { matched: number; moved: number };
 
 /** Pixels of the fixture `tone`, and pixels that change over 600 ms (p17's motion diff). */
-export async function previewPixels(canvas: Locator, tone: Tone): Promise<PreviewSample> {
+async function previewPixels(canvas: Locator, tone: Tone): Promise<PreviewSample> {
   return canvas.evaluate(async (node: HTMLCanvasElement, tone) => {
     const context = node.getContext("2d");
     if (!context) return { matched: 0, moved: 0 };

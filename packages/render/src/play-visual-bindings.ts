@@ -4,6 +4,7 @@ import type { Node as BabylonNode } from "@babylonjs/core/node";
 import type { Scene } from "@babylonjs/core/scene";
 import type { CommandMessage } from "@haptic/bridge";
 import { AreaRectLightGroup } from "./area-rect-light";
+import { Light2DGroup, Occluder2DGroup } from "./light-2d-group";
 import type { CreateEngineOptions } from "./create-engine-types";
 import { removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { markLatticeComponentRoot } from "./lattice-deformer";
@@ -203,6 +204,27 @@ export function createPlayVisualBindings({
     markSnapshotStale();
     binding.fogVolumes.set(command.slotId, { actorId: command.actorId, bindings: command.volumes });
     refreshRuntimeFogVolumes(command.slotId);
+    scheduler.invalidate("asset");
+  }
+  if (command.type === "setLights2D") {
+    let group = binding.lights2D.get(command.slotId);
+    if (command.lights.length) {
+      if (!group) { group = new Light2DGroup(scene); binding.lights2D.set(command.slotId, group); }
+      const mesh = binding.meshes.get(command.slotId);
+      if (mesh) group.setWorld(mesh.getWorldMatrix());
+      group.update(command.lights);
+    } else if (group) { group.dispose(); binding.lights2D.delete(command.slotId); }
+    // 2D lights are uniform data: the next frame draws them, with no snapshot or readiness change.
+    scheduler.invalidate("asset");
+  }
+  if (command.type === "setOccluders2D") {
+    let group = binding.occluders2D.get(command.slotId);
+    if (command.shapes.length) {
+      if (!group) { group = new Occluder2DGroup(scene); binding.occluders2D.set(command.slotId, group); }
+      const mesh = binding.meshes.get(command.slotId);
+      if (mesh) group.setWorld(mesh.getWorldMatrix());
+      group.update(command.shapes);
+    } else if (group) { group.dispose(); binding.occluders2D.delete(command.slotId); }
     scheduler.invalidate("asset");
   }
   if (command.type === "setAreaLights") {

@@ -14,9 +14,9 @@ import { subject } from "./self-pin";
 export const TIMELINE_CLIP_CATEGORY = "timeline";
 
 /** What a Timeline Clip control node asks the runtime to do (`ctx.timelineClipControl`). */
-export type TimelineClipAction = "play" | "playFromStart" | "reverse" | "pause" | "stop" | "setPosition" | "setPlayRate" | "setLoopMode";
+type TimelineClipAction = "play" | "playFromStart" | "reverse" | "pause" | "stop" | "setPosition" | "setPlayRate" | "setLoopMode";
 /** What a Timeline Clip read returns (`ctx.timelineClipState`). */
-export type TimelineClipField = "position" | "length" | "playRate" | "playing" | "reversed";
+type TimelineClipField = "position" | "length" | "playRate" | "playing" | "reversed";
 
 const target = () => subject(pin("target", "Target", "in", objectRef("TimelineClip")));
 const exec = () => [pin("execIn", "exec", "in", EXEC), pin("execOut", "then", "out", EXEC)];

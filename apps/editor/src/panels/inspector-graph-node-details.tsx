@@ -26,8 +26,7 @@ import { Input } from "@haptic/ui/components/input";
 import { Button } from "@haptic/ui/components/button";
 import { useRegistryState } from "../context/document-context";
 import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
-import { JsBodyEditor } from "../components/js-body-editor";
-import { GlslCodePreview } from "../components/glsl-code-preview";
+import { LazyGlslCodePreview, LazyJsBodyEditor } from "../components/lazy-code-editors";
 import { DataTreeEntryField } from "../components/data-tree-entry-picker";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import { executeJavaScriptNameError } from "@haptic/scripting-nodes";
@@ -73,6 +72,7 @@ import {
   pinRowIdsFor,
   type CommittedPinRowIds,
 } from "./inspector-member-rows";
+import { FunctionPinListEditors } from "./inspector-function-pins";
 import type { InspectorCatalogs } from "./use-inspector-catalogs";
 
 /** The pin whose default the Class picker fills, and the base Class it allows. */
@@ -97,6 +97,8 @@ export interface GraphNodeDetailsProps {
   activeFunctionId: string | null;
   /** The inspected document's path; a renamed event's Calls are scoped to its Class. */
   docPath: string | undefined;
+  /** The graph's host class id, so a function signature edit reaches only its own Calls. */
+  classId?: string;
   /** The focused diagnostic's line in an Execute JavaScript body. */
   focusBodyLine?: number;
   catalogs: InspectorCatalogs;
@@ -125,6 +127,7 @@ export function GraphNodeDetails({
   selectedNode,
   activeFunctionId,
   docPath,
+  classId,
   focusBodyLine,
   catalogs,
   persistGraph,
@@ -222,6 +225,14 @@ export function GraphNodeDetails({
         ? { signature: (pin as { signature?: PinListRow["signature"] }).signature ?? [] }
         : {}),
     }));
+  // A function's Input node edits its Inputs, its Output node its Outputs.
+  const functionEndpoint =
+    selectedNode.type === "flow.function.input" ? "in"
+      : selectedNode.type === "flow.function.output" ? "out"
+        : null;
+  const endpointFunction = functionEndpoint && activeFunctionId
+    ? (graph.members ?? []).find((member) => member.kind === "function" && member.id === activeFunctionId)
+    : undefined;
   // Wired to a delegate input, a custom event takes that delegate's signature (as in Unreal).
   const eventSignatureFrom = isCustomEvent ? customEventSignatureSource(graph, selectedNode.id) : null;
   const title =
@@ -407,6 +418,18 @@ export function GraphNodeDetails({
         ) : null}
         {dataLiteralDefaults.length > 0 ? <GraphDataLiteralDefaults entries={dataLiteralDefaults}
           nodeData={selectedNode.data} onPatch={updateNodeData} /> : null}
+        {functionEndpoint && endpointFunction ? (
+          <FunctionPinListEditors
+            graph={graph}
+            member={endpointFunction}
+            only={functionEndpoint}
+            classEntries={objectClassEntries}
+            typeAssets={typeAssets}
+            classId={classId}
+            delegateSignatures={delegateSignatures}
+            onChange={persistGraph}
+          />
+        ) : null}
         {isExecJs ? (
           <>
             <PinListEditor
@@ -445,8 +468,8 @@ export function GraphNodeDetails({
             <MultilineTextField code title="JavaScript Function Body" data-testid="class-node-code"
               value={String(selectedNode.data.body ?? "")}
               onChange={(body) => updateNodeData({ body })}
-              renderPreview={(value) => <GlslCodePreview value={value} language="javascript" />}
-              renderEditor={(value, onChange) => <JsBodyEditor value={value} onChange={onChange} bodyLine={focusBodyLine} names={[...inputs, ...outputs].map((pin) => pin.name)} />}
+              renderPreview={(value) => <LazyGlslCodePreview value={value} language="javascript" />}
+              renderEditor={(value, onChange) => <LazyJsBodyEditor value={value} onChange={onChange} bodyLine={focusBodyLine} names={[...inputs, ...outputs].map((pin) => pin.name)} />}
             />
           </>
         ) : null}

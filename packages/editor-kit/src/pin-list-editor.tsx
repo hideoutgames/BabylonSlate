@@ -287,7 +287,7 @@ export function PinListEditor({
         return (
           <div
             key={row.id}
-            className="group/pin-row flex flex-nowrap items-center gap-1"
+            className="flex flex-nowrap items-center gap-1"
           >
             <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div
@@ -512,7 +512,6 @@ export function PinListEditor({
             </div>
             {readOnly ? null : (
               <ListRowActions
-                className={cn("transition-opacity motion-reduce:transition-none pointer-coarse:opacity-100", selected ? "opacity-100" : "opacity-0 group-hover/pin-row:opacity-100 group-focus-within/pin-row:opacity-100")}
                 index={index}
                 count={rows.length}
                 name={row.name}

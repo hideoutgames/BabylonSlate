@@ -19,7 +19,7 @@ import {
   createMeshComponent,
   type SerializedScene,
 } from "@haptic/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { isEngineDefaultMaterial } from "./default-material";
 import {
   createEditorCamera,

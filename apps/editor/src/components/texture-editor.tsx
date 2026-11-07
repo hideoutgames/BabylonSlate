@@ -53,6 +53,7 @@ import {
 } from "../lib/asset-settings";
 import { shownCompressionState } from "../lib/texture-encode-state";
 import { ImportProgressDialog, type ImportProgress } from "./import-progress-dialog";
+import { asRecord } from "../lib/as-record";
 
 const HDR_FACE_SIZE_OPTIONS = HDR_ENVIRONMENT_FACE_SIZES.map((size) => ({ value: String(size), label: `${size} × ${size}` }));
 
@@ -63,12 +64,6 @@ const CHECKERBOARD =
 type TextureZoom = "fit" | "actual";
 
 const FIT_INSET = 16;
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
 
 /**
  * Whether the Texture's committed encode is stale for the alignment policy

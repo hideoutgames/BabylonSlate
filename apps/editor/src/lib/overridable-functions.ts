@@ -14,9 +14,9 @@ import {
   mergedPrefabViewsForGraph,
 } from "./component-graph-members";
 
-export type OverridableFunctionKind = "interface" | "function";
+type OverridableFunctionKind = "interface" | "function";
 
-export type OverridableFunctionRow = {
+type OverridableFunctionRow = {
   id: string;
   kind: OverridableFunctionKind;
   name: string;
@@ -27,7 +27,7 @@ export type OverridableFunctionRow = {
   overrides?: { classId: string; name: string };
 };
 
-export type ScriptInterfaceCatalogEntry = {
+type ScriptInterfaceCatalogEntry = {
   guid: string;
   name: string;
   methods: Array<{ name: string; pins?: GraphClassMemberPin[] }>;
@@ -82,7 +82,7 @@ function interfaceMembersFromGraphs(
   return members;
 }
 
-export function ensureFunctionExecPins(
+function ensureFunctionExecPins(
   pins: GraphClassMemberPin[] | undefined,
 ): GraphClassMemberPin[] {
   const list = pins ?? [];

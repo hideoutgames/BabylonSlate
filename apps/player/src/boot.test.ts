@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDefaultWaterDefinition, createDefaultScene, createDefaultRenderTargetCaptureProperties, DEFAULT_RENDER_PROJECT_SETTINGS, resolveRenderingPipeline,
+import { createDefaultWaterDefinition, createDefaultScene, createDefaultRenderTargetCaptureProperties, DEFAULT_RENDER_PROJECT_SETTINGS,
   SaveGameService, createSaveStorageClient, type SaveGameConfiguration, type SaveGameStorage } from "@haptic/core";
 import { encodePackedAudioAsset } from "@haptic/assets";
 import { exportGame } from "@haptic/exporter";
@@ -99,7 +99,6 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration, with
     prepareSceneStream: vi.fn(async (_slots: readonly number[], _signal: AbortSignal, progress?: (value: number) => void) => { progress?.(1); }),
     setSceneStreamingPaused: vi.fn(),
     playVisualStates: () => [], playMeshMaterialNames: () => [], isFreeCamEnabled: () => false,
-    renderingPipeline: () => resolveRenderingPipeline(game.manifest.render),
     whenEditorModelsReady: async () => {}, whenMaterialTexturesReady: async () => {},
     prewarmSceneMaterials: async () => {}, presentFirstFrame: vi.fn(async () => {}),
     unlockAudio: async () => {},

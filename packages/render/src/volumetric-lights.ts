@@ -64,14 +64,16 @@ function slotsBefore(a: VolumeLight, b: VolumeLight): boolean {
 /**
  * Fills `slots` with the lights that take part: the directional light first, then the others by creation. Bounded and
  * deterministic; borrowed cluster children stay eligible. Distance (with directional lights and render priority)
- * chooses which lights take part, not their slots, so lights crossing in distance keep their slots. Allocates nothing
- * once the scratch has grown to the light count.
+ * chooses which lights take part, not their slots, so lights crossing in distance keep their slots. A point or spot
+ * light takes part while its range reaches within `reach` of the camera: Volumetric Distance, or the farthest bound
+ * Fog Volume when that is farther. Allocates nothing once the scratch has grown to the light count.
  */
 export function fillVolumetricSlots(
   slots: VolumetricSlots,
   scene: Scene,
   camera: Camera,
   settings: VolumetricLightingSettings,
+  reach = settings.maxDistance,
 ): void {
   const limit = settings.maxLights;
   const previous = slots.count;
@@ -104,7 +106,7 @@ export function fillVolumetricSlots(
               transformed ? light.transformedPosition : light.position,
               camera.globalPosition,
             );
-      if (distance > (settings.maxDistance + light.range) ** 2) continue;
+      if (distance > (reach + light.range) ** 2) continue;
       // Insert among the best `limit` so far, shifting the tail (and dropping the last when full).
       let at = count;
       while (at > 0 && outranks(light, distance, picked[at - 1]!, pickedDistance[at - 1]!)) at--;

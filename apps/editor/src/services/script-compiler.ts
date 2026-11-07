@@ -25,6 +25,7 @@ import {
   collectLatentFunctions,
   isLatentFunctionKey,
   isLogicGraphPayload,
+  jsIdent,
   latentSourcesFromSerializedGraph,
   type CompiledEntryPoint,
   type LatentFunctionSource,
@@ -102,17 +103,11 @@ export function classDisplayNameForGraphPath(path: string): string {
   return stripAssetFileSuffix(path.split("/").pop() ?? path) || classIdForGraphPath(path);
 }
 
-
-export function consoleCommandFromGraph(
+function consoleCommandFromGraph(
   graph: LogicGraph,
   classId: string,
 ): ScriptConsoleCommand | undefined {
   return consoleCommandMetadataFromGraph(graph, classId);
-}
-
-function jsIdent(name: string): string {
-  const cleaned = name.replace(/[^A-Za-z0-9_$]/g, "_");
-  return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
 }
 
 /**

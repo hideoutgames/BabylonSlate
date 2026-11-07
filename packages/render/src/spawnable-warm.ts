@@ -12,7 +12,7 @@ import { pipelinesWarmed } from "./variant-pipeline-warmup";
 import { pipelinesDeferred } from "./webgpu-pipeline-deferral";
 
 /** Where pipelines are deferred, staged meshes whose pipelines are not warm yet go after this long all the same. */
-export const SPAWNABLE_PIPELINE_WARM_MS = 10_000;
+const SPAWNABLE_PIPELINE_WARM_MS = 10_000;
 
 /**
  * Compiles what Play may spawn, before it does, against the Scene's current lighting: each Material on a staged box

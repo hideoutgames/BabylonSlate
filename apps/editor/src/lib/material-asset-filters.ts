@@ -1,7 +1,7 @@
 /**
  * Material asset type and domain predicates, the Material header meta, and the
  * picker filters that prefer an open document's domain over the saved header.
- * `content-browser-helpers.ts` re-exports the public names.
+ * `content-browser-helpers.ts` re-exports the names its importers use.
  */
 import { isMaterialTextureAssetType } from "@haptic/core";
 import { isEnvironmentTexturePayload } from "@haptic/assets";

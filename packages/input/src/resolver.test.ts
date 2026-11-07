@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { inputMappingKey } from "./input-assets";
 import {
   createDefaultInputMappings,
   normalizeInputMappings,
@@ -7,6 +8,12 @@ import {
 } from "./mappings";
 import { InputResolver } from "./resolver";
 import type { RawInputEvent } from "./ring-buffer";
+
+// Passes through; a sample reads each mapping's key once, so the calls count samples.
+vi.mock("./input-assets", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./input-assets")>();
+  return { ...actual, inputMappingKey: vi.fn(actual.inputMappingKey) };
+});
 
 function key(tick: number, code: string, phase: "down" | "up"): RawInputEvent {
   return { kind: "key", tick, code, phase };
@@ -99,6 +106,41 @@ describe("InputResolver event transitions", () => {
     const short = resolver.resolve([pad([0, 0, 0, 0], [0, 0])]);
     expect(short.actions.Menu).toEqual({ held: false, pressed: false, released: true });
     expect(short.axes.Look).toBe(0);
+  });
+
+  it("samples an idle tick once, and twice when recognition changed a value or mappings share a key", () => {
+    const resolver = new InputResolver({
+      actions: [
+        { name: "Jump", bindings: [{ device: "key", code: "Space" }] },
+        { name: "Hold", bindings: [{ device: "touch", code: "long-press" }] },
+      ],
+      axes: [{ name: "Turn", kind: "1d", bindings: [{ device: "key", code: "KeyD" }] }],
+    });
+    const samples = (events: RawInputEvent[]) => {
+      vi.mocked(inputMappingKey).mockClear();
+      const resolved = resolver.resolve(events, 1 / 60);
+      return { resolved, samples: vi.mocked(inputMappingKey).mock.calls.length / 3 };
+    };
+    resolver.resolve([key(0, "Space", "down"), { kind: "pointer", tick: 0, pointerId: 1, phase: "down", x: 10, y: 10, button: 0, pointerType: "touch" }], 1 / 60);
+    resolver.resolve([], 1 / 60);
+    const idle = samples([]);
+    expect(idle.samples).toBe(1);
+    expect(idle.resolved.actions.Jump).toEqual({ held: true, pressed: false, released: false });
+    // The 30th tick of the press recognizes Long Press: its first sample still sees it up, so the press edges.
+    for (let tick = 3; tick < 29; tick++) expect(samples([]).samples).toBe(1);
+    const recognized = samples([]);
+    expect(recognized.samples).toBe(2);
+    expect(recognized.resolved.actions.Hold).toEqual({ held: true, pressed: true, released: false });
+    expect(samples([]).resolved.actions.Hold).toEqual({ held: true, pressed: false, released: false });
+
+    const shared = new InputResolver({ actions: [
+      { name: "Fire", bindings: [{ device: "key", code: "KeyF" }] },
+      { name: "Fire", bindings: [{ device: "key", code: "KeyG" }] },
+    ], axes: [] });
+    shared.resolve([]);
+    vi.mocked(inputMappingKey).mockClear();
+    shared.resolve([]);
+    expect(vi.mocked(inputMappingKey)).toHaveBeenCalledTimes(4);
   });
 
   it("releases a whole mouse contact when pointerup names a button whose chord edge was missed", () => {

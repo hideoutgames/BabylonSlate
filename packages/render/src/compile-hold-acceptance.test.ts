@@ -33,7 +33,6 @@
  * it draws with is ready, its pipelines included.
  */
 import {
-  ArcRotateCamera,
   Color4,
   Constants,
   DirectionalLight,
@@ -59,7 +58,7 @@ import {
   VertexBuffer,
   type AbstractEngine,
   type AbstractMesh,
-  type Effect,
+  Effect,
 } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_VISIBLE,
@@ -563,7 +562,7 @@ function playWorld(
     { slotId: 1, guid: "floor", position: [0, 0, 0], scale: [12, 0.2, 12], assign: { meshAssetGuid: null, meshKind: "box" } },
     { slotId: 2, guid: "crate", position: [0, 1, 0], assign: { meshAssetGuid: null, meshKind: "box" } },
     sun(),
-    { slotId: 4, guid: "camera", position: [0, 3, -10], assign: { meshAssetGuid: null, meshKind: null, parts: [part("lens", "camera", { camera: { fieldOfView: 60, isDefault: true } })] } },
+    { slotId: 4, guid: "camera", position: [0, 3, -10], assign: { meshAssetGuid: null, meshKind: null, parts: [part("lens", "camera", { camera: { fieldOfView: 60 } })] } },
   ];
   let frameId = 0;
   const pose = () => {
@@ -609,6 +608,8 @@ function playWorld(
   };
   for (const actor of world) handle.applyCommand({ type: "spawn", slotId: actor.slotId, actorGuid: actor.guid, classId: "Actor" });
   for (const actor of world) assign(actor);
+  // The runtime possesses the Scene's Default Camera when it starts.
+  handle.applyCommand({ type: "possessCamera", slotId: 4 });
   place(...actors);
 
   // The world view's frames, as the render loop drives them.
@@ -942,9 +943,10 @@ describe("compile holds after the first frame", () => {
     if (spec.full) updateSceneRenderingSettings(world.handle.scene,
       { quality: normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 2 } }) });
     if (spec.camera) {
-      const camera = world.handle.scene.activeCamera as ArcRotateCamera;
+      // The possessed camera, looking at the origin from the case's viewpoint; unchanged actor poses leave it there.
+      const camera = world.handle.scene.activeCamera as UniversalCamera;
+      camera.position.copyFrom(spec.camera);
       camera.setTarget(Vector3.Zero());
-      camera.setPosition(spec.camera);
     }
     const lightOf = (slotId: number) => world.handle.scene.lights.find((entry) => entry.name === `${AUTHORED_LIGHT_PREFIX}${slotId}`);
     let before: Effect | null = null;
@@ -1839,15 +1841,16 @@ describe("compile holds after the first frame", () => {
     });
   });
 
-  it("a geometry pass that first draws when a Fog Volume comes within reach holds the view for its pipelines: webgpu", async () => {
-    // Fog Volumes alone run the geometry pass only while one is within reach of the camera, so the view's complete
-    // frames leave it undrawn. Its first draws miss every mesh's pipeline at once, so they hold as a new graph's do.
+  it("a geometry pass that first draws when a Fog Volume comes into view holds the view for its pipelines: webgpu", async () => {
+    // Fog Volumes alone run the geometry pass only while one is in the camera's view (behind the camera it is not), so
+    // the view's complete frames leave it undrawn. Its first draws miss every mesh's pipeline at once, so they hold as a
+    // new graph's do.
     const world = playWorld("webgpu", []);
     Object.assign(world.engine.getCaps(), { texelFetch: true });
     // Fog Volumes alone: Screen-Space Shadows would keep the geometry pass drawing every frame.
     updateSceneRenderingSettings(world.handle.scene, undefined, undefined, { screenShadows: "off" });
     const fog = new TransformNode("fog", world.handle.scene);
-    fog.position.z = 5_000;
+    fog.position.z = -5_000;
     upsertFogVolumes(world.handle.scene, "fog", fog, fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]));
     const record = await measure(world, () => { fog.position.z = 0; });
     // Its geometry variants are compiled only once it runs: the pass had not drawn before.
@@ -1901,8 +1904,9 @@ describe("compile holds after the first frame", () => {
   const HELD = { geometryVariants: true, held: true, holdRaised: true, leftOut: 0, waitedFor: true, recovered: true };
 
   it("a Fog Volume pass that went idle holds again for its next draws: webgpu", async () => {
-    // The pass drew while a volume was within reach, then idled while the crate's geometry variant changed. A volume
-    // coming within reach again draws that new variant first; an idle pass is forgotten, so it holds as a first draw.
+    // The pass drew while a volume was in view, then idled (the volume behind the camera) while the crate's geometry
+    // variant changed. The volume coming into view again draws that new variant first; an idle pass is forgotten, so it
+    // holds as a first draw.
     const world = playWorld("webgpu", []);
     Object.assign(world.engine.getCaps(), { texelFetch: true });
     // Fog Volumes alone: Screen-Space Shadows would keep the geometry pass drawing every frame.
@@ -1911,7 +1915,7 @@ describe("compile holds after the first frame", () => {
     upsertFogVolumes(world.handle.scene, "fog", fog, fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]));
     const [crate] = ownMaterials(world, "actor-2");
     await settle(world);
-    fog.position.z = 5_000;
+    fog.position.z = -5_000;
     for (let index = 0; index < 3; index++) await world.frame();
     expect(await geometryLag(world, async () => {
       changeDefines(world, crate!);
@@ -2384,6 +2388,27 @@ describe("the lighting CI gate", () => {
       compiled: Object.fromEntries(Object.keys(compiled).map((name) => [name, 0])), pipelines: 0, synchronous: 0, builds: 0,
       marched: ["Spatial Geometry", "Screen shadows", "Forward objects"], tasks, reading: true, sameReaders: before,
     });
+  });
+
+  it.each(MODELS)("a Screen-Space Shadows level change rebuilds nothing and the march reads the new level: %s", async (model) => {
+    const world = playWorld(model, actors());
+    Object.assign(world.engine.getCaps(), { texelFetch: true });
+    const screenShadows = (level: "low" | "high") =>
+      world.handle.setRenderSettings(normalizeRenderProjectSettings({ shadows: { screenShadows: level } }));
+    screenShadows("high");
+    await settle(world);
+    const tasks = world.handle.renderTaskNames();
+    const builds = vi.spyOn(FrameGraph.prototype, "buildAsync");
+    const uniforms = vi.spyOn(Effect.prototype, "setFloat4");
+    // Steps, pixel cap and world cap of the frame's last march.
+    const march = () => uniforms.mock.calls.filter(([name]) => name === "ssMarch").at(-1)?.slice(1, 4);
+    await world.frame();
+    expect(march()).toEqual([16, 64, 0.8]);
+    screenShadows("low");
+    const frames: boolean[] = [];
+    for (let index = 0; index < 3; index++) frames.push((await world.frame()).view?.rendered === true);
+    expect({ march: march(), frames, builds: builds.mock.calls.length, tasks: world.handle.renderTaskNames() })
+      .toEqual({ march: [6, 30, 0.35], frames: [true, true, true], builds: 0, tasks });
   });
 
   /** The world view's Anti-Aliasing, on a device that multisamples at up to 4. */

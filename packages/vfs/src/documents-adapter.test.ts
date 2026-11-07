@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SourceRevisionChangedError } from "@haptic/core";
 import { DocumentsStorageAdapter } from "./documents-adapter";
+import { DERIVED_STORAGE_ROOT, LIBRARY_FOLDERS } from "./library-folders";
 import { createMountedProjectStorage } from "./mounted-storage";
 import {
   createFakeDocumentsFs,
@@ -173,5 +174,38 @@ describe("DocumentsStorageAdapter", () => {
     await expect(storage.exists("project.json")).rejects.toBe(denied);
     await expect(storage.stat("project.json")).rejects.toBe(denied);
     await expect(storage.listProjects()).rejects.toBe(denied);
+  });
+
+  it("deletes a project folder and refuses app folders, chosen folders and the projects root", async () => {
+    await storage.openDocumentsProject("__haptic_derived__");
+    await storage.writeText("thumb.bin", "derived");
+    await storage.openDocumentsProject("Gone");
+    await storage.writeText("assets/a.bin", "gone");
+    await storage.openDocumentsProject("Keep");
+    await storage.writeText("project.json", "keep");
+    const gone = { id: "documents:Gone", name: "Gone", tier: "documents" as const };
+
+    await storage.deleteProject(gone);
+    expect([...fs.tree.keys()].filter((path) => path.includes("/Gone"))).toEqual([]);
+    expect(storage.getCurrentFolder()?.id).toBe("documents:Keep");
+    await expect(storage.deleteProject(gone)).resolves.toBeUndefined();
+
+    for (const folder of [...LIBRARY_FOLDERS, DERIVED_STORAGE_ROOT]) await storage.openDocumentsProject(folder);
+    await storage.openDocumentsProject("Keep");
+    for (const handle of [
+      ...[...LIBRARY_FOLDERS, DERIVED_STORAGE_ROOT].map((folder) => ({ id: `documents:${folder}`, name: folder, tier: "documents" as const })),
+      { id: "documents:", name: "Projects", tier: "documents" as const },
+      { id: "documents:..", name: "Parent", tier: "documents" as const },
+      { id: "documents:Keep/assets", name: "Assets", tier: "documents" as const },
+      { id: "documents:Keep", name: "Keep", tier: "external" as const },
+      { id: "external:Keep", name: "Keep", tier: "documents" as const },
+    ]) await expect(storage.deleteProject(handle), handle.id).rejects.toThrow();
+    expect(fs.tree.has("BabylonSlate/projects/Keep/project.json")).toBe(true);
+    expect(fs.tree.has("BabylonSlate/projects/__haptic_derived__/thumb.bin")).toBe(true);
+    for (const folder of LIBRARY_FOLDERS) expect(fs.tree.has(`BabylonSlate/projects/${folder}`), folder).toBe(true);
+
+    await storage.deleteProject({ id: "documents:Keep", name: "Keep", tier: "documents" });
+    expect(fs.tree.has("BabylonSlate/projects/Keep")).toBe(false);
+    expect(storage.getCurrentFolder()).toBeNull();
   });
 });

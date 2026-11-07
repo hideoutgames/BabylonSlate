@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting } from "./create-engine";
+import { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting } from "./preserve-drawing-buffer-setting";
 
 function memoryStorage() {
   const values = new Map<string, string>();

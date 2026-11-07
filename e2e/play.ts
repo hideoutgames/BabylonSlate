@@ -8,7 +8,7 @@ import { acceptUnsavedPlayPrompts } from "./unsaved-play";
  * a full suite can stay on Compiling for tens of seconds.
  */
 const PLAY_OVERLAY_TIMEOUT_MS = 60_000;
-export const PREVIEW_BUILD_TIMEOUT_MS = 60_000;
+const PREVIEW_BUILD_TIMEOUT_MS = 60_000;
 
 export async function waitForPlayOverlay(page: Page): Promise<void> {
   await expect(page.getByTestId("play-overlay")).toBeVisible({

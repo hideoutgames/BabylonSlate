@@ -1,27 +1,20 @@
 export {
   MISSING_STARTUP_SCENE_MESSAGE,
-  DEFAULT_FILE_COUNT_WARN,
-  DEFAULT_FILE_COUNT_FAIL,
   GAME_MANIFEST_FILE,
   NAVMESH_EXPORT_TYPE,
-  NAVMESH_EXPORT_GUID_PREFIX,
   navmeshExportGuid,
   sceneGuidFromNavmeshExport,
   AUDIO_REVERB_EXPORT_TYPE,
-  AUDIO_REVERB_EXPORT_GUID_PREFIX,
   audioReverbExportGuid,
   sceneGuidFromAudioReverbExport,
   FONT_FACETYPE_EXPORT_TYPE,
   AREA_EMISSION_EXPORT_TYPE,
   areaEmissionExportGuid,
   textureGuidFromAreaEmissionExport,
-  FONT_FACETYPE_EXPORT_GUID_PREFIX,
   fontFacetypeExportGuid,
   fontGuidFromFontFacetypeExport,
   FONT_MSDF_EXPORT_TYPE,
-  FONT_MSDF_EXPORT_GUID_PREFIX,
   FONT_MSDF_ATLAS_EXPORT_TYPE,
-  FONT_MSDF_ATLAS_EXPORT_GUID_PREFIX,
   fontMsdfExportGuid,
   fontMsdfAtlasExportGuid,
   fontGuidFromFontMsdfExport,
@@ -31,7 +24,6 @@ export { collectExportReachability, collectHeaderReachability } from "./closure"
 export { runtimeAssetCatalogFromIndexed, runtimeAssetCatalogFromManifest } from "./asset-catalog";
 export { selectPlayerRuntimeFiles } from "./player-files";
 export {
-  PREVIEW_PACK_MESSAGE,
   PREVIEW_REQUEST_PACK_MESSAGE,
   PREVIEW_READY_MESSAGE,
   PREVIEW_DIAGNOSTICS_MESSAGE,
@@ -82,7 +74,7 @@ export type { PreviewConsoleRequest } from "./preview-protocol";
 export { createPreviewSaveStorageClient, createPreviewSaveStorageHost } from "./preview-save-storage";
 export * from "./preview-diagnostics";
 
-export { createPreviewAssetClient, createPreviewAssetServer, PREVIEW_ASSET_REQUEST, PREVIEW_ASSET_RESPONSE } from "./preview-assets";
+export { createPreviewAssetClient, createPreviewAssetServer } from "./preview-assets";
 
-export { gameComplexCollisionModelGuids, packedContentFromGame, packedPlayControls, packedBootControls, packedSourceControls, type PackedAudioLibrary, type PackedGameContent } from "./hydrate";
+export { packedContentFromGame, packedPlayControls, packedBootControls, packedSourceControls, type PackedAudioLibrary, type PackedGameContent } from "./hydrate";
 export { gameSourceSubset, requiredGameAssets, type GameSourceContent } from "./source-content";

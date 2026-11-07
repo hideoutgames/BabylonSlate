@@ -11,7 +11,6 @@ import type {
   ScalabilityRequest,
   ScalabilityResult,
   ScalabilitySnapshot,
-  SceneLayerCamera,
   SceneStreamingState,
   WaterSample,
 } from "@haptic/core";
@@ -22,9 +21,11 @@ import type {
   ClassRegistry,
   EngineObject,
   InterfaceRegistry,
+  LayerCamera,
   MaterialInstanceObject,
   PostProcessMaterialObject,
   Scene,
+  SceneCameraManager,
   SceneLayer,
   TimelineClipInstance,
   TimelineClipObject,
@@ -58,6 +59,8 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
 
 /** How a load handle settled: Loaded succeeds; a Failed handle carries its error. */
 export type ScriptAssetLoadResult = Pick<RuntimeAssetPreloadResult, "success" | "errorMessage">;
+/** `blocking`: Spawn Actor (Blocking) and Spawn Actor Deferred (Blocking) hold the simulation while the Class prepares. */
+export type SpawnActorOptions = { blocking?: boolean };
 
 /**
  * Engine services a compiled graph calls through `ctx`. The host implements the
@@ -150,9 +153,9 @@ export interface ScriptHostServices {
   createObject?(classId: string): EngineObject | null;
   /** Collect Garbage: request a collection pass at the end of the tick. */
   collectGarbage?(): void;
-  spawnActorAsync?(classId: string, transform?: unknown, owner?: EngineObject | null): Promise<Actor | null>;
-  /** Deferred Spawn Actor: the prepared actor outside the World, without Begin Play, until `finishDeferredSpawn`. */
-  beginDeferredSpawnAsync?(classId: string, transform?: unknown, owner?: EngineObject | null): Promise<Actor | null>;
+  spawnActorAsync?(classId: string, transform?: unknown, owner?: EngineObject | null, options?: SpawnActorOptions): Promise<Actor | null>;
+  /** Spawn Actor Deferred: the prepared actor outside the World, without Begin Play, until `finishDeferredSpawn`. */
+  beginDeferredSpawnAsync?(classId: string, transform?: unknown, owner?: EngineObject | null, options?: SpawnActorOptions): Promise<Actor | null>;
   /** Finish Deferred Spawn Actor: spawns a `beginDeferredSpawnAsync` actor, running its Begin Play; null when it was discarded. */
   finishDeferredSpawn?(actor: Actor): Actor | null;
   /** Emit a bone attachment (or detach with a null target); false when the renderer cannot address either actor. */
@@ -171,6 +174,10 @@ export interface ScriptHostServices {
   executeConsoleCommand(command: string): { success: boolean; output: string };
   executeConsoleCommandAsync?(command: string): Promise<{ success: boolean; output: string }>;
   delay(seconds: number, owner?: EngineObject | null): Promise<void>;
+  /** Resolves in the next tick, counted like `delay` while the owner may run. */
+  delayOneTick?(owner?: EngineObject | null): Promise<void>;
+  /** Restarts `key`'s wait for `owner`; the earlier wait rejects with a `retriggered` cancellation. */
+  retriggerableDelay?(key: string, seconds: number, owner?: EngineObject | null): Promise<void>;
   tween?(request: TweenRequest): Promise<boolean>;
   isTweenSessionActive?(): boolean;
   reportError(error: unknown): void;
@@ -264,10 +271,20 @@ export interface ScriptHostServices {
   registerScenePostProcess?(materialGuid: string): RegisteredPostProcess<Scene> | null;
   /** Unregister Scene Post-Processing on the current Scene. */
   unregisterScenePostProcess?(materialGuid: string): void;
-  /** A live Scene Layer instance's camera; null once the layer is gone. */
-  getSceneLayerCamera?(layerGuid: string): SceneLayerCamera | null;
-  /** Change any of a layer camera's centre, roll and zoom; values that are not finite numbers keep the current ones. */
-  setSceneLayerCamera?(layerGuid: string, changes: { x?: unknown; y?: unknown; rotation?: unknown; zoom?: unknown }): void;
+  /**
+   * Change any of a Layer Camera's centre, roll and zoom (a Scene Layer
+   * instance's or the main Scene's); values that are not finite numbers keep
+   * the current ones, and a destroyed camera ignores it.
+   */
+  setLayerCamera?(camera: LayerCamera, changes: { x?: unknown; y?: unknown; rotation?: unknown; zoom?: unknown }): void;
+  /** The session's Scene Camera Manager. */
+  getSceneCameraManager?(): SceneCameraManager | null;
+  /** The main Scene's Layer Camera; null between Scenes. */
+  getMainSceneCamera?(): LayerCamera | null;
+  /** The possessed actor the main Scene's view looks through; null while its Layer Camera is in view. */
+  getCameraActor?(): Actor | null;
+  /** That actor's Camera component in view; null while the Layer Camera is in view. */
+  getCameraComponent?(): ActorComponent | null;
   /** The live Scene Layer an actor (or a component's actor) belongs to; null for world actors. */
   getOwningSceneLayer?(target: EngineObject | null): SceneLayer | null;
   playSound?(

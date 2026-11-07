@@ -416,7 +416,7 @@ export function createDetachedShadowGenerator(
 }
 
 /** Takes `generator` off its light, so receivers never bind it (`light.getShadowGenerator()` does not return it). */
-export function detachShadowGenerator(generator: ShadowGenerator): void {
+function detachShadowGenerator(generator: ShadowGenerator): void {
   const light = generator.getLight();
   const generators = light._shadowGenerators;
   if (!generators) return;

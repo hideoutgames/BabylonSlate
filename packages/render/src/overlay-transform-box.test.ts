@@ -11,7 +11,7 @@ import {
   VertexBuffer,
   type AbstractMesh,
 } from "@babylonjs/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import { createGizmoHost } from "./gizmo-host";
 import {
   applyOverlayBoxDrag,

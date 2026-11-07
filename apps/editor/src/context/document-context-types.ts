@@ -41,7 +41,7 @@ import type { GitConfigPrefill } from "@haptic/source-control";
 import type { CreateProjectOptions } from "../lib/create-project";
 import type { ListedProject, UpdateListedProjectOptions } from "../lib/listed-projects";
 import type { AssetThumbnailWriteIdentity } from "../lib/asset-thumbnail-revision";
-import type { DocumentService, DocumentIdentityListener, DocumentRevisions, OpenDocument } from "../services/document-service";
+import type { DocumentService, DocumentIdentityListener, OpenDocument } from "../services/document-service";
 import type { DocumentTransitionGate } from "../services/document-transition-gate";
 import type { PlayScriptCompileOptions } from "../services/play-content-service";
 import type { PluginImportResult, ProjectService } from "../services/project-service";
@@ -64,6 +64,13 @@ export type CloseProjectResult =
   | { outcome: "unsaved"; dirty: OpenDocument[]; projectDirty: boolean }
   | { outcome: "refused" };
 
+/**
+ * Everything `DocumentProvider` publishes, by field: `DocumentActions` picks
+ * its callbacks and each state slice below its fields. Open documents are
+ * read through the subscription hooks (`useOpenDocument`,
+ * `useOpenDocumentsOfKinds`, `useOpenDocumentTabs`, `useTabOrder`) or
+ * `getOpenDocuments()`.
+ */
 export interface DocumentContextValue {
   registerBeforeTransition: DocumentTransitionGate["register"];
   /** Protect in-memory authoring; the owner must release its lease on every exit. */
@@ -85,7 +92,7 @@ export interface DocumentContextValue {
    * registry-adjacent ProjectService change arrives (plugins, search index,
    * Show Plugin Content). Document edits, tab changes, saves' dirty-state
    * changes and other per-edit context updates leave it alone, so key
-   * registry-derived memos and effects on it instead of on the context value.
+   * registry-derived memos and effects on it.
    * Monotonic; never repeats.
    */
   registryEpoch: number;
@@ -164,39 +171,20 @@ export interface DocumentContextValue {
   textureUsageBlockedReason: (guid: string) => string | null;
   onSessionDiagnostic: (listener: (line: string) => void) => () => void;
   /**
-   * Canonical open documents in tab order, including background working
-   * documents used by utilities. Navigation omits `background`.
-   * The array keeps its identity until a
-   * document revision advances or the tab order changes, so registry-only
-   * updates, tab switches and other context updates leave it alone. Its
-   * entries are mutated in place (content, dirty, layout), so entry identity
-   * is not a change signal: key memos on `documentRevisions`.
-   */
-  openDocuments: OpenDocument[];
-  /**
-   * The open documents at call time, read from the document service. Stable
-   * identity: handlers, guards and async continuations use it instead of a
-   * render-time `openDocuments` snapshot, so they stay correct without
-   * re-rendering on every edit.
+   * Canonical open documents in tab order at call time, including background
+   * working documents used by utilities (navigation omits `background`), read
+   * from the document service. Stable identity: handlers, guards and async
+   * continuations call it, so they stay correct without re-rendering on every
+   * edit. Entries are mutated in place (content, dirty, layout); a component
+   * that shows open documents subscribes through `useOpenDocument`,
+   * `useOpenDocumentsOfKinds` or `useOpenDocumentTabs`.
    */
   getOpenDocuments: () => OpenDocument[];
-  /**
-   * One revision per document kind, advanced when a document of that kind
-   * opens, closes, moves, is reordered, edited (including Undo / Redo,
-   * reloads and patches), relaid out or changes dirty state. Memos that read
-   * other documents key on the kinds they read (`documentKindsRevision`,
-   * `useOpenDocumentsOfKinds`) instead of on `openDocuments`.
-   */
-  documentRevisions: DocumentRevisions;
-  /** Advances when the open set, the tab order or the active tab changes. */
-  tabsRevision: number;
-  /** Keeps its identity while the tab ids and their order are unchanged. */
-  tabOrder: string[];
   activeDocumentId: string | null;
   listedProjects: ListedProject[];
   needsReconnect: boolean;
   recoveryAvailable: boolean;
-  /** Recomputed only when a document revision advances. */
+  /** Open documents with unsaved edits. */
   dirtyDocuments: OpenDocument[];
   projectDirty: boolean;
   autoSaveStatus: { state: "saving" | "saved" | "error"; message?: string } | null;
@@ -469,12 +457,6 @@ export interface DocumentContextValue {
   loadGraphDocument: (path: string) => Promise<SerializedGraph | null>;
   /** True when Compile should run: never compiled this session, or open graphs changed. */
   graphsNeedCompile: boolean;
-  /**
-   * Open-graph compile fingerprint (node positions omitted). Recomputed only
-   * when Class graph or Input Action / Axis documents change, or the registry
-   * epoch advances.
-   */
-  currentGraphSignature: string;
   /** Project-wide search index (headers + Scene/Graph documents). */
   searchIndex: ProjectSearchIndex | null;
 }
@@ -492,16 +474,14 @@ type DocumentActionName = {
  * provider's lifetime and reads documents, the project, Anim modes and other
  * provider state when it runs. A component that calls one while rendering
  * (`isDockWindowOpen`, `textureUsageBlockedReason`, …) and shows the result
- * must also subscribe to the state it depends on through a narrow hook (or
- * `useDocuments()`).
+ * must also subscribe to the state it depends on through a narrow hook.
  */
 export type DocumentActions = Pick<DocumentContextValue, DocumentActionName>;
 
 /*
  * Narrow slices of the document context. Each object keeps its identity until
  * one of its fields changes, so its readers re-render only for that state.
- * Field names match `useDocuments()`, so a component moves to a slice by
- * changing only the hook it calls.
+ * Each picks its fields from `DocumentContextValue` under the same names.
  */
 
 /** `useProjectState()`: changes when the project document is replaced. */
@@ -540,7 +520,7 @@ export type ActiveDocumentState = Pick<
  */
 export type SaveState = Pick<DocumentContextValue, "dirtyDocuments" | "projectDirty" | "autoSaveStatus" | "recoveryAvailable">;
 /** `useCompileState()`: compile staleness. */
-export type CompileState = Pick<DocumentContextValue, "graphsNeedCompile" | "currentGraphSignature">;
+export type CompileState = Pick<DocumentContextValue, "graphsNeedCompile">;
 /** `useEditorShellState()`: Homepage, recovery, prompts and thumbnails. */
 export type EditorShellState = Pick<
   DocumentContextValue,

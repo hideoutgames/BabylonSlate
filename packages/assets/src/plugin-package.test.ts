@@ -28,7 +28,6 @@ import {
 } from "./plugin-host";
 import {
   STARTER_ACTOR_GUID,
-  STARTER_CONTENT_FOLDER,
   STARTER_CONTENT_PLUGIN_GUID,
   buildStarterContentFiles,
 } from "./starter-content";
@@ -528,7 +527,7 @@ describe("installEnginePluginDefaults", () => {
     await unpackEnginePluginZip(
       engine,
       await vitePackedStarterContent(),
-      STARTER_CONTENT_FOLDER,
+      "starter-content",
     );
     return engine;
   }

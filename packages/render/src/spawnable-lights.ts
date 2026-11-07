@@ -3,7 +3,8 @@ import type { AuthoredLightProperties } from "./scene-illumination";
 
 /**
  * A light part Play may spawn: a Light or Hemispheric Fill Light component of a Class's prefab template, with the
- * kind its `light:{kind}` part names (`createPlayLight`) and the properties that part carries.
+ * kind its `light:{kind}` part names (`createPlayLight`) and the properties that part carries; or a 2D Light (`2d`),
+ * which is data in the 2D light block (`spawnsLights2D`).
  */
 export type SpawnableLight = { kind: string; properties: AuthoredLightProperties };
 
@@ -22,7 +23,8 @@ export function spawnableLightsFromScripts(scripts: Iterable<ScriptBundleEntry>)
       const properties = component.properties as AuthoredLightProperties & { lightKind?: unknown };
       const kind = component.classId === "HemisphericFillLightComponent" ? "hemispheric"
         : component.classId === "LightComponent" ? (typeof properties.lightKind === "string" ? properties.lightKind : "point")
-          : undefined;
+          : component.classId === "Light2DComponent" ? "2d"
+            : undefined;
       if (kind) lights.set(`${script.classId}|${component.id}`, { kind, properties });
     }
     for (const [key, light] of addedLights(script)) lights.set(key, light);
@@ -34,7 +36,18 @@ export function spawnableLightsFromScripts(scripts: Iterable<ScriptBundleEntry>)
 const ADDED_LIGHTS: ReadonlyMap<string, SpawnableLight> = new Map([
   ["LightComponent", { kind: "point", properties: {} }],
   ["HemisphericFillLightComponent", { kind: "hemispheric", properties: {} }],
+  ["Light2DComponent", { kind: "2d", properties: {} }],
 ]);
+
+/**
+ * Whether Play may spawn a 2D Light, so its Scene's Shading Mode 2D surfaces draw lit from its load. Only lights it can
+ * see count: unlike the 3D stand-ins for an unseen Class (`UNSEEN_CLASS_LIGHTS`), assuming one would darken every
+ * 2D surface of a Scene that never spawns one.
+ */
+export function spawnsLights2D(lights: Iterable<SpawnableLight>): boolean {
+  for (const light of lights) if (light.kind === "2d") return true;
+  return false;
+}
 
 /** Add Component's compiled call (`component.add` emits `ctx.addComponent(<actor>, <class>, <transform>)`). */
 const ADD_COMPONENT_CALL = /\bctx\.addComponent\(/g;
@@ -58,7 +71,8 @@ function addedLights(script: ScriptBundleEntry): Map<string, SpawnableLight> {
       if (light) lights.set(`${script.classId}|added ${classId}`, light);
       continue;
     }
-    for (const [added, light] of ADDED_LIGHTS) lights.set(`${script.classId}|added ${added}`, light);
+    // A class from a pin may be any light, but not taken to be a 2D one (`spawnsLights2D`).
+    for (const [added, light] of ADDED_LIGHTS) if (light.kind !== "2d") lights.set(`${script.classId}|added ${added}`, light);
   }
   return lights;
 }
@@ -94,7 +108,7 @@ function callArguments(source: string, start: number): string[] {
  * What a Class the load cannot see may spawn, listed in its place: a point and a spot light, each with and without
  * shadows (a Spawn Actor's Class is taken never to carry a directional or hemispheric light).
  */
-export const UNSEEN_CLASS_LIGHTS: ReadonlyMap<string, SpawnableLight> = new Map([
+const UNSEEN_CLASS_LIGHTS: ReadonlyMap<string, SpawnableLight> = new Map([
   ["unseen Class|point", { kind: "point", properties: {} }],
   ["unseen Class|point with shadows", { kind: "point", properties: { castShadows: true } }],
   ["unseen Class|spot", { kind: "spot", properties: {} }],
@@ -102,9 +116,10 @@ export const UNSEEN_CLASS_LIGHTS: ReadonlyMap<string, SpawnableLight> = new Map(
 ]);
 
 /**
- * Spawn Actor's and Deferred Spawn Actor's compiled calls (`actor.spawn` emits `ctx.spawnActorAsync(<class>,
- * <transform>)`, `actor.deferredSpawn` `ctx.beginDeferredSpawnActorAsync(…)`): the class is a JSON string when the
- * node names it, any other expression when a pin feeds it.
+ * The Spawn Actor nodes' compiled calls (`actor.spawn` emits `ctx.spawnActorAsync(<class>, <transform>)`,
+ * `actor.spawnBlocking` the same with a third `{ blocking: true }` argument, and the deferred pair
+ * `ctx.beginDeferredSpawnActorAsync(…)`): the class is a JSON string when the node names it, any other expression
+ * when a pin feeds it.
  */
 const SPAWN_CALL = /\bctx\.(?:spawnActorAsync|beginDeferredSpawnActorAsync)\(\s*(?:("(?:[^"\\\n]|\\.)*")\s*[,)])?/g;
 

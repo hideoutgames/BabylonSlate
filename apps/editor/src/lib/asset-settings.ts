@@ -1,6 +1,6 @@
 import { shouldCompressTexture, TEXTURE_DOWNSAMPLE_OPTIONS } from "@haptic/assets";
-import { newGuid } from "@haptic/core";
-import { dataFieldIdentity, ENUM_VALUE_MAX } from "@haptic/scripting";
+import { dataFieldIdentity, newGuid } from "@haptic/core";
+import { ENUM_VALUE_MAX } from "@haptic/scripting";
 import type {
   EnumAsset,
   EnumMember,

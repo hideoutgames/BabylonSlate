@@ -1,7 +1,9 @@
-/** Texture compression states (engineplan §3.5). */
+/**
+ * Saved Texture compression states (engineplan §3.5). A running encode is not one:
+ * the file stays `pending` until the encode commits, and only the editor shows `encoding`.
+ */
 export type TextureCompressionState =
   | "pending"
-  | "encoding"
   | "compressed"
   | "fallback_uncompressed"
   | "encode_failed";
@@ -109,7 +111,7 @@ export function textureEncodePadding(
 }
 
 /** Round each edge up to a multiple of `align` (no-op when unset or <= 1). */
-export function alignEncodeSize(
+function alignEncodeSize(
   width: number,
   height: number,
   align?: number,

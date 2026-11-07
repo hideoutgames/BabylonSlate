@@ -16,7 +16,8 @@ import { RenderTargetCaptures } from "./render-target-capture";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { sceneShadowController } from "./shadow-controller";
-import { AtlasCascadedShadowGenerator } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasBytes } from "./shadow-atlas";
+import { awaitsFirstDraw } from "./shadow-first-draw";
 import { enableHeadlessCascades } from "./shadow-test-fixtures";
 import { configureEditorRenderingGroups } from "./sorting";
 import { createWaterMesh } from "./water-mesh";
@@ -475,6 +476,72 @@ it("releases a Full Quality capture's own sun maps on quality change, removal an
   expect(own!.getShadowMap()).toBeNull();
   expect(managedRenderReservations(engine)).toMatchObject({ shadowBytes: 0, resourceBytes: 0, pendingBytes: 0 });
 });
+
+it.each(["fast", "fullQuality"] as const)(
+  "keeps a manual %s capture requested in the frame a shadow atlas resize frees the old atlas until the new maps exist",
+  async (quality) => {
+    // Medium's 4096-texel atlas grows to High's 8192 one: the sync that plans it frees the old atlas with its maps,
+    // and a later Engine frame builds the new ones. The scene view's graph is unchanged, so it draws that frame with
+    // no maps. A manual capture keeps the image it publishes: one requested then waits for the new maps.
+    const { engine, scene, sun, spot, controller, view, captures, lens, settings, captureCamera } = shadowedHost(8192);
+    lens.position.set(0, 4, -8);
+    lens.lookAt(Vector3.Zero());
+    captures.configure("capture", { ...settings, quality, captureEveryFrame: false }, () => lens);
+    const frame = () => {
+      for (const texture of scene.textures) {
+        const internal = texture.getInternalTexture();
+        if (internal) internal.isReady = true;
+      }
+      engine.beginFrame();
+      try {
+        view.render();
+      } finally {
+        engine.endFrame();
+      }
+    };
+    // A Full Quality capture draws after the frame's maps, its own sun map included, so it samples them drawn; a Fast
+    // one draws before them, so a map made that frame exists but has not drawn yet.
+    const sampled = (map: ShadowGenerator | null) => !!map && (quality === "fast" || !awaitsFirstDraw(map));
+    /** Per capture draw of the floor: whether it samples the sun and spot maps. */
+    const captured: boolean[] = [];
+    (scene.getMeshByName("floor") as Mesh).onBeforeRenderObservable.add(() => {
+      const camera = captureCamera();
+      if (!camera || scene.activeCamera !== camera) return;
+      captured.push(sampled(controller.viewBoundGenerator(sun, camera)) && sampled(controller.generator(spot)));
+    });
+    /** Requests a capture after `change`, in the same frame, and reports the maps' reasons in that frame. */
+    const capture = async (change = () => {}) => {
+      captured.length = 0;
+      change();
+      captures.request("capture");
+      frame();
+      const reasons = controller.diagnostics().map(({ reason }) => reason);
+      await vi.waitFor(() => {
+        frame();
+        expect(captured.length).toBeGreaterThan(0);
+      }, { timeout: 5000 });
+      const drawn = captured.length;
+      // A manual capture draws no more once it has published.
+      for (let index = 0; index < 3; index++) frame();
+      return { reasons, drew: drawn > 0, published: captured.length === drawn, withMaps: captured.every(Boolean) };
+    };
+    // The scene view's maps draw, then a first capture prepares the capture's pass.
+    await vi.waitFor(() => {
+      frame();
+      for (const map of [controller.generator(sun), controller.generator(spot)]) expect(!!map && !awaitsFirstDraw(map)).toBe(true);
+    }, { timeout: 5000 });
+    expect(await capture()).toMatchObject({ drew: true, published: true, withMaps: true });
+    expect(shadowAtlasBytes(scene)).toBe(4096 ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL);
+    const during = await capture(() => updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ profile: "high", cascades: 2, distance: 40, mapSize: 256, localMapSize: 256, maxLocalLights: 1 }),
+    }));
+    expect({ during, atlas: shadowAtlasBytes(scene) }).toEqual({
+      during: { reasons: ["shadow atlas resizing", "shadow atlas resizing"], drew: true, published: true, withMaps: true },
+      atlas: 8192 ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL,
+    });
+    view.dispose();
+  },
+);
 
 it("releases a Full Quality view's graph, output and ledger charge on disable, removal and scene close", async () => {
   const { engine, scene, view, captures, root, settings, output } = host("fullQuality");

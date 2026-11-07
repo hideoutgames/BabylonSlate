@@ -78,7 +78,7 @@ function colorPipelineScene(): SerializedScene {
   scene.settings.grid.showGrid = false;
   scene.actors = scene.actors.filter(
     (actor) =>
-      actor.id === scene.settings.mainCameraActorId ||
+      actor.id === scene.settings.defaultCameraActorId ||
       actor.components.some(
         (component) => component.classId === "LightComponent",
       ),

@@ -12,13 +12,13 @@ import {
 } from "@haptic/shader-graph";
 import { compileMaterialPlan, type CompiledMaterial } from "./material-compiler";
 
-export const ENGINE_DEFAULT_MATERIAL_NAME = "engineDefaultMaterial";
+const ENGINE_DEFAULT_MATERIAL_NAME = "engineDefaultMaterial";
 /** Checker cells along each UV axis across 0–1. */
-export const ENGINE_DEFAULT_CHECKER_CELLS = 16;
+const ENGINE_DEFAULT_CHECKER_CELLS = 16;
 /** The checker's greys in sRGB: a new surface Material's Base Color (0.8) and a slightly darker one. */
 export const ENGINE_DEFAULT_CHECKER_GREYS = [204 / 255, 166 / 255] as const;
 /** 0 in 3D; 1 in 2D, where the Material emits its checker. */
-export const ENGINE_DEFAULT_EMISSION_PARAMETER = "Emission";
+const ENGINE_DEFAULT_EMISSION_PARAMETER = "Emission";
 
 /**
  * The Material that surfaces with no Material of their own draw with: a lit grey checker built from the same graph

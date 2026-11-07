@@ -11,7 +11,7 @@ vi.mock("@haptic/navigation", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@haptic/navigation")>();
   return { ...actual, navMeshDebugPrimitives: vi.fn(actual.navMeshDebugPrimitives) };
 });
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import {
   NAVMESH_DEBUG_Y_OFFSET,
   NavMeshDebugOverlay,

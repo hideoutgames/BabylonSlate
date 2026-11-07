@@ -21,9 +21,10 @@ Select an actor, then choose **Add Component > Camera > Camera**. You can also p
 
 - World scenes only.
 - A camera looks along its actor's forward (+Z) axis.
-- Choose the Default Camera in **Scene Settings**, with nothing selected in the **Inspector**.
+- Choose the scene's **Default Camera** actor in **Scene Settings**, with nothing selected in the **Inspector**. Play looks through the actor's first Camera component.
+- Without a possessed camera, Play looks through the scene's [Layer Camera](../graphics/cameras.md#layer-camera).
 - To follow an actor, put the camera on a [Spring Arm](spring-arm.md).
-- In scripts, [Possess Camera](../scripting/class/possess-camera.md) switches the active camera. [Set Field Of View](../scripting/class/set-field-of-view.md) and [Set Orthographic Size](../scripting/class/set-orthographic-size.md) change the zoom.
+- In scripts, [Possess Camera](../scripting/class/possess-camera.md) switches the active camera, and [Get Scene Camera Manager](../scripting/class/get-scene-camera-manager.md) reports the camera in view. [Set Field Of View](../scripting/class/set-field-of-view.md) and [Set Orthographic Size](../scripting/class/set-orthographic-size.md) change the zoom.
 
 ## Related
 

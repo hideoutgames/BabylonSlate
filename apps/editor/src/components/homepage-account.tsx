@@ -11,7 +11,6 @@
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
   DialogDescription,
 } from "@haptic/ui/components/dialog";
@@ -176,12 +175,11 @@ export function HomepageAccount({
           className="homepage-theme homepage-profile"
           data-auth-open="true"
         >
-          <DialogHeader>
-            <DialogTitle>Sign In</DialogTitle>
-            <DialogDescription className="sr-only">
-              Connect your Slate account.
-            </DialogDescription>
-          </DialogHeader>
+          {/* The form's own heading leads the dialog, so the title is for assistive tech only. */}
+          <DialogTitle className="sr-only">Sign In</DialogTitle>
+          <DialogDescription className="sr-only">
+            Sign in with an account you already have or an email code.
+          </DialogDescription>
           {authOpen && publishableKey && (
             <AccountErrorBoundary
               fallback={<p role="alert">Sign-in is unavailable right now.</p>}

@@ -79,7 +79,6 @@ export * from "./unique-names";
 export * from "./worker-encode";
 export * from "./environment-texture";
 export {
-  DEFAULT_HDR_ENVIRONMENT_FACE_SIZE,
   HDR_ENVIRONMENT_FACE_SIZES,
   HDR_SOURCE_CHUNK_ID,
   hdrEnvironmentFaceSize,

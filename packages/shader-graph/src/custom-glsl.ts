@@ -49,7 +49,7 @@ export function customGlslDefinition(node: MaterialGraphNode, base: MaterialNode
 }
 
 /** Blank out comments, keeping line breaks. An unterminated block comment is left in place. */
-export function glslWithoutComments(body: string): string {
+function glslWithoutComments(body: string): string {
   return body.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (comment) => comment.replace(/[^\n]/g, " "));
 }
 

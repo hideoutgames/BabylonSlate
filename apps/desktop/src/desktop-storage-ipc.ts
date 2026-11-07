@@ -1,6 +1,6 @@
 import { realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { isStorageNotFound, SourceRevisionChangedError } from "@haptic/core";
+import { isStorageNotFound, SourceRevisionChangedError, type ProjectFolderHandle } from "@haptic/core";
 import { isLibraryFolder, type LibraryFolder } from "@haptic/vfs/library-folders";
 import { NodeStorageAdapter } from "@haptic/vfs/node";
 import { LIBRARY_FILE_OPERATIONS, MAX_IPC_BYTES } from "./packaged-security";
@@ -39,6 +39,24 @@ export const STORAGE_OPERATIONS: Record<FileOperation, StorageOperation> = {
   remove: (storage, path) => storage.remove(String(path)),
   stat: (storage, path) => storage.stat(String(path)),
 };
+
+/**
+ * Deletes a Projects Folder project for one editor document. Desktop has no
+ * cross-window lock, so a project another document has open is refused.
+ */
+export async function deleteDesktopProject(
+  documents: ReadonlyMap<number, NodeStorageAdapter>,
+  owner: number,
+  storage: NodeStorageAdapter,
+  handle: ProjectFolderHandle,
+): Promise<void> {
+  for (const [other, adapter] of documents) {
+    if (other !== owner && adapter.getCurrentFolder()?.id === handle.id) {
+      throw new Error("This project is open in another window. Close it there and try again.");
+    }
+  }
+  await storage.deleteProject(handle);
+}
 
 /**
  * The app-owned user libraries (imported Templates, Engine Plugins and Engine

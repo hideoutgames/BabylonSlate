@@ -13,8 +13,8 @@ import { mergePrefabComponents } from "./prefab-preview";
 
 export const PREFAB_TRANSFORM_OVERRIDE = "transform";
 export const PREFAB_PARENT_OVERRIDE = "parentId";
-export const PREFAB_MATERIAL_INSTANCE_OVERRIDE = "materialInstance";
-export const PREFAB_NAME_OVERRIDE = "name";
+const PREFAB_MATERIAL_INSTANCE_OVERRIDE = "materialInstance";
+const PREFAB_NAME_OVERRIDE = "name";
 
 /** Override keys that name component fields rather than `properties` entries. */
 function isFieldOverride(key: string): boolean {
@@ -458,6 +458,11 @@ function pruneMatchingPrefabOverrides(
   };
 }
 
+/**
+ * Marks the prefab-sourced component fields an edit from `previous` to `next` changed as instance overrides, and drops
+ * override keys that match the template again. Only what the edit changed is walked: an actor or component that is
+ * the same object as before keeps its overrides as they are, so an edit costs work in proportion to what it touched.
+ */
 export function stampUserComponentOverrides(
   previous: SerializedScene,
   next: SerializedScene,
@@ -470,7 +475,7 @@ export function stampUserComponentOverrides(
     ...next,
     actors: next.actors.map((actor) => {
       const beforeActor = beforeActors.get(actor.id);
-      if (!beforeActor) return actor;
+      if (!beforeActor || actor === beforeActor) return actor;
       const beforeComponents = new Map(
         beforeActor.components.map((component) => [component.id, component]),
       );
@@ -483,7 +488,7 @@ export function stampUserComponentOverrides(
       const nextComponents = actor.components.map((component) => {
         const before = beforeComponents.get(component.id);
         const sourceId = component.sourceId ?? before?.sourceId;
-        if (!sourceId || !before) return component;
+        if (!sourceId || !before || component === before) return component;
         const keys = overrideSet(component.overrideKeys ?? before.overrideKeys);
         for (const key of new Set([
           ...Object.keys(before.properties),

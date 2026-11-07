@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { MeshBuilder } from "@babylonjs/core";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import {
   DEFAULT_CAMERA_RADIUS,
   MAX_CAMERA_RADIUS,

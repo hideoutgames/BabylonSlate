@@ -1,4 +1,4 @@
-import type { IndexedAsset } from "@haptic/assets";
+import type { IndexedAsset, TextureCompressionState as SavedTextureCompressionState } from "@haptic/assets";
 import {
   normalizeAnimationPayload,
   contentEntryNameError,
@@ -28,39 +28,31 @@ import { joinAssetFolderPath } from "./content-browser-tree";
 import { isMaterialAssetType } from "./material-asset-filters";
 import { shownCompressionState } from "./texture-encode-state";
 
-// Boot-path consumers import these from `class-asset-lookup` directly; the
-// re-export keeps every other importer of this module unchanged.
+// Boot-path consumers import these from `class-asset-lookup` directly; other
+// importers use them through this module.
 export {
-  ENGINE_BASE_CLASSES,
   classDocumentShowsPrefab,
   classIdFromClassAsset,
   classParentLookup,
   newAssetFileName,
   newAssetFileSuffix,
-  registryClassParentLookup,
-  type ClassAssetRef,
 } from "./class-asset-lookup";
 
 // Content paths and folder trees, selection, search and sort, moves, New Asset
 // factories, header dependencies and Material filters live in sibling
-// modules; the re-exports keep every importer of this module unchanged.
+// modules; this module re-exports the names its importers use.
 export {
   ASSETS_ROOT,
   isFolderTreeRoot,
-  collectFolderGuids,
   type MoveKind,
-  type FlattenedFolderRow,
   parentFolderPath,
   filterFolderTreeRows,
   type ContentBrowserTreeRow,
-  listChildFolders,
   listChildFoldersFromTrees,
   collectFolderGuidsFromTrees,
   flattenFolderForest,
   flattenContentBrowserForest,
-  nestedFolderPaths,
   withAutoCollapsedNestedFolders,
-  flattenContentBrowserTree,
   flattenFolderTree,
   joinAssetFolderPath,
 } from "./content-browser-tree";
@@ -68,8 +60,6 @@ export {
   type ContentBrowserPaintHit,
   type ContentBrowserSelection,
   isContentBrowserEmptyGridDoubleClickTarget,
-  exclusiveSelectAsset,
-  exclusiveSelectFolder,
   applyContentBrowserTileSelect,
   applyContentBrowserTreeSelect,
   paintSelectTiles,
@@ -84,7 +74,6 @@ export {
   uniqueAssetTypes,
 } from "./content-browser-filter-sort";
 export {
-  isValidMoveDestination,
   contentBrowserSelectionMoves,
   moveNameCollision,
   contentBrowserMoveDialogTitle,
@@ -94,45 +83,37 @@ export {
   remapPathAfterFolderMove,
   type ContentBrowserDropMove,
   isCrossRootMove,
-  contentBrowserMoveFromDrop,
   contentBrowserTreeDropMoves,
 } from "./content-browser-moves";
 export {
   defaultParentClassForType,
   buildNewAssetResult,
   buildMaterialInstanceAssetResult,
+  buildSheetSpriteAnimationAssetResult,
   buildSpriteAnimationAssetResult,
   buildTilesetAssetResult,
   derivedAssetNameFor,
-  materialInstanceNameFor,
+  sheetAnimationCell,
   spriteAnimationNameFor,
 } from "./new-asset-result";
 export {
   materialAssetDependencies,
   assetHeaderDependencyMetadata,
-  assetHeaderDependencies,
   assetDependenciesIncludingOpenDocuments,
 } from "./asset-header-dependencies";
 export {
-  materialHeaderMeta,
   isMaterialSamplerTextureAsset,
   isMaterialAssetType,
-  isPostProcessMaterialAsset,
-  isParticleMaterialAsset,
   isPostProcessMaterialForPicker,
   isParticleMaterialForPicker,
   materialDomainsFromAssets,
   filterInspectorPinPickerAssets,
 } from "./material-asset-filters";
 
-export type TextureCompressionState =
-  | "pending"
-  | "encoding"
-  | "compressed"
-  | "fallback_uncompressed"
-  | "encode_failed";
+/** A saved state, or `encoding` while the editor runs the Texture's encode (`shownCompressionState`). */
+type TextureCompressionState = SavedTextureCompressionState | "encoding";
 
-export const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
+const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
   "pending",
   "encoding",
   "fallback_uncompressed",
@@ -140,7 +121,7 @@ export const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
 ];
 
 
-export type ParentClassTreeRow = {
+type ParentClassTreeRow = {
   id: string;
   parentClassId: string | null;
   depth: number;
@@ -287,7 +268,7 @@ export const CREATABLE_ASSET_TYPES = [
 
 export type CreatableAssetType = (typeof CREATABLE_ASSET_TYPES)[number];
 
-export type CreatableAssetTypeGroup = {
+type CreatableAssetTypeGroup = {
   id: string;
   label: string;
   types: readonly CreatableAssetType[];
@@ -426,13 +407,15 @@ export function compressionBadgeLabel(state: TextureCompressionState): string {
   }
 }
 
-export type ContentBrowserContextAction =
+type ContentBrowserContextAction =
   | "open"
   | "generate-thumbnail"
   | "import-msdf-atlas"
   | "create-material-instance"
+  | "convert-to-2d"
   | "create-sprite"
   | "create-sprite-animation"
+  | "create-sheet-animation"
   | "create-tileset"
   | "create-material"
   | "create-tilemap"
@@ -453,6 +436,12 @@ export type ContentBrowserContextAction =
   | "show-references"
   | "delete";
 
+/**
+ * Convert to 2D's submenu for a selection of Textures: a Sprite per Texture, one Sprite Animation with a frame per
+ * Texture, and a Sheet Sprite Animation per Texture.
+ */
+export const CONVERT_TO_2D_ACTIONS = ["create-sprite", "create-sprite-animation", "create-sheet-animation"] as const;
+
 export function canRetargetSelectedAssets(
   assets: ReadonlyArray<{ type: string; payload?: unknown }>,
 ): boolean {
@@ -472,9 +461,10 @@ function createActionsForTypes(types: readonly string[], canCreateChildClass: bo
   const all = (accepted: (type: string) => boolean) => types.every(accepted);
   const single = types.length === 1 ? types[0] : undefined;
   const actions: ContentBrowserContextAction[] = [];
-  if (all((type) => type === "Texture")) actions.push("create-sprite");
-  // Any mix of Textures and Sprites becomes one Sprite Animation; one Texture can also become a Tileset.
-  if (all((type) => type === "Texture" || type === "Sprite")) actions.push("create-sprite-animation");
+  // Textures alone convert to 2D assets (`CONVERT_TO_2D_ACTIONS`); a mix with Sprites, or Sprites, becomes one Sprite
+  // Animation. One Texture can also become a Tileset.
+  if (all((type) => type === "Texture")) actions.push("convert-to-2d");
+  else if (all((type) => type === "Texture" || type === "Sprite")) actions.push("create-sprite-animation");
   if (single === "Texture") actions.push("create-tileset");
   if (all((type) => type === "Texture")) actions.push("create-material");
   if (all((type) => type === "Tileset")) actions.push("create-tilemap");

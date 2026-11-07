@@ -7,7 +7,6 @@ import type {
   AppRoute,
   CompileState,
   DocumentActions,
-  DocumentContextValue,
   EditorShellState,
   ProjectState,
   RegistryState,
@@ -17,7 +16,6 @@ import type {
 
 // The contexts `DocumentProvider` fills, and the hooks that read them.
 
-export const DocumentContext = createContext<DocumentContextValue | null>(null);
 /** Created once per provider: action-only consumers never re-render through it. */
 export const DocumentActionsContext = createContext<DocumentActions | null>(null);
 /** Changes only when the app moves between Homepage and the editor. */
@@ -34,22 +32,6 @@ export const SourceControlStateContext = createContext<SourceControlState | null
 
 /** Bumps only the Windows menu so dock add/remove does not remount editor chrome. */
 export const DockWindowTickContext = createContext(0);
-
-/**
- * Everything: the stable actions plus documents, project and registry state.
- *
- * @deprecated The value changes after every edit, tab change and save, so
- * every caller re-renders with it. Use `useDocumentActions()` for callbacks
- * and the narrow hooks below for state (see "Document revisions and
- * subscriptions" in .agents/reference/architecture/command-layer.md).
- */
-export function useDocuments(): DocumentContextValue {
-  const context = useContext(DocumentContext);
-  if (!context) {
-    throw new Error("useDocuments must be used within DocumentProvider");
-  }
-  return context;
-}
 
 /**
  * The document callbacks only. The object and each callback keep their
@@ -150,7 +132,7 @@ export function useOpenDocumentTabs(): OpenDocument[] {
 }
 
 /**
- * One open document: the same entry `openDocuments` holds. Re-renders when
+ * One open document: the same entry `getOpenDocuments()` holds. Re-renders when
  * that document opens, closes or changes its content, label, layout or dirty
  * state; edits of other documents and tab switches do not. The entry is
  * mutated in place, so key memos on `document.content`, not on the entry.

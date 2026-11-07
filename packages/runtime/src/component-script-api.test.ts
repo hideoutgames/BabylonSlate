@@ -189,6 +189,53 @@ describe("component script API", () => {
     expect(commands.some((command) => command.type === "assignMesh" && command.meshKind === "box")).toBe(true);
     runtime.stop();
   });
+  it("sends an actor's 2D lights and a sprite's Shading Mode, and resends the lights when a script writes one", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+      playScene: sceneOf([createActor("lamp", "Lamp", { classId: "Hero", components: [
+        { id: "sprite", classId: "SpriteComponent", properties: { assetGuid: null, shadingMode: "3d" } },
+        { id: "glow", classId: "Light2DComponent", properties: { radius: 4, outerAngle: 90 } },
+      ] })]), onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([script('export function Update(ctx) { const c = ctx.getComponentById(ctx.self, "glow"); ctx.setVariableOn(c, "intensity", 3); }',
+        { entryPoints: [{ name: "Update", event: "Update", isAsync: false }] })]);
+      runtime.realizePlayWorld();
+      const lights = () => commands.filter((command): command is Extract<CommandMessage, { type: "setLights2D" }> => command.type === "setLights2D");
+      expect(lights().at(-1)?.lights).toEqual([{ id: "glow", transforms: [expect.any(Object)], properties: {
+        enabled: true, lightKind: "point", color: [1, 1, 1], intensity: 1, radius: 4, innerRadius: 0, outerAngle: 90, innerAngle: 90, castShadows: true,
+      } }]);
+      const sprite = commands.find((command): command is Extract<CommandMessage, { type: "assignMesh" }> => command.type === "assignMesh");
+      // The sprite is the actor's one visual (a 2D Light is not one), so the mode rides on the command itself.
+      expect(sprite).toMatchObject({ meshKind: "sprite", shadingMode: "3d" });
+      runtime.invokeScriptEvent("Hero", "Update", runtime.getWorld().findActor("lamp")!);
+      expect(lights().at(-1)?.lights[0]?.properties.intensity).toBe(3);
+    } finally { runtime.stop(); }
+  });
+  it("sends a 2D body's solid collider outlines as its 2D shadow casters, and none for a trigger", () => {
+    const commands: CommandMessage[] = [];
+    const scene = sceneOf([
+      createActor("crate", "Crate", { components: [
+        { id: "body", classId: "RigidBodyComponent", properties: { motionType: "static" } },
+        { id: "box", classId: "ColliderComponent", properties: { shape: { kind: "box2d", halfExtents: { x: 1, y: 0.5 } } } },
+      ] }),
+      createActor("zone", "Zone", { components: [
+        { id: "body", classId: "RigidBodyComponent", properties: { motionType: "static" } },
+        { id: "trigger", classId: "ColliderComponent", properties: { shape: { kind: "box2d", halfExtents: { x: 1, y: 1 } }, isTrigger: true } },
+      ] }),
+    ]);
+    scene.settings.physicsWorld = "2d";
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, physicsWorld: "2d",
+      playScene: scene, onCommand: (command) => commands.push(command) });
+    try {
+      runtime.realizePlayWorld();
+      runtime.start();
+      runtime.tick();
+      const sent = commands.filter((command): command is Extract<CommandMessage, { type: "setOccluders2D" }> => command.type === "setOccluders2D");
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.shapes).toEqual([{ closed: true, points: [-1, -0.5, 1, -0.5, 1, 0.5, -1, 0.5] }]);
+    } finally { runtime.stop(); }
+  });
   it("Set Text updates the component text, refreshes the mesh, and fires On Text Changed", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
@@ -663,8 +710,7 @@ describe("component script API", () => {
   it("Possess on a CameraComponent emits possessCamera for the owner", async () => {
     const commands: CommandMessage[] = [];
     const settings = createDefaultSceneSettings();
-    settings.mainCameraActorId = "rig";
-    settings.mainCameraComponentId = "cam-1";
+    settings.defaultCameraActorId = "rig";
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,

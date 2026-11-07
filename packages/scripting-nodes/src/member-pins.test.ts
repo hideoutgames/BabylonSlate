@@ -12,9 +12,9 @@ import {
   structRef,
   enumRef,
   isAssignable,
+  jsIdent,
 } from "@haptic/scripting";
 import {
-  jsIdent,
   localVariableIdent,
   objectLiteralKey,
   pinTypeForMember,

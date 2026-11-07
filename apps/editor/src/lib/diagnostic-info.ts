@@ -31,7 +31,7 @@ export function collectDiagnosticEnvironment(appVersion = getApplicationVersion(
 }
 
 /** iPadOS Safari reports a Mac platform and user agent by default; touch support gives it away. */
-export function describePlatform(platform: string, touchPoints: number): string {
+function describePlatform(platform: string, touchPoints: number): string {
   return platform === "MacIntel" && touchPoints > 1 ? "iPad (reports MacIntel)" : platform;
 }
 

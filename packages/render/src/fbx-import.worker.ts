@@ -1,6 +1,6 @@
 import { convertFbxToGlb, type ModelImportFile } from "./fbx-conversion";
 
-export type FbxImportRequest =
+type FbxImportRequest =
   | { type: "sidecars"; sidecars: ModelImportFile[] }
   | { type: "convert"; file: ModelImportFile };
 

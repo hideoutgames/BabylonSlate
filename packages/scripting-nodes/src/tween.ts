@@ -10,7 +10,7 @@ const curve = enumRef(ENGINE_EASING_CURVE_ENUM_ID);
 const space = enumRef(ENGINE_TWEEN_SPACE_ENUM_ID);
 const actor = objectRef("Actor");
 const component = objectRef("ActorComponent");
-const sceneLayer = objectRef("SceneLayer");
+const layerCamera = objectRef("LayerCamera");
 const identityTransform = {
   position: { x: 0, y: 0, z: 0 },
   rotation: { x: 0, y: 0, z: 0, w: 1 },
@@ -79,7 +79,7 @@ export const tweenNodes: NodeDefinition[] = [
   tweenNode("textOutline", "Text Outline", FLOAT, component, "text.outline"),
   tweenNode("textOutlineColor", "Text Outline Color", COLOR, component, "text.outlineColor"),
   tweenNode("textWrapSize", "Text Wrap Size", VEC2, component, "text.wrapSize"),
-  tweenNode("sceneLayerCameraLocation", "Scene Layer Camera Location", VEC2, sceneLayer, "sceneLayer.cameraLocation"),
-  tweenNode("sceneLayerCameraRotation", "Scene Layer Camera Rotation", FLOAT, sceneLayer, "sceneLayer.cameraRotation"),
-  tweenNode("sceneLayerCameraZoom", "Scene Layer Camera Zoom", FLOAT, sceneLayer, "sceneLayer.cameraZoom", false, 1),
+  tweenNode("layerCameraLocation", "Layer Camera Location", VEC2, layerCamera, "layerCamera.location"),
+  tweenNode("layerCameraRotation", "Layer Camera Rotation", FLOAT, layerCamera, "layerCamera.rotation"),
+  tweenNode("layerCameraZoom", "Layer Camera Zoom", FLOAT, layerCamera, "layerCamera.zoom", false, 1),
 ];

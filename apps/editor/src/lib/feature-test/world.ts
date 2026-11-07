@@ -51,16 +51,16 @@ import { TIMELINE_PAVILION, placeTimelineListener, placeTimelinePavilion, placeT
  * reflections on top of the main scene misses the first-frame deadline on
  * software GL.
  */
-export const FEATURE_TEST_WORLD_SCENE = "FT_World";
+const FEATURE_TEST_WORLD_SCENE = "FT_World";
 const SCENES_FOLDER = "Scenes";
 /** High over the south shore, looking across the island to the Ocean. */
 const WORLD_CAMERA = { position: [-4, 52, -82] as Vec3, target: [4, 0, 6] as Vec3 };
 
 /** Folder under `assets/FeatureTest/` for the Water assets. */
-export const FEATURE_TEST_WORLD_FOLDER = "World";
+const FEATURE_TEST_WORLD_FOLDER = "World";
 
 /** Water assets, one per shading path. */
-export const FEATURE_TEST_WORLD_WATER = {
+const FEATURE_TEST_WORLD_WATER = {
   /** Global Water Volume: Realistic spectrum, wind sea over the default long swell. */
   sea: "FT_WorldSea",
   /** Ocean: Realistic spectrum, a short seeded wind sea with no swell. */
@@ -71,7 +71,7 @@ export const FEATURE_TEST_WORLD_WATER = {
   river: "FT_WorldRiver",
 } as const;
 /** The River's Custom Material: the Realistic starter water Material. */
-export const FEATURE_TEST_WORLD_RIVER_MATERIAL = "FT_WorldRiverMaterial";
+const FEATURE_TEST_WORLD_RIVER_MATERIAL = "FT_WorldRiverMaterial";
 
 type WaterKey = keyof typeof FEATURE_TEST_WORLD_WATER;
 
@@ -423,7 +423,7 @@ function createWorldScene(): SerializedScene {
   scene.name = FEATURE_TEST_WORLD_SCENE;
   // Basic 3D's empty placeholder actor has no role here.
   scene.actors = scene.actors.filter((entry) => entry.components.length > 0);
-  const camera = scene.actors.find((entry) => entry.id === scene.settings.mainCameraActorId);
+  const camera = scene.actors.find((entry) => entry.id === scene.settings.defaultCameraActorId);
   if (camera) {
     camera.transform = tf(WORLD_CAMERA.position, {
       rotation: lookAtRotation(WORLD_CAMERA.position, WORLD_CAMERA.target),

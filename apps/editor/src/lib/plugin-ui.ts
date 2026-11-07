@@ -311,7 +311,7 @@ export function classAssetPaths(
     .sort();
 }
 
-export function sceneAssetPaths(
+function sceneAssetPaths(
   assets: ReadonlyArray<{
     path: string;
     placeholder?: boolean;

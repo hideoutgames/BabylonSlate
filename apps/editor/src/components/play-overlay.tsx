@@ -23,6 +23,9 @@ import type { SceneLoadProgress, SpawnableLight } from "@haptic/render";
 import type { RenderDiagnostics } from "@haptic/render";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
+  clampRenderResolution,
+  pixelatedExtend,
+  playFramebufferSize,
   resolveRenderingQuality,
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
@@ -73,13 +76,7 @@ import { playConsoleCommands } from "../lib/play-console";
 import { nextPlayInspectorOpen, profileDefaultsFromSettings } from "../lib/play-debugger-defaults";
 import { runProfilerConsoleCommand, withProfilerHelp } from "../lib/profiler-console";
 import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry, type SessionPauseCause } from "@haptic/bridge";
-import {
-  applyPlayPreviewCanvasLayout,
-  clampRenderResolution,
-  pixelatedExtend,
-  playFramebufferSize,
-  playOverlayContainer,
-} from "../lib/play-preview-aspect";
+import { applyPlayPreviewCanvasLayout, playOverlayContainer } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
 import type {
   SpriteAnimationPayload,
@@ -1219,6 +1216,8 @@ function PlayOverlayView({
         tickIndex: () => number;
         inspectWorld: PlaySession["inspectWorld"];
         runtimeMode: () => PlaySession["runtimeMode"] | null;
+        /** Play's error and warning log lines (the Debug Console's), oldest first. */
+        problemLogs: () => Array<{ severity: string; message: string }>;
         rendering: () => ReturnType<PlaySession["handle"]["renderDiagnostics"]> | null;
         /** The next presented frame as the player sees it, downsampled (`samplePresentedImage`). */
         presentedImage: () => ReturnType<PlaySession["handle"]["samplePresentedImage"]>;
@@ -1257,6 +1256,7 @@ function PlayOverlayView({
       tickIndex: () => sessionRef.current?.lastTickIndex() ?? 0,
       inspectWorld: () => sessionRef.current?.inspectWorld() ?? Promise.resolve({ tickIndex: 0, nodes: [] }),
       runtimeMode: () => sessionRef.current?.runtimeMode ?? null,
+      problemLogs: () => playProbes.get(PLAY_PROBE_KEY)?.problemLogs() ?? [],
       flyThrough: async (options) => {
         if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Fly-through requires a test build.");
         const handle = sessionRef.current?.handle;
@@ -1472,18 +1472,6 @@ function PlayOverlayView({
         >
           <SelectableText>{audioDebugText}</SelectableText>
         </pre>
-      ) : null}
-      {logs.length > 0 ? (
-        <div
-          className="play-debug-readout pointer-events-none absolute bottom-3 left-3 max-h-32 max-w-md overflow-hidden"
-          data-testid="play-log-tail"
-        >
-          {logs.slice(-5).map((line) => (
-            <div key={line.id}>
-              <SelectableText>{line.message}</SelectableText>
-            </div>
-          ))}
-        </div>
       ) : null}
       <PlayDebugConsole
         open={consoleOpen}

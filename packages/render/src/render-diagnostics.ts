@@ -20,7 +20,7 @@ import type { DrawPassCounts } from "./draw-passes";
 import { existingSceneInstancePool, type InstancePoolDiagnostics } from "./instance-pool";
 
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
-import { deviceProfile, deviceTextureLimits } from "./device-profile";
+import { deviceTextureLimits } from "./device-profile";
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
 
 export type RenderDiagnostics = {
@@ -203,7 +203,6 @@ export function createRenderDiagnostics(
           state.shadows,
           engine._features.supportCSM,
           state.mode,
-          deviceProfile().shadowMapCap,
         ).limits,
         ...deviceTextureLimits(resolveSceneRenderingQuality(scene).textures.byteBudget),
         ...(shadows?.limits() ?? []),

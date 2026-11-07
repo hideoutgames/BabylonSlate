@@ -1,17 +1,12 @@
 import type { SerializedGraph } from "@haptic/core";
+import { jsIdent } from "./compile-events";
 import type { NodeRegistry } from "./node-registry";
-
-/** Same ident rules as Call Function / compileGraph export names. */
-export function codegenJsIdent(name: string): string {
-  const cleaned = name.replace(/[^A-Za-z0-9_$]/g, "_");
-  return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
-}
 
 export function latentFunctionKey(
   classId: string,
   functionName: string,
 ): string {
-  return `${classId}:${codegenJsIdent(functionName)}`;
+  return `${classId}:${jsIdent(functionName)}`;
 }
 
 export type LatentFunctionSource = {
@@ -81,7 +76,7 @@ export function isLatentFunctionKey(
   latent: ReadonlySet<string>,
   parentOf?: (classId: string) => string | null | undefined,
 ): boolean {
-  const ident = codegenJsIdent(functionName);
+  const ident = jsIdent(functionName);
   for (const key of latent) {
     // Idents never contain ":", so the last one separates the class id.
     const split = key.lastIndexOf(":");
@@ -116,7 +111,7 @@ export function collectLatentFunctions(
     changed = false;
     const isLatentCall = (classId: string, functionName: string) =>
       owners
-        .get(codegenJsIdent(functionName))
+        .get(jsIdent(functionName))
         ?.some((owner) => sharesLineage(classId, owner, parentOf)) ?? false;
     for (const source of sources) {
       const key = latentFunctionKey(source.classId, source.functionName);

@@ -1,6 +1,6 @@
 import { MarkerType } from "@xyflow/react";
 
-export const ANIM_TRANSITION_ARROW = { type: MarkerType.ArrowClosed } as const;
+const ANIM_TRANSITION_ARROW = { type: MarkerType.ArrowClosed } as const;
 
 export function animTransitionEdgeMarkers(edgeType: string | undefined): {
   markerEnd?: typeof ANIM_TRANSITION_ARROW;

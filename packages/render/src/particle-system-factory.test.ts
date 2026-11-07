@@ -8,7 +8,7 @@ import {
 } from "@haptic/assets";
 import type { ParticleBillboardMode } from "@haptic/core";
 import { MaterialLibrary, materialUnavailable } from "./material-library";
-import { createTestEngine } from "./create-null-engine";
+import { createTestEngine } from "./test-support/test-engine";
 import {
   applyBasicEmitterPlan,
   bindParticleMaterial,

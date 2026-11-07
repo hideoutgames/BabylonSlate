@@ -93,6 +93,43 @@ export class NativePreparationScheduler {
   }
 }
 
+/**
+ * Starts a group of preparation jobs at once, in order, so the queue's
+ * concurrency and byte ceiling bound them rather than the caller. The first
+ * failure aborts the signal the jobs schedule with, cancelling those the queue
+ * has not admitted by then (it may admit one into the slot the failure frees),
+ * and is rethrown only once the whole group has settled, so nothing the group
+ * started is still acquiring. `signal` cancels the group with its reason.
+ * Results keep job order.
+ */
+export async function prepareTogether<T>(
+  signal: AbortSignal | undefined,
+  jobs: readonly ((signal: AbortSignal) => Promise<T>)[],
+): Promise<T[]> {
+  const group = new AbortController();
+  const forward = () => group.abort(signal!.reason);
+  if (signal?.aborted) forward();
+  else signal?.addEventListener("abort", forward, { once: true });
+  let failure: { error: unknown } | undefined;
+  try {
+    const settled = await Promise.allSettled(jobs.map(async (job) => {
+      try {
+        return await job(group.signal);
+      } catch (error) {
+        if (!failure) {
+          failure = { error };
+          group.abort(error);
+        }
+        throw error;
+      }
+    }));
+    if (failure) throw failure.error;
+    return settled.map((result) => (result as PromiseFulfilledResult<T>).value);
+  } finally {
+    signal?.removeEventListener("abort", forward);
+  }
+}
+
 const engineSchedulers = new WeakMap<AbstractEngine, NativePreparationScheduler>();
 /** All Scenes and Play handles on an Engine share one admission queue. */
 export function nativePreparationForEngine(engine: AbstractEngine, limits?: NativePreparationLimits): NativePreparationScheduler {

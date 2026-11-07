@@ -23,10 +23,10 @@ import { FEATURE_TEST_OPTIONAL_SLOTS } from "./engine-content-files";
  */
 
 /** Folder under `assets/FeatureTest/` for every audio asset. */
-export const FEATURE_TEST_AUDIO_FOLDER = "Audio";
+const FEATURE_TEST_AUDIO_FOLDER = "Audio";
 
 /** Asset names, so tests and docs can find them by path. */
-export const FEATURE_TEST_AUDIO_NAMES = {
+const FEATURE_TEST_AUDIO_NAMES = {
   /** Root channel (no effects). */
   masterChannel: "FT_AudioMaster",
   /** Child of Master with environment reverb and wall muffling. */
