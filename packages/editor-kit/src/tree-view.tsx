@@ -21,6 +21,7 @@ import {
 } from "./use-context-menu";
 import {
   WINDOWED_SLICE_OVERSCAN,
+  windowedScrollTop,
   windowedSlice,
   windowedViewportHeight,
 } from "./windowed-slice";
@@ -672,7 +673,13 @@ export function TreeView({
       }
       if (onReparent) {
         const target = dropAtClientY(event.clientY);
-        setDropHint(target.id === drag.nodeId ? undefined : target);
+        const next = target.id === drag.nodeId ? undefined : target;
+        // A move within the same row band keeps the hint, and renders nothing.
+        setDropHint((previous) =>
+          previous?.id === next?.id && previous?.placement === next?.placement
+            ? previous
+            : next,
+        );
         return;
       }
       onExternalDragMove?.(drag.nodeId, event.clientX, event.clientY);
@@ -774,7 +781,16 @@ export function TreeView({
       data-testid={testId}
       onKeyDown={onKeyDown}
       onScroll={(event) => {
-        setScrollTop(event.currentTarget.scrollTop);
+        // Commits only when the scroll changes the mounted rows.
+        const next = event.currentTarget.scrollTop;
+        setScrollTop((previous) =>
+          windowedScrollTop(previous, next, {
+            itemCount: nodes.length,
+            rowHeight,
+            viewportHeight,
+            overscan: WINDOWED_SLICE_OVERSCAN,
+          }),
+        );
         if (dragRef.current) clearDrag();
       }}
       // Touch leaves a sticky :hover on the last row it touched; rows show

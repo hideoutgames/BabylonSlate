@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
+import { Profiler } from "react";
 import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import { HIDDEN_VIEWPORT_HEIGHT, WINDOWED_SLICE_OVERSCAN } from "./windowed-slice";
 import {
@@ -206,6 +207,44 @@ describe("WindowedList scrolling", () => {
       expect(mountedRange()).toEqual([3, 21]);
       scrollTo(0);
       expect(mountedRange()).toEqual([0, 13]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("re-renders only for scrolls that change the mounted rows", () => {
+    const restore = stubNativeScrollerHeight("native-scroller", 280);
+    try {
+      let commits = 0;
+      const { getByTestId } = render(
+        <Profiler id="list" onRender={() => { commits += 1; }}>
+          <div data-testid="native-scroller" style={{ overflowY: "auto" }}>
+            <WindowedList itemCount={500} rowHeight={28}>
+              {(index) => (
+                <div data-testid={`windowed-row-${index}`}>{index}</div>
+              )}
+            </WindowedList>
+          </div>
+        </Profiler>,
+      );
+      const scroller = getByTestId("native-scroller");
+      const scrollTo = (top: number) => {
+        scroller.scrollTop = top;
+        fireEvent.scroll(scroller);
+      };
+      scrollTo(30);
+      expect(mountedRange()).toEqual([0, 15]);
+      // React may render once more after a commit to confirm an unchanged
+      // state; later unchanged updates skip rendering.
+      scrollTo(33);
+      const settled = commits;
+      // Scrolls inside the second row keep the same rows mounted.
+      for (const top of [35, 40, 45, 50, 55]) scrollTo(top);
+      expect(commits).toBe(settled);
+      expect(mountedRange()).toEqual([0, 15]);
+      scrollTo(200);
+      expect(commits).toBe(settled + 1);
+      expect(mountedRange()).toEqual([3, 21]);
     } finally {
       restore();
     }
