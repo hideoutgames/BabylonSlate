@@ -189,6 +189,8 @@ export interface GraphEditorProps {
   commitPositionsOnDragEnd?: boolean;
   /** Selected canvas node ids; not part of the serialized graph. */
   onSelectionChange?: (nodeIds: string[]) => void;
+  /** A click or tap on the empty canvas, after it clears the selection. */
+  onEmptyCanvasClick?: () => void;
   /** Pin click in read-only previews (does not mutate). */
   onPinSelect?: (nodeId: string, pinId: string) => void;
   /** Highlight a node without fit-view (host list selection). */
@@ -712,6 +714,7 @@ function GraphEditorCanvas({
   onChange,
   commitPositionsOnDragEnd = false,
   onSelectionChange,
+  onEmptyCanvasClick,
   selectedNodeId,
   focusedNodeId,
   diagnostics,
@@ -2106,8 +2109,10 @@ function GraphEditorCanvas({
   }, [edges, selectedEdges, selectedNodes]);
 
   const onSelectionChangeRef = useRef(onSelectionChange);
+  const onEmptyCanvasClickRef = useRef(onEmptyCanvasClick);
   useLayoutEffect(() => {
     onSelectionChangeRef.current = onSelectionChange;
+    onEmptyCanvasClickRef.current = onEmptyCanvasClick;
   });
   const selectionKey = selectedNodes.map((node) => node.id).join("\0");
   useEffect(() => {
@@ -2574,6 +2579,7 @@ function GraphEditorCanvas({
         return;
       }
       clearSelection();
+      onEmptyCanvasClickRef.current?.();
       const now = Date.now();
       if (now - lastPaneTapRef.current < DOUBLE_TAP_MS && !readOnly) {
         const point = event ? { x: event.clientX, y: event.clientY } : null;

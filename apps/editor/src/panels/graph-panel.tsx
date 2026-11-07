@@ -133,6 +133,7 @@ export function GraphPanel(
   const { focusedNodeId, openSessionSource } = usePlay();
   const {
     setSelectedNodeIds,
+    setSelectedMemberId,
     activeFunctionId: focusedFunctionId,
     setActiveFunctionId,
     releaseActiveFunctionId,
@@ -847,6 +848,8 @@ export function GraphPanel(
             onCanvasApi={setCanvasApi}
             onNavigateRequest={onNavigateRequest}
             onSelectionChange={setSelectedNodeIds}
+            // An empty click in a function's tab selects the function itself.
+            onEmptyCanvasClick={functionMember ? () => setSelectedMemberId(functionMember.id) : undefined}
             contextMenuItemsForNode={contextMenuItemsForNode}
             preparePaste={preparePaste}
             onChange={(next) => {
