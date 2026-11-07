@@ -225,7 +225,7 @@ export function monitorMaterial(name: string, textureGuid: string): Record<strin
  * Unlit surface showing a Mirror's reflection through a Mirror Reflection node, its Offset rippled by two drifting
  * Perlin noises (about 1% of the screen) and tinted cool, as water or warped glass would.
  */
-export function mirrorRippleMaterial(name: string): Record<string, unknown> {
+function mirrorRippleMaterial(name: string): Record<string, unknown> {
   const doc = createDefaultMaterialDocument(name);
   const output = doc.nodes.find((node) => node.type === "output.surface");
   if (!output) throw new Error("FeatureTest mirror Material has no surface output.");

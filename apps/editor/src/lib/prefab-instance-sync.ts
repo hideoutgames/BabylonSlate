@@ -13,8 +13,8 @@ import { mergePrefabComponents } from "./prefab-preview";
 
 export const PREFAB_TRANSFORM_OVERRIDE = "transform";
 export const PREFAB_PARENT_OVERRIDE = "parentId";
-export const PREFAB_MATERIAL_INSTANCE_OVERRIDE = "materialInstance";
-export const PREFAB_NAME_OVERRIDE = "name";
+const PREFAB_MATERIAL_INSTANCE_OVERRIDE = "materialInstance";
+const PREFAB_NAME_OVERRIDE = "name";
 
 /** Override keys that name component fields rather than `properties` entries. */
 function isFieldOverride(key: string): boolean {

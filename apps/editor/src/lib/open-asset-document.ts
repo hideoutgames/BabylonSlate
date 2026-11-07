@@ -11,7 +11,7 @@ export type AssetDocumentLookup = {
   header: { type: string };
 };
 
-export function assetDocumentOpenTarget(
+function assetDocumentOpenTarget(
   getByGuid: (guid: string) => AssetDocumentLookup | undefined,
   guid: string,
 ): { kind: AssetDocumentKind; path: string } | null {

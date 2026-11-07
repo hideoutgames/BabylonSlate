@@ -35,7 +35,7 @@ export function useGraphDebugSnapshot(): GraphDebugSnapshot | null {
  * snapshot it changes only with the target, so a graph canvas that gates its run trace on it does
  * not render again as instances spawn and despawn.
  */
-export function useGraphDebugTarget(): DebugObserveTarget | null {
+function useGraphDebugTarget(): DebugObserveTarget | null {
   const store = useGraphDebugStore();
   return useSyncExternalStore(store?.subscribe ?? noStore, store ? () => store.getSnapshot().target : noTarget);
 }

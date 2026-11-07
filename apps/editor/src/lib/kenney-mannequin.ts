@@ -4,10 +4,10 @@ import { nodeCwd, tryReadRepoFile } from "./engine-content";
 import { prepareMannequinNormals } from "./kenney-mannequin-normals";
 
 /** Public URL path (under Vite `BASE_URL`) for the Kenney Mannequin GLB. */
-export const KENNEY_MANNEQUIN_PUBLIC_PATH =
+const KENNEY_MANNEQUIN_PUBLIC_PATH =
   "engine-content/kenney-assets/Mannequin/mannequin.glb";
 
-export const KENNEY_MANNEQUIN_PNG_PUBLIC_PATH =
+const KENNEY_MANNEQUIN_PNG_PUBLIC_PATH =
   "engine-content/kenney-assets/Mannequin/mannequin.png";
 
 const REPO_RELATIVE_GLB =

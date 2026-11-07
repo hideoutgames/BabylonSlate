@@ -1,12 +1,5 @@
 import { fitContainedRect, playFramebufferSize, presentedFramebufferStyle, type PlayContainer, type PlayOutputSettings } from "@haptic/core";
 
-export {
-  clampRenderResolution,
-  fitContainedRect,
-  pixelatedExtend,
-  playFramebufferSize,
-} from "@haptic/core";
-
 /** The Play overlay's box: what a pixelated framebuffer that extends past the design size fills. */
 export function playOverlayContainer(overlay: HTMLElement): PlayContainer {
   return { width: overlay.clientWidth, height: overlay.clientHeight, devicePixelRatio: window.devicePixelRatio };

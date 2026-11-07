@@ -15,7 +15,7 @@ export const FEATURE_TEST_CHECK_SCENES = [
 ] as const;
 
 /** Console commands each scene runs in Play; the main scene exercises the full set. */
-export function featureTestCheckCommands(sceneName: string, mode: FeatureTestCheckMode): string[] {
+function featureTestCheckCommands(sceneName: string, mode: FeatureTestCheckMode): string[] {
   if (sceneName === "main" && mode === "full") return ["ft_stats", "ft_spawn 10", "ft_stats", "ft_stream", "ft_cel", "ft_pbr"];
   // Occlusion Culling is on at every tier; the yardstick turns it on in case the project turned it off.
   if (sceneName === "FT_Occlusion") return ["ft_stats", "ft_occlusion"];
@@ -411,7 +411,7 @@ export interface BaselineDelta {
  * and after it), or null when it or they are unmeasured. A baseline's change is against its view's first baseline:
  * its drift. Warm-up windows have none and are never references.
  */
-export function deltaAroundBaselines(
+function deltaAroundBaselines(
   samples: readonly FeatureTestBenchmarkSample[],
   sample: FeatureTestBenchmarkSample,
   value: (entry: FeatureTestBenchmarkSample) => number | null,
@@ -918,7 +918,7 @@ export interface FeatureTestCheckTimeouts {
   profileWarmupWindowMs: number;
 }
 
-export const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
+const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
   sceneOpenMs: 120_000,
   playLoadMs: 120_000,
   playCloseMs: 30_000,
@@ -1198,7 +1198,7 @@ const PRESENTED_IMAGE_WAIT_MS = 5_000;
  * An image sample is black when at least this share of it is near-black. Every Feature Test scene shows a lit sky or
  * backdrop, which samples none; a black world under main's HUD still leaves most of the image black.
  */
-export const BLACK_IMAGE_SHARE = 0.6;
+const BLACK_IMAGE_SHARE = 0.6;
 
 function presentationCounts(play: PlayProbe): {
   drawn: number; held: number; skipped: number; contextLosses: number; heldReasons: Readonly<Record<string, number>>;

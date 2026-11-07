@@ -96,16 +96,13 @@ export {
   applyWorkerPlayStats,
   applyPlayFpsSample,
 } from "./play-session-helpers";
-export type { PlaySessionStepTarget, PlaySessionGraphDebugTarget } from "./play-session-helpers";
 export { applyPlayActiveScene } from "./play-scene-readiness";
 export { playSessionBootControls, previewFixtureThrowHint } from "./play-session-boot";
 export type {
   PlaySessionResult,
   PlaySession,
-  PlaySourcePreparation,
   PlaySceneSourceLoader,
   PlayAssetSourceLoader,
-  PlayPrintEntry,
   PlayHudStats,
 } from "./play-session-types";
 

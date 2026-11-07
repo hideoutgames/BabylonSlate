@@ -3,7 +3,7 @@ import { thumbnailMime } from "@haptic/assets";
 export type ThumbnailUrlMap = Record<string, string>;
 
 /** Thumbnails read at once; each batch of this many is committed together. */
-export const THUMBNAIL_LOAD_CONCURRENCY = 4;
+const THUMBNAIL_LOAD_CONCURRENCY = 4;
 
 /** How long the mounted tiles must stay unchanged before a re-sync reads thumbnails. */
 export const THUMBNAIL_SYNC_DEBOUNCE_MS = 100;

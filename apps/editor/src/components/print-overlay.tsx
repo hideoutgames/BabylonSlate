@@ -60,7 +60,7 @@ export type PrintHudOptions = {
 
 export type PrintHudPrint = (options: PrintHudOptions) => void;
 
-export function usePrintRegistry() {
+function usePrintRegistry() {
   const [entries, setEntries] = useState<PrintOverlayEntry[]>([]);
 
   const print = useCallback<PrintHudPrint>((options) => {

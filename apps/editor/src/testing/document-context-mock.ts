@@ -260,7 +260,6 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     collectPlayMaterialLibrary: async () => ({ documents: new Map(), functions: new Map(), textureGuids: [] }),
     loadGraphDocument: async () => null,
     graphsNeedCompile: false,
-    currentGraphSignature: "",
     searchIndex: null,
   };
 }

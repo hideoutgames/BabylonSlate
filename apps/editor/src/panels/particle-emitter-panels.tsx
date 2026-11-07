@@ -72,6 +72,7 @@ import { ParticleBasicBindingsEditor } from "../components/particle-parameter-fi
 import { Badge } from "@haptic/ui/components/badge";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
+import { asRecord } from "../lib/as-record";
 
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
@@ -87,12 +88,6 @@ type RegistryAsset = {
 };
 
 type Commit = (next: ParticleEmitterPayload, path?: string) => void;
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
 
 function vec3(value: Vector3Value): ParticleVec3Tuple {
   return [value[0], value[1], value[2]];

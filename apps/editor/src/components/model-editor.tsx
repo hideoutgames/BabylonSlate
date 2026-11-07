@@ -43,12 +43,7 @@ import { useModelColliderSession } from "../context/model-collider-session";
 import { useModelSourceBytes } from "../lib/use-model-source-bytes";
 import { scaleLinkKey, useLinkedScale, type ScaleLink } from "../lib/linked-scale";
 import { ModelPreviewCanvas } from "./model-preview-canvas";
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
+import { asRecord } from "../lib/as-record";
 
 /** Shown in place of a mesh preview when the Model source could not be read. */
 export function ModelSourceReadError({ error }: { error: string }) {

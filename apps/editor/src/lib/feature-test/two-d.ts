@@ -62,13 +62,13 @@ import {
 import { PLATFORMER_TILE_PX, ROBOT_FRAMES, type RobotFrame } from "./engine-content-files";
 
 /** Folder under `assets/FeatureTest/` for every 2D asset (the scene goes to `Scenes`). */
-export const FEATURE_TEST_TWO_D_FOLDER = "TwoD";
+const FEATURE_TEST_TWO_D_FOLDER = "TwoD";
 
 /** The 2D world scene (`FeatureTest/Scenes/FT_2D`): open its tab and press Play. */
-export const FEATURE_TEST_TWO_D_SCENE_NAME = "FT_2D";
+const FEATURE_TEST_TWO_D_SCENE_NAME = "FT_2D";
 
 /** Asset names, so sibling FeatureTest modules and docs can find them by path. */
-export const FEATURE_TEST_TWO_D_NAMES = {
+const FEATURE_TEST_TWO_D_NAMES = {
   robotIdleSprite: "FT_2DRobotIdleSprite",
   robotJumpSprite: "FT_2DRobotJumpSprite",
   robotFallSprite: "FT_2DRobotFallSprite",
@@ -90,7 +90,7 @@ export const FEATURE_TEST_TWO_D_NAMES = {
 export const FEATURE_TEST_TWO_D_CHARACTERS_LAYER = "Characters";
 
 /** Project sorting layers FT_2D uses, back to front; missing ones are merged in. */
-export const FEATURE_TEST_TWO_D_SORTING_LAYERS = [
+const FEATURE_TEST_TWO_D_SORTING_LAYERS = [
   "Background",
   "Default",
   FEATURE_TEST_TWO_D_CHARACTERS_LAYER,

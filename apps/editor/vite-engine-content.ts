@@ -12,7 +12,7 @@ import {
  * tree. Required files must exist; optional CC0 slots are copied when present
  * and listed in a manifest so the browser never probes missing URLs.
  */
-export function copyFeatureTestEngineContent(
+function copyFeatureTestEngineContent(
   repoRoot: string,
   destPublicDir: string,
 ): void {

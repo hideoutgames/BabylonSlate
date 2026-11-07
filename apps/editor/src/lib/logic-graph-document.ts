@@ -84,7 +84,7 @@ export function replaceSerializedGraphInDocument(
   return next;
 }
 
-export type FunctionLibraryPaletteEntry = {
+type FunctionLibraryPaletteEntry = {
   classId: string;
   parentClass?: string | null;
   functions: Array<{ name: string; pins?: GraphClassMemberPin[] }>;
@@ -443,7 +443,7 @@ export function classGraphFromHeaderPayload(
   };
 }
 
-export type ScriptInterfacePaletteEntry = {
+type ScriptInterfacePaletteEntry = {
   guid: string;
   name: string;
   methods: Array<{
@@ -620,7 +620,7 @@ export function collectSceneDocumentsForPalette(options: {
   return [...byGuid.values()];
 }
 
-export type LogicGraphCommit =
+type LogicGraphCommit =
   | { kind: "graph"; graph: SerializedGraph }
   /** The whole Scene (or Scene Layer tab) with its new script, for `applySceneChange`. */
   | { kind: "scene"; scene: SerializedScene }
@@ -713,13 +713,13 @@ export type GraphEnumEntry = {
 };
 
 /** A Data Definition's fields always carry their persisted id. */
-export type GraphDataDefinitionEntry = {
+type GraphDataDefinitionEntry = {
   guid: string;
   name: string;
   fields: DataDefinitionField[];
 };
 
-export type GraphTypeAssetCatalog = {
+type GraphTypeAssetCatalog = {
   structures: GraphStructureEntry[];
   dataDefinitions: GraphDataDefinitionEntry[];
   enums: GraphEnumEntry[];

@@ -21,7 +21,7 @@ export type FeatureTestZoneId =
   | "streaming"
   | "lod";
 
-export interface FeatureTestZone {
+interface FeatureTestZone {
   id: FeatureTestZoneId;
   /** Title Case label drawn as 3D Text over the zone. */
   title: string;
@@ -85,13 +85,13 @@ export function zonePoint(
   return [center[0] + offset[0], offset[1], center[1] + offset[2]];
 }
 
-export type FeatureTestStressRegionId = "physics" | "particles" | "animation" | "foliage";
+type FeatureTestStressRegionId = "physics" | "particles" | "animation" | "foliage";
 
 /**
  * `FT_Stress` scene regions (x range, z range). Heavy, scalable workloads live
  * here so the main scene stays a moderate, representative showcase.
  */
-export const FEATURE_TEST_STRESS_REGIONS: Readonly<
+const FEATURE_TEST_STRESS_REGIONS: Readonly<
   Record<FeatureTestStressRegionId, { center: readonly [number, number]; size: readonly [number, number] }>
 > = {
   physics: { center: [-48, 0], size: [32, 32] },

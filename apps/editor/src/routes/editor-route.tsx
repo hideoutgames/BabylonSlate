@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, useEffect, useRef, useState, type ReactNode } from "react";
 import { CONTENT_BROWSER_ID } from "@haptic/core";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -12,7 +12,6 @@ import {
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
 import { HistoryIcon } from "lucide-react";
-import { ComponentGallery } from "../components/component-gallery";
 import { EditorChromeBar } from "../components/editor-chrome-bar";
 import { EditorStatusBar } from "../components/editor-status-bar";
 import { DocumentWorkspace } from "../components/document-workspace";
@@ -46,6 +45,12 @@ import {
   shouldPromptBeforeUnload,
   tabCloseDecision,
 } from "../lib/dirty-document-prompts";
+
+// Test builds only (`?gallery` needs test mode), so production editor builds
+// never load the gallery's chunk; the app route's Suspense covers the load.
+const ComponentGallery = lazy(() =>
+  import("../components/component-gallery").then((module) => ({ default: module.ComponentGallery })),
+);
 
 function PromptList({ items }: { items: string[] }) {
   return (

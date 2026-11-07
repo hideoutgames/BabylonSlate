@@ -102,7 +102,7 @@ const SceneEditingContext = createContext<SceneEditingContextValue | null>(null)
  * Keep live viewport mode aligned with the scene document so undo/redo of
  * SetViewportModeCommand restores the camera, not only the serialized field.
  */
-export function resolveDocumentViewportMode(
+function resolveDocumentViewportMode(
   mode: ViewportMode | undefined | null,
 ): ViewportMode {
   return mode === "2d" ? "2d" : "3d";

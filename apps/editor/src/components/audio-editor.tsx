@@ -41,15 +41,10 @@ import {
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { createAudioPreviewSession } from "../lib/audio-preview";
 import { decodeAudioWaveformPeaks } from "../lib/audio-waveform-decode";
+import { asRecord } from "../lib/as-record";
 
 const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 const AUDIO_VISUAL = resolveTypeVisual({ assetType: "Audio" });
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
 
 function useAudioDocument() {
   const { documentId } = useDocumentWorkspace();

@@ -320,12 +320,6 @@ export class DocumentService {
       .filter((doc): doc is OpenDocument => doc !== undefined);
   }
 
-  getClosableDocumentsOrdered(): OpenDocument[] {
-    return this.getOpenDocumentsOrdered().filter(
-      (doc) => doc.ref.kind !== "content-browser",
-    );
-  }
-
   getScrollableDocumentsOrdered(): OpenDocument[] {
     return this.getOpenDocumentsOrdered().filter(
       (doc) =>
@@ -340,11 +334,6 @@ export class DocumentService {
   /** Preview source reads inherit the lifetime of their authored editor tab. */
   getAssetLoadScope(id: string): AssetLoadScope | undefined {
     return this.assetScopes.get(id);
-  }
-
-  getActiveDocument(): OpenDocument | undefined {
-    if (!this.state.activeDocumentId) return undefined;
-    return this.state.openDocuments.get(this.state.activeDocumentId);
   }
 
   ensureContentBrowserTab(): void {
@@ -844,13 +833,6 @@ export class DocumentService {
     documentId: string,
   ): Record<string, PanelPlacement> {
     return this.state.panelPlacements[documentId] ?? {};
-  }
-
-  replacePanelPlacements(
-    documentId: string,
-    placements: Record<string, PanelPlacement>,
-  ): void {
-    this.state.panelPlacements[documentId] = { ...placements };
   }
 
   /** Clear only revisions whose content was actually written by this save. */

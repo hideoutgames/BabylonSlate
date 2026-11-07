@@ -61,7 +61,7 @@ function saveMarker(marker: BreakdownResumeMarker): boolean {
   }
 }
 
-export function clearBreakdownResume(): void {
+function clearBreakdownResume(): void {
   try {
     localStorage.removeItem(KEY);
   } catch {
@@ -116,7 +116,7 @@ function withNotes(report: FeatureTestCheckReport, notes: readonly string[]): Fe
 }
 
 /** The note that the user's setting is stored again: the live Engine keeps the switched one until it is next created. */
-export function restoredNote(original: boolean): string {
+function restoredNote(original: boolean): string {
   return `preserveDrawingBuffer is stored as ${onOff(original)} again, as before the A/B; it applies when the editor next reloads or the project is reopened.`;
 }
 

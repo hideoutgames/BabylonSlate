@@ -39,7 +39,7 @@ import {
   normalizeMaterialInstanceDocument,
 } from "@haptic/shader-graph";
 
-export function filterPlayScriptDocuments<
+function filterPlayScriptDocuments<
   T extends { path: string; content: SerializedGraph },
 >(
   graphs: ReadonlyArray<T>,

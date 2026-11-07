@@ -15,7 +15,7 @@ export type ScriptCostEntryRow = ScriptCost & { key: string; label: string; entr
 export type ScriptCostClassRow = ScriptCost & { key: string; label: string; entries: ScriptCostEntryRow[] };
 
 /** The entry as the graph names it, for an entry recorded without its canvas title. */
-export function scriptEntryLabel(entry: PerformanceScriptEntry): string {
+function scriptEntryLabel(entry: PerformanceScriptEntry): string {
   if (entry.title) return entry.title;
   // Lifecycle events run as `on<Name>`: `onBeginPlay` is Event Begin Play.
   if (!entry.event) return humanizePropertyLabel(entry.exportName);

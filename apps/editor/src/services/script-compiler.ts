@@ -103,7 +103,7 @@ export function classDisplayNameForGraphPath(path: string): string {
 }
 
 
-export function consoleCommandFromGraph(
+function consoleCommandFromGraph(
   graph: LogicGraph,
   classId: string,
 ): ScriptConsoleCommand | undefined {

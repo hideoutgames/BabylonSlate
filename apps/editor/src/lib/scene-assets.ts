@@ -250,7 +250,7 @@ export function draggedSceneAssetIds(
 }
 
 /** World units between neighbours when several entries land at once. */
-export const SCENE_ASSET_DROP_SPACING = 2;
+const SCENE_ASSET_DROP_SPACING = 2;
 
 /**
  * Where `count` entries land around `center`: a near-square grid, row by

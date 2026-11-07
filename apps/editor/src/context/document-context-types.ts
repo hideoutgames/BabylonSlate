@@ -469,12 +469,6 @@ export interface DocumentContextValue {
   loadGraphDocument: (path: string) => Promise<SerializedGraph | null>;
   /** True when Compile should run: never compiled this session, or open graphs changed. */
   graphsNeedCompile: boolean;
-  /**
-   * Open-graph compile fingerprint (node positions omitted). Recomputed only
-   * when Class graph or Input Action / Axis documents change, or the registry
-   * epoch advances.
-   */
-  currentGraphSignature: string;
   /** Project-wide search index (headers + Scene/Graph documents). */
   searchIndex: ProjectSearchIndex | null;
 }
@@ -540,7 +534,7 @@ export type ActiveDocumentState = Pick<
  */
 export type SaveState = Pick<DocumentContextValue, "dirtyDocuments" | "projectDirty" | "autoSaveStatus" | "recoveryAvailable">;
 /** `useCompileState()`: compile staleness. */
-export type CompileState = Pick<DocumentContextValue, "graphsNeedCompile" | "currentGraphSignature">;
+export type CompileState = Pick<DocumentContextValue, "graphsNeedCompile">;
 /** `useEditorShellState()`: Homepage, recovery, prompts and thumbnails. */
 export type EditorShellState = Pick<
   DocumentContextValue,

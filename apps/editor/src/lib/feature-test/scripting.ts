@@ -172,7 +172,7 @@ function progressFieldDefinitions(speedMode: string): DataDefinitionField[] {
  * `FT_GlobalParams`: one parameter of each type. The Data Probe sets and reads Wind Strength;
  * Materials and Particle Graphs read the others.
  */
-export const FEATURE_TEST_GLOBAL_PARAMETERS = {
+const FEATURE_TEST_GLOBAL_PARAMETERS = {
   parameters: [
     { id: "ft-global-wind-strength", name: "Wind Strength", type: "float", defaultValue: [1] },
     { id: "ft-global-uv-offset", name: "UV Offset", type: "vec2", defaultValue: [0, 0] },

@@ -6,9 +6,9 @@ import {
 } from "@haptic/vfs";
 import type { ProjectStorage } from "@haptic/core";
 
-export const ENGINE_PLUGIN_INDEX_FILE = "index.json";
+const ENGINE_PLUGIN_INDEX_FILE = "index.json";
 
-export function enginePluginPublicUrl(baseUrl: string, file: string): string {
+function enginePluginPublicUrl(baseUrl: string, file: string): string {
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return `${base}engine-plugins/${file}`;
 }
@@ -55,14 +55,6 @@ async function loadEnginePluginCatalog(options: {
   }
 }
 
-/** Mount the bundled plugin catalog; file parts are fetched on demand, never as archives. */
-export async function loadEnginePluginStorage(options: {
-  fetch: typeof fetch;
-  baseUrl?: string;
-}): Promise<ProjectStorage> {
-  return (await loadEnginePluginCatalog(options)) ?? emptyEnginePluginStorage();
-}
-
 let cachedEnginePluginStorage: ProjectStorage | null = null;
 /** The load concurrent callers share until it settles. */
 let pendingEnginePluginStorage: Promise<ProjectStorage> | null = null;
@@ -72,7 +64,11 @@ export function isCachedEnginePluginStorage(storage: ProjectStorage): boolean {
   return storage === cachedEnginePluginStorage;
 }
 
-/** Fetch bundled engine plugins once per editor session after a successful index load, even one listing no plugins. */
+/**
+ * Mount the bundled plugin catalog once per editor session after a successful
+ * index load, even one listing no plugins; file parts are fetched on demand,
+ * never as archives.
+ */
 export async function ensureEnginePluginStorage(options?: {
   fetch?: typeof fetch;
   baseUrl?: string;

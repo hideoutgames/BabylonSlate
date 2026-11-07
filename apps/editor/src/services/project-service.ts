@@ -2,7 +2,6 @@ import { isProjectOpenElsewhere, SourceRevisionChangedError } from "@haptic/core
 import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, isAppOwnedFolder, pickImportFiles } from "@haptic/vfs";
-import type { DockviewApi } from "dockview-react";
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@haptic/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
@@ -71,7 +70,6 @@ import {
   AUDIO_REVERB_CHUNK_ID,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   DOCUMENT_CHUNK_ID,
-  EncodeQueue,
   encodeAssetDocument,
   audioClipChunk,
   audioClipChunkToDrop,
@@ -412,10 +410,6 @@ export class ProjectService {
     });
   }
 
-  get textureEncodeQueue(): EncodeQueue {
-    return this.textures.publicQueue;
-  }
-
   onRegistryChange(listener: () => void): () => void {
     this.registryListeners.add(listener);
     return () => {
@@ -437,15 +431,6 @@ export class ProjectService {
     return () => {
       this.ownWriteListeners.delete(listener);
     };
-  }
-
-  /** Pause encode jobs while Preview runs (engineplan §3.5). */
-  pauseTextureEncodeQueue(): void {
-    this.textures.pause();
-  }
-
-  resumeTextureEncodeQueue(): void {
-    this.textures.resume();
   }
 
   async retryTextureEncoding(
@@ -560,12 +545,6 @@ export class ProjectService {
   setEngineExtensionStorage(storage: ProjectStorage): void {
     this.projectPlugins.setEngineExtensionStorage(storage);
     this.extensions.setEngineStorage(storage);
-  }
-
-  setPluginOverrides(
-    overrides: Record<string, PluginEnableOverride>,
-  ): void {
-    this.projectPlugins.setOverrides(overrides);
   }
 
   get searchIndex(): ProjectSearchIndex | null {
@@ -2028,16 +2007,6 @@ export class ProjectService {
     }
 
     return createEmptyLayouts();
-  }
-
-  captureLayout(api: DockviewApi): Record<string, unknown> {
-    return api.toJSON() as unknown as Record<string, unknown>;
-  }
-
-  restoreLayout(api: DockviewApi, layout: Record<string, unknown> | null): void {
-    if (layout) {
-      api.fromJSON(layout as never);
-    }
   }
 }
 

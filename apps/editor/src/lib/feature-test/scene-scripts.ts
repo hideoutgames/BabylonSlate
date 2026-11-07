@@ -27,7 +27,7 @@ import { classGraph, gChain, gNode, gWire, printString } from "./graph";
  * A Timeline Clip the probe plays. With its document's guid the getter is
  * typed to the clip's class, so its Custom Event Tracks can be bound too.
  */
-export type ProbedTimelineClip = { clip: SerializedTimelineClip; documentGuid?: string };
+type ProbedTimelineClip = { clip: SerializedTimelineClip; documentGuid?: string };
 
 /** The one-input Custom Event Track the main scene's Intro clip fires, and the line it carries. */
 const INTRO_LINE: TimelineEventTrack = {

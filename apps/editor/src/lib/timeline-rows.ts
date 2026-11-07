@@ -86,7 +86,7 @@ export function formatTimelineValue(valueType: TimelineValueType, value: unknown
 }
 
 /** A colour key value as CSS, for the lane gradient. */
-export function timelineCssColor(value: unknown): string {
+function timelineCssColor(value: unknown): string {
   const byte = (name: string) => Math.round(Math.min(1, Math.max(0, number(field(value, name)))) * 255);
   const alpha = field(value, "w");
   return `rgba(${byte("x")}, ${byte("y")}, ${byte("z")}, ${typeof alpha === "number" ? Math.min(1, Math.max(0, alpha)) : 1})`;

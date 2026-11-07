@@ -28,8 +28,6 @@ import {
   type ScriptPaletteOptions,
 } from "./script-palette-members";
 
-export type { PaletteOwnedActor, PaletteSceneDocument, ScriptPaletteOptions } from "./script-palette-members";
-
 function structPaletteNodes(
   nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
