@@ -424,6 +424,40 @@ it.each(["WorldNormal", "DepthPass"] as const)("filters mixed %s slots per mesh 
   expect(scene.multiMaterials).not.toContain(slots);
 });
 
+it.each(["WorldNormal", "DepthPass"] as const)("keeps a steady %s capture's draw wrappers, resetting a mesh's only when its variant or a slot changes", (mode) => {
+  const { scene, captures, engine } = host();
+  engine.getCaps().textureHalfFloatRender = true;
+  vi.spyOn(normalMaterial, "createRenderTargetNormalMaterial").mockImplementation((scene) => new NodeMaterial("Capture Variant", scene));
+  vi.spyOn(normalMaterial, "createRenderTargetDepthMaterial").mockImplementation((scene) => new NodeMaterial("Capture Depth Variant", scene));
+  captures.setAssets(new Map([["target", { mode, width: 16, height: 8 }]]));
+  const opaque = new StandardMaterial("Opaque", scene);
+  const blended = new StandardMaterial("Blended", scene); blended.alpha = 0.5;
+  const slots = new MultiMaterial("Slots", scene); slots.subMaterials = [opaque, opaque];
+  const single = MeshBuilder.CreateBox("Single", {}, scene); single.material = opaque;
+  const multi = MeshBuilder.CreateBox("Multi", {}, scene); multi.material = slots;
+  const capture = () => { captures.request("capture"); captures.render(); };
+  capture();
+  const pass = (scene.textures.find((entry) => entry.name === "renderTarget:target") as RenderTargetTexture).renderPassId;
+  // The pass's draws (mocked here) hold a wrapper per submesh: its program and defines.
+  const wrappers = () => [single, multi].map((mesh) => mesh.subMeshes[0]!._getDrawWrapper(pass, true)!);
+  let drawn = wrappers();
+  const kept = () => wrappers().map((wrapper, index) => wrapper === drawn[index]);
+  capture();
+  capture();
+  expect(kept()).toEqual([true, true]);
+  // A blended slot changes the slot container's children (it draws nothing there): that mesh's pass draws them anew.
+  slots.subMaterials = [opaque, blended];
+  capture();
+  expect(Array.from((multi.getMaterialForRenderPass(pass) as MultiMaterial).subMaterials)[1]).toBeNull();
+  expect(kept()).toEqual([true, false]);
+  drawn = wrappers();
+  // Another Material is another variant, for that mesh alone.
+  single.material = new StandardMaterial("Replacement", scene);
+  capture();
+  expect(single.getMaterialForRenderPass(pass)).not.toBe((multi.getMaterialForRenderPass(pass) as MultiMaterial).subMaterials[0]);
+  expect(kept()).toEqual([false, true]);
+});
+
 it.each(["WorldNormal", "DepthPass"] as const)("borrows retained authored %s geometry and releases only its capture lease on replacement", async (mode) => {
   const { scene, captures, engine } = host();
   engine.getCaps().textureHalfFloatRender = true;
