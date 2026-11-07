@@ -246,6 +246,30 @@ export interface MaterialLowerContext extends MaterialValidationContext {
   functions?: Record<string, MaterialFunctionDocument>;
 }
 
+const cachedLowerings = new WeakMap<MaterialDocument, {
+  functions: ReadonlyArray<readonly [string, MaterialFunctionDocument]>;
+  result: MaterialLowerResult;
+}>();
+
+/**
+ * `lowerMaterialDocument` with only Material Functions as context, for
+ * documents nobody edits in place, such as an exported game's loaded content.
+ * A document's result is reused while it would lower against the same
+ * Function documents under the same guids; `functions` itself may change in
+ * place, so a Function that loads or leaves later lowers the document again.
+ */
+export function lowerMaterialDocumentCached(
+  doc: MaterialDocument,
+  functions: ReadonlyMap<string, MaterialFunctionDocument>,
+): MaterialLowerResult {
+  const cached = cachedLowerings.get(doc);
+  if (cached && cached.functions.length === functions.size
+    && cached.functions.every(([guid, fn]) => functions.get(guid) === fn)) return cached.result;
+  const result = lowerMaterialDocument(doc, { functions: Object.fromEntries(functions) });
+  cachedLowerings.set(doc, { functions: [...functions], result });
+  return result;
+}
+
 /**
  * Lower a validated Material document into a deterministic build plan.
  *

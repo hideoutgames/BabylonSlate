@@ -5,6 +5,11 @@ import type { GameManifest } from "./types";
 
 /** Prepared sources shared by Play, Preview Build, and the standalone player. */
 export type GameSourceContent = {
+  /**
+   * JSON payloads already parsed, keyed like `payloads`. A host that passes a
+   * `PackedContentCache` keeps each loaded payload's bytes and document
+   * unchanged, under the same identity, while it stays loaded.
+   */
   decodedPayloads?: ReadonlyMap<string, unknown>;
   /** Cooked Complex Collision meshes; omitted means "cook the scanned Models from `modelBytes`". */
   complexMeshes?: ReadonlyMap<string, CollisionTriangleMesh>;

@@ -1,7 +1,7 @@
 import { classIdForAssetPath, createSaveStorageServer, newGuid } from "@haptic/core";
 import { createSaveGameStorage } from "@haptic/vfs/save-game-storage";
 import type { ScalabilityAcknowledgement, RenderProjectSettings, RuntimeAssetLoadState } from "@haptic/core";
-import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
+import { buildMaterialParameterCatalog, lowerMaterialDocumentCached } from "@haptic/shader-graph";
 import { buildParticleParameterCatalog, cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
 import { captureShadowDiagnostics, lightsDebugText, setGlobalParameterCatalog } from "@haptic/render";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
@@ -550,7 +550,7 @@ function initializePlayer(
     // Export compiles with stripDevelopmentOnly exactly when bundleDebugger is false: trace and cursor debug lines go with it.
     traceDebugDraw: manifest.bundleDebugger,
     audioAssetGuids: manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
-    materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
+    materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions, lowerMaterialDocumentCached),
     particleParameterCatalog: buildParticleParameterCatalog(content.particleLibrary),
     materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes, content.renderTargetTextures),
     renderTargets: Object.fromEntries(content.renderTargets),

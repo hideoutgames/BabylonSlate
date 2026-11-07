@@ -32,6 +32,7 @@ export {
 } from "./document";
 export {
   lowerMaterialDocument,
+  lowerMaterialDocumentCached,
   materialCompileKeyFromLowering,
   type MaterialBuildPlan,
   type MaterialBufferRequirements,
@@ -107,7 +108,7 @@ export { materialGradientStops, type MaterialGradientStop } from "./gradient";
 export * from "./vector-mask";
 export * from "./global-parameter";
 
-export { buildMaterialParameterCatalog, materialParameterDefaults } from "./material-parameter-catalog";
+export { buildMaterialParameterCatalog, materialParameterDefaults, type MaterialCatalogLowering } from "./material-parameter-catalog";
 export { convertGlslToMaterial, type GlslToMaterialOptions, type GlslToMaterialResult } from "./glsl-to-material";
 export {
   MATERIAL_INSTANCE_MAX_DEPTH,

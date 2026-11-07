@@ -4,6 +4,7 @@ import {
   webGpuMaterialCompatibilityReason,
   type BackendEngineSession,
 } from "@haptic/render";
+import { lowerMaterialDocumentCached } from "@haptic/shader-graph";
 import { startPlayer, type PlayerBootHandle, type PlayerBootOptions } from "./boot";
 import { playerDecoderPaths } from "./decoder-paths";
 import { packedContentFromGame } from "./hydrate";
@@ -29,7 +30,7 @@ export async function startPlayerWithBackend(
   const owner = await createBackendEngineSession({
     requestedBackend,
     webGpuCompatibilityReason: requestedBackend === "webgpu"
-      ? webGpuMaterialCompatibilityReason(content.materialDocuments, content.materialFunctions)
+      ? webGpuMaterialCompatibilityReason(content.materialDocuments, content.materialFunctions, lowerMaterialDocumentCached)
       : undefined,
     signal: options.signal,
     createCanvas: () => {

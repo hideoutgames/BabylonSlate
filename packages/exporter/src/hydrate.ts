@@ -52,6 +52,7 @@ import type { ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
 import type { CollisionTriangleMesh, ScenePostProcessEntry } from "@haptic/core";
 import {
   buildMaterialParameterCatalog,
+  lowerMaterialDocumentCached,
   materializeMaterialInstances,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -158,7 +159,20 @@ function gameComplexCollisionModelGuids(game: GameSourceContent): Set<string> {
   ]);
 }
 
-export function packedContentFromGame(game: GameSourceContent): PackedGameContent {
+/**
+ * Normalized Material and Material Function documents, by the loaded payload
+ * they came from (its decoded document, else its bytes). Only for a host whose
+ * loaded payloads never change in place, such as the exported player, which
+ * keeps each payload's identity while it stays loaded: its source refreshes
+ * then keep each document's identity, and with it each cached lowering.
+ */
+export type PackedContentCache = { readonly normalized: WeakMap<object, { type: string; name: string | undefined; value: unknown }> };
+
+export function createPackedContentCache(): PackedContentCache {
+  return { normalized: new WeakMap() };
+}
+
+export function packedContentFromGame(game: GameSourceContent, cache?: PackedContentCache): PackedGameContent {
   const dataAssets: DataAssetCatalogEntry[] = [];
   const curveAssets: CurveAssetCatalogEntry[] = [];
   const globalParameterCatalog: GlobalParameterCatalog = {};
@@ -192,6 +206,15 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     const decoded = game.decodedPayloads?.get(entry.guid);
     if (!bytes && decoded === undefined) continue;
     const parsed = decoded ?? jsonFromBytes(bytes!);
+    const source = decoded !== null && typeof decoded === "object" ? decoded : bytes;
+    const normalizedOnce = <T>(normalize: () => T): T => {
+      if (!cache || !source) return normalize();
+      const known = cache.normalized.get(source);
+      if (known?.type === entry.type && known.name === entry.name) return known.value as T;
+      const value = normalize();
+      cache.normalized.set(source, { type: entry.type, name: entry.name, value });
+      return value;
+    };
     if (entry.type === "DataDefinition" || entry.type === "DataTree" || entry.type === "Structure" || entry.type === "Enum") {
       if (parsed) dataAssets.push({ guid: entry.guid, type: entry.type, name: entry.name ?? entry.guid, payload: parsed });
       continue;
@@ -254,7 +277,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     if (entry.type === "Material" && parsed) {
       materialDocuments.set(
         entry.guid,
-        normalizeMaterialDocument(parsed, entry.name ?? "Material"),
+        normalizedOnce(() => normalizeMaterialDocument(parsed, entry.name ?? "Material")),
       );
       continue;
     }
@@ -265,10 +288,10 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     if (entry.type === "MaterialFunction" && parsed) {
       materialFunctions.set(
         entry.guid,
-        normalizeMaterialFunctionDocument(
+        normalizedOnce(() => normalizeMaterialFunctionDocument(
           parsed,
           entry.name ?? "Material Function",
-        ),
+        )),
       );
       continue;
     }
@@ -486,14 +509,18 @@ export function packedBootControls(
   return controls;
 }
 
-/** Replace the runtime's source union after acquisition or release, including empty collections. */
-export function packedSourceControls(game: GameSourceContent, content = packedContentFromGame(game)): ControlMessage[] {
+/**
+ * Replace the runtime's source union after acquisition or release, including empty collections.
+ * With a `cache`, `content` came through it, and its Materials lower once per document.
+ */
+export function packedSourceControls(game: GameSourceContent, content?: PackedGameContent, cache?: PackedContentCache): ControlMessage[] {
+  content ??= packedContentFromGame(game, cache);
   const controls: ControlMessage[] = [{ type: "loadScripts", scripts: [...game.scripts], spawn: [], replace: true }, {
     type: "loadSceneContent", assetGuids: [...game.payloads.keys(), ...(game.decodedPayloads?.keys() ?? [])],
     sceneLayers: [...game.sceneLayers].map(([guid, layer]) => ({ guid, layer })),
     sceneNavmeshBytes: Object.fromEntries(game.navmeshBytes),
     dataAssets: content.dataAssets, curveAssets: content.curveAssets, globalParameterCatalog: content.globalParameterCatalog, timelineClipAssets: content.timelineClipAssets, audioAssetGuids: game.manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
-    materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
+    materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions, cache ? lowerMaterialDocumentCached : undefined),
     particleParameterCatalog: buildParticleParameterCatalog(content.particleLibrary),
     materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes, content.renderTargetTextures),
     renderTargets: Object.fromEntries(content.renderTargets), renderTargetTextures: Object.fromEntries(content.renderTargetTextures),

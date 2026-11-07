@@ -76,5 +76,5 @@ export * from "./preview-diagnostics";
 
 export { createPreviewAssetClient, createPreviewAssetServer } from "./preview-assets";
 
-export { packedContentFromGame, packedPlayControls, packedBootControls, packedSourceControls, type PackedAudioLibrary, type PackedGameContent } from "./hydrate";
+export { createPackedContentCache, packedContentFromGame, packedPlayControls, packedBootControls, packedSourceControls, type PackedAudioLibrary, type PackedContentCache, type PackedGameContent } from "./hydrate";
 export { gameSourceSubset, requiredGameAssets, type GameSourceContent } from "./source-content";

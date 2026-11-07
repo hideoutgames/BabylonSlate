@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_COLLISION_PRESETS, DEFAULT_RENDER_PROJECT_SETTINGS } from "@haptic/core";
 import { createDefaultSpriteAnimationPayload, getTile, TERRAIN_E, TERRAIN_W } from "@haptic/assets";
-import { packedContentFromGame, packedSourceControls } from "./hydrate";
+import { createDefaultMaterialDocument, createDefaultMaterialFunctionDocument } from "@haptic/shader-graph";
+import { createPackedContentCache, packedContentFromGame, packedSourceControls } from "./hydrate";
 import { gameSourceSubset, type GameSourceContent } from "./source-content";
 import type { GameAssetIndexEntry } from "./types";
 
@@ -118,6 +119,61 @@ describe("packedContentFromGame", () => {
     expect(content.timelineClipAssets[0]!.payload).not.toHaveProperty("editorPreview");
     const load = packedSourceControls(game, content).find((control) => control.type === "loadSceneContent");
     expect(load).toMatchObject({ timelineClipAssets: [{ guid: "swing" }] });
+  });
+});
+
+describe("packed content cache", () => {
+  /** A Material that calls the "tint" Material Function, and that Function. */
+  function tintedMaterial() {
+    const fn = createDefaultMaterialFunctionDocument("Tint");
+    fn.nodes.push({ id: "boost", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} });
+    fn.edges = [
+      { id: "e-in-boost", sourceNodeId: "inputs", sourcePinId: "in_value", targetNodeId: "boost", targetPinId: "a" },
+      { id: "e-boost-out", sourceNodeId: "boost", sourcePinId: "out", targetNodeId: "outputs", targetPinId: "out_value" },
+    ];
+    const material = createDefaultMaterialDocument();
+    material.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "tint" } });
+    material.edges = material.edges.filter((edge) => edge.id !== "e-color-output");
+    material.edges.push(
+      { id: "e-color-call", sourceNodeId: "baseColor", sourcePinId: "out", targetNodeId: "call", targetPinId: "in_value" },
+      { id: "e-call-out", sourceNodeId: "call", sourcePinId: "out_value", targetNodeId: "output", targetPinId: "baseColor" },
+    );
+    return { fn, material };
+  }
+  const catalogOf = (controls: ReturnType<typeof packedSourceControls>) => {
+    const load = controls.find((control) => control.type === "loadSceneContent");
+    return load?.type === "loadSceneContent" ? Object.keys(load.materialParameterCatalog ?? {}) : [];
+  };
+
+  it("keeps a loaded Material's document across refreshes and normalizes a newly loaded payload", () => {
+    const { material } = tintedMaterial();
+    const game = sources([{ guid: "mat", type: "Material", name: "Floor", encoding: "json" }], { mat: material });
+    const cache = createPackedContentCache();
+    const first = packedContentFromGame(game, cache).materialDocuments.get("mat");
+    expect(first?.name).toBe("Floor");
+    expect(packedContentFromGame(game, cache).materialDocuments.get("mat")).toBe(first);
+    // Without a cache, as editor Play packs, every call normalizes again.
+    expect(packedContentFromGame(game).materialDocuments.get("mat")).not.toBe(first);
+    game.payloads.set("mat", encoder.encode(JSON.stringify(material)));
+    expect(packedContentFromGame(game, cache).materialDocuments.get("mat")).not.toBe(first);
+  });
+
+  it("lists a Material in the parameter catalog once the Material Function it calls loads, and drops it when that leaves", () => {
+    const { fn, material } = tintedMaterial();
+    const game = sources([
+      { guid: "mat", type: "Material", encoding: "json" },
+      { guid: "tint", type: "MaterialFunction", encoding: "json" },
+    ], { mat: material });
+    const cache = createPackedContentCache();
+    // The player keeps one content object and syncs its maps in place on every refresh.
+    const content = packedContentFromGame(game, cache);
+    expect(catalogOf(packedSourceControls(game, content, cache))).toEqual([]);
+    game.payloads.set("tint", encoder.encode(JSON.stringify(fn)));
+    const loaded = packedContentFromGame(game, cache);
+    for (const [guid, document] of loaded.materialFunctions) content.materialFunctions.set(guid, document);
+    expect(catalogOf(packedSourceControls(game, content, cache))).toEqual(["mat"]);
+    content.materialFunctions.clear();
+    expect(catalogOf(packedSourceControls(game, content, cache))).toEqual([]);
   });
 });
 

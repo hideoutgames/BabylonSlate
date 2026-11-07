@@ -3,17 +3,26 @@ import type {
   MaterialParameterValue,
 } from "@haptic/core";
 import type { MaterialDocument, MaterialFunctionDocument } from "./document";
-import { lowerMaterialDocument, type MaterialBuildPlan } from "./lower";
+import { lowerMaterialDocument, type MaterialBuildPlan, type MaterialLowerResult } from "./lower";
+
+/** How a catalog lowers each document; `lowerMaterialDocumentCached` for documents nobody edits in place. */
+export type MaterialCatalogLowering = (
+  document: MaterialDocument,
+  functions: ReadonlyMap<string, MaterialFunctionDocument>,
+) => MaterialLowerResult;
 
 /** Match compiled parameter bindings: only reachable root parameters are public. */
 export function buildMaterialParameterCatalog(
   documents: ReadonlyMap<string, MaterialDocument>,
   functions: ReadonlyMap<string, MaterialFunctionDocument> = new Map(),
+  lower?: MaterialCatalogLowering,
 ): MaterialParameterCatalog {
   const result: Array<[string, MaterialParameterCatalog[string]]> = [];
-  const context = { functions: Object.fromEntries(functions) };
+  let context: { functions: Record<string, MaterialFunctionDocument> } | undefined;
+  const lowerDocument: MaterialCatalogLowering = lower
+    ?? ((document) => lowerMaterialDocument(document, context ??= { functions: Object.fromEntries(functions) }));
   for (const [guid, document] of documents) {
-    const lowered = lowerMaterialDocument(document, context);
+    const lowered = lowerDocument(document, functions);
     if (!lowered.ok) continue;
     result.push([
       guid,

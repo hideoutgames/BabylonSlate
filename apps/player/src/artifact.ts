@@ -67,6 +67,11 @@ export type LoadedGame = {
   fontFamilies: Map<string, string>;
   audioBytes: Map<string, Uint8Array>;
   audioPayloads: Map<string, AudioPayload>;
+  /**
+   * Each loaded payload's bytes and decoded document keep their identity, and
+   * never change in place, while it stays loaded: boot's source refresh and the
+   * player's packed-content cache (`./hydrate`) rely on it.
+   */
   payloads: Map<string, Uint8Array>;
   decodedPayloads?: Map<string, unknown>;
   /** Cooked only for Models a prepared Scene/Class uses with Use Complex Collision. */

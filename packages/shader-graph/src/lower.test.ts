@@ -6,7 +6,7 @@ import {
   type MaterialDocument,
 } from "./document";
 import { newCustomGlslProperties } from "./custom-glsl";
-import { lowerMaterialDocument, materialCompileKeyFromLowering } from "./lower";
+import { lowerMaterialDocument, lowerMaterialDocumentCached, materialCompileKeyFromLowering } from "./lower";
 import { isPerInstanceParameter } from "./parameters";
 
 const materialCompileKey = (document: MaterialDocument) => materialCompileKeyFromLowering(document, lowerMaterialDocument(document));
@@ -725,3 +725,46 @@ function postProcessSampling(
   );
   return doc;
 }
+
+describe("lowerMaterialDocumentCached", () => {
+  /** A Material that calls the "fn-tint" Material Function. */
+  function callingTint() {
+    const fn = createDefaultMaterialFunctionDocument("Tint");
+    fn.nodes.push({ id: "boost", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} });
+    fn.edges = [
+      { id: "e-in-boost", sourceNodeId: "inputs", sourcePinId: "in_value", targetNodeId: "boost", targetPinId: "a" },
+      { id: "e-boost-out", sourceNodeId: "boost", sourcePinId: "out", targetNodeId: "outputs", targetPinId: "out_value" },
+    ];
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "fn-tint" } });
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      { id: "e-color-call", sourceNodeId: "baseColor", sourcePinId: "out", targetNodeId: "call", targetPinId: "in_value" },
+      { id: "e-call-out", sourceNodeId: "call", sourcePinId: "out_value", targetNodeId: "output", targetPinId: "baseColor" },
+    );
+    return { fn, doc };
+  }
+
+  it("reuses a document's lowering while it lowers against the same Function documents", () => {
+    const { fn, doc } = callingTint();
+    const functions = new Map([["fn-tint", fn]]);
+    const first = lowerMaterialDocumentCached(doc, functions);
+    expect(first.ok).toBe(true);
+    expect(lowerMaterialDocumentCached(doc, new Map(functions))).toBe(first);
+    // Equal content in another document is lowered on its own.
+    expect(lowerMaterialDocumentCached(structuredClone(doc), functions)).not.toBe(first);
+  });
+
+  it("lowers again when the functions map gains, replaces or loses a Function in place", () => {
+    const { fn, doc } = callingTint();
+    const functions = new Map<string, typeof fn>();
+    expect(lowerMaterialDocumentCached(doc, functions).ok).toBe(false);
+    functions.set("fn-tint", fn);
+    const loaded = lowerMaterialDocumentCached(doc, functions);
+    expect(loaded.ok && loaded.plan.operations.some((operation) => operation.id === "call/boost")).toBe(true);
+    functions.set("fn-tint", structuredClone(fn));
+    expect(lowerMaterialDocumentCached(doc, functions)).not.toBe(loaded);
+    functions.delete("fn-tint");
+    expect(lowerMaterialDocumentCached(doc, functions).ok).toBe(false);
+  });
+});
