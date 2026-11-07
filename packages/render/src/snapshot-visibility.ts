@@ -129,8 +129,8 @@ const leftoverSweeps = new WeakMap<object, LeftoverSweep>();
  * leftover can exist that the owner's last sweep did not already dispose. A leftover is a world mesh named for an
  * overlay slot, so one can appear only when a slot joins the overlay set, a visual moved between Scenes (`moved`),
  * or the world Scene gained a mesh. Babylon adds every mesh through `addMesh` and reports every removal at once, so
- * meshes gained since the last sweep are the change in length plus the removals since; nothing renames an actor
- * mesh after adding it. A sweep that throws records nothing, so the next snapshot sweeps again.
+ * meshes gained since the last sweep are the change in length plus the removals since; a mesh is renamed only
+ * right after it is added, so its addition already forces the sweep. A sweep that throws records nothing, so the next snapshot sweeps again.
  */
 export function sweepWorldOverlayLeftoverSlots(
   owner: object,
