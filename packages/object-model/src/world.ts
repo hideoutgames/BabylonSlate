@@ -863,14 +863,20 @@ export class World {
       for (let i = 0; i < iteration.length; i++) {
         if (!this.sceneTickable()) break;
         const actor = iteration.list[i]!;
-        if (actor.tickEnabled && !actor.destroyed && this.canTickActor(actor)) actor.callOnTick(ctx);
+        // A hookless actor would run nothing, so it skips the admission check.
+        if (actor.tickEnabled && actor.hasTickHook && !actor.destroyed && this.canTickActor(actor)) actor.callOnTick(ctx);
       }
     } finally {
       this.endActorIteration();
     }
   }
 
-  /** Each actor's component list is captured into reused scratch before its first callback. */
+  /**
+   * Each actor's component list is captured into reused scratch before its
+   * first callback. Components without a Tick hook would run nothing, so an
+   * actor with none of them is skipped before any admission check, and only a
+   * component with a hook is preceded by one.
+   */
   private tickComponents(ctx: TickContext): void {
     const iteration = this.beginActorIteration();
     const scratch = (this.componentScratch[this.actorIterationDepth - 1] ??= []);
@@ -878,12 +884,17 @@ export class World {
       for (let i = 0; i < iteration.length; i++) {
         if (!this.sceneTickable()) break;
         const actor = iteration.list[i]!;
-        if (actor.destroyed || !this.canTickActor(actor)) continue;
-        const count = actor.components.length;
-        for (let c = 0; c < count; c++) scratch[c] = actor.components[c];
-        for (let c = 0; c < count; c++) {
-          if (!this.sceneTickable() || !this.canTickActor(actor)) break;
+        if (actor.destroyed) continue;
+        const components = actor.components;
+        const count = components.length;
+        let first = 0;
+        while (first < count && !components[first]!.hasTickHook) first++;
+        if (first === count || !this.canTickActor(actor)) continue;
+        for (let c = first; c < count; c++) scratch[c] = components[c];
+        for (let c = first; c < count; c++) {
           const component = scratch[c]!;
+          if (!component.hasTickHook) continue;
+          if (!this.sceneTickable() || !this.canTickActor(actor)) break;
           if (!component.destroyed) component.callOnTick(ctx);
         }
       }

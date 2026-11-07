@@ -380,6 +380,25 @@ describe("World tick", () => {
     expect(events).toEqual(["gi", "overlay", "overlay-component", "gi", "overlay", "overlay-component"]);
   });
 
+  it("runs the owner admission check only for actors and components that have a Tick hook", () => {
+    const admitted: string[] = [];
+    const events: string[] = [];
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(),
+      canTickActor: (actor) => { admitted.push(actor.guid); return true; } });
+    const idle = world.createActor({ classId: "Actor", guid: "idle" });
+    idle.attachComponent(world.createComponent({ classId: "ActorComponent" }));
+    const ticking = world.createActor({ classId: "Actor", guid: "ticking", hooks: { onTick: () => { events.push("actor"); } } });
+    ticking.attachComponent(world.createComponent({ classId: "ActorComponent" }));
+    ticking.attachComponent(world.createComponent({ classId: "ActorComponent",
+      hooks: { onTick: () => { events.push("component"); } } }));
+    world.spawnActorNow(idle);
+    world.spawnActorNow(ticking);
+    world.tick();
+    expect(events).toEqual(["actor", "component"]);
+    // The actor's Tick, then its components: the owner once, and again before its hooked component.
+    expect(admitted).toEqual(["ticking", "ticking", "ticking"]);
+  });
+
   it("rechecks an owner's readiness between component callbacks without blocking a ready sibling layer", () => {
     const events: string[] = [];
     const ready = new Set(["first", "second"]);

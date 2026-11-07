@@ -203,6 +203,14 @@ export class EngineObject {
     this.hooks.onCreation?.(this);
   }
 
+  /**
+   * Whether this object has a Tick hook. Hooks are fixed at construction, so a
+   * tick phase can skip an object without one before its admission check.
+   */
+  get hasTickHook(): boolean {
+    return this.hooks.onTick !== undefined;
+  }
+
   callOnTick(ctx: TickContext): void {
     if (this.destroyed) return;
     this.hooks.onTick?.(this, ctx);
@@ -337,6 +345,13 @@ export class ActorComponent extends EngineObject {
 
   private materialObject: MaterialObject | null = null;
   private creationCalled = false;
+  /**
+   * What `classId` (fixed at construction) means for variable reads, settled
+   * once so a read costs no class lookup: a 2D visual's unset `opacity` and
+   * `tint` read their defaults, and a mesh class owns `materialObject`.
+   */
+  private readonly overlayStyleDefaults = supportsOverlayVisualStyle(this.classId);
+  private readonly materialObjectClass = this.classId === "MeshComponent" || this.classId === "DynamicRuntimeMeshComponent";
 
   override callOnCreation(): void {
     if (this.creationCalled || this.destroyed || !this.owner?.world) return;
@@ -391,11 +406,11 @@ export class ActorComponent extends EngineObject {
   }
 
   override getVariable(name: string): unknown {
-    if (supportsOverlayVisualStyle(this.classId) && !this.variables.has(name)) {
+    if (this.overlayStyleDefaults && !this.variables.has(name)) {
       if (name === "opacity") return 1;
       if (name === "tint") return [1, 1, 1, 1];
     }
-    if ((this.classId !== "MeshComponent" && this.classId !== "DynamicRuntimeMeshComponent") || name !== "materialObject") {
+    if (!this.materialObjectClass || name !== "materialObject") {
       return super.getVariable(name);
     }
     const guid = super.getVariable("materialGuid");
@@ -425,7 +440,7 @@ export class ActorComponent extends EngineObject {
   }
 
   override setVariable(name: string, value: unknown): void {
-    if (this.classId === "MeshComponent" || this.classId === "DynamicRuntimeMeshComponent") {
+    if (this.materialObjectClass) {
       if (name === "materialObject") return;
       if (name === "materialGuid" && value !== super.getVariable(name)) {
         if (this.materialObject) this.materialObject.destroyed = true;
