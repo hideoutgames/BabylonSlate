@@ -18,7 +18,7 @@ import {
 const DECIMAL_LITERAL = String.raw`/^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/`;
 
 export const FORMAT_ARG_PIN_PREFIX = "arg:";
-export const FORMAT_STRING_DEFAULT = "{input}";
+const FORMAT_STRING_DEFAULT = "{input}";
 
 export type FormatToken =
   | { kind: "lit"; text: string }
@@ -85,13 +85,13 @@ export function parseFormatTokens(format: string): FormatToken[] {
   return tokens;
 }
 
-export function formatStringOf(properties: Record<string, unknown>): string {
+function formatStringOf(properties: Record<string, unknown>): string {
   const authored = readPinDefault(properties, "format");
   if (typeof authored === "string") return authored;
   return FORMAT_STRING_DEFAULT;
 }
 
-export function isFormatWired(properties: Record<string, unknown>): boolean {
+function isFormatWired(properties: Record<string, unknown>): boolean {
   return properties.formatWired === true;
 }
 

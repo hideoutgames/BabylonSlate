@@ -23,7 +23,7 @@ const timelineClass = (assetGuid: string) => (assetGuid ? `Timeline:${assetGuid}
  * `timelineAssetGuid` (a wired variable's default, else empty for a plain
  * Timeline); otherwise the pin's own value names it.
  */
-export function timelineFromAssetGuid(properties: Record<string, unknown>): string {
+function timelineFromAssetGuid(properties: Record<string, unknown>): string {
   return "timelineAssetGuid" in properties ? text(properties.timelineAssetGuid) : text(properties["default:timelineAsset"]);
 }
 
@@ -51,7 +51,7 @@ export function timelineClipNodeTitle(properties: Record<string, unknown>): stri
 }
 
 /** The proxies a Create <Name> Timeline Clip node offers inputs for, as the editor last stored them. */
-export function timelineCreateClipProxies(properties: Record<string, unknown>): TimelineClipProxySummary[] {
+function timelineCreateClipProxies(properties: Record<string, unknown>): TimelineClipProxySummary[] {
   const raw = properties.timelineClipProxies;
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((entry): TimelineClipProxySummary[] => {

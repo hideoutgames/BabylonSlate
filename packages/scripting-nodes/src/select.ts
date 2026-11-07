@@ -19,7 +19,7 @@ import {
 } from "@haptic/scripting";
 import { enumGuidOf, enumMembersOf, titleCaseEnumMember } from "./enum";
 
-export const SELECT_OPTION_PIN_PREFIX = "option:";
+const SELECT_OPTION_PIN_PREFIX = "option:";
 const SELECT_SEARCH_ALIASES = ["?:", "condition ? a : b"] as const;
 
 export function selectOptionPinId(memberName: string): string {
