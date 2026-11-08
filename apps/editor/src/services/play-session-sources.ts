@@ -380,7 +380,7 @@ export function createPlaySourceTracker(ctx: PlaySourceTrackerContext): PlaySour
     for (const guid of preparedSceneReverbs.keys()) if (!sceneSourceOwners.has(guid)) preparedSceneReverbs.delete(guid);
     for (const key of ["textureBytes", "modelBytes", "modelPayloads", "complexMeshes", "spritePayloads", "spriteAnimationPayloads",
       "tilemapPayloads", "tilesetPayloads", "waterPayloads", "fontFacetypeBytes", "fontMsdfJson", "fontMsdfPng",
-      "fontCssStackByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
+      "fontCssStackByGuid", "fontPixelSizeByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
       "renderTargets", "renderTargetTextures", "areaEmissions", "texturePixelSizes", "modelClipAnimationGuids",
       "retargetAnimationLoads", "animGraphs", "behaviourTrees", "blackboards", "dataAssets", "sceneNavmeshBytes",
       "audioReverbByScene", "navmeshBytes", "audioReverbBytes", "scenes", "scene", "sceneLayers"] as const) delete options[key];

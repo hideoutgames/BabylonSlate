@@ -652,12 +652,15 @@ function playText2DFontStacks(host: PlayAssetSourceHost, preparedFamilies: Reado
   const fonts = host.registry.list({ type: "Font" }).map((asset) => {
     const guid = asset.header.guid;
     const payload = normalizeFontPayload(host.documentOverrides?.get(guid)?.payload ?? asset.header.payload, asset.header.name);
-    return { guid, family: preparedFamilies.get(guid) ?? payload.family, fallbackGuids: payload.fallbackGuids };
+    return { guid, family: preparedFamilies.get(guid) ?? payload.family, fallbackGuids: payload.fallbackGuids, pixelSize: payload.pixelSize };
   });
   const compiled = compileText2DFontStacks({
     fonts, defaultFontGuid: host.project.settings.fonts.defaultFontGuid, globalFallback: host.project.settings.fonts.globalFallback,
   });
-  return { fontCssStack: compiled.defaultStack, fontCssStackByGuid: compiled.byGuid };
+  return {
+    fontCssStack: compiled.defaultStack, fontCssStackByGuid: compiled.byGuid,
+    fontPixelSize: compiled.defaultPixelSize, fontPixelSizeByGuid: compiled.pixelSizeByGuid,
+  };
 }
 
 const SCRIPT_ASSET_TYPES = new Set(["Class", "AnimationGraph"]);

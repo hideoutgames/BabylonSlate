@@ -1308,6 +1308,37 @@ describe("collectAndExportGame", () => {
     ).toMatchObject({ width: 1024, height: 512 });
   });
 
+  it("records a pixel Font's Pixel Size on its packed entry", async () => {
+    const scene = createDefaultScene();
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main", dependencies: ["ark", "body"] }),
+        asset({ guid: "ark", type: "Font", name: "Ark Pixel" }),
+        asset({ guid: "body", type: "Font", name: "Body" }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      payloadByGuid: (guid) => guid === "ark" ? { family: "Ark Pixel", pixelSize: 12 } : guid === "body" ? { family: "Body" } : null,
+      bytesByGuid: (guid) =>
+        guid === "scene-1"
+          ? new TextEncoder().encode(JSON.stringify(scene))
+          : new Uint8Array([1, 2, 3]),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    const entry = (guid: string) => result.value.manifest.assets.find((candidate) => candidate.guid === guid);
+    expect(entry("ark")).toMatchObject({ name: "Ark Pixel", pixelSize: 12 });
+    expect(entry("body")).not.toHaveProperty("pixelSize");
+  });
+
   it("records pixelsPerUnit, the Font Global Fallback and Font family names from payloads", async () => {
     const scene = {
       ...createDefaultScene(),

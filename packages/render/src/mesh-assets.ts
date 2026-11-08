@@ -67,6 +67,10 @@ export interface MeshAssetContext {
   fontCssStack?: string;
   /** Per-Font compiled CSS stacks for Bitmap 2D Text. */
   fontCssStackByGuid?: ReadonlyMap<string, string>;
+  /** The project default Font's Pixel Size (0 when it is no pixel font), for 2D Text with no Font picked. */
+  fontPixelSize?: number;
+  /** Each pixel Font's Pixel Size; a Font missing here is no pixel font. */
+  fontPixelSizeByGuid?: ReadonlyMap<string, number>;
   /** Play pause — overlay letter effects freeze while true. */
   paused?: boolean;
   /** Existing bitmap storage retained while a replacement visual is staged. */
@@ -149,7 +153,7 @@ function byteMapFingerprint(
 }
 
 function sortedStringMapFingerprint(
-  map: ReadonlyMap<string, string> | undefined,
+  map: ReadonlyMap<string, string | number> | undefined,
 ): string {
   if (!map || map.size === 0) return "";
   return [...map.entries()]
@@ -189,6 +193,7 @@ export function meshAssetFingerprintWithoutModels(
     `fonts:${byteMapFingerprint(assets?.fontFacetypeBytes)}`,
     `msdf:${byteMapFingerprint(assets?.fontMsdfJson)}:${byteMapFingerprint(assets?.fontMsdfPng)}`,
     `fontCss:${assets?.fontCssStack ?? ""}:${sortedStringMapFingerprint(assets?.fontCssStackByGuid)}`,
+    `fontPixel:${assets?.fontPixelSize ?? 0}:${sortedStringMapFingerprint(assets?.fontPixelSizeByGuid)}`,
   ].join("|");
 }
 
@@ -226,7 +231,7 @@ export function meshAssetInstallRevision(assets: MeshAssetContext): number {
   const key = [
     assets.pixelsPerUnit, assets.spritePayloads, assets.spriteAnimations, assets.tilemaps, assets.waters, assets.tilesets,
     assets.payloadRevisions, assets.textureBytes, assets.texturePixelSizes, assets.fontFacetypeBytes, assets.fontMsdfJson,
-    assets.fontMsdfPng, assets.fontCssStack, assets.fontCssStackByGuid, assets.areaEmissions, assets.modelSources ?? assets.modelBytes,
+    assets.fontMsdfPng, assets.fontCssStack, assets.fontCssStackByGuid, assets.fontPixelSize, assets.fontPixelSizeByGuid, assets.areaEmissions, assets.modelSources ?? assets.modelBytes,
   ].map((value) => {
     if (typeof value !== "object" || value === null) return `${typeof value}:${String(value)}`;
     let identity = installedIdentities.get(value);

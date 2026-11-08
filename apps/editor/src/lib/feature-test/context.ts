@@ -137,6 +137,8 @@ export interface FeatureTestAssets {
     facetype: string;
     /** Onest source Font (OFL). */
     onest: string;
+    /** Ark Pixel 12px Proportional (OFL), a pixel Font with Pixel Size 12. */
+    arkPixel: string;
   };
   /** User-supplied CC0 Audio assets (null when the slot is empty). Filled by the audio area. */
   audio: {
@@ -346,7 +348,7 @@ function emptyAssets(): FeatureTestAssets {
       classPath: "",
       actorId: "",
     },
-    fonts: { facetype: "", onest: "" },
+    fonts: { facetype: "", onest: "", arkPixel: "" },
     audio: { loop: null, oneShot: null, mixer: null, channel: null, attenuation: null },
     materials: {},
     timeline: "",

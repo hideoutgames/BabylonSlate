@@ -425,6 +425,8 @@ export interface DocumentContextValue {
   collectPlayFontCssStacks: () => {
     fontCssStack: string;
     fontCssStackByGuid: Map<string, string>;
+    fontPixelSize: number;
+    fontPixelSizeByGuid: Map<string, number>;
   };
   /** Model source bytes for scene MeshComponent `assetGuid`s. */
   collectPlayModelBytes: (

@@ -12,7 +12,21 @@ export interface FontPayload {
   weight: number | string;
   style: "normal" | "italic";
   fallbackGuids: string[];
+  /**
+   * A pixel font's native size in pixels: 2D Text draws it unsmoothed at whole multiples of this size (Scale).
+   * 0 for an ordinary font.
+   */
+  pixelSize: number;
   representations: FontRepresentations;
+}
+
+/** The largest Pixel Size a Font takes. */
+export const MAX_FONT_PIXEL_SIZE = 128;
+
+/** A Pixel Size: a whole number of pixels from 1 to `MAX_FONT_PIXEL_SIZE`, else 0 (no pixel font). */
+export function normalizeFontPixelSize(value: unknown): number {
+  const size = typeof value === "number" ? Math.round(value) : NaN;
+  return Number.isFinite(size) && size >= 1 ? Math.min(MAX_FONT_PIXEL_SIZE, size) : 0;
 }
 
 function representationsFrom(
@@ -40,6 +54,7 @@ export function createFontPayload(
     weight: extra.weight ?? 400,
     style: extra.style === "italic" ? "italic" : "normal",
     fallbackGuids: extra.fallbackGuids ? [...extra.fallbackGuids] : [],
+    pixelSize: normalizeFontPixelSize(extra.pixelSize),
     representations: representationsFrom(extra.representations),
   };
 }
@@ -67,6 +82,7 @@ export function normalizeFontPayload(
         : 400,
     style: source.style === "italic" ? "italic" : "normal",
     fallbackGuids,
+    pixelSize: normalizeFontPixelSize(source.pixelSize),
     representations: {
       source: representations.source === true,
       facetype: representations.facetype === true,
@@ -89,6 +105,7 @@ export function mergeFontAttachPayload(
     style: current.style,
     fallbackGuids:
       current.fallbackGuids.length > 0 ? current.fallbackGuids : next.fallbackGuids,
+    pixelSize: current.pixelSize || next.pixelSize,
     representations: {
       source: current.representations.source || next.representations.source,
       facetype: current.representations.facetype || next.representations.facetype,

@@ -67,6 +67,8 @@ export type Text2DFontStackSource = {
   guid: string;
   family: string;
   fallbackGuids?: readonly string[];
+  /** A pixel font's Pixel Size; 0 or absent for an ordinary font. */
+  pixelSize?: number;
 };
 
 /** Project default + per-Font CSS stacks for Bitmap overlay 2D Text. */
@@ -74,7 +76,7 @@ export function compileText2DFontStacks(options: {
   fonts: readonly Text2DFontStackSource[];
   defaultFontGuid?: string | null;
   globalFallback?: string;
-}): { defaultStack: string; byGuid: Map<string, string> } {
+}): { defaultStack: string; byGuid: Map<string, string>; defaultPixelSize: number; pixelSizeByGuid: Map<string, number> } {
   const familyByGuid = new Map(
     options.fonts.map((font) => [font.guid, font.family] as const),
   );
@@ -103,7 +105,10 @@ export function compileText2DFontStacks(options: {
       }),
     );
   }
-  return { defaultStack, byGuid };
+  const pixelSizeByGuid = new Map<string, number>();
+  for (const font of options.fonts) if (font.pixelSize && font.pixelSize > 0) pixelSizeByGuid.set(font.guid, font.pixelSize);
+  const defaultPixelSize = options.defaultFontGuid ? pixelSizeByGuid.get(options.defaultFontGuid) ?? 0 : 0;
+  return { defaultStack, byGuid, defaultPixelSize, pixelSizeByGuid };
 }
 
 /** Characters the custom family does not draw, judged by their advance under two different generic tails. */

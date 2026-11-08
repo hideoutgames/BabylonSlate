@@ -4,7 +4,7 @@ import type { CreateEngineOptions } from "./create-engine-types";
 const INITIAL_SOURCE_OPTIONS = [
   "textureBytes", "modelBytes", "modelSources", "modelPayloads", "spritePayloads", "spriteAnimations",
   "tilemapPayloads", "tilesetPayloads", "waterPayloads", "fontFacetypeBytes", "fontMsdfJson", "fontMsdfPng",
-  "fontCssStackByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
+  "fontCssStackByGuid", "fontPixelSizeByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
   "renderTargets", "renderTargetTextures", "areaEmissions", "texturePixelSizes", "modelClipAnimationGuids",
   "retargetAnimationLoads", "navmeshBytes", "audioReverbBytes", "audioBytes", "spawnableLights",
 ] as const satisfies readonly (keyof CreateEngineOptions)[];

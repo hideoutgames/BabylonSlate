@@ -271,6 +271,8 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     fontFaceEntries: options.fontFaceEntries,
     fontCssStack: options.fontCssStack,
     fontCssStackByGuid: options.fontCssStackByGuid,
+    fontPixelSize: options.fontPixelSize,
+    fontPixelSizeByGuid: options.fontPixelSizeByGuid,
     modelBytes: options.modelBytes,
     modelPayloads: options.modelPayloads,
     modelClipAnimationGuids: options.modelClipAnimationGuids,

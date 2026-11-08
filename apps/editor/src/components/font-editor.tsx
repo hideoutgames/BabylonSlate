@@ -32,12 +32,14 @@ import { Input } from "@haptic/ui/components/input";
 import { Separator } from "@haptic/ui/components/separator";
 import { cn } from "@haptic/ui/lib/utils";
 import {
+  MAX_FONT_PIXEL_SIZE,
   fontFamilyFromRepresentationFileName,
   glyphsFallingToFallback,
   groupMsdfImportBatch,
   mergeFontAttachPayload,
   msdfAtlasPickError,
   normalizeFontPayload,
+  normalizeFontPixelSize,
 } from "@haptic/assets";
 import { FontRegistry } from "@haptic/render";
 import { pickImportFiles } from "@haptic/vfs";
@@ -354,6 +356,19 @@ export function FontInspector({
             label: "Family",
             value: font.family,
             onChange: (value) => onChange({ ...font, family: value }),
+          },
+          {
+            id: "pixelSize",
+            kind: "number",
+            label: "Pixel Size",
+            unit: "px",
+            value: font.pixelSize,
+            defaultValue: 0,
+            min: 0,
+            max: MAX_FONT_PIXEL_SIZE,
+            precision: 0,
+            description: "Above 0, 2D Text draws this font pixel perfect at whole multiples of this em height.",
+            onChange: (value) => onChange({ ...font, pixelSize: normalizeFontPixelSize(value) }),
           },
         ]}
       />

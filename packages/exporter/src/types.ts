@@ -86,6 +86,8 @@ export type ExportAssetBytes = {
   /** Authored Texture payload pixels for overlay 2DTexture layout. */
   width?: number;
   height?: number;
+  /** A pixel Font's Pixel Size: the em height its glyphs are drawn at, one texel per font pixel. */
+  pixelSize?: number;
 };
 
 export type GameAssetIndexEntry = {
@@ -113,6 +115,8 @@ export type GameAssetIndexEntry = {
   /** Authored Texture payload pixels for overlay 2DTexture layout. */
   width?: number;
   height?: number;
+  /** A pixel Font's Pixel Size. */
+  pixelSize?: number;
 };
 
 export type GameManifest = {

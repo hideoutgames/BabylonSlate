@@ -1,6 +1,6 @@
 /**
- * Repository `engine-content/` files the FeatureTest starter imports. Node-free
- * so the Vite copy plugin and the browser scaffold share one list.
+ * Repository `engine-content/` files the built-in starters import: the FeatureTest starter's content and the
+ * Pixel Art Optimized fonts. Node-free so the Vite copy plugin and the browser scaffold share one list.
  */
 
 /** Curated Kenney Holiday Pack models (CC0). Each one references `Textures/colormap.png`. */
@@ -23,6 +23,19 @@ export const HOLIDAY_COLORMAP_PATH = `${HOLIDAY_PACK_DIR}/Textures/colormap.png`
 /** Onest (SIL OFL 1.1); `OFL.txt` ships beside it. */
 export const ONEST_FONT_PATH = "engine-content/fonts/Onest/Onest-Latin-Variable.woff2";
 const ONEST_LICENSE_PATH = "engine-content/fonts/Onest/OFL.txt";
+
+/**
+ * Ark Pixel Font (SIL OFL 1.1), Latin flavor with every character, built from source at 10 and 12 px
+ * (`Source.txt`); `OFL.txt` ships beside it. Pixel Art Optimized projects import all four as pixel Fonts and
+ * make the first the project default Font.
+ */
+export const ARK_PIXEL_FONTS = [
+  { name: "Ark Pixel 12px Proportional", path: "engine-content/fonts/ArkPixel/ark-pixel-12px-proportional-latin.woff2", pixelSize: 12 },
+  { name: "Ark Pixel 12px Monospaced", path: "engine-content/fonts/ArkPixel/ark-pixel-12px-monospaced-latin.woff2", pixelSize: 12 },
+  { name: "Ark Pixel 10px Proportional", path: "engine-content/fonts/ArkPixel/ark-pixel-10px-proportional-latin.woff2", pixelSize: 10 },
+  { name: "Ark Pixel 10px Monospaced", path: "engine-content/fonts/ArkPixel/ark-pixel-10px-monospaced-latin.woff2", pixelSize: 10 },
+] as const;
+const ARK_PIXEL_LICENSE_PATH = "engine-content/fonts/ArkPixel/OFL.txt";
 export const SKYBOX_NET_PATH = "engine-content/skybox/cubemap_layout.png";
 
 /** Kenney Platformer Pack Redux tilesheet: 13 × 12 tiles of 128 px (CC0). */
@@ -62,6 +75,8 @@ export const FEATURE_TEST_ENGINE_CONTENT: readonly string[] = [
   ...ROBOT_FRAMES.map(robotFramePath),
   ONEST_FONT_PATH,
   ONEST_LICENSE_PATH,
+  ...ARK_PIXEL_FONTS.map((font) => font.path),
+  ARK_PIXEL_LICENSE_PATH,
   SKYBOX_NET_PATH,
 ];
 

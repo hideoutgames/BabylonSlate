@@ -2,6 +2,7 @@ import {
   createSkyboxFaceTextureResult,
   newAssetGuid,
   normalizeAnimationPayload,
+  normalizeFontPayload,
 } from "@haptic/assets";
 import { SKYBOX_FACE_KEYS } from "@haptic/core";
 import { bundledAsciiTypeFace } from "@haptic/render/default-typeface";
@@ -9,6 +10,7 @@ import { encodeRgbaPng } from "@haptic/render/png-encode";
 import { MANNEQUIN_ACTOR_ID, MANNEQUIN_ASSET_FOLDER, MANNEQUIN_CLASS_FILE, MANNEQUIN_CLASS_ID } from "../scaffold-empty-3d";
 import type { FeatureTestContext } from "./context";
 import {
+  ARK_PIXEL_FONTS,
   FEATURE_TEST_HOLIDAY_MODELS,
   FEATURE_TEST_OPTIONAL_SLOTS,
   ONEST_FONT_PATH,
@@ -155,6 +157,15 @@ export async function importFeatureTestContent(ctx: FeatureTestContext): Promise
     await ctx.importFile(FONTS, "FT_Onest.woff2", await host.loadBytes(ONEST_FONT_PATH)),
     "Font",
   ).header.guid;
+  // A pixel Font: an imported source Font given its Pixel Size, as Pixel Art Optimized projects set it.
+  const ark = ARK_PIXEL_FONTS[0];
+  const arkFont = single(await ctx.importFile(FONTS, "FT_ArkPixel.woff2", await host.loadBytes(ark.path)), "Font");
+  await ctx.saveDocument("font", FONTS, arkFont.path.slice(arkFont.path.lastIndexOf("/") + 1), {
+    ...normalizeFontPayload(arkFont.header.payload, ark.name),
+    family: ark.name,
+    pixelSize: ark.pixelSize,
+  });
+  assets.fonts.arkPixel = arkFont.header.guid;
 }
 
 function single<T extends { header: { type: string } }>(created: readonly T[], type: string): T {

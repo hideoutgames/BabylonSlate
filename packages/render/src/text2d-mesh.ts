@@ -22,8 +22,12 @@ import {
   measureBitmapGlyph,
   packBitmapGlyphAtlas,
   planBitmapGlyphAtlas,
+  measurePixelGlyph,
+  pixelGlyphKey,
+  pixelScaleOf,
   rasterizeBitmapGlyph,
-  resolveText2DFontStack,
+  rasterizePixelGlyph,
+  resolveText2DFont,
   type BitmapAllocationLimits,
   type BitmapCanvasScratch,
   type BitmapGlyphCell,
@@ -190,6 +194,52 @@ function bitmapMetrics(
       const height = sizePx / ppu;
       return { width: height, height };
     },
+  };
+}
+
+/**
+ * A pixel font's metrics: each glyph's native cell times its whole-number scale, advancing by the font's own
+ * advance, with the pen at the cell's origin column. Whitespace advances by its own width and draws nothing.
+ * `native` is null without a 2D canvas, which then falls back to `fallback` cells.
+ */
+function pixelMetrics(
+  pixelsPerUnit: number,
+  pixelSize: number,
+  native: (ch: string, style: RichTextStyle) => { width: number; height: number; originX: number; advance: number; inkBounds?: BitmapGlyphCell["inkBounds"] } | null,
+  fallback: (ch: string, style: RichTextStyle) => Pick<BitmapGlyphCell, "width" | "height" | "inkBounds">,
+): GlyphMetricsProvider {
+  const ppu = pixelsPerUnit > 0 ? pixelsPerUnit : 100;
+  const plain = bitmapMetrics(ppu, fallback);
+  return {
+    measureGlyph(ch, style) {
+      const cell = native(ch, style);
+      if (!cell) return plain.measureGlyph(ch, style);
+      const unit = pixelScaleOf(style, pixelSize) / ppu;
+      return {
+        width: cell.width * unit,
+        height: cell.height * unit,
+        bearingX: -cell.originX * unit,
+        bearingY: 0,
+        advance: cell.advance * unit,
+        source: "bitmap",
+        inkBounds: cell.inkBounds && { top: cell.inkBounds.top * unit, bottom: cell.inkBounds.bottom * unit },
+      };
+    },
+    measureImage: plain.measureImage,
+  };
+}
+
+/** Moves every quad so its edges fall on whole pixels; a line's quads share their offset, so spacing is kept. */
+function snapLayoutToPixels(layout: Text2DLayout, pixelsPerUnit: number): Text2DLayout {
+  const ppu = pixelsPerUnit > 0 ? pixelsPerUnit : 100;
+  const snap = (edge: number) => Math.round(edge * ppu) / ppu;
+  return {
+    ...layout,
+    items: layout.items.map((item) => ({
+      ...item,
+      x: snap(item.x - item.width / 2) + item.width / 2,
+      y: snap(item.y - item.height / 2) + item.height / 2,
+    })),
   };
 }
 
@@ -425,31 +475,48 @@ export function createText2DMesh(
   const png = fontGuid ? assets?.fontMsdfPng?.get(fontGuid) : undefined;
   const hasPair = Boolean(json && png && json.byteLength > 0 && (png instanceof Blob ? png.size : png.byteLength) > 0);
   if (parsed.renderer === "msdf" && !hasPair) warnMsdfFallback(fontGuid);
-  const renderer = resolveText2DRenderer(parsed.renderer, hasPair);
-  const fontStack = resolveText2DFontStack(fontGuid, assets);
+  const { stack: fontStack, pixelSize } = resolveText2DFont(fontGuid, assets);
+  // A pixel font draws its own bitmap glyphs: a distance field would round them.
+  const pixel = pixelSize > 0 && !options.metrics;
+  const renderer = pixel ? "bitmap" : resolveText2DRenderer(parsed.renderer, hasPair);
+  /** A glyph's atlas key: a pixel font's native cell, else the canvas cell at its size. */
+  const glyphKey = (ch: string, style: RichTextStyle) =>
+    pixel ? pixelGlyphKey(ch, style, fontStack, pixelSize) : bitmapGlyphKey(ch, style, fontStack);
   const bitmapCells = new Map<string, ReturnType<typeof rasterizeBitmapGlyph>>();
   const measured = new Map<string, ReturnType<typeof measureBitmapGlyph>>();
   const requests = new Map<string, { ch: string; style: RichTextStyle }>();
   // One canvas serves every unique glyph of this build (Play rebuilds on text edits).
   const canvasScratch: BitmapCanvasScratch = {};
+  const pixelMeasured = new Map<string, NonNullable<ReturnType<typeof measurePixelGlyph>>>();
   const measure = (ch: string, style: RichTextStyle) => {
-    const key = bitmapGlyphKey(ch, style, fontStack);
+    const key = glyphKey(ch, style);
     let cell = measured.get(key);
     if (!cell) {
-      cell = measureBitmapGlyph(ch, style, fontStack, canvasScratch);
+      const native = pixel ? measurePixelGlyph(ch, style, fontStack, pixelSize, canvasScratch) : null;
+      if (native) pixelMeasured.set(key, native);
+      cell = native ?? measureBitmapGlyph(ch, style, fontStack, canvasScratch);
       measured.set(key, cell);
       requests.set(key, { ch, style });
     }
     return bitmapCells.get(key) ?? { width: cell.layoutWidth, height: cell.layoutHeight };
   };
-  const bitmap = options.metrics ?? bitmapMetrics(ppu, measure);
+  const bitmap = options.metrics ?? (pixel ? pixelMetrics(ppu, pixelSize, (ch, style) => {
+    measure(ch, style);
+    return pixelMeasured.get(glyphKey(ch, style)) ?? null;
+  }, measure) : bitmapMetrics(ppu, measure));
   const atlas = renderer === "msdf" && json ? parseMsdfAtlas(json) : null;
   const metrics = options.metrics ?? (atlas ? msdfMetrics(atlas, ppu, bitmap) : bitmap);
   const layoutOptions = { rich, pixelsPerUnit: ppu, metrics };
-  let { layout } = layoutText2DFromProperties(properties, layoutOptions);
+  // A pixel font's base size is its Pixel Size times the text's whole-number Scale.
+  const layoutProperties = pixel ? { ...parsed, size: pixelSize * parsed.pixelScale } : properties;
+  const layOut = () => {
+    const result = layoutText2DFromProperties(layoutProperties, layoutOptions).layout;
+    return pixel ? snapLayoutToPixels(result, ppu) : result;
+  };
+  let layout = layOut();
   // A custom metrics provider may not have requested bitmap measurements.
   for (const item of layout.items) {
-    if (item.kind === "glyph" && item.source !== "msdf" && item.ch?.trim()) {
+    if (item.kind === "glyph" && item.source !== "msdf" && item.ch?.trim() && !pixel) {
       measure(item.ch, item.style);
     }
   }
@@ -460,10 +527,11 @@ export function createText2DMesh(
   };
   const bitmapPlan = planBitmapGlyphAtlas([...measured.values()], limits);
   for (const [key, request] of requests) {
-    bitmapCells.set(key, rasterizeBitmapGlyph(request.ch, request.style, fontStack, limits, measured.get(key), canvasScratch));
+    const native = pixelMeasured.has(key) ? rasterizePixelGlyph(request.ch, request.style, fontStack, pixelSize, limits, canvasScratch) : null;
+    bitmapCells.set(key, native ?? rasterizeBitmapGlyph(request.ch, request.style, fontStack, limits, measured.get(key), canvasScratch));
   }
   // Preserve the actual canvas/fallback cell metrics after the bounded raster pass.
-  if (!options.metrics) layout = layoutText2DFromProperties(properties, layoutOptions).layout;
+  if (!options.metrics) layout = layOut();
   const packedBitmap = packBitmapGlyphAtlas([...bitmapCells.values()], limits, bitmapPlan);
   const wrapW =
     parsed.wrapWidth > 0 ? parsed.wrapWidth / ppu : Math.max(layout.width, 0.01);
@@ -483,6 +551,7 @@ export function createText2DMesh(
       text2dRenderer: renderer,
       text2dRich: rich,
       text2dFontStack: fontStack,
+      text2dPixelSize: pixel ? pixelSize : 0,
       /** Laid-out width in pixels from the glyph cells actually drawn. */
       text2dLayoutWidth: layout.width * ppu,
       text2dBitmapBytes: packedBitmap ? packedBitmap.width * packedBitmap.height * 8 : 0,
@@ -507,7 +576,8 @@ export function createText2DMesh(
         scene,
         false,
         true,
-        Texture.BILINEAR_SAMPLINGMODE,
+        // A pixel font's texels stay square on screen.
+        pixel ? Texture.NEAREST_SAMPLINGMODE : Texture.BILINEAR_SAMPLINGMODE,
       ));
       bitmapAtlas.hasAlpha = true;
       bitmapAtlas.name = `${name}:bitmap-atlas`;
@@ -544,7 +614,7 @@ export function createText2DMesh(
       const msdf = item.source === "msdf" && renderer === "msdf";
       const restRotation = item.style.italic && msdf ? MSDF_ITALIC_SHEAR : 0;
       if (batchGlyphs && item.kind === "glyph" && !hasLetterEffects(item)) {
-        const bitmapKey = !msdf && item.ch ? bitmapGlyphKey(item.ch, item.style, fontStack) : null;
+        const bitmapKey = !msdf && item.ch ? glyphKey(item.ch, item.style) : null;
         const style = msdf ? msdfBindingFor(item) : null;
         const batchKey = style?.binding ?? (bitmapKey && bitmapBinding && packedBitmap ? bitmapAtlas : null);
         if (batchKey) {
@@ -597,7 +667,7 @@ export function createText2DMesh(
         setUnlitMaterial(child, TEXT_GLYPH, bitmapBinding);
         applyGlyphUvs(
           child,
-          packedBitmap.uvs.get(bitmapGlyphKey(item.ch, item.style, fontStack)),
+          packedBitmap.uvs.get(glyphKey(item.ch, item.style)),
         );
       } else {
         setUnlitMaterial(child, TEXT_SOLID, solidGlyphBinding(item.style.color, fade));
@@ -612,7 +682,7 @@ export function createText2DMesh(
         text2dSource: item.kind === "image" ? "image" : item.source,
       };
       if (item.kind !== "image") {
-        const atlasUv = msdf ? item.uvs : item.ch ? packedBitmap?.uvs.get(bitmapGlyphKey(item.ch, item.style, fontStack)) : undefined;
+        const atlasUv = msdf ? item.uvs : item.ch ? packedBitmap?.uvs.get(glyphKey(item.ch, item.style)) : undefined;
         const glyphAtlas = msdf ? atlasTexture : item.kind === "glyph" ? bitmapAtlas : null;
         bindTextMaterialGlyph(child, {
           atlas: glyphAtlas,

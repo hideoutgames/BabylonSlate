@@ -921,6 +921,8 @@ function initializeEngine(
   if (options.textureBytes) claimTextureHandover();
   binding.fontCssStack = options.fontCssStack;
   binding.fontCssStackByGuid = options.fontCssStackByGuid;
+  binding.fontPixelSize = options.fontPixelSize;
+  binding.fontPixelSizeByGuid = options.fontPixelSizeByGuid;
   const fontRegistry = new FontRegistry();
   onRollback(() => fontRegistry.dispose());
   binding.modelBytes = options.modelBytes;
@@ -1506,6 +1508,8 @@ function initializeEngine(
       binding.fontMsdfPng = installTextureBytes(assets.fontMsdfPng);
       binding.fontCssStack = assets.fontCssStack;
       binding.fontCssStackByGuid = assets.fontCssStackByGuid;
+      binding.fontPixelSize = assets.fontPixelSize;
+      binding.fontPixelSizeByGuid = assets.fontPixelSizeByGuid;
       binding.modelBytes = assets.modelBytes;
       binding.modelSources = installModelSources(assets);
       binding.modelPayloads = assets.modelPayloads;

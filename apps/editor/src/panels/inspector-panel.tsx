@@ -154,6 +154,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     fontHasFacetype,
     fontHasMsdfJson,
     fontHasMsdfPng,
+    fontPixelSize,
   } = catalogs;
   // Open Class and Script Interface tabs' unsaved content feeds pin hydration.
   const classGraphs = useClassGraphs();
@@ -353,6 +354,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           fontHasFacetype={fontHasFacetype}
           fontHasMsdfJson={fontHasMsdfJson}
           fontHasMsdfPng={fontHasMsdfPng}
+          fontPixelSize={fontPixelSize}
           onUpdate={(property, value, alsoSet) =>
             updateComponent(selectedPrefabComponent.id, property, value, alsoSet)
           }

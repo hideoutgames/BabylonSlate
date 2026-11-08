@@ -938,3 +938,36 @@ describe("texture encode diagnostics", () => {
     expect(service.sessionDiagnostics).toEqual(lines);
   });
 });
+
+describe("Pixel Art Optimized projects", () => {
+  it("import the Ark Pixel Fonts as pixel Fonts and make Ark Pixel 12px Proportional the default Font", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    const project = await service.createEmptyProject("PixelFonts", { kind: "2d", pixelArt: true });
+    const fonts = service.registry!.list({ type: "Font" }).map((asset) => ({
+      guid: asset.header.guid,
+      name: asset.header.name,
+      path: asset.path,
+      family: (asset.header.payload as { family?: string }).family,
+      pixelSize: (asset.header.payload as { pixelSize?: number }).pixelSize,
+    }));
+    expect(fonts.map(({ name, family, pixelSize }) => ({ name, family, pixelSize })).sort((a, b) => a.name.localeCompare(b.name))).toEqual([
+      { name: "Ark_Pixel_10px_Monospaced", family: "Ark Pixel 10px Monospaced", pixelSize: 10 },
+      { name: "Ark_Pixel_10px_Proportional", family: "Ark Pixel 10px Proportional", pixelSize: 10 },
+      { name: "Ark_Pixel_12px_Monospaced", family: "Ark Pixel 12px Monospaced", pixelSize: 12 },
+      { name: "Ark_Pixel_12px_Proportional", family: "Ark Pixel 12px Proportional", pixelSize: 12 },
+    ]);
+    expect(fonts.every((font) => font.path.startsWith("assets/Fonts/"))).toBe(true);
+    const proportional = fonts.find((font) => font.family === "Ark Pixel 12px Proportional")!;
+    expect(project.document.settings.fonts.defaultFontGuid).toBe(proportional.guid);
+    const stored = JSON.parse(await storage.readText(PROJECT_FILE)) as { settings: { fonts: { defaultFontGuid: string } } };
+    expect(stored.settings.fonts.defaultFontGuid).toBe(proportional.guid);
+  });
+
+  it("leaves other projects without bundled Fonts", async () => {
+    const service = new ProjectService(new MemoryStorageAdapter("documents"));
+    const project = await service.createEmptyProject("PlainFonts", { kind: "2d" });
+    expect(service.registry!.list({ type: "Font" })).toEqual([]);
+    expect(project.document.settings.fonts.defaultFontGuid).toBeNull();
+  });
+});

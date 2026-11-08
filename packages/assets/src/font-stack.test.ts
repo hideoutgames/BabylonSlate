@@ -69,6 +69,19 @@ describe("compileText2DFontStacks", () => {
     expect(defaultStack).toBe("sans-serif");
     expect(byGuid.size).toBe(0);
   });
+
+  it("reports each pixel Font's Pixel Size and the project default Font's", () => {
+    const compiled = compileText2DFontStacks({
+      fonts: [
+        { guid: "ark", family: "Ark Pixel", pixelSize: 12 },
+        { guid: "body", family: "Body", pixelSize: 0 },
+      ],
+      defaultFontGuid: "ark",
+    });
+    expect(compiled.defaultPixelSize).toBe(12);
+    expect([...compiled.pixelSizeByGuid]).toEqual([["ark", 12]]);
+    expect(compileText2DFontStacks({ fonts: [{ guid: "body", family: "Body" }], defaultFontGuid: "body" }).defaultPixelSize).toBe(0);
+  });
 });
 
 describe("glyphsFallingToFallback", () => {

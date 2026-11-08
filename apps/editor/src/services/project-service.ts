@@ -131,6 +131,7 @@ import {
   openOwnedDocumentsProject,
   projectFolderIsEmpty,
   scaffoldFeatureTest,
+  scaffoldPixelArtFonts,
   scaffoldKenneyMannequinEmpty,
   scaffoldOwnedProject,
   type OwnedFolder,
@@ -1168,6 +1169,7 @@ export class ProjectService {
       await scaffoldKenneyMannequinEmpty(this.starterHost(), document, kind === "feature-test" ? 1 : undefined);
     }
     if (kind === "feature-test") await scaffoldFeatureTest(this.starterHost(), document);
+    if (renderOptions?.pixelArt) await scaffoldPixelArtFonts(this.starterHost(), document);
     return {
       document,
       layouts: createEmptyLayouts(),

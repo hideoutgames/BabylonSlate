@@ -71,7 +71,7 @@ export async function collectFontAssetEntries(
 export function collectFontCssStacks(
   assets: readonly FontAssetSource[],
   settings?: { defaultFontGuid?: string | null; globalFallback?: string },
-): { fontCssStack: string; fontCssStackByGuid: Map<string, string> } {
+): { fontCssStack: string; fontCssStackByGuid: Map<string, string>; fontPixelSize: number; fontPixelSizeByGuid: Map<string, number> } {
   const compiled = compileText2DFontStacks({
     fonts: assets
       .filter((asset) => asset.type === "Font")
@@ -81,6 +81,7 @@ export function collectFontCssStacks(
           guid: asset.guid,
           family: payload.family,
           fallbackGuids: payload.fallbackGuids,
+          pixelSize: payload.pixelSize,
         };
       }),
     defaultFontGuid: settings?.defaultFontGuid,
@@ -89,6 +90,8 @@ export function collectFontCssStacks(
   return {
     fontCssStack: compiled.defaultStack,
     fontCssStackByGuid: compiled.byGuid,
+    fontPixelSize: compiled.defaultPixelSize,
+    fontPixelSizeByGuid: compiled.pixelSizeByGuid,
   };
 }
 
@@ -102,6 +105,19 @@ export function fontAssetHasMsdfJson(payload: unknown): boolean {
 
 export function fontAssetHasMsdfPng(payload: unknown): boolean {
   return normalizeFontPayload(payload, "").representations.msdfPng === true;
+}
+
+/**
+ * The Pixel Size 2D Text draws with for a Font guid, or for the project default Font when `guid` is empty;
+ * 0 when that Font is not a pixel font.
+ */
+export function textFontPixelSize(
+  guid: string | null | undefined,
+  defaultFontGuid: string | null | undefined,
+  payloadOf: (guid: string) => unknown,
+): number {
+  const target = guid || defaultFontGuid;
+  return target ? normalizeFontPayload(payloadOf(target), "").pixelSize : 0;
 }
 
 /** Load facetype JSON for 3D Text, keyed by Font asset guid. */

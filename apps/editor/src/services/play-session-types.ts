@@ -245,6 +245,8 @@ export type PlaySessionOptions = {
   fontFaceEntries?: readonly import("@haptic/render").FontAssetEntry[];
   fontCssStack?: string;
   fontCssStackByGuid?: ReadonlyMap<string, string>;
+  fontPixelSize?: number;
+  fontPixelSizeByGuid?: ReadonlyMap<string, number>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   /** Complex Collision meshes cooked during source preparation; Play never re-cooks them. */

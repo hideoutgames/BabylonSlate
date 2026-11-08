@@ -92,6 +92,7 @@ import {
   fontAssetHasFacetype,
   fontAssetHasMsdfJson,
   fontAssetHasMsdfPng,
+  textFontPixelSize,
 } from "../lib/play-fonts";
 import { useClassGraphs } from "../lib/use-class-graphs";
 import {
@@ -288,6 +289,8 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
       assetRegistry?.getByGuid?.(guid)?.header.payload,
     );
   };
+  const fontPixelSize = (guid: string | null | undefined) =>
+    textFontPixelSize(guid, projectDocument?.settings.fonts.defaultFontGuid, (target) => assetRegistry?.getByGuid?.(target)?.header.payload);
 
   const doc = useOpenDocument(documentId);
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
@@ -570,6 +573,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
             fontHasFacetype,
             fontHasMsdfJson,
             fontHasMsdfPng,
+            fontPixelSize,
             physicsWorld: scene.settings.physicsWorld,
             onPickAsset: setAssetPick,
             areaEmissionStatus,
