@@ -49,12 +49,6 @@ describe("syncActorComponentsFromPrefab", () => {
     expect(replayJournalLines([line], new Map([["scene", before]])).documents.get("scene")).toStrictEqual(stamped);
   });
 
-  it("does not migrate instance-only components onto a suppressed template", () => {
-    const extra = createMeshComponent("extra", "sphere");
-    const actor = createActor("actor", "Actor", { components: [extra], suppressedComponentSourceIds: ["removed"] });
-    expect(syncActorComponentsFromPrefab(actor, [createMeshComponent("removed")])).toStrictEqual([extra]);
-  });
-
   it("keeps private material state through prefab changes, undo and reset", () => {
     const prefab = createMeshComponent("mesh");
     prefab.properties.materialGuid = "surface";
@@ -234,26 +228,18 @@ describe("syncActorComponentsFromPrefab", () => {
     expect(synced[1]?.parentId).toBeNull();
   });
 
-  it("migrates copy-once rows by classId order and treats differing keys as overrides", () => {
-    const prefab = [createMeshComponent("prefab-mesh", "sphere")];
-    const actor = createActor("hero", "Hero", {
-      components: [
-        {
-          id: "hero-MeshComponent-1",
-          classId: "MeshComponent",
-          properties: {
-            ...createMeshComponent("x", "box").properties,
-            meshKind: "box",
-          },
-          parentId: null,
-          transform: identity,
-        },
-      ],
-    });
-    const synced = syncActorComponentsFromPrefab(actor, prefab);
-    expect(synced[0]?.sourceId).toBe("prefab-mesh");
-    expect(synced[0]?.overrideKeys).toContain("meshKind");
-    expect(synced[0]?.properties.meshKind).toBe("box");
+  it("keeps an instance-added component when its Class gains a row of the same class", () => {
+    const extra = createMeshComponent("hero-extra", "box");
+    const actor = createActor("hero", "Hero", { components: [extra], suppressedComponentSourceIds: ["removed"] });
+    const synced = syncActorComponentsFromPrefab(actor, [
+      createMeshComponent("removed", "cone"),
+      createMeshComponent("prefab-mesh", "sphere"),
+    ]);
+    expect(synced.map((row) => [row.id, row.sourceId, row.properties.meshKind])).toEqual([
+      ["hero-MeshComponent-1", "prefab-mesh", "sphere"],
+      ["hero-extra", undefined, "box"],
+    ]);
+    expect(synced[1]).toStrictEqual(extra);
   });
 });
 

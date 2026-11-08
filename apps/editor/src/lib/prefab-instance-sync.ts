@@ -159,37 +159,6 @@ function withOverrideKeys(
   return keys.size > 0 ? { overrideKeys: [...keys] } : {};
 }
 
-function differingOverrideKeys(
-  instance: SerializedComponent,
-  prefab: SerializedComponent,
-): string[] {
-  const keys = new Set<string>();
-  const propertyKeys = new Set([
-    ...Object.keys(instance.properties),
-    ...Object.keys(prefab.properties),
-  ]);
-  for (const key of propertyKeys) {
-    if (!jsonEqual(instance.properties[key], prefab.properties[key])) {
-      keys.add(key);
-    }
-  }
-  if (
-    !jsonEqual(
-      instance.transform ?? identitySerializedTransform(),
-      prefab.transform ?? identitySerializedTransform(),
-    )
-  ) {
-    keys.add(PREFAB_TRANSFORM_OVERRIDE);
-  }
-  if (!jsonEqual(instance.materialInstance, prefab.materialInstance)) keys.add(PREFAB_MATERIAL_INSTANCE_OVERRIDE);
-  if (instance.name !== prefab.name) keys.add(PREFAB_NAME_OVERRIDE);
-  expandMeshMaterialOverrides(keys, instance);
-  if (instance.classId === "MeshComponent" && jsonEqual(meshMaterialSelection(instance), meshMaterialSelection(prefab))) {
-    for (const key of MESH_MATERIAL_KEYS) keys.delete(key);
-  }
-  return [...keys];
-}
-
 function nextInstanceComponentId(
   actorId: string,
   classId: string,
@@ -222,36 +191,6 @@ function instantiateFromPrefab(
   };
 }
 
-function migrateUnsourcedComponents(
-  components: readonly SerializedComponent[],
-  prefabComponents: readonly SerializedComponent[],
-): SerializedComponent[] {
-  const claimed = new Set(
-    components
-      .map((component) => component.sourceId)
-      .filter((id): id is string => typeof id === "string"),
-  );
-  const queues = new Map<string, SerializedComponent[]>();
-  for (const prefab of prefabComponents) {
-    if (claimed.has(prefab.id)) continue;
-    const queue = queues.get(prefab.classId) ?? [];
-    queue.push(prefab);
-    queues.set(prefab.classId, queue);
-  }
-  return components.map((component) => {
-    if (component.sourceId) return component;
-    const queue = queues.get(component.classId);
-    const match = queue?.shift();
-    if (!match) return component;
-    const overrideKeys = differingOverrideKeys(component, match);
-    return {
-      ...component,
-      sourceId: match.id,
-      ...withOverrideKeys(new Set(overrideKeys)),
-    };
-  });
-}
-
 function remapPrefabParentId(
   prefabParentId: string | null | undefined,
   sourceToId: Map<string, string>,
@@ -260,20 +199,22 @@ function remapPrefabParentId(
   return sourceToId.get(prefabParentId) ?? null;
 }
 
-/** Merge a Class prefab onto one actor's components without wiping instance overrides. */
+/**
+ * Merge a Class prefab onto one actor's components without wiping instance
+ * overrides. Components without a `sourceId` were added to the instance and
+ * stay as they are; a template row is never linked to one.
+ */
 export function syncActorComponentsFromPrefab(
   actor: SerializedActor,
   prefabComponents: readonly SerializedComponent[],
 ): SerializedComponent[] {
   const suppressed = new Set(actor.suppressedComponentSourceIds ?? []);
   const activePrefabs = prefabComponents.filter((component) => !suppressed.has(component.id));
-  const migrated = migrateUnsourcedComponents(
-    actor.components.filter((component) => !component.sourceId || !suppressed.has(component.sourceId)), activePrefabs,
-  );
-  const usedIds = new Set(migrated.map((component) => component.id));
+  const kept = actor.components.filter((component) => !component.sourceId || !suppressed.has(component.sourceId));
+  const usedIds = new Set(kept.map((component) => component.id));
   const bySource = new Map<string, SerializedComponent>();
   const extras: SerializedComponent[] = [];
-  for (const component of migrated) {
+  for (const component of kept) {
     if (component.sourceId) {
       bySource.set(component.sourceId, component);
     } else {
