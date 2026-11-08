@@ -65,18 +65,37 @@ describe("textures handed over between the editor's view and Play", () => {
     return engine;
   }
 
-  /** The textures uploaded to the Engine, in order, by name. */
-  function recordUploads(engine: NullEngine): TextureName[] {
-    const uploads: TextureName[] = [];
+  /**
+   * The textures uploaded to the Engine, in order, by name. An upload carries its bytes as a buffer or, for an image,
+   * loads them from the object URL of the cache's Blob, so `names` reads the Blob behind each URL.
+   */
+  function recordUploads(engine: NullEngine): { names: () => Promise<TextureName[]> } {
+    const uploads: Array<Uint8Array | Blob | undefined> = [];
+    const blobs = new Map<string, Blob>();
+    const createObjectURL = URL.createObjectURL.bind(URL);
+    vi.spyOn(URL, "createObjectURL").mockImplementation((object) => {
+      const url = createObjectURL(object);
+      if (object instanceof Blob) blobs.set(url, object);
+      return url;
+    });
     const createTexture = engine.createTexture.bind(engine);
     vi.spyOn(engine, "createTexture").mockImplementation((...args) => {
-      const buffer = args[7];
-      const name = (Object.keys(TEXTURES) as TextureName[]).find((key) =>
-        buffer instanceof Uint8Array && Buffer.from(buffer).equals(Buffer.from(TEXTURES[key])));
-      if (name) uploads.push(name);
+      const [url, , , , , , , buffer] = args;
+      uploads.push(buffer instanceof Uint8Array ? buffer : typeof url === "string" ? blobs.get(url) : undefined);
       return createTexture(...args);
     });
-    return uploads;
+    return {
+      names: async () => {
+        const names: TextureName[] = [];
+        for (const upload of uploads) {
+          const bytes = upload instanceof Blob ? new Uint8Array(await upload.arrayBuffer()) : upload;
+          const name = (Object.keys(TEXTURES) as TextureName[]).find((key) =>
+            bytes !== undefined && Buffer.from(bytes).equals(Buffer.from(TEXTURES[key])));
+          if (name) names.push(name);
+        }
+        return names;
+      },
+    };
   }
 
   function sample(handle: EngineHandle, engine: NullEngine, names: TextureName[]): Partial<Record<TextureName, Texture>> {
@@ -134,7 +153,7 @@ describe("textures handed over between the editor's view and Play", () => {
     expect(shown.shared).toBe(edited.shared);
     expect(isDisposedGpuTexture(shown.shared!)).toBe(false);
     // What only the editor samples was released for Play, so its reload uploads it again.
-    expect(uploads).toEqual(["shared", "editorOnly", "playOnly", "editorOnly"]);
+    expect(await uploads.names()).toEqual(["shared", "editorOnly", "playOnly", "editorOnly"]);
   });
 
   it("releases the editor's textures Play does not name before Play's view loads anything", async () => {
@@ -204,7 +223,7 @@ describe("textures handed over between the editor's view and Play", () => {
     const shown = sample(reloaded, engine, ["shared", "spare"]);
     expect(shown.shared).toBe(edited.shared);
     expect(shown.spare).toBe(edited.spare);
-    expect(uploads).toEqual(["shared", "spare"]);
+    expect(await uploads.names()).toEqual(["shared", "spare"]);
   });
 
   it("flushes a released view's textures at once when it does not hand them over", async () => {
