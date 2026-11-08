@@ -179,13 +179,14 @@ export type PlayFreeCamInputHandle = {
   dispose: () => void;
 };
 
+/** World units moved per pixel of drag (2D pan, 3D three-finger fly). */
+const FREE_CAM_PAN_SCALE = 0.01;
+/** Radians of look per pixel of 3D drag. */
+const FREE_CAM_ORBIT_SCALE = 0.005;
+
 export type PlayFreeCamInputOptions = {
   mode?: ViewportMode;
   keyTarget?: EventTarget;
-  speed?: number;
-  orbitScale?: number;
-  panScale?: number;
-  isEnabled?: () => boolean;
   /** A selected runtime gizmo may own this fresh gesture instead of the camera. */
   blockPointer?: (x: number, y: number) => boolean;
   requestFrame?: (callback: FrameRequestCallback) => number;
@@ -202,10 +203,7 @@ export function attachPlayFreeCamInput(
   options: PlayFreeCamInputOptions = {},
 ): PlayFreeCamInputHandle {
   const mode = options.mode ?? "3d";
-  const orbitScale = options.orbitScale ?? 0.005;
-  const panScale = options.panScale ?? 0.01;
-  const enabled = () =>
-    controller.enabled() && (options.isEnabled?.() ?? true);
+  const enabled = () => controller.enabled();
   const keyTarget =
     options.keyTarget ??
     (typeof window !== "undefined" ? window : undefined);
@@ -215,7 +213,6 @@ export function attachPlayFreeCamInput(
         { fly: (forward, right) => controller.fly(forward, right) },
         canvas,
         {
-          speed: options.speed,
           isEnabled: enabled,
           requestFrame: options.requestFrame,
           cancelFrame: options.cancelFrame,
@@ -278,10 +275,10 @@ export function attachPlayFreeCamInput(
     lastSpread = 0;
     if (dx === 0 && dy === 0) return;
     if (mode === "2d") {
-      controller.fly(-dy * panScale, -dx * panScale);
+      controller.fly(-dy * FREE_CAM_PAN_SCALE, -dx * FREE_CAM_PAN_SCALE);
       return;
     }
-    controller.look(dx * orbitScale, dy * orbitScale);
+    controller.look(dx * FREE_CAM_ORBIT_SCALE, dy * FREE_CAM_ORBIT_SCALE);
   };
 
   const endPointer = (event: PointerEvent) => {

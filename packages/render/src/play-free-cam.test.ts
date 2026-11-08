@@ -240,7 +240,7 @@ describe("attachPlayFreeCamInput", () => {
     const input = attachPlayFreeCamInput(
       canvas as unknown as HTMLCanvasElement,
       freeCam,
-      { mode: "3d", orbitScale: 0.01 },
+      { mode: "3d" },
     );
     const camera = scene.activeCamera as UniversalCamera;
     camera.computeWorldMatrix();
@@ -292,7 +292,7 @@ describe("attachPlayFreeCamInput", () => {
     const input = attachPlayFreeCamInput(
       canvas as unknown as HTMLCanvasElement,
       freeCam,
-      { mode: "2d", panScale: 0.01 },
+      { mode: "2d" },
     );
     canvas.emit("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
     canvas.emit("pointermove", { pointerId: 1, clientX: 200, clientY: 50 });
@@ -339,7 +339,7 @@ describe("attachPlayFreeCamInput", () => {
     const input = attachPlayFreeCamInput(
       canvas as unknown as HTMLCanvasElement,
       freeCam,
-      { mode: "2d", panScale: 0.01 },
+      { mode: "2d" },
     );
     canvas.emit("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
     canvas.emit("pointerdown", { pointerId: 2, clientX: 200, clientY: 100 });

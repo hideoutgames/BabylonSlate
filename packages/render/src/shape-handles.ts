@@ -33,8 +33,6 @@ export interface ShapeHandleTarget extends ComponentShapeEdit {
 }
 export interface ShapeHandlesOptions {
   scheduler?: Pick<RenderScheduler, "invalidate" | "acquireContinuous">;
-  handleScale?: number;
-  onDragStart?: () => void;
   onCommit?: (edit: ComponentShapeEdit) => void;
   /** The selected handle or its world placement node changed; re-attach the transform gizmo. */
   onSelectionChange?: () => void;
@@ -190,7 +188,6 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       const doubleTap = lastTap.id === id && now - lastTap.time < 350;
       lastTap.id = id; lastTap.time = now;
       release ??= options.scheduler?.acquireContinuous(`${adapter.name}-handles`) ?? null;
-      options.onDragStart?.();
       drag = { handle, meshId: id, start: adapter.parse({ ...body }, target), properties: {}, removed: false };
       if (doubleTap && handle.kind === "point") {
         const removal = adapter.remove(body, handle);
@@ -253,7 +250,7 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       Vector3.TransformCoordinatesFromFloatsToRef(handle.position[0], handle.position[1], handle.position[2], matrix, pick.position);
       const distance = camera ? Vector3.Distance(camera.globalPosition, pick.position) : 10;
       const ortho = camera?.mode === Camera.ORTHOGRAPHIC_CAMERA ? (camera.orthoTop ?? 1) - (camera.orthoBottom ?? -1) : 0;
-      pick.scaling.setAll(Math.max(0.01, (ortho || distance) * 0.045 * (options.handleScale ?? 1)));
+      pick.scaling.setAll(Math.max(0.01, (ortho || distance) * 0.045));
       const behavior = pick.getBehaviorByName("PointerDrag") as PointerDragBehavior | null;
       if (behavior && stale) behavior.options = adapter.constraint(handle, matrix, camera);
     }
@@ -295,7 +292,6 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       const handle = handles.find((entry) => entry.id === selectedId);
       if (drag || !handle || !body || !target || !selection) return false;
       release ??= options.scheduler?.acquireContinuous(`${adapter.name}-handles`) ?? null;
-      options.onDragStart?.();
       drag = { handle, meshId: handle.id, start: adapter.parse({ ...body }, target), properties: {}, removed: false, gizmo: true };
       return true;
     },
