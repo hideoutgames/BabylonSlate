@@ -241,14 +241,40 @@ export interface ScriptHostServices {
     shape: ColliderShape,
     start: PhysicsTransform,
     end: PhysicsTransform,
-    channel?: string,
+    options?: LineTraceOptions & { channel?: string },
     caller?: EngineObject | null,
   ): HitResult;
+  /**
+   * Every actor along a line (`shape` null) or a linear shape sweep, nearest first, one hit per actor, at most
+   * `MAX_MULTI_TRACE_HITS`.
+   */
+  multiTrace?(
+    shape: ColliderShape | null,
+    start: PhysicsTransform,
+    end: PhysicsTransform,
+    options?: LineTraceOptions & { channel?: string },
+    caller?: EngineObject | null,
+  ): HitResult[];
+  /** Actors whose shapes `shape` at `pose` overlaps, nearest first. */
+  shapeOverlap?(
+    shape: ColliderShape,
+    pose: PhysicsTransform,
+    options?: LineTraceOptions & { channel?: string },
+    caller?: EngineObject | null,
+  ): OverlapResult;
   addImpulse?(
     actor: Actor | null | undefined,
     impulse: Vec3,
     strength?: number,
   ): void;
+  /** A world impulse at a world point on the actor's body. */
+  addImpulseAtPoint?(actor: Actor, impulse: Vec3, point: Vec3): void;
+  /** The actor's body velocity at its center of mass (angular in radians/second); null without a body. */
+  physicsVelocity?(actor: Actor): { linear: Vec3; angular: Vec3; centerOfMass: Vec3 } | null;
+  /** Replace the supplied velocities of the actor's dynamic body (angular in radians/second). */
+  setPhysicsVelocity?(actor: Actor, velocity: { linear?: Vec3; angular?: Vec3 }): void;
+  setActorCollisionEnabled?(actor: Actor, enabled: boolean): void;
+  isActorCollisionEnabled?(actor: Actor): boolean;
   moveCharacter?(
     actor: Actor | null | undefined,
     translation: Vec3,

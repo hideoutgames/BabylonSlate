@@ -67,7 +67,7 @@ describe("script physics query channels", () => {
         findActor: (id) => world.findActor(id),
         lineTrace: (start, end, options) => sync.lineTrace(start, end, options),
         sphereOverlap: (center, radius, channel) => sync.sphereOverlap(center, radius, { channel }),
-        shapeSweep: (shape, start, end, channel) => sync.shapeSweep(shape, start, end, { channel }),
+        shapeSweep: (shape, start, end, options) => sync.shapeSweep(shape, start, end, options),
       }).createContext(null, 0, 0);
       const start = identityTransform(), end = { ...identityTransform(), position: { x: 10, y: 0, z: 0 } };
       const shape = dimension === "2d" ? { kind: "circle" as const, radius: 0.1 } : { kind: "sphere" as const, radius: 0.1 };
@@ -131,7 +131,7 @@ describe("script physics query channels", () => {
         findActor: (id) => world.findActor(id),
         lineTrace: (start, end, options) => sync.lineTrace(start, end, options),
         sphereOverlap: (center, radius, channel) => sync.sphereOverlap(center, radius, { channel }),
-        shapeSweep: (shape, start, end, channel) => sync.shapeSweep(shape, start, end, { channel }),
+        shapeSweep: (shape, start, end, options) => sync.shapeSweep(shape, start, end, options),
       }).createContext(null, 0, 0);
       const start = { ...identityTransform(), position: { x: 0, y: 0.5, z: 0 } };
       const end = { ...identityTransform(), position: { x: 12, y: 0.5, z: 0 } };

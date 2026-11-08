@@ -802,11 +802,14 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (!query) return miss();
     const from = sweep.start.position;
     const velocity = { x: sweep.end.x - from.x, y: sweep.end.y - from.y };
+    // Rapier finds nothing for a cast that does not move, so a sweep in place casts a hair along X: it still
+    // reports each shape it starts inside, at distance zero.
+    const still = Math.hypot(velocity.x, velocity.y) < 1e-9;
     // Travel is velocity × time of impact; an initial overlap stops at zero.
     const hit = this.world.castShape(
       { x: from.x, y: from.y },
       quatToPlanarAngle(sweep.start.rotation),
-      velocity,
+      still ? { x: 1e-6, y: 0 } : velocity,
       query,
       0,
       1,

@@ -277,6 +277,19 @@ export interface ScriptContext {
   classIsChildOf(classId: unknown, parentClassId: unknown): boolean;
   /** Get Display Name: an actor's or component's name, else its class. */
   getDisplayName(object: unknown): string;
+  /** Get Physics Linear Velocity, or Angular Velocity In Degrees (`angular`): the body's, zero without one. */
+  physicsVelocity(actor: unknown, angular: boolean): Vec3;
+  /** Set Physics Linear Velocity, or Angular Velocity In Degrees (`angular`), optionally added to the current one. */
+  setPhysicsVelocity(actor: unknown, angular: boolean, velocity: unknown, addToCurrent: unknown): void;
+  /** Add Force: an impulse of force × `deltaSeconds` (this tick's game time). */
+  addForce(actor: unknown, force: unknown, deltaSeconds: unknown): void;
+  /** Add Torque: an angular impulse of torque × `deltaSeconds`, applied as an impulse couple about the center of mass. */
+  addTorque(actor: unknown, torque: unknown, deltaSeconds: unknown): void;
+  /** Set Motion Type: the actor's first Rigid Body's Motion Type, from a Motion Type enum member. */
+  setMotionType(actor: unknown, motionType: unknown): void;
+  /** Set Actor Enable Collision: while off, the actor's shapes block and overlap nothing and queries skip it. */
+  setActorCollisionEnabled(actor: unknown, enabled: unknown): void;
+  isActorCollisionEnabled(actor: unknown): boolean;
   /** Set Timer By Event: a timer owned by this context's object; `{ Id: 0 }` when Time is not above 0. */
   setTimer(delegate: unknown, time: unknown, looping: unknown, firstDelay: unknown): { Id: number };
   clearTimer(handle: unknown): void;
@@ -577,6 +590,7 @@ export interface ScriptContext {
     start: PhysicsTransform,
     end: PhysicsTransform,
     channel?: string,
+    actorsToIgnore?: readonly (Actor | null)[],
   ): {
     hit: boolean;
     location: Vec3 | null;
@@ -584,6 +598,16 @@ export interface ScriptContext {
     distance: number;
     actor: Actor | null;
   };
+  /** Multi Line Trace (`shape` null) and Multi Sphere Trace: Hit Result structures, nearest first, one per actor. */
+  multiTrace(
+    shape: ColliderShape | null,
+    start: PhysicsTransform,
+    end: PhysicsTransform,
+    channel?: string,
+    actorsToIgnore?: readonly (Actor | null)[],
+  ): { Hit: boolean; Location: Vec3; Normal: Vec3; Actor: Actor | null; Distance: number }[];
+  /** Box and Capsule Overlap Actors: the live actors `shape` at `pose` overlaps. */
+  shapeOverlap(shape: ColliderShape, pose: PhysicsTransform, channel?: string): Actor[];
   addImpulse(
     actor: EngineObject | null | undefined,
     impulse: Vec3,
@@ -762,6 +786,8 @@ export type HostContextKey =
   | "randomSeedStep" | "setActorHidden" | "isActorHidden" | "setComponentVisible" | "isComponentVisible" | "componentTransform"
   | "setComponentTransform" | "actorDistance" | "addActorLocalOffset" | "addActorLocalRotation" | "addActorWorldRotation"
   | "teleportActor" | "getActorTags" | "setActorTags" | "getObjectClass" | "classIsChildOf" | "getDisplayName"
+  | "physicsVelocity" | "setPhysicsVelocity" | "addForce" | "addTorque" | "setMotionType" | "setActorCollisionEnabled"
+  | "isActorCollisionEnabled"
   | "clearTimer" | "setTimerPaused" | "timerExists" | "isTimerActive" | "isTimerPaused" | "timerRemaining" | "timerElapsed" | "clampToRange" | "isInRange" | "lerpFloatRange"
   | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getCurveObject"
   | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "timelineClipControl" | "timelineClipState" | "getTimeline" | "getTimelineClip" | "getLoadedTimelineClips" | "createTimelineClip" | "timelineProxy" | "timelineProxyGet" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"

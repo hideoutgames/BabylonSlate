@@ -47,6 +47,7 @@ import {
 import { Actor, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipInstance, TimelineClipObject, TimelineObject } from "@haptic/object-model";
 import { timelineClipState } from "./timeline-runtime";
 import { createObjectMembers } from "./script-object-members";
+import { createPhysicsMembers } from "./script-physics-members";
 import { isInfiniteLoopError } from "@haptic/debugger";
 import { EMPTY_ASSET_CATALOG } from "./asset-catalog";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
@@ -649,6 +650,7 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
       services.removeObstacle?.(id);
     },
     ...createObjectMembers(services),
+    ...createPhysicsMembers(services),
     clearTimer: (handle) => services.timers?.clear(timerId(handle)),
     setTimerPaused: (handle, paused) => services.timers?.setPaused(timerId(handle), paused === true),
     timerExists: (handle) => services.timers?.exists(timerId(handle)) ?? false,

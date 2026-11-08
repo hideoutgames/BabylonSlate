@@ -106,6 +106,8 @@ export class PhysicsWorldSync {
   private readonly hosting: PhysicsHosting;
   private readonly readback: PhysicsReadback;
   private readonly channels: PhysicsQueryChannels;
+  /** Actors whose collision a script switched off (`setActorCollisionEnabled`), by guid. */
+  private readonly collisionOff = new Set<string>();
 
   constructor(
     backend: PhysicsBackend,
@@ -144,7 +146,7 @@ export class PhysicsWorldSync {
     this.skipEmptySteps = options?.skipEmptySteps ?? false;
     this.actorsOf = options?.actorsOf;
     this.actorFilter = options?.actorFilter ?? (() => true);
-    this.colliders = new PhysicsColliderSets(backend, options?.collisionPresets, options?.onCollidersPublished);
+    this.colliders = new PhysicsColliderSets(backend, options?.collisionPresets, options?.onCollidersPublished, this.collisionOff);
     this.classifier = new PhysicsBodyClassifier(backend.kind, this.colliders.meshes);
     // Hosts read reassigned state (`actors`, `world`, `worldTransforms`, the
     // hosting map) through closures, never as captured values.
@@ -171,6 +173,7 @@ export class PhysicsWorldSync {
       bodyOwners: this.bodyOwnerByActor,
       hosts: () => this.hosting.hosts,
       ragdollActors: this.ragdollActors,
+      collisionOff: this.collisionOff,
     });
     this.constraints = new PhysicsConstraintSync(backend, options?.deferUnsupportedConstraints);
   }
@@ -272,6 +275,7 @@ export class PhysicsWorldSync {
     this.characterByActor.clear();
     this.movementControllerDescriptors.clear();
     this.bodyOwnerByActor.clear();
+    this.collisionOff.clear();
     this.ragdollActors.clear();
     this.invalidateChannels();
     this.channels.clearCache();
@@ -667,6 +671,48 @@ export class PhysicsWorldSync {
     const vector = { x: impulse?.x, y: impulse?.y, z: impulse?.z ?? 0 };
     if (!bodyId || ![vector.x, vector.y, vector.z, strength ?? 1].every(Number.isFinite)) return;
     this.backend.addImpulse(bodyId, vector as Vec3, strength);
+  }
+
+  /**
+   * Set Actor Enable Collision: while off, the actor's shapes (on its own body or hosted on an ancestor's) block and
+   * overlap nothing and no query finds them; its body keeps simulating. Republished at once.
+   */
+  setActorCollisionEnabled(actor: Actor, enabled: boolean): void {
+    if (enabled ? !this.collisionOff.delete(actor.guid) : this.collisionOff.has(actor.guid)) return;
+    if (!enabled) this.collisionOff.add(actor.guid);
+    this.invalidateChannels();
+    const host = this.hosting.hostOf(actor.guid);
+    for (const owner of host ? [actor, host] : [actor]) {
+      this.colliders.invalidate(owner.guid);
+      if (owner.destroyed || this.findLiveActor(owner.guid) !== owner) continue;
+      if (owner === host) this.applyHostColliders(host);
+      else if (this.bodyOwnerByActor.get(owner.guid) === owner && this.bodyByActor.has(owner.guid))
+        this.applyActorColliders(owner, this.bodyByActor.get(owner.guid)!, this.liveTransforms(owner).get(owner.guid)!);
+    }
+  }
+
+  /** False while a script has switched the actor's collision off. */
+  isActorCollisionEnabled(actor: Actor): boolean {
+    return !this.collisionOff.has(actor.guid);
+  }
+
+  /** World-space velocity at the actor's body's center of mass (angular in radians/second); null without a body. */
+  actorBodyVelocity(actorId: string) {
+    const bodyId = this.bodyByActor.get(actorId);
+    return bodyId ? this.backend.getBodyVelocity(bodyId) : null;
+  }
+
+  /** Replace a dynamic body's world angular velocity, in radians/second. */
+  setActorAngularVelocity(actorId: string, velocity: Vec3): void {
+    const bodyId = this.bodyByActor.get(actorId);
+    if (bodyId && [velocity.x, velocity.y, velocity.z].every(Number.isFinite)) this.backend.setBodyAngularVelocity(bodyId, velocity);
+  }
+
+  /** A world impulse at a world point; dropped unless every component is finite. */
+  addImpulseAtPoint(actorId: string, impulse: Vec3, point: Vec3): void {
+    const bodyId = this.bodyByActor.get(actorId);
+    if (!bodyId || ![impulse.x, impulse.y, impulse.z, point.x, point.y, point.z].every(Number.isFinite)) return;
+    this.backend.addImpulseAtPoint(bodyId, impulse, point);
   }
 
   /** Steering updates velocity through physics without replacing its pose. */

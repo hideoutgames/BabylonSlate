@@ -16,6 +16,8 @@ export interface QueryChannelHost {
   hosts(): ReadonlyMap<string, Actor>;
   /** Actors whose ordinary body an active ragdoll replaced, by guid. */
   readonly ragdollActors: ReadonlyMap<string, Actor>;
+  /** Actors whose collision a script switched off: every channel ignores them. */
+  readonly collisionOff: ReadonlySet<string>;
 }
 
 /**
@@ -57,15 +59,18 @@ export class PhysicsQueryChannels {
   /** The backend's options for a query on `options.channel`, whose meaning lives here and nowhere else. */
   options(options?: LineTraceOptions & { channel?: string }): LineTraceOptions | undefined {
     const channel = options?.channel;
-    if (!channel) return options;
+    // Actors with collision switched off answer no query; the Static, Dynamic and Character lists already hold them.
+    const off = this.host.collisionOff;
+    const withOff = (query: LineTraceOptions | undefined) => off.size ? { ...query, ignoreActorSet: off } : query;
+    if (!channel) return withOff(options);
     switch (channel) {
       case "All":
-        return options;
+        return withOff(options);
       case "Solid":
-        return { ...options, includeTriggers: false };
+        return withOff({ ...options, includeTriggers: false });
       case "Triggers":
         // Every backend filters trigger shapes itself, before the hit is chosen.
-        return { ...options, onlyTriggers: true };
+        return withOff({ ...options, onlyTriggers: true });
       case "Static":
       case "Dynamic":
       case "Character": {
@@ -76,7 +81,7 @@ export class PhysicsQueryChannels {
       }
       default:
         this.warnUnknownChannel(channel);
-        return options;
+        return withOff(options);
     }
   }
 
@@ -115,6 +120,7 @@ export class PhysicsQueryChannels {
       if (!matches(host)) ignored.add(actorId);
     // An active ragdoll's bones are dynamic and no Movement drives them: Dynamic (and All) keep them.
     if (channel !== "Dynamic") for (const actorId of this.host.ragdollActors.keys()) ignored.add(actorId);
+    for (const actorId of this.host.collisionOff) ignored.add(actorId);
     this.channelIgnores.set(channel, { epoch: this.channelEpoch, revision, ids: ignored });
     return ignored;
   }
