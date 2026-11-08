@@ -107,6 +107,16 @@ describe("listDockWindows", () => {
     expect(primaryDockPanel("tileset")).toBe("tileset-preview");
   });
 
+  it("opens a Camera Shake on its Preview with the Inspector beside it", () => {
+    const windows = listDockWindows("camera-shake");
+    expect(windows.map((entry) => [entry.id, entry.component, entry.title])).toEqual([
+      ["camera-shake-preview", "camera-shake-preview", "Preview"],
+      ["camera-shake-details", "camera-shake-details", "Inspector"],
+    ]);
+    expect(windows[1]).toMatchObject({ defaultPosition: { referencePanelId: "camera-shake-preview", direction: "right" } });
+    expect(primaryDockPanel("camera-shake")).toBe("camera-shake-preview");
+  });
+
   it("omits the Locks window when source control is off", () => {
     for (const kind of [
       "scene",
@@ -124,6 +134,7 @@ describe("listDockWindows", () => {
       "audio-mixer",
       "audio-channel",
       "sound-attenuation",
+      "camera-shake",
       "particle-emitter",
       "particle-graph",
       "particle-system",

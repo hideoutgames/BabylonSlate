@@ -36,6 +36,7 @@ export type DockviewDocumentKind =
   | "audio-mixer"
   | "audio-channel"
   | "sound-attenuation"
+  | "camera-shake"
   | "particle-emitter"
   | "particle-graph"
   | "particle-system"
@@ -86,6 +87,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "audio-mixer",
   "audio-channel",
   "sound-attenuation",
+  "camera-shake",
   "particle-emitter",
   "particle-graph",
   "particle-system",
@@ -162,6 +164,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "audio-mixer": "audio-mixer-details",
   "audio-channel": "audio-channel-details",
   "sound-attenuation": "sound-attenuation-details",
+  "camera-shake": "camera-shake-preview",
   "particle-emitter": "particle-emitter-preview",
   "particle-graph": "particle-graph-canvas",
   "particle-system": "particle-system-preview",
@@ -1056,6 +1059,16 @@ const SOUND_ATTENUATION_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const CAMERA_SHAKE_WINDOWS: DockWindowDefinition[] = [
+  { id: "camera-shake-preview", component: "camera-shake-preview", title: "Preview" },
+  {
+    id: "camera-shake-details",
+    component: "camera-shake-details",
+    title: "Inspector",
+    defaultPosition: { referencePanelId: "camera-shake-preview", direction: "right", initialWidth: 320 },
+  },
+];
+
 const ANIM_GRAPH_STATE_WINDOWS: DockWindowDefinition[] = [
   { id: "anim-graph-graph", component: "anim-graph-graph", title: "Graph" },
   {
@@ -1280,6 +1293,9 @@ export function listDockWindows(
   }
   if (kind === "sound-attenuation") {
     return withOptionalLocks(kind, SOUND_ATTENUATION_WINDOWS, options);
+  }
+  if (kind === "camera-shake") {
+    return withOptionalLocks(kind, CAMERA_SHAKE_WINDOWS, options);
   }
   if (kind === "anim-graph") {
     const windows =

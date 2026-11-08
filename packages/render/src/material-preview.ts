@@ -1,5 +1,6 @@
 import "./gltf-loader";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
@@ -558,8 +559,17 @@ function previewBufferSize(
  * (the renderer's readiness-dirty signal, which covers models and textures
  * that finish loading), a running animation or `animating` content wakes it.
  */
+/**
+ * What a preview presenter draws: a Scene, its renderer and camera (whose output target it owns), and the mesh it
+ * waits for before the first frame. Material previews pass their whole host; other previews (Camera Shake) build
+ * their own Scene.
+ */
+export type PreviewPresenterHost = Pick<MaterialPreviewScene, "scene" | "renderer" | "mesh"> & {
+  camera: Camera & { radius?: number };
+};
+
 export function createMaterialPreviewPresenter(
-  host: MaterialPreviewScene,
+  host: PreviewPresenterHost,
   canvas: HTMLCanvasElement,
   options: {
     maxSize?: number;
@@ -698,7 +708,7 @@ export function createMaterialPreviewPresenter(
       const at = now();
       if (!pendingForce && at - lastPresentMs < minIntervalMs) return;
       // e2e telemetry: refreshed per presentation attempt, not per requested frame.
-      canvas.dataset.cameraRadius = String(host.camera.radius);
+      if (host.camera.radius !== undefined) canvas.dataset.cameraRadius = String(host.camera.radius);
       const size = previewBufferSize(canvas, maxSize);
       if (!size) return;
       try {

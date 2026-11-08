@@ -673,6 +673,7 @@ export function DocumentWorkspace() {
           doc.ref.kind === "audio-mixer" ||
           doc.ref.kind === "audio-channel" ||
           doc.ref.kind === "sound-attenuation" ||
+          doc.ref.kind === "camera-shake" ||
           doc.ref.kind === "float-curve" ||
           doc.ref.kind === "vector-curve" ||
           doc.ref.kind === "color-curve" ||
