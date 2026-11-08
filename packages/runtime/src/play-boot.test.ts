@@ -179,8 +179,13 @@ describe("createPlayBootCoordinator", () => {
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
       cooperativeSceneLoading: { stepsPerYield: 32, yieldControl: () => { yielded = true; return chunk.promise; } },
       onCommand: (command) => commands.push(command),
-      playScene: { ...createDefaultScene(), actors: Array.from({ length: 65 }, (_, index) => createActor(`a${index}`, "Actor")) },
+      playScene: { ...createDefaultScene(), actors: Array.from({ length: 65 }, (_, index) => createActor(`a${index}`, "Actor", { classId: "Ticker" })) },
     });
+    // The World skips an actor without a Tick hook before its admission check,
+    // so the actors carry a Tick script for `callOnTick` to show admission.
+    await runtime.loadScripts([{ assetGuid: "ticker-script", classId: "Ticker", parentClassId: "Actor", anchors: [],
+      source: `export function tick(ctx) { ctx.self.setVariable("ticked", true); }`,
+      entryPoints: [{ name: "tick", event: "onTick", isAsync: false }] }]);
     vi.spyOn(runtime, "loadPhysics").mockReturnValue(physics.promise);
     const boot = createPlayBootCoordinator();
     const gate = createPlayPauseGate(runtime);

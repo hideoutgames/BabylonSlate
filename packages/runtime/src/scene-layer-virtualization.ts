@@ -6,21 +6,27 @@ type Pool = { layerId: string; owner: Actor; classId: string; actors: Map<number
 export class SceneLayerVirtualization {
   private readonly pools = new Map<string, Pool>();
 
-  /** `byId` is a guid index of `actors` as of this call; a caller that already has one passes it. */
+  /**
+   * `byId` returns a guid index of `actors` (by default one built from them); a caller that keeps one passes it. It is
+   * asked once, at the first ancestor walk, which comes before this call's first spawn or removal, so the index is the
+   * one as of this call, and a layer without virtualized containers never needs one.
+   */
   sync(layerId: string, actors: readonly Actor[], entries: ReadonlyMap<string, OverlayLayoutEntry>,
     spawn: (parent: Actor, classId: string, defaults: Record<string, unknown>) => Actor | null,
     remove: (actor: Actor) => void,
-    byId: ReadonlyMap<string, Actor> = new Map(actors.map(actor => [actor.guid, actor]))): boolean {
+    byId: () => ReadonlyMap<string, Actor> = () => new Map(actors.map(actor => [actor.guid, actor]))): boolean {
     let changed = false;
     const live = new Set<string>();
+    let index: ReadonlyMap<string, Actor> | undefined;
     const ancestry = (actor: Actor): { depth: number; classes: Set<string> } => {
+      index ??= byId();
       let parent: Actor | undefined = actor, depth = 0;
       const seen = new Set<string>(), classes = new Set<string>();
       while (parent && !seen.has(parent.guid)) {
         seen.add(parent.guid); classes.add(parent.classId);
         if (typeof parent.getVariable("virtualizedContainerId") === "string") depth++;
         const parentId = parent.getVariable("parentId");
-        parent = typeof parentId === "string" ? byId.get(parentId) : undefined;
+        parent = typeof parentId === "string" ? index.get(parentId) : undefined;
       }
       return { depth, classes };
     };

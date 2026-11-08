@@ -41,7 +41,7 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 
 Every phase of a tick receives the same `TickContext` (`dt`, `tickIndex`, World and the input provider's members), built once per `tick()`; a new one is built each tick because latent script contexts keep theirs.
 
-`WorldOptions.canTickScene` suspends phases 2–7 during cooperative scene preparation while the Game Instance keeps ticking; `canTickActor` gates individual owners and SceneLayers. Both are rechecked mid-tick.
+`WorldOptions.canTickScene` suspends phases 2–7 during cooperative scene preparation while the Game Instance keeps ticking; `canTickActor` gates individual owners and SceneLayers. Both are rechecked mid-tick, right before each tick hook; the `actors` and `components` phases skip an object without `onTick` (`EngineObject.ticks`) before any check, so both gates must stay free of side effects.
 
 ## Subsystems
 
