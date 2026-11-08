@@ -9,6 +9,7 @@ import {
   type ContextMenuItem,
 } from "./use-context-menu";
 import { ContextMenuOverlay } from "./context-menu-overlay";
+import { useSuppressNativeContextMenu } from "./use-suppress-native-context-menu";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 
 function TestHost({
@@ -514,6 +515,30 @@ describe("useContextMenuGesture", () => {
     expect(onTile).toHaveBeenLastCalledWith(ORIGIN.clientX, ORIGIN.clientY);
     expect(onTile).toHaveBeenCalledTimes(2);
     expect(getByTestId("grid-state").textContent).toBe("closed");
+  });
+
+  function PortalHost({ onTile }: { onTile: () => void }) {
+    useSuppressNativeContextMenu();
+    const tile = useContextMenuGesture({ exclusive: true, onMenu: onTile });
+    return (
+      <div data-testid="tile" {...tile}>
+        {createPortal(
+          <div>
+            <span data-testid="portaled-text">Dialog</span>
+            <input data-testid="portaled-field" />
+          </div>,
+          document.body,
+        )}
+      </div>
+    );
+  }
+
+  it("keeps the app-wide native menu rule for a portaled descendant of an exclusive surface", () => {
+    const onTile = vi.fn();
+    const { getByTestId } = render(<PortalHost onTile={onTile} />);
+    expect(fireEvent.contextMenu(getByTestId("portaled-text"))).toBe(false);
+    expect(fireEvent.contextMenu(getByTestId("portaled-field"))).toBe(true);
+    expect(onTile).not.toHaveBeenCalled();
   });
 
   function SnapHost({ onMenu, onClick }: { onMenu: () => void; onClick: () => void }) {

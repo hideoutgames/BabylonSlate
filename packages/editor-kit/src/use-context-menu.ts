@@ -7,6 +7,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { NestedMenuItem } from "./nested-menu";
+import { keepsNativeMenu } from "./use-suppress-native-context-menu";
 
 /** Matches dockview's own long-press drag timing so the two never disagree. */
 export const CONTEXT_MENU_LONG_PRESS_MS = 500;
@@ -188,7 +189,12 @@ export function useContextMenuGesture(
     (event: ReactMouseEvent) => {
       if (!enabled) return;
       if (exclusive) event.stopPropagation();
-      if (!eventTargetIsInside(event) || isClaimed(event)) return;
+      if (!eventTargetIsInside(event) || isClaimed(event)) {
+        // Stopping propagation also keeps the event from the app-wide
+        // suppression (`useSuppressNativeContextMenu`), so apply its rule here.
+        if (exclusive && !keepsNativeMenu(event.target)) event.preventDefault();
+        return;
+      }
       event.preventDefault();
       const right = rightPressRef.current;
       if (right?.moved) return;

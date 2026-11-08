@@ -4,7 +4,7 @@ import { useEffect } from "react";
  * Editable fields and opted-in selectable text keep the platform menu, since
  * that is where cut/copy/paste and the iOS text callout are still wanted.
  */
-function keepsNativeMenu(target: EventTarget | null): boolean {
+export function keepsNativeMenu(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   return Boolean(
     target.closest("input, textarea, [contenteditable=''], [contenteditable='true'], .selectable-text"),
