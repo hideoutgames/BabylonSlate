@@ -25,7 +25,7 @@ The **Viewport** window previews the clip: each proxy is drawn the way its **Edi
 - Drag the gizmo to move, turn or scale the selected proxies together, as in a Scene's Timeline mode:
   - A channel whose track has keys (**Location**, **Rotation** or **Scale**) takes a key at the playhead with **Auto Key** on. With it off, the change waits as an unkeyed value, shown amber on the track, until you key it.
   - **Location**, **Rotation** or **Scale** without a track, or whose track has no keys yet, overwrites the proxy's preview placement, with **Auto Key** on or off, the same as editing them in the **Inspector**. The placement stays when you change the **Representation**.
-- The camera, shading, grid and gizmo controls work as in a Scene.
+- The camera, shading, grid and gizmo controls work as in a Scene. Turn on **Joystick** in the viewport's settings menu for an on-screen stick that moves the camera.
 
 ## Timeline
 

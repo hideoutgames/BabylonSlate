@@ -1,6 +1,7 @@
 import {
   memo,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -10,22 +11,31 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
+import { Button } from "@haptic/ui/components/button";
 import { cn } from "@haptic/ui/lib/utils";
 import {
   fitKeyframeView,
   keyAt,
   keyReach,
   keyRefId,
+  keyframeScrollHit,
+  keyframeScrollRange,
+  keyframeScrollThumb,
+  keyframeZoomFactor,
   keysInRect,
   panKeyframeView,
+  resizeKeyframeView,
   rulerTicks,
+  scrollKeyframeView,
   snapToFrame,
   timeToX,
   xToTime,
   zoomKeyframeView,
   type KeyRef,
+  type KeyframeScrollThumb,
   type KeyframeShape,
+  type KeyframeTimeRange,
   type KeyframeTimelineRow,
   type KeyframeTimelineView,
 } from "./keyframe-timeline-model";
@@ -154,6 +164,8 @@ const TRACK_LIST_WIDTH_PX = 264;
 const DRAG_PX = 4;
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_SLOP_PX = 8;
+/** Each Zoom In or Zoom Out press. */
+const ZOOM_STEP = 1.5;
 
 type Press =
   | {
@@ -164,6 +176,16 @@ type Press =
   }
   | { kind: "marquee"; pointerId: number; x: number; y: number; mode: KeySelectMode; active: boolean }
   | { kind: "pan"; pointerId: number; x: number; y: number; scrollTop: number; view: KeyframeTimelineView; holdTimer: number | null; moved: boolean };
+
+/** A drag on the scroll bar, measured from the view, range and thumb it started with. */
+interface ScrollDrag {
+  pointerId: number;
+  x: number;
+  mode: "thumb" | "start" | "end";
+  view: KeyframeTimelineView;
+  range: KeyframeTimeRange;
+  thumb: KeyframeScrollThumb;
+}
 
 /**
  * A keyframe editor: a track list beside a time ruler and canvas-drawn key
@@ -178,7 +200,10 @@ type Press =
  * menu; drag empty lane space to marquee; Ctrl/⌘+wheel zooms and Shift+wheel
  * pans. Touch: tap selects, drag a key to move it, hold a key for its menu,
  * drag empty space to scroll and pan, hold then move to marquee, and pinch to
- * zoom.
+ * zoom. The lanes fill the window below the last row, so a marquee can start
+ * there. A row below them pans and zooms the time scale: Zoom Out and Zoom In
+ * about the playhead, and a scroll bar whose thumb drags to pan and whose
+ * ends drag to zoom.
  */
 export function KeyframeTimeline({
   rows,
@@ -218,6 +243,8 @@ export function KeyframeTimeline({
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ distance: number; view: KeyframeTimelineView; centre: number } | null>(null);
   const ruler = useRef<{ pointerId: number; mode: "scrub" | "length"; length: number } | null>(null);
+  const scrollDrag = useRef<ScrollDrag | null>(null);
+  const lanesId = useId();
 
   const fitted = useMemo(() => fitKeyframeView(length, laneWidth), [length, laneWidth]);
   const view = zoomed ?? fitted;
@@ -637,8 +664,50 @@ export function KeyframeTimeline({
   const playheadX = timeToX(view, time);
   const gridStyle: CSSProperties = { gridTemplateColumns: `${TRACK_LIST_WIDTH_PX}px minmax(0, 1fr)` };
 
+  // Zoom Out and Zoom In keep the playhead where it is, or the lanes' middle when it is out of view.
+  const zoomAnchor = playheadX >= 0 && playheadX <= laneWidth ? playheadX : laneWidth / 2;
+  const zoomedBy = (factor: number) => zoomKeyframeView(view, factor, zoomAnchor);
+  const canZoomIn = laneWidth > 0 && zoomedBy(ZOOM_STEP).pixelsPerSecond > view.pixelsPerSecond;
+  const canZoomOut = laneWidth > 0 && zoomedBy(1 / ZOOM_STEP).pixelsPerSecond < view.pixelsPerSecond;
+
+  // The scroll bar spans the lanes' width, below them.
+  const scrollRange = keyframeScrollRange(view, laneWidth, length);
+  const thumb = keyframeScrollThumb(view, laneWidth, scrollRange, laneWidth, coarse ? 66 : 24);
+  const gripWidth = Math.min(keyReach(coarse), thumb.width / 3);
+  const visibleSeconds = laneWidth / view.pixelsPerSecond;
+  const scrollable = scrollRange.end - scrollRange.start - visibleSeconds;
+  const scrollPercent = scrollable > 1e-9 ? Math.round(((view.start - scrollRange.start) / scrollable) * 100) : 0;
+  const scrollTo = (start: number) => setZoomed({
+    ...view,
+    start: Math.min(scrollRange.start + Math.max(0, scrollable), Math.max(scrollRange.start, start)),
+  });
+  const onScrollPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if ((event.pointerType === "mouse" && event.button !== 0) || laneWidth <= 0) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const x = event.clientX - event.currentTarget.getBoundingClientRect().left;
+    const hit = keyframeScrollHit(thumb, x, keyReach(event.pointerType !== "mouse" || coarse));
+    let start = view;
+    if (hit === "track") {
+      // A press beside the thumb brings its middle there, then drags it.
+      start = scrollKeyframeView(view, laneWidth, scrollRange, laneWidth, thumb, x - (thumb.left + thumb.width / 2));
+      setZoomed(start);
+    }
+    scrollDrag.current = { pointerId: event.pointerId, x, mode: hit === "track" ? "thumb" : hit, view: start, range: scrollRange, thumb };
+  };
+  const onScrollPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const held = scrollDrag.current;
+    if (held?.pointerId !== event.pointerId) return;
+    const dx = event.clientX - event.currentTarget.getBoundingClientRect().left - held.x;
+    setZoomed(held.mode === "thumb"
+      ? scrollKeyframeView(held.view, laneWidth, held.range, laneWidth, held.thumb, dx)
+      : resizeKeyframeView(held.view, laneWidth, held.range, laneWidth, held.mode, dx));
+  };
+  const onScrollPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (scrollDrag.current?.pointerId === event.pointerId) scrollDrag.current = null;
+  };
+
   return (
-    <div className={cn("grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] bg-background text-xs", className)} style={gridStyle} data-testid={testId}>
+    <div className={cn("grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)_auto] bg-background text-xs", className)} style={gridStyle} data-testid={testId}>
       <div className="flex items-center border-r border-b px-1" style={{ height: RULER_PX }}>{header}</div>
       <div
         role="slider"
@@ -701,7 +770,8 @@ export function KeyframeTimeline({
         className="col-span-2 min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain"
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       >
-        <div className="grid" style={gridStyle}>
+        {/* At least as tall as the window, so the lanes below the last row take a marquee. */}
+        <div className="grid min-h-full" style={gridStyle}>
           <div role="tree" aria-label={`${ariaLabel} Tracks`} className="min-w-0 border-r">
             {rows.map((row) => (
               <MemoTrackListRow
@@ -717,6 +787,7 @@ export function KeyframeTimeline({
           </div>
           <div
             ref={lanesRef}
+            id={lanesId}
             role="group"
             aria-roledescription="keyframe lanes"
             aria-label={ariaLabel}
@@ -746,6 +817,65 @@ export function KeyframeTimeline({
             ) : null}
           </div>
         </div>
+      </div>
+      <div className="flex items-center gap-0.5 border-t border-r px-1" style={{ height: rowHeight }} data-testid="keyframe-timeline-zoom-controls">
+        <Button type="button" variant="ghost" size={coarse ? "touch-icon" : "icon-xs"} aria-label="Zoom Out" disabled={!canZoomOut}
+          onClick={() => setZoomed(zoomedBy(1 / ZOOM_STEP))} data-testid="keyframe-timeline-zoom-out">
+          <ZoomOutIcon aria-hidden="true" />
+        </Button>
+        <Button type="button" variant="ghost" size={coarse ? "touch-icon" : "icon-xs"} aria-label="Zoom In" disabled={!canZoomIn}
+          onClick={() => setZoomed(zoomedBy(ZOOM_STEP))} data-testid="keyframe-timeline-zoom-in">
+          <ZoomInIcon aria-hidden="true" />
+        </Button>
+        <span className="px-1 font-mono text-[11px] text-muted-foreground tabular-nums" data-testid="keyframe-timeline-zoom">
+          {`${Math.round(keyframeZoomFactor(view, fitted) * 100)}%`}
+        </span>
+      </div>
+      <div
+        role="scrollbar"
+        aria-label="Scroll Time"
+        aria-controls={lanesId}
+        aria-orientation="horizontal"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={scrollPercent}
+        tabIndex={0}
+        data-testid="keyframe-timeline-scrollbar"
+        className="relative touch-none overflow-hidden border-t outline-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        style={{ height: rowHeight }}
+        onPointerDown={onScrollPointerDown}
+        onPointerMove={onScrollPointerMove}
+        onPointerUp={onScrollPointerEnd}
+        onPointerCancel={onScrollPointerEnd}
+        onKeyDown={(event) => {
+          const step = visibleSeconds / 10;
+          const next = event.key === "ArrowLeft" ? view.start - step : event.key === "ArrowRight" ? view.start + step
+            : event.key === "Home" ? scrollRange.start : event.key === "End" ? scrollRange.end : null;
+          if (next === null) return;
+          event.preventDefault();
+          scrollTo(next);
+        }}
+      >
+        {laneWidth > 0 ? (
+          <div aria-hidden="true" className="absolute inset-y-0 left-0" style={{ width: laneWidth }}>
+            <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-muted" />
+            <div
+              data-testid="keyframe-timeline-scroll-thumb"
+              className={cn(
+                "absolute top-1/2 -translate-y-1/2 cursor-grab rounded-sm bg-muted-foreground/40 hover:bg-muted-foreground/55 active:cursor-grabbing",
+                coarse ? "h-5" : "h-3",
+              )}
+              style={{ left: thumb.left, width: thumb.width }}
+            >
+              {/* The ends resize the thumb, which zooms. */}
+              {(["left-0", "right-0"] as const).map((side) => (
+                <span key={side} className={cn("absolute inset-y-0 flex cursor-ew-resize items-center justify-center", side)} style={{ width: gripWidth }}>
+                  <span className="h-2/3 w-px rounded-full bg-background/80" />
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

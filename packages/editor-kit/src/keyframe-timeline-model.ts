@@ -84,6 +84,112 @@ export function panKeyframeView(view: KeyframeTimelineView, dx: number): Keyfram
   return { ...view, start: Math.max(-KEYFRAME_TIMELINE_GUTTER_PX / view.pixelsPerSecond, start) };
 }
 
+/** A span of seconds. */
+export interface KeyframeTimeRange {
+  start: number;
+  end: number;
+}
+
+/** The seconds `width` pixels of lanes show. */
+export const keyframeVisibleRange = (view: KeyframeTimelineView, width: number): KeyframeTimeRange =>
+  ({ start: view.start, end: xToTime(view, width) });
+
+/**
+ * What the scroll bar spans: 0 s to the clip's end with their gutters at the
+ * view's scale, stretched to wherever the view has gone past them.
+ */
+export function keyframeScrollRange(view: KeyframeTimelineView, width: number, length: number): KeyframeTimeRange {
+  const visible = keyframeVisibleRange(view, width);
+  return {
+    start: Math.min(visible.start, -KEYFRAME_TIMELINE_GUTTER_PX / view.pixelsPerSecond),
+    end: Math.max(visible.end, length + KEYFRAME_TIMELINE_END_GUTTER_PX / view.pixelsPerSecond),
+  };
+}
+
+/** The scroll bar's thumb, in pixels along a track `trackWidth` wide. */
+export interface KeyframeScrollThumb {
+  left: number;
+  width: number;
+}
+
+/**
+ * The thumb for the view: as wide as the share of the range the lanes show,
+ * at least `minWidth`, and as far along as the view is through the range.
+ */
+export function keyframeScrollThumb(
+  view: KeyframeTimelineView,
+  width: number,
+  range: KeyframeTimeRange,
+  trackWidth: number,
+  minWidth: number,
+): KeyframeScrollThumb {
+  const span = Math.max(range.end - range.start, 1e-9);
+  const visible = width / view.pixelsPerSecond;
+  const thumbWidth = Math.min(trackWidth, Math.max(minWidth, (trackWidth * visible) / span));
+  const scrollable = span - visible;
+  const left = scrollable > 1e-9 ? ((trackWidth - thumbWidth) * (view.start - range.start)) / scrollable : 0;
+  return { left: Math.min(trackWidth - thumbWidth, Math.max(0, left)), width: thumbWidth };
+}
+
+/**
+ * The view with its thumb dragged `dx` pixels from where `view` had it,
+ * kept within `range`. The range and the thumb are the drag's at its start.
+ */
+export function scrollKeyframeView(
+  view: KeyframeTimelineView,
+  width: number,
+  range: KeyframeTimeRange,
+  trackWidth: number,
+  thumb: KeyframeScrollThumb,
+  dx: number,
+): KeyframeTimelineView {
+  const scrollable = range.end - range.start - width / view.pixelsPerSecond;
+  const free = trackWidth - thumb.width;
+  if (scrollable <= 0 || free <= 0) return view;
+  const start = view.start + (dx * scrollable) / free;
+  return { ...view, start: Math.min(range.start + scrollable, Math.max(range.start, start)) };
+}
+
+/**
+ * The view with one end of its thumb dragged `dx` pixels along a track that
+ * spans `range`: the other end keeps its time, so the lanes zoom. The start
+ * stays no further left than the gutter before 0 s.
+ */
+export function resizeKeyframeView(
+  view: KeyframeTimelineView,
+  width: number,
+  range: KeyframeTimeRange,
+  trackWidth: number,
+  edge: "start" | "end",
+  dx: number,
+): KeyframeTimelineView {
+  const seconds = (dx * (range.end - range.start)) / Math.max(trackWidth, 1);
+  const visible = keyframeVisibleRange(view, width);
+  const minSpan = width / MAX_PIXELS_PER_SECOND;
+  const maxSpan = width / MIN_PIXELS_PER_SECOND;
+  if (edge === "end") {
+    const span = Math.min(maxSpan, Math.max(minSpan, visible.end + seconds - visible.start));
+    return { start: visible.start, pixelsPerSecond: width / span };
+  }
+  // The start at the gutter, -gutter * span / width, bounds the span from above.
+  const gutterLimit = width > KEYFRAME_TIMELINE_GUTTER_PX ? (visible.end * width) / (width - KEYFRAME_TIMELINE_GUTTER_PX) : maxSpan;
+  const span = Math.min(maxSpan, Math.max(minSpan, Math.min(gutterLimit, visible.end - (visible.start + seconds))));
+  return { start: visible.end - span, pixelsPerSecond: width / span };
+}
+
+/** Where a press on the scroll bar lands: an end of the thumb resizes it, its middle drags it. */
+export function keyframeScrollHit(thumb: KeyframeScrollThumb, x: number, edgeReach: number): "start" | "end" | "thumb" | "track" {
+  if (x < thumb.left || x > thumb.left + thumb.width) return "track";
+  const reach = Math.min(edgeReach, thumb.width / 3);
+  if (x <= thumb.left + reach) return "start";
+  if (x >= thumb.left + thumb.width - reach) return "end";
+  return "thumb";
+}
+
+/** How far the lanes are zoomed, against the view that fits the clip: 1 fits it. */
+export const keyframeZoomFactor = (view: KeyframeTimelineView, fitted: KeyframeTimelineView): number =>
+  view.pixelsPerSecond / fitted.pixelsPerSecond;
+
 /** `time` on the nearest frame, kept within 0 and `length`. */
 export function snapToFrame(time: number, frameRate: number, length: number): number {
   const clamped = Math.min(length, Math.max(0, time));

@@ -6,9 +6,14 @@ import {
   keyAt,
   keyRefFromId,
   keyRefId,
+  keyframeScrollHit,
+  keyframeScrollRange,
+  keyframeScrollThumb,
   keysInRect,
   panKeyframeView,
+  resizeKeyframeView,
   rulerTicks,
+  scrollKeyframeView,
   snapToFrame,
   timeToX,
   xToTime,
@@ -34,6 +39,63 @@ describe("keyframe timeline view", () => {
     expect(zoomed.pixelsPerSecond).toBeCloseTo(view.pixelsPerSecond * 2);
     expect(xToTime(zoomed, anchorX)).toBeCloseTo(4);
     expect(timeToX(panKeyframeView(zoomed, 5000), 0)).toBeCloseTo(KEYFRAME_TIMELINE_GUTTER_PX);
+  });
+});
+
+describe("keyframe timeline scroll bar", () => {
+  // 400 px of lanes from 1 s at 200 px per second show 1 s to 3 s of a 4 s clip. The range runs from the
+  // gutter before 0 s (10 px, 0.05 s) to the gutter after the end (24 px, 0.12 s): 4.17 s on a 417 px
+  // track, 0.01 s per pixel. The thumb is 2 / 4.17 of the track, and 1.05 of the 2.17 s it can travel along.
+  const view = { start: 1, pixelsPerSecond: 200 };
+  const range = { start: -0.05, end: 4.12 };
+  const thumb = { left: 105, width: 200 };
+
+  it("spans the clip and its gutters, and wherever the view has gone past them", () => {
+    const spanned = keyframeScrollRange(view, 400, 4);
+    expect(spanned.start).toBeCloseTo(-0.05);
+    expect(spanned.end).toBeCloseTo(4.12);
+    // Panned past the clip's end: the range reaches the view's end, 5 s to 7 s.
+    expect(keyframeScrollRange({ start: 5, pixelsPerSecond: 200 }, 400, 4).end).toBeCloseTo(7);
+  });
+
+  it("sizes the thumb by the share of the range shown, never below its minimum", () => {
+    const sized = keyframeScrollThumb(view, 400, range, 417, 24);
+    expect(sized.left).toBeCloseTo(105);
+    expect(sized.width).toBeCloseTo(200);
+    // Fitted: the thumb fills the track.
+    expect(keyframeScrollThumb({ start: -0.05, pixelsPerSecond: 200 }, 834, { start: -0.05, end: 4.12 }, 417, 24)).toEqual({ left: 0, width: 417 });
+    // 0.1 s of the 4.17 s would be 10 px; shown at the range's end, the thumb ends the track.
+    const narrow = keyframeScrollThumb({ start: 4.02, pixelsPerSecond: 4000 }, 400, range, 417, 24);
+    expect(narrow.width).toBe(24);
+    expect(narrow.left).toBeCloseTo(393);
+  });
+
+  it("pans by the thumb's drag, within the range", () => {
+    expect(scrollKeyframeView(view, 400, range, 417, thumb, 50)).toEqual({ start: expect.closeTo(1.5), pixelsPerSecond: 200 });
+    expect(scrollKeyframeView(view, 400, range, 417, thumb, 500).start).toBeCloseTo(2.12);
+    expect(scrollKeyframeView(view, 400, range, 417, thumb, -500).start).toBeCloseTo(-0.05);
+  });
+
+  it("zooms by an end's drag, keeping the other end's time", () => {
+    const resize = (edge: "start" | "end", dx: number) => {
+      const next = resizeKeyframeView(view, 400, range, 417, edge, dx);
+      return [Number(next.start.toFixed(4)), Number(next.pixelsPerSecond.toFixed(2))];
+    };
+    // The end 1 s earlier: 1 s to 2 s.
+    expect(resize("end", -100)).toEqual([1, 400]);
+    expect(resize("end", 100)).toEqual([1, 133.33]);
+    // The start 0.5 s later: 1.5 s to 3 s.
+    expect(resize("start", 50)).toEqual([1.5, 266.67]);
+    // The start stops at the gutter before 0 s: 3.0769 s shown at 130 px per second, from -10 / 130 s.
+    expect(resize("start", -200)).toEqual([-0.0769, 130]);
+    // Never closer than 4000 px per second.
+    expect(resize("end", -300)).toEqual([1, 4000]);
+  });
+
+  it("resizes from a thumb's ends and drags from its middle", () => {
+    expect([100, 108, 200, 302, 306].map((x) => keyframeScrollHit(thumb, x, 6))).toEqual(["track", "start", "thumb", "end", "track"]);
+    // A narrow thumb keeps a middle third to drag.
+    expect([7, 12, 17].map((x) => keyframeScrollHit({ left: 0, width: 24 }, x, 22))).toEqual(["start", "thumb", "end"]);
   });
 });
 

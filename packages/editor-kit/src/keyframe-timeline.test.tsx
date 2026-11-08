@@ -138,6 +138,58 @@ describe("KeyframeTimeline", () => {
     expect(onSelect).toHaveBeenCalledWith([], "replace");
   });
 
+  it("zooms about the playhead with Zoom In and Zoom Out, as far as the furthest scale", () => {
+    render(<Harness />);
+    const zoom = () => screen.getByTestId("keyframe-timeline-zoom").textContent;
+    expect(zoom()).toBe("100%");
+    fireEvent.click(screen.getByRole("button", { name: "Zoom In" }));
+    expect(zoom()).toBe("150%");
+    // The playhead at 0.5 s keeps its x, and 1 s is now 0.5 s at 137.25 px per second to its right.
+    expect(screen.getByTestId("keyframe-timeline-lane-playhead").style.left).toBe(`${Math.round(x(0.5))}px`);
+    press("pointerdown", x(0.5) + 0.5 * 137.25, y(1));
+    press("pointerup", x(0.5) + 0.5 * 137.25, y(1));
+    expect(screen.getByTestId("selected").textContent).toBe("k1");
+    // 137.25 px per second reaches the furthest scale, 4, in nine steps of 1.5.
+    const zoomOut = screen.getByRole("button", { name: "Zoom Out" }) as HTMLButtonElement;
+    for (let step = 0; step < 9; step++) fireEvent.click(zoomOut);
+    expect(zoomOut.disabled).toBe(true);
+    expect(zoom()).toBe("4%");
+  });
+
+  it("pans with the scroll bar's thumb, zooms with its ends, and brings it where the track is pressed", () => {
+    render(<Harness />);
+    const bar = screen.getByRole("scrollbar", { name: "Scroll Time" });
+    const zoom = () => screen.getByTestId("keyframe-timeline-zoom").textContent;
+    const drag = (from: number, to: number) => {
+      act(() => dispatchPointerEvent(bar, "pointerdown", { pointerType: "mouse", clientX: from }));
+      act(() => dispatchPointerEvent(bar, "pointermove", { pointerType: "mouse", clientX: to }));
+      act(() => dispatchPointerEvent(bar, "pointerup", { pointerType: "mouse", clientX: to }));
+    };
+    // Fitted, the thumb fills the track, so its middle has nowhere to go.
+    drag(200, 250);
+    expect(zoom()).toBe("100%");
+    expect(bar.getAttribute("aria-valuenow")).toBe("0");
+    // Its right end 100 px left: the track's 4.37 s lose 1.09 s, so 3.28 s fill the lanes at 122 px per second,
+    // still from -0.11 s; 2 s is now at 2.11 × 122 px.
+    drag(398, 298);
+    expect(zoom()).toBe("133%");
+    press("pointerdown", 2.1093 * 122, y(1));
+    press("pointerup", 2.1093 * 122, y(1));
+    expect(screen.getByTestId("selected").textContent).toBe("k2");
+    // Its middle dragged to the track's end shows the clip's end.
+    drag(150, 400);
+    expect(bar.getAttribute("aria-valuenow")).toBe("100");
+    // A press at the track's start brings the thumb there.
+    drag(1, 1);
+    expect(bar.getAttribute("aria-valuenow")).toBe("0");
+    // The arrow keys pan by a tenth of the 3.28 s shown, of the 1 s the thumb can travel.
+    fireEvent.keyDown(bar, { key: "ArrowRight" });
+    expect(bar.getAttribute("aria-valuenow")).toBe("33");
+    fireEvent.keyDown(bar, { key: "End" });
+    expect(bar.getAttribute("aria-valuenow")).toBe("100");
+    expect(zoom()).toBe("133%");
+  });
+
   it("scrubs the ruler to frames and steps it with the arrow keys", () => {
     const onTime = vi.fn();
     render(<Harness onTime={onTime} />);
