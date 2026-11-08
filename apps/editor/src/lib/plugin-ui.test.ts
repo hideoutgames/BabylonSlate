@@ -16,12 +16,10 @@ import {
   mergePluginEditorUtilityObjects,
   pluginDependencyStatus,
   pluginEnableNeedsConfirm,
-  pluginFolderSlug,
   pluginDownloadFileName,
   pluginRootId,
   pluginSettingsIdentityFields,
   rootIdForFolderPath,
-  uniquePluginFolderName,
 } from "./plugin-ui";
 
 describe("plugin identity helpers", () => {
@@ -29,12 +27,7 @@ describe("plugin identity helpers", () => {
     expect(pluginRootId("pack-guid")).toBe("plugin:pack-guid");
   });
 
-  it("slugs display names into unique plugin folder names", () => {
-    expect(pluginFolderSlug("Starter Content")).toBe("starter-content");
-    expect(pluginFolderSlug("  ")).toBe("plugin");
-    expect(uniquePluginFolderName("Pack", [])).toBe("pack");
-    expect(uniquePluginFolderName("Pack", ["pack"])).toBe("pack-1");
-    expect(uniquePluginFolderName("Pack", ["pack", "pack-1"])).toBe("pack-2");
+  it("names plugin downloads after the display name's folder slug", () => {
     expect(pluginDownloadFileName("Starter Content")).toBe(
       "starter-content.hplugin",
     );

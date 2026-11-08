@@ -59,7 +59,6 @@ import {
   applyLiveEngineSettings,
   canvasIsEditorVisible,
   localRenderingQualityOverrides,
-  ENGINE_SETTINGS_CHANGED_EVENT,
   type LiveEngineSettings,
 } from "../lib/viewport-render-gate";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
@@ -88,16 +87,13 @@ import type {
   RetargetAnimationLoad,
 } from "@haptic/assets";
 import type { PlayAudioLibrary } from "../lib/play-audio";
-import {
-  PLAY_AUDIO_UNLOCK_HINT,
-  shouldShowPlayAudioUnlockHint,
-} from "../lib/play-audio-unlock-hint";
 import type {
   MaterialDocument,
   MaterialFunctionDocument,
 } from "@haptic/shader-graph";
 import { isTestModeEnabled } from "@haptic/vfs";
 import {
+  ENGINE_SETTINGS_CHANGED_EVENT,
   getHostMemoryStats,
   latestHostMemoryStats,
   type HostMemoryStats,
@@ -105,6 +101,8 @@ import {
 import {
   audioDebugOverlayText,
   audioStats,
+  PLAY_AUDIO_UNLOCK_HINT,
+  shouldShowPlayAudioUnlockHint,
   type FontAssetEntry,
 } from "@haptic/render";
 import { useInspectWorldPoll } from "../lib/use-inspect-world-poll";
