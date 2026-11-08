@@ -225,6 +225,8 @@ export type ControlMessage =
       timelineClipAssets?: import("@haptic/core").TimelineClipAssetCatalogEntry[];
       /** Packaged authored assets for the Asset Registry nodes, snapshotted when the session starts. */
       assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
+      /** Game libraries of enabled gameplay Extensions, dependencies first; evaluated before any script. */
+      extensionLibraries?: import("@haptic/core").ExtensionGameLibrary[];
       /** Initial session render cap, shared with the renderer for console readback. */
       frameCap?: number;
       /** Project Garbage Collection Interval, in ticks. */

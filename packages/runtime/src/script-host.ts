@@ -1,4 +1,4 @@
-import { RandomStream, SaveGameError, type SaveGameMigrationData, type SaveGameService } from "@haptic/core";
+import { loadExtensionGameLibraries, RandomStream, SaveGameError, type ExtensionLibraries, type SaveGameMigrationData, type SaveGameService } from "@haptic/core";
 import {
   interfaceHandlerKey,
   isCreatableObjectChain,
@@ -203,15 +203,26 @@ export class ScriptHost {
     await this.replaceScripts([...scripts.filter((entry) => compiledScriptKey(entry) !== compiledScriptKey(script)), script]);
   }
 
+  /**
+   * Gameplay Extension libraries, evaluated once, before the first module that
+   * can call them; a library that fails is reported and left out.
+   */
+  private extensions: ExtensionLibraries | null = null;
+  private extensionLibraries(): ExtensionLibraries {
+    this.extensions ??= loadExtensionGameLibraries(this.services.extensionLibraries ?? [], (error) => this.services.reportError(error));
+    return this.extensions;
+  }
+
   /** Prepare a complete owned union, retaining the previous valid modules on failure. */
   async replaceScripts(scripts: readonly CompiledScript[]): Promise<void> {
     const generation = ++this.sourceGeneration;
+    const extensions = this.extensionLibraries();
     const existing = new Map([...this.byClassId.values()].flat().map((entry) => [compiledScriptKey(entry.script), entry]));
     const prepared = new Map<string, LoadedScript[]>();
     for (const script of scripts) {
       const previous = existing.get(compiledScriptKey(script));
       const exports = previous && sameModule(previous.script, script)
-        ? previous.exports : await loadCompiledModule(script, compiledScriptSourceLabel(script));
+        ? previous.exports : await loadCompiledModule(script, compiledScriptSourceLabel(script), extensions);
       if (generation !== this.sourceGeneration) throw new Error("Script preparation was superseded or disposed.");
       const entries = prepared.get(script.classId) ?? [];
       entries.push({ script, exports });

@@ -35,6 +35,7 @@ export function runtimeOptionsFromLoadControl(
   | "curveAssets"
   | "timelineClipAssets"
   | "assetCatalog"
+  | "extensionLibraries"
   | "physicsWorld"
   | "gravity"
   | "collisionPresets"
@@ -110,6 +111,7 @@ export function runtimeOptionsFromLoadControl(
     ...(msg.curveAssets ? { curveAssets: msg.curveAssets } : {}),
     ...(msg.timelineClipAssets ? { timelineClipAssets: msg.timelineClipAssets } : {}),
     ...(msg.assetCatalog ? { assetCatalog: msg.assetCatalog } : {}),
+    ...(msg.extensionLibraries?.length ? { extensionLibraries: msg.extensionLibraries } : {}),
     focusNavigation: msg.focusNavigation,
     pixelsPerUnit: msg.pixelsPerUnit,
     texturePixelSizes: msg.texturePixelSizes,

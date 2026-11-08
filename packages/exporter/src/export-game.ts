@@ -339,6 +339,7 @@ export async function exportGame(
     sortingLayers: normalizeSortingLayers(options.sortingLayers),
     physicsWorld: options.physicsWorld ?? "3d",
     collisionPresets: normalizeCollisionPresets(options.collisionPresets),
+    ...(options.extensionLibraries?.length ? { extensionLibraries: structuredClone([...options.extensionLibraries]) } : {}),
     assets: index,
     ...(options.bundleDebugger
       ? {

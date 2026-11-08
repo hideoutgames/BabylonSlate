@@ -2,13 +2,14 @@ import { newGuid, type ProjectStorage } from "@haptic/core";
 import { unzipSync } from "fflate";
 import { encodeProjectZip, readProjectTree, writeProjectTree, type ProjectTreeFile } from "./hproject";
 import { discoverEngineExtensions, discoverProjectExtensions, type ExtensionDescriptor } from "./extension-host";
-import { decodeExtensionSettings, encodeExtensionSettings, EXTENSIONS_DIR, EXTENSION_MANIFEST_FILE, EXTENSION_MANIFEST_MAX_BYTES, isExtensionPackagePath, type ExtensionSettings } from "./extension-settings";
+import { decodeExtensionSettings, encodeExtensionSettings, EXTENSIONS_DIR, EXTENSION_MANIFEST_FILE, EXTENSION_MANIFEST_MAX_BYTES, isExtensionCodePath, isExtensionPackagePath, type ExtensionSettings } from "./extension-settings";
 import { isZipArchive } from "./importers/zip-import";
 
 const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
 const MAX_EXPANDED_BYTES = 256 * 1024 * 1024;
 const MAX_PACKAGE_FILES = 4096;
-const MAX_SOURCE_BYTES = 1024 * 1024;
+/** Per code file (`.ts` / `.js`), entries and added files alike. */
+export const EXTENSION_SOURCE_MAX_BYTES = 1024 * 1024;
 
 export interface InspectedHextension {
   settings: ExtensionSettings;
@@ -60,8 +61,13 @@ function inspectExtensionFiles(files: ProjectTreeFile[]): InspectedHextension {
   if (!regularFiles.some((file) => file.path === settings.entryPoint)) {
     throw new Error(`Extension Entry Point is missing: ${settings.entryPoint}`);
   }
-  if (regularFiles.find((file) => file.path === settings.entryPoint)!.data.byteLength > MAX_SOURCE_BYTES) {
-    throw new Error("Extension Entry Point exceeds 1 MiB.");
+  if (!settings.editorOnly && !regularFiles.some((file) => file.path === settings.gameEntryPoint)) {
+    throw new Error(`Extension Game Entry Point is missing: ${settings.gameEntryPoint}`);
+  }
+  for (const file of regularFiles) {
+    if (isExtensionCodePath(file.path) && file.data.byteLength > EXTENSION_SOURCE_MAX_BYTES) {
+      throw new Error(`Extension code file exceeds 1 MiB: ${file.path}`);
+    }
   }
   return { settings, settingsPath: EXTENSION_MANIFEST_FILE, files: regularFiles };
 }

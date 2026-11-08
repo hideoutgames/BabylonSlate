@@ -25,6 +25,7 @@ import {
   engineCommandBus,
   nearestTextureFiltering,
   normalizeRenderingPipeline,
+  type ExtensionGameLibrary,
 } from "@haptic/core";
 import type { SessionReportEntry } from "@haptic/runtime";
 import { BREAKPOINT_PAUSE_CODE, type ScriptBundleEntry, type SessionPauseCause } from "@haptic/bridge";
@@ -281,6 +282,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     "worker" | "in-process" | null
   >(null);
   const [scripts, setScripts] = useState<ScriptBundleEntry[]>([]);
+  /** Game libraries of enabled gameplay Extensions, linked when Play is prepared. */
+  const [extensionLibraries, setExtensionLibraries] = useState<ExtensionGameLibrary[]>([]);
   const [sessionPlayScene, setSessionPlayScene] = useState<PlaySceneLoad | null>(
     null,
   );
@@ -306,6 +309,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPlayInputAssets([]);
     setPlayAudioSourceLoader(undefined);
     setScripts([]);
+    setExtensionLibraries([]);
     pendingScriptsRef.current = null;
   }, [releaseAllSources]);
   const [playAudioSourceLoader, setPlayAudioSourceLoader] =
@@ -332,7 +336,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   } = useDocumentActions();
   const activeDocumentId = useActiveDocumentId();
   const { projectDocument } = useProjectState();
-  const { assetRegistry, registryEpoch, projectGuid } = useRegistryState();
+  const { assetRegistry, registryEpoch, projectGuid, extensionService } = useRegistryState();
   const { migrationPending } = useEditorShellState();
   const { dirtyDocuments, projectDirty } = useSaveState();
   const { graphsNeedCompile } = useCompileState();
@@ -458,6 +462,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const playRequestInputs: PlayRequestInputs = {
     activeDocumentId,
     assetRegistry,
+    extensionService,
     projectGuid,
     projectDocument,
     dirtyDocuments,
@@ -754,7 +759,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       if (!sessionOwner.canStart() || preparingRef.current) return;
       // Read at call time (see playRequestInputsRef); shadows the render values.
       const {
-        activeDocumentId, assetRegistry, dirtyDocuments, graphsNeedCompile, migrationPending,
+        activeDocumentId, assetRegistry, dirtyDocuments, extensionService, graphsNeedCompile, migrationPending,
         projectDirty, projectDocument, sceneDocuments,
         hasStartupScene,
         openPlaySceneGuid,
@@ -908,6 +913,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setSessionPlayScene(resolvedScene);
         const nextScripts = game.scripts;
         const nextDiagnostics: Diagnostic[] = [...prepared.diagnostics];
+        // Linked from the files as they are now, so edits made in another editor play too.
+        setExtensionLibraries(await current(extensionService.gameLibraries()));
         setScripts(nextScripts);
         setDiagnostics(nextDiagnostics);
         playContentActions.setPrepared(preparedPlayContent(prepared, {
@@ -958,6 +965,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         if (!outputLogWindowVisible()) setPlayFailure({ simulating, reason });
         setPrepareState(null);
         setScripts([]);
+        setExtensionLibraries([]);
       } finally {
         if (sessionOwner.owns(ticket)) {
           preparingRef.current = false;
@@ -1204,6 +1212,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             sharedEngine={engineRef.current}
             injectFixtureThrow={injectThrow}
             scripts={scripts}
+            extensionLibraries={extensionLibraries}
             physics={presentedPlay?.physics}
             sceneAssetGuid={playSceneGuid}
             scene={presentedPlay?.scene}

@@ -1,10 +1,16 @@
-import type { AssetDocument } from "@haptic/assets";
+import type { AssetDocument, ExtensionCodeFile } from "@haptic/assets";
+import { evaluateExtensionBundle } from "@haptic/core";
 import type { GlslToMaterialOptions, GlslToMaterialResult } from "@haptic/shader-graph";
+import { linkExtensionModules } from "./extension-modules";
 
 export interface EditorExtensionEntry {
   id: string;
-  path: string;
-  source: string;
+  /** Display name for errors and source URLs. */
+  label?: string;
+  /** Package-relative editor entry module. */
+  entry: string;
+  /** The package's code files; the entry may import them relatively. */
+  files: readonly ExtensionCodeFile[];
 }
 
 export interface EditorExtensionField {
@@ -75,44 +81,11 @@ interface ExtensionState {
 }
 
 async function evaluateExtension(entry: EditorExtensionEntry): Promise<(api: EditorExtensionApi) => unknown> {
-  if (!/\.(?:js|ts)$/i.test(entry.path)) {
-    throw new Error("Extension entries must be JavaScript (.js) or TypeScript (.ts) files.");
-  }
-  // Loaded only when extensions are enabled. The same parser handles JavaScript
-  // exports and TypeScript syntax without rewriting source with regular expressions.
-  const ts = await import("typescript");
-  const sourceFile = ts.createSourceFile(entry.path, entry.source, ts.ScriptTarget.ES2022, true);
-  const checkImports = (node: import("typescript").Node): void => {
-    if (ts.isImportDeclaration(node) || ts.isImportEqualsDeclaration(node)
-      || (ts.isExportDeclaration(node) && node.moduleSpecifier)
-      || (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword
-        || (ts.isIdentifier(node.expression) && node.expression.text === "require")))) {
-      throw new Error("Extension entries cannot import or require modules. Use the editor API passed to activate(api).");
-    }
-    ts.forEachChild(node, checkImports);
-  };
-  checkImports(sourceFile);
-  const result = ts.transpileModule(entry.source, {
-    fileName: entry.path,
-    reportDiagnostics: true,
-    compilerOptions: {
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.CommonJS,
-      moduleDetection: ts.ModuleDetectionKind.Force,
-      isolatedModules: true,
-    },
-  });
-  const errors = result.diagnostics?.filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error) ?? [];
-  if (errors.length > 0) {
-    throw new Error(errors.map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")).join("\n"));
-  }
-  const module = { exports: {} as Record<string, unknown> };
-  const requireUnsupported = () => { throw new Error("Extension module imports are not supported."); };
-  // Extensions are trusted editor code, not a security sandbox. Runtime exports
-  // are explicit so both ESM-transpiled and CommonJS entry points work.
-  const evaluate = new Function("exports", "module", "require", `${result.outputText}\n//# sourceURL=${encodeURIComponent(entry.path)}`);
-  evaluate(module.exports, module, requireUnsupported);
-  const activate = module.exports?.activate;
+  const bundle = await linkExtensionModules(entry.files, entry.entry);
+  // Extensions are trusted editor code, not a security sandbox. Every module is
+  // CommonJS after linking, so ESM-transpiled and CommonJS entries both work.
+  const exports = evaluateExtensionBundle(bundle, entry.label ?? entry.id);
+  const activate = exports?.activate;
   if (typeof activate !== "function") {
     throw new Error("Extension entry must export an activate(api) function.");
   }

@@ -536,6 +536,7 @@ function initializePlayer(
       return classId ? [[classId, entry.guid]] : [];
     })),
     consoleCommands: manifestConsoleCommands(manifest, game.scripts),
+    ...(manifest.extensionLibraries?.length ? { extensionLibraries: manifest.extensionLibraries } : {}),
     ...(game.acquireScene ? { sceneCatalog: manifest.assets.filter(entry => entry.type === "Scene").map(entry => ({ guid: entry.guid, name: entry.name ?? entry.guid })) } : {}),
     sceneLayers,
     sceneNavmeshBytes: Object.fromEntries(content.navmeshByScene),

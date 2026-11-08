@@ -148,6 +148,8 @@ export type CollectExportGameParams = {
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
   tagRegistry?: TagRegistry;
   playerFiles: Map<string, Uint8Array>;
+  /** Game libraries of enabled gameplay Extensions, dependencies first. */
+  extensionLibraries?: readonly import("@haptic/core").ExtensionGameLibrary[];
   /** Preview Build keeps Development Only nodes. */
   previewBuild?: boolean;
   onPhase?: (phase: "Compiling" | "Writing Pack") => void;
@@ -635,6 +637,7 @@ export async function collectAndExportGame(
     inputAssets,
     focusNavigation: params.focusNavigation,
     scripts,
+    ...(params.extensionLibraries?.length ? { extensionLibraries: params.extensionLibraries } : {}),
     assets: exportAssets,
     playerFiles: params.playerFiles,
     fileCountWarn: preset.fileCountWarn,

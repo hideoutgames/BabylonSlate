@@ -6,6 +6,7 @@ import {
   encodeExtensionSettings,
   EXTENSION_MANIFEST_FILE,
   EXTENSIONS_DIR,
+  isExtensionCodePath,
   isExtensionPackagePath,
   normalizeExtensionSettings,
   type ExtensionSettings,
@@ -122,6 +123,33 @@ export async function writeProjectExtension(
   await storage.writeText(entryPath, source);
   await storage.writeBinary(`${folderPath}/${EXTENSION_MANIFEST_FILE}`, encodeExtensionSettings(normalized));
   return describeExtension(folderPath, "project", normalized);
+}
+
+/** Starting game entry for a package whose Editor Only is turned off. */
+export const DEFAULT_EXTENSION_GAME_SOURCE = "// Exports from this file are the extension's game library.\n// Execute JavaScript nodes call them through extensions.<Library Name>.\nexport function describe(value) {\n  return `Value: ${value}`;\n}\n";
+
+export interface ExtensionCodeFile {
+  /** Package-relative path. */
+  path: string;
+  source: string;
+}
+
+/** Every `.ts` / `.js` file of a package outside its `assets/` root, sorted by path. */
+export async function readExtensionCodeFiles(storage: ProjectStorage, folderPath: string): Promise<ExtensionCodeFile[]> {
+  const files: ExtensionCodeFile[] = [];
+  const walk = async (relative: string): Promise<void> => {
+    const entries = await storage.readdir(relative ? `${folderPath}/${relative}` : folderPath);
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = relative ? `${relative}/${entry.name}` : entry.name;
+      if (entry.isDir) {
+        if (relative || entry.name.toLowerCase() !== "assets") await walk(path);
+      } else if (isExtensionCodePath(path)) {
+        files.push({ path, source: await storage.readText(`${folderPath}/${path}`) });
+      }
+    }
+  };
+  await walk("");
+  return files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 export function shadowEngineExtensions(

@@ -66,6 +66,8 @@ const RESERVED = new Set([
   "eval",
   "arguments",
   "ctx",
+  // Gameplay Extension libraries, in scope for every body.
+  "extensions",
 ]);
 
 /**

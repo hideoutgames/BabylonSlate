@@ -1,5 +1,5 @@
 import { useRef, useState, useSyncExternalStore } from "react";
-import type { ExtensionDescriptor } from "@haptic/assets";
+import type { ExtensionCodeFile, ExtensionDescriptor } from "@haptic/assets";
 import { NamePromptDialog } from "@haptic/editor-kit";
 import { pickImportFiles } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
@@ -28,7 +28,7 @@ export function ProjectExtensionsSettings() {
   const [enableTarget, setEnableTarget] = useState<ExtensionDescriptor | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ExtensionDescriptor | null>(null);
   const [exportTarget, setExportTarget] = useState<ExtensionDescriptor | null>(null);
-  const [editor, setEditor] = useState<{ entry: ExtensionDescriptor; source: string } | null>(null);
+  const [editor, setEditor] = useState<{ entry: ExtensionDescriptor; files: ExtensionCodeFile[] } | null>(null);
   const [command, setCommand] = useState<EditorExtensionCommandDescriptor | null>(null);
   const [conflict, setConflict] = useState<{ name: string; bytes: Uint8Array } | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -56,13 +56,13 @@ export function ProjectExtensionsSettings() {
     setConflict(null);
     updateProjectSettings({ extensionOverrides: service.getOverrides() });
   };
-  const edit = async (entry: ExtensionDescriptor) => setEditor({ entry, source: await service.readSource(entry.extensionGuid) });
+  const edit = async (entry: ExtensionDescriptor) => setEditor({ entry, files: await service.readFiles(entry.extensionGuid) });
   const maturity = enableTarget ? [enableTarget.settings.experimental ? "Experimental" : "", enableTarget.settings.beta ? "Beta" : ""].filter(Boolean).join(" / ") : "";
 
   return <FieldGroup data-testid="settings-extensions-panel">
     <SettingsSection id="installed" title="Installed Extensions">
       <div className="settings-row flex flex-col gap-2">
-      <FieldDescription>Editor tools for project assets and TypeScript or JavaScript code. Extensions do not run in the game.</FieldDescription>
+      <FieldDescription>TypeScript or JavaScript tools for the editor. An extension with Editor Only off also adds a game library and content to Play and packaged games.</FieldDescription>
       {pending ? <p role="status">{pending}…</p> : null}
       {error ? <Alert variant="destructive"><AlertTitle>Extension Action Failed</AlertTitle><AlertDescription>{error.message}<Button variant="outline" size="sm" disabled={Boolean(pending)} onClick={error.retry}>Retry</Button></AlertDescription></Alert> : null}
       {snapshot.diagnostics.length > 0 ? <Alert><AlertTitle>Extension Diagnostics</AlertTitle><AlertDescription><ul className="list-disc pl-4">{snapshot.diagnostics.map((message, index) => <li key={`${index}:${message}`}>{message}</li>)}</ul></AlertDescription></Alert> : null}
@@ -78,6 +78,7 @@ export function ProjectExtensionsSettings() {
               <Badge variant="outline">{entry.source === "engine" ? "Engine" : "Project"}</Badge>
               {entry.settings.experimental ? <Badge variant="secondary">Experimental</Badge> : null}
               {entry.settings.beta ? <Badge variant="secondary">Beta</Badge> : null}
+              {!entry.invalid && !entry.settings.editorOnly ? <Badge variant="secondary">Gameplay</Badge> : null}
               <span className="text-sm text-muted-foreground">v{entry.settings.version}</span>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -106,11 +107,11 @@ export function ProjectExtensionsSettings() {
       </div>
     </SettingsSection>
     <NamePromptDialog open={newOpen} onOpenChange={setNewOpen} title="New Extension" label="Display Name" confirmLabel="Create" onSubmit={(name) => void run("Creating Extension", async () => { await edit(await service.create(name)); })} />
-    {editor ? <ExtensionEditorDialog entry={editor.entry} entries={snapshot.entries} initialSource={editor.source} service={service} onClose={() => setEditor(null)} /> : null}
+    {editor ? <ExtensionEditorDialog entry={editor.entry} entries={snapshot.entries} initialFiles={editor.files} service={service} onClose={() => setEditor(null)} /> : null}
     {command ? <ExtensionCommandDialog command={command} service={service} onClose={() => setCommand(null)} /> : null}
     {exportTarget ? <ExtensionExportDialog entry={exportTarget} service={service} onClose={() => setExportTarget(null)} /> : null}
     <AlertDialog open={Boolean(enableTarget)} onOpenChange={(open) => { if (!open) setEnableTarget(null); }}><AlertDialogContent>
-      <AlertDialogHeader><AlertDialogTitle>{`Enable ${maturity ? `${maturity} ` : ""}Extension`}</AlertDialogTitle><AlertDialogDescription>{enableTarget?.settings.displayName}{maturity ? ` is marked ${maturity}` : ""}. Its code runs in the editor and can modify project assets and code. Enable only code you trust.</AlertDialogDescription></AlertDialogHeader>
+      <AlertDialogHeader><AlertDialogTitle>{`Enable ${maturity ? `${maturity} ` : ""}Extension`}</AlertDialogTitle><AlertDialogDescription>{enableTarget?.settings.displayName}{maturity ? ` is marked ${maturity}` : ""}. Its code runs in the editor and can modify project assets and code{enableTarget && !enableTarget.settings.editorOnly ? ", and its game library runs in Play and packaged games" : ""}. Enable only code you trust.</AlertDialogDescription></AlertDialogHeader>
       <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => { if (enableTarget) { const entry = enableTarget; setEnableTarget(null); void run("Enabling Extension", () => setEnabled(entry, true)); } }}>Enable</AlertDialogAction></AlertDialogFooter>
     </AlertDialogContent></AlertDialog>
     <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}><AlertDialogContent variant="destructive">

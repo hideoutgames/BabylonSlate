@@ -190,6 +190,8 @@ export type PlaySessionOptions = {
   physics?: PlayPhysicsSettings;
   /** Compiled project graphs to run for this session. */
   scripts?: readonly ScriptBundleEntry[];
+  /** Game libraries of enabled gameplay Extensions, evaluated before the session's scripts. */
+  extensionLibraries?: readonly import("@haptic/core").ExtensionGameLibrary[];
   /** The light parts the startup sources may spawn (`spawnableLightsOfLoad`); defaults to those of `scripts`. */
   spawnableLights?: ReadonlyMap<string, SpawnableLight>;
   /** Authored scene instantiated in the worker. */

@@ -164,10 +164,11 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
   };
 
   return (
-    <div className="flex min-h-40 flex-1 flex-col" data-testid={language === "glsl" ? "glsl-body-editor" : "js-body-editor"}>
+    <div className="flex min-h-40 min-w-0 flex-1 flex-col" data-testid={language === "glsl" ? "glsl-body-editor" : "js-body-editor"}>
       <div
         ref={hostRef}
-        className="min-h-0 flex-1 overflow-hidden text-left [&_.cm-editor]:outline-none"
+        // min-w-0: long lines scroll inside CodeMirror instead of widening the host.
+        className="min-h-0 min-w-0 flex-1 overflow-hidden text-left [&_.cm-editor]:outline-none"
         // Selection intentionally enabled for code editing.
         style={{ userSelect: "text", WebkitUserSelect: "text" }}
       />

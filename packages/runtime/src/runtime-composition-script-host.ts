@@ -202,6 +202,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
       rt.emit({ type: "sessionEnded" });
     }),
     environment: options.environment ?? DEFAULT_GAME_ENVIRONMENT,
+    ...(options.extensionLibraries?.length ? { extensionLibraries: options.extensionLibraries } : {}),
     getViewportSize: () => rt.overlay.reportedCanvasSize(),
     copyToClipboard: (text) => emit({ type: "copyToClipboard", text, frameId: rt.frameId }),
     openUrl: (url) => emit({ type: "openUrl", url, frameId: rt.frameId }),

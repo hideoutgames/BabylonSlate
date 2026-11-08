@@ -82,7 +82,7 @@ describe("EditorExtensionService lifecycle", () => {
     try {
       await expect(service.run("tools", "code", {})).rejects.toThrow(/read-only/);
       await expect(service.run("tools", "asset", {})).rejects.toThrow(/read-only/);
-      await expect(service.save("tools", enabledSettings("tools"), originalModule)).rejects.toThrow(/read-only/);
+      await expect(service.save("tools", enabledSettings("tools"), { write: [{ path: "index.ts", source: originalModule }], remove: [] })).rejects.toThrow(/read-only/);
       await expect(service.remove("tools")).rejects.toThrow(/read-only/);
       await service.run("tools", "read", {});
       expect(messages).toContain("Read-only command ran");

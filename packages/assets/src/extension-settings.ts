@@ -25,12 +25,45 @@ export interface ExtensionSettings {
   enabledByDefault: boolean;
   engineVersion: string;
   extensionDependencies: ExtensionDependency[];
-  /** One package-relative TypeScript or JavaScript module. */
+  /** Package-relative TypeScript or JavaScript module exporting `activate(api)` for the editor. */
   entryPoint: string;
+  /** Editor-only packages never reach Play, Preview Build or exported games. */
+  editorOnly: boolean;
+  /** Package-relative game module; its exports become `extensions.<libraryName>` in games. */
+  gameEntryPoint: string;
+  /** JavaScript identifier games use to reach the game module's exports. */
+  libraryName: string;
+  /** Shows the mounted `assets/` root in the Content Browser tree (gameplay packages only). */
+  appearInContentBrowser: boolean;
 }
 
 /** Shared by manifests and package writes; never resolve untrusted paths first. */
 export const isExtensionPackagePath = isPortablePackagePath;
+
+/** Folder inside a package for added code files. */
+export const EXTENSION_CODE_DIR = "code";
+export const DEFAULT_EXTENSION_GAME_ENTRY_POINT = "game.ts";
+
+const LIBRARY_NAME = /^[A-Za-z_$][\w$]*$/;
+
+export function isExtensionLibraryName(value: string): boolean {
+  return LIBRARY_NAME.test(value);
+}
+
+/** TypeScript or JavaScript source inside a package (never under its `assets/` root). */
+export function isExtensionCodePath(path: string): boolean {
+  return isExtensionPackagePath(path) && /\.(?:ts|js)$/.test(path) && !/^assets(?:\/|$)/i.test(path);
+}
+
+/** camelCase identifier from a display name: "GLSL to Material" -> "glslToMaterial". */
+export function defaultExtensionLibraryName(displayName: string): string {
+  const words = displayName.split(/[^A-Za-z0-9]+/).filter(Boolean);
+  const name = words.map((word, index) => index === 0
+    ? word.toLowerCase()
+    : word[0]!.toUpperCase() + word.slice(1)).join("");
+  if (!name) return "extension";
+  return /^[0-9]/.test(name) ? `_${name}` : name;
+}
 
 export function createDefaultExtensionSettings(options: {
   extensionGuid: string;
@@ -49,6 +82,10 @@ export function createDefaultExtensionSettings(options: {
     engineVersion: ENGINE_VERSION,
     extensionDependencies: [],
     entryPoint: "index.ts",
+    editorOnly: true,
+    gameEntryPoint: DEFAULT_EXTENSION_GAME_ENTRY_POINT,
+    libraryName: defaultExtensionLibraryName(options.displayName),
+    appearInContentBrowser: false,
   };
 }
 
@@ -65,8 +102,22 @@ export function normalizeExtensionSettings(value: unknown): ExtensionSettings {
     return text.trim();
   };
   const entryPoint = requiredText("entryPoint");
-  if (!isExtensionPackagePath(entryPoint) || !/\.(?:ts|js)$/.test(entryPoint)) {
+  if (!isExtensionCodePath(entryPoint)) {
     throw new Error("Extension Entry Point must be a relative .ts or .js file.");
+  }
+  const gameEntryPoint = typeof record.gameEntryPoint === "string" && record.gameEntryPoint.trim()
+    ? record.gameEntryPoint.trim() : DEFAULT_EXTENSION_GAME_ENTRY_POINT;
+  if (!isExtensionCodePath(gameEntryPoint)) {
+    throw new Error("Extension Game Entry Point must be a relative .ts or .js file.");
+  }
+  if (gameEntryPoint.toLowerCase() === entryPoint.toLowerCase()) {
+    throw new Error("Extension Game Entry Point must differ from its Entry Point.");
+  }
+  const displayName = requiredText("displayName");
+  const libraryName = typeof record.libraryName === "string" && record.libraryName.trim()
+    ? record.libraryName.trim() : defaultExtensionLibraryName(displayName);
+  if (!isExtensionLibraryName(libraryName)) {
+    throw new Error("Extension Library Name must be a JavaScript identifier.");
   }
   const dependencies: ExtensionDependency[] = [];
   const seen = new Set<string>();
@@ -85,7 +136,7 @@ export function normalizeExtensionSettings(value: unknown): ExtensionSettings {
   }
   return {
     extensionGuid: requiredText("extensionGuid"),
-    displayName: requiredText("displayName"),
+    displayName,
     version: requiredText("version"),
     description: typeof record.description === "string" ? record.description : "",
     author: typeof record.author === "string" ? record.author : "",
@@ -97,6 +148,10 @@ export function normalizeExtensionSettings(value: unknown): ExtensionSettings {
     engineVersion: typeof record.engineVersion === "string" ? record.engineVersion.trim() : "",
     extensionDependencies: dependencies,
     entryPoint,
+    editorOnly: record.editorOnly !== false,
+    gameEntryPoint,
+    libraryName,
+    appearInContentBrowser: record.appearInContentBrowser === true,
   };
 }
 

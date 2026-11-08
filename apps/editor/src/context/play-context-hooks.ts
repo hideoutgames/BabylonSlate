@@ -84,7 +84,7 @@ export interface PlayContextValue {
  */
 export type PlayRequestInputs = Pick<ActiveDocumentState, "activeDocumentId">
   & Pick<ProjectState, "projectDocument">
-  & Pick<RegistryState, "assetRegistry" | "projectGuid">
+  & Pick<RegistryState, "assetRegistry" | "extensionService" | "projectGuid">
   & Pick<SaveState, "dirtyDocuments" | "projectDirty">
   & Pick<CompileState, "graphsNeedCompile">
   & Pick<EditorShellState, "migrationPending">
