@@ -278,17 +278,52 @@ test.describe("Scene modes", () => {
     await page.getByTestId("timeline-track-menu-selected").click();
     await expect.poll(async () => (await content(page)).timelineClips?.[0]?.objects.length).toBe(1);
     const objectId = (await content(page)).timelineClips![0]!.objects[0]!.id;
+    // The lanes fill the window below the actor's row, down to the scroll and zoom row, so a marquee can start there.
+    const actorRow = page.getByTestId(`timeline-row-${objectId}`);
+    const lastRow = (await actorRow.boundingBox())!;
+    const emptyLanes = (await page.getByTestId("keyframe-timeline-lanes").boundingBox())!;
+    const scrollBar = (await page.getByTestId("keyframe-timeline-scrollbar").boundingBox())!;
+    expect(emptyLanes.y + emptyLanes.height).toBeGreaterThan(lastRow.y + lastRow.height + 20);
+    expect(Math.abs(emptyLanes.y + emptyLanes.height - scrollBar.y)).toBeLessThanOrEqual(1);
     await page.getByTestId(`timeline-add-track-${objectId}`).click();
     const dialog = page.getByTestId("timeline-add-track-dialog");
+    const isMobileLayout = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
+    // The touch layout focuses the list, not the search field, so it scrolls at once and no keyboard covers it.
+    if (isMobileLayout) await expect(dialog.getByRole("list")).toBeFocused();
+    else await expect(dialog.getByTestId("timeline-add-track-dialog-search")).toBeFocused();
     await dialog.getByText("Scale", { exact: true }).click();
     await dialog.getByRole("button", { name: "Add Tracks" }).click();
     await expect.poll(async () => (await content(page)).timelineClips![0]!.objects[0]!.tracks.length).toBe(1);
     const trackId = (await content(page)).timelineClips![0]!.objects[0]!.tracks[0]!.id;
-    const isMobileLayout = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
-    if (isMobileLayout) expect((await page.getByTestId(`timeline-row-${trackId}`).boundingBox())!.height).toBeGreaterThanOrEqual(43);
+    const trackRow = (await page.getByTestId(`timeline-row-${trackId}`).boundingBox())!;
+    if (isMobileLayout) expect(trackRow.height).toBeGreaterThanOrEqual(43);
     await page.getByTestId(`timeline-key-toggle-${trackId}`).click();
     await expect.poll(async () => (await content(page)).timelineClips![0]!.objects[0]!.tracks[0]!.keys.map((key) => key.Value))
       .toEqual([{ x: 1, y: 1, z: 1 }]);
+
+    if (isMobileLayout) expect(scrollBar.height).toBeGreaterThanOrEqual(43);
+    // A marquee started below the collapsed actor's row selects the key at 0 s; on a touch screen, hold, then drag.
+    await actorRow.getByRole("button", { name: "Collapse" }).click();
+    await expect(page.getByTestId(`timeline-row-${trackId}`)).toHaveCount(0);
+    const lanes = (await page.getByTestId("keyframe-timeline-lanes").boundingBox())!;
+    const from = { x: lanes.x + 2, y: lanes.y + lanes.height - 4 };
+    const to = { x: lanes.x + 30, y: lanes.y + 2 };
+    const along = (step: number) => ({ x: from.x + ((to.x - from.x) * step) / 4, y: from.y + ((to.y - from.y) * step) / 4 });
+    if (isMobileLayout) {
+      const session = await page.context().newCDPSession(page);
+      await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
+      await page.waitForTimeout(700);
+      for (let step = 1; step <= 4; step++) await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [along(step)] });
+      await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await session.detach();
+    } else {
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      for (let step = 1; step <= 4; step++) await page.mouse.move(along(step).x, along(step).y);
+      await page.mouse.up();
+    }
+    await expect(page.getByTestId("timeline-inspector-key").getByLabel("Track")).toHaveValue("Actor › Scale");
+    await actorRow.getByRole("button", { name: "Expand" }).click();
     // Right-click stands in for a long-press here; both open the row menu.
     await page.getByTestId(`timeline-row-${trackId}`).click({ button: "right" });
     await page.getByTestId("timeline-row-menu-mute").click();

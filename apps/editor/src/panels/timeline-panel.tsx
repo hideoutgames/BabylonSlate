@@ -761,7 +761,8 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
   const setTime = (next: number) => playhead.set(Math.min(clip.length, Math.max(0, next)));
 
   return <PanelFrame>
-    <div ref={rootRef} className="flex min-h-0 flex-1 flex-col" data-testid="scene-timeline-panel">
+    {/* The window's height: the lanes fill it below the last row, and the scroll and zoom row sits at its bottom. */}
+    <div ref={rootRef} className="flex h-full min-h-0 flex-col" data-testid="scene-timeline-panel">
       <ToolbarStrip data-testid="scene-timeline-toolbar">
         <span className="max-w-28 truncate px-1 font-medium" data-testid="scene-timeline-title">{clip.name}</span>
         <TransportButton label="Go to Start" onClick={() => setTime(0)} testId="timeline-go-start"><SkipBackIcon /></TransportButton>
