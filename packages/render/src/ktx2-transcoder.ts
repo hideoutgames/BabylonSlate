@@ -104,15 +104,6 @@ function shouldForceKtx2Rgba(
 }
 
 /**
- * Preview Build always packs PNG/pixels so a cold iframe matches overlay Play.
- * Itch Export Game still packs KTX2 when the player files contain the
- * transcoder (`playerFilesHaveKtx2Transcoder` in `@haptic/assets`).
- */
-export function shouldPackKtx2ForPreviewBuild(): boolean {
-  return false;
-}
-
-/**
  * After Engine construction: pick a transcode target the GPU can upload.
  * Software WebGL often advertises S3TC/ASTC then fails `texImage2D`.
  */

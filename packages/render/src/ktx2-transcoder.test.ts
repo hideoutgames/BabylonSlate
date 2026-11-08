@@ -5,7 +5,6 @@ import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
   probeKtx2TranscoderAvailable,
-  shouldPackKtx2ForPreviewBuild,
 } from "./ktx2-transcoder";
 
 describe("ktx2 transcoder config", () => {
@@ -170,9 +169,5 @@ describe("ktx2 transcoder config", () => {
     files.set("ktx2/uastc_r8_unorm.wasm", new Uint8Array([1]));
     files.set("ktx2/uastc_rg8_unorm.wasm", new Uint8Array([1]));
     expect(playerFilesHaveKtx2Transcoder(files)).toBe(true);
-  });
-
-  it("never packs KTX2 for Preview Build", () => {
-    expect(shouldPackKtx2ForPreviewBuild()).toBe(false);
   });
 });

@@ -9,7 +9,7 @@ Export Game and Preview Build: the headless `@haptic/exporter` closure and packe
 - Packaged games always boot `project.json` `startupSceneGuid` (an asset guid). Never boot or tree-shake from `HprojectManifest.startupScene` or a guessed `assets/main.scene.hasset`. A missing or stale startup scene fails with `MISSING_STARTUP_SCENE_MESSAGE` ("Set Startup Scene in Project Settings."). Overlay Play and Preview Build may seed the open Scene tab for that session only (Debug **Start In Open Scene**, default on); Export Game never does.
 - Every export writes independent `assets/data-<n>.bin` files with `assetCatalogVersion: 1`; there is no packed/loose choice and no `mode` field. ZIP is delivery only, not a runtime archive. Static hosting needs no HTTP Range support.
 - Export Game and Preview Build share one closure and compile path (`collectAndExportGame`). A reached asset that fails to load, has a non-current format version, or whose Class / Animation Graph codegen throws fails the export by name; nothing ships silently without it.
-- Preview Build packs PNG/pixels, never KTX2 (`shouldPackKtx2ForPreviewBuild()` is false), so a cold iframe matches overlay Play; Export Game packs KTX2 only when the full self-hosted transcoder ships.
+- Preview Build packs PNG/pixels, never KTX2 (`use-preview-build.ts` passes `transcoderAvailable: false`), so a cold iframe matches overlay Play; Export Game packs KTX2 only when the full self-hosted transcoder ships.
 - No game HUD keys in `GameManifest`; the player never hydrates a HUD and never packs EditorUtilityInterface assets.
 
 ## Ownership
