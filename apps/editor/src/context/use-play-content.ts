@@ -61,6 +61,8 @@ export interface PlayContent {
   fontFaceEntries: FontAssetEntry[];
   fontCssStack: string;
   fontCssStackByGuid: Map<string, string>;
+  fontPixelSize: number;
+  fontPixelSizeByGuid: Map<string, number>;
   modelBytes: Map<string, Uint8Array>;
   modelPayloads: Map<string, ModelPayload>;
   complexMeshes: ReadonlyMap<string, CollisionTriangleMesh>;
@@ -126,6 +128,8 @@ function emptyPlayContent(fontCssStack = "sans-serif"): PlayContent {
     fontFaceEntries: [],
     fontCssStack,
     fontCssStackByGuid: new Map(),
+    fontPixelSize: 0,
+    fontPixelSizeByGuid: new Map(),
     modelBytes: new Map(),
     modelPayloads: new Map(),
     complexMeshes: new Map(),
@@ -195,6 +199,8 @@ export function preparedPlayContent(
     fontFaceEntries: [...(sources.fonts ?? [])],
     fontCssStack: sources.assets?.fontCssStack ?? "sans-serif",
     fontCssStackByGuid: new Map(sources.assets?.fontCssStackByGuid ?? []),
+    fontPixelSize: sources.assets?.fontPixelSize ?? 0,
+    fontPixelSizeByGuid: new Map(sources.assets?.fontPixelSizeByGuid ?? []),
   };
 }
 

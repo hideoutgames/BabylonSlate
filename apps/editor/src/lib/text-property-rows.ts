@@ -1,6 +1,7 @@
 import {
   DEFAULT_TEXT2D_WRAP_HEIGHT,
   DEFAULT_TEXT2D_WRAP_WIDTH,
+  MAX_TEXT2D_PIXEL_SCALE,
   parseText2DProperties,
   parseText3DProperties,
   resolveText2DRenderer,
@@ -155,6 +156,46 @@ export function text2DPropertyRows(
     rendererValue === "msdf"
       ? " Bold thickens the field; Italic shears glyphs. True bold/italic faces need a second atlas (not in v1)."
       : "";
+  // A pixel font always draws as Bitmap, at whole multiples of its Pixel Size: Scale replaces Size and Renderer.
+  const pixelSize = context.fontPixelSize?.(parsed.fontAssetGuid) ?? 0;
+  const rendererRow: PropertyRow = {
+    kind: "enum",
+    id: rowId(actorId, component.id, "renderer"),
+    label: "Renderer",
+    value: rendererValue,
+    defaultValue: "bitmap",
+    options: TEXT2D_RENDERERS.map((value) => ({
+      value,
+      label: TEXT2D_RENDERER_LABELS[value],
+      disabled: value === "msdf" && msdfStatus !== "ready",
+    })),
+    description: msdfStatus === "ready" ? `${text2dMsdfDescription(msdfStatus)}${msdfStyleNote}` : msdfStyleNote.trim() || undefined,
+    // Why MSDF is unavailable stays visible: the Font needs an atlas first.
+    status: msdfStatus === "ready" ? undefined : text2dMsdfDescription(msdfStatus),
+    onChange: (next) => {
+      const pair = Boolean(
+        parsed.fontAssetGuid &&
+          context.fontHasMsdfJson?.(parsed.fontAssetGuid) &&
+          context.fontHasMsdfPng?.(parsed.fontAssetGuid),
+      );
+      update("renderer", resolveText2DRenderer(next, pair));
+    },
+  };
+  const sizeRow: PropertyRow = pixelSize > 0
+    ? {
+      kind: "number",
+      id: rowId(actorId, component.id, "pixelScale"),
+      label: "Scale",
+      value: parsed.pixelScale,
+      defaultValue: 1,
+      min: 1,
+      max: MAX_TEXT2D_PIXEL_SCALE,
+      precision: 0,
+      description: "Whole multiples of the pixel font's Pixel Size, so every font pixel stays square and sharp.",
+      status: `${pixelSize * parsed.pixelScale} px`,
+      onChange: (next) => update("pixelScale", Math.min(MAX_TEXT2D_PIXEL_SCALE, Math.max(1, Math.round(next)))),
+    }
+    : sliderRow(actorId, component.id, "size", "Size", parsed.size, 1, 256, update, 1, 32);
   return [
     ...(component.classId === "2DRichTextComponent" ? richTextAppearPropertyRows(actorId, component, update) : []),
     {
@@ -179,41 +220,8 @@ export function text2DPropertyRows(
       options: [{ value: "text", label: "Text Box" }, { value: "glyph", label: "Each Glyph" }],
       onChange: (next) => update("materialUv", next),
     },
-    {
-      kind: "enum",
-      id: rowId(actorId, component.id, "renderer"),
-      label: "Renderer",
-      value: rendererValue,
-      defaultValue: "bitmap",
-      options: TEXT2D_RENDERERS.map((value) => ({
-        value,
-        label: TEXT2D_RENDERER_LABELS[value],
-        disabled: value === "msdf" && msdfStatus !== "ready",
-      })),
-      description: msdfStatus === "ready" ? `${text2dMsdfDescription(msdfStatus)}${msdfStyleNote}` : msdfStyleNote.trim() || undefined,
-      // Why MSDF is unavailable stays visible: the Font needs an atlas first.
-      status: msdfStatus === "ready" ? undefined : text2dMsdfDescription(msdfStatus),
-      onChange: (next) => {
-        const pair = Boolean(
-          parsed.fontAssetGuid &&
-            context.fontHasMsdfJson?.(parsed.fontAssetGuid) &&
-            context.fontHasMsdfPng?.(parsed.fontAssetGuid),
-        );
-        update("renderer", resolveText2DRenderer(next, pair));
-      },
-    },
-    sliderRow(
-      actorId,
-      component.id,
-      "size",
-      "Size",
-      parsed.size,
-      1,
-      256,
-      update,
-      1,
-      32,
-    ),
+    ...(pixelSize > 0 ? [] : [rendererRow]),
+    sizeRow,
     {
       kind: "color",
       id: rowId(actorId, component.id, "color"),
@@ -345,6 +353,7 @@ export function text2DPropertyRows(
         "fontAssetGuid",
         "renderer",
         "size",
+        "pixelScale",
         "color",
         "outline",
         "outlineColor",

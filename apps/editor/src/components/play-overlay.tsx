@@ -173,6 +173,8 @@ export interface PlayOverlayProps {
   fontFaceEntries?: readonly FontAssetEntry[];
   fontCssStack?: string;
   fontCssStackByGuid?: ReadonlyMap<string, string>;
+  fontPixelSize?: number;
+  fontPixelSizeByGuid?: ReadonlyMap<string, number>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   /** Complex Collision meshes already cooked by source preparation. */
@@ -318,6 +320,8 @@ function PlayOverlayView({
   fontFaceEntries,
   fontCssStack,
   fontCssStackByGuid,
+  fontPixelSize,
+  fontPixelSizeByGuid,
   modelBytes,
   modelPayloads,
   complexMeshes,
@@ -670,6 +674,10 @@ function PlayOverlayView({
   fontCssStackRef.current = fontCssStack;
   const fontCssStackByGuidRef = useRef(fontCssStackByGuid);
   fontCssStackByGuidRef.current = fontCssStackByGuid;
+  const fontPixelSizeRef = useRef(fontPixelSize);
+  fontPixelSizeRef.current = fontPixelSize;
+  const fontPixelSizeByGuidRef = useRef(fontPixelSizeByGuid);
+  fontPixelSizeByGuidRef.current = fontPixelSizeByGuid;
   const modelBytesRef = useRef(modelBytes);
   modelBytesRef.current = modelBytes;
   const modelPayloadsRef = useRef(modelPayloads);
@@ -914,6 +922,8 @@ function PlayOverlayView({
           fontFaceEntries: fontFaceEntriesRef.current,
           fontCssStack: fontCssStackRef.current,
           fontCssStackByGuid: fontCssStackByGuidRef.current,
+          fontPixelSize: fontPixelSizeRef.current,
+          fontPixelSizeByGuid: fontPixelSizeByGuidRef.current,
           modelBytes: modelBytesRef.current,
           modelPayloads: modelPayloadsRef.current,
           complexMeshes: complexMeshesRef.current,

@@ -1434,6 +1434,27 @@ describe("applyPrefabPropertyDefaults", () => {
       ["fontAssetGuid", null, { renderer: "bitmap" }],
     ]);
   });
+
+  it("swaps Size and Renderer for a whole-number Scale when the Font, or the project default, is a pixel font", () => {
+    const fontPixelSize = (guid: string | null | undefined) => (guid ?? "default-ark") === "default-ark" ? 12 : guid === "ark-10" ? 10 : 0;
+    const labels = (properties: Record<string, unknown>) =>
+      rowsFor({ id: "label", classId: "2DTextComponent", properties }, { fontPixelSize }).rows.map((row) => row.label);
+    expect(labels({ fontAssetGuid: "body" })).toEqual(expect.arrayContaining(["Renderer", "Size"]));
+    expect(labels({ fontAssetGuid: "body" })).not.toContain("Scale");
+    for (const fontAssetGuid of [null, "ark-10"]) {
+      expect(labels({ fontAssetGuid })).toContain("Scale");
+      expect(labels({ fontAssetGuid })).not.toContain("Size");
+      expect(labels({ fontAssetGuid })).not.toContain("Renderer");
+    }
+    const text = rowsFor({ id: "label", classId: "2DRichTextComponent", properties: { fontAssetGuid: "ark-10", pixelScale: 3 } }, { fontPixelSize });
+    const scale = text.rows.find((row) => row.label === "Scale");
+    if (scale?.kind !== "number") throw new Error("Missing Scale row");
+    expect(scale).toMatchObject({ value: 3, min: 1, max: 64, precision: 0, defaultValue: 1, status: "30 px" });
+    scale.onChange(4.4);
+    scale.onChange(0);
+    expect(text.update.mock.calls).toEqual([["pixelScale", 4], ["pixelScale", 1]]);
+    expect(text.rows.some((row) => row.id.endsWith("-pixelScale") && row.label !== "Scale")).toBe(false);
+  });
 });
 
 it("edits slider visual asset slots independently and exposes ordered range values", () => {

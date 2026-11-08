@@ -94,6 +94,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   projectDocument: {
     settings: {
       twoD: { sortingLayers: ["Background", "Default", "UI"] },
+      fonts: { defaultFontGuid: null, globalFallback: "sans-serif" },
       gameInstanceClass: "MyGame",
       render: harness.render,
     },

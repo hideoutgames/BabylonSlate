@@ -31,7 +31,7 @@ Installed templates appear under **Installed**. To add one, choose **Add Templat
 | Location | **App Documents** (iPad, iPhone and Android) or **Projects Folder** (desktop) keeps the project in the app's own storage. **Choose Folder** asks for a folder when you choose Create. On the web, projects are stored in the browser. |
 | Resolution | The game's design size for Play and exported games. Default 1920 × 1080. |
 | Black Bars | Adds bars to keep the design size. Off, the game fills the window without stretching. |
-| Pixel Art Optimized | Off by default. Sets the project up for pixel art: **Pixel-Perfect Mode** with **Nearest Texture Filtering**, **Upscaling** set to **Pixelated**, full resolution without **Dynamic Resolution**, and no anti-aliasing. **Pixel Art Size** picks a design size of 640 × 360 or 320 × 180. With **Black Bars** off, the view extends to fill the screen instead of showing bars. You can change every one of these settings later. |
+| Pixel Art Optimized | Off by default. Sets the project up for pixel art: **Pixel-Perfect Mode** with **Nearest Texture Filtering**, **Upscaling** set to **Pixelated**, full resolution without **Dynamic Resolution**, and no anti-aliasing. It also imports the [Ark Pixel](../assets/font.md#ark-pixel) fonts and makes Ark Pixel 12px Proportional the **Default Font**, so text is pixel perfect. **Pixel Art Size** picks a design size of 640 × 360 or 320 × 180. With **Black Bars** off, the view extends to fill the screen instead of showing bars. You can change every one of these settings later. |
 
 Change the resolution later in **Project Settings > Rendering**. See [Where Projects Live](../projects/storage.md) for more on storage.
 

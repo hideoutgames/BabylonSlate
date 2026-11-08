@@ -433,6 +433,188 @@ export function packBitmapGlyphAtlas(
   return { width: atlasW, height: atlasH, pixels, uvs, workingBytes: plan.workingBytes };
 }
 
+/**
+ * A pixel font's glyph at its native size: binary coverage (each texel fully drawn or empty) on a whole-pixel
+ * baseline, so it stays sharp when its quad is a whole multiple of the cell. `originX` is the pen's column in the
+ * cell and `advance` the font's own pen advance, both in native pixels; every cell of a font shares its height and
+ * baseline row, so glyphs line up without per-glyph offsets.
+ */
+export type PixelGlyphCell = BitmapGlyphCell & { originX: number; advance: number };
+
+/** Coverage (alpha) at or above this draws a pixel-font texel; anything less leaves it empty. */
+export const PIXEL_FONT_COVERAGE_CUTOFF = 128;
+
+/** A pixel font's line box in native pixels: whole-pixel ascent and descent from the font's own metrics. */
+function pixelLineMetrics(ctx: CanvasRenderingContext2D, pixelSize: number): { ascent: number; descent: number } {
+  const reference = ctx.measureText("Hg");
+  return {
+    ascent: Math.ceil(reference.fontBoundingBoxAscent > 0 ? reference.fontBoundingBoxAscent : pixelSize * 0.8),
+    descent: Math.ceil(reference.fontBoundingBoxDescent > 0 ? reference.fontBoundingBoxDescent : pixelSize * 0.2),
+  };
+}
+
+/** Native-pixel metrics of one pixel-font glyph, before it is drawn. */
+type PixelGlyphLayout = { width: number; height: number; originX: number; baseline: number; advance: number; outline: number };
+
+/** The glyph cache key of a pixel-font glyph: its native size and colours, never its on-screen scale. */
+export function pixelGlyphKey(ch: string, style: RichTextStyle, stack: string, pixelSize: number): string {
+  return `px|${bitmapGlyphKey(ch, { ...style, size: pixelSize, outline: Math.max(0, Math.round(style.outline / pixelScaleOf(style, pixelSize))) }, stack)}`;
+}
+
+/** A span's whole-number scale of a pixel font: its size in multiples of the native size, at least 1. */
+export function pixelScaleOf(style: RichTextStyle, pixelSize: number): number {
+  return Math.max(1, Math.round(style.size / Math.max(1, pixelSize)));
+}
+
+function pixelGlyphLayout(ctx: CanvasRenderingContext2D, ch: string, style: RichTextStyle, pixelSize: number): PixelGlyphLayout {
+  const outline = Math.max(0, Math.round(style.outline / pixelScaleOf(style, pixelSize)));
+  const { ascent, descent } = pixelLineMetrics(ctx, pixelSize);
+  const measured = ctx.measureText(ch);
+  const advance = Math.max(0, Math.round(measured.width));
+  const left = Math.max(0, Math.ceil(measured.actualBoundingBoxLeft || 0));
+  const right = Math.max(advance, Math.ceil(measured.actualBoundingBoxRight || 0));
+  const pad = outline + 1;
+  return { width: pad + left + right + pad, height: pad + ascent + descent + pad, originX: pad + left, baseline: pad + ascent, advance, outline };
+}
+
+function pixelCanvas(ch: string, style: RichTextStyle, stack: string, pixelSize: number, scratch?: BitmapCanvasScratch) {
+  const target = glyphCanvas(scratch);
+  if (!target) return null;
+  target.ctx.font = cssFontForText2D({ ...style, size: pixelSize }, stack);
+  target.ctx.textBaseline = "alphabetic";
+  target.ctx.textAlign = "left";
+  return { ...target, layout: pixelGlyphLayout(target.ctx, ch, style, pixelSize) };
+}
+
+/** Measure a pixel-font glyph's cell at its native size; null without a 2D canvas. */
+export function measurePixelGlyph(
+  ch: string,
+  style: RichTextStyle,
+  stack: string,
+  pixelSize: number,
+  scratch?: BitmapCanvasScratch,
+): (BitmapGlyphMeasurement & { originX: number; advance: number }) | null {
+  const target = pixelCanvas(ch, style, stack, pixelSize, scratch);
+  if (!target) return null;
+  const { width, height, originX, advance } = target.layout;
+  return { key: pixelGlyphKey(ch, style, stack, pixelSize), width, height, layoutWidth: width, layoutHeight: height, originX, advance };
+}
+
+/**
+ * Draw a pixel-font glyph at its native size: the canvas's coverage is cut at half, so every texel is the fill
+ * colour or empty, and an outline is the fill's square dilation by its whole-pixel width in the outline colour.
+ * Null without a 2D canvas (the caller then draws the bundled 5×7 face).
+ */
+export function rasterizePixelGlyph(
+  ch: string,
+  style: RichTextStyle,
+  stack: string,
+  pixelSize: number,
+  limits: BitmapAllocationLimits = defaultLimits,
+  scratch?: BitmapCanvasScratch,
+): PixelGlyphCell | null {
+  const target = pixelCanvas(ch, style, stack, pixelSize, scratch);
+  if (!target) return null;
+  const { canvas, ctx, layout } = target;
+  const { width, height } = layout;
+  checkedCellBytes(width, height, limits);
+  canvas.width = width;
+  canvas.height = height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.font = cssFontForText2D({ ...style, size: pixelSize }, stack);
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#fff";
+  ctx.fillText(ch, layout.originX, layout.baseline);
+  const coverage = ctx.getImageData(0, 0, width, height).data;
+  const fill = new Uint8Array(width * height);
+  for (let index = 0; index < fill.length; index++) fill[index] = coverage[index * 4 + 3]! >= PIXEL_FONT_COVERAGE_CUTOFF ? 1 : 0;
+  const outline = layout.outline > 0 ? dilateSquare(fill, width, height, layout.outline) : null;
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  let minY = height;
+  let maxY = -1;
+  for (let index = 0; index < fill.length; index++) {
+    const color = fill[index] ? style.color : outline?.[index] ? style.outlineColor : null;
+    if (!color) continue;
+    pixels[index * 4] = channel(color, 0);
+    pixels[index * 4 + 1] = channel(color, 1);
+    pixels[index * 4 + 2] = channel(color, 2);
+    pixels[index * 4 + 3] = 255;
+    const row = Math.floor(index / width);
+    minY = Math.min(minY, row);
+    maxY = Math.max(maxY, row);
+  }
+  return {
+    key: pixelGlyphKey(ch, style, stack, pixelSize),
+    width,
+    height,
+    pixels,
+    originX: layout.originX,
+    advance: layout.advance,
+    ...(maxY >= 0 ? { inkBounds: { top: height / 2 - minY, bottom: height / 2 - maxY - 1 } } : {}),
+  };
+}
+
+/** A line of pixel-font text in native pixels: `alpha` holds one byte per texel, 255 drawn or 0 empty. */
+export type PixelFontLine = { width: number; height: number; baseline: number; alpha: Uint8Array };
+
+/**
+ * Draw a line of pixel-font text as 2D Text draws its glyphs: at the native Pixel Size (regular weight and
+ * style), on a whole-pixel alphabetic baseline, with coverage cut to drawn or empty. The Font editor's preview
+ * shows it scaled by whole device pixels. Null without a 2D canvas; throws `BitmapAllocationLimitError` for a
+ * line past `limits`.
+ */
+export function rasterizePixelFontLine(
+  text: string,
+  stack: string,
+  pixelSize: number,
+  limits: BitmapAllocationLimits = defaultLimits,
+  scratch?: BitmapCanvasScratch,
+): PixelFontLine | null {
+  if (!(pixelSize > 0)) return null;
+  const target = glyphCanvas(scratch);
+  if (!target) return null;
+  const { canvas, ctx } = target;
+  const font = cssFontForText2D({
+    bold: false, italic: false, underline: false, color: [1, 1, 1], size: pixelSize, outline: 0, outlineColor: [0, 0, 0],
+  }, stack);
+  ctx.font = font;
+  const { ascent, descent } = pixelLineMetrics(ctx, pixelSize);
+  const measured = ctx.measureText(text);
+  const left = Math.max(0, Math.ceil(measured.actualBoundingBoxLeft || 0));
+  const right = Math.max(Math.round(measured.width), Math.ceil(measured.actualBoundingBoxRight || 0));
+  const width = Math.max(1, left + right);
+  const height = Math.max(1, ascent + descent);
+  checkedCellBytes(width, height, limits);
+  canvas.width = width;
+  canvas.height = height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.font = font;
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#fff";
+  ctx.fillText(text, left, ascent);
+  const coverage = ctx.getImageData(0, 0, width, height).data;
+  const alpha = new Uint8Array(width * height);
+  for (let index = 0; index < alpha.length; index++) alpha[index] = coverage[index * 4 + 3]! >= PIXEL_FONT_COVERAGE_CUTOFF ? 255 : 0;
+  return { width, height, baseline: ascent, alpha };
+}
+
+/** A 2D Text's font: its CSS stack, and its Pixel Size when the Font is a pixel font (0 otherwise). */
+export function resolveText2DFont(
+  fontGuid: string | null,
+  assets?: {
+    fontCssStack?: string;
+    fontCssStackByGuid?: ReadonlyMap<string, string>;
+    fontPixelSize?: number;
+    fontPixelSizeByGuid?: ReadonlyMap<string, number>;
+  },
+): { stack: string; pixelSize: number } {
+  const named = fontGuid ? assets?.fontCssStackByGuid?.get(fontGuid) : undefined;
+  const pixelSize = named?.trim() ? assets?.fontPixelSizeByGuid?.get(fontGuid!) ?? 0 : assets?.fontPixelSize ?? 0;
+  return { stack: resolveText2DFontStack(fontGuid, assets), pixelSize: Number.isInteger(pixelSize) && pixelSize > 0 ? pixelSize : 0 };
+}
+
 export function resolveText2DFontStack(
   fontGuid: string | null,
   assets?: {

@@ -431,6 +431,7 @@ export async function collectAndExportGame(
     if (bytes) {
       const payload = params.payloadByGuid?.(guid);
       const textureSize = texturePixelSizeFromPayload(payload);
+      const font = asset.type === "Font" ? normalizeFontPayload(payload, asset.name) : null;
       exportAssets.push({
         guid,
         assetPath: asset.path,
@@ -449,12 +450,9 @@ export async function collectAndExportGame(
           closure.value.bySceneGuid,
         ),
         bytes,
-        name:
-          asset.type === "Font"
-            ? normalizeFontPayload(params.payloadByGuid?.(guid), asset.name)
-                .family
-            : asset.name,
+        name: font ? font.family : asset.name,
         ...(asset.type === "Texture" && textureSize ? textureSize : {}),
+        ...(font && font.pixelSize > 0 ? { pixelSize: font.pixelSize } : {}),
       });
     }
   }

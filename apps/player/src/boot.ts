@@ -216,7 +216,8 @@ function initializePlayer(
   };
   const fontIds = new Set(manifest.assets.filter(entry => entry.type === "Font").map(entry => entry.guid));
   const fontFallbacks = new Map(manifest.assets.filter(entry => entry.type === "Font").map(entry => [entry.guid, entry.requiredDependencies?.filter(id => fontIds.has(id)) ?? []]));
-  const fontCss = packedFontCssStacks(game.fontFamilies, manifest.globalFallback, manifest.defaultFontGuid, fontFallbacks);
+  const fontPixelSizes = new Map(manifest.assets.flatMap(entry => entry.type === "Font" && (entry.pixelSize ?? 0) > 0 ? [[entry.guid, entry.pixelSize!] as const] : []));
+  const fontCss = packedFontCssStacks(game.fontFamilies, manifest.globalFallback, manifest.defaultFontGuid, fontFallbacks, fontPixelSizes);
   const installs = createPlayerSourceInstalls(game);
   own(() => installs.dispose());
 
@@ -285,6 +286,8 @@ function initializePlayer(
     fontFaceEntries: [...game.fontBytes].map(([guid, bytes]) => ({ guid, family: game.fontFamilies.get(guid) ?? guid, bytes: bytes.slice().buffer })),
     fontCssStack: fontCss.fontCssStack,
     fontCssStackByGuid: fontCss.fontCssStackByGuid,
+    fontPixelSize: fontCss.fontPixelSize,
+    fontPixelSizeByGuid: fontCss.fontPixelSizeByGuid,
     modelBytes: game.modelBytes,
     modelSources: installs.models(game.modelBytes),
     modelPayloads: game.modelPayloads,
@@ -811,7 +814,7 @@ function initializePlayer(
   };
   const renderSources = (sources: GameSourceContent) => {
     const prepared = packedContentFromGame(sources);
-    const fonts = packedFontCssStacks(sources.fontFamilies, manifest.globalFallback, manifest.defaultFontGuid, fontFallbacks);
+    const fonts = packedFontCssStacks(sources.fontFamilies, manifest.globalFallback, manifest.defaultFontGuid, fontFallbacks, fontPixelSizes);
     return {
       assets: {
         textureBytes: installs.textures(sources.textureBytes), areaEmissions: sources.areaEmissions,
@@ -823,6 +826,7 @@ function initializePlayer(
         texturePixelSizes: prepared.texturePixelSizes, pixelsPerUnit: prepared.pixelsPerUnit,
         fontFacetypeBytes: sources.fontFacetypeBytes, fontMsdfJson: sources.fontMsdfJson, fontMsdfPng: installs.msdfAtlases(sources.fontMsdfPng),
         fontCssStack: fonts.fontCssStack, fontCssStackByGuid: fonts.fontCssStackByGuid,
+        fontPixelSize: fonts.fontPixelSize, fontPixelSizeByGuid: fonts.fontPixelSizeByGuid,
       },
       materialDocuments: prepared.materialDocuments, materialFunctions: prepared.materialFunctions,
       audioLibrary: prepared.audioLibrary, particleLibrary: prepared.particleLibrary,

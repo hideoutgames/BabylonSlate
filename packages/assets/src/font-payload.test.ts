@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   createFontPayload,
+  MAX_FONT_PIXEL_SIZE,
   mergeFontAttachPayload,
   normalizeFontPayload,
+  normalizeFontPixelSize,
 } from "./font-payload";
 
 describe("font payload", () => {
@@ -48,5 +50,24 @@ describe("font payload", () => {
       msdfPng: false,
       msdf: false,
     });
+  });
+
+  it("keeps Pixel Size a whole number of pixels, 0 for an ordinary font", () => {
+    expect(createFontPayload("Ui").pixelSize).toBe(0);
+    expect(normalizeFontPayload({ pixelSize: 12 }, "Ark").pixelSize).toBe(12);
+    expect(normalizeFontPixelSize(9.6)).toBe(10);
+    expect(normalizeFontPixelSize(0.4)).toBe(0);
+    expect(normalizeFontPixelSize(-3)).toBe(0);
+    expect(normalizeFontPixelSize("12")).toBe(0);
+    expect(normalizeFontPixelSize(1000)).toBe(MAX_FONT_PIXEL_SIZE);
+  });
+
+  it("keeps the open Font's Pixel Size when attaching a representation", () => {
+    const merged = mergeFontAttachPayload(
+      createFontPayload("Ark", { pixelSize: 10 }),
+      createFontPayload("Ark", { representations: { msdfJson: true } }),
+      "Ark",
+    );
+    expect(merged.pixelSize).toBe(10);
   });
 });

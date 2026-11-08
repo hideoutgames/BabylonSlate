@@ -762,6 +762,7 @@ function text2dAssignPayload(
       fontAssetGuid:
         component.getVariable("fontAssetGuid") ?? component.assetGuid,
       size: component.getVariable("size"),
+      pixelScale: component.getVariable("pixelScale"),
       color: component.getVariable("color"),
       renderer: component.getVariable("renderer"),
       outline: component.getVariable("outline"),
@@ -787,6 +788,7 @@ function text2dAssignPayload(
     materialUv: parsed.materialUv,
     fontAssetGuid: parsed.fontAssetGuid,
     size: parsed.size,
+    pixelScale: parsed.pixelScale,
     color: parsed.color,
     renderer: parsed.renderer,
     outline: parsed.outline,

@@ -20,12 +20,13 @@ export interface SceneSourceAssets {
 const assetMaps = ["renderTargets", "renderTargetTextures", "waters", "textureBytes", "areaEmissions",
   "texturePixelSizes", "spritePayloads", "spriteAnimations", "tilemaps", "tilesets", "modelBytes", "modelSources",
   "modelPayloads", "modelClipAnimationGuids", "retargetAnimationLoads", "fontFacetypeBytes",
-  "fontMsdfJson", "fontMsdfPng", "fontCssStackByGuid"] as const satisfies readonly (keyof MeshAssetContext)[];
+  "fontMsdfJson", "fontMsdfPng", "fontCssStackByGuid", "fontPixelSizeByGuid"] as const satisfies readonly (keyof MeshAssetContext)[];
 
 export function captureMeshSourceAssets(source: MeshAssetContext): MeshAssetContext {
   const assets: MeshAssetContext = {
     resourceCache: source.resourceCache, pixelsPerUnit: source.pixelsPerUnit, sortingLayers: source.sortingLayers,
     fontCssStack: source.fontCssStack,
+    fontPixelSize: source.fontPixelSize,
   };
   const target = assets as Record<string, unknown>;
   for (const key of assetMaps) {

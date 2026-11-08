@@ -27,6 +27,8 @@ export type ComponentPropertyContext = {
   fontHasFacetype?: (guid: string | null | undefined) => boolean;
   fontHasMsdfJson?: (guid: string | null | undefined) => boolean;
   fontHasMsdfPng?: (guid: string | null | undefined) => boolean;
+  /** The Pixel Size 2D Text draws a Font with (the project default Font's for an empty guid); 0 for an ordinary font. */
+  fontPixelSize?: (guid: string | null | undefined) => number;
   physicsWorld: "3d" | "2d";
   onPickAsset: (request: AssetPickRequest) => void;
   actorLabel?: (actorId: string) => string | undefined;

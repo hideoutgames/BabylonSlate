@@ -1,11 +1,12 @@
 import { useMemo } from "react";
 import { isEditorGraphHost } from "@haptic/core";
-import { useRegistryState } from "../context/document-context";
+import { useProjectState, useRegistryState } from "../context/document-context";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import {
   fontAssetHasFacetype,
   fontAssetHasMsdfJson,
   fontAssetHasMsdfPng,
+  textFontPixelSize,
 } from "../lib/play-fonts";
 import { collectEnumMemberNames } from "../lib/graph-inspector";
 import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
@@ -29,6 +30,7 @@ const DATA_KINDS = ["data-tree"] as const;
  */
 export function useInspectorCatalogs(docPath: string | undefined, docKind?: string) {
   const { assetRegistry, registryEpoch } = useRegistryState();
+  const { projectDocument } = useProjectState();
   const indexed = useMemo(() => {
     void registryEpoch;
     return docPath === undefined ? undefined : assetRegistry?.getByPath(docPath);
@@ -141,6 +143,8 @@ export function useInspectorCatalogs(docPath: string | undefined, docKind?: stri
       assetRegistry?.getByGuid?.(guid)?.header.payload,
     );
   };
+  const fontPixelSize = (guid: string | null | undefined) =>
+    textFontPixelSize(guid, projectDocument?.settings.fonts.defaultFontGuid, (target) => assetRegistry?.getByGuid?.(target)?.header.payload);
   return {
     indexed,
     parentClass,
@@ -160,6 +164,7 @@ export function useInspectorCatalogs(docPath: string | undefined, docKind?: stri
     fontHasFacetype,
     fontHasMsdfJson,
     fontHasMsdfPng,
+    fontPixelSize,
   };
 }
 

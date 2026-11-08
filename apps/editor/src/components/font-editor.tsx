@@ -32,12 +32,14 @@ import { Input } from "@haptic/ui/components/input";
 import { Separator } from "@haptic/ui/components/separator";
 import { cn } from "@haptic/ui/lib/utils";
 import {
+  MAX_FONT_PIXEL_SIZE,
   fontFamilyFromRepresentationFileName,
   glyphsFallingToFallback,
   groupMsdfImportBatch,
   mergeFontAttachPayload,
   msdfAtlasPickError,
   normalizeFontPayload,
+  normalizeFontPixelSize,
 } from "@haptic/assets";
 import { FontRegistry } from "@haptic/render";
 import { pickImportFiles } from "@haptic/vfs";
@@ -48,7 +50,13 @@ import {
   useRegistryState,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
+import { familyFromAssetPayload, fontEditorStack, textDrawsSame } from "../lib/font-preview";
+import {
+  MAX_PIXEL_PREVIEW_SCALE,
+  PIXEL_PREVIEW_WATERFALL_SCALES,
+  pixelPreviewGlyphScale,
+} from "../lib/pixel-font-preview";
+import { PixelFontText } from "./pixel-font-text";
 
 const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 const WATERFALL_SIZES = [12, 16, 24, 36, 48] as const;
@@ -94,6 +102,8 @@ export function FontDetailsPanel(_props: IDockviewPanelProps) {
 /**
  * The family loaded from its source chunk, set in a sample line, a size
  * waterfall and a glyph sheet, with the project fallback stack behind it.
+ * A pixel font (Pixel Size above 0) previews as 2D Text draws it: every pixel
+ * drawn or empty, at whole Scales snapped to whole device pixels.
  */
 export function FontPreview({ path, payload }: { path: string; payload: Record<string, unknown> }) {
   const { readAssetChunk } = useDocumentActions();
@@ -102,6 +112,8 @@ export function FontPreview({ path, payload }: { path: string; payload: Record<s
   const font = normalizeFontPayload(payload, "Custom Font");
   const [sample, setSample] = useState("The quick brown fox");
   const [size, setSize] = useState(48);
+  const [scale, setScale] = useState(4);
+  const pixelSize = font.pixelSize;
   const [fontsReady, setFontsReady] = useState(false);
   const [fontError, setFontError] = useState<string | null>(null);
   const [fontAttempt, setFontAttempt] = useState(0);
@@ -152,7 +164,8 @@ export function FontPreview({ path, payload }: { path: string; payload: Record<s
     // A large size keeps close advances apart.
     ctx.font = `64px ${measureStack}`;
     return ctx.measureText(text).width;
-  });
+    // A width tie (full-width CJK) is settled by what the stacks paint; without a canvas it counts as fallback.
+  }, undefined, (text, stackA, stackB) => textDrawsSame(text, stackA, stackB) ?? true);
   const shown = { fontFamily: stack, fontWeight: font.weight, fontStyle: font.style };
 
   return (
@@ -166,18 +179,39 @@ export function FontPreview({ path, payload }: { path: string; payload: Record<s
           onChange={(event) => setSample(event.target.value)}
         />
         <Separator orientation="vertical" className="my-1" />
-        <span className="text-xs text-muted-foreground">Size</span>
-        <NumberField
-          integer
-          aria-label="Sample Size"
-          unit="px"
-          data-testid="font-sample-size"
-          className={cn("h-7 w-16 text-xs", TOOL_ITEM)}
-          min={6}
-          max={200}
-          value={size}
-          onChange={setSize}
-        />
+        {pixelSize > 0 ? (
+          <>
+            <span className="text-xs text-muted-foreground">Scale</span>
+            <NumberField
+              integer
+              aria-label="Sample Scale"
+              data-testid="font-sample-scale"
+              className={cn("h-7 w-14 text-xs", TOOL_ITEM)}
+              min={1}
+              max={MAX_PIXEL_PREVIEW_SCALE}
+              value={scale}
+              onChange={setScale}
+            />
+            <span className="text-xs tabular-nums text-muted-foreground" data-testid="font-sample-pixel-size">
+              {pixelSize * scale} px
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="text-xs text-muted-foreground">Size</span>
+            <NumberField
+              integer
+              aria-label="Sample Size"
+              unit="px"
+              data-testid="font-sample-size"
+              className={cn("h-7 w-16 text-xs", TOOL_ITEM)}
+              min={6}
+              max={200}
+              value={size}
+              onChange={setSize}
+            />
+          </>
+        )}
         <span className="ml-auto min-w-0 truncate text-xs text-muted-foreground" data-testid="font-fallback-glyphs">
           {fontError
             ? null
@@ -199,23 +233,44 @@ export function FontPreview({ path, payload }: { path: string; payload: Record<s
           </Alert>
         ) : null}
         <section className="border-b border-border px-4 py-5">
-          <p
-            className="break-words leading-tight text-foreground"
-            data-testid="font-sample-preview"
-            data-fonts-ready={fontsReady ? "true" : "false"}
-            data-font-stack={stack}
-            style={{ ...shown, fontSize: size }}
-          >
-            <SelectableText>{sample}</SelectableText>
-          </p>
+          {pixelSize > 0 ? (
+            <div
+              className="overflow-hidden text-foreground"
+              data-testid="font-sample-preview"
+              data-fonts-ready={fontsReady ? "true" : "false"}
+              data-font-stack={stack}
+              data-pixel-size={pixelSize}
+            >
+              <PixelFontText text={sample} stack={stack} pixelSize={pixelSize} scale={scale} ready={fontsReady} />
+            </div>
+          ) : (
+            <p
+              className="break-words leading-tight text-foreground"
+              data-testid="font-sample-preview"
+              data-fonts-ready={fontsReady ? "true" : "false"}
+              data-font-stack={stack}
+              style={{ ...shown, fontSize: size }}
+            >
+              <SelectableText>{sample}</SelectableText>
+            </p>
+          )}
         </section>
         <section className="flex flex-col border-b border-border py-2" data-testid="font-waterfall">
-          {WATERFALL_SIZES.map((px) => (
-            <div key={px} className="flex items-baseline gap-3 px-4 py-1">
-              <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{px}</span>
-              <span className="min-w-0 truncate text-foreground" style={{ ...shown, fontSize: px }}>{sample || font.family}</span>
-            </div>
-          ))}
+          {pixelSize > 0
+            ? PIXEL_PREVIEW_WATERFALL_SCALES.map((rowScale) => (
+              <div key={rowScale} className="flex items-center gap-3 px-4 py-1" data-testid={`font-waterfall-scale-${rowScale}`}>
+                <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{pixelSize * rowScale}</span>
+                <div className="min-w-0 overflow-hidden text-foreground">
+                  <PixelFontText text={sample || font.family} stack={stack} pixelSize={pixelSize} scale={rowScale} ready={fontsReady} />
+                </div>
+              </div>
+            ))
+            : WATERFALL_SIZES.map((px) => (
+              <div key={px} className="flex items-baseline gap-3 px-4 py-1">
+                <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{px}</span>
+                <span className="min-w-0 truncate text-foreground" style={{ ...shown, fontSize: px }}>{sample || font.family}</span>
+              </div>
+            ))}
         </section>
         <section className="px-4 py-3" data-testid="font-glyphs">
           <div className="mb-2 text-xs font-medium text-muted-foreground">Glyphs</div>
@@ -224,9 +279,11 @@ export function FontPreview({ path, payload }: { path: string; payload: Record<s
               <span
                 key={`${glyph}-${index}`}
                 className="flex aspect-square items-center justify-center border-b border-r border-border bg-background text-xl text-foreground"
-                style={shown}
+                style={pixelSize > 0 ? undefined : shown}
               >
-                {glyph}
+                {pixelSize > 0 ? (
+                  <PixelFontText text={glyph} stack={stack} pixelSize={pixelSize} scale={pixelPreviewGlyphScale(pixelSize)} ready={fontsReady} />
+                ) : glyph}
               </span>
             ))}
           </div>
@@ -354,6 +411,19 @@ export function FontInspector({
             label: "Family",
             value: font.family,
             onChange: (value) => onChange({ ...font, family: value }),
+          },
+          {
+            id: "pixelSize",
+            kind: "number",
+            label: "Pixel Size",
+            unit: "px",
+            value: font.pixelSize,
+            defaultValue: 0,
+            min: 0,
+            max: MAX_FONT_PIXEL_SIZE,
+            precision: 0,
+            description: "Above 0, 2D Text draws this font pixel perfect at whole multiples of this em height.",
+            onChange: (value) => onChange({ ...font, pixelSize: normalizeFontPixelSize(value) }),
           },
         ]}
       />

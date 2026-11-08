@@ -350,6 +350,8 @@ export function useViewportSceneLoad({
           fontMsdfPng: msdf.png,
           fontCssStack: fontCss.fontCssStack,
           fontCssStackByGuid: fontCss.fontCssStackByGuid,
+          fontPixelSize: fontCss.fontPixelSize,
+          fontPixelSizeByGuid: fontCss.fontPixelSizeByGuid,
           modelBytes,
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,

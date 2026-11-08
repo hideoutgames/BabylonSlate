@@ -67,6 +67,8 @@ export type Text2DFontStackSource = {
   guid: string;
   family: string;
   fallbackGuids?: readonly string[];
+  /** A pixel font's Pixel Size; 0 or absent for an ordinary font. */
+  pixelSize?: number;
 };
 
 /** Project default + per-Font CSS stacks for Bitmap overlay 2D Text. */
@@ -74,7 +76,7 @@ export function compileText2DFontStacks(options: {
   fonts: readonly Text2DFontStackSource[];
   defaultFontGuid?: string | null;
   globalFallback?: string;
-}): { defaultStack: string; byGuid: Map<string, string> } {
+}): { defaultStack: string; byGuid: Map<string, string>; defaultPixelSize: number; pixelSizeByGuid: Map<string, number> } {
   const familyByGuid = new Map(
     options.fonts.map((font) => [font.guid, font.family] as const),
   );
@@ -103,15 +105,24 @@ export function compileText2DFontStacks(options: {
       }),
     );
   }
-  return { defaultStack, byGuid };
+  const pixelSizeByGuid = new Map<string, number>();
+  for (const font of options.fonts) if (font.pixelSize && font.pixelSize > 0) pixelSizeByGuid.set(font.guid, font.pixelSize);
+  const defaultPixelSize = options.defaultFontGuid ? pixelSizeByGuid.get(options.defaultFontGuid) ?? 0 : 0;
+  return { defaultStack, byGuid, defaultPixelSize, pixelSizeByGuid };
 }
 
-/** Characters the custom family does not draw, judged by their advance under two different generic tails. */
+/**
+ * Characters the custom family does not draw, judged by their advance under two different generic tails. When the
+ * generics share a character's advance and the custom face matches it too (full-width CJK is one em in nearly every
+ * font), widths cannot tell, so `drawsSame` compares what the custom stack and the generic alone paint; without it
+ * such a character counts as falling back.
+ */
 export function glyphsFallingToFallback(
   sample: string,
   customFamily: string,
   measure: (text: string, fontStack: string) => number,
   genericFallback = "sans-serif",
+  drawsSame?: (text: string, stackA: string, stackB: string) => boolean,
 ): string[] {
   // A glyph the custom face draws measures the same whatever generic follows
   // it; a missing one takes on the generic's width. Two generics with
@@ -129,7 +140,7 @@ export function glyphsFallingToFallback(
     const generics = Math.abs(genericOnly - measure(char, contrast)) >= 0.5;
     const falls = generics
       ? Math.abs(withCustom - measure(char, contrastStack)) >= 0.5
-      : Math.abs(withCustom - genericOnly) < 0.5;
+      : Math.abs(withCustom - genericOnly) < 0.5 && (drawsSame?.(char, customStack, genericFallback) ?? true);
     if (falls) flagged.push(char);
   }
   return flagged;

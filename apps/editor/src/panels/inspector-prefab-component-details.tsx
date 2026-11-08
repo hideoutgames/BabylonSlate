@@ -70,6 +70,7 @@ export function PrefabComponentDetails({
   fontHasFacetype,
   fontHasMsdfJson,
   fontHasMsdfPng,
+  fontPixelSize,
   onUpdate,
   onUpdateTransform,
 }: {
@@ -95,6 +96,7 @@ export function PrefabComponentDetails({
   fontHasFacetype?: (guid: string | null | undefined) => boolean;
   fontHasMsdfJson?: (guid: string | null | undefined) => boolean;
   fontHasMsdfPng?: (guid: string | null | undefined) => boolean;
+  fontPixelSize?: (guid: string | null | undefined) => number;
   onUpdate: ComponentPropertyUpdate;
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
@@ -167,6 +169,7 @@ export function PrefabComponentDetails({
             fontHasFacetype,
             fontHasMsdfJson,
             fontHasMsdfPng,
+            fontPixelSize,
             physicsWorld,
             onPickAsset: setAssetPick,
             areaEmissionStatus,

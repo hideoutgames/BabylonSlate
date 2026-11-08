@@ -30,7 +30,7 @@ Tags use square brackets and can nest. Close them with the same name, such as `[
 | --- | --- |
 | `[b]`, `[i]`, `[u]` | Bold, italic, underline. |
 | `[color=red]` | Colour, by name (red, orange, yellow, green, blue, purple, white, black and other basic colours) or hex such as `#ff8800`. |
-| `[size=48]` | Letter size in pixels. |
+| `[size=48]` | Letter size in pixels. With a pixel font, it rounds to the nearest whole multiple of the font's Pixel Size. |
 | `[outline=2]`, `[outline-color=black]` | Outline width and colour. `[outline]` alone keeps the **Outline** setting, or uses 1 when that is 0. |
 | `[img=… size=32]` | An inline image from a Texture. In the **Content Browser**, choose **Copy Asset Reference** on the Texture and paste the value after `img=`. Size is optional. |
 | `[shake=1]` | Jitters each letter. The number is the strength. |

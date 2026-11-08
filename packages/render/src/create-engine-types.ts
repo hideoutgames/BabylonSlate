@@ -413,6 +413,10 @@ export interface CreateEngineOptions {
   fontCssStack?: string;
   /** Per-Font compiled CSS stacks for Bitmap 2D Text. */
   fontCssStackByGuid?: ReadonlyMap<string, string>;
+  /** The project default Font's Pixel Size (0 when it is no pixel font), for 2D Text with no Font picked. */
+  fontPixelSize?: number;
+  /** Each pixel Font's Pixel Size; a Font missing here is no pixel font. */
+  fontPixelSizeByGuid?: ReadonlyMap<string, number>;
   /** FontFace source bytes for Bitmap 2D Text. */
   fontFaceEntries?: readonly FontAssetEntry[];
   /** Model source bytes keyed by Model asset guid. */

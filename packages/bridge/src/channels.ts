@@ -765,6 +765,8 @@ export type CommandMessage =
           materialGuid?: string | null;
           materialUv?: "text" | "glyph";
           size: number;
+          /** A pixel font's whole-number Scale. */
+          pixelScale?: number;
           color: [number, number, number];
           fontAssetGuid: string | null;
           renderer: "bitmap" | "msdf";
@@ -812,6 +814,8 @@ export type CommandMessage =
         materialGuid?: string | null;
         materialUv?: "text" | "glyph";
         size: number;
+        /** A pixel font's whole-number Scale. */
+        pixelScale?: number;
         color: [number, number, number];
         fontAssetGuid: string | null;
         renderer: "bitmap" | "msdf";

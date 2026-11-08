@@ -29,6 +29,15 @@ describe("2DTextComponent helpers", () => {
     expect(parseText2DProperties({ materialGuid: " text-material ", materialUv: "glyph" })).toMatchObject({ materialGuid: "text-material", materialUv: "glyph" });
   });
 
+  it("keeps a pixel font's Scale a whole number from 1 to 64", () => {
+    expect(parseText2DProperties({}).pixelScale).toBe(1);
+    expect(parseText2DProperties({ pixelScale: 2.6 }).pixelScale).toBe(3);
+    expect(parseText2DProperties({ pixelScale: 0 }).pixelScale).toBe(1);
+    expect(parseText2DProperties({ pixelScale: 500 }).pixelScale).toBe(64);
+    expect(parseText2DProperties({ pixelScale: "2" }).pixelScale).toBe(1);
+    expect(createText2DComponent("text").properties.pixelScale).toBe(1);
+  });
+
   it("collects Font and inline image guids from overlay text components", () => {
     const scene = createDefaultScene();
     scene.actors.push(

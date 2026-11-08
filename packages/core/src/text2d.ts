@@ -37,6 +37,9 @@ export const TEXT2D_COMPONENT_CLASS_IDS = [
   "2DRichTextComponent",
 ] as const;
 
+/** The largest Scale a pixel-font 2D Text takes. */
+export const MAX_TEXT2D_PIXEL_SCALE = 64;
+
 export type Text2DProperties = Text2DAppearProperties & {
   text: string;
   /** Only Materials with the Text domain are accepted. */
@@ -44,6 +47,8 @@ export type Text2DProperties = Text2DAppearProperties & {
   materialUv: "text" | "glyph";
   fontAssetGuid: string | null;
   size: number;
+  /** With a pixel font (a Font with a Pixel Size): the whole-number multiple of that size the text draws at; Size is unused. */
+  pixelScale: number;
   color: Rgb;
   renderer: Text2DRenderer;
   outline: number;
@@ -199,6 +204,9 @@ export function parseText2DProperties(
         ? source.fontAssetGuid.trim()
         : null,
     size,
+    pixelScale: typeof source.pixelScale === "number" && Number.isFinite(source.pixelScale)
+      ? Math.min(MAX_TEXT2D_PIXEL_SCALE, Math.max(1, Math.round(source.pixelScale)))
+      : 1,
     color: parseRgb(source.color, DEFAULT_TEXT2D_COLOR),
     renderer: parseText2DRenderer(source.renderer),
     outline,
@@ -223,6 +231,7 @@ function componentProperties(rich: boolean): Record<string, unknown> {
     materialUv: parsed.materialUv,
     fontAssetGuid: parsed.fontAssetGuid,
     size: parsed.size,
+    pixelScale: parsed.pixelScale,
     color: [...parsed.color],
     renderer: parsed.renderer,
     outline: parsed.outline,

@@ -96,7 +96,7 @@ function componentVisualKind(
     const parsed = parseText2DProperties(component.properties, {
       rich: component.classId === "2DRichTextComponent",
     });
-    return `2dtext:${component.classId}:${parsed.text}:${parsed.size}:${parsed.renderer}:${parsed.fontAssetGuid ?? ""}:${parsed.color.join(",")}:${parsed.alignment}:${parsed.verticalAlignment}:${parsed.bold}:${parsed.italic}:${parsed.underline}:${parsed.outline}:${parsed.wrapWidth}:${parsed.wrapHeight}:${parsed.hitTest}:${parsed.materialGuid ?? ""}:${parsed.materialUv}`;
+    return `2dtext:${component.classId}:${parsed.text}:${parsed.size}:${parsed.pixelScale}:${parsed.renderer}:${parsed.fontAssetGuid ?? ""}:${parsed.color.join(",")}:${parsed.alignment}:${parsed.verticalAlignment}:${parsed.bold}:${parsed.italic}:${parsed.underline}:${parsed.outline}:${parsed.wrapWidth}:${parsed.wrapHeight}:${parsed.hitTest}:${parsed.materialGuid ?? ""}:${parsed.materialUv}`;
   }
   if (component.classId === "2DTextureComponent") {
     return overlayTextureVisualKind(

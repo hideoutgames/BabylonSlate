@@ -161,6 +161,34 @@ export async function scaffoldKenneyMannequinEmpty(
 }
 
 /**
+ * Pixel Art Optimized fonts: imports the bundled Ark Pixel Fonts into `assets/Fonts` as pixel Fonts (each with
+ * its Pixel Size) and makes Ark Pixel 12px Proportional the project default Font, so 2D Text is pixel perfect
+ * from the start. Returns the imported Fonts' guids in `ARK_PIXEL_FONTS` order.
+ */
+export async function scaffoldPixelArtFonts(host: StarterScaffoldHost, document: ProjectDocument): Promise<string[]> {
+  const registry = host.registry();
+  if (!registry) throw new Error("Asset registry is not mounted.");
+  const [{ ARK_PIXEL_FONTS }, { loadEngineContentBytes }, { normalizeFontPayload }] = await Promise.all([
+    import("../lib/feature-test/engine-content-files"),
+    import("../lib/engine-content"),
+    import("@haptic/assets"),
+  ]);
+  const guids: string[] = [];
+  for (const font of ARK_PIXEL_FONTS) {
+    const created = await registry.importFile("project", "Fonts", `${font.name}.woff2`, await loadEngineContentBytes(font.path));
+    const asset = created.find((entry) => entry.header.type === "Font");
+    if (!asset) throw new Error(`${font.name} import did not create a Font.`);
+    // The asset is named after its file (`Ark_Pixel_12px_Proportional`); the family keeps the font's own name.
+    const payload = normalizeFontPayload(asset.header.payload, font.name);
+    await host.saveDocument("font", asset.path, { ...payload, family: font.name, pixelSize: font.pixelSize });
+    guids.push(asset.header.guid);
+  }
+  document.settings.fonts = { ...document.settings.fonts, defaultFontGuid: guids[0]! };
+  await host.saveProject(document, createEmptyLayouts());
+  return guids;
+}
+
+/**
  * FeatureTest starter: every engine feature on top of Basic 3D. Lazily
  * loaded so its scaffold code stays out of the editor startup chunk.
  */

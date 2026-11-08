@@ -86,6 +86,8 @@ const BUTTON = { width: 2.6, height: 0.7 } as const;
 /** Guids and Classes the layers are written from. */
 interface LayerRefs {
   font: string;
+  /** Ark Pixel 12px Proportional, a pixel Font. */
+  pixelFont: string;
   textMaterial: string;
   overlayMaterial: string;
   panelTexture: string;
@@ -116,6 +118,7 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
   const icon = (stem: keyof LayerRefs["icons"]) => requireRef(ctx.assets.textures.ui[stem], `the ui_${stem} Texture`);
   const base = {
     font,
+    pixelFont: requireRef(ctx.assets.fonts.arkPixel, "the Ark Pixel Font"),
     textMaterial: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.text),
     overlayMaterial,
     panelTexture: requireRef(ctx.assets.textures.colormapPixelArt, "the pixel art colormap Texture"),
@@ -314,6 +317,19 @@ function addHeader(refs: LayerRefs, add: AddActor): void {
       insetBottom: 0.25,
     }),
   ], { folderId }));
+  // A pixel Font draws at whole multiples of its Pixel Size: Scale 2 is 24 px, and the size tag rounds to Scale 4.
+  add(layerActor("ft-ui-pixel-text", "Pixel Text", [
+    ui("ft-ui-pixel-text-markup", "2DRichTextComponent", {
+      text: "[color=7fd3ff]Pixel Font[/color] Ark 像素 ピクセル [size=48]4x[/size]",
+      fontAssetGuid: refs.pixelFont,
+      pixelScale: 2,
+      outline: 2,
+      outlineColor: [0.05, 0.08, 0.2],
+      wrapWidth: 640,
+      wrapHeight: 80,
+      alignment: "left",
+    }),
+  ], { position: [-12.2, 6.3], folderId }));
   // No Font of its own: the label draws with the project Default Font (Onest).
   add(layerActor("ft-ui-safe-area-label", "Safe Area Label", [
     ui("ft-ui-safe-area-label-text", "2DTextComponent", text(refs, "Safe Area", 24, [220, 32], { color: [0.7, 0.9, 1], fontAssetGuid: null })),

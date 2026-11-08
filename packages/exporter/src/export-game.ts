@@ -82,6 +82,7 @@ function indexEntry(
     asset.height > 0
       ? { width: asset.width, height: asset.height }
       : {}),
+    ...(typeof asset.pixelSize === "number" && asset.pixelSize > 0 ? { pixelSize: asset.pixelSize } : {}),
     ...extra,
   };
 }
