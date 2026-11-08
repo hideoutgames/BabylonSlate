@@ -58,6 +58,7 @@ export * from "./payload-loader";
 export * from "./plugin-host";
 export * from "./plugin-package";
 export * from "./plugin-settings";
+export * from "./extension-fields";
 export * from "./extension-settings";
 export * from "./extension-host";
 export * from "./extension-package";

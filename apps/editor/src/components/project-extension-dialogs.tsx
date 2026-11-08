@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import {
   DEFAULT_EXTENSION_GAME_SOURCE, EXTENSION_CODE_DIR, EXTENSION_SOURCE_MAX_BYTES, isExtensionCodePath, isExtensionLibraryName,
-  type ExtensionCodeFile, type ExtensionDescriptor, type ExtensionSettings,
+  resolveExtensionFieldValues,
+  type ExtensionCodeFile, type ExtensionDescriptor, type ExtensionFieldValue, type ExtensionFieldValues, type ExtensionSettings,
 } from "@haptic/assets";
 import { LabelHint, NamePromptDialog, SearchDropdown } from "@haptic/editor-kit";
 import { pickImportFiles } from "@haptic/vfs";
@@ -19,6 +20,7 @@ import type { EditorExtensionService } from "../services/editor-extension-servic
 import { ensureEngineExtensionLibrary, type EngineExtensionEntry } from "../lib/engine-extension-library";
 import { saveExtensionArchive } from "../lib/extension-download";
 import { PLUGIN_ICON_OPTIONS } from "../lib/plugin-icons";
+import { ExtensionFieldList } from "./extension-fields";
 import { LazyCodeBodyEditor } from "./lazy-code-editors";
 
 function useExtensionAction() {
@@ -46,31 +48,24 @@ export function ExtensionCommandDialog({ command, service, onClose }: {
   service: EditorExtensionService;
   onClose(): void;
 }) {
-  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(command.fields.map((field) => [field.id, field.defaultValue ?? ""])));
-  const [succeeded, setSucceeded] = useState(false);
+  const [values, setValues] = useState<ExtensionFieldValues>(() => resolveExtensionFieldValues(command.fields));
+  // null until the command completes; then its returned message, if any.
+  const [completed, setCompleted] = useState<{ message?: string } | null>(null);
   const { busy, error, run } = useExtensionAction();
-  const setValue = (id: string, value: string) => { setValues((previous) => ({ ...previous, [id]: value })); setSucceeded(false); };
+  const setValue = (id: string, value: ExtensionFieldValue) => { setValues((previous) => ({ ...previous, [id]: value })); setCompleted(null); };
   return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
     <DialogContent className="editor-dialog-large sm:max-w-2xl" bodyClassName="flex min-w-0 flex-col overflow-hidden">
       <DialogHeader><DialogTitle>{command.title}</DialogTitle><DialogDescription>{command.description ?? "Run this editor extension command."}</DialogDescription></DialogHeader>
       <FieldGroup className="-mx-3 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3">
-        {command.fields.map((field) => <Field key={field.id}>
-          <FieldLabel htmlFor={`extension-command-${field.id}`}>{field.label}{field.required ? " *" : ""}</FieldLabel>
-          {field.type === "multiline" && command.id === "glsl-to-material" && field.id === "source" ?
-            <div className="flex h-64 min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border" role="group" aria-label={field.label}>
-              <LazyCodeBodyEditor language="glsl" ariaLabel={field.label} value={values[field.id] ?? ""} onChange={(value) => setValue(field.id, value)} />
-            </div> : field.type === "multiline" ?
-              <Textarea id={`extension-command-${field.id}`} value={values[field.id] ?? ""} disabled={busy} onChange={(event) => setValue(field.id, event.target.value)} /> :
-              <Input id={`extension-command-${field.id}`} value={values[field.id] ?? ""} disabled={busy} onChange={(event) => setValue(field.id, event.target.value)} />}
-        </Field>)}
+        <ExtensionFieldList fields={command.fields} values={values} onChange={setValue} idPrefix="extension-command" disabled={busy} />
       </FieldGroup>
       <ActionError message={error} />
-      {succeeded ? <Alert role="status"><AlertTitle>{command.id === "glsl-to-material" ? "Material Created" : "Command Completed"}</AlertTitle><AlertDescription>{command.id === "glsl-to-material" ? `${values.name} is available in the Content Browser.` : "The extension command completed successfully."}</AlertDescription></Alert> : null}
+      {completed ? <Alert role="status"><AlertTitle>Command Completed</AlertTitle><AlertDescription>{completed.message ?? "The extension command completed successfully."}</AlertDescription></Alert> : null}
       <DialogFooter>
         <Button variant="outline" size="sm" disabled={busy} onClick={onClose}>Close</Button>
-        <Button size="sm" disabled={busy || succeeded} onClick={() => void run(async () => {
-          await service.run(command.extensionId, command.id, { ...values });
-          setSucceeded(true);
+        <Button size="sm" disabled={busy || completed !== null} onClick={() => void run(async () => {
+          const message = await service.run(command.extensionId, command.id, { ...values });
+          setCompleted(message ? { message } : {});
         })}>{busy ? "Running…" : "Run"}</Button>
       </DialogFooter>
     </DialogContent>
@@ -110,6 +105,7 @@ export function ExtensionEditorDialog({ entry, entries, initialFiles, service, o
   const [sources, setSources] = useState<Map<string, string>>(() => new Map(original));
   const [activePath, setActivePath] = useState(entry.settings.entryPoint);
   const [newFileOpen, setNewFileOpen] = useState(false);
+  const [contributes, setContributes] = useState(() => JSON.stringify(entry.settings.contributes, null, 2));
   const { busy, error, run } = useExtensionAction();
   const [fileError, setFileError] = useState<string | null>(null);
   const patch = (value: Partial<ExtensionSettings>) => setSettings((previous) => ({ ...previous, ...value }));
@@ -140,9 +136,17 @@ export function ExtensionEditorDialog({ entry, entries, initialFiles, service, o
     if (problems.length) setFileError(problems.join("\n"));
   };
   const save = async () => {
+    let parsedContributes: unknown;
+    try {
+      parsedContributes = contributes.trim() ? JSON.parse(contributes) : {};
+    } catch (cause) {
+      throw new Error(`Contributions are not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    }
     const final = new Map(sources);
     if (!settings.editorOnly && !final.has(settings.gameEntryPoint)) final.set(settings.gameEntryPoint, DEFAULT_EXTENSION_GAME_SOURCE);
-    await service.save(entry.extensionGuid, { ...settings, libraryName: settings.libraryName.trim() }, {
+    await service.save(entry.extensionGuid, {
+      ...settings, libraryName: settings.libraryName.trim(), contributes: parsedContributes as ExtensionSettings["contributes"],
+    }, {
       write: [...final].filter(([path, source]) => original.get(path) !== source).map(([path, source]) => ({ path, source })),
       remove: [...original.keys()].filter((path) => !final.has(path)),
     });
@@ -192,6 +196,12 @@ export function ExtensionEditorDialog({ entry, entries, initialFiles, service, o
             <Button variant="outline" size="sm" disabled={busy} className="w-fit">Add Dependency</Button>
           </SearchDropdown>
         </FieldSet>
+        <Field className="min-w-0">
+          <LabelHint hint="What the extension adds to the editor, as JSON, such as a Project Settings category."><FieldLabel>Contributions</FieldLabel></LabelHint>
+          <div className="flex h-48 min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border" role="group" aria-label="Contributions" data-testid="extension-contributions-editor">
+            <LazyCodeBodyEditor language="javascript" ariaLabel="Contributions" value={contributes} readOnly={busy} onChange={setContributes} />
+          </div>
+        </Field>
         <Field className="min-w-0">
           <LabelHint hint={`Saved in extensions/${entry.folderName}/ in the project folder, so other code editors can open them. Files import each other with relative paths.`}><FieldLabel htmlFor="extension-edit-file">Code Files</FieldLabel></LabelHint>
           <div className="flex min-w-0 flex-wrap items-center gap-2">

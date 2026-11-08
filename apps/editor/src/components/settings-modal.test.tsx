@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
-import { createDefaultPluginSettings, type PluginDescriptor } from "@haptic/assets";
+import { createDefaultPluginSettings, createExtensionSettings, normalizeExtensionContributions, type ExtensionDescriptor, type PluginDescriptor } from "@haptic/assets";
 import { createEmptyProject, defaultExportPreset } from "@haptic/core";
 import { createAppSettingsStore } from "@haptic/vfs";
 import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
@@ -33,6 +33,7 @@ const {
   pluginDescriptors,
   applyPluginOverrides,
   projectTwoD,
+  extensionState,
 } = vi.hoisted(() => {
   const lastProjectRender = { current: null as import("@haptic/core").RenderProjectSettings | null };
   return {
@@ -58,6 +59,11 @@ const {
     pluginDescriptors: [] as PluginDescriptor[],
     applyPluginOverrides: vi.fn(async () => undefined),
     projectTwoD: { current: null as Partial<import("@haptic/core").TwoDProjectSettings> | null },
+    extensionState: {
+      entries: [] as import("@haptic/assets").ExtensionDescriptor[],
+      overrides: {} as Record<string, { enabled: boolean }>,
+      values: {} as Record<string, Record<string, string | number | boolean>>,
+    },
   };
 });
 
@@ -91,8 +97,12 @@ vi.mock("../context/document-context", async () => {
       projectDocument.settings.exportPresets = projectExportPresets.current;
     }
     if (projectTwoD.current) projectDocument.settings.twoD = { ...projectDocument.settings.twoD, ...projectTwoD.current };
+    projectDocument.settings.extensionOverrides = extensionState.overrides;
+    projectDocument.settings.extensionSettings = extensionState.values;
+    const snapshot = { entries: extensionState.entries, commands: [], diagnostics: [] };
     return {
     projectDocument,
+    extensionService: { subscribe: () => () => {}, getSnapshot: () => snapshot } as never,
     projectGuid: "test-project",
     activeDocumentId: "active-scene",
     exportProject,
@@ -204,6 +214,66 @@ afterEach(async () => {
   projectExportPresets.current = null;
   pluginDescriptors.length = 0;
   applyPluginOverrides.mockClear();
+  extensionState.entries = [];
+  extensionState.overrides = {};
+  extensionState.values = {};
+});
+
+function discordExtension(enabledByDefault: boolean): ExtensionDescriptor {
+  return {
+    extensionGuid: "discord", folderName: "discord", folderPath: "extensions/discord", settingsPath: "extensions/discord/extension.json",
+    contentPath: "extensions/discord/assets", source: "project", readOnly: false,
+    settings: {
+      ...createExtensionSettings("Discord Presence", "discord"), enabledByDefault,
+      contributes: normalizeExtensionContributions({ settings: { title: "Discord", sections: [{ id: "app", title: "Application", fields: [
+        { id: "applicationId", label: "Application ID", type: "text" },
+        { id: "showElapsed", label: "Show Elapsed Time", type: "toggle", default: true },
+      ] }] } }),
+    },
+  };
+}
+
+describe("extension settings categories", () => {
+  it("adds an enabled extension's category under the title it writes and saves its fields in the project", async () => {
+    extensionState.entries = [discordExtension(false)];
+    extensionState.overrides = { discord: { enabled: true } };
+    extensionState.values = { discord: { applicationId: "123" } };
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+
+    fireEvent.click(screen.getByTestId("settings-modal-category-extension:discord"));
+
+    expect(screen.getByTestId("settings-modal-category-extension:discord").textContent).toContain("Discord");
+    const applicationId = screen.getByTestId("property-ext-discord-applicationId") as HTMLInputElement;
+    expect(applicationId.value).toBe("123");
+    fireEvent.change(applicationId, { target: { value: "456" } });
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({ extensionSettings: { discord: { applicationId: "456" } } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show Elapsed Time" }));
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({ extensionSettings: { discord: { applicationId: "123", showElapsed: false } } });
+  });
+
+  it("finds an extension's field in search and focuses it", async () => {
+    extensionState.entries = [discordExtension(true)];
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+
+    fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: "application id" } });
+    fireEvent.click(screen.getByRole("button", { name: /Application ID/ }));
+
+    const field = await screen.findByTestId("property-ext-discord-applicationId");
+    await waitFor(() => expect(document.activeElement).toBe(field));
+  });
+
+  it("leaves a disabled extension's category out of Project Settings and never adds one to Engine Settings", () => {
+    extensionState.entries = [discordExtension(true)];
+    extensionState.overrides = { discord: { enabled: false } };
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    expect(screen.queryByTestId("settings-modal-category-extension:discord")).toBeNull();
+    cleanup();
+
+    extensionState.overrides = {};
+    render(<SettingsModal open onOpenChange={() => {}} scope="engine" />);
+    expect(screen.getByTestId("engine-settings-modal-category-undo")).toBeTruthy();
+    expect(screen.queryByTestId("engine-settings-modal-category-extension:discord")).toBeNull();
+  });
 });
 
 it("hides unrelated settings when search has no matching section", () => {

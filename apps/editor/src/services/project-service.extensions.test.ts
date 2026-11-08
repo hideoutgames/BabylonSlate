@@ -92,7 +92,7 @@ describe("Editor Extensions in a project", () => {
     const { service, storage } = await setup();
     const entry = await writeProjectExtension(storage, "writer", createExtensionSettings("Writer"), `
       export function activate(api) {
-        api.registerCommand({ id: 'write', title: 'Write', execute: async (values) => {
+        api.registerCommand({ id: 'write', title: 'Write', fields: [{ id: 'path', label: 'Path', type: 'text' }], execute: async (values) => {
           await api.code.write(values.path, 'export const amount: number = 2;');
         }});
         api.registerCommand({ id: 'update', title: 'Update', execute: async () => {

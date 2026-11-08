@@ -230,6 +230,11 @@ export interface ProjectSettings {
   pluginOverrides: Record<string, PluginEnableOverride>;
   /** Extension enablement keyed by extension guid; gameplay (not Editor Only) extensions also follow it in Play and export. */
   extensionOverrides: Record<string, { enabled: boolean }>;
+  /**
+   * Values of extensions' Project Settings fields, keyed by extension guid then
+   * field id. Reading resolves them against each field's type and default.
+   */
+  extensionSettings: Record<string, Record<string, string | number | boolean>>;
   /** Named export presets; each may override plugin enablement (layer 3). */
   exportPresets: ExportPreset[];
   /**
@@ -724,6 +729,21 @@ function normalizePluginOverrides(value: unknown): Record<string, PluginEnableOv
   return out;
 }
 
+function normalizeExtensionSettingValues(value: unknown): Record<string, Record<string, string | number | boolean>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, Record<string, string | number | boolean>> = {};
+  for (const [rawGuid, raw] of Object.entries(value as Record<string, unknown>)) {
+    const guid = rawGuid.trim();
+    if (!guid || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const values: Record<string, string | number | boolean> = {};
+    for (const [key, entry] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof entry === "string" || typeof entry === "boolean" || (typeof entry === "number" && Number.isFinite(entry))) values[key] = entry;
+    }
+    if (Object.keys(values).length) out[guid] = values;
+  }
+  return out;
+}
+
 function normalizeCountThreshold(
   value: unknown,
   fallback: number,
@@ -850,6 +870,7 @@ export function normalizeProjectSettings(
     ),
     pluginOverrides: normalizePluginOverrides(settings?.pluginOverrides),
     extensionOverrides: normalizePluginOverrides(settings?.extensionOverrides),
+    extensionSettings: normalizeExtensionSettingValues(settings?.extensionSettings),
     exportPresets: normalizeExportPresets(settings?.exportPresets),
     alwaysPackageFolders: normalizeAlwaysPackageFolders(settings?.alwaysPackageFolders),
     sourceControl: normalizeSourceControl(settings?.sourceControl),

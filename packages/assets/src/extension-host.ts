@@ -46,7 +46,7 @@ export function createExtensionSettings(displayName: string, extensionGuid = new
   return createDefaultExtensionSettings({ displayName: displayName.trim() || "Extension", extensionGuid });
 }
 
-function resolveExtensionEnabled(enabledByDefault: boolean, projectOverride?: boolean): boolean {
+export function resolveExtensionEnabled(enabledByDefault: boolean, projectOverride?: boolean): boolean {
   return projectOverride ?? enabledByDefault;
 }
 

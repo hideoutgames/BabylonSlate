@@ -1,4 +1,7 @@
-import type { AssetDocument, ExtensionCodeFile } from "@haptic/assets";
+import {
+  normalizeExtensionFields, resolveExtensionFieldValues,
+  type AssetDocument, type ExtensionCodeFile, type ExtensionField, type ExtensionFieldValues,
+} from "@haptic/assets";
 import { evaluateExtensionBundle } from "@haptic/core";
 import type { GlslToMaterialOptions, GlslToMaterialResult } from "@haptic/shader-graph";
 import { linkExtensionModules } from "./extension-modules";
@@ -11,22 +14,18 @@ export interface EditorExtensionEntry {
   entry: string;
   /** The package's code files; the entry may import them relatively. */
   files: readonly ExtensionCodeFile[];
-}
-
-export interface EditorExtensionField {
-  id: string;
-  label: string;
-  type: "text" | "multiline";
-  defaultValue?: string;
-  required?: boolean;
+  /** The extension's Project Settings values when it activates (`api.settings`). */
+  settings?: ExtensionFieldValues;
 }
 
 export interface EditorExtensionCommand {
   id: string;
   title: string;
   description?: string;
-  fields?: readonly EditorExtensionField[];
-  execute(values: Record<string, string>): Promise<void> | void;
+  /** Dialog fields in the declarative schema (`normalizeExtensionFields`). */
+  fields?: readonly unknown[];
+  /** Receives every field's value, typed by its field; a returned string is shown when it completes. */
+  execute(values: ExtensionFieldValues): Promise<string | void> | string | void;
 }
 
 export interface EditorExtensionCommandDescriptor {
@@ -34,7 +33,7 @@ export interface EditorExtensionCommandDescriptor {
   id: string;
   title: string;
   description?: string;
-  fields: readonly EditorExtensionField[];
+  fields: readonly ExtensionField[];
 }
 
 export interface EditorExtensionServices {
@@ -58,6 +57,12 @@ export interface EditorExtensionApi {
   assets: EditorExtensionServices["assets"];
   code: EditorExtensionServices["code"];
   materials: EditorExtensionServices["materials"];
+  /** This extension's Project Settings values, with field defaults filled in. */
+  settings: {
+    get(): ExtensionFieldValues;
+    /** Calls `listener` after the values change; returns an unsubscribe function. */
+    onChange(listener: (values: ExtensionFieldValues) => void): () => void;
+  };
   registerCommand(command: EditorExtensionCommand): () => void;
   log(message: string): void;
 }
@@ -70,6 +75,7 @@ export interface EditorExtensionDiagnostic {
 
 type Cleanup = () => void | Promise<void>;
 type RegisteredCommand = EditorExtensionCommandDescriptor & Pick<EditorExtensionCommand, "execute">;
+const EMPTY_VALUES: ExtensionFieldValues = Object.freeze({}) as ExtensionFieldValues;
 
 interface ExtensionState {
   id: string;
@@ -78,6 +84,8 @@ interface ExtensionState {
   commands: Map<string, RegisteredCommand>;
   operations: Set<Promise<unknown>>;
   cleanup?: Cleanup;
+  settings: ExtensionFieldValues;
+  settingsListeners: Set<(values: ExtensionFieldValues) => void>;
 }
 
 async function evaluateExtension(entry: EditorExtensionEntry): Promise<(api: EditorExtensionApi) => unknown> {
@@ -132,7 +140,10 @@ export class EditorExtensionHost {
     if (this.disposed) throw new Error("The extension host has been disposed.");
     if (!entry.id.trim()) throw new Error("An extension ID is required.");
     const previous = this.states.get(entry.id);
-    const state: ExtensionState = { id: entry.id, alive: true, ready: false, commands: new Map(), operations: new Set() };
+    const state: ExtensionState = {
+      id: entry.id, alive: true, ready: false, commands: new Map(), operations: new Set(),
+      settings: Object.freeze({ ...(entry.settings ?? EMPTY_VALUES) }), settingsListeners: new Set(),
+    };
     this.states.set(entry.id, state);
     if (previous) {
       this.notifyChange();
@@ -166,6 +177,21 @@ export class EditorExtensionHost {
     }
   }
 
+  /** New Project Settings values for an active extension; its `api.settings` listeners run when they differ. */
+  updateSettings(extensionId: string, values: ExtensionFieldValues): void {
+    const state = this.states.get(extensionId);
+    if (!state || !this.isCurrent(state)) return;
+    if (JSON.stringify(state.settings) === JSON.stringify(values)) return;
+    state.settings = Object.freeze({ ...values });
+    for (const listener of [...state.settingsListeners]) {
+      try {
+        listener(state.settings);
+      } catch (error) {
+        this.recordDiagnostic(state, "command", error);
+      }
+    }
+  }
+
   async deactivate(extensionId: string): Promise<void> {
     const state = this.states.get(extensionId);
     if (!state) return;
@@ -187,23 +213,22 @@ export class EditorExtensionHost {
     for (const state of states) await this.disposeState(state);
   }
 
-  async run(extensionId: string, commandId: string, values: Record<string, string> = {}): Promise<void> {
+  /** Runs a command; resolves to the message it returned, if any. */
+  async run(extensionId: string, commandId: string, values: Readonly<Record<string, unknown>> = {}): Promise<string | undefined> {
     const state = this.states.get(extensionId);
     const command = state?.ready ? state.commands.get(commandId) : undefined;
     if (!state || !command) throw new Error(`Extension command is unavailable: ${extensionId}/${commandId}`);
     this.assertCurrent(state);
-    const input = Object.assign(Object.create(null) as Record<string, string>, values);
-    for (const value of Object.values(input)) {
-      if (typeof value !== "string") throw new Error("Extension command field values must be strings.");
-    }
+    // Each field gets a value of its own type; anything else falls back to the field default.
+    const input = Object.assign(Object.create(null) as ExtensionFieldValues, resolveExtensionFieldValues(command.fields, values));
     for (const field of command.fields) {
-      input[field.id] ??= field.defaultValue ?? "";
-      if (field.required && !input[field.id].trim()) throw new Error(`${field.label} is required.`);
+      if (field.required && typeof input[field.id] === "string" && !(input[field.id] as string).trim()) throw new Error(`${field.label} is required.`);
     }
     try {
-      await command.execute(input);
+      const result = await command.execute(input);
       this.assertCurrent(state);
       if (this.clearDiagnostics(state.id, "command")) this.notifyChange();
+      return typeof result === "string" && result.trim() ? result : undefined;
     } catch (error) {
       if (this.isCurrent(state)) {
         this.recordDiagnostic(state, "command", error);
@@ -239,6 +264,7 @@ export class EditorExtensionHost {
   private async disposeState(state: ExtensionState): Promise<void> {
     state.alive = false;
     state.commands.clear();
+    state.settingsListeners.clear();
     const cleanup = state.cleanup;
     state.cleanup = undefined;
     if (cleanup) {
@@ -282,6 +308,18 @@ export class EditorExtensionHost {
         this.assertCurrent(state);
         this.services.log?.(state.id, String(message));
       },
+      settings: {
+        get: () => {
+          this.assertCurrent(state);
+          return state.settings;
+        },
+        onChange: (listener) => {
+          this.assertCurrent(state);
+          if (typeof listener !== "function") throw new Error("settings.onChange needs a function.");
+          state.settingsListeners.add(listener);
+          return () => { state.settingsListeners.delete(listener); };
+        },
+      },
       registerCommand: (command) => {
         this.assertCurrent(state);
         if (!command || typeof command.id !== "string" || !command.id.trim()
@@ -289,15 +327,11 @@ export class EditorExtensionHost {
           throw new Error("Extension commands need an ID, a title, and an execute function.");
         }
         if (state.commands.has(command.id)) throw new Error(`Duplicate extension command: ${command.id}`);
-        const fields = command.fields?.map((field) => ({ ...field })) ?? [];
-        const ids = new Set<string>();
-        for (const field of fields) {
-          if (typeof field.id !== "string" || !field.id.trim() || typeof field.label !== "string" || !field.label.trim()
-            || !["text", "multiline"].includes(field.type) || ids.has(field.id)
-            || (field.defaultValue !== undefined && typeof field.defaultValue !== "string")) {
-            throw new Error(`Invalid or duplicate command field in ${command.id}.`);
-          }
-          ids.add(field.id);
+        let fields: ExtensionField[];
+        try {
+          fields = normalizeExtensionFields(command.fields);
+        } catch (cause) {
+          throw new Error(`Command ${command.id}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
         }
         const registered = { ...command, fields, extensionId: state.id };
         state.commands.set(command.id, registered);

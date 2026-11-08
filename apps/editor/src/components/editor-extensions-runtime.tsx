@@ -20,6 +20,11 @@ export function EditorExtensionsRuntime() {
       }
     });
   }, [extensionService, getOpenDocuments]);
+  const settingValues = JSON.stringify(projectDocument?.settings.extensionSettings ?? {});
+  // Before the refresh below, so extensions activate with the current values.
+  useEffect(() => {
+    extensionService?.setSettingValues(JSON.parse(settingValues));
+  }, [extensionService, settingValues]);
   useEffect(() => {
     if (!extensionService || !projectGuid) return;
     void extensionService.refresh(JSON.parse(overrides)).catch(() => { /* Settings displays startup diagnostics. */ });

@@ -85,7 +85,7 @@ describe("EditorExtensionHost", () => {
       }): void {
         api.registerCommand({ id: "convert", title: "Convert", fields: [
           { id: "source", label: "GLSL Source", type: "multiline", required: true },
-          { id: "name", label: "Name", type: "text", defaultValue: "Converted" },
+          { id: "name", label: "Name", type: "text", default: "Converted" },
         ], execute: async (values: Values): Promise<void> => {
           const result = await api.materials.convertGlsl(values.source, { name: values.name, bindings: { uTime: "time" } });
           if (!result.ok) throw new Error("Conversion failed");
@@ -281,7 +281,7 @@ describe("EditorExtensionHost", () => {
     const { host, code } = fixture();
     await host.activate(entry("validate", "validate.js", `
       export function activate(api) {
-        api.registerCommand({ id: "save", title: "Save", execute(values) {
+        api.registerCommand({ id: "save", title: "Save", fields: [{ id: "source", label: "Source", type: "text" }], execute(values) {
           if (values.source === "bad") throw new Error("Invalid source");
           return api.code.write("Code/output.js", values.source);
         }});
@@ -294,6 +294,60 @@ describe("EditorExtensionHost", () => {
 
     expect(code.get("Code/output.js")).toBe("valid");
     expect(host.getDiagnostics()).toEqual([]);
+  });
+
+  it("passes each command field a value of its type and returns the command's message", async () => {
+    const { host } = fixture();
+    const received: unknown[] = [];
+    vi.stubGlobal("__extensionReceived", (values: unknown) => received.push(values));
+    expect(await host.activate(entry("typed", "typed.js", `
+      export function activate(api) {
+        api.registerCommand({ id: "go", title: "Go", fields: [
+          { id: "count", label: "Count", type: "number", integer: true, min: 1, max: 5, default: 2 },
+          { id: "loud", label: "Loud", type: "toggle" },
+          { id: "mode", label: "Mode", type: "choice", options: [{ value: "a", label: "A" }, { value: "b", label: "B" }] },
+          { id: "body", label: "Body", type: "code", language: "glsl", required: true, default: "void main() {}" },
+        ], execute(values) { __extensionReceived(values); return values.loud ? "Done loudly" : undefined; } });
+      }
+    `))).toBe(true);
+
+    expect(await host.run("typed", "go", { count: 9.6, loud: true, mode: "b", body: "x", extra: "dropped" })).toBe("Done loudly");
+    expect(await host.run("typed", "go", { count: "3", loud: "yes", mode: "c" })).toBeUndefined();
+    await expect(host.run("typed", "go", { body: "  " })).rejects.toThrow("Body is required.");
+
+    expect(received).toEqual([
+      { count: 5, loud: true, mode: "b", body: "x" },
+      { count: 2, loud: false, mode: "a", body: "void main() {}" },
+    ]);
+  });
+
+  it("refuses a command whose fields break the schema", async () => {
+    const { host } = fixture();
+    expect(await host.activate(entry("malformed", "malformed.js", `
+      export function activate(api) {
+        api.registerCommand({ id: "go", title: "Go", fields: [{ id: "x", label: "X", type: "slider" }], execute() {} });
+      }
+    `))).toBe(false);
+    expect(host.getDiagnostics()).toEqual([expect.objectContaining({ extensionId: "malformed", message: expect.stringContaining("Command go: Field x has an unknown type") })]);
+  });
+
+  it("gives editor code its Project Settings values and calls listeners only when they change", async () => {
+    const { host } = fixture();
+    const seen: unknown[] = [];
+    vi.stubGlobal("__extensionSettings", (values: unknown) => seen.push(values));
+    expect(await host.activate({ ...entry("configured", "configured.js", `
+      export function activate(api) {
+        __extensionSettings(api.settings.get());
+        api.settings.onChange((values) => __extensionSettings(values));
+      }
+    `), settings: { region: "north" } })).toBe(true);
+
+    host.updateSettings("configured", { region: "north" });
+    host.updateSettings("configured", { region: "south" });
+    await host.deactivate("configured");
+    host.updateSettings("configured", { region: "east" });
+
+    expect(seen).toEqual([{ region: "north" }, { region: "south" }]);
   });
 
   it("continues disposal after one extension cleanup throws", async () => {

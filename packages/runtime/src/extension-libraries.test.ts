@@ -7,11 +7,12 @@ import { compileClassScript, graphNode, startGraphScenario, wire } from "./testi
 
 const registry = createDefaultNodeRegistry();
 
-function library(libraryName: string, modules: Record<string, string>, entry = Object.keys(modules)[0]!, imports: Record<string, Record<string, string>> = {}): ExtensionGameLibrary {
+function library(libraryName: string, modules: Record<string, string>, entry = Object.keys(modules)[0]!, imports: Record<string, Record<string, string>> = {}, settings: ExtensionGameLibrary["settings"] = {}): ExtensionGameLibrary {
   return {
     extensionGuid: `${libraryName}-guid`,
     libraryName,
     label: libraryName[0]!.toUpperCase() + libraryName.slice(1),
+    settings,
     bundle: { entry, modules: Object.entries(modules).map(([path, code]) => ({ path, code, imports: imports[path] ?? {} })) },
   };
 }
@@ -61,6 +62,17 @@ describe("Extension game libraries", () => {
 
     expect(scenario.diagnostics()).toEqual([]);
     expect(scenario.logs("Probe")).toEqual(["18"]);
+  });
+
+  it("give each library its own Project Settings values through haptic:extension", async () => {
+    const weather = library("weather", {
+      "game.js": "const { settings } = require('haptic:extension');\nexports.describe = (value) => `${settings.region}:${settings.scale * value}`;",
+    }, "game.js", { "game.js": { "haptic:extension": "haptic:extension" } }, { region: "north", scale: 2 });
+
+    const scenario = await run("result = extensions.weather.describe(value);", [weather]);
+
+    expect(scenario.diagnostics()).toEqual([]);
+    expect(scenario.logs("Probe")).toEqual(["north:6"]);
   });
 
   it("reports a library that fails to load and still loads the others", async () => {
