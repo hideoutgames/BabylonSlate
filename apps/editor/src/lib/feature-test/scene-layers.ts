@@ -23,6 +23,7 @@ import {
 import { classGraph, gChain, getVar, gNode, gWire, setVar, varMember, type GraphNode } from "./graph";
 import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./materials";
 import { ownedActorProbeScript } from "./scene-scripts";
+import { featureTestCameraShakes } from "./scripting";
 import { withFeatureTestHudPulse } from "./timeline";
 
 /** Folder under `assets/FeatureTest/` for the Scene Layers and their SceneLayerActor Classes. */
@@ -785,6 +786,7 @@ async function savePitCounter(ctx: FeatureTestContext, refs: ClassBase): Promise
  * a Camera Offset so the pit ends where it was authored.
  */
 async function saveCameraRig(ctx: FeatureTestContext): Promise<PlacedClass> {
+  const shakes = featureTestCameraShakes(ctx);
   const seconds = { "default:duration": KNOBS.cameraTweenSeconds, "default:curve": "sineInOut" };
   const offset = engineFunction("LayerCamera", "Add Camera Offset");
   const graph = classGraph({
@@ -807,10 +809,15 @@ async function saveCameraRig(ctx: FeatureTestContext): Promise<PlacedClass> {
         runtime: offset.runtime,
         "default:delta": { x: 0, y: 0.3 },
       }),
+      // The rig's own layer shakes once its camera has moved: Play Camera Shake On Scene Layer.
+      gNode("own-layer", "scene-layer.getOwningSceneLayer", 1920, 200),
+      gNode("layer-shake", "camera.playShakeOnSceneLayer", 1920, 0, { "default:shake": shakes.hit, "default:scale": 0.3 }),
     ],
     edges: [
       ...gChain("begin", "pan", "zoom-in", "turn", "reset-rotation", "reset-zoom", "reset-location"),
       gWire("reset-location", "execOut", "offset", "exec"),
+      gWire("offset", "execOut", "layer-shake", "execIn"),
+      gWire("own-layer", "out", "layer-shake", "sceneLayer"),
       ...["location", "zoom", "rotation", "reset-rotation", "reset-zoom", "reset-location", "offset", "pan", "zoom-in", "turn"]
         .map((target) => gWire("camera", "value", target, "target")),
       gWire("location", "value", "pan", "a"),
