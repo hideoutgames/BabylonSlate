@@ -788,8 +788,8 @@ export class SceneLayerCompositor {
     });
   }
 
+  /** Draws the blit plane as `rebuildPostProcess` bound it: the layer's target changes only through that rebuild. */
   private blit(layer: LayerRecord): void {
-    this.prepareBlit(layer);
     if (!layer.blitScene) return;
     const capture = activeRenderFrameCapture(this.engine);
     if (capture) capture.stage(layer.blitScene, { name: "SceneLayer output composition", kind: "composition",
