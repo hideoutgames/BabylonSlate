@@ -215,8 +215,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   ],
   applyGraphChange,
   projectDocument: { settings: {} },
-  assetRegistry: {
-    list: () => [
+  assetRegistry: (() => {
+    const assets = () => [
       {
         header: { guid: "item-definition", name: "Item", type: "DataDefinition", payload: { kind: "dataDefinition", fields: [
           { id: "price", name: "Price", typeId: "int", defaultValue: 12 },
@@ -248,8 +248,9 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         },
         path: "assets/Atlas.texture.hasset",
       },
-    ],
-  },
+    ];
+    return { list: assets, getByPath: (path: string) => assets().find((asset) => asset.path === path) };
+  })(),
 })));
 
 vi.mock("../context/validation-context", () => ({

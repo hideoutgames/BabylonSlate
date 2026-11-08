@@ -3,14 +3,18 @@ import { cleanup, renderHook } from "@testing-library/react";
 import { useGraphPanelCatalogs } from "./graph-panel-catalogs";
 
 const SAVE_PATH = "assets/Progress.hasset";
-const docs = vi.hoisted(() => ({
-  projectDocument: { settings: { saveGame: { definitionGuid: "save-asset" } } },
-  assetRegistry: {
-    list: () => [{ rootId: "project", path: "assets/Progress.hasset", header: { guid: "save-asset", type: "SaveGame", name: "Progress", payload: {} } }],
-  },
-  registryEpoch: 1,
-  openDocuments: [] as unknown[],
-}));
+const docs = vi.hoisted(() => {
+  const saveAsset = { rootId: "project", path: "assets/Progress.hasset", header: { guid: "save-asset", type: "SaveGame", name: "Progress", payload: {} } };
+  return {
+    projectDocument: { settings: { saveGame: { definitionGuid: "save-asset" } } },
+    assetRegistry: {
+      list: () => [saveAsset],
+      getByGuid: (guid: string) => (guid === saveAsset.header.guid ? saveAsset : undefined),
+    },
+    registryEpoch: 1,
+    openDocuments: [] as unknown[],
+  };
+});
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => docs));
 
 function saveGameTab(fieldName: string) {

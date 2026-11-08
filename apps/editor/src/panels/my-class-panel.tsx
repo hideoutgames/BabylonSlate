@@ -83,7 +83,6 @@ import { IconActionButton } from "../components/icon-action-button";
 import { usePhoneTouchSizing } from "../shell/use-platform-layout";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import {
-  collectClassGraphsForPalette,
   collectScriptInterfacesForPalette,
   applyLogicGraphCommit,
   commitLogicGraph,
@@ -95,13 +94,13 @@ import {
 } from "../lib/overridable-functions";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { useClassGraphs } from "../lib/use-class-graphs";
 import { engineScriptInterfaceAssets } from "../lib/engine-script-interfaces";
 import {
   EVENT_GRAPH_PANEL_ID,
   openFunctionGraphPanel,
 } from "../shell/function-graph-panels";
 
-const CLASS_KINDS = ["graph"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
 
 export type MyClassMember = {
@@ -1363,7 +1362,7 @@ export function MyClassPanel(props: MyClassPanelProps) {
   const documentActions = useDocumentActions();
   const { openDocument } = documentActions;
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
+  const classGraphs = useClassGraphs();
   const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);
   const { setFocusDiagnostic } = useValidation();
   const {
@@ -1418,18 +1417,14 @@ export function MyClassPanel(props: MyClassPanelProps) {
       classId: className ?? undefined,
       parentClass: host.parentClass,
       parentOf,
-      parentGraphs: collectClassGraphsForPalette({
-        assets,
-        openDocuments: classDocuments,
-        classIdForPath: classIdForGraphPath,
-      }),
+      parentGraphs: classGraphs,
       assetType: indexed?.header.type,
       scriptInterfaces: collectScriptInterfacesForPalette({
         assets,
         openDocuments: interfaceDocuments,
       }),
     };
-  }, [assetRegistry, className, classDocuments, host.parentClass, indexed, interfaceDocuments, parentOf, registryEpoch]);
+  }, [assetRegistry, className, classGraphs, host.parentClass, indexed, interfaceDocuments, parentOf, registryEpoch]);
 
   const focusEvent = (nodeId: string, name: string) => {
     dockApi?.getPanel(EVENT_GRAPH_PANEL_ID)?.api.setActive();

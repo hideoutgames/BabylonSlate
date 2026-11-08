@@ -64,7 +64,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   ],
   applyGraphChange,
   projectDocument: { settings: {} },
-  assetRegistry: { list: () => [] },
+  assetRegistry: { list: () => [], getByPath: () => undefined },
 })));
 
 vi.mock("../context/validation-context", () => ({

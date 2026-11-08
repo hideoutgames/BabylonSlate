@@ -61,21 +61,23 @@ const store = vi.hoisted(() => {
 vi.mock("../context/play-context", () => ({ useOptionalPlay: () => null }));
 vi.mock("../context/document-context", async () => {
   const { useSyncExternalStore } = await import("react");
+  const assets = [
+    {
+      header: { guid: "mat-surface", name: "Rock", type: "Material", payload: { domain: "surface" } },
+      path: "assets/Rock.material.hasset",
+    },
+    {
+      header: { guid: "mat-particle", name: "SparksMat", type: "Material", payload: { domain: "particle" } },
+      path: "assets/SparksMat.material.hasset",
+    },
+    { header: { guid: "tex-clouds", name: "Clouds", type: "Texture", payload: {} }, path: "assets/Clouds.png" },
+    { header: { guid: "model-statue", name: "Statue", type: "Model", payload: {} }, path: "assets/Statue.glb" },
+    { header: { guid: "em-spark", name: "Spark", type: "ParticleEmitter", payload: {} }, path: "assets/Spark.emitter.hasset" },
+    { header: { guid: "pg-smoke", name: "Smoke", type: "ParticleGraph", payload: {} }, path: "assets/Smoke.particlegraph.hasset" },
+  ];
   const assetRegistry = {
-    list: () => [
-      {
-        header: { guid: "mat-surface", name: "Rock", type: "Material", payload: { domain: "surface" } },
-        path: "assets/Rock.material.hasset",
-      },
-      {
-        header: { guid: "mat-particle", name: "SparksMat", type: "Material", payload: { domain: "particle" } },
-        path: "assets/SparksMat.material.hasset",
-      },
-      { header: { guid: "tex-clouds", name: "Clouds", type: "Texture", payload: {} }, path: "assets/Clouds.png" },
-      { header: { guid: "model-statue", name: "Statue", type: "Model", payload: {} }, path: "assets/Statue.glb" },
-      { header: { guid: "em-spark", name: "Spark", type: "ParticleEmitter", payload: {} }, path: "assets/Spark.emitter.hasset" },
-      { header: { guid: "pg-smoke", name: "Smoke", type: "ParticleGraph", payload: {} }, path: "assets/Smoke.particlegraph.hasset" },
-    ],
+    list: () => assets,
+    getByGuid: (guid: string) => assets.find((asset) => asset.header.guid === guid),
   };
   return (await import("../testing/document-context-mock")).documentContextMock(() => {
     const content = useSyncExternalStore(store.subscribe, store.getSnapshot);

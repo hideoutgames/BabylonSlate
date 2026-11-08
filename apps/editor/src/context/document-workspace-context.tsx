@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 
 interface DocumentWorkspaceContextValue {
   documentId: string;
@@ -14,8 +14,11 @@ export function DocumentWorkspaceProvider({
   documentId: string;
   children: ReactNode;
 }) {
+  // A stable value keeps every panel of the document from re-rendering when
+  // the workspace re-renders for tab, play or registry changes.
+  const value = useMemo(() => ({ documentId }), [documentId]);
   return (
-    <DocumentWorkspaceContext.Provider value={{ documentId }}>
+    <DocumentWorkspaceContext.Provider value={value}>
       {children}
     </DocumentWorkspaceContext.Provider>
   );

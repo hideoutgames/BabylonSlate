@@ -71,6 +71,21 @@ export function prefabAssetTemplates(options: {
   return templates;
 }
 
+/** One Prefab asset's template (`prefabAssetTemplates`): its open tab's unsaved components, else its header's. */
+export function prefabAssetTemplate(options: {
+  asset: { path: string; header: { type: string; guid: string; payload?: Record<string, unknown> } } | undefined;
+  openDocuments: ReadonlyArray<{ ref: { kind: string; path: string }; content: unknown }>;
+}): SerializedComponent[] | undefined {
+  const { asset } = options;
+  if (asset?.header.type !== "Prefab" || !asset.header.guid) return undefined;
+  // The last open tab wins, as in `prefabAssetTemplates`.
+  let open: (typeof options.openDocuments)[number] | undefined;
+  for (const doc of options.openDocuments) {
+    if (doc.ref.kind === "prefab" && doc.content && doc.ref.path === asset.path) open = doc;
+  }
+  return normalizePrefab(open ? open.content : asset.header.payload).components;
+}
+
 function cloneTransform(
   transform: SerializedTransform | undefined,
 ): SerializedTransform {

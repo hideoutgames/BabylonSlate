@@ -64,13 +64,8 @@ export function ProjectGameSettings({
               {selectedPickerIdentity(
                 assetRowIdentity(
                   (() => {
-                    const asset = assetRegistry
-                      ?.list()
-                      .find(
-                        (entry) =>
-                          entry.header.guid ===
-                          projectDocument.settings.startupSceneGuid,
-                      );
+                    const guid = projectDocument.settings.startupSceneGuid;
+                    const asset = guid ? assetRegistry?.getByGuid(guid) : undefined;
                     return asset
                       ? {
                           name: asset.header.name,

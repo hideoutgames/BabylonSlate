@@ -77,6 +77,8 @@ export function NumericDragField({
     startX: number;
     startValue: number;
     latest: number;
+    /** Whether this scrub has sent a value through `onChange`. */
+    sent: boolean;
   } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
@@ -101,6 +103,7 @@ export function NumericDragField({
         startX: event.clientX,
         startValue: value,
         latest: value,
+        sent: false,
       };
       setDragging(true);
       event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -114,11 +117,16 @@ export function NumericDragField({
       if (!drag || drag.pointerId !== event.pointerId) return;
       const delta = (event.clientX - drag.startX) * sensitivity;
       const next = clamp(drag.startValue + delta, min, max);
+      // A move that leaves the value where it is (vertical drift, a clamped
+      // end) sends nothing. A mixed field still sends its first move, which
+      // gives every selected item the baseline value.
+      if (next === drag.latest && (drag.sent || !mixed)) return;
       if (validate?.(next)) return;
       drag.latest = next;
+      drag.sent = true;
       onChange(next);
     },
-    [max, min, onChange, sensitivity, validate],
+    [max, min, mixed, onChange, sensitivity, validate],
   );
 
   const endDrag = useCallback(

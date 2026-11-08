@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createActor, createTimelineClip, type SerializedScene, type SerializedTimelineClip, type TimelineKey } from "@haptic/core";
 import { keyRefId } from "@haptic/editor-kit";
-import { formatTimelineValue, laneSelection, timelineKeyShape, timelineRows, trackKeyRefs } from "./timeline-rows";
+import { formatTimelineValue, laneSelection, timelineKeyShape, timelineRowStructure, timelineRowValues, timelineRows, trackKeyRefs } from "./timeline-rows";
 
 const key = (id: string, Time: number, Value: unknown, Interpolation: TimelineKey["Interpolation"] = "linear"): TimelineKey =>
   ({ id, Time, Value, Interpolation, ArriveTangent: 0, LeaveTangent: 0 });
@@ -45,6 +45,15 @@ describe("timelineRows", () => {
     expect(rows[1]!.connect).toBe(true);
     expect(rows[4]!.gradient).toEqual([{ time: 0, color: "rgba(255, 128, 0, 1)" }]);
     expect(rows[5]!.muted).toBe(true);
+  });
+
+  it("fills a playhead move's values into the same rows, reusing every row whose value is unchanged", () => {
+    const structure = timelineRowStructure(options);
+    const before = timelineRowValues(structure, 0.5);
+    expect(timelineRowValues(structure, 0.5, undefined, before)).toBe(before);
+    const after = timelineRowValues(structure, 0.75, undefined, before);
+    expect(after.map((row) => row.value ?? null)).toEqual([null, "1.50, 0, 0", "False", null, "#ff8000", "No Tracks"]);
+    expect(after.map((row, index) => row === before[index])).toEqual([true, false, true, true, true, true]);
   });
 
   it("marks rows that cannot animate: a missing actor or component, a property gone or of another type", () => {

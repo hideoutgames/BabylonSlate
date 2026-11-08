@@ -4,13 +4,10 @@ import { useDocumentActions, useOpenDocument, useRegistryState } from "./documen
 import { useDocumentWorkspace } from "./document-workspace-context";
 import { useSceneTools } from "./scene-tools-context";
 import { registryClassParentLookup } from "../lib/class-asset-lookup";
-import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { useClassGraphs } from "../lib/use-class-graphs";
 import type { TimelinePropertyContext } from "../lib/timeline-property-catalog";
 import { withTimelineClip } from "../lib/timeline-track-edits";
-import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { classIdForGraphPath } from "../services/script-compiler";
-
-const CLASS_KINDS = ["graph"] as const;
 
 /**
  * What the Timeline windows edit when it is not a Scene's or Scene Layer's own
@@ -54,16 +51,16 @@ export function useTimelineClip() {
 /** Class graphs and parents for Class variable tracks, kept current with open Class tabs. */
 export function useTimelinePropertyContext(): Omit<TimelinePropertyContext, "classLabel"> & { classLabel: (classId: string) => string | undefined } {
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
+  const graphs = useClassGraphs();
   return useMemo(() => {
     void registryEpoch;
     const assets = assetRegistry?.list() ?? [];
     const names = new Map<string, string>();
     for (const asset of assets) if (asset.header.type === "Class" && asset.path) names.set(classIdForGraphPath(asset.path), asset.header.name);
     return {
-      graphs: collectClassGraphsForPalette({ assets, openDocuments: classDocuments, classIdForPath: classIdForGraphPath }),
+      graphs,
       parentOf: registryClassParentLookup(assetRegistry),
       classLabel: (classId: string) => names.get(classId),
     };
-  }, [assetRegistry, classDocuments, registryEpoch]);
+  }, [assetRegistry, graphs, registryEpoch]);
 }

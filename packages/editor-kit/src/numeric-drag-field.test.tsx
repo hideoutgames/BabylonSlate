@@ -189,6 +189,52 @@ describe("NumericDragField", () => {
     expect(onChange).toHaveBeenLastCalledWith(0);
   });
 
+  it("sends nothing for scrub moves that leave the value unchanged", () => {
+    const onChange = vi.fn();
+    const onDragEnd = vi.fn();
+    render(
+      <NumericDragField
+        label="Scale"
+        value={1}
+        sensitivity={1}
+        max={2}
+        onChange={onChange}
+        onDragEnd={onDragEnd}
+        data-testid="field"
+      />,
+    );
+
+    const scrub = screen.getByTestId("field-scrub");
+    dispatchPointerEvent(scrub, "pointerdown", { clientX: 0, clientY: 0 });
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 0, clientY: 30 });
+    expect(onChange).not.toHaveBeenCalled();
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 100 });
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 150 });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(2);
+    dispatchPointerEvent(scrub, "pointerup", { clientX: 150 });
+    expect(onDragEnd).toHaveBeenCalledExactlyOnceWith(2, "drag");
+  });
+
+  it("gives a mixed selection the baseline on its first scrub move", () => {
+    const onChange = vi.fn();
+    render(
+      <NumericDragField
+        label="X"
+        value={3}
+        mixed
+        sensitivity={1}
+        onChange={onChange}
+        data-testid="field"
+      />,
+    );
+
+    const scrub = screen.getByTestId("field-scrub");
+    dispatchPointerEvent(scrub, "pointerdown", { clientX: 0, clientY: 0 });
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 0, clientY: 30 });
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 0, clientY: 60 });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(3);
+  });
+
   it("ignores pointer moves from an unrelated pointer", () => {
     const onChange = vi.fn();
     render(
