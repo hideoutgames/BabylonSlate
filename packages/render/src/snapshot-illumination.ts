@@ -1,3 +1,4 @@
+import { VIEW_BLEND_CAMERA_NAME } from "./view-blend";
 import type { Camera } from "@babylonjs/core/Cameras/camera";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import type { Light } from "@babylonjs/core/Lights/light";
@@ -67,7 +68,9 @@ export function refreshPlayActiveCamera(
   scene: Scene,
   binding: SnapshotSceneBinding,
 ): void {
-  if (scene.activeCamera?.name === PLAY_FREE_CAM_NAME) return;
+  // The free camera keeps the view, and a view blend hands it over itself when it ends.
+  const active = scene.activeCamera?.name;
+  if (active === PLAY_FREE_CAM_NAME || active === VIEW_BLEND_CAMERA_NAME) return;
   const camera = resolvePlayGameCamera(scene, binding);
   if (camera) scene.activeCamera = camera;
 }

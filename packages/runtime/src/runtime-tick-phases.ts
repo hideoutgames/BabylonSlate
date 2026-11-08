@@ -37,7 +37,7 @@ export function runTick(rt: RuntimeComposition): void {
   rt.realTimeSeconds += rt.dt;
   if (!gamePaused) rt.waterClock.advance(simDt);
   // Voices play in real time, so their age follows the undilated step.
-  rt.voices.advance(rt.dt);
+  for (const command of rt.voices.advance(rt.dt)) rt.emit(command);
   const pending = resolveTickInput(rt, simDt);
   rt.ticks.beginPhaseTiming();
   tickWorld(rt, pending, simDt);

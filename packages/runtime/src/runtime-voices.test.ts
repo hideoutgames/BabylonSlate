@@ -30,4 +30,32 @@ describe("RuntimeVoices live voices", () => {
     voices.observe({ type: "activeScene", sceneAssetGuid: "second", sceneLoadId: 3 });
     expect(liveIds(voices)).toEqual([]);
   });
+
+  it("ramps a fading voice each tick, stops it after a fade out and drops the fade with the voice", () => {
+    const voices = new RuntimeVoices(() => 1);
+    const send = (commands: CommandMessage[]) => {
+      for (const command of commands) voices.observe(command);
+      return commands;
+    };
+    voices.observe({ type: "playSound", assetGuid: "a", volume: 0.8, frameId: 0, voiceId: "script:1" });
+    expect(send(voices.fade("script:1", 1, 0, { stopAtEnd: true }))).toEqual([{ type: "setVoiceGain", voiceId: "script:1", volume: 0.8 }]);
+    expect(send(voices.advance(0.25))).toEqual([{ type: "setVoiceGain", voiceId: "script:1", volume: expect.closeTo(0.6, 9) }]);
+    expect(send(voices.advance(1))).toEqual([
+      { type: "setVoiceGain", voiceId: "script:1", volume: 0 },
+      { type: "stopSound", voiceId: "script:1" },
+    ]);
+    expect(voices.isLive("script:1")).toBe(false);
+    expect(voices.advance(1)).toEqual([]);
+
+    // A fade in starts silent; a new fade replaces it, and a voice that ends takes its fade with it.
+    voices.observe({ type: "playSound", assetGuid: "a", volume: 1, frameId: 0, voiceId: "script:2" });
+    expect(send(voices.fade("script:2", 2, 0.5, { from: 0 }))).toEqual([{ type: "setVoiceGain", voiceId: "script:2", volume: 0 }]);
+    expect(send(voices.advance(1))).toEqual([{ type: "setVoiceGain", voiceId: "script:2", volume: 0.25 }]);
+    expect(send(voices.fade("script:2", 0, 0.9))).toEqual([{ type: "setVoiceGain", voiceId: "script:2", volume: 0.9 }]);
+    expect(voices.advance(1)).toEqual([]);
+    send(voices.fade("script:2", 4, 0));
+    voices.ended("script:2");
+    expect(voices.advance(1)).toEqual([]);
+    expect(voices.fade("script:9", 1, 0)).toEqual([]);
+  });
 });

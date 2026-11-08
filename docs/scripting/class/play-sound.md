@@ -19,9 +19,11 @@ Plays an Audio asset, positioned at the actor running the graph when the sound i
 | Pin | Type |
 | --- | --- |
 | Out | Exec |
+| Handle | SoundHandle |
 
 ## Notes
 
 - Whether the sound loops follows the Audio asset's Loop setting.
 - A sound is spatial when its Audio asset uses a Sound Attenuation asset.
 - Audio starts only after the player has clicked or tapped the game view.
+- Keep **Handle** to [stop](stop-sound.md), [fade](fade-out-sound.md) or change the sound's [volume](set-sound-volume.md) or [pitch](set-sound-pitch.md) later.

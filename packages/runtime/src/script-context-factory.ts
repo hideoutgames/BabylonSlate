@@ -718,8 +718,18 @@ export function createScriptContext(
         actors: resolveLiveActors(services, overlap.actorIds),
       };
     };
-    context.shapeSweep = (shape, start, end, channel) => {
-      const hit = services.shapeSweep?.(shape, start, end, channel, contextOwner) ?? {
+    const queryOptions = (channel: string | undefined, actorsToIgnore: readonly (Actor | null)[] | undefined) => ({
+      ignoreActorIds: [
+        ...new Set(
+          (Array.isArray(actorsToIgnore) ? actorsToIgnore : [])
+            .filter((actor): actor is Actor => actor instanceof Actor && !actor.destroyed)
+            .map((actor) => actor.guid),
+        ),
+      ],
+      ...(channel ? { channel } : {}),
+    });
+    context.shapeSweep = (shape, start, end, channel, actorsToIgnore) => {
+      const hit = services.shapeSweep?.(shape, start, end, queryOptions(channel, actorsToIgnore), contextOwner) ?? {
         hit: false,
         location: null,
         normal: null,
@@ -735,6 +745,20 @@ export function createScriptContext(
         actor: resolveLiveActor(services, hit.actorId),
       };
     };
+    context.multiTrace = (shape, start, end, channel, actorsToIgnore) =>
+      (services.multiTrace?.(shape, start, end, queryOptions(channel, actorsToIgnore), contextOwner) ?? [])
+        .map((hit) => ({ ...hit, actor: resolveLiveActor(services, hit.actorId) }))
+        // An actor destroyed by an earlier handler this tick is no hit.
+        .filter((hit) => hit.actor !== null)
+        .map((hit) => ({
+          Hit: true,
+          Location: hit.location ?? { x: 0, y: 0, z: 0 },
+          Normal: hit.normal ?? { x: 0, y: 0, z: 0 },
+          Actor: hit.actor,
+          Distance: hit.distance ?? 0,
+        }));
+    context.shapeOverlap = (shape, pose, channel) =>
+      resolveLiveActors(services, services.shapeOverlap?.(shape, pose, queryOptions(channel, undefined), contextOwner)?.actorIds ?? []);
     context.addImpulse = (actor, impulse, strength) => {
       const target = asActor(actor);
       if (!target) return;
@@ -750,9 +774,23 @@ export function createScriptContext(
         offset,
       );
     };
-    context.playSound = (asset, volume) => {
+    // The handle's Id is the number in the voice id (`script:<Id>`); 0 when no host names voices.
+    const playScriptSound = (asset: unknown, volume: unknown, extra: { location?: { x: number; y: number; z: number }; pitch?: number }) => {
+      const voiceId = services.scriptVoiceId?.();
       services.playSound?.(String(asset ?? ""), Number(volume ?? 1), {
         emitterActorGuid: self?.guid ?? null,
+        ...(voiceId ? { voiceId } : {}),
+        ...extra,
+      });
+      return { Id: voiceId ? Number(voiceId.slice("script:".length)) || 0 : 0 };
+    };
+    context.playSound = (asset, volume) => playScriptSound(asset, volume, {});
+    context.playSoundAtLocation = (asset, location, volume, pitch) => {
+      const position = finiteVector(location as never, 0);
+      const multiplier = Number(pitch ?? 1);
+      return playScriptSound(asset, volume, {
+        ...(position ? { location: position } : {}),
+        pitch: Number.isFinite(multiplier) ? multiplier : 1,
       });
     };
     context.spawnParticlesAtLocation = (system, location, rotation, scale, autoDestroy = true) =>

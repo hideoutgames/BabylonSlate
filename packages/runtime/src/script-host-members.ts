@@ -34,6 +34,8 @@ import {
   slerpQuats,
   DEFAULT_GAME_ENVIRONMENT,
   localCalendarDate,
+  parseEasingCurve,
+  sampleEasingCurve,
   localTimeOfDay,
   newGuid,
   utcCalendarDate,
@@ -47,6 +49,7 @@ import {
 import { Actor, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipInstance, TimelineClipObject, TimelineObject } from "@haptic/object-model";
 import { timelineClipState } from "./timeline-runtime";
 import { createObjectMembers } from "./script-object-members";
+import { createPhysicsMembers } from "./script-physics-members";
 import { isInfiniteLoopError } from "@haptic/debugger";
 import { EMPTY_ASSET_CATALOG } from "./asset-catalog";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
@@ -111,6 +114,18 @@ export interface HostMembersHost extends ComponentFunctionHost {
  * `HostContextKey`). Built once per host. Their closures must not capture a per-call value, which
  * `createScriptContext` owns; they live in their own module so that a reference to one is a compile error.
  */
+/** A Sound Handle's voice id, `script:<Id>`; null for Id 0 or a value that is no handle. */
+function soundVoiceId(handle: unknown): string | null {
+  const id = handle && typeof handle === "object" ? Number((handle as { Id?: unknown }).Id) : NaN;
+  return Number.isInteger(id) && id > 0 ? `script:${id}` : null;
+}
+
+/** A volume pin's value clamped to 0..1, or `fallback` when not a finite number. */
+function unitVolume(value: unknown, fallback: number): number {
+  const volume = Number(value);
+  return Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : fallback;
+}
+
 export function createHostMembers(host: HostMembersHost): HostContextMembers {
   const services = host.services;
   const curveObjects = new CurveObjectCache(() => services.curves);
@@ -588,6 +603,9 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     possessCamera: (target) => {
       services.possessCamera?.(target);
     },
+    possessCameraWithBlend: (target, seconds, curve) => {
+      services.possessCamera?.(target, { seconds: Number(seconds), curve: typeof curve === "string" ? curve : "linear" });
+    },
     getSceneCameraManager: () => services.getSceneCameraManager?.() ?? null,
     getRenderTargetMode: (guid) => typeof guid === "string" ? services.getRenderTargetMode?.(guid) ?? "SceneColor" : "SceneColor",
     getRenderTargetTextureTarget: (guid) => typeof guid === "string" ? services.getRenderTargetTextureTarget?.(guid) ?? null : null,
@@ -649,6 +667,34 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
       services.removeObstacle?.(id);
     },
     ...createObjectMembers(services),
+    ...createPhysicsMembers(services),
+    stopSoundHandle: (handle) => {
+      const voiceId = soundVoiceId(handle);
+      if (voiceId && services.soundVoices?.isPlaying(voiceId)) services.stopSound?.(voiceId);
+    },
+    setSoundVolume: (handle, volume) => {
+      const voiceId = soundVoiceId(handle);
+      if (voiceId) services.soundVoices?.setVolume(voiceId, unitVolume(volume, 1));
+    },
+    setSoundPitch: (handle, pitch) => {
+      const voiceId = soundVoiceId(handle);
+      const value = Number(pitch);
+      if (voiceId && Number.isFinite(value)) services.soundVoices?.setPitch(voiceId, value);
+    },
+    fadeInSound: (handle, seconds, volume) => {
+      const voiceId = soundVoiceId(handle);
+      if (voiceId) services.soundVoices?.fade(voiceId, Number(seconds), unitVolume(volume, 1), { from: 0 });
+    },
+    fadeOutSound: (handle, seconds) => {
+      const voiceId = soundVoiceId(handle);
+      if (voiceId) services.soundVoices?.fade(voiceId, Number(seconds), 0, { stopAtEnd: true });
+    },
+    isSoundPlaying: (handle) => {
+      const voiceId = soundVoiceId(handle);
+      return voiceId ? services.soundVoices?.isPlaying(voiceId) ?? false : false;
+    },
+    // The sampler clamps Alpha to 0..1 and reads a non-finite one as 0.
+    easeAlpha: (curve, alpha) => sampleEasingCurve(parseEasingCurve(curve), Number(alpha)),
     clearTimer: (handle) => services.timers?.clear(timerId(handle)),
     setTimerPaused: (handle, paused) => services.timers?.setPaused(timerId(handle), paused === true),
     timerExists: (handle) => services.timers?.exists(timerId(handle)) ?? false,

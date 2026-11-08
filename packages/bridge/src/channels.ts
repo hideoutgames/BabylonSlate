@@ -834,7 +834,11 @@ export type CommandMessage =
       };
     }
   /** View through this slot's camera; null returns the view to the main Scene's Layer Camera. */
-  | { type: "possessCamera"; slotId: number | null }
+  /**
+   * View through `slotId`'s camera (null: the Layer Camera). With `blend`, Possess Camera With Blend: the view eases
+   * from where it was to the new camera over `seconds`, shaped by an Easing Curve member (`curve`).
+   */
+  | { type: "possessCamera"; slotId: number | null; blend?: { seconds: number; curve: string } }
   | { type: "sceneLoading"; sceneAssetGuid: string; sceneLoadId: number }
   | { type: "sceneStreamLoading"; actorGuid: string; streamLoadId: number }
   /** A blocking Scene load or asset load holds the simulation; the host pauses render game time to match. */
@@ -1089,9 +1093,15 @@ export type CommandMessage =
        */
       clipRoll?: number;
       pitchRoll?: number;
+      /** Play Sound At Location: a fixed world position for a spatial voice, used instead of the emitter's pose. */
+      location?: { x: number; y: number; z: number } | null;
+      /** The play call's pitch multiplier on the Audio asset's pitch; 1 when omitted. */
+      pitch?: number;
     }
   | { type: "stopSound"; voiceId: string }
   | { type: "setVoiceGain"; voiceId: string; volume: number }
+  /** Set Sound Pitch: replaces the voice's play-call pitch multiplier. */
+  | { type: "setVoicePitch"; voiceId: string; pitch: number }
   /** Game pause: hold or release one voice whose owner does not tick while the game is paused. */
   | { type: "setVoicePaused"; voiceId: string; paused: boolean }
   | { type: "setChannelVolume"; channelGuid: string; volume: number }

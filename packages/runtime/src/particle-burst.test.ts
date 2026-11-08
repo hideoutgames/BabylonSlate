@@ -7,7 +7,8 @@ import { createInProcessRuntime } from "./driver";
 describe("Emit Particle Burst commands", () => {
   it("sends whole positive counts, a slot only when one is chosen, and the component when one is named", () => {
     const commands: CommandMessage[] = [];
-    const bindings = createAudioHostBindings({ frameId: () => 0, scriptVoiceId: () => "v", emit: (command) => commands.push(command) });
+    const bindings = createAudioHostBindings({ frameId: () => 0, scriptVoiceId: () => "v", emit: (command) => commands.push(command),
+      voices: { isLive: () => false, fade: () => [] } });
     bindings.emitParticleBurst!("actor", 12.7, -1);
     bindings.emitParticleBurst!("actor", 3, 2, "sparks");
     bindings.emitParticleBurst!("actor", 0, 0);

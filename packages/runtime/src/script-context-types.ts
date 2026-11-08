@@ -277,6 +277,32 @@ export interface ScriptContext {
   classIsChildOf(classId: unknown, parentClassId: unknown): boolean;
   /** Get Display Name: an actor's or component's name, else its class. */
   getDisplayName(object: unknown): string;
+  /** Ease: Alpha clamped to 0..1 and shaped by an Easing Curve member (`sampleEasingCurve` in core). */
+  easeAlpha(curve: unknown, alpha: unknown): number;
+  /** Stop Sound: stops the handle's voice at once. */
+  stopSoundHandle(handle: unknown): void;
+  /** Set Sound Volume: the voice's play-call volume, 0..1, cancelling a fade. */
+  setSoundVolume(handle: unknown, volume: unknown): void;
+  /** Set Sound Pitch: the voice's pitch multiplier on its Audio's pitch. */
+  setSoundPitch(handle: unknown, pitch: unknown): void;
+  /** Fade In Sound: from silent to `volume` over `seconds`. */
+  fadeInSound(handle: unknown, seconds: unknown, volume: unknown): void;
+  /** Fade Out Sound: to silent over `seconds`, then stops the voice. */
+  fadeOutSound(handle: unknown, seconds: unknown): void;
+  isSoundPlaying(handle: unknown): boolean;
+  /** Get Physics Linear Velocity, or Angular Velocity In Degrees (`angular`): the body's, zero without one. */
+  physicsVelocity(actor: unknown, angular: boolean): Vec3;
+  /** Set Physics Linear Velocity, or Angular Velocity In Degrees (`angular`), optionally added to the current one. */
+  setPhysicsVelocity(actor: unknown, angular: boolean, velocity: unknown, addToCurrent: unknown): void;
+  /** Add Force: an impulse of force × `deltaSeconds` (this tick's game time). */
+  addForce(actor: unknown, force: unknown, deltaSeconds: unknown): void;
+  /** Add Torque: an angular impulse of torque × `deltaSeconds`, applied as an impulse couple about the center of mass. */
+  addTorque(actor: unknown, torque: unknown, deltaSeconds: unknown): void;
+  /** Set Motion Type: the actor's first Rigid Body's Motion Type, from a Motion Type enum member. */
+  setMotionType(actor: unknown, motionType: unknown): void;
+  /** Set Actor Enable Collision: while off, the actor's shapes block and overlap nothing and queries skip it. */
+  setActorCollisionEnabled(actor: unknown, enabled: unknown): void;
+  isActorCollisionEnabled(actor: unknown): boolean;
   /** Set Timer By Event: a timer owned by this context's object; `{ Id: 0 }` when Time is not above 0. */
   setTimer(delegate: unknown, time: unknown, looping: unknown, firstDelay: unknown): { Id: number };
   clearTimer(handle: unknown): void;
@@ -577,6 +603,7 @@ export interface ScriptContext {
     start: PhysicsTransform,
     end: PhysicsTransform,
     channel?: string,
+    actorsToIgnore?: readonly (Actor | null)[],
   ): {
     hit: boolean;
     location: Vec3 | null;
@@ -584,6 +611,16 @@ export interface ScriptContext {
     distance: number;
     actor: Actor | null;
   };
+  /** Multi Line Trace (`shape` null) and Multi Sphere Trace: Hit Result structures, nearest first, one per actor. */
+  multiTrace(
+    shape: ColliderShape | null,
+    start: PhysicsTransform,
+    end: PhysicsTransform,
+    channel?: string,
+    actorsToIgnore?: readonly (Actor | null)[],
+  ): { Hit: boolean; Location: Vec3; Normal: Vec3; Actor: Actor | null; Distance: number }[];
+  /** Box and Capsule Overlap Actors: the live actors `shape` at `pose` overlaps. */
+  shapeOverlap(shape: ColliderShape, pose: PhysicsTransform, channel?: string): Actor[];
   addImpulse(
     actor: EngineObject | null | undefined,
     impulse: Vec3,
@@ -594,7 +631,10 @@ export interface ScriptContext {
     translation: Vec3,
     offset?: number,
   ): void;
-  playSound(asset: string, volume?: number): void;
+  /** Play Sound: a Sound Handle naming the new voice (`script:<Id>`). */
+  playSound(asset: string, volume?: number): { Id: number };
+  /** Play Sound At Location: a voice at a fixed world position (spatial when its Audio has Sound Attenuation). */
+  playSoundAtLocation(asset: string, location: unknown, volume?: number, pitch?: unknown): { Id: number };
   spawnParticlesAtLocation(system: unknown, location: unknown, rotation: unknown, scale: unknown, autoDestroy?: unknown): Actor | null;
   spawnParticlesAttached(system: unknown, attachTo: unknown, bone: unknown, locationOffset: unknown, rotationOffset: unknown,
     autoDestroy?: unknown): Actor | null;
@@ -664,6 +704,8 @@ export interface ScriptContext {
   getMaterialAsset(material: unknown): string | null;
   /** View through `target`'s first Camera component; None (or an actor without one) returns the view to the Scene's Layer Camera. */
   possessCamera(target: unknown): void;
+  /** Possess Camera With Blend: Possess Camera, easing the view over `seconds` along an Easing Curve member. */
+  possessCameraWithBlend(target: unknown, seconds: unknown, curve: unknown): void;
   /** The session's Scene Camera Manager. */
   getSceneCameraManager(): EngineObject | null;
   getRenderTargetMode(guid: string | null): RenderTargetMode;
@@ -762,6 +804,9 @@ export type HostContextKey =
   | "randomSeedStep" | "setActorHidden" | "isActorHidden" | "setComponentVisible" | "isComponentVisible" | "componentTransform"
   | "setComponentTransform" | "actorDistance" | "addActorLocalOffset" | "addActorLocalRotation" | "addActorWorldRotation"
   | "teleportActor" | "getActorTags" | "setActorTags" | "getObjectClass" | "classIsChildOf" | "getDisplayName"
+  | "stopSoundHandle" | "setSoundVolume" | "setSoundPitch" | "fadeInSound" | "fadeOutSound" | "isSoundPlaying"
+  | "easeAlpha" | "physicsVelocity" | "setPhysicsVelocity" | "addForce" | "addTorque" | "setMotionType" | "setActorCollisionEnabled"
+  | "isActorCollisionEnabled"
   | "clearTimer" | "setTimerPaused" | "timerExists" | "isTimerActive" | "isTimerPaused" | "timerRemaining" | "timerElapsed" | "clampToRange" | "isInRange" | "lerpFloatRange"
   | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getCurveObject"
   | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "timelineClipControl" | "timelineClipState" | "getTimeline" | "getTimelineClip" | "getLoadedTimelineClips" | "createTimelineClip" | "timelineProxy" | "timelineProxyGet" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
@@ -778,7 +823,7 @@ export type HostContextKey =
   | "setFocusTarget" | "clearFocusTarget" | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"
   | "registerScenePostProcess" | "unregisterScenePostProcess"
   | "getOwningSceneLayer"
-  | "getScalability" | "requestScalability" | "possessCamera" | "getSceneCameraManager" | "getRenderTargetMode"
+  | "getScalability" | "requestScalability" | "possessCamera" | "possessCameraWithBlend" | "getSceneCameraManager" | "getRenderTargetMode"
   | "getRenderTargetTextureTarget" | "captureRenderTarget" | "recaptureReflectionProbes" | "getRenderTargetCaptureProperty"
   | "setRenderTargetCaptureProperty" | "getCameraFieldOfView" | "setCameraFieldOfView" | "getCameraOrthographicSize"
   | "setCameraOrthographicSize" | "setLightEnabled" | "setLightColor" | "setLightIntensity" | "findPathTo"

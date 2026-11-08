@@ -60,9 +60,14 @@ Query nodes look into the physics world and return a result straight away, on th
 | [Line Trace](../scripting/class/line-trace.md) | Casts a ray between two points and reports the first hit. |
 | [Sphere Shape Sweep](../scripting/class/sphere-shape-sweep.md) | Moves a sphere between two points and reports the first hit. |
 | [Sphere Overlap Actors](../scripting/class/sphere-overlap-actors.md) | Lists the actors whose colliders overlap a sphere. |
+| [Box Trace](../scripting/class/box-trace.md), [Capsule Trace](../scripting/class/capsule-trace.md) | Move a turned box or capsule between two points and report the first hit. |
+| [Multi Line Trace](../scripting/class/multi-line-trace.md), [Multi Sphere Trace](../scripting/class/multi-sphere-trace.md) | Report every actor along the way, nearest first. |
+| [Box Overlap Actors](../scripting/class/box-overlap-actors.md), [Capsule Overlap Actors](../scripting/class/capsule-overlap-actors.md) | List the actors whose colliders overlap a turned box or capsule. |
 | [Project Cursor To Scene](../scripting/class/project-cursor-to-scene.md) | Casts a ray from the camera through the cursor or touch point. |
 
-A hit returns **Hit**, **Location**, **Normal**, **Distance** and the **Actor**. A miss returns false, zeros and an empty Actor. **Line Trace** also takes **Actors To Ignore**, so the actor doing the trace cannot block itself.
+A hit returns **Hit**, **Location**, **Normal**, **Distance** and the **Actor**. A miss returns false, zeros and an empty Actor. **Line Trace**, the Box, Capsule and Multi traces also take **Actors To Ignore**, so the actor doing the trace cannot block itself.
+
+[Set Actor Enable Collision](../scripting/class/set-actor-enable-collision.md) turns all of an actor's collision off: it then blocks and overlaps nothing, and every query passes through it.
 
 ## Collision channels
 

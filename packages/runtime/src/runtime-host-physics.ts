@@ -1,5 +1,6 @@
 import { emptyWaterSample } from "@haptic/core";
 import { Actor, ActorComponent, SceneLayer, type EngineObject, type World } from "@haptic/object-model";
+import type { HitResult, LineTraceOptions } from "@haptic/physics";
 import type { MovementWorldSync } from "./movement";
 import type { PhysicsWorldSync } from "./physics-sync";
 import type { RagdollWorldSync } from "./ragdoll-sync";
@@ -37,6 +38,28 @@ interface PhysicsHostDeps {
 
 const miss = () => ({ hit: false, location: null, normal: null, distance: 0, actorId: null, bodyId: null });
 
+/** Multi traces and shape overlaps stop after this many actors. */
+export const MAX_MULTI_TRACE_HITS = 64;
+
+/**
+ * Repeats a single-hit query, ignoring each actor it found, until it misses: the hits come nearest first, one per
+ * actor, on every backend. A hit that names no actor ends the walk, since it could not be ignored.
+ */
+function collectHits(
+  query: (options: LineTraceOptions & { channel?: string }) => HitResult,
+  options: (LineTraceOptions & { channel?: string }) | undefined,
+): HitResult[] {
+  const ignored = [...(options?.ignoreActorIds ?? [])];
+  const hits: HitResult[] = [];
+  while (hits.length < MAX_MULTI_TRACE_HITS) {
+    const hit = query({ ...options, ignoreActorIds: ignored });
+    if (!hit.hit || !hit.actorId) break;
+    hits.push(hit);
+    ignored.push(hit.actorId);
+  }
+  return hits;
+}
+
 /**
  * The Scene Layer instance whose world a script's queries use: the calling
  * actor's (or its component's owner's) layer, or the calling Scene Layer
@@ -57,7 +80,8 @@ export function callerSceneLayerId(caller: EngineObject | null | undefined): str
  */
 export function createPhysicsHostBindings(deps: PhysicsHostDeps): Pick<ScriptHostServices,
   "sampleWater" | "lineTrace" | "projectCursorToScene" | "projectTouchToScene" | "sphereOverlap" | "shapeSweep" |
-  "addImpulse" | "moveCharacter" | "teleportActor"> {
+  "multiTrace" | "shapeOverlap" | "addImpulse" | "addImpulseAtPoint" | "physicsVelocity" | "setPhysicsVelocity" |
+  "setActorCollisionEnabled" | "isActorCollisionEnabled" | "moveCharacter" | "teleportActor"> {
   const queryWorld = (caller: EngineObject | null | undefined): PhysicsWorldSync | null => {
     const layerId = callerSceneLayerId(caller);
     return layerId ? deps.layerPhysics(layerId) : deps.physics();
@@ -78,8 +102,21 @@ export function createPhysicsHostBindings(deps: PhysicsHostDeps): Pick<ScriptHos
       deps.projectTouchToScene(finger, channel, options, callerSceneLayerId(caller)),
     sphereOverlap: (center, radius, channel, caller) =>
       queryWorld(caller)?.sphereOverlap(center, radius, { channel }) ?? { actorIds: [], bodyIds: [] },
-    shapeSweep: (shape, start, end, channel, caller) =>
-      queryWorld(caller)?.shapeSweep(shape, start, end, { channel }) ?? miss(),
+    shapeSweep: (shape, start, end, options, caller) =>
+      queryWorld(caller)?.shapeSweep(shape, start, end, options) ?? miss(),
+    multiTrace: (shape, start, end, options, caller) => {
+      const world = queryWorld(caller);
+      if (!world) return [];
+      return collectHits((query) => shape
+        ? world.shapeSweep(shape, start, end, query)
+        : world.lineTrace(start.position, end.position, query), options);
+    },
+    shapeOverlap: (shape, pose, options, caller) => {
+      const world = queryWorld(caller);
+      // A sweep that does not move reports each shape it starts inside, at distance zero.
+      const hits = world ? collectHits((query) => world.shapeSweep(shape, pose, pose, query), options) : [];
+      return { actorIds: hits.map((hit) => hit.actorId!), bodyIds: hits.map((hit) => hit.bodyId ?? "") };
+    },
     addImpulse: (actor, impulse, strength) => {
       const target = actor;
       if (!target) return;
@@ -91,6 +128,19 @@ export function createPhysicsHostBindings(deps: PhysicsHostDeps): Pick<ScriptHos
         strength,
       );
     },
+    addImpulseAtPoint: (actor, impulse, point) => {
+      deps.physicsFor(actor)?.addImpulseAtPoint(actor.guid, impulse, point);
+    },
+    physicsVelocity: (actor) => deps.physicsFor(actor)?.actorBodyVelocity(actor.guid) ?? null,
+    setPhysicsVelocity: (actor, velocity) => {
+      const world = deps.physicsFor(actor);
+      if (!world) return;
+      if (velocity.linear && [velocity.linear.x, velocity.linear.y, velocity.linear.z].every(Number.isFinite))
+        world.setActorLinearVelocity(actor.guid, velocity.linear);
+      if (velocity.angular) world.setActorAngularVelocity(actor.guid, velocity.angular);
+    },
+    setActorCollisionEnabled: (actor, enabled) => deps.physicsFor(actor)?.setActorCollisionEnabled(actor, enabled),
+    isActorCollisionEnabled: (actor) => deps.physicsFor(actor)?.isActorCollisionEnabled(actor) ?? true,
     moveCharacter: (actor, translation, dt, offset) => {
       const target = actor;
       if (!target) return;

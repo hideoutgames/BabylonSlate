@@ -74,7 +74,8 @@ import type { EngineOptions } from "@babylonjs/core/Engines/thinEngine";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import type { Material } from "@babylonjs/core/Materials/material";
 import type { AssetContainer } from "@babylonjs/core/assetContainer";
-import { qualitySettingsFingerprint, qualityValuesKey, resolveRenderingQuality } from "@haptic/core";
+import { parseEasingCurve, qualitySettingsFingerprint, qualityValuesKey, resolveRenderingQuality } from "@haptic/core";
+import { captureView, ViewBlend } from "./view-blend";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
@@ -186,6 +187,7 @@ import {
   applyComponentTransformsCommand,
   retainAssignMeshComponentTransforms,
   applyPossessCamera,
+  PLAY_FREE_CAM_NAME,
   assignedMaterialGuids as listAssignedMaterialGuids,
   createSnapshotSceneBinding,
   disposeSnapshotBinding,
@@ -1377,6 +1379,27 @@ function initializeEngine(
     rebuildPostProcessStack();
   };
 
+  /** A running Possess Camera With Blend and the time of the last frame it advanced on. */
+  let viewBlend: { blend: ViewBlend; lastFrame: number | null } | null = null;
+  /** Advances the view blend by the time since the last rendered frame; at its end the game camera takes the view. */
+  const stepViewBlend = (now: number) => {
+    if (!viewBlend) return;
+    const dt = viewBlend.lastFrame === null ? 0 : (now - viewBlend.lastFrame) / 1000;
+    viewBlend.lastFrame = now;
+    if (viewBlend.blend.update(dt, resolvePlayGameCamera(scene, binding))) {
+      scheduler.invalidate("camera");
+      return;
+    }
+    const previous = scene.activeCamera;
+    const ended = viewBlend.blend;
+    viewBlend = null;
+    ended.dispose();
+    // Another camera that took the view (the free camera) keeps it; otherwise the game camera returns.
+    if (!scene.activeCamera) refreshPlayActiveCamera(scene, binding);
+    rebuildIfActiveCameraChanged(previous);
+    scheduler.invalidate("camera");
+  };
+
   const viewportShading = options.editor
     ? new ViewportShadingOverlay(scene)
     : null;
@@ -2140,6 +2163,7 @@ function initializeEngine(
       return;
     }
     frameWasLoading = loadingFrame;
+    stepViewBlend(frameStart);
     // Measure render cost only, not wall-clock gap since the previous
     // rendered frame — a frozen obstructed viewport can idle for seconds
     // between frames, and feeding that gap to the scaling valve would read
@@ -3071,7 +3095,21 @@ function initializeEngine(
       }
       if (command.type === "possessCamera") {
         const previousCamera = scene.activeCamera;
+        // Possess Camera With Blend eases from the view as it is now, including from a blend still running.
+        const blendFrom = command.blend && command.blend.seconds > 0 && previousCamera && previousCamera.name !== PLAY_FREE_CAM_NAME
+          ? captureView(previousCamera) : null;
+        if (viewBlend) {
+          viewBlend.blend.dispose();
+          viewBlend = null;
+        }
         applyPossessCamera(scene, binding, command.slotId);
+        const target = scene.activeCamera;
+        if (blendFrom && command.blend && target && target !== previousCamera && target.mode === blendFrom.mode) {
+          const blend = new ViewBlend(scene, blendFrom, command.blend.seconds, parseEasingCurve(command.blend.curve));
+          scene.activeCamera = blend.camera;
+          blend.update(0, target);
+          viewBlend = { blend, lastFrame: null };
+        }
         rebuildIfActiveCameraChanged(previousCamera);
         scheduler.invalidate("camera");
       }

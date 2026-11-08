@@ -42,10 +42,13 @@ export class PhysicsColliderSets implements MeshCollidersHost, SpriteTileCollide
     string,
     {
       actor: Actor;
-      descriptor: readonly unknown[];
+      /** Null after `invalidate`: the next publish rebuilds the set. */
+      descriptor: readonly unknown[] | null;
       colliders: Map<string, ColliderDesc>;
     }
   >();
+  /** Actors whose collision a script switched off (Set Actor Enable Collision); their shapes block and overlap nothing. */
+  private readonly collisionOff: ReadonlySet<string>;
   private readonly geometryByComponent = new WeakMap<
     ActorComponent,
     Map<string, PreparedColliderGeometry>
@@ -69,8 +72,10 @@ export class PhysicsColliderSets implements MeshCollidersHost, SpriteTileCollide
     collisionPresets?: readonly Pick<CollisionPreset, "id" | "layer" | "mask" | "overlapMask">[],
     /** Told when an actor's published set changes or its body retires (2D lights' shadow casters follow it). */
     onPublished?: (actor: Actor) => void,
+    collisionOff: ReadonlySet<string> = new Set(),
   ) {
     this.backend = backend;
+    this.collisionOff = collisionOff;
     this.collisionPresets = collisionPresets;
     this.onPublished = onPublished;
     this.meshes = new MeshColliders(backend.kind, this);
@@ -99,7 +104,7 @@ export class PhysicsColliderSets implements MeshCollidersHost, SpriteTileCollide
   ): void {
     const current = this.describe(actor, drive, world, triggersOnly, hosted);
     const prepared = this.preparedByActor.get(actor.guid);
-    if (current.matches(prepared?.actor === actor ? prepared.descriptor : undefined))
+    if (current.matches(prepared?.actor === actor ? prepared.descriptor ?? undefined : undefined))
       return;
     const descriptor = current.copy();
     const colliders = new Map<string, ColliderDesc>();
@@ -117,6 +122,10 @@ export class PhysicsColliderSets implements MeshCollidersHost, SpriteTileCollide
     }
     if (hosted)
       for (const shape of hosted) this.collectHostedColliders(actor, bodyId, shape, colliders);
+    // Each shape answers for its owner: a hosted child's switch reaches only its own shapes on the host.
+    if (this.collisionOff.size)
+      for (const [id, collider] of colliders)
+        if (this.collisionOff.has(collider.actorId ?? actor.guid)) colliders.set(id, { ...collider, mask: 0, overlapMask: 0 });
 
     const previous =
       prepared?.actor === actor
@@ -132,6 +141,12 @@ export class PhysicsColliderSets implements MeshCollidersHost, SpriteTileCollide
       this.backend.applyColliderChanges(bodyId, { upsert, remove });
     this.preparedByActor.set(actor.guid, { actor, descriptor, colliders });
     if (upsert.length || remove.length) this.onPublished?.(actor);
+  }
+
+  /** The next `publish` for this body rebuilds its set and sends what changed, even when its inputs did not. */
+  invalidate(actorId: string): void {
+    const prepared = this.preparedByActor.get(actorId);
+    if (prepared) prepared.descriptor = null;
   }
 
   /** The collider set last prepared for `actor`'s body; undefined when none was, or it was another actor's. */

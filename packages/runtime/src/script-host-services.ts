@@ -241,14 +241,40 @@ export interface ScriptHostServices {
     shape: ColliderShape,
     start: PhysicsTransform,
     end: PhysicsTransform,
-    channel?: string,
+    options?: LineTraceOptions & { channel?: string },
     caller?: EngineObject | null,
   ): HitResult;
+  /**
+   * Every actor along a line (`shape` null) or a linear shape sweep, nearest first, one hit per actor, at most
+   * `MAX_MULTI_TRACE_HITS`.
+   */
+  multiTrace?(
+    shape: ColliderShape | null,
+    start: PhysicsTransform,
+    end: PhysicsTransform,
+    options?: LineTraceOptions & { channel?: string },
+    caller?: EngineObject | null,
+  ): HitResult[];
+  /** Actors whose shapes `shape` at `pose` overlaps, nearest first. */
+  shapeOverlap?(
+    shape: ColliderShape,
+    pose: PhysicsTransform,
+    options?: LineTraceOptions & { channel?: string },
+    caller?: EngineObject | null,
+  ): OverlapResult;
   addImpulse?(
     actor: Actor | null | undefined,
     impulse: Vec3,
     strength?: number,
   ): void;
+  /** A world impulse at a world point on the actor's body. */
+  addImpulseAtPoint?(actor: Actor, impulse: Vec3, point: Vec3): void;
+  /** The actor's body velocity at its center of mass (angular in radians/second); null without a body. */
+  physicsVelocity?(actor: Actor): { linear: Vec3; angular: Vec3; centerOfMass: Vec3 } | null;
+  /** Replace the supplied velocities of the actor's dynamic body (angular in radians/second). */
+  setPhysicsVelocity?(actor: Actor, velocity: { linear?: Vec3; angular?: Vec3 }): void;
+  setActorCollisionEnabled?(actor: Actor, enabled: boolean): void;
+  isActorCollisionEnabled?(actor: Actor): boolean;
   moveCharacter?(
     actor: Actor | null | undefined,
     translation: Vec3,
@@ -318,9 +344,23 @@ export interface ScriptHostServices {
       emitterActorGuid?: string | null;
       loop?: boolean;
       voiceId?: string;
+      /** Play Sound At Location's fixed spatial position. */
+      location?: { x: number; y: number; z: number } | null;
+      /** Pitch multiplier on the Audio asset's pitch. */
+      pitch?: number;
     },
   ): void;
   stopSound?(voiceId: string): void;
+  /** A new script voice id, `script:<n>`; `n` is the voice's Sound Handle Id. */
+  scriptVoiceId?(): string;
+  /** Sound Handle nodes over the session's live voices, by voice id. */
+  soundVoices?: {
+    isPlaying(voiceId: string): boolean;
+    setVolume(voiceId: string, volume: number): void;
+    setPitch(voiceId: string, pitch: number): void;
+    /** Ramp to `to` over `seconds` of real time, from `from` or the current volume, then stop when `stopAtEnd`. */
+    fade(voiceId: string, seconds: number, to: number, options?: { from?: number; stopAtEnd?: boolean }): void;
+  };
   /** `restart`: Restart Particles, which cuts the run on screen whatever the component's Retrigger. */
   setParticlePlaying?(
     actorGuid: string,
@@ -362,7 +402,7 @@ export interface ScriptHostServices {
   getPostProcessEntry?(owner: Scene | SceneLayer, entryId: string): PostProcessMaterialObject | null;
   getMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): MaterialParameterValue | null;
   resetMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): boolean;
-  possessCamera?(target: unknown): void;
+  possessCamera?(target: unknown, blend?: { seconds: number; curve: string }): void;
   getRenderTargetMode?(guid: string): RenderTargetMode;
   getRenderTargetTextureTarget?(guid: string): string | null;
   captureRenderTarget?(target: Actor): void;

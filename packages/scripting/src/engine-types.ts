@@ -43,6 +43,9 @@ export const ENGINE_ASSET_LOAD_PRIORITY_ENUM_ID = "engine:AssetLoadPriority";
 
 export const ENGINE_COLLISION_CHANNEL_ENUM_ID = "engine:CollisionChannel";
 export const ENGINE_NAV_OBSTACLE_KIND_ENUM_ID = "engine:NavObstacleKind";
+/** Set Motion Type's input: a Rigid Body's `motionType` by member name (lower-cased in the runtime). */
+export const ENGINE_MOTION_TYPE_ENUM_ID = "engine:MotionType";
+export const MOTION_TYPE_MEMBERS = ["Static", "Kinematic", "Dynamic"] as const;
 export const ENGINE_HIT_RESULT_STRUCT_ID = "engine:HitResult";
 /** Get Time Now: the UTC time of day, each field a whole-number Float. */
 export const ENGINE_TIME_STRUCT_ID = "engine:Time";
@@ -52,6 +55,8 @@ export const ENGINE_DATE_STRUCT_ID = "engine:Date";
 export const ENGINE_SEED_STRUCT_ID = "engine:Seed";
 /** Set Timer By Event's handle: the timer's id, 0 for none (`ScriptTimers` in runtime). */
 export const ENGINE_TIMER_HANDLE_STRUCT_ID = "engine:TimerHandle";
+/** Play Sound's handle: the voice's number (`script:<Id>` in runtime), 0 for none. */
+export const ENGINE_SOUND_HANDLE_STRUCT_ID = "engine:SoundHandle";
 
 export const ENGINE_INT_RANGE_STRUCT_ID = "engine:IntRange";
 export const ENGINE_FLOAT_RANGE_STRUCT_ID = "engine:FloatRange";
@@ -182,6 +187,11 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
     id: ENGINE_NAV_OBSTACLE_KIND_ENUM_ID,
     name: "Nav Obstacle Kind",
     members: ["box", "cylinder"].map((name, value) => ({ name, value })),
+  },
+  {
+    id: ENGINE_MOTION_TYPE_ENUM_ID,
+    name: "Motion Type",
+    members: MOTION_TYPE_MEMBERS.map((name, value) => ({ name, value })),
   },
 
   {
@@ -357,6 +367,12 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
     // `ScriptTimers` ids from 1; 0 names no timer.
     id: ENGINE_TIMER_HANDLE_STRUCT_ID,
     name: "Timer Handle",
+    fields: [{ name: "Id", typeId: "int", defaultValue: 0 }],
+  },
+  {
+    // `RuntimeVoices.scriptVoiceId` numbers from 1; 0 names no sound.
+    id: ENGINE_SOUND_HANDLE_STRUCT_ID,
+    name: "Sound Handle",
     fields: [{ name: "Id", typeId: "int", defaultValue: 0 }],
   },
 

@@ -61,6 +61,9 @@ A Ground shape placed from **Place Actors** does not stop anything until you giv
 ## Drive physics from scripts
 
 - [Add Impulse](../scripting/class/add-impulse.md) pushes a dynamic body. **Strength** defaults to 1.
+- [Add Force](../scripting/class/add-force.md) and [Add Torque](../scripting/class/add-torque.md) push and twist a dynamic body for one frame; call them every frame for a steady push.
+- [Set Physics Linear Velocity](../scripting/class/set-physics-linear-velocity.md) and [Set Physics Angular Velocity In Degrees](../scripting/class/set-physics-angular-velocity-in-degrees.md) set how fast a body moves and spins; their **Get** nodes read it.
+- [Set Motion Type](../scripting/class/set-motion-type.md) switches a body between Dynamic, Kinematic and Static, for example to start or stop simulating it.
 - Setting a Rigid Body or Collider variable from a graph, such as **Mass** or **Is Trigger**, applies during Play.
 - Moving an actor with a physics body from a script teleports the body.
 

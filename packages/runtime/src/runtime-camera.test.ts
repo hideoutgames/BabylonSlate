@@ -128,6 +128,23 @@ describe("RuntimeCamera possession", () => {
     expect(f.warnings).toEqual([]);
   });
 
+  it("sends Possess Camera With Blend's blend with the possession, and cuts for a blend time of 0", () => {
+    const f = fixture();
+    const first = f.spawn("first");
+    const second = f.spawn("second");
+    f.camera.possess(first, { seconds: 1.5, curve: "quadIn" });
+    f.camera.possess(second, { seconds: 0, curve: "quadIn" });
+    f.camera.possess(null, { seconds: 2, curve: "linear" });
+    f.camera.possess(second, { seconds: Number.NaN, curve: "linear" });
+    expect(f.emitted.filter((command) => command.type === "possessCamera")).toEqual([
+      { type: "possessCamera", slotId: f.slots.actorSlot(first), blend: { seconds: 1.5, curve: "quadIn" } },
+      { type: "possessCamera", slotId: f.slots.actorSlot(second) },
+      { type: "possessCamera", slotId: null, blend: { seconds: 2, curve: "linear" } },
+      { type: "possessCamera", slotId: f.slots.actorSlot(second) },
+    ]);
+    expect(f.camera.cameraActor()).toBe(second);
+  });
+
   it("warns and returns to the Layer Camera when the target has no Camera component", () => {
     const f = fixture();
     const possessed = f.spawn("possessed");
