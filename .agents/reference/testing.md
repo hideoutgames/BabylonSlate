@@ -75,8 +75,10 @@ Configured in `vitest.workspace.ts`; each project is a thin `vitest.projects.*.t
 | Project | Environment | Covers |
 | --- | --- | --- |
 | `node` | node | `packages/{core,assets,edit,object-model,physics,bridge,runtime,debugger,anim-graph,behaviour-tree,navigation,shader-graph,particle-graph,input,ui,scripting,scripting-nodes,test-kit,exporter,source-control}`, plus `apps/docs` (sidebar coverage, repo-link rewriter, heading fragments, workflow policy), `apps/player`, `apps/desktop` (source-read host tests; Electron main is not executed), `playwright.config.test.ts`; and the `.test.ts` logic tests of `apps/editor`, `packages/editor-kit`, `packages/graph-ui`, `packages/vfs` |
-| `jsdom` | jsdom + `vitest.setup.jsdom.ts` | Editor, editor-kit and graph-ui `.test.tsx` files and the explicit DOM-dependent `.test.ts` exceptions; `css: true` so `?raw` stylesheet imports resolve (Vitest otherwise stubs CSS to an empty string, which once let a radius audit pass on empty input) |
+| `jsdom` | jsdom + `vitest.setup.jsdom.ts` | Editor, editor-kit and graph-ui `.test.tsx` files and the explicit DOM-dependent `.test.ts` exceptions; `css: true`, because tests read computed styles: role queries skip what a stylesheet hides (`display: none`, `visibility: hidden`) and components read values such as the windowed lists' `overflow` |
 | `babylon` | node | `packages/render` via `NullEngine` |
+
+The `node` and `babylon` projects have no DOM, so they keep Vitest's CSS stub: every stylesheet import there, `?raw` and `?inline` included, is an empty string (`scripts/vitest-projects.test.mjs`). A stylesheet audit reads the file with `readFileSync` (as `apps/editor/src/lib/editor-themes.test.ts` does), never through an import, which would pass on empty input.
 
 Physics tests use Havok through `NullEngine`; Havok cases share the initialized WASM module and create independent worlds.
 
