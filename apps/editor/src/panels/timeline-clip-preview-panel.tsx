@@ -3,8 +3,9 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AssetLoadError } from "@haptic/assets";
 import { applyTimelineClipToScene, type SerializedScene } from "@haptic/core";
-import { createEngine, EDITOR_CANVAS_COLOR_SCHEME, syncEditorPlayState, type EngineHandle } from "@haptic/render";
+import { applyViewportJoystickSteer, createEngine, EDITOR_CANVAS_COLOR_SCHEME, syncEditorPlayState, type EngineHandle } from "@haptic/render";
 import { isTestModeEnabled } from "@haptic/vfs";
+import { ViewportJoystick } from "../components/viewport-joystick";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { selectProxies, selectProxy, TimelineClipAssetSource, useSelectedProxies, useTimelineClipAsset } from "../components/timeline-clip-asset-editor";
 import { usePlay } from "../context/play-context";
@@ -27,7 +28,8 @@ import { composeTimelineProxyPreview, timelineProxyGizmoEdit, timelineProxyPrevi
  * Proxies and the Inspector (Shift or Ctrl adds it); a 2D hold-and-drag or
  * Drag Select marquees several. The gizmo keys the proxies' transform tracks
  * (Auto Key) or sets unkeyed values, and moves its preview placement where it
- * has no track (`timelineProxyGizmoEdit`).
+ * has no track (`timelineProxyGizmoEdit`). With Joystick on in the viewport's
+ * settings, an on-screen stick flies its camera.
  */
 export function TimelineClipPreviewPanel(props: IDockviewPanelProps) {
   const { id, twoD } = useTimelineClipAsset();
@@ -50,13 +52,14 @@ function ClipPreview(_props: IDockviewPanelProps) {
   void _props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
+  const joystickLeaseRef = useRef<(() => void) | null>(null);
   const viewportId = useId();
   const { id: documentId, payload, twoD, commit } = useTimelineClipAsset();
   const { scene, clip, tools } = useTimelineClip();
   const selectedProxies = useSelectedProxies(documentId);
   const {
     viewportMode, gridVisible, saveEditorCameraPose, loadEditorCameraPose, viewportShadingMode, pivotAroundCenter,
-    gizmoTool, gizmoSpace, snapEnabled, dragSelectActive, setDragSelectActive,
+    gizmoTool, gizmoSpace, snapEnabled, dragSelectActive, setDragSelectActive, joystickEnabled,
   } = useSceneEditing();
   const dragSelectActiveRef = useRef(dragSelectActive);
   dragSelectActiveRef.current = dragSelectActive;
@@ -176,6 +179,8 @@ function ClipPreview(_props: IDockviewPanelProps) {
       resizeObserver.disconnect();
       detachRenderGate();
       unregisterScheduler();
+      joystickLeaseRef.current?.();
+      joystickLeaseRef.current = null;
       if (handle.editor) saveEditorCameraPose(handle.editor.camera.exportSessionState());
       handle.dispose();
       engineRef.current = null;
@@ -354,6 +359,28 @@ function ClipPreview(_props: IDockviewPanelProps) {
         style={{ left: marqueeRect.x, top: marqueeRect.y, width: marqueeRect.width, height: marqueeRect.height }}
       /> : null}
       <canvas ref={canvasRef} className="h-full min-h-0 min-w-0 w-full flex-1 touch-none" data-testid="timeline-clip-preview-canvas" />
+      {joystickEnabled ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-start p-4">
+          <div className="pointer-events-auto">
+            <ViewportJoystick
+              speed={flySpeed}
+              onFly={(forward, right) => {
+                const camera = engineRef.current?.editor?.camera;
+                if (camera) applyViewportJoystickSteer(camera, forward, right);
+              }}
+              onActiveChange={(active) => {
+                const scheduler = engineRef.current?.scheduler;
+                if (!scheduler) return;
+                if (active) joystickLeaseRef.current ??= scheduler.acquireContinuous("viewport-joystick");
+                else {
+                  joystickLeaseRef.current?.();
+                  joystickLeaseRef.current = null;
+                }
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

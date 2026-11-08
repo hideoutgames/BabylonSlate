@@ -1,18 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createDefaultTimelineClipAsset, defaultTimelineProxyPreview, type SerializedScene, type SerializedTimelineClipAsset } from "@haptic/core";
 import { TIMELINE_PROXY_SHAPE_CLASS_ID } from "@haptic/render";
 import { SceneToolsProvider, useSceneTools } from "../context/scene-tools-context";
 import { selectProxies, useSelectedProxies } from "../components/timeline-clip-asset-editor";
+import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TimelineClipPreviewPanel } from "./timeline-clip-preview-panel";
 
 const DOC = "timeline-clip-3d:assets/Swing.timelineclip3d.hasset";
 const harness = vi.hoisted(() => {
   const handle = {
     editor: {
-      camera: { importSessionState: vi.fn(), exportSessionState: vi.fn(() => ({})), setPivotAroundCenter: vi.fn() },
+      camera: {
+        importSessionState: vi.fn(), exportSessionState: vi.fn(() => ({})), setPivotAroundCenter: vi.fn(),
+        mode: "3d", pivotAroundCenter: false, fly: vi.fn(), look: vi.fn(),
+      },
       setViewportMode: vi.fn(),
       setViewportShadingMode: vi.fn(),
       setSelectedActors: vi.fn(),
@@ -21,7 +25,7 @@ const harness = vi.hoisted(() => {
       gizmos: { setTool: vi.fn(), setSpace: vi.fn(), setSnap: vi.fn() },
       selectedActorTransforms: vi.fn((): Array<{ actorId: string; position: [number, number, number]; rotation: [number, number, number, number]; scale: [number, number, number] }> => []),
     },
-    scheduler: { setAlwaysRender: vi.fn(), acquireObstruction: vi.fn(), setResizing: vi.fn() },
+    scheduler: { setAlwaysRender: vi.fn(), acquireObstruction: vi.fn(), setResizing: vi.fn(), acquireContinuous: vi.fn() },
     scaling: {},
     resourceCache: {},
     loadScene: vi.fn(),
@@ -175,6 +179,22 @@ describe("TimelineClipPreviewPanel", () => {
     act(() => options.onPickActor(null));
     expect(selected).toEqual([]);
     await waitFor(() => expect(harness.handle.editor.setSelectedActors).toHaveBeenLastCalledWith([]));
+  });
+
+  it("shows the Joystick, whose stick flies the preview camera under a render lease", async () => {
+    const release = vi.fn();
+    harness.handle.scheduler.acquireContinuous.mockReturnValue(release);
+    // jsdom has no pointer capture.
+    HTMLElement.prototype.setPointerCapture = () => {};
+    render(<SceneToolsProvider><TimelineClipPreviewPanel {...panel} /></SceneToolsProvider>);
+    await waitFor(() => expect(harness.handle.loadScene).toHaveBeenCalled());
+    const stick = screen.getByTestId("viewport-joystick");
+    // Pushed straight up from its centre: forward.
+    act(() => dispatchPointerEvent(stick, "pointerdown", { clientX: 0, clientY: -40 }));
+    expect(harness.handle.scheduler.acquireContinuous).toHaveBeenCalledWith("viewport-joystick");
+    await waitFor(() => expect(harness.handle.editor.camera.fly.mock.calls.some(([forward, right]) => forward > 0 && right === 0)).toBe(true));
+    act(() => dispatchPointerEvent(stick, "pointerup", { clientX: 0, clientY: -40 }));
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   it("previews a 2D clip in a locked 2D overlay viewport", async () => {
