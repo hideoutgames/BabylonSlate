@@ -36,7 +36,7 @@ function isStage(value: unknown): value is RenderFrameStage {
     optional(value.parentId, isNumber) && optional(value.graphId, isNumber) && optional(value.taskId, isNumber) &&
     optional(value.submissionMs, isNumber) && optional(value.drawCalls, isNumber) && optional(value.fallbackPasses, isBoolean) &&
     optional(value.selectedPasses, strings) && optional(value.sceneId, isString) && optional(value.actorGuid, isString) &&
-    optional(value.materialGuid, isString) && optional(value.detail, isString);
+    optional(value.detail, isString);
 }
 
 function isResource(value: unknown): value is RenderFrameResource {

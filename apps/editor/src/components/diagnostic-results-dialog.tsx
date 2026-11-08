@@ -272,7 +272,7 @@ export function FrameReportView({ report }: { report: RenderFrameReport }) {
           startsAt: `+${format(stage.startedAtMs - origin)} ms`, submission: stage.submissionMs == null ? null : `${format(stage.submissionMs)} ms`,
           drawCalls: stage.drawCalls, completed: stage.completed ? "Yes" : "No", detail: stage.detail, selectedPasses: stage.selectedPasses?.join(", "),
           fallbackPasses: stage.fallbackPasses === undefined ? undefined : stage.fallbackPasses ? "Yes" : "No",
-          sceneId: stage.sceneId, actorGuid: stage.actorGuid, materialGuid: stage.materialGuid,
+          sceneId: stage.sceneId, actorGuid: stage.actorGuid,
           sceneUniqueId: stage.sceneUniqueId, graphId: stage.graphId, taskId: stage.taskId, parentStage: stage.parentId == null ? undefined : stage.parentId + 1,
         }).filter(([key, value]) => value !== undefined || key === "selectedPasses"))} />
         {task ? <>
