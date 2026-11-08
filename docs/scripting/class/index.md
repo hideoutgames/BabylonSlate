@@ -749,9 +749,16 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Fade In Sound](fade-in-sound.md) | Raises a sound from silent to a volume over time. |
+| [Fade Out Sound](fade-out-sound.md) | Lowers a sound to silent over time, then stops it. |
+| [Is Sound Playing](is-sound-playing.md) | Returns whether a sound is still playing. |
 | [Play Sound](play-sound.md) | Plays an Audio asset, positioned at the actor running the graph when the sound is spatial. |
+| [Play Sound At Location](play-sound-at-location.md) | Plays an Audio asset at a fixed point in the world. |
 | [Set Channel Volume](set-channel-volume.md) | Sets the volume of an Audio Channel for the current session. |
 | [Set Global Volume](set-global-volume.md) | Sets the master volume of the selected Audio Mixer for the current session. |
+| [Set Sound Pitch](set-sound-pitch.md) | Changes the pitch of a playing sound. |
+| [Set Sound Volume](set-sound-volume.md) | Changes the volume of a playing sound. |
+| [Stop Sound](stop-sound.md) | Stops a playing sound at once. |
 
 ## Particles
 

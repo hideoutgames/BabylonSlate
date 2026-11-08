@@ -35,6 +35,8 @@ Open **Place Actors** and choose your Audio asset under **Project**. Haptic crea
 ## Play sounds from scripts
 
 - [Play Sound](../scripting/class/play-sound.md) plays an Audio asset from the actor running the graph.
+- [Play Sound At Location](../scripting/class/play-sound-at-location.md) plays one at a fixed point in the world.
+- Both return a **Handle**: pass it to [Stop Sound](../scripting/class/stop-sound.md), [Set Sound Volume](../scripting/class/set-sound-volume.md), [Set Sound Pitch](../scripting/class/set-sound-pitch.md), [Fade In Sound](../scripting/class/fade-in-sound.md), [Fade Out Sound](../scripting/class/fade-out-sound.md) or [Is Sound Playing](../scripting/class/is-sound-playing.md).
 - An Audio component has **Play** and **Stop** functions and **Volume**, **Loop** and **Audio** variables. Setting **Volume** changes a sound that is already playing.
 - [Event On Audio Finished](../scripting/class/event-on-audio-finished.md) runs when an Audio component's sound ends. Looping sounds never finish.
 - In a Behaviour Tree, the [Play Sound](../scripting/behaviour-tree/play-sound.md) task plays a sound for the actor.

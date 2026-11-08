@@ -15,6 +15,7 @@ Every sound that uses this Audio asset is now spatial. One Sound Attenuation ass
 - The **listener** is the camera in view: the possessed camera actor, otherwise the scene's [Layer Camera](../graphics/cameras.md#layer-camera), which hears from the centre of its view on the X/Y plane.
 - A sound from an **Audio** component plays at its actor and follows it as it moves.
 - [Play Sound](../scripting/class/play-sound.md) plays at the actor running the graph.
+- [Play Sound At Location](../scripting/class/play-sound-at-location.md) plays at a fixed point and stays there.
 - Select an actor with an Audio component to see its range in the viewport: a green sphere for **Inner Radius** and a yellow sphere for **Max Radius**.
 
 Previewing in the Audio asset editor is never spatial.
