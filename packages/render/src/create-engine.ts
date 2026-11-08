@@ -1847,7 +1847,9 @@ function initializeEngine(
   let framePresented = false;
   let previousFramePresented = false;
   let lastPresentedAt = 0;
-  let lastPressureSample: FramePressureSample | null = null;
+  /** Rewritten in place each presented frame; diagnostics read a copy. */
+  const lastPressureSample: FramePressureSample = { presentationMs: null, cpuMs: 0, gpuMs: null };
+  let pressureSampled = false;
   let rendererGpuLease: EngineGpuTimingLease | null = null;
   const gpuObservers = new Set<() => void>();
   onRollback(() => {
@@ -1886,7 +1888,7 @@ function initializeEngine(
     const native = engine as unknown as { _contextWasLost: boolean };
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
-      () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
+      () => ({ sample: pressureSampled ? { ...lastPressureSample } : null, gpuAttribution: gpuAttribution() }),
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(),
       drawPasses: { ...drawPasses.last },
       gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
@@ -2395,14 +2397,12 @@ function initializeEngine(
         rendererGpuLease = acquireEngineGpuTiming(engine);
       }
       const counter = !engine.isWebGPU && presentationSignals && sole && engine.getCaps().timerQuery ? engine.getGPUFrameTimeCounter() : null;
-      lastPressureSample = {
-        presentationMs:
-          presentationSignals && previousFramePresented
-            ? presentedAt - lastPresentedAt
-            : null,
-        cpuMs: lastRenderCpuMs,
-        gpuMs: counter && counter.count > 0 ? counter.current / 1_000_000 : null,
-      };
+      lastPressureSample.presentationMs = presentationSignals && previousFramePresented
+        ? presentedAt - lastPresentedAt
+        : null;
+      lastPressureSample.cpuMs = lastRenderCpuMs;
+      lastPressureSample.gpuMs = counter && counter.count > 0 ? counter.current / 1_000_000 : null;
+      pressureSampled = true;
       lastPresentedAt = presentedAt;
       // The scaling level is Engine-wide: only the sole rendering view drives
       // it, so sibling views on a shared Engine cannot ratchet it against
