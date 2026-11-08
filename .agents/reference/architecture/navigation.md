@@ -54,7 +54,7 @@ Recast navmesh bake, Scene `navmesh` chunk, runtime crowd/obstacles/cost volumes
 
 ## Runtime
 
-- Hosts pass `sceneNavmeshBytes` keyed by canonical scene guid; `loadNavMesh` imports before Play realizes. Change Scene selects the target mesh before Begin Play and clears navigation for unbaked targets. Stop disposes the session.
+- Hosts pass `sceneNavmeshBytes` keyed by canonical scene guid; `loadNavMesh` imports before Play realizes. Editor Play and the exported player's worker send it without bytes, so the worker imports the startup Scene's catalogued mesh instead of a second copy. Change Scene selects the target mesh before Begin Play and clears navigation for unbaked targets. Stop disposes the session.
 - `NavAgentComponent` registers agents after Begin Play, or lazily on the first Move To. Dynamic unwalkable blockers → `addObstacle`; cost blockers → `applyCostVolume` (re-stamped only when kind, cost or world pose changed). Streamed instances do not apply cost blockers.
 - A Move To (graph node or Behaviour Tree task) without a loaded navmesh or a live Nav Agent stays a no-op; `warnMoveBlocked` logs one `Navigation` warning per actor and reason per session.
 - The crowd tick composes Nav Agents and moving cost blockers through two `WorldTransformComposer`s over the frame index, and keeps its posed-agent list, depth map and point reads in scratch it clears when the tick ends. Crowd poses write before the published frame, parents before children (sorted by depth only when a posed agent has a parent). Agents face velocity while moving (3D about +Y, 2D about +Z) and keep facing when idle.

@@ -36,10 +36,11 @@ describe("gltf mesh decoder config", () => {
     const joined = [
       draco.DefaultConfiguration.wasmUrl,
       draco.DefaultConfiguration.wasmBinaryUrl,
-      draco.DefaultConfiguration.fallbackUrl,
       meshopt.Configuration.decoder.url,
     ].join(" ");
     expect(joined).not.toMatch(/cdn|http/i);
+    // No asm.js fallback ships, and Babylon's CDN default must not remain.
+    expect(draco.DefaultConfiguration.fallbackUrl).toBeUndefined();
     expect(draco.DefaultConfiguration.wasmUrl).toBe(
       "/assets/draco/draco_wasm_wrapper_gltf.js",
     );

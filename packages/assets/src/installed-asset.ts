@@ -6,12 +6,16 @@ const headers = new WeakMap<Blob, Uint8Array>();
 const environmentInfo = new WeakMap<Blob, EnvironmentTextureInfo>();
 let nextBlobGeneration = 0;
 
-/** Immutable installed content. Mutable source arrays are copied before publication. */
-export function installAssetBytes(bytes: Uint8Array | Blob, mime = "application/octet-stream"): Blob {
+/**
+ * Immutable installed content. Mutable source arrays are copied before publication. `sha256` is
+ * the content's hex SHA-256 when the caller has already verified it for exactly these bytes (an
+ * exported asset's catalog revision), so installation does not hash them again.
+ */
+export function installAssetBytes(bytes: Uint8Array | Blob, mime = "application/octet-stream", sha256?: string): Blob {
   if (bytes instanceof Blob) return bytes;
   const copy = bytes.slice();
   const blob = new Blob([copy], { type: mime });
-  identities.set(blob, assetBytesDigest(copy));
+  identities.set(blob, sha256 ?? assetBytesDigest(copy));
   headers.set(blob, copy.slice(0, 64 * 1024));
   if (environmentTextureContainer(copy)) environmentInfo.set(blob, readEnvironmentTextureInfo(copy));
   return blob;

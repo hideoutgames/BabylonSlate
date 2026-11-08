@@ -3,7 +3,11 @@ import type { ScriptBundleEntry } from "@haptic/bridge";
 import type { AreaEmissionPixels, AudioPayload, ModelPayload } from "@haptic/assets";
 import type { GameManifest } from "./types";
 
-/** Prepared sources shared by Play, Preview Build, and the standalone player. */
+/**
+ * Prepared sources shared by Play, Preview Build, and the standalone player. A published payload
+ * (`payloads`, `decodedPayloads`) is never edited in place: a host that reloads an asset publishes
+ * new objects. `packedContentFromGame` keeps each payload's normalized documents by its identity.
+ */
 export type GameSourceContent = {
   decodedPayloads?: ReadonlyMap<string, unknown>;
   /** Cooked Complex Collision meshes; omitted means "cook the scanned Models from `modelBytes`". */

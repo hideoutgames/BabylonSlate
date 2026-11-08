@@ -3,17 +3,50 @@ import type {
   MaterialParameterValue,
 } from "@haptic/core";
 import type { MaterialDocument, MaterialFunctionDocument } from "./document";
-import { lowerMaterialDocument, type MaterialBuildPlan } from "./lower";
+import { lowerMaterialDocumentCached, type MaterialBuildPlan } from "./lower";
 
-/** Match compiled parameter bindings: only reachable root parameters are public. */
+const NO_FUNCTIONS: ReadonlyMap<string, MaterialFunctionDocument> = new Map();
+
+/**
+ * Each functions Map's record for the lowering cache. A host syncs one Map in place as sources
+ * load and release, so the record is rebuilt whenever its entries (guids or document objects)
+ * change: a newly loaded or released Material Function never meets a stale cached lowering.
+ */
+const functionRecords = new WeakMap<
+  ReadonlyMap<string, MaterialFunctionDocument>,
+  { entries: ReadonlyArray<readonly [string, MaterialFunctionDocument]>; record: Record<string, MaterialFunctionDocument> }
+>();
+
+function functionsRecord(functions: ReadonlyMap<string, MaterialFunctionDocument>): Record<string, MaterialFunctionDocument> {
+  const cached = functionRecords.get(functions);
+  if (cached && cached.entries.length === functions.size) {
+    let index = 0;
+    let same = true;
+    for (const [guid, document] of functions) {
+      const entry = cached.entries[index++]!;
+      if (entry[0] !== guid || entry[1] !== document) { same = false; break; }
+    }
+    if (same) return cached.record;
+  }
+  const entries = [...functions];
+  const record = Object.fromEntries(entries);
+  functionRecords.set(functions, { entries, record });
+  return record;
+}
+
+/**
+ * Match compiled parameter bindings: only reachable root parameters are public. For Play and
+ * packaged content, whose documents are never edited in place: each lowering is remembered per
+ * document and functions (`lowerMaterialDocumentCached`).
+ */
 export function buildMaterialParameterCatalog(
   documents: ReadonlyMap<string, MaterialDocument>,
-  functions: ReadonlyMap<string, MaterialFunctionDocument> = new Map(),
+  functions: ReadonlyMap<string, MaterialFunctionDocument> = NO_FUNCTIONS,
 ): MaterialParameterCatalog {
   const result: Array<[string, MaterialParameterCatalog[string]]> = [];
-  const context = { functions: Object.fromEntries(functions) };
+  const record = functionsRecord(functions);
   for (const [guid, document] of documents) {
-    const lowered = lowerMaterialDocument(document, context);
+    const lowered = lowerMaterialDocumentCached(document, record);
     if (!lowered.ok) continue;
     result.push([
       guid,

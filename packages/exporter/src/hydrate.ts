@@ -52,15 +52,18 @@ import type { ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
 import type { CollisionTriangleMesh, ScenePostProcessEntry } from "@haptic/core";
 import {
   buildMaterialParameterCatalog,
-  materializeMaterialInstances,
+  materializeMaterialInstance,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
   normalizeMaterialInstanceDocument,
+  resolveMaterialInstance,
   type MaterialDocument,
   type MaterialFunctionDocument,
   type MaterialInstanceDocument,
+  type MaterialSource,
 } from "@haptic/shader-graph";
 import type { GameSourceContent } from "./source-content";
+import type { GameAssetIndexEntry } from "./types";
 
 const decoder = new TextDecoder();
 const JSON_CONTENT_TYPES = new Set([
@@ -151,12 +154,84 @@ function asSpriteAnimationPayload(
   return parseSpriteAnimationPayload(value);
 }
 
-function navmeshArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const copy = bytes.slice();
-  return copy.buffer.slice(
-    copy.byteOffset,
-    copy.byteOffset + copy.byteLength,
-  ) as ArrayBuffer;
+/**
+ * Each loaded payload's normalized value, keyed by the payload object: its bytes, or its decoded document.
+ * Hosts never edit a published payload in place (`GameSourceContent`), so a source refresh or a render subset
+ * that holds the same payload reuses its value, and its documents keep their identity, instead of parsing and
+ * normalizing it again. Callers must not change a returned value.
+ */
+const normalizedPayloads = new WeakMap<object, { guid: string; type: string; name: string | undefined; value: unknown }>();
+
+function normalizedEntry(entry: GameAssetIndexEntry, payload: object, parse: () => unknown): unknown {
+  const cached = normalizedPayloads.get(payload);
+  if (cached && cached.guid === entry.guid && cached.type === entry.type && cached.name === entry.name) return cached.value;
+  const value = normalizeEntry(entry, parse());
+  normalizedPayloads.set(payload, { guid: entry.guid, type: entry.type, name: entry.name, value });
+  return value;
+}
+
+/** The value `packedContentFromGame` keeps for one JSON entry, or null when it keeps none. */
+function normalizeEntry(entry: GameAssetIndexEntry, parsed: unknown): unknown {
+  if (!parsed) return null;
+  const { guid, type, name } = entry;
+  if (type === "DataDefinition" || type === "DataTree" || type === "Structure" || type === "Enum") return parsed;
+  if (type === GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE) return normalizeGlobalParameterCollection(parsed).parameters;
+  const curveKind = curveKindForAssetType(type);
+  if (curveKind) return normalizeCurveAssetPayload(curveKind, parsed);
+  // Keys, events and proxies only: the Editor Preview never ships.
+  if (isTimelineClipAssetType(type)) return timelineClipAssetCatalogEntry(guid, type, name ?? guid, parsed);
+  switch (type) {
+    case "RenderTarget": return normalizeRenderTargetPayload(parsed);
+    case "RenderTargetTexture": return normalizeRenderTargetTexturePayload(parsed);
+    case "Sprite": return typeof parsed === "object" ? parseSpritePayload(parsed) : null;
+    case "SpriteAnimation": return asSpriteAnimationPayload(parsed);
+    case "Water": return normalizeWaterDefinition(parsed);
+    case "Tilemap": return normalizeTilemapPayload(parsed);
+    case "Tileset": return normalizeTilesetPayload(parsed);
+    case "AnimationGraph": return parseAnimGraphDocument(parsed);
+    case "BehaviourTree": return parseBehaviourTreeDocument(parsed);
+    case "Blackboard": return parseBlackboardDocument(parsed);
+    case "Material": return normalizeMaterialDocument(parsed, name ?? "Material");
+    case "MaterialInstance": return normalizeMaterialInstanceDocument(parsed, name ?? "Material Instance");
+    case "MaterialFunction": return normalizeMaterialFunctionDocument(parsed, name ?? "Material Function");
+    case "AudioMixer": return normalizeAudioMixerPayload(parsed);
+    case "AudioChannel": return normalizeAudioChannelPayload(parsed);
+    case "SoundAttenuation": return normalizeSoundAttenuationPayload(parsed);
+    case "Audio": return normalizeAudioPayload(parsed);
+    case "Animation": return normalizeAnimationPayload(parsed);
+  }
+  return isParticleAssetType(type) ? parsed : null;
+}
+
+/** Each instance's materialized document, kept while its chain (the instance, its parents and the root) is the same documents. */
+const materializedDocuments = new WeakMap<MaterialInstanceDocument, { rootGuid: string; chain: readonly object[]; document: MaterialDocument }>();
+
+/** `materializeMaterialInstances` for documents that are never edited in place (`normalizedPayloads`). */
+function materializedInstances(
+  materials: ReadonlyMap<string, MaterialDocument>,
+  instances: ReadonlyMap<string, MaterialInstanceDocument>,
+): Map<string, MaterialDocument> {
+  const lookup = (guid: string): MaterialSource | null => {
+    const material = materials.get(guid);
+    if (material) return { kind: "material", document: material };
+    const instance = instances.get(guid);
+    return instance ? { kind: "instance", document: instance } : null;
+  };
+  const result = new Map<string, MaterialDocument>();
+  for (const [guid, instance] of instances) {
+    const resolved = resolveMaterialInstance(guid, lookup);
+    if (!resolved.ok) continue;
+    const chain = resolved.chain.map((id) => lookup(id)!.document);
+    const cached = materializedDocuments.get(instance);
+    if (cached && cached.rootGuid === resolved.rootGuid && cached.chain.length === chain.length && cached.chain.every((document, index) => document === chain[index])) {
+      result.set(guid, cached.document);
+      continue;
+    }
+    const document = materializeMaterialInstance(resolved.root, resolved.rootGuid, resolved.overrides, instance);
+    materializedDocuments.set(instance, { rootGuid: resolved.rootGuid, chain, document });
+    result.set(guid, document);
+  }
+  return result;
 }
 
 /** Models this source set's Scenes, SceneLayers and Classes simulate with Use Complex Collision. */
@@ -199,114 +274,35 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     const bytes = game.payloads.get(entry.guid);
     const decoded = game.decodedPayloads?.get(entry.guid);
     if (!bytes && decoded === undefined) continue;
-    const parsed = decoded ?? jsonFromBytes(bytes!);
-    if (entry.type === "DataDefinition" || entry.type === "DataTree" || entry.type === "Structure" || entry.type === "Enum") {
-      if (parsed) dataAssets.push({ guid: entry.guid, type: entry.type, name: entry.name ?? entry.guid, payload: parsed });
-      continue;
-    }
-    if (entry.type === GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE) {
-      if (parsed) globalParameterCatalog[entry.guid] = normalizeGlobalParameterCollection(parsed).parameters;
-      continue;
-    }
+    const value = normalizedEntry(entry, decoded ?? bytes!, () => decoded ?? jsonFromBytes(bytes!));
+    if (value === null || value === undefined) continue;
+    const name = entry.name ?? entry.guid;
     const curveKind = curveKindForAssetType(entry.type);
-    if (curveKind) {
-      if (parsed) curveAssets.push({ guid: entry.guid, type: CURVE_ASSET_TYPES[curveKind], name: entry.name ?? entry.guid, payload: normalizeCurveAssetPayload(curveKind, parsed) });
-      continue;
-    }
-    if (isTimelineClipAssetType(entry.type)) {
-      // Keys, events and proxies only: the Editor Preview never ships.
-      if (parsed) timelineClipAssets.push(timelineClipAssetCatalogEntry(entry.guid, entry.type, entry.name ?? entry.guid, parsed));
-      continue;
-    }
-    if (entry.type === "RenderTarget" && parsed) {
-      renderTargets.set(entry.guid, normalizeRenderTargetPayload(parsed));
-      continue;
-    }
-    if (entry.type === "RenderTargetTexture" && parsed) {
-      renderTargetTextures.set(entry.guid, normalizeRenderTargetTexturePayload(parsed));
-      continue;
-    }
-    if (entry.type === "Sprite") {
-      if (parsed && typeof parsed === "object") spritePayloads.set(entry.guid, parseSpritePayload(parsed));
-      continue;
-    }
-    if (entry.type === "SpriteAnimation" && parsed) {
-      const animation = asSpriteAnimationPayload(parsed);
-      if (animation) spriteAnimationPayloads.set(entry.guid, animation);
-      continue;
-    }
-    if (entry.type === "Water" && parsed) waterPayloads.set(entry.guid, normalizeWaterDefinition(parsed));
-    if (entry.type === "Tilemap" && parsed) {
-      tilemapPayloads.set(entry.guid, normalizeTilemapPayload(parsed));
-      continue;
-    }
-    if (entry.type === "Tileset" && parsed) {
-      tilesetPayloads.set(entry.guid, normalizeTilesetPayload(parsed));
-      continue;
-    }
-    if (entry.type === "AnimationGraph" && parsed) {
-      const document = parseAnimGraphDocument(parsed);
-      if (document) animGraphs.push({ guid: entry.guid, document });
-      continue;
-    }
-    if (entry.type === "BehaviourTree" && parsed) {
-      const document = parseBehaviourTreeDocument(parsed);
-      if (document) behaviourTrees.push({ guid: entry.guid, document });
-      continue;
-    }
-    if (entry.type === "Blackboard" && parsed) {
-      const document = parseBlackboardDocument(parsed);
-      if (document) blackboards.push({ guid: entry.guid, document });
-      continue;
-    }
-    if (entry.type === "Material" && parsed) {
-      materialDocuments.set(
-        entry.guid,
-        normalizeMaterialDocument(parsed, entry.name ?? "Material"),
-      );
-      continue;
-    }
-    if (entry.type === "MaterialInstance" && parsed) {
-      materialInstances.set(entry.guid, normalizeMaterialInstanceDocument(parsed, entry.name ?? "Material Instance"));
-      continue;
-    }
-    if (entry.type === "MaterialFunction" && parsed) {
-      materialFunctions.set(
-        entry.guid,
-        normalizeMaterialFunctionDocument(
-          parsed,
-          entry.name ?? "Material Function",
-        ),
-      );
-      continue;
-    }
-    if (entry.type === "AudioMixer" && parsed) {
-      mixers.set(entry.guid, normalizeAudioMixerPayload(parsed));
-      continue;
-    }
-    if (entry.type === "AudioChannel" && parsed) {
-      channels.set(entry.guid, normalizeAudioChannelPayload(parsed));
-      continue;
-    }
-    if (entry.type === "SoundAttenuation" && parsed) {
-      attenuations.set(entry.guid, normalizeSoundAttenuationPayload(parsed));
-      continue;
-    }
-    if (entry.type === "Audio" && parsed && !audio.has(entry.guid)) {
-      audio.set(entry.guid, normalizeAudioPayload(parsed));
-      continue;
-    }
-    if (isParticleAssetType(entry.type) && parsed) {
-      particleAssets.push({
-        guid: entry.guid,
-        type: entry.type,
-        name: entry.name,
-        payload: parsed,
-      });
-      continue;
-    }
-    if (entry.type === "Animation" && parsed) {
-      animationPayloads.set(entry.guid, normalizeAnimationPayload(parsed));
+    if (entry.type === "DataDefinition" || entry.type === "DataTree" || entry.type === "Structure" || entry.type === "Enum") {
+      dataAssets.push({ guid: entry.guid, type: entry.type, name, payload: value });
+    } else if (entry.type === GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE) globalParameterCatalog[entry.guid] = value as GlobalParameterCatalog[string];
+    else if (curveKind) curveAssets.push({ guid: entry.guid, type: CURVE_ASSET_TYPES[curveKind], name, payload: value as CurveAssetCatalogEntry["payload"] });
+    else if (isTimelineClipAssetType(entry.type)) timelineClipAssets.push(value as TimelineClipAssetCatalogEntry);
+    else if (entry.type === "RenderTarget") renderTargets.set(entry.guid, value as RenderTargetPayload);
+    else if (entry.type === "RenderTargetTexture") renderTargetTextures.set(entry.guid, value as RenderTargetTexturePayload);
+    else if (entry.type === "Sprite") spritePayloads.set(entry.guid, value as SpritePayload);
+    else if (entry.type === "SpriteAnimation") spriteAnimationPayloads.set(entry.guid, value as SpriteAnimationPayload);
+    else if (entry.type === "Water") waterPayloads.set(entry.guid, value as WaterDefinition);
+    else if (entry.type === "Tilemap") tilemapPayloads.set(entry.guid, value as TilemapPayload);
+    else if (entry.type === "Tileset") tilesetPayloads.set(entry.guid, value as TilesetPayload);
+    else if (entry.type === "AnimationGraph") animGraphs.push({ guid: entry.guid, document: value as AnimGraphDocument });
+    else if (entry.type === "BehaviourTree") behaviourTrees.push({ guid: entry.guid, document: value });
+    else if (entry.type === "Blackboard") blackboards.push({ guid: entry.guid, document: value });
+    else if (entry.type === "Material") materialDocuments.set(entry.guid, value as MaterialDocument);
+    else if (entry.type === "MaterialInstance") materialInstances.set(entry.guid, value as MaterialInstanceDocument);
+    else if (entry.type === "MaterialFunction") materialFunctions.set(entry.guid, value as MaterialFunctionDocument);
+    else if (entry.type === "AudioMixer") mixers.set(entry.guid, value as AudioMixerPayload);
+    else if (entry.type === "AudioChannel") channels.set(entry.guid, value as AudioChannelPayload);
+    else if (entry.type === "SoundAttenuation") attenuations.set(entry.guid, value as SoundAttenuationPayload);
+    else if (entry.type === "Audio") audio.set(entry.guid, value as AudioPayload);
+    else if (isParticleAssetType(entry.type)) particleAssets.push({ guid: entry.guid, type: entry.type, name: entry.name, payload: value });
+    else if (entry.type === "Animation") {
+      animationPayloads.set(entry.guid, value as AnimationPayload);
       if (entry.name?.trim()) animationNames.set(entry.guid, entry.name.trim());
     }
   }
@@ -361,7 +357,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     document: resolveAnimGraphClips(entry.document, clipCatalog),
   }));
 
-  for (const [guid, document] of materializeMaterialInstances(materialDocuments, materialInstances)) {
+  for (const [guid, document] of materializedInstances(materialDocuments, materialInstances)) {
     materialDocuments.set(guid, document);
   }
 
@@ -471,12 +467,9 @@ export function packedPlayControls(content: PackedGameContent): ControlMessage[]
         : {}),
     });
   }
-  if (content.navmeshBytes && content.navmeshBytes.byteLength > 0) {
-    controls.push({
-      type: "loadNavMesh",
-      bytes: navmeshArrayBuffer(content.navmeshBytes),
-    });
-  }
+  // The startup Scene's mesh is in `navmeshByScene`, which the host's `load` sends as
+  // `sceneNavmeshBytes`: the worker imports that entry instead of a second copy.
+  if (content.navmeshBytes && content.navmeshBytes.byteLength > 0) controls.push({ type: "loadNavMesh" });
   return controls;
 }
 

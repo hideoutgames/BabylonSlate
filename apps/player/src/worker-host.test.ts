@@ -75,3 +75,24 @@ it("reports a worker whose module never evaluates, and not one that started or w
     expect(errors).toEqual(["The game worker did not start within 10 seconds: its module never finished loading."]);
   } finally { vi.useRealTimers(); }
 });
+
+it("remembers a failure no handler saw, and starts the start wait only once the boot attaches a handler", () => {
+  vi.useFakeTimers();
+  try {
+    const crashed = createPlayerWorkerHost();
+    FakeWorker.instance.onerror?.({ message: "Module failed to load" } as ErrorEvent);
+    expect(crashed.failed()).toBe(true);
+
+    // Prewarmed through a long download: the wait belongs to the boot that adopts it.
+    const prewarmed = createPlayerWorkerHost();
+    vi.advanceTimersByTime(30_000);
+    expect(prewarmed.failed()).toBe(false);
+    const errors: string[] = [];
+    prewarmed.onError((error) => errors.push(error.message));
+    vi.advanceTimersByTime(9_999);
+    expect(errors).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(errors).toEqual(["The game worker did not start within 10 seconds: its module never finished loading."]);
+    expect(prewarmed.failed()).toBe(true);
+  } finally { vi.useRealTimers(); }
+});

@@ -35,7 +35,8 @@ import {
 import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import { pixelatedExtend, playFramebufferSize, type SerializedScene } from "@haptic/core";
 import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@haptic/exporter";
-import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
+import { createPlayerWorkerHost, playerHavokWasmUrl, type PlayerWorkerHost } from "./worker-host";
+import { createPlayerSourceInstalls } from "./source-installs";
 import { playerDecoderPaths } from "./decoder-paths";
 import { manifestConsoleCommands } from "./console-catalog";
 import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
@@ -67,10 +68,6 @@ import { createPlayerPauseState } from "./console-pause";
 import type { DebugInspectSnapshot } from "@haptic/object-model";
 import type { PlayerPreviewDiagnosticPorts } from "./player-diagnostic-types";
 import { playerContainer } from "./layout";
-
-function havokWasmUrl(): string {
-  return new URL("./havok/HavokPhysics.wasm", document.baseURI).href;
-}
 
 export type PlayerDiagnostic = {
   message: string;
@@ -135,6 +132,11 @@ export type PlayerBootOptions = {
   traceByteBudget?: number;
   sharedEngine?: AbstractEngine;
   content?: PackedGameContent;
+  /**
+   * The game worker the launch started before its download (`prewarmPlayerWorker`). The boot adopts
+   * and then owns it, or terminates it and starts its own when it has failed.
+   */
+  worker?: PlayerWorkerHost;
   /**
    * Runs after every player resource has attempted cleanup, including startup
    * rollback. `viewReleased` is present once a view was created: a shared-Engine
@@ -217,6 +219,8 @@ function initializePlayer(
   const fontIds = new Set(manifest.assets.filter(entry => entry.type === "Font").map(entry => entry.guid));
   const fontFallbacks = new Map(manifest.assets.filter(entry => entry.type === "Font").map(entry => [entry.guid, entry.requiredDependencies?.filter(id => fontIds.has(id)) ?? []]));
   const fontCss = packedFontCssStacks(game.fontFamilies, "sans-serif", manifest.defaultFontGuid, fontFallbacks);
+  const installs = createPlayerSourceInstalls(game);
+  own(() => installs.dispose());
 
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
@@ -274,16 +278,17 @@ function initializePlayer(
         return () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } };
       } catch (error) { releaseRender?.(); source.release(); throw error; }
     } : undefined,
-    textureBytes: game.textureBytes,
+    textureBytes: installs.textures(game.textureBytes),
     areaEmissions: game.areaEmissions,
     texturePixelSizes: content.texturePixelSizes,
     fontFacetypeBytes: game.fontFacetypeBytes,
     fontMsdfJson: game.fontMsdfJson,
-    fontMsdfPng: game.fontMsdfPng,
+    fontMsdfPng: installs.msdfAtlases(game.fontMsdfPng),
     fontFaceEntries: [...game.fontBytes].map(([guid, bytes]) => ({ guid, family: game.fontFamilies.get(guid) ?? guid, bytes: bytes.slice().buffer })),
     fontCssStack: fontCss.fontCssStack,
     fontCssStackByGuid: fontCss.fontCssStackByGuid,
     modelBytes: game.modelBytes,
+    modelSources: installs.models(game.modelBytes),
     modelPayloads: game.modelPayloads,
     modelClipAnimationGuids: content.modelClipAnimationGuids,
     retargetAnimationLoads: content.retargetAnimationLoads,
@@ -520,7 +525,7 @@ function initializePlayer(
     texturePixelSizes: Object.fromEntries(content.texturePixelSizes),
     gravity: scene.settings.gravity,
     collisionPresets: manifest.collisionPresets,
-    havokWasmUrl: havokWasmUrl(),
+    havokWasmUrl: playerHavokWasmUrl(),
     gameInstanceClass: manifest.gameInstanceClass,
     scenes,
     // Runtime Class lookups use the class id only, as in Editor Play.
@@ -807,14 +812,14 @@ function initializePlayer(
     const fonts = packedFontCssStacks(sources.fontFamilies, "sans-serif", manifest.defaultFontGuid, fontFallbacks);
     return {
       assets: {
-        textureBytes: sources.textureBytes, areaEmissions: sources.areaEmissions,
-        modelBytes: sources.modelBytes, modelPayloads: sources.modelPayloads,
+        textureBytes: installs.textures(sources.textureBytes), areaEmissions: sources.areaEmissions,
+        modelBytes: sources.modelBytes, modelSources: installs.models(sources.modelBytes), modelPayloads: sources.modelPayloads,
         modelClipAnimationGuids: prepared.modelClipAnimationGuids, retargetAnimationLoads: prepared.retargetAnimationLoads,
         spritePayloads: prepared.spritePayloads, spriteAnimations: prepared.spriteAnimationPayloads,
         tilemaps: prepared.tilemapPayloads, tilesets: prepared.tilesetPayloads, waters: prepared.waterPayloads,
         renderTargets: prepared.renderTargets, renderTargetTextures: prepared.renderTargetTextures,
         texturePixelSizes: prepared.texturePixelSizes, pixelsPerUnit: prepared.pixelsPerUnit,
-        fontFacetypeBytes: sources.fontFacetypeBytes, fontMsdfJson: sources.fontMsdfJson, fontMsdfPng: sources.fontMsdfPng,
+        fontFacetypeBytes: sources.fontFacetypeBytes, fontMsdfJson: sources.fontMsdfJson, fontMsdfPng: installs.msdfAtlases(sources.fontMsdfPng),
         fontCssStack: fonts.fontCssStack, fontCssStackByGuid: fonts.fontCssStackByGuid,
       },
       materialDocuments: prepared.materialDocuments, materialFunctions: prepared.materialFunctions,
@@ -1046,7 +1051,10 @@ function initializePlayer(
 
   let releaseWorker = () => {};
   try {
-    const ownedWorker = createPlayerWorkerHost();
+    let prewarmed = options.worker;
+    // A prewarmed worker that failed before any handler was attached would hang the boot: start another.
+    if (prewarmed?.failed()) { prewarmed.terminate(); prewarmed = undefined; }
+    const ownedWorker = prewarmed ?? createPlayerWorkerHost();
     worker = ownedWorker;
     releaseWorker = own(() => ownedWorker.terminate());
     worker.onError((error) => {
