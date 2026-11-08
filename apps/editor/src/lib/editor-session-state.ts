@@ -5,6 +5,7 @@ import type { CopiedTimelineKeys, CopiedTimelineTrack } from "./timeline-track-e
 import { moveKeyedEntry } from "./move-keyed-entry";
 import type { ParticleModuleId } from "./particle-value-modes";
 import type { PlaceActorsView } from "./place-actors";
+import { DEFAULT_SCENE_ASSET_KINDS, type SceneAssetKind } from "./scene-assets";
 
 export type GraphSessionViewport = { x: number; y: number; zoom: number };
 
@@ -13,6 +14,8 @@ export type AssetsPanelPreferences = {
   view: "cards" | "list";
   sort: "name" | "type" | "folder";
   showPluginContent: boolean;
+  /** Asset Types the panel lists; each host reads the kinds it offers. */
+  shownKinds: readonly SceneAssetKind[];
 };
 
 /**
@@ -35,7 +38,12 @@ export class EditorSessionState {
   private timelineClipClipboard: SerializedTimelineClip[] | null = null;
   private timelineKeyClipboard: CopiedTimelineKeys | null = null;
   private timelineTrackClipboard: CopiedTimelineTrack | null = null;
-  private assetsPanel: AssetsPanelPreferences = { view: "cards", sort: "name", showPluginContent: true };
+  private assetsPanel: AssetsPanelPreferences = {
+    view: "cards",
+    sort: "name",
+    showPluginContent: true,
+    shownKinds: DEFAULT_SCENE_ASSET_KINDS,
+  };
 
   readAssetsPanelPreferences(): AssetsPanelPreferences {
     return { ...this.assetsPanel };

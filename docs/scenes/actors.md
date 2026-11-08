@@ -15,13 +15,17 @@ Search matches names, categories, asset types and folders. In **Models** and **P
 
 ## Place from the Assets window
 
-In **Design** mode, the **Assets** window below the **Outliner** lists the Models, Actor Classes and Prefabs in your project and its plugins, as cards with thumbnails or as a list. In a [Scene Layer](scene-layers.md) it lists the built-in 2D elements first, then Classes whose parent is **Scene Layer Actor**, then Models.
+In **Design** mode, the **Assets** window below the **Outliner** lists the Models, Actor Classes and Prefabs in your project and its plugins, as cards with thumbnails or as a list. In a [Scene Layer](scene-layers.md) it lists the built-in 2D elements first, then Classes whose parent is **Scene Layer Actor**, then Models. Sprites and Tilemaps are listed once you turn them on.
 
-- Search by name, type, folder or plugin. **Filter** narrows by **Asset Types** and **Folder**; turn off **Show Plugin Content** to hide plugin assets, which carry a puzzle-piece mark. Tap a filter tag under the search field to remove it.
+- Search by name, type, folder or plugin.
+- **Filter > Asset Types** chooses which types are listed: turn off any of them, or turn on **Sprites** and **Tilemaps**. The window keeps your choice until you close the project.
+- **Filter > Folder** shows one folder; turn off **Show Plugin Content** to hide plugin assets, which carry a puzzle-piece mark.
+- Each filter you change shows as a tag under the search field. Tap a tag to undo it, or **Clear Filters** when nothing matches.
 - **Sort** orders entries by **Name**, **Type** or **Folder**. The two buttons beside it switch between **Cards** and **List**.
 - Select as in the **Outliner**: tap to select, hold <kbd>Mod</kbd> to add or remove an entry, or hold <kbd>Shift</kbd> to select a range. On touch, hold an entry and choose **Select** to add it to the selection.
 - Drag an entry onto the viewport to place it where you let go: in 3D it lands on the surface under the pointer, as in [Place an actor](#place-an-actor). Dragging a selected entry places the whole selection, spread in a grid around that point, each resting on that surface. On touch, drag sideways toward the viewport to start at once; moving up or down scrolls the list, unless you hold the entry briefly first.
 - Double-tap an entry, or tap **Place** under the list, to place at the centre of the viewport.
+- A Sprite or Tilemap is placed as an actor with a [Sprite](../components/sprite.md) or [Tilemap](../components/tilemap.md) component already set to that asset.
 - Hold or right-click an entry for **Place**, **Open** and **Show in Content Browser**.
 
 Placing several entries is one step to undo, and the new actors become the selection. If you close the window, reopen it from **Windows > Assets**.
