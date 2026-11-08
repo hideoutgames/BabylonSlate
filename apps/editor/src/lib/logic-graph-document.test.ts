@@ -400,6 +400,14 @@ describe("collectClassGraphsForPalette", () => {
 });
 
 describe("collectSceneDocumentsForPalette", () => {
+  it("does not fail on a restored Scene tab that has not loaded (null content)", () => {
+    const scenes = collectSceneDocumentsForPalette({
+      assets: [{ path: "assets/Hall.scene.hasset", header: { guid: "scene-1", type: "Scene", name: "Hall", payload: { name: "Main Hall", actors: [] } } }],
+      openDocuments: [{ ref: { kind: "scene", path: "assets/Hall.scene.hasset" }, content: null }],
+    });
+    expect(scenes).toEqual([{ guid: "scene-1", name: "Untitled", actors: [] }]);
+  });
+
   it("indexes Scene assets by guid and prefers open document actors", () => {
     const scenes = collectSceneDocumentsForPalette({
       assets: [
@@ -471,6 +479,15 @@ describe("withOpenScenesForPalette", () => {
     const [after] = withOpenScenesForPalette([], open({ ...scene, name: "Renamed" }), guidForPath);
     expect(after!.name).toBe("Renamed");
     expect(after!.actors).toBe(before!.actors);
+  });
+
+  it("takes a restored Scene tab that has not loaded (null content) as an empty Scene", () => {
+    const header = { guid: "scene-1", name: "Hall", actors: [{ name: "Hero", components: [] }] };
+    expect(withOpenScenesForPalette(
+      [header],
+      [{ ref: { kind: "scene", path: "assets/Hall.scene.hasset" }, content: null }],
+      () => "scene-1",
+    )).toEqual([{ guid: "scene-1", name: "Untitled", actors: [] }]);
   });
 });
 
