@@ -15,6 +15,6 @@ Returns the time since Play started, ignoring time dilation.
 ## Notes
 
 - Advances by the full simulation step whatever the time dilation, so it keeps normal speed during slow motion or a freeze. Use it for menus, UI animation and real-time cooldowns.
-- Stops while the game is paused, and keeps counting across scene changes.
+- Keeps counting while [**Set Game Paused**](set-game-paused.md) pauses the game, so a pause menu can animate with it. It stops only while the editor's **Pause** button pauses Play, and keeps counting across scene changes.
 - For time that follows slow motion, use [**Get Game Time In Seconds**](get-game-time-in-seconds.md). For the clock time, use [**Get Time MS**](get-time-ms.md).
 - Returns 0 in Editor Utility Objects, which do not run a simulation.

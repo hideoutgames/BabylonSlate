@@ -434,7 +434,8 @@ function documentCompileFingerprint(content: SerializedGraph): string {
     functionGraphs: compileFunctionGraphFingerprint(content.functionGraphs),
     // Copied onto the compiled bundle (`classMetadataFromGraph`).
     actorDefaults: content.actorDefaults ?? null,
-    gameInstanceDefaults: content.gameInstanceDefaults ?? null,
+    // Only Game Instance classes set it; omitting it keeps every other key as short as before.
+    ...(content.gameInstanceDefaults ? { gameInstanceDefaults: content.gameInstanceDefaults } : {}),
   });
   documentFingerprints.set(content, fingerprint);
   return fingerprint;

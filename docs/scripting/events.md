@@ -68,6 +68,7 @@ For actor classes, select **Prefab Root** in **Components**. **Actor Defaults** 
 | Generate Hit Events | Turn off to stop **Event On Hit** for this actor. Physics still simulates. |
 | Generate Overlap Events | Turn off to stop the overlap events for this actor. |
 | Event Tick | **Inherit**, **Enabled** or **Disabled**. Disabled stops the actor's **Event Tick**; its components keep ticking. |
+| Tick On Pause | Off by default. Keeps the actor's **Event Tick**, input events, Delays and tweens running while the game is paused by [Set Game Paused](class/set-game-paused.md). |
 
 ## Notes
 

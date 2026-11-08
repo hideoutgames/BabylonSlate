@@ -943,11 +943,13 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Platform](get-platform.md) | Returns the operating system of the device the game runs on. |
 | [Get Viewport Size](get-viewport-size.md) | Returns the size of the game view. |
 | [Is Development Build](is-development-build.md) | Returns true unless the game is a release export. |
+| [Is Game Paused](is-game-paused.md) | Returns true while the game is paused. |
 | [Is In Editor](is-in-editor.md) | Returns true while the game runs inside the editor. |
 | [Is Touch Device](is-touch-device.md) | Returns true when the device has a touch screen. |
 | [New GUID](new-guid.md) | Returns a new random identifier. |
 | [Open URL](open-url.md) | Opens a web address in a new browser tab. |
 | [Quit Game](quit-game.md) | Ends the game. |
+| [Set Game Paused](set-game-paused.md) | Pauses or resumes the game. |
 
 ## Debug
 

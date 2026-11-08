@@ -1132,6 +1132,14 @@ describe("script compiler service", () => {
       generateOverlapEvents: true,
     });
   });
+
+  it("copies gameInstanceDefaults from the serialized graph onto the bundle", () => {
+    const script = compileGraphDocument(
+      { ...tickToLog, gameInstanceDefaults: { tickOnPause: true } },
+      { path: "assets/Session.class.hasset" },
+    );
+    expect(script?.gameInstanceDefaults).toEqual({ tickOnPause: true });
+  });
 });
 
 describe("graphCompileSignature", () => {
@@ -1188,6 +1196,10 @@ describe("graphCompileSignature", () => {
     ).not.toBe(base);
     expect(
       graphCompileSignature([{ path: "assets/main.class.hasset", content: actorDefaults }]),
+    ).not.toBe(base);
+    const gameInstanceDefaults: SerializedGraph = { ...tickToLog, gameInstanceDefaults: { tickOnPause: true } };
+    expect(
+      graphCompileSignature([{ path: "assets/main.class.hasset", content: gameInstanceDefaults }]),
     ).not.toBe(base);
   });
 

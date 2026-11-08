@@ -15,6 +15,7 @@ With nothing selected, the **Inspector** shows the layer's settings:
 | --- | --- |
 | Name | The layer's display name. |
 | Enable Physics | Off by default. When on, each copy of the layer simulates its Rigid Bodies and Colliders in its own 2D world. |
+| Tick On Pause | Off by default. When on, every actor in the layer and its Scene Layer Script keep ticking while the game is paused by [Set Game Paused](../scripting/class/set-game-paused.md), whatever the actors' own **Tick On Pause**. Use it for pause menus. |
 | Gravity | Gravity for that 2D world. |
 | Layer Width, Layer Height | Size of the design canvas in layer units. Default 32 × 18. |
 | Camera Location | Where the layer's camera starts: the centre of the view and of the orange design canvas. Default 0, 0. |
