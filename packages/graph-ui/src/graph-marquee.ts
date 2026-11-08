@@ -41,9 +41,8 @@ export function resolvePaneMarqueePhase(options: {
 function pointerMovedPastTolerance(
   from: { x: number; y: number },
   to: { x: number; y: number },
-  tolerancePx = CONTEXT_MENU_MOVE_TOLERANCE_PX,
 ): boolean {
-  return Math.hypot(to.x - from.x, to.y - from.y) > tolerancePx;
+  return Math.hypot(to.x - from.x, to.y - from.y) > CONTEXT_MENU_MOVE_TOLERANCE_PX;
 }
 
 export function flowRectFromPoints(

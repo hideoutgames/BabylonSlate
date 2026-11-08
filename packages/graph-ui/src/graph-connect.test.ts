@@ -1464,7 +1464,7 @@ describe("nearestSnapConnectPin", () => {
 
   it("returns undefined when every compatible pin is outside the radius", () => {
     expect(
-      nearestSnapConnectPin({ x: 100, y: 200 }, source, pins, 40),
+      nearestSnapConnectPin({ x: 200, y: CONNECT_END_CANCEL_PX }, source, pins),
     ).toBeUndefined();
   });
 });

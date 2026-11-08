@@ -533,15 +533,18 @@ export function staticBlockerBakeParts(
   return parts;
 }
 
+/** Scene units the 2D floor reaches past its outermost actor origin or wall. */
+const XY_BOUNDS_PAD = 8;
+
 /**
  * 2D floor bounds: actor origins plus the Recast XZ walls and solids baked on
  * it (collider and tilemap geometry), padded so walls never sit off the floor.
  */
 export function xyBoundsFromActors(
   actors: readonly BlockerActorBakeInput[],
-  pad = 8,
   geometry: readonly NavBakeMeshPart[] = [],
 ): XyBounds {
+  const pad = XY_BOUNDS_PAD;
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;

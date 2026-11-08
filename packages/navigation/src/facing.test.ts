@@ -11,6 +11,6 @@ describe("facingYawFromVelocity", () => {
   });
 
   it("keeps the previous yaw when speed is below the guard", () => {
-    expect(facingYawFromVelocity({ x: 0, y: 0, z: 0.0001 }, 0.4, 0.01)).toBe(0.4);
+    expect(facingYawFromVelocity({ x: 0, y: 0, z: 0.0001 }, 0.4)).toBe(0.4);
   });
 });

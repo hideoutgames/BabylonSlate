@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { canCopyPropertyRow, pastePropertyRow, pastedPropertyValue, type PropertyClipboardEntry } from "./property-clipboard";
+import { canCopyPropertyRow, canPastePropertyRow, copyPropertyRow, pastePropertyRow, pastedPropertyValue, type PropertyClipboardEntry } from "./property-clipboard";
 import type { PropertyRow } from "./property-grid";
 
 const base = { id: "row", label: "Row" };
@@ -43,14 +43,22 @@ describe("property clipboard", () => {
     expect(canCopyPropertyRow({ ...base, kind: "vector3", value: [0, 0, 0], mixedAxes: [false, true, false], onChange: () => {} })).toBe(false);
   });
 
-  it("pastes as one finished edit, with its own copy of the value", () => {
+  it("pastes the copied value as one finished edit, with its own copy each time", () => {
+    const source: PropertyRow = { ...base, kind: "vector3", value: [1, 2, 3], onChange: () => {} };
+    expect(copyPropertyRow(source)).toBe(true);
     const onChange = vi.fn();
     const onCommit = vi.fn();
-    const entry: PropertyClipboardEntry = { kind: "vector3", value: [1, 2, 3] };
-    expect(pastePropertyRow({ ...base, kind: "vector3", value: [0, 0, 0], onChange, onCommit }, entry)).toBe(true);
+    const target: PropertyRow = { ...base, kind: "vector3", value: [0, 0, 0], onChange, onCommit };
+    expect(canPastePropertyRow(target)).toBe(true);
+    expect(pastePropertyRow(target)).toBe(true);
+    expect(pastePropertyRow(target)).toBe(true);
     expect(onChange).toHaveBeenCalledWith([1, 2, 3]);
     expect(onCommit).toHaveBeenCalledWith([1, 2, 3]);
-    expect(onChange.mock.calls[0]![0]).not.toBe(entry.value);
-    expect(pastePropertyRow(number({ onChange }), entry)).toBe(false);
+    expect(onChange.mock.calls[0]![0]).not.toBe(source.value);
+    expect(onChange.mock.calls[0]![0]).not.toBe(onChange.mock.calls[1]![0]);
+    const numberChange = vi.fn();
+    expect(canPastePropertyRow(number({ onChange: numberChange }))).toBe(false);
+    expect(pastePropertyRow(number({ onChange: numberChange }))).toBe(false);
+    expect(numberChange).not.toHaveBeenCalled();
   });
 });

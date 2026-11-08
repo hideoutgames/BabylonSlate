@@ -146,13 +146,13 @@ export function pastedPropertyValue(row: PropertyRow, entry: PropertyClipboardEn
   }
 }
 
-export function canPastePropertyRow(row: PropertyRow, entry: PropertyClipboardEntry | null = copied): boolean {
-  return pastedPropertyValue(row, entry) !== undefined;
+export function canPastePropertyRow(row: PropertyRow): boolean {
+  return pastedPropertyValue(row, copied) !== undefined;
 }
 
 /** Sets the copied value on `row` as one finished edit; false when the row does not take it. */
-export function pastePropertyRow(row: PropertyRow, entry: PropertyClipboardEntry | null = copied): boolean {
-  const pasted = pastedPropertyValue(row, entry);
+export function pastePropertyRow(row: PropertyRow): boolean {
+  const pasted = pastedPropertyValue(row, copied);
   if (pasted === undefined) return false;
   const value = structuredClone(pasted);
   // Same shape as Reset: change, then commit for rows that report finished edits.
