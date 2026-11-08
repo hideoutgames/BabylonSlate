@@ -16,6 +16,7 @@ import {
   type MeshAssetContext,
 } from "./mesh-assets";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
+import { setTestTextureBudget } from "./test-support/resource-cache-budget";
 import { ktx2HeaderBytes } from "./texture-test-fixtures";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { createDefaultSpriteAnimationPayload, createDefaultSpritePayload } from "@haptic/assets";
@@ -345,7 +346,7 @@ describe("applyAlbedoTexture", () => {
       const working = unlitBinding(f.mesh).texture;
       const bytes = f.cache.accountedBytes();
       expect(bytes).toBeGreaterThan(0);
-      f.cache.setByteCeiling(bytes + 1);
+      setTestTextureBudget(f.cache, bytes + 1);
       const assets = { ...f.assets, textureBytes: new Map(f.assets.textureBytes).set("deferred", source) };
       applyAlbedoTexture(f.mesh, f.scene, "deferred", assets);
       const next = f.acquire.mock.results[1]!.value as ReturnType<ResourceCache["acquireTexture"]>;
@@ -456,7 +457,8 @@ describe("applyAlbedoTexture", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     // NullEngine reserves unknown-format 512x512 uploads as RGBA float.
-    const cache = new ResourceCache({ byteCeiling: 16 * 1024 * 1024 });
+    const cache = new ResourceCache();
+    setTestTextureBudget(cache, 16 * 1024 * 1024);
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const albedoLease = acquireMaterialTexture(cache, "tex-1", engine, bytes);
     const albedo = albedoLease?.resource ?? null;

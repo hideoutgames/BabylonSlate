@@ -6,6 +6,7 @@ import { Scene } from "@babylonjs/core/scene";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { acquireTextureVariant, ResourceCache } from "./resource-cache";
+import { setTestTextureBudget } from "./test-support/resource-cache-budget";
 
 it("cancels a pending upload after its final owner releases it and ignores a late native failure", async () => {
   const { cache, engine } = host();
@@ -63,7 +64,7 @@ it("retries a failed upload under the same source identity before eviction", asy
 
 it("rejects an over-budget successor without retiring the working upload", () => {
   const { cache, engine } = host();
-  cache.setByteCeiling(200);
+  setTestTextureBudget(cache, 200);
   const working = cache.acquireTexture("working", engine, ktx2());
   uploaded(working.resource, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
   expect(cache.accountedBytes()).toBe(80);
@@ -80,7 +81,7 @@ it("admits a sampling variant that shares a live upload while over budget", asyn
   const working = cache.acquireTexture("working", engine, ktx2());
   uploaded(working.resource, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
   const bytes = cache.accountedBytes();
-  cache.setByteCeiling(bytes - 1);
+  setTestTextureBudget(cache, bytes - 1);
   const variant = acquireTextureVariant(working.resource as Texture, { anisotropicFilteringLevel: 2 });
   expect(variant?.resource).not.toBe(working.resource);
   await expect(variant?.ready).resolves.toBeUndefined();
@@ -102,7 +103,7 @@ it.each([
   const header = new Blob();
   vi.spyOn(header, "arrayBuffer").mockImplementation(() => new Promise((resolve) => { headers.push(() => resolve(ktx2().buffer)); }));
   vi.spyOn(bytes, "slice").mockReturnValue(header);
-  cache.setByteCeiling(79);
+  setTestTextureBudget(cache, 79);
   const source = cache.acquireTexture("atlas", engine, bytes);
   uploaded(source.resource, Constants.TEXTUREFORMAT_COMPRESSED_RGBA_ASTC_4x4);
   const variant = acquireTextureVariant(source.resource as Texture, { anisotropicFilteringLevel: 2 })!;
