@@ -1,0 +1,19 @@
+Ark Pixel Font 2026.10.25 by TakWolf (SIL Open Font License 1.1, see OFL.txt).
+https://github.com/TakWolf/ark-pixel-font
+
+The four fonts are the 10 px and 12 px sizes in Monospaced and Proportional
+widths, Latin language flavor (Chinese, Japanese and Korean characters use the
+Latin flavor's shapes), with every character the font draws:
+
+  ark-pixel-10px-monospaced-latin.woff2
+  ark-pixel-10px-proportional-latin.woff2
+  ark-pixel-12px-monospaced-latin.woff2
+  ark-pixel-12px-proportional-latin.woff2
+
+They were built unmodified from the human-drawn glyph sources at commit
+f47afb1241859b5311dc48e9571e5fbaf8f82b32 with the project's own build program
+(MIT License): `python -m tools.build_fonts --font-formats otf.woff2` on
+Python 3.14, renaming `<name>.otf.woff2` to `<name>.woff2`. OFL.txt is the
+repository's LICENSE-OFL.
+
+Projects and exports that ship these fonts must keep OFL.txt with them.

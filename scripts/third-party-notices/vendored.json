@@ -59,5 +59,13 @@
       "../../apps/editor/public/legal/BabylonJS-Area-Lights-Attribution.txt",
       "../../apps/editor/public/legal/BabylonJS-Area-Lights-CC-BY-4.0.txt"
     ]
+  },
+  {
+    "name": "Ark Pixel Font",
+    "version": "2026.10.25",
+    "license": "OFL-1.1",
+    "source": "https://github.com/TakWolf/ark-pixel-font",
+    "scopes": ["editor", "game"],
+    "files": ["../../engine-content/fonts/ArkPixel/OFL.txt"]
   }
 ]
