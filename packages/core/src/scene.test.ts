@@ -300,6 +300,15 @@ describe("scene schema", () => {
     ).toBe(true);
   });
 
+  it("keeps 2D Z-Order stacking off unless set, with a whole Next Z-Order", () => {
+    expect(normalizeScene({}).settings).toMatchObject({ stackZOrder2D: false, nextZOrder2D: 0 });
+    expect(normalizeScene({ settings: { stackZOrder2D: "yes", nextZOrder2D: "4" } }).settings)
+      .toMatchObject({ stackZOrder2D: false, nextZOrder2D: 0 });
+    expect(normalizeScene({ settings: { stackZOrder2D: true, nextZOrder2D: 2.6 } }).settings)
+      .toMatchObject({ stackZOrder2D: true, nextZOrder2D: 3 });
+    expect(normalizeScene({ settings: { nextZOrder2D: Number.NaN } }).settings.nextZOrder2D).toBe(0);
+  });
+
   it("normalizes editorJoystickEnabled to true unless explicitly false", () => {
     expect(normalizeScene({}).settings.editorJoystickEnabled).toBe(true);
     expect(

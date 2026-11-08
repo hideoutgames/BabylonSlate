@@ -47,6 +47,8 @@ To give a whole project the pixel-art look, turn on **Pixel-Perfect Mode** and t
 ## Draw order
 
 - **Z-Order** sets depth. An actor with a higher Z-Order is nearer the camera and draws in front.
+- Every actor you place, drag onto the viewport, paste or duplicate gets Z-Order 0. Its X and Y are kept, and actors inside a pasted or duplicated group keep their offsets from their parent. Camera actors keep their depth, since it is their distance from the scene.
+- To stack new actors instead, turn on **Stack New Actors** in **Scene Settings**. Each new actor then gets **Next Z-Order**, which goes up by one after it, so it draws above the one before. Set **Next Z-Order** to start the count again.
 - At the same depth, **Sorting Layer** and **Order In Layer** decide. Layers later in the project list draw on top, and within a layer a higher order draws on top.
 
 Sprite, Tilemap layers and Particle components each have a **Sorting Layer** and an **Order In Layer**.

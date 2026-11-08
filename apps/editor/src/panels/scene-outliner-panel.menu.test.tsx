@@ -147,6 +147,32 @@ describe("SceneOutlinerPanel menus", () => {
     expect(pasted.actors).toEqual([expect.objectContaining({ name: "Copied Cube Copy" })]);
   });
 
+  it("duplicates and pastes into a 2D Scene at Z-Order 0, keeping X and Y", async () => {
+    const scene = createDefaultScene("2d");
+    scene.actors = [{ ...createActor("actor-1", "Crate"), transform: { position: [2, 3, -5], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } }];
+    harness.scene = scene;
+    render(<KeybindProvider><EditorSessionStateProvider><SceneEditingProvider>
+      <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+    </SceneEditingProvider></EditorSessionStateProvider></KeybindProvider>);
+    fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
+    fireEvent.click(screen.getByTestId("outliner-duplicate-actor-1"));
+    const duplicated = applySceneChange.mock.calls.at(-1)?.[1] as SerializedScene;
+    expect(duplicated.actors.map((actor) => [actor.name, actor.transform.position])).toEqual([
+      ["Crate", [2, 3, -5]],
+      ["Crate Copy", [2, 3, 0]],
+    ]);
+
+    fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy" }));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    const tree = screen.getByRole("tree");
+    tree.focus();
+    fireEvent.keyDown(tree, { key: "v", code: "KeyV", ctrlKey: true });
+    await waitFor(() => expect(applySceneChange).toHaveBeenCalledTimes(2));
+    const pasted = applySceneChange.mock.calls.at(-1)?.[1] as SerializedScene;
+    expect(pasted.actors.at(-1)?.transform.position).toEqual([2, 3, 0]);
+  });
+
   it("bounds actor and asset reads when selection rebuilds many row menus", async () => {
     let actorIdReads = 0;
     const scene = createDefaultScene();

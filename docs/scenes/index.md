@@ -54,6 +54,7 @@ Tap empty space in the viewport, or clear the selection, to show **Scene Setting
 | Fog | Distance fog, with **Fog Mode**, **Fog Color** and its distance or density settings. See [Sky and Fog](../graphics/sky-and-fog.md). |
 | Default Camera | The placed actor Play looks through when the scene starts; **None** starts on the Layer Camera. See [Cameras](../graphics/cameras.md#choose-the-camera-in-view). |
 | Joystick | Shows the on-screen joystick for the editor camera. |
+| Stack New Actors, Next Z-Order | 2D only. Off (the default): every actor you place, drag onto the viewport, paste or duplicate gets **Z-Order** 0. On: each one gets **Next Z-Order**, which then goes up by one, so it draws above the last. See [Draw order](../2d/index.md#draw-order). |
 | Gravity | Default 0, −9.81, 0. |
 | Snap Step, Tile Size, Tile Subdivisions | Grid Snap, Grid Size, and how many subdivisions each grid cell has. |
 | Layer Camera Location, Layer Camera Width, Layer Camera Height | Where the scene's [Layer Camera](../graphics/cameras.md#layer-camera) starts and the area it frames, shown as the orange outline in 2D. Default 0, 0 and 16 × 9. |

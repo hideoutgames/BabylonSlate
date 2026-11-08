@@ -190,6 +190,24 @@ describe("SceneAssetsPanel", () => {
     expect(cardIds()).toEqual(["asset-cone", "asset-crate", "asset-door", "asset-level", "asset-stack"]);
   });
 
+  it("places into a 2D Scene from Next Z-Order upward when Stack New Actors is on", () => {
+    viewportDropApi.placementAtViewCenter.mockReturnValueOnce({ position: [1, 2, 0], normal: null });
+    const scene = createDefaultScene("2d");
+    scene.settings = { ...scene.settings, stackZOrder2D: true, nextZOrder2D: 2 };
+    harness.scene = scene;
+    render(<SceneAssetsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(card("crate"));
+    fireEvent.click(card("stack"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("scene-assets-place"));
+    const next = applySceneChange.mock.calls[0]![1];
+    // Two entries spread across X/Y around the view centre, at Z-Order 2 and 3.
+    expect(next.actors.slice(scene.actors.length).map((actor) => [actor.name, actor.transform.position])).toEqual([
+      ["Crate", [0, 2, -2]],
+      ["Stack", [2, 2, -3]],
+    ]);
+    expect(next.settings.nextZOrder2D).toBe(4);
+  });
+
   it("lists a Scene Layer's built-in 2D elements before its Layer Actor Classes and Models", () => {
     renderPanel("scene-layer");
     const ids = cardIds();

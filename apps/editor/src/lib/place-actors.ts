@@ -1,4 +1,4 @@
-import { remapScenePropertyReferences } from "@haptic/core";
+import { actorCameraComponent, remapScenePropertyReferences } from "@haptic/core";
 import {
   createActor,
   UI_CONTROL_2D_CLASS_IDS,
@@ -32,6 +32,7 @@ import {
 import { classIdFromClassAsset, classParentLookup } from "./content-browser-helpers";
 import { mergedPrefabComponentsForClass } from "./prefab-instance-sync";
 import { duplicateBaseName, uniqueSceneActorName } from "./scene-actor-names";
+import { depthFromZOrder } from "./transform-property-rows";
 
 export type PlaceActorKind =
   | { type: "shape"; meshKind: string }
@@ -569,6 +570,38 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
     return resolveTypeVisual({ assetType: kind.assetType });
   }
   return resolveActorTypeVisual({ classId: "Actor" });
+}
+
+/**
+ * `scene` with new actors (placed, dropped on the viewport, pasted or
+ * duplicated) added in creation order. In a Scene whose viewport is 2D, each
+ * new actor whose parent is not new too takes Z-Order 0, or, with Stack New
+ * Actors on, the Scene's Next Z-Order, which then goes up by one per actor;
+ * actors under a new parent keep their offset. A Camera keeps its Z: in 2D it
+ * is the camera's distance from the scene, not a draw order. 3D and Scene
+ * Layers add the actors as they are.
+ */
+export function addNewSceneActors(
+  scene: SerializedScene,
+  actors: readonly SerializedActor[],
+): SerializedScene {
+  if (scene.viewportMode !== "2d" || scene.overlayEditor) {
+    return { ...scene, actors: [...scene.actors, ...actors] };
+  }
+  const ids = new Set(actors.map((actor) => actor.id));
+  const stack = scene.settings.stackZOrder2D;
+  let order = scene.settings.nextZOrder2D;
+  const added = actors.map((actor): SerializedActor => {
+    if ((actor.parentId && ids.has(actor.parentId)) || actorCameraComponent(actor)) return actor;
+    const [x, y] = actor.transform.position;
+    const z = depthFromZOrder(stack ? order++ : 0);
+    return { ...actor, transform: { ...actor.transform, position: [x, y, z] } };
+  });
+  return {
+    ...scene,
+    ...(stack ? { settings: { ...scene.settings, nextZOrder2D: order } } : {}),
+    actors: [...scene.actors, ...added],
+  };
 }
 
 /** Undo merge key a placement and its rest on a surface share. */
