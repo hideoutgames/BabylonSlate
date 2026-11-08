@@ -14,7 +14,7 @@ export type ActorTransformMap = ReadonlyMap<string, Transform>;
 /** Resolve one current pose without caching transforms changed by this tick's scripts. */
 export function actorWorldTransform(
   actor: Actor,
-  actorsByGuid: ReadonlyMap<string, Actor>,
+  actorsByGuid: Pick<ReadonlyMap<string, Actor>, "get">,
 ): Transform | null {
   const chain = [actor.transform];
   let parentId = actorParentGuid(actor);
