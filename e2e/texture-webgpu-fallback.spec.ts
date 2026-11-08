@@ -139,7 +139,12 @@ async function fixture(backend: Backend): Promise<Map<string, Uint8Array>> {
   }, { dependencies: [PARTICLE_GUID] }));
   const scene = createDefaultScene();
   scene.settings.grid.showGrid = false;
-  const textured = createMeshComponent("mesh-1", "box");
+  // The Main Class's prefab mesh on this instance, with its Material overridden.
+  const textured = {
+    ...createMeshComponent("mesh-1", "box"),
+    sourceId: "prefab-mesh",
+    overrideKeys: ["materialGuid", "materialSource"],
+  };
   textured.properties.materialGuid = SURFACE_GUID;
   const sun = createDefaultSunActor(lookAtRotation(SUN_POSITION, [0, 0, 0]));
   sun.transform.position = [...SUN_POSITION];

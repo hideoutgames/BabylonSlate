@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAIN_CLASS_FILE,
+  MAIN_SCENE_FILE,
   type SerializedComponent,
+  type SerializedGraph,
+  type SerializedScene,
   createActor,
   createDefaultScene,
   createMeshComponent,
@@ -21,6 +25,8 @@ import { EditSession, commandToJournalPayload, diffSceneCommands, replayJournalL
 import { instantiatePrefabComponents } from "./prefab-preview";
 import { MODEL_MATERIALS_PICKER_VALUE, patchInspectorComponentProperty } from "./mesh-material-properties";
 import { duplicateSceneActor, spawnPlacedActor } from "./place-actors";
+import { decodeAssetDocument } from "@haptic/assets";
+import { minimalProjectFiles } from "../../../../packages/assets/src/test-support/minimal-project";
 
 const identity = identitySerializedTransform();
 
@@ -244,6 +250,18 @@ describe("syncActorComponentsFromPrefab", () => {
 });
 
 describe("syncSceneActorsFromPrefabs", () => {
+  it("opens the minimal test project's Main instance with its one prefab mesh, unchanged", async () => {
+    const files = await minimalProjectFiles();
+    const scene = (await decodeAssetDocument(files.get(MAIN_SCENE_FILE)!)).payload as unknown as SerializedScene;
+    const graph = (await decodeAssetDocument(files.get(MAIN_CLASS_FILE)!)).payload as unknown as SerializedGraph;
+    const template = mergedPrefabComponentsForClass({ classId: "main", parentOf: () => null, graphs: { main: graph } })!;
+    const synced = syncSceneActorsFromPrefabs(scene, { main: template });
+    expect(synced).toBe(scene);
+    const meshes = synced.actors.find((actor) => actor.id === "actor-1")!.components
+      .filter((component) => component.classId === "MeshComponent");
+    expect(meshes.map((component) => [component.id, component.sourceId])).toEqual([["mesh-1", "prefab-mesh"]]);
+  });
+
   it("updates matching classId actors and leaves others alone", () => {
     const scene = createDefaultScene();
     scene.actors = [
