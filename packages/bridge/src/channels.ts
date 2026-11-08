@@ -269,7 +269,7 @@ export type ControlMessage =
       loopCount?: number;
       /** Simulation: pause the first time each node reports an error, and send `sessionPaused` with its cause. */
       pauseOnErrors?: boolean;
-      /** Node breakpoints set when the session starts; scripts must be compiled with `instrumentBreakpoints`. */
+      /** Node breakpoints set when the session starts; scripts must be compiled with `instrumentExecutionTrace`. */
       breakpoints?: Breakpoint[];
       /** Audio asset guids in the Play library (BT PlaySound fail-on-missing). */
       audioAssetGuids?: string[];

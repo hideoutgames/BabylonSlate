@@ -11,7 +11,7 @@ const log = (id: string, message: string) =>
   graphNode(registry, id, "debug.log", { category: "Scenario", "default:message": message });
 
 /** A Class that logs "begin" on Begin Play, and "a" then "b" every tick. */
-function heroScript(compile: Parameters<typeof compileClassScript>[0]["compile"] = { instrumentBreakpoints: true }) {
+function heroScript(compile: Parameters<typeof compileClassScript>[0]["compile"] = { instrumentExecutionTrace: true }) {
   return compileClassScript({
     registry,
     classId: "Hero",
@@ -102,7 +102,7 @@ describe("node breakpoints", () => {
 
   it("never stop a release export", async () => {
     const scenario = await startGraphScenario({
-      scripts: [heroScript({ instrumentBreakpoints: true, stripDevelopmentOnly: true })],
+      scripts: [heroScript({ instrumentExecutionTrace: true, stripDevelopmentOnly: true })],
       actors: heroes.slice(0, 1),
       runtime: { breakpoints: [at("logA")] },
     });
@@ -122,7 +122,7 @@ function counterScript() {
   return compileClassScript({
     registry,
     classId: "Hero",
-    compile: { instrumentBreakpoints: true },
+    compile: { instrumentExecutionTrace: true },
     graph: {
       id: "event-graph",
       kind: "event",

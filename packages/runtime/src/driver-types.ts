@@ -133,7 +133,7 @@ export interface RuntimeDriverOptions {
    */
   pauseOnErrors?: boolean;
   /**
-   * Node breakpoints from the first run on: in Class graphs (scripts compiled with `instrumentBreakpoints`),
+   * Node breakpoints from the first run on: in Class graphs (scripts compiled with `instrumentExecutionTrace`),
    * Behaviour Trees and State Machines. A hit (a run that meets the breakpoint's condition and hit count)
    * pauses the session at the end of the tick and sends `sessionPaused` with its location and object.
    */
