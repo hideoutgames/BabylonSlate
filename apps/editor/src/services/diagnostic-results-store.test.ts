@@ -10,7 +10,7 @@ const recording = (durationMs = 1000, retainedBytes = 1024, stopReason: Performa
 const capture = (renderFrameId = 1) => ({ version: 1, frame: { renderFrameId } }) as unknown as RenderFrameReport;
 function ports(overrides: Partial<DiagnosticSessionPorts> = {}): DiagnosticSessionPorts {
   return { mode: "play", startProfile: vi.fn(async () => {}), stopProfile: vi.fn(async () => null),
-    captureFrame: vi.fn(async () => { throw new Error("Unavailable"); }), ...overrides };
+    captureFrame: vi.fn(async () => { throw new Error("Unavailable"); }), stopSession: vi.fn(), ...overrides };
 }
 it("opens old results without collecting and enforces Simulation capability in dispatch", async () => {
   const store = new DiagnosticResultsStore();
@@ -31,9 +31,9 @@ it("keeps the latest recording when a frame is captured, and ignores a previous 
   const profile = recording();
   first.publishProfile(profile);
   first.release();
-  const second = store.bindSession(ports());
   const report = capture();
-  second.publishFrame(report);
+  store.bindSession(ports({ captureFrame: vi.fn(async () => report) }));
+  await store.captureFrame();
   const later = recording(1);
   first.publishProfile(later);
   first.publishError("late failure");
@@ -115,4 +115,13 @@ it.each([
   lease.publishProfile(recording(10_000, 1024, stopReason));
   expect(store.getSnapshot()).toMatchObject({ active: null, busy: false, open: opens, view: opens ? "summary" : "timeline" });
   expect(store.getSnapshot().profiles).toHaveLength(1);
+});
+
+it("stops the bound session through its port and shows why a stop failed", async () => {
+  const store = new DiagnosticResultsStore();
+  const stopSession = vi.fn(async () => { throw new Error("The player did not stop."); });
+  store.bindSession(ports({ stopSession }));
+  await store.stopSession();
+  expect(stopSession).toHaveBeenCalledOnce();
+  expect(store.getSnapshot().error).toBe("The player did not stop.");
 });

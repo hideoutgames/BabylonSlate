@@ -11,7 +11,7 @@ export type DiagnosticSessionPorts = {
   startProfile(options: DiagnosticProfileOptions): Promise<void>;
   stopProfile(): Promise<PerformanceProfile | null>;
   captureFrame(): Promise<RenderFrameReport>;
-  stopSession?(): void | Promise<unknown>;
+  stopSession(): void | Promise<unknown>;
 };
 /** A kept result: its short name (a recording number and time, or a file name) and the full label the history lists. */
 export type DiagnosticHistoryEntry<T> = { id: number; name: string; label: string; value: T };
@@ -100,10 +100,6 @@ export class DiagnosticResultsStore {
         this.update({ ...this.keepProfile(profile), active: null, busy: false, error: null,
           ...(endedItself ? { open: true, view: "summary" as const } : {}) });
       },
-      publishFrame: (report: RenderFrameReport) => {
-        if (this.session !== session) return;
-        this.update({ ...this.keepFrame(report), active: null, busy: false, error: null, view: "frame" });
-      },
       publishError: (reason: string) => this.fail(session, reason),
       release: () => {
         if (this.session !== session) return;
@@ -142,7 +138,7 @@ export class DiagnosticResultsStore {
   }
   async stopSession(): Promise<void> {
     const session = this.session;
-    try { await session?.ports.stopSession?.(); }
+    try { await session?.ports.stopSession(); }
     catch (error) { if (session) this.fail(session, error); }
   }
   private available() {
