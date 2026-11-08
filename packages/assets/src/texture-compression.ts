@@ -5,7 +5,6 @@
 export type TextureCompressionState =
   | "pending"
   | "compressed"
-  | "fallback_uncompressed"
   | "encode_failed";
 
 export type TextureUsage =

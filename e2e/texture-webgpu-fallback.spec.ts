@@ -327,7 +327,8 @@ async function addTwoToneTexture(
     height,
     usage: source === "ktx2" ? "albedo" : "pixelArt",
     downsample: 1,
-    compressionState: source === "ktx2" ? "compressed" : "fallback_uncompressed",
+    // Pixel Art is never compressed, so its import writes no compression state.
+    ...(source === "ktx2" ? { compressionState: "compressed" } : {}),
   };
   if (source === "ktx2") {
     const settings = { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, maxDimension: height };
