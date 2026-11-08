@@ -891,7 +891,6 @@ describe("collectExportReachability", () => {
     };
     // Saved Particle Graph shape: the Material is a top-level field; nodes hold no asset refs.
     const graphWithMaterial = (materialGuid: string) => ({
-      schemaVersion: 1,
       name: "Embers",
       materialGuid,
       nodes: [

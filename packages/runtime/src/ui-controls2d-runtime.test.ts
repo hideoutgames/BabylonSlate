@@ -130,7 +130,7 @@ describe("SceneLayer control runtime integration", () => {
       { id: "input", classId: "2DTextInputComponent", properties: {} },
     ] })];
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: createDefaultScene(), sceneLayerLibrary: { background, modal }, onCommand: (command) => commands.push(command) });
     try {
       runtime.realizePlayWorld(); runtime.createSceneLayer("background"); runtime.createSceneLayer("modal", 1);
@@ -159,7 +159,7 @@ describe("SceneLayer control runtime integration", () => {
       { id: "later-radio", classId: "2DRadioButtonComponent", properties: { checked: true, group: "choice" } },
     ] })];
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: createDefaultScene(), sceneLayerLibrary: { radios: layer }, onCommand: (command) => commands.push(command) });
     try {
       runtime.realizePlayWorld(); runtime.createSceneLayer("radios");
@@ -182,7 +182,7 @@ describe("SceneLayer control runtime integration", () => {
     ];
     layer.actors = [createActor("controls", "Controls", { classId: "Controls", components })];
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: createDefaultScene(), sceneLayerLibrary: { controls: layer }, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts([{ assetGuid: "controls-script", classId: "Controls", parentClassId: "SceneLayerActor", anchors: [],

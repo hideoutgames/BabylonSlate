@@ -1,4 +1,5 @@
 import { IMAGE_EXTENSIONS } from "./image";
+import { fileNameOf } from "./file-name";
 import { extensionOf } from "./util";
 
 export interface ImportFileBytes {
@@ -11,10 +12,6 @@ function stemOf(fileName: string): string {
   const base = fileName.split(/[\\/]/).pop() ?? fileName;
   const idx = base.lastIndexOf(".");
   return (idx > 0 ? base.slice(0, idx) : base).toLowerCase();
-}
-
-function fileNameOf(fileName: string): string {
-  return (fileName.split(/[\\/]/).pop() ?? fileName).toLowerCase();
 }
 
 /** Options a texture statement may put before its file name, with their argument counts. */

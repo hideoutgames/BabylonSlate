@@ -174,7 +174,7 @@ async function setup(kind: "3d" | "2d", properties: Record<string, unknown> = {}
         : { kind: "box2d", halfExtents: { x: 100, y: 0.5 } } } },
     ],
   }));
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
     physicsWorld: kind, playScene: { name: "Movement", viewportMode: kind,
       settings: { ...createDefaultSceneSettings(), physicsWorld: kind }, actors, folders: [] } });
   await runtime.loadScripts([controlScript]);
@@ -437,7 +437,7 @@ describe("Movement through the shared Play/player runtime", () => {
       source: go("follower-motor"), entryPoints: [{ name: "go", event: "go", isAsync: false }],
     }];
     const motor = (id: string) => ({ id, classId: "MovementComponent", properties: { gravityScale: 0, acceleration: 600, airControl: 1 } });
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       physicsWorld: "3d", playScene: { name: "Movement", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [
         // The leader's motor registers first, so its event runs before the follower's motor.
         createActor("leader", "Leader", { classId: "Leader", components: [motor("leader-motor")] }),

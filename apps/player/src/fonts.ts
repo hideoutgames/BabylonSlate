@@ -1,8 +1,9 @@
 import { compileText2DFontStacks } from "@haptic/assets";
 
+/** Bitmap 2D Text CSS stacks from packed family names, each ending in the project's Global Fallback. */
 export function packedFontCssStacks(
   fontFamilies: ReadonlyMap<string, string>,
-  globalFallback = "sans-serif",
+  globalFallback: string,
   defaultFontGuid?: string,
   fallbackGuids?: ReadonlyMap<string, readonly string[]>,
 ): { fontCssStack: string; fontCssStackByGuid: Map<string, string> } {

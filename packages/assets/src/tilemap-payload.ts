@@ -2,8 +2,7 @@ import { sortingLayerSortKey } from "@haptic/core";
 /** Tilemap asset payload: ordered layers of chunked tile ids (engineplan §13.3). */
 
 import {
-  tilesetAtlasColumns,
-  tilesetAtlasRows,
+  tilesetAtlasTileCount,
   type TilesetPayload,
 } from "./tileset-payload";
 import { tilesetTerrainStamp } from "./tileset-terrain";
@@ -207,12 +206,8 @@ export function decodeTileGid(
   const identity = tilemapTileIdentity(map, gid);
   if (!identity) return null;
   const tileset = tilesets.get(identity.guid);
-  if (!tileset || identity.localId > atlasTileCount(tileset)) return null;
+  if (!tileset || identity.localId > tilesetAtlasTileCount(tileset)) return null;
   return { ...identity, tileset };
-}
-
-function atlasTileCount(tileset: TilesetPayload): number {
-  return tilesetAtlasColumns(tileset) * tilesetAtlasRows(tileset);
 }
 
 function highestPaintedGid(map: TilemapPayload): number {
@@ -240,7 +235,7 @@ export function reconcileTilemapTilesets(
   // cells only when atlas growth or overlap needs repair.
   if (ordered.every((ref, index) => {
     const atlas = knownTilesets.get(ref.guid);
-    return ref.tileCount >= (atlas ? atlasTileCount(atlas) : 0)
+    return ref.tileCount >= (atlas ? tilesetAtlasTileCount(atlas) : 0)
       && ref.firstGid + ref.tileCount <= (ordered[index + 1]?.firstGid ?? Infinity);
   })) return map;
   const nextRefs = new Map(ordered.map((ref) => [ref.guid, { ...ref }]));
@@ -257,7 +252,7 @@ export function reconcileTilemapTilesets(
   for (const original of ordered) {
     const ref = nextRefs.get(original.guid)!;
     const payload = knownTilesets.get(ref.guid);
-    const count = Math.max(ref.tileCount, payload ? atlasTileCount(payload) : 0);
+    const count = Math.max(ref.tileCount, payload ? tilesetAtlasTileCount(payload) : 0);
     let nextFirst = Infinity;
     for (const other of nextRefs.values()) {
       if (other.firstGid > ref.firstGid) nextFirst = Math.min(nextFirst, other.firstGid);
@@ -293,7 +288,7 @@ export function addTilemapTileset(
   if (!guid) return map;
   if (map.tilesets.some((ref) => ref.guid === guid)) return map;
   const reconciled = reconcileTilemapTilesets(map, knownTilesets ?? new Map());
-  const count = Math.max(1, atlasTileCount(tileset));
+  const count = Math.max(1, tilesetAtlasTileCount(tileset));
   const firstGid = nextTilesetFirstGid(reconciled);
   // No cell uses the Tileset yet, so the map starts current with its terrains.
   const ref = { guid, firstGid, tileCount: count, terrainStamp: tilesetTerrainStamp(tileset) };

@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  snapshotFloatCount,
-  writeSnapshotHeader,
-} from "@haptic/bridge";
-import {
   applyPlayerFpsSample,
-  applyPlayerSnapshotTick,
   applyWorkerPlayerStats,
   unlockAudioOnFirstGesture,
 } from "./hud";
@@ -58,22 +53,6 @@ describe("applyWorkerPlayerStats", () => {
     expect(next.ticks).toBe(13);
     expect(next.scriptMs).toBe(4);
     expect(next.physicsMs).toBe(5);
-  });
-});
-
-describe("applyPlayerSnapshotTick", () => {
-  it("keeps worker tickIndex from the snapshot when stats are sparse", () => {
-    const unpublished = new Float32Array(snapshotFloatCount(1));
-    expect(applyPlayerSnapshotTick(7, unpublished)).toBe(7);
-    const published = new Float32Array(snapshotFloatCount(1));
-    writeSnapshotHeader(published, {
-      frameId: 3,
-      tickIndex: 40,
-      actorCount: 0,
-      scriptMs: 1,
-      physicsMs: 1,
-    });
-    expect(applyPlayerSnapshotTick(7, published)).toBe(40);
   });
 });
 

@@ -460,7 +460,6 @@ it.each([
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         ...createDefaultScene(),

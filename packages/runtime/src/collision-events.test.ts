@@ -135,7 +135,6 @@ describe("runtime collision events", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 4,
-      seedDemoActors: false,
       physicsWorld: "3d",
       gravity: [0, 0, 0],
       dt: 1 / 60,
@@ -188,7 +187,6 @@ describe("runtime collision events", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 3,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
       dt: 1 / 60,
@@ -231,7 +229,6 @@ describe("runtime collision events", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 4,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
       dt: 1 / 60,
@@ -280,7 +277,6 @@ describe("runtime collision events", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 5,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
       dt: 1 / 60,
@@ -324,7 +320,6 @@ describe("runtime collision events", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 6,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
       dt: 1 / 60,
@@ -369,7 +364,6 @@ describe("runtime collision events", () => {
     const registry = createDefaultNodeRegistry();
     const runtime = createInProcessRuntime({
       seed: 7,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
       dt: 1 / 60,
@@ -399,7 +393,6 @@ describe("runtime collision events", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 6,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
       dt: 1 / 60,
@@ -462,7 +455,6 @@ describe("runtime collision events", () => {
     const registry = createDefaultNodeRegistry();
     const runtime = createInProcessRuntime({
       seed: 8,
-      seedDemoActors: false,
       physicsWorld: "3d",
       gravity: [0, 0, 0],
       dt: 1 / 60,

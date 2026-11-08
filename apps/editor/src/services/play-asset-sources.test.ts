@@ -256,7 +256,7 @@ describe("Play source ownership", () => {
     const compile = vi.fn(async () => ({ bundles: [compilerOutput], diagnostics: [] }));
     const host = { registry, project: createEmptyProject("Commands"), createScope: (owner: string) => loading.createScope(owner), compile };
     const messages: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       classAssetGuids: { LoadLeft: guid }, consoleCommands: [{ ...command, classId: "LoadLeft", assetGuid: guid }],
       onCommand: message => messages.push(message),
     });

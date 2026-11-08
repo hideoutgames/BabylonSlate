@@ -303,7 +303,7 @@ describe("Asset Registry nodes at runtime", () => {
     const logs: string[] = [];
     const runtime = createInProcessRuntime({
       ...runtimeOptionsFromLoadControl({ type: "load", sceneAssetGuid: "scene", ...(assetCatalog ? { assetCatalog } : {}) }),
-      seedDemoActors: false, preferSoftwarePhysics: true,
+      preferSoftwarePhysics: true,
       onCommand: (command) => { if (command.type === "log" && command.category === "Assets") logs.push(command.message); },
     });
     try {

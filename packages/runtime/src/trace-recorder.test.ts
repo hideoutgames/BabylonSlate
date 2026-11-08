@@ -9,7 +9,7 @@ import { replayTracePayload } from "./testing/trace-replay";
 
 describe("runtime trace recorder", () => {
   it("records each tick's script messages and diagnostics on its own trace frame", async () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true });
     try {
       await runtime.loadScripts([{ assetGuid: "logger", classId: "Logger", anchors: [],
         source: 'let tick = 0;\nexport function onTick(ctx) { tick++; ctx.log("log", "Script", "tick " + tick); ctx.log("error", "Script", "error " + tick); }',
@@ -28,7 +28,7 @@ describe("runtime trace recorder", () => {
   });
 
   it("records live object references and collections without interrupting ticks", () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true });
     try {
       const world = runtime.getWorld();
       const actor = world.createActor({ classId: "Actor", guid: "target" });
@@ -55,7 +55,6 @@ describe("runtime trace recorder", () => {
   it("records a session that replays to the same world snapshot", () => {
     const options = {
       seed: 9,
-      seedDemoActors: false as const,
       preferSoftwarePhysics: true,
       dt: 1 / 60,
     };
@@ -89,7 +88,6 @@ describe("runtime trace recorder", () => {
   it("records undilated dt while slomo is active", () => {
     const recorded = createInProcessRuntime({
       seed: 3,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       dt: 1 / 60,
     });
@@ -109,7 +107,7 @@ describe("runtime trace recorder", () => {
   });
 
   it("reports a repeated snapshot start and keeps the running recording", () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true });
     try {
       runtime.start();
       expect(runtime.executeConsoleCommand("snapshot start").success).toBe(true);
@@ -125,7 +123,6 @@ describe("runtime trace recorder", () => {
     const commands: CommandMessage[] = [];
     const recorded = createInProcessRuntime({
       seed: 4,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       dt: 1 / 60,
       onCommand: (command) => commands.push(command),
@@ -144,7 +141,7 @@ describe("runtime trace recorder", () => {
   it("publishes an oversized-frame stop immediately, preserves prior frames and keeps gameplay ticking", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, traceByteBudget: 2048,
+      seed: 1, preferSoftwarePhysics: true, traceByteBudget: 2048,
       onCommand: (command) => commands.push(command),
     });
     try {
@@ -180,7 +177,6 @@ describe("runtime trace recorder", () => {
   it("replays recorded input events onto a new runtime", () => {
     const options = {
       seed: 11,
-      seedDemoActors: false as const,
       preferSoftwarePhysics: true,
       dt: 1 / 60,
     };
@@ -236,7 +232,7 @@ describe("runtime trace recorder", () => {
   });
 
   describe("time dilation", () => {
-    const options = { seed: 5, seedDemoActors: false as const, preferSoftwarePhysics: true, dt: 1 / 60 };
+    const options = { seed: 5, preferSoftwarePhysics: true, dt: 1 / 60 };
     /** A runtime whose probe moves by the tick's step and climbs while Jump is held. */
     const probeRuntime = (onTick?: (tickIndex: number) => void) => {
       const runtime = createInProcessRuntime(options);
@@ -307,23 +303,6 @@ describe("runtime trace recorder", () => {
       replayTracePayload({ pushInput: (events) => replay.pushInput(events), setTimeDilation: (rate) => replay.setTimeDilation(rate),
         tick: () => { replay.tick(); replayed.push(snapshotText(replay)); } }, payload);
       expect(replayed).toEqual(payload.frames.map((frame) => frame.snapshotText));
-      replay.stop();
-    });
-
-    it("restores a frame's dilation so the next tick takes the recorded step", () => {
-      const recorded = probeRuntime();
-      recorded.executeConsoleCommand("slomo 0.5");
-      recorded.executeConsoleCommand("snapshot start");
-      recorded.tick();
-      recorded.executeConsoleCommand("snapshot stop");
-      const frame = recorded.stopTrace()!.frames.at(-1)!;
-      recorded.stop();
-
-      const replay = probeRuntime();
-      replay.restoreFromTrace(frame);
-      expect(replay.executeConsoleCommand("slomo").output).toBe("slomo 0.5");
-      replay.tick();
-      expect(replay.getWorld().clock.dt).toBe(0.5 / 60);
       replay.stop();
     });
   });

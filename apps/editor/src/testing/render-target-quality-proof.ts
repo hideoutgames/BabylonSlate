@@ -238,7 +238,7 @@ export async function runRenderTargetMonitorProof(backend: Backend) {
   configureEditorRenderingGroups(scene);
   updateSceneRenderingSettings(scene, {
     mode: "pbr",
-    effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1, mode: "sceneLinear" }, toneMapping: "neutral", exposure: 1.5 },
+    effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { mode: "sceneLinear" }, toneMapping: "neutral", exposure: 1.5 },
   });
   const camera = new FreeCamera("Main Camera", new Vector3(0, 0, -5), scene);
   camera.rotationQuaternion = Quaternion.Identity();

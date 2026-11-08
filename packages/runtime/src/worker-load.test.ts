@@ -60,7 +60,6 @@ it("loads the first authored world without waiting for a host loading paint and 
   send({
     type: "load",
     sceneAssetGuid: "empty",
-    deferSceneLoadingPaint: true,
     scene: { ...createDefaultScene(), actors: [] },
   });
   send({

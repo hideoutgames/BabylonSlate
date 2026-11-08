@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { pickCatalogItem } from "./pick-catalog-item";
 import { clickPlayAndWaitForOverlay } from "./play";
+import { guidForPath } from "./material-graph";
 
 async function showContentBrowser(page: Page): Promise<void> {
   await page
@@ -22,15 +23,6 @@ async function createAsset(
   await page.getByTestId("new-asset-name").fill(name);
   await page.getByTestId("content-browser-new-asset-create").click();
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
-}
-
-async function guidForPath(page: Page, path: string): Promise<string> {
-  return page.evaluate((assetPath) => {
-    const host = globalThis as {
-      __hapticTest?: { guidForPath: (path: string) => string | null };
-    };
-    return host.__hapticTest?.guidForPath(assetPath) ?? "";
-  }, path);
 }
 
 async function placeActor(page: Page, itemId: string): Promise<void> {

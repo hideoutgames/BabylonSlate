@@ -35,7 +35,7 @@ describe("Move To Blackboard Key", () => {
       }],
     };
     const runtime = createInProcessRuntime({
-      seed: 1, dt: 1 / 30, maxActors: 8, seedDemoActors: false,
+      seed: 1, dt: 1 / 30, maxActors: 8,
       onCommand: (command) => commands.push(command),
       playScene: {
         name: "Blackboard Navigation", viewportMode: "3d",
@@ -159,10 +159,6 @@ describe("Move To Blackboard Key", () => {
     runtime.executeConsoleCommand("snapshot stop");
     const trace = runtime.stopTrace()!;
     expect(() => JSON.stringify(trace)).not.toThrow();
-    runtime.restoreFromTrace(trace.frames.at(-1)!);
-    target.transform.position.x = 1;
-    for (let i = 0; i < 90; i += 1) runtime.tick();
-    expect(runtime.getWorld().findActor("guard")!.transform.position.x).toBeLessThan(5.8);
   });
 
   it("stops and fails when the referenced actor is destroyed", async () => {

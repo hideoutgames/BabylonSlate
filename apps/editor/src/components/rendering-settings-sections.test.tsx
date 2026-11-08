@@ -25,7 +25,7 @@ const renderSettings = normalizeRenderProjectSettings({
   cel: { outlinesEnabled: true, outlineDistanceFadeEnabled: true, specularEnabled: true },
   effects: {
     ...DEFAULT_RENDER_EFFECTS,
-    colorPipeline: { version: 1, mode: "sceneLinear" },
+    colorPipeline: { mode: "sceneLinear" },
     whiteBalance: on(DEFAULT_RENDER_EFFECTS.whiteBalance),
     vignette: on(DEFAULT_RENDER_EFFECTS.vignette),
     bloom: on(DEFAULT_RENDER_EFFECTS.bloom),

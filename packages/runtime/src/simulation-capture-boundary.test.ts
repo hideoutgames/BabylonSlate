@@ -7,7 +7,7 @@ import { SnapshotPublisher } from "./snapshot-publisher";
 describe("Simulation final capture boundary", () => {
   it("retains known cold asset references without treating their identity as a loaded resource", async () => {
     const baseline = { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero", properties: { lookup: "cold" } })] };
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       sessionGeneration: 6, sessionMode: "simulate", playScene: baseline, playSceneGuid: "root", simulationAssetGuids: ["root", "hero-class", "cold"] });
     try {
       await runtime.loadScripts([{ classId: "Hero", parentClassId: "Actor", assetGuid: "hero-class", anchors: [], source: "", entryPoints: [],
@@ -24,7 +24,7 @@ describe("Simulation final capture boundary", () => {
     const baseline = { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] };
     const gravity = [...baseline.settings.gravity];
     Object.freeze(baseline.settings); Object.freeze(baseline);
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       sessionGeneration: 6, sessionMode: "simulate", playScene: baseline, playSceneGuid: "root" });
     try {
       await runtime.loadScripts([{ classId: "Hero", parentClassId: "Actor", assetGuid: "hero", anchors: [],
@@ -40,7 +40,7 @@ describe("Simulation final capture boundary", () => {
 
   it("captures before destructive End Play, hydrates retained references, and keeps the quiescent clock frozen", async () => {
     const baseline = { ...createDefaultScene(), actors: [createActor("before", "Before", { classId: "Hero" })] };
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       sessionGeneration: 6, sessionMode: "simulate", playScene: baseline, playSceneGuid: "root" });
     let captured: Awaited<ReturnType<typeof runtime.captureSimulationState>> | undefined;
     try {
@@ -62,7 +62,7 @@ describe("Simulation final capture boundary", () => {
       expect(world.clock.tickIndex).toBe(boundary.tickIndex);
     } finally { runtime.stop(); }
     if (!captured?.ok) throw new Error("capture unavailable");
-    const loaded = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: captured.scene });
+    const loaded = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: captured.scene });
     try {
       loaded.realizePlayWorld();
       const before = loaded.getWorld().findActor("before")!;
@@ -71,7 +71,7 @@ describe("Simulation final capture boundary", () => {
   });
 
   it("rejects unmatched render ownership and capture budgets without stopping or changing authored data", async () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, sessionGeneration: 8,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, sessionGeneration: 8,
       sessionMode: "simulate", playScene: { ...createDefaultScene(), actors: [createActor("before", "Before")] }, playSceneGuid: "root" });
     try {
       runtime.realizePlayWorld(); runtime.start();
@@ -85,7 +85,7 @@ describe("Simulation final capture boundary", () => {
   });
 
   it("answers a quiescence step that throws and accepts a retry with a newer request ID", async () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, sessionGeneration: 9,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, sessionGeneration: 9,
       sessionMode: "simulate", playScene: { ...createDefaultScene(), actors: [createActor("before", "Before")] }, playSceneGuid: "root" });
     const flush = vi.spyOn(SnapshotPublisher.prototype, "flushDeferred");
     try {

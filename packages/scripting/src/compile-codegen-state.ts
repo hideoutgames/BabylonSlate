@@ -103,7 +103,7 @@ export function createCodegenState(
     traceExecution:
       options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true,
     checkBreakpoints:
-      options.instrumentBreakpoints === true && options.stripDevelopmentOnly !== true,
+      options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true,
     entryNodeId: "",
     exprCache: new Map<string, string>(),
     pureInProgress: new Set<string>(),

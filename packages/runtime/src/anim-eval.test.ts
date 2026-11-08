@@ -101,7 +101,6 @@ describe("runtime AnimationGraph evaluation", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: animScene(),
       animGraphs: { "graph-1": graph },
       onCommand: (command) => commands.push(command),
@@ -129,7 +128,6 @@ describe("runtime AnimationGraph evaluation", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: animScene(),
       onCommand: (command) => commands.push(command),
     });
@@ -139,48 +137,6 @@ describe("runtime AnimationGraph evaluation", () => {
     runtime.tick();
     expect(commands.some((command) => command.type === "animState")).toBe(true);
     runtime.stop();
-  });
-
-  it("trace restore resumes a sprite clip mid-state, as in the uninterrupted run", () => {
-    const graph = createDefaultAnimGraph("Hero");
-    graph.clips[0] = { id: "idle-clip", kind: "sprite", assetGuid: "walk-anim", clipName: "", durationMs: 1000 };
-    const spriteRuntime = (commands: CommandMessage[]) => {
-      const runtime = createInProcessRuntime({
-        seed: 1,
-        maxActors: 4,
-        seedDemoActors: false,
-        dt: 0.1,
-        playScene: animScene(),
-        animGraphs: { "graph-1": graph },
-        onCommand: (command) => commands.push(command),
-      });
-      runtime.start();
-      runtime.realizePlayWorld();
-      return runtime;
-    };
-    const frameOf = (commands: CommandMessage[]) => commands.flatMap((command) =>
-      command.type === "animState" ? [{ clipAssetGuid: command.clipAssetGuid, normalisedTime: command.normalisedTime }] : []);
-
-    const recordedCommands: CommandMessage[] = [];
-    const recorded = spriteRuntime(recordedCommands);
-    recorded.executeConsoleCommand("snapshot start");
-    for (let i = 0; i < 3; i += 1) recorded.tick();
-    recorded.executeConsoleCommand("snapshot stop");
-    recordedCommands.length = 0;
-    recorded.tick();
-    const uninterrupted = frameOf(recordedCommands);
-    expect(uninterrupted).toEqual([{ clipAssetGuid: "walk-anim", normalisedTime: expect.closeTo(0.4, 9) }]);
-    const frame = recorded.stopTrace()!.frames.at(-1)!;
-    recorded.stop();
-
-    const commands: CommandMessage[] = [];
-    const replay = spriteRuntime(commands);
-    replay.restoreFromTrace(frame);
-    expect(frameOf(commands)).toEqual([{ clipAssetGuid: "walk-anim", normalisedTime: expect.closeTo(0.3, 9) }]);
-    commands.length = 0;
-    replay.tick();
-    expect(frameOf(commands)).toEqual(uninterrupted);
-    replay.stop();
   });
 
   it.each(["world", "SceneLayer"])(
@@ -273,7 +229,6 @@ describe("runtime AnimationGraph evaluation", () => {
       const runtime = createInProcessRuntime({
         seed: 1,
         maxActors: 4,
-        seedDemoActors: false,
         preferSoftwarePhysics: true,
         physicsWorld: "2d",
         playScene: owner === "world" ? scene : { ...scene, actors: [] },

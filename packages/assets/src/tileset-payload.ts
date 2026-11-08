@@ -163,9 +163,14 @@ export function tilesetAtlasRows(tileset: TilesetPayload): number {
   return Math.max(1, Math.floor(usable / stride));
 }
 
+/** Tiles in the atlas grid (columns × rows); a tile id past it never draws. */
+export function tilesetAtlasTileCount(tileset: TilesetPayload): number {
+  return tilesetAtlasColumns(tileset) * tilesetAtlasRows(tileset);
+}
+
 /** Ensure every atlas cell has a tile record so collision/flags/animation can be authored. */
 export function ensureTilesetTiles(tileset: TilesetPayload): TilesetPayload {
-  const count = tilesetAtlasColumns(tileset) * tilesetAtlasRows(tileset);
+  const count = tilesetAtlasTileCount(tileset);
   const byId = new Map(tileset.tiles.map((tile) => [tile.id, tile]));
   const tiles: TilesetTile[] = [];
   for (let id = 1; id <= count; id++) {

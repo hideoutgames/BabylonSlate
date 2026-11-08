@@ -1,7 +1,6 @@
 import { useMemo } from "react";
-import { bindingCodesForDevice, type InputDevice } from "@haptic/input";
+import { bindingCodeLabel, bindingCodesForDevice, type InputDevice } from "@haptic/input";
 import { Button } from "@haptic/ui/components/button";
-import { formatBindingLabel } from "./format-binding-label";
 import { PickerIdentity } from "./picker-identity";
 import { SearchDropdown } from "./search-dropdown";
 import type { SearchDialogItem } from "./search-dialog";
@@ -66,7 +65,7 @@ export function BindingCodePicker({
   "data-testid": testId = "binding-code-picker",
 }: BindingCodePickerProps) {
   const items = useMemo(() => catalogItems(device), [device]);
-  const label = code ? formatBindingLabel(device, code) : emptyPrompt(device);
+  const label = code ? bindingCodeLabel(device, code) : emptyPrompt(device);
 
   return (
     <SearchDropdown

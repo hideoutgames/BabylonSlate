@@ -1058,7 +1058,7 @@ function applyRenderSettings(settings: ProjectSettings, lut: string | null): Pro
       shadows: { ...shadows, enabled: true },
       effects: {
         ...effects,
-        colorPipeline: { version: 1, mode: "sceneLinear" },
+        colorPipeline: { mode: "sceneLinear" },
         toneMapping: "neutral",
         exposure: 1,
         contrast: 1.05,

@@ -194,43 +194,6 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     if (this.debug) this.host.emit({ type: "behaviourTreeSnapshot", trees: [] });
   }
 
-  /**
-   * Replace per-slot evaluation, Play Animation ownership and Play Sound voice
-   * ownership with a trace frame's, so the Animation Graph skip, slot release,
-   * task end and abort behave as in the recorded run.
-   */
-  restoreFromTrace(states: readonly TraceBtState[]): void {
-    this.evalBySlot.clear();
-    this.sourceBySlot.clear();
-    this.lastState.clear();
-    this.blackboardBaseline.clear();
-    this.playAnimOwnedSlots.clear();
-    this.voiceByActor.clear();
-    const actorBySlot = new Map<number, Actor>();
-    for (const actor of this.host.world().getActors()) {
-      const slotId = actor.destroyed ? undefined : this.host.slot(actor);
-      if (slotId !== undefined) actorBySlot.set(slotId, actor);
-    }
-    for (const row of states) {
-      if (row.playAnimationOwned === true) this.playAnimOwnedSlots.add(row.slotId);
-      const owner = actorBySlot.get(row.slotId);
-      if (row.playSoundVoiceIds?.length && owner) this.voiceByActor.set(owner.guid, new Set(row.playSoundVoiceIds));
-      this.evalBySlot.set(row.slotId, {
-        stack: row.stack.map((frame) => ({ ...frame })),
-        status: row.status as BtEvalState["status"],
-        lastResults: { ...row.lastResults } as BtEvalState["lastResults"],
-        btNodeId: row.btNodeId,
-        blackboard: { ...row.blackboard },
-        nodeMemory: Object.fromEntries(
-          Object.entries(row.nodeMemory ?? {}).map(([id, memory]) => [
-            id,
-            { ...memory },
-          ]),
-        ),
-      });
-    }
-  }
-
   /** Per-slot evaluation state recorded with each trace frame. */
   traceStates(): TraceBtState[] {
     const voicesBySlot = new Map<number, string[]>();

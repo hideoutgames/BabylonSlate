@@ -3,7 +3,7 @@ import { createActor, createDefaultScene, createDefaultSceneLayer, createDefault
 import { generateNavMesh } from "@haptic/navigation";
 import * as physics from "@haptic/physics";
 import { createInProcessRuntime } from "./driver";
-import { createRuntimeFromLoad } from "./play-load";
+import { runtimeOptionsFromLoadControl } from "./play-load";
 
 function scene(name: string, kind: "2d" | "3d" = "3d") {
   return { ...createDefaultScene(kind), name, settings: { ...createDefaultSceneSettings(kind), gravity: [0, 0, 0] as [number, number, number] } };
@@ -11,7 +11,7 @@ function scene(name: string, kind: "2d" | "3d" = "3d") {
 
 describe("scene backend ownership", () => {
   it("cancels a pending native replacement promptly and disposes its late result", async () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene("Spatial"),
+    const runtime = createInProcessRuntime({ seed: 1, playScene: scene("Spatial"),
       sceneLibrary: { planar: scene("Planar", "2d") } });
     const createBackend = physics.createPhysicsBackend;
     let release!: (backend: physics.PhysicsBackend) => void;
@@ -38,10 +38,11 @@ describe("scene backend ownership", () => {
     const a = scene("Origin"), b = scene("Destination"), c = scene("Unbaked");
     for (const [document, x] of [[a, 0], [b, 100], [c, 200]] as const) document.actors = [createActor("probe", "Probe", { classId: "Probe",
       transform: { position: [x, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } })];
-    const runtime = createRuntimeFromLoad({ type: "load", seed: 1, sceneAssetGuid: "a", scene: a,
+    // The immediate in-process harness: no host paints Loading UI or acknowledges model readiness.
+    const runtime = createInProcessRuntime({ ...runtimeOptionsFromLoadControl({ type: "load", seed: 1, sceneAssetGuid: "a", scene: a,
       scenes: [{ guid: "a", scene: a }, { guid: "b", scene: b }, { guid: "c", scene: c }],
       sceneNavmeshBytes: { a: await bake(0), b: await bake(100) },
-    }, () => {});
+    }), deferSceneModelsReady: false, deferSceneLoadingPaint: false, onCommand: () => {} });
     try {
       await runtime.loadScripts([{ assetGuid: "probe", classId: "Probe", anchors: [],
         source: 'export function begin(ctx) { const x = ctx.self.transform.position.x; ctx.setVariable("pathCount", ctx.findPathTo({x:x-4,y:0,z:0},{x:x+4,y:0,z:0}).length); }',
@@ -66,7 +67,7 @@ describe("scene backend ownership", () => {
       { id: "shape", classId: "ColliderComponent", properties: { shape: document.viewportMode === "2d"
         ? { kind: "box2d", halfExtents: { x: 1, y: 1 } } : { kind: "box", halfExtents: { x: 1, y: 1, z: 1 } } } },
     ] })];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: software,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: software,
       playScene: a, playSceneGuid: "a", sceneLibrary: { a, b },
       sceneLayerLibrary: { overlay: { ...createDefaultSceneLayer(), settings: { ...createDefaultSceneLayer().settings, physicsEnabled: true } } } });
     try {

@@ -176,7 +176,7 @@ describe("createPlayBootCoordinator", () => {
     const started = deferred<void>();
     let yielded = false;
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       cooperativeSceneLoading: { stepsPerYield: 32, yieldControl: () => { yielded = true; return chunk.promise; } },
       onCommand: (command) => commands.push(command),
       playScene: { ...createDefaultScene(), actors: Array.from({ length: 65 }, (_, index) => createActor(`a${index}`, "Actor", { classId: "Ticker" })) },
@@ -248,7 +248,7 @@ describe("createPlayBootCoordinator", () => {
     const enteredPhysics = deferred<void>();
     const commands: CommandMessage[] = [];
     const scene = { ...createDefaultScene(), actors: [createActor("a", "Actor")] };
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, cooperativeSceneLoading: true,
+    const runtime = createInProcessRuntime({ seed: 1, cooperativeSceneLoading: true,
       preferSoftwarePhysics: true, playScene: { ...scene, name: "First" }, playSceneGuid: "first",
       sceneLibrary: { next: { ...scene, name: "Next" } },
       onCommand: (command) => commands.push(command),
@@ -282,7 +282,7 @@ describe("createPlayBootCoordinator", () => {
   it("overlaps host Scene readiness with the native physics load and completes the Scene after both", async () => {
     const physics = deferred<void>();
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       cooperativeSceneLoading: true, deferSceneModelsReady: true, playSceneGuid: "world",
       playScene: { ...createDefaultScene(), name: "World", actors: [createActor("a", "Actor")] },
       onCommand: (command) => commands.push(command),

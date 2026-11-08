@@ -27,7 +27,6 @@ async function execute(
   sibling.properties.materialGuid = "mat-rock";
   const runtime = createInProcessRuntime({
     seed: 1,
-    seedDemoActors: false,
     preferSoftwarePhysics: true,
     playScene: {
       name: "Materials",
@@ -66,7 +65,7 @@ describe("runtime material parameters", () => {
     const mesh = createMeshComponent("mesh-1", "box");
     mesh.properties.materialGuid = "mat";
     mesh.materialInstance = { materialGuid: "mat", parameters: { Gain: { kind: "float", value: 0.25 } } };
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: { name: "Materials", viewportMode: "3d", folders: [], settings: createDefaultSceneSettings(),
         actors: [createActor("prop", "Prop", { classId: "Hero", components: [mesh] })] },
       materialParameterCatalog: { mat: { domain: "surface", planHash: "mat", parameters: { Gain: { kind: "float", value: 1 } } } },
@@ -91,7 +90,7 @@ describe("runtime material parameters", () => {
     const commands: CommandMessage[] = [];
     const mesh = createMeshComponent("mesh-1", "box");
     mesh.properties.materialGuid = "mat";
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: { name: "Materials", viewportMode: "3d", folders: [], settings: createDefaultSceneSettings(),
         actors: [createActor("prop", "Prop", { classId: "Hero", components: [mesh] })] },
       materialParameterCatalog: { mat: { domain: "surface", planHash: "mat", parameters: {

@@ -7,7 +7,7 @@ import { runtimeOptionsFromLoadControl } from "./play-load";
 describe("render target graph runtime", () => {
   it("spawns the built-in capture actor with a lens without requiring an authored class", () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command),
     });
     try {
@@ -22,7 +22,7 @@ describe("render target graph runtime", () => {
 
   it("sends the capture lens pose by value, so a later in-place move cannot change the sent command", () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command),
     });
     try {
@@ -52,7 +52,7 @@ describe("render target graph runtime", () => {
         renderTargets: { depth: { mode: "DepthPass", width: 128, height: 64 } },
         renderTargetTextures: { image: { renderTargetGuid: "depth" } },
       }),
-      cooperativeSceneLoading: false, preferSoftwarePhysics: true,
+      cooperativeSceneLoading: false, deferSceneModelsReady: false, deferSceneLoadingPaint: false, preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command),
     });
     try {
@@ -92,7 +92,7 @@ describe("render target graph runtime", () => {
 
   it("sends each capture's authored quality, Fast when saved without one, and accepts only known qualities", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: { ...createDefaultScene(), actors: [
         createActor("full", "Full", { classId: "Monitor", components: [
           { id: "lens", classId: "RenderTargetCaptureComponent", properties: { quality: "fullQuality" } },
@@ -126,7 +126,7 @@ describe("render target graph runtime", () => {
 
   it("rejects non-actor filter values, returns detached lists, and preserves empty enabled filters", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: { ...createDefaultScene(), actors: [createActor("capture", "Capture", { classId: "Monitor", components: [
         { id: "lens", classId: "RenderTargetCaptureComponent", properties: { captureOnlyActors: true, actorIds: ["missing"] } },
       ] })] }, onCommand: (command) => commands.push(command),

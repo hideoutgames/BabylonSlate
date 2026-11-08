@@ -16,7 +16,7 @@ function tickLogger(classId: string, severity: "log" | "error", message: string)
 async function start(pauseOnErrors: boolean) {
   const commands: CommandMessage[] = [];
   const runtime = createInProcessRuntime({
-    seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, pauseOnErrors,
+    seed: 1, preferSoftwarePhysics: true, pauseOnErrors,
     // The failing actor ticks first, so the logger shows whether the rest of its tick still ran.
     playScene: { ...createDefaultScene(), actors: [
       createActor("broken", "Broken", { classId: "Broken" }),

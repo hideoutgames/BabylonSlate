@@ -7,9 +7,6 @@ import {
 } from "./catalog";
 import type { MaterialValueType } from "./types";
 
-export const MATERIAL_SCHEMA_VERSION = 3;
-export const MATERIAL_FUNCTION_SCHEMA_VERSION = 2;
-
 export type MaterialBlendMode =
   | "opaque"
   | "masked"
@@ -56,7 +53,6 @@ export interface MaterialPreviewSettings {
 }
 
 export interface MaterialDocument {
-  schemaVersion: number;
   name: string;
   domain: MaterialDomain;
   shadingModel: MaterialShadingModel;
@@ -84,7 +80,6 @@ export interface MaterialFunctionPin {
 }
 
 export interface MaterialFunctionDocument {
-  schemaVersion: number;
   name: string;
   description: string;
   inputs: MaterialFunctionPin[];
@@ -307,7 +302,6 @@ export function createDefaultMaterialDocument(
         ? defaultParticleGraph()
         : defaultSurfaceGraph();
   return {
-    schemaVersion: MATERIAL_SCHEMA_VERSION,
     name,
     domain,
     shadingModel: domain === "particle" || domain === "text" ? "unlit" : "pbr",
@@ -448,7 +442,6 @@ export function normalizeMaterialDocument(
   const domain = parseMaterialDomain(record.domain);
   const nodes = withTerminal(normalizeNodes(record.nodes), domain);
   return {
-    schemaVersion: Math.max(asNumber(record.schemaVersion, MATERIAL_SCHEMA_VERSION), MATERIAL_SCHEMA_VERSION),
     name: asString(record.name, fallbackName),
     domain,
     shadingModel: domain === "text" || record.shadingModel === "unlit" ? "unlit" : "pbr",
@@ -494,7 +487,6 @@ export function createDefaultMaterialFunctionDocument(
   name = "Material Function",
 ): MaterialFunctionDocument {
   return {
-    schemaVersion: MATERIAL_FUNCTION_SCHEMA_VERSION,
     name,
     description: "",
     inputs: [{ id: "in_value", name: "Value", type: "vec3" }],
@@ -548,7 +540,6 @@ export function normalizeMaterialFunctionDocument(
     });
   }
   return {
-    schemaVersion: Math.max(asNumber(record.schemaVersion, MATERIAL_FUNCTION_SCHEMA_VERSION), MATERIAL_FUNCTION_SCHEMA_VERSION),
     name: asString(record.name, fallbackName),
     description: asString(record.description, ""),
     inputs: normalizeFunctionPins(record.inputs, "in"),
@@ -568,7 +559,6 @@ export function createImportedMaterialDocument(options: {
 }): MaterialDocument {
   const seeded = seedImportedMaterialNodes(options.textureGuid);
   return normalizeMaterialDocument({
-    schemaVersion: MATERIAL_SCHEMA_VERSION,
     name: "Material",
     domain: "surface",
     shadingModel: options.shadingModel,

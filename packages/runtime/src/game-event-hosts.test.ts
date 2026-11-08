@@ -45,7 +45,7 @@ async function boot() {
     createActor("button", "Button", { classId: "HudButton", components: [{ id: "button-part", classId: "HudPart", properties: {} }] }),
   ] };
   const commands: CommandMessage[] = [];
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
     playScene: scene, playSceneGuid: "level", sceneLayerLibrary: { hud }, onCommand: (command) => commands.push(command) });
   const service = runtime.configureSaveGame({ projectId: "project", definition, storage: new MemoryStorage() });
   await runtime.loadScripts([

@@ -11,7 +11,6 @@ describe("ParticleComponent play-on-start", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       deferSceneModelsReady: true,
       playSceneGuid: "particle-scene",
@@ -67,7 +66,6 @@ describe("ParticleComponent play-on-start", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Particles",
@@ -108,7 +106,6 @@ describe("ParticleComponent play-on-start", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Particles",

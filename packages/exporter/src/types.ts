@@ -19,7 +19,6 @@ export type ExportIndexedAsset = {
   classReferences?: string[];
   requiredClassReferences?: string[];
   consoleCommand?: ConsoleCommandMetadata;
-  dependencyMetadataVersion?: number;
   rootId: string;
 };
 
@@ -74,7 +73,6 @@ export type ExportAssetBytes = {
   classReferences?: readonly string[];
   requiredClassReferences?: readonly string[];
   consoleCommand?: ConsoleCommandMetadata;
-  dependencyMetadataVersion?: number;
   /** A required project system independent of the initial scene. */
   startupRequired?: boolean;
   /** Scene guid this asset was reached through; boot assets use the startup scene. */
@@ -129,6 +127,8 @@ export type GameManifest = {
   gameInstanceClass?: string;
   audioMixerGuid?: string;
   defaultFontGuid?: string;
+  /** Project Global Fallback: the generic CSS family that ends every Bitmap 2D Text font stack. */
+  globalFallback: string;
   occlusionEnabled?: boolean;
   reverbWetScale?: number;
   reverbDecayScale?: number;
@@ -159,6 +159,8 @@ export type ExportGameOptions = {
   /** Editor-hosted Preview only; never enables diagnostics in ordinary exports. */
   includePreviewDiagnostics?: boolean;
   defaultFontGuid?: string | null;
+  /** Project Global Fallback; missing or blank writes `sans-serif`. */
+  globalFallback?: string;
   saveGame?: import("@haptic/core").SaveGameConfiguration;
   project?: { name: string; version: string };
   inputAssets?: import("@haptic/core").InputAssetDefinition[];

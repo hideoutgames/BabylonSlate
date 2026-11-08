@@ -4,7 +4,7 @@ import type { CommandMessage, SessionBoundaryRequest, SessionBoundaryResult } fr
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 
 const makeRuntime = (options: Partial<Parameters<typeof createInProcessRuntime>[0]> = {}) =>
-  createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, sessionGeneration: 7,
+  createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, sessionGeneration: 7,
     playScene: createDefaultScene(), playSceneGuid: "root", ...options });
 const flush = async () => { for (let index = 0; index < 12; index++) await Promise.resolve(); };
 

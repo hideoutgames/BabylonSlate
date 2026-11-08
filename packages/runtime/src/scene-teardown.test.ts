@@ -27,7 +27,7 @@ describe("runtime departing Scene loading", () => {
     const layerDocument = createDefaultSceneLayer();
     layerDocument.actors = [createActor("global", "Global", { classId: "SceneLayerActor" })];
     const commands: CommandMessage[] = [];
-    const runtime: RuntimeDriver = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime: RuntimeDriver = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: document, playSceneGuid: "world", sceneLayerLibrary: { global: layerDocument },
       cooperativeSceneLoading: chunks, deferSceneLoadingPaint: true,
       onCommand(command) { commands.push(command); if (command.type === "sceneLoading" && command.sceneLoadId === 1) runtime.notifySceneLoadingPainted("world", 1); },
@@ -79,7 +79,7 @@ describe("runtime departing Scene loading", () => {
 
   it("ignores a cancelled same-guid paint acknowledgment and follows the replacement without leaking departing actors", async () => {
     const commands: CommandMessage[] = [];
-    const runtime: RuntimeDriver = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene(2), playSceneGuid: "world", cooperativeSceneLoading: true, deferSceneLoadingPaint: true,
+    const runtime: RuntimeDriver = createInProcessRuntime({ seed: 1, playScene: scene(2), playSceneGuid: "world", cooperativeSceneLoading: true, deferSceneLoadingPaint: true,
       onCommand(command) { commands.push(command); if (command.type === "sceneLoading" && command.sceneLoadId === 1) runtime.notifySceneLoadingPainted("world", 1); },
     });
     try {
@@ -103,7 +103,7 @@ describe("runtime departing Scene loading", () => {
 
   it("Stop cancels a held paint without allowing a late host acknowledgment to restart realization", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene(2), playSceneGuid: "world", cooperativeSceneLoading: true, deferSceneLoadingPaint: true, onCommand: (command) => commands.push(command) });
+    const runtime = createInProcessRuntime({ seed: 1, playScene: scene(2), playSceneGuid: "world", cooperativeSceneLoading: true, deferSceneLoadingPaint: true, onCommand: (command) => commands.push(command) });
     // The first Scene departs from nothing and realizes without a paint.
     await runtime.realizePlayWorld();
     expect(commands.some((command) => command.type === "sceneLoading")).toBe(false);
@@ -122,7 +122,7 @@ describe("runtime departing Scene loading", () => {
   it("Stop retires the remaining owned objects while outgoing teardown is suspended", async () => {
     const chunks = chunkGate();
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene(), playSceneGuid: "world", cooperativeSceneLoading: chunks, onCommand: (command) => commands.push(command) });
+    const runtime = createInProcessRuntime({ seed: 1, playScene: scene(), playSceneGuid: "world", cooperativeSceneLoading: chunks, onCommand: (command) => commands.push(command) });
     try {
       await runtime.realizePlayWorld();
       const departing = [...runtime.getWorld().getActors()];
@@ -144,7 +144,7 @@ describe("runtime departing Scene loading", () => {
 
   it("fails a missing host paint at the deadline without reporting the Scene ready", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene(2), playSceneGuid: "world", cooperativeSceneLoading: true, deferSceneLoadingPaint: true, onCommand: (command) => commands.push(command) });
+    const runtime = createInProcessRuntime({ seed: 1, playScene: scene(2), playSceneGuid: "world", cooperativeSceneLoading: true, deferSceneLoadingPaint: true, onCommand: (command) => commands.push(command) });
     try {
       await runtime.realizePlayWorld();
       vi.useFakeTimers();

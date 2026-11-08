@@ -5,7 +5,7 @@ import { createInProcessRuntime } from "./driver";
 describe("runtime splines", () => {
   it("travels a Spline in world space through the actor and component transforms", async () => {
     const turn = Math.SQRT1_2;
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: { name: "Paths", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [
         createActor("rail", "Rail", { classId: "Rider",
           // A quarter turn about Y carries local +X onto world -Z.

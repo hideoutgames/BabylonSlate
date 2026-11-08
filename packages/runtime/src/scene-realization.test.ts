@@ -50,7 +50,7 @@ function largeScene(count = 80, classId?: string) {
 }
 
 function makeRuntime(options: Parameters<typeof createInProcessRuntime>[0]) {
-  return createInProcessRuntime({ seedDemoActors: false, preferSoftwarePhysics: true, ...options });
+  return createInProcessRuntime({ preferSoftwarePhysics: true, ...options });
 }
 
 describe("cooperative runtime scene realization", () => {

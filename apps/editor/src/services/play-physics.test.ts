@@ -76,7 +76,6 @@ describe("playLoadControl", () => {
     expect(msg.physicsWorld).toBe("2d");
     expect(msg.gravity).toEqual([0, -20, 0]);
     expect(msg.havokWasmUrl).toMatch(/\/havok\/HavokPhysics\.wasm$/);
-    expect(msg.deferSceneModelsReady).toBe(true);
   });
 
   const scene = { name: "Main", viewportMode: "3d" as const, actors: [] };

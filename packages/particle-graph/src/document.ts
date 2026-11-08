@@ -29,9 +29,6 @@ import {
 import { resizeParticleValue, type ParticleNumericType } from "./types";
 import { DEFAULT_PARTICLE_SPAWN, particleGraphSpawnEmitters, particleSpawnSettings } from "./spawn";
 
-/** Payload field; never a top-level `version` (the project service strips it). */
-const PARTICLE_GRAPH_SCHEMA_VERSION = 1 as const;
-
 export interface ParticleGraphNode {
   id: string;
   type: string;
@@ -88,7 +85,6 @@ export interface ParticleGraphParameter {
 }
 
 export interface ParticleGraphDocument {
-  schemaVersion: typeof PARTICLE_GRAPH_SCHEMA_VERSION;
   name: string;
   /** Particle-domain Material; required to render. */
   materialGuid: string | null;
@@ -399,7 +395,6 @@ export function normalizeParticleGraphDocument(
   const record = asRecord(value);
   const parameters = normalizeParticleGraphParameters(record.parameters);
   return {
-    schemaVersion: PARTICLE_GRAPH_SCHEMA_VERSION,
     name: asString(record.name, fallbackName),
     materialGuid: nullableGuid(record.materialGuid),
     settings: normalizeParticleGraphSettings(record.settings),
@@ -457,7 +452,6 @@ export function createDefaultParticleGraphDocument(
   name = "Particle Graph",
 ): ParticleGraphDocument {
   return {
-    schemaVersion: PARTICLE_GRAPH_SCHEMA_VERSION,
     name,
     materialGuid: null,
     settings: createDefaultParticleGraphSettings(),

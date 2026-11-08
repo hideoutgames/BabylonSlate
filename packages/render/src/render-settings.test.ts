@@ -176,7 +176,7 @@ it("reports device-clamped water features while keeping the requested quality", 
   expect(planarClamp.limits).toEqual([expect.stringContaining("Water Refraction"), expect.stringContaining("Planar")]);
   // Scene Linear mirrors into a half-float target too: no planar pass can run, so readback reports Sky Only, and
   // the clamp follows the configured colour pipeline without a Water quality change.
-  const sceneLinear = { ...tier("ultra"), effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1 as const, mode: "sceneLinear" as const } } };
+  const sceneLinear = { ...tier("ultra"), effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { mode: "sceneLinear" as const } } };
   updateSceneRenderingSettings(planar, sceneLinear);
   expect(planar.imageProcessingConfiguration.applyByPostProcess).toBe(true);
   const linearClamp = sceneWaterQualityDeviceClamp(planar);

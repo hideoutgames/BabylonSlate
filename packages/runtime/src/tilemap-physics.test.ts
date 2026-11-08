@@ -32,7 +32,6 @@ describe("tilemap chain colliders", () => {
       maxActors: 8,
       preferSoftwarePhysics: true,
       physicsWorld: "2d",
-      seedDemoActors: false,
       pixelsPerUnit: 16,
       tilemaps: { "map-1": tilemap },
       tilesets: { "tileset-1": tileset },
@@ -101,7 +100,7 @@ describe("tilemap chain colliders", () => {
     const border = tilemap.chunkSize;
     for (let x = border - 2; x < border + 2; x++) tilemap = setTile(tilemap, "layer-1", x, 0, 1);
     const runtime = createInProcessRuntime({
-      seed: 4, maxActors: 8, preferSoftwarePhysics: true, physicsWorld: "2d", seedDemoActors: false,
+      seed: 4, maxActors: 8, preferSoftwarePhysics: true, physicsWorld: "2d",
       pixelsPerUnit: 16, tilemaps: { "map-1": tilemap }, tilesets: { "tileset-1": tileset },
     });
     const world = runtime.getWorld();
@@ -130,7 +129,7 @@ describe("tilemap chain colliders", () => {
     };
     for (let x = -4; x < 0; x++) tilemap = setTile(tilemap, "layer-1", x, -3, 1);
     const runtime = createInProcessRuntime({
-      seed: 4, maxActors: 8, preferSoftwarePhysics: true, physicsWorld: "2d", seedDemoActors: false,
+      seed: 4, maxActors: 8, preferSoftwarePhysics: true, physicsWorld: "2d",
       pixelsPerUnit: 16, tilemaps: { "map-1": tilemap }, tilesets: { "tileset-1": tileset },
     });
     const world = runtime.getWorld();
@@ -171,7 +170,7 @@ describe("tilemap chain colliders", () => {
     };
     for (let x = 0; x < 4; x++) tilemap = setTile(tilemap, "layer-1", x, 0, 1);
     const runtime = createInProcessRuntime({
-      seed: 4, maxActors: 8, preferSoftwarePhysics: true, physicsWorld: "2d", seedDemoActors: false,
+      seed: 4, maxActors: 8, preferSoftwarePhysics: true, physicsWorld: "2d",
       pixelsPerUnit: 16, tilemaps: { "map-1": tilemap }, tilesets: { "tileset-1": groundTileset(2) },
     });
     const world = runtime.getWorld();
@@ -212,7 +211,6 @@ describe("tilemap chain colliders", () => {
       seed: 4,
       maxActors: 8,
       physicsWorld: "2d",
-      seedDemoActors: false,
       pixelsPerUnit: 16,
       tilemaps: { "map-1": tilemap },
       tilesets: { "tileset-1": tileset },

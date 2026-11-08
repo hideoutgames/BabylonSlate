@@ -45,7 +45,7 @@ describe("Scene batch snapshot delivery", () => {
       },
       send: (command) => events.push(command.type),
     });
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, cooperativeSceneLoading: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, cooperativeSceneLoading: true,
       maxActors: 1, playSceneGuid: "scene", deferSceneModelsReady: true,
       playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", {
         transform: { position: [17, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },

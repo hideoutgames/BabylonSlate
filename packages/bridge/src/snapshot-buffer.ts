@@ -113,6 +113,20 @@ export function snapshotTickIndex(buf: Float32Array): number | null {
   return readSnapshotHeader(buf).tickIndex;
 }
 
+/** A worker host's input tick after a snapshot: its tickIndex once published, so throttled stats cannot drop sticks. */
+export function applySnapshotTick(previous: number, buf: Float32Array): number {
+  return snapshotTickIndex(buf) ?? previous;
+}
+
+/**
+ * Tick stamp for Play canvas events. In-process Play uses World.clock; a
+ * worker host has no World on the main thread, so it uses the last snapshot
+ * `tickIndex` rather than `performance.now() / (1000/60)`.
+ */
+export function playInputStampTick(inProcessTickIndex: number | undefined, lastWorkerTickIndex: number): number {
+  return inProcessTickIndex ?? lastWorkerTickIndex;
+}
+
 export function writeActorSlot(
   buf: Float32Array,
   slotIndex: number,

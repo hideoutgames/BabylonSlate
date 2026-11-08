@@ -712,13 +712,12 @@ export function nearestSnapConnectPin(
   pointer: { x: number; y: number },
   source: { nodeId: string; pinId: string },
   pins: readonly SnapConnectPin[],
-  thresholdPx = CONNECT_END_CANCEL_PX,
 ): { nodeId: string; pinId: string } | undefined {
   let best: { nodeId: string; pinId: string; dist: number } | undefined;
   for (const pin of pins) {
     if (pin.nodeId === source.nodeId) continue;
     const dist = Math.hypot(pin.x - pointer.x, pin.y - pointer.y);
-    if (dist >= thresholdPx) continue;
+    if (dist >= CONNECT_END_CANCEL_PX) continue;
     if (!best || dist < best.dist) {
       best = { nodeId: pin.nodeId, pinId: pin.pinId, dist };
     }

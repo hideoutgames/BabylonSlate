@@ -5,7 +5,7 @@ export type SpriteClipState = { assetGuid: string; clipName: string; normalisedT
 
 /**
  * The Sprite Animation clip each actor shows, as the Animation Graph and Play
- * Animation last set it, for trace frames and trace restore. Weak Actor keys
+ * Animation last set it, for trace frames. Weak Actor keys
  * match the physics sprite-collider state, so a retired actor's clip cannot
  * reach a successor that reuses its guid.
  */
@@ -15,10 +15,6 @@ export class SpriteClipTrace {
   set(actor: Actor, clip: SpriteClipState | null): void {
     if (clip) this.byActor.set(actor, { ...clip });
     else this.byActor.delete(actor);
-  }
-
-  get(actor: Actor): SpriteClipState | undefined {
-    return this.byActor.get(actor);
   }
 
   /** Live actors' clips in World order. */

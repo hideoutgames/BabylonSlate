@@ -73,7 +73,7 @@ export function collectNavBakeGeometry(
       if (chains.length > 0) walls.push(recastWallsFromXyChains(chains, 2));
     }
     // The floor reaches past every wall, not only past the actor origins.
-    const xy = xyBoundsFromActors(sceneData.actors, undefined, walls);
+    const xy = xyBoundsFromActors(sceneData.actors, walls);
     const clipped = bounds ? intersectXyBounds(xy, bounds) : xy;
     if (clipped) parts.push(recastWalkableQuadFromXy(clipped));
     parts.push(...walls);

@@ -20,7 +20,7 @@ describe("particle library", () => {
     ]);
     expect(library.emitters.get("em-1")).toMatchObject({
       kind: "basic",
-      payload: { schemaVersion: 2, render: { materialGuid: "mat-1", blendMode: "additive" } },
+      payload: { render: { materialGuid: "mat-1", blendMode: "additive" } },
     });
     expect(library.systems.get("sys-1")).toEqual({
       emitterGuids: ["em-1"],

@@ -364,7 +364,7 @@ export function traceSnapshotRoots(
     // Absent and empty are deliberately different in older recordings.
     roots.push(buildNode(frame[key], key, `/${key}`, `/${key}`, namesOf));
   }
-  // Recorded since restoring a trace resumes them; older recordings have none to show.
+  // Older recordings may have none to show.
   for (const key of ["audio", "sprites", "animGraphs"] as const) {
     if (frame[key] !== undefined)
       roots.push(buildNode(frame[key], key, `/${key}`, `/${key}`, namesOf));

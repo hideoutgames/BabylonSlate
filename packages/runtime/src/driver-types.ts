@@ -40,7 +40,7 @@ import type {
   Transform,
   WaterDefinition,
 } from "@haptic/core";
-import type { RegisteredCommand, TraceFrame, TracePayload } from "@haptic/debugger";
+import type { RegisteredCommand, TracePayload } from "@haptic/debugger";
 import type { InputBindingControls, RawInputEvent, ResolvedInputTick } from "@haptic/input";
 import type { NavObstacleKind, NavPoint } from "@haptic/navigation";
 import type { Actor, EngineObject, DebugInspectSnapshot, Scene, SceneLayer, World } from "@haptic/object-model";
@@ -90,12 +90,6 @@ export interface RuntimeDriverOptions {
   /** Authored Input Action / Input Axis assets; the starter controls when omitted. */
   inputAssets?: InputAssetDefinition[];
   focusNavigation?: Partial<FocusNavigationSettings>;
-  /**
-   * Demo actors exist so an empty project still shows motion in Preview. Without
-   * a `playScene` they spawn at the first `realizePlayWorld` or `start`, never
-   * during construction.
-   */
-  seedDemoActors?: boolean;
   /** Scene physics world kind (defaults to 3d). */
   physicsWorld?: PhysicsWorldKind;
   gravity?: [number, number, number];
@@ -105,7 +99,7 @@ export interface RuntimeDriverOptions {
   havokWasmUrl?: string;
   /** Skip wasm backends (tests / CI without wasm). */
   preferSoftwarePhysics?: boolean;
-  /** Authored scene to instantiate on `realizePlayWorld` (no demo actors). */
+  /** Authored scene to instantiate on `realizePlayWorld`. */
   playScene?: SerializedScene;
   playSceneGuid?: string;
   /** Class id for the session GameInstance singleton. */
@@ -139,7 +133,7 @@ export interface RuntimeDriverOptions {
    */
   pauseOnErrors?: boolean;
   /**
-   * Node breakpoints from the first run on: in Class graphs (scripts compiled with `instrumentBreakpoints`),
+   * Node breakpoints from the first run on: in Class graphs (scripts compiled with `instrumentExecutionTrace`),
    * Behaviour Trees and State Machines. A hit (a run that meets the breakpoint's condition and hit count)
    * pauses the session at the end of the tick and sends `sessionPaused` with its location and object.
    */
@@ -171,13 +165,13 @@ export interface RuntimeDriverOptions {
   pixelsPerUnit?: number;
   texturePixelSizes?: Readonly<Record<string, { width: number; height: number }>>;
   /**
-   * Hold OnSceneFinishLoading until `notifySceneModelsReady`. Play overlay and
-   * the exported player set this; in-process tests leave it false.
+   * Hold OnSceneFinishLoading until `notifySceneModelsReady`. Every worker
+   * `load` sets this; in-process tests leave it false.
    */
   deferSceneModelsReady?: boolean;
   deferMaterialEdits?: boolean;
   simulationAssetGuids?: string[];
-  /** Wait for the host Loading UI to paint before retiring or realizing a Scene. */
+  /** Wait for the host Loading UI to paint before retiring or realizing a Scene; every worker `load` sets this. */
   deferSceneLoadingPaint?: boolean;
   /** Real Play/player yield actor work; immediate harnesses keep the default. */
   cooperativeSceneLoading?: boolean | CooperativeSceneLoadingOptions;
@@ -238,8 +232,7 @@ export interface RuntimeDriver {
     transform?: Transform;
   }): Actor | null;
   /**
-   * Instantiate `playScene` with compiled script hooks (without one, the demo
-   * actors unless `seedDemoActors` is false). Idempotent. Call after
+   * Instantiate `playScene` with compiled script hooks. Idempotent. Call after
    * `loadScripts` so Begin Play binds on spawn.
    */
   realizePlayWorld(): void | Promise<void>;
@@ -330,8 +323,6 @@ export interface RuntimeDriver {
   stopTrace(): TracePayload | null;
   /** Time dilation (`slomo`) from the next tick, clamped to `0..8`; non-finite rates are ignored. */
   setTimeDilation(rate: number): void;
-  /** Resume a frame's time dilation, behaviour trees, Animation Graphs, sprite clips and voices. */
-  restoreFromTrace(frame: TraceFrame): void;
   registerAnimGraph(guid: string, document: AnimGraphDocument): void;
   registerBehaviourTree(guid: string, document: BehaviourTreeDocument): void;
   registerBlackboard(guid: string, document: BlackboardDocument): void;

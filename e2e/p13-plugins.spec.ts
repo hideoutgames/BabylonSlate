@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
-import { openContentBrowser, openMainScene, openTestProject } from "./open-test-project";
+import { closeSettings, openContentBrowser, openMainScene, openTestProject } from "./open-test-project";
+import { guidForPath } from "./material-graph";
 
 const STARTER_CONTENT_PLUGIN_GUID = "c0ffee00-0000-4000-8000-000000000001";
 const STARTER_ACTOR_PATH =
@@ -16,29 +17,12 @@ async function openPluginsSettings(page: Page): Promise<void> {
   await expect(page.getByTestId("settings-plugins-panel")).toBeVisible();
 }
 
-async function closeSettings(page: Page, testId = "settings-modal"): Promise<void> {
-  await page
-    .getByTestId(testId)
-    .locator('[data-slot="dialog-close"]')
-    .click();
-  await expect(page.getByTestId(testId)).toHaveCount(0);
-}
-
 async function returnToHomepage(page: Page): Promise<void> {
   await closeProjectViaSettings(page);
   const discard = page.getByTestId("dirty-discard");
   await expect(page.getByTestId("homepage").or(discard)).toBeVisible();
   if (await discard.isVisible()) await discard.click();
   await expect(page.getByTestId("homepage")).toBeVisible();
-}
-
-async function guidForPath(page: Page, path: string): Promise<string> {
-  return page.evaluate(async (assetPath) => {
-    const host = globalThis as {
-      __hapticTest?: { guidForPath: (path: string) => string | null };
-    };
-    return host.__hapticTest?.guidForPath(assetPath) ?? "";
-  }, path);
 }
 
 test.describe("P13 plugins", () => {

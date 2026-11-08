@@ -41,7 +41,7 @@ describe("SceneScript and SceneLayerScript", () => {
   it("runs the main Scene's script from its readiness until the Scene changes", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: scene("Level1"), playSceneGuid: "level-1",
       sceneLibrary: { "level-2": scene("Level2") },
       onCommand: (command) => commands.push(command),
@@ -72,7 +72,7 @@ describe("SceneScript and SceneLayerScript", () => {
     const overlay = { ...createDefaultSceneLayer(), actors: [createActor("panel", "Panel", {
       classId: "SceneLayerActor", components: [createMeshComponent("panel-mesh", "box")] })] };
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: scene("Level1", ["overlay", "overlay"]), playSceneGuid: "level-1",
       sceneLibrary: { "level-2": scene("Level2") },
       sceneLayerLibrary: { overlay },
@@ -136,7 +136,7 @@ describe("Get <Actor> and Get <Component> (<Actor>)", () => {
     const panel = (classId: string) => createActor("panel", "Panel", { classId, components: [createMeshComponent("panel-mesh", "box")] });
     const level = { ...scene("Level1", ["overlay", "overlay"]), actors: [panel("Actor")] };
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: level, playSceneGuid: "level-1",
       sceneLayerLibrary: { overlay: { ...createDefaultSceneLayer(), actors: [panel("SceneLayerActor")] } },
       onCommand: (command) => commands.push(command),
@@ -205,7 +205,7 @@ describe("Get <Name> Timeline Clip", () => {
     const panel = () => createActor("panel", "Panel", { components: [createMeshComponent("panel-mesh", "box")] });
     const level = { ...scene("Level1", ["overlay", "overlay"]), actors: [panel()], timelineClips: [slide("intro", "Intro", "y", true)] };
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: level, playSceneGuid: "level-1",
       sceneLayerLibrary: { overlay: { ...createDefaultSceneLayer(), actors: [panel()], timelineClips: [slide("reveal", "Reveal", "x", false)] } },
       onCommand: (command) => commands.push(command),
@@ -272,7 +272,7 @@ describe("Get <Name> Timeline Clip", () => {
         keys: [{ id: "k", time: 0.25, values: { Text: "Welcome" } }] }],
     };
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: { ...scene("Level1", ["overlay", "overlay"]), actors: [] }, playSceneGuid: "level-1",
       sceneLayerLibrary: { overlay: { ...createDefaultSceneLayer(), actors: [createActor("panel", "Panel")], timelineClips: [reveal] } },
       onCommand: (command) => commands.push(command),
@@ -343,7 +343,7 @@ describe("Get <Name> Timeline Clip", () => {
         keys: [{ id: "k", time: 0.25, values: { Text: "Welcome" } }] }],
     };
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: { ...scene("Level1", ["overlay"]), actors: [] }, playSceneGuid: "level-1",
       sceneLayerLibrary: { overlay: { ...createDefaultSceneLayer(), actors: [createActor("panel", "Panel")], timelineClips: [reveal] } },
       onCommand: (command) => commands.push(command),

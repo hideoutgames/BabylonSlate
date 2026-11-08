@@ -1,32 +1,16 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { guidForPath } from "./material-graph";
-import { createContentBrowserAsset, openAssetFromBrowser, openMainScene, openTestProject } from "./open-test-project";
+import {
+  closeWindowsMenu,
+  createContentBrowserAsset,
+  openAssetFromBrowser,
+  openMainScene,
+  openTestProject,
+  openWindowsMenu,
+  pickAsset,
+} from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
-
-async function pickAsset(page: Page, pickerTestId: string, guid: string): Promise<void> {
-  await expect(page.getByTestId(pickerTestId)).toBeVisible();
-  await page.getByTestId(`search-item-${guid}`).click();
-  await expect(page.getByTestId(pickerTestId)).toHaveCount(0);
-}
-
-async function openWindowsMenu(page: Page): Promise<void> {
-  const content = page.getByTestId("windows-menu-content");
-  if (await content.isVisible()) return;
-  await page.getByTestId("windows-menu").click();
-  await expect(content).toBeVisible();
-}
-
-async function closeWindowsMenu(page: Page): Promise<void> {
-  const content = page.getByTestId("windows-menu-content");
-  if (!(await content.isVisible())) return;
-  await page.keyboard.press("Escape");
-  await page.keyboard.press("Escape");
-  if (await content.isVisible()) {
-    await page.mouse.click(12, 12);
-  }
-  await expect(content).toHaveCount(0);
-}
 
 /** New Material switched to the Particle Domain, which draws each particle's own color. */
 async function createParticleMaterial(page: Page, name: string): Promise<string> {

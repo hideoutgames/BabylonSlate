@@ -75,7 +75,6 @@ describe.each([
         }
         const runtime = createInProcessRuntime({
           seed: 1,
-          seedDemoActors: false,
           preferSoftwarePhysics: software,
           physicsWorld: mode,
           playScene: scene,

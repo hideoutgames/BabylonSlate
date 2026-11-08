@@ -11,7 +11,7 @@ function script(label: string): CompiledScript {
 describe("owned compiled script sources", () => {
   it("maps a genuine compiled error to the correct adjacent authored node", async () => {
     const failures: Array<{ nodeId?: string; bodyLine?: number }> = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1,
       onCommand: (command) => { if (command.type === "diagnostic" && command.message === "actual-body") failures.push(command); } });
     const source: CompiledScript = { ...script("throwing"), source: [
       "//# sourceURL=haptic:///class-a.js",
@@ -36,7 +36,7 @@ describe("owned compiled script sources", () => {
 
   it("owns every Class module from one AnimationGraph asset and removes only retired modules", async () => {
     const messages: string[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       onCommand: (command) => { if (command.type === "log" && command.category === "source-test") messages.push(command.message); } });
     const first: CompiledScript = { ...script("event"), assetGuid: "animation-owner", classId: "AnimEvent",
       anchors: [{ assetGuid: "animation-owner", graphId: "event-graph", nodeId: "event-node", line: 3, column: 1 }] };
@@ -74,7 +74,7 @@ describe("owned compiled script sources", () => {
 
   it("deduplicates the owned union and retains a live class until its final actor retires", async () => {
     const messages: string[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       onCommand: (command) => { if (command.type === "log" && command.category === "source-test") messages.push(command.message); } });
     try {
       const source = script("ready");
@@ -98,7 +98,7 @@ describe("owned compiled script sources", () => {
 
   it("keeps the prior functions on a corrupt replacement and allows a corrected retry", async () => {
     const messages: string[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       onCommand: (command) => { if (command.type === "log" && command.category === "source-test") messages.push(command.message); } });
     try {
       await runtime.replaceScriptSources([script("old")]);
@@ -114,7 +114,7 @@ describe("owned compiled script sources", () => {
   });
 
   it("cannot publish queued class registration after a project stops", async () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    const runtime = createInProcessRuntime({ seed: 1 });
     const pending = runtime.replaceScriptSources([script("late")]);
     runtime.stop();
     await expect(pending).rejects.toThrow("stopped");

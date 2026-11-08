@@ -27,7 +27,7 @@ function doorScript(): CompiledScript {
 }
 function fixture(mode: "play" | "simulate" = "play") {
   const commands: CommandMessage[] = [];
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
     sessionGeneration: 3, sessionMode: mode, playScene: createDefaultScene(), onCommand: command => commands.push(command) });
   runtime.realizePlayWorld(); runtime.start();
   let requestId = 0;
@@ -62,7 +62,7 @@ describe("runtime explicit diagnostics", () => {
     const commands: CommandMessage[] = [];
     const scene = createDefaultScene();
     scene.actors = ["front", "back"].map((id) => createActor(id, id, { classId: "Door", transform: identitySerializedTransform() }));
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       sessionGeneration: 3, sessionMode: "play", playScene: scene, onCommand: command => commands.push(command) });
     await runtime.loadScripts([doorScript()]);
     runtime.realizePlayWorld(); runtime.start();

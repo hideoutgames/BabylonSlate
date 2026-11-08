@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { expect, test, type CDPSession, type Page } from "@playwright/test";
-import { clickPlayAndWaitForOverlay } from "./play";
+import { clickPlayAndWaitForOverlay, runConsoleCommand } from "./play";
 import { distribution, graphicsAdapter } from "./play-performance-fixture";
 import {
   createFeatureTestProject,
@@ -226,13 +226,6 @@ async function samplePlay(page: Page, durationMs: number) {
       pipeline: rendering.pipeline ?? null,
     },
   };
-}
-
-async function runConsoleCommand(page: Page, command: string): Promise<void> {
-  await page.getByTestId("play-console-open").click();
-  await page.getByTestId("debug-console-input").fill(command);
-  await page.getByTestId("debug-console-submit").click();
-  await page.keyboard.press("Escape");
 }
 
 async function measurePlay(page: Page, cdp: CDPSession) {

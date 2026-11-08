@@ -25,8 +25,13 @@ import {
 } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
-import { createRuntimeFromLoad } from "./play-load";
+import { createRuntimeFromLoad, runtimeOptionsFromLoadControl, type PlayLoadControl } from "./play-load";
 import type { CompiledScript } from "./script-host";
+
+/** A worker `load` on the immediate in-process harness: no host paints Loading UI or acknowledges model readiness. */
+function immediateRuntimeFromLoad(msg: PlayLoadControl, onCommand: (command: CommandMessage) => void) {
+  return createInProcessRuntime({ ...runtimeOptionsFromLoadControl(msg), deferSceneModelsReady: false, deferSceneLoadingPaint: false, onCommand });
+}
 
 function fallingBoxScene(): SerializedScene {
   return {
@@ -121,7 +126,7 @@ function node(
 }
 
 describe("p7-play-scene-load", () => {
-  it("realizes the authored scene instead of demo actors", async () => {
+  it("realizes the authored scene", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createRuntimeFromLoad(
       {
@@ -169,7 +174,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "TwoMeshes",
@@ -226,7 +230,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "BodyOnly",
@@ -264,7 +267,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "HiddenCollider",
@@ -305,7 +307,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "VisibleCollider",
@@ -349,7 +350,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "CubeAndHero",
@@ -390,7 +390,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Parented",
@@ -444,7 +443,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Visibility",
@@ -480,7 +478,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "VisibilityHierarchy",
@@ -645,7 +642,7 @@ describe("p7-play-scene-load", () => {
         ],
       }),
     );
-    const runtime = createRuntimeFromLoad(
+    const runtime = immediateRuntimeFromLoad(
       {
         type: "load",
         sceneAssetGuid: "assets/possess.scene.hasset",
@@ -1138,7 +1135,6 @@ describe("p7-play-scene-load", () => {
       maxActors: 8,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
-      seedDemoActors: false,
       playScene: fallingBoxScene(),
       playSceneGuid: "fall-scene",
     });
@@ -1158,7 +1154,6 @@ describe("p7-play-scene-load", () => {
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
       gravity: [0, 0, 0],
-      seedDemoActors: false,
       playScene: {
         name: "ParentedPhysics",
         viewportMode: "3d",
@@ -1286,7 +1281,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       dt: 0.1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Scripted",
@@ -1312,7 +1306,7 @@ describe("p7-play-scene-load", () => {
     const level2 = cameraPossessScene(true);
     level2.name = "Level2";
     const commands: CommandMessage[] = [];
-    const runtime = createRuntimeFromLoad(
+    const runtime = immediateRuntimeFromLoad(
       {
         type: "load",
         sceneAssetGuid: "scene-1",
@@ -1353,7 +1347,6 @@ describe("p7-play-scene-load", () => {
     };
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Level1",
@@ -1376,7 +1369,6 @@ describe("p7-play-scene-load", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Level1",
@@ -1410,7 +1402,7 @@ describe("p7-play-scene-load", () => {
       actors: [createActor("other", "Other")],
     };
     const commands: CommandMessage[] = [];
-    const runtime = createRuntimeFromLoad(
+    const runtime = immediateRuntimeFromLoad(
       {
         type: "load",
         sceneAssetGuid: "scene-1",
@@ -1445,7 +1437,6 @@ describe("p7-play-scene-load", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command),
     });
@@ -1524,7 +1515,6 @@ describe("p7-play-scene-load", () => {
       .join("\n");
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Arena",

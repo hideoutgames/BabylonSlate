@@ -1,4 +1,3 @@
-import { snapshotTickIndex } from "@haptic/bridge";
 import {
   isStatGroup,
   nextStatGroups,
@@ -119,14 +118,6 @@ export function applyPlayerFpsSample(
     appAvailableBytes: previous?.appAvailableBytes,
     systemAvailableBytes: previous?.systemAvailableBytes,
   };
-}
-
-/** Worker hosts stamp input from snapshot tickIndex so throttled stats cannot drop sticks. */
-export function applyPlayerSnapshotTick(
-  previous: number,
-  buffer: Float32Array,
-): number {
-  return snapshotTickIndex(buffer) ?? previous;
 }
 
 const HUD_STYLE = "display:inline-flex;flex-direction:column;gap:2px;max-width:calc(100vw - 16px);padding:4px 8px;border-radius:2px;background:rgba(20,20,20,0.72);backdrop-filter:blur(4px);color:#eee;font:11px/16px ui-monospace,SFMono-Regular,Menlo,monospace;";

@@ -3,7 +3,7 @@ import { parseStackFrames, lookupAnchor, type AnchorEntry } from "./stack-map";
 import { LogRingBuffer } from "./log-ring";
 import { loadCompiledModule } from "./module-loader";
 import { createInProcessRuntime } from "./driver";
-import { readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
+import { readSnapshotHeader, snapshotFloatCount } from "@haptic/bridge";
 
 describe("stack parser", () => {
   it("parses V8 and WebKit frames", () => {
@@ -79,7 +79,6 @@ describe("in-process runtime driver", () => {
   ) {
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand,
     });
     await runtime.loadScripts([
@@ -137,13 +136,17 @@ describe("in-process runtime driver", () => {
     runtime.stop();
   });
 
-  it("ticks a world and writes snapshot headers", () => {
+  it("ticks a world and writes snapshot headers", async () => {
     const runtime = createInProcessRuntime({
       seed: 7,
       maxActors: 8,
       dt: 1 / 60,
     });
+    await runtime.loadScripts([
+      { assetGuid: "mover-script", classId: "Mover", source: "const noop = true;", anchors: [], entryPoints: [] },
+    ]);
     runtime.start();
+    expect(runtime.spawnScriptedActor({ classId: "Mover" })).not.toBeNull();
     for (let i = 0; i < 5; i++) {
       runtime.tick();
     }
@@ -151,48 +154,14 @@ describe("in-process runtime driver", () => {
     expect(runtime.copySnapshot(buf)).toBe(true);
     const header = readSnapshotHeader(buf);
     expect(header.tickIndex).toBe(5);
-    expect(header.actorCount).toBeGreaterThan(0);
+    expect(header.actorCount).toBe(1);
     runtime.stop();
-  });
-
-  it.each(["realizePlayWorld", "start"] as const)(
-    "emits no command during construction and realizes empty-Preview demo actors once, from %s",
-    (first) => {
-      const commands: CommandMessage[] = [];
-      const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
-      try {
-        expect(commands).toEqual([]);
-        expect(runtime.getWorld().getActors()).toHaveLength(0);
-        runtime[first]();
-        runtime.realizePlayWorld();
-        runtime.start();
-        const spawns = commands.filter((command) => command.type === "spawn");
-        expect(spawns).toEqual([
-          { type: "spawn", slotId: 0, actorGuid: expect.any(String), classId: "Enemy" },
-          { type: "spawn", slotId: 1, actorGuid: expect.any(String), classId: "Actor" },
-        ]);
-        expect(commands.indexOf(spawns[0]!)).toBe(0);
-        expect(runtime.getWorld().getActors().map((actor) => actor.classId)).toEqual(["Enemy", "Actor"]);
-      } finally {
-        runtime.stop();
-      }
-    },
-  );
-
-  it("does not realize demo actors for a session stopped before it started", () => {
-    const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
-    runtime.stop();
-    runtime.realizePlayWorld();
-    runtime.start();
-    expect(commands.some((command) => command.type === "spawn")).toBe(false);
   });
 
   it("does not copy a snapshot before the first published tick", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
     });
     const buf = new Float32Array(snapshotFloatCount(8));
     expect(runtime.copySnapshot(buf)).toBe(false);
@@ -238,7 +207,6 @@ describe("in-process runtime driver", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
     });
     const world = runtime.getWorld();
     const probe = world.createActor({
@@ -276,7 +244,6 @@ describe("in-process runtime driver", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
     });
     runtime.start();
     // Play's worker path stamps events with Math.floor(performance.now() / (1000/60)),

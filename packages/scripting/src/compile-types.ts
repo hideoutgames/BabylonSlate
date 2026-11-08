@@ -61,20 +61,17 @@ export type CompileOptions = {
    */
   instrumentInfiniteLoops?: boolean;
   /**
-   * Editor Simulation compiles report what runs for the instance the editor
-   * observes (`ctx.debugTrace`): each exec node visit, the exec edge taken, and
-   * the values nodes read and produce. An unobserved instance pays one null
-   * check per probe. Ignored when `stripDevelopmentOnly` is set, so release
-   * exports never carry it.
+   * Editor Play and Simulation compiles carry the graph debugger's probes:
+   * - they report what runs for the instance the editor observes
+   *   (`ctx.debugTrace`): each exec node visit, the exec edge taken, and the
+   *   values nodes read and produce. An unobserved instance pays one null
+   *   check per probe.
+   * - they check each exec node against the session's breakpoints
+   *   (`ctx.breakpoints`), for every instance. With no breakpoint in the graph
+   *   a check is one null check.
+   * Ignored when `stripDevelopmentOnly` is set, so release exports never carry it.
    */
   instrumentExecutionTrace?: boolean;
-  /**
-   * Editor Simulation compiles check each exec node against the session's
-   * breakpoints (`ctx.breakpoints`), for every instance. With no breakpoint in
-   * the graph a check is one null check. Ignored when `stripDevelopmentOnly`
-   * is set, so release exports never carry it.
-   */
-  instrumentBreakpoints?: boolean;
   /** Function-local `let` lines inserted at the start of each export. */
   localPreamble?: string[];
   /**

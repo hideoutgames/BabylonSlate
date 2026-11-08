@@ -8,7 +8,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("tick phase timing", () => {
   it("marks every timed phase once per tick, in order, with the scene systems after post-physics", () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: createDefaultScene() });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: createDefaultScene() });
     runtime.realizePlayWorld();
     runtime.start();
     try {

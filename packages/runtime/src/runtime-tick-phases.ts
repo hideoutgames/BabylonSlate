@@ -28,10 +28,8 @@ export function runTick(rt: RuntimeComposition): void {
   const simDt = simulationDt(rt);
   rt.world.clock.dt = simDt;
   rt.waterClock.advance(simDt);
-  // Voices play in real time, so their age (and the clock restored voices
-  // waiting for the audio unlock catch up by) follows the undilated step.
+  // Voices play in real time, so their age follows the undilated step.
   rt.voices.advance(rt.dt);
-  if (rt.voices.hasRestoredVoices) rt.emit({ type: "audioSimTime", seconds: rt.voices.audioTime });
   const pending = resolveTickInput(rt, simDt);
   rt.ticks.beginPhaseTiming();
   tickWorld(rt, pending, simDt);

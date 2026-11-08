@@ -192,7 +192,7 @@ export type PlaySessionOptions = {
   scripts?: readonly ScriptBundleEntry[];
   /** The light parts the startup sources may spawn (`spawnableLightsOfLoad`); defaults to those of `scripts`. */
   spawnableLights?: ReadonlyMap<string, SpawnableLight>;
-  /** Authored scene instantiated in the worker instead of demo actors. */
+  /** Authored scene instantiated in the worker. */
   sceneAssetGuid?: string;
   scene?: SerializedScene;
   project?: { name: string; version: string };

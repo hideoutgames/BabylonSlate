@@ -14,23 +14,23 @@ import { mountPlayerHud, mountPlayerDebuggerOverlays, type PlayerHudStats } from
 import { applyPlayerLayout } from "./layout";
 import {
   createPreviewAssetClient,
+  filesFromPreviewPack,
   PREVIEW_CONSOLE_REQUEST_MESSAGE,
   PREVIEW_CONSOLE_RESULT_MESSAGE,
   PREVIEW_CONSOLE_EVENT_MESSAGE,
   PREVIEW_CONSOLE_CATALOG_MESSAGE,
   PREVIEW_CONSOLE_CONTEXT_MESSAGE,
-  isPreviewConsoleRequest,
-  createPreviewSaveStorageClient,
-} from "@haptic/exporter";
-import {
-  filesFromPreviewPack,
-  isExpectedPreviewHostMessage,
-  previewPackFromExpectedHostMessage,
   PREVIEW_DIAGNOSTICS_MESSAGE,
   PREVIEW_ERROR_MESSAGE,
   PREVIEW_READY_MESSAGE,
   PREVIEW_REQUEST_PACK_MESSAGE,
   PREVIEW_STOP_MESSAGE,
+  isPreviewConsoleRequest,
+  createPreviewSaveStorageClient,
+} from "@haptic/exporter";
+import {
+  isExpectedPreviewHostMessage,
+  previewPackFromExpectedHostMessage,
 } from "./preview-protocol";
 
 const previewHostOrigin = window.location.origin;

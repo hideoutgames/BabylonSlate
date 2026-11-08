@@ -13,7 +13,7 @@ const edge = (sourceNodeId: string, sourcePinId: string, targetNodeId: string, t
 async function run(graph: LogicGraph) {
   expect(validateGraphs([graph], { assetGuid: "scalability-class", knownGuids: new Set([...ENGINE_ENUMS, ...ENGINE_STRUCTS].map((type) => type.id)) }, { registry }).filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
   const commands: CommandMessage[] = [];
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
     renderSettings: { mode: "cel" }, frameCap: 30, onCommand: (command) => commands.push(command) });
   const compiled = compileGraph(graph, { registry, assetGuid: "scalability-class" });
   // A Game Subsystem hears Scalability Changed; its On Init runs when the session starts.

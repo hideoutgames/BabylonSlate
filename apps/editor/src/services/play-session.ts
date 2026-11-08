@@ -17,7 +17,9 @@ import {
 import { spawnableLightsFromScripts } from "@haptic/render/spawnable-lights";
 import { encodeInputEvents } from "@haptic/input";
 import {
+  applySnapshotTick,
   createSessionBoundaryClient,
+  playInputStampTick,
   snapshotFloatCount,
   type CommandMessage,
 } from "@haptic/bridge";
@@ -49,13 +51,11 @@ import {
   applyPlayHudConsoleCommand,
   applyPlaySessionPausedCommand,
   applyPlaySessionStep,
-  applyPlaySnapshotTick,
   applyWorkerPlayStats,
   deliverInspectSnapshot,
   describeRetainedTextures,
   diagnosticFromCommand,
   isFatalPlayDiagnostic,
-  playInputStampTick,
   printEntryFromCommand,
   resolvePlayFrameCap,
   shouldForwardPlayEngineCommand,
@@ -90,8 +90,6 @@ export {
   applyPlayGraphDebugObserve,
   texturesRetainedAfterPlay,
   resolvePlayFrameCap,
-  playInputStampTick,
-  applyPlaySnapshotTick,
   printEntryFromCommand,
   applyWorkerPlayStats,
   applyPlayFpsSample,
@@ -179,7 +177,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
         // Apply the authoritative edited pose before acknowledging it. This is
         // snapshot publication only: paused edits never advance a game tick.
         if (!owner.copySnapshot(snapBuf)) throw new Error("The runtime edit applied, but its presentation snapshot is unavailable.");
-        lastWorkerTickIndex = applyPlaySnapshotTick(lastWorkerTickIndex, snapBuf);
+        lastWorkerTickIndex = applySnapshotTick(lastWorkerTickIndex, snapBuf);
         handle.pushSnapshot(snapBuf);
         if (acknowledgedPaused) handle.requestPausedRedraw();
       }
@@ -692,7 +690,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     worker.onCommand((cmd) => onCommand(cmd));
     worker.onSnapshot((buffer) => {
       if (stopped) return;
-      lastWorkerTickIndex = applyPlaySnapshotTick(lastWorkerTickIndex, buffer);
+      lastWorkerTickIndex = applySnapshotTick(lastWorkerTickIndex, buffer);
       handle.pushSnapshot(buffer);
     });
   } else {
@@ -757,7 +755,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     if (runtime) {
       runtime.advance(elapsed);
       if (runtime.copySnapshot(snapBuf)) {
-        lastWorkerTickIndex = applyPlaySnapshotTick(
+        lastWorkerTickIndex = applySnapshotTick(
           lastWorkerTickIndex,
           snapBuf,
         );

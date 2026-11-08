@@ -25,7 +25,7 @@ function cameraScene(defaultCamera: string | null): SerializedScene {
 async function runBeginPlay(scene: SerializedScene, body: string) {
   const commands: CommandMessage[] = [];
   const runtime = createInProcessRuntime({
-    seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: scene,
+    seed: 1, preferSoftwarePhysics: true, playScene: scene,
     onCommand: (command) => commands.push(command),
   });
   await runtime.loadScripts([{

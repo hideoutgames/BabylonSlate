@@ -71,7 +71,6 @@ export function assetsFromIndexed(
     classReferences: asset.header.classReferences,
     requiredClassReferences: asset.header.requiredClassReferences,
     consoleCommand: asset.header.consoleCommand,
-    dependencyMetadataVersion: asset.header.dependencyMetadataVersion,
     rootId: asset.rootId,
   }));
 }
@@ -131,6 +130,8 @@ export type CollectExportGameParams = {
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
   renderSettings: RenderProjectSettings;
   defaultFontGuid?: string | null;
+  /** Project Global Fallback, written to game.json for the player's font stacks. */
+  globalFallback?: string;
   playFrameCap: number;
   garbageCollectionIntervalTicks?: number;
   touchMinTargetPx?: number;
@@ -438,7 +439,6 @@ export async function collectAndExportGame(
         classReferences: asset.classReferences,
         requiredClassReferences: asset.requiredClassReferences,
         consoleCommand: asset.consoleCommand,
-        dependencyMetadataVersion: asset.dependencyMetadataVersion,
         startupRequired: asset.type === "InputAction" || asset.type === "InputAxis" || asset.guid === params.audioMixerGuid || (asset.type === "Class" && !!asset.path && !!params.gameInstanceClass && classIdForAssetPath(asset.path) === params.gameInstanceClass) || (asset.type === "Class" && !!asset.parentClass && subsystemBaseClassIdOf(subsystemHierarchy, asset.parentClass) !== null),
         type: asset.type,
         sceneGuid: packSceneGuidForAsset(
@@ -620,6 +620,7 @@ export async function collectAndExportGame(
     reverbDampingScale: params.reverbDampingScale,
     renderSettings: params.renderSettings,
     defaultFontGuid: params.defaultFontGuid,
+    globalFallback: params.globalFallback,
     playFrameCap: params.playFrameCap,
     garbageCollectionIntervalTicks: params.garbageCollectionIntervalTicks,
     touchMinTargetPx: params.touchMinTargetPx,

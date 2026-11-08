@@ -45,7 +45,7 @@ export type TraceVoice = {
   emitterActorGuid?: string;
   /** Undilated fixed-step seconds since the voice started. */
   elapsedSeconds: number;
-  /** The playSound clip and pitch draws (`clipRoll`, `pitchRoll`), so a restore replays the same clip at the same pitch. */
+  /** The playSound clip and pitch draws (`clipRoll`, `pitchRoll`) the voice plays with. */
   clipRoll?: number;
   pitchRoll?: number;
 };
@@ -57,38 +57,6 @@ export type TraceAudioState = {
   nextScriptVoice: number;
 };
 
-/** One ParticleComponent the session's commands assigned, with its Play state. */
-export type TraceParticleComponent = {
-  actorGuid: string;
-  componentGuid: string;
-  /** Played and not yet reported ended or stopped. */
-  playing: boolean;
-  /** Generation of its latest Play, which the render host echoes when playback ends. */
-  generation: number;
-};
-
-/** A ParticleComponent's runtime parameter values (Set Particle Parameter) by name. */
-export type TraceParticleParameters = {
-  actorGuid: string;
-  componentGuid: string;
-  values: Record<string, number[]>;
-};
-
-export type TraceParticleState = {
-  components: TraceParticleComponent[];
-  /** The generation the next Play gets. */
-  nextGeneration: number;
-  /** Components with runtime parameter values; omitted when none has any. */
-  parameters?: TraceParticleParameters[];
-};
-
-/** A Global Parameter Collection parameter's session value (Set Global <Type> Parameter). */
-export type TraceGlobalParameterValue = {
-  collectionGuid: string;
-  parameterId: string;
-  value: number[];
-};
-
 /** The Sprite Animation clip an actor shows (Animation Graph or Play Animation). */
 export type TraceSpriteClip = {
   actorGuid: string;
@@ -98,7 +66,7 @@ export type TraceSpriteClip = {
   normalisedTime: number;
 };
 
-/** One AnimationGraphComponent's evaluation, so its graph continues mid-state. */
+/** One AnimationGraphComponent's evaluation. */
 export type TraceAnimGraphState = {
   componentGuid: string;
   /** Present with `state` when the graph was initialized and evaluated for this component. */
@@ -127,9 +95,6 @@ export type TraceFrame = {
   audio?: TraceAudioState;
   sprites?: TraceSpriteClip[];
   animGraphs?: TraceAnimGraphState[];
-  particles?: TraceParticleState;
-  /** Global parameters set this session; the rest hold their defaults. */
-  globalParameters?: TraceGlobalParameterValue[];
 };
 
 export type TraceStopReason = "requested" | "session-ended" | "oversized-frame";

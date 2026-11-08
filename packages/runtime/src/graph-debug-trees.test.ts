@@ -37,7 +37,7 @@ function sceneOf(actors: Array<{ id: string; name: string; components: Row[] }>)
 function start(options: Partial<Parameters<typeof createInProcessRuntime>[0]>) {
   const commands: CommandMessage[] = [];
   const runtime = createInProcessRuntime({
-    seed: 1, seedDemoActors: false, dt: 0.1, ...options, onCommand: (command) => commands.push(command),
+    seed: 1, dt: 0.1, ...options, onCommand: (command) => commands.push(command),
   });
   runtime.start();
   runtime.realizePlayWorld();

@@ -336,12 +336,6 @@ export class ScopedStorageAdapter implements ProjectStorage {
     return toFileStat(stat);
   }
 
-  /** Test helper — mark the folder stale. */
-  async markStale(): Promise<void> {
-    this.stale = true;
-    await Preferences.set({ key: STALE_PREF_KEY, value: "1" });
-  }
-
   private getFolder(): FolderRef {
     if (this.readScopeClosed) throw new Error("Read scope is closed");
     if (!this.folder) {

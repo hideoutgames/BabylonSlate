@@ -176,7 +176,7 @@ describe("WaterPreviewPanel", () => {
   });
 
   it("applies project render settings, Water quality included, to the existing preview scene without its post-processing", () => {
-    const effects = { colorPipeline: { version: 1, mode: "sceneLinear" } };
+    const effects = { colorPipeline: { mode: "sceneLinear" } };
     harness.projectDocument = { settings: { render: { mode: "pbr", quality: { water: { shadingDetail: "high" } }, effects } } };
     const rerender = renderPreview();
     const scene = harness.hosts[0]!.scene;

@@ -49,9 +49,9 @@ function motionPermissionRequests(): Array<() => Promise<string>> | null {
   return requests.length > 0 ? requests : null;
 }
 
-/** `screen.orientation.angle`, or the older `window.orientation` that iOS Safari had alone. */
+/** The screen's rotation from `screen.orientation.angle`, or 0 when the view has none. */
 function screenAngle(view: Window | null): number {
-  const angle = view?.screen?.orientation?.angle ?? (view as { orientation?: unknown } | null)?.orientation;
+  const angle = view?.screen?.orientation?.angle;
   return typeof angle === "number" && Number.isFinite(angle) ? angle : 0;
 }
 

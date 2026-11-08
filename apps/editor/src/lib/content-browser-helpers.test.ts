@@ -1438,7 +1438,6 @@ describe("content-browser-helpers", () => {
     });
     expect(emitter.type).toBe("ParticleEmitter");
     expect(emitter.payload).toMatchObject({
-      schemaVersion: 2,
       emitter: { capacity: 256 },
       render: { materialGuid: null, blendMode: "additive" },
     });

@@ -341,7 +341,6 @@ export {
   NumberPromptDialog,
   type NumberPromptDialogProps,
 } from "./number-prompt-dialog";
-export { formatBindingLabel } from "./format-binding-label";
 export {
   BindingCodePicker,
   type BindingCodePickerProps,

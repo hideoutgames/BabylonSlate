@@ -14,7 +14,7 @@ function ticker(classId: string, parentClassId: string, actorDefaults?: ActorDef
 
 describe("Actor Defaults", () => {
   it("skips Event Tick when it resolves to Disabled along the Class chain", async () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true });
     try {
       await runtime.loadScripts([
         ticker("Base", "Actor", { eventTick: "disabled", generateHitEvents: false }),

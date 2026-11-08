@@ -59,7 +59,7 @@ describe("Movement input graphs", () => {
     };
     const commands: string[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, dt: 0.1,
+      seed: 1, preferSoftwarePhysics: true, dt: 0.1,
       physicsWorld: kind, inputAssets, onCommand: (command) => commands.push(command.type),
       playScene: {
         name: "Graph Movement", viewportMode: kind,

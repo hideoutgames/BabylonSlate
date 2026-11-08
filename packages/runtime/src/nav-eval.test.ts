@@ -178,7 +178,7 @@ describe("runtime navmesh import and crowd", () => {
       components: [{ id: "nav", classId: "NavAgentComponent", properties: { radius: 0.2, height: 2, maxSpeed: 3.5 } }],
       })),
     ];
-    const runtime = createInProcessRuntime({ seed: 1, maxActors: 512, seedDemoActors: false, playScene: scene });
+    const runtime = createInProcessRuntime({ seed: 1, maxActors: 512, playScene: scene });
     try {
       await runtime.loadNavMesh(bytes);
       runtime.start();
@@ -209,7 +209,7 @@ describe("runtime navmesh import and crowd", () => {
       components: [{ id: "bt", classId: "BehaviourTreeComponent", properties: { treeGuid: "spawn-tree" } }],
     })];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, playScene: scene,
+      seed: 1, playScene: scene,
       behaviourTrees: { "spawn-tree": {
         name: "Spawn Agent", rootId: "wait", blackboardGuid: null,
         nodes: [{
@@ -253,7 +253,7 @@ describe("runtime navmesh import and crowd", () => {
   it("steps the crowd by the tick's step when slomo changes mid-tick", async () => {
     // slomo 2 during tick 1 must walk the agent exactly as slomo 2 issued after tick 1.
     const walk = async (midTick: boolean) => {
-      const runtime = createInProcessRuntime({ seed: 1, dt: 0.1, seedDemoActors: false, playScene: patrolScene() });
+      const runtime = createInProcessRuntime({ seed: 1, dt: 0.1, playScene: patrolScene() });
       try {
         await runtime.loadNavMesh(bytes);
         runtime.start();
@@ -284,7 +284,7 @@ describe("runtime navmesh import and crowd", () => {
   it("streams active navigation only while requested and clears removed agents", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, playScene: patrolScene(),
+      seed: 1, playScene: patrolScene(),
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadNavMesh(bytes);
@@ -317,7 +317,7 @@ describe("runtime navmesh import and crowd", () => {
   it("Stop releases the navmesh and clears the navigation, then behaviour-tree, debug overlays", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, playScene: patrolScene(),
+      seed: 1, playScene: patrolScene(),
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadNavMesh(bytes);
@@ -338,7 +338,7 @@ describe("runtime navmesh import and crowd", () => {
 
   it("an idle NavAgent preserves dynamic gravity and the physics world pose", async () => {
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, playScene: physicalAgentScene({ y: 2 }),
+      seed: 1, playScene: physicalAgentScene({ y: 2 }),
       preferSoftwarePhysics: true,
     });
     try {
@@ -364,7 +364,7 @@ describe("runtime navmesh import and crowd", () => {
 
   it("NavAgent leaves an authored zero-gravity body floating", async () => {
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, playScene: physicalAgentScene({ y: 2, gravityScale: 0 }),
+      seed: 1, playScene: physicalAgentScene({ y: 2, gravityScale: 0 }),
       preferSoftwarePhysics: true,
     });
     try {
@@ -381,7 +381,7 @@ describe("runtime navmesh import and crowd", () => {
   it.each(["software", "havok"] as const)("%s: an airborne BT owner falls then navigates with its collider and parent offset", async (backend) => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, playScene: physicalAgentScene({ y: 6, moveTo: true }),
+      seed: 1, playScene: physicalAgentScene({ y: 6, moveTo: true }),
       preferSoftwarePhysics: backend === "software",
       behaviourTrees: { "move-tree": physicalMoveTree },
       onCommand: (command) => commands.push(command),
@@ -412,7 +412,7 @@ describe("runtime navmesh import and crowd", () => {
 
   it("stopping dynamic navigation stops horizontal steering while an upward impulse still falls", async () => {
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, playScene: physicalAgentScene({ y: 0 }),
+      seed: 1, playScene: physicalAgentScene({ y: 0 }),
       preferSoftwarePhysics: true,
     });
     try {
@@ -444,7 +444,6 @@ describe("runtime navmesh import and crowd", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       playScene: patrolScene(),
     });
     await runtime.loadNavMesh(bytes);
@@ -468,7 +467,6 @@ describe("runtime navmesh import and crowd", () => {
       const runtime = createInProcessRuntime({
         seed: 1,
         maxActors: 8,
-        seedDemoActors: false,
         playScene: {
           name: "Nav",
           viewportMode: "3d",
@@ -529,7 +527,6 @@ describe("runtime navmesh import and crowd", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       playScene: {
         name: "Nav",
         viewportMode: "3d",
@@ -587,7 +584,6 @@ describe("runtime navmesh import and crowd", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       playScene: {
         name: "Nav",
         viewportMode: "3d",
@@ -671,7 +667,6 @@ describe("runtime navmesh import and crowd", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       playScene: {
         name: "Nav",
         viewportMode: "3d",
@@ -733,7 +728,7 @@ describe("runtime navmesh import and crowd", () => {
     async function play(actors: SerializedScene["actors"], navmesh: Uint8Array | null, ticks = 5) {
       const commands: CommandMessage[] = [];
       const runtime = createInProcessRuntime({
-        seed: 1, seedDemoActors: false, onCommand: (command) => commands.push(command),
+        seed: 1, onCommand: (command) => commands.push(command),
         playScene: { name: "Nav", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors },
       });
       await runtime.loadScripts([moveEveryTick]);
@@ -770,7 +765,7 @@ describe("runtime navmesh import and crowd", () => {
     ] as const)("warns once when a Behaviour Tree Move To task fails for %s", async (_label, withAgent, withNavmesh, message) => {
       const commands: CommandMessage[] = [];
       const runtime = createInProcessRuntime({
-        seed: 1, seedDemoActors: false, onCommand: (command) => commands.push(command),
+        seed: 1, onCommand: (command) => commands.push(command),
         behaviourTrees: { "tree-1": {
           name: "Patrol", rootId: "move", blackboardGuid: null,
           nodes: [{
@@ -806,7 +801,6 @@ describe("runtime navmesh import and crowd", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       playScene: {
         name: "Nav",
         viewportMode: "3d",
@@ -871,7 +865,6 @@ describe("runtime navmesh import and crowd", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       playScene: {
         name: "Nav2d",
         viewportMode: "2d",
@@ -930,7 +923,6 @@ describe("runtime navmesh import and crowd", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       playScene: {
         name: "NavCost",
         viewportMode: "3d",

@@ -1,8 +1,6 @@
 import type { GraphClassMember, SerializedGraph } from "@haptic/core";
 import { normalizeTag, normalizeTagContainer } from "@haptic/core";
 
-export const ANIM_GRAPH_SCHEMA_VERSION = 2 as const;
-
 export const ANIM_EVENT_INITIALIZE_TYPE = "anim.event.initialize";
 export const ANIM_EVENT_UPDATE_TYPE = "anim.event.update";
 export const ANIM_RULE_ENTER_TYPE = "anim.rule.enterState";
@@ -59,7 +57,6 @@ export interface AnimTransition {
 }
 
 export interface AnimGraphDocument {
-  schemaVersion: typeof ANIM_GRAPH_SCHEMA_VERSION;
   name: string;
   entryStateId: string;
   states: AnimState[];
@@ -249,7 +246,6 @@ export function createDefaultAnimGraph(name = "Locomotion"): AnimGraphDocument {
     position: defaultAnimStatePosition(0),
   };
   return {
-    schemaVersion: ANIM_GRAPH_SCHEMA_VERSION,
     name,
     entryStateId: idle.id,
     states: [idle],
@@ -959,7 +955,6 @@ export function parseAnimGraphDocument(
       ? source.entryStateId
       : states[0]!.id;
   return {
-    schemaVersion: ANIM_GRAPH_SCHEMA_VERSION,
     name:
       typeof source.name === "string" && source.name !== ""
         ? source.name

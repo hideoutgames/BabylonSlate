@@ -85,7 +85,7 @@ function cameraRigScript(): CompiledScript {
 describe("Tween runtime integration", () => {
   it("runs a compiled one-shot reference tween using pause and time dilation, then executes Completed once", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, dt: 0.5, onCommand: command => commands.push(command) });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, dt: 0.5, onCommand: command => commands.push(command) });
     try {
       await runtime.loadScripts([floatScript()]);
       runtime.start();
@@ -108,7 +108,7 @@ describe("Tween runtime integration", () => {
 
   it.each(["stop", "destroy"] as const)("does not resume Completed after %s before the completion microtask", async action => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, dt: 2, onCommand: command => commands.push(command) });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, dt: 2, onCommand: command => commands.push(command) });
     try {
       await runtime.loadScripts([floatScript()]); runtime.start();
       const actor = runtime.spawnScriptedActor({ classId: "TweenActor" })!;
@@ -135,7 +135,7 @@ describe("Tween runtime integration", () => {
       }`,
     };
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, dt: 0.5,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, dt: 0.5,
       playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
     try {
       await runtime.loadScripts([script]); runtime.realizePlayWorld(); runtime.start();
@@ -160,7 +160,7 @@ describe("Tween runtime integration", () => {
     const layer = createDefaultSceneLayer();
     layer.actors = [createActor("rig", "Rig", { classId: "CameraRig" })];
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, dt: 0.5,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, dt: 0.5,
       playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
     try {
       await runtime.loadScripts([cameraRigScript()]); runtime.realizePlayWorld(); runtime.start();
@@ -191,7 +191,7 @@ describe("Tween runtime integration", () => {
       }`,
     };
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, dt: 0.5,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, dt: 0.5,
       playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
     const cameras = () => commands.flatMap(command => command.type === "sceneLayerCamera" ? [command.camera] : []);
     try {

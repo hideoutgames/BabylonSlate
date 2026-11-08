@@ -8,8 +8,7 @@ import {
   type SpritePayload,
 } from "./sprite-payload";
 import {
-  tilesetAtlasColumns,
-  tilesetAtlasRows,
+  tilesetAtlasTileCount,
   tilesetTileRect,
   tilesetTileUv,
   type TilesetPayload,
@@ -189,7 +188,7 @@ export function spriteAnimationSheetGrid(
 export function spriteAnimationSheetCellCount(sheet: SpriteAnimationSheet, atlas: { width: number; height: number }): number {
   if (atlas.width <= 0 || atlas.height <= 0) return 0;
   const grid = spriteAnimationSheetGrid(sheet, atlas);
-  return tilesetAtlasColumns(grid) * tilesetAtlasRows(grid);
+  return tilesetAtlasTileCount(grid);
 }
 
 /** Image-space rect of a sheet cell (row 0 at the top), or null outside the Texture. */

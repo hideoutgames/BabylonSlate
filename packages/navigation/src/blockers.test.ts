@@ -214,11 +214,11 @@ describe("staticBlockerBakeParts", () => {
 
 describe("xyBoundsFromActors", () => {
   it("pads empty actor lists to a centered default bounds", () => {
-    expect(xyBoundsFromActors([], 5)).toEqual({
-      minX: -5,
-      minY: -5,
-      maxX: 5,
-      maxY: 5,
+    expect(xyBoundsFromActors([])).toEqual({
+      minX: -8,
+      minY: -8,
+      maxX: 8,
+      maxY: 8,
     });
   });
 
@@ -228,11 +228,11 @@ describe("xyBoundsFromActors", () => {
       { points: [{ x: 0, y: 0 }, { x: 30, y: 0 }], loop: false },
       { points: [{ x: 0, y: 0 }, { x: 0, y: -20 }], loop: false },
     ], 2);
-    expect(xyBoundsFromActors([{ transform: { position: [0, 0, 0] }, components: [] }], 2, [wall])).toEqual({
-      minX: expect.closeTo(-2.4, 5),
-      minY: expect.closeTo(-22, 5),
-      maxX: expect.closeTo(32, 5),
-      maxY: expect.closeTo(2.4, 5),
+    expect(xyBoundsFromActors([{ transform: { position: [0, 0, 0] }, components: [] }], [wall])).toEqual({
+      minX: expect.closeTo(-8.4, 5),
+      minY: expect.closeTo(-28, 5),
+      maxX: expect.closeTo(38, 5),
+      maxY: expect.closeTo(8.4, 5),
     });
   });
 
@@ -249,9 +249,8 @@ describe("xyBoundsFromActors", () => {
             components: [],
           },
         ],
-        2,
       ),
-    ).toEqual({ minX: -2, minY: -2, maxX: 12, maxY: 6 });
+    ).toEqual({ minX: -8, minY: -8, maxX: 18, maxY: 12 });
   });
 });
 

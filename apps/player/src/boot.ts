@@ -5,9 +5,10 @@ import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
 import { buildParticleParameterCatalog, cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
 import { captureShadowDiagnostics, lightsDebugText, setGlobalParameterCatalog } from "@haptic/render";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
-import { createSessionBoundaryClient, snapshotFloatCount, type SessionBoundaryRequest, type SessionBoundaryResult } from "@haptic/bridge";
+import { applySnapshotTick, createSessionBoundaryClient, playInputStampTick, snapshotFloatCount, type SessionBoundaryRequest, type SessionBoundaryResult } from "@haptic/bridge";
 import { createMessageRateMeter } from "@haptic/debugger";
 import { encodeInputEvents } from "@haptic/input";
+import { attachInputCapture } from "@haptic/input/dom";
 import { parseAnimGraphDocument } from "@haptic/anim-graph";
 import {
   parseBehaviourTreeDocument,
@@ -34,7 +35,7 @@ import {
 } from "@haptic/render";
 import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import { pixelatedExtend, playFramebufferSize, type SerializedScene } from "@haptic/core";
-import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@haptic/exporter";
+import { gameSourceSubset, packedBootControls, packedContentFromGame, packedSourceControls, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest, type PackedGameContent } from "@haptic/exporter";
 import { createPlayerWorkerHost, playerHavokWasmUrl, type PlayerWorkerHost } from "./worker-host";
 import { createPlayerSourceInstalls } from "./source-installs";
 import { playerDecoderPaths } from "./decoder-paths";
@@ -49,11 +50,8 @@ import {
   waitForPlayerLoadingPaint,
 } from "./scene-loading-state";
 import { mountPlayerPrintOverlay } from "./print-overlay";
-import { packedBootControls, packedContentFromGame, packedSourceControls, type PackedGameContent } from "./hydrate";
-import { attachInputCapture, playInputStampTick } from "./input";
 import {
   applyPlayerFpsSample,
-  applyPlayerSnapshotTick,
   applyWorkerPlayerStats,
   unlockAudioOnFirstGesture,
   type PlayerHudStats,
@@ -218,7 +216,7 @@ function initializePlayer(
   };
   const fontIds = new Set(manifest.assets.filter(entry => entry.type === "Font").map(entry => entry.guid));
   const fontFallbacks = new Map(manifest.assets.filter(entry => entry.type === "Font").map(entry => [entry.guid, entry.requiredDependencies?.filter(id => fontIds.has(id)) ?? []]));
-  const fontCss = packedFontCssStacks(game.fontFamilies, "sans-serif", manifest.defaultFontGuid, fontFallbacks);
+  const fontCss = packedFontCssStacks(game.fontFamilies, manifest.globalFallback, manifest.defaultFontGuid, fontFallbacks);
   const installs = createPlayerSourceInstalls(game);
   own(() => installs.dispose());
 
@@ -547,8 +545,6 @@ function initializePlayer(
     renderTargets: Object.fromEntries(content.renderTargets),
     renderTargetTextures: Object.fromEntries(content.renderTargetTextures),
     animClipCatalog: content.animClipCatalog,
-    deferSceneModelsReady: true,
-    deferSceneLoadingPaint: true,
   };
 
   let ticks = 0;
@@ -809,7 +805,7 @@ function initializePlayer(
   };
   const renderSources = (sources: GameSourceContent) => {
     const prepared = packedContentFromGame(sources);
-    const fonts = packedFontCssStacks(sources.fontFamilies, "sans-serif", manifest.defaultFontGuid, fontFallbacks);
+    const fonts = packedFontCssStacks(sources.fontFamilies, manifest.globalFallback, manifest.defaultFontGuid, fontFallbacks);
     return {
       assets: {
         textureBytes: installs.textures(sources.textureBytes), areaEmissions: sources.areaEmissions,
@@ -1066,7 +1062,7 @@ function initializePlayer(
     worker.onCommand((cmd) => onCommand(cmd as never));
     worker.onSnapshot((buffer) => {
       if (halted) return;
-      lastWorkerTickIndex = applyPlayerSnapshotTick(
+      lastWorkerTickIndex = applySnapshotTick(
         lastWorkerTickIndex,
         buffer,
       );
@@ -1193,7 +1189,7 @@ function initializePlayer(
       catch (error) { if (!halted) runtime?.reportError(error); }
       if (halted || !runtime) return;
       if (runtime.copySnapshot(snapBuf)) {
-        lastWorkerTickIndex = applyPlayerSnapshotTick(
+        lastWorkerTickIndex = applySnapshotTick(
           lastWorkerTickIndex,
           snapBuf,
         );

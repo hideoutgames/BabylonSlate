@@ -9,7 +9,9 @@ import {
   u32ToFloatBits,
 } from "./layout";
 import {
+  applySnapshotTick,
   isPublishedSnapshot,
+  playInputStampTick,
   readSnapshotHeader,
   snapshotTickIndex,
   writeActorSlot,
@@ -94,6 +96,29 @@ describe("snapshot layout", () => {
 
   it("returns null snapshotTickIndex for unpublished buffers", () => {
     expect(snapshotTickIndex(new Float32Array(snapshotFloatCount(1)))).toBeNull();
+  });
+
+  it("stamps worker input from snapshot tickIndex when stats are sparse", () => {
+    const unpublished = new Float32Array(snapshotFloatCount(1));
+    expect(applySnapshotTick(4, unpublished)).toBe(4);
+    const published = new Float32Array(snapshotFloatCount(1));
+    writeSnapshotHeader(published, {
+      frameId: 9,
+      tickIndex: 12,
+      actorCount: 0,
+      scriptMs: 1,
+      physicsMs: 2,
+    });
+    expect(applySnapshotTick(4, published)).toBe(12);
+  });
+
+  it("stamps Play input from the in-process World tick when present", () => {
+    expect(playInputStampTick(3, 99)).toBe(3);
+  });
+
+  it("stamps worker Play input from the last snapshot tick instead of a wall-clock index", () => {
+    expect(playInputStampTick(undefined, 0)).toBe(0);
+    expect(playInputStampTick(undefined, 12)).toBe(12);
   });
 
   it("treats only magic+version headers as published snapshots", () => {

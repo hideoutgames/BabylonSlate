@@ -35,7 +35,7 @@ function documents() {
 describe("scene owner readiness", () => {
   it("cleans a partial layer when structural assignment fails before its ready marker", () => {
     const { layer } = documents();
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: { ...createDefaultScene(), actors: [] }, sceneLayerLibrary: { overlay: layer }, deferSceneModelsReady: true,
       onCommand: (command) => { if (command.type === "assignMesh") throw new Error("Layer assignment failed"); } });
     try {
@@ -49,7 +49,7 @@ describe("scene owner readiness", () => {
   it("realizes scripted assets before activation while a ready global layer keeps ticking and publishing motion", async () => {
     const { scene, layer } = documents();
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: scene, playSceneGuid: "world", sceneLayerLibrary: { overlay: layer },
       cooperativeSceneLoading: true, deferSceneModelsReady: true, onCommand: (command) => commands.push(command) });
     try {
@@ -168,7 +168,7 @@ describe("scene owner readiness", () => {
         { name: "end", event: "onEnd", isAsync: false }],
     };
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       gameInstanceClass: "Caller", playScene: scene, playSceneGuid: "world", sceneLayerLibrary: { overlay: layer },
       cooperativeSceneLoading: true, deferSceneModelsReady: true, onCommand: (command) => commands.push(command) });
     try {
@@ -239,7 +239,7 @@ describe("scene owner readiness", () => {
   it("rejects stale layer acknowledgments and never runs cancelled creation or destruction callbacks", async () => {
     const { scene, layer } = documents();
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: scene, playSceneGuid: "world", sceneLayerLibrary: { overlay: layer },
       deferSceneModelsReady: true, onCommand: (command) => commands.push(command) });
     try {

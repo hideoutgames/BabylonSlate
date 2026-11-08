@@ -40,8 +40,6 @@ export function modulePreamble(graph: LogicGraph, options: CompileOptions): stri
   if (options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true) {
     preamble.push("var __dv = (t, node, pin, value) => (t === null ? value : t.read(node, pin, value));");
     preamble.push("var __dw = (t, node, pin, value) => (t === null ? value : (t.write(node, pin, value), value));");
-  }
-  if (options.instrumentBreakpoints === true && options.stripDevelopmentOnly !== true) {
     preamble.push("var __bv = (b, node, pin, value) => (b === null ? value : b.read(node, pin, value));");
   }
   if (graph.nodes.some((node) => node.typeId.startsWith("tags."))) {

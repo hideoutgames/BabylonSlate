@@ -8,7 +8,6 @@ describe("runtime physics phase", () => {
       maxActors: 8,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
-      seedDemoActors: false,
     });
     const world = runtime.getWorld();
     const actor = world.createActor({
@@ -83,7 +82,6 @@ describe("runtime physics phase", () => {
       seed: 3,
       maxActors: 8,
       physicsWorld: "3d",
-      seedDemoActors: false,
     });
     const world = runtime.getWorld();
     const ground = world.createActor({
@@ -134,7 +132,6 @@ describe("runtime physics phase", () => {
       maxActors: 8,
       preferSoftwarePhysics: true,
       physicsWorld: "2d",
-      seedDemoActors: false,
     });
     const world = runtime.getWorld();
     const actor = world.createActor({
@@ -179,7 +176,6 @@ describe("runtime physics phase", () => {
       maxActors: 8,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
-      seedDemoActors: false,
     });
     const world = runtime.getWorld();
     const actor = world.createActor({

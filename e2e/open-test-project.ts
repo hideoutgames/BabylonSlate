@@ -85,6 +85,42 @@ export async function submitCreateOrOpenListed(
   await page.getByTestId(`open-listed-project-${listedName}`).click();
 }
 
+/** Open the toolbar Windows menu; a no-op while it is open. */
+export async function openWindowsMenu(page: Page): Promise<void> {
+  const content = page.getByTestId("windows-menu-content");
+  if (await content.isVisible()) return;
+  await page.getByTestId("windows-menu").click();
+  await expect(content).toBeVisible();
+}
+
+/** Close the toolbar Windows menu (Escape, then a click outside if a submenu kept it open). */
+export async function closeWindowsMenu(page: Page): Promise<void> {
+  const content = page.getByTestId("windows-menu-content");
+  if (!(await content.isVisible())) return;
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  if (await content.isVisible()) {
+    await page.mouse.click(12, 12);
+  }
+  await expect(content).toHaveCount(0);
+}
+
+/** Pick `guid` in an open asset picker and wait for the picker to close. */
+export async function pickAsset(page: Page, pickerTestId: string, guid: string): Promise<void> {
+  await expect(page.getByTestId(pickerTestId)).toBeVisible();
+  await page.getByTestId(`search-item-${guid}`).click();
+  await expect(page.getByTestId(pickerTestId)).toHaveCount(0);
+}
+
+/** Close a settings dialog with its Close button. */
+export async function closeSettings(page: Page, testId = "settings-modal"): Promise<void> {
+  await page
+    .getByTestId(testId)
+    .locator('[data-slot="dialog-close"]')
+    .click();
+  await expect(page.getByTestId(testId)).toHaveCount(0);
+}
+
 export async function openContentBrowser(page: Page): Promise<void> {
   const tab = page.locator(
     '[data-testid="document-tab"][data-document-kind="content-browser"]',

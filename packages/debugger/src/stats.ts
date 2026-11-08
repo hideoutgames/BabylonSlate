@@ -6,22 +6,14 @@ export const TICK_BUDGET_MS = 8;
 /** Play/export HUD stats channel rate so measuring does not perturb the tick. */
 export const STATS_COMMAND_INTERVAL_MS = 200;
 
-export function isTickOverBudget(
-  scriptMs: number,
-  physicsMs: number,
-  budgetMs: number = TICK_BUDGET_MS,
-): boolean {
-  return scriptMs + physicsMs > budgetMs;
+export function isTickOverBudget(scriptMs: number, physicsMs: number): boolean {
+  return scriptMs + physicsMs > TICK_BUDGET_MS;
 }
 
 /** First sample always; then at most one stats command per interval. */
-export function shouldEmitStatsCommand(
-  nowMs: number,
-  lastEmitMs: number | null,
-  intervalMs: number = STATS_COMMAND_INTERVAL_MS,
-): boolean {
+export function shouldEmitStatsCommand(nowMs: number, lastEmitMs: number | null): boolean {
   if (lastEmitMs === null) return true;
-  return nowMs - lastEmitMs >= intervalMs;
+  return nowMs - lastEmitMs >= STATS_COMMAND_INTERVAL_MS;
 }
 
 /** Optional Stats rows enabled with `stat <group>`; FPS and tick timings always show. */
@@ -263,8 +255,11 @@ export function statsHudModel(input: StatsHudInput, groups: readonly StatGroup[]
   };
 }
 
-/** Bridge messages per second, re-measured over windows of at least `windowMs`. */
-export function createMessageRateMeter(now: () => number, windowMs = 200): {
+/** Shortest window the bridge message rate is measured over. */
+const MESSAGE_RATE_WINDOW_MS = 200;
+
+/** Bridge messages per second, re-measured over windows of at least `MESSAGE_RATE_WINDOW_MS`. */
+export function createMessageRateMeter(now: () => number): {
   note: () => void;
   perSecond: () => number;
 } {
@@ -274,7 +269,7 @@ export function createMessageRateMeter(now: () => number, windowMs = 200): {
   const roll = () => {
     const time = now();
     const elapsed = time - windowStart;
-    if (elapsed < windowMs) return;
+    if (elapsed < MESSAGE_RATE_WINDOW_MS) return;
     rate = (count * 1000) / elapsed;
     count = 0;
     windowStart = time;

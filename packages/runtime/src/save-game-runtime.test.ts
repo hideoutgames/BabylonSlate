@@ -43,7 +43,7 @@ async function boot(storage: MemoryStorage, options: { sceneId?: string; onComma
   scene.actors = [createActor("hero", "Hero", { classId: actorScript.classId, components: structuredClone(components) }),
     createActor("door", "Door", { components: [{ id: "door-save", classId: "SaveGameComponent", properties: {} }] })];
   if (options.referenceTarget) scene.actors.push(createActor("reference-only", "Reference Target"));
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
     playScene: scene, playSceneGuid: options.sceneId ?? "level", onCommand: options.onCommand });
   const service = runtime.configureSaveGame({ projectId: "project", definition: options.definition ?? definition, storage });
   await runtime.loadScripts([actorScript, options.gameInstance ?? recordLoadedHeroes, ...(options.scripts ?? [])]);
@@ -59,7 +59,7 @@ describe("runtime Save Game", () => {
     layer.actors = [createActor("menu", "Menu", { classId: "SceneLayerActor", components: [
       { id: "list", classId: "2DVirtualizedListComponent", properties: { width: 4, height: 1, itemClassId: "Row", itemCount: 0, overscan: 0 } },
     ] })];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer } });
     const service = runtime.configureSaveGame({ projectId: "project", definition, storage: new MemoryStorage() });
     const entryPoints = ["onBeginPlay", "onDestroyed"].map((name) => ({ name, event: name, isAsync: false }));

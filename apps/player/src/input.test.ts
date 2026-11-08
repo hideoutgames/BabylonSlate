@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { InputRingBuffer } from "@haptic/input";
-import { attachInputCapture, playInputStampTick } from "./input";
+import { attachInputCapture } from "@haptic/input/dom";
 
 class FakeCanvas {
   tabIndex = 0;
@@ -27,16 +27,6 @@ class FakeCanvas {
     }
   }
 }
-
-describe("playInputStampTick", () => {
-  it("prefers the in-process clock when present", () => {
-    expect(playInputStampTick(12, 3)).toBe(12);
-  });
-
-  it("uses the last worker tick when the in-process clock is missing", () => {
-    expect(playInputStampTick(undefined, 7)).toBe(7);
-  });
-});
 
 describe("attachInputCapture", () => {
   it("skips pointer and keyboard while free cam is on, but still forwards gamepads", () => {

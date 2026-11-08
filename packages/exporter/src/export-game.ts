@@ -312,6 +312,7 @@ export async function exportGame(
     focusNavigation: normalizeFocusNavigationSettings(options.focusNavigation),
     startupSceneGuid: options.startupSceneGuid,
     ...(options.defaultFontGuid ? { defaultFontGuid: options.defaultFontGuid } : {}),
+    globalFallback: normalizeGlobalFallback(options.globalFallback),
     ...(gameInstanceClass ? { gameInstanceClass } : {}),
     ...(options.audioMixerGuid?.trim()
       ? { audioMixerGuid: options.audioMixerGuid.trim() }
@@ -388,10 +389,15 @@ export function unzipExport(bytes: Uint8Array): Record<string, Uint8Array> {
 
 const OUTDATED_MANIFEST = "rebuild this game with the current exporter.";
 
+/** The Global Fallback CSS family, `sans-serif` when missing or blank, as Project Settings normalizes it. */
+function normalizeGlobalFallback(value: unknown): string {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : "sans-serif";
+}
+
 
 /** Fields `exportGame` always writes; a manifest without one predates the current exporter. */
 const REQUIRED_MANIFEST_FIELDS = [
-  "project", "focusNavigation", "startupSceneGuid", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
+  "project", "focusNavigation", "startupSceneGuid", "globalFallback", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
   "reverbDampingScale", "bundleDebugger", "render", "playFrameCap", "garbageCollectionIntervalTicks", "touchMinTargetPx", "pixelsPerUnit",
   "pixelPerfect", "nearestTextures", "sortingLayers", "physicsWorld", "collisionPresets", "assets",
 ] as const satisfies readonly (keyof GameManifest)[];
@@ -430,6 +436,7 @@ export function parseGameManifest(source: string): GameManifest {
     playFrameCap: normalizePlayFrameCap(parsed.playFrameCap),
     garbageCollectionIntervalTicks: normalizeGarbageCollectionIntervalTicks(parsed.garbageCollectionIntervalTicks),
     project: { name: parsed.project!.name, version: parsed.project!.version },
+    globalFallback: normalizeGlobalFallback(parsed.globalFallback),
     ...(gameInstanceClass ? { gameInstanceClass } : {}),
     ...(audioMixerGuid ? { audioMixerGuid } : {}),
     occlusionEnabled: parsed.occlusionEnabled !== false,

@@ -7,7 +7,7 @@ import { createInProcessRuntime } from "./driver";
 describe("RuntimeDriver.executeConsoleCommand", () => {
   it("registers command metadata without loading source and prepares only the invoked Class", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       classAssetGuids: { Heal: "heal-class", Unused: "unused-class" },
       consoleCommands: [{ classId: "Heal", assetGuid: "heal-class", name: "heal", description: "Heal", category: "game", parameters: [{ name: "amount", type: "int" }] }],
       onCommand: command => commands.push(command),
@@ -33,7 +33,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
   });
 
   it("settles a cold console invocation when its session stops", async () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       classAssetGuids: { Cold: "cold" }, consoleCommands: [{ classId: "Cold", assetGuid: "cold", name: "cold", description: "", category: "game", parameters: [] }],
     });
     const operation = runtime.executeConsoleCommandAsync("cold");
@@ -43,7 +43,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
 
   it("refuses synchronous and asynchronous commands alike once the session stopped", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       onCommand: command => commands.push(command) });
     runtime.stop();
     commands.length = 0;
@@ -56,7 +56,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
 
   it("does not send renderer work for repeated quality presets, values or resets", () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1,
       preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
     try {
       for (const line of ["quality low", "quality resolution scale 0.5", "quality shadows reset", "quality reset"])
@@ -71,7 +71,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command),
     });
@@ -95,7 +94,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
         { id: "particle", classId: "ParticleComponent", properties: {} },
       ],
     })];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1,
       playScene: scene, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
     runtime.realizePlayWorld();
     runtime.start();
@@ -124,7 +123,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     const events: string[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
     });
     const world = runtime.getWorld();
@@ -161,7 +159,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
         components: [{ id: "fallback-camera", classId: "CameraComponent", properties: {} }],
       }),
     ];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1,
       playScene: scene, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts([{
@@ -198,7 +196,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
   });
 
   it("rejects ambiguous names and actors without cameras", () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true });
     runtime.start();
     for (const guid of ["a", "b"]) {
       const actor = runtime.getWorld().createActor({ guid, classId: "Actor", variables: { name: "Camera" } });
@@ -215,7 +213,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
   });
 
   it("does not expose actor mutation commands without the debugger", () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1,
       preferSoftwarePhysics: true, includeDebugCommands: false });
     expect(runtime.executeConsoleCommand("possess cam").success).toBe(false);
     expect(runtime.executeConsoleCommand("destroyactor cam").success).toBe(false);
@@ -225,7 +223,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     let loaded: string | undefined;
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
     });
     runtime.getWorld().setGameInstance(
@@ -250,7 +247,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
   it("reports stripped debug commands when includeDebugCommands is false", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       includeDebugCommands: false,
     });
@@ -265,7 +261,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command),
     });
@@ -297,7 +292,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command),
     });
@@ -311,7 +305,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
   it("advances one tick from step while staying paused", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
     });
     runtime.start();
@@ -331,7 +324,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       includeDebugCommands: false,
       onCommand: (command) => commands.push(command),
@@ -358,7 +350,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
 
   it("dispatches complete presets after manual lighting edits and reports Custom without resetting simulation", () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, includeDebugCommands: false, onCommand: (command) => commands.push(command) });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, includeDebugCommands: false, onCommand: (command) => commands.push(command) });
     runtime.executeConsoleCommand("quality ultra");
     runtime.executeConsoleCommand("quality shadows budget 16");
     expect(runtime.executeConsoleCommand("quality shadows").output).toContain("shadows custom");
@@ -375,7 +367,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       dt: 1 / 60,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
     });
     runtime.start();
@@ -410,9 +401,9 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.stop();
   });
 
-  it("sends the render host the time scale at start, on every change and on trace restore", () => {
+  it("sends the render host the time scale at start and on every change", () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command) });
     const scales = () => commands.flatMap((command) => (command.type === "setSimulationTimeScale" ? [command.scale] : []));
     try {
@@ -423,17 +414,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
       runtime.executeConsoleCommand("slomo 99");
       runtime.executeConsoleCommand("slomo 0");
       expect(scales()).toEqual([1, 0.5, 0]);
-      runtime.executeConsoleCommand("slomo 0.25");
-      runtime.executeConsoleCommand("snapshot start");
-      runtime.tick();
-      runtime.executeConsoleCommand("snapshot stop");
-      const frame = runtime.stopTrace()!.frames[0]!;
-      commands.length = 0;
-      // A restore publishes the frame's dilation once, changed or not.
-      runtime.restoreFromTrace(frame);
-      runtime.executeConsoleCommand("slomo 2");
-      runtime.restoreFromTrace(frame);
-      expect(scales()).toEqual([0.25, 2, 0.25]);
     } finally {
       runtime.stop();
     }
@@ -441,7 +421,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
 
   it("counts Delays with the tick's step when slomo changes mid-tick", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, dt: 0.5, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, dt: 0.5, preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command) });
     const resumed = () => commands.some((command) => command.type === "log" && command.message === "resumed");
     const flush = async () => { for (let index = 0; index < 8; index++) await Promise.resolve(); };
@@ -470,7 +450,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     const dts: number[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command),
     });
@@ -506,7 +485,6 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command),
     });

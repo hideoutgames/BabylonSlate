@@ -78,7 +78,6 @@ function softwareLayerRuntime(sceneLayerLibrary: Record<string, SerializedSceneL
   const runtime = createInProcessRuntime({
     seed: 1,
     preferSoftwarePhysics: true,
-    seedDemoActors: false,
     playScene: worldScene("A"),
     sceneLayerLibrary,
     onCommand,
@@ -236,7 +235,7 @@ async function queryRuntime(layer: SerializedSceneLayer) {
   const scene = worldScene("A");
   scene.actors = [wall("main-wall", 2), createActor("main-probe", "Probe", { classId: "MainProbe" })];
   const runtime = createInProcessRuntime({
-    seed: 1, preferSoftwarePhysics: true, seedDemoActors: false, playScene: scene, sceneLayerLibrary: { layer },
+    seed: 1, preferSoftwarePhysics: true, playScene: scene, sceneLayerLibrary: { layer },
   });
   await runtime.loadScripts([
     { assetGuid: "main-probe", classId: "MainProbe", parentClassId: "Actor", source: PROBE_SOURCE, anchors: [],
@@ -546,7 +545,6 @@ describe("SceneLayer runtime compositor", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       preferSoftwarePhysics: true,
-      seedDemoActors: false,
       playScene: worldScene("A"),
       sceneLayerLibrary: { hud: overlayLayer() },
       onCommand: (command) => commands.push(command),
@@ -613,7 +611,7 @@ describe("SceneLayer runtime compositor", () => {
   it("starts each layer instance's camera on the asset's Camera Location", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, preferSoftwarePhysics: true, seedDemoActors: false, playScene: worldScene("A"),
+      seed: 1, preferSoftwarePhysics: true, playScene: worldScene("A"),
       sceneLayerLibrary: { hud: { ...overlayLayer(), settings: { ...overlayLayer().settings, cameraLocation: [6, -2] } } },
       onCommand: (command) => commands.push(command),
     });
@@ -638,7 +636,6 @@ describe("SceneLayer runtime compositor", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       preferSoftwarePhysics: true,
-      seedDemoActors: false,
       playScene: { ...worldScene("A"), actors: [createActor("caller", "Caller", { classId: "LayerCaller" })] },
       playSceneGuid: "world",
       sceneLayerLibrary: { hud: overlayLayer() },
@@ -674,7 +671,6 @@ describe("SceneLayer runtime compositor", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       preferSoftwarePhysics: true,
-      seedDemoActors: false,
       playScene: levelA,
       playSceneGuid: "a",
       sceneLibrary: { a: levelA, b: levelB },
@@ -706,7 +702,6 @@ describe("SceneLayer runtime compositor", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       preferSoftwarePhysics: true,
-      seedDemoActors: false,
       playScene: worldScene("A"),
       sceneLayerLibrary: { hud },
     });
@@ -891,7 +886,6 @@ describe("SceneLayer runtime compositor", () => {
       seed: 1,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
-      seedDemoActors: false,
       playScene: worldScene("A"),
       sceneLayerLibrary: { hud },
     });
@@ -936,7 +930,6 @@ describe("SceneLayer runtime compositor", () => {
     ]);
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       playScene: level,
       playSceneGuid: "a",
       sceneLibrary: { a: level },

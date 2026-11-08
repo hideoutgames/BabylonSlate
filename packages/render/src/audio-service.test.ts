@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AUDIO_MAX_CONCURRENT_VOICES,
   AUDIO_PRE_UNLOCK_QUEUE_CAP,
-  AUDIO_REVERB_VERSION,
   AUDIO_SPEED_OF_SOUND,
   audioClipCacheKey,
   createDefaultAudioPayload,
@@ -12,7 +11,6 @@ import {
   type AudioMixerPayload,
   type SoundAttenuationPayload,
 } from "@haptic/assets";
-import type { CommandMessage } from "@haptic/bridge";
 import { createActor, createDefaultSceneSettings } from "@haptic/core";
 import { createInProcessRuntime } from "@haptic/test-kit";
 import { AudioBufferCache } from "./audio-buffer-cache";
@@ -944,22 +942,6 @@ describe("AudioService", () => {
     service.dispose();
   });
 
-  it("starts a resumed voice at its played time scaled by pitch", async () => {
-    const backend = new FakeAudioPlaybackBackend();
-    const service = new AudioService({ backend });
-    service.setLibrary(library({ audio: { jump: { ...createDefaultAudioPayload(), pitch: 2 } } }));
-    service.setSourceBytes("jump", new Uint8Array([1]));
-    await service.unlockAsync();
-    service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 1, voiceId: "resumed", startOffsetSeconds: 1.5 });
-    service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 1, voiceId: "fresh" });
-    await service.flush();
-    expect(backend.plays.map((play) => [play.voiceId, play.startOffsetSeconds])).toEqual([
-      ["resumed", 3],
-      ["fresh", undefined],
-    ]);
-    service.dispose();
-  });
-
   it("composes authored pitch with Doppler playbackRate", async () => {
     let now = 0;
     const backend = new FakeAudioPlaybackBackend();
@@ -1020,7 +1002,6 @@ describe("AudioService", () => {
     service.setSourceBytes("jump", new Uint8Array([1]));
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: false,
         geometryHash: "h",
         probes: [
@@ -1075,7 +1056,6 @@ describe("AudioService", () => {
     service.setSourceBytes("jump", new Uint8Array([1]));
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: false,
         geometryHash: "h",
         probes: [
@@ -1151,7 +1131,6 @@ describe("AudioService", () => {
     service.setSourceBytes("jump", new Uint8Array([1]));
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: false,
         geometryHash: "h",
         probes: [
@@ -1214,7 +1193,6 @@ describe("AudioService", () => {
     service.setSourceBytes("jump", new Uint8Array([1]));
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: true,
         geometryHash: "h",
         probes: [],
@@ -1272,7 +1250,6 @@ describe("AudioService", () => {
     bits[0] = 0b0000_0110;
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: false,
         geometryHash: "occ",
         probes: [],
@@ -1349,7 +1326,6 @@ describe("AudioService", () => {
     bits[0] = 0b0000_0110;
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: false,
         geometryHash: "occ",
         probes: [],
@@ -1783,7 +1759,6 @@ describe("AudioService spatial refresh per applied snapshot", () => {
     bits[0] = 0b0000_0110;
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: false,
         geometryHash: "occ",
         probes: [],
@@ -2062,99 +2037,6 @@ describe("AudioService lifecycle events", () => {
 });
 
 describe("AudioService with runtime Audio component commands", () => {
-  /** A Play session whose speaker plays a looping Audio component voice (`audio-1`) on start. */
-  function speakerRuntime(onCommand: (command: CommandMessage) => void) {
-    const runtime = createInProcessRuntime({
-      seed: 7, dt: 0.1, seedDemoActors: false, preferSoftwarePhysics: true, onCommand,
-      playScene: {
-        name: "Audio", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [],
-        actors: [createActor("speaker", "Speaker", {
-          classId: "Actor",
-          components: [{ id: "audio-1", classId: "AudioComponent", properties: { audioAssetGuid: "chime", loop: true } }],
-        })],
-      },
-    });
-    runtime.realizePlayWorld();
-    runtime.start();
-    return runtime;
-  }
-
-  function chimeService(random: () => number) {
-    const backend = new FakeAudioPlaybackBackend();
-    const service = new AudioService({ backend, random });
-    service.setLibrary(library({ audio: { chime: {
-      ...createDefaultAudioPayload(),
-      clips: [{ chunkId: "source", name: "low", weight: 1 }, { chunkId: "source:2", name: "high", weight: 1 }],
-      pitchRandom: true, pitchMin: 0.5, pitchMax: 2,
-    } } }));
-    service.setSourceBytes(audioClipCacheKey("chime", "source"), new Uint8Array([1]));
-    service.setSourceBytes(audioClipCacheKey("chime", "source:2"), new Uint8Array([2]));
-    return { backend, service };
-  }
-
-  /** Records three 0.1 s ticks; the last frame holds `audio-1` 0.3 s in. */
-  function recordSpeaker(runtime: ReturnType<typeof speakerRuntime>) {
-    runtime.executeConsoleCommand("snapshot start");
-    for (let tick = 0; tick < 3; tick += 1) runtime.tick();
-    runtime.executeConsoleCommand("snapshot stop");
-    return runtime.stopTrace()!.frames.at(-1)!;
-  }
-
-  it("restores a random-clip, random-pitch voice with the clip and pitch it played", async () => {
-    // The two hosts' own random sources would pick different clips and pitches.
-    const original = chimeService(() => 0.1);
-    const restored = chimeService(() => 0.9);
-    let host = original.service;
-    const runtime = speakerRuntime((command) => host.handleCommand(command));
-    try {
-      await original.service.unlockAsync();
-      const frame = recordSpeaker(runtime);
-      await original.service.flush();
-      const played = original.backend.plays.map((play) => [play.clipChunkId, original.backend.playbackRates.get(play.voiceId)]);
-      expect(played).toHaveLength(1);
-
-      host = restored.service;
-      await restored.service.unlockAsync();
-      runtime.restoreFromTrace(frame);
-      await restored.service.flush();
-      expect(restored.backend.plays.map((play) => [play.clipChunkId, restored.backend.playbackRates.get(play.voiceId)])).toEqual(played);
-      expect(restored.backend.plays[0]!.startOffsetSeconds).toBeGreaterThan(0);
-    } finally {
-      runtime.stop();
-      original.service.dispose();
-      restored.service.dispose();
-    }
-  });
-
-  it("starts a restored voice that waited for the unlock later by the undilated unpaused time it waited, and an ordinary one at 0", async () => {
-    const recording = chimeService(() => 0.5);
-    let host = recording.service;
-    const runtime = speakerRuntime((command) => host.handleCommand(command));
-    const locked = chimeService(() => 0.5);
-    try {
-      await recording.service.unlockAsync();
-      const frame = recordSpeaker(runtime);
-      host = locked.service;
-      locked.service.handleCommand({ type: "playSound", assetGuid: "chime", volume: 1, frameId: 1, voiceId: "ordinary" });
-      runtime.restoreFromTrace(frame);
-      // Audio ignores slomo: 4 ticks at slomo 0.5 count 4 × 0.1 s; paused ticks count nothing.
-      expect(runtime.executeConsoleCommand("slomo 0.5").success).toBe(true);
-      for (let tick = 0; tick < 4; tick += 1) runtime.tick();
-      runtime.pause();
-      runtime.tick();
-      await locked.service.unlockAsync();
-      const pitchOf = (voiceId: string) => locked.backend.playbackRates.get(voiceId)!;
-      expect(locked.backend.plays.map((play) => [play.voiceId, play.startOffsetSeconds])).toEqual([
-        ["ordinary", undefined],
-        ["audio-1", expect.closeTo((0.3 + 0.4) * pitchOf("audio-1"), 9)],
-      ]);
-    } finally {
-      runtime.stop();
-      recording.service.dispose();
-      locked.service.dispose();
-    }
-  });
-
   it("stops the voice an Audio component's script Play started when its Stop runs", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const diagnostics: Array<{ code: string }> = [];
@@ -2163,7 +2045,6 @@ describe("AudioService with runtime Audio component commands", () => {
     service.setSourceBytes("jump", new Uint8Array([1, 2, 3]));
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Audio",

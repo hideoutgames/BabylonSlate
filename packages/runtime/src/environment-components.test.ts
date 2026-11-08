@@ -7,7 +7,7 @@ it("transports authored terrain and a whole mixed foliage stroke as component pa
   const landscape = parseLandscapeProperties({ subdivisions: 4, heights: Array(25).fill(3), materialGuid: "terrain", collisionsEnabled: true });
   const foliage = { groupId: "trees", batches: ["oak", "pine"].map((modelGuid) => ({ modelGuid, materialGuid: "leaves", transforms: [identitySerializedTransform()] })) };
   const commands: CommandMessage[] = [];
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
     playScene: { ...createDefaultScene(), actors: [createActor("environment", "Environment", { components: [
       { id: "terrain", classId: "LandscapeComponent", properties: { ...landscape } },
       { id: "plants", classId: "FoliageComponent", properties: { ...foliage } },

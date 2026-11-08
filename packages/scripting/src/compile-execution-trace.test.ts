@@ -188,6 +188,8 @@ function run(source: string, exportName = "run", ctxExtras: Record<string, unkno
     make: () => "door",
     log: (value: unknown) => logged.push(value),
     debugTrace: { graph: (assetGuid: string, graphId: string) => (graphs.push(`${assetGuid}#${graphId}`), recorder) },
+    // The runtime's breakpoint host is null while no breakpoint is set.
+    breakpoints: null,
     ...ctxExtras,
   };
   const body = source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
@@ -212,21 +214,27 @@ describe("compileGraph instrumentExecutionTrace", () => {
     expect(release.anchors).toEqual(plain.anchors);
   });
 
-  it("emits visits, wires taken and the values nodes read and produce, pure nodes included", () => {
+  it("emits visits, wires taken, the values nodes read and produce, pure nodes included, and the breakpoint checks", () => {
     expect(compile(makeThenLog(), TRACED).source).toBe(`//# sourceURL=haptic:///classes/Door.class.js
 var __dv = (t, node, pin, value) => (t === null ? value : t.read(node, pin, value));
 var __dw = (t, node, pin, value) => (t === null ? value : (t.write(node, pin, value), value));
+var __bv = (b, node, pin, value) => (b === null ? value : b.read(node, pin, value));
 export function run(ctx) {
   const __dbg = ctx.debugTrace === null ? null : ctx.debugTrace.graph("classes/Door.class", "event-graph");
+  const __bp = ctx.breakpoints === null ? null : ctx.breakpoints.graph("classes/Door.class", "event-graph");
   let _n_make_value = "";
   if (__dbg !== null) __dbg.exec("entry");
+  if (__bp !== null && __bp.has("entry")) __bp.hit("entry", "entry", ctx.self);
   if (__dbg !== null) __dbg.edge("e1");
   if (__dbg !== null) __dbg.exec("make");
+  if (__bp !== null && __bp.has("make")) __bp.hit("make", "entry", ctx.self);
   _n_make_value = ctx.make();
   if (__dbg !== null) { __dbg.write("make", "value", _n_make_value); }
+  if (__bp !== null && __bp.has("make")) { __bp.write("make", "value", _n_make_value); }
   if (__dbg !== null) __dbg.edge("e2");
   if (__dbg !== null) __dbg.exec("log");
-  ctx.log(__dv(__dbg, "log", "message", __dw(__dbg, "shout", "result", (String(_n_make_value).toUpperCase()))));
+  if (__bp !== null && __bp.has("log")) __bp.hit("log", "entry", ctx.self);
+  ctx.log(__dv(__dbg, "log", "message", __bv(__bp, "log", "message", __dw(__dbg, "shout", "result", (String(_n_make_value).toUpperCase())))));
 }
 `);
   });
@@ -404,7 +412,7 @@ export function run(ctx) {
     };
     const body = source.replace(/export\s+function\s+/g, "function ");
     const module = new Function(`${body}\nreturn { run };`)() as { run: (ctx: unknown) => void };
-    expect(() => module.run({ log: () => {}, debugTrace: { graph: () => recorder } })).toThrow("stop");
+    expect(() => module.run({ log: () => {}, debugTrace: { graph: () => recorder }, breakpoints: null })).toThrow("stop");
     expect(events).toEqual([
       "exec entry", "edge e1", "exec a", "edge e2", "exec b", "edge e3", "exec a", "edge e2", "exec b",
     ]);

@@ -13,7 +13,6 @@ describe("P14 perf smoke", () => {
       seed: 14,
       maxActors: 8,
       preferSoftwarePhysics: true,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     runtime.start();

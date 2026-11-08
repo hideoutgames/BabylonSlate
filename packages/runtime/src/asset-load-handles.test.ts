@@ -15,7 +15,7 @@ function loader(source: string): CompiledScript {
 /** One Loader actor whose Begin Play runs `source`; the Class catalog makes the host demand-driven. */
 async function start(source: string, classAssetGuids: Record<string, string> = {}) {
   const commands: CommandMessage[] = [];
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, sessionGeneration: 1,
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, sessionGeneration: 1,
     playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Loader" })] }, playSceneGuid: "root",
     classAssetGuids: { Loader: "loader-script", ...classAssetGuids }, onCommand: command => commands.push(command) });
   await runtime.loadScripts([loader(source)]);

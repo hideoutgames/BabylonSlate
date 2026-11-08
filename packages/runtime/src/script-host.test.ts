@@ -131,7 +131,7 @@ describe("script host runs compiled graphs", () => {
     };
     const run = async (seed: number) => {
       const messages: string[] = [];
-      const runtime = createInProcessRuntime({ seed, seedDemoActors: false, preferSoftwarePhysics: true,
+      const runtime = createInProcessRuntime({ seed, preferSoftwarePhysics: true,
         onCommand: (command) => { if (command.type === "log") messages.push(command.message); } });
       try {
         await runtime.loadScripts([toScript(graph, registry, "RandomActor", "random")]);
@@ -212,7 +212,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       dt: 0.1,
       onCommand: (command) => commands.push(command),
     });
@@ -253,7 +252,6 @@ describe("script host runs compiled graphs", () => {
     };
     const runtime = createInProcessRuntime({
       seed: 2,
-      seedDemoActors: false,
       dt: 1 / 60,
       preferSoftwarePhysics: true,
       physicsWorld: "2d",
@@ -304,7 +302,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -346,7 +343,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -398,7 +394,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -442,7 +437,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -478,7 +472,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -536,7 +529,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -579,7 +571,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       dt: 0.1,
       onCommand: (command) => commands.push(command),
     });
@@ -620,7 +611,6 @@ describe("script host runs compiled graphs", () => {
     };
     const runtime = createInProcessRuntime({
       seed: 4,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       includeDebugCommands: false,
     });
@@ -656,7 +646,6 @@ describe("script host runs compiled graphs", () => {
     let loaded: string | undefined;
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Level1",
@@ -712,7 +701,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 5,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -739,7 +727,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 5,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -775,7 +762,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 5,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -817,7 +803,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 6,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -870,7 +855,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 7,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -928,7 +912,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 8,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -987,7 +970,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 9,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -1059,7 +1041,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 10,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -1113,7 +1094,6 @@ describe("script host runs compiled graphs", () => {
     };
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       dt: 0.1,
       inputAssets: [
         {
@@ -1176,7 +1156,6 @@ describe("script host runs compiled graphs", () => {
     };
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       inputAssets: [
         {
           guid: "jump",
@@ -1218,7 +1197,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
       inputAssets: [
         {
@@ -1268,7 +1246,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       dt: 0.1,
       onCommand: (command) => commands.push(command),
     });
@@ -1339,7 +1316,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       dt: 0.1,
       onCommand: (command) => commands.push(command),
     });
@@ -1412,7 +1388,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     const script = withFunctionExport(
@@ -1455,7 +1430,6 @@ describe("script host runs compiled graphs", () => {
     };
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
     });
     await runtime.loadScripts([
       toScript(graph, registry, "Holder", "holder-asset"),
@@ -1491,7 +1465,6 @@ describe("script host runs compiled graphs", () => {
     };
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
     });
     await runtime.loadScripts([
       toScript(graph, registry, "Holder", "holder-pose-asset"),
@@ -1531,7 +1504,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -1579,7 +1551,6 @@ describe("script host runs compiled graphs", () => {
     };
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
     });
     await runtime.loadScripts([
       toScript(childGraph, registry, "Child", "child-pose-asset"),
@@ -1630,7 +1601,7 @@ describe("script host runs compiled graphs", () => {
         edge("e5", "defer", "out", "finish", "actor"),
       ],
     };
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    const runtime = createInProcessRuntime({ seed: 1 });
     await runtime.loadScripts([
       toScript(childGraph, registry, "Child", "child-deferred-asset"),
       toScript(spawnerGraph, registry, "Spawner", "spawner-deferred-asset"),
@@ -1644,7 +1615,7 @@ describe("script host runs compiled graphs", () => {
   });
 
   it("keeps a Deferred Spawn Actor result out of play until it finishes, and Destroy Actor cancels it", async () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    const runtime = createInProcessRuntime({ seed: 1 });
     await runtime.loadScripts([
       { classId: "Child", parentClassId: "Actor", assetGuid: "child-asset", anchors: [],
         source: "export function begin(ctx) { ctx.self.setVariable(\"began\", true); }",
@@ -1729,7 +1700,7 @@ describe("script host runs compiled graphs", () => {
       ],
     };
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1,
       onCommand: command => commands.push(command),
     });
     try {
@@ -1812,7 +1783,6 @@ describe("script host runs compiled graphs", () => {
     };
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
     });
     await runtime.loadScripts([
       toScript(parentGraph, registry, "Anchor", "anchor-asset"),
@@ -1871,7 +1841,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 8,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -1937,7 +1906,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 8,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -2000,7 +1968,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 3,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     runtime.getWorld().interfaceRegistry.register({
@@ -2062,7 +2029,6 @@ describe("script host runs compiled graphs", () => {
       maxActors: 8,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     const world = runtime.getWorld();
@@ -2161,7 +2127,6 @@ describe("script host runs compiled graphs", () => {
       maxActors: 8,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     const world = runtime.getWorld();
@@ -2276,7 +2241,7 @@ describe("script host runs compiled graphs", () => {
     };
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 11, maxActors: 8, preferSoftwarePhysics: true, physicsWorld: "3d", seedDemoActors: false,
+      seed: 11, maxActors: 8, preferSoftwarePhysics: true, physicsWorld: "3d",
       onCommand: (command) => commands.push(command),
     });
     const world = runtime.getWorld();
@@ -2338,7 +2303,7 @@ describe("script host runs compiled graphs", () => {
       ],
     };
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 3, seedDemoActors: false, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
+    const runtime = createInProcessRuntime({ seed: 3, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
     await runtime.loadScripts([toScript(graph, registry, "Tilter", "tilter-asset")]);
     runtime.spawnScriptedActor({ classId: "Tilter" });
     runtime.start();
@@ -2365,7 +2330,7 @@ describe("script host runs compiled graphs", () => {
     const motionCommands = async (code: string) => {
       const commands: CommandMessage[] = [];
       const runtime = createInProcessRuntime({
-        seed: 3, seedDemoActors: false, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command),
+        seed: 3, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command),
         inputAssets: [{ guid: "lean", name: "Lean", type: "InputAxis", valueType: "1d", bindings: [{ id: "b", device: "touch", code }] }],
       });
       runtime.start();
@@ -2388,7 +2353,7 @@ describe("script host runs compiled graphs", () => {
   ])("$name", async ({ traceDebugDraw, options, drawn }) => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 11, seedDemoActors: false, preferSoftwarePhysics: true, traceDebugDraw,
+      seed: 11, preferSoftwarePhysics: true, traceDebugDraw,
       onCommand: (command) => commands.push(command),
     });
     try {
@@ -2427,7 +2392,6 @@ describe("script host runs compiled graphs", () => {
       maxActors: 8,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
-      seedDemoActors: false,
       playScene: {
         name: "Aim",
         viewportMode: "3d",
@@ -2505,7 +2469,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -2538,7 +2501,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       gameInstanceClass: "MyGame",
       onCommand: (command) => commands.push(command),
     });
@@ -2571,7 +2533,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -2614,7 +2575,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -2651,7 +2611,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -2690,7 +2649,6 @@ describe("script host runs compiled graphs", () => {
     const settings = createDefaultSceneSettings();
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
       playScene: {
         name: "Cam",
@@ -2752,7 +2710,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -2803,7 +2760,6 @@ describe("script host runs compiled graphs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([

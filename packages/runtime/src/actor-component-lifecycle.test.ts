@@ -43,7 +43,7 @@ function componentScript(
 describe("ActorComponent lifecycle boundaries", () => {
   it("dispatches Destroyed once when a component queues owner destruction then quits", async () => {
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: sceneOf([createActor("owner", "Owner", {
         components: [{ id: "quitter", classId: "Quitter", properties: {} }],
       })]),
@@ -72,7 +72,7 @@ describe("ActorComponent lifecycle boundaries", () => {
 
   it("refuses component creation requested by Destroyed during Stop", async () => {
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: sceneOf([createActor("owner", "Owner", {
         components: [{ id: "source", classId: "Source", properties: {} }],
       })]),
@@ -104,7 +104,7 @@ describe("ActorComponent lifecycle boundaries", () => {
 
   it("allows Actor Begin Play to call an authored component interface before component Begin Play", async () => {
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: sceneOf([createActor("owner", "Owner", {
         classId: "Owner",
         components: [{ id: "health", classId: "Health", properties: {} }],
@@ -154,7 +154,7 @@ describe("ActorComponent lifecycle boundaries", () => {
   it("does not begin remaining components after a cooperative scene change", async () => {
     const messages: string[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       cooperativeSceneLoading: true,
       playSceneGuid: "first",
       sceneLibrary: { next: sceneOf([]) },

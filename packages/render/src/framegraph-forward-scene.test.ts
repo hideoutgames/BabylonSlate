@@ -195,7 +195,7 @@ it.each(["legacyDisplay", "sceneLinear"] as const)(
       mode: "pbr",
       effects: {
         ...DEFAULT_RENDER_EFFECTS,
-        colorPipeline: { version: 1, mode },
+        colorPipeline: { mode },
         bloom: { enabled: true, threshold: 0.8, weight: 0.2, kernel: 16, scale: 0.5 },
       },
     });
@@ -777,7 +777,7 @@ it("composes the settings effect chain in Scene Linear, its last stage drawing t
     mode: "pbr",
     effects: {
       ...DEFAULT_RENDER_EFFECTS,
-      colorPipeline: { version: 1, mode: "sceneLinear" },
+      colorPipeline: { mode: "sceneLinear" },
       toneMapping: "aces",
       bloom: { enabled: true, threshold: 0.9, weight: 0.5, kernel: 32, scale: 0.5 },
     },
@@ -831,7 +831,7 @@ it("draws a new 3D project's output in its Display Color stage", async () => {
   setTierFxaa(scene, false);
   updateSceneRenderingSettings(scene, {
     mode: "pbr",
-    effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1, mode: "sceneLinear" }, toneMapping: "neutral" },
+    effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { mode: "sceneLinear" }, toneMapping: "neutral" },
   });
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
@@ -869,7 +869,7 @@ it("treats the Scene Linear setting as display-space identity under CEL", async 
     mode: "cel",
     effects: {
       ...DEFAULT_RENDER_EFFECTS,
-      colorPipeline: { version: 1, mode: "sceneLinear" },
+      colorPipeline: { mode: "sceneLinear" },
       toneMapping: "aces",
       exposure: 2,
     },
@@ -887,7 +887,7 @@ it("treats the Scene Linear setting as display-space identity under CEL", async 
     mode: "cel",
     effects: {
       ...DEFAULT_RENDER_EFFECTS,
-      colorPipeline: { version: 1, mode: "sceneLinear" },
+      colorPipeline: { mode: "sceneLinear" },
       vignette: { enabled: true, weight: 2, color: [0, 0, 0] },
     },
   });
@@ -963,7 +963,7 @@ it("gives the settings effect chain's offscreen scene color a real depth attachm
     mode: "pbr",
     effects: {
       ...DEFAULT_RENDER_EFFECTS,
-      colorPipeline: { version: 1, mode: "sceneLinear" },
+      colorPipeline: { mode: "sceneLinear" },
     },
   });
   const captured: { graph: FrameGraph; task: FrameGraphTask }[] = [];

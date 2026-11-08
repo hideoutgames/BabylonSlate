@@ -17,7 +17,7 @@ describe("render effects settings", () => {
       );
     }
     const normalized = normalizeRenderEffectsSettings({
-      colorPipeline: { version: 7, mode: "linear" },
+      colorPipeline: { mode: "linear" },
       toneMapping: "filmic",
       exposure: Number.NaN,
       contrast: "high",
@@ -42,7 +42,7 @@ describe("render effects settings", () => {
     });
     expect(normalized).toEqual({
       ...DEFAULT_RENDER_EFFECTS,
-      colorPipeline: { version: 1, mode: "sceneLinear" },
+      colorPipeline: { mode: "sceneLinear" },
       toneMapping: "aces",
       exposure: 2.5,
       contrast: 1.2,
@@ -109,7 +109,7 @@ describe("render effects settings", () => {
       render: {
         effects: {
           ...DEFAULT_RENDER_EFFECTS,
-          colorPipeline: { version: 1, mode: "sceneLinear" },
+          colorPipeline: { mode: "sceneLinear" },
           toneMapping: "neutral",
           bloom: { ...DEFAULT_RENDER_EFFECTS.bloom, enabled: true },
           ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, radius: 1.5 },
@@ -120,7 +120,6 @@ describe("render effects settings", () => {
       },
     });
     expect(settings.render.effects?.colorPipeline).toEqual({
-      version: 1,
       mode: "sceneLinear",
     });
     expect(settings.render.effects?.toneMapping).toBe("neutral");
@@ -152,7 +151,7 @@ it("bounds spatial GPU work and preserves authored settings while disabled", () 
 describe("Scene Post Processing overrides", () => {
   it("keeps only the leaves the project block accepts, clamped as there", () => {
     expect(normalizeRenderEffectsOverrides({
-      colorPipeline: { version: 2, mode: "sceneLinear" },
+      colorPipeline: { mode: "sceneLinear" },
       toneMapping: "filmic",
       exposure: 500,
       contrast: Number.NaN,
@@ -182,7 +181,7 @@ describe("Scene Post Processing overrides", () => {
     expect(resolved.vignette).toEqual({ ...DEFAULT_RENDER_EFFECTS.vignette, enabled: true });
     expect(resolved.exposure).toBe(2);
     expect(resolved.contrast).toBe(3);
-    expect(resolved.colorPipeline).toEqual({ version: 1, mode: "legacyDisplay" });
+    expect(resolved.colorPipeline).toEqual({ mode: "legacyDisplay" });
     expect(resolveRenderEffectsSettings(project, undefined)).toEqual(normalizeRenderEffectsSettings(project));
   });
 

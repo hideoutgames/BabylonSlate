@@ -5,16 +5,11 @@ import { Scene } from "@babylonjs/core/scene";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { SessionDiagnosticAggregator } from "@haptic/runtime";
 import type { DebugInspectSnapshot } from "@haptic/object-model";
-import {
-  snapshotFloatCount,
-  writeSnapshotHeader,
-} from "@haptic/bridge";
 import { createDefaultScene } from "@haptic/core";
 import { bindResourceCacheToHandle, encodePngRgba, releaseResourceCacheForEngine, resourceCacheForEngine } from "@haptic/render";
 import {
   applyPlayFpsSample,
   applyWorkerPlayStats,
-  applyPlaySnapshotTick,
   diagnosticFromCommand,
   applyPlaySessionStep,
   applyPlayGraphDebugObserve,
@@ -24,7 +19,6 @@ import {
   deliverInspectSnapshot,
   inspectSnapshotFromCommand,
   isFatalPlayDiagnostic,
-  playInputStampTick,
   playSessionBootControls,
   previewFixtureThrowHint,
   printEntryFromCommand,
@@ -309,33 +303,6 @@ describe("inspectSnapshotFromCommand", () => {
     ).toBe(true);
     expect(received).toEqual([{ tickIndex: 9, nodes: [] }]);
     expect(waiters).toHaveLength(0);
-  });
-});
-
-describe("playInputStampTick", () => {
-  it("uses the in-process World tick when present", () => {
-    expect(playInputStampTick(3, 99)).toBe(3);
-  });
-
-  it("uses the last worker snapshot tick instead of a wall-clock index", () => {
-    expect(playInputStampTick(undefined, 0)).toBe(0);
-    expect(playInputStampTick(undefined, 12)).toBe(12);
-  });
-});
-
-describe("applyPlaySnapshotTick", () => {
-  it("stamps worker input from snapshot tickIndex when stats are sparse", () => {
-    const unpublished = new Float32Array(snapshotFloatCount(1));
-    expect(applyPlaySnapshotTick(4, unpublished)).toBe(4);
-    const published = new Float32Array(snapshotFloatCount(1));
-    writeSnapshotHeader(published, {
-      frameId: 9,
-      tickIndex: 12,
-      actorCount: 0,
-      scriptMs: 1,
-      physicsMs: 2,
-    });
-    expect(applyPlaySnapshotTick(4, published)).toBe(12);
   });
 });
 

@@ -20,11 +20,12 @@ import {
 } from "./audio-payload";
 
 export const AUDIO_REVERB_CHUNK_ID = "audioReverb";
-export const AUDIO_REVERB_VERSION = 2;
 const AUDIO_OCCLUSION_WALLS_TO_SATURATE = 2;
 export const AUDIO_MUFFLE_LOWPASS_HZ = 700;
 
 const MAGIC = new TextEncoder().encode("BSAR");
+/** The word after the magic; decode reads no field from a chunk with any other value. */
+const FORMAT = 2;
 const FLAG_DRY = 1;
 
 export type AudioReverbProbe = {
@@ -52,7 +53,6 @@ export type AudioReverbOccupancy = {
 };
 
 export type AudioReverbField = {
-  version: number;
   dryFallback: boolean;
   geometryHash: string;
   probes: AudioReverbProbe[];
@@ -270,7 +270,7 @@ export function encodeAudioReverbChunk(field: AudioReverbField): Uint8Array {
   const bytes = new Uint8Array(header + probeBytes + occupancyBytes.byteLength);
   bytes.set(MAGIC, 0);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  view.setUint32(4, field.version, true);
+  view.setUint32(4, FORMAT, true);
   view.setUint32(8, field.dryFallback ? FLAG_DRY : 0, true);
   view.setUint16(12, hashBytes.byteLength, true);
   bytes.set(hashBytes, 14);
@@ -307,7 +307,7 @@ export function decodeAudioReverbChunk(
     return null;
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const version = view.getUint32(4, true);
+  if (view.getUint32(4, true) !== FORMAT) return null;
   const flags = view.getUint32(8, true);
   const hashLen = view.getUint16(12, true);
   if (14 + hashLen + 2 > bytes.byteLength) return null;
@@ -334,7 +334,6 @@ export function decodeAudioReverbChunk(
   }
   const occupancy = decodeOccupancy(bytes, offset);
   return {
-    version,
     dryFallback: (flags & FLAG_DRY) !== 0,
     geometryHash,
     probes,
@@ -350,7 +349,6 @@ export function isDryAudioReverbFallback(
 
 export function dryAudioReverbFallbackBytes(geometryHash: string): Uint8Array {
   return encodeAudioReverbChunk({
-    version: AUDIO_REVERB_VERSION,
     dryFallback: true,
     geometryHash,
     probes: [],
@@ -858,7 +856,6 @@ export function bakeAudioReverb(geometry: AudioReverbGeometry): Uint8Array {
     return dryAudioReverbFallbackBytes(geometryHash);
   }
   return encodeAudioReverbChunk({
-    version: AUDIO_REVERB_VERSION,
     dryFallback: false,
     geometryHash,
     probes,

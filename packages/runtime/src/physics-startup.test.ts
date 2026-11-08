@@ -17,7 +17,7 @@ describe("Play physics startup", () => {
     vi.spyOn(Rapier2DPhysicsBackend, "create").mockRejectedValue(
       new Error("Rapier is not included in a 3d-only export"),
     );
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    const runtime = createInProcessRuntime({ seed: 1 });
     try {
       await createPlayBootCoordinator().play(runtime);
       runtime.tick();
@@ -36,7 +36,6 @@ describe("Play physics startup", () => {
     );
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       sceneLayerLibrary: { hud: createDefaultSceneLayer() },
     });
     try {
@@ -52,7 +51,7 @@ describe("Play physics startup", () => {
       new Error("Havok download failed"),
     );
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    const runtime = createInProcessRuntime({ seed: 1 });
     try {
       await expect(createPlayBootCoordinator().play(runtime)).rejects.toThrow(
         "Havok download failed",
@@ -69,7 +68,7 @@ describe("Play physics startup", () => {
     vi.spyOn(HavokPhysicsBackend, "create").mockRejectedValue(new Error("Havok download failed"));
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1,
       cooperativeSceneLoading: true, deferSceneModelsReady: true,
       playScene: { ...createDefaultScene(), actors: [createActor("box", "Box")] },
       onCommand: (command) => {
@@ -104,7 +103,6 @@ describe("Play physics startup", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       sceneLayerLibrary: { overlay: { ...createDefaultSceneLayer(), settings: { ...createDefaultSceneLayer().settings, physicsEnabled: true } } },
     });
     const initialBackend = runtime.getPhysicsSync()!.getBackend();
@@ -124,7 +122,7 @@ describe("Play physics startup", () => {
     const disposed = vi.spyOn(backend, "dispose");
     let resolve!: (backend: HavokPhysicsBackend) => void;
     vi.spyOn(HavokPhysicsBackend, "create").mockReturnValue(new Promise((done) => { resolve = done; }));
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false });
+    const runtime = createInProcessRuntime({ seed: 1 });
     const initial = runtime.getPhysicsSync()!.getBackend();
     const loading = runtime.loadPhysics();
     const rejected = expect(loading).rejects.toMatchObject({ name: "AbortError" });

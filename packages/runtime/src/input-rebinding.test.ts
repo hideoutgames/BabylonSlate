@@ -94,7 +94,6 @@ describe("compiled runtime input rebinding", () => {
     async (typeId, properties, jumpKey, confirmKey) => {
       const runtime = createInProcessRuntime({
         seed: 1,
-        seedDemoActors: false,
         inputAssets: assets,
       });
       runtime.inputBindings.setInputActionBinding!(
@@ -128,7 +127,6 @@ describe("compiled runtime input rebinding", () => {
     const logs: LogCommand[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       inputAssets: assets,
       onCommand: (command) => {
         if (command.type === "log") logs.push(command);
@@ -190,7 +188,6 @@ describe("compiled runtime input rebinding", () => {
     const logs: LogCommand[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       inputAssets: assets,
       onCommand: (command) => {
         if (command.type === "log") logs.push(command);
@@ -227,7 +224,6 @@ describe("compiled runtime input rebinding", () => {
     runtime.stop();
     const restored = createInProcessRuntime({
       seed: 2,
-      seedDemoActors: false,
       inputAssets: assets,
     });
     await load(
@@ -259,7 +255,6 @@ describe("compiled gamepad connection events", () => {
     const logs: LogCommand[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       onCommand: (command) => {
         if (command.type === "log") logs.push(command);
       },

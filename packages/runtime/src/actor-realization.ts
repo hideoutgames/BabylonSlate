@@ -68,7 +68,7 @@ export interface ScriptedActorSpawn {
  * `OwnerAdmission`), Class actor defaults, loaded parent-cycle repair, render
  * slot assignment with its `spawn` command, the realization sequence (render,
  * audio and particle commands, World spawn, deferred owner work, the tick's
- * frame index), script spawns, the demo actors of an empty Preview, and actor
+ * frame index), script spawns, and actor
  * removal (`despawn`, slot release and the subsystems' `retireActor` hooks).
  * It reads the driver's subsystems through lazy host callbacks and is not a
  * registered subsystem.
@@ -314,37 +314,5 @@ export class ActorRealization {
       this.host.cancelInvalidTweens();
       this.removingActors.delete(actor);
     }
-  }
-
-  /** Demo actors so an empty project still shows motion in Preview. */
-  seedDemoActors(): void {
-    const world = this.host.world();
-    const actor = world.createActor({
-      classId: "Enemy",
-      variables: { speed: 1, n: 0 },
-      hooks: {
-        onTick: (self, ctx) => {
-          const speed = Number(self.getVariable("speed") ?? 1);
-          const bump = ctx.world.rngNextFloat() * speed;
-          self.setVariable("n", Number(self.getVariable("n")) + bump);
-          self.transform.position.x += bump;
-          self.transform.position.y += bump * 0.5;
-        },
-      },
-    });
-    world.spawnActorNow(actor);
-    this.assignSlot(actor);
-
-    const second = world.createActor({
-      classId: "Actor",
-      variables: { tag: "follower" },
-      hooks: {
-        onTick: (self, ctx) => {
-          self.transform.position.z += ctx.world.rngNextFloat() * 0.1;
-        },
-      },
-    });
-    world.spawnActorNow(second);
-    this.assignSlot(second);
   }
 }

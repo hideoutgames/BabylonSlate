@@ -9,7 +9,7 @@ function cable(id: string, properties: Record<string, unknown> = {}): Serialized
 
 function setup(actors: SerializedActor[], native = false) {
   const commands: CommandMessage[] = [];
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: !native,
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: !native,
     playScene: { name: "Cables", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors },
     onCommand: (command) => commands.push(command),
   });

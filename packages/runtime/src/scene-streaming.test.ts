@@ -32,7 +32,7 @@ async function setup(options: { child?: SerializedScene; deferred?: boolean; scr
       components: [createMeshComponent("mesh", "box"),
         { id: "body", classId: "RigidBodyComponent", properties: { motionType: "static" } },
         { id: "collider", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } } ] })] };
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
     playScene: scene, playSceneGuid: "parent", sceneLibrary: options.acquireScene ? undefined : { child, ...options.scenes },
     acquireScene: options.acquireScene, deferSceneModelsReady: options.deferred ?? true,
     ...(options.yieldControl ? { cooperativeSceneLoading: { yieldControl: options.yieldControl, stepsPerYield: 32 } } : {}),

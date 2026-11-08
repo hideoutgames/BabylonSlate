@@ -85,7 +85,7 @@ describe("2D rich text appearance runtime", () => {
       } },
       { id: "other", classId: "2DRichTextComponent", properties: { text: "Other" } },
     ] })];
-    const runtime = createInProcessRuntime({ seed: 1, dt: 0.1, preferSoftwarePhysics: true, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1, dt: 0.1, preferSoftwarePhysics: true,
       playScene: createDefaultScene(), sceneLayerLibrary: { labels: layer }, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts([{ assetGuid: "label-script", classId: "LabelActor", parentClassId: "SceneLayerActor", anchors: [],

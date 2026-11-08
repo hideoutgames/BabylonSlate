@@ -144,7 +144,6 @@ describe("user class inheritance at runtime", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneOf([
         createActor("kid", "Kid", { classId: "Child" }),
@@ -188,7 +187,6 @@ describe("user class inheritance at runtime", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneOf([
         createActor("kid", "Kid", { classId: "Child" }),
@@ -224,7 +222,6 @@ describe("user class inheritance at runtime", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       gameInstanceClass: "LeafGI",
       playScene: sceneOf([]),
@@ -249,7 +246,7 @@ describe("user class inheritance at runtime", () => {
   });
 
   it("registers every class of a parent cycle without looping", async () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true });
     try {
       await runtime.loadScripts([
         classScript("Loop", "Knot", ""),

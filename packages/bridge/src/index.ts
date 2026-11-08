@@ -8,7 +8,9 @@ export {
 export {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
+  applySnapshotTick,
   isPublishedSnapshot,
+  playInputStampTick,
   readActorSlotInto,
   readSnapshotHeader,
   snapshotActiveFloatCount,

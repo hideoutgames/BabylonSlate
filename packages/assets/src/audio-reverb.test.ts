@@ -6,7 +6,6 @@ import {
   AUDIO_OCCUPANCY_GRID_MAX_Z,
 } from "./audio-payload";
 import {
-  AUDIO_REVERB_VERSION,
   bakeAudioReverb,
   collectStaticAudioGeometry,
   decodeAudioReverbChunk,
@@ -47,7 +46,6 @@ function boxActor(
 describe("audio reverb chunk", () => {
   it("round-trips probes and marks a dry fallback", () => {
     const baked = {
-      version: AUDIO_REVERB_VERSION,
       dryFallback: false,
       geometryHash: "abc",
       probes: [
@@ -66,7 +64,6 @@ describe("audio reverb chunk", () => {
     const bytes = encodeAudioReverbChunk(baked);
     expect(decodeAudioReverbChunk(bytes)).toEqual(baked);
     const dry = encodeAudioReverbChunk({
-      version: AUDIO_REVERB_VERSION,
       dryFallback: true,
       geometryHash: "abc",
       probes: [],
@@ -76,7 +73,19 @@ describe("audio reverb chunk", () => {
     expect(isDryAudioReverbFallback(decoded)).toBe(true);
   });
 
-  it("persists occupancy in v2 and treats a v1 chunk as unoccluded", () => {
+  it("reads no field from a chunk whose format word is not the current one", () => {
+    const bytes = encodeAudioReverbChunk({ dryFallback: false, geometryHash: "abc", probes: [] });
+    expect(decodeAudioReverbChunk(bytes)).not.toBeNull();
+    // The format word follows the four magic bytes.
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const format = view.getUint32(4, true);
+    for (const other of [format - 1, format + 1]) {
+      view.setUint32(4, other, true);
+      expect(decodeAudioReverbChunk(bytes)).toBeNull();
+    }
+  });
+
+  it("persists occupancy and treats a chunk without it as unoccluded", () => {
     const bits = new Uint8Array(1);
     bits[0] = 0b0000_0110;
     const occupancy = {
@@ -92,7 +101,6 @@ describe("audio reverb chunk", () => {
       bits,
     };
     const packed = encodeAudioReverbChunk({
-      version: 2,
       dryFallback: false,
       geometryHash: "occ",
       probes: [],
@@ -115,18 +123,18 @@ describe("audio reverb chunk", () => {
         decoded?.occupancy ?? null,
       ),
     ).toBe(0.5);
-    const legacy = encodeAudioReverbChunk({
-      version: 1,
+    const withoutOccupancy = decodeAudioReverbChunk(encodeAudioReverbChunk({
       dryFallback: false,
       geometryHash: "occ",
       probes: [],
-    });
-    expect(decodeAudioReverbChunk(legacy)?.occupancy).toBeUndefined();
+    }));
+    expect(withoutOccupancy).not.toBeNull();
+    expect(withoutOccupancy?.occupancy).toBeUndefined();
     expect(
       occlusionFactor(
         { x: -1, y: 1, z: 1 },
         { x: 7, y: 1, z: 1 },
-        decodeAudioReverbChunk(legacy)?.occupancy ?? null,
+        withoutOccupancy?.occupancy ?? null,
       ),
     ).toBe(0);
   });

@@ -36,8 +36,8 @@ interface TickPipelineHost {
   liveActors(): number;
   /** Collectable objects alive now, and the last collection pass's milliseconds (null before the first). */
   objectLifetime(): { collectable: number; lastPassMs: number | null };
-  /** Behaviour tree, voice, sprite clip, Animation Graph and particle state that `restoreFromTrace` resumes. */
-  traceState(): Required<Pick<TraceFrame, "bt" | "audio" | "sprites" | "animGraphs" | "particles" | "globalParameters">>;
+  /** Behaviour tree, voice, sprite clip and Animation Graph state each trace frame records for the Trace viewer. */
+  traceState(): Required<Pick<TraceFrame, "bt" | "audio" | "sprites" | "animGraphs">>;
   reportLog(message: string, severity: LogSeverity, category: string): void;
   emit(command: CommandMessage): void;
   /** Times the scripts' entry points with `meter` while a profile records; null stops. */

@@ -43,7 +43,7 @@ describe("BehaviourTreeRuntime", () => {
   ] as const)("stops every Play Sound voice the tree started when %s", (_how, remove) => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, maxActors: 4, seedDemoActors: false, playScene: guardScene(),
+      seed: 1, maxActors: 4, playScene: guardScene(),
       behaviourTrees: { "tree-1": { name: "Host", rootId: "root", blackboardGuid: null, nodes: [
         sequence(["first", "second", "wait"]),
         task("first", "bt.task.playSound", { audioAssetGuid: "audio-1" }),
@@ -73,7 +73,7 @@ describe("BehaviourTreeRuntime", () => {
   it("aborts the old tree and starts a replacement tree at its root with its own Blackboard defaults", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, maxActors: 4, seedDemoActors: false, dt: 0.1, playScene: guardScene(),
+      seed: 1, maxActors: 4, dt: 0.1, playScene: guardScene(),
       behaviourTrees: {
         "tree-1": { name: "Old", rootId: "root", blackboardGuid: "board-1", nodes: [
           sequence(["push", "sound", "wait"]),
@@ -126,7 +126,7 @@ describe("BehaviourTreeRuntime", () => {
   it("publishes a Blackboard when a task replaces or edits a value in place, and nothing while it is unchanged", { timeout: 10_000 }, async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, maxActors: 4, seedDemoActors: false, dt: 0.1, playScene: guardScene(),
+      seed: 1, maxActors: 4, dt: 0.1, playScene: guardScene(),
       behaviourTrees: { "tree-1": { name: "Edit", rootId: "edit", blackboardGuid: "board-1", nodes: [task("edit", "BTTask_Edit")] } },
       blackboards: { "board-1": { name: "Edits", keys: [
         { name: "list", type: { kind: "array", element: { kind: "string" } }, defaultValue: ["a"] },
@@ -190,7 +190,7 @@ describe("BehaviourTreeRuntime", () => {
       id: "limit", classId: "bt.decorator.timeLimit", abortMode: "none" as const, observedKeys: [], properties: { durationMs: 150 },
     }] };
     const runtime = createInProcessRuntime({
-      seed: 1, maxActors: 4, seedDemoActors: false, dt: 0.1, playScene: guardScene(),
+      seed: 1, maxActors: 4, dt: 0.1, playScene: guardScene(),
       behaviourTrees: { "tree-1": { name: "Hold", rootId: "hold", blackboardGuid: null, nodes: [hold] } },
       onCommand: (command) => commands.push(command),
     });
@@ -224,7 +224,7 @@ export function onAbort(ctx) { ctx.log("log", "Probe", "abort " + ctx.deltaSecon
       { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } },
     );
     const runtime = createInProcessRuntime({
-      seed: 1, maxActors: 4, seedDemoActors: false, preferSoftwarePhysics: true, playScene: scene,
+      seed: 1, maxActors: 4, preferSoftwarePhysics: true, playScene: scene,
       behaviourTrees: { "tree-1": { name: "Face", rootId: "root", blackboardGuid: null, nodes: [
         sequence(["face", "wait"]),
         task("face", "bt.task.rotateToFace", { target: { x: 1, y: 0, z: 0 } }),
