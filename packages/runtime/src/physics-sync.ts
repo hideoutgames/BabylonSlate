@@ -33,6 +33,7 @@ import { PhysicsHosting, unitQuaternion, type BodyMotion } from "./physics-hosti
 import type { ModelContent } from "./physics-mesh-colliders";
 import { PhysicsQueryChannels } from "./physics-query-channels";
 import { PhysicsReadback, actorLocalPhysicsTransform } from "./physics-readback";
+import { componentOwners } from "./world-component-index";
 import type { SpriteClipPlayback, SpriteContent, TileContent } from "./physics-sprite-tile-colliders";
 
 export { actorLocalPhysicsTransform } from "./physics-readback";
@@ -96,6 +97,9 @@ export class PhysicsWorldSync {
    * in a transition event's script resolve their chains instead of the pass.
    */
   private passStale = false;
+  /** The Water Buoyancy owner list `buoyantActors` last read, and its set. */
+  private buoyantOwners: readonly Actor[] | null = null;
+  private buoyantOwnerSet: ReadonlySet<Actor> = new Set();
   // Built once in the constructor, after the options their hosts read.
   private readonly colliders: PhysicsColliderSets;
   private readonly classifier: PhysicsBodyClassifier;
@@ -283,6 +287,8 @@ export class PhysicsWorldSync {
     this.world = null;
     this.worldTransforms = new Map();
     this.passStale = false;
+    this.buoyantOwners = null;
+    this.buoyantOwnerSet = new Set();
   }
 
   /** Ensure every physics-bearing actor has backend bodies (idempotent). */
@@ -602,16 +608,29 @@ export class PhysicsWorldSync {
     if (this.skipEmptySteps && this.bodyByActor.size === 0 && this.characterByActor.size === 0) return;
     if (this.backend.kind === "3d") {
       this.water.update(this.actors, time);
-      if (this.water.hasBodies) for (const [actorId, bodyId] of this.bodyByActor) {
+      const floating = this.water.hasBodies ? this.buoyantActors(world) : undefined;
+      if (floating?.size) for (const [actorId, bodyId] of this.bodyByActor) {
         // The body's own actor: a step hook may have replaced the guid's holder.
         const actor = this.bodyOwnerByActor.get(actorId);
+        // Buoyancy acts only on a World actor holding a Water Buoyancy component; any other body skips it.
+        if (!actor || !floating.has(actor)) continue;
         const tuning = this.appliedBodyProperties.get(actorId)?.value;
-        if (actor && tuning?.motionType === "dynamic")
+        if (tuning?.motionType === "dynamic")
           this.water.applyBuoyancy(actor, bodyId, this.backend, tuning.mass, gravity, dt);
       }
     }
     this.backend.step(dt);
     this.readback.readBack(recompose);
+  }
+
+  /** The World's actors owning a Water Buoyancy component, as a set rebuilt only when that owner list changes. */
+  private buoyantActors(world: World): ReadonlySet<Actor> {
+    const owners = componentOwners(world, "WaterBuoyancyComponent");
+    if (owners !== this.buoyantOwners) {
+      this.buoyantOwners = owners;
+      this.buoyantOwnerSet = new Set(owners);
+    }
+    return this.buoyantOwnerSet;
   }
 
   /** The bodies, hosting, motion types or ragdolls behind the channels' ignore lists changed. */
