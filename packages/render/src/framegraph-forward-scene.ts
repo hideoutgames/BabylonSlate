@@ -148,6 +148,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
    * collider outline or grid neither darkens ambient occlusion, reflects, nor blocks Screen-Space Shadows' march.
    */
   readonly worldObjectList: FrameGraphObjectList = { meshes: this.world, particleSystems: null };
+  /** Whether a spatial geometry pass draws `worldObjectList`; without one the cull builds no world list. */
+  publishesWorld = false;
   /** A world view's occlusion culling, and the colour pass whose first draws keep a mesh in the list. */
   occlusion: { view: ViewOcclusion; colourPass: () => number } | null = null;
 
@@ -188,6 +190,11 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   private publishWorld(): void {
     const world = this.world;
     world.length = 0;
+    // Only a spatial geometry pass reads the list: without one it stays empty and keeps no culled mesh alive.
+    if (!this.publishesWorld) {
+      this.worldObjectList.particleSystems = null;
+      return;
+    }
     for (const mesh of this.outputObjectList.meshes ?? []) if (!isEditorHelperMesh(mesh)) world.push(mesh);
     this.worldObjectList.particleSystems = this.outputObjectList.particleSystems;
   }
@@ -1700,6 +1707,7 @@ export class ForwardSceneFrameGraph {
       geometry.objectList = this.cull!.outputObjectList;
       geometry.camera = this.objects!.camera;
     }
+    this.cull!.publishesWorld = !!this.effectsGraph?.spatial;
     if (this.effectsGraph?.spatial) {
       this.effectsGraph.spatial.geometry.objectList = this.cull!.worldObjectList;
       this.effectsGraph.spatial.geometry.camera = this.objects!.camera;
