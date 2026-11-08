@@ -140,6 +140,22 @@ export function getElectronHttpBridge(): ElectronHttpBridge | null {
   return host.haptic?.http ?? null;
 }
 
+/** The desktop app's own Electron runtime, for packaging games for the OS it runs on. */
+export interface ElectronGameShellBridge {
+  /** Node's `process.platform` and `process.arch` of the running app. */
+  platform: string;
+  arch: string;
+  /** This app's Electron files named as the release lists them, zipped in that layout; refused unless `electronVersion` is the app's. */
+  runtime(files: string[], electronVersion: string): Promise<Uint8Array>;
+}
+
+export function getElectronGameShellBridge(): ElectronGameShellBridge | null {
+  const host = globalThis as {
+    haptic?: { gameShell?: ElectronGameShellBridge };
+  };
+  return host.haptic?.gameShell ?? null;
+}
+
 export function isElectronHost(): boolean {
   return getElectronUserDataBridge() !== null;
 }

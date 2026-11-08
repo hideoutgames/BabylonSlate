@@ -23,6 +23,7 @@ import { DesktopAccountSecretStore } from "./desktop-account-secrets";
 import { fetchDesktopHttp, type DesktopHttpRequest } from "./desktop-http";
 import { desktopMemoryStats } from "./desktop-memory";
 import { createAuthBrowserSessions } from "./desktop-auth-browser";
+import { ownRuntimeZip } from "./game-runtime";
 import {
   allowsEditorPermission,
   authProviderUrl,
@@ -193,6 +194,11 @@ async function registerIpc(): Promise<void> {
   }
 
   handle("memory:stats", (event) => desktopMemoryStats(app.getAppMetrics(), event.sender.getOSProcessId()));
+  // Packaging a game for this computer's OS reuses this app's Electron runtime, laid out as Electron's release.
+  handle("game-shell:runtime", async (_event, files, electronVersion) => {
+    if (electronVersion !== process.versions.electron) throw new Error("This desktop app's Electron version does not match the game player's.");
+    return ownRuntimeZip({ installDir: dirname(process.execPath), executablePath: process.execPath, files: files as string[], platform: process.platform });
+  });
   handle("settings:read", async () => {
     try {
       return await readFile(settingsPath, "utf8");

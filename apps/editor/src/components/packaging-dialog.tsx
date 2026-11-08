@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from "react";
+import { useMemo, useState, type ComponentType } from "react";
 import { DownloadIcon } from "lucide-react";
 import SiHtml5 from "@icons-pack/react-simple-icons/icons/SiHtml5";
 import Android from "react-bootstrap-icons/dist/icons/android";
@@ -6,6 +6,7 @@ import Apple from "react-bootstrap-icons/dist/icons/apple";
 import Tux from "react-bootstrap-icons/dist/icons/tux";
 import Windows from "react-bootstrap-icons/dist/icons/windows";
 import { defaultExportPreset } from "@haptic/core";
+import { desktopGameNames } from "@haptic/exporter/native-desktop";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -20,8 +21,8 @@ import { Progress } from "@haptic/ui/components/progress";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { cn } from "@haptic/ui/lib/utils";
 import { useProjectState, useRegistryState } from "../context/document-context";
-import { PACKAGING_TARGETS, type PackagingTarget } from "../lib/packaging-targets";
-import { gameArchiveName, useGameExport } from "./use-game-export";
+import { packagingTargets, type PackagingTarget } from "../lib/packaging-targets";
+import { gameArchiveName, useGameExport, useGameShells } from "./use-game-export";
 
 type MarkProps = { className?: string; title?: string; "aria-hidden"?: boolean };
 
@@ -40,10 +41,19 @@ const MARKS: Record<PackagingTarget["id"], { Mark: ComponentType<MarkProps>; col
   ios: { Mark: Apple },
 };
 
-const GROUPS = [
-  { id: "available", label: "Available", targets: PACKAGING_TARGETS.filter((entry) => entry.available) },
-  { id: "unavailable", label: "Unavailable", targets: PACKAGING_TARGETS.filter((entry) => !entry.available) },
-].filter((group) => group.targets.length > 0);
+function targetGroups(targets: readonly PackagingTarget[]) {
+  return [
+    { id: "available", label: "Available", targets: targets.filter((entry) => entry.available) },
+    { id: "unavailable", label: "Unavailable", targets: targets.filter((entry) => !entry.available) },
+  ].filter((group) => group.targets.length > 0);
+}
+
+/** Why a platform cannot be packaged here: a desktop player this copy of Haptic does not carry, or one not offered on this device. */
+function unavailableReason(target: PackagingTarget): string {
+  return target.desktopTarget
+    ? `This copy of Haptic does not include the ${target.label} player.`
+    : `${target.label} packaging is not available on this device.`;
+}
 
 function PlatformMark({ target, className }: { target: PackagingTarget; className?: string }) {
   const { Mark, color } = MARKS[target.id];
@@ -72,10 +82,13 @@ export function PackagingDialog({
   onOpenProjectSettings: (categoryId: "export" | "game") => void;
 }) {
   const { projectDocument } = useProjectState();
-  const { assetRegistry } = useRegistryState();
-  const { busy, error, notice, packageWeb } = useGameExport(projectDocument);
+  const { assetRegistry, projectGuid } = useRegistryState();
+  const shells = useGameShells(open);
+  const targets = useMemo(() => packagingTargets(shells.desktop), [shells.desktop]);
+  const groups = useMemo(() => targetGroups(targets), [targets]);
+  const { busy, stage, error, notice, packageTarget } = useGameExport(projectDocument, { manifest: shells.manifest, projectGuid });
   const [targetId, setTargetId] = useState<PackagingTarget["id"]>("web");
-  const target = PACKAGING_TARGETS.find((entry) => entry.id === targetId) ?? PACKAGING_TARGETS[0]!;
+  const target = targets.find((entry) => entry.id === targetId) ?? targets[0]!;
   const settings = projectDocument?.settings;
   const projectName = projectDocument?.metadata.name ?? "";
   const startupGuid = settings?.startupSceneGuid ?? null;
@@ -92,7 +105,7 @@ export function PackagingDialog({
         </DialogHeader>
         <div className="grid min-h-72 grid-cols-[11.5rem_minmax(0,1fr)] border-y max-sm:grid-cols-1">
           <nav aria-label="Platforms" className="flex flex-col gap-3 border-r bg-sidebar p-2 max-sm:border-r-0 max-sm:border-b">
-            {GROUPS.map((group) => (
+            {groups.map((group) => (
               <div key={group.id} className="flex flex-col gap-0.5">
                 <p id={`packaging-group-${group.id}`} className="px-2 pt-1 text-xs font-medium text-muted-foreground">
                   {group.label}
@@ -103,7 +116,7 @@ export function PackagingDialog({
                   aria-labelledby={`packaging-group-${group.id}`}
                   value={group.targets.some((entry) => entry.id === target.id) ? [target.id] : []}
                   onValueChange={(value) => {
-                    const next = PACKAGING_TARGETS.find((entry) => entry.id === value[0]);
+                    const next = targets.find((entry) => entry.id === value[0]);
                     if (next) setTargetId(next.id);
                   }}
                 >
@@ -138,7 +151,9 @@ export function PackagingDialog({
                 <dl className="divide-y rounded-lg border bg-card text-sm" data-testid="packaging-summary">
                   <div className="flex items-center justify-between gap-3 px-3 py-1.5">
                     <dt className="text-muted-foreground">Output</dt>
-                    <dd className="truncate font-mono text-xs">{projectName ? gameArchiveName(projectName) : ""}</dd>
+                    <dd className="truncate font-mono text-xs" data-testid="packaging-output">
+                      {!projectName ? "" : target.desktopTarget ? desktopGameNames(projectName, target.desktopTarget).archive : gameArchiveName(projectName)}
+                    </dd>
                   </div>
                   <div className="flex items-center justify-between gap-3 px-3 py-1.5">
                     <dt className="text-muted-foreground">Startup Scene</dt>
@@ -169,7 +184,7 @@ export function PackagingDialog({
                 {busy ? (
                   <div className="flex flex-col gap-1.5" role="status">
                     <Progress value={null} aria-label="Packaging" />
-                    <p className="text-xs text-muted-foreground">Packaging… Collecting the assets the game reaches.</p>
+                    <p className="text-xs text-muted-foreground">Packaging… {stage}</p>
                   </div>
                 ) : null}
                 {error ? (
@@ -181,8 +196,8 @@ export function PackagingDialog({
                 {notice && !busy ? <p role="status" className="text-xs text-muted-foreground">{notice}</p> : null}
               </>
             ) : (
-              <p className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
-                {target.label} packaging is not available on this device.
+              <p className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground" data-testid="packaging-unavailable">
+                {unavailableReason(target)}
               </p>
             )}
           </div>
@@ -194,7 +209,7 @@ export function PackagingDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {notice && !busy ? "Close" : "Cancel"}
           </Button>
-          <Button data-testid="packaging-package" disabled={!canPackage} onClick={() => void packageWeb()}>
+          <Button data-testid="packaging-package" disabled={!canPackage} onClick={() => void packageTarget(target)}>
             {busy ? null : <DownloadIcon data-icon="inline-start" />}
             {busy ? "Packaging…" : "Package"}
           </Button>

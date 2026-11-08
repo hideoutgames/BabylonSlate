@@ -1,15 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { isErr, type ProjectDocument } from "@haptic/core";
+import type { DesktopGameTarget } from "@haptic/exporter/native-desktop";
 import { useDocumentActions } from "../context/document-context";
 import { saveZipArchive, savedFileNotice } from "../lib/file-export";
 import { exportGameFailureMessage } from "../lib/export-game-failure";
+import { loadDesktopShell, loadGameShellManifest, packageableDesktopTargets, type GameShellManifest } from "../lib/game-shells";
+import type { PackagingTarget } from "../lib/packaging-targets";
 
-/** Web packaging run state shown by the Packaging dialog. */
+/** Packaging run state shown by the Packaging dialog. */
 export interface GameExport {
   busy: boolean;
+  /** What packaging is doing now, while busy. */
+  stage: string | null;
   error: string | null;
   notice: string | null;
-  packageWeb: () => Promise<void>;
+  packageTarget: (target: PackagingTarget) => Promise<void>;
 }
 
 /** The saved web package's file name. */
@@ -17,16 +22,37 @@ export function gameArchiveName(projectName: string): string {
   return `${projectName.replace(/\s+/g, "_")}.zip`;
 }
 
-/** Packages the project as a playable web ZIP and saves it. */
-export function useGameExport(projectDocument: ProjectDocument | null): GameExport {
+/** The players this copy of Haptic carries, read once `active` turns on. */
+export function useGameShells(active: boolean): { manifest: GameShellManifest | null; desktop: ReadonlySet<DesktopGameTarget> } {
+  const [state, setState] = useState<{ manifest: GameShellManifest | null; desktop: ReadonlySet<DesktopGameTarget> } | null>(null);
+  useEffect(() => {
+    if (!active || state) return;
+    let current = true;
+    void loadGameShellManifest().then((manifest) => {
+      if (current) setState({ manifest, desktop: packageableDesktopTargets(manifest) });
+    });
+    return () => { current = false; };
+  }, [active, state]);
+  return state ?? { manifest: null, desktop: new Set() };
+}
+
+const COLLECTING = "Collecting the assets the game reaches.";
+
+/** Packages the project for a platform and saves the ZIP. */
+export function useGameExport(
+  projectDocument: ProjectDocument | null,
+  options: { manifest: GameShellManifest | null; projectGuid: string | null },
+): GameExport {
   const { exportGameArtifact, zipExportedGame } = useDocumentActions();
   const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const packageWeb = async () => {
-    if (!projectDocument || busy) return;
+  const packageTarget = async (target: PackagingTarget) => {
+    if (!projectDocument || busy || !target.available) return;
     setBusy(true);
+    setStage(COLLECTING);
     setError(null);
     setNotice(null);
     try {
@@ -35,15 +61,32 @@ export function useGameExport(projectDocument: ProjectDocument | null): GameExpo
         setError(exportGameFailureMessage(result.error));
         return;
       }
-      const archive = await zipExportedGame(result.value);
-      setNotice(savedFileNotice("Game package", await saveZipArchive(archive, gameArchiveName(projectDocument.metadata.name))));
+      if (!target.desktopTarget) {
+        const archive = await zipExportedGame(result.value);
+        setNotice(savedFileNotice("Game package", await saveZipArchive(archive, gameArchiveName(projectDocument.metadata.name))));
+        return;
+      }
+      if (!options.manifest) throw new Error(`This copy of Haptic cannot package ${target.label} games.`);
+      setStage(`Adding the ${target.label} player.`);
+      const shell = await loadDesktopShell(options.manifest, target.desktopTarget);
+      const { packageDesktopGame } = await import("@haptic/exporter/native-desktop");
+      const packaged = packageDesktopGame({
+        target: target.desktopTarget,
+        ...shell,
+        game: result.value.files,
+        name: projectDocument.metadata.name,
+        version: projectDocument.metadata.version,
+        gameId: options.projectGuid ?? "game",
+      });
+      setNotice(savedFileNotice(`${target.label} game`, await saveZipArchive(packaged.bytes, packaged.fileName)));
     } catch (cause) {
       console.error("[editor] Packaging failed", cause);
       setError(exportGameFailureMessage(cause));
     } finally {
       setBusy(false);
+      setStage(null);
     }
   };
 
-  return { busy, error, notice, packageWeb };
+  return { busy, stage, error, notice, packageTarget };
 }

@@ -31,6 +31,12 @@ contextBridge.exposeInMainWorld("haptic", {
   http: {
     fetch: (request: unknown) => ipcRenderer.invoke("lfs:fetch", request),
   },
+  // Native game packaging: this app's own Electron runtime as a release-layout zip.
+  gameShell: {
+    platform: process.platform,
+    arch: process.arch,
+    runtime: (files: string[], electronVersion: string) => ipcRenderer.invoke("game-shell:runtime", files, electronVersion),
+  },
   // Exports: the main process asks where to save and writes the file.
   files: {
     save: (name: string, data: ArrayBuffer) => ipcRenderer.invoke("file:save", name, data),

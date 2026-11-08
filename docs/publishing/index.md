@@ -1,6 +1,6 @@
 # Publishing
 
-**Packaging** builds your project as a web game in a ZIP file, ready for itch.io or any static web host.
+**Packaging** builds your project as a game in a ZIP file: a web game ready for itch.io or any static web host, or a desktop game for Windows or Linux.
 
 ## Before you package
 
@@ -12,14 +12,39 @@
 ## Package the game
 
 1. In the toolbar, choose **Settings > Packaging** (<kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>).
-2. In the platform list, select **Web** under **Available**. Platforms under **Unavailable** can't be packaged on this device.
+2. In the platform list, select a platform under **Available**. Platforms under **Unavailable** can't be packaged with this copy of Haptic.
 3. Check the summary: the output file, **Startup Scene**, **Bundle Debugger** and **Always Package Folders**. If no Startup Scene is set, choose **Game Settings** to set one; **Package** stays unavailable until you do.
 4. Choose **Package**.
-5. Save the ZIP when Haptic asks (see [Saving exported files](../projects/index.md#saving-exported-files)); in a browser, **Game package downloaded. Check your downloads.** appears. The ZIP is named after the project, with underscores for spaces.
+5. Save the ZIP when Haptic asks (see [Saving exported files](../projects/index.md#saving-exported-files)); in a browser, a message such as **Game package downloaded. Check your downloads.** appears. The ZIP is named after the project, with underscores for spaces, and desktop ZIPs end in `-Windows` or `-Linux`.
 
-The ZIP has `index.html` at its root. Upload it to itch.io as an HTML game, or unzip it and serve the folder from any static web host.
+The web ZIP has `index.html` at its root. Upload it to itch.io as an HTML game, or unzip it and serve the folder from any static web host. For desktop ZIPs, see [Desktop games](#desktop-games).
 
 If packaging fails, the reason appears in the **Packaging** window.
+
+## Desktop games
+
+Windows and Linux games are the same web game in a desktop player built on Electron, so they look and play as they do in Play. Each ZIP holds one folder named after the project:
+
+| Platform | Start the game with | Notes |
+| --- | --- | --- |
+| Windows (64-bit) | `<Project Name>.exe` | Unsigned, so Windows SmartScreen may warn on first launch: choose **More info**, then **Run anyway**. |
+| Linux (64-bit) | the lowercase command, such as `space-game` | Unzip with a tool that keeps file permissions, such as `unzip`. |
+
+- Keep the whole folder together; the game reads its files from the `resources` folder beside the program.
+- The game's saves are stored per project in your user data folder under `Haptic Games`, so renaming the project keeps them.
+- The game window cannot open other pages. Links it opens go to the system browser.
+- The folder includes the licences of Electron and Chromium (`LICENSE`, `LICENSES.chromium.html`) beside `legal/THIRD-PARTY-NOTICES.txt` in `resources/game`. Keep them when you share the game.
+- On Linux distributions that restrict unprivileged user namespaces, such as Ubuntu 24.04, the game can stop at start with a sandbox message. Run `sudo chown root chrome-sandbox && sudo chmod 4755 chrome-sandbox` in the game's folder once.
+
+Which platforms you can package depends on where you run Haptic:
+
+| Haptic | Can package |
+| --- | --- |
+| Browser, iPad and Android | Web, Windows, Linux |
+| Windows and Linux desktop apps | Web, Windows, Linux |
+| macOS desktop app | Web, Windows, Linux |
+
+macOS, Android and iOS games are not available yet.
 
 ## Packaging settings
 

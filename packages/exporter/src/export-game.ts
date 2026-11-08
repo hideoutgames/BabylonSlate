@@ -1,3 +1,4 @@
+import { SAFE_ZIP_MTIME } from "./zip-time";
 import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, type Result } from "@haptic/core";
 import { collectAssetDependencyMetadata, decodePackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@haptic/assets";
 import { zipSync, unzipSync } from "fflate";
@@ -367,12 +368,7 @@ export async function exportGame(
   return ok({ files, fileCount, warnings, manifest });
 }
 
-/**
- * fflate encodes DOS dates with local getFullYear/getMonth/…. UTC midnight
- * 1980-01-01 is still 1979 in US timezones and throws "date not in range
- * 1980-2099". Local noon stays in range everywhere.
- */
-export const SAFE_ZIP_MTIME = new Date(1980, 0, 1, 12, 0, 0);
+export { SAFE_ZIP_MTIME };
 
 export function zipExport(artifact: ExportArtifact): Uint8Array {
   const record: Record<string, Uint8Array> = {};
