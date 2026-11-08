@@ -671,9 +671,10 @@ export function collectSceneHeadersForPalette(
 }
 
 /**
- * Header Scenes with the open Scene documents in their place. An open
+ * Header Scenes with the open Scene documents in their place. A loaded
  * document's content is already a normalised `SerializedScene`, so it is
- * projected as it is, reusing the projection of every actor list it kept.
+ * projected as it is, reusing the projection of every actor list it kept; a
+ * restored tab not loaded yet (null content) normalises to an empty Scene.
  */
 export function withOpenScenesForPalette(
   headers: readonly PaletteSceneDocument[],
@@ -688,6 +689,10 @@ export function withOpenScenesForPalette(
     if (doc.ref.kind !== "scene") continue;
     const guid = guidForPath(doc.ref.path);
     if (!guid) continue;
+    if (!doc.content) {
+      byGuid.set(guid, paletteSceneFromContent(guid, doc.content, guid));
+      continue;
+    }
     const scene = doc.content as SerializedScene;
     byGuid.set(guid, { guid, name: scene.name || guid, actors: paletteActors(scene.actors) });
   }

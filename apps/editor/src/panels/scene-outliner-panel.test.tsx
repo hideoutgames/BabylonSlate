@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import {
   createActor,
   createDefaultScene,
+  type SerializedActor,
   type SerializedScene,
 } from "@haptic/core";
 import {
@@ -10,7 +11,7 @@ import {
   folderRowId,
   outlinerRowTarget,
 } from "../lib/outliner-drop";
-import { flattenOutliner, sameOutlinerStructure } from "./scene-outliner-panel";
+import { flattenOutliner, sameOutlinerStructure } from "../lib/outliner-structure";
 
 function sceneWith(partial: Partial<SerializedScene>): SerializedScene {
   return { ...createDefaultScene(), actors: [], folders: [], ...partial };
@@ -118,7 +119,7 @@ describe("flattenOutliner folders", () => {
 });
 
 describe("sameOutlinerStructure", () => {
-  const hero = {
+  const hero: SerializedActor = {
     ...createActor("hero", "Hero", { components: [{ id: "mesh", classId: "MeshComponent", properties: {} }] }),
     folderId: "props",
   };
@@ -126,7 +127,7 @@ describe("sameOutlinerStructure", () => {
     folders: [{ id: "props", name: "Props", parentFolderId: null }],
     actors: [hero],
   });
-  const edited = (actor: Partial<typeof hero>, folders = scene.folders) =>
+  const edited = (actor: Partial<SerializedActor>, folders = scene.folders) =>
     sceneWith({ folders, actors: [{ ...hero, ...actor }] });
 
   it.each([
