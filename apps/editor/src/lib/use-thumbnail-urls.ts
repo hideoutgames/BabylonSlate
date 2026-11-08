@@ -1,12 +1,25 @@
-import { useEffect, useState } from "react";
-import { thumbnailMime } from "@haptic/assets";
+import { useEffect, useRef, useState } from "react";
+import {
+  syncContentBrowserThumbnailUrls,
+  type ThumbnailUrlMap,
+} from "./content-browser-thumbnails";
 
 export type LoadThumbnail = (guid: string) => Promise<Uint8Array | null>;
 
+/** Same guids with the same URLs: committing it would only re-render the cards. */
+function sameUrls(a: ThumbnailUrlMap, b: ThumbnailUrlMap): boolean {
+  const guids = Object.keys(a);
+  return guids.length === Object.keys(b).length && guids.every((guid) => a[guid] === b[guid]);
+}
+
 /**
  * Object URLs for asset thumbnails while `enabled`, keyed by guid; assets
- * without a thumbnail are absent. A changed `versions` entry reloads; the
- * URLs are released when disabled, changed or unmounted.
+ * without a thumbnail are absent. Synced like the Content Browser grid
+ * (`syncContentBrowserThumbnailUrls`): unchanged guids keep their URLs, a
+ * guid whose `versions` entry changed keeps its old URL until the new
+ * thumbnail is read, and the rest load four at a time, each batch shown as
+ * soon as it is read. A URL is released once a map without it has rendered
+ * (replaced, or its guid left the list), and on disable or unmount.
  */
 export function useThumbnailUrls(
   guids: readonly string[],
@@ -14,31 +27,80 @@ export function useThumbnailUrls(
   versions: Readonly<Record<string, number>> | undefined,
   enabled: boolean,
 ): Record<string, string> {
-  const [urls, setUrls] = useState<Record<string, string>>({});
-  const key = enabled
-    ? guids.map((guid) => `${guid}:${versions?.[guid] ?? 0}`).join("|")
-    : "";
+  const [urls, setUrls] = useState<ThumbnailUrlMap>({});
+  // Written only with the state, by a commit: a render that still shows an
+  // older map must not put it back.
+  const urlsRef = useRef(urls);
+  // The version each guid's thumbnail was last read at.
+  const loadedVersionsRef = useRef<Readonly<Record<string, number | undefined>>>({});
+  // URLs a commit stopped showing, tagged with that commit's map. A URL is
+  // revoked only after the map that dropped it has rendered; revoking it when
+  // the commit is scheduled would leave an <img> pointing at a revoked URL.
+  const retiredRef = useRef<Array<{ shown: ThumbnailUrlMap; urls: readonly string[] }>>([]);
+
   useEffect(() => {
-    if (!key || !load) return;
+    const retired = retiredRef.current;
+    const rendered = retired.findLastIndex((entry) => entry.shown === urls);
+    if (rendered < 0) return;
+    for (const entry of retired.splice(0, rendered + 1)) {
+      for (const url of entry.urls) URL.revokeObjectURL(url);
+    }
+  }, [urls]);
+
+  useEffect(() => {
+    if (!enabled || !load) {
+      loadedVersionsRef.current = {};
+      const shown = Object.values(urlsRef.current);
+      if (shown.length === 0) return;
+      const cleared: ThumbnailUrlMap = {};
+      retiredRef.current.push({ shown: cleared, urls: shown });
+      urlsRef.current = cleared;
+      setUrls(cleared);
+      return;
+    }
     let cancelled = false;
-    const created: string[] = [];
-    void (async () => {
-      const next: Record<string, string> = {};
-      for (const guid of key.split("|").map((entry) => entry.split(":")[0]!)) {
-        const bytes = await load(guid).catch(() => null);
-        if (cancelled) return;
-        if (!bytes) continue;
-        const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: thumbnailMime(bytes) }));
-        created.push(url);
-        next[guid] = url;
-      }
-      if (!cancelled) setUrls(next);
-    })();
+    void syncContentBrowserThumbnailUrls({
+      mountedTextureGuids: guids,
+      urls: urlsRef.current,
+      refreshGuids: new Set(guids.filter((guid) => versions?.[guid] !== loadedVersionsRef.current[guid])),
+      hidden: false,
+      load,
+      createObjectURL: (blob) => URL.createObjectURL(blob),
+      revokeObjectURL: (url) => URL.revokeObjectURL(url),
+      isCancelled: () => cancelled,
+      retireObjectURLs: (retiring) => {
+        if (retiring.length > 0) retiredRef.current.push({ shown: urlsRef.current, urls: retiring });
+      },
+      commit: (next, { loaded, done }) => {
+        // A cancelled sync leaves later guids unread, so only a finished one
+        // may claim every version; batches record just what they read.
+        loadedVersionsRef.current = done
+          ? (versions ?? {})
+          : {
+              ...loadedVersionsRef.current,
+              ...Object.fromEntries(loaded.map((guid) => [guid, versions?.[guid]])),
+            };
+        // A version bump of an asset not listed here still ends in a commit.
+        if (sameUrls(next, urlsRef.current)) return;
+        urlsRef.current = next;
+        setUrls(next);
+      },
+    });
     return () => {
       cancelled = true;
-      for (const url of created) URL.revokeObjectURL(url);
-      setUrls({});
     };
-  }, [key, load]);
+  }, [enabled, guids, load, versions]);
+
+  useEffect(() => {
+    // The queue is only ever mutated in place, so this is the list the syncs fill.
+    const retired = retiredRef.current;
+    return () => {
+      for (const url of Object.values(urlsRef.current)) URL.revokeObjectURL(url);
+      for (const entry of retired.splice(0)) {
+        for (const url of entry.urls) URL.revokeObjectURL(url);
+      }
+    };
+  }, []);
+
   return urls;
 }

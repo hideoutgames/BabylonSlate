@@ -15,7 +15,7 @@ Search matches names, categories, asset types and folders. In **Models** and **P
 
 ## Place from the Assets window
 
-In **Design** mode, the **Assets** window below the **Outliner** lists the Models, Actor Classes and Prefabs in your project and its plugins, as cards with thumbnails or as a list. In a [Scene Layer](scene-layers.md) it lists the built-in 2D elements first, then Classes whose parent is **Scene Layer Actor**, then Models.
+In **Design** mode, the **Assets** window below the **Outliner** lists the Models, Actor Classes and Prefabs in your project and its plugins, as cards with thumbnails or as a list. Thumbnails appear a few at a time; when one is drawn again, its card keeps the old image until the new one is ready. In a [Scene Layer](scene-layers.md) it lists the built-in 2D elements first, then Classes whose parent is **Scene Layer Actor**, then Models.
 
 - Search by name, type, folder or plugin. **Filter** narrows by **Asset Types** and **Folder**; turn off **Show Plugin Content** to hide plugin assets, which carry a puzzle-piece mark. Tap a filter tag under the search field to remove it.
 - **Sort** orders entries by **Name**, **Type** or **Folder**. The two buttons beside it switch between **Cards** and **List**.
