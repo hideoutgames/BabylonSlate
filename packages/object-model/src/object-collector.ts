@@ -72,11 +72,6 @@ export class ObjectCollector {
     this.collectables.push(object);
   }
 
-  /** Whether `object` is collectable and still alive. */
-  isCollectable(object: EngineObject): boolean {
-    return !object.destroyed && this.collectables.includes(object);
-  }
-
   /** Adds a root source; the returned function removes it. */
   addRootSource(source: RootSource): () => void {
     this.sources.push(source);
