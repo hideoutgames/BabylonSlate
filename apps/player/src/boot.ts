@@ -35,7 +35,7 @@ import {
 import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import { pixelatedExtend, playFramebufferSize, type SerializedScene } from "@haptic/core";
 import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@haptic/exporter";
-import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
+import { createPlayerWorkerHost, playerHavokWasmUrl, type PlayerWorkerHost } from "./worker-host";
 import { createPlayerSourceInstalls } from "./source-installs";
 import { playerDecoderPaths } from "./decoder-paths";
 import { manifestConsoleCommands } from "./console-catalog";
@@ -68,10 +68,6 @@ import { createPlayerPauseState } from "./console-pause";
 import type { DebugInspectSnapshot } from "@haptic/object-model";
 import type { PlayerPreviewDiagnosticPorts } from "./player-diagnostic-types";
 import { playerContainer } from "./layout";
-
-function havokWasmUrl(): string {
-  return new URL("./havok/HavokPhysics.wasm", document.baseURI).href;
-}
 
 export type PlayerDiagnostic = {
   message: string;
@@ -136,6 +132,11 @@ export type PlayerBootOptions = {
   traceByteBudget?: number;
   sharedEngine?: AbstractEngine;
   content?: PackedGameContent;
+  /**
+   * The game worker the launch started before its download (`prewarmPlayerWorker`). The boot adopts
+   * and then owns it, or terminates it and starts its own when it has failed.
+   */
+  worker?: PlayerWorkerHost;
   /**
    * Runs after every player resource has attempted cleanup, including startup
    * rollback. `viewReleased` is present once a view was created: a shared-Engine
@@ -523,7 +524,7 @@ function initializePlayer(
     texturePixelSizes: Object.fromEntries(content.texturePixelSizes),
     gravity: scene.settings.gravity,
     collisionPresets: manifest.collisionPresets,
-    havokWasmUrl: havokWasmUrl(),
+    havokWasmUrl: playerHavokWasmUrl(),
     gameInstanceClass: manifest.gameInstanceClass,
     scenes,
     // Runtime Class lookups use the class id only, as in Editor Play.
@@ -1049,7 +1050,10 @@ function initializePlayer(
 
   let releaseWorker = () => {};
   try {
-    const ownedWorker = createPlayerWorkerHost();
+    let prewarmed = options.worker;
+    // A prewarmed worker that failed before any handler was attached would hang the boot: start another.
+    if (prewarmed?.failed()) { prewarmed.terminate(); prewarmed = undefined; }
+    const ownedWorker = prewarmed ?? createPlayerWorkerHost();
     worker = ownedWorker;
     releaseWorker = own(() => ownedWorker.terminate());
     worker.onError((error) => {

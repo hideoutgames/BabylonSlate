@@ -10,6 +10,7 @@ import type { AbstractEngine } from "@babylonjs/core";
 import { loadGameFromFiles } from "./artifact";
 import { startPlayer, type PlayerBootHandle } from "./boot";
 import { startPlayerWithBackend } from "./player-backend";
+import { createPlayerWorkerHost } from "./worker-host";
 import * as inputs from "./input";
 const attachInputCapture = inputs.attachInputCapture;
 
@@ -130,6 +131,28 @@ async function expectEngineReleased(owner: rendering.BackendEngineSession) {
 }
 
 describe("player startup and Stop ownership", () => {
+  it("boots on the worker the launch prewarmed, and replaces one that failed before the boot", async () => {
+    const first = await fixture();
+    const loads = (worker: TestWorker) => worker.messages.filter(entry => entry.channel === "control" && entry.payload.type === "load").length;
+    const healthy = createPlayerWorkerHost();
+    const session = startPlayer({ game: first.game, canvas: first.canvas, worker: healthy });
+    expect(TestWorker.instances).toHaveLength(1);
+    expect(loads(TestWorker.instances[0]!)).toBe(1);
+    session.stop();
+    expect(TestWorker.instances[0]!.terminated).toBe(true);
+
+    // Its failure arrived before the boot attached a handler: a fresh worker runs the game instead.
+    const failed = createPlayerWorkerHost();
+    const dead = TestWorker.instances[1]!;
+    dead.onerror?.({ message: "Module failed to load" } as ErrorEvent);
+    const second = await fixture();
+    sessions.push(startPlayer({ game: second.game, canvas: second.canvas, worker: failed }));
+    expect(dead.terminated).toBe(true);
+    expect(loads(dead)).toBe(0);
+    expect(TestWorker.instances).toHaveLength(3);
+    expect(loads(TestWorker.instances[2]!)).toBe(1);
+  });
+
   it("awaits the correlated Preview pause boundary before render-only capture and neutralizes modal gamepad input", async () => {
     const { game, canvas, handle, input } = await fixture();
     game.manifest.bundleDebugger = true;
