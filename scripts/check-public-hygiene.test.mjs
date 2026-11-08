@@ -143,3 +143,27 @@ test("the command line runs the scan when started through a differently named pa
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /--commits needs a git range/);
 });
+
+test("the event-only mode checks the event text without reading a repository", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "haptic-hygiene-event-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const script = fileURLToPath(
+    new URL("./check-public-hygiene.mjs", import.meta.url),
+  );
+  const run = (event) => {
+    const path = join(directory, "event.json");
+    writeFileSync(path, JSON.stringify(event));
+    // Any git command fails here, so a tree or history scan cannot pass.
+    return spawnSync(process.execPath, [script, "--event-only", path], {
+      cwd: directory,
+      env: { ...process.env, GIT_DIR: join(directory, "no-repository") },
+      encoding: "utf8",
+    });
+  };
+  const flagged = run({ issue: { number: 1 }, comment: { body: sessionLink } });
+  assert.equal(flagged.status, 1, flagged.stderr);
+  assert.match(flagged.stderr, /^issue:comment:1 \[agent-session-link\]/m);
+  const clean = run({ issue: { number: 1 }, comment: { body: "Looks good" } });
+  assert.equal(clean.status, 0, clean.stderr);
+  assert.equal(clean.stdout, "public hygiene: no violations\n");
+});

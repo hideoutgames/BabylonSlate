@@ -13,6 +13,8 @@ pnpm test <files>        # focused unit tests (always name files; see testing.md
 pnpm build:pages         # editor (test mode) + docs site, as deployed to GitHub Pages
 ```
 
+`pnpm dev` first bundles the player (`vite build`, with the player build's own checks), which the dev server serves at `/player/` for Preview Build and Export, and does not type-check it: the IDE, `pnpm typecheck --filter player` and the CI typecheck report type errors.
+
 Local verification policy and the full command list: [testing.md](testing.md).
 
 ## Pages preview
