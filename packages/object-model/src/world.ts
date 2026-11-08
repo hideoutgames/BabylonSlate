@@ -104,6 +104,11 @@ function liveInto<T extends Subsystem>(subsystems: readonly T[], out: T[]): T[] 
   return out;
 }
 
+/** A component whose `callOnTick` would run a hook now. */
+function ticksNow(component: ActorComponent): boolean {
+  return component.ticks && !component.destroyed;
+}
+
 export class World {
   /** Identity/hierarchy revision; no properties or world snapshots are collected. */
   structuralRevision = 0;
@@ -857,34 +862,51 @@ export class World {
     this.flushDeferred();
   }
 
+  /**
+   * Admission is checked right before each tick hook runs. An actor without a
+   * hook is skipped first: the checks have no side effects and only a hook can
+   * change their answers, so the same hooks run in the same order.
+   */
   private tickActors(ctx: TickContext): void {
     const iteration = this.beginActorIteration();
     try {
       for (let i = 0; i < iteration.length; i++) {
-        if (!this.sceneTickable()) break;
         const actor = iteration.list[i]!;
-        if (actor.tickEnabled && !actor.destroyed && this.canTickActor(actor)) actor.callOnTick(ctx);
+        if (!actor.ticks || !actor.tickEnabled || actor.destroyed) continue;
+        if (!this.sceneTickable()) break;
+        if (this.canTickActor(actor)) actor.callOnTick(ctx);
       }
     } finally {
       this.endActorIteration();
     }
   }
 
-  /** Each actor's component list is captured into reused scratch before its first callback. */
+  /**
+   * As `tickActors`, admission is checked only right before a component's tick
+   * hook, so actors and components without one cost no checks. An actor's
+   * component list is captured into reused scratch before its first callback.
+   */
   private tickComponents(ctx: TickContext): void {
     const iteration = this.beginActorIteration();
     const scratch = (this.componentScratch[this.actorIterationDepth - 1] ??= []);
     try {
-      for (let i = 0; i < iteration.length; i++) {
-        if (!this.sceneTickable()) break;
+      let tickable = true;
+      for (let i = 0; tickable && i < iteration.length; i++) {
         const actor = iteration.list[i]!;
-        if (actor.destroyed || !this.canTickActor(actor)) continue;
-        const count = actor.components.length;
-        for (let c = 0; c < count; c++) scratch[c] = actor.components[c];
-        for (let c = 0; c < count; c++) {
-          if (!this.sceneTickable() || !this.canTickActor(actor)) break;
+        if (actor.destroyed) continue;
+        const components = actor.components;
+        const count = components.length;
+        // No hook runs before the first ticking component, so the list is still as the actor started.
+        let first = 0;
+        while (first < count && !ticksNow(components[first]!)) first++;
+        if (first === count) continue;
+        for (let c = first; c < count; c++) scratch[c] = components[c];
+        for (let c = first; c < count; c++) {
           const component = scratch[c]!;
-          if (!component.destroyed) component.callOnTick(ctx);
+          if (!ticksNow(component)) continue;
+          if (!this.sceneTickable()) { tickable = false; break; }
+          if (!this.canTickActor(actor)) break;
+          component.callOnTick(ctx);
         }
       }
     } finally {

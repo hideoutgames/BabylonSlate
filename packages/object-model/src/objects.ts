@@ -203,6 +203,11 @@ export class EngineObject {
     this.hooks.onCreation?.(this);
   }
 
+  /** Whether a tick hook is bound: without one `callOnTick` does nothing, so the World skips its tick admission. */
+  get ticks(): boolean {
+    return this.hooks.onTick !== undefined;
+  }
+
   callOnTick(ctx: TickContext): void {
     if (this.destroyed) return;
     this.hooks.onTick?.(this, ctx);
