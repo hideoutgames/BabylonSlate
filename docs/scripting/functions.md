@@ -19,7 +19,7 @@ Select the function in the **Class** window, or click an empty part of its graph
 | Name | The function's name, shown on its Call nodes. |
 | Overridable | Lets child classes replace this function. Off by default. |
 | Category | Groups functions into folders in the **Class** window. |
-| Inputs | Values passed in. They appear as outputs of the **Input** node and as inputs of each Call node. Select an Integer, Float or Vector input to give it a **Unit**; the Call node's value field then shows it, such as 250 ms. |
+| Inputs | Values passed in. They appear as outputs of the **Input** node and as inputs of each Call node. Select an Integer, Float or Vector input to give it a **Unit**; the Call node's value field then shows it, such as 250 ms. Select any input to make it [Pass-By-Reference](#pass-by-reference). |
 | Outputs | Values returned. They appear as inputs of the **Output** node and as outputs of each Call node. |
 
 Move a pin up or down in **Inputs** or **Outputs** to reorder it on the nodes.
@@ -34,6 +34,16 @@ You can also add a pin from the graph. Drag a wire from an output pin onto the b
 - To call a function on another object, drag from a pin that holds that object and choose the Call entry. The node gets a **Target** pin. A Call for a function of this class has a **Target** pin that shows **Self** and calls the running object while it is unconnected; connect another object of the class to call that one.
 - The caller continues once the function reaches its **Output** node. If the function contains a latent node such as [Delay](class/delay.md), its Call node becomes latent too and waits for it.
 - An output the function never sets returns its type's default value.
+
+## Pass-By-Reference
+
+Normally a function gets a copy of each input, so changing it inside the function leaves the caller's variable alone. A **Pass-By-Reference** input passes the caller's variable itself:
+
+1. Select the input in **Inputs** and turn on **Pass-By-Reference**. Its pin becomes a small diamond on the **Input** node and on every Call node; see [Reference pins](pin-types.md#reference-pins).
+2. On each Call node, connect a variable to it: a Get node of a class variable, a local variable or the caller's own Pass-By-Reference input.
+3. Inside the function, write the input with [Set By-Ref Var](class/set-by-ref-var.md), or connect it to another reference pin, such as the **Seed** of a [Seeded Random](random-numbers.md#seeded-random-nodes) node. The caller's variable changes too.
+
+Reading the input inside the function always returns the variable's current value, including changes the function has made.
 
 ## Copy a function to another class
 

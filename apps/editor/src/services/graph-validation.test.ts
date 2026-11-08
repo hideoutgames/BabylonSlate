@@ -1186,6 +1186,10 @@ describe("scriptPinCompatibility", () => {
     expect(rule({ ...output, reference: undefined }, target)).toBe(false);
     expect(rule({ ...output, type: { kind: "int" } }, target)).toBe(false);
     expect(rule({ ...output, reference: undefined }, { ...target, reference: undefined })).toBe(true);
+    // Set By-Ref Var's wildcard Target takes a writable variable of any type, still never a value.
+    const wildcard = { ...target, type: { kind: "resolvingWildcard" } };
+    expect(rule({ ...output, type: { kind: "int" } }, wildcard)).toBe(true);
+    expect(rule({ ...output, type: { kind: "int" }, reference: undefined }, wildcard)).toBe(false);
   });
   it("restores read-only native access when loading a getter saved before reference metadata", () => {
     const graph: SerializedGraph = { nodes: [{ id: "progress", type: "variables.get", position: { x: 0, y: 0 },

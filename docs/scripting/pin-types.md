@@ -53,6 +53,14 @@ A connected reference is used as it is, even when it is empty when the node runs
 - An empty **Event** on [Bind Event to Event Dispatcher](class/bind-event-to-event-dispatcher.md) or [Unbind Event from Event Dispatcher](class/unbind-event-from-event-dispatcher.md) is reported the same way.
 - Inputs where an empty value is meaningful do not report it, for example the **Value** of [Set Variable](class/set-variable.md), [Is Valid](class/is-valid.md), the input of [Cast To](class/cast-to.md), the **Owner** of [Set Owner](class/set-owner.md) and the **Parent** of [Attach Actor](class/attach-actor.md).
 
+## Reference pins
+
+A small diamond, smaller than an execution pin, is a reference pin. It takes a variable instead of a value, so the node can change that variable:
+
+- Connect a Get node of a writable variable: a class variable, a local variable or a function's [Pass-By-Reference](functions.md#pass-by-reference) input. A value from any other node, such as **Make Seed**, is an error in **Compiler Results**, and so is leaving the pin unconnected.
+- The variable must have exactly the pin's type. [Set By-Ref Var](class/set-by-ref-var.md) takes a variable of any type.
+- Examples are the **Seed** of the [Seeded Random](random-numbers.md#seeded-random-nodes) nodes, the **Target** of [Assign Tag](class/assign-tag.md) and the **Target** of the value tweens such as [Tween Float](class/tween-float.md).
+
 ## Inline values
 
 An unconnected input can hold a value, edited on the node or under **Defaults** in the **Inspector**.

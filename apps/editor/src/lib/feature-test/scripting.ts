@@ -1377,6 +1377,22 @@ async function saveTouchProbe(ctx: FeatureTestContext, types: ScriptingTypes, fo
   return { ref, components };
 }
 
+/** The Data Probe's Seeds and the first Random Int (1 to 1000) each gives, from `drawSeeded` in core. */
+const LOOT_SEED = "FeatureTest Loot";
+const LOOT_FIRST_ROLL = 113;
+const GLOBAL_SEED = "FeatureTest Global";
+const GLOBAL_FIRST_ROLL = 803;
+
+/** Make Seed: `text` at Step 0. */
+function seedNode(id: string, x: number, y: number, text: string): GraphNode {
+  return gNode(id, "struct.make", x, y, {
+    structGuid: "engine:Seed",
+    fields: [{ name: "Seed", typeId: "string", defaultValue: "" }, { name: "Step", typeId: "int", defaultValue: 0 }],
+    "default:Seed": text,
+    "default:Step": 0,
+  });
+}
+
 /** Read Data Entry `Weapons/Sword` + Break and Get Data Children of `Weapons`; Asserts check both reads. */
 async function saveDataProbe(
   ctx: FeatureTestContext,
@@ -1397,8 +1413,36 @@ async function saveDataProbe(
   const damageFalloff = varMember("ft-data-var-damage-falloff", "DamageFalloff", "struct", {
     Keys: [curveKey(0, 100), curveKey(2, 50), curveKey(4, 0)], Before: "constant", After: "constant",
   }, { typeClassId: "engine:FloatCurve" });
+  // Random: a Seed variable rolled through a Pass-By-Reference function and rewound with Set By-Ref Var,
+  // and the global seed fixed so the normal Random nodes repeat. Expected values come from the seeds.
+  const lootSeed = varMember("ft-data-var-loot-seed", "LootSeed", "struct", { Seed: LOOT_SEED, Step: 0 }, {
+    typeClassId: "engine:Seed",
+  });
+  const seedByReference = { name: "Seed", typeId: "struct", typeClassId: "engine:Seed", direction: "in" as const, byReference: true };
+  const rollLoot = fnMember("ft-data-fn-roll-loot", "RollLoot", [seedByReference, { name: "Roll", typeId: "int", direction: "out" }], {
+    category: "Random",
+  });
+  const rewindLoot = fnMember("ft-data-fn-rewind-loot", "RewindLoot", [seedByReference], { category: "Random" });
   const graph = classGraph({
-    members: [spawnCount, damageFalloff],
+    members: [spawnCount, damageFalloff, lootSeed, rollLoot, rewindLoot],
+    functionGraphs: {
+      [rollLoot.id]: fnGraph(rollLoot, {
+        nodes: [gNode("ft-data-roll", "random.seededInt", 400, 240, { "default:min": 1, "default:max": 1000 })],
+        edges: [gWire(`${rollLoot.id}-input`, "Seed", "ft-data-roll", "seed"), gWire("ft-data-roll", "out", `${rollLoot.id}-output`, "Roll")],
+      }),
+      [rewindLoot.id]: fnGraph(rewindLoot, {
+        nodes: [
+          seedNode("ft-data-rewound-seed", 280, 360, LOOT_SEED),
+          gNode("ft-data-rewind", "variables.setByRef", 480, 120),
+        ],
+        edges: [
+          gWire(`${rewindLoot.id}-input`, "exec", "ft-data-rewind", "execIn"),
+          gWire("ft-data-rewind", "execOut", `${rewindLoot.id}-output`, "then"),
+          gWire(`${rewindLoot.id}-input`, "Seed", "ft-data-rewind", "target"),
+          gWire("ft-data-rewound-seed", "out", "ft-data-rewind", "value"),
+        ],
+      }, false),
+    },
     components,
     nodes: [
       gNode("begin", "flow.event.beginPlay", 0, 0),
@@ -1464,6 +1508,27 @@ async function saveDataProbe(
       gNode("assert-locale", "debug.assert", 7900, -200, { "default:message": "Get Locale returned no language" }),
       gNode("game-paused", "system.isGamePaused", 8620, -380),
       gNode("assert-not-paused", "debug.assertEqual", 8620, -200, { "default:expected": false, "default:message": "Is Game Paused read true before anything paused the game" }),
+      getVar("get-loot", lootSeed, 8860, -560),
+      callSelf("call-roll-loot", 8860, -200, rollLoot),
+      gNode("assert-loot-roll", "debug.assertEqual", 9100, -200, { "default:expected": LOOT_FIRST_ROLL, "default:message": "Seeded Random Int rolled the wrong value from LootSeed" }),
+      gNode("loot-step", "random.getStepCount", 9340, -380),
+      gNode("assert-loot-step", "debug.assertEqual", 9340, -200, { "default:expected": 1, "default:message": "The roll did not move LootSeed on through its Pass-By-Reference input" }),
+      callSelf("call-rewind-loot", 9580, -200, rewindLoot),
+      gNode("loot-rewound-step", "random.getStepCount", 9820, -380),
+      gNode("assert-loot-rewound", "debug.assertEqual", 9820, -200, { "default:expected": 0, "default:message": "Set By-Ref Var did not rewind LootSeed" }),
+      seedNode("global-seed-value", 10060, -560, GLOBAL_SEED),
+      gNode("set-global-seed", "random.setGlobalSeed", 10060, -200),
+      gNode("global-roll", "math.randomInt", 10300, -380, { "default:min": 1, "default:max": 1000 }),
+      gNode("assert-global-roll", "debug.assertEqual", 10300, -200, { "default:expected": GLOBAL_FIRST_ROLL, "default:message": "Random Int ignored Set Global Randomization Seed" }),
+      gNode("global-seed", "random.getGlobalSeed", 10540, -560),
+      gNode("global-step", "random.getStepCount", 10540, -380),
+      gNode("assert-global-step", "debug.assertEqual", 10540, -200, { "default:expected": 1, "default:message": "Get Global Randomization Seed did not count the Random Int draw" }),
+      gNode("weighted", "random.boolWithWeight", 10780, -380, { "default:weight": 1 }),
+      gNode("assert-weighted", "debug.assert", 10780, -200, { "default:message": "Random Bool With Weight 1 returned false" }),
+      gNode("loot-table", "array.make", 11020, -560, { count: 3, "default:item0": 10, "default:item1": 20, "default:item2": 30 }),
+      gNode("shuffled", "random.shuffleArray", 11020, -380),
+      gNode("shuffled-count", "array.length", 11260, -380),
+      gNode("assert-shuffled", "debug.assertEqual", 11260, -200, { "default:expected": 3, "default:message": "Shuffle Array lost items" }),
       gNode("roll-in-range", "range.isFloatInRange", 1900, 400),
       gNode("assert-roll", "debug.assert", 1900, 0, { "default:message": "Sword Damage is outside its Damage Roll range" }),
       gNode("read", "data.readEntry", 220, 160, {
@@ -1482,7 +1547,28 @@ async function saveDataProbe(
     edges: [
       ...gChain("begin", "assert-found", "assert-weapons", "assert-falloff", "assert-spawn", "assert-roll", "assert-asset",
         "set-global", "assert-global", "assert-delta", "assert-frame", "assert-time", "assert-date", "assert-time-ms", "assert-dilation", "assert-local-date",
-        "assert-development", "assert-guid", "assert-locale", "assert-not-paused", "print"),
+        "assert-development", "assert-guid", "assert-locale", "assert-not-paused"),
+      gWire("assert-not-paused", "execOut", "call-roll-loot", "exec"),
+      gWire("call-roll-loot", "then", "assert-loot-roll", "execIn"),
+      ...gChain("assert-loot-roll", "assert-loot-step"),
+      gWire("assert-loot-step", "execOut", "call-rewind-loot", "exec"),
+      gWire("call-rewind-loot", "then", "assert-loot-rewound", "execIn"),
+      ...gChain("assert-loot-rewound", "set-global-seed", "assert-global-roll", "assert-global-step", "assert-weighted", "assert-shuffled", "print"),
+      gWire("get-loot", "value", "call-roll-loot", "Seed"),
+      gWire("call-roll-loot", "Roll", "assert-loot-roll", "actual"),
+      gWire("get-loot", "value", "loot-step", "seed"),
+      gWire("loot-step", "step", "assert-loot-step", "actual"),
+      gWire("get-loot", "value", "call-rewind-loot", "Seed"),
+      gWire("get-loot", "value", "loot-rewound-step", "seed"),
+      gWire("loot-rewound-step", "step", "assert-loot-rewound", "actual"),
+      gWire("global-seed-value", "out", "set-global-seed", "seed"),
+      gWire("global-roll", "out", "assert-global-roll", "actual"),
+      gWire("global-seed", "seed", "global-step", "seed"),
+      gWire("global-step", "step", "assert-global-step", "actual"),
+      gWire("weighted", "out", "assert-weighted", "condition"),
+      gWire("loot-table", "out", "shuffled", "array"),
+      gWire("shuffled", "out", "shuffled-count", "array"),
+      gWire("shuffled-count", "out", "assert-shuffled", "actual"),
       gWire("get-global", "value", "assert-global", "actual"),
       gWire("delta", "deltaSeconds", "delta-positive", "a"),
       gWire("delta-positive", "out", "assert-delta", "condition"),
