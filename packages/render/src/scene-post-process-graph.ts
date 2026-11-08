@@ -47,7 +47,6 @@ type Recipe = {
   sceneNormal: boolean;
   depthType: number;
   scale: number;
-  estimatedBytes: number;
 };
 export type ScenePostProcessGraphResult =
   | { ok: true; owner: ScenePostProcessGraph | null }
@@ -185,7 +184,6 @@ export function createScenePostProcessGraph(
       sceneNormal,
       depthType: depthType ?? Constants.TEXTURETYPE_FLOAT,
       scale,
-      estimatedBytes,
     },
     lease,
   );
@@ -222,10 +220,6 @@ export class ScenePostProcessGraph {
   private retirement: Promise<void> | null = null;
   private taskRelease: Promise<void> | null = null;
   private released: Promise<void> | null = null;
-  get estimatedBytes(): number {
-    return this.recipe.estimatedBytes;
-  }
-
   private readonly options: Options;
   private readonly recipe: Recipe;
   private readonly lease: ManagedRenderLease;

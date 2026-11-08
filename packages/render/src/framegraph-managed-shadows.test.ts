@@ -504,7 +504,7 @@ it("uses normal preparation when a point-light handoff changes cube layout", asy
   vi.spyOn(performance, "now").mockReturnValue(now + 500);
   camera.position.x = 40;
   controller.sync();
-  expect(controller.status(incoming)).toBe("active");
+  expect(controller.diagnostics([incoming])[0]!.status).toBe("active");
   expect(controller.generator(light)).toBeNull();
   // A directed point light draws one face: one atlas tile, not the six its predecessor holds.
   expect((controller.generator(incoming) as AtlasShadowGenerator).tiles).toHaveLength(1);
