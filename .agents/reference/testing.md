@@ -79,7 +79,7 @@ Configured in `vitest.workspace.ts`; each project is a thin `vitest.projects.*.t
 
 Physics tests use Havok through `NullEngine`; Havok cases share the initialized WASM module and create independent worlds.
 
-Every `NullEngine` in the `babylon` project draws lit surfaces on the light block, the one lighting path: its setup file (`packages/render/src/test-support/light-block-engine.ts`) reports uniform buffers and stubs the texture array, depth texture and scissor the block's resources need. Editor tests that run the renderer headlessly import it (`@haptic/render/light-block-engine`).
+Every `NullEngine` in the `babylon` project draws lit surfaces on the light block, the one lighting path: its setup file (`packages/render/src/test-support/light-block-engine.ts`) reports uniform buffers and stubs the texture array, depth texture and scissor the block's resources need. Editor tests that run the renderer headlessly import it (`@haptic/render/light-block-engine`). A second setup file (`test-support/node-dom-polyfills.ts`) gives Node the `PointerEvent` and `FileReader` globals every shipped host has, which simulated gizmo pointers and OBJ import need; production sources carry no such shims.
 
 ## Coverage gates
 

@@ -7,8 +7,12 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    // Every NullEngine takes the light block's path as a shipped Engine does (uniform buffers, the atlas's textures).
-    setupFiles: ["./packages/render/src/test-support/light-block-engine.ts"],
+    // Every NullEngine takes the light block's path as a shipped Engine does (uniform buffers, the atlas's textures),
+    // and Node gains the PointerEvent and FileReader globals every shipped host has.
+    setupFiles: [
+      "./packages/render/src/test-support/light-block-engine.ts",
+      "./packages/render/src/test-support/node-dom-polyfills.ts",
+    ],
     fileParallelism: true,
     maxWorkers: Number(process.env.VITEST_MAX_WORKERS ?? 1),
   },

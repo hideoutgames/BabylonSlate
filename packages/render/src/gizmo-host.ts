@@ -413,26 +413,6 @@ function thinRotationRings(rotation: RotationGizmo): void {
   }
 }
 
-function ensurePointerEvent(): void {
-  if (typeof PointerEvent === "function") return;
-  class PointerEventShim extends Event {
-    pointerId: number;
-    button: number;
-    pointerType: string;
-    constructor(type: string, init: PointerEventInit = {}) {
-      super(type, init);
-      this.pointerId = init.pointerId ?? 0;
-      this.button = init.button ?? 0;
-      this.pointerType = String(init.pointerType ?? "mouse");
-    }
-  }
-  Object.defineProperty(globalThis, "PointerEvent", {
-    configurable: true,
-    writable: true,
-    value: PointerEventShim,
-  });
-}
-
 /**
  * Translate / rotate / scale gizmos on a utility layer, with the axis set
  * filtered by viewport mode: 2D exposes XY translate plus the XY plane, Z rotate
@@ -779,7 +759,6 @@ export function createGizmoHost(
       return pick?.hit === true;
     },
     forwardPointer: (type, canvasX, canvasY, canvasSize) => {
-      ensurePointerEvent();
       const mapped = mapCanvasPointer(scene, canvasX, canvasY, canvasSize);
       scene.pointerX = mapped.x;
       scene.pointerY = mapped.y;
