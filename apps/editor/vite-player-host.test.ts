@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -84,5 +84,18 @@ describe("playerHostVitePlugin", () => {
     } finally {
       if (sibling) rmSync(sibling, { recursive: true, force: true });
     }
+  });
+});
+
+describe("pnpm dev", () => {
+  it("bundles the player the dev server serves at /player/ without type-checking it first", () => {
+    const { scripts } = JSON.parse(
+      readFileSync(new URL("./package.json", import.meta.url), "utf8"),
+    ) as { scripts: Record<string, string> };
+    // The bundle keeps the player build's own checks; type errors are for the IDE, `pnpm typecheck` and CI.
+    expect(scripts.dev.split(" && ")).toEqual([
+      "pnpm --filter player exec vite build",
+      "vite",
+    ]);
   });
 });
