@@ -21,6 +21,8 @@ import {
   ENGINE_HIT_RESULT_STRUCT_ID,
   ENGINE_PARTICLES_FINISHED_REASON_ENUM_ID,
   pinTypeForVariable,
+  byReferenceArgumentValue,
+  isByReferenceFunctionInput,
   type VariableTypeSpec,
 } from "@haptic/scripting";
 import {
@@ -789,7 +791,9 @@ export const flowNodes: NodeDefinition[] = [
       const out: Record<string, string> = {};
       for (const pinDef of ctx.node.pins) {
         if (pinDef.kind === "exec") continue;
-        out[pinDef.name] = `ctx.args[${JSON.stringify(pinDef.name)}]`;
+        out[pinDef.name] = isByReferenceFunctionInput(ctx.node, pinDef)
+          ? byReferenceArgumentValue(pinDef.name)
+          : `ctx.args[${JSON.stringify(pinDef.name)}]`;
       }
       if (Object.keys(out).length === 0) return;
       return out;
@@ -1088,6 +1092,7 @@ function functionEndpointPins(
     ? (properties.pins as Array<VariableTypeSpec & {
         name?: string;
         direction?: string;
+        byReference?: boolean;
       }>)
     : [];
   const want = endpoint === "input" ? "in" : "out";
@@ -1098,13 +1103,18 @@ function functionEndpointPins(
     }
     if (row.direction !== want) return [];
     // Typed like the function's Call nodes: an Array stays an Array and a Delegate keeps its Signature.
+    const byReference = endpoint === "input" && row.byReference === true && row.typeId !== "exec";
     return [
-      pin(
-        row.name,
-        row.name,
-        asDirection,
-        row.typeId === "exec" ? EXEC : pinTypeForVariable(row),
-      ),
+      {
+        ...pin(
+          row.name,
+          row.name,
+          asDirection,
+          row.typeId === "exec" ? EXEC : pinTypeForVariable(row),
+        ),
+        // A Pass-By-Reference input supplies the caller's variable to reference inputs.
+        ...(byReference ? { reference: "writable" as const, byReference: true } : {}),
+      },
     ];
   });
   if (mapped.length > 0) return mapped;

@@ -2,6 +2,7 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
+  RESOLVING_WILDCARD,
   objectRef,
   pinTypeForVariable,
 } from "@haptic/scripting";
@@ -150,6 +151,26 @@ export const variableNodes: NodeDefinition[] = [
           `ctx.setVariableOn(${ctx.input("target")}, ${quoted}, ${out});`,
         );
       }
+    },
+  },
+  {
+    id: "variables.setByRef",
+    title: "Set By-Ref Var",
+    category: "variables",
+    description: "Writes Value into the variable wired to Target, such as a Pass-By-Reference function input, so the caller's variable changes too.",
+    searchAliases: ["set by reference", "by ref", "reference", "assign"],
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      { ...pin("target", "Target", "in", RESOLVING_WILDCARD), reference: "required" as const },
+      pin("value", "Value", "in", RESOLVING_WILDCARD),
+      pin("out", "Value", "out", RESOLVING_WILDCARD),
+    ],
+    codegen: (ctx) => {
+      // Evaluate the value once: the stored value and the output are one sample.
+      const out = ctx.output("out");
+      ctx.emit(`${out} = ${ctx.input("value")};`);
+      if (ctx.reference) ctx.emit(`(${ctx.reference("target")})?.set(${out});`);
     },
   },
   {

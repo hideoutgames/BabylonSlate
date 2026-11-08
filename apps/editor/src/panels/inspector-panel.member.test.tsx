@@ -380,6 +380,19 @@ describe("Inspector class member details", () => {
     expect(next.functionGraphs?.["fn-heal"]?.nodes.map((node) => node.data.pins)).toEqual([pins, pins]);
   });
 
+  it("makes a function input Pass-By-Reference on the function and both endpoint nodes, and back", () => {
+    renderFunctionNodeInspector("fn-heal-input");
+    fireEvent.click(screen.getByTestId("class-fn-in-row-fn-heal-in-0"));
+    fireEvent.click(screen.getByTestId("class-fn-in-fn-heal-in-0-by-reference"));
+    const pins = [
+      { name: "Amount", typeId: "float", direction: "in", byReference: true },
+      { name: "Healed", typeId: "bool", direction: "out" },
+    ];
+    const next = applyGraphChange.mock.calls.at(-1)![1];
+    expect(next.members?.find((member) => member.id === "fn-heal")?.pins).toEqual(pins);
+    expect(next.functionGraphs?.["fn-heal"]?.nodes.map((node) => node.data.pins)).toEqual([pins, pins]);
+  });
+
   it("removes a function output from its Output node and keeps its inputs", () => {
     renderFunctionNodeInspector("fn-heal-output");
     fireEvent.click(screen.getByTestId("class-fn-out-fn-heal-out-0-remove"));

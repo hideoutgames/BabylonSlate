@@ -337,6 +337,11 @@ export interface GraphClassMemberPin {
   /** Number and vector inputs: display unit (`VALUE_UNITS`) on the pin's literal. Missing is none. */
   unit?: string;
   /**
+   * Function inputs only: the Call passes the wired variable itself, so the function's writes (Set By-Ref
+   * Var, Seeded Random nodes) reach the caller's variable. Missing is pass-by-value.
+   */
+  byReference?: boolean;
+  /**
    * Delegate pins only: the input types of the delegate's signature, copied
    * from the Event Dispatcher `typeClassId` names (`<classId>::<name>`).
    */

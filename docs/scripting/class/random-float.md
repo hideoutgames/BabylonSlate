@@ -14,4 +14,5 @@ Returns a random number from 0 up to, but not including, 1.
 
 ## Notes
 
-- Values come from a seeded generator, so the same seed repeats the same sequence.
+- Draws from the global seed, which each Play session starts afresh; see [Random numbers](../random-numbers.md).
+- [Seeded Random Float](seeded-random-float.md) draws from a Seed variable instead.

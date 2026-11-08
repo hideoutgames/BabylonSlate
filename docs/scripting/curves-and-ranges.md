@@ -107,4 +107,4 @@ When many classes should share one curve, make a **Float Curve**, **Vector Curve
 | [Evaluate Float Curve](class/evaluate-float-curve.md), [Evaluate Vector Curve](class/evaluate-vector-curve.md), [Evaluate Color Curve](class/evaluate-color-curve.md) | Read a curve's value at a time. |
 | [Get Float Curve Time Range](class/get-float-curve-time-range.md), [Get Vector Curve Time Range](class/get-vector-curve-time-range.md), [Get Color Curve Time Range](class/get-color-curve-time-range.md), [Get Float Curve Value Range](class/get-float-curve-value-range.md) | Return the times of the first and last keys, or the lowest and highest key values. |
 
-The Random nodes draw from the session's seeded random generator, the same one [Random Float](class/random-float.md) uses, so Play repeats the same values for the same seed.
+The Random nodes draw from the global seed, as [Random Float](class/random-float.md) does, and each has a Seeded version that draws from a Seed variable instead. See [Random numbers](random-numbers.md).

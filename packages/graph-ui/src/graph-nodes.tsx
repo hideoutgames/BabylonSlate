@@ -140,14 +140,16 @@ export function zipPinRows(
 
 function PinVisual({
   type,
+  pin,
   connected,
 }: {
   type: PinTypeRef;
+  pin?: SerializedPin;
   connected: boolean;
 }) {
   return (
     <PinShapeGlyph
-      shape={pinVisualShape(type)}
+      shape={pinVisualShape(type, pin)}
       connected={connected}
       color={pinCssVar(type)}
       size="var(--graph-pin-size, 22px)"
@@ -209,7 +211,7 @@ function PinHandle({
         onPinTap(nodeId, pin.id, pin.direction);
       }}
     >
-      <PinVisual type={displayType} connected={connected} />
+      <PinVisual type={displayType} pin={pin} connected={connected} />
     </Handle>
   );
 }

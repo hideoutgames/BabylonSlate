@@ -56,6 +56,7 @@ export function memberPinRows(
       ...(pin.container ? { container: pin.container } : {}),
       ...(pin.typeClassId ? { typeClassId: pin.typeClassId } : {}),
       ...(pin.unit ? { unit: pin.unit } : {}),
+      ...(pin.byReference ? { byReference: true } : {}),
       ...(pin.typeId === "delegate" ? { signature: pin.signature ?? [] } : {}),
     }));
 }
@@ -75,6 +76,7 @@ export function memberPinsFromRows(
     const unit = declaredValueUnit(pin.typeId, row.unit);
     if (unit) pin.unit = unit;
     if (pin.typeId === "delegate") pin.signature = (row.signature ?? []).map((input) => ({ ...input }));
+    if (direction === "in" && row.byReference === true && pin.typeId !== "exec") pin.byReference = true;
     return pin;
   };
   return [

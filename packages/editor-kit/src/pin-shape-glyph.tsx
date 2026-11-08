@@ -1,6 +1,7 @@
 import { cn } from "@haptic/ui/lib/utils";
 
-export type PinShape = "diamond" | "circle" | "list" | "map" | "square";
+/** `reference` is a by-reference pin: a diamond like an exec pin's, drawn smaller. */
+export type PinShape = "diamond" | "reference" | "circle" | "list" | "map" | "square";
 
 /**
  * A delegate square's dark shade: its own colour darkened. An unconnected
@@ -82,9 +83,10 @@ export function PinShapeGlyph({
     );
   }
 
-  // A square reads larger than a circle of the same size, so it is drawn smaller.
+  // A square reads larger than a circle of the same size, so it is drawn smaller; a reference
+  // diamond is smaller still, so it never reads as an exec pin.
   const square = shape === "square";
-  const side = square ? `calc(${styleSize} * 0.82)` : styleSize;
+  const side = square ? `calc(${styleSize} * 0.82)` : shape === "reference" ? `calc(${styleSize} * 0.6)` : styleSize;
   const shade = square ? squareShade(color) : undefined;
   return (
     <span
@@ -92,7 +94,7 @@ export function PinShapeGlyph({
         "block",
         connected && !outlined && !square ? "" : "border-2",
         connected && outlined && !square ? "border-card" : "",
-        shape === "diamond" ? "rotate-45 rounded-sm" : square ? "rounded-sm" : "rounded-full",
+        shape === "diamond" || shape === "reference" ? "rotate-45 rounded-sm" : square ? "rounded-sm" : "rounded-full",
         className,
       )}
       data-pin-shape={shape}

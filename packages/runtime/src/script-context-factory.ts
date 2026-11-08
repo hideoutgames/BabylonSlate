@@ -8,7 +8,7 @@ import {
   SaveGameError,
   updateDeformerProperties,
   type RenderTargetCaptureProperty,
-  type Rng,
+  type RandomStream,
   type SaveGameMigrationData,
   type SaveGameValue,
 } from "@haptic/core";
@@ -79,7 +79,7 @@ const NO_INTERFACE_RECEIVER: InterfaceDispatchTarget = { guid: "", classId: "", 
  * private state, which contexts reach only through these members.
  */
 export interface ScriptContextHost extends ComponentFunctionHost {
-  readonly rng: Rng;
+  readonly rng: RandomStream;
   readonly dispatchers: DispatcherBindings;
   readonly materials: ScriptMaterialOwnership;
   /** The prototype of every context. */
@@ -204,6 +204,7 @@ export function createScriptContext(
       return {
         identity: object, property: `variable:${name}`,
         owner: object instanceof EngineObject ? object : contextOwner ?? undefined,
+        get: () => object instanceof EngineObject ? context.getVariableFrom(object, name) : object.getVariable(name),
         set: (value) => {
           if (object instanceof EngineObject) context.setVariableOn(object, name, tweenStorageValue(object, name, value));
           else object.setVariable(name, value);

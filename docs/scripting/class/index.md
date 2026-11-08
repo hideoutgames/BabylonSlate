@@ -93,6 +93,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | Node | Description |
 | --- | --- |
 | [Get Variable](get-variable.md) | Returns the current value of a variable. |
+| [Set By-Ref Var](set-by-ref-var.md) | Writes **Value** into the variable connected to **Target**, such as a Pass-By-Reference function input. |
 | [Set Variable](set-variable.md) | Sets a variable to a new value and passes that value on. |
 | [Validated Get](validated-get.md) | Reads an object variable and runs **Is Valid** only if it holds an object. |
 
@@ -203,9 +204,6 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Not Equal](not-equal.md) | Returns true when two numbers are not exactly equal. |
 | [Power](power.md) | Raises a base number to the power of an exponent. |
 | [Radians To Degrees](radians-to-degrees.md) | Converts the input from radians to degrees. |
-| [Random Bool](random-bool.md) | Returns true or false with equal chance. |
-| [Random Float](random-float.md) | Returns a random number from 0 up to, but not including, 1. |
-| [Random Int](random-int.md) | Returns a random whole number between **Min** and **Max**. |
 | [Round](round.md) | Rounds the input to the nearest whole number. |
 | [Sign](sign.md) | Returns -1, 0 or 1 depending on the sign of the input. |
 | [Sin (Degrees)](sin-degrees.md) | Returns the sine of an angle in degrees. |
@@ -427,11 +425,38 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Is Integer In Range](is-integer-in-range.md) | Returns true when **Value** lies inside the range. |
 | [Lerp Float Range](lerp-float-range.md) | Returns the value at **Alpha** between the range's **Min** and **Max**. |
 | [Map Float Range](map-float-range.md) | Maps **Value** from the **From** range to the **To** range. |
+
+## Random
+
+| Node | Description |
+| --- | --- |
+| [Get Global Randomization Seed](get-global-randomization-seed.md) | Returns the global seed and how many values have been drawn from it. |
+| [Get Step Count](get-step-count.md) | Returns how many values have been drawn from **Seed**. |
+| [Random Array Item](random-array-item.md) | Returns a random item of the Array and its index. |
+| [Random Bool](random-bool.md) | Returns true or false with equal chance. |
+| [Random Bool With Weight](random-bool-with-weight.md) | Returns true with the chance **Weight**. |
+| [Random Float](random-float.md) | Returns a random number from 0 up to, but not including, 1. |
 | [Random Float In Range](random-float-in-range.md) | Returns a random number from **Min** up to, but not including, **Max**. |
+| [Random Int](random-int.md) | Returns a random whole number between **Min** and **Max**. |
 | [Random Integer In Range](random-int-in-range.md) | Returns a random whole number from **Min** to **Max**. |
 | [Random Rotator In Range](random-rotator-in-range.md) | Returns a random rotator inside the range, with each axis drawn on its own. |
+| [Random Unit Vector](random-unit-vector.md) | Returns a random direction of length 1. |
 | [Random Vector 2 In Range](random-vector2-in-range.md) | Returns a random Vector 2 inside the range, with each axis drawn on its own. |
 | [Random Vector In Range](random-vector-in-range.md) | Returns a random vector inside the range, with each axis drawn on its own. |
+| [Seeded Random Array Item](seeded-random-array-item.md) | Returns a random item of the Array and its index, drawn from **Seed**. |
+| [Seeded Random Bool](seeded-random-bool.md) | Returns true or false with equal chance, drawn from **Seed**. |
+| [Seeded Random Bool With Weight](seeded-random-bool-with-weight.md) | Returns true with the chance **Weight**, drawn from **Seed**. |
+| [Seeded Random Float](seeded-random-float.md) | Returns a random number from 0 up to, but not including, 1, drawn from **Seed**. |
+| [Seeded Random Float In Range](seeded-random-float-in-range.md) | Returns a random number from **Min** up to, but not including, **Max**, drawn from **Seed**. |
+| [Seeded Random Int](seeded-random-int.md) | Returns a random whole number between **Min** and **Max**, drawn from **Seed**. |
+| [Seeded Random Integer In Range](seeded-random-int-in-range.md) | Returns a random whole number from **Min** to **Max**, drawn from **Seed**. |
+| [Seeded Random Rotator In Range](seeded-random-rotator-in-range.md) | Returns a random rotator inside the range, drawn from **Seed**. |
+| [Seeded Random Unit Vector](seeded-random-unit-vector.md) | Returns a random direction of length 1, drawn from **Seed**. |
+| [Seeded Random Vector 2 In Range](seeded-random-vector2-in-range.md) | Returns a random Vector 2 inside the range, drawn from **Seed**. |
+| [Seeded Random Vector In Range](seeded-random-vector-in-range.md) | Returns a random vector inside the range, drawn from **Seed**. |
+| [Seeded Shuffle Array](seeded-shuffle-array.md) | Returns the Array's items in a random order, drawn from **Seed**. |
+| [Set Global Randomization Seed](set-global-randomization-seed.md) | Makes the normal Random nodes continue from **Seed**. |
+| [Shuffle Array](shuffle-array.md) | Returns the Array's items in a random order. |
 
 ## Curve
 

@@ -262,8 +262,10 @@ export function scriptPinCompatibility(
 ): PinCompatibilityRule {
   return (outgoing, incoming) =>
     adoptsDelegateSignature(outgoing, incoming) ||
+    // A reference input takes a writable variable of its exact type; a wildcard one (Set By-Ref Var) takes any.
     ((incoming.reference !== "required" || (outgoing.reference === "writable" &&
-      pinTypeEquals(outgoing.type as PinType, incoming.type as PinType))) &&
+      (incoming.type.kind === "resolvingWildcard" ||
+        pinTypeEquals(outgoing.type as PinType, incoming.type as PinType)))) &&
     isAssignable(outgoing.type as PinType, incoming.type as PinType, {
       hierarchy,
     }));

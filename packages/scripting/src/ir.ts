@@ -15,6 +15,11 @@ export type GraphPin = {
   /** Required storage input, or a variable output that can supply that storage. */
   reference?: "required" | "writable";
   /**
+   * A Pass-By-Reference function input's output on the function's Input node: it supplies the caller's
+   * storage to reference inputs, and the graph draws it as a reference diamond.
+   */
+  byReference?: boolean;
+  /**
    * An unwired reference input reads the object running the graph: the compiler passes `ctx.self`
    * and the graph shows a read-only Self field on the pin. A wired reference is used as is.
    */

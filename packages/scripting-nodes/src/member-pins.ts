@@ -31,7 +31,14 @@ export type MemberPinRow = {
   keyTypeId?: string;
   keyTypeClassId?: string;
   unit?: string;
+  /** Function inputs: Pass-By-Reference (`GraphClassMemberPin.byReference`). */
+  byReference?: boolean;
 };
+
+/** A function input row passed by reference. */
+export function isByReferenceRow(row: MemberPinRow): boolean {
+  return row.byReference === true && (row.direction ?? "in") === "in" && row.typeId !== "exec";
+}
 
 /** A signature input's display unit, carried onto its pin for the literal field. */
 export function memberPinUnit(row: MemberPinRow): { unit?: string } {

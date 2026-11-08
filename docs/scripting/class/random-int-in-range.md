@@ -21,6 +21,7 @@ Returns a random whole number from **Min** to **Max**.
 ## Notes
 
 - Both **Min** and **Max** can be returned.
-- Draws from the session's seeded random generator, so Play repeats the same values for the same seed.
+- Draws from the global seed, which each Play session starts afresh; see [Random numbers](../random-numbers.md).
+- [Seeded Random Integer In Range](seeded-random-int-in-range.md) draws from a Seed variable instead.
 - If **Min** is greater than **Max**, the two are swapped.
 - See [Curves and ranges](../curves-and-ranges.md).

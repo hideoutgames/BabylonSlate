@@ -18,6 +18,7 @@ The pages in this section cover Class graphs.
 
 - **Execution pins** (diamonds) set the order things happen. An event such as [Event Begin Play](class/event-begin-play.md) starts a chain; each node runs, then passes execution on through its output.
 - **Data pins** (coloured circles) carry values. The colour shows the [pin type](pin-types.md).
+- **Reference pins** (small diamonds) take a variable rather than a value, and the node can change that variable. See [Reference pins](pin-types.md#reference-pins).
 - **Pure nodes** have no execution pins, such as [Add](class/add.md) or [Get Actor Location](class/get-actor-location.md). They produce a value when a connected node needs it.
 - **Latent nodes**, such as [Delay](class/delay.md), finish later without pausing the rest of the game. They show a clock icon.
 - **Tooltips:** hover a node's title to see what it does, or a pin name with a dotted underline to see what the pin is for. On touch, tap it. Class graphs and Particle Graphs show them where the node or pin has a description.

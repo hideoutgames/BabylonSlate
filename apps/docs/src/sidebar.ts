@@ -123,6 +123,7 @@ function guideSidebar(): SidebarItem[] {
       "interfaces",
       "structures-and-enums",
       "curves-and-ranges",
+      "random-numbers",
       "tags",
       "data",
       "save-games",

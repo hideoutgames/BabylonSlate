@@ -3,7 +3,7 @@ import type { GraphNode, GraphPin } from "./ir";
 import { findPin } from "./ir";
 import type { CodegenContext } from "./node-registry";
 import { defaultValueLiteral, pinTypeEquals } from "./types";
-import { isWritableVariableOutput } from "./variable-references";
+import { byReferenceArgument, isByReferenceFunctionInput, isWritableVariableOutput } from "./variable-references";
 import { jsIdent, localVariableIdent } from "./compile-events";
 import { pinForCodegen, wiredSourceType } from "./compile-graph-index";
 import {
@@ -61,13 +61,17 @@ function referenceExpr(s: CodegenState, node: GraphNode, pinName: string): strin
   const edge = targetPin && s.index.incoming(node.id, targetPin.id);
   const source = edge && s.index.node(edge.sourceNodeId);
   const sourcePin = source && edge && findPin(source, edge.sourcePinId);
+  // A wildcard reference input (Set By-Ref Var) takes its type from the variable wired to it.
+  const typed = targetPin?.type.kind === "resolvingWildcard" || (sourcePin && targetPin && pinTypeEquals(sourcePin.type, targetPin.type));
   if (!source || !sourcePin || !targetPin || s.shouldStrip(source) ||
-      !pinTypeEquals(sourcePin.type, targetPin.type) || !isWritableVariableOutput(source, sourcePin)) return "null";
+      !typed || !isWritableVariableOutput(source, sourcePin)) return "null";
+  // A Pass-By-Reference input forwards the reference its caller passed.
+  if (isByReferenceFunctionInput(source, sourcePin)) return byReferenceArgument(sourcePin.id);
   const name = String(source.properties.variableName ?? "Value").trim() || "Value";
   if (source.properties.scope === "local") {
     const local = localVariableIdent(name);
     const reference = `__ref_${local}`;
-    s.outputDecls.set(reference, `  const ${reference} = { identity: {}, property: ${JSON.stringify(name)}, set: value => { ${local} = value; } };`);
+    s.outputDecls.set(reference, `  const ${reference} = { identity: {}, property: ${JSON.stringify(name)}, get: () => ${local}, set: value => { ${local} = value; } };`);
     return reference;
   }
   const property = typeof source.properties.propertyKey === "string" && source.properties.propertyKey

@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { createSeededRng } from "@haptic/core";
+import { RandomStream } from "@haptic/core";
 import { Actor, type TickContext } from "@haptic/object-model";
 import {
   ScriptHost,
@@ -46,7 +46,7 @@ describe("ScriptContext members used apart from their context", () => {
     log("log", "Cat", formatValue(3));
 
     expect(logged).toEqual([["warning", "Cat", "hello"], ["log", "Cat", "3"]]);
-    expect(random.float()).toBe(createSeededRng(42).nextFloat());
+    expect(random.float()).toBe(new RandomStream("42").nextFloat());
     expect(getAllActorsOfClass("Hero")).toEqual([hero]);
   });
 
@@ -57,7 +57,7 @@ describe("ScriptContext members used apart from their context", () => {
       const b = host.createContext(null, 0, 0);
       return [a.randomInRange("int", { Min: 1, Max: 6 }), a.random.float(), b.randomInRange("float", { Min: 10, Max: 20 })];
     };
-    const rng = createSeededRng(11);
+    const rng = new RandomStream("11");
     const expected = [1 + (rng.next() % 6), rng.nextFloat(), 10 + 10 * rng.nextFloat()];
     expect(draws(11)).toEqual(expected);
     expect(draws(11)).toEqual(draws(11));
@@ -106,7 +106,7 @@ describe("ScriptContext members used apart from their context", () => {
     const other = host.createContext(null, 0, 0);
     other.log("log", "Cat", "kept");
 
-    expect(other.random.float()).toBe(createSeededRng(7).nextFloat());
+    expect(other.random.float()).toBe(new RandomStream("7").nextFloat());
     expect(logged).toEqual(["kept"]);
   });
 

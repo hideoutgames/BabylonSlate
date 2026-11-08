@@ -48,6 +48,8 @@ export const ENGINE_HIT_RESULT_STRUCT_ID = "engine:HitResult";
 export const ENGINE_TIME_STRUCT_ID = "engine:Time";
 /** Get Date Now: the UTC calendar date, Int fields. */
 export const ENGINE_DATE_STRUCT_ID = "engine:Date";
+/** A random sequence (Seed text) and the number of values drawn from it (Step): `RandomSeed` in core. */
+export const ENGINE_SEED_STRUCT_ID = "engine:Seed";
 
 export const ENGINE_INT_RANGE_STRUCT_ID = "engine:IntRange";
 export const ENGINE_FLOAT_RANGE_STRUCT_ID = "engine:FloatRange";
@@ -338,6 +340,15 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
       { name: "Day", typeId: "int", defaultValue: 1 },
       { name: "DayOfWeek", typeId: "int", defaultValue: 4 },
       { name: "DayOfYear", typeId: "int", defaultValue: 1 },
+    ],
+  },
+  {
+    // `RandomSeed` in core: the Seeded Random nodes read and advance it.
+    id: ENGINE_SEED_STRUCT_ID,
+    name: "Seed",
+    fields: [
+      { name: "Seed", typeId: "string", defaultValue: "" },
+      { name: "Step", typeId: "int", defaultValue: 0 },
     ],
   },
 

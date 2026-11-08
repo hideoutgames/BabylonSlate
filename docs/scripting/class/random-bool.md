@@ -14,4 +14,5 @@ Returns true or false with equal chance.
 
 ## Notes
 
-- Values come from a seeded generator, so the same seed repeats the same sequence.
+- Draws from the global seed, which each Play session starts afresh; see [Random numbers](../random-numbers.md).
+- [Seeded Random Bool](seeded-random-bool.md) draws from a Seed variable instead.
