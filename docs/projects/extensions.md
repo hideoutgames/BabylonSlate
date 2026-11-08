@@ -33,7 +33,7 @@ Unsupported code is reported before anything is created. See [Materials](../grap
 
 1. In **Project Settings > Project Extensions**, choose **New Extension**.
 2. Enter a **Display Name** and choose **Create**. **Edit Extension** opens.
-3. Fill in the fields and write the code under **Entry Source**, then choose **Save**. Saving reloads enabled extensions.
+3. Fill in the fields and write the code under **Code Files**, then choose **Save**. Saving reloads enabled extensions.
 
 | Field | Description |
 | --- | --- |
@@ -45,6 +45,7 @@ Unsupported code is reported before anything is created. See [Materials](../grap
 | Library Name | Shown when Editor Only is off. The name games use to reach the game library. |
 | Appear In Content Browser | Shown when Editor Only is off, and off by default. Shows the extension's content folder in the Content Browser. |
 | Extension Dependencies | Other extensions it needs. |
+| Contributions | What the extension adds to the editor, as JSON. See [Project Settings](#project-settings). |
 | Code Files | Chooses the file the code editor shows. **New Code File** and **Add Code File** add files; **Remove Code File** removes an added file. |
 
 ### Code files
@@ -69,7 +70,8 @@ The editor entry exports an `activate(api)` function. It can be `async` and can 
 
 | API | Use |
 | --- | --- |
-| `api.registerCommand({ id, title, description, fields, execute })` | Add a command button. `fields` are `text` or `multiline` inputs; `execute(values)` receives their text. |
+| `api.registerCommand({ id, title, description, fields, execute })` | Add a command button. `fields` use the [field types](#field-types). `execute(values)` receives each field's value, and the text it returns is shown when the command completes. |
+| `api.settings.get()` / `api.settings.onChange(listener)` | Read the extension's [Project Settings](#project-settings) values, and run `listener` when they change. `onChange` returns a function that stops it. |
 | `api.assets.list()` | List the project's assets. |
 | `api.assets.read(path)` | Read an asset document. |
 | `api.assets.create(path, { type, name, payload })` | Create an asset under `assets/`. Fails if the path exists. |
@@ -83,15 +85,57 @@ export function activate(api) {
   api.registerCommand({
     id: "count-assets",
     title: "Count Assets",
-    async execute() {
+    fields: [{ id: "type", label: "Type", type: "text", default: "Material" }],
+    async execute(values) {
       const assets = await api.assets.list();
-      api.log(`This project has ${assets.length} assets.`);
+      return `This project has ${assets.filter((asset) => asset.type === values.type).length} ${values.type} assets.`;
     },
   });
 }
 ```
 
 Extensions run as trusted code, not in a sandbox. Disabling an extension, editing it or closing the project stops it and removes its commands.
+
+## Project Settings
+
+An extension can add its own category to **Project Settings**. Write it under **Contributions** in **Edit Extension**, or as `contributes` in `extension.json`. The category appears while the extension is enabled, under the title you choose, and **Search settings** finds its fields.
+
+```json
+{
+  "settings": {
+    "title": "Weather",
+    "sections": [
+      {
+        "id": "general",
+        "title": "General",
+        "fields": [
+          { "id": "region", "label": "Region", "type": "text", "default": "North" },
+          { "id": "rain", "label": "Rain Chance", "type": "number", "min": 0, "max": 1, "default": 0.25 },
+          { "id": "storms", "label": "Storms", "type": "toggle", "hint": "Adds lightning to heavy rain." }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- Values are saved in the project, so each project keeps its own.
+- Editor code reads them with `api.settings`.
+- Game code of a [gameplay extension](#gameplay-extensions) imports them: `import { settings } from "haptic:extension";`. The game receives the values the project had when Play started or the game was exported.
+- Values are stored in the project file and ship with games, so never put passwords or private keys in them.
+
+### Field types
+
+Settings and command fields share these types. Each field has an `id`, a `label`, an optional `hint` (shown as the label's tooltip) and an optional `default`.
+
+| Type | Value | Options |
+| --- | --- | --- |
+| `text` | Text on one line | `required` stops a command while it is empty |
+| `multiline` | Text on several lines | `required` |
+| `code` | Code with highlighting | `language`: `javascript` or `glsl`; `required` |
+| `number` | A number | `min`, `max`, `integer`, `unit` |
+| `toggle` | On or off | |
+| `choice` | One of a list | `options`: a list of `{ "value", "label" }` |
 
 ## Gameplay extensions
 
