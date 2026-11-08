@@ -50,7 +50,7 @@ import {
   useRegistryState,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
+import { familyFromAssetPayload, fontEditorStack, textDrawsSame } from "../lib/font-preview";
 import {
   MAX_PIXEL_PREVIEW_SCALE,
   PIXEL_PREVIEW_WATERFALL_SCALES,
@@ -164,7 +164,8 @@ export function FontPreview({ path, payload }: { path: string; payload: Record<s
     // A large size keeps close advances apart.
     ctx.font = `64px ${measureStack}`;
     return ctx.measureText(text).width;
-  });
+    // A width tie (full-width CJK) is settled by what the stacks paint; without a canvas it counts as fallback.
+  }, undefined, (text, stackA, stackB) => textDrawsSame(text, stackA, stackB) ?? true);
   const shown = { fontFamily: stack, fontWeight: font.weight, fontStyle: font.style };
 
   return (

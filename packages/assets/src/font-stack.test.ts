@@ -101,4 +101,18 @@ describe("glyphsFallingToFallback", () => {
       fontStack.includes("Coincident") && text !== "字" ? 7 : generic(fontStack);
     expect(glyphsFallingToFallback("e字", "Coincident", measure)).toEqual(["字"]);
   });
+
+  it("settles a full-width tie by what the stacks paint", () => {
+    // Every font gives these characters one em, so widths cannot tell the custom face from the generic.
+    const measure = () => 12;
+    const drawn = new Set(["像"]);
+    const drawsSame = (text: string, customStack: string, genericStack: string) => {
+      expect(customStack).toContain("Ark Pixel");
+      expect(genericStack).toBe("sans-serif");
+      return !drawn.has(text);
+    };
+    expect(glyphsFallingToFallback("像한", "Ark Pixel", measure, "sans-serif", drawsSame)).toEqual(["한"]);
+    // Without a drawing comparison a tie still counts as a fallback.
+    expect(glyphsFallingToFallback("像한", "Ark Pixel", measure)).toEqual(["像", "한"]);
+  });
 });
