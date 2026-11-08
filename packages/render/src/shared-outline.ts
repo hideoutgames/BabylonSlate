@@ -93,6 +93,28 @@ export class SharedOutlineOwner {
   }
   identityForKey(key: string): number { return this.identities.get(key) ?? 0; }
   get maximumIdentity(): number { return this.identities.size; }
+  /** How many more actor keys the Scene can identify. */
+  get identityRoom(): number { return SHARED_OUTLINE_MAX_ID - this.identities.size; }
+  /**
+   * Gives each key without an identity the next one, in order, and returns the keys it identified. Separate publishes
+   * identify one new key each, in call order, while one publish identifies its new keys sorted: a batched publish
+   * identifies its calls' keys first, so outline ties, which the lower identity wins, resolve as they would have.
+   */
+  identify(keys: Iterable<string>): string[] {
+    const fresh: string[] = [];
+    for (const key of keys) if (!this.identities.has(key)) fresh.push(key);
+    if (fresh.length > this.identityRoom)
+      throw new Error("Shared outline identity capacity (65,535 actor keys over the Scene lifetime) exceeded.");
+    for (const key of fresh) this.identities.set(key, this.identities.size + 1);
+    return fresh;
+  }
+  /** Undoes `identify` for keys no later identity followed, newest first, when the publish they were for is refused. */
+  forget(keys: readonly string[]): void {
+    for (let index = keys.length - 1; index >= 0; index--) {
+      const key = keys[index]!;
+      if (this.identities.get(key) === this.identities.size) this.identities.delete(key);
+    }
+  }
 
   /** Validate the complete replacement before mutating live source registrations. */
   reconcile(): void {
@@ -110,7 +132,7 @@ export class SharedOutlineOwner {
         }
       }
     const newKeys = [...keys].filter((key) => !this.identities.has(key));
-    if (this.identities.size + newKeys.length > SHARED_OUTLINE_MAX_ID)
+    if (newKeys.length > this.identityRoom)
       throw new Error("Shared outline identity capacity (65,535 actor keys over the Scene lifetime) exceeded.");
     const next = new Map<AbstractMesh, number>();
     const requiredSources = new Set<Mesh>();

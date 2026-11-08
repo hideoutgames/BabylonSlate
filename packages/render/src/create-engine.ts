@@ -2014,7 +2014,8 @@ function initializeEngine(
       return sampled;
     }
     const previousCamera = scene.activeCamera;
-    applySnapshotToScene(scene, binding, sampled);
+    // The snapshot's spawns, rebuilt visuals and despawns publish their outlines once, not once each.
+    outlineHost.batch(() => applySnapshotToScene(scene, binding, sampled));
     playViz?.refresh();
     rebuildIfActiveCameraChanged(previousCamera);
     publishPositions(sampled);

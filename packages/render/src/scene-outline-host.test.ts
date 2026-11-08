@@ -246,6 +246,56 @@ describe("authored scene outline host", () => {
     expect(host.view.contributions.get("global")?.targets.map((target) => target.key)).toEqual(["a", "d", "renamed"]);
   });
 
+  it("publishes a batch once, identifying its actors in call order as one publish per call would", () => {
+    let invalidations = 0;
+    const { scene, host } = setup(() => invalidations++);
+    const [a, b, transient] = ["a", "b", "t"].map((name) => MeshBuilder.CreateBox(name, {}, scene));
+    const revision = host.view.revision;
+    host.batch(() => {
+      host.setActor("b", [b!], authored("b"));
+      host.setActor("t", [transient!], authored("t"));
+      host.removeActor("t");
+      host.setActor("a", [a!], authored("a"));
+      expect(host.view.revision).toBe(revision);
+    });
+    expect(host.view.revision).toBe(revision + 1);
+    expect(invalidations).toBe(1);
+    // Separate publishes identify b, t and a in turn, where one publish would identify a and b sorted. The lower
+    // identity wins an outline tie, so the order is visible.
+    expect(["b", "t", "a"].map((key) => host.view.owner.identityForKey(key))).toEqual([1, 2, 3]);
+    expect([...host.view.contributions.keys()]).toEqual(["component:b:ink", "component:a:ink"]);
+    expect(host.view.meshesForGroup("strict")).toEqual([b, a]);
+  });
+
+  it("refuses a batched call over identity capacity where its own publish would, keeping the calls before it", () => {
+    const { scene, host } = setup();
+    const [a, b, c] = ["a", "b", "c"].map((name) => MeshBuilder.CreateBox(name, {}, scene));
+    const owner = host.view.owner;
+    owner.identify(Array.from({ length: owner.identityRoom - 2 }, (_, index) => `earlier-${index}`));
+    let continued = false;
+    expect(() => host.batch(() => {
+      host.setActor("a", [a!], authored("a"));
+      host.setActor("b", [b!], authored("b"));
+      host.setActor("c", [c!], authored("c"));
+      continued = true;
+    })).toThrow(/capacity/);
+    expect(continued).toBe(false);
+    expect([...host.view.contributions.keys()]).toEqual(["component:a:ink", "component:b:ink"]);
+    expect(owner.identityForKey("c")).toBe(0);
+  });
+
+  it("falls back to one publish per call when a batch is refused, keeping every call but the refused one", () => {
+    const { scene, host } = setup();
+    const [shared, b] = ["shared", "b"].map((name) => MeshBuilder.CreateBox(name, {}, scene));
+    expect(() => host.batch(() => {
+      host.setActor("a", [shared!], authored("a"));
+      host.setActor("conflict", [shared!], authored("conflict"));
+      host.setActor("b", [b!], authored("b"));
+    })).toThrow(/same actor key/);
+    expect([...host.view.contributions.keys()]).toEqual(["component:a:ink", "component:b:ink"]);
+    expect(["a", "conflict", "b"].map((key) => host.view.owner.identityForKey(key))).toEqual([1, 0, 2]);
+  });
+
   it("keeps editor guides out of gameplay masks and removes only global CEL on a mode change", () => {
     const { scene, host } = setup();
     const mesh = MeshBuilder.CreateBox("receiver", {}, scene);
