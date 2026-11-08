@@ -10,7 +10,7 @@ import {
   folderRowId,
   outlinerRowTarget,
 } from "../lib/outliner-drop";
-import { flattenOutliner, sameOutlinerStructure } from "./scene-outliner-panel";
+import { flattenOutliner, sameOutlinerStructure } from "../lib/outliner-structure";
 
 function sceneWith(partial: Partial<SerializedScene>): SerializedScene {
   return { ...createDefaultScene(), actors: [], folders: [], ...partial };
