@@ -18,8 +18,9 @@ test("authored TypeScript extensions persist code and enablement across a projec
   await create.getByRole("textbox", { name: "Display Name", exact: true }).fill("Code Tools");
   await create.getByRole("button", { name: "Create", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "Edit Extension", exact: true });
-  await expect(editor.getByText(/index\.ts/)).toBeVisible();
-  await editor.getByRole("textbox", { name: "Extension Source", exact: true }).fill(`
+  // The code editor names the file it shows; a new extension opens on its editor entry.
+  await expect(editor.getByRole("combobox", { name: "Code Files", exact: true })).toContainText("index.ts (Editor Entry)");
+  await editor.getByRole("textbox", { name: "index.ts Source", exact: true }).fill(`
     export function activate(api) {
       const path: string = "code/extension-example.ts";
       const source: string = "export const value: number = 42;";
