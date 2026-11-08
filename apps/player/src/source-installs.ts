@@ -8,9 +8,15 @@ type InstallCache = Map<string, { revision: string; blob: Blob }>;
  * so each Texture, Model source and MSDF atlas installs once per boot: keyed by guid and its catalog
  * revision (never by array identity), and reused by `createEngine` and every `acquireSceneSources`.
  * A Texture's or atlas's catalog revision is the SHA-256 the artifact verified for its bytes, so they
- * are not hashed again. Installs of sources the game no longer holds are forgotten at the next install.
+ * are not hashed again. Installs of sources the game no longer holds are forgotten as soon as the game
+ * releases them (`onSourcesChanged`), and before each install; `dispose` ends that subscription.
  */
-export function createPlayerSourceInstalls(game: Pick<GameSourceContent, "textureBytes" | "modelBytes" | "fontMsdfPng"> & { manifest: GameManifest }) {
+export function createPlayerSourceInstalls(
+  game: Pick<GameSourceContent, "textureBytes" | "modelBytes" | "fontMsdfPng"> & {
+    manifest: GameManifest;
+    onSourcesChanged?: (listener: () => void) => () => void;
+  },
+) {
   const revisions = new Map(game.manifest.assets.flatMap((entry) => entry.revision ? [[entry.guid, entry.revision] as const] : []));
   const textures: InstallCache = new Map();
   const models: InstallCache = new Map();
@@ -20,6 +26,8 @@ export function createPlayerSourceInstalls(game: Pick<GameSourceContent, "textur
       for (const guid of cache.keys()) if (!held.has(guid)) cache.delete(guid);
     }
   };
+  // A release that no acquisition follows (a Change Scene's departing Scene) must not keep its copies.
+  const unsubscribe = game.onSourcesChanged?.(prune);
   const install = (
     cache: InstallCache,
     sources: ReadonlyMap<string, Uint8Array>,
@@ -51,5 +59,9 @@ export function createPlayerSourceInstalls(game: Pick<GameSourceContent, "textur
       install(models, sources, revisionOf, (missing) => installModelSources({ modelBytes: missing })),
     msdfAtlases: (sources: ReadonlyMap<string, Uint8Array>) =>
       install(atlases, sources, atlasRevision, (missing) => installTextureBytes(missing, atlasRevision)),
+    dispose: () => {
+      unsubscribe?.();
+      for (const cache of [textures, models, atlases]) cache.clear();
+    },
   };
 }
