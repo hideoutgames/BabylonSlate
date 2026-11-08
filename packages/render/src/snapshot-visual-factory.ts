@@ -186,11 +186,8 @@ export function createPlayVisual(
     applyPlayVisualSorting(mesh, slotId, binding);
     return mesh;
   }
-  const root = MeshBuilder.CreateSphere(
-    `actor-${slotId}`,
-    { diameter: 0.75 },
-    scene,
-  );
+  // The origin only carries the actor's transform; its parts draw.
+  const root = new Mesh(`actor-${slotId}`, scene);
   root.isVisible = false;
   root.metadata = { ...(root.metadata ?? {}), playActorOrigin: true };
   const meshes = new Map<string, Mesh>();
