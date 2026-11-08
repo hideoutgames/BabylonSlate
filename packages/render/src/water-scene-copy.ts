@@ -645,9 +645,6 @@ export class WaterSceneCopyGraph {
     this.ownOpaque.dependencies.add(handle);
   }
 
-  /** The registered "Forward transparent" render pass id. */
-  get renderPassId(): number { return this.passId; }
-
   setCamera(camera: Camera): void {
     this.copy.camera = camera;
     this.transparent.camera = camera;
