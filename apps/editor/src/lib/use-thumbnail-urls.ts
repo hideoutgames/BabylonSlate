@@ -3,8 +3,13 @@ import {
   syncContentBrowserThumbnailUrls,
   type ThumbnailUrlMap,
 } from "./content-browser-thumbnails";
+import { useStableBy } from "./use-stable-by";
 
 export type LoadThumbnail = (guid: string) => Promise<Uint8Array | null>;
+
+function sameGuids(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((guid, index) => guid === b[index]);
+}
 
 /** Same guids with the same URLs: committing it would only re-render the cards. */
 function sameUrls(a: ThumbnailUrlMap, b: ThumbnailUrlMap): boolean {
@@ -19,7 +24,9 @@ function sameUrls(a: ThumbnailUrlMap, b: ThumbnailUrlMap): boolean {
  * guid whose `versions` entry changed keeps its old URL until the new
  * thumbnail is read, and the rest load four at a time, each batch shown as
  * soon as it is read. A URL is released once a map without it has rendered
- * (replaced, or its guid left the list), and on disable or unmount.
+ * (replaced, or its guid left the list), and on disable or unmount. A new
+ * `guids` array with the same guids, or a version change of an asset not
+ * listed, reads nothing.
  */
 export function useThumbnailUrls(
   guids: readonly string[],
@@ -27,6 +34,11 @@ export function useThumbnailUrls(
   versions: Readonly<Record<string, number>> | undefined,
   enabled: boolean,
 ): Record<string, string> {
+  // Callers rebuild the list on registry changes that leave it as it was.
+  const listed = useStableBy(guids, sameGuids);
+  const listedVersions = useStableBy(versions, (previous, next) =>
+    listed.every((guid) => previous?.[guid] === next?.[guid]),
+  );
   const [urls, setUrls] = useState<ThumbnailUrlMap>({});
   // Written only with the state, by a commit: a render that still shows an
   // older map must not put it back.
@@ -60,9 +72,9 @@ export function useThumbnailUrls(
     }
     let cancelled = false;
     void syncContentBrowserThumbnailUrls({
-      mountedTextureGuids: guids,
+      mountedTextureGuids: listed,
       urls: urlsRef.current,
-      refreshGuids: new Set(guids.filter((guid) => versions?.[guid] !== loadedVersionsRef.current[guid])),
+      refreshGuids: new Set(listed.filter((guid) => listedVersions?.[guid] !== loadedVersionsRef.current[guid])),
       hidden: false,
       load,
       createObjectURL: (blob) => URL.createObjectURL(blob),
@@ -75,12 +87,12 @@ export function useThumbnailUrls(
         // A cancelled sync leaves later guids unread, so only a finished one
         // may claim every version; batches record just what they read.
         loadedVersionsRef.current = done
-          ? (versions ?? {})
+          ? (listedVersions ?? {})
           : {
               ...loadedVersionsRef.current,
-              ...Object.fromEntries(loaded.map((guid) => [guid, versions?.[guid]])),
+              ...Object.fromEntries(loaded.map((guid) => [guid, listedVersions?.[guid]])),
             };
-        // A version bump of an asset not listed here still ends in a commit.
+        // A sync whose reads all found no thumbnail still ends in a commit.
         if (sameUrls(next, urlsRef.current)) return;
         urlsRef.current = next;
         setUrls(next);
@@ -89,7 +101,7 @@ export function useThumbnailUrls(
     return () => {
       cancelled = true;
     };
-  }, [enabled, guids, load, versions]);
+  }, [enabled, listed, listedVersions, load]);
 
   useEffect(() => {
     // The queue is only ever mutated in place, so this is the list the syncs fill.

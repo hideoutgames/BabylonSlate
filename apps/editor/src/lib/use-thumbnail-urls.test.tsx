@@ -51,16 +51,25 @@ function renderThumbnails(initialProps: Props) {
   );
 }
 
-/** Lets the named reads finish with a thumbnail, then lets the hook commit and render. */
-async function finish(...guids: string[]) {
+async function settle(guids: readonly string[], bytes: Uint8Array | null) {
   await act(async () => {
     for (const guid of guids) {
       const resolve = pending.get(guid);
       if (!resolve) throw new Error(`${guid} was not requested`);
       pending.delete(guid);
-      resolve(PNG);
+      resolve(bytes);
     }
   });
+}
+
+/** Lets the named reads finish with a thumbnail, then lets the hook commit and render. */
+async function finish(...guids: string[]) {
+  await settle(guids, PNG);
+}
+
+/** Lets the named reads finish without a thumbnail. */
+async function missing(...guids: string[]) {
+  await settle(guids, null);
 }
 
 function requested(): string[] {
@@ -97,6 +106,32 @@ describe("useThumbnailUrls", () => {
     }
     expect(revokeObjectURL.mock.calls).toEqual([[before.b]]);
     expect(revokedWhileShown).toEqual([]);
+  });
+
+  it("reads nothing for a rebuilt list of the same assets, and keeps its map when new reads find no thumbnail", async () => {
+    const { result, rerender } = renderThumbnails({ guids: ["a", "none"], versions: {}, enabled: true });
+    await finish("a");
+    await missing("none");
+    const before = result.current;
+    expect(Object.keys(before)).toEqual(["a"]);
+    load.mockClear();
+
+    // The Assets panel rebuilds its list on every registry change.
+    rerender({ guids: ["a", "none"], versions: {}, enabled: true });
+    await act(async () => {});
+    // Nor does a thumbnail written for an asset not listed.
+    rerender({ guids: ["a", "none"], versions: { other: 1 }, enabled: true });
+    await act(async () => {});
+    expect(load).not.toHaveBeenCalled();
+
+    // A changed list tries again every asset that has no thumbnail, as the Content Browser grid does.
+    rerender({ guids: ["a", "none", "new"], versions: { other: 1 }, enabled: true });
+    await act(async () => {});
+    expect(requested()).toEqual(["none", "new"]);
+    const rendered = renders.length;
+    await missing("none", "new");
+    expect(result.current).toBe(before);
+    expect(renders.length).toBe(rendered);
   });
 
   it("shows first loads in batches of four as each batch is read", async () => {
