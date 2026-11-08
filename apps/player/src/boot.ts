@@ -218,6 +218,7 @@ function initializePlayer(
   const fontFallbacks = new Map(manifest.assets.filter(entry => entry.type === "Font").map(entry => [entry.guid, entry.requiredDependencies?.filter(id => fontIds.has(id)) ?? []]));
   const fontCss = packedFontCssStacks(game.fontFamilies, manifest.globalFallback, manifest.defaultFontGuid, fontFallbacks);
   const installs = createPlayerSourceInstalls(game);
+  own(() => installs.dispose());
 
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
