@@ -642,10 +642,25 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Add Force](add-force.md) | Pushes an actor's Rigid Body for one frame. |
 | [Add Impulse](add-impulse.md) | Applies an instant push to an actor's dynamic Rigid Body. |
+| [Add Torque](add-torque.md) | Twists an actor's Rigid Body for one frame. |
+| [Box Overlap Actors](box-overlap-actors.md) | Returns the actors whose colliders overlap a box at a given point. |
+| [Box Trace](box-trace.md) | Sweeps a box from a start point to an end point and reports the first hit. |
+| [Capsule Overlap Actors](capsule-overlap-actors.md) | Returns the actors whose colliders overlap a capsule at a given point. |
+| [Capsule Trace](capsule-trace.md) | Sweeps a capsule from a start point to an end point and reports the first hit. |
+| [Get Actor Enable Collision](get-actor-enable-collision.md) | Returns whether an actor's collision is on. |
+| [Get Physics Angular Velocity In Degrees](get-physics-angular-velocity-in-degrees.md) | Returns how fast an actor's Rigid Body is spinning. |
+| [Get Physics Linear Velocity](get-physics-linear-velocity.md) | Returns how fast an actor's Rigid Body is moving. |
 | [Line Trace](line-trace.md) | Casts a ray from a start point to an end point and reports the first thing it hits. |
 | [Move Character](move-character.md) | Moves an actor by a distance, sliding along solid colliders instead of passing through them. |
+| [Multi Line Trace](multi-line-trace.md) | Casts a ray from a start point to an end point and reports every actor it passes through. |
+| [Multi Sphere Trace](multi-sphere-trace.md) | Sweeps a sphere from a start point to an end point and reports every actor it touches. |
 | [Sample Water Surface](sample-water-surface.md) | Samples the rendered water surface at a world position, including wave motion. |
+| [Set Actor Enable Collision](set-actor-enable-collision.md) | Turns all of an actor's collision off, or back on. |
+| [Set Motion Type](set-motion-type.md) | Changes how an actor's Rigid Body moves, such as turning physics simulation on or off. |
+| [Set Physics Angular Velocity In Degrees](set-physics-angular-velocity-in-degrees.md) | Sets how fast an actor's Rigid Body spins. |
+| [Set Physics Linear Velocity](set-physics-linear-velocity.md) | Sets how fast an actor's Rigid Body moves. |
 | [Sphere Overlap Actors](sphere-overlap-actors.md) | Returns the actors whose colliders overlap a sphere at a given point. |
 | [Sphere Shape Sweep](sphere-shape-sweep.md) | Sweeps a sphere from a start point to an end point and reports the first hit. |
 

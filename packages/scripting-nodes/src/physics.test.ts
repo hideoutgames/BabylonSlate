@@ -397,6 +397,56 @@ describe("physics nodes", () => {
     expect(logs).toEqual([zero, zero, { Hit: false, Location: zero, Normal: zero, Actor: null, Distance: 0 }]);
   });
 
+  it("Box Trace sweeps its box at one turned pose and Multi Line Trace reports Hit for any hit", () => {
+    const calls: unknown[][] = [];
+    const quat = { x: 0, y: 0.7, z: 0, w: 0.7 };
+    const logs = runBeginPlay(
+      [["box", "physics.boxTrace", { "default:end": { x: 5, y: 0, z: 0 }, "default:orientation": { pitch: 0, yaw: 90, roll: 0 } }],
+        ["multi", "physics.multiLineTrace", { "default:end": { x: 9, y: 0, z: 0 }, "default:channel": "Static" }],
+        ["logHit", "debug.log"]],
+      [["begin", "execOut", "box", "execIn"], ["box", "execOut", "multi", "execIn"], ["multi", "execOut", "logHit", "execIn"],
+        ["multi", "hit", "logHit", "message"]],
+      {
+        rotatorToQuat: (rotator: unknown) => (calls.push(["rotatorToQuat", rotator]), quat),
+        shapeSweep: (...args: unknown[]) => (calls.push(["shapeSweep", ...args]), { hit: false }),
+        multiTrace: (...args: unknown[]) => (calls.push(["multiTrace", ...args]), [{ Hit: true }]),
+      },
+    );
+    const zero = { x: 0, y: 0, z: 0 };
+    expect(calls.filter(([name]) => name !== "rotatorToQuat")).toEqual([
+      ["shapeSweep", { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } }, { position: zero, rotation: quat },
+        { position: { x: 5, y: 0, z: 0 }, rotation: quat }, "", []],
+      ["multiTrace", null, { position: zero, rotation: { x: 0, y: 0, z: 0, w: 1 } },
+        { position: { x: 9, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } }, "Static", []],
+    ]);
+    expect(calls.filter(([name]) => name === "rotatorToQuat")).toEqual([
+      ["rotatorToQuat", { pitch: 0, yaw: 90, roll: 0 }], ["rotatorToQuat", { pitch: 0, yaw: 90, roll: 0 }],
+    ]);
+    expect(logs).toEqual([true]);
+  });
+
+  it("Add Force and Add Torque act for the frame's Delta Seconds and Set Motion Type defaults to Dynamic", () => {
+    const calls: unknown[][] = [];
+    runBeginPlay(
+      [["self", "actor.getSelf"], ["force", "physics.addForce", { "default:force": { x: 0, y: 9, z: 0 } }],
+        ["torque", "physics.addTorque", { "default:torque": { x: 0, y: 0, z: 2 } }], ["motion", "physics.setMotionType"]],
+      [["begin", "execOut", "force", "execIn"], ["force", "execOut", "torque", "execIn"], ["torque", "execOut", "motion", "execIn"],
+        ["self", "out", "force", "target"]],
+      {
+        self: "body",
+        getDeltaSeconds: () => 0.25,
+        addForce: (...args: unknown[]) => calls.push(["addForce", ...args]),
+        addTorque: (...args: unknown[]) => calls.push(["addTorque", ...args]),
+        setMotionType: (...args: unknown[]) => calls.push(["setMotionType", ...args]),
+      },
+    );
+    expect(calls).toEqual([
+      ["addForce", "body", { x: 0, y: 9, z: 0 }, 0.25],
+      ["addTorque", "body", { x: 0, y: 0, z: 2 }, 0.25],
+      ["setMotionType", "body", "Dynamic"],
+    ]);
+  });
+
   it("Add Impulse applies Strength 1 when the pin is unwired", () => {
     const impulses: unknown[][] = [];
     runBeginPlay(

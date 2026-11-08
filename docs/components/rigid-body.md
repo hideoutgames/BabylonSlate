@@ -24,7 +24,7 @@ A Static body shows only Motion Type, because the other settings do nothing.
 - The scene's **Physics World** setting, **3D** or **2D**, decides which kind of physics the body uses. A Scene Layer simulates in its own 2D world when its **Enable Physics** is on.
 - Compiler Results warns about a Rigid Body with no shape to collide with, and about a Collider that has no Rigid Body and is therefore not simulated. Mesh collision, Tilemaps and Blocking Volumes are solid without a Rigid Body, and a Collider beside them is simulated too.
 - Use **Motion Type** Static with a Collider for a trigger volume or a fixed collider.
-- [Add Impulse](../scripting/class/add-impulse.md) pushes a Dynamic body from a script.
+- [Add Impulse](../scripting/class/add-impulse.md), [Add Force](../scripting/class/add-force.md) and [Add Torque](../scripting/class/add-torque.md) push a Dynamic body from a script, and [Set Motion Type](../scripting/class/set-motion-type.md) changes **Motion Type** during Play.
 - A Dynamic Rigid Body beside [Movement](movement.md) is steered by Movement and kept upright. A Kinematic one is moved by Movement's own character controller, and a Static one stops Movement.
 
 ## Related
