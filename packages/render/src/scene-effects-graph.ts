@@ -124,7 +124,7 @@ export class SceneEffectsGraph {
       if (hasSpatialEffects(plan) && !spatialEffectsUnsupported(graph.scene)) {
         const camera = options.camera ?? graph.scene.activeCamera;
         if (!camera) throw new Error("Spatial effects require a camera.");
-        const lease = reserveSpatialEffects(graph.scene, plan, options.width, options.height, false,
+        const lease = reserveSpatialEffects(graph.scene, plan, options.width, options.height,
           this.sceneColorTexture !== null ? samples : 1);
         if (lease) {
           this.spatial = new SpatialEffectsGraph(graph, camera, plan, source, options.width, options.height, lease,

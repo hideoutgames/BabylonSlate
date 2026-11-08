@@ -36,7 +36,6 @@ export interface AudioPlaybackBackend {
   /** Create the AudioV2 engine (suspended) before the first gesture. */
   warmAsync(): Promise<void>;
   unlockAsync(): Promise<void>;
-  isUnlocked(): boolean;
   decode(assetGuid: string, bytes: Uint8Array): Promise<{ pcmBytes: number }>;
   estimateDecodedBytes?(bytes: Uint8Array): number;
   play(request: AudioPlayRequest): Promise<void>;
@@ -80,10 +79,6 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   disposed = false;
   disposedBuffers: string[] = [];
   onVoiceEnded: ((voiceId: string) => void) | null = null;
-
-  isUnlocked(): boolean {
-    return this.unlocked;
-  }
 
   async warmAsync(): Promise<void> {
     if (this.engineCreateCount === 0) this.engineCreateCount = 1;

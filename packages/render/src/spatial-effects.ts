@@ -133,7 +133,6 @@ export function reserveSpatialEffects(
   plan: SceneEffectsPlan,
   width: number,
   height: number,
-  native: boolean,
   /** The graph's own scene colour and depth samples (MSAA), each sample counted beside the resolved texture. */
   sceneSamples = 1,
 ) {
@@ -144,9 +143,8 @@ export function reserveSpatialEffects(
     Math.max(1, Math.round(width * Math.max(0.25, scale * quality))) *
     Math.max(1, Math.round(height * Math.max(0.25, scale * quality))) *
     pixelBytes;
-  // Native includes its half-float prepass color, R32 depth, padded depth/stencil
-  // and a full-size PP input. Graph includes its scene color/depth and geometry Z.
-  let bytes = pixels * (native ? 28 : 20);
+  // The graph's scene color/depth and geometry Z.
+  let bytes = pixels * 20;
   // Multisampled scene colour (at most half-float) and depth32 store every sample.
   if (sceneSamples > 1) bytes += pixels * sceneSamples * (8 + 4);
   // Reflections and occlusion share the encoded world-normal attachment.

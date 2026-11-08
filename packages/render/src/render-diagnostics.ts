@@ -135,7 +135,7 @@ export type RenderDiagnostics = {
   drawCalls: number;
   /** Visible automatic-LOD meshes, how many draw a simplified level, and the triangles that saves. */
   autoLod: ReturnType<typeof autoLodDiagnostics>;
-  /** The Scene's instance pool (`SceneInstancePool.diagnostics`): groups, pooled members, meshes left unpooled by reason; null without one. */
+  /** The Scene's instance pool (`SceneInstancePool.diagnostics`): groups, retained groups, pooled members and re-keys; null without one. */
   instancePool: InstancePoolDiagnostics | null;
   /** The world view's last frame culled by occlusion (meshes tested and culled, occluders, their triangles, ms); null while it does not cull. */
   occlusion: { tested: number; culled: number; occluders: number; triangles: number; ms: number } | null;

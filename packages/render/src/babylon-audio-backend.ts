@@ -68,15 +68,10 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   /** Requested gain and applied muffle per live voice; both set its volume. */
   private readonly voiceLevels = new Map<string, { gain: number; muffle: number }>();
   private muffleFilter: BiquadFilterNode | null = null;
-  private unlocked = false;
   private paused = false;
   private disposed = false;
   private readonly pendingVoices = new Map<string, symbol>();
   onVoiceEnded: ((voiceId: string) => void) | null = null;
-
-  isUnlocked(): boolean {
-    return this.unlocked;
-  }
 
   async warmAsync(): Promise<void> {
     await this.ensureEngine();
@@ -87,7 +82,6 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     const engine = this.engine ?? (await this.ensureEngine());
     this.resumeAudioContext();
     await engine.unlockAsync();
-    this.unlocked = true;
   }
 
   async decode(
@@ -339,7 +333,6 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     this.engine = null;
     this.creating = null;
     this.audioContext = null;
-    this.unlocked = false;
     this.paused = false;
   }
 

@@ -2,6 +2,7 @@ import { VOLUME_SHADOW_CODE } from "./volumetric-lights";
 import { MAX_FOG_VOLUMES } from "./fog-volumes";
 import { HAPTIC_SHADOW_ATLAS, hapticShadowGlsl, hapticShadowWgsl } from "./haptic-lighting-shader";
 import { HAPTIC_LIGHTS_GLSL, HAPTIC_LIGHTS_WGSL } from "./haptic-lights";
+import { syntax } from "./ambient-occlusion-shader";
 
 /**
  * One bounded single-scattering shader, emitted for both native shader languages. It has `slots` light slots whatever
@@ -15,29 +16,12 @@ export function volumetricShader(
   steps: number,
   localVolumes = false,
 ): string {
-  const v2 = wgsl ? "vec2f" : "vec2",
-    v3 = wgsl ? "vec3f" : "vec3",
-    v4 = wgsl ? "vec4f" : "vec4";
-  const m4 = wgsl ? "mat4x4f" : "mat4",
-    f = wgsl ? "f32" : "float";
-  const u = (name: string) => (wgsl ? `uniforms.${name}` : name);
-  const decl = (type: string, name: string, value: string) =>
-    wgsl ? `var ${name}: ${type} = ${value};` : `${type} ${name} = ${value};`;
-  const uniform = (type: string, name: string) => `uniform ${name}: ${type};`;
-  const field = (type: string, name: string) =>
-    wgsl ? uniform(type, name) : `uniform ${type} ${name};`;
+  const { v2, v3, v4, f, u, decl, field, texture, sample, uv } = syntax(wgsl);
+  const m4 = wgsl ? "mat4x4f" : "mat4";
   const array = (type: string, name: string, count: number) =>
     wgsl
-      ? uniform(`array<${type}, ${count}>`, name)
+      ? `uniform ${name}: array<${type}, ${count}>;`
       : `uniform ${type} ${name}[${count}];`;
-  const texture = (name: string) =>
-    wgsl
-      ? `var ${name}: texture_2d<f32>; var ${name}Sampler: sampler;`
-      : `uniform sampler2D ${name};`;
-  const sample = (name: string, uv: string) =>
-    wgsl
-      ? `textureSampleLevel(${name}, ${name}Sampler, ${uv}, 0.0)`
-      : `texture2D(${name}, ${uv})`;
   const fn = (
     name: string,
     args: [string, string][],
@@ -47,7 +31,6 @@ export function volumetricShader(
     wgsl
       ? `fn ${name}(${args.map(([type, n]) => `${n}: ${type}`).join(",")}) -> ${result} { ${body} }`
       : `${result} ${name}(${args.map(([type, n]) => `${type} ${n}`).join(",")}) { ${body} }`;
-  const uv = wgsl ? "input.vUV" : "vUV";
   let header = `${wgsl ? "varying vUV: vec2f;" : "varying vec2 vUV;"}
 ${texture("depthSampler")}
 ${field(m4, "inverseProjection")}${field(m4, "inverseView")}${field(m4, "volumeView")}
@@ -251,18 +234,8 @@ export function volumetricCompositeShader(
   wgsl: boolean,
   linear: boolean,
 ): string {
-  const v2 = wgsl ? "vec2f" : "vec2",
-    v3 = wgsl ? "vec3f" : "vec3",
-    v4 = wgsl ? "vec4f" : "vec4";
-  const sample = (name: string, uv: string) =>
-    wgsl
-      ? `textureSampleLevel(${name}, ${name}Sampler, ${uv}, 0.0)`
-      : `texture2D(${name}, ${uv})`;
-  const decl = (type: string, name: string, value: string) =>
-    wgsl ? `var ${name}: ${type} = ${value};` : `${type} ${name} = ${value};`;
-  const uv = wgsl ? "input.vUV" : "vUV",
-    texel = wgsl ? "uniforms.fogTexelSize" : "fogTexelSize";
-  const f = wgsl ? "f32" : "float";
+  const { v2, v3, v4, f, decl, sample, uv } = syntax(wgsl);
+  const texel = wgsl ? "uniforms.fogTexelSize" : "fogTexelSize";
   const header = wgsl
     ? `varying vUV: vec2f; uniform fogTexelSize: vec2f; uniform cameraFar: f32;
 ${["textureSampler", "mainSampler", "depthSampler"].map((name) => `var ${name}: texture_2d<f32>; var ${name}Sampler: sampler;`).join("\n")}`

@@ -6,10 +6,9 @@ import { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPa
 
 export interface RenderFrameStageDescription {
   name: string;
-  kind: "frameGraph" | "task" | "native" | "overlay" | "composition" | "auxiliary";
+  kind: "frameGraph" | "task" | "overlay" | "composition" | "auxiliary";
   sceneId?: string;
   actorGuid?: string;
-  materialGuid?: string;
   detail?: string;
 }
 export interface RenderFrameStage extends RenderFrameStageDescription {
@@ -236,7 +235,6 @@ export class RenderFrameCapture {
       ...(description.detail ? { detail: text(description.detail) } : {}),
       ...(description.sceneId ? { sceneId: text(description.sceneId) } : {}),
       ...(description.actorGuid ? { actorGuid: text(description.actorGuid) } : {}),
-      ...(description.materialGuid ? { materialGuid: text(description.materialGuid) } : {}),
       id: this.report.stages.length, sceneUniqueId: scene.uniqueId,
       ...(this.parents.length ? { parentId: this.parents[this.parents.length - 1] } : {}),
       startedAtMs: performance.now() - this.started, completed: false,

@@ -7,56 +7,6 @@ import { OBJFileLoader } from "@babylonjs/loaders/OBJ/objFileLoader";
 import { GLTF2Export } from "@babylonjs/serializers/glTF/2.0";
 import { groupObjImportSidecars } from "@haptic/assets";
 
-/** Node tests have Blob/File but no FileReader; Babylon MTL/OBJ file IO needs it. */
-function installFileReaderPolyfill(): void {
-  if (typeof globalThis.FileReader !== "undefined") return;
-  class FileReaderPolyfill {
-    result: string | ArrayBuffer | null = null;
-    error: Error | null = null;
-    onload: ((ev: { target: FileReaderPolyfill }) => void) | null = null;
-    onerror: ((ev: { target: FileReaderPolyfill }) => void) | null = null;
-    onloadend: ((ev: { target: FileReaderPolyfill }) => void) | null = null;
-    onprogress: ((ev: unknown) => void) | null = null;
-    abort(): void {}
-    readAsText(blob: Blob): void {
-      void blob.text().then(
-        (text) => {
-          this.result = text;
-          const ev = { target: this };
-          this.onload?.(ev);
-          this.onloadend?.(ev);
-        },
-        (error: Error) => {
-          this.error = error;
-          const ev = { target: this };
-          this.onerror?.(ev);
-          this.onloadend?.(ev);
-        },
-      );
-    }
-    readAsArrayBuffer(blob: Blob): void {
-      void blob.arrayBuffer().then(
-        (buffer) => {
-          this.result = buffer;
-          const ev = { target: this };
-          this.onload?.(ev);
-          this.onloadend?.(ev);
-        },
-        (error: Error) => {
-          this.error = error;
-          const ev = { target: this };
-          this.onerror?.(ev);
-          this.onloadend?.(ev);
-        },
-      );
-    }
-  }
-  Object.defineProperty(globalThis, "FileReader", {
-    configurable: true,
-    value: FileReaderPolyfill,
-  });
-}
-
 interface ConvertObjToGlbOptions {
   engine?: AbstractEngine;
   fileName?: string;
@@ -127,7 +77,6 @@ export async function convertObjToGlb(
   const ownsEngine = !options.engine;
   const scene = new Scene(engine);
   const fileName = fileNameOf(options.fileName ?? "import.obj");
-  installFileReaderPolyfill();
   const sidecarKeys = registerSidecars([
     { name: fileName, bytes: objBytes },
     ...(options.sidecars ?? []),

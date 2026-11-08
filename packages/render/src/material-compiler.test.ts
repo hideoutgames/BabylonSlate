@@ -38,6 +38,7 @@ import { sceneInstancePool, setMeshShadowFlags } from "./instance-pool";
 import { isDisposedGpuTexture, isDisposedNodeMaterial } from "./gpu-resource-live";
 import { OwnedPostProcess } from "./owned-post-process";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
+import { setTestTextureBudget } from "./test-support/resource-cache-budget";
 import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { installTimerClock, installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
 
@@ -2076,7 +2077,8 @@ describe("material compiler", () => {
 
   it("does not dispose a ResourceCache Texture when the compiled material is dropped", () => {
     const scene = host();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
+    setTestTextureBudget(cache, 8 * 1024 * 1024);
     disposers.push(() => cache.dispose());
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const cachedLease = acquireMaterialTexture(

@@ -10,10 +10,7 @@ import type { Node } from "@babylonjs/core/node";
 import type { Scene } from "@babylonjs/core/scene";
 import { hasStockVertexStage } from "./shadow-material-policy";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
-
-function isWater(mesh: AbstractMesh): boolean {
-  return (mesh.metadata as { slateWater?: unknown } | null)?.slateWater === true;
-}
+import { isWaterSurfaceMesh } from "./water-mesh-surface";
 
 /**
  * Points and lines rasterise wider than the pixel their vertices land in (a line up to half a
@@ -42,7 +39,7 @@ function boundsCertifyDrawnGeometry(mesh: AbstractMesh): boolean {
   if (mesh.doNotSyncBoundingInfo || mesh._masterMesh || mesh instanceof LinesMesh) return false;
   const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
   if (source instanceof Mesh && (source.hasThinInstances || source.getLODLevels().length > 0)) return false;
-  if (hasDeformingShadowBounds(source) || isWater(source)) return false;
+  if (hasDeformingShadowBounds(source) || isWaterSurfaceMesh(source)) return false;
   for (let node: Node | null = mesh; node; node = node.parent)
     if (node instanceof TransformNode && node.isWorldMatrixCameraDependent()) return false;
   return keepsVertices(source, source.material ?? source.getScene().defaultMaterial);

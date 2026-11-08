@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ResourceCache } from "./resource-cache";
+import { accountedEntry, setTestTextureBudget } from "./test-support/resource-cache-budget";
 import { RenderScheduler } from "./render-scheduler";
 import { SnapshotSampler, writeSampledAudioPoses } from "./snapshot-sync";
 import {
@@ -10,7 +11,7 @@ import {
 
 describe("resource cache", () => {
   it("reuses stable blob URLs per asset guid", () => {
-    const cache = new ResourceCache({ byteCeiling: 1024 * 1024 });
+    const cache = new ResourceCache();
     const bytes = new Uint8Array([1, 2, 3]);
     const aLease = cache.acquireBlobUrl("guid-1", bytes);
     const a = aLease.resource;
@@ -26,7 +27,7 @@ describe("resource cache", () => {
   });
 
   it("replaces the blob URL when texture bytes change", () => {
-    const cache = new ResourceCache({ byteCeiling: 1024 * 1024 });
+    const cache = new ResourceCache();
     const aLease = cache.acquireBlobUrl("guid-1", new Uint8Array([1, 2, 3]));
     const a = aLease.resource;
     const bLease = cache.acquireBlobUrl("guid-1", new Uint8Array([9, 9, 9]));
@@ -36,63 +37,53 @@ describe("resource cache", () => {
   });
 
   it("evicts unreferenced entries over the ceiling", () => {
-    const evictions: string[] = [];
-    const cache = new ResourceCache({
-      byteCeiling: 100,
-      onEvict: (id) => evictions.push(id),
-    });
-    cache.account("a", 80);
-    cache.account("b", 80);
-    cache.releaseAccounting("a");
+    const cache = new ResourceCache();
+    setTestTextureBudget(cache, 100);
+    const a = accountedEntry(cache, "a", 80);
+    accountedEntry(cache, "b", 80);
+    a.release();
     cache.evictToCeiling();
-    expect(evictions).toContain("a");
+    // Only the released entry can go.
+    expect(cache.resourceStats()).toMatchObject({ generations: 1, leases: 1 });
     expect(cache.accountedBytes()).toBe(80);
     cache.dispose();
   });
 
   it("trims unreferenced LRU toward 80% of the live ceiling", () => {
-    const evictions: string[] = [];
-    const cache = new ResourceCache({
-      byteCeiling: 100,
-      onEvict: (id) => evictions.push(id),
-    });
-    cache.account("a", 50);
-    cache.account("b", 50);
-    cache.account("c", 50);
-    cache.releaseAccounting("a");
-    cache.releaseAccounting("b");
+    const cache = new ResourceCache();
+    setTestTextureBudget(cache, 100);
+    const a = accountedEntry(cache, "a", 50);
+    const b = accountedEntry(cache, "b", 50);
+    accountedEntry(cache, "c", 50);
+    a.release();
+    b.release();
     cache.evictToCeiling();
     expect(cache.accountedBytes()).toBeLessThanOrEqual(80);
-    expect(evictions).toContain("a");
+    // Only the released entries can go; the held one stays.
+    expect(cache.resourceStats()).toMatchObject({ generations: 1, leases: 1 });
     cache.dispose();
   });
 
-  it("skips eviction when the budget is disabled", () => {
-    const evictions: string[] = [];
-    const cache = new ResourceCache({
-      byteCeiling: 10,
-      onEvict: (id) => evictions.push(id),
-    });
-    cache.setBudgetEnabled(false);
-    cache.account("a", 80);
-    cache.releaseAccounting("a");
+  it("skips eviction when a view disables the budget", () => {
+    const cache = new ResourceCache();
+    const view = {};
+    cache.setClientBudget(view, 10);
+    cache.setClientBudgetEnabled(view, false);
+    accountedEntry(cache, "a", 80).release();
     cache.evictToCeiling();
-    expect(evictions).toEqual([]);
+    expect(cache.resourceStats()).toMatchObject({ generations: 1, leases: 0 });
     expect(cache.accountedBytes()).toBe(80);
     cache.dispose();
   });
 
   it("evicts released accounting entries while preserving their live siblings", () => {
-    const evictions: string[] = [];
-    const cache = new ResourceCache({
-      byteCeiling: 100,
-      onEvict: (id) => evictions.push(id),
-    });
-    cache.account("gone", 80);
-    cache.account("kept", 80);
-    cache.releaseAccounting("gone");
+    const cache = new ResourceCache();
+    setTestTextureBudget(cache, 100);
+    const gone = accountedEntry(cache, "gone", 80);
+    accountedEntry(cache, "kept", 80);
+    gone.release();
     cache.evictToCeiling();
-    expect(evictions).toContain("gone");
+    expect(cache.resourceStats()).toMatchObject({ generations: 1, leases: 1 });
     expect(cache.accountedBytes()).toBe(80);
     cache.dispose();
   });

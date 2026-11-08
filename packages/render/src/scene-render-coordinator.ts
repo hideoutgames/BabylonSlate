@@ -394,11 +394,6 @@ export class SceneRenderCoordinator {
     return this.graph.strictReadinessChecks;
   }
 
-  /** Outline-task-only probes; a selection change adds these and no strict scene probe. */
-  get outlineReadinessChecks(): number {
-    return this.graph.outlineReadinessChecks;
-  }
-
   diagnostics() { return this.graph.diagnostics(); }
 
   /**

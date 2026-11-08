@@ -58,6 +58,7 @@ import { reflectionShadowsEnabled } from "./reflection-sun-shadows";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources } from "./render-target-resource-cost";
 import { waterMeshReflectsObjects, waterMeshRestVaries } from "./water-mesh";
+import { isWaterSurfaceMesh } from "./water-mesh-surface";
 import { sceneViewRenderSize } from "./scene-output-scale";
 import { upscaledRenderSize } from "./scene-effects";
 import { enterDrawPass, leaveDrawPass } from "./draw-passes";
@@ -165,10 +166,6 @@ type View = {
 
 const owners = new WeakMap<Scene, WaterPlanarReflections>();
 
-function isWaterMesh(mesh: AbstractMesh): boolean {
-  return (mesh.metadata as { slateWater?: unknown } | null)?.slateWater === true;
-}
-
 function waterResources(texture: RenderTargetTexture): ManagedRenderResource[] {
   // Colour and depth are both the reflection's cost; charge them to one category.
   return managedRenderTargetResources(texture.renderTarget!, { colorCategory: "water" })
@@ -259,7 +256,7 @@ class WaterPlanarReflections {
   private readonly reflectionPlanes = Frustum.GetPlanes(Matrix.Identity());
   private readonly math = new PlanarMirrorMath();
   private readonly plane: MirrorPlane = { nx: 0, ny: 1, nz: 0, d: 0 };
-  private readonly excluded = isWaterMesh;
+  private readonly excluded = isWaterSurfaceMesh;
   private readonly polygonA = new Float64Array(36);
   private readonly polygonB = new Float64Array(36);
   private planeY = 0;
@@ -425,7 +422,7 @@ class WaterPlanarReflections {
     if (this.waterDirty) {
       this.water.length = 0;
       const meshes = this.scene.meshes;
-      for (let i = 0; i < meshes.length; i++) if (isWaterMesh(meshes[i]!)) this.water.push(meshes[i]!);
+      for (let i = 0; i < meshes.length; i++) if (isWaterSurfaceMesh(meshes[i]!)) this.water.push(meshes[i]!);
       this.waterDirty = false;
     }
     const eyeY = camera.globalPosition.y;

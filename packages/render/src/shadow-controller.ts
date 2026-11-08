@@ -59,7 +59,6 @@ import {
   type EffectiveShadowBias,
   type LocalShadowLight,
   type ShadowEntry as Entry,
-  type ShadowLightStatus,
 } from "./shadow-entry";
 import {
   applyShadowAdmission,
@@ -185,8 +184,6 @@ export class SceneShadowController {
   private readonly refresh = new ShadowMapRefresh((mesh) =>
     this.spatial.invalidate(mesh),
   );
-  /** A native camera pass began since the last before-render-targets notification. */
-  private cameraPass = false;
   private readonly counters: ShadowDrawCounters = { drawCalls: 0, triangles: 0 };
   shadowDrawCalls(): number {
     return this.counters.drawCalls;
@@ -248,23 +245,8 @@ export class SceneShadowController {
     scene.onBeforeRenderObservable.add(() => {
       this.counters.drawCalls = 0;
       this.counters.triangles = 0;
-      // Admission only: a caster walk here would be redone before any map renders.
-      this.cameraPass = false;
+      // Admission only: the caster walk runs from ManagedShadowsTask, before any map renders.
       this.sync("admission");
-    });
-    scene.onBeforeCameraRenderObservable.add(() => {
-      this.cameraPass = true;
-    });
-    // Babylon's native path notifies this once per frame before any camera
-    // renders, then again per camera after its active-mesh/world-matrix
-    // evaluation and just before it gathers and renders the shadow maps. Only the
-    // latter decides a map, so only it walks. A frame graph draws the maps from
-    // ManagedShadowsTask, whose pass refreshes after Babylon's world-matrix
-    // update, so it never walks here.
-    scene.onBeforeRenderTargetsRenderObservable.add(() => {
-      if (scene.frameGraph || !this.cameraPass) return;
-      this.cameraPass = false;
-      this.refreshShadowMaps();
     });
     // A hidden mesh casts into no map; revealed, it joins the caster lists of the maps it can reach, which draw again
     // with it: a local light's only when the mesh is within its range, a sun's always.
@@ -495,16 +477,9 @@ export class SceneShadowController {
       }
     });
   }
-  status(light: Light): ShadowLightStatus | undefined {
-    return this.entries.get(light)?.status;
-  }
   /** Authored request, independent of admission, visibility and global shadow enablement. */
   requestsShadow(light: Light): boolean {
     return this.entries.get(light)?.requested ?? false;
-  }
-  /** Authored shadow priority (`register`'s). */
-  shadowPriority(light: Light): number {
-    return this.entries.get(light)?.priority ?? 0;
   }
   limits(): string[] {
     const limits = new Set<string>();

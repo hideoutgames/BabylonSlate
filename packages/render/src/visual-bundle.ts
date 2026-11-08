@@ -1,23 +1,16 @@
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
-import type { Material } from "@babylonjs/core/Materials/material";
 
 /** Resources produced by one visual generation, recorded before binding overrides. */
 export class VisualBundle {
   private retired = false;
   private readonly cancellations = new Set<() => void>();
   private readonly renderUsers = new Set<{ dispose(): void; isDisposed?(): boolean }>();
-  private readonly materials = new Set<Material>();
   private readonly textures = new Set<BaseTexture>();
   private readonly releases = new Set<() => void>();
 
   ownRenderUser<T extends { dispose(): void }>(user: T): T {
     this.renderUsers.add(user);
     return user;
-  }
-
-  ownMaterial<T extends Material>(material: T): T {
-    this.materials.add(material);
-    return material;
   }
 
   ownTexture<T extends BaseTexture>(texture: T): T {
@@ -38,12 +31,10 @@ export class VisualBundle {
     };
     for (const cancel of this.cancellations) run(cancel);
     for (const user of this.renderUsers) run(() => { if (!user.isDisposed?.()) user.dispose(); });
-    for (const material of this.materials) run(() => material.dispose(false, false));
     for (const texture of this.textures) run(() => texture.dispose());
     for (const release of this.releases) run(release);
     this.cancellations.clear();
     this.renderUsers.clear();
-    this.materials.clear();
     this.textures.clear();
     this.releases.clear();
     if (failures.length) throw new AggregateError(failures, "Visual retirement failed");

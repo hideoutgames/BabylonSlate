@@ -339,6 +339,8 @@ export function createEngine(
   }
 }
 
+/** Snapshot slots before the game runtime installs its layout (`SnapshotSampler.installLayout`). */
+const INITIAL_SNAPSHOT_CAPACITY = 256;
 /** Render-loop passes (about ten seconds at 60 Hz) that frame-phase timing outlives its last `renderDiagnostics()` read. */
 const FRAME_PHASE_LEASE_FRAMES = 600;
 /**
@@ -815,12 +817,6 @@ function initializeEngine(
   const nativePreparation = nativePreparationForEngine(engine);
   onRollback(() => cacheBinding.dispose());
   onRollback(() => { if (!scene.isDisposed) scene.dispose(); });
-  if (typeof options.textureByteCeiling === "number") {
-    resourceCache.setByteCeiling(options.textureByteCeiling);
-  }
-  if (typeof options.textureBudgetEnabled === "boolean") {
-    resourceCache.setBudgetEnabled(options.textureBudgetEnabled);
-  }
   const audioService = options.playMode
     ? new AudioService({
         backend: createPlayAudioBackend(options.audioBackend),
@@ -830,22 +826,10 @@ function initializeEngine(
         loadSourceBytes: options.loadAudioSourceBytes,
         prepareAsset: options.prepareAudioAsset,
         preparation: nativePreparation,
-        maxVoices: options.audioMaxVoices,
       })
     : null;
   onRollback(() => audioService?.dispose());
   if (audioService) {
-    if (
-      typeof options.audioByteCeiling === "number" ||
-      typeof options.audioBudgetEnabled === "boolean"
-    ) {
-      audioService.setAudioBudget(
-        typeof options.audioByteCeiling === "number"
-          ? options.audioByteCeiling
-          : 256 * 1024 * 1024,
-        options.audioBudgetEnabled !== false,
-      );
-    }
     if (options.audioLibrary) audioService.setLibrary(options.audioLibrary);
     for (const [guid, bytes] of options.audioBytes ?? []) {
       audioService.setSourceBytes(guid, bytes);
@@ -871,7 +855,7 @@ function initializeEngine(
         ? 1000 / options.frameCap
         : 1000 / 60,
   });
-  const snapshots = new SnapshotSampler(options.maxActors ?? 256);
+  const snapshots = new SnapshotSampler(INITIAL_SNAPSHOT_CAPACITY);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
   let gameInputEnabled = true;
   let simulationEditMode = false;

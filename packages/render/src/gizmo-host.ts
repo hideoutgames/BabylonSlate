@@ -44,8 +44,6 @@ interface GizmoHostOptions {
   onDragStart?: () => void;
   onDrag?: () => void;
   onDragEnd?: () => void;
-  /** Screen-space handle scale; touch needs larger handles than a mouse. */
-  handleScale?: number;
   /**
    * `overlay-box` is the SceneLayer 2D transform widget. World scenes stay
    * on Babylon Position/Rotation/Scale gizmos (`trs`).
@@ -105,7 +103,7 @@ export interface GizmoHost {
 }
 
 /** Screen-space scale: smaller visuals; pick size lives on collider scales. */
-const DEFAULT_GIZMO_HANDLE_SCALE = 1.8;
+const GIZMO_HANDLE_SCALE = 1.8;
 
 /** Invisible pick meshes, scaled independently of the thin visual shafts. */
 export const GIZMO_COLLIDER_SCALE = 2.5;
@@ -213,9 +211,8 @@ export function gizmoAxisEnabledFlags(
 export function clampGizmoScreenScale(
   currentScale: number,
   scaleRatio: number,
-  minDistance: number = GIZMO_MIN_CAMERA_DISTANCE,
 ): number {
-  const minAbs = Math.abs(scaleRatio) * minDistance;
+  const minAbs = Math.abs(scaleRatio) * GIZMO_MIN_CAMERA_DISTANCE;
   if (!Number.isFinite(currentScale) || Math.abs(currentScale) < minAbs) {
     return (Math.sign(currentScale) || 1) * minAbs;
   }
@@ -413,26 +410,6 @@ function thinRotationRings(rotation: RotationGizmo): void {
   }
 }
 
-function ensurePointerEvent(): void {
-  if (typeof PointerEvent === "function") return;
-  class PointerEventShim extends Event {
-    pointerId: number;
-    button: number;
-    pointerType: string;
-    constructor(type: string, init: PointerEventInit = {}) {
-      super(type, init);
-      this.pointerId = init.pointerId ?? 0;
-      this.button = init.button ?? 0;
-      this.pointerType = String(init.pointerType ?? "mouse");
-    }
-  }
-  Object.defineProperty(globalThis, "PointerEvent", {
-    configurable: true,
-    writable: true,
-    value: PointerEventShim,
-  });
-}
-
 /**
  * Translate / rotate / scale gizmos on a utility layer, with the axis set
  * filtered by viewport mode: 2D exposes XY translate plus the XY plane, Z rotate
@@ -451,7 +428,6 @@ export function createGizmoHost(
       scene.getEngine().clear(null, false, true, true);
     }
   });
-  const handleScale = options.handleScale ?? DEFAULT_GIZMO_HANDLE_SCALE;
 
   const position = new PositionGizmo(layer, GIZMO_SHAFT_THICKNESS);
   const rotation = new RotationGizmo(
@@ -465,9 +441,9 @@ export function createGizmoHost(
   const gizmos = [position, rotation, scale];
 
   for (const gizmo of [position, rotation]) {
-    gizmo.scaleRatio = handleScale;
+    gizmo.scaleRatio = GIZMO_HANDLE_SCALE;
   }
-  scale.scaleRatio = handleScale;
+  scale.scaleRatio = GIZMO_HANDLE_SCALE;
   scale.sensitivity = GIZMO_SCALE_SENSITIVITY;
   // Snapped scale steps linearly (1.1, 1.2, …) instead of compounding.
   scale.incrementalSnap = true;
@@ -779,7 +755,6 @@ export function createGizmoHost(
       return pick?.hit === true;
     },
     forwardPointer: (type, canvasX, canvasY, canvasSize) => {
-      ensurePointerEvent();
       const mapped = mapCanvasPointer(scene, canvasX, canvasY, canvasSize);
       scene.pointerX = mapped.x;
       scene.pointerY = mapped.y;

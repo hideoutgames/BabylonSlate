@@ -318,7 +318,6 @@ export interface CreateEngineOptions {
    * Engine ends a hold.
    */
   onPipelineHold?: (held: boolean) => void;
-  maxActors?: number;
   /** Attach the editor camera, gizmos, grid, selection and scene sync. */
   editor?: boolean;
   /** Document viewport identity for scoped editor commands. */
@@ -455,11 +454,6 @@ export interface CreateEngineOptions {
    * stack without mutating scene documents.
    */
   postProcessingEnabled?: boolean;
-  textureByteCeiling?: number;
-  textureBudgetEnabled?: boolean;
-  audioByteCeiling?: number;
-  audioBudgetEnabled?: boolean;
-  audioMaxVoices?: number;
   /** Engine Settings `hardwareScalingLevel`. 1 is native. */
   hardwareScalingLevel?: number;
   /**

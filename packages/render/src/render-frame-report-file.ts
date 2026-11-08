@@ -7,7 +7,7 @@ import type {
 } from "./render-frame-report";
 
 const FRAME_REPORT_FILE_KIND = "haptic-frame";
-const STAGE_KINDS = new Set<string>(["frameGraph", "task", "native", "overlay", "composition", "auxiliary"]);
+const STAGE_KINDS = new Set<string>(["frameGraph", "task", "overlay", "composition", "auxiliary"]);
 const BACKENDS = new Set<string>(["webgpu", "webgl2", "webgl1", "unknown"]);
 
 type Fields = Record<string, unknown>;
@@ -36,7 +36,7 @@ function isStage(value: unknown): value is RenderFrameStage {
     optional(value.parentId, isNumber) && optional(value.graphId, isNumber) && optional(value.taskId, isNumber) &&
     optional(value.submissionMs, isNumber) && optional(value.drawCalls, isNumber) && optional(value.fallbackPasses, isBoolean) &&
     optional(value.selectedPasses, strings) && optional(value.sceneId, isString) && optional(value.actorGuid, isString) &&
-    optional(value.materialGuid, isString) && optional(value.detail, isString);
+    optional(value.detail, isString);
 }
 
 function isResource(value: unknown): value is RenderFrameResource {
