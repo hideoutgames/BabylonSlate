@@ -85,6 +85,7 @@ import {
   selectionAfterLockChange,
 } from "../context/scene-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
+import { useExtensionMenuItems } from "../components/use-extension-menu-items";
 import { usePhoneTouchSizing } from "../shell/use-platform-layout";
 import { QUIET_ROW_ACTION } from "../lib/row-action-classes";
 import { PlaceActorsDialog } from "../components/place-actors-dialog";
@@ -730,7 +731,24 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     [timelineTarget, viewportDropApi],
   );
 
+  // Extension entries read the rows the menu was opened on when they run.
+  const extensionActorIdsRef = useRef<string[]>([]);
+  const extensionFolderIdRef = useRef<string | null>(null);
+  const scenePath = doc?.ref.path ?? null;
+  const actorExtensionItems = useExtensionMenuItems("outliner.actor", useCallback(() => ({
+    scene: scenePath,
+    actors: extensionActorIdsRef.current.flatMap((id) => {
+      const actor = actorById.get(id);
+      return actor ? [{ id, name: actor.name, classId: actor.classId }] : [];
+    }),
+  }), [actorById, scenePath]));
+  const folderExtensionItems = useExtensionMenuItems("outliner.folder", useCallback(() => {
+    const folder = sceneRef.current?.folders.find((entry) => entry.id === extensionFolderIdRef.current);
+    return { scene: scenePath, folder: folder ? { id: folder.id, name: folder.name } : null };
+  }, [scenePath]));
+
   const actorMenuItems = useCallback((actorId: string): NestedMenuItem[] => {
+    extensionActorIdsRef.current = selectedActorIdSet.has(actorId) ? [...selectedActorIds] : [actorId];
     const actor = actorById.get(actorId);
     const classAsset = actor ? classAssetById.get(actor.classId) : undefined;
     const items: NestedMenuItem[] = [];
@@ -813,10 +831,12 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
           }
         },
       },
+      ...actorExtensionItems,
     );
     return items;
   }, [
     actorById,
+    actorExtensionItems,
     addToTimelineClip,
     canPaste,
     copyActors,
@@ -835,7 +855,9 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   ]);
 
   const folderMenuItems = useCallback(
-    (folderId: string): NestedMenuItem[] => [
+    (folderId: string): NestedMenuItem[] => {
+      extensionFolderIdRef.current = folderId;
+      return [
       {
         id: "rename-folder",
         label: "Rename",
@@ -854,8 +876,10 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         testId: `outliner-delete-folder-${folderId}`,
         onSelect: () => setDeleteFolderId(folderId),
       },
-    ],
-    [keybinds],
+      ...folderExtensionItems,
+      ];
+    },
+    [folderExtensionItems, keybinds],
   );
 
   const searchRef = useRef<HTMLInputElement>(null);

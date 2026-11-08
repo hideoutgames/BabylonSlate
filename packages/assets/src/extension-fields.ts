@@ -75,9 +75,36 @@ export interface ExtensionNodeContribution {
   outputs: ExtensionNodePin[];
 }
 
+/**
+ * Editor menus an extension can add entries to. Each passes the command a
+ * context describing what the menu was opened on (see the docs' menu table).
+ */
+export const EXTENSION_MENU_IDS = [
+  "settings",
+  "debug",
+  "contentBrowser.asset",
+  "contentBrowser.folder",
+  "contentBrowser.empty",
+  "outliner.actor",
+  "outliner.folder",
+  "viewport",
+  "graph.node",
+] as const;
+export type ExtensionMenuId = (typeof EXTENSION_MENU_IDS)[number];
+
+/** A menu entry that runs one of the extension's registered commands. */
+export interface ExtensionMenuContribution {
+  menu: ExtensionMenuId;
+  /** Id of a command the extension registers with `api.registerCommand`. */
+  command: string;
+  /** Entry label; the command's title when omitted. */
+  title?: string;
+}
+
 export interface ExtensionContributions {
   settings?: ExtensionSettingsContribution;
   nodes?: ExtensionNodeContribution[];
+  menus?: ExtensionMenuContribution[];
 }
 
 const FIELD_ID = /^[A-Za-z][A-Za-z0-9_-]*$/;
@@ -218,11 +245,26 @@ function normalizeNodes(value: unknown): ExtensionNodeContribution[] | undefined
   return nodes;
 }
 
+function normalizeMenus(value: unknown): ExtensionMenuContribution[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error("Extension menus must be a list.");
+  const menus = value.map((entry, index): ExtensionMenuContribution => {
+    const raw = record(entry, `Extension menu entry ${index + 1}`);
+    const menu = raw.menu as ExtensionMenuId;
+    if (!EXTENSION_MENU_IDS.includes(menu)) throw new Error(`Unknown extension menu: ${String(raw.menu)}`);
+    return { menu, command: text(raw.command, `Menu entry ${index + 1} command`), ...(optionalText(raw.title) ? { title: optionalText(raw.title) } : {}) };
+  });
+  const keys = menus.map((entry) => `${entry.menu}\u0000${entry.command}`);
+  if (new Set(keys).size !== keys.length) throw new Error("A command appears twice in one extension menu.");
+  return menus;
+}
+
 export function normalizeExtensionContributions(value: unknown): ExtensionContributions {
   if (value === undefined) return {};
   const raw = record(value, "Extension contributes");
   const nodes = normalizeNodes(raw.nodes);
-  const withNodes: ExtensionContributions = nodes?.length ? { nodes } : {};
+  const menus = normalizeMenus(raw.menus);
+  const withNodes: ExtensionContributions = { ...(nodes?.length ? { nodes } : {}), ...(menus?.length ? { menus } : {}) };
   if (raw.settings === undefined) return withNodes;
   const settings = record(raw.settings, "Extension settings");
   if (!Array.isArray(settings.sections) || settings.sections.length === 0) {

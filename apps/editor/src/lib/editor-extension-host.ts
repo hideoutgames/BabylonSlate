@@ -24,9 +24,15 @@ export interface EditorExtensionCommand {
   description?: string;
   /** Dialog fields in the declarative schema (`normalizeExtensionFields`). */
   fields?: readonly unknown[];
-  /** Receives every field's value, typed by its field; a returned string is shown when it completes. */
-  execute(values: ExtensionFieldValues): Promise<string | void> | string | void;
+  /**
+   * Receives every field's value, typed by its field, and the menu context when
+   * a menu entry ran it (`{}` otherwise); a returned string is shown when it completes.
+   */
+  execute(values: ExtensionFieldValues, context: ExtensionMenuContext): Promise<string | void> | string | void;
 }
+
+/** What a menu was opened on (selected assets, actors, nodes); plain data, frozen. */
+export type ExtensionMenuContext = Readonly<Record<string, unknown>>;
 
 export interface EditorExtensionCommandDescriptor {
   extensionId: string;
@@ -214,7 +220,7 @@ export class EditorExtensionHost {
   }
 
   /** Runs a command; resolves to the message it returned, if any. */
-  async run(extensionId: string, commandId: string, values: Readonly<Record<string, unknown>> = {}): Promise<string | undefined> {
+  async run(extensionId: string, commandId: string, values: Readonly<Record<string, unknown>> = {}, context: ExtensionMenuContext = {}): Promise<string | undefined> {
     const state = this.states.get(extensionId);
     const command = state?.ready ? state.commands.get(commandId) : undefined;
     if (!state || !command) throw new Error(`Extension command is unavailable: ${extensionId}/${commandId}`);
@@ -225,7 +231,7 @@ export class EditorExtensionHost {
       if (field.required && typeof input[field.id] === "string" && !(input[field.id] as string).trim()) throw new Error(`${field.label} is required.`);
     }
     try {
-      const result = await command.execute(input);
+      const result = await command.execute(input, Object.freeze(structuredClone({ ...context })));
       this.assertCurrent(state);
       if (this.clearDiagnostics(state.id, "command")) this.notifyChange();
       return typeof result === "string" && result.trim() ? result : undefined;

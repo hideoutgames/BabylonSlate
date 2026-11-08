@@ -36,6 +36,7 @@ import { ValidationProvider } from "../context/validation-context";
 import { MaterialRenderControlProvider } from "../context/material-render-control-context";
 import { EditorUtilityRuntime } from "../components/editor-utility-runtime";
 import { EditorExtensionsRuntime } from "../components/editor-extensions-runtime";
+import { ExtensionCommandHost } from "../components/extension-commands";
 import { ModelThumbnailCaptureHost } from "../components/model-thumbnail-capture-host";
 import { TestAudioHostStats } from "../lib/test-audio-host-stats";
 import { TestParticleHostStats } from "../lib/test-particle-host-stats";
@@ -626,11 +627,13 @@ export default function EditorRoute({
                         <TestParticleHostStats />
                         <ModelThumbnailCaptureHost />
                         <ProjectSearchProvider>
-                          <PlayAwareKeybinds>
-                            {gallery
-                              ? <ComponentGallery />
-                              : profileRegion("editor-layout", <EditorLayout />)}
-                          </PlayAwareKeybinds>
+                          <ExtensionCommandHost>
+                            <PlayAwareKeybinds>
+                              {gallery
+                                ? <ComponentGallery />
+                                : profileRegion("editor-layout", <EditorLayout />)}
+                            </PlayAwareKeybinds>
+                          </ExtensionCommandHost>
                         </ProjectSearchProvider>
                       </MaterialRenderControlProvider>
                     </PlayProvider>

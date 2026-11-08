@@ -11,6 +11,7 @@ import {
 } from "../lib/content-browser-helpers";
 import { isNewClassParentAllowed } from "../lib/create-project-asset";
 import { contentBrowserTileMenuItems, type ContentBrowserTileMenuDeps } from "./content-browser-tile-menu";
+import { useExtensionMenuItems } from "./use-extension-menu-items";
 
 /** What the asset, folder and empty-grid menus and the selection shortcuts read and act through. */
 export interface ContentBrowserContextMenusDeps extends ContentBrowserTileMenuDeps {
@@ -162,6 +163,20 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
 
   const emptyGridMenuPointRef = useRef<{ x: number; y: number } | null>(null);
 
+  // Extension entries read what the menu was opened on when they run.
+  const assetExtensionItems = useExtensionMenuItems("contentBrowser.asset", useCallback(() => ({
+    assets: menuTargetGuidsRef.current.flatMap((guid) => {
+      const asset = assetRegistry?.getByGuid(guid);
+      return asset ? [{ path: asset.path, type: asset.header.type, name: asset.header.name, guid }] : [];
+    }),
+  }), [assetRegistry, menuTargetGuidsRef]));
+  const folderExtensionItems = useExtensionMenuItems("contentBrowser.folder", useCallback(() => ({
+    folders: [...menuTargetFoldersRef.current],
+  }), [menuTargetFoldersRef]));
+  const emptyExtensionItems = useExtensionMenuItems("contentBrowser.empty", useCallback(() => ({
+    folder: selectedFolderPath,
+  }), [selectedFolderPath]));
+
   // Disabled like the toolbar buttons, so a read-only root offers no action
   // that would then do nothing.
   const creationDisabled = busy || !selectedRootWritable;
@@ -193,8 +208,9 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
           void handleImport();
         },
       },
+      ...emptyExtensionItems,
     ],
-    [creationDisabled, handleImport, openNewAssetMenu, onNewFolder, keybinds],
+    [creationDisabled, emptyExtensionItems, handleImport, openNewAssetMenu, onNewFolder, keybinds],
   );
   const {
     menu: emptyGridMenu,
@@ -290,9 +306,14 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
       const deleteIndex = items.findIndex((item) => item.id === "delete");
       if (deleteIndex > 0)
         items.splice(deleteIndex, 0, { type: "separator", id: "delete-separator" });
+      // Extension entries apply to a selection of only assets or only folders.
+      if (guids.length > 0 && folders.length === 0) items.push(...assetExtensionItems);
+      if (folders.length > 0 && guids.length === 0) items.push(...folderExtensionItems);
       openMenuAt(clientX, clientY, items);
     },
     [
+      assetExtensionItems,
+      folderExtensionItems,
       closeEmptyGridMenu,
       openMenuAt,
       rootPrefixes,

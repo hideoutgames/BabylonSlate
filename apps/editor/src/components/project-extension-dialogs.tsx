@@ -15,7 +15,7 @@ import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLab
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@haptic/ui/components/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@haptic/ui/components/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@haptic/ui/components/alert-dialog";
-import type { EditorExtensionCommandDescriptor } from "../lib/editor-extension-host";
+import type { EditorExtensionCommandDescriptor, ExtensionMenuContext } from "../lib/editor-extension-host";
 import type { EditorExtensionService } from "../services/editor-extension-service";
 import { ensureEngineExtensionLibrary, type EngineExtensionEntry } from "../lib/engine-extension-library";
 import { saveExtensionArchive } from "../lib/extension-download";
@@ -43,9 +43,11 @@ function ActionError({ message }: { message: string | null }) {
   return message ? <Alert variant="destructive"><AlertTitle>Extension Action Failed</AlertTitle><AlertDescription className="whitespace-pre-wrap">{message}</AlertDescription></Alert> : null;
 }
 
-export function ExtensionCommandDialog({ command, service, onClose }: {
+export function ExtensionCommandDialog({ command, service, context, onClose }: {
   command: EditorExtensionCommandDescriptor;
   service: EditorExtensionService;
+  /** What the menu that opened it was opened on; `{}` from Project Settings. */
+  context?: ExtensionMenuContext;
   onClose(): void;
 }) {
   const [values, setValues] = useState<ExtensionFieldValues>(() => resolveExtensionFieldValues(command.fields));
@@ -64,7 +66,7 @@ export function ExtensionCommandDialog({ command, service, onClose }: {
       <DialogFooter>
         <Button variant="outline" size="sm" disabled={busy} onClick={onClose}>Close</Button>
         <Button size="sm" disabled={busy || completed !== null} onClick={() => void run(async () => {
-          const message = await service.run(command.extensionId, command.id, { ...values });
+          const message = await service.run(command.extensionId, command.id, { ...values }, context);
           setCompleted(message ? { message } : {});
         })}>{busy ? "Running…" : "Run"}</Button>
       </DialogFooter>

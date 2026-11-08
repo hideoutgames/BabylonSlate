@@ -109,6 +109,11 @@ import { ActionFeedbackButton } from "./action-feedback-button";
 import { CompilationErrorIndicator } from "./compilation-error-indicator";
 import { WindowsMenu } from "./windows-menu";
 import { PlayDebugMenuItems, type PlayLaunchMode } from "./play-debug-menu-items";
+import { ExtensionDropdownMenuItems } from "./extension-commands";
+import { useExtensionMenuItems } from "./use-extension-menu-items";
+
+/** The Settings and Debug menus describe nothing in particular to extension commands. */
+const noMenuContext = () => ({});
 import { useMaterialRenderControl } from "../context/material-render-control-context";
 import {
   playChromeLaunchAriaLabel,
@@ -494,6 +499,8 @@ export function EditorChromeBar({
     setToolsOpen(false);
     onCloseProject?.();
   };
+  const settingsExtensionItems = useExtensionMenuItems("settings", noMenuContext);
+  const debugExtensionItems = useExtensionMenuItems("debug", noMenuContext);
   const debugMenu = (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -542,6 +549,7 @@ export function EditorChromeBar({
           setToolsOpen(false);
           void openTraceDocument(path);
         }}
+        extensionItems={<ExtensionDropdownMenuItems items={debugExtensionItems} />}
       />
     </DropdownMenu>
   );
@@ -711,6 +719,7 @@ export function EditorChromeBar({
               onSelect: openProjectBrowser,
             },
           ] satisfies NestedMenuItem[] : []),
+          ...settingsExtensionItems,
         ],
       }], (
       <DropdownMenu>
@@ -786,6 +795,7 @@ export function EditorChromeBar({
               </DropdownMenuGroup>
             </>
           ) : null}
+          <ExtensionDropdownMenuItems items={settingsExtensionItems} />
         </DropdownMenuContent>
       </DropdownMenu>
       ))}

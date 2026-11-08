@@ -42,6 +42,7 @@ import {
 } from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
+import { useExtensionMenuItems } from "../components/use-extension-menu-items";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
 import { isTestModeEnabled } from "@haptic/vfs";
@@ -177,6 +178,16 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     enabled: selectedActorIds.length > 0,
     scopeRef: panelRef,
   });
+  // Filled in once the open scene is known below; extension entries read it when they run.
+  const extensionContextRef = useRef<{ path: string | null; scene: SerializedScene | null; selected: readonly string[] }>({ path: null, scene: null, selected: [] });
+  const viewportExtensionItems = useExtensionMenuItems("viewport", useCallback(() => {
+    const { path, scene: current, selected } = extensionContextRef.current;
+    return {
+      scene: path,
+      actors: (current?.actors ?? []).filter((actor) => selected.includes(actor.id))
+        .map((actor) => ({ id: actor.id, name: actor.name, classId: actor.classId })),
+    };
+  }, []));
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
       {
@@ -194,6 +205,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         shortcut: frameChord,
         onSelect: frameSelection,
       },
+      ...viewportExtensionItems,
     ],
   });
 
@@ -206,6 +218,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
+  extensionContextRef.current = { path: doc?.ref.path ?? null, scene, selected: selectedActorIds };
   // Timeline mode: the selected clip, which the viewport shows at the playhead.
   const timelineClip = documentSceneMode(doc?.ref.kind, doc?.layout) === "timeline"
     ? scene?.timelineClips?.find((clip) => clip.id === sceneTools.timelineClipId) ?? null
