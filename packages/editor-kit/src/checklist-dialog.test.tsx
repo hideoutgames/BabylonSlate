@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ChecklistDialog, type ChecklistDialogGroup } from "./checklist-dialog";
+import { setTouchUi } from "./touch-ui";
 
 const groups: ChecklistDialogGroup[] = [
   { id: "actor", label: "Actor", items: [
@@ -44,6 +45,19 @@ describe("ChecklistDialog", () => {
     fireEvent.click(screen.getByText("Visible"));
     fireEvent.keyDown(search, { key: "Enter" });
     expect(onConfirm).toHaveBeenCalledWith(["visible"]);
+  });
+
+  it("focuses the search field, or in the touch layout the list, so it scrolls at once without a keyboard", async () => {
+    const first = render(<ChecklistDialog open onOpenChange={() => {}} title="Add Track" groups={groups} confirmLabel="Add Tracks" onConfirm={() => {}} searchPlaceholder="Search Properties" />);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Search Properties")));
+    first.unmount();
+    setTouchUi(true);
+    try {
+      render(<ChecklistDialog open onOpenChange={() => {}} title="Add Track" groups={groups} confirmLabel="Add Tracks" onConfirm={() => {}} searchPlaceholder="Search Properties" />);
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("list")));
+    } finally {
+      setTouchUi(false);
+    }
   });
 
   it("picks one item at a time, skips items it cannot take and runs its action row", () => {

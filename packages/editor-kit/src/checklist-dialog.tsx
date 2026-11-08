@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { CheckIcon } from "lucide-react";
 import { Button } from "@haptic/ui/components/button";
 import { Checkbox } from "@haptic/ui/components/checkbox";
@@ -85,6 +85,8 @@ export function ChecklistDialog({
   const [query, setQuery] = useState("");
   const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
   const idPrefix = useId();
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     setQuery("");
@@ -121,6 +123,8 @@ export function ChecklistDialog({
       <DialogContent
         className="h-[min(36rem,calc(100dvh-4rem))] sm:max-w-md"
         bodyClassName="flex flex-col gap-3 overflow-hidden"
+        // The touch layout focuses the list, so it scrolls at once and no keyboard covers it.
+        initialFocus={(interaction) => (touch && interaction !== "keyboard" ? listRef.current : searchRef.current)}
         data-testid={testId}
       >
         <DialogHeader>
@@ -131,11 +135,11 @@ export function ChecklistDialog({
         {/* SearchInput grows in a toolbar row; here the list below takes the free height. */}
         <div className="flex shrink-0" data-slot="checklist-search">
           <SearchInput
+            ref={searchRef}
             value={query}
             onChange={setQuery}
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
-            autoFocus={!touch}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
@@ -145,7 +149,7 @@ export function ChecklistDialog({
             data-testid={testId ? `${testId}-search` : undefined}
           />
         </div>
-        <div className="-mx-1 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1" role="list">
+        <div ref={listRef} tabIndex={-1} className="-mx-1 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 outline-none" role="list">
           {action ? <button
             type="button"
             className={cn("flex w-full items-center gap-2 rounded-md px-1.5 text-left font-medium hover:bg-accent/50 [&_svg]:size-4",
