@@ -24,6 +24,7 @@ Returns how deep the water is below this point, a fade that rises from 0 at the 
 ## Notes
 
 - With the scene behind the water available (see [**Water Scene Color**](water-scene-color.md)), Depth measures whatever lies under the water, such as rocks. Otherwise it uses the terrain under the water, or the body's banks and **Depth**.
+- Beside an object in front of the water, such as one standing in it, Depth measures the scene just next to it, as Water Scene Color shows it there.
 - Use Fade as the blend between Shallow and Deep Color, or as Opacity for soft shorelines.
 - Multiply Opacity by Edge Fade so the water's edges fade out as built-in water's do. The Material has to be Translucent.
 - To look like built-in water, [**Mix**](mix.md) from the deep water's colour to [**Water Scene Color**](water-scene-color.md) with Transmittance as the blend.

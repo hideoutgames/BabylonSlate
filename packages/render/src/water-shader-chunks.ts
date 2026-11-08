@@ -5,7 +5,6 @@
 import { WATER_FFT_CASCADES_MAX } from "@haptic/core";
 import { WATER_FFT_CASCADE_TURNS } from "./water-fft-spectrum";
 import { WATER_FIELD_SHORE_RANGE as SHORE } from "./water-field";
-import { WATER_SCENE_COPY_SKY_DEPTH } from "./water-scene-copy";
 import {
   f, FFT_CASCADE_UNIFORMS, OPEN_EDGE_FADE,
   OPEN_EDGE_FADE_TERRAIN, PIXEL_SLOPE_CAP, PIXEL_SLOPE_FILTER, SOFT_SHORE_DEPTH, SPECTRUM_FOAM_SCALE, SSR_REFINE_STEPS,
@@ -83,27 +82,22 @@ float swHaze = 1.0 - (1.0 - swAir * smoothstep(0.3, 0.85, ${graze})) * (1.0 - sm
 }
 
 /**
- * Beside the silhouette of something in front of the water, a downsampled copy texel holds that object (its nearest
- * depth): there the copy is not what lies behind this point. The nearest neighbouring texel that does lie behind the
- * water stands in for it (its colour and depth, at most one copy texel away, written into `uv` and `sceneZ`), so
- * silhouettes keep refracting instead of dropping a texel-sized block of pixels back to the blended surface. Only there:
- * four depth loads. `waterZ` is the water's view depth, `pixel` the output's 1 / width. High and Ultra Water Shading
- * Detail only (`SLATE_WATER_DETAIL` 2 and up): below, a silhouette's texel keeps the unbent copy's fallback. GLSL-shaped;
- * reads the copy helpers. The Water Scene Color node reads it.
+ * Beside the silhouette of something in front of the water, the copy texel holds that object (a downsampled texel's
+ * nearest depth, a multisampled pixel's one sample): there the copy is not what lies behind this point. The farthest
+ * neighbouring texel that does lie behind the water stands in for it (its colour and depth, one copy texel away, written
+ * into `uv` and `sceneZ`), so silhouettes keep refracting instead of dropping a texel-wide outline back to the blended
+ * surface. `base` is the fragment's own copy uv, which `uv` equals there (nothing in front of the water bends the
+ * lookup), and `waterZ` the water's view depth. Its depths are the fragment's copy neighbourhood (`swCopyNear`), which
+ * Water Depth Fade loads on every fragment: with both nodes, the fallback adds no texture loads, so it runs at every
+ * Water Shading Detail. GLSL-shaped; reads the copy helpers. The Water Scene Color node reads it.
  */
-export function silhouetteFallbackSource(uv: string, sceneZ: string, waterZ: string, pixel: string): string {
+export function silhouetteFallbackSource(uv: string, base: string, sceneZ: string, waterZ: string): string {
   return `
-#if ${WATER_DETAIL_DEFINE} >= 2
-vec2 swCopyTexel = swSceneTexelUv();
-if (${sceneZ} < ${waterZ} && swCopyTexel.x > ${pixel} * 1.01) {
-  float swBehind = ${f(WATER_SCENE_COPY_SKY_DEPTH * 2)};
-  vec2 swBehindUv = ${uv};${[[-1, 0], [1, 0], [0, -1], [0, 1]].map(([x, y], k) => `
-  vec2 swNearUv${k} = ${uv} + swCopyTexel * vec2(${f(x!)}, ${f(y!)});
-  float swNearZ${k} = swSceneDepth(swNearUv${k});
-  if (swNearZ${k} >= ${waterZ} && swNearZ${k} < swBehind) { swBehind = swNearZ${k}; swBehindUv = swNearUv${k}; }`).join("")}
-  if (swBehind < ${f(WATER_SCENE_COPY_SKY_DEPTH * 2)}) { ${uv} = swBehindUv; ${sceneZ} = swBehind; }
-}
-#endif`;
+if (${sceneZ} < ${waterZ}) {
+  vec3 swBehind = swCopyBehind(${base}, ${waterZ}, ${sceneZ});
+  ${uv} = ${base} + swBehind.xy * swSceneTexelUv();
+  ${sceneZ} = swBehind.z;
+}`;
 }
 
 /**
