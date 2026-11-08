@@ -10,7 +10,6 @@ import {
 } from "./document";
 import { isMaterialParameterNode, materialParameterName } from "./parameters";
 
-const MATERIAL_INSTANCE_SCHEMA_VERSION = 1;
 /** Parent chains deeper than this are rejected as authoring mistakes. */
 export const MATERIAL_INSTANCE_MAX_DEPTH = 16;
 
@@ -19,7 +18,6 @@ export const MATERIAL_INSTANCE_MAX_DEPTH = 16;
  * root parameter values. Parents may be Materials or other instances.
  */
 export interface MaterialInstanceDocument {
-  schemaVersion: number;
   kind: "materialInstance";
   name: string;
   parentGuid: string | null;
@@ -70,7 +68,6 @@ export function createDefaultMaterialInstanceDocument(
   parentGuid: string | null = null,
 ): MaterialInstanceDocument {
   return {
-    schemaVersion: MATERIAL_INSTANCE_SCHEMA_VERSION,
     kind: "materialInstance",
     name,
     parentGuid,
@@ -87,7 +84,6 @@ export function normalizeMaterialInstanceDocument(
   const record = asRecord(value);
   const parent = typeof record.parentGuid === "string" ? record.parentGuid.trim() : "";
   return {
-    schemaVersion: MATERIAL_INSTANCE_SCHEMA_VERSION,
     kind: "materialInstance",
     name: typeof record.name === "string" && record.name.trim() ? record.name : fallbackName,
     parentGuid: parent || null,

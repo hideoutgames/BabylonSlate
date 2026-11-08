@@ -11,7 +11,7 @@ Basic Particle Emitter, Particle Graph and Particle System assets, `ParticleComp
 - The look is a **particle-domain Material**; emitters have no Texture field (one look path). Textures are sampled in the Material ([shader-graph.md](shader-graph.md)). No default Material or Texture ships (no generated artwork): an emitter without a usable Material does not render.
 - Units are **seconds**: `updateSpeed = PARTICLE_UPDATE_SPEED` (1/60). Babylon's default 0.01 made one unit about 1.67 s.
 - Blend and billboard ids map to Babylon constants **by name** in [`particle-render-modes.ts`](../../../packages/render/src/particle-render-modes.ts), never repo-local numbers (an earlier numeric table swapped ONEONE and STANDARD).
-- **Versioning**: headers follow the [schema versioning rules](../engine-plan.md#schema-versioning); `schemaVersion` is a payload field. Normalizers read the current shape. Before the first release it changes in place; after it, a normalizer may fill defaults for new optional fields and any other change raises the header version and adds a migration step.
+- **Versioning**: the asset header `version` follows the [schema versioning rules](../engine-plan.md#schema-versioning); payloads carry no version of their own. Normalizers read the current shape. Before the first release it changes in place; after it, a normalizer may fill defaults for new optional fields and any other change raises the header version and adds a migration step.
 - Lifecycle (Loop, Duration, Pre Warm) belongs to each emitter; the System owns slots, Space and Preview Skybox.
 - Out of scope: flow maps, custom emitters, `textureMask`, ramp/remap gradients, a particle-age material node, attractors in Basic, live particles in the edit-mode viewport.
 
@@ -30,8 +30,8 @@ Basic Particle Emitter, Particle Graph and Particle System assets, `ParticleComp
 
 | Asset | Type, suffix | Payload | Dependencies |
 | --- | --- | --- | --- |
-| Basic Particle Emitter | `ParticleEmitter`, `.emitter.hasset` | `schemaVersion: 2` module stack | Its Material |
-| Particle Graph | `ParticleGraph`, `.particlegraph.hasset` | `schemaVersion: 1` graph + settings | Its Material |
+| Basic Particle Emitter | `ParticleEmitter`, `.emitter.hasset` | Module stack | Its Material |
+| Particle Graph | `ParticleGraph`, `.particlegraph.hasset` | Graph + settings | Its Material |
 | Particle System | `ParticleSystem`, `.particles.hasset` | `emitterGuids` (≤ 8, ordered, duplicates allowed), `space` (`world`/`local` → `isLocal` on every slot), `previewSkybox` | Its emitters |
 
 - The registry runs no normalizer at v1, so every read site normalizes (Play/preview `particleLibraryFromAssets`, player hydrate, Inspector).

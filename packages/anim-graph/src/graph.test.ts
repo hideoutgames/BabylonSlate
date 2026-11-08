@@ -6,7 +6,6 @@ import {
   ANIM_RULE_EXIT_TYPE,
 } from "./graph";
 import {
-  ANIM_GRAPH_SCHEMA_VERSION,
   ANIM_STATE_LAYOUT_GAP_X,
   clipForState,
   createDefaultAnimGraph,
@@ -659,10 +658,9 @@ describe("anim graph evaluator", () => {
   });
 });
 
-describe("anim graph v2 document", () => {
-  it("creates a versioned document with Animation Object events and empty variables", () => {
+describe("anim graph document", () => {
+  it("creates a document with Animation Object events and empty variables", () => {
     const doc = createDefaultAnimGraph();
-    expect(doc.schemaVersion).toBe(ANIM_GRAPH_SCHEMA_VERSION);
     expect(doc.variables).toEqual([]);
     expect(doc.animationObject.nodes.map((node) => node.type)).toEqual([
       ANIM_EVENT_INITIALIZE_TYPE,
@@ -803,7 +801,7 @@ describe("anim graph v2 document", () => {
   });
 });
 
-describe("anim graph v2 evaluator", () => {
+describe("anim graph evaluator", () => {
   it("keeps a transition gated until both Enter State and Exit State are true", () => {
     const doc = createDefaultAnimGraph();
     doc.states.push({

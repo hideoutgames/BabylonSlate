@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  MATERIAL_FUNCTION_SCHEMA_VERSION,
-  MATERIAL_SCHEMA_VERSION,
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   createImportedMaterialDocument,
@@ -15,7 +13,6 @@ import {
 describe("material document", () => {
   it("keeps new Color Parameter Vector 4 connections intact", () => {
     const doc = normalizeMaterialDocument({
-      schemaVersion: 3,
       nodes: [{ id: "tint", type: "param.color", properties: { name: "Tint" } }],
       edges: [{ id: "tint-edge", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" }],
     });
@@ -24,7 +21,6 @@ describe("material document", () => {
   });
   it("creates a surface material whose default graph reaches the output", () => {
     const doc = createDefaultMaterialDocument("Rock");
-    expect(doc.schemaVersion).toBe(MATERIAL_SCHEMA_VERSION);
     expect(doc.name).toBe("Rock");
     expect(doc.domain).toBe("surface");
     const terminal = doc.nodes.find((node) => node.type === "output.surface");
@@ -57,7 +53,6 @@ describe("material document", () => {
 
   it("keeps an explicit post-process domain and its terminal", () => {
     const doc = normalizeMaterialDocument({
-      schemaVersion: MATERIAL_SCHEMA_VERSION,
       name: "Blur",
       domain: "postProcess",
       nodes: [],
@@ -71,7 +66,6 @@ describe("material document", () => {
 
   it("treats leftover interface domain strings as surface", () => {
     const doc = normalizeMaterialDocument({
-      schemaVersion: MATERIAL_SCHEMA_VERSION,
       name: "HudGlow",
       domain: "interface",
       nodes: [],
@@ -150,7 +144,6 @@ describe("material document", () => {
 
   it("creates a material function with matching interface and plumbing nodes", () => {
     const fn = createDefaultMaterialFunctionDocument("Tint");
-    expect(fn.schemaVersion).toBe(MATERIAL_FUNCTION_SCHEMA_VERSION);
     expect(fn.inputs.length).toBeGreaterThan(0);
     expect(fn.outputs.length).toBeGreaterThan(0);
     expect(fn.nodes.some((node) => node.type === "function.input")).toBe(true);
@@ -159,7 +152,6 @@ describe("material document", () => {
 
   it("keeps stable function pin ids when normalizing", () => {
     const fn = normalizeMaterialFunctionDocument({
-      schemaVersion: MATERIAL_FUNCTION_SCHEMA_VERSION,
       name: "Tint",
       inputs: [{ id: "in_color", name: "Renamed Color", type: "vec3" }],
       outputs: [{ id: "out_value", name: "Result", type: "vec3" }],

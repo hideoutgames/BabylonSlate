@@ -36,8 +36,6 @@ import {
   type ParticleVec3Tuple,
 } from "./particle-values";
 
-/** Payload field; never a top-level `version` (the project service strips it). */
-const PARTICLE_EMITTER_SCHEMA_VERSION = 2 as const;
 export const PARTICLE_BURST_MAX_ENTRIES = 8;
 
 /** Authoring bounds shared by the normalizer and the Details panel. */
@@ -124,7 +122,6 @@ export const PARTICLE_SHAPE_KINDS: readonly ParticleShapeKind[] = [
 
 /** Optional modules carry `enabled`; a disabled module keeps its values. */
 export type ParticleEmitterPayload = {
-  schemaVersion: typeof PARTICLE_EMITTER_SCHEMA_VERSION;
   emitter: {
     loop: ParticleLoopMode;
     /** Seconds: loop length when infinite, run length when once. */
@@ -391,7 +388,6 @@ export function normalizeParticleEmitterPayload(
   const render = asRecord(rec.render);
   const specs = PARTICLE_VALUE_SPECS;
   return {
-    schemaVersion: PARTICLE_EMITTER_SCHEMA_VERSION,
     emitter: {
       loop: emitter.loop === "once" ? "once" : "infinite",
       duration: bounded(emitter.duration, 2, PARTICLE_EMITTER_LIMITS.duration),

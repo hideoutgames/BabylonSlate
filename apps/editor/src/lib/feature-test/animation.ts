@@ -1,6 +1,5 @@
 import {
   ANIM_EXIT_TIME_REACHED_TYPE,
-  ANIM_GRAPH_SCHEMA_VERSION,
   ANIM_RULE_ENTER_NODE_ID,
   animGraphMembersFromVariables,
   createDefaultAnimationObjectGraph,
@@ -195,7 +194,6 @@ function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
   const clip = (id: string, name: string) =>
     animationClip(ctx, id, requireRef(ctx.assets.mannequin.animations[name], `the Mannequin "${name}" Animation`));
   return {
-    schemaVersion: ANIM_GRAPH_SCHEMA_VERSION,
     name: NAMES.locomotionGraph,
     entryStateId: "idle",
     states: [
@@ -231,8 +229,7 @@ function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
  */
 function doorGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
   const clips = ctx.assets.doorAnimations;
-  const base: Pick<AnimGraphDocument, "schemaVersion" | "name" | "variables" | "animationObject"> = {
-    schemaVersion: ANIM_GRAPH_SCHEMA_VERSION,
+  const base: Pick<AnimGraphDocument, "name" | "variables" | "animationObject"> = {
     name: NAMES.doorGraph,
     variables: [],
     animationObject: createDefaultAnimationObjectGraph(),
