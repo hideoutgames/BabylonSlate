@@ -35,7 +35,7 @@ function wire(sourceNodeId: string, sourcePinId: string, targetNodeId: string, t
 }
 
 const library: ExtensionGameLibrary = {
-  extensionGuid: "scores-guid", libraryName: "scores", label: "Score Tools", settings: {},
+  extensionGuid: "scores-guid", libraryName: "scores", label: "Score Tools", settings: {}, assets: [],
   bundle: { entry: "game.js", modules: [{ path: "game.js", imports: {}, code: [
     "exports.add = (a, b) => a + b;",
     "exports.split = (full) => { const [first, last] = full.split(' '); return { first, last }; };",

@@ -1,8 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ContentBrowserNewAssetDialog, ContentBrowserNewAssetMenu } from "./content-browser-new-asset-dialog";
 import { CONTENT_BROWSER_FOLDER_COLOR } from "./content-browser-folder-tile";
 import type { CreatableAssetType } from "../lib/content-browser-helpers";
+import { createExtensionSettings, normalizeExtensionContributions } from "@haptic/assets";
+import { extensionAssetTypes } from "../lib/extension-asset-types";
+
+const weatherTypes = extensionAssetTypes([{
+  extensionGuid: "weather", folderName: "weather", folderPath: "extensions/weather", settingsPath: "extensions/weather/extension.json",
+  contentPath: "extensions/weather/assets", source: "project", readOnly: false,
+  settings: { ...createExtensionSettings("Weather", "weather"), contributes: normalizeExtensionContributions({ assetTypes: [
+    { id: "preset", title: "Weather Preset", sections: [{ id: "s", title: "S", fields: [{ id: "rain", label: "Rain", type: "number" }] }] },
+    { id: "zone", title: "Weather Zone", category: "World", description: "Where a preset applies.", sections: [{ id: "s", title: "S", fields: [{ id: "radius", label: "Radius", type: "number" }] }] },
+  ] }) },
+}]);
 
 const layout = vi.hoisted(() => ({ phone: false }));
 vi.mock("../shell/use-platform-layout", () => ({
@@ -290,6 +301,36 @@ describe("ContentBrowserNewAssetMenu", () => {
     fireEvent.click(screen.getByTestId("search-item-ParticleEmitter"));
     expect(onSelect).toHaveBeenCalledWith("ParticleEmitter");
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("lists enabled extensions' asset types under their categories and hands the chosen one to its own handler", () => {
+    const onSelect = vi.fn();
+    const onSelectExtension = vi.fn();
+    render(
+      <ContentBrowserNewAssetMenu open onOpenChange={vi.fn()} anchor={{ x: 40, y: 60 }} onSelect={onSelect} onNewFolder={vi.fn()}
+        extensionTypes={weatherTypes} onSelectExtension={onSelectExtension}>
+        <button type="button">New Asset</button>
+      </ContentBrowserNewAssetMenu>,
+    );
+    const menu = screen.getByTestId("new-asset-type-menu");
+    // Without a category a type sits under its extension's name; World holds built-in types and Weather Zone.
+    expect(within(menu).getByTestId("search-item-extension.weather.preset").textContent).toBe("Weather Preset");
+    const labels = [...menu.querySelectorAll("[data-slot='dropdown-menu-label']")].map((node) => node.textContent);
+    expect(labels).toContain("Weather");
+
+    fireEvent.change(screen.getByTestId("new-asset-type-menu-query"), { target: { value: "weather zone" } });
+    fireEvent.click(screen.getByTestId("search-item-extension.weather.zone"));
+    expect(onSelectExtension).toHaveBeenCalledExactlyOnceWith(weatherTypes[1]);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("describes an extension asset type and offers none of the built-in type options", () => {
+    const { onCreate } = renderDialog({ type: "Class", extensionType: weatherTypes[0], name: "Drizzle" });
+    expect(screen.getByText("Weather Preset")).toBeTruthy();
+    expect(screen.getByTestId("new-asset-type-description").textContent).toBe("Added by Weather.");
+    expect(screen.queryByTestId("new-asset-parent")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    expect(onCreate).toHaveBeenCalledOnce();
   });
 
   it("lists Folder first under Structure, grey like folder tiles, and makes a folder instead of opening the New Asset dialog", () => {

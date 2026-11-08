@@ -150,6 +150,35 @@ describe("Editor Extensions in a project", () => {
     await service.closeProject();
   });
 
+  it("authors an enabled extension's asset type from its code, keeps its type and name on save and links it into the game library", async () => {
+    const { service, storage } = await setup();
+    const contributes = normalizeExtensionContributions({ assetTypes: [{ id: "preset", title: "Weather Preset", editorOnly: false,
+      sections: [{ id: "sky", title: "Sky", fields: [{ id: "rain", label: "Rain", type: "number", default: 1, max: 10 }] }] }] });
+    const entry = await writeProjectExtension(storage, "weather", { ...createExtensionSettings("Weather", "weather"), editorOnly: false, contributes }, `
+      export function activate(api) {
+        api.registerCommand({ id: "make", title: "Make", async execute() {
+          await api.assets.create("assets/Rain.hasset", { type: "extension.weather.preset", name: "Rain", payload: { rain: 50, stray: true } });
+          const refused = await api.assets.create("assets/Other.hasset", { type: "extension.other.preset", name: "Other", payload: {} }).then(() => "created", (error) => error.message);
+          return refused;
+        } });
+      }
+    `);
+    await storage.writeText("extensions/weather/game.ts", "export const ready = true;");
+    await enable(service, entry);
+
+    expect(await service.extensions.run(entry.extensionGuid, "make", {})).toBe("Extension cannot author this asset type: extension.other.preset");
+    const rain = service.registry?.getByPath("assets/Rain.hasset");
+    expect(rain?.header.type).toBe("extension.weather.preset");
+    expect(await service.loadDocument("extension-asset", "assets/Rain.hasset")).toEqual({ rain: 10 });
+
+    await service.saveDocument("extension-asset", "assets/Rain.hasset", { rain: 4 });
+    const saved = service.registry?.getByPath("assets/Rain.hasset");
+    expect([saved?.header.type, saved?.header.name]).toEqual(["extension.weather.preset", "Rain"]);
+    const [library] = await service.extensions.gameLibraries();
+    expect(library!.assets).toEqual([{ guid: rain!.header.guid, name: "Rain", type: "preset", values: { rain: 4 } }]);
+    await service.closeProject();
+  });
+
   it("adds an enabled gameplay extension's graph nodes to the editor's node registry and removes them when disabled", async () => {
     const { service, storage } = await setup();
     const contributes = normalizeExtensionContributions({ nodes: [{ id: "ping", title: "Ping", call: "ping", outputs: [{ id: "ok", name: "OK", type: "bool" }] }] });

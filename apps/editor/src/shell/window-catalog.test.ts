@@ -234,6 +234,12 @@ describe("material dock catalog", () => {
     expect(primaryDockPanel("font")).toBe("font-preview");
   });
 
+  it("opens an extension asset in DockView on its Inspector alone", () => {
+    expect(isDockviewDocumentKind("extension-asset")).toBe(true);
+    expect(listDockWindows("extension-asset").map((entry) => entry.id)).toEqual(["extension-asset-details"]);
+    expect(primaryDockPanel("extension-asset")).toBe("extension-asset-details");
+  });
+
   it("anchors Locks under the material graph when source control is on", () => {
     expect(
       listDockWindows("material", { sourceControl: true }).find(

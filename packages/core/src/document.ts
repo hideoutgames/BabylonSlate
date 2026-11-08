@@ -50,6 +50,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "texture",
   "render-target",
   "render-target-texture",
+  "extension-asset",
 ] as const;
 
 export type AssetDocumentKind = (typeof ASSET_DOCUMENT_KINDS)[number];
@@ -183,10 +184,25 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "RenderTarget";
     case "render-target-texture":
       return "RenderTargetTexture";
+    // Each extension asset keeps its own header type; this placeholder is never written.
+    case "extension-asset":
+      return "ExtensionAsset";
   }
 }
 
+/** Header types an extension declares: `extension.<extensionGuid>.<typeId>`. */
+export const EXTENSION_ASSET_TYPE_PREFIX = "extension.";
+
+export function extensionAssetType(extensionGuid: string, typeId: string): string {
+  return `${EXTENSION_ASSET_TYPE_PREFIX}${extensionGuid}.${typeId}`;
+}
+
+export function isExtensionAssetType(type: string): boolean {
+  return type.startsWith(EXTENSION_ASSET_TYPE_PREFIX);
+}
+
 export function documentKindForAssetType(type: string): AssetDocumentKind | null {
+  if (isExtensionAssetType(type)) return "extension-asset";
   switch (type) {
     case "Scene":
       return "scene";
@@ -387,6 +403,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Render Target";
     case "render-target-texture":
       return "Render Target Texture";
+    case "extension-asset":
+      return "Extension Asset";
   }
 }
 

@@ -98,6 +98,36 @@ describe("Extension fields", () => {
     expect(() => normalizeExtensionContributions({ menus: [{ menu: "debug", command: "x" }, { menu: "debug", command: "x" }] })).toThrow(/appears twice/);
   });
 
+  it("normalize asset types: Editor Only unless turned off, sections filled like settings", () => {
+    expect(normalizeExtensionContributions({ assetTypes: [
+      { id: "preset", title: " Weather Preset ", iconKey: "Cloud", sections: [{ id: "sky", title: "Sky", fields: [{ id: "rain", label: "Rain", type: "toggle" }] }] },
+      { id: "zone", title: "Weather Zone", category: "World", editorOnly: false, description: "Where weather applies.",
+        sections: [{ id: "size", title: "Size", fields: [{ id: "radius", label: "Radius", type: "number", min: 1 }] }] },
+    ] }).assetTypes).toEqual([
+      { id: "preset", title: "Weather Preset", iconKey: "Cloud", editorOnly: true,
+        sections: [{ id: "sky", title: "Sky", fields: [{ id: "rain", label: "Rain", type: "toggle", default: false }] }] },
+      { id: "zone", title: "Weather Zone", category: "World", description: "Where weather applies.", editorOnly: false,
+        sections: [{ id: "size", title: "Size", fields: [{ id: "radius", label: "Radius", type: "number", default: 1, integer: false, min: 1 }] }] },
+    ]);
+    expect(normalizeExtensionContributions({ assetTypes: [] })).toEqual({});
+  });
+
+  it.each([
+    ["without sections", [{ id: "a", title: "A", sections: [] }], /at least one section/],
+    ["with one field id in two sections", [{ id: "a", title: "A", sections: [
+      { id: "s", title: "S", fields: [{ id: "x", label: "X", type: "text" }] },
+      { id: "t", title: "T", fields: [{ id: "x", label: "X", type: "text" }] },
+    ] }], /Duplicate field id: x/],
+    ["declared twice", [
+      { id: "a", title: "A", sections: [{ id: "s", title: "S", fields: [{ id: "x", label: "X", type: "text" }] }] },
+      { id: "a", title: "B", sections: [{ id: "s", title: "S", fields: [{ id: "x", label: "X", type: "text" }] }] },
+    ], /asset type ids must be unique/],
+    ["with an id that is not an identifier", [{ id: "a.b", title: "A", sections: [] }], /must start with a letter/],
+    ["with a non-boolean editorOnly", [{ id: "a", title: "A", editorOnly: "no", sections: [] }], /editorOnly must be true or false/],
+  ])("reject an asset type %s", (_name, assetTypes, message) => {
+    expect(() => normalizeExtensionContributions({ assetTypes })).toThrow(message);
+  });
+
   it("round-trip in the manifest and reject a malformed command form", () => {
     const contributes = normalizeExtensionContributions({ settings });
     const manifest = { ...createDefaultExtensionSettings({ extensionGuid: "discord", displayName: "Discord" }), contributes };

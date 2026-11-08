@@ -1,6 +1,6 @@
 # Extensions
 
-Extensions are small JavaScript or TypeScript packages. Every extension can add editor commands that read and create assets and project code, and place them in editor menus. An extension with **Editor Only** turned off also adds a game library and content to Play and packaged games.
+Extensions are small JavaScript or TypeScript packages. Every extension can add editor commands that read and create assets and project code, place them in editor menus, and add its own asset types. An extension with **Editor Only** turned off also adds a game library and content to Play and packaged games.
 
 For editor tools built with visual scripting instead of code, see [Editor Scripting](../scripting/editor-scripting.md).
 
@@ -45,7 +45,7 @@ Unsupported code is reported before anything is created. See [Materials](../grap
 | Library Name | Shown when Editor Only is off. The name games use to reach the game library. |
 | Appear In Content Browser | Shown when Editor Only is off, and off by default. Shows the extension's content folder in the Content Browser. |
 | Extension Dependencies | Other extensions it needs. |
-| Contributions | What the extension adds to the editor, as JSON. See [Project Settings](#project-settings) and [Graph nodes](#graph-nodes). |
+| Contributions | What the extension adds to the editor, as JSON. See [Project Settings](#project-settings), [Menus](#menus), [Asset types](#asset-types) and [Graph nodes](#graph-nodes). |
 | Code Files | Chooses the file the code editor shows. **New Code File** and **Add Code File** add files; **Remove Code File** removes an added file. |
 
 ### Code files
@@ -74,7 +74,7 @@ The editor entry exports an `activate(api)` function. It can be `async` and can 
 | `api.settings.get()` / `api.settings.onChange(listener)` | Read the extension's [Project Settings](#project-settings) values, and run `listener` when they change. `onChange` returns a function that stops it. |
 | `api.assets.list()` | List the project's assets. |
 | `api.assets.read(path)` | Read an asset document. |
-| `api.assets.create(path, { type, name, payload })` | Create an asset under `assets/`. Fails if the path exists. |
+| `api.assets.create(path, { type, name, payload })` | Create an asset under `assets/`. Fails if the path exists. An [extension asset type](#asset-types) is written as `extension.<Extension ID>.<id>`. |
 | `api.assets.update(path, document)` | Change an asset. Close its tab first. |
 | `api.code.read(path)` / `api.code.write(path, source)` | Read or write `.ts` and `.js` files under `code/`. |
 | `api.materials.convertGlsl(source, options)` | Convert GLSL to a Material document without saving it. |
@@ -181,6 +181,63 @@ export function activate(api) {
   });
 }
 ```
+
+## Asset types
+
+An extension can add its own asset types. Declare them under `assetTypes` in **Contributions**:
+
+```json
+{
+  "assetTypes": [
+    {
+      "id": "preset",
+      "title": "Weather Preset",
+      "category": "Weather",
+      "description": "Rain, wind and fog for one kind of weather.",
+      "iconKey": "Sparkles",
+      "editorOnly": false,
+      "sections": [
+        {
+          "id": "sky",
+          "title": "Sky",
+          "fields": [
+            { "id": "rain", "label": "Rain Chance", "type": "number", "min": 0, "max": 1, "default": 0.5 },
+            { "id": "storms", "label": "Storms", "type": "toggle" }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+- While the extension is enabled, **New Asset** in the Content Browser lists the type under its `category` (the extension's name if none). The new asset holds every field's default and opens at once.
+- The asset's **Inspector** shows the type's sections. Fields use the [field types](#field-types), and each field's value is saved in the asset.
+- `iconKey` names one of the icons the extension's **Icon** field offers, such as `Sparkles`. Without it, the type uses the extension's icon.
+- Assets are ordinary `.hasset` files, named after the asset. They stay in the project when the extension is disabled or removed, but cannot be edited until an enabled extension declares their type again.
+- `editorOnly` is on unless you turn it off. Editor Only assets never reach games.
+
+### Assets in games
+
+With `editorOnly` off, a [gameplay extension](#gameplay-extensions)'s game code reads every asset of the type in the project:
+
+```js
+import { assets } from "haptic:extension";
+
+export function wettest() {
+  return Math.max(...assets.list("preset").map((asset) => asset.values.rain));
+}
+```
+
+| Call | Returns |
+| --- | --- |
+| `assets.list()` | Every asset of the extension's gameplay types, as `{ guid, name, type, values }`. `type` is the asset type's `id`. |
+| `assets.list(type)` | The assets of one asset type. |
+| `assets.get(guid)` | One asset, or `null`. |
+
+- Assets ship with the game whether or not anything else uses them. Play uses the values open tabs show, saved or not; Preview Build and packaged games use saved values.
+- The values are read-only. A field the extension no longer declares is left out, and a missing value takes its default.
+- An Editor Only extension has no game library, so its gameplay asset types do not reach games. Project Extensions lists this as a diagnostic.
 
 ## Graph nodes
 

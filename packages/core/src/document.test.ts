@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { ASSET_TYPES } from "./asset-catalog";
+import { isEditorOnlyAssetType } from "./editor-only";
 import {
   CONTENT_BROWSER_ID,
   assetTypeForDocumentKind,
+  extensionAssetType,
+  isExtensionAssetType,
   createDocumentRef,
   createEmptyLayouts,
   documentId,
@@ -275,6 +279,18 @@ describe("Class and settings documents", () => {
         name: "Day",
       }).label,
     ).toBe("Day Skybox Creator");
+  });
+
+  it("opens every extension-declared asset type as the one extension asset kind, never offered to Find Assets", () => {
+    const type = extensionAssetType("weather", "preset");
+    expect(type).toBe("extension.weather.preset");
+    expect(isExtensionAssetType(type)).toBe(true);
+    expect(isExtensionAssetType("Material")).toBe(false);
+    expect(documentKindForAssetType(type)).toBe("extension-asset");
+    expect(documentKindLabel("extension-asset")).toBe("Extension Asset");
+    expect(ASSET_TYPES).not.toContain(assetTypeForDocumentKind("extension-asset"));
+    // Gameplay ones ship inside their extension's library data, so no file is ever packed.
+    expect(isEditorOnlyAssetType(type)).toBe(true);
   });
 
   it("labels a Water document, which carries no name, from its file stem", () => {

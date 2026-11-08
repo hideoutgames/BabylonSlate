@@ -1,14 +1,15 @@
-import { ENGINE_VERSION, type ExtensionGameLibrary, type ProjectStorage } from "@haptic/core";
+import { ENGINE_VERSION, type ExtensionGameLibrary, type ExtensionLibraryAsset, type ProjectStorage } from "@haptic/core";
 import {
   applyExtensionImport, createExtensionSettings, discoverEngineExtensions,
   discoverProjectExtensions, encodeExtensionSettings, exportExtensionZip,
   EXTENSION_CODE_DIR, EXTENSION_SOURCE_MAX_BYTES, inspectHextension, isExtensionCodePath,
-  isExtensionPackagePath, normalizeExtensionSettings,
+  isExtensionPackagePath, normalizeExtensionSettings, resolveExtensionFieldValues,
   planExtensionImport, readExtensionCodeFiles, resolveExtensionGraph, shadowEngineExtensions,
   uniqueExtensionFolderName, writeProjectExtension,
   type ExtensionCodeFile, type ExtensionDescriptor, type ExtensionSettings,
 } from "@haptic/assets";
 import { EditorExtensionHost, type EditorExtensionServices, type EditorExtensionCommandDescriptor, type ExtensionMenuContext } from "../lib/editor-extension-host";
+import { extensionAssetTypeDiagnostics, extensionAssetTypes, type ExtensionAssetTypeDescriptor } from "../lib/extension-asset-types";
 import { linkExtensionModules } from "../lib/extension-modules";
 import { resolvedExtensionSettings, type ExtensionSettingValues } from "../lib/extension-settings-ui";
 
@@ -40,6 +41,8 @@ export type ExtensionOverrides = Record<string, { enabled: boolean }>;
 export interface ExtensionSnapshot {
   entries: ExtensionDescriptor[];
   commands: EditorExtensionCommandDescriptor[];
+  /** Asset types of the enabled packages, in dependency order. */
+  assetTypes: ExtensionAssetTypeDescriptor[];
   diagnostics: string[];
 }
 
@@ -64,7 +67,7 @@ export class EditorExtensionService {
   private overrides: ExtensionOverrides = {};
   private settingValues: ExtensionSettingValues = {};
   private listeners = new Set<() => void>();
-  private state: ExtensionSnapshot = { entries: [], commands: [], diagnostics: [] };
+  private state: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [] };
   private fingerprint = "";
   /** Extensions active in the current host, which the fingerprint describes. */
   private started = new Set<string>();
@@ -134,6 +137,12 @@ export class EditorExtensionService {
       ...this.packageDiagnostics, ...this.cleanupDiagnostics, ...this.host.getDiagnostics().map((value) => value.message),
     ] });
   }
+  /** Keeps the published list (and its identity) while the enabled packages' types are unchanged. */
+  private publishAssetTypes(order: readonly ExtensionDescriptor[]): void {
+    const next = extensionAssetTypes(order);
+    if (JSON.stringify(next) === JSON.stringify(this.state.assetTypes)) return;
+    this.state = { ...this.state, assetTypes: next };
+  }
   private async resetHost(): Promise<void> {
     this.unsubscribeHost();
     await this.host.dispose();
@@ -193,6 +202,7 @@ export class EditorExtensionService {
         ...duplicateLibraryDiagnostics(graph.order),
         ...graph.order.filter((entry) => entry.settings.editorOnly && entry.settings.contributes.nodes?.length)
           .map((entry) => `${entry.settings.displayName}: its graph nodes appear only while Editor Only is off.`),
+        ...extensionAssetTypeDiagnostics(graph.order),
       ];
       const modules: { entry: ExtensionDescriptor; files: ExtensionCodeFile[] }[] = [];
       for (const entry of graph.order) {
@@ -223,6 +233,7 @@ export class EditorExtensionService {
         })) this.started.add(entry.extensionGuid);
       }
       this.packageDiagnostics = diagnostics;
+      this.publishAssetTypes(graph.order);
       this.publishHostState(entries);
     } catch (cause) {
       await this.resetHost();
@@ -231,6 +242,7 @@ export class EditorExtensionService {
       this.syncNodes([]);
       await this.syncContentRoots([]).catch(() => undefined);
       this.packageDiagnostics = [String(cause)];
+      this.publishAssetTypes([]);
       this.publishHostState([]);
       throw cause;
     }
@@ -246,6 +258,7 @@ export class EditorExtensionService {
       this.order = [];
       this.syncNodes([]);
       await this.syncContentRoots([]);
+      this.publishAssetTypes([]);
       this.publishHostState([]);
     });
   }
@@ -334,9 +347,15 @@ export class EditorExtensionService {
 
   /**
    * Links the game module of every enabled gameplay package, dependencies first,
-   * reading current files so edits made in another editor are picked up.
+   * reading current files so edits made in another editor are picked up. Each
+   * library carries the project's assets of its gameplay asset types;
+   * `openContent` supplies an open tab's unsaved payload for a path.
    */
-  gameLibraries(overrides: ExtensionOverrides = this.overrides, settingValues: ExtensionSettingValues = this.settingValues): Promise<ExtensionGameLibrary[]> {
+  gameLibraries(
+    overrides: ExtensionOverrides = this.overrides,
+    settingValues: ExtensionSettingValues = this.settingValues,
+    openContent: (path: string) => Record<string, unknown> | undefined = () => undefined,
+  ): Promise<ExtensionGameLibrary[]> {
     return this.serialize(async () => {
       const entries = shadowEngineExtensions(
         await discoverProjectExtensions(this.storage),
@@ -346,7 +365,11 @@ export class EditorExtensionService {
       const duplicates = duplicateLibraryDiagnostics(order);
       if (duplicates.length > 0) throw new Error(duplicates.join("\n"));
       const libraries: ExtensionGameLibrary[] = [];
-      for (const entry of gameplayExtensions(order)) {
+      const gameplay = gameplayExtensions(order);
+      const listed = gameplay.some((entry) => entry.settings.contributes.assetTypes?.some((type) => !type.editorOnly))
+        ? [...await this.services.assets.list()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+        : [];
+      for (const entry of gameplay) {
         try {
           const files = await readExtensionCodeFiles(this.storageFor(entry), entry.folderPath);
           libraries.push({
@@ -354,6 +377,7 @@ export class EditorExtensionService {
             libraryName: entry.settings.libraryName,
             label: entry.settings.displayName,
             settings: resolvedExtensionSettings(entry, settingValues),
+            assets: await this.libraryAssets(entry, listed, openContent),
             bundle: await linkExtensionModules(files, entry.settings.gameEntryPoint),
           });
         } catch (cause) {
@@ -362,6 +386,30 @@ export class EditorExtensionService {
       }
       return libraries;
     });
+  }
+
+  /** The listed assets of the package's gameplay (not Editor Only) asset types, values resolved against their fields. */
+  private async libraryAssets(
+    entry: ExtensionDescriptor,
+    listed: readonly { path: string; type: string; name: string; guid: string }[],
+    openContent: (path: string) => Record<string, unknown> | undefined,
+  ): Promise<ExtensionLibraryAsset[]> {
+    const types = new Map(extensionAssetTypes([entry]).filter((type) => !type.editorOnly).map((type) => [type.type, type]));
+    const assets: ExtensionLibraryAsset[] = [];
+    for (const asset of listed) {
+      const type = types.get(asset.type);
+      if (!type) continue;
+      let payload = openContent(asset.path);
+      if (!payload) {
+        try {
+          payload = (await this.services.assets.read(asset.path)).payload;
+        } catch (cause) {
+          throw new Error(`${asset.path}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+        }
+      }
+      assets.push({ guid: asset.guid, name: asset.name, type: type.id, values: resolveExtensionFieldValues(type.fields, payload) });
+    }
+    return assets;
   }
 
   /** Enabled gameplay packages of the last refresh, dependencies first. */

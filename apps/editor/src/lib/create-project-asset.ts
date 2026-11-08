@@ -24,6 +24,7 @@ import {
   type CreatableAssetType,
 } from "./content-browser-helpers";
 import { isEngineClassId } from "./class-asset-lookup";
+import { newExtensionAssetPayload, type ExtensionAssetTypeDescriptor } from "./extension-asset-types";
 import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "./logic-graph-document";
 import { PROJECT_CONTENT_ROOT_ID } from "./plugin-ui";
 import { classIdForGraphPath } from "../services/script-compiler";
@@ -115,6 +116,28 @@ export async function createProjectAsset(options: {
     joinAssetFolderPath(options.folderRelative, fileName),
     result,
   );
+}
+
+/** New Asset's write for an extension asset type: `<Name>.hasset` holding every field's default. */
+export async function createExtensionAsset(options: {
+  registry: Pick<AssetRegistry, "createAsset">;
+  rootId: string;
+  folderRelative: string;
+  type: ExtensionAssetTypeDescriptor;
+  name: string;
+}): Promise<IndexedAsset> {
+  const fileName = newAssetFileName(options.type.type, options.name);
+  if (!fileName) throw new Error("Enter a name for the new asset.");
+  return options.registry.createAsset(options.rootId, joinAssetFolderPath(options.folderRelative, fileName), {
+    type: options.type.type,
+    name: options.name.trim(),
+    guid: newAssetGuid(),
+    // Unregistered types have no schema version; saves write the same 0.
+    version: 0,
+    dependencies: [],
+    payload: newExtensionAssetPayload(options.type),
+    chunks: [],
+  });
 }
 
 /** Types a picker may offer as Create New rows (editor-only tools, and clips that need a Timeline Asset first, excluded). */

@@ -1,3 +1,4 @@
+import { isExtensionAssetType } from "./document";
 import { normalizeClassMemberCategory } from "./class-member-category";
 import { normalizeMaterialInstanceOverrides, type MaterialInstanceOverrides } from "./material-parameter-value";
 import type { SerializedComponent } from "./scene";
@@ -10,7 +11,9 @@ export function isEditorOnlyAssetType(type: string): boolean {
   return (
     type === "EditorUtilityInterface" ||
     type === "PluginSettings" ||
-    type === "SkyboxCreator"
+    type === "SkyboxCreator" ||
+    // Never packed as files: gameplay ones reach games inside their extension's library data.
+    isExtensionAssetType(type)
   );
 }
 

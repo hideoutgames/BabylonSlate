@@ -85,12 +85,13 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
 };
 
 /** File suffix a new asset of this type is written with. */
-export function newAssetFileSuffix(type: CreatableAssetType): string {
-  return ASSET_FILE_SUFFIX[type] ?? ".hasset";
+export function newAssetFileSuffix(type: CreatableAssetType | (string & {})): string {
+  return (ASSET_FILE_SUFFIX as Partial<Record<string, string>>)[type] ?? ".hasset";
 }
 
+/** `type` may also be an extension asset type, written with the plain `.hasset` suffix. */
 export function newAssetFileName(
-  type: CreatableAssetType,
+  type: CreatableAssetType | (string & {}),
   name: string,
 ): string {
   const safe = name.trim().replace(/[^a-zA-Z0-9_.-]+/g, "_");

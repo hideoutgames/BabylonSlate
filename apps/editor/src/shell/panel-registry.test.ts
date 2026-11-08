@@ -57,6 +57,7 @@ const KINDS = Object.keys({
   timeline: true,
   "timeline-clip-2d": true,
   "timeline-clip-3d": true,
+  "extension-asset": true,
 } satisfies Record<DockviewDocumentKind, true>) as DockviewDocumentKind[];
 
 const OPTION_VARIANTS: DockWindowOptions[] = [

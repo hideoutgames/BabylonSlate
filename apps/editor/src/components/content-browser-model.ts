@@ -9,6 +9,7 @@ import {
 import { resolvePluginEnabled, type ExtensionDescriptor, type IndexedAsset } from "@haptic/assets";
 import type { TypeVisual } from "@haptic/editor-kit";
 import type { useProjectState, useRegistryState } from "../context/document-context";
+import { useExtensionAssetTypes } from "./use-extension-asset-types";
 import { resolvePluginIcon } from "../lib/plugin-icons";
 import {
   ASSETS_ROOT,
@@ -188,18 +189,19 @@ export function useContentBrowserModel(deps: ContentBrowserModelDeps) {
     [allAssets],
   );
 
-  /** One type visual per asset object while the class ancestry is unchanged. */
+  const extensionAssetTypes = useExtensionAssetTypes();
+  /** One type visual per asset object while the class ancestry and extension asset types are unchanged. */
   const typeVisualFor = useMemo(() => {
     const visuals = new WeakMap<IndexedAsset, TypeVisual>();
     return (asset: IndexedAsset): TypeVisual => {
       let visual = visuals.get(asset);
       if (!visual) {
-        visual = visualForIndexedAsset(asset, classParentOf);
+        visual = visualForIndexedAsset(asset, classParentOf, extensionAssetTypes);
         visuals.set(asset, visual);
       }
       return visual;
     };
-  }, [classParentOf]);
+  }, [classParentOf, extensionAssetTypes]);
 
   const folderGuids = useMemo(() => {
     if (folderTrees.length === 0) return null;

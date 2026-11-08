@@ -913,9 +913,14 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setSessionPlayScene(resolvedScene);
         const nextScripts = game.scripts;
         const nextDiagnostics: Diagnostic[] = [...prepared.diagnostics];
-        // Linked from the files as they are now, so edits made in another editor play too.
+        // Linked from the files as they are now, so edits made in another editor play too;
+        // extension assets open in tabs play with their unsaved values.
+        const openExtensionAssets = new Map(getOpenDocuments().flatMap((doc) =>
+          doc.ref.kind === "extension-asset" && doc.content && typeof doc.content === "object"
+            ? [[doc.ref.path, doc.content as Record<string, unknown>] as const] : []));
         setExtensionLibraries(await current(extensionService.gameLibraries(
-          projectDocument.settings.extensionOverrides, projectDocument.settings.extensionSettings)));
+          projectDocument.settings.extensionOverrides, projectDocument.settings.extensionSettings,
+          (path) => openExtensionAssets.get(path))));
         setScripts(nextScripts);
         setDiagnostics(nextDiagnostics);
         playContentActions.setPrepared(preparedPlayContent(prepared, {

@@ -113,6 +113,7 @@ const assetEditorPanelComponents = {
   "audio-mixer-details": lazyPanel(dataPanels, (m) => m.AudioMixerDetailsPanel),
   "audio-channel-details": lazyPanel(dataPanels, (m) => m.AudioChannelDetailsPanel),
   "sound-attenuation-details": lazyPanel(dataPanels, (m) => m.SoundAttenuationDetailsPanel),
+  "extension-asset-details": lazyPanel(dataPanels, (m) => m.ExtensionAssetDetailsPanel),
   "curve-asset-editor": lazyPanel(dataPanels, (m) => m.CurveAssetEditorPanel),
   "curve-asset-details": lazyPanel(dataPanels, (m) => m.CurveAssetDetailsPanel),
   "global-parameter-collection": lazyPanel(dataPanels, (m) => m.GlobalParameterCollectionPanel),

@@ -15,7 +15,7 @@ The toolbar above the grid has:
 | Control | Use |
 | --- | --- |
 | Import | Import files into the current folder. A ZIP imports into a new folder named after it. See [Importing Assets](importing.md). |
-| New Asset | Open a menu with **Folder** first under **Structure**, then the asset types grouped by category, with a search field at the top. **Folder** creates a folder at once (see [New folders](#new-folders)). Pick a type, then name the asset to create it in the current folder. Click **Location** to pick a different folder before you create it. See [Assets](../assets/index.md) for every type. |
+| New Asset | Open a menu with **Folder** first under **Structure**, then the asset types grouped by category, with a search field at the top. **Folder** creates a folder at once (see [New folders](#new-folders)). Pick a type, then name the asset to create it in the current folder. Click **Location** to pick a different folder before you create it. See [Assets](../assets/index.md) for every type; enabled [extensions](../projects/extensions.md#asset-types) can add their own. |
 | Search assets… | Filter the grid by name. |
 | Filter | Show only the asset types you tick under **Asset Types**, in the grid and the folder tree. Folders always show. |
 | Sort | **Name A–Z**, **Name Z–A**, **Type A–Z**, **Type Z–A**, **Date Modified (Newest)** or **Date Modified (Oldest)**. |

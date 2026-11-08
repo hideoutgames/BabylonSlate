@@ -89,6 +89,7 @@ const DEFAULT_FOCUS_KEEP_PANELS = {
   "skybox-creator": ["skybox-creator-preview"],
   trace: ["trace-timeline"],
   texture: ["texture-preview"],
+  "extension-asset": ["extension-asset-details"],
 } as const;
 
 type FocusKeepPanelKey = keyof typeof DEFAULT_FOCUS_KEEP_PANELS;

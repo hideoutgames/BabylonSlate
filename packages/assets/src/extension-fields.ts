@@ -101,10 +101,30 @@ export interface ExtensionMenuContribution {
   title?: string;
 }
 
+/**
+ * An asset type the extension adds: New Asset creates it, its Details window
+ * shows `sections`, and the fields' values are the asset's payload.
+ */
+export interface ExtensionAssetTypeContribution {
+  /** Unique within the extension; the header type is `extension.<extensionGuid>.<id>`. */
+  id: string;
+  title: string;
+  /** New Asset category; the extension's display name when omitted. */
+  category?: string;
+  /** One sentence shown in New Asset. */
+  description?: string;
+  /** Icon key; the extension's icon when omitted. */
+  iconKey?: string;
+  /** On (default): assets stay in the editor. Off: they reach the extension's game library. */
+  editorOnly: boolean;
+  sections: ExtensionSettingsSection[];
+}
+
 export interface ExtensionContributions {
   settings?: ExtensionSettingsContribution;
   nodes?: ExtensionNodeContribution[];
   menus?: ExtensionMenuContribution[];
+  assetTypes?: ExtensionAssetTypeContribution[];
 }
 
 const FIELD_ID = /^[A-Za-z][A-Za-z0-9_-]*$/;
@@ -259,34 +279,68 @@ function normalizeMenus(value: unknown): ExtensionMenuContribution[] | undefined
   return menus;
 }
 
+/** Sections of one form (`what`: "Extension settings", "Asset type x"); field ids are unique across all of them. */
+function normalizeSections(value: unknown, what: string): ExtensionSettingsSection[] {
+  if (!Array.isArray(value) || value.length === 0) throw new Error(`${what} need at least one section.`);
+  const sectionIds = new Set<string>();
+  const sections = value.map((entry, index): ExtensionSettingsSection => {
+    const section = record(entry, `${what} section ${index + 1}`);
+    const id = text(section.id, `${what} section id`);
+    if (!FIELD_ID.test(id) || sectionIds.has(id)) throw new Error(`${what}: invalid or duplicate section id: ${id}`);
+    sectionIds.add(id);
+    const fields = normalizeExtensionFields(section.fields);
+    if (fields.length === 0) throw new Error(`${what} section ${id} needs at least one field.`);
+    return { id, title: text(section.title, `${what} section ${id} title`), fields };
+  });
+  // One value per field id across the whole form.
+  normalizeExtensionFields(sections.flatMap((section) => section.fields));
+  return sections;
+}
+
+function normalizeAssetTypes(value: unknown): ExtensionAssetTypeContribution[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error("Extension asset types must be a list.");
+  const types = value.map((entry, index): ExtensionAssetTypeContribution => {
+    const raw = record(entry, `Extension asset type ${index + 1}`);
+    const id = text(raw.id, "Asset type id");
+    if (!FIELD_ID.test(id)) throw new Error(`Asset type id ${id} must start with a letter and use letters, digits, _ or -.`);
+    if (raw.editorOnly !== undefined && typeof raw.editorOnly !== "boolean") throw new Error(`Asset type ${id} editorOnly must be true or false.`);
+    return {
+      id,
+      title: text(raw.title, `Asset type ${id} title`),
+      ...(optionalText(raw.category) ? { category: optionalText(raw.category) } : {}),
+      ...(optionalText(raw.description) ? { description: optionalText(raw.description) } : {}),
+      ...(optionalText(raw.iconKey) ? { iconKey: optionalText(raw.iconKey) } : {}),
+      editorOnly: raw.editorOnly !== false,
+      sections: normalizeSections(raw.sections, `Asset type ${id}`),
+    };
+  });
+  const ids = types.map((type) => type.id);
+  if (new Set(ids).size !== ids.length) throw new Error("Extension asset type ids must be unique.");
+  return types;
+}
+
 export function normalizeExtensionContributions(value: unknown): ExtensionContributions {
   if (value === undefined) return {};
   const raw = record(value, "Extension contributes");
   const nodes = normalizeNodes(raw.nodes);
   const menus = normalizeMenus(raw.menus);
-  const withNodes: ExtensionContributions = { ...(nodes?.length ? { nodes } : {}), ...(menus?.length ? { menus } : {}) };
-  if (raw.settings === undefined) return withNodes;
+  const assetTypes = normalizeAssetTypes(raw.assetTypes);
+  const contributions: ExtensionContributions = {
+    ...(nodes?.length ? { nodes } : {}), ...(menus?.length ? { menus } : {}), ...(assetTypes?.length ? { assetTypes } : {}),
+  };
+  if (raw.settings === undefined) return contributions;
   const settings = record(raw.settings, "Extension settings");
-  if (!Array.isArray(settings.sections) || settings.sections.length === 0) {
-    throw new Error("Extension settings need at least one section.");
-  }
-  const sectionIds = new Set<string>();
-  const sections = settings.sections.map((entry, index): ExtensionSettingsSection => {
-    const section = record(entry, `Extension settings section ${index + 1}`);
-    const id = text(section.id, "Settings section id");
-    if (!FIELD_ID.test(id) || sectionIds.has(id)) throw new Error(`Invalid or duplicate settings section id: ${id}`);
-    sectionIds.add(id);
-    const fields = normalizeExtensionFields(section.fields);
-    if (fields.length === 0) throw new Error(`Settings section ${id} needs at least one field.`);
-    return { id, title: text(section.title, `Settings section ${id} title`), fields };
-  });
-  // One value per field id across the whole category.
-  normalizeExtensionFields(sections.flatMap((section) => section.fields));
-  return { ...withNodes, settings: { title: text(settings.title, "Extension settings title"), sections } };
+  return { ...contributions, settings: { title: text(settings.title, "Extension settings title"), sections: normalizeSections(settings.sections, "Extension settings") } };
 }
 
 export function extensionSettingsFields(contributions: ExtensionContributions): ExtensionField[] {
   return contributions.settings?.sections.flatMap((section) => section.fields) ?? [];
+}
+
+/** Every field of a sectioned form, in order. */
+export function extensionSectionFields(sections: readonly ExtensionSettingsSection[]): ExtensionField[] {
+  return sections.flatMap((section) => section.fields);
 }
 
 function clampNumber(value: number, min: number | undefined, max: number | undefined, integer: boolean): number {

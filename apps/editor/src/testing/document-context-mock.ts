@@ -61,7 +61,7 @@ const resolved = async () => {};
 const unsubscribe = () => noop;
 
 function inertExtensionService(): DocumentsValue["extensionService"] {
-  const snapshot: ExtensionSnapshot = { entries: [], commands: [], diagnostics: [] };
+  const snapshot: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [] };
   const service: { [K in keyof DocumentsValue["extensionService"]]: DocumentsValue["extensionService"][K] } = {
     subscribe: unsubscribe,
     getSnapshot: () => snapshot,

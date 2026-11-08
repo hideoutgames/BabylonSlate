@@ -43,6 +43,7 @@ import {
 } from "../lib/content-browser-helpers";
 import { CONTENT_BROWSER_FOLDER_COLOR } from "./content-browser-folder-tile";
 import { FolderPickerDialog } from "./folder-picker-dialog";
+import { extensionAssetTypeVisual, type ExtensionAssetTypeDescriptor } from "../lib/extension-asset-types";
 import { hasTouchInput } from "../lib/touch-input";
 import { usePhoneLayout, usePhoneTouchSizing } from "../shell/use-platform-layout";
 
@@ -56,6 +57,8 @@ export interface ContentBrowserNewAssetDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Chosen beforehand in the New Asset type menu. */
   type: CreatableAssetType;
+  /** An extension asset type chosen instead; it replaces `type` while set. */
+  extensionType?: ExtensionAssetTypeDescriptor | null;
   name: string;
   onNameChange: (name: string) => void;
   parentClass: string;
@@ -191,14 +194,16 @@ const NEW_ASSET_TYPE_ITEMS: SearchDialogItem[] = [
 
 /**
  * Compact searchable menu: Folder under Structure, then the creatable types
- * grouped by category. Folder creates a folder; a type opens the New Asset
- * dialog.
+ * grouped by category, then enabled extensions' asset types under their
+ * categories. Folder creates a folder; a type opens the New Asset dialog.
  */
 export function ContentBrowserNewAssetMenu({
   open,
   onOpenChange,
   anchor,
   onSelect,
+  extensionTypes = [],
+  onSelectExtension,
   onNewFolder,
   children,
 }: {
@@ -207,10 +212,22 @@ export function ContentBrowserNewAssetMenu({
   /** Viewport point for a menu opened from empty grid space; `null` opens under the trigger. */
   anchor: { x: number; y: number } | null;
   onSelect: (type: CreatableAssetType) => void;
+  extensionTypes?: readonly ExtensionAssetTypeDescriptor[];
+  onSelectExtension?: (type: ExtensionAssetTypeDescriptor) => void;
   /** The Folder entry: creates a folder in the open folder and renames it inline. */
   onNewFolder: () => void;
   children: ReactElement;
 }) {
+  const items = useMemo(() => extensionTypes.length === 0 || !onSelectExtension ? NEW_ASSET_TYPE_ITEMS : [
+    ...NEW_ASSET_TYPE_ITEMS,
+    ...extensionTypes.map((type): SearchDialogItem => ({
+      id: type.type,
+      label: type.title,
+      group: type.category,
+      keywords: `${type.extensionName} ${type.id}`,
+      leading: <TypeVisualIcon visual={extensionAssetTypeVisual(type)} />,
+    })),
+  ], [extensionTypes, onSelectExtension]);
   return (
     <SearchDropdown
       open={open}
@@ -219,9 +236,11 @@ export function ContentBrowserNewAssetMenu({
       title="New Asset"
       placeholder="Search Asset Types"
       emptyLabel="No asset types match the search."
-      items={NEW_ASSET_TYPE_ITEMS}
+      items={items}
       onSelect={(id) => {
+        const extensionType = extensionTypes.find((type) => type.type === id);
         if (id === NEW_ASSET_FOLDER_ID) onNewFolder();
+        else if (extensionType) onSelectExtension?.(extensionType);
         else onSelect(id as CreatableAssetType);
       }}
       data-testid="new-asset-type-menu"
@@ -234,7 +253,8 @@ export function ContentBrowserNewAssetMenu({
 export function ContentBrowserNewAssetDialog({
   open,
   onOpenChange,
-  type,
+  type: builtInType,
+  extensionType = null,
   name,
   onNameChange,
   parentClass,
@@ -265,7 +285,9 @@ export function ContentBrowserNewAssetDialog({
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
   const detailsRef = useRef<HTMLElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
-  const selectedVisual = resolveTypeVisual({ assetType: type });
+  // Built-in options (Parent Class, Material starter, Data Definition, Timeline Asset) never apply to an extension type.
+  const type = extensionType ? null : builtInType;
+  const selectedVisual = extensionType ? extensionAssetTypeVisual(extensionType) : resolveTypeVisual({ assetType: builtInType });
   const isData = type === "DataTree";
   const isClip = type === "TimelineClip2D" || type === "TimelineClip3D";
   // The same rule as Rename, so a created name can always be renamed back.
@@ -324,13 +346,13 @@ export function ContentBrowserNewAssetDialog({
               </span>
               <div className="min-w-0 flex flex-col gap-1">
                 <p className="truncate font-medium">
-                  {creatableAssetTypeLabel(type)}
+                  {extensionType ? extensionType.title : creatableAssetTypeLabel(builtInType)}
                 </p>
                 <p
                   className="text-sm text-muted-foreground"
                   data-testid="new-asset-type-description"
                 >
-                  {creatableAssetTypeDescription(type)}
+                  {extensionType ? extensionType.description ?? `Added by ${extensionType.extensionName}.` : creatableAssetTypeDescription(builtInType)}
                 </p>
               </div>
             </div>

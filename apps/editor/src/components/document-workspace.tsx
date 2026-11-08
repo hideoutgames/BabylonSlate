@@ -690,7 +690,8 @@ export function DocumentWorkspace() {
           doc.ref.kind === "animation" ||
           doc.ref.kind === "skybox-creator" ||
           doc.ref.kind === "texture" ||
-          doc.ref.kind === "font"
+          doc.ref.kind === "font" ||
+          doc.ref.kind === "extension-asset"
         ) {
           if (!shouldMount) return null;
           const shell = (
