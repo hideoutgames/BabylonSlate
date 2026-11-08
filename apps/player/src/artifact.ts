@@ -374,7 +374,8 @@ export async function loadGameFromFiles(
         else variants.add(guid);
       }
     }
-    const extraMetadata = [...closure].filter(id => !documentIds.includes(id));
+    // The closure only grows after the snapshot, so the Fonts requireFont added follow it in insertion order.
+    const extraMetadata = [...closure].slice(documentIds.length);
     // A Model's collision triangles are a separate cached representation, cooked
     // only when a Scene/Class in this closure uses Use Complex Collision.
     const needsCollision = complexCollisionModelGuids([...prepared.map(asset => asset.document), ...scripts]);
@@ -451,8 +452,9 @@ export function loadGameAudioClipBytes(
 export function createGameAudioSourceLoader(
   game: LoadedGame,
 ): (request: { assetGuid: string; chunkId: string; revision?: string }) => Promise<Uint8Array | null> {
+  const revisions = new Map(game.manifest.assets.map(entry => [entry.guid, entry.revision]));
   return async ({ assetGuid, chunkId, revision }) => {
-    const exportedRevision = game.manifest.assets.find(entry => entry.guid === assetGuid)?.revision;
+    const exportedRevision = revisions.get(assetGuid);
     if (revision && exportedRevision && revision !== exportedRevision) throw new Error(`Audio asset ${assetGuid} source revision is no longer available.`);
     const scope = game.assets.createScope(`audio:${assetGuid}:${chunkId}`);
     try {
