@@ -23,6 +23,9 @@ import {
   quatRotateVector,
   quatToRotator,
   randomInRange,
+  drawRandom,
+  drawSeeded,
+  normalizeRandomSeed,
   rotatorForward,
   rotatorRight,
   rotatorToQuat,
@@ -37,7 +40,7 @@ import {
   utcTimeOfDay,
   type CurveAssetCatalogEntry,
   type CurveKind,
-  type Rng,
+  type RandomStream,
   type SaveGameResult,
   type SaveGameValue,
 } from "@haptic/core";
@@ -92,7 +95,8 @@ function webAddress(value: unknown): string | null {
 
 /** What `createHostMembers` reads from its `ScriptHost`. */
 export interface HostMembersHost extends ComponentFunctionHost {
-  readonly rng: Rng;
+  /** The global seed: the normal Random nodes draw from it in call order. */
+  readonly rng: RandomStream;
   readonly dispatchers: DispatcherBindings;
   /** Locals of waiting latent frames, which keep objects alive. */
   readonly frames: Pick<LatentFrameRoots, "hold">;
@@ -339,6 +343,19 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     quatRotateVector,
     normalizeQuat,
     randomInRange: (kind, range) => randomInRange(kind, range, host.rng),
+    randomDraw: (draw, a, b) => drawRandom(host.rng, draw, a, b),
+    seededRandomDraw: (reference, seed, draw, a, b) => {
+      // Read through the reference, so a draw earlier in the same expression has already moved it on.
+      const drawn = drawSeeded(reference?.get ? reference.get() : seed, draw, a, b);
+      reference?.set(drawn.seed);
+      return drawn.value;
+    },
+    getGlobalRandomSeed: () => host.rng.snapshot(),
+    setGlobalRandomSeed: (seed) => {
+      const next = normalizeRandomSeed(seed);
+      host.rng.reset(next.Seed, next.Step);
+    },
+    randomSeedStep: (seed) => normalizeRandomSeed(seed).Step,
     clampToRange,
     isInRange,
     lerpFloatRange,

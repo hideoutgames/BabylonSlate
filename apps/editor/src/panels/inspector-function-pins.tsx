@@ -70,6 +70,7 @@ export function FunctionPinListEditors({
           showOptional={false}
           showDefault={false}
           showUnit
+          showPassByReference
           readOnly={readOnly}
           onChange={(nextRows) => commitPins(nextRows, outputRows)}
         />

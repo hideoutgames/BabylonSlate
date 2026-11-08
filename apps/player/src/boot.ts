@@ -1,4 +1,4 @@
-import { browserDeviceFacts, classIdForAssetPath, createSaveStorageServer, newGuid } from "@haptic/core";
+import { browserDeviceFacts, classIdForAssetPath, createSaveStorageServer, newGuid, newSessionSeed } from "@haptic/core";
 import { createSaveGameStorage } from "@haptic/vfs/save-game-storage";
 import type { ScalabilityAcknowledgement, RenderProjectSettings, RuntimeAssetLoadState } from "@haptic/core";
 import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
@@ -509,6 +509,8 @@ function initializePlayer(
     project: manifest.project,
     // Exported games and Preview Build run outside the editor; release exports leave Development Only nodes out.
     environment: { ...browserDeviceFacts(navigator), inEditor: false, developmentBuild: manifest.bundleDebugger },
+    // Each run draws different random numbers until a graph sets the global seed.
+    seed: newSessionSeed(),
     thirdPartyNoticesUrl: new URL("legal/THIRD-PARTY-NOTICES.txt", document.baseURI).href,
     saveGame: manifest.saveGame,
     type: "load" as const,

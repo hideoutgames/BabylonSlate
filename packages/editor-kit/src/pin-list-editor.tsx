@@ -4,6 +4,7 @@ import { VALUE_UNITS, normalizeTag, normalizeValueUnit, typeAcceptsUnit, type De
 import { nextCopyName } from "@haptic/assets";
 import { cn } from "@haptic/ui/lib/utils";
 import { EditableName } from "./inline-rename";
+import { LabelHint } from "./label-hint";
 import { TagPicker } from "./tag-picker";
 import { VariableTypeFields, type VariableContainer } from "./variable-type-fields";
 import { Button } from "@haptic/ui/components/button";
@@ -61,6 +62,8 @@ export type PinListRow = {
   unit?: string;
   /** Delegate rows: the input types of the signature named by `typeClassId`. */
   signature?: readonly DelegateSignatureType[];
+  /** Function inputs: Pass-By-Reference. */
+  byReference?: boolean;
 };
 
 export type PinListEditorProps = {
@@ -75,6 +78,8 @@ export type PinListEditorProps = {
   showContainer?: boolean;
   /** Offer a Unit for number and vector rows (function inputs, event parameters). */
   showUnit?: boolean;
+  /** Offer Pass-By-Reference for every row except exec (function inputs). */
+  showPassByReference?: boolean;
   /** Keep the list compact when another panel owns the selected row details. */
   showDetails?: boolean;
   addPosition?: "top" | "bottom";
@@ -171,6 +176,7 @@ export function PinListEditor({
   showDefault = true,
   showContainer = false,
   showUnit = false,
+  showPassByReference = false,
   showDetails = true,
   addPosition = "bottom",
   types,
@@ -273,11 +279,12 @@ export function PinListEditor({
           showDefault && !showClassType && !showAssetType && !showTypeAsset && !showSignature;
         const showEnumValues = row.type === "enum" && !hasTypeAssets;
         const showUnitField = showUnit && typeAcceptsUnit(String(row.type));
+        const showByReference = showPassByReference && row.type !== "exec";
         const showExtras =
           selected &&
           showDetails &&
           !readOnly &&
-          (showContainer || showOptional || showUnitField ||
+          (showContainer || showOptional || showUnitField || showByReference ||
             showDefaultField ||
             showClassType ||
             showAssetType ||
@@ -354,6 +361,23 @@ export function PinListEditor({
                     <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-optional`}>
                       Optional
                     </FieldLabel>
+                  </Field>
+                ) : null}
+                {showByReference ? (
+                  <Field orientation="horizontal" className="w-auto">
+                    <Checkbox
+                      id={`${testIdPrefix}-${row.id}-by-reference`}
+                      checked={row.byReference === true}
+                      onCheckedChange={(checked) =>
+                        onChange(patchRow(rows, row.id, { byReference: checked === true }))
+                      }
+                      data-testid={`${testIdPrefix}-${row.id}-by-reference`}
+                    />
+                    <LabelHint hint="The Call takes a variable, and the function's writes change that variable.">
+                      <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-by-reference`}>
+                        Pass-By-Reference
+                      </FieldLabel>
+                    </LabelHint>
                   </Field>
                 ) : null}
                 {showUnitField ? (

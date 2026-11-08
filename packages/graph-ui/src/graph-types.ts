@@ -20,6 +20,8 @@ export type SerializedPin = {
   /** Display unit shown after a number or vector literal (`VALUE_UNITS`). */
   unit?: string;
   reference?: "required" | "writable";
+  /** A Pass-By-Reference function input on its Input node: drawn as a reference diamond. */
+  byReference?: boolean;
   /** An unwired reference input reads the actor running the graph and shows Self. */
   selfWhenUnwired?: boolean;
   colorHint?: boolean;

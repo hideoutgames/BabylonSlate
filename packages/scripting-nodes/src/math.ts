@@ -470,7 +470,7 @@ export const mathNodes: NodeDefinition[] = [
   {
     id: "math.random",
     title: "Random Float",
-    category: "math",
+    category: "random",
     pure: true,
     pins: () => [pin("out", "Out", "out", FLOAT)],
     codegen: () => ({ out: `ctx.random.float()` }),
@@ -478,7 +478,7 @@ export const mathNodes: NodeDefinition[] = [
   {
     id: "math.randomInt",
     title: "Random Int",
-    category: "math",
+    category: "random",
     pure: true,
     pins: () => [
       pin("min", "Min", "in", INT),
@@ -492,7 +492,7 @@ export const mathNodes: NodeDefinition[] = [
   {
     id: "math.randomBool",
     title: "Random Bool",
-    category: "math",
+    category: "random",
     pure: true,
     pins: () => [pin("out", "Out", "out", BOOL)],
     codegen: () => ({ out: `ctx.random.bool()` }),

@@ -8,6 +8,8 @@ import { ActorComponent, type EngineObject } from "@haptic/object-model";
 export type TweenReference = {
   identity: object;
   property: string;
+  /** Current stored value; variable references have it, so reference inputs can read before they write. */
+  get?(): unknown;
   set(value: unknown): void | boolean;
   owner?: EngineObject;
   /** Compound writes claim the same channels as their individual property writers. */

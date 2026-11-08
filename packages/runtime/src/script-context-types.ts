@@ -24,6 +24,8 @@ import type {
   TweenValueType,
   CalendarDate,
   DevicePlatform,
+  RandomDraw,
+  RandomSeed,
   TimeOfDay,
   WaterSample,
 } from "@haptic/core";
@@ -230,6 +232,19 @@ export interface ScriptContext {
   };
   /** Random In Range nodes: draws from the seeded session RNG (integers inclusive, others from Min up to Max). */
   randomInRange(kind: RangeKind, range: unknown): unknown;
+  /** Random Bool With Weight, Random Unit Vector, Random Array Item, Shuffle Array: from the global seed. */
+  randomDraw(draw: RandomDraw, a?: unknown, b?: unknown): unknown;
+  /**
+   * Seeded Random nodes: draw from the Seed read through `reference` (else `seed`) and write it back moved on
+   * by the values drawn, so the wired variable continues where the draw left off.
+   */
+  seededRandomDraw(reference: TweenReference | null, seed: unknown, draw: RandomDraw, a?: unknown, b?: unknown): unknown;
+  /** Get Global Randomization Seed: the global seed and how many values the normal Random nodes have drawn. */
+  getGlobalRandomSeed(): RandomSeed;
+  /** Set Global Randomization Seed: the normal Random nodes continue from this Seed and Step. */
+  setGlobalRandomSeed(seed: unknown): void;
+  /** Get Step Count: the Seed's Step. */
+  randomSeedStep(seed: unknown): number;
   clampToRange(kind: RangeKind, value: unknown, range: unknown): unknown;
   isInRange(kind: "int" | "float", value: unknown, range: unknown): boolean;
   lerpFloatRange(range: unknown, alpha: unknown): number;
@@ -700,7 +715,8 @@ export type HostContextKey =
   | "setMaterialColorParameter" | "setMaterialVectorParameter" | "setMaterialTextureParameter" | "rotatorToQuat" | "quatToRotator"
   | "combineRotators" | "inverseRotator" | "deltaRotator" | "lerpRotator" | "rotatorForward" | "rotatorRight"
   | "rotatorUp" | "lookAtRotator" | "multiplyQuats" | "inverseQuat" | "slerpQuats" | "quatRotateVector"
-  | "normalizeQuat" | "randomInRange" | "clampToRange" | "isInRange" | "lerpFloatRange"
+  | "normalizeQuat" | "randomInRange" | "randomDraw" | "seededRandomDraw" | "getGlobalRandomSeed" | "setGlobalRandomSeed"
+  | "randomSeedStep" | "clampToRange" | "isInRange" | "lerpFloatRange"
   | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getCurveObject"
   | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "timelineClipControl" | "timelineClipState" | "getTimeline" | "getTimelineClip" | "getLoadedTimelineClips" | "createTimelineClip" | "timelineProxy" | "timelineProxyGet" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
   | "detachActor" | "getParent" | "getActorName" | "setOwner" | "getOwner" | "executeConsoleCommand" | "getFirstComponentOfType"

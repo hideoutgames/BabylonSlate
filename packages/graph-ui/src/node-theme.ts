@@ -39,7 +39,7 @@ const ROLE_CLASS: Record<NodeVisualRole, string> = {
   "bt-task": "bg-node-bt-task",
 };
 
-export type PinVisualShape = "diamond" | "circle" | "list" | "map" | "square";
+export type PinVisualShape = "diamond" | "reference" | "circle" | "list" | "map" | "square";
 
 export function pinCssVar(type: PinTypeRef): string {
   if (type.kind === "array" && isPinTypeRef(type.element)) {
@@ -51,8 +51,16 @@ export function pinCssVar(type: PinTypeRef): string {
   return pinColorVar(type.kind);
 }
 
-export function pinVisualShape(type: PinTypeRef): PinVisualShape {
+/**
+ * A by-reference pin (an input that takes a writable variable, or a Pass-By-Reference function input
+ * on its Input node) is a small diamond, as in Unreal, whatever its type.
+ */
+export function pinVisualShape(
+  type: PinTypeRef,
+  pin?: { reference?: "required" | "writable"; byReference?: boolean },
+): PinVisualShape {
   if (type.kind === "exec") return "diamond";
+  if (pin?.reference === "required" || pin?.byReference === true) return "reference";
   if (type.kind === "array") return "list";
   if (type.kind === "map") return "map";
   if (type.kind === "delegate") return "square";

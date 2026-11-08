@@ -1,4 +1,4 @@
-import { createSeededRng, SaveGameError, type Rng, type SaveGameMigrationData, type SaveGameService } from "@haptic/core";
+import { RandomStream, SaveGameError, type SaveGameMigrationData, type SaveGameService } from "@haptic/core";
 import {
   interfaceHandlerKey,
   isCreatableObjectChain,
@@ -115,7 +115,8 @@ export class ScriptHost {
   private finalizingOwner: EngineObject | null = null;
   /** The `ctx.callInterface` caller whose frame its interface handler runs in. */
   private interfaceCaller: CallerFrame | null = null;
-  private readonly rng: Rng;
+  /** The global seed: Set Global Randomization Seed moves it; traces replay it from the session seed. */
+  private readonly rng: RandomStream;
   /** Host-lifetime members every context inherits; built once in the constructor. */
   private readonly hostMembers: HostContextMembers;
   /** Material replacement versions and the preloads they hold, per owner and scope. */
@@ -129,7 +130,7 @@ export class ScriptHost {
 
   constructor(services: ScriptHostServices) {
     this.services = services;
-    this.rng = createSeededRng(services.seed ?? 1);
+    this.rng = new RandomStream(String(services.seed ?? 1));
     const canInvokeOwner = (owner: EngineObject) => this.canInvokeOwner(owner);
     this.materials = new ScriptMaterialOwnership({ services, canInvokeOwner });
     // The context modules reach this host's private state only through these wrappers.

@@ -39,6 +39,7 @@ export * from "./affine-transform";
 export * from "./euler";
 export * from "./easing";
 export * from "./curves";
+export * from "./random-seed";
 export * from "./wall-clock";
 export * from "./game-environment";
 export * from "./curve-assets";

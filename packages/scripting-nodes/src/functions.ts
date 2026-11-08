@@ -1,4 +1,5 @@
 import {
+  BY_REFERENCE_ARGS_KEY,
   jsIdent,
   pin,
   type NodeDefinition,
@@ -7,6 +8,7 @@ import {
 import {
   CALL_PIN_IDS,
   assignResultFields,
+  isByReferenceRow,
   memberArgPinId,
   memberPinRows,
   memberPinUnit,
@@ -50,6 +52,8 @@ export const functionCallNodes: NodeDefinition[] = [
               row.typeId === "exec" ? EXEC : pinTypeForVariable(row),
             ),
             ...(direction === "in" ? memberPinUnit(row) : {}),
+            // A Pass-By-Reference input takes a writable variable, as Assign Tag's Target does.
+            ...(direction === "in" && isByReferenceRow(row) ? { reference: "required" as const } : {}),
           }));
       const inputs = hasExec
         ? sidePins("in")
@@ -83,6 +87,10 @@ export const functionCallNodes: NodeDefinition[] = [
           ? JSON.stringify(classId)
           : ctx.input("target");
       const args: string[] = [];
+      const references: string[] = [];
+      const byReference = new Set(
+        memberPinRows(ctx.node.properties).filter(isByReferenceRow).map((row) => row.name),
+      );
       for (const pinDef of ctx.node.pins) {
         if (
           pinDef.direction !== "in" ||
@@ -92,7 +100,12 @@ export const functionCallNodes: NodeDefinition[] = [
           continue;
         }
         args.push(`${objectLiteralKey(pinDef.name)}: ${ctx.input(pinDef.id)}`);
+        if (byReference.has(pinDef.name) && ctx.reference) {
+          references.push(`${objectLiteralKey(pinDef.name)}: ${ctx.reference(pinDef.id)}`);
+        }
       }
+      // The function reads and writes these through its Input node; the values above stay for callers that read args.
+      if (references.length > 0) args.push(`${BY_REFERENCE_ARGS_KEY}: { ${references.join(", ")} }`);
       const latent =
         !runtime && ctx.isLatentFunction?.(classId, functionName) === true;
       if (latent) ctx.requestAsync();
