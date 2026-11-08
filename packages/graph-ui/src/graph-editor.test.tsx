@@ -3198,6 +3198,57 @@ describe("GraphEditor", () => {
     expect(intHandle?.querySelector('[data-pin-shape="circle"]')).not.toBeNull();
   });
 
+  it("draws by-reference pins as small diamonds, smaller than an exec pin's", () => {
+    const seed = { kind: "structRef", guid: "engine:Seed" };
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "input",
+          type: "flow.function.input",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Input",
+            __nodeType: "flow.function.input",
+            __category: "flow",
+            __pins: [
+              { id: "exec", name: "exec", kind: "exec", direction: "out", type: { kind: "exec" } },
+              { id: "Seed", name: "Seed", kind: "data", direction: "out", type: seed, reference: "writable", byReference: true },
+              { id: "Count", name: "Count", kind: "data", direction: "out", type: { kind: "int" } },
+            ],
+          },
+        },
+        {
+          id: "roll",
+          type: "random.seededFloat",
+          position: { x: 300, y: 0 },
+          data: {
+            title: "Seeded Random Float",
+            __nodeType: "random.seededFloat",
+            __category: "random",
+            __pure: true,
+            __pins: [
+              { id: "seed", name: "Seed", kind: "data", direction: "in", type: seed, reference: "required" },
+              { id: "out", name: "Out", kind: "data", direction: "out", type: { kind: "float" } },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+    const shape = (node: string, pin: string) =>
+      container.querySelector(`[data-id="${node}"] [data-pin-id="${pin}"] [data-pin-shape]`);
+    expect(shape("roll", "seed")?.getAttribute("data-pin-shape")).toBe("reference");
+    expect(shape("input", "Seed")?.getAttribute("data-pin-shape")).toBe("reference");
+    // A writable output that is not a Pass-By-Reference input stays a circle, as a Get Variable's does.
+    expect(shape("input", "Count")?.getAttribute("data-pin-shape")).toBe("circle");
+    const exec = shape("input", "exec") as HTMLElement;
+    expect(exec.getAttribute("data-pin-shape")).toBe("diamond");
+    expect((shape("roll", "seed") as HTMLElement).style.width).toContain("0.6");
+    expect(exec.style.width).not.toContain("0.6");
+  });
+
   it("draws a custom event's delegate as a square in its title bar, dark-filled until wired", () => {
     const delegate = { kind: "delegate", inputs: [{ kind: "float" }], outputs: [] };
     const customEvent = (id: string, y: number) => ({

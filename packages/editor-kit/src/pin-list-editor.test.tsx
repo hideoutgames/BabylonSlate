@@ -443,6 +443,18 @@ describe("PinListEditor", () => {
     expect(screen.getByTestId("pin-a-default")).toBeTruthy();
   });
 
+  it("offers Pass-By-Reference on function inputs only", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <PinListEditor rows={rows.slice(0, 1)} selectedId="a" onChange={onChange}
+        showOptional={false} showDefault={false} showPassByReference />,
+    );
+    fireEvent.click(screen.getByTestId("pin-a-by-reference"));
+    expect(onChange).toHaveBeenCalledWith([expect.objectContaining({ id: "a", byReference: true })]);
+    rerender(<PinListEditor rows={rows.slice(0, 1)} selectedId="a" onChange={onChange} showOptional={false} showDefault={false} />);
+    expect(screen.queryByTestId("pin-a-by-reference")).toBeNull();
+  });
+
   it("hides optional and default when those extras are disabled", () => {
     render(
       <PinListEditor

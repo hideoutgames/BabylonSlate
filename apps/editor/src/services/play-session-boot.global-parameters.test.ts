@@ -12,4 +12,11 @@ describe("Play session load", () => {
     } as unknown as PlaySessionOptions;
     expect(playSessionLoad(options, false).loadControl.globalParameterCatalog).toEqual(catalog);
   });
+
+  it("starts each session from a fresh seed, so the normal Random nodes differ between runs", () => {
+    const options = { scene: createDefaultScene() } as unknown as PlaySessionOptions;
+    const seeds = new Set(Array.from({ length: 4 }, () => playSessionLoad(options, false).loadControl.seed));
+    expect(seeds.size).toBeGreaterThan(1);
+    for (const seed of seeds) expect(Number.isInteger(seed)).toBe(true);
+  });
 });
