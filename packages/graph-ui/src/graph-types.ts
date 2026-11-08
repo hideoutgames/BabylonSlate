@@ -32,16 +32,9 @@ export type SerializedPin = {
   placement?: "header";
 };
 
-/** Serialized graph with optional pin handles on edges (backward compatible with core). */
-export type GraphEdge = SerializedGraph["edges"][number] & {
-  sourceHandle?: string;
-  targetHandle?: string;
-  type?: string;
-};
+export type GraphEdge = SerializedGraph["edges"][number];
 
-export type GraphDocument = Omit<SerializedGraph, "edges"> & {
-  edges: GraphEdge[];
-};
+export type GraphDocument = SerializedGraph;
 
 export type GraphDiagnostic = {
   nodeId?: string;
