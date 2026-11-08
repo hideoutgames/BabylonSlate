@@ -2,10 +2,9 @@ import type { Camera } from "@babylonjs/core/Cameras/camera";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import type { Light } from "@babylonjs/core/Lights/light";
 import { Quaternion, Vector3, type Matrix } from "@babylonjs/core/Maths/math.vector";
-import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { sceneShadowController } from "./shadow-controller";
-import { createPrimitiveMesh } from "./scene-loader";
 import {
   AUTHORED_CAMERA_PREFIX,
   AUTHORED_LIGHT_PREFIX,
@@ -88,7 +87,10 @@ export function applyPossessCamera(
   refreshPlayActiveCamera(scene, binding);
 }
 
-/** A helper kind's hidden mesh, and the light or camera it drives when it has one. */
+/**
+ * A helper kind's hidden mesh, and the light or camera it drives when it has one. It only carries a transform in the
+ * actor's hierarchy, so it holds no geometry.
+ */
 export function createPlayHelperMesh(
   scene: Scene,
   slotId: number,
@@ -98,7 +100,7 @@ export function createPlayHelperMesh(
   targets: PlayVisualTargets | undefined,
   illuminationPart: AssignMeshPart | undefined,
 ): Mesh {
-  const mesh = createPrimitiveMesh(scene, name, null);
+  const mesh = new Mesh(name, scene);
   markPlayHelperVisual(mesh);
   const helper: ComponentIllumination = { mesh, componentId: illuminationPart?.componentId };
   if (meshKind?.startsWith("light:") && binding) {

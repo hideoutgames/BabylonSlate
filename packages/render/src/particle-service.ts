@@ -6,6 +6,7 @@ import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
 import type { ParticleInputBlock } from "@babylonjs/core/Particles/Node/Blocks/particleInputBlock";
@@ -63,6 +64,7 @@ import {
 import { markSceneReadinessDirty } from "./scene-perf";
 import { applySortingToParticleSystem, resolveSortingLayer, type SortingLayerResolution } from "./sorting";
 import { drawWhateverTheView } from "./play-view-culling";
+import { isEditorHelperMesh } from "./helper-mesh";
 import { effectDrawnOn } from "./first-draw-stats";
 import { FIRST_DRAWS_PER_FRAME } from "./variant-pipeline-warmup";
 
@@ -829,8 +831,10 @@ export class ParticleService {
         lastFrame = frame;
         if (firstFrame < 0) firstFrame = frame;
         const root = this.resolveEmitter?.(entry.command.slotId) ?? null;
-        const mesh = root ? [root, ...root.getChildMeshes(false)].find((candidate): candidate is Mesh =>
-          candidate instanceof Mesh && candidate !== context.node && !candidate.isDisposed() && candidate.getTotalVertices() > 0) : undefined;
+        // The first mesh that draws: hidden helpers and collider outlines are not the actor's mesh.
+        const mesh = root ? [root, ...root.getChildMeshes(false)].find((candidate): candidate is Mesh | InstancedMesh =>
+          (candidate instanceof Mesh || candidate instanceof InstancedMesh) && candidate !== context.node && !candidate.isDisposed() &&
+          !isEditorHelperMesh(candidate) && candidate.getTotalVertices() > 0) : undefined;
         if (mesh) geometry = meshGeometryRelativeTo(mesh, context.node);
         if (!geometry && !reported && frame - firstFrame > 120) {
           reported = true;

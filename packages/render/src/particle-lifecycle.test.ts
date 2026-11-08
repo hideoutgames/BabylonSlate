@@ -1,4 +1,6 @@
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import "@babylonjs/core/Meshes/instancedMesh";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
@@ -794,12 +796,13 @@ describe("Mesh Shapes", () => {
   type Geometry = { positions: number[]; indices: number[] };
   function meshService(properties: Record<string, unknown>, options: {
     acquireModelGeometry?: (guid: string) => Promise<Geometry | null> | null;
-    owner?: boolean;
+    owner?: boolean | ((scene: Scene) => Mesh);
   } = {}) {
     const host = createTestEngine();
     const diagnostics: Array<{ code: string; assetGuid?: string }> = [];
     // The owning actor: a 20 m box, so particles born on it are far from the emitter.
-    const owner = options.owner ? MeshBuilder.CreateBox("owner", { size: 20 }, host.scene) : null;
+    const owner = typeof options.owner === "function" ? options.owner(host.scene)
+      : options.owner ? MeshBuilder.CreateBox("owner", { size: 20 }, host.scene) : null;
     const service = new ParticleService({ scene: host.scene, gpuSupported: false,
       acquireMaterial: (_guid, lease) => {
         const resource = new NodeMaterial("mesh shape test material", lease.scene);
@@ -857,6 +860,24 @@ describe("Mesh Shapes", () => {
     expect(distances.length).toBeGreaterThan(0);
     // On the box's faces, 10 m from its centre or more.
     for (const distance of distances) expect(distance).toBeGreaterThan(8);
+  });
+
+  it("spawns on a pooled mesh of the actor, past its origin and helpers", async () => {
+    const { scene, diagnostics } = meshService({}, { owner: (ownerScene) => {
+      // A multi-component actor: a geometry-less origin, a collider outline, and its 20 m box drawn as a pool instance.
+      const origin = new Mesh("actor-1", ownerScene);
+      origin.metadata = { playActorOrigin: true };
+      const outline = MeshBuilder.CreateBox("actor-1|collider", { size: 1 }, ownerScene);
+      outline.metadata = { editorColliderVisual: true };
+      outline.parent = origin;
+      const leaf = MeshBuilder.CreateBox("instanceSource:box", { size: 20 }, ownerScene).createInstance("actor-1|box:pooled");
+      leaf.parent = origin;
+      return origin;
+    } });
+    const distances = await spawnDistances(scene);
+    expect(distances.length).toBeGreaterThan(0);
+    for (const distance of distances) expect(distance).toBeGreaterThan(8);
+    expect(diagnostics.filter((entry) => entry.code === "particle.mesh_missing")).toEqual([]);
   });
 });
 

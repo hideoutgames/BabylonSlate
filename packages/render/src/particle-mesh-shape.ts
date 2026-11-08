@@ -1,6 +1,7 @@
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { CreateSphereVertexData } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import {
@@ -44,9 +45,12 @@ export const PREVIEW_OWNER_MESH: ParticleMeshShapeSource = {
   },
 };
 
-/** A mesh's geometry (bind pose) in `emitter`'s space, or null when it has none. */
-export function meshGeometryRelativeTo(mesh: Mesh, emitter: AbstractMesh): ParticleMeshGeometry | null {
-  const data = VertexData.ExtractFromMesh(mesh, false, true);
+/**
+ * A mesh's geometry (bind pose) in `emitter`'s space, or null when it has none. An instance (a pooled primitive or
+ * model leaf) gives its source's geometry where the instance is placed.
+ */
+export function meshGeometryRelativeTo(mesh: Mesh | InstancedMesh, emitter: AbstractMesh): ParticleMeshGeometry | null {
+  const data = VertexData.ExtractFromMesh(mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh, false, true);
   if (!data.positions?.length || !data.indices?.length) return null;
   const relative = mesh.computeWorldMatrix(true).multiply(Matrix.Invert(emitter.computeWorldMatrix(true)));
   const positions = Float32Array.from(data.positions);
