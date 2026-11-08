@@ -398,6 +398,29 @@ describe("World tick", () => {
     expect(events).toEqual(["first-1", "second-1", "second-2"]);
   });
 
+  it("ticks the hooks after components without one, rechecking admission before each", () => {
+    const events: string[] = [];
+    const blocked = new Set<string>();
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(),
+      canTickActor: (actor) => !blocked.has(actor.guid) });
+    const plain = () => world.createComponent({ classId: "ActorComponent" });
+    const ticking = (name: string, block?: string) => world.createComponent({ classId: "ActorComponent",
+      hooks: { onTick: () => {
+        events.push(name);
+        if (block) blocked.add(block);
+      } } });
+    const first = world.createActor({ classId: "Actor", guid: "first" });
+    for (const component of [plain(), ticking("first-1", "first"), plain(), ticking("first-2")]) first.attachComponent(component);
+    world.spawnActorNow(first);
+    world.spawnActorNow(world.createActor({ classId: "Actor", guid: "idle" }));
+    const second = world.createActor({ classId: "Actor", guid: "second", hooks: { onTick: () => { events.push("second"); } } });
+    for (const component of [plain(), plain(), ticking("second-1"), plain(), ticking("second-2")]) second.attachComponent(component);
+    world.spawnActorNow(second);
+    world.tick();
+    // first-1 blocks its own actor, so first-2 never runs; the actors and components without hooks run nothing.
+    expect(events).toEqual(["second", "first-1", "second-1", "second-2"]);
+  });
+
   it("discards cancelled actor preparation without running queued lifecycle hooks", () => {
     const world = createTestWorld();
     const events: string[] = [];

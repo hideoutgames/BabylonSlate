@@ -14,6 +14,9 @@ export interface FramePressureSample {
   gpuMs: number | null;
 }
 
+/** Samples the valve's medians span. */
+const PRESSURE_WINDOW = 15;
+
 interface HardwareScalingOptions {
   minLevel?: number;
   maxLevel?: number;
@@ -40,7 +43,18 @@ export class HardwareScalingController {
   private level: number;
   private cooldown = 0;
   private dynamic = true;
-  private samples: FramePressureSample[] = [];
+  /**
+   * The last `PRESSURE_WINDOW` samples, as values: fixed rings written in place, so a presented frame allocates
+   * nothing and no caller's sample object is kept. A null presentation or GPU time is NaN.
+   */
+  private readonly pressure = new Float64Array(PRESSURE_WINDOW);
+  private readonly presentation = new Float64Array(PRESSURE_WINDOW);
+  private readonly cpu = new Float64Array(PRESSURE_WINDOW);
+  private readonly gpu = new Float64Array(PRESSURE_WINDOW);
+  private sampleCount = 0;
+  private nextSample = 0;
+  /** Median scratch. */
+  private readonly sorted = new Float64Array(PRESSURE_WINDOW);
   /**
    * Raise backoff: frames a raise waits after the last drop. A drop within two
    * cooldowns of a raise, with most frames since it over budget, doubles it: the
@@ -69,7 +83,7 @@ export class HardwareScalingController {
     this.maxLevel = 1 / Math.min(settings.scale, settings.minScale);
     this.targetFrameMs = 1000 / settings.targetFps;
     this.dynamic = settings.dynamic;
-    this.samples = [];
+    this.clearSamples();
     this.resetRaiseBackoff();
     this.setLevel(this.minLevel);
   }
@@ -102,10 +116,15 @@ export class HardwareScalingController {
    * samples so a long `loadScene` cannot ratchet toward maxLevel.
    */
   noteRestore(): void {
-    this.samples = [];
+    this.clearSamples();
     this.cooldown = this.cooldownFrames;
     this.resetRaiseBackoff();
     this.setLevel(this.minLevel);
+  }
+
+  private clearSamples(): void {
+    this.sampleCount = 0;
+    this.nextSample = 0;
   }
 
   private resetRaiseBackoff(): void {
@@ -119,15 +138,22 @@ export class HardwareScalingController {
     if (!this.dynamic) return;
     this.sinceRaise += 1;
     this.sinceDrop += 1;
-    if (pressureOf(sample) > this.targetFrameMs * 1.15) this.heavySinceRaise += 1;
-    this.samples.push(sample);
-    if (this.samples.length > 15) this.samples.shift();
+    const pressure = pressureOf(sample);
+    if (pressure > this.targetFrameMs * 1.15) this.heavySinceRaise += 1;
+    const slot = this.nextSample;
+    this.pressure[slot] = pressure;
+    this.presentation[slot] = sample.presentationMs ?? Number.NaN;
+    this.cpu[slot] = sample.cpuMs;
+    this.gpu[slot] = sample.gpuMs ?? Number.NaN;
+    this.nextSample = (slot + 1) % PRESSURE_WINDOW;
+    if (this.sampleCount < PRESSURE_WINDOW) this.sampleCount += 1;
     if (this.cooldown > 0) {
       this.cooldown -= 1;
       return;
     }
-    if (this.samples.length < 5) return;
-    const medianPressure = medianOf(this.samples.map(pressureOf));
+    const count = this.sampleCount;
+    if (count < 5) return;
+    const medianPressure = this.median(this.pressure, count);
     if (medianPressure > this.targetFrameMs * 1.15 && this.level < this.maxLevel) {
       const raisedLevelDidNotFit =
         this.sinceRaise <= this.cooldownFrames * 2 && this.heavySinceRaise * 2 >= this.sinceRaise;
@@ -146,25 +172,21 @@ export class HardwareScalingController {
     // unknown GPU is never read as free time. Views that never report
     // presentation intervals (free-running editor viewports) fall back to the
     // cost-only headroom rule; a partially unknown window still blocks.
-    const noPresentationEvidence = this.samples.every(
-      (entry) => entry.presentationMs == null,
-    );
-    const presentationAtTarget =
-      noPresentationEvidence ||
-      this.samples.every(
-        (entry) =>
-          entry.presentationMs != null &&
-          entry.presentationMs <= this.targetFrameMs * 1.05,
-      );
+    let presented = 0;
+    let presentedAtTarget = 0;
+    for (let index = 0; index < count; index++) {
+      const presentation = this.presentation[index]!;
+      if (Number.isNaN(presentation)) continue;
+      presented += 1;
+      if (presentation <= this.targetFrameMs * 1.05) presentedAtTarget += 1;
+    }
+    const presentationAtTarget = presented === 0 || presentedAtTarget === count;
     if (!presentationAtTarget) return;
-    const gpuSamples = this.samples.flatMap((entry) =>
-      entry.gpuMs != null ? [entry.gpuMs] : [],
-    );
+    // NaN when no sample has an attributable GPU time.
+    const gpuMedian = this.median(this.gpu, count, true);
     if (
-      medianOf(this.samples.map((entry) => entry.cpuMs)) <
-        this.targetFrameMs * 0.7 &&
-      (gpuSamples.length === 0 ||
-        medianOf(gpuSamples) < this.targetFrameMs * 0.7) &&
+      this.median(this.cpu, count) < this.targetFrameMs * 0.7 &&
+      (Number.isNaN(gpuMedian) || gpuMedian < this.targetFrameMs * 0.7) &&
       this.level > this.minLevel
     ) {
       // The previous raise held: nothing dropped since it.
@@ -175,13 +197,26 @@ export class HardwareScalingController {
       this.heavySinceRaise = 0;
     }
   }
+
+  /**
+   * The median of a ring's first `count` values (the upper one of an even count), or with `known` of its non-NaN
+   * values, NaN when it has none. The scratch's unused slots hold +Infinity, which sorts after every value.
+   */
+  private median(ring: Float64Array, count: number, known = false): number {
+    const sorted = this.sorted;
+    let length = 0;
+    for (let index = 0; index < count; index++) {
+      const value = ring[index]!;
+      if (!known || !Number.isNaN(value)) sorted[length++] = value;
+    }
+    if (length === 0) return Number.NaN;
+    sorted.fill(Number.POSITIVE_INFINITY, length);
+    // A typed array sorts numerically.
+    sorted.sort();
+    return sorted[length >> 1]!;
+  }
 }
 
 function pressureOf(entry: FramePressureSample): number {
   return Math.max(entry.presentationMs ?? 0, entry.cpuMs, entry.gpuMs ?? 0);
-}
-
-function medianOf(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)]!;
 }

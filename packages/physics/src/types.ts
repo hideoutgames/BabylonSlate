@@ -135,6 +135,11 @@ export type ColliderChanges = {
 export type LineTraceOptions = {
   /** Exclude every collider owned by these actors before selecting a hit. */
   ignoreActorIds?: readonly string[];
+  /**
+   * More actors to exclude, as a set a caller keeps across queries (a collision channel's ignore list), so a query
+   * neither copies nor re-hashes it. Ignored like `ignoreActorIds` and after them.
+   */
+  ignoreActorSet?: ReadonlySet<string>;
   /** False excludes sensor/trigger geometry; omitted, every backend hits triggers. */
   includeTriggers?: boolean;
   /** True hits only sensor/trigger geometry, and wins over `includeTriggers: false`. */
