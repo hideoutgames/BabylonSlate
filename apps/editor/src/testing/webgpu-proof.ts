@@ -35,6 +35,7 @@ import {
 import { normalizeShadowSettings } from "@haptic/core";
 import { unlitBinding } from "../../../../packages/render/src/unlit-material-blocks";
 import { createAppWebGpuEngine as createLoadedWebGpuEngine } from "../../../../packages/render/src/webgpu-engine";
+import { findSceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import {
   proveWebGpuGeometrySpawn, proveWebGpuVariantSwap,
 } from "./webgpu-variant-swap-proof";
@@ -534,6 +535,10 @@ async function captureVertexStreams(
 
 async function captureSunShadows(engine: AbstractEngine, mode: "pbr" | "cel") {
   const scene = new Scene(engine);
+  // This fixture draws with Babylon's Scene.render, which draws the shadow maps itself. The engine refreshes them
+  // from the forward graph's shadow task (ManagedShadowsTask), after the frame's world matrices update and before any
+  // map draws, so the fixture refreshes at the same point: once per camera pass, after its active meshes are evaluated.
+  scene.onAfterActiveMeshesEvaluationObservable.add(() => findSceneShadowController(scene)?.refreshShadowMaps());
   scene.clearColor = new Color4(0.04, 0.07, 0.12, 1);
   const camera = new FreeCamera("shadow camera", new Vector3(0, 4, -7), scene);
   camera.setTarget(new Vector3(0, 0.3, 0));
