@@ -1,11 +1,8 @@
 import { Camera } from "@babylonjs/core/Cameras/camera";
-import { Constants } from "@babylonjs/core/Engines/constants";
-import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { PickingInfo } from "@babylonjs/core/Collisions/pickingInfo";
-import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import { Scene } from "@babylonjs/core/scene";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -329,18 +326,7 @@ describe("SceneLayerCompositor", () => {
   it("resizes layer targets at the frame boundary and waits for every retired graph before Scene disposal", async () => {
     const { engine } = world();
     engine.getCaps().depthTextureExtension = true;
-    // NullEngine has no native depth attachment driver. Keep the real RTT owner
-    // and complete only that boundary, as in the shadow allocation fixtures.
-    vi.spyOn(engine, "createDepthStencilTexture").mockImplementation((size, options) => {
-      const texture = new InternalTexture(engine, InternalTextureSource.DepthStencil);
-      const dimensions = typeof size === "number" ? { width: size, height: size } : size;
-      texture.width = texture.baseWidth = dimensions.width;
-      texture.height = texture.baseHeight = dimensions.height;
-      texture.format = options.depthTextureFormat ?? Constants.TEXTUREFORMAT_DEPTH24;
-      texture.isReady = true;
-      engine.getLoadedTexturesCache().push(texture);
-      return texture;
-    });
+    const depthTextures = vi.spyOn(engine, "createDepthStencilTexture");
     const renderers: SceneRenderCoordinator[] = [];
     const compositor = new SceneLayerCompositor({
       engine,
@@ -351,7 +337,10 @@ describe("SceneLayerCompositor", () => {
     });
     const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
     const first = layer.camera.outputRenderTarget!;
-    expect(first.depthStencilTexture?.format).toBe(Constants.TEXTUREFORMAT_DEPTH24);
+    // Colour only: the layer's graph draws through its chain's scene depth, so the target has no depth texture or
+    // renderbuffer of the canvas's size.
+    expect(first.depthStencilTexture).toBeNull();
+    expect(first.renderTarget!._generateDepthBuffer).toBe(false);
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });
     const retire = SceneRenderCoordinator.prototype.retire;
@@ -371,7 +360,11 @@ describe("SceneLayerCompositor", () => {
     expect(next.getSize().width).toBe(first.getSize().width + 16);
     compositor.render(new Set(), () => {});
     expect(layer.camera.outputRenderTarget).toBe(next);
-    expect(next.depthStencilTexture).not.toBe(first.depthStencilTexture);
+    expect(next.depthStencilTexture).toBeNull();
+    // Only the shadow atlas's placeholder makes a depth texture.
+    const depthOwners = depthTextures.mock.calls.map(([, , wrapper]) => wrapper);
+    expect(depthOwners).not.toContain(first.renderTarget);
+    expect(depthOwners).not.toContain(next.renderTarget);
     expect(renderers[1]).not.toBe(renderers[0]);
     expect(draw).not.toHaveBeenCalled();
     expect(disposeFirst).not.toHaveBeenCalled();
@@ -477,11 +470,6 @@ describe("SceneLayerCompositor", () => {
     const upload = engine.createRawTexture.bind(engine);
     vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
       const texture = upload(...args); texture.isReady = true; return texture;
-    });
-    // NullEngine has no depth-texture driver; the layer graph only needs a
-    // depth attachment to borrow. Supply that boundary for each layer target.
-    vi.spyOn(RenderTargetTexture.prototype, "depthStencilTexture", "get").mockImplementation(function (this: RenderTargetTexture) {
-      return this.getInternalTexture();
     });
     const renderers: SceneRenderCoordinator[] = [];
     const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: (_layer, _stack, renderer) => {

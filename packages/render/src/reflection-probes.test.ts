@@ -8,9 +8,10 @@ import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Scene } from "@babylonjs/core/scene";
 import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
-import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
-import { REFLECTION_PROBE_CLASS_ID, reflectionProbeBindings } from "@haptic/core";
+import { REFLECTION_PROBE_CLASS_ID, createActor, createDefaultScene, reflectionProbeBindings } from "@haptic/core";
+import { availableManagedRenderBytes, beginManagedRenderAllocation, managedRenderReservations } from "./managed-render-resources";
 import { environmentPolynomial } from "./environment-irradiance";
 import { createFilteredEnvironmentTarget, filterEnvironment } from "./environment-prefilter";
 import { REFLECTION_PROBE_RECAPTURE_DELAY_MS, sceneReflectionProbes } from "./reflection-probes";
@@ -136,4 +137,65 @@ it("recompiles meshes for a probe's cube when the first probe publishes and for 
   expect((await readyDefines(scene, material, inside)).USE_LOCAL_REFLECTIONMAP_CUBIC).toBe(true);
   probes.remove("actor");
   expect((await readyDefines(scene, material, inside)).USE_LOCAL_REFLECTIONMAP_CUBIC).toBe(false);
+});
+
+/** The raw capture cube's bytes at resolution 64: half-float colour with every mip of six faces, and its depth. */
+const CAPTURE_BYTES_64 = 6 * 8 * (64 * 64 + 32 * 32 + 16 * 16 + 8 * 8 + 4 * 4 + 2 * 2 + 1) + 6 * 64 * 64 * 4;
+const captureCube = (scene: Scene) => scene.textures.find((texture) => texture.name === "reflectionProbe:actor:probe");
+
+it("frees a runtime probe's raw capture cube once its filtered cube publishes, and captures into a new one when the static scene changes", async () => {
+  const { scene, probes, publish, frame } = fixture();
+  const environment = () => managedRenderReservations(scene.getEngine()).categoryBytes.environment;
+  await publish([8, 4, 8]);
+  // Lighting reads the filtered cube alone: the raw half-float cube and its depth go with their lease.
+  await vi.waitFor(() => expect(environment()).toBe(0));
+  expect(captureCube(scene)).toBeUndefined();
+  const draws = vi.mocked(drawOutsideSceneView).mock.calls.length;
+  // Its filtering takes a while: the new cube is held until it finishes.
+  let filtered!: () => void;
+  vi.mocked(filterEnvironment).mockImplementationOnce(() => new Promise<void>((resolve) => { filtered = resolve; }));
+  MeshBuilder.CreateBox("added", {}, scene);
+  frame();
+  expect(vi.mocked(drawOutsideSceneView).mock.calls.length).toBe(draws + 1);
+  expect(environment()).toBe(CAPTURE_BYTES_64);
+  expect(captureCube(scene)).toBeDefined();
+  filtered();
+  await vi.waitFor(() => expect(environment()).toBe(0));
+  expect(captureCube(scene)).toBeUndefined();
+  expect(probes.diagnostics()[0]?.published).toBe(true);
+});
+
+it("keeps a runtime probe published when the budget refuses its new capture cube, and recaptures once the budget has room", async () => {
+  const { scene, probes, publish, frame } = fixture();
+  const engine = scene.getEngine();
+  await publish([8, 4, 8]);
+  // Its first capture cube is already freed, so the filler leaves no room for a new one.
+  await vi.waitFor(() => expect(managedRenderReservations(engine).categoryBytes.environment).toBe(0));
+  const filler = beginManagedRenderAllocation(engine, availableManagedRenderBytes(engine))!;
+  const draws = vi.mocked(drawOutsideSceneView).mock.calls.length;
+  MeshBuilder.CreateBox("added", {}, scene);
+  frame();
+  expect(vi.mocked(drawOutsideSceneView).mock.calls.length).toBe(draws);
+  expect(probes.diagnostics()[0]?.published).toBe(true);
+  // No forced recapture and no further static change: the refused capture retries on its own.
+  filler.release();
+  frame();
+  expect(vi.mocked(drawOutsideSceneView).mock.calls.length).toBe(draws + 1);
+  expect(captureCube(scene)).toBeDefined();
+});
+
+it("keeps an editor probe's capture cube, which every settled document edit draws again", async () => {
+  const { scene, inside, probes, frame } = fixture();
+  inside.parent = new Mesh("editorActor:actor", scene);
+  const document = createDefaultScene();
+  document.actors.push(createActor("actor", "Probe", {
+    components: [{ id: "probe", classId: REFLECTION_PROBE_CLASS_ID, properties: { size: [8, 4, 8], resolution: 64 } }],
+  }));
+  probes.syncAuthored(document);
+  frame();
+  await vi.waitFor(() => expect(probes.diagnostics()[0]?.published).toBe(true));
+  // Past the capture's settling, where a runtime probe frees its cube.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(managedRenderReservations(scene.getEngine()).categoryBytes.environment).toBe(CAPTURE_BYTES_64);
+  expect(captureCube(scene)).toBeDefined();
 });

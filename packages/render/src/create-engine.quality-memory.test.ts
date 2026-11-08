@@ -241,19 +241,21 @@ describe("Play quality changes", () => {
     await step("shadows restore", ["quality reset"]);
     await step("MSAA and post off", ["quality postprocessing antialiasing off", "postprocessing off"]);
     await step("MSAA and post restore", ["quality reset", "postprocessing on"]);
-    // 21 at High: the 13 the view's graph allocates (multisampled scene colour and depth, geometry buffers, the spatial
-    // stages' and bloom's targets) and 8 the session holds besides (the sun's shadow atlas among them). Post off
-    // leaves the multisampled scene colour and depth, and with MSAA off too the view draws into the backbuffer; Medium
-    // shadows draw no Screen-Space Shadows, one target fewer. The peak is the larger state, with no allowance above it.
+    // 23 at High: the 15 the view's graph allocates (multisampled scene colour and depth, geometry buffers, the spatial
+    // stages' and bloom's targets, of which ambient occlusion's single-channel march and blurs take a pair of their own
+    // beside the reflection and volumetric stages' half-scale RGBA pair) and 8 the session holds besides (the sun's
+    // shadow atlas among them). Post off leaves the multisampled scene colour and depth, and with MSAA off too the view
+    // draws into the backbuffer; Medium shadows draw no Screen-Space Shadows, one target fewer. The peak is the larger
+    // state, with no allowance above it.
     expect(counts).toEqual({
-      "MSAA off": { before: 21, peak: 21, after: 21 },
-      "MSAA restore": { before: 21, peak: 21, after: 21 },
-      "post off": { before: 21, peak: 10, after: 10 },
-      "post restore": { before: 10, peak: 21, after: 21 },
-      "shadows medium": { before: 21, peak: 21, after: 20 },
-      "shadows restore": { before: 20, peak: 21, after: 21 },
-      "MSAA and post off": { before: 21, peak: 8, after: 8 },
-      "MSAA and post restore": { before: 8, peak: 21, after: 21 },
+      "MSAA off": { before: 23, peak: 23, after: 23 },
+      "MSAA restore": { before: 23, peak: 23, after: 23 },
+      "post off": { before: 23, peak: 10, after: 10 },
+      "post restore": { before: 10, peak: 23, after: 23 },
+      "shadows medium": { before: 23, peak: 23, after: 22 },
+      "shadows restore": { before: 22, peak: 23, after: 23 },
+      "MSAA and post off": { before: 23, peak: 8, after: 8 },
+      "MSAA and post restore": { before: 8, peak: 23, after: 23 },
     });
   });
 });

@@ -1,4 +1,5 @@
 import { Camera } from "@babylonjs/core/Cameras/camera";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
@@ -86,6 +87,11 @@ class PreparedSSRCombine extends ThinSSRBlurCombinerPostProcess {
 export interface SpatialStage {
   wrapper: EffectWrapper;
   scale: number;
+  /**
+   * The stage target's format (half float): RGBA unless every reader of the stage's output takes one channel, as the
+   * occlusion march and blurs, whose single-channel targets sample as (value, 0, 0, 1).
+   */
+  format?: number;
   /** Index of the stage whose input is the full-resolution color to compose. */
   mainInput?: number;
   geometry: boolean;
@@ -134,10 +140,10 @@ export function reserveSpatialEffects(
   const pixels = width * height;
   const quality =
     resolveSceneRenderingQuality(scene).postprocessing.resolutionScale;
-  const scaledBytes = (scale: number) =>
+  const scaledBytes = (scale: number, pixelBytes = 8) =>
     Math.max(1, Math.round(width * Math.max(0.25, scale * quality))) *
     Math.max(1, Math.round(height * Math.max(0.25, scale * quality))) *
-    8;
+    pixelBytes;
   // Native includes its half-float prepass color, R32 depth, padded depth/stencil
   // and a full-size PP input. Graph includes its scene color/depth and geometry Z.
   let bytes = pixels * (native ? 28 : 20);
@@ -145,8 +151,9 @@ export function reserveSpatialEffects(
   if (sceneSamples > 1) bytes += pixels * sceneSamples * (8 + 4);
   // Reflections and occlusion share the encoded world-normal attachment.
   if (plan.ambientOcclusion && !plan.reflections) bytes += pixels * 4;
+  // Its R16F march and blurs, and the RGBA16F compose.
   if (plan.ambientOcclusion)
-    bytes += pixels * 8 + scaledBytes(plan.ambientOcclusion.resolutionScale) * 3;
+    bytes += pixels * 8 + scaledBytes(plan.ambientOcclusion.resolutionScale, 2) * 3;
   if (plan.reflections)
     bytes += pixels * 16 + scaledBytes(plan.reflections.resolutionScale) * 3;
   if (plan.volumetricLighting)
@@ -283,9 +290,12 @@ export function createSpatialStages(
         ),
       );
       const inverseProjection = Matrix.Identity();
+      // The march and blurs write visibility to every colour channel, and each reader (the blurs, the compose) takes
+      // red alone: one half-float channel holds it, at a quarter of RGBA16F's bytes and fetch bandwidth.
       stages.push({
         wrapper: march,
         scale,
+        format: Constants.TEXTUREFORMAT_R,
         geometry: true,
         bind: (effect) => {
           const projection = camera.getProjectionMatrix();
@@ -322,6 +332,7 @@ export function createSpatialStages(
         stages.push({
           wrapper: blur,
           scale,
+          format: Constants.TEXTUREFORMAT_R,
           geometry: true,
           bind: (effect) => effect.setFloat2("aoBlurStep", x, y),
         });

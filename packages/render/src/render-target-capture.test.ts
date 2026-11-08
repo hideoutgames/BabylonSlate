@@ -57,7 +57,7 @@ function host(floatingOrigin = false) {
   const allocate = engine.createRenderTargetTexture.bind(engine);
   vi.spyOn(engine, "createRenderTargetTexture").mockImplementation((size, options) => {
     const target = allocate(size, options);
-    target.texture!.format = Constants.TEXTUREFORMAT_RGBA;
+    target.texture!.format = (typeof options === "object" ? options.format : undefined) ?? Constants.TEXTUREFORMAT_RGBA;
     return target;
   });
   const scene = new Scene(engine, { useFloatingOrigin: floatingOrigin });
@@ -134,6 +134,26 @@ it("publishes nothing and keeps a manual request while its draw waits for a comp
   expect(output.getSize()).toEqual({ width: 16, height: 8 });
   captures.render();
   expect(draws).toHaveLength(2);
+});
+
+it("stores a Depth Pass capture as one half-float channel, charged at two bytes a pixel", () => {
+  const { scene, captures, engine, draws } = host();
+  engine.getCaps().textureHalfFloatRender = true;
+  vi.spyOn(normalMaterial, "createRenderTargetDepthMaterial").mockImplementation((scene) => new NodeMaterial("Capture Depth Variant", scene));
+  captures.setAssets(new Map([["target", { mode: "DepthPass", width: 16, height: 8 }]]), new Map([["texture", { renderTargetGuid: "target" }]]));
+  MeshBuilder.CreateBox("Model", {}, scene).material = new StandardMaterial("Source", scene);
+  captures.acquireTexture("texture");
+  // Beside the shared 1 × 1 data fallback.
+  const fallback = managedRenderReservations(engine).categoryBytes.geometry;
+  captures.request("capture"); captures.render();
+  expect(draws).toHaveLength(1);
+  const target = scene.textures.find((entry) => entry.name === "renderTarget:target") as RenderTargetTexture;
+  // Only red carries depth: an R16F target samples as the (d, 0, 0, 1) the capture writes and clears.
+  expect([target.getInternalTexture()!.format, target.getInternalTexture()!.type])
+    .toEqual([Constants.TEXTUREFORMAT_R, Constants.TEXTURETYPE_HALF_FLOAT]);
+  expect(target.clearColor.asArray()).toEqual([1, 0, 0, 1]);
+  // 16 × 8 pixels at 2 bytes, where RGBA16F took 8.
+  expect(managedRenderReservations(engine).categoryBytes.geometry - fallback).toBe(16 * 8 * 2);
 });
 
 it("keeps color and data sampling distinct while sharing the uncaptured fallback", () => {

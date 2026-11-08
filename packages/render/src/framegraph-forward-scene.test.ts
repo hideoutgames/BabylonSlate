@@ -427,9 +427,15 @@ it("rejects unmanaged shadows, native passes, unsupported targets and frozen que
     reason: expect.stringContaining("Native camera post-processes"),
   });
   external.dispose(camera);
-  const target = new RenderTargetTexture("shared view", 32, scene);
+  const target = new RenderTargetTexture("shared view", 32, scene, { generateMipMaps: false, generateDepthBuffer: false });
   camera.outputRenderTarget = target;
-  await expect(graph.prepare(camera)).rejects.toThrow("color/depth texture");
+  // A target without depth draws through the view's own scene colour and depth, then copies colour into it.
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.taskNames()).toEqual(expect.arrayContaining(["Forward clear", "Forward objects", "Capture output"]));
+  const multisampled = new RenderTargetTexture("multisampled view", 32, scene);
+  vi.spyOn(multisampled, "samples", "get").mockReturnValue(4);
+  camera.outputRenderTarget = multisampled;
+  await expect(graph.prepare(camera)).rejects.toThrow("single-sample 2D color texture");
   camera.outputRenderTarget = null;
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
@@ -1364,6 +1370,41 @@ it("redraws without advancing native animation or catching up after resume", asy
   graph.render(camera);
   expect(moving.position.x).toBeCloseTo(2);
   graph.dispose();
+});
+
+it("keeps occlusion's march and blurs in one half-float channel, which every reader of them takes", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 160;
+  options.renderHeight = 128;
+  const { engine, scene, camera } = host(new NullEngine(options));
+  // The spatial chain needs four float targets and depth sampling.
+  Object.assign(engine.getCaps(), {
+    maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
+    textureHalfFloatRender: true, textureFloatRender: true, texelFetch: true,
+  });
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: { ...DEFAULT_RENDER_EFFECTS, ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } },
+    quality: normalizeRenderingQuality({ postprocessing: { resolutionScale: 1, antiAliasing: "off", ambientOcclusion: true } }),
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const { textureManager } = (graph as unknown as { graph: FrameGraph }).graph;
+    const formats = Object.fromEntries([...textureManager._textures].filter(([, entry]) => entry?.name.startsWith("Scene Ambient Occlusion"))
+      .map(([handle, entry]) => [entry!.name, textureManager.getTextureFromHandle(handle)!.format]));
+    expect(formats).toEqual({
+      "Scene Ambient Occlusion": Constants.TEXTUREFORMAT_R,
+      "Scene Ambient Occlusion Blur X": Constants.TEXTUREFORMAT_R,
+      "Scene Ambient Occlusion Blur Y": Constants.TEXTUREFORMAT_R,
+      "Scene Ambient Occlusion Compose": Constants.TEXTUREFORMAT_RGBA,
+    });
+    // The 160 × 128 RGBA16F compose, and two 80 × 64 R16F targets at 2 B a pixel (the march and Blur Y share one
+    // texture: the blur Y writes after the blur X has read the march), where RGBA16F took 8 B.
+    expect(managedRenderReservations(engine).categoryBytes.postprocess).toBe(160 * 128 * 8 + 2 * 80 * 64 * 2);
+  } finally {
+    graph.dispose();
+  }
 });
 
 it("sizes every screen-space target of the world view from its render scale; only the backbuffer stays at output size", async () => {

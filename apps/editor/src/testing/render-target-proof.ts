@@ -19,7 +19,7 @@ import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene"
 import { createDepthTextureTarget } from "../../../../packages/render/src/depth-texture-target";
 
 /**
- * A colour target whose depth is a depth texture (material previews, views presented through a target, SceneLayers),
+ * A colour target whose depth is a depth texture (material previews, views presented through a target),
  * drawn into by the forward graph: a plane facing the eye crossed by one turned 45°, so only the target's depth test
  * shows each on its own side whatever their draw order. Returns a pixel left and right of the crossing and whether a
  * depth renderbuffer sits beside the texture.

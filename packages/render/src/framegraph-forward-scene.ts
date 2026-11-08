@@ -215,7 +215,7 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
 
 /**
  * The scene renderer: a Forward FrameGraph drawing to the backbuffer or an
- * explicit 2D color/depth target. The caller retains its existing frame
+ * explicit 2D color target (with or without depth). The caller retains its existing frame
  * scheduler and calls render instead of Scene.render, exactly once per frame.
  * prepare only builds/probes effects; it never presents or consumes a frame.
  * A scene the graph cannot draw fails preparation; there is no native fallback.
@@ -1022,16 +1022,11 @@ export class ForwardSceneFrameGraph {
     if (scene.getEngine()._currentRenderTarget)
       return "A caller-bound render target is not supported.";
     const target = camera.outputRenderTarget;
-    // An auxiliary view draws into its own scene targets and copies colour
-    // only, so its output needs no depth attachment.
-    if (
-      target &&
-      (target.isCube ||
-        target.is2DArray ||
-        target.samples !== 1 ||
-        (!target.depthStencilTexture && !this.auxiliary))
-    )
-      return "FrameGraph output requires a single-sample 2D color/depth texture.";
+    // An output without a depth texture (an auxiliary view's, a post-processed
+    // SceneLayer's) is drawn through a chain's scene targets or the view's own,
+    // which the output copy leaves as colour only.
+    if (target && (target.isCube || target.is2DArray || target.samples !== 1))
+      return "FrameGraph output requires a single-sample 2D color texture.";
     // Post-processing runs as graph tasks attached through attachPostProcess.
     if (camera._postProcesses.some(Boolean) || scene.postProcesses.length)
       return "Native camera post-processes are not supported; attach them to the render coordinator.";
@@ -1158,10 +1153,22 @@ export class ForwardSceneFrameGraph {
         };
         // An auxiliary view without a chain still draws offscreen: only the
         // final copy writes its output, which a material in view may sample.
-        // So does a scaled view (the copy fills its full-size output), and a multisampled one: the output (the
-        // backbuffer, created without antialiasing) is single-sample.
-        if ((this.auxiliary || output.scale !== 1 || samples > 1) && !this.postProcessGraph && !effectsPlan)
+        // So does a scaled view (the copy fills its full-size output), a multisampled one (the output, the
+        // backbuffer created without antialiasing, is single-sample), and one whose output target has no depth.
+        if ((this.auxiliary || output.scale !== 1 || samples > 1 || (output.color && !output.depth)) && !this.postProcessGraph && !effectsPlan)
           this.ownScene = this.declareOwnSceneTargets(this.graph, renderSize.width, renderSize.height, samples);
+        const engine = scene.getEngine();
+        /** Whether the view's own multisampled colour presents by one blit to the backbuffer (`MultisamplePresentTask`). */
+        const presentsByBlit = (own: { samples: number; colorType: number }, laterReaders: boolean) => presentsMultisampleByBlit({
+          webGl2: !engine.isWebGPU && (engine as { webGLVersion?: number }).webGLVersion === 2, samples: own.samples, colorType: own.colorType,
+          backbuffer: !output.color, outputSized: renderSize.width === output.width && renderSize.height === output.height,
+          laterReaders,
+        });
+        // The outline composition only blends onto its target and never samples the colour beneath, so where the own
+        // pair presents by one blit (nothing else reads the scene colour after the objects pass) it composes onto the
+        // backbuffer after that blit: no resolve and no output copy.
+        const outlineOnOutput = !!this.preparedOutlineView && !effectsPlan && !this.postProcessGraph && !!this.ownScene &&
+          presentsByBlit(this.ownScene, waterDemand > 0);
         if (effectsPlan) {
           this.effectsGraph = new SceneEffectsGraph({
             frameGraph: this.graph,
@@ -1178,7 +1185,7 @@ export class ForwardSceneFrameGraph {
             outputTarget: color,
           });
         } else if (this.preparedOutlineView) {
-          composeOutline(this.postProcessGraph?.outputTexture ?? this.ownScene?.color ?? color);
+          composeOutline(this.postProcessGraph?.outputTexture ?? (outlineOnOutput ? undefined : this.ownScene?.color) ?? color);
         }
         this.clear = new FrameGraphClearTextureTask(
           "Forward clear",
@@ -1191,9 +1198,10 @@ export class ForwardSceneFrameGraph {
           color;
         this.clear.depthTexture = this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture ??
           this.ownScene?.depth ?? depth;
-        // Every auxiliary path (own targets, an authored or a settings chain) has its own depth.
-        if (this.auxiliary && this.clear.depthTexture === depth)
-          throw new Error("An auxiliary view requires its own scene depth.");
+        // Every auxiliary path, and every one into a target without depth (own targets, an authored or a settings
+        // chain), has its own depth: the backbuffer's is not the target's.
+        if ((this.auxiliary || (output.color && !output.depth)) && this.clear.depthTexture === depth)
+          throw new Error("A view drawing into a target without depth requires its own scene depth.");
         // The authored clear color is display-space; a Scene Linear scene
         // color holds linear HDR that the Display Color stage encodes once.
         this.clear.convertColorToLinearSpace = effectsPlan?.sceneLinear === true;
@@ -1277,20 +1285,15 @@ export class ForwardSceneFrameGraph {
         for (const task of this.water?.afterObjects ?? []) this.graph.addTask(task);
         for (const task of this.postProcessGraph?.postProcessTasks ?? []) this.graph.addTask(task);
         for (const task of this.effectsGraph?.tasks ?? []) this.graph.addTask(task);
-        if (this.outlineTask && !this.effectsGraph) this.graph.addTask(this.outlineTask);
+        if (this.outlineTask && !this.effectsGraph && !outlineOnOutput) this.graph.addTask(this.outlineTask);
         // The single output owner: every authored or settings-driven chain
         // feeds this copy; nothing else writes the view's output.
         const chainOutput =
           this.effectsGraph?.outputTexture ??
           (this.postProcessGraph ? this.outlineTask?.outputTexture ?? this.postProcessGraph.outputTexture : undefined) ??
           (this.ownScene ? this.outlineTask?.outputTexture ?? this.ownScene.color : undefined);
-        const engine = scene.getEngine();
         const own = this.ownScene;
-        if (own && !this.outlineTask && presentsMultisampleByBlit({
-          webGl2: !engine.isWebGPU && (engine as { webGLVersion?: number }).webGLVersion === 2, samples: own.samples, colorType: own.colorType,
-          backbuffer: !output.color, outputSized: renderSize.width === output.width && renderSize.height === output.height,
-          laterReaders: this.water !== undefined,
-        })) {
+        if (own && (outlineOnOutput || (!this.outlineTask && presentsByBlit(own, this.water !== undefined)))) {
           // The objects pass is the scene colour's last writer and nothing samples its resolve: one blit from the
           // multisampled colour to the backbuffer replaces the resolve and the output copy.
           this.objects.resolveMSAAColors = false;
@@ -1298,6 +1301,8 @@ export class ForwardSceneFrameGraph {
           present.sourceTexture = own.color;
           this.outputCopy = present;
           this.graph.addTask(present);
+          // Then the outlines blend onto the presented colour.
+          if (outlineOnOutput) this.graph.addTask(this.outlineTask!);
         } else if (chainOutput && !this.effectsGraph?.rendersToOutput) {
           // A chain whose last stage drew the output needs no copy.
           if (output.color) {

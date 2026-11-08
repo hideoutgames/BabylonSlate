@@ -298,7 +298,7 @@ it("rejects unsupported depth and a constrained replacement before declaring tar
 it("uses half-float scene depth where 32-bit float targets cannot blend", async () => {
   const h = host();
   // iPad: float targets render but EXT_float_blend is absent, so a blended
-  // transparent draw into an RGBA32F geometry target is INVALID_OPERATION.
+  // transparent draw into a 32-bit float geometry target is INVALID_OPERATION.
   h.engine.getCaps().blendFloat = false;
   const plan = prepareScenePostProcessPlan(
     h.library,
@@ -308,11 +308,10 @@ it("uses half-float scene depth where 32-bit float targets cannot blend", async 
   const owner = successful(h.create(plan));
   h.connect(owner);
   await h.graph.buildAsync();
-  expect(
-    h.graph.textureManager.getTextureFromHandle(
-      owner.geometryTask!.geometryNormViewDepthTexture,
-    )!.type,
-  ).toBe(Constants.TEXTURETYPE_HALF_FLOAT);
+  const depth = h.graph.textureManager.getTextureFromHandle(
+    owner.geometryTask!.geometryNormViewDepthTexture,
+  )!;
+  expect([depth.format, depth.type]).toEqual([Constants.TEXTUREFORMAT_R, Constants.TEXTURETYPE_HALF_FLOAT]);
   await h.retire();
 });
 
@@ -334,9 +333,9 @@ it("shares one demanded geometry set and isolated Z, reconciles every output, an
   );
   const owner = successful(h.create(plan, 0.5));
   // 3 full-resolution RGBA8 targets (scene, normal, first pass), 2 Z targets,
-  // RGBA32F normalized depth, and one 8x4 RGBA8 scalable output.
-  expect(owner.estimatedBytes).toBe(4736);
-  expect(managedRenderReservations(h.engine).pendingBytes).toBe(4736);
+  // R32F normalized depth, and one 8x4 RGBA8 scalable output.
+  expect(owner.estimatedBytes).toBe(3200);
+  expect(managedRenderReservations(h.engine).pendingBytes).toBe(3200);
   expect(owner.geometryTask!.textureDescriptions).toHaveLength(2);
   expect(owner.geometryTask!.depthTexture).not.toBe(owner.depthTexture);
   expect(h.graph.tasks).toEqual([]); // Caller controls ordering around surfaces.
@@ -355,17 +354,21 @@ it("shares one demanded geometry set and isolated Z, reconciles every output, an
     width: 8,
     height: 4,
   });
-  expect(
-    textures.getTextureFromHandle(
-      owner.geometryTask!.geometryNormViewDepthTexture,
-    )!.type,
-  ).toBe(Constants.TEXTURETYPE_FLOAT);
+  const normalizedDepth = textures.getTextureFromHandle(
+    owner.geometryTask!.geometryNormViewDepthTexture,
+  )!;
+  // One channel: Scene Depth reads red alone.
+  expect([normalizedDepth.format, normalizedDepth.type]).toEqual([
+    Constants.TEXTUREFORMAT_R,
+    Constants.TEXTURETYPE_FLOAT,
+  ]);
   const totals = managedRenderReservations(h.engine);
   expect(totals.pendingBytes).toBe(0);
   // Beside the light block's LTC tables, which the Scene holds while the block exists.
   expect(totals.categoryBytes.areaLight).toBe(AREA_LIGHT_LOOKUP_BYTES);
-  expect(totals.reservedBytes - AREA_LIGHT_LOOKUP_BYTES).toBeLessThanOrEqual(4736);
-  expect(totals.categoryBytes.geometry).toBe(2560);
+  expect(totals.reservedBytes - AREA_LIGHT_LOOKUP_BYTES).toBeLessThanOrEqual(3200);
+  // R32F depth (4 B) and RGBA8 normal (4 B) over 16 × 8 pixels.
+  expect(totals.categoryBytes.geometry).toBe(1024);
   expect(totals.categoryBytes.depth).toBe(1024);
   expect(() => owner.releaseAfterGraphDisposal()).toThrow(/Dispose/);
   await h.retire();
