@@ -1,4 +1,6 @@
-import { Mesh, Quaternion, Vector3, type UniversalCamera } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createActor,

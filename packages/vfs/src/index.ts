@@ -37,3 +37,4 @@ export * from "./save-game-storage";
 export * from "./save-game-web";
 export * from "./save-game-mobile";
 export * from "./save-game-electron";
+export * from "./save-file";

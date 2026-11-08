@@ -32,7 +32,10 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("@haptic/render", async () => {
-  const { NullEngine, Scene } = await import("@babylonjs/core");
+  const [{ NullEngine }, { Scene }] = await Promise.all([
+    import("@babylonjs/core/Engines/nullEngine"),
+    import("@babylonjs/core/scene"),
+  ]);
   const engine = new NullEngine();
   return {
     createParticlePreviewScene: () => {

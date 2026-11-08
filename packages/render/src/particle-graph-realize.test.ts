@@ -1,4 +1,9 @@
-import { GPUParticleSystem, MeshBuilder, ParticleSystem, UpdateSizeBlock, type Mesh, type Scene } from "@babylonjs/core";
+import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import { UpdateSizeBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/updateSizeBlock";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PARTICLE_UPDATE_SPEED, type ParticleSpace } from "@haptic/core";
 import {

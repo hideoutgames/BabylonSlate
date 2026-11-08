@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FreeCamera, Matrix, MeshBuilder, NullEngine, Scene, ShaderLanguage, Vector3, type AbstractMesh, type NodeMaterial } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import {
   createDefaultWaterDefinition, createWaterWaveOutput, normalizeWaterBody, RENDER_QUALITY_PROFILES, WATER_FFT_CASCADES_MAX, waterBankGain,
   waterEulerianGradient, waterSpectrum,
@@ -11,6 +18,8 @@ import { waterFftCycle, waterFftSynthesize, waterSpectrumInitial, waterSpectrumL
 import { WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM, WATER_VERTEX_WAVE_UNIFORMS, waterFoamDrift, waterWaveBlockSource } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { materialHasWaterWaves } from "./water-waves-block";
+// The WGSL cases fake a WebGPU Engine, whose code registers the WGSL includes Haptic's blocks emit as it loads.
+import "./webgpu-registrations";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });

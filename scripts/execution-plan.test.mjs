@@ -29,6 +29,7 @@ test("low-memory policy clamps fast/CI requests without making builds impossible
       assert.equal(plan.hosted, false);
       assert.equal(plan.workers, 1);
       assert.equal(plan.browserWorkers, 1);
+      assert.equal(plan.workspaceConcurrency, 1);
       assert.equal(plan.retries, 0);
       assert.equal(plan.config.capacity.reserveGiB, Math.max(2, reserve));
       assert.equal(plan.config.maxRoots, 1);
@@ -94,6 +95,8 @@ test("partial/spurious CI context cannot select hosted execution", async () => {
   assert.equal(plan.hosted, true);
   assert.equal(plan.workers, 4);
   assert.equal(plan.browserWorkers, 1);
+  // One typecheck program per runner vCPU, for the build profile too.
+  assert.equal((await resolveExecutionPlan("build", hosted)).workspaceConcurrency, 4);
 });
 
 test("an alternate or missing configuration cannot relax an existing host policy", async (t) => {

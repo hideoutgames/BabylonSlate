@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { MeshBuilder } from "@babylonjs/core";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { createTestEngine } from "./test-support/test-engine";
 import {
   DEFAULT_CAMERA_RADIUS,

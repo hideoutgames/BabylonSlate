@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from "react";
-import { pickImportFiles } from "@haptic/vfs";
+import { pickImportFiles, saveFile } from "@haptic/vfs";
 import {
   ColorField,
   colorFromHex,
@@ -39,7 +39,7 @@ import {
 } from "@haptic/ui/components/select";
 import { useAppSettings } from "../context/app-settings-context";
 import { ThemePreviewFrame } from "./editor-theme-preview-frame";
-import { downloadBlob } from "../lib/download";
+import { savedFileNotice } from "../lib/file-export";
 import {
   editorThemeFileName,
   listEditorThemes,
@@ -176,12 +176,20 @@ export function ThemeSettingsFields() {
             size="sm"
             variant="outline"
             data-testid="application-theme-export"
-            onClick={() =>
-              downloadBlob(
-                new Blob([serializeEditorTheme(active)], { type: "application/json" }),
+            onClick={() => {
+              setNotice(null);
+              // Called inside the tap: Safari shares only during one.
+              void saveFile(
                 editorThemeFileName(active),
-              )
-            }
+                new Blob([serializeEditorTheme(active)], { type: "application/json" }),
+              ).then(
+                (saved) => {
+                  const text = savedFileNotice(active.name, saved);
+                  setNotice(text ? { tone: "info", text } : null);
+                },
+                () => setNotice({ tone: "error", text: `Couldn't export ${active.name}.` }),
+              );
+            }}
           >
             Export Theme
           </Button>

@@ -1,5 +1,7 @@
 import { afterEach, expect, it } from "vitest";
-import { Mesh, NullEngine, Scene } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
 import { createSnapshotSceneBinding, meshForPlayComponent, retirePlaySlot } from "./snapshot-apply";
 
 const engines: NullEngine[] = [];

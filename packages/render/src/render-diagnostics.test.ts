@@ -1,12 +1,10 @@
-import {
-  HemisphericLight,
-  MeshBuilder,
-  NullEngine,
-  Scene,
-  StandardMaterial,
-  UniversalCamera,
-  Vector3,
-} from "@babylonjs/core";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readEngineDrawCalls } from "./draw-calls";
 import { MANAGED_RENDER_BYTE_LIMIT } from "./managed-render-resources";

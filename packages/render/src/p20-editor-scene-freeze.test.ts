@@ -1,15 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ACTOR_FRAMING_MIN_RADIUS } from "./actor-framing";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
-import {
-  Mesh,
-  NodeMaterial,
-  NullEngine,
-  ScenePerformancePriority,
-  ShaderMaterial,
-  Texture,
-  VertexBuffer,
-} from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { ScenePerformancePriority } from "@babylonjs/core/scene";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
 import {
   createActor,

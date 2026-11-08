@@ -28,6 +28,8 @@ export const ActiveDocumentStateContext = createContext<ActiveDocumentState | nu
 export const SaveStateContext = createContext<SaveState | null>(null);
 export const CompileStateContext = createContext<CompileState | null>(null);
 export const EditorShellStateContext = createContext<EditorShellState | null>(null);
+/** Replaced on every thumbnail write, so only views that show thumbnails read it. */
+export const ThumbnailVersionsContext = createContext<Readonly<Record<string, number>> | null>(null);
 export const SourceControlStateContext = createContext<SourceControlState | null>(null);
 
 /** Bumps only the Windows menu so dock add/remove does not remount editor chrome. */
@@ -98,9 +100,19 @@ export function useCompileState(): CompileState {
   return useSlice(CompileStateContext, "useCompileState");
 }
 
-/** Homepage lists, recovery, migration and exclusive Scene prompts, thumbnails. */
+/** Homepage lists, recovery, migration and exclusive Scene prompts, the Thumbnails setting. */
 export function useEditorShellState(): EditorShellState {
   return useSlice(EditorShellStateContext, "useEditorShellState");
+}
+
+/**
+ * Each asset's thumbnail version, bumped when its thumbnail is written or its
+ * saved revision changes; key thumbnail reloads on it. A new record on every
+ * write, so the shell slice and its readers stay still while thumbnails are
+ * captured.
+ */
+export function useThumbnailVersions(): Readonly<Record<string, number>> {
+  return useSlice(ThumbnailVersionsContext, "useThumbnailVersions");
 }
 
 /** The source control service; a new object whenever its state changes. */

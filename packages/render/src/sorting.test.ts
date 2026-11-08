@@ -1,4 +1,6 @@
-import { NullEngine, ParticleSystem, Scene } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import { Scene } from "@babylonjs/core/scene";
 import { describe, expect, it } from "vitest";
 import { computeSortKey } from "@haptic/core";
 import {

@@ -1,16 +1,13 @@
 import { describe, expect, it } from "vitest";
-import {
-  FragmentOutputBlock,
-  InputBlock,
-  NodeMaterial,
-  NullEngine,
-  Scene,
-  ShaderLanguage,
-  Vector2,
-  Vector4,
-  VectorMergerBlock,
-  VertexOutputBlock,
-} from "@babylonjs/core";
+import { FragmentOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/fragmentOutputBlock";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { Vector2, Vector4 } from "@babylonjs/core/Maths/math.vector";
+import { VectorMergerBlock } from "@babylonjs/core/Materials/Node/Blocks/vectorMergerBlock";
+import { VertexOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/vertexOutputBlock";
 import { blockAdapterFor } from "./material-block-registry";
 
 describe("Voronoi shader generation", () => {

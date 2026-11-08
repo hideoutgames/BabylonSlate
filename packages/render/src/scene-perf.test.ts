@@ -1,28 +1,27 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  Matrix,
-  Mesh,
-  MeshBuilder,
-  MorphTarget,
-  MorphTargetManager,
-  HemisphericLight,
-  NodeMaterial,
-  NodeMaterialModes,
-  NullEngine,
-  PBRMaterial,
-  SpotLight,
-  ShadowGenerator,
-  ShaderMaterial,
-  StandardMaterial,
-  Scene,
-  ThinEngine,
-  UniversalCamera,
-  Vector3,
-  Viewport,
-  type AbstractMesh,
-  type Effect,
-} from "@babylonjs/core";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { MorphTarget } from "@babylonjs/core/Morph/morphTarget";
+import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Scene } from "@babylonjs/core/scene";
+import { ThinEngine } from "@babylonjs/core/Engines/thinEngine";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { Viewport } from "@babylonjs/core/Maths/math.viewport";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
+// Registers thin instances, which the fixture adds.
+import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { installTimerClock } from "./virtual-clock-test-fixtures";
 import {
   applyEditorMaterialFreeze,

@@ -15,7 +15,7 @@
 2. In the platform list, select **Web** under **Available**. Platforms under **Unavailable** can't be packaged on this device.
 3. Check the summary: the output file, **Startup Scene**, **Bundle Debugger** and **Always Package Folders**. If no Startup Scene is set, choose **Game Settings** to set one; **Package** stays unavailable until you do.
 4. Choose **Package**.
-5. When **Game package prepared. Check your downloads.** appears, find the ZIP. It is named after the project, with underscores for spaces.
+5. Save the ZIP when Haptic asks (see [Saving exported files](../projects/index.md#saving-exported-files)); in a browser, **Game package downloaded. Check your downloads.** appears. The ZIP is named after the project, with underscores for spaces.
 
 The ZIP has `index.html` at its root. Upload it to itch.io as an HTML game, or unzip it and serve the folder from any static web host.
 

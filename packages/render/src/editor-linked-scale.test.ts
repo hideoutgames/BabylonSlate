@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { NullEngine, Vector3, type PointerDragBehavior } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { PointerDragBehavior } from "@babylonjs/core/Behaviors/Meshes/pointerDragBehavior";
 import { createActor, createDefaultScene, createMeshComponent } from "@haptic/core";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { createEngine } from "./create-engine";

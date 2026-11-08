@@ -1,4 +1,7 @@
-import { NullEngine, Scene, FreeCamera, Vector3 } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { expect, it, vi } from "vitest";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { MaterialLibrary } from "./material-library";

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NullEngine } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import type { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 import { WebGPUCacheBindGroups } from "@babylonjs/core/Engines/WebGPU/webgpuCacheBindGroups";
 import { drainEngineAfterRelease } from "./idle-engine-drain";

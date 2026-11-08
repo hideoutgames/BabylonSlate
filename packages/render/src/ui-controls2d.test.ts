@@ -1,4 +1,6 @@
-import { NullEngine, RawTexture, StandardMaterial } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene, parseUIControl2DProperties, walkOverlayPointerHits } from "@haptic/core";
 import { UIControls2DInput, type SceneLayerControlEvent } from "./ui-controls2d-input";

@@ -32,34 +32,30 @@
  * ready, and a spawned mesh with nothing to draw is hidden until every variant
  * it draws with is ready, its pipelines included.
  */
-import {
-  Color4,
-  Constants,
-  DirectionalLight,
-  Mesh,
-  InstancedMesh,
-  MeshBuilder,
-  NullEngine,
-  NullEngineOptions,
-  Material,
-  Matrix,
-  PBRMaterial,
-  PointLight,
-  RawTexture,
-  RenderTargetTexture,
-  Scene,
-  ShadowGenerator,
-  StandardMaterial,
-  SubMesh,
-  Texture,
-  TransformNode,
-  UniversalCamera,
-  Vector3,
-  VertexBuffer,
-  type AbstractEngine,
-  type AbstractMesh,
-  Effect,
-} from "@babylonjs/core";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
+import { Material } from "@babylonjs/core/Materials/material";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { SubMesh } from "@babylonjs/core/Meshes/subMesh";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Effect } from "@babylonjs/core/Materials/effect";
 import {
   SNAPSHOT_FLAG_VISIBLE,
   snapshotFloatCount,

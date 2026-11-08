@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Color4, InputBlock, MeshBuilder, NullEngine, Scene } from "@babylonjs/core";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { everyInstanceParameter, instanceParameterAttribute, instanceParameterOf, prepareInstanceParameters, setMeshInstanceParameters } from "./instance-parameters";
 import { sceneInstancePool } from "./instance-pool";

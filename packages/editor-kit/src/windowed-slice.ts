@@ -66,6 +66,36 @@ export function windowedSlice({
   };
 }
 
+/**
+ * The scroll position a windowed list keeps in state for a scroll to `next`:
+ * `next` when it moves the first visible row or the mounted slice, else
+ * `previous`, so a scroll inside one row commits no render. The kept value
+ * stays inside the real position's row, which the overscan covers when the
+ * other inputs change before the next scroll.
+ */
+export function windowedScrollTop(
+  previous: number,
+  next: number,
+  input: Omit<WindowedSliceInput, "scrollTop">,
+): number {
+  if (previous === next) return previous;
+  if (firstVisibleRow(input, previous) !== firstVisibleRow(input, next)) return next;
+  const before = windowedSlice({ ...input, scrollTop: previous });
+  const after = windowedSlice({ ...input, scrollTop: next });
+  return before.firstIndex === after.firstIndex && before.lastIndex === after.lastIndex
+    ? previous
+    : next;
+}
+
+function firstVisibleRow(
+  { itemCount, rowHeight, rowOffsets }: Omit<WindowedSliceInput, "scrollTop">,
+  scrollTop: number,
+): number {
+  return rowOffsets
+    ? rowIndexAt(rowOffsets, itemCount, scrollTop)
+    : Math.floor(scrollTop / rowHeight);
+}
+
 /** Prefix sums of row heights: entry `i` is row `i`'s top; the last is the total. */
 export function windowedRowOffsets(
   itemCount: number,

@@ -132,7 +132,7 @@ export class SpatialEffectsGraph {
     this.handles.push(...sceneTargets);
     const unattached = new Set<SpatialStage>();
     try {
-      const target = (name: string, scale = 1, depth = false) => {
+      const target = (name: string, scale = 1, depth = false, format = Constants.TEXTUREFORMAT_RGBA) => {
         const handle = graph.textureManager.createRenderTargetTexture(name, {
           size: {
             width: Math.max(1, Math.round(width * scale)),
@@ -147,11 +147,7 @@ export class SpatialEffectsGraph {
                 ? Constants.TEXTURETYPE_FLOAT
                 : Constants.TEXTURETYPE_HALF_FLOAT,
             ],
-            formats: [
-              depth
-                ? Constants.TEXTUREFORMAT_DEPTH32_FLOAT
-                : Constants.TEXTUREFORMAT_RGBA,
-            ],
+            formats: [depth ? Constants.TEXTUREFORMAT_DEPTH32_FLOAT : format],
             useSRGBBuffers: [false],
           },
         });
@@ -237,7 +233,7 @@ export class SpatialEffectsGraph {
         this.tasks.push(task);
         unattached.delete(stage);
         task.sourceTexture = source;
-        task.targetTexture = target(stage.wrapper.name, stage.scale);
+        task.targetTexture = target(stage.wrapper.name, stage.scale, false, stage.format);
         source = task.outputTexture;
       }
       this.output = source;

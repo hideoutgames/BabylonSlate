@@ -1,4 +1,6 @@
-import { PointLight, Vector3, type LinesMesh } from "@babylonjs/core";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { describe, expect, it, vi } from "vitest";
 import type { CommandMessage, DebugDrawCommand } from "@haptic/bridge";
 import { createTestEngine } from "./test-support/test-engine";

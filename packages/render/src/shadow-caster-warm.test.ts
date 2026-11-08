@@ -1,4 +1,7 @@
-import { Observable, type AbstractMesh, type Scene, type ShadowGenerator } from "@babylonjs/core";
+import { Observable } from "@babylonjs/core/Misc/observable";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { Scene } from "@babylonjs/core/scene";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import { WebGPUCacheRenderPipelineTree } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipelineTree";
 import { beforeEach, expect, it } from "vitest";
 import { renderTrackingCasters } from "./shadow-caster-warm";

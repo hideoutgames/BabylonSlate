@@ -17,7 +17,10 @@ const RELATED_TESTS = new Map([
   [".github/workflows/preview.yml", ["scripts/distribution/workflow.test.mjs"]],
   [
     ".github/workflows/security.yml",
-    ["scripts/distribution/workflow.test.mjs"],
+    [
+      "scripts/security-workflow.test.mjs",
+      "scripts/distribution/workflow.test.mjs",
+    ],
   ],
   [
     ".github/workflows/webkit-smoke.yml",

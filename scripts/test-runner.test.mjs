@@ -1,13 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runStage, runTests, unitProfile } from "./test-runner.mjs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  runStage,
+  runTests,
+  toolingArguments,
+  unitProfile,
+} from "./test-runner.mjs";
+import { resolveExecutionPlan } from "./execution-plan.mjs";
+import { toolCli } from "./process-runner.mjs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { acquireResources } from "./resource-admission.mjs";
 import { existsSync, writeFileSync } from "node:fs";
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { execFile, spawn } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 test("a stricter host policy before launch rejects stale worker settings and releases the nested scope", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "runner policy change "));
@@ -94,15 +102,160 @@ test("scoped lint and typecheck preserve the selected files and workspace", asyn
   );
   process.env.npm_execpath = manager;
   const options = { capture: true, env: { ...env, HAPTIC_TEST_LEASE: JSON.stringify({ ticket: lease.ticket, token: lease.token }) } };
+  // Content-keyed, because a checkout resets modification times.
+  const cache = ["--cache", "--cache-strategy", "content", "--cache-location", ".cache/eslint/"];
   const scoped = await runTests("lint", ["scripts/test-runner.mjs"], options);
-  assert.deepEqual(JSON.parse(scoped.output), ["exec", "eslint", "scripts/test-runner.mjs"]);
+  assert.deepEqual(JSON.parse(scoped.output), ["exec", "eslint", ...cache, "scripts/test-runner.mjs"]);
   const all = await runTests("lint", [], options);
-  assert.deepEqual(JSON.parse(all.output), ["exec", "eslint", "."]);
+  assert.deepEqual(JSON.parse(all.output), ["exec", "eslint", ...cache, "."]);
   const types = await runTests("typecheck", ["--filter", "editor", "--noEmit"], options);
-  assert.deepEqual(JSON.parse(types.output), ["--workspace-concurrency=1", "--filter", "editor", "-r", "typecheck", "--noEmit"]);
+  assert.deepEqual(JSON.parse(types.output), ["--workspace-concurrency=1", "--no-sort", "--filter", "editor", "-r", "typecheck", "--noEmit"]);
   const equals = await runTests("typecheck", ["--filter=docs-site"], options);
-  assert.deepEqual(JSON.parse(equals.output), ["--workspace-concurrency=1", "--filter=docs-site", "-r", "typecheck"]);
+  assert.deepEqual(JSON.parse(equals.output), ["--workspace-concurrency=1", "--no-sort", "--filter=docs-site", "-r", "typecheck"]);
   await assert.rejects(runTests("typecheck", ["--filter"], options), /requires a workspace selector/);
+});
+
+const hostedContext = {
+  HAPTIC_EXECUTION_POLICY: "hosted-ci",
+  GITHUB_ACTIONS: "true",
+  RUNNER_ENVIRONMENT: "github-hosted",
+  GITHUB_RUN_ID: "123",
+  GITHUB_REPOSITORY: "fixture/repo",
+  RUNNER_OS: "Linux",
+};
+
+test("hosted CI typechecks four workspaces at once while builds keep their dependency order", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "hosted typecheck "));
+  const manager = join(directory, "package-manager.mjs");
+  const originalManager = process.env.npm_execpath;
+  t.after(async () => {
+    if (originalManager === undefined) delete process.env.npm_execpath;
+    else process.env.npm_execpath = originalManager;
+    await rm(directory, { recursive: true, force: true });
+  });
+  await writeFile(manager, "console.log(JSON.stringify(process.argv.slice(2)));\n");
+  process.env.npm_execpath = manager;
+  // A checkout without the restored ESLint cache, as on a cache miss.
+  const options = { capture: true, cwd: directory, env: hostedContext };
+  const types = await runTests("typecheck", [], options);
+  assert.deepEqual(JSON.parse(types.output), ["--workspace-concurrency=4", "--no-sort", "-r", "typecheck"]);
+  const builds = await runTests("build-all", [], options);
+  assert.deepEqual(JSON.parse(builds.output), ["--workspace-concurrency=1", "-r", "build"]);
+  // Linting threads share the content cache: workers read it and the main thread writes it.
+  const cache = ["--cache", "--cache-strategy", "content", "--cache-location", ".cache/eslint/"];
+  const cold = await runTests("lint", [], options);
+  assert.deepEqual(JSON.parse(cold.output), ["exec", "eslint", ...cache, "--concurrency=4", "."]);
+  // A restored cache leaves only changed files, which one thread lints sooner than workers start.
+  await mkdir(join(directory, ".cache", "eslint"), { recursive: true });
+  const warm = await runTests("lint", [], options);
+  assert.deepEqual(JSON.parse(warm.output), ["exec", "eslint", ...cache, "."]);
+});
+
+test("hosted CI runs the tooling contract files four at once and local runs one at a time", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "tooling concurrency "));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  // Each file waits for the other to start, so only files that run at the same time pass.
+  const files = ["first", "second"].map((name) => join(directory, `${name}.test.mjs`));
+  for (const [index, file] of files.entries())
+    await writeFile(
+      file,
+      `import { test } from "node:test";
+import { existsSync, writeFileSync } from "node:fs";
+test("meets the other file", async () => {
+  writeFileSync(${JSON.stringify(`${file}.started`)}, "");
+  const deadline = Date.now() + 10_000;
+  while (!existsSync(${JSON.stringify(`${files[1 - index]}.started`)})) {
+    if (Date.now() > deadline) throw new Error("the other file never started");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+});
+`,
+    );
+  // The nested runner reports as a top-level run, not to this file's runner.
+  await runTests("tooling", files, {
+    capture: true,
+    env: { ...hostedContext, NODE_TEST_CONTEXT: undefined },
+  });
+  const local = await resolveExecutionPlan("tooling", {
+    HAPTIC_EXECUTION_POLICY: "local",
+    HAPTIC_LOCAL_RESOURCE_CONFIG: join(directory, "missing.json"),
+  });
+  assert.deepEqual(toolingArguments([], local), ["--test", "--test-concurrency=1", "scripts/*.test.mjs"]);
+});
+
+test("hosted CI runs the editor DOM files in one Vitest run and local runs restart every 50 files", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "editor-batches-"));
+  let lease;
+  t.after(async () => {
+    await lease?.release();
+    await rm(directory, { recursive: true, force: true });
+  });
+  // Sorted names, as the runner sorts the files it lists.
+  const files = Array.from(
+    { length: 103 },
+    (_, index) => `apps/editor/src/file-${String(index).padStart(3, "0")}.test.tsx`,
+  );
+  const runs = join(directory, "runs.jsonl");
+  const stub = join(directory, "vitest-stub.mjs");
+  // Preloaded into every process the runner starts; only the Vitest CLI lists the fixture files and records its runs.
+  await writeFile(
+    stub,
+    `import { appendFileSync, writeSync } from "node:fs";
+if (process.argv[1] === ${JSON.stringify(toolCli("vitest"))}) {
+  const args = process.argv.slice(2);
+  if (args[0] === "list") writeSync(1, ${JSON.stringify(JSON.stringify(files.map((file) => ({ file }))))});
+  else appendFileSync(${JSON.stringify(runs)}, JSON.stringify(args) + "\\n");
+  process.exit(0);
+}
+`,
+  );
+  // The CLI runs as CI and developers start it, with the execution context in its own environment only.
+  const jsdomRuns = async (mode, env) => {
+    await rm(runs, { force: true });
+    await promisify(execFile)(
+      process.execPath,
+      [fileURLToPath(new URL("./run-tests.mjs", import.meta.url)), mode],
+      {
+        env: {
+          ...process.env,
+          NODE_TEST_CONTEXT: undefined,
+          ...env,
+          NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(stub).href}`,
+        },
+      },
+    );
+    return (await readFile(runs, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .filter((args) => args.includes("jsdom"))
+      .map((args) => args.filter((arg) => files.includes(arg)));
+  };
+  // Verify's unit job runs `pnpm test:coverage`.
+  assert.deepEqual(
+    await jsdomRuns("coverage", { ...hostedContext, HAPTIC_TEST_LEASE: undefined }),
+    [files],
+  );
+  // `pnpm test:editor-unit` under a reservation the runner nests its stages in.
+  const config = join(directory, "resources.json");
+  await writeFile(config, JSON.stringify({ version: 1, profile: "standard" }));
+  const env = {
+    HAPTIC_EXECUTION_POLICY: "local",
+    HAPTIC_TEST_PROFILE: "shared",
+    LOCALAPPDATA: directory,
+    HAPTIC_LOCAL_RESOURCE_CONFIG: config,
+  };
+  lease = await acquireResources(
+    { workers: 3, browsers: 0, memoryGiB: 2 },
+    { directory, env, freeMemory: () => 16 * 1024 ** 3 },
+  );
+  assert.deepEqual(
+    await jsdomRuns("editor", {
+      ...env,
+      HAPTIC_TEST_LEASE: JSON.stringify({ ticket: lease.ticket, token: lease.token }),
+    }),
+    [files.slice(0, 50), files.slice(50, 100), files.slice(100)],
+  );
 });
 
 test("a reader that closes early does not strand the stage's reservation", async (t) => {

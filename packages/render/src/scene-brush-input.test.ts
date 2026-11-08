@@ -1,5 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { ArcRotateCamera, Matrix, Vector3, VertexBuffer } from "@babylonjs/core";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { createActor, createDefaultScene, parseLandscapeProperties, type SerializedScene, type SerializedTransform } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync } from "./editor-scene-sync";

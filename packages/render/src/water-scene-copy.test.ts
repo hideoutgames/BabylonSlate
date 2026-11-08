@@ -1,16 +1,13 @@
-import {
-  FreeCamera,
-  Mesh,
-  MeshBuilder,
-  NullEngine,
-  NullEngineOptions,
-  ParticleSystem,
-  Scene,
-  StandardMaterial,
-  TransformNode,
-  Effect,
-  Vector3,
-} from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Effect } from "@babylonjs/core/Materials/effect";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";

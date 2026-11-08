@@ -3,8 +3,10 @@ import {
   HIDDEN_VIEWPORT_HEIGHT,
   WINDOWED_SLICE_OVERSCAN,
   windowedRowOffsets,
+  windowedScrollTop,
   windowedSlice,
   windowedViewportHeight,
+  type WindowedSliceInput,
 } from "./windowed-slice";
 
 /** Matches `--touch-target` for catalog and Compiler Results rows. */
@@ -82,6 +84,18 @@ export function WindowedList({
   // than mounting every row (a remount per search query would otherwise do so).
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
+  const sliceInput: Omit<WindowedSliceInput, "scrollTop"> = {
+    itemCount,
+    rowHeight: fixedRowHeight,
+    viewportHeight: viewportHeight ?? HIDDEN_VIEWPORT_HEIGHT,
+    overscan: WINDOWED_SLICE_OVERSCAN,
+    rowOffsets,
+  };
+  // The scroll listener outlives renders; it windows by the latest rows and height.
+  const sliceInputRef = useRef(sliceInput);
+  useLayoutEffect(() => {
+    sliceInputRef.current = sliceInput;
+  });
 
   useLayoutEffect(() => {
     const viewport = findWindowedListScrollParent(listRef.current);
@@ -96,7 +110,11 @@ export function WindowedList({
       setScrollTop(viewport.scrollTop);
     };
     read();
-    const onScroll = () => setScrollTop(viewport.scrollTop);
+    // Commits only when the scroll changes the mounted rows.
+    const onScroll = () => {
+      const next = viewport.scrollTop;
+      setScrollTop((previous) => windowedScrollTop(previous, next, sliceInputRef.current));
+    };
     viewport.addEventListener("scroll", onScroll, { passive: true });
     const observer =
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(read);
@@ -125,14 +143,7 @@ export function WindowedList({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- row geometry derives from rowHeight.
   }, [activeIndex, itemCount, rowHeight]);
 
-  const { firstIndex, lastIndex } = windowedSlice({
-    itemCount,
-    rowHeight: fixedRowHeight,
-    scrollTop,
-    viewportHeight: viewportHeight ?? HIDDEN_VIEWPORT_HEIGHT,
-    overscan: WINDOWED_SLICE_OVERSCAN,
-    rowOffsets,
-  });
+  const { firstIndex, lastIndex } = windowedSlice({ ...sliceInput, scrollTop });
 
   const rows: number[] = [];
   for (let index = firstIndex; index < lastIndex; index++) {

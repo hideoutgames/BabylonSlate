@@ -1,14 +1,25 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Profiler } from "react";
 import type { Engine } from "@babylonjs/core";
+import { statsHudModel } from "@haptic/debugger";
 import { startPlaySession, type PlaySession } from "../services/play-session";
 import { PlayOverlay } from "./play-overlay";
 
 vi.mock("../services/play-session", () => ({ startPlaySession: vi.fn() }));
 vi.mock("../context/play-context", () => ({
-  usePlay: () => ({ appendLog: appendLog }),
+  usePlay: () => {
+    // The overlay root is the only caller in its tree, so this counts its renders.
+    renders.overlay += 1;
+    return { appendLog: appendLog };
+  },
 }));
-const { appendLog } = vi.hoisted(() => ({ appendLog: vi.fn() }));
+const { appendLog, renders } = vi.hoisted(() => ({ appendLog: vi.fn(), renders: { overlay: 0, commits: 0 } }));
+// Counts the Stats HUD's renders: it builds its model once per render.
+vi.mock("@haptic/debugger", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/debugger")>();
+  return { ...actual, statsHudModel: vi.fn(actual.statsHudModel) };
+});
 vi.mock("../context/app-settings-context", () => ({
   useAppSettings: () => ({ settings: {} }),
 }));
@@ -34,7 +45,11 @@ async function openPlay() {
     inspectWorld: () => Promise.resolve({ tickIndex: 0, nodes: [] }),
     stop: () => ({}),
   } as unknown as PlaySession);
-  render(<PlayOverlay sharedEngine={{} as Engine} onClose={() => {}} />);
+  render(
+    <Profiler id="play-overlay" onRender={() => { renders.commits += 1; }}>
+      <PlayOverlay sharedEngine={{} as Engine} onClose={() => {}} />
+    </Profiler>,
+  );
   await act(async () => {});
   const callbacks = vi.mocked(startPlaySession).mock.lastCall![0];
   act(() => callbacks.onSceneLoading?.(null));
@@ -89,4 +104,40 @@ it("puts Play warnings and errors in the Debug Console, not on the Play view", a
   const transcript = await screen.findByTestId("debug-console-transcript");
   await waitFor(() => expect(transcript.textContent).toContain("Audio clip missing"));
   expect(screen.queryByTestId("play-log-tail")).toBeNull();
+});
+
+it("keeps a logging game from re-rendering the Play overlay, and its closed Debug Console, until the console opens", async () => {
+  const callbacks = await openPlay();
+  await act(async () => {});
+  const before = { ...renders };
+  act(() => {
+    for (let index = 0; index < 50; index += 1) callbacks.onLog?.(`line ${index}`, "info");
+  });
+  // Lines reach the console a frame later; the hidden-tab fallback flushes within 250 ms.
+  await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
+  expect(renders.commits).toBe(before.commits);
+  expect(renders.overlay).toBe(before.overlay);
+
+  fireEvent.click(screen.getByTestId("play-console-open"));
+  const transcript = await screen.findByTestId("debug-console-transcript");
+  const logRows = () =>
+    Array.from(transcript.querySelectorAll('[data-testid^="debug-console-log-"]'), (row) => row.textContent);
+  expect(logRows()).toEqual(Array.from({ length: 50 }, (_, index) => `[info] line ${index}`));
+
+  // While it is open, new lines re-render the console alone.
+  const open = renders.overlay;
+  act(() => callbacks.onLog?.("after opening", "warning"));
+  await waitFor(() => expect(logRows().at(-1)).toBe("[warning] after opening"));
+  expect(renders.overlay).toBe(open);
+});
+
+it("skips the hidden Stats HUD when the overlay renders for its own state", async () => {
+  await openPlay();
+  await act(async () => {});
+  const overlayRenders = renders.overlay;
+  const hudRenders = vi.mocked(statsHudModel).mock.calls.length;
+  fireEvent.click(screen.getByTestId("play-console-open"));
+  await screen.findByTestId("debug-console-transcript");
+  expect(renders.overlay).toBeGreaterThan(overlayRenders);
+  expect(vi.mocked(statsHudModel).mock.calls.length).toBe(hudRenders);
 });

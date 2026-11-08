@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { NodeMaterial, NullEngine, Scene, Texture } from "@babylonjs/core";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import {
   isDisposedGpuTexture,
   isDisposedNodeMaterial,

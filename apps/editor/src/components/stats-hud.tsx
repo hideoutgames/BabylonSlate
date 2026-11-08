@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useRef, useState } from "react";
 import { STAT_GROUP_LABELS, statsHudModel, TICK_BUDGET_MS, type StatGroup, type StatsHudMetric } from "@haptic/debugger";
 import type { HostMemoryStats } from "@haptic/vfs";
 import { drawCallCeilingWarning, geometryByteCeilingWarning, type RenderDiagnostics } from "@haptic/render";
@@ -82,8 +82,12 @@ function GroupRow({ group, metrics }: { group: StatGroup; metrics: readonly Stat
   );
 }
 
-/** Play Stats: FPS and tick timings, plus rows the `stat` console commands add. */
-export function StatsHud({
+/**
+ * Play Stats: FPS and tick timings, plus rows the `stat` console commands add.
+ * Memoized: the Play overlay keeps it mounted while hidden and sets its
+ * values only while it shows, so overlay renders that change none skip it.
+ */
+export const StatsHud = memo(function StatsHud({
   fps,
   scriptMs,
   physicsMs,
@@ -183,4 +187,4 @@ export function StatsHud({
       ) : <GroupRow key={group} group={group} metrics={metrics} />)}
     </div>
   );
-}
+});

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Matrix, Mesh, Quaternion, Vector3 } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import {
   createActor,
   createDefaultScene,

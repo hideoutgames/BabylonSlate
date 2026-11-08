@@ -13,6 +13,8 @@ pnpm test <files>        # focused unit tests (always name files; see testing.md
 pnpm build:pages         # editor (test mode) + docs site, as deployed to GitHub Pages
 ```
 
+`pnpm dev` first bundles the player (`vite build`, with the player build's own checks), which the dev server serves at `/player/` for Preview Build and Export, and does not type-check it: the IDE, `pnpm typecheck --filter player` and the CI typecheck report type errors.
+
 Local verification policy and the full command list: [testing.md](testing.md).
 
 ## Pages preview
@@ -47,7 +49,7 @@ pnpm --filter editor ios:sync && pnpm --filter editor exec cap open ios         
 pnpm --filter editor android:sync && pnpm --filter editor exec cap open android  # needs the Android SDK
 ```
 
-- `ios:sync` / `android:sync` build the editor (with the embedded player) and run `cap sync`. `ios:sync` then restores the custom Secrets, ScopedStorage, AudioLifecycle and Memory plugin classes in `capacitor.config.json`: never run `cap sync ios` directly.
+- `ios:sync` / `android:sync` build the editor (with the embedded player) and run `cap sync`. `ios:sync` then restores the custom Secrets, ScopedStorage, AudioLifecycle, Memory and FileExport plugin classes in `capacitor.config.json`: never run `cap sync ios` directly.
 - `--demo` (`pnpm --filter editor ios:sync --demo`, `android:sync --demo`) builds with `VITE_MOBILE_DEMO=true`, so the app skips the required sign-in for simulator and emulator testing. A later sync without it restores sign-in; distribution builds refuse it. For `ios:build` / `android:build`, set `VITE_MOBILE_DEMO=true` in the environment.
 - Social sign-in returns through `haptic://sso-callback` ([accounts](architecture/accounts.md#social-sign-in)): simulator and emulator builds receive it, the Electron app only when packaged on macOS and Linux, and every Clerk instance needs the redirect on its mobile SSO allowlist.
 - `ios:build` / `android:build` add an unsigned simulator build / debug APK. Signing, archives and uploads are distribution operations: [distribution.md](distribution.md) and [the distribution rule](../rules/distribution.md).

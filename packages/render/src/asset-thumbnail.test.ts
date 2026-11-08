@@ -1,4 +1,10 @@
-import { ArcRotateCamera, Color3, InputBlock, Mesh, NodeMaterial, RenderTargetTexture, type Scene } from "@babylonjs/core";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { Scene } from "@babylonjs/core/scene";
 import { normalizeModelPayload } from "@haptic/assets";
 import { createActor, createDefaultScene, createMeshComponent, identitySerializedTransform } from "@haptic/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";

@@ -1,4 +1,4 @@
-import { Matrix, Vector3 } from "@babylonjs/core";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { expect, it } from "vitest";
 import { PlanarMirrorMath, type MirrorPlane } from "./planar-mirror";
 

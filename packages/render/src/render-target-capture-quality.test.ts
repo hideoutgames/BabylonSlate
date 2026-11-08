@@ -1,7 +1,18 @@
-import {
-  CascadedShadowGenerator, Constants, DirectionalLight, FreeCamera, Mesh, MeshBuilder, NullEngine, NullEngineOptions, ParticleSystem,
-  Scene, SpotLight, StandardMaterial, UniversalCamera, Vector3, type Camera, type ShadowGenerator,
-} from "@babylonjs/core";
+import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import { Scene } from "@babylonjs/core/scene";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   createDefaultRenderTargetCaptureProperties, createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeShadowSettings,

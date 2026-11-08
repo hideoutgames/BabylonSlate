@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Constants, NullEngine, RawTexture, RenderTargetTexture, Scene, StandardMaterial } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { areaLightLtcTexture, retainAreaLightLookup } from "./area-light-resources";
 import { internalTexturesHeldByScene } from "./scene-texture-references";

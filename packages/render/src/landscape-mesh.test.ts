@@ -1,5 +1,7 @@
 import { afterEach, expect, it } from "vitest";
-import { VertexBuffer, Mesh, StandardMaterial } from "@babylonjs/core";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { createActor, createDefaultScene, parseLandscapeProperties, sculptLandscape } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync } from "./editor-scene-sync";

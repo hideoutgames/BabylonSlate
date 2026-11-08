@@ -345,7 +345,8 @@ describe("SettingsModal sub-categories", () => {
       for (const field of fields.filter((entry) => entry.categoryId === categoryId && entry.sectionId)) {
         const section = screen.queryByTestId(`settings-section-${field.sectionId}`);
         expect(section, `${categoryId} › ${field.sectionId} for ${field.label}`).not.toBeNull();
-        expect(section?.querySelector("legend")?.textContent).toBe(field.sectionTitle);
+        // The section's group is named by its header.
+        expect(document.getElementById(section?.getAttribute("aria-labelledby") ?? "")?.textContent).toBe(field.sectionTitle);
         const control = field.targetId ? document.getElementById(field.targetId) : null;
         // Controls that show only in some states (Bloom Weight needs Bloom) are absent here.
         if (control) expect(section?.contains(control), `${field.targetId} in ${field.sectionId}`).toBe(true);

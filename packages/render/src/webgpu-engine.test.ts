@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { EngineStore, Observable } from "@babylonjs/core";
+import { EngineStore } from "@babylonjs/core/Engines/engineStore";
+import { Observable } from "@babylonjs/core/Misc/observable";
 import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 import {
   REQUESTED_UNIFORM_BUFFERS_PER_SHADER_STAGE,

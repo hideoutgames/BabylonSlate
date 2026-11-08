@@ -1,10 +1,11 @@
-import { downloadZipArchive } from "./download";
+import type { SaveFileResult } from "@haptic/vfs";
+import { saveZipArchive } from "./file-export";
 import { pluginDownloadFileName } from "./plugin-ui";
 
-/** Use the same archive download path for project and Engine Plugins. */
-export function downloadPluginArchive(
+/** Use the same archive save path for project and Engine Plugins. */
+export function savePluginArchive(
   bytes: Uint8Array,
   displayName: string,
-): void {
-  downloadZipArchive(bytes, pluginDownloadFileName(displayName));
+): Promise<SaveFileResult> {
+  return saveZipArchive(bytes, pluginDownloadFileName(displayName));
 }

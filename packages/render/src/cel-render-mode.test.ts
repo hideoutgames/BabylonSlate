@@ -1,14 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  Matrix,
-  SphericalPolynomial,
-  InputBlock,
-  MeshBuilder,
-  NullEngine,
-  PointLight,
-  Scene,
-  Vector3,
-} from "@babylonjs/core";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
+import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { Scene } from "@babylonjs/core/scene";
 import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,

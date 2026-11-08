@@ -1,4 +1,5 @@
-import { Mesh, type Scene } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { Scene } from "@babylonjs/core/scene";
 import { describe, expect, it, afterEach } from "vitest";
 import {
   createActor,

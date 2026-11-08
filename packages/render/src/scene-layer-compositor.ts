@@ -6,7 +6,7 @@ import type { AttachedPostProcessStack } from "./post-process-material";
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
-import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
@@ -34,7 +34,6 @@ import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { configureCutoutSorting } from "./sorting";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
-import { createDepthTextureTarget } from "./depth-texture-target";
 
 /** A layer's output over the world: its target's colour, blended by its alpha, without fog. */
 const SCENE_LAYER_BLIT: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: false, role: "world" };
@@ -680,9 +679,11 @@ export class SceneLayerCompositor {
     }
     const width = Math.max(1, this.engine.getRenderWidth(true));
     const height = Math.max(1, this.engine.getRenderHeight(true));
-    // The graph borrows both native attachments; the host retains their owner.
-    // Without depth textures the coordinator reports the layer as unsupported.
-    layer.rtt = createDepthTextureTarget(`sceneLayerRtt:${layer.layerId}`, { width, height }, layer.scene);
+    // Colour only: the layer's graph draws through its chain's scene colour and depth (or its own pair) and copies
+    // colour here, so a depth attachment would never be drawn into. The graph borrows the colour; the host retains it.
+    layer.rtt = new RenderTargetTexture(`sceneLayerRtt:${layer.layerId}`, { width, height }, layer.scene, {
+      generateMipMaps: false, generateDepthBuffer: false,
+    });
     // The unlit Material reads a texture's alpha only when the texture advertises it.
     // The layer clear is transparent; preserve world pixels outside its content.
     layer.rtt.hasAlpha = true;

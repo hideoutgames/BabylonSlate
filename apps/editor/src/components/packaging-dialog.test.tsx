@@ -65,7 +65,7 @@ it("packages the project for the web and downloads the archive named after it", 
   expect(exportGameArtifact.mock.calls[0]![0].projectSnapshot.metadata.name).toBe("Harbour Run");
   expect(zipExportedGame).toHaveBeenCalledWith(artifact);
   expect(downloads).toEqual(["Harbour_Run.zip"]);
-  expect(screen.getByText("Game package prepared. Check your downloads.")).toBeTruthy();
+  expect(screen.getByText("Game package downloaded. Check your downloads.")).toBeTruthy();
 });
 
 it("groups platforms into Available and Unavailable and explains an unavailable one", () => {

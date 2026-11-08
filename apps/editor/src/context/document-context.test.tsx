@@ -51,12 +51,15 @@ import {
   useDocumentActions,
   useDocumentDirty,
   useDocumentKindsRevision,
+  useEditorShellState,
   useOpenDocument,
   useOpenDocumentTabs,
   useRegistryState,
   useSaveState,
+  useThumbnailVersions,
   type AppRoute,
   type DocumentActions,
+  type EditorShellState,
 } from "./document-context";
 
 // Stand-ins shared by real-provider tests: see ../testing/real-document-provider.
@@ -1398,6 +1401,34 @@ describe("DocumentProvider actions and route", () => {
     expect(revisions().scene).not.toBe(revisionsBefore.scene);
     expect(revisions().graph).toBe(revisionsBefore.graph);
     expect(seen.classDocuments).toBe(classDocuments);
+  });
+
+  it("bumps a written thumbnail's version for its readers without re-rendering the shell slice's readers", async () => {
+    const shell = { renders: 0, value: null as EditorShellState | null };
+    const thumbnails = { renders: 0, value: null as Readonly<Record<string, number>> | null };
+    function ShellReader() {
+      shell.value = useEditorShellState();
+      shell.renders += 1;
+      return null;
+    }
+    function ThumbnailReader() {
+      thumbnails.value = useThumbnailVersions();
+      thumbnails.renders += 1;
+      return null;
+    }
+    const actions = await openProject(<><ShellReader /><ThumbnailReader /></>);
+    const guid = documents().assetRegistry!.getByPath(MAIN_SCENE_FILE)!.header.guid;
+    await act(async () => {});
+    const shellBefore = { ...shell };
+    const thumbnailRenders = thumbnails.renders;
+    const version = thumbnails.value![guid] ?? 0;
+
+    await act(() => actions.writeAssetThumbnail(guid, new Uint8Array([1, 2, 3])));
+
+    expect(thumbnails.value![guid]).toBe(version + 1);
+    expect(thumbnails.renders).toBeGreaterThan(thumbnailRenders);
+    expect(shell.value).toBe(shellBefore.value);
+    expect(shell.renders).toBe(shellBefore.renders);
   });
 
   it("reports the route through useAppRoute as projects open and close", async () => {

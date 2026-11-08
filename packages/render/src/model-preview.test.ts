@@ -1,16 +1,13 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  Frustum,
-  Matrix,
-  Mesh,
-  MeshBuilder,
-  NodeMaterial,
-  StandardMaterial,
-  VertexBuffer,
-  Vector3,
-} from "@babylonjs/core";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeCelShadingSettings } from "@haptic/core";
 import {

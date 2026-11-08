@@ -1,5 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { Camera, FreeCamera, NullEngine, Scene, ShaderStore, Vector3 } from "@babylonjs/core";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";
 import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
 import { EffectCompileFailure } from "./effect-compile-failure";

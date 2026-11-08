@@ -71,7 +71,22 @@ The Documents tier crosses the Capacitor bridge once per asset write as base64 d
 | Web | `UnavailableSecretStore` (`available: false`): Source Control hidden | none |
 
 - `nativeHttp`: `{ method, url, headers, body?, upload? }` → `{ status, bodyText, headers? }`. `upload` is one base64 image (PNG, JPEG, GIF or WEBP) sent as a `multipart/form-data` POST instead of `body`; the transport owns the encoding and `Content-Type` (Capacitor `formData` entries, or Electron's main process), see [accounts](accounts.md#account-management). Account tokens on Electron use a separate `accountSecrets` bridge.
-- Preload exposes `haptic.userData`, `.project`, `.library`, `.secrets`, `.accountSecrets`, `.saveGames`, `.http`, `.memory` (`memory:stats`: the calling renderer's, the GPU process's, the main process's and every app process's working set, read-only, no arguments).
+- Preload exposes `haptic.userData`, `.project`, `.library`, `.secrets`, `.accountSecrets`, `.saveGames`, `.http`, `.files` (`file:save`, see [Saving exported files](#saving-exported-files)), `.memory` (`memory:stats`: the calling renderer's, the GPU process's, the main process's and every app process's working set, read-only, no arguments).
+
+## Saving exported files
+
+Every export (theme, project backup, Export Game, plugin, extension, save, diagnostic JSON) goes through `saveFile(name, blob)` in [`save-file.ts`](../../../packages/vfs/src/save-file.ts), which resolves `downloaded` / `saved` / `shared` / `cancelled`. Editor notices come from `savedFileNotice` ([`file-export.ts`](../../../apps/editor/src/lib/file-export.ts)); `cancelled` shows nothing and is never an error. The UI never builds anchors or calls the plugin itself.
+
+| Host | Route | Result |
+| --- | --- | --- |
+| iOS app | `BabylonSlateFileExport` ([`capacitor-file-export.ts`](../../../packages/vfs/src/capacitor-file-export.ts)): `begin`, base64 `append` in 2 MiB chunks (never one bridge string), `finish` presents `UIActivityViewController` (iPad popover centred on the web view, no arrow) | `shared` / `cancelled` when the sheet closes |
+| Android app | Same plugin; `finish` opens `ACTION_CREATE_DOCUMENT` and copies the file. A MIME type whose extension does not match the name is sent as `application/octet-stream`, or the provider appends its extension | `saved` / `cancelled` |
+| Electron | `files.save` → `file:save` IPC: save dialog starting in Downloads, then a write; a name only (no separators), bytes ≤ 512 MiB. A larger file downloads, and Electron's default download (no `will-download` handler) also asks with a save dialog | `saved` / `cancelled` (`downloaded` above the limit) |
+| iPhone/iPad browsers (`isAppleMobileOperatingSystem`) | `navigator.share({ files })` when `canShare` accepts the `File`; called before any `await`, so a caller inside a tap keeps its activation. `NotAllowedError` (a slow export outlived the tap) falls back to the anchor | `shared` / `cancelled` / `downloaded` |
+| Other browsers | Anchor `download` on a blob URL revoked after 40 s (Safari and WKWebView read it late) | `downloaded` |
+
+- Why native code: WKWebView and Capacitor Android ignore anchor downloads (Capacitor 8 has no `WKDownload` delegate or `DownloadListener`; iOS hands the `blob:` URL to `UIApplication.open` and cancels).
+- The native temporary file lives alone in `haptic-exports/<id>/` under the app's temporary (iOS) or cache (Android) folder, so the sheet shows its real name; it is removed when `finish` settles, on `discard` (a failed `append`) and at plugin load.
 
 ## Platform decisions
 

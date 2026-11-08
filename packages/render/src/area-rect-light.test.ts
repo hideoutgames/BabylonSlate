@@ -1,4 +1,8 @@
-import { Matrix, NullEngine, Quaternion, RawTexture2DArray, Scene, Vector3, type BaseTexture } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { RawTexture2DArray } from "@babylonjs/core/Materials/Textures/rawTexture2DArray";
+import { Scene } from "@babylonjs/core/scene";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import { areaLightLtcTexture } from "./area-light-resources";
 import { areaRectLightBindings, identitySerializedTransform } from "@haptic/core";
 import { describe, expect, it, vi } from "vitest";

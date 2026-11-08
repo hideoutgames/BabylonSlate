@@ -1,4 +1,11 @@
-import { FreeCamera, Mesh, NullEngine, RawTexture, Scene, StandardMaterial, TextureBlock, Vector3 } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { installAssetBytes } from "@haptic/assets";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";

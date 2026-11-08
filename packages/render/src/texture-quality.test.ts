@@ -1,5 +1,14 @@
 import { expect, it, vi } from "vitest";
-import { Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, RenderTargetTexture, Scene, StandardMaterial, Texture, type Effect } from "@babylonjs/core";
+import { Matrix } from "@babylonjs/core/Maths/math.vector";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import { installAssetBytes } from "@haptic/assets";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";

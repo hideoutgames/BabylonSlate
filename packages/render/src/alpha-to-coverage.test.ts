@@ -1,5 +1,10 @@
 import { afterEach, expect, it } from "vitest";
-import { Constants, MeshBuilder, NullEngine, Scene, StandardMaterial, type AbstractMesh } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { drawsAlphaCoverage, endAlphaToCoverage, guardAlphaToCoverageBlending, registerAlphaToCoverage } from "./alpha-to-coverage";
 
 type CoverageEngine = NullEngine & { getAlphaToCoverage(): boolean };

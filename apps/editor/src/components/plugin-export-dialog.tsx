@@ -28,7 +28,7 @@ import {
   ensureEnginePluginLibrary,
   type EnginePluginEntry,
 } from "../lib/engine-plugin-library";
-import { downloadPluginArchive } from "../lib/plugin-download";
+import { savePluginArchive } from "../lib/plugin-download";
 
 export function PluginExportDialog({
   plugin,
@@ -85,8 +85,8 @@ export function PluginExportDialog({
           <DialogHeader>
             <DialogTitle>Export Plugin</DialogTitle>
             <DialogDescription>
-              Download {plugin.settings.displayName} or add it to Engine Plugins
-              for new projects.
+              Save {plugin.settings.displayName} as a file or add it to Engine
+              Plugins for new projects.
             </DialogDescription>
           </DialogHeader>
           {error ? (
@@ -104,12 +104,12 @@ export function PluginExportDialog({
               onClick={() =>
                 void run(async () => {
                   const bytes = await exportPlugin(plugin.pluginGuid);
-                  downloadPluginArchive(bytes, plugin.settings.displayName);
-                  onClose();
+                  // A cancelled share sheet or save dialog keeps the choice open.
+                  if ((await savePluginArchive(bytes, plugin.settings.displayName)) !== "cancelled") onClose();
                 })
               }
             >
-              Export To Download
+              Export To File
             </Button>
             <Button
               variant="outline"

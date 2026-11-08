@@ -84,12 +84,17 @@ describe("packaged renderer boundary", () => {
     expect(() => validateIpcArguments("account-secrets:set", ["slate-clerk-client:pk_test_example", "token"])).not.toThrow();
     expect(() => validateIpcArguments("account-secrets:delete", ["slate-clerk-client:pk_test_example"])).not.toThrow();
     expect(() => validateIpcArguments("project:writeBinary", ["assets/a.bin", new ArrayBuffer(4)])).not.toThrow();
+    expect(() => validateIpcArguments("file:save", ["Haptic_Dark.haptic-theme.json", new ArrayBuffer(4)])).not.toThrow();
     expect(() => validateIpcArguments("project:delete", [{ id: "node:/data/projects/Game", name: "Game", tier: "documents" }]))
       .not.toThrow();
     for (const tier of ["documents", "external"]) {
       expect(() => validateIpcArguments("project:openKnown", [{ id: "node:/picked/Game", name: "Game", tier }])).not.toThrow();
     }
     for (const [channel, args] of [
+      // An export names a file, never a folder: the save dialog picks where it goes.
+      ["file:save", ["../outside.zip", new ArrayBuffer(1)]], ["file:save", ["C:\\secret.zip", new ArrayBuffer(1)]],
+      ["file:save", ["", new ArrayBuffer(1)]], ["file:save", [".", new ArrayBuffer(1)]],
+      ["file:save", ["backup.zip", "bytes"]], ["file:save", ["backup.zip"]],
       ["project:delete", [{ id: "node:/picked/Game", name: "Game", tier: "external" }]],
       ["project:delete", [{ id: "node:/data/projects/Game", name: "../Game", tier: "documents" }]],
       ["project:delete", ["node:/data/projects/Game"]], ["project:delete", []],

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { FreeCamera, NullEngine, PointerDragBehavior, Scene, UtilityLayerRenderer, Vector3 } from "@babylonjs/core";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PointerDragBehavior } from "@babylonjs/core/Behaviors/Meshes/pointerDragBehavior";
+import { Scene } from "@babylonjs/core/scene";
+import { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLayerRenderer";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { createActor, createDefaultScene, parseSplineProperties } from "@haptic/core";
 import { createSplineHandles, insertSplinePoint, removeSplinePoint, splineHandles } from "./spline-handles";
 import { createSplineMesh, splineMeshBody } from "./spline-mesh";

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { PointLight, Ray, Vector3 } from "@babylonjs/core";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { createActor, createDefaultScene, identitySerializedTransform } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { createEditorCamera } from "./editor-camera";

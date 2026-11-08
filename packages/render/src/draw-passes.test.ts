@@ -1,4 +1,12 @@
-import { Constants, FreeCamera, Mesh, MeshBuilder, NullEngine, Scene, SpotLight, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultRenderTargetCaptureProperties, normalizeShadowSettings } from "@haptic/core";
 import { beginEngineDrawCallFrame } from "./draw-calls";

@@ -1,5 +1,7 @@
 import { installAssetBytes } from "@haptic/assets";
-import { NullEngine, Scene, StandardMaterial } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { encodeParentedAnimatedTriangleGlb } from "./glb-test-fixtures";
 import * as modelContainer from "./model-container";

@@ -155,7 +155,7 @@ export function createScenePostProcessGraph(
       Constants.TEXTURETYPE_FLOAT,
     );
   if (sceneDepth)
-    estimatedBytes += cost(Constants.TEXTUREFORMAT_RGBA, depthType!);
+    estimatedBytes += cost(Constants.TEXTUREFORMAT_R, depthType!);
   if (sceneNormal)
     estimatedBytes += cost(
       Constants.TEXTUREFORMAT_RGBA,
@@ -317,10 +317,12 @@ export class ScenePostProcessGraph {
       geometry.sizeIsPercentage = false;
       geometry.samples = 1;
       if (this.recipe.sceneDepth) {
+        // Only red carries the depth (Scene Depth reads it alone): an R target samples as the (depth, 0, 0, 1) the
+        // geometry outputs write, at a quarter of RGBA's bytes.
         geometry.textureDescriptions.push({
           type: Constants.PREPASS_NORMALIZED_VIEW_DEPTH_TEXTURE_TYPE,
           textureType: this.recipe.depthType,
-          textureFormat: Constants.TEXTUREFORMAT_RGBA,
+          textureFormat: Constants.TEXTUREFORMAT_R,
         });
         logicalBuffers.sceneDepth = geometry.geometryNormViewDepthTexture;
         this.handles.push({

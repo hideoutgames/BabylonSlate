@@ -1,4 +1,4 @@
-import { MeshBuilder } from "@babylonjs/core";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./test-support/test-engine";
 import { waitForPreviewMeshesReady, waitUntilReady } from "./preview-readiness";

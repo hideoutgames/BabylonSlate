@@ -3,8 +3,12 @@ import {
   claimInheritedLease,
 } from "./resource-admission.mjs";
 import { resolveExecutionPlan, workerArguments } from "./execution-plan.mjs";
+import { hostedExecution } from "./execution-location.mjs";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import {
   pnpmCommand,
+  repoRoot,
   runCommand,
   toolCli,
 } from "./process-runner.mjs";
@@ -100,9 +104,37 @@ export async function runStage(profile, command, args, options = {}) {
   }
 }
 
+/** `args` may be a function of the resolved plan, like runStage's. */
 export async function runPnpm(profile, args, options) {
-  const [command, commandArgs] = pnpmCommand(args);
-  return runStage(profile, command, commandArgs, options);
+  const [command] = pnpmCommand([]);
+  return runStage(
+    profile,
+    command,
+    (plan) => pnpmCommand(typeof args === "function" ? args(plan) : args)[1],
+    options,
+  );
+}
+
+/**
+ * ESLint's own per-file result cache. An entry is reused only for the same file content (not modification time,
+ * which a checkout resets), ESLint and Node versions and computed config; plugin code is not part of it, so CI keys
+ * the restored cache on the lockfile as well.
+ */
+const ESLINT_CACHE_LOCATION = ".cache/eslint/";
+const ESLINT_CACHE = [
+  "--cache",
+  "--cache-strategy",
+  "content",
+  "--cache-location",
+  ESLINT_CACHE_LOCATION,
+];
+
+/**
+ * Workspace typechecks run `tsc --noEmit`, which reads sibling workspaces' sources (every export points at `src`),
+ * never their build outputs, so they need no dependency order and run as many at once as the plan allows.
+ */
+function typecheckConcurrency(plan) {
+  return [`--workspace-concurrency=${plan.workspaceConcurrency}`, "--no-sort"];
 }
 
 async function vitest(args, options = {}) {
@@ -141,6 +173,48 @@ export function unitProfile(args) {
   return args.length ? "focused" : "dom";
 }
 
+/**
+ * Editor DOM test files per Vitest run. Locally each batch of 50 restarts Vitest, so a low-memory host never holds
+ * the whole suite's module graph in one main process. The hosted runner has the memory for one run, which transforms
+ * the shared editor modules once and keeps its workers busy across every file.
+ */
+function editorDomBatches(files, hosted) {
+  if (hosted) return [files];
+  const batches = [];
+  for (let index = 0; index < files.length; index += 50)
+    batches.push(files.slice(index, index + 50));
+  return batches;
+}
+
+/** Each contract file runs in its own process; hosted CI runs as many at once as it has workers, locally one. */
+export function toolingArguments(args, plan) {
+  return [
+    "--test",
+    `--test-concurrency=${plan.hosted ? plan.workers : 1}`,
+    ...(args.length ? args : ["scripts/*.test.mjs"]),
+  ];
+}
+
+/**
+ * Hosted CI lints a checkout without a restored cache on as many threads as it has workers. Each file lints
+ * independently (the config is not type-aware), and worker threads only read the cache, which the main thread writes.
+ * A restored cache leaves only changed files to lint, which one thread finishes sooner than workers start; locally
+ * ESLint keeps its single thread.
+ */
+function lintArguments(args, plan, cwd) {
+  const threads =
+    plan.hosted && !existsSync(join(cwd, ESLINT_CACHE_LOCATION))
+      ? [`--concurrency=${plan.workers}`]
+      : [];
+  return [
+    "exec",
+    "eslint",
+    ...ESLINT_CACHE,
+    ...threads,
+    ...(args.length ? args : ["."]),
+  ];
+}
+
 async function editorTests(options = {}) {
   await vitest(["--project", "node", "apps/editor"], {
     ...options,
@@ -173,8 +247,9 @@ async function editorTests(options = {}) {
     .sort();
   if (!files.length)
     throw new Error("Editor DOM discovery unexpectedly selected no tests");
-  for (let index = 0; index < files.length; index += 50) {
-    await vitest(["--project", "jsdom", ...files.slice(index, index + 50)], {
+  const hosted = hostedExecution({ ...process.env, ...options.env });
+  for (const batch of editorDomBatches(files, hosted)) {
+    await vitest(["--project", "jsdom", ...batch], {
       ...options,
       env: { VITEST_COVERAGE: "0" },
     });
@@ -198,7 +273,7 @@ async function fullVerification(options = {}) {
     () =>
       runPnpm(
         "build",
-        ["--workspace-concurrency=1", "-r", "typecheck"],
+        (plan) => [...typecheckConcurrency(plan), "-r", "typecheck"],
         options,
       ),
     "typecheck",
@@ -223,11 +298,7 @@ export async function runTests(mode, args, options = {}) {
     return runStage(
       "tooling",
       process.execPath,
-      [
-        "--test",
-        "--test-concurrency=1",
-        ...(args.length ? args : ["scripts/*.test.mjs"]),
-      ],
+      (plan) => toolingArguments(args, plan),
       options,
     );
   if (mode === "watch")
@@ -259,9 +330,12 @@ export async function runTests(mode, args, options = {}) {
     }
     const command =
       mode === "lint"
-        ? ["exec", "eslint", ...(args.length ? args : ["."])]
-        : [
-            "--workspace-concurrency=1",
+        ? (plan) => lintArguments(args, plan, options.cwd ?? repoRoot)
+        : (plan) => [
+            // Builds consume their dependencies' outputs, so they keep pnpm's dependency order, one at a time.
+            ...(mode === "build-all"
+              ? ["--workspace-concurrency=1"]
+              : typecheckConcurrency(plan)),
             ...selectors,
             "-r",
             mode === "build-all" ? "build" : "typecheck",

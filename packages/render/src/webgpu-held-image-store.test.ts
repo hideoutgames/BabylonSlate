@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { Observable, type AbstractEngine, type EngineView } from "@babylonjs/core";
+import { Observable } from "@babylonjs/core/Misc/observable";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { EngineView } from "@babylonjs/core/Engines/AbstractEngine/abstractEngine.views";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWebGpuHeldImageStore } from "./webgpu-held-image-store";
 

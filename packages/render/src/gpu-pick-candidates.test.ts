@@ -1,22 +1,21 @@
-import {
-  BoundingInfo,
-  FreeCamera,
-  Material,
-  Matrix,
-  Mesh,
-  MeshBuilder,
-  MorphTargetManager,
-  MultiMaterial,
-  NullEngine,
-  PBRMaterial,
-  Scene,
-  ShaderMaterial,
-  Skeleton,
-  StandardMaterial,
-  TransformNode,
-  Vector3,
-  type AbstractMesh,
-} from "@babylonjs/core";
+import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { Material } from "@babylonjs/core/Materials/material";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { Scene } from "@babylonjs/core/scene";
+import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+// Registers thin instances, which the fixture adds.
+import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { afterEach, describe, expect, it } from "vitest";
 import { pickFrustumPlanes } from "./gpu-object-id-picker";
 import { pickCandidates } from "./gpu-pick-candidates";

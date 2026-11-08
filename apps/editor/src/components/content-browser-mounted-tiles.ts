@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isThumbnailableAssetType } from "@haptic/assets";
-import type { useDocumentActions, useEditorShellState } from "../context/document-context";
+import type { useDocumentActions, useThumbnailVersions } from "../context/document-context";
 import { classDocumentShowsPrefab } from "../lib/content-browser-helpers";
 import {
   THUMBNAIL_SYNC_DEBOUNCE_MS,
@@ -43,7 +43,7 @@ export interface ContentBrowserMountedTilesDeps {
   classParentOf: (id: string) => string | null;
   sourceControl: Parameters<typeof mountedTileLocksKey>[3];
   thumbnailsEnabled: boolean;
-  thumbnailVersions: ReturnType<typeof useEditorShellState>["thumbnailVersions"];
+  thumbnailVersions: ReturnType<typeof useThumbnailVersions>;
   loadAssetThumbnail: ReturnType<typeof useDocumentActions>["loadAssetThumbnail"];
 }
 

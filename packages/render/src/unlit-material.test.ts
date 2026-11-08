@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  Constants, MeshBuilder, NullEngine, RawTexture, Scene, Texture, VertexBuffer, type AbstractEngine, type Mesh,
-  type NodeMaterial,
-} from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { drawsAlphaCoverage } from "./alpha-to-coverage";
 import { acquireAuthoredMaterialVariant } from "./material-compiler";
 import { materialIneligibility } from "./instance-pool";

@@ -1,4 +1,8 @@
-import { Mesh, Ray, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Ray } from "@babylonjs/core/Culling/ray";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, identitySerializedTransform, type SerializedActor } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";

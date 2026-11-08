@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { OctagonAlertIcon } from "lucide-react";
+import type { SaveFileResult } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
 import { Badge } from "@haptic/ui/components/badge";
 import { Switch } from "@haptic/ui/components/switch";
@@ -55,12 +56,12 @@ export function EngineLibrarySettings<Entry extends EngineLibrarySettingsEntry>(
   kind,
   ensureLibrary,
   guidOf,
-  download,
+  save,
 }: {
   kind: "Plugin" | "Extension";
   ensureLibrary: () => Promise<EngineLibrary<Entry>>;
   guidOf: (entry: Entry) => string;
-  download: (bytes: Uint8Array, displayName: string) => void;
+  save: (bytes: Uint8Array, displayName: string) => Promise<SaveFileResult>;
 }) {
   const id = kind.toLowerCase();
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -168,7 +169,7 @@ export function EngineLibrarySettings<Entry extends EngineLibrarySettingsEntry>(
                   disabled={busy || loading || Boolean(entry.invalid)}
                   onClick={() =>
                     void run(async (library) => {
-                      download(await library.export(guid), entry.settings.displayName);
+                      await save(await library.export(guid), entry.settings.displayName);
                     })
                   }
                 >

@@ -7,8 +7,13 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    // Every NullEngine takes the light block's path as a shipped Engine does (uniform buffers, the atlas's textures).
-    setupFiles: ["./packages/render/src/test-support/light-block-engine.ts"],
+    // Every NullEngine has the engine-wide registrations a shipped Engine loads before it exists (create-engine.ts and
+    // webgpu-engine.ts import babylon-registrations.ts), and takes the light block's path as a shipped Engine does
+    // (uniform buffers, the atlas's textures).
+    setupFiles: [
+      "./packages/render/src/babylon-registrations.ts",
+      "./packages/render/src/test-support/light-block-engine.ts",
+    ],
     fileParallelism: true,
     maxWorkers: Number(process.env.VITEST_MAX_WORKERS ?? 1),
   },

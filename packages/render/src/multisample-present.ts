@@ -16,7 +16,10 @@ export interface MultisamplePresentInputs {
   backbuffer: boolean;
   /** The own targets are the output's size: a multisampled blit cannot scale. */
   outputSized: boolean;
-  /** Something after the objects pass reads or writes the scene colour (outlines, the water scene copy). */
+  /**
+   * Something after the objects pass reads the scene colour (the water scene copy). Outlines only blend onto their
+   * target: the view composes them onto the backbuffer after the blit.
+   */
   laterReaders: boolean;
 }
 

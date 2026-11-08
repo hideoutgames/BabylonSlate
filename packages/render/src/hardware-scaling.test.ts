@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { NullEngine } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import {
   HardwareScalingController,
   type FramePressureSample,

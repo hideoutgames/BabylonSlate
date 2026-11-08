@@ -1,10 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  MeshBuilder,
-  Quaternion,
-  TransformNode,
-  Vector3,
-} from "@babylonjs/core";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import {
   createActor,
   createDefaultScene,

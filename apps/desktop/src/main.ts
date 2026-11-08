@@ -240,6 +240,17 @@ async function registerIpc(): Promise<void> {
   // Arguments are validated: a provider sign-in page and the sign-in callback.
   handle("auth:open-browser", (_event, url) => authBrowser.open(authProviderUrl(String(url))!));
 
+  // Exports (themes, backups, packages, saves) ask where to save, starting in
+  // Downloads, and resolve false when the user cancels.
+  handle("file:save", async (event, name, data) => {
+    const options = { defaultPath: join(app.getPath("downloads"), String(name)) };
+    const window = BrowserWindow.fromWebContents(event.sender);
+    const picked = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+    if (picked.canceled || !picked.filePath) return false;
+    await writeFile(picked.filePath, Buffer.from(data as ArrayBuffer));
+    return true;
+  });
+
   handle("project:pickFolder", async event => {
     const storage = projects(event);
     const picked = await dialog.showOpenDialog({

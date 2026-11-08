@@ -28,7 +28,7 @@ const { library, download } = vi.hoisted(() => ({
 vi.mock("../lib/engine-plugin-library", () => ({
   ensureEnginePluginLibrary: async () => library,
 }));
-vi.mock("../lib/plugin-download", () => ({ downloadPluginArchive: download }));
+vi.mock("../lib/plugin-download", () => ({ savePluginArchive: download }));
 
 function entry(guid: string, bundled: boolean): EnginePluginEntry {
   return {

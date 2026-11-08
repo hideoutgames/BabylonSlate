@@ -1071,6 +1071,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+  // A paused session opens its source. Stable, so the memoized overlay skips this provider's renders.
+  const onPausedAt = useCallback((cause: SessionPauseCause) => {
+    void openSessionSource({ severity: cause.code === BREAKPOINT_PAUSE_CODE ? "info" : "error", ...cause });
+  }, [openSessionSource]);
   // The Profiler's Scripts view opens an entry's graph the same way.
   const diagnosticResults = useDiagnosticResultsStore();
   useEffect(() => {
@@ -1228,10 +1232,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             pauseOnErrors={simulationDefaultsFromSettings(appSettings.debuggerDefaults).pauseOnErrors}
             // A breakpoint stop opens its node like an error does, but is not an error.
             onPlayBreak={setPlayBreak}
-            onPausedAt={(cause) => void navigateToSessionReportEntry(
-              { severity: cause.code === BREAKPOINT_PAUSE_CODE ? "info" : "error", ...cause },
-              sessionReportNavigationHost,
-            )}
+            onPausedAt={onPausedAt}
             audioProjectSettings={projectDocument?.settings.audio}
             inputAssets={playInputAssets}
             focusNavigation={projectDocument?.settings.focusNavigation}

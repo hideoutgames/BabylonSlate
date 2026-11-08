@@ -1,5 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { CubeTexture, NullEngine, PBRMaterial, Scene, SphericalPolynomial } from "@babylonjs/core";
+import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
+import { Scene } from "@babylonjs/core/scene";
+import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { createDefaultScene } from "@haptic/core";
 import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
 import { ResourceCache, type ResourceLease } from "./resource-cache";

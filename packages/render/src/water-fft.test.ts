@@ -1,5 +1,11 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { Constants, EffectRenderer, FreeCamera, NullEngine, Scene, Vector3, Viewport } from "@babylonjs/core";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { EffectRenderer } from "@babylonjs/core/Materials/effectRenderer";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Scene } from "@babylonjs/core/scene";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import {
   createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, normalizeWaterDefinition, waterSpectrum, type WaterDefinition,
 } from "@haptic/core";
@@ -67,13 +73,16 @@ async function untilReady(engine: NullEngine, scene: Scene, sampled: WaterDefini
   return frames;
 }
 
+/** Bytes of the two work atlases (2C·N × N RGBA32F) a Scene's simulations of one size share. */
+const work = (size: number, cascades: number) => 2 * (2 * cascades * size * size * 16);
 /**
- * Bytes the FFT leases: h0 (C·N × N RGBA32F), two work atlases (2C·N × N RGBA32F), the 2C-layer RGBA16F output and two
+ * Bytes one simulation leases beside the shared work atlases: h0 (C·N × N RGBA32F), the 2C-layer RGBA16F output and two
  * C-layer RGBA16F foam targets, those three with their mips (a third more).
  */
-const footprint = (size: number, cascades: number) =>
-  cascades * size * size * 16 + 2 * (2 * cascades * size * size * 16) + Math.ceil(2 * cascades * size * size * 8 * 4 / 3)
-    + 2 * Math.ceil(cascades * size * size * 8 * 4 / 3);
+const own = (size: number, cascades: number) =>
+  cascades * size * size * 16 + Math.ceil(2 * cascades * size * size * 8 * 4 / 3) + 2 * Math.ceil(cascades * size * size * 8 * 4 / 3);
+/** Bytes `count` simulations of one size hold: each its own targets, and one work pair between them. */
+const footprint = (size: number, cascades: number, count = 1) => work(size, cascades) + count * own(size, cascades);
 
 it("does no work while the water is out of view, no material samples it, or the device cannot render floats", async () => {
   const draws = vi.spyOn(EffectRenderer.prototype, "draw");
@@ -241,7 +250,7 @@ it("reuses storage and spectra across asset edits, bodies viewed in turn, and id
     await untilReady(engine, scene, [taller.water, turned.water], i % 2 === 0 ? taller.water : turned.water);
   }
   expect(waterFftDiagnostics(scene)).toMatchObject({ created: 2, retargeted: 1, respectrummed: 0, built: 2 });
-  expect(managedRenderReservations(engine).categoryBytes.water).toBe(2 * footprint(64, 1));
+  expect(managedRenderReservations(engine).categoryBytes.water).toBe(footprint(64, 1, 2));
 
   // Out of view: kept through brief absences, released after WATER_FFT_IDLE_RUNS runs...
   turned.mesh.setEnabled(true);
@@ -270,7 +279,7 @@ it("never holds more than WATER_FFT_MAX_SIMULATIONS simulations through repeated
   }
   // Past the cap the longest-idle simulation takes the new spectrum (one upload) instead of a new lease.
   expect(waterFftDiagnostics(scene)).toMatchObject({ created: WATER_FFT_MAX_SIMULATIONS, respectrummed: 6 - WATER_FFT_MAX_SIMULATIONS, built: 6 });
-  expect(managedRenderReservations(engine).categoryBytes.water).toBe(WATER_FFT_MAX_SIMULATIONS * footprint(64, 1));
+  expect(managedRenderReservations(engine).categoryBytes.water).toBe(footprint(64, 1, WATER_FFT_MAX_SIMULATIONS));
 });
 
 it("releases its lease at once when the Water quality size changes", async () => {

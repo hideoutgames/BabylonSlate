@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine, RawTexture, Scene, StandardMaterial } from "@babylonjs/core";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { SessionDiagnosticAggregator } from "@haptic/runtime";
 import type { DebugInspectSnapshot } from "@haptic/object-model";
 import {

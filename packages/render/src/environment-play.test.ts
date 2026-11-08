@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import { Mesh, VertexBuffer } from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { identitySerializedTransform, parseLandscapeProperties } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { createSnapshotSceneBinding, applyAssignMesh, retirePlaySlot } from "./snapshot-apply";
