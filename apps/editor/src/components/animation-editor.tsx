@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   PanelFrame,
@@ -30,30 +30,9 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { AnimationPreviewCanvas } from "./animation-preview-canvas";
+import { ModelSourceReadError } from "./model-editor";
 import { asRecord } from "../lib/as-record";
-
-function useAssetSourceBytes(guid: string | null): Uint8Array | null {
-  const { readAssetChunk } = useDocumentActions();
-  const { assetRegistry } = useRegistryState();
-  const [bytes, setBytes] = useState<Uint8Array | null>(null);
-  const path = guid
-    ? assetRegistry?.list().find((asset) => asset.header.guid === guid)?.path
-    : undefined;
-  useEffect(() => {
-    if (!path) {
-      setBytes(null);
-      return;
-    }
-    let cancelled = false;
-    void readAssetChunk(path, "source").then((value) => {
-      if (!cancelled) setBytes(value);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [path, readAssetChunk]);
-  return bytes;
-}
+import { useModelSourceBytes } from "../lib/use-model-source-bytes";
 
 export function AnimationPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -61,28 +40,26 @@ export function AnimationPreviewPanel(_props: IDockviewPanelProps) {
   const { assetRegistry } = useRegistryState();
   const doc = useOpenDocument(documentId);
   const animation = normalizeAnimationPayload(asRecord(doc?.content));
-  const sourceBytes = useAssetSourceBytes(animation.modelGuid);
-  const model = assetRegistry
-    ?.list()
-    .find((asset) => asset.header.guid === animation.modelGuid);
+  const model = animation.modelGuid
+    ? assetRegistry?.getByGuid(animation.modelGuid)
+    : undefined;
+  const source = useModelSourceBytes(model?.path);
   const materialSlots =
     model?.header.type === "Model"
       ? normalizeModelPayload(model.header.payload ?? {}).materialSlots
       : [];
   const sourceAnim = animation.sourceAnimationGuid
-    ? assetRegistry
-        ?.list()
-        .find((asset) => asset.header.guid === animation.sourceAnimationGuid)
+    ? assetRegistry?.getByGuid(animation.sourceAnimationGuid)
     : undefined;
   const sourceModelGuid =
     sourceAnim && sourceAnim.header.type === "Animation"
       ? normalizeAnimationPayload(sourceAnim.header.payload ?? {}).modelGuid
-      : null;
-  const sourceClipBytes = useAssetSourceBytes(sourceModelGuid);
+      : "";
+  const sourceClip = useModelSourceBytes(
+    sourceModelGuid ? assetRegistry?.getByGuid(sourceModelGuid)?.path : undefined,
+  );
   const skeleton = animation.skeletonGuid
-    ? assetRegistry
-        ?.list()
-        .find((asset) => asset.header.guid === animation.skeletonGuid)
+    ? assetRegistry?.getByGuid(animation.skeletonGuid)
     : undefined;
   const skeletonKind: SkeletonKind | null = skeleton
     ? normalizeSkeletonPayload(skeleton.header.payload ?? {}).kind
@@ -92,9 +69,10 @@ export function AnimationPreviewPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="animation-preview-panel">
       <AnimationPreview
         payload={animation}
-        sourceBytes={sourceBytes}
+        sourceBytes={source.bytes}
+        sourceError={source.error ?? sourceClip.error}
         materialSlots={materialSlots}
-        sourceClipBytes={sourceClipBytes}
+        sourceClipBytes={sourceClip.bytes}
         skeletonKind={skeletonKind}
         showBones={showBones}
         onShowBonesChange={setShowBones}
@@ -131,6 +109,7 @@ function previewSpeedRatio(payload: AnimationPayload): number {
 export function AnimationPreview({
   payload,
   sourceBytes = null,
+  sourceError = null,
   materialSlots,
   sourceClipBytes = null,
   skeletonKind = null,
@@ -139,12 +118,21 @@ export function AnimationPreview({
 }: {
   payload: AnimationPayload;
   sourceBytes?: Uint8Array | null;
+  /** Why the clip's Model (or its source clip's Model) could not be read, shown instead of a mesh. */
+  sourceError?: string | null;
   materialSlots: readonly ModelMaterialSlot[];
   sourceClipBytes?: Uint8Array | null;
   skeletonKind?: SkeletonKind | null;
   showBones?: boolean;
   onShowBonesChange?: (value: boolean) => void;
 }) {
+  if (sourceError) {
+    return (
+      <div className="flex h-full flex-col p-3" data-testid="animation-preview">
+        <ModelSourceReadError error={sourceError} />
+      </div>
+    );
+  }
   if (!sourceBytes || !isGltfModelBytes(sourceBytes)) {
     return (
       <div className="flex h-full flex-col p-3" data-testid="animation-preview">
