@@ -1,4 +1,5 @@
 import { normalizeRenderingPipeline } from "@haptic/core";
+import { packedContentFromGame } from "@haptic/exporter";
 import {
   createBackendEngineSession,
   webGpuMaterialCompatibilityReason,
@@ -6,7 +7,6 @@ import {
 } from "@haptic/render";
 import { startPlayer, type PlayerBootHandle, type PlayerBootOptions } from "./boot";
 import { playerDecoderPaths } from "./decoder-paths";
-import { packedContentFromGame } from "./hydrate";
 
 export type PlayerBackendHandle = PlayerBootHandle & {
   backend: Pick<BackendEngineSession, "requestedBackend" | "effectiveBackend" | "fallbackReason">;

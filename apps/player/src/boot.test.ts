@@ -11,7 +11,7 @@ import { loadGameFromFiles } from "./artifact";
 import { startPlayer, type PlayerBootHandle } from "./boot";
 import { startPlayerWithBackend } from "./player-backend";
 import { createPlayerWorkerHost } from "./worker-host";
-import * as inputs from "./input";
+import * as inputs from "@haptic/input/dom";
 const attachInputCapture = inputs.attachInputCapture;
 
 class TestWorker {

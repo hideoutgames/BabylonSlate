@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InputResolver, InputRingBuffer } from "@haptic/input";
 import { attachInputCapture } from "./input-capture";
-import { attachInputCapture as attachPlayerInputCapture } from "../../../player/src/input";
+import { attachInputCapture as attachPlayerInputCapture } from "@haptic/input/dom";
 
 class FakeCanvas {
   tabIndex = 0;

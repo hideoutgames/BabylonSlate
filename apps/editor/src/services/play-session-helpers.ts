@@ -9,7 +9,6 @@ import {
 } from "@haptic/render";
 import {
   isPlayEngineCommandType,
-  snapshotTickIndex,
   type CommandMessage,
   type ControlMessage,
   type DebugObserveTarget,
@@ -218,26 +217,6 @@ export function describeRetainedTextures(
 /** Resolve a Play session cap; omitted or non-positive values become 60. */
 export function resolvePlayFrameCap(fps?: number): number {
   return typeof fps === "number" && fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP;
-}
-
-/**
- * Tick stamp for Play canvas events. In-process Play uses World.clock;
- * the worker host has no World on the main thread, so it must use the last
- * snapshot `tickIndex` rather than `performance.now() / (1000/60)`.
- */
-export function playInputStampTick(
-  inProcessTickIndex: number | undefined,
-  lastWorkerTickIndex: number,
-): number {
-  return inProcessTickIndex ?? lastWorkerTickIndex;
-}
-
-/** Worker hosts stamp input from snapshot tickIndex so throttled stats cannot drop sticks. */
-export function applyPlaySnapshotTick(
-  previous: number,
-  buffer: Float32Array,
-): number {
-  return snapshotTickIndex(buffer) ?? previous;
 }
 
 /** A worker `print` command as a HUD entry. An empty message is a valid empty line; a non-string is not. */

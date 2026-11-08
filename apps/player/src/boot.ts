@@ -5,9 +5,10 @@ import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
 import { buildParticleParameterCatalog, cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
 import { captureShadowDiagnostics, lightsDebugText, setGlobalParameterCatalog } from "@haptic/render";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
-import { createSessionBoundaryClient, snapshotFloatCount, type SessionBoundaryRequest, type SessionBoundaryResult } from "@haptic/bridge";
+import { applySnapshotTick, createSessionBoundaryClient, playInputStampTick, snapshotFloatCount, type SessionBoundaryRequest, type SessionBoundaryResult } from "@haptic/bridge";
 import { createMessageRateMeter } from "@haptic/debugger";
 import { encodeInputEvents } from "@haptic/input";
+import { attachInputCapture } from "@haptic/input/dom";
 import { parseAnimGraphDocument } from "@haptic/anim-graph";
 import {
   parseBehaviourTreeDocument,
@@ -34,7 +35,7 @@ import {
 } from "@haptic/render";
 import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import { pixelatedExtend, playFramebufferSize, type SerializedScene } from "@haptic/core";
-import { gameSourceSubset, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest } from "@haptic/exporter";
+import { gameSourceSubset, packedBootControls, packedContentFromGame, packedSourceControls, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest, type PackedGameContent } from "@haptic/exporter";
 import { createPlayerWorkerHost, playerHavokWasmUrl, type PlayerWorkerHost } from "./worker-host";
 import { createPlayerSourceInstalls } from "./source-installs";
 import { playerDecoderPaths } from "./decoder-paths";
@@ -49,11 +50,8 @@ import {
   waitForPlayerLoadingPaint,
 } from "./scene-loading-state";
 import { mountPlayerPrintOverlay } from "./print-overlay";
-import { packedBootControls, packedContentFromGame, packedSourceControls, type PackedGameContent } from "./hydrate";
-import { attachInputCapture, playInputStampTick } from "./input";
 import {
   applyPlayerFpsSample,
-  applyPlayerSnapshotTick,
   applyWorkerPlayerStats,
   unlockAudioOnFirstGesture,
   type PlayerHudStats,
@@ -1065,7 +1063,7 @@ function initializePlayer(
     worker.onCommand((cmd) => onCommand(cmd as never));
     worker.onSnapshot((buffer) => {
       if (halted) return;
-      lastWorkerTickIndex = applyPlayerSnapshotTick(
+      lastWorkerTickIndex = applySnapshotTick(
         lastWorkerTickIndex,
         buffer,
       );
@@ -1192,7 +1190,7 @@ function initializePlayer(
       catch (error) { if (!halted) runtime?.reportError(error); }
       if (halted || !runtime) return;
       if (runtime.copySnapshot(snapBuf)) {
-        lastWorkerTickIndex = applyPlayerSnapshotTick(
+        lastWorkerTickIndex = applySnapshotTick(
           lastWorkerTickIndex,
           snapBuf,
         );

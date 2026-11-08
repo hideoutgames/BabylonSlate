@@ -27,7 +27,7 @@ Export Game and Preview Build: the headless `@haptic/exporter` closure and packe
 | Settings → Packaging (Export Game for the Web target) | [`apps/editor/src/components/packaging-dialog.tsx`](../../../apps/editor/src/components/packaging-dialog.tsx), [`use-game-export.ts`](../../../apps/editor/src/components/use-game-export.ts) |
 | Player host URLs | [`apps/editor/src/lib/player-host-url.ts`](../../../apps/editor/src/lib/player-host-url.ts) |
 | Editor Preview Build flow: prepare, iframe handoff, close, diagnostics report | `usePreviewBuild` ([`apps/editor/src/context/use-preview-build.ts`](../../../apps/editor/src/context/use-preview-build.ts)), called by `PlayProvider` |
-| Player boot, backend, worker host | [`apps/player/src/`](../../../apps/player/src/) `boot.ts`, `player-backend.ts`, `worker-host.ts`, `hydrate.ts` |
+| Player boot, backend, worker host | [`apps/player/src/`](../../../apps/player/src/) `boot.ts`, `player-backend.ts`, `worker-host.ts` |
 
 ## Closure
 
