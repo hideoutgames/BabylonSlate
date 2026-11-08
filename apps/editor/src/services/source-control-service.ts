@@ -55,6 +55,7 @@ export interface SourceControlConfigureInput {
   testMode: boolean;
   secretStore: SecretStore;
   nativeHttp: NativeHttp | null;
+  /** Test seam: a provider the tests seed before configuring; the editor never passes one. */
   fake?: FakeLockProvider;
 }
 

@@ -55,6 +55,7 @@ describe("PlayOverlayChrome", () => {
       startProfile: async () => {},
       stopProfile,
       captureFrame: async () => { throw new Error("Unavailable"); },
+      stopSession: () => {},
     });
     diagnostics.store = store;
     const { getByTestId, queryByTestId } = renderChrome({ showProfiler: false });
