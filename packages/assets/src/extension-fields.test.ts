@@ -64,8 +64,9 @@ describe("Extension fields", () => {
   });
 
   it("round-trip in the manifest and reject a malformed command form", () => {
-    const manifest = { ...createDefaultExtensionSettings({ extensionGuid: "discord", displayName: "Discord" }), contributes: { settings } };
-    expect(decodeExtensionSettings(encodeExtensionSettings(manifest)).contributes).toEqual(normalizeExtensionContributions({ settings }));
+    const contributes = normalizeExtensionContributions({ settings });
+    const manifest = { ...createDefaultExtensionSettings({ extensionGuid: "discord", displayName: "Discord" }), contributes };
+    expect(decodeExtensionSettings(encodeExtensionSettings(manifest)).contributes).toEqual(contributes);
     expect(() => normalizeExtensionFields([{ id: "a", label: "A", type: "text" }, { id: "a", label: "B", type: "text" }])).toThrow(/Duplicate field id/);
     expect(() => normalizeExtensionFields("fields")).toThrow(/must be a list/);
   });
