@@ -8,7 +8,7 @@ import {
   type createAppSettingsStore,
 } from "@haptic/vfs";
 import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
-import { attachLifecyclePause } from "../services/lifecycle-pause";
+import { attachLifecyclePause } from "@haptic/render/lifecycle-pause";
 import type { ProjectService } from "../services/project-service";
 import {
   readGitPrefill,

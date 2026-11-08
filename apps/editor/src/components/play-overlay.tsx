@@ -54,7 +54,7 @@ import {
 } from "../services/play-session";
 import type { GameSessionOwner, GameSessionTicket } from "../services/game-session-owner";
 import { finishPlaySessionWithTrace } from "../lib/play-trace-spill";
-import { attachLifecyclePause } from "../services/lifecycle-pause";
+import { attachLifecyclePause } from "@haptic/render/lifecycle-pause";
 import {
   applyLiveEngineSettings,
   canvasIsEditorVisible,
