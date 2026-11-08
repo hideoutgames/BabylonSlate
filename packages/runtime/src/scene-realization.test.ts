@@ -3,6 +3,7 @@ import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshCom
 import { readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
 import { readActorSlot } from "@haptic/bridge/read-actor-slot";
 import { createInProcessRuntime } from "./driver";
+import type { CompiledScript } from "./script-host";
 
 function controlledYields() {
   let automatic = false;
@@ -26,11 +27,21 @@ function controlledYields() {
   };
 }
 
-function largeScene(count = 80) {
+/**
+ * A Tick script for the actors whose `callOnTick` the tests spy on: the World
+ * skips an actor without a Tick hook before its admission check, so only a
+ * hooked actor's `callOnTick` shows whether admission let it tick.
+ */
+const ticker: CompiledScript = { assetGuid: "ticker-script", classId: "Ticker", parentClassId: "Actor", anchors: [],
+  source: `export function tick(ctx) { ctx.self.setVariable("ticked", true); }`,
+  entryPoints: [{ name: "tick", event: "onTick", isAsync: false }] };
+
+function largeScene(count = 80, classId?: string) {
   return {
     ...createDefaultScene(),
     name: "Large",
     actors: Array.from({ length: count }, (_, index) => createActor(`actor-${index}`, `Actor ${index}`, {
+      ...(classId ? { classId } : {}),
       parentId: index === 0 ? "actor-79" : null,
       transform: { position: [index === 0 ? 2 : 10, 3, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
       components: [createMeshComponent(`mesh-${index}`, "box")],
@@ -46,7 +57,8 @@ describe("cooperative runtime scene realization", () => {
   it("ticks Game Instance while partial actor work is suspended, then publishes parented poses before ready", async () => {
     const chunks = controlledYields();
     const commands: CommandMessage[] = [];
-    const runtime = makeRuntime({ seed: 1, playScene: largeScene(), playSceneGuid: "large", cooperativeSceneLoading: chunks, deferSceneModelsReady: true, onCommand: (command) => commands.push(command) });
+    const runtime = makeRuntime({ seed: 1, playScene: largeScene(80, "Ticker"), playSceneGuid: "large", cooperativeSceneLoading: chunks, deferSceneModelsReady: true, onCommand: (command) => commands.push(command) });
+    await runtime.loadScripts([ticker]);
     runtime.beginPlayLoading();
     const loading = runtime.realizePlayWorld();
     try {
@@ -109,9 +121,10 @@ describe("cooperative runtime scene realization", () => {
 
   it("follows a same-guid replacement and rejects the stale batch acknowledgement", async () => {
     const chunks = controlledYields();
-    const scene = largeScene();
+    const scene = largeScene(80, "Ticker");
     const commands: CommandMessage[] = [];
     const runtime = makeRuntime({ seed: 1, playScene: scene, playSceneGuid: "large", sceneLibrary: { large: scene }, cooperativeSceneLoading: chunks, deferSceneModelsReady: true, onCommand: (command) => commands.push(command) });
+    await runtime.loadScripts([ticker]);
     const loading = runtime.realizePlayWorld();
     try {
       while (runtime.getWorld().getActors().length === 0) await chunks.next();
@@ -197,8 +210,9 @@ describe("cooperative runtime scene realization", () => {
     const chunks = controlledYields();
     chunks.release();
     const next = largeScene();
-    const runtime = makeRuntime({ seed: 1, playScene: largeScene(1), playSceneGuid: "first", sceneLibrary: { next }, cooperativeSceneLoading: chunks });
+    const runtime = makeRuntime({ seed: 1, playScene: largeScene(1, "Ticker"), playSceneGuid: "first", sceneLibrary: { next }, cooperativeSceneLoading: chunks });
     try {
+      await runtime.loadScripts([ticker]);
       await runtime.realizePlayWorld();
       runtime.start();
       const world = runtime.getWorld();
@@ -206,7 +220,9 @@ describe("cooperative runtime scene realization", () => {
       world.setGameInstance(world.createGameInstance({ classId: "GameInstance", hooks: { onTick: () => {
         if (!changed) { changed = true; runtime.executeConsoleCommand("changescene next"); }
       } } }));
-      const actorTick = vi.spyOn(world.getActors()[0]!, "callOnTick");
+      const actor = world.getActors()[0]!;
+      expect(actor.hasTickHook).toBe(true);
+      const actorTick = vi.spyOn(actor, "callOnTick");
       const physicsStep = vi.spyOn(runtime.getPhysicsSync()!, "step");
       runtime.tick();
       expect(actorTick).not.toHaveBeenCalled();

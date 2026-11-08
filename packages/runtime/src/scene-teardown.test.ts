@@ -2,10 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent } from "@haptic/core";
 import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
+import type { CompiledScript } from "./script-host";
 
-function scene(count = 80) {
+/**
+ * A Tick script for the actors whose `callOnTick` a test spies on: the World
+ * skips an actor without a Tick hook before its admission check, so only a
+ * hooked actor's `callOnTick` shows whether admission let it tick.
+ */
+const ticker: CompiledScript = { assetGuid: "ticker-script", classId: "Ticker", parentClassId: "Actor", anchors: [],
+  source: `export function tick(ctx) { ctx.self.setVariable("ticked", true); }`,
+  entryPoints: [{ name: "tick", event: "onTick", isAsync: false }] };
+
+function scene(count = 80, classId?: string) {
   return { ...createDefaultScene(), name: "World", actors: Array.from({ length: count }, (_, i) =>
-    createActor(`actor-${i}`, `Actor ${i}`, { components: [createMeshComponent(`mesh-${i}`, "box")] })) };
+    createActor(`actor-${i}`, `Actor ${i}`, { ...(classId ? { classId } : {}), components: [createMeshComponent(`mesh-${i}`, "box")] })) };
 }
 
 function chunkGate() {
@@ -23,7 +33,7 @@ function chunkGate() {
 describe("runtime departing Scene loading", () => {
   it("paints before exit/removal, yields departing objects, and keeps Game Instance ticking with global layers retained", async () => {
     const chunks = chunkGate();
-    const document = scene();
+    const document = scene(80, "Ticker");
     const layerDocument = createDefaultSceneLayer();
     layerDocument.actors = [createActor("global", "Global", { classId: "SceneLayerActor" })];
     const commands: CommandMessage[] = [];
@@ -33,6 +43,7 @@ describe("runtime departing Scene loading", () => {
       onCommand(command) { commands.push(command); if (command.type === "sceneLoading" && command.sceneLoadId === 1) runtime.notifySceneLoadingPainted("world", 1); },
     });
     try {
+      await runtime.loadScripts([ticker]);
       await runtime.realizePlayWorld();
       runtime.start();
       const world = runtime.getWorld();
@@ -45,6 +56,7 @@ describe("runtime departing Scene loading", () => {
       const globalActor = world.findActor(globalGuid)!;
       const previous = [...world.getActors()].filter((actor) => !actor.sceneLayerId);
       const exit = vi.spyOn(world, "exitActiveScene");
+      expect(previous[0]!.hasTickHook).toBe(true);
       const actorTick = vi.spyOn(previous[0]!, "callOnTick");
       const gameTick = vi.fn();
       world.setGameInstance(world.createGameInstance({ classId: "GameInstance", hooks: { onTick: gameTick } }));
