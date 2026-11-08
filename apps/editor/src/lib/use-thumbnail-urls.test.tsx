@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import { useThumbnailUrls } from "./use-thumbnail-urls";
+import { useThumbnailUrls, type LoadThumbnail } from "./use-thumbnail-urls";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 
@@ -25,7 +25,7 @@ afterEach(() => {
 
 type Props = { guids: string[]; versions: Record<string, number>; enabled: boolean };
 
-function renderUrls(load: (guid: string) => Promise<Uint8Array | null>, initial: Props) {
+function renderUrls(load: LoadThumbnail, initial: Props) {
   return renderHook(
     ({ guids, versions, enabled }: Props) => useThumbnailUrls(guids, load, versions, enabled),
     { initialProps: initial },
@@ -34,13 +34,13 @@ function renderUrls(load: (guid: string) => Promise<Uint8Array | null>, initial:
 
 describe("useThumbnailUrls", () => {
   it("reloads only a bumped thumbnail and keeps the other images meanwhile", async () => {
-    const load = vi.fn(async () => PNG);
+    const load = vi.fn<LoadThumbnail>(async () => PNG);
     const { result, rerender } = renderUrls(load, { guids: ["a", "b"], versions: {}, enabled: true });
     await waitFor(() => expect(result.current).toEqual({ a: "blob:1", b: "blob:2" }));
     load.mockClear();
 
-    let finish!: (bytes: Uint8Array) => void;
-    load.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    let finish!: (bytes: Uint8Array | null) => void;
+    load.mockImplementationOnce(() => new Promise<Uint8Array | null>((resolve) => { finish = resolve; }));
     rerender({ guids: ["a", "b"], versions: { b: 1 }, enabled: true });
     expect(load).toHaveBeenCalledExactlyOnceWith("b");
     // While the new image loads, both cards keep showing theirs.
@@ -53,7 +53,7 @@ describe("useThumbnailUrls", () => {
   });
 
   it("releases replaced URLs when React renders only a later commit of the same sync", async () => {
-    const load = vi.fn(async (): Promise<Uint8Array | null> => PNG);
+    const load = vi.fn<LoadThumbnail>(async () => PNG);
     const { result, rerender } = renderUrls(load, { guids: ["a", "b", "c", "d"], versions: {}, enabled: true });
     await waitFor(() => expect(result.current).toEqual({ a: "blob:1", b: "blob:2", c: "blob:3", d: "blob:4" }));
 
@@ -61,7 +61,7 @@ describe("useThumbnailUrls", () => {
     const held: Array<() => void> = [];
     load.mockImplementation((guid: string) => guid === "e"
       ? Promise.resolve(PNG)
-      : new Promise((resolve) => { held.push(() => resolve(PNG)); }));
+      : new Promise<Uint8Array | null>((resolve) => { held.push(() => resolve(PNG)); }));
     rerender({ guids: ["a", "b", "c", "d", "e"], versions: { a: 1, b: 1, c: 1, d: 1 }, enabled: true });
     expect(held).toHaveLength(4);
     // Both commits land before React renders, so it renders only the second map.
@@ -74,7 +74,7 @@ describe("useThumbnailUrls", () => {
   });
 
   it("releases the URL of a guid that leaves the list, and every URL when disabled", async () => {
-    const load = vi.fn(async () => PNG);
+    const load = vi.fn<LoadThumbnail>(async () => PNG);
     const { result, rerender } = renderUrls(load, { guids: ["a", "b"], versions: {}, enabled: true });
     await waitFor(() => expect(result.current).toEqual({ a: "blob:1", b: "blob:2" }));
 

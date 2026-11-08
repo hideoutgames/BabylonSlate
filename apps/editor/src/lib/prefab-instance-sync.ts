@@ -78,9 +78,11 @@ export function prefabAssetTemplate(options: {
 }): SerializedComponent[] | undefined {
   const { asset } = options;
   if (asset?.header.type !== "Prefab" || !asset.header.guid) return undefined;
-  const open = options.openDocuments.findLast(
-    (doc) => doc.ref.kind === "prefab" && Boolean(doc.content) && doc.ref.path === asset.path,
-  );
+  // The last open tab wins, as in `prefabAssetTemplates`.
+  let open: (typeof options.openDocuments)[number] | undefined;
+  for (const doc of options.openDocuments) {
+    if (doc.ref.kind === "prefab" && doc.content && doc.ref.path === asset.path) open = doc;
+  }
   return normalizePrefab(open ? open.content : asset.header.payload).components;
 }
 
