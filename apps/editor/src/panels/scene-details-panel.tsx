@@ -90,12 +90,10 @@ import {
   fontAssetHasMsdfJson,
   fontAssetHasMsdfPng,
 } from "../lib/play-fonts";
-import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
-import { classIdForGraphPath } from "../services/script-compiler";
+import { useClassGraphs } from "../lib/use-class-graphs";
 import {
-  prefabAssetTemplates,
-  prefabTemplateKey,
-  prefabTemplatesByClassId,
+  mergedPrefabComponentsForClass,
+  prefabAssetTemplate,
 } from "../lib/prefab-instance-sync";
 import { physicsConstraintTargets } from "../lib/physics-constraint-targets";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
@@ -109,7 +107,6 @@ import {
 } from "../lib/use-open-documents-of-kinds";
 
 const NO_SEARCH_ITEMS: SearchDialogItem[] = [];
-const CLASS_KINDS = ["graph"] as const;
 const PREFAB_KINDS = ["prefab"] as const;
 const MODEL_KINDS = ["model"] as const;
 
@@ -250,7 +247,6 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         path: asset.path,
       }));
   }, [assetRegistry, materialDocuments, registryEpoch]);
-  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const prefabDocuments = useOpenDocumentsOfKinds(PREFAB_KINDS);
   const sortingLayers =
     projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
@@ -307,27 +303,19 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   );
   const pickingCableTarget = actor?.components.find((component) => component.id === constraintTargetPick?.componentId)?.classId === "CableComponent";
   const particleParameters = useParticleSystemParameters(particleSystemGuidsOf(actor));
-  const classSaveGraphs = useMemo(() => {
-    void registryEpoch;
-    return collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments: classDocuments, classIdForPath: classIdForGraphPath });
-  }, [assetRegistry, classDocuments, registryEpoch]);
-  const prefabTemplates = useMemo(() => {
-    void registryEpoch; // Registry headers mutate without replacing the registry.
-    const assets = assetRegistry?.list() ?? [];
-    const graphs = collectClassGraphsForPalette({
-      assets,
-      openDocuments: classDocuments,
-      classIdForPath: classIdForGraphPath,
-    });
-    return {
-      ...prefabTemplatesByClassId({
-        classIds: Object.keys(graphs),
-        parentOf: classParentLookup(assets),
-        graphs,
-      }),
-      ...prefabAssetTemplates({ assets, openDocuments: prefabDocuments }),
-    };
-  }, [assetRegistry, classDocuments, prefabDocuments, registryEpoch]);
+  const classSaveGraphs = useClassGraphs();
+  // The selected actor's prefab template: its Prefab asset's when placed from
+  // one, else its Class's ancestor-merged components.
+  const actorClassId = actor?.classId;
+  const actorPrefabGuid = actor?.prefabGuid;
+  const actorTemplate = useMemo(() => {
+    if (actorPrefabGuid) {
+      void registryEpoch; // Registry headers mutate without replacing the registry.
+      return prefabAssetTemplate({ asset: assetRegistry?.getByGuid(actorPrefabGuid), openDocuments: prefabDocuments });
+    }
+    if (!actorClassId || !Object.hasOwn(classSaveGraphs, actorClassId)) return undefined;
+    return mergedPrefabComponentsForClass({ classId: actorClassId, parentOf, graphs: classSaveGraphs }) ?? undefined;
+  }, [actorClassId, actorPrefabGuid, assetRegistry, classSaveGraphs, parentOf, prefabDocuments, registryEpoch]);
 
   const mutate = useCallback(
     (next: SerializedScene) => {
@@ -519,9 +507,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
       const nameParts = prefabComponentLabelParts(component, assetLabel);
       const title = nameParts.detail ? `${nameParts.name} ${nameParts.detail}` : nameParts.name;
       const template = component.sourceId
-        ? prefabTemplates[prefabTemplateKey(actor)]?.find(
-            (entry) => entry.id === component.sourceId,
-          )
+        ? actorTemplate?.find((entry) => entry.id === component.sourceId)
         : undefined;
       const updateComponent: ComponentPropertyUpdate = (property, value, alsoSet) => {
             if (component.classId === "SceneStreamingComponent" && property === "sceneGuid") {

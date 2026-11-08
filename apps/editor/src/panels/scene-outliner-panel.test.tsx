@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import {
   createActor,
   createDefaultScene,
+  type SerializedActor,
   type SerializedScene,
 } from "@haptic/core";
 import {
@@ -10,7 +11,7 @@ import {
   folderRowId,
   outlinerRowTarget,
 } from "../lib/outliner-drop";
-import { flattenOutliner } from "./scene-outliner-panel";
+import { flattenOutliner, sameOutlinerStructure } from "../lib/outliner-structure";
 
 function sceneWith(partial: Partial<SerializedScene>): SerializedScene {
   return { ...createDefaultScene(), actors: [], folders: [], ...partial };
@@ -114,6 +115,34 @@ describe("flattenOutliner folders", () => {
       [actorRowId("tail"), 1],
       [actorRowId("loop-b"), 0],
     ]);
+  });
+});
+
+describe("sameOutlinerStructure", () => {
+  const hero: SerializedActor = {
+    ...createActor("hero", "Hero", { components: [{ id: "mesh", classId: "MeshComponent", properties: {} }] }),
+    folderId: "props",
+  };
+  const scene = sceneWith({
+    folders: [{ id: "props", name: "Props", parentFolderId: null }],
+    actors: [hero],
+  });
+  const edited = (actor: Partial<SerializedActor>, folders = scene.folders) =>
+    sceneWith({ folders, actors: [{ ...hero, ...actor }] });
+
+  it.each([
+    ["a transform edit", edited({ transform: { ...hero.transform, position: [4, 0, 0] } }), true],
+    ["a component property edit", edited({ components: hero.components.map((component) => ({ ...component, properties: { size: 2 } })) }), true],
+    ["a rename", edited({ name: "Villain" }), false],
+    ["a visibility change", edited({ visible: false }), false],
+    ["a lock change", edited({ locked: true }), false],
+    ["a reparent", edited({ parentId: "other" }), false],
+    ["a folder move", edited({ folderId: null }), false],
+    ["a class change", edited({ classId: "Character" }), false],
+    ["an added component", edited({ components: [...hero.components, { id: "light", classId: "PointLightComponent", properties: {} }] }), false],
+    ["a folder rename", edited({}, [{ id: "props", name: "Set Dressing", parentFolderId: null }]), false],
+  ])("treats %s as keeping the rows: %s", (_label, next, same) => {
+    expect(sameOutlinerStructure(scene, next)).toBe(same);
   });
 });
 

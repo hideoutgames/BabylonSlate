@@ -1408,7 +1408,9 @@ describe("Tilemap editor views", () => {
       while (restore.length) restore.pop()!();
       vi.unstubAllGlobals();
     }
-  });
+    // Building and windowing a 16384-tile sheet takes about 2 s on its own, so the
+    // default 5 s runs out when hosted CI runs every editor DOM file at once.
+  }, 20_000);
 });
 
 describe("Tilemap Select tool", () => {

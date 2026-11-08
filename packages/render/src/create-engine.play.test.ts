@@ -5583,6 +5583,41 @@ describe("Play createEngine view", () => {
     } finally { observing.mockRestore(); }
   });
 
+  it("publishes the outlines a snapshot changes once, not once per actor", () => {
+    const attach = SceneRenderCoordinator.prototype.attachSharedOutline;
+    let view: SharedOutlineView | undefined;
+    const observing = vi.spyOn(SceneRenderCoordinator.prototype, "attachSharedOutline").mockImplementation(function (this: SceneRenderCoordinator, value: SharedOutlineView) {
+      if (value.key === "authored-world") view = value;
+      return attach.call(this, value);
+    });
+    try {
+      const engine = sharedEngine();
+      const { handle } = playHandle(engine);
+      const pose = (slots: readonly number[], frameId: number) => {
+        const snapshot = new Float32Array(snapshotFloatCount(8));
+        writeSnapshotHeader(snapshot, { frameId, tickIndex: frameId, actorCount: slots.length, scriptMs: 0, physicsMs: 0 });
+        slots.forEach((slotId, index) => writeActorSlot(snapshot, index, { slotId, position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 }, flags: SNAPSHOT_FLAG_VISIBLE }));
+        handle.pushSnapshot(snapshot);
+        engine.beginFrame(); renderViews(engine); engine.endFrame();
+      };
+      for (const slotId of [1, 2, 3]) {
+        const actorGuid = `hero-${slotId}`;
+        handle.applyCommand({ type: "spawn", slotId, actorGuid, classId: "Actor" });
+        handle.applyCommand({ type: "setActorOutlines", slotId, actorId: actorGuid,
+          outlines: outlineBindings(actorGuid, [{ id: "ink", classId: "OutlineComponent", properties: {} }]) });
+        handle.applyCommand({ type: "assignMesh", slotId, actorGuid, meshAssetGuid: null, meshKind: "box" });
+      }
+      pose([1, 2, 3], 1);
+      expect(view!.contributions.size).toBe(3);
+      const revision = view!.revision;
+      // A snapshot without them retires all three: one publish, where one per actor would take three.
+      pose([], 2);
+      expect(view!.active).toBe(false);
+      expect(view!.revision).toBe(revision + 1);
+    } finally { observing.mockRestore(); }
+  });
+
   it("applies render scale to a locked Play framebuffer without replacing its authored size", () => {
     const engine = sharedEngine();
     // NullEngine hardcodes a scaling level of one; supply the browser boundary.

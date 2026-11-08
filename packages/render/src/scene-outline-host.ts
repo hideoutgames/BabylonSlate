@@ -62,6 +62,14 @@ export interface SceneOutlineSelection {
  * Actor keys group model parts and keep shared assets independently styled. */
 /** One High or Full Quality capture's outline view: its graph detach and the meshes it may outline. */
 type CaptureView = { detach: () => void; includes: (mesh: AbstractMesh) => boolean };
+/** The setActor and removeActor calls a batch recorded, applied in order to a copy of the actors and published at its end. */
+type PendingActors = {
+  actors: Map<string, ActorOutline>;
+  /** Each call as it runs without a batch, replayed one publish each when the batched publish is refused. */
+  calls: (() => void)[];
+  /** Keys a call made outline targets before any publish identified them, in call order (`SharedOutlineOwner.identify`). */
+  identify: Set<string>;
+};
 
 export class SceneOutlineHost {
   readonly view: SharedOutlineView;
@@ -82,6 +90,9 @@ export class SceneOutlineHost {
   private occluders: AbstractMesh[] = [];
   /** Nothing is outlined, and the views already hold no contributions or occluders. */
   private idle = false;
+  /** Open `batch` calls, and the calls they recorded; only a batch holds pending calls. */
+  private batching = 0;
+  private pending: PendingActors | null = null;
 
   constructor(scene: Scene, renderer: SceneRenderCoordinator, invalidate: () => void) {
     this.scene = scene; this.invalidate = invalidate;
@@ -89,31 +100,114 @@ export class SceneOutlineHost {
     this.detach = renderer.attachSharedOutline(this.view);
     this.selection = {
       set: (meshes) => {
+        this.flush();
         const chosen = new Set([...meshes].filter((mesh): mesh is AbstractMesh => !!mesh));
         this.setSelection([...this.actors].filter(([, actor]) => actor.meshes.some((mesh) => chosen.has(mesh))).map(([id]) => id));
       },
-      selected: () => this.selectedActors.flatMap((id) => this.actors.get(id)?.meshes ?? []).filter((mesh) => !mesh.isDisposed()),
+      selected: () => {
+        this.flush();
+        return this.selectedActors.flatMap((id) => this.actors.get(id)?.meshes ?? []).filter((mesh) => !mesh.isDisposed());
+      },
       clear: () => this.setSelection([]),
       dispose: () => this.setSelection([]),
     };
   }
 
+  /**
+   * Runs `apply` (one Play snapshot apply) with its setActor and removeActor calls published once, at its end, as one
+   * validated snapshot instead of once each. Identities, the published state and a refused call come out as separate
+   * publishes would leave them; any other host call publishes the recorded calls first.
+   */
+  batch(apply: () => void): void {
+    this.batching++;
+    try { apply(); }
+    finally { if (--this.batching === 0) this.flush(); }
+  }
+
   setActor(actorId: string, meshes: readonly AbstractMesh[], bindings: readonly OutlineBinding[], previousActorId?: string): void {
     if (this.disposed) return;
     const actor = { meshes: meshes.filter((mesh) => this.eligible(mesh)), bindings };
+    if (this.pending || (this.batching && !this.staysIdle(actor))) this.recordSetActor(actorId, actor, previousActorId);
+    else this.applySetActor(actorId, actor, previousActorId);
+  }
+
+  private applySetActor(actorId: string, actor: ActorOutline, previousActorId?: string): void {
     const actors = this.staysIdle(actor) ? this.actors : new Map(this.actors);
     if (previousActorId && previousActorId !== actorId) actors.delete(previousActorId);
     actors.set(actorId, actor);
     if (actors !== this.actors) this.sync(actors);
   }
 
+  private recordSetActor(actorId: string, actor: ActorOutline, previousActorId?: string): void {
+    const identifies = this.identifiesFirst(actorId, actor);
+    if (identifies && this.view.owner.identityRoom <= (this.pending?.identify.size ?? 0)) {
+      // Its own publish is refused for capacity: publish the calls before it, then refuse it where it would have been.
+      this.flush();
+      this.applySetActor(actorId, actor, previousActorId);
+      return;
+    }
+    const pending = this.pendingActors();
+    if (previousActorId && previousActorId !== actorId) pending.actors.delete(previousActorId);
+    pending.actors.set(actorId, actor);
+    if (identifies) pending.identify.add(actorId);
+    pending.calls.push(() => this.applySetActor(actorId, actor, previousActorId));
+  }
+
+  /**
+   * Whether a publish of this call alone would identify `actorId`: it makes the actor an outline target (CEL outlines,
+   * an enabled Outline component or the selection, with meshes) before any publish identified its key.
+   */
+  private identifiesFirst(actorId: string, actor: ActorOutline): boolean {
+    if (!actor.meshes.length || this.view.owner.identityForKey(actorId) !== 0 || this.pending?.identify.has(actorId)) return false;
+    if (outlinesActor(actor) || this.selectedActors.includes(actorId)) return true;
+    const { mode, cel } = sceneRenderingSettings(this.scene);
+    return mode === "cel" && cel.outlinesEnabled;
+  }
+
+  private pendingActors(): PendingActors {
+    return this.pending ??= { actors: new Map(this.actors), calls: [], identify: new Set() };
+  }
+
+  /**
+   * Publishes the calls a batch recorded: once, or, when that publish is refused, one publish per call as without a
+   * batch, so the calls before the first refused one keep their outlines and its refusal is what the batch throws.
+   */
+  private flush(): void {
+    const pending = this.pending;
+    if (!pending) return;
+    this.pending = null;
+    const owner = this.view.owner;
+    let identified: string[] = [];
+    try {
+      identified = owner.identify(pending.identify);
+      this.sync(pending.actors);
+    } catch {
+      owner.forget(identified);
+      let refusal: { error: unknown } | undefined;
+      for (const call of pending.calls) {
+        try { call(); } catch (error) { refusal ??= { error }; }
+      }
+      if (refusal) throw refusal.error;
+    }
+  }
+
   replaceActors(actors: readonly { id: string; meshes: readonly AbstractMesh[]; bindings: readonly OutlineBinding[] }[]): void {
     if (this.disposed) return;
+    this.flush();
     this.sync(new Map(actors.map((actor) => [actor.id, { meshes: actor.meshes.filter((mesh) => this.eligible(mesh)), bindings: actor.bindings }])));
   }
 
   removeActor(actorId: string): void {
-    if (this.disposed || !this.actors.has(actorId)) return;
+    if (this.disposed || !(this.pending?.actors ?? this.actors).has(actorId)) return;
+    if (this.pending || (this.batching && !this.staysIdle())) {
+      const pending = this.pendingActors();
+      pending.actors.delete(actorId);
+      pending.calls.push(() => this.applyRemoveActor(actorId));
+    } else this.applyRemoveActor(actorId);
+  }
+
+  private applyRemoveActor(actorId: string): void {
+    if (!this.actors.has(actorId)) return;
     if (this.staysIdle()) { this.actors.delete(actorId); return; }
     const actors = new Map(this.actors); actors.delete(actorId);
     this.sync(actors);
@@ -121,12 +215,14 @@ export class SceneOutlineHost {
 
   setSelection(actorIds: readonly string[]): void {
     if (this.disposed) return;
+    this.flush();
     this.sync(this.actors, [...actorIds]);
   }
 
   /** Scalar comparison only on unchanged frames; no membership scan/upload. */
   refreshSettings(): void {
     if (this.disposed) return;
+    this.flush();
     const { mode, cel } = sceneRenderingSettings(this.scene);
     // Settings updates replace the resolved CEL object; they never mutate it.
     if (mode === this.settingsMode && cel === this.settingsCel) return;
@@ -215,6 +311,7 @@ export class SceneOutlineHost {
   attachCaptureView(renderer: SceneRenderCoordinator, includes: (mesh: AbstractMesh) => boolean = () => true):
     { refresh(): void; detach(): void } {
     if (this.disposed) return { refresh() {}, detach() {} };
+    this.flush();
     const view = SharedOutlineOwner.forScene(this.scene).createView(`capture:${++this.captureViewCount}`);
     let detach: () => void;
     try {
@@ -227,7 +324,11 @@ export class SceneOutlineHost {
     this.captureViews.set(view, capture);
     this.publishCaptureView(view, capture);
     return {
-      refresh: () => { if (this.captureViews.get(view) === capture) this.publishCaptureView(view, capture); },
+      refresh: () => {
+        if (this.captureViews.get(view) !== capture) return;
+        this.flush();
+        this.publishCaptureView(view, capture);
+      },
       detach: () => {
         if (!this.captureViews.delete(view)) return;
         detach();
@@ -252,6 +353,7 @@ export class SceneOutlineHost {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.pending = null;
     for (const [view, { detach }] of this.captureViews) { detach(); view.dispose(); }
     this.captureViews.clear();
     this.detach(); this.view.dispose(); this.actors.clear();

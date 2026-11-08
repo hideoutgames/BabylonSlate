@@ -62,7 +62,7 @@ vi.mock("../context/document-context", async () => {
       animEditorMode: store.mode(),
       applyAssetDocumentChange: store.applyAssetDocumentChange,
       projectDocument: { settings: {} },
-      assetRegistry: { list: () => [] },
+      assetRegistry: { list: () => [], getByPath: () => undefined },
     };
   });
 });

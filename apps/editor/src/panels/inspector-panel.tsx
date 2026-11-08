@@ -59,7 +59,6 @@ import { physicsWorldFromOpenDocuments, prefabComponentLabel } from "./add-compo
 import {
   applyLogicGraphCommit,
   commitLogicGraph,
-  collectClassGraphsForPalette,
   collectScriptInterfacesForPalette,
   logicGraphEditMergeKey,
   serializedGraphFromDocument,
@@ -67,6 +66,7 @@ import {
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
 import { isDataGraphNode } from "../lib/data-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
+import { useClassGraphs } from "../lib/use-class-graphs";
 import { documentComponentClassId } from "../lib/linked-scale";
 import { delegateSignatureEntries } from "../lib/delegate-signatures";
 import { logicGraphHostClass } from "../lib/embedded-script";
@@ -77,7 +77,6 @@ import { GraphNodeDetails } from "./inspector-graph-node-details";
 import type { CommittedPinRowIds } from "./inspector-member-rows";
 import { useInspectorCatalogs } from "./use-inspector-catalogs";
 
-const CLASS_KINDS = ["graph"] as const;
 const WORLD_KINDS = ["scene", "scene-layer"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
 
@@ -157,7 +156,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     fontHasMsdfPng,
   } = catalogs;
   // Open Class and Script Interface tabs' unsaved content feeds pin hydration.
-  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
+  const classGraphs = useClassGraphs();
   const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);
   const graphClassId = logicGraphHostClass(doc?.ref.kind, docPath, indexed, classIdForGraphPath).classId;
   const parsedAnim = useMemo(
@@ -255,11 +254,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
       enums: typeSchemas.enums,
       dataAssets,
       classId: graphClassId,
-      otherClassGraphs: collectClassGraphsForPalette({
-        assets: assetRegistry?.list() ?? [],
-        openDocuments: classDocuments,
-        classIdForPath: classIdForGraphPath,
-      }),
+      otherClassGraphs: classGraphs,
       functionGraphs: graph?.functionGraphs,
       scriptInterfaces: collectScriptInterfacesForPalette({
         assets: assetRegistry?.list() ?? [],
@@ -268,7 +263,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     });
   }, [
     assetRegistry,
-    classDocuments,
+    classGraphs,
     graphClassId,
     graph?.functionGraphs,
     inspectGraph,
@@ -281,15 +276,11 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   ]);
   // Event Dispatchers of every Class, for a Delegate type's Signature: the open one first.
   const delegateSignatures = useMemo(() => {
-    void registryEpoch;
-    const graphs = collectClassGraphsForPalette({
-      assets: assetRegistry?.list() ?? [],
-      openDocuments: classDocuments,
-      classIdForPath: classIdForGraphPath,
-    });
+    // The shared record is copied before the open graph joins it.
+    const graphs = { ...classGraphs };
     if (graph && graphClassId) graphs[graphClassId] = graph;
     return delegateSignatureEntries(graphs, graphClassId);
-  }, [assetRegistry, classDocuments, graph, graphClassId, registryEpoch]);
+  }, [classGraphs, graph, graphClassId]);
   const selectedNode = hydratedInspectGraph
     ? hydratedInspectGraph.nodes.find(
         (node) => node.id === selectedSerializedNode?.id,

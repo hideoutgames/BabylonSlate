@@ -42,7 +42,7 @@ export function WindowsMenu() {
   const actorPrefab = useMemo(() => {
     void registryEpoch;
     if (activeKind !== "graph" || !activePath) return true;
-    const indexed = assetRegistry?.list().find((asset) => asset.path === activePath);
+    const indexed = assetRegistry?.getByPath(activePath);
     if (!indexed) return true;
     return classDocumentShowsPrefab(
       indexed.header.parentClass,

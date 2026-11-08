@@ -5,6 +5,7 @@ import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
 import {
   classGraphFromHeaderPayload,
   collectClassGraphsForPalette,
+  collectClassHeaderGraphs,
   collectFunctionLibrariesForPalette,
   collectGraphTypeAssets,
   typeSchemasFromGraphAssets,
@@ -13,6 +14,8 @@ import {
   commitLogicGraph,
   replaceSerializedGraphInDocument,
   serializedGraphFromDocument,
+  withOpenClassGraphs,
+  withOpenScenesForPalette,
 } from "./logic-graph-document";
 import { classParentLookup } from "./content-browser-helpers";
 import { classIdForGraphPath } from "../services/script-compiler";
@@ -379,9 +382,32 @@ describe("collectClassGraphsForPalette", () => {
     });
     expect(graphs).toEqual({});
   });
+
+  it("lays open Classes over a copy, so the shared header record keeps the saved graphs", () => {
+    const headers = collectClassHeaderGraphs({
+      assets: [{ path: "assets/Hero.class.hasset", header: { type: "Class", name: "Hero", payload: {} } }],
+      classIdForPath: () => "Hero",
+    });
+    const live: SerializedGraph = { nodes: [], edges: [], members: [{ id: "fn-live", kind: "function", name: "Jump", pins: [] }] };
+    const graphs = withOpenClassGraphs(
+      headers,
+      [{ ref: { kind: "graph", path: "assets/Hero.class.hasset" }, content: live }],
+      () => "Hero",
+    );
+    expect(graphs.Hero).toBe(live);
+    expect(headers.Hero).toEqual({ nodes: [], edges: [], members: [] });
+  });
 });
 
 describe("collectSceneDocumentsForPalette", () => {
+  it("does not fail on a restored Scene tab that has not loaded (null content)", () => {
+    const scenes = collectSceneDocumentsForPalette({
+      assets: [{ path: "assets/Hall.scene.hasset", header: { guid: "scene-1", type: "Scene", name: "Hall", payload: { name: "Main Hall", actors: [] } } }],
+      openDocuments: [{ ref: { kind: "scene", path: "assets/Hall.scene.hasset" }, content: null }],
+    });
+    expect(scenes).toEqual([{ guid: "scene-1", name: "Untitled", actors: [] }]);
+  });
+
   it("indexes Scene assets by guid and prefers open document actors", () => {
     const scenes = collectSceneDocumentsForPalette({
       assets: [
@@ -440,6 +466,28 @@ describe("collectSceneDocumentsForPalette", () => {
         ],
       },
     ]);
+  });
+});
+
+describe("withOpenScenesForPalette", () => {
+  it("keeps the projection of an actor list an edit left alone", () => {
+    const scene = createDefaultScene();
+    const open = (content: unknown) => [{ ref: { kind: "scene", path: "assets/Hall.scene.hasset" }, content }];
+    const guidForPath = () => "scene-1";
+    const [before] = withOpenScenesForPalette([], open(scene), guidForPath);
+    // A Level Script or settings edit replaces the Scene but keeps its actors.
+    const [after] = withOpenScenesForPalette([], open({ ...scene, name: "Renamed" }), guidForPath);
+    expect(after!.name).toBe("Renamed");
+    expect(after!.actors).toBe(before!.actors);
+  });
+
+  it("takes a restored Scene tab that has not loaded (null content) as an empty Scene", () => {
+    const header = { guid: "scene-1", name: "Hall", actors: [{ name: "Hero", components: [] }] };
+    expect(withOpenScenesForPalette(
+      [header],
+      [{ ref: { kind: "scene", path: "assets/Hall.scene.hasset" }, content: null }],
+      () => "scene-1",
+    )).toEqual([{ guid: "scene-1", name: "Untitled", actors: [] }]);
   });
 });
 

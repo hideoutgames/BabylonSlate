@@ -55,13 +55,8 @@ export function ProjectAudioSettings({
               {selectedPickerIdentity(
                 assetRowIdentity(
                   (() => {
-                    const asset = assetRegistry
-                      ?.list()
-                      .find(
-                        (entry) =>
-                          entry.header.guid ===
-                          projectDocument.settings.audio.audioMixerGuid,
-                      );
+                    const guid = projectDocument.settings.audio.audioMixerGuid;
+                    const asset = guid ? assetRegistry?.getByGuid(guid) : undefined;
                     return asset
                       ? {
                           name: asset.header.name,
