@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   resolveActorDefaults,
+  resolveActorTags,
   resolveGameInstanceDefaults,
   createDefaultScene,
   createEmptyProject,
@@ -214,6 +215,12 @@ describe("project schema", () => {
     expect(resolveGameInstanceDefaults([]).tickOnPause).toBe(false);
     expect(resolveGameInstanceDefaults([undefined, { tickOnPause: true }]).tickOnPause).toBe(true);
     expect(resolveGameInstanceDefaults([{ tickOnPause: false }, { tickOnPause: true }]).tickOnPause).toBe(false);
+  });
+
+  it("gives actors the Tags of the nearest Class that sets them, an empty set being a choice", () => {
+    expect(resolveActorTags([])).toEqual({ Tags: [] });
+    expect(resolveActorTags([{ tickOnPause: true }, { properties: { actorTags: { Tags: [2, 2, 5] } } }])).toEqual({ Tags: [2, 5] });
+    expect(resolveActorTags([{ properties: { actorTags: { Tags: [] } } }, { properties: { actorTags: { Tags: [5] } } }])).toEqual({ Tags: [] });
   });
 
   it("defaults playFrameCap to 60 and keeps a positive override", () => {

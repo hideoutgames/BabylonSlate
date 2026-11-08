@@ -293,6 +293,9 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Add Actor Local Offset](add-actor-local-offset.md) | Moves the actor along its own axes, as its rotation turns them; its scale does not stretch the move. |
+| [Add Actor Local Rotation](add-actor-local-rotation.md) | Turns the actor about its own axes. |
+| [Add Actor World Rotation](add-actor-world-rotation.md) | Turns the actor about the world's axes. |
 | [Add World Offset](add-world-offset.md) | Moves an actor by adding an offset to its current location. |
 | [Break Transform](break-transform.md) | Splits a transform into its location, rotation and scale. |
 | [Get Actor Forward Vector](get-actor-forward-vector.md) | Returns the direction an actor faces, as a unit vector along its forward axis. |
@@ -302,11 +305,31 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Actor Scale](get-actor-scale.md) | Returns an actor's scale on each axis as a vector. |
 | [Get Actor Transform](get-actor-transform.md) | Returns an actor's location, rotation and scale as one transform. |
 | [Get Actor Up Vector](get-actor-up-vector.md) | Returns the direction above an actor, as a unit vector along its up axis. |
+| [Get Component Forward Vector](get-component-forward-vector.md) | Returns the component's forward direction in the world, of length 1. |
+| [Get Component Relative Location](get-component-relative-location.md) | Returns the component's location relative to the component it is attached to, or to its actor. |
+| [Get Component Relative Rotation](get-component-relative-rotation.md) | Returns the component's rotation relative to the component it is attached to, or to its actor. |
+| [Get Component Relative Scale](get-component-relative-scale.md) | Returns the component's scale relative to the component it is attached to, or to its actor. |
+| [Get Component Relative Transform](get-component-relative-transform.md) | Returns the component's transform relative to the component it is attached to, or to its actor. |
+| [Get Component Right Vector](get-component-right-vector.md) | Returns the component's right direction in the world, of length 1. |
+| [Get Component Up Vector](get-component-up-vector.md) | Returns the component's up direction in the world, of length 1. |
+| [Get Component World Location](get-component-world-location.md) | Returns the component's location in the world. |
+| [Get Component World Rotation](get-component-world-rotation.md) | Returns the component's rotation in the world. |
+| [Get Component World Scale](get-component-world-scale.md) | Returns the component's scale in the world. |
+| [Get Component World Transform](get-component-world-transform.md) | Returns the component's transform in the world. |
 | [Make Transform](make-transform.md) | Builds a transform from a location, a rotation and an optional scale. |
 | [Set Actor Location](set-actor-location.md) | Moves an actor to a new location. |
 | [Set Actor Rotation](set-actor-rotation.md) | Sets an actor's rotation from pitch, yaw and roll angles in degrees. |
 | [Set Actor Scale](set-actor-scale.md) | Sets the scale of an actor on each axis. |
 | [Set Actor Transform](set-actor-transform.md) | Sets an actor's location, rotation and scale from one transform. |
+| [Set Component Relative Location](set-component-relative-location.md) | Sets the component's location relative to the component it is attached to, or to its actor. |
+| [Set Component Relative Rotation](set-component-relative-rotation.md) | Sets the component's rotation relative to the component it is attached to, or to its actor. |
+| [Set Component Relative Scale](set-component-relative-scale.md) | Sets the component's scale relative to the component it is attached to, or to its actor. |
+| [Set Component Relative Transform](set-component-relative-transform.md) | Sets the component's transform relative to the component it is attached to, or to its actor. |
+| [Set Component World Location](set-component-world-location.md) | Sets the component's location in the world; it stays attached and keeps that place until its parent moves. |
+| [Set Component World Rotation](set-component-world-rotation.md) | Sets the component's rotation in the world; it stays attached and keeps that place until its parent moves. |
+| [Set Component World Scale](set-component-world-scale.md) | Sets the component's scale in the world; it stays attached and keeps that place until its parent moves. |
+| [Set Component World Transform](set-component-world-transform.md) | Sets the component's transform in the world; it stays attached and keeps that place until its parent moves. |
+| [Teleport](teleport.md) | Moves and turns the actor at once, without sweeping through what lies between. |
 
 ## Color
 
@@ -506,6 +529,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Actor Has Tag](actor-has-tag.md) | True when one of the actor's Tags is Tag or, unless Exact Match is on, a child of it. |
+| [Add Actor Tag](add-actor-tag.md) | Gives the actor Tag for the rest of its life, unless removed. |
 | [Add Tag](add-tag.md) | Returns a new TagContainer with a Tag added. |
 | [Assign Tag](assign-tag.md) | Assigns a Tag to a variable and returns the assigned Tag. |
 | [Assign TagContainer](assign-tagcontainer.md) | Assigns a TagContainer to a variable and returns the assigned TagContainer. |
@@ -513,6 +538,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Difference Tags](difference-tags.md) | Returns a TagContainer with the Tags from the first that are not in the second. |
 | [Equal Tag](equal-tag.md) | Returns true when two Tags are the same Tag. |
 | [Equal TagContainer](equal-tagcontainer.md) | Returns true when two TagContainers hold exactly the same Tags. |
+| [Get Actor Tags](get-actor-tags.md) | Returns the actor's Tags: its Class's Tags, the placed actor's own, or what scripts set since. |
+| [Get All Actors With Tag](get-all-actors-with-tag.md) | Returns every actor with Tag or, unless Exact Match is on, a child of it, in spawn order. |
 | [Get Tags](get-tags.md) | Returns the Tags held in a TagContainer as an array. |
 | [Has All Tags](has-all-tags.md) | Returns true when a TagContainer matches every Tag in a second TagContainer. |
 | [Has Any Tags](has-any-tags.md) | Returns true when a TagContainer matches at least one Tag in a second TagContainer. |
@@ -525,6 +552,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Make TagContainer From Array](make-tagcontainer-from-array.md) | Returns a TagContainer built from an array of Tags. |
 | [Matches Tag](matches-tag.md) | Returns true when a Tag is the same as, or a child of, a query Tag. |
 | [Not Equal Tag](not-equal-tag.md) | Returns true when two Tags are different Tags. |
+| [Remove Actor Tag](remove-actor-tag.md) | Takes Tag off the actor; its child Tags stay. |
 | [Remove Tag](remove-tag.md) | Returns a new TagContainer without a given Tag. |
 | [Select By Tag](select-by-tag.md) | Returns the value that belongs to the case matching a Tag. |
 | [Switch On Tag](switch-on-tag.md) | Runs the output for the case that matches a Tag. |
@@ -555,10 +583,13 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Actor Name](get-actor-name.md) | Returns the name of an actor as text. |
 | [Get Actor Of Class](get-actor-of-class.md) | Returns one actor of a Class, or an empty reference when none exists. |
 | [Get All Actors Of Class](get-all-actors-of-class.md) | Returns every actor in the game that is an instance of a Class. |
+| [Get Distance To](get-distance-to.md) | Returns the distance between the two actors' world locations, or 0 when either is missing. |
 | [Get Owner](get-owner.md) | Returns the actor that owns another actor. |
 | [Get Parent](get-parent.md) | Returns the actor that another actor is attached to. |
 | [Get Self](get-self.md) | Returns a reference to the actor that is running this graph. |
+| [Is Actor Hidden In Game](is-actor-hidden-in-game.md) | True while the actor is hidden. |
 | [Is Valid](is-valid.md) | Returns true when an object reference points to an object, and false when it is empty. |
+| [Set Actor Hidden In Game](set-actor-hidden-in-game.md) | Hides or shows the actor and all its components. |
 | [Set Owner](set-owner.md) | Records an actor as the owner of another actor, without attaching or moving it. |
 | [Spawn Actor (Async)](spawn-actor-async.md) | Creates a new actor from a Class and returns a reference to it, while the game keeps running. |
 | [Spawn Actor (Blocking)](spawn-actor-blocking.md) | Creates a new actor from a Class and returns a reference to it, pausing the game until it exists. |
@@ -569,8 +600,11 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Class Is Child Of](class-is-child-of.md) | True when Test Class is Parent Class or one of its child Classes. |
 | [Collect Garbage](collect-garbage.md) | Collects the objects made by **Create Object** that nothing refers to any more, at the end of the current tick. |
 | [Create Object](create-object.md) | Creates an object of a Class whose parent is Object, runs its **Event On Init**, and returns it. |
+| [Get Class](get-class.md) | Returns the object's Class, or None for a missing object. |
+| [Get Display Name](get-display-name.md) | Returns an actor's or component's name, or the Class of any other object. |
 
 ## Component
 
@@ -582,6 +616,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Component Ref](get-component-ref.md) | Returns a component of an actor as a typed reference. |
 | [Get First Component Of Type](get-first-component-of-type.md) | Returns the first component of a type found on any actor in the game. |
 | [Has Component](has-component.md) | Returns true when an actor has a component of a given type. |
+| [Is Visible](is-visible.md) | True while the component draws, unless Set Visibility turned it off. |
+| [Set Visibility](set-visibility.md) | Shows or hides what the component draws. |
 
 ## Camera
 

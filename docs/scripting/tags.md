@@ -47,4 +47,14 @@ Turn on **Exact Match** on a node to ignore parent categories. On **Switch On Ta
 
 To keep the result, write it back to the variable: wire the variable's Get node into [Assign TagContainer](class/assign-tagcontainer.md) (or [Assign Tag](class/assign-tag.md) for a single tag), or use **Set**.
 
+## Actor tags
+
+Every actor has its own **Tags**, so scripts can find and group actors without a variable:
+
+- Set the tags a class's actors start with in its **Actor Defaults** (see [Class](../assets/class.md#settings)). A child class inherits them until it sets its own.
+- Select a placed actor in a scene to give it different **Tags** in the **Inspector**; reset the field to follow its class again.
+- In scripts, [Get Actor Tags](class/get-actor-tags.md) and [Actor Has Tag](class/actor-has-tag.md) read them, [Add Actor Tag](class/add-actor-tag.md) and [Remove Actor Tag](class/remove-actor-tag.md) change them while the game runs, and [Get All Actors With Tag](class/get-all-actors-with-tag.md) finds every actor with a tag or one of its child tags.
+
+Tags added or removed during Play are not saved to the scene.
+
 Other useful nodes: [Make Tag](class/make-tag.md), [Make TagContainer](class/make-tagcontainer.md), [Get Tags](class/get-tags.md), [Tag Count](class/tag-count.md) and [Tag To String](class/tag-to-string.md).

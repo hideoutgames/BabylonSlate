@@ -50,7 +50,10 @@ function useAncestorClassDefaults(parentClass: string): { ancestors: string[]; d
     void Promise.all(ancestorAssets.filter(asset => closed.has(asset.path)).map(async asset => {
       const graph = await loadGraphDocument(asset.path).catch(() => null);
       return [classIdFromClassAsset(asset), classDefaultsOf(graph)] as const;
-    })).then(entries => { if (active) setSavedDefaults(Object.fromEntries(entries)); });
+    })).then(entries => {
+      // Nothing loaded keeps the same state, so a Class without saved ancestors never re-renders its host.
+      if (active) setSavedDefaults(previous => entries.length === 0 && Object.keys(previous).length === 0 ? previous : Object.fromEntries(entries));
+    });
     return () => { active = false; };
   }, [ancestorAssets, closedAncestorPaths, loadGraphDocument]);
   const openDefaults = useMemo(() => Object.fromEntries(ancestorAssets.flatMap(asset => {
