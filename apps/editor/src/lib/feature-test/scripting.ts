@@ -1237,7 +1237,7 @@ export interface FeatureTestCameraShakes {
 
 const cameraShakesByContext = new WeakMap<FeatureTestContext, FeatureTestCameraShakes>();
 
-/** The Camera Shake assets `buildFeatureTestScripting` made, for areas built after it (the HUD camera rig). */
+/** The Camera Shake assets `buildFeatureTestScripting` made, for areas built after it (the overlay layer's camera rig). */
 export function featureTestCameraShakes(ctx: FeatureTestContext): FeatureTestCameraShakes {
   const shakes = cameraShakesByContext.get(ctx);
   if (!shakes) throw new Error("Feature Test Camera Shakes are built with the scripting area.");

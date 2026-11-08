@@ -52,6 +52,7 @@ Assets are the building blocks of a project: Scenes, Classes, Materials, sounds,
 | [Sprite Animation](sprite-animation.md) | A 2D clip of Texture or Sprite frames, or sprite sheet cells, played by an Animation Graph. |
 | [Timeline](timeline.md) | Groups Timeline Clips from Scenes, Scene Layers and Timeline Clip assets. |
 | [Timeline Clip](timeline-clip.md) | A 2D or 3D Timeline Clip in its own file, animating Proxies that each instance binds to real objects. |
+| [Camera Shake](camera-shake.md) | A noise, wave or curve shake that scripts play on the view. |
 
 ## Rendering
 

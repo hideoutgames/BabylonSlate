@@ -1,0 +1,18 @@
+import { _ as _export_sfc, s as serverRenderer_cjs_prodExports, v as vueExports } from "./plugin-vue_export-helper.DIxrRcst.js";
+import "node:stream";
+const __pageData = JSON.parse('{"title":"Water Ocean","description":"","frontmatter":{},"headers":[],"relativePath":"components/water-ocean.md","filePath":"components/water-ocean.md"}');
+const _sfc_main = { name: "components/water-ocean.md" };
+function _sfc_ssrRender(_ctx, _push, _parent, _attrs, $props, $setup, $data, $options) {
+  _push(`<div${serverRenderer_cjs_prodExports.ssrRenderAttrs(_attrs)}><h1 id="water-ocean" tabindex="-1">Water Ocean <a class="header-anchor" href="#water-ocean" aria-label="Permalink to &quot;Water Ocean&quot;">​</a></h1><p>A large rectangle of water with broad waves.</p><h2 id="add-it" tabindex="-1">Add it <a class="header-anchor" href="#add-it" aria-label="Permalink to &quot;Add it&quot;">​</a></h2><p>Select an actor, then choose <strong>Add Component &gt; Water &gt; Water Ocean</strong>. You can also place a ready-made actor from <strong>Place Actors &gt; Water &gt; Water Ocean</strong>.</p><h2 id="settings" tabindex="-1">Settings <a class="header-anchor" href="#settings" aria-label="Permalink to &quot;Settings&quot;">​</a></h2><table tabindex="0"><thead><tr><th>Setting</th><th>Description</th></tr></thead><tbody><tr><td>Water</td><td>The <a href="./../assets/water">Water</a> asset that sets the look and waves. Empty uses the Realistic defaults.</td></tr><tr><td>Enabled</td><td>Draws the water and includes it in water queries and buoyancy. Default on.</td></tr><tr><td>Width</td><td>Size along local X, 0.1 to 10,000. Default 256.</td></tr><tr><td>Length</td><td>Size along local Z, 0.1 to 10,000. Default 256.</td></tr><tr><td>Depth</td><td>Depth of the water below the surface, 0.01 to 10,000. Default 1000.</td></tr><tr><td>Wave Scale</td><td>Multiplies the asset&#39;s waves, 0 to 10. Default 1.</td></tr><tr><td>Flow Speed</td><td>Speed of the current, -100 to 100. Default 0.</td></tr><tr><td>Flow Direction</td><td>Direction of the current, in degrees. Default 0.</td></tr><tr><td>Surface Resolution</td><td>Mesh detail, 8 to 128. Default 96.</td></tr></tbody></table><h2 id="notes" tabindex="-1">Notes <a class="header-anchor" href="#notes" aria-label="Permalink to &quot;Notes&quot;">​</a></h2><ul><li>World scenes only.</li><li>Select the actor to show handles you drag to change Width, Length and Depth. If the actor has several shapes, choose <strong>Edit In Viewport</strong> on the component to pick the one to edit.</li><li>Waves are measured in world units, so scaling the actor does not stretch them.</li><li>To float an object on it, add <a href="./water-buoyancy">Water Buoyancy</a>. To cut a hole in it, use a <a href="./water-removal-volume">Water Removal Volume</a>.</li><li><a href="./../scripting/class/sample-water-surface">Sample Water Surface</a> reads the height and current at a position.</li></ul><h2 id="related" tabindex="-1">Related <a class="header-anchor" href="#related" aria-label="Permalink to &quot;Related&quot;">​</a></h2><ul><li><a href="./../graphics/water">Water</a></li><li><a href="./../assets/water">Water asset</a></li></ul></div>`);
+}
+const _sfc_setup = _sfc_main.setup;
+_sfc_main.setup = (props, ctx) => {
+  const ssrContext = vueExports.useSSRContext();
+  (ssrContext.modules || (ssrContext.modules = /* @__PURE__ */ new Set())).add("components/water-ocean.md");
+  return _sfc_setup ? _sfc_setup(props, ctx) : void 0;
+};
+const waterOcean = /* @__PURE__ */ _export_sfc(_sfc_main, [["ssrRender", _sfc_ssrRender]]);
+export {
+  __pageData,
+  waterOcean as default
+};

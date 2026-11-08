@@ -1,0 +1,18 @@
+import { _ as _export_sfc, s as serverRenderer_cjs_prodExports, v as vueExports } from "./plugin-vue_export-helper.DIxrRcst.js";
+import "node:stream";
+const __pageData = JSON.parse('{"title":"Light","description":"","frontmatter":{},"headers":[],"relativePath":"components/light.md","filePath":"components/light.md"}');
+const _sfc_main = { name: "components/light.md" };
+function _sfc_ssrRender(_ctx, _push, _parent, _attrs, $props, $setup, $data, $options) {
+  _push(`<div${serverRenderer_cjs_prodExports.ssrRenderAttrs(_attrs)}><h1 id="light" tabindex="-1">Light <a class="header-anchor" href="#light" aria-label="Permalink to &quot;Light&quot;">​</a></h1><p>A point, spot or directional light that lights and shades the scene.</p><h2 id="add-it" tabindex="-1">Add it <a class="header-anchor" href="#add-it" aria-label="Permalink to &quot;Add it&quot;">​</a></h2><p>Select an actor, then choose <strong>Add Component &gt; Rendering &gt; Light</strong>. You can also place a ready-made actor from <strong>Place Actors &gt; Lights</strong>: <strong>Point Light</strong>, <strong>Directional Light</strong> or <strong>Spot Light</strong>.</p><h2 id="settings" tabindex="-1">Settings <a class="header-anchor" href="#settings" aria-label="Permalink to &quot;Settings&quot;">​</a></h2><table tabindex="0"><thead><tr><th>Setting</th><th>Description</th></tr></thead><tbody><tr><td>Enabled</td><td>Turns the light on or off. Default on.</td></tr><tr><td>Color</td><td>The light colour. Default white.</td></tr><tr><td>Intensity</td><td>Brightness, 0 to 16. Default 1.</td></tr><tr><td>Light Kind</td><td><strong>Point</strong>, <strong>Spot</strong> or <strong>Directional</strong>. Default Point.</td></tr><tr><td>Cast Shadows</td><td>Casts shadows. Default off.</td></tr><tr><td>Shadow Priority</td><td>Which lights keep their shadows when the shadow budget is full. Default 0.</td></tr><tr><td>Range</td><td>Distance the light reaches. Not for Directional. Default 10.</td></tr><tr><td>Inner Angle</td><td>Spot only. Full-strength cone, in degrees. Default 30.</td></tr><tr><td>Outer Angle</td><td>Spot only. Edge of the cone, in degrees. Default 45.</td></tr></tbody></table><h2 id="notes" tabindex="-1">Notes <a class="header-anchor" href="#notes" aria-label="Permalink to &quot;Notes&quot;">​</a></h2><ul><li>World scenes only.</li><li>Spot and directional lights shine along the actor&#39;s forward (+Z) axis. Rotate the actor to aim them.</li><li>Only the first enabled directional light in a scene lights it. Others stay off.</li><li>The viewport icon shows the state. White works as set, yellow is limited, and red is disabled or not lighting.</li><li>Scripts can use <a href="./../scripting/class/set-light-enabled">Set Light Enabled</a>, <a href="./../scripting/class/set-light-color">Set Light Color</a> and <a href="./../scripting/class/set-light-intensity">Set Light Intensity</a>.</li></ul><h2 id="related" tabindex="-1">Related <a class="header-anchor" href="#related" aria-label="Permalink to &quot;Related&quot;">​</a></h2><ul><li><a href="./../graphics/lighting">Lighting</a></li><li><a href="./../graphics/shadows">Shadows</a></li><li><a href="./hemispheric-fill-light">Hemispheric Fill Light</a></li></ul></div>`);
+}
+const _sfc_setup = _sfc_main.setup;
+_sfc_main.setup = (props, ctx) => {
+  const ssrContext = vueExports.useSSRContext();
+  (ssrContext.modules || (ssrContext.modules = /* @__PURE__ */ new Set())).add("components/light.md");
+  return _sfc_setup ? _sfc_setup(props, ctx) : void 0;
+};
+const light = /* @__PURE__ */ _export_sfc(_sfc_main, [["ssrRender", _sfc_ssrRender]]);
+export {
+  __pageData,
+  light as default
+};

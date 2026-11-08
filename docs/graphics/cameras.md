@@ -100,6 +100,7 @@ For a camera actor:
 
 - [Possess Camera](../scripting/class/possess-camera.md) switches the view for the whole game; None returns it to the Layer Camera.
 - [Possess Camera With Blend](../scripting/class/possess-camera-with-blend.md) moves the view to another camera smoothly over a **Blend Time**.
+- [Play Camera Shake](../scripting/class/play-camera-shake.md) shakes the view with a [Camera Shake](../assets/camera-shake.md) asset; [Play World Camera Shake](../scripting/class/play-world-camera-shake.md) shakes it less the farther it is from a point.
 - [Get Field Of View](../scripting/class/get-field-of-view.md) and [Set Field Of View](../scripting/class/set-field-of-view.md) read and change a perspective camera's zoom.
 - [Get Orthographic Size](../scripting/class/get-orthographic-size.md) and [Set Orthographic Size](../scripting/class/set-orthographic-size.md) do the same for orthographic cameras.
 - Drag from a Camera component reference, such as **Get Camera Component**, for its **Projection Mode**, **Field Of View**, **Orthographic Size**, **Near Clip** and **Far Clip** variables and its **Possess** function.

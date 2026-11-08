@@ -1,0 +1,18 @@
+import { _ as _export_sfc, s as serverRenderer_cjs_prodExports, v as vueExports } from "./plugin-vue_export-helper.DIxrRcst.js";
+import "node:stream";
+const __pageData = JSON.parse('{"title":"2D Anchor","description":"","frontmatter":{},"headers":[],"relativePath":"components/2d-anchor.md","filePath":"components/2d-anchor.md"}');
+const _sfc_main = { name: "components/2d-anchor.md" };
+function _sfc_ssrRender(_ctx, _push, _parent, _attrs, $props, $setup, $data, $options) {
+  _push(`<div${serverRenderer_cjs_prodExports.ssrRenderAttrs(_attrs)}><h1 id="2d-anchor" tabindex="-1">2D Anchor <a class="header-anchor" href="#2d-anchor" aria-label="Permalink to &quot;2D Anchor&quot;">​</a></h1><p>Anchors a Scene Layer actor to a point on the layer and offsets it from its placed position.</p><h2 id="add-it" tabindex="-1">Add it <a class="header-anchor" href="#add-it" aria-label="Permalink to &quot;Add it&quot;">​</a></h2><p>Select an actor in a Scene Layer, then choose <strong>Add Component &gt; Overlay &gt; 2D Anchor</strong>. You can also place a ready-made helper from <strong>Place Actors &gt; Overlay &gt; 2D Anchor</strong>.</p><h2 id="settings" tabindex="-1">Settings <a class="header-anchor" href="#settings" aria-label="Permalink to &quot;Settings&quot;">​</a></h2><table tabindex="0"><thead><tr><th>Setting</th><th>Description</th></tr></thead><tbody><tr><td>Anchor</td><td>The layer point the actor is anchored to: Top Left, Top Center, Top Right, Center Left, Center, Center Right, Bottom Left, Bottom Center or Bottom Right. Default Center.</td></tr><tr><td>Offset X</td><td>Shifts the actor sideways from its placed position, in layer units. Default 0.</td></tr><tr><td>Offset Y</td><td>Shifts the actor up (positive) or down from its placed position, in layer units. Default 0.</td></tr></tbody></table><h2 id="notes" tabindex="-1">Notes <a class="header-anchor" href="#notes" aria-label="Permalink to &quot;Notes&quot;">​</a></h2><ul><li>Scene Layers only.</li><li>Layer units are the units of <strong>Layer Width</strong> and <strong>Layer Height</strong> in the Scene Layer&#39;s settings.</li><li>When the screen is wider or taller than <strong>Layer Width</strong> × <strong>Layer Height</strong>, the anchor point moves to that screen edge or corner and the actor keeps its distance from it, at its original size.</li><li>Anchors use the layer&#39;s default view. When a script moves, turns or zooms the <a href="./../scenes/scene-layers#move-the-layer-camera">layer camera</a>, anchored actors move with the rest of the layer.</li><li>An actor that holds only a 2D Anchor is an anchor helper. It has no position of its own, no Transform and no visual, and it anchors its parent actor. A helper with no parent does nothing.</li><li>When an actor and one of its ancestors both have an anchor, the topmost anchor applies and the rest of the branch follows it.</li><li>Animate the offset with <a href="./../scripting/class/tween-anchor-offset">Tween Anchor Offset</a>.</li></ul><h2 id="related" tabindex="-1">Related <a class="header-anchor" href="#related" aria-label="Permalink to &quot;Related&quot;">​</a></h2><ul><li><a href="./../scenes/scene-layers">Scene Layers</a></li><li><a href="./../assets/scene-layer">Scene Layer</a></li></ul></div>`);
+}
+const _sfc_setup = _sfc_main.setup;
+_sfc_main.setup = (props, ctx) => {
+  const ssrContext = vueExports.useSSRContext();
+  (ssrContext.modules || (ssrContext.modules = /* @__PURE__ */ new Set())).add("components/2d-anchor.md");
+  return _sfc_setup ? _sfc_setup(props, ctx) : void 0;
+};
+const _2dAnchor = /* @__PURE__ */ _export_sfc(_sfc_main, [["ssrRender", _sfc_ssrRender]]);
+export {
+  __pageData,
+  _2dAnchor as default
+};
