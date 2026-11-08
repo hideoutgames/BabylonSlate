@@ -150,6 +150,46 @@ describe("ProjectExtensionsSettings", () => {
     expect(screen.getByRole("switch", { name: "Enable Renamed Tools" })).toBeTruthy();
   });
 
+  it("turns a package gameplay and saves its game entry and new code files under code/", async () => {
+    render(<ProjectExtensionsSettings />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Tools" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Edit Extension" }));
+    expect(dialog.queryByRole("textbox", { name: "Library Name" })).toBeNull();
+    expect(dialog.queryByRole("switch", { name: "Appear In Content Browser" })).toBeNull();
+
+    fireEvent.click(dialog.getByRole("switch", { name: "Editor Only" }));
+    expect((dialog.getByRole("textbox", { name: "Library Name" }) as HTMLInputElement).value).toBe("tools");
+    fireEvent.change(dialog.getByRole("textbox", { name: "Library Name" }), { target: { value: "my-tools" } });
+    expect(dialog.getByText("Use letters, digits, _ or $, not starting with a digit.")).toBeTruthy();
+    expect((dialog.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(dialog.getByRole("textbox", { name: "Library Name" }), { target: { value: "myTools" } });
+    fireEvent.click(dialog.getByRole("switch", { name: "Appear In Content Browser" }));
+
+    fireEvent.click(dialog.getByRole("button", { name: "New Code File" }));
+    const prompt = within(await screen.findByRole("alertdialog", { name: "New Code File" }));
+    fireEvent.change(prompt.getByRole("textbox", { name: "File Name" }), { target: { value: "helpers" } });
+    fireEvent.click(prompt.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: "New Code File" })).toBeNull());
+    harness.pick.mockResolvedValue([
+      { name: "rain.js", bytes: new TextEncoder().encode("export const rain = 1;") },
+      { name: "notes.md", bytes: new TextEncoder().encode("# Notes") },
+    ]);
+    fireEvent.click(dialog.getByRole("button", { name: "Add Code File" }));
+    expect(await dialog.findByText("notes.md is not a .ts or .js file.")).toBeTruthy();
+    expect(harness.pick).toHaveBeenCalledWith(expect.objectContaining({ accept: ".ts,.js" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit Extension" })).toBeNull());
+
+    expect(decodeExtensionSettings(await storage.readBinary("extensions/tools/extension.json")))
+      .toMatchObject({ editorOnly: false, libraryName: "myTools", appearInContentBrowser: true, gameEntryPoint: "game.ts" });
+    expect(await storage.readText("extensions/tools/game.ts")).toContain("export function describe(value)");
+    expect(await storage.readText("extensions/tools/code/helpers.ts")).toBe("");
+    expect(await storage.readText("extensions/tools/code/rain.js")).toBe("export const rain = 1;");
+    expect(await storage.exists("extensions/tools/code/notes.md")).toBe(false);
+    expect(await storage.readText("extensions/tools/index.ts")).toBe(source);
+    expect(within(screen.getByTestId("settings-extension-row-tools")).getByText("Gameplay")).toBeTruthy();
+  });
+
   it("keeps installed code until import replacement is confirmed and leaves the replacement disabled", async () => {
     await harness.service!.refresh({ tools: { enabled: true } });
     harness.overrides = harness.service!.getOverrides();

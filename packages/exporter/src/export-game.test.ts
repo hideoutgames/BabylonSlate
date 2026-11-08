@@ -134,6 +134,25 @@ describe("exportGame", () => {
     expect(parseGameManifest(JSON.stringify(json)).garbageCollectionIntervalTicks).toBe(60);
   });
 
+  it("ships gameplay Extension libraries in game.json for the player to load", async () => {
+    const library = {
+      extensionGuid: "weather-guid", libraryName: "weather", label: "Weather",
+      bundle: { entry: "game.ts", modules: [{ path: "game.ts", code: "exports.rain = 1;", imports: {} }] },
+    };
+    const withLibrary = await exportGame({
+      bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      extensionLibraries: [library], scripts: [], assets: [], playerFiles: stubPlayer(),
+    });
+    if (!withLibrary.ok) throw new Error(withLibrary.error);
+    expect(parseGameManifest(new TextDecoder().decode(withLibrary.value.files.get(GAME_MANIFEST_FILE))).extensionLibraries).toEqual([library]);
+    const without = await exportGame({
+      bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [], assets: [], playerFiles: stubPlayer(),
+    });
+    if (!without.ok) throw new Error(without.error);
+    expect(JSON.parse(new TextDecoder().decode(without.value.files.get(GAME_MANIFEST_FILE)))).not.toHaveProperty("extensionLibraries");
+  });
+
   it("retains project identity in release builds", async () => {
     const result = await exportGame({
       project: { name: "Orbit Workshop", version: "2.4.0-beta.3" },

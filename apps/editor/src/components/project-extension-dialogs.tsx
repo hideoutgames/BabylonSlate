@@ -53,7 +53,7 @@ export function ExtensionCommandDialog({ command, service, onClose }: {
   return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
     <DialogContent className="editor-dialog-large sm:max-w-2xl" bodyClassName="flex min-w-0 flex-col overflow-hidden">
       <DialogHeader><DialogTitle>{command.title}</DialogTitle><DialogDescription>{command.description ?? "Run this editor extension command."}</DialogDescription></DialogHeader>
-      <FieldGroup className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+      <FieldGroup className="-mx-3 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3">
         {command.fields.map((field) => <Field key={field.id}>
           <FieldLabel htmlFor={`extension-command-${field.id}`}>{field.label}{field.required ? " *" : ""}</FieldLabel>
           {field.type === "multiline" && command.id === "glsl-to-material" && field.id === "source" ?
@@ -151,7 +151,8 @@ export function ExtensionEditorDialog({ entry, entries, initialFiles, service, o
   return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
     <DialogContent className="editor-dialog-large sm:max-w-3xl" bodyClassName="flex min-w-0 flex-col overflow-hidden">
       <DialogHeader><DialogTitle>Edit Extension</DialogTitle><DialogDescription>Saving reloads enabled extensions. Code runs in the editor, and in games when Editor Only is off.</DialogDescription></DialogHeader>
-      <FieldGroup className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto" data-testid="extension-editor-fields">
+      {/* The gutter holds the Switches' touch hit areas, which reach past the controls, so the list scrolls only vertically. */}
+      <FieldGroup className="-mx-3 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3" data-testid="extension-editor-fields">
         <Field><FieldLabel htmlFor="extension-edit-guid">Extension ID</FieldLabel><Input id="extension-edit-guid" value={entry.extensionGuid} readOnly /></Field>
         {([['displayName', 'Display Name'], ['version', 'Version'], ['author', 'Author'], ['category', 'Category']] as const).map(([key, label]) => <Field key={key}>
           <FieldLabel htmlFor={`extension-edit-${key}`}>{label}</FieldLabel>
