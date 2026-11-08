@@ -939,7 +939,7 @@ describe("Profile", () => {
               cpuMs: 30, gpuMs: null, width: 100, height: 100, scalingLevel: 1, settings,
               frameBackpressure: { mode, inFlight: 0, skipped: 0 },
               drawPasses: { objects: 520, shadows: settings.shadows === "off" ? 0 : 140, captures: settings.captures === "on" ? 44 : 0, post: 12 },
-              instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0, unpooled: { deforming: 64, blended: 9 } },
+              instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0 },
             } as unknown as RenderDiagnostics,
           };
         } };
@@ -981,7 +981,7 @@ describe("Profile", () => {
     expect(rows.find((sample) => sample.label === "shadows off")!.drawPasses).toEqual({ objects: 520, shadows: 0, captures: 44, post: 12 });
     expect(rows.find((sample) => sample.label === "captures off")!.drawPasses).toEqual({ objects: 520, shadows: 140, captures: 0, post: 12 });
     expect(main!.play.profile).toEqual({
-      instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0, unpooled: { deforming: 64, blended: 9 } },
+      instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0 },
       endChanges: [],
       // This view reports no presentation counts.
       holdRate: null,
