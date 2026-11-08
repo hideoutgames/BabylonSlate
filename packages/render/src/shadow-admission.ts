@@ -1,9 +1,9 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Scene } from "@babylonjs/core/scene";
 import {
-  availableManagedLightingBytes,
+  availableManagedRenderBytes,
   reserveManagedShadowBytes,
-} from "./managed-lighting-resources";
+} from "./managed-render-resources";
 
 export type ShadowCost = {
   bytes: number;
@@ -46,5 +46,5 @@ export function reserveSceneShadows(scene: Scene, cost: ShadowCost): void {
 /** This Scene may replace its own shadows, but cannot spend any cluster lease. Exempt bytes are not in it. */
 export function availableSceneShadowBytes(scene: Scene): number {
   const own = reservations.get(scene.getEngine())?.get(scene);
-  return availableManagedLightingBytes(scene.getEngine()) + (own ? own.bytes - (own.exempt ?? 0) : 0);
+  return availableManagedRenderBytes(scene.getEngine()) + (own ? own.bytes - (own.exempt ?? 0) : 0);
 }

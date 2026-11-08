@@ -68,6 +68,7 @@ export { dynamicMeshTransferables } from "./dynamic-mesh-transfers";
 export { controlTransferables } from "./control-transfers";
 export { dispatchCommandBatch } from "./command-batch";
 
+export { runtimeIdentityKey } from "./runtime-inspector";
 export type { RuntimeObjectIdentity, RuntimeInspectorValue, RuntimePropertyCapability, RuntimePropertyDescriptor, RuntimeIdentityRow, RuntimeIdentityCursor, RuntimeInspectorAction, RuntimeInspectorRequest, RuntimeInspectorPayload, RuntimeInspectorResult } from "./runtime-inspector";
 
 export type { DiagnosticOperation, DiagnosticOperationRequest, DiagnosticOperationResult, PerformanceScriptEntry, PerformanceTickChunk } from "./diagnostic-operation";

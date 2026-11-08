@@ -84,7 +84,7 @@ it("bounds retained stages and bytes without truncating game rendering", () => {
   const { report } = captureRenderFrame(engine, () => {
     const capture = activeRenderFrameCapture(engine)!;
     for (let index = 0; index < 1000; index++)
-      capture.stage(scene, { name: "large name".repeat(1000), kind: "native" }, () => { draws++; });
+      capture.stage(scene, { name: "large name".repeat(1000), kind: "task" }, () => { draws++; });
   });
   expect(draws).toBe(1000);
   expect(report.complete).toBe(false);

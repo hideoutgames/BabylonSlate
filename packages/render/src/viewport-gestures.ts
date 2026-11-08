@@ -22,13 +22,6 @@ export interface ViewportGestureOptions {
   onDragSelectEnd?: () => void;
   scheduler?: Pick<RenderScheduler, "acquireContinuous">;
   /**
-   * World units flown per pixel of three-finger drag in 3D (look + right).
-   * 2D uses 1:1 frustum mapping instead.
-   */
-  panScale?: number;
-  /** Radians of look per pixel of one-finger / left-button drag. */
-  orbitScale?: number;
-  /**
    * When true at pointer-down (gizmo handle hit or an active gizmo drag),
    * a one-finger drag does not look the camera.
    */
@@ -61,6 +54,13 @@ interface PointerSample {
 }
 
 const TAP_TOLERANCE_PX = 8;
+/**
+ * World units per pixel of a 3D pan and of the three-finger fly (look + right).
+ * 2D uses 1:1 frustum mapping instead.
+ */
+const PAN_SCALE = 0.01;
+/** Radians of look per pixel of one-finger / left-button drag. */
+const ORBIT_SCALE = 0.005;
 /** Hold before a 2D one-finger drag becomes a marquee (matches editor-kit DRAG_ARM_MS). */
 const MARQUEE_ARM_MS = 250;
 
@@ -100,7 +100,6 @@ export function attachViewportGestures(
   controller: EditorCameraController,
   options: ViewportGestureOptions = {},
 ): ViewportGestureHandle {
-  const { panScale = 0.01, orbitScale = 0.005 } = options;
   const pointers = new Map<number, PointerSample>();
   let lastMid: PointerSample | null = null;
   let lastSpread = 0;
@@ -181,7 +180,7 @@ export function attachViewportGestures(
       controller.pan(deltaX, deltaY);
       return;
     }
-    controller.pan(-dx * panScale, dy * panScale);
+    controller.pan(-dx * PAN_SCALE, dy * PAN_SCALE);
   };
 
   const recapturePinch = (samples: PointerSample[]) => {
@@ -300,7 +299,7 @@ export function attachViewportGestures(
         if (dx !== 0 || dy !== 0) {
           acquireLease();
           if (editorActive()) {
-            controller.look(-dx * orbitScale, -dy * orbitScale);
+            controller.look(-dx * ORBIT_SCALE, -dy * ORBIT_SCALE);
           }
         }
       } else if (
@@ -329,7 +328,7 @@ export function attachViewportGestures(
       const dy = mid.y - lastMid.y;
       if (controller.mode === "3d") {
         if (editorActive()) {
-          controller.fly(-dy * panScale, -dx * panScale);
+          controller.fly(-dy * PAN_SCALE, -dx * PAN_SCALE);
         }
       } else {
         panFromPointerDelta(dx, dy);

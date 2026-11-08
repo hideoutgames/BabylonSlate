@@ -23,6 +23,7 @@ import { syncSceneLighting } from "./scene-lighting";
 import { invalidateShadowReceiverHandoffs } from "./shadow-receiver-handoff";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { acquireMaterialTexture, materialTextureSampling, ResourceCache, type ResourceLease } from "./resource-cache";
+import { setTestTextureBudget } from "./test-support/resource-cache-budget";
 
 const disposers: Array<() => void> = [];
 
@@ -76,7 +77,8 @@ function deferredTextureSource() {
 
 function textureLibrary() {
   const scene = host();
-  const cache = new ResourceCache({ byteCeiling: 16 * 1024 * 1024 });
+  const cache = new ResourceCache();
+  setTestTextureBudget(cache, 16 * 1024 * 1024);
   disposers.push(() => cache.dispose());
   const sources = new Map<string, Uint8Array | Blob>([["first", new Uint8Array([1, 2, 3])]]);
   const leases = new Map<string, ResourceLease<Texture>>();
@@ -141,7 +143,7 @@ describe("material library", () => {
     const sample = material.material.getBlockByName("sample") as TextureBlock;
     const working = sample.texture;
     f.sources.set("next", deferred.source);
-    f.cache.setByteCeiling(f.cache.accountedBytes() + 1);
+    setTestTextureBudget(f.cache, f.cache.accountedBytes() + 1);
 
     expect(f.library.setParameter(f.scene, "material", "Albedo", { kind: "texture", textureAssetGuid: "next" })).toBe(true);
     const next = f.leases.get("next")!;
@@ -172,7 +174,7 @@ describe("material library", () => {
     expect(working).toBe(f.leases.get("next")!.resource);
     f.cache.flushUnreferenced();
     f.sources.set("first", deferred.source);
-    f.cache.setByteCeiling(f.cache.accountedBytes() + 1);
+    setTestTextureBudget(f.cache, f.cache.accountedBytes() + 1);
 
     expect(f.library.resetParameter(f.scene, "material", "Albedo")).toBe(true);
     const reset = f.leases.get("first")!;
@@ -214,7 +216,7 @@ describe("material library", () => {
     const mesh = MeshBuilder.CreatePlane("working", {}, f.scene);
     mesh.material = first.material;
     f.sources.set("next", deferred.source);
-    f.cache.setByteCeiling(f.cache.accountedBytes() + 1);
+    setTestTextureBudget(f.cache, f.cache.accountedBytes() + 1);
     const document = textureDocument("next");
     const next = f.library.acquire(f.scene, "material", document);
     if (!next.ok) throw new Error("Replacement did not compile");
@@ -972,7 +974,8 @@ describe("material library", () => {
   it("samples a texture picked on a Nearest Texture Sample nearest and without mipmaps, and smoothly elsewhere", () => {
     const scene = host();
     // Two samplings of an unmeasured texture.
-    const cache = new ResourceCache({ byteCeiling: 512 * 1024 * 1024 });
+    const cache = new ResourceCache();
+    setTestTextureBudget(cache, 512 * 1024 * 1024);
     disposers.push(() => cache.dispose());
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const library = new MaterialLibrary({
@@ -999,7 +1002,8 @@ describe("material library", () => {
 
   it("releases material texture ownership without disposing an independent view's lease", async () => {
     const scene = host();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
+    setTestTextureBudget(cache, 8 * 1024 * 1024);
     disposers.push(() => cache.dispose());
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const cachedLease = acquireMaterialTexture(

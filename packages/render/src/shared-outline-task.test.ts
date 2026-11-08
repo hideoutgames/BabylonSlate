@@ -10,6 +10,7 @@ import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { managedRenderReservations } from "./managed-render-resources";
 import { SharedOutlineOwner } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
+import { setOutlineContribution } from "./test-support/shared-outline-contributions";
 
 const disposers: Array<() => void> = [];
 afterEach(() => {
@@ -28,7 +29,7 @@ async function outlineGraph() {
   const graph = new FrameGraph(scene);
   const view = SharedOutlineOwner.forScene(scene).createView("test");
   disposers.push(() => { view.dispose(); graph.dispose(); scene.dispose(); engine.dispose(); });
-  view.setContribution("component", { kind: "component", color: [1, 0, 0], width: 2, targets: [{ key: "member", meshes: [member] }] });
+  setOutlineContribution(view, "component", { kind: "component", color: [1, 0, 0], width: 2, targets: [{ key: "member", meshes: [member] }] });
   expect(view.groupActive("strict")).toBe(true);
   const task = new FrameGraphSharedOutlineTask("Outlines", graph, view);
   task.camera = camera;

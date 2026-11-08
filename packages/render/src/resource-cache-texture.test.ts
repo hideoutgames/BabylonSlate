@@ -15,6 +15,8 @@ import {
   TEXTURE_HANDOVER_CLAIM_MS,
 } from "./resource-cache";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { TEXTURE_BYTE_CEILING } from "./perf-ceilings";
+import { accountedEntry, setTestTextureBudget } from "./test-support/resource-cache-budget";
 import { installTextureBytes } from "./mesh-assets";
 import { encodeRgbaPng } from "./png-encode";
 import { ktx2HeaderBytes } from "./texture-test-fixtures";
@@ -33,7 +35,10 @@ function textureEngine() {
   });
   return engine;
 }
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("bounded texture preparation ownership", () => {
   it("cancels a stalled upload only after its final independent owner releases it", async () => {
@@ -168,13 +173,12 @@ describe("resource cache getTexture", () => {
     expect(cache.resourceStats()).toEqual({ generations: 0, leases: 0, wrappers: 0, pending: 0 });
   });
   it("honors the largest live view budget regardless of update order", () => {
-    const cache = new ResourceCache({ byteCeiling: 100 });
+    const cache = new ResourceCache();
     const high = {};
     const low = {};
     cache.setClientBudget(high, 1000);
     cache.setClientBudget(low, 100);
-    cache.account("resident", 500);
-    cache.releaseAccounting("resident");
+    accountedEntry(cache, "resident", 500).release();
     cache.setClientBudget(low, 200);
     expect(cache.accountedBytes()).toBe(500);
     cache.setClientBudget(high, null);
@@ -182,14 +186,15 @@ describe("resource cache getTexture", () => {
     cache.dispose();
   });
   it("never lets a budget hold unreferenced textures past the device class's ceiling", () => {
-    // A phone or tablet's ceiling bounds a quality level's or a view's larger budget.
-    const cache = new ResourceCache({ byteCeiling: 1000, deviceByteCeiling: 300 });
+    // A phone or tablet's ceiling (768 MiB) bounds a quality level's or a view's larger budget.
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)", maxTouchPoints: 5 });
+    const cache = new ResourceCache();
     const view = {};
-    cache.account("held", 250);
-    cache.account("released", 250);
-    cache.releaseAccounting("released");
-    cache.setClientBudget(view, 2000);
-    expect(cache.accountedBytes()).toBe(250);
+    const mib = 1024 * 1024;
+    accountedEntry(cache, "held", 500 * mib);
+    accountedEntry(cache, "released", 500 * mib).release();
+    cache.setClientBudget(view, 2000 * mib);
+    expect(cache.accountedBytes()).toBe(500 * mib);
     cache.dispose();
   });
   it("keeps concurrent texture representations alive until their own views release them", () => {
@@ -221,7 +226,7 @@ describe("resource cache getTexture", () => {
   });
   it("reuses one Texture for the same guid + sampling key", () => {
     const engine = textureEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const aLease = cache.acquireTexture("tex", engine, bytes, {
       samplingMode: Texture.TRILINEAR_SAMPLINGMODE,
@@ -242,7 +247,7 @@ describe("resource cache getTexture", () => {
 
   it("rebuilds a material texture after the cached instance was disposed", () => {
     const engine = textureEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const firstLease = acquireMaterialTexture(cache, "tex", engine, bytes);
     const first = firstLease?.resource ?? null;
@@ -259,7 +264,7 @@ describe("resource cache getTexture", () => {
 
   it("returns a distinct no-mip wrapper without disposing the mipped Texture", () => {
     const engine = textureEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const bytes = new Uint8Array([9, 9, 9]);
     const aLease = cache.acquireTexture("tex", engine, bytes, { noMipmap: false });
     const a = aLease.resource;
@@ -289,7 +294,7 @@ describe("resource cache getTexture", () => {
       original(url);
     });
     const engine = textureEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const aLease = cache.acquireTexture("tex", engine, bytes);
     const a = aLease.resource;
@@ -314,7 +319,7 @@ describe("resource cache getTexture", () => {
       original(url);
     });
     const engine = textureEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const aLease = cache.acquireTexture("tex", engine, bytes);
     const a = aLease.resource;
@@ -334,7 +339,7 @@ describe("resource cache getTexture", () => {
 
   it("keeps glTF invertY false on a distinct wrapper from sprite albedo", () => {
     const engine = textureEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const spriteLease = cache.acquireTexture("shared", engine, bytes, {
       noMipmap: true,
@@ -365,7 +370,7 @@ describe("resource cache getTexture", () => {
       1, 2, 3, 4,
     ]);
     const engine = textureEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const textureLease = cache.acquireTexture("tex", engine, source === "blob" ? new Blob([ktx2], { type: "image/ktx2" }) : ktx2);
     const texture = textureLease.resource;
     const loaderHints = texture as unknown as {
@@ -382,7 +387,7 @@ describe("resource cache getTexture", () => {
 
   it("decodes a 2D KTX2 from its own buffer with no Blob copy, and loads images and blob URL leases from one", () => {
     const engine = textureEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const objectUrls = vi.spyOn(URL, "createObjectURL");
     const create = vi.spyOn(engine, "createTexture");
     const ktx2 = ktx2HeaderBytes(4, 4);
@@ -418,7 +423,7 @@ describe("resource cache getTexture", () => {
       1, 2, 3, 4,
     ]);
     const engine = textureEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const mippedLease = cache.acquireTexture("tex", engine, ktx2);
     const mipped = mippedLease.resource;
     const pixelArtLease = cache.acquireTexture("tex", engine, ktx2, {
@@ -438,7 +443,7 @@ describe("resource cache getTexture", () => {
 
   it("builds a cube texture when isCube is set", () => {
     const engine = textureEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const cubeLease = cache.acquireTexture("env", engine, bytes, { isCube: true });
     const cube = cubeLease.resource;
@@ -450,7 +455,7 @@ describe("resource cache getTexture", () => {
   it("builds a six-face cube in px py pz nx ny nz order", () => {
     const engine = textureEngine();
     const scene = new Scene(engine);
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const files = [
       "blob:px",
       "blob:py",
@@ -482,7 +487,8 @@ describe("resource cache getTexture", () => {
 
   it("rejects an over-budget cube successor and releases only its provisional upload", () => {
     const engine = textureEngine(); const scene = new Scene(engine);
-    const cache = new ResourceCache({ byteCeiling: 40_000 });
+    const cache = new ResourceCache();
+    setTestTextureBudget(cache, 40_000);
     const working = cache.acquireCubeTextureFromImages("working", scene, ["px", "py", "pz", "nx", "ny", "nz"]);
     const bytes = cache.accountedBytes();
     expect(bytes).toBeGreaterThan(0);
@@ -495,7 +501,8 @@ describe("resource cache getTexture", () => {
 
   it("rejects a delayed cube upload before its lease becomes publishable", async () => {
     const engine = textureEngine(); const scene = new Scene(engine);
-    const cache = new ResourceCache({ byteCeiling: 40_000 });
+    const cache = new ResourceCache();
+    setTestTextureBudget(cache, 40_000);
     const working = cache.acquireCubeTextureFromImages("working", scene, ["px", "py", "pz", "nx", "ny", "nz"]);
     await working.ready;
     vi.mocked(engine.createCubeTexture).mockImplementationOnce((url) => {
@@ -538,7 +545,7 @@ describe("resource cache getTexture", () => {
 
   it("keeps the native texture of a cube released before its faces load until they upload", () => {
     const engine = textureEngine(); const scene = new Scene(engine);
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const faces = pendingCubeFaces(engine);
     const lease = cache.acquireCubeTextureFromImages("sky", scene, ["px", "py", "pz", "nx", "ny", "nz"]);
     const cube = lease.resource;
@@ -554,7 +561,7 @@ describe("resource cache getTexture", () => {
 
   it("releases the native texture of a released cube whose faces fail to load", () => {
     const engine = textureEngine(); const scene = new Scene(engine);
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const faces = pendingCubeFaces(engine);
     const lease = cache.acquireCubeTextureFromImages("sky", scene, ["px", "py", "pz", "nx", "ny", "nz"]);
     const native = lease.resource.getInternalTexture()!;
@@ -568,7 +575,7 @@ describe("resource cache getTexture", () => {
     vi.useFakeTimers();
     try {
       const engine = textureEngine(); const scene = new Scene(engine);
-      const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+      const cache = new ResourceCache();
       pendingCubeFaces(engine);
       const lease = cache.acquireCubeTextureFromImages("sky", scene, ["px", "py", "pz", "nx", "ny", "nz"]);
       const native = lease.resource.getInternalTexture()!;
@@ -584,7 +591,7 @@ describe("resource cache getTexture", () => {
 
   it("keeps a released pending cube's native texture alive for a lease acquired before its faces load", async () => {
     const engine = textureEngine(); const scene = new Scene(engine);
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const faces = pendingCubeFaces(engine);
     const files = ["px", "py", "pz", "nx", "ny", "nz"];
     const first = cache.acquireCubeTextureFromImages("sky", scene, files);
@@ -602,7 +609,7 @@ describe("resource cache getTexture", () => {
   it("keeps a six-face cube off the scene so Play scene dispose cannot leak it", () => {
     const engine = textureEngine();
     const scene = new Scene(engine);
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const files = [
       "blob:px",
       "blob:py",
@@ -625,7 +632,7 @@ describe("resource cache getTexture", () => {
   it("keeps a leased cube during unreferenced eviction", () => {
     const engine = textureEngine();
     const scene = new Scene(engine);
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const files = [
       "blob:px",
       "blob:py",
@@ -647,7 +654,7 @@ describe("resource cache getTexture", () => {
   it("does not dispose a cache cube when a Play PBR skybox material is disposed", () => {
     const engine = textureEngine();
     const playScene = new Scene(engine);
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const files = [
       "blob:px",
       "blob:py",
@@ -672,7 +679,7 @@ describe("Play texture cache invariant with getTexture", () => {
   it("Play open/close cycle does not grow accounted bytes after flush", () => {
     const engine = textureEngine();
     const before = engine.getLoadedTexturesCache().filter((texture) => texture._references > 0).length;
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const cache = new ResourceCache();
     const bytes = new Uint8Array(32 * 32 * 4);
     // Editor retain
     const editorLease = cache.acquireTexture("shared", engine, bytes);
@@ -768,7 +775,7 @@ describe("resourceCacheForEngine", () => {
 
 describe("bindResourceCacheToHandle", () => {
   it.each(["enabled-first", "disabled-first"])("keeps a sibling's disabled budget policy regardless of update order (%s)", (order) => {
-    const inner = new ResourceCache({ byteCeiling: 100 });
+    const inner = new ResourceCache();
     const capped = bindResourceCacheToHandle(inner);
     const uncapped = bindResourceCacheToHandle(inner);
     const clients = order === "enabled-first" ? [capped, uncapped] : [uncapped, capped];
@@ -776,39 +783,37 @@ describe("bindResourceCacheToHandle", () => {
       client.cache.setByteCeiling(100);
       client.cache.setBudgetEnabled(client === capped);
     }
-    inner.account("resident", 500);
-    inner.releaseAccounting("resident");
+    accountedEntry(inner, "resident", 500).release();
     capped.cache.setBudgetEnabled(true);
     expect(inner.accountedBytes()).toBe(500);
     uncapped.dispose();
-    inner.account("after-detach", 500);
-    inner.releaseAccounting("after-detach");
+    accountedEntry(inner, "after-detach", 500).release();
     inner.evictToCeiling();
     expect(inner.accountedBytes()).toBe(0);
     capped.dispose();
     inner.dispose();
   });
 
-  it.each([true, false])("restores the cache's baseline enabled=%s after the last explicit view policy detaches", (enabled) => {
-    const inner = new ResourceCache({ byteCeiling: 100, budgetEnabled: enabled });
+  it("evicts at the default ceiling again once the last view that disabled its budget detaches", () => {
+    const inner = new ResourceCache();
     const bound = bindResourceCacheToHandle(inner);
     bound.cache.setByteCeiling(100);
-    bound.cache.setBudgetEnabled(!enabled);
-    inner.account("while-attached", 500);
-    inner.releaseAccounting("while-attached");
+    bound.cache.setBudgetEnabled(false);
+    // Accounting only: no allocation. Past the default ceiling, which applies once no view sets a budget.
+    const pastDefault = TEXTURE_BYTE_CEILING + 1;
+    accountedEntry(inner, "while-attached", pastDefault).release();
     inner.evictToCeiling();
-    expect(inner.accountedBytes()).toBe(enabled ? 500 : 0);
+    expect(inner.accountedBytes()).toBe(pastDefault);
     bound.dispose();
-    inner.account("after-detach", 500);
-    inner.releaseAccounting("after-detach");
+    accountedEntry(inner, "after-detach", pastDefault).release();
     inner.evictToCeiling();
-    expect(inner.accountedBytes()).toBe(enabled ? 0 : 500);
+    expect(inner.accountedBytes()).toBe(0);
     inner.dispose();
   });
 
   it("releases this handle's retains then flushes unreferenced GPU wrappers", () => {
     const engine = textureEngine();
-    const inner = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const inner = new ResourceCache();
     const bound = bindResourceCacheToHandle(inner);
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const textureLease = bound.cache.acquireTexture("tex-scene", engine, bytes);
@@ -821,7 +826,7 @@ describe("bindResourceCacheToHandle", () => {
 
   it("keeps textures still retained by another handle", () => {
     const engine = textureEngine();
-    const inner = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const inner = new ResourceCache();
     const editor = bindResourceCacheToHandle(inner);
     const play = bindResourceCacheToHandle(inner);
     const bytes = new Uint8Array([1, 2, 3, 4]);
@@ -841,7 +846,7 @@ describe("bindResourceCacheToHandle", () => {
     const revoke = URL.revokeObjectURL.bind(URL);
     vi.spyOn(URL, "revokeObjectURL").mockImplementation((url) => { revoked.push(String(url)); revoke(url); });
     const engine = textureEngine();
-    const inner = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const inner = new ResourceCache();
     const editor = bindResourceCacheToHandle(inner);
     const play = bindResourceCacheToHandle(inner);
     const bytes = new Uint8Array([1, 2, 3, 4]);
@@ -867,7 +872,7 @@ describe("bindResourceCacheToHandle", () => {
 
   it("flushes a sampling left without leases once another handle leases its texture in another sampling", () => {
     const engine = textureEngine();
-    const inner = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const inner = new ResourceCache();
     const play = bindResourceCacheToHandle(inner);
     const preview = bindResourceCacheToHandle(inner);
     const bytes = new Uint8Array([1, 2, 3, 4]);

@@ -6,6 +6,7 @@ import { isEditorHelperMesh } from "./helper-mesh";
 import { isSkyboxMesh } from "./skybox";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { isMirrorSurfaceMesh } from "./mirror-surface-state";
+import { isWaterSurfaceMesh } from "./water-mesh-surface";
 export type ShadowParticipation = {
   castShadows?: boolean;
   receiveShadows?: boolean;
@@ -49,7 +50,7 @@ export function participatesInShadows(mesh: AbstractMesh): boolean {
  */
 export function neverCastsShadows(mesh: AbstractMesh): boolean {
   // Mirror surfaces are flat reflections: as casters they would only add a depth variant to compile.
-  return (mesh.metadata as { slateWater?: unknown } | null)?.slateWater === true || isMirrorSurfaceMesh(mesh);
+  return isWaterSurfaceMesh(mesh) || isMirrorSurfaceMesh(mesh);
 }
 
 /** Bind-pose bounds cannot certify where GPU-deformed vertices will be. */

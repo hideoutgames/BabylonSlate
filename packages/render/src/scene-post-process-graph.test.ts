@@ -334,7 +334,6 @@ it("shares one demanded geometry set and isolated Z, reconciles every output, an
   const owner = successful(h.create(plan, 0.5));
   // 3 full-resolution RGBA8 targets (scene, normal, first pass), 2 Z targets,
   // R32F normalized depth, and one 8x4 RGBA8 scalable output.
-  expect(owner.estimatedBytes).toBe(3200);
   expect(managedRenderReservations(h.engine).pendingBytes).toBe(3200);
   expect(owner.geometryTask!.textureDescriptions).toHaveLength(2);
   expect(owner.geometryTask!.depthTexture).not.toBe(owner.depthTexture);

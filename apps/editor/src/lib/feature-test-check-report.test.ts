@@ -317,7 +317,7 @@ describe("formatFeatureTestCheckReport", () => {
         editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
           profile: {
-            instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0, unpooled: { deforming: 64, blended: 9, drawHooks: 0 } },
+            instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0 },
             endChanges: ["presentation.framesInFlight=off"],
             holdRate: { heldPerSecond: 2.36, share: 0.234 },
           },
@@ -358,7 +358,7 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines[0]).toMatch(/^Haptic Feature Test Check \(Profile\)/);
     expect(lines[1]).toBe("Result: 1/1 scenes passed · NOT RESTORED · took 270.0 s");
     expect(lines).toContain("  Settings: shadows high 2048 · shadows.screen off · resolution.scale 1 · post.enabled true");
-    expect(lines).toContain("  Instance pool: 18 groups · 410 pooled · 2 retained empty · unpooled 73 (deforming 64, blended 9)");
+    expect(lines).toContain("  Instance pool: 18 groups · 410 pooled · 2 retained empty");
     expect(lines).toContain("  NOT RESTORED at the end: presentation.framesInFlight=off");
     expect(lines).toContain("  Warm-up drift: first window 90.0 ms, steady 84.0 ms (-7%) over 2 windows (mean frame)");
     expect(lines).toContain("  Hold rate: the warm-up held 2.4 frames/s, 23% of attempts; each step waits for a 2 s window holding at most 38% (+15 points)");

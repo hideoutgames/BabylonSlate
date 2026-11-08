@@ -1,6 +1,7 @@
-import type {
-  RuntimeIdentityCursor, RuntimeIdentityRow, RuntimeInspectorPayload, RuntimeInspectorResult,
-  RuntimeObjectIdentity,
+import {
+  runtimeIdentityKey,
+  type RuntimeIdentityCursor, type RuntimeIdentityRow, type RuntimeInspectorPayload, type RuntimeInspectorResult,
+  type RuntimeObjectIdentity,
 } from "@haptic/bridge";
 import type { RuntimeInspectionAction, RuntimeInspectionWriteOptions } from "./runtime-inspector-client";
 
@@ -22,9 +23,6 @@ const emptyState = (): SimulationInspectionState => ({
   identityError: null, selectionError: null, tickIndex: 0, identitiesLimited: false, moreIdentities: false,
 });
 const MAX_IDENTITIES = 4096;
-export const runtimeIdentityKey = (identity: RuntimeObjectIdentity): string => JSON.stringify([
-  identity.sceneInstanceId, identity.actorGuid, identity.actorToken, identity.componentGuid ?? null, identity.componentToken ?? null,
-]);
 
 /** Selected, bounded data only. No requests or timers survive the last visible consumer. */
 export class SimulationInspectionStore {

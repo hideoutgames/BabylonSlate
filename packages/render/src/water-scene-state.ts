@@ -14,6 +14,7 @@ import { Scene } from "@babylonjs/core/scene";
 import type { WaterDefinition } from "@haptic/core";
 import { sceneHasWaterRemovals, sceneWaterRemovals, waterRemovalWorldRadius } from "./water-removal-mesh";
 import { waterHazeConstants } from "./water-shader-defines";
+import { smoothstep } from "./water-blend-ownership";
 
 /**
  * Per-channel absorption of `water` for `transmittanceSource` (`slateWaterAbsorb`) into `out` (r, g, b, and Opacity's
@@ -255,7 +256,3 @@ export function sceneWaterBindingData(scene: Scene): WaterBindingData {
   return data;
 }
 
-export const smoothstep = (edge0: number, edge1: number, x: number) => {
-  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
-};

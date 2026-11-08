@@ -26,6 +26,7 @@ import { drawOutsideSceneView } from "./render-target-capture";
 import { withDrawPass } from "./draw-passes";
 import { isRenderTargetCaptureCandidate } from "./render-target-capture-state";
 import { isMirrorSurfaceMesh } from "./mirror-surface-state";
+import { isWaterSurfaceMesh } from "./water-mesh-surface";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { admittedSceneMeshes } from "./scene-stream-admission";
 import { isSkyboxMesh } from "./skybox";
@@ -334,7 +335,7 @@ export class ReflectionProbes {
   private eligible(mesh: AbstractMesh): boolean {
     if (mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.getTotalVertices() === 0) return false;
     if (!isRenderTargetCaptureCandidate(mesh)) return false;
-    if ((mesh.metadata as { slateWater?: unknown } | null)?.slateWater === true) return false;
+    if (isWaterSurfaceMesh(mesh)) return false;
     // A Mirror shows a reflection drawn for the current view; a probe would bake it in from the wrong place.
     if (isMirrorSurfaceMesh(mesh)) return false;
     return this.isStatic(mesh);

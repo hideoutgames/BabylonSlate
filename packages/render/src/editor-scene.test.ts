@@ -1861,7 +1861,6 @@ describe("editor grid", () => {
     const closeGrid = createEditorGrid(scene, {
       mode: "2d",
       camera: twoD.camera,
-      spacing: 1,
     });
     closeGrid.sync();
     const closeCoverage = gridCoverageWorld("2d", {
@@ -1885,7 +1884,6 @@ describe("editor grid", () => {
     const farGrid = createEditorGrid(scene, {
       mode: "3d",
       camera: threeD.camera,
-      spacing: 1,
     });
     farGrid.sync();
     const farUniforms = (farGrid.mesh.material as ShaderMaterial).serialize();
@@ -1916,7 +1914,6 @@ describe("editor grid", () => {
     const grid = createEditorGrid(scene, {
       mode: "3d",
       camera: camera.camera,
-      spacing: 1,
     });
     grid.sync();
     camera.camera.getViewMatrix();
@@ -1929,7 +1926,7 @@ describe("editor grid", () => {
   it("keeps following the camera across repeated syncs and restores a plane that was moved", () => {
     const { scene } = createHandle();
     const camera = createEditorCamera(scene, { mode: "3d" });
-    const grid = createEditorGrid(scene, { mode: "3d", camera: camera.camera, spacing: 1 });
+    const grid = createEditorGrid(scene, { mode: "3d", camera: camera.camera });
     const material = grid.mesh.material as ShaderMaterial;
     grid.sync();
     const placed = grid.mesh.position.clone();

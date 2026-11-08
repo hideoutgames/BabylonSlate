@@ -95,12 +95,7 @@ vec3 slateCelSurfaceLight(vec3 color, float peak) {
     );
 }
 
-export function bindCelSettings(
-  effect: Effect,
-  scene: Scene,
-  unlit = false,
-  environmentInfluence = 1,
-): void {
+export function bindCelSettings(effect: Effect, scene: Scene): void {
   // Runs for every CEL draw: reuse the precomputed uniform names.
   const { cel, environmentLighting } = sceneRenderingSettings(scene);
   effect.setFloat4(
@@ -125,13 +120,13 @@ export function bindCelSettings(
       : cel.lightMixing === "additive"
         ? 1
         : 2,
-    unlit || !scene.lightsEnabled ? 1 : 0,
+    scene.lightsEnabled ? 0 : 1,
     0,
   );
   const environment = scene.environmentTexture;
   const polynomial = environment?.sphericalPolynomial;
-  const strength = !unlit && scene.lightsEnabled && environmentLighting.enabled && polynomial
-    ? scene.iblIntensity * environmentLighting.celStrength * environmentInfluence
+  const strength = scene.lightsEnabled && environmentLighting.enabled && polynomial
+    ? scene.iblIntensity * environmentLighting.celStrength
     : 0;
   effect.setFloat4("slateCelEnvironment", strength, 0, 0, 0);
   const matrix = environment?.getReflectionTextureMatrix().m;

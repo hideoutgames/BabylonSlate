@@ -288,7 +288,7 @@ describe("shared shadow lifecycle", () => {
     camera.position.x = 1000;
     endFrame(scene);
     controller.sync();
-    expect(controller.status(spot)).toBe("outside-relevant-area");
+    expect(controller.diagnostics([spot])[0]!.status).toBe("outside-relevant-area");
     expect(controller.boundGenerator(spot)).not.toBeNull();
     // Without the sun the atlas is High's 8192, where the standby map's tile is not: map and atlas go now.
     controller.register(sun, false);
@@ -299,7 +299,7 @@ describe("shared shadow lifecycle", () => {
     camera.position.x = 0;
     endFrame(scene);
     controller.sync();
-    expect(controller.status(spot)).toBe("active");
+    expect(controller.diagnostics([spot])[0]!.status).toBe("active");
     expect(shadowAtlasTexture(scene).getRenderSize()).toBe(8192);
   });
   it("excludes collider display segments without excluding authored meshes below the collider", () => {
@@ -1032,7 +1032,7 @@ describe("shared shadow lifecycle", () => {
     const dirty = vi.spyOn(receiver, "_markSubMeshesAsLightDirty");
     scene.activeCamera!.position.x = 1000;
     controller.sync();
-    expect(controller.status(first)).toBe("outside-relevant-area");
+    expect(controller.diagnostics([first])[0]!.status).toBe("outside-relevant-area");
     expect(controller.generator(first)).toBeNull();
     // Receivers keep the attached map, and so their defines, at neutral darkness.
     expect(first.getShadowGenerator()).toBe(generator);
@@ -1091,7 +1091,7 @@ describe("shared shadow lifecycle", () => {
     syncForwardLightPolicy(scene, 2, selectHapticLights);
     controller.sync();
     expect(controller.generator(shadowed)).toBe(generator);
-    expect(controller.status(shadowed)).toBe("active");
+    expect(controller.diagnostics([shadowed])[0]!.status).toBe("active");
     expect(generator.getDarkness()).toBe(1);
     prepareShadowLayers(generator);
     expect(generator.getDarkness()).toBe(0);
@@ -1181,7 +1181,7 @@ describe("shared shadow lifecycle", () => {
     syncForwardLightPolicy(scene, 3, selectHapticLights);
     controller.sync();
     expect(isForwardLightExcluded(dropped)).toBe(true);
-    expect(controller.status(rejected)).toBe("outside-relevant-area");
+    expect(controller.diagnostics([rejected])[0]!.status).toBe("outside-relevant-area");
     expect(near.isEnabled()).toBe(true);
     // The new winner takes the farthest retained map and the nearer one waits.
     expect(controller.generator(winner)).toBe(droppedMap);
@@ -1215,7 +1215,7 @@ describe("shared shadow lifecycle", () => {
     // The first placement found no third quadrant; the retry, with the standby tiles freed, did.
     expect(placement.mock.results.filter(({ value }) => value === null)).toHaveLength(1);
     placement.mockRestore();
-    expect(controller.status(sun)).toBe("active");
+    expect(controller.diagnostics([sun])[0]!.status).toBe("active");
     expect(tileSizes(controller.generator(sun))).toEqual([1024, 1024, 1024]);
     expect(controller.diagnostics([sun])[0]!.reason).toBeNull();
     expect(point.getShadowGenerator()).toBeNull();
@@ -1392,7 +1392,7 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     controller.sync();
     expect(controller.generator(light)).toBeNull();
-    expect(controller.status(light)).toBe("allocation-failed");
+    expect(controller.diagnostics([light])[0]!.status).toBe("allocation-failed");
     expect(allocation).toHaveBeenCalledTimes(4);
     expect(controller.generator(fallback)).not.toBeNull();
     engine.onContextRestoredObservable.notifyObservers(engine);
@@ -1615,7 +1615,7 @@ describe("shared shadow lifecycle", () => {
         "Shadow allocation and resource cleanup failed",
       );
       expect(allocation).toHaveBeenCalledTimes(1);
-      expect(controller.status(light)).toBe("allocation-failed");
+      expect(controller.diagnostics([light])[0]!.status).toBe("allocation-failed");
     } finally {
       restoreFailedDispose?.();
     }
