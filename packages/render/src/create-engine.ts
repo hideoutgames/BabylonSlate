@@ -76,6 +76,7 @@ import type { Material } from "@babylonjs/core/Materials/material";
 import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import { parseEasingCurve, qualitySettingsFingerprint, qualityValuesKey, resolveRenderingQuality } from "@haptic/core";
 import { captureView, ViewBlend } from "./view-blend";
+import { CameraShakeView } from "./camera-shake-view";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
@@ -1379,6 +1380,15 @@ function initializeEngine(
     rebuildPostProcessStack();
   };
 
+  /**
+   * Play Camera Shake on the world view: the camera the frame graph draws through (blends included), never the
+   * free camera, which stays steady for inspection.
+   */
+  const worldShake = options.playMode ? new CameraShakeView(scene, () => {
+    const camera = scene.frameGraph?.findMainCamera() ?? scene.activeCamera;
+    return camera && camera.name !== PLAY_FREE_CAM_NAME ? camera : null;
+  }) : null;
+
   /** A running Possess Camera With Blend and the time of the last frame it advanced on. */
   let viewBlend: { blend: ViewBlend; lastFrame: number | null } | null = null;
   /** Advances the view blend by the time since the last rendered frame; at its end the game camera takes the view. */
@@ -2566,6 +2576,7 @@ function initializeEngine(
       if (handedOverTextures) endClaimedTextureHandover = null;
       else endTextureHandover();
       resetJoysticks();
+      worldShake?.dispose();
       runtimeTransformTools?.dispose();
       runtimeTransformTools = null;
       disposed = true;
@@ -2976,6 +2987,11 @@ function initializeEngine(
       if (command.type === "sceneLayerLayout") {
         overlayLayouts.apply(command);
         scheduler.invalidate("snapshot");
+      }
+      if (command.type === "setCameraShake") {
+        if (command.sceneLayerId === null) worldShake?.set(command.offset);
+        else sceneLayerCompositor?.setShake(command.sceneLayerId, command.offset);
+        scheduler.invalidate("camera");
       }
       if (command.type === "sceneLayerCamera") {
         sceneLayerCompositor?.setCamera(command.layerId, command.camera);

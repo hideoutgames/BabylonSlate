@@ -1,4 +1,5 @@
 import { activeRenderFrameCapture } from "./render-frame-report";
+import { CameraShakeView, type CameraShakeViewOffset } from "./camera-shake-view";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { overlayClipAllowsPoint } from "./overlay-layout-render";
 import { pickBufferSize } from "./pick-coords";
@@ -100,6 +101,8 @@ type LayerRecord = SceneLayerView & {
   blitReady: boolean;
   fallback: { scene: Scene; release(): void } | null;
   attachedPostProcess: ReturnType<NonNullable<SceneLayerCompositorOptions["attachLayerPostProcess"]>>;
+  /** Play Camera Shake On Scene Layer: created with the layer's first shake. */
+  shake: CameraShakeView | null;
 };
 
 /**
@@ -165,6 +168,7 @@ export class SceneLayerCompositor {
       blitPlane: null,
       blitScene: null,
       attachedPostProcess: null,
+      shake: null,
       parameters: new PostProcessParameterState(),
       retirements: new PostProcessRetirement(),
       presented: false,
@@ -198,6 +202,8 @@ export class SceneLayerCompositor {
     }
     this.byId.delete(layerId);
     this.sortedCache = null;
+    layer.shake?.dispose();
+    layer.shake = null;
     this.releaseFallback(layer);
     this.releasePostProcess(layer);
     // Bounded cleanup reports stay separate from actual release: the Scene is
@@ -227,6 +233,14 @@ export class SceneLayerCompositor {
     if (!layer) return;
     layer.postProcessStack = stack.map((entry) => ({ ...entry }));
     this.rebuildPostProcess(layer);
+  }
+
+  /** Shake a layer's view (`setCameraShake`); picks keep the unshaken camera. */
+  setShake(layerId: string, offset: CameraShakeViewOffset | null): void {
+    const layer = this.byId.get(layerId);
+    if (!layer || (!offset && !layer.shake)) return;
+    layer.shake ??= new CameraShakeView(layer.scene, () => layer.camera);
+    layer.shake.set(offset);
   }
 
   /** Move, turn or zoom a layer's camera (`sceneLayerCamera`); the next pick and draw use it. */

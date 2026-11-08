@@ -152,9 +152,10 @@ export class CameraShakes implements RuntimeSubsystem {
     return worldCameraShakeScale(Math.hypot(view.x - epicenter.x, view.y - epicenter.y, view.z - epicenter.z), inner, outer, falloff);
   }
 
-  /** A new main Scene ends every shake; the renderer starts the Scene's view unshaken. */
+  /** A new main Scene ends every shake and leaves the view unshaken; its Scene Layers leave with the old Scene. */
   resetForSceneLoad(): void {
     this.shakes.clear();
+    if (this.sent.has(null)) this.host.emit({ type: "setCameraShake", sceneLayerId: null, offset: null });
     this.sent.clear();
   }
 

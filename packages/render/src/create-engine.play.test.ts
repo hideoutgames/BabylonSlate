@@ -4472,6 +4472,37 @@ describe("Play createEngine view", () => {
     }
   });
 
+  it("shakes the camera in view while the scene draws and restores it after", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    const frame = runRenderLoop.mock.calls[0]?.[0];
+    handle.applyCommand({ type: "assignMesh", slotId: 1, meshKind: "camera", meshAssetGuid: null, camera: { projectionMode: "perspective" } });
+    const buf = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(buf, { frameId: 1, tickIndex: 1, actorCount: 1, scriptMs: 0, physicsMs: 0 });
+    writeActorSlot(buf, 0, { slotId: 1, position: { x: 0, y: 3, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 }, flags: 1 });
+    handle.pushSnapshot(buf);
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
+    frame?.();
+    const scene = handle.scene;
+    const camera = scene.activeCamera!;
+    expect(camera.name).toBe("authoredCamera:1");
+    const rest = camera.position.y;
+    // The draw's before- and after-render observers bracket the shake.
+    const draw = () => {
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      const during = camera.position.y;
+      scene.onAfterRenderObservable.notifyObservers(scene);
+      return during;
+    };
+    handle.applyCommand({ type: "setCameraShake", sceneLayerId: null, offset: { x: 0, y: 0.5, z: 0, pitch: 0, yaw: 0, roll: 0, fov: 0 } });
+    expect(draw()).toBeCloseTo(rest + 0.5, 6);
+    expect(camera.position.y).toBe(rest);
+    handle.applyCommand({ type: "setCameraShake", sceneLayerId: null, offset: null });
+    expect(draw()).toBe(rest);
+  });
+
   it("keeps the post-process stack on the Layer Camera after the possessed camera despawns", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
