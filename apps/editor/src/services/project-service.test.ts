@@ -569,7 +569,7 @@ describe("project round-trip", () => {
     await service.loadCurrentProject();
     await service.closeProject();
 
-    await service.renameListedProjectDisplayName(handle, "Pretty Name");
+    await service.updateListedProject(handle, { name: "Pretty Name" });
     const reopened = await service.openListedProject(handle);
     expect(reopened.document.metadata.name).toBe("Pretty Name");
     expect(storage.getCurrentFolder()?.name).toBe("RenameMe.hproject");
@@ -613,7 +613,7 @@ describe("project round-trip", () => {
     expect(storage.getCurrentFolder()?.name).toBe("Original");
     expect(await storage.readBinary("assets/keep.bin")).toEqual(new Uint8Array([3, 1, 4]));
     await service.closeProject();
-    await service.renameListedProjectDisplayName(handle, "Renamed Again");
+    await service.updateListedProject(handle, { name: "Renamed Again" });
     expect((await service.openListedProject(handle)).document.metadata.appearance)
       .toEqual({ icon: "mountain", color: "coral" });
   });
@@ -640,11 +640,10 @@ describe("project round-trip", () => {
     expect(await storage.readBinary(asset.path)).toEqual(asset.data);
   });
 
-  it("keeps legacy template metadata complete when a badge is selected", async () => {
+  it("refuses a template whose manifest has no metadata, even when a badge is selected", async () => {
     const legacy = createEmptyProject("Legacy");
-    const storage = new MemoryStorageAdapter("documents");
-    const service = new ProjectService(storage);
-    const created = await service.createFromTemplate({
+    const service = new ProjectService(new MemoryStorageAdapter("documents"));
+    await expect(service.createFromTemplate({
       name: "New Project",
       appearance: { icon: "box", color: "mint" },
       templateFiles: [{
@@ -654,10 +653,22 @@ describe("project round-trip", () => {
           settings: legacy.settings, scenes: [], graphs: [],
         })),
       }],
-    });
-    expect(created.document.metadata.name).toBe("New Project");
-    expect(created.document.metadata.createdAt).toBeTruthy();
-    expect(created.document.metadata.appearance).toEqual({ icon: "box", color: "mint" });
+    })).rejects.toThrow("Invalid project manifest: project.json is missing metadata, settings, scenes or graphs.");
+  });
+
+  it("refuses to edit the identity of a listed project whose manifest has no metadata", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const handle = await storage.openDocumentsProject("Legacy");
+    const manifest = JSON.stringify({ name: "Legacy", guid: "old", kind: "project", version: 1 });
+    await storage.writeText(PROJECT_FILE, manifest);
+    await storage.releaseFolder();
+    const service = new ProjectService(storage);
+
+    await expect(service.updateListedProject(handle, { name: "Renamed" }))
+      .rejects.toThrow("Invalid project manifest: project.json is missing metadata, settings, scenes or graphs.");
+    expect(storage.getCurrentFolder()).toBeNull();
+    await storage.openKnownFolder(handle);
+    expect(await storage.readText(PROJECT_FILE)).toBe(manifest);
   });
 
   it("removes the registered folder when project scaffolding fails", async () => {

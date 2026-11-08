@@ -66,7 +66,6 @@ export function attachInputCapture(
     /** When true, pointer and keyboard stay off the game ring (free cam). */
     skipPointerAndKeyboard?: () => boolean;
     syntheticGamepad?: () => { index: number; axes: number[]; buttons: number[] } | undefined;
-    syntheticTouchAxes?: () => Record<string, number> | undefined;
     /**
      * True while engine UI owns the pointer: a SceneLayer joystick, 2D
      * control or scroll drag. Asked during each pointer event, so attach
@@ -419,14 +418,6 @@ export function attachInputCapture(
         }
       }
       sampledPads = present;
-      const touchAxes = options.syntheticTouchAxes?.();
-      if (touchAxes) {
-        for (const [controlId, value] of Object.entries(touchAxes)) {
-          if (typeof value === "number" && Number.isFinite(value)) {
-            setTouchAxis(controlId, value);
-          }
-        }
-      }
     },
     setSuppressed: (value) => {
       if (disposed) return;

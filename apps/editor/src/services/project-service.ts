@@ -1,5 +1,5 @@
 import { isProjectOpenElsewhere, SourceRevisionChangedError } from "@haptic/core";
-import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
+import { newGuid, normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, isAppOwnedFolder, pickImportFiles } from "@haptic/vfs";
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
@@ -118,7 +118,6 @@ import {
   assetName,
   fallbackDocumentType,
   headerMetaForSave,
-  newGuid,
   parentDir,
   suppliedChunkIds,
   withSavedTextureEncodeState,
@@ -306,7 +305,7 @@ export class ProjectService {
     return admitOwnerWrites(this, this.writeAdmission, [
       "retryTextureEncoding", "retryAllFailedTextureEncoding",
       "prepareAreaEmission", "deleteListedProject", "openProject", "createEmptyProject",
-      "createFromTemplate", "openListedProject", "closeProject", "renameListedProjectDisplayName",
+      "createFromTemplate", "openListedProject", "closeProject",
       "updateListedProject", "reconnect", "loadCurrentProject", "syncPlugins", "applyPluginOverrides",
       "createProjectPlugin", "deleteProjectPlugin", "importPlugin", "remountRegistry",
       "replaceClassReferencesBeforeDelete", "clearDeletedAssetReferences", "renameAsset", "saveDocument",
@@ -706,15 +705,14 @@ export class ProjectService {
           ) as {
             metadata?: Partial<ProjectMetadata>;
           };
-          manifest.metadata = {
-            ...createEmptyProject(projectName).metadata,
-            ...manifest.metadata,
-            appearance,
-          };
-          await this.storage.writeText(
-            PROJECT_FILE,
-            JSON.stringify(manifest, null, 2),
-          );
+          // A manifest without metadata stays as it is, so the load below refuses it.
+          if (manifest.metadata) {
+            manifest.metadata.appearance = appearance;
+            await this.storage.writeText(
+              PROJECT_FILE,
+              JSON.stringify(manifest, null, 2),
+            );
+          }
         }
         this.projectGuid = guid;
         await this.projectPlugins.installEnginePluginDefaultsIfNeeded();
@@ -747,14 +745,6 @@ export class ProjectService {
     resetAreaEmissionPreparations();
   }
 
-  /** Compatibility wrapper for display-name-only callers. */
-  async renameListedProjectDisplayName(
-    handle: ProjectFolderHandle,
-    displayName: string,
-  ): Promise<void> {
-    return this.updateListedProject(handle, { name: displayName });
-  }
-
   /** Persist browser identity without changing the project folder or its assets. */
   async updateListedProject(
     handle: ProjectFolderHandle,
@@ -767,14 +757,10 @@ export class ProjectService {
       if (!(await this.storage.exists(PROJECT_FILE))) {
         throw new Error("The project could not be found.");
       }
-      const raw = JSON.parse(await this.storage.readText(PROJECT_FILE)) as {
-        name?: string;
-        metadata?: Partial<ProjectMetadata>;
-      };
-      raw.metadata ??= createEmptyProject(name).metadata;
+      const raw = JSON.parse(await this.storage.readText(PROJECT_FILE)) as Partial<ProjectDocument>;
+      if (!isCompleteProjectManifest(raw)) throw new Error(INCOMPLETE_PROJECT_MANIFEST);
       raw.metadata.name = name;
       raw.metadata.updatedAt = new Date().toISOString();
-      if (typeof raw.name === "string") raw.name = name;
       if (details.appearance !== undefined) {
         raw.metadata.appearance = normalizeProjectAppearance(details.appearance);
       }
@@ -840,7 +826,7 @@ export class ProjectService {
     const raw = JSON.parse(
       await this.storage.readText(PROJECT_FILE),
     ) as ProjectDocument & { guid?: string; kind?: string; version?: number };
-    const document = normalizeProjectDocument(raw, folder.name);
+    const document = normalizeProjectDocument(raw);
     // Every project is created with its guid, the namespace of its player saves.
     if (typeof raw.guid !== "string" || !raw.guid) {
       throw new Error("Invalid project manifest: project.json has no project guid.");
@@ -1997,26 +1983,24 @@ export class ProjectService {
   }
 }
 
-function normalizeProjectDocument(
-  raw: ProjectDocument & { name?: string },
-  fallbackName: string,
-): ProjectDocument {
-  if (raw.metadata && raw.settings && raw.scenes && raw.graphs) {
-    return {
-      ...raw,
-      metadata: {
-        ...raw.metadata,
-        appearance: normalizeProjectAppearance(raw.metadata.appearance),
-      },
-      settings: normalizeProjectSettings(raw.settings),
-    };
-  }
-  const document = createEmptyProject(
-    typeof raw.name === "string" ? raw.name : fallbackName,
-  );
-  const appearance = normalizeProjectAppearance(raw.metadata?.appearance);
-  if (appearance) document.metadata.appearance = appearance;
-  return document;
+const INCOMPLETE_PROJECT_MANIFEST =
+  "Invalid project manifest: project.json is missing metadata, settings, scenes or graphs.";
+
+function isCompleteProjectManifest(raw: Partial<ProjectDocument>): raw is ProjectDocument {
+  return Boolean(raw.metadata && raw.settings && raw.scenes && raw.graphs);
+}
+
+/** The stored manifest with its appearance and settings normalised; one missing a section is refused. */
+function normalizeProjectDocument(raw: Partial<ProjectDocument>): ProjectDocument {
+  if (!isCompleteProjectManifest(raw)) throw new Error(INCOMPLETE_PROJECT_MANIFEST);
+  return {
+    ...raw,
+    metadata: {
+      ...raw.metadata,
+      appearance: normalizeProjectAppearance(raw.metadata.appearance),
+    },
+    settings: normalizeProjectSettings(raw.settings),
+  };
 }
 
 function uniquePaths(paths: string[]): string[] {

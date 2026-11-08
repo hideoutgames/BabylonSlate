@@ -15,7 +15,7 @@ import {
   type ProjectTemplateCatalogEntry,
 } from "@haptic/assets";
 import { resolveJournalLines, type EditSession } from "@haptic/edit";
-import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
+import { waitForSceneLoadingPaint } from "@haptic/render/scene-load-readiness";
 import type { JournalBuffer } from "../lib/journal-buffer";
 import { ensureEnginePluginStorage } from "../lib/engine-plugins";
 import { ensureEngineExtensionStorage } from "../lib/engine-extensions";

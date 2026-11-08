@@ -24,14 +24,12 @@ import {
   BT_SERVICE_CATALOG,
   BT_TASK_CATALOG,
   canReparentNode,
-  createDefaultBehaviourTree,
   defaultPropertiesForClassId,
   deleteSubtree,
   duplicateSubtrees,
   hydrateBehaviourTreeForEditor,
   kindForCatalogClassId,
   moveAttachment,
-  parseBehaviourTreeDocument,
   parseBlackboardDocument,
   pinsForBtKind,
   propertyFieldsForClassId,
@@ -73,7 +71,7 @@ import { defaultJsValue } from "@haptic/scripting";
 import { Button } from "@haptic/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
 import { ScrollArea } from "@haptic/ui/components/scroll-area";
-import { commitBehaviourTreeGraphChange } from "../lib/behaviour-tree-graph-commit";
+import { asTree, commitBehaviourTreeGraphChange } from "../lib/behaviour-tree-graph-commit";
 import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
 import { pinDefaultPropertyRows } from "../lib/graph-inspector";
 import { documentId } from "@haptic/core";
@@ -102,10 +100,6 @@ const BT_HIDDEN_TOOLBAR_ACTIONS: Array<"copy" | "paste" | "breakLinks" | "format
   "breakLinks",
   "format",
 ];
-
-function asTree(payload: Record<string, unknown>): BehaviourTreeDocument {
-  return parseBehaviourTreeDocument(payload) ?? createDefaultBehaviourTree();
-}
 
 function catalogPalette(entries: readonly BtCatalogEntry[]): PaletteNode[] {
   return entries.map((entry) => ({

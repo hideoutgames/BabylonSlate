@@ -5,6 +5,7 @@ import {
   collectStaticAudioGeometry,
   dryAudioReverbFallbackBytes,
   geometryHashForAudioBake,
+  isStaticAudioGeometryActor,
   type AudioReverbGeometry,
 } from "@haptic/assets";
 import type { SerializedActor, SerializedScene } from "@haptic/core";
@@ -82,14 +83,6 @@ function yieldBakeSlice(): Promise<void> {
   });
 }
 
-function isDynamicRigidBody(actor: SerializedActor): boolean {
-  return actor.components.some(
-    (component) =>
-      component.classId === "RigidBodyComponent" &&
-      component.properties.motionType === "dynamic",
-  );
-}
-
 /** Cheap key so background debounce is not reset by unrelated document bumps. */
 export function staticAudioGeometryFingerprint(
   scene: Pick<AudioReverbBakeScene, "actors">,
@@ -98,9 +91,8 @@ export function staticAudioGeometryFingerprint(
   const byId = new Map(actors.map((actor) => [actor.id, actor]));
   const parts: string[] = [];
   for (const actor of actors) {
-    if (isDynamicRigidBody(actor)) continue;
+    if (!isStaticAudioGeometryActor(actor)) continue;
     const meshes = actor.components.filter((component) => component.classId === "MeshComponent");
-    if (meshes.length === 0) continue;
     parts.push(actor.id, JSON.stringify(actor.transform ?? null));
     // The bake places meshes through their actor attachments: every ancestor's
     // pose, and a missing or cyclic link, moves them.

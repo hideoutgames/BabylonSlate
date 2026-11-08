@@ -4,24 +4,6 @@ import type { ProjectSceneWriter } from "../services/project-write-admission";
 
 const flushes = new Set<(writer?: ProjectSceneWriter) => Promise<void>>();
 
-export type NavBakeSaveResult = {
-  ok: boolean;
-  path: string | null;
-  byteLength: number;
-  error: string | null;
-};
-
-let lastBake: NavBakeSaveResult | null = null;
-
-/** Playwright / Save diagnostics: last `startBake` outcome (success or error). */
-export function recordNavBakeSaveResult(result: NavBakeSaveResult): void {
-  lastBake = result;
-}
-
-export function lastNavBakeSaveResult(): NavBakeSaveResult | null {
-  return lastBake;
-}
-
 /** Register a mounted scene workspace bake flush. Returns unregister. */
 export function registerNavBakeSaveFlush(flush: (writer?: ProjectSceneWriter) => Promise<void>): () => void {
   flushes.add(flush);

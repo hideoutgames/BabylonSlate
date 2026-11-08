@@ -1,9 +1,16 @@
 import {
   applyNodePositions,
+  createDefaultBehaviourTree,
+  parseBehaviourTreeDocument,
   serializedToBehaviourTree,
   type BehaviourTreeDocument,
 } from "@haptic/behaviour-tree";
 import type { SerializedGraph } from "@haptic/core";
+
+/** The tree a Behaviour Tree document body holds, or a new default tree when it holds none. */
+export function asTree(payload: Record<string, unknown>): BehaviourTreeDocument {
+  return parseBehaviourTreeDocument(payload) ?? createDefaultBehaviourTree();
+}
 
 function attachNewBehaviourTreeNodes(
   next: BehaviourTreeDocument,

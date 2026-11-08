@@ -12,34 +12,8 @@ import {
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   resolveTypeVisual,
 } from "@haptic/editor-kit";
+import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
-
-function dispatchPointerEvent(
-  target: Element,
-  type: "pointerdown" | "pointermove" | "pointerup" | "pointercancel",
-  init: {
-    pointerId?: number;
-    pointerType?: "touch" | "mouse" | "pen";
-    clientX?: number;
-    clientY?: number;
-  } = {},
-): void {
-  const {
-    pointerId = 1,
-    pointerType = "touch",
-    clientX = 0,
-    clientY = 0,
-  } = init;
-  const event = new MouseEvent(type, {
-    bubbles: true,
-    cancelable: true,
-    clientX,
-    clientY,
-  });
-  Object.defineProperty(event, "pointerId", { value: pointerId });
-  Object.defineProperty(event, "pointerType", { value: pointerType });
-  target.dispatchEvent(event);
-}
 
 function asset(): IndexedAsset {
   return {

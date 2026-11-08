@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAIN_CLASS_FILE,
+  MAIN_SCENE_FILE,
   type SerializedComponent,
+  type SerializedGraph,
+  type SerializedScene,
   createActor,
   createDefaultScene,
   createMeshComponent,
@@ -21,6 +25,8 @@ import { EditSession, commandToJournalPayload, diffSceneCommands, replayJournalL
 import { instantiatePrefabComponents } from "./prefab-preview";
 import { MODEL_MATERIALS_PICKER_VALUE, patchInspectorComponentProperty } from "./mesh-material-properties";
 import { duplicateSceneActor, spawnPlacedActor } from "./place-actors";
+import { decodeAssetDocument } from "@haptic/assets";
+import { minimalProjectFiles } from "../../../../packages/assets/src/test-support/minimal-project";
 
 const identity = identitySerializedTransform();
 
@@ -47,12 +53,6 @@ describe("syncActorComponentsFromPrefab", () => {
     expect(synced.actors.map((actor) => actor.components.map((component) => component.sourceId))).toEqual([["survivor"], ["survivor"]]);
     const line = serializeJournalLine({ v: 1, docId: "scene", at: "2026-10-07", command: commandToJournalPayload(applied.command) });
     expect(replayJournalLines([line], new Map([["scene", before]])).documents.get("scene")).toStrictEqual(stamped);
-  });
-
-  it("does not migrate instance-only components onto a suppressed template", () => {
-    const extra = createMeshComponent("extra", "sphere");
-    const actor = createActor("actor", "Actor", { components: [extra], suppressedComponentSourceIds: ["removed"] });
-    expect(syncActorComponentsFromPrefab(actor, [createMeshComponent("removed")])).toStrictEqual([extra]);
   });
 
   it("keeps private material state through prefab changes, undo and reset", () => {
@@ -234,30 +234,34 @@ describe("syncActorComponentsFromPrefab", () => {
     expect(synced[1]?.parentId).toBeNull();
   });
 
-  it("migrates copy-once rows by classId order and treats differing keys as overrides", () => {
-    const prefab = [createMeshComponent("prefab-mesh", "sphere")];
-    const actor = createActor("hero", "Hero", {
-      components: [
-        {
-          id: "hero-MeshComponent-1",
-          classId: "MeshComponent",
-          properties: {
-            ...createMeshComponent("x", "box").properties,
-            meshKind: "box",
-          },
-          parentId: null,
-          transform: identity,
-        },
-      ],
-    });
-    const synced = syncActorComponentsFromPrefab(actor, prefab);
-    expect(synced[0]?.sourceId).toBe("prefab-mesh");
-    expect(synced[0]?.overrideKeys).toContain("meshKind");
-    expect(synced[0]?.properties.meshKind).toBe("box");
+  it("keeps an instance-added component when its Class gains a row of the same class", () => {
+    const extra = createMeshComponent("hero-extra", "box");
+    const actor = createActor("hero", "Hero", { components: [extra], suppressedComponentSourceIds: ["removed"] });
+    const synced = syncActorComponentsFromPrefab(actor, [
+      createMeshComponent("removed", "cone"),
+      createMeshComponent("prefab-mesh", "sphere"),
+    ]);
+    expect(synced.map((row) => [row.id, row.sourceId, row.properties.meshKind])).toEqual([
+      ["hero-MeshComponent-1", "prefab-mesh", "sphere"],
+      ["hero-extra", undefined, "box"],
+    ]);
+    expect(synced[1]).toStrictEqual(extra);
   });
 });
 
 describe("syncSceneActorsFromPrefabs", () => {
+  it("opens the minimal test project's Main instance with its one prefab mesh, unchanged", async () => {
+    const files = await minimalProjectFiles();
+    const scene = (await decodeAssetDocument(files.get(MAIN_SCENE_FILE)!)).payload as unknown as SerializedScene;
+    const graph = (await decodeAssetDocument(files.get(MAIN_CLASS_FILE)!)).payload as unknown as SerializedGraph;
+    const template = mergedPrefabComponentsForClass({ classId: "main", parentOf: () => null, graphs: { main: graph } })!;
+    const synced = syncSceneActorsFromPrefabs(scene, { main: template });
+    expect(synced).toBe(scene);
+    const meshes = synced.actors.find((actor) => actor.id === "actor-1")!.components
+      .filter((component) => component.classId === "MeshComponent");
+    expect(meshes.map((component) => [component.id, component.sourceId])).toEqual([["mesh-1", "prefab-mesh"]]);
+  });
+
   it("updates matching classId actors and leaves others alone", () => {
     const scene = createDefaultScene();
     scene.actors = [

@@ -7,10 +7,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
-import {
-  createDefaultBehaviourTree,
-  parseBehaviourTreeDocument,
-} from "@haptic/behaviour-tree";
+import { asTree } from "../lib/behaviour-tree-graph-commit";
 import { useDocumentActions } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 
@@ -31,10 +28,6 @@ export interface BehaviourTreeEditingContextValue {
 
 const BehaviourTreeEditingContext =
   createContext<BehaviourTreeEditingContextValue | null>(null);
-
-function asTree(payload: Record<string, unknown>) {
-  return parseBehaviourTreeDocument(payload) ?? createDefaultBehaviourTree();
-}
 
 export function BehaviourTreeEditingProvider({
   children,

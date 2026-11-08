@@ -3,6 +3,7 @@ import {
   NumberPromptDialog,
   ShortcutKeys,
   ariaKeyShortcuts,
+  useContextMenuGesture,
   type NestedMenuItem,
 } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
@@ -44,7 +45,6 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { GridSettingsFields, GridSizeDialog, type SnapValues } from "./grid-size-dialog";
 import { anchorBelow } from "../lib/menu-anchor";
-import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { IconActionButton } from "./icon-action-button";
 import { useKeybindings, useKeybindCommand } from "../context/keybind-context";
 import type { EditorCommandId } from "../lib/editor-keybinds";
@@ -110,7 +110,8 @@ export function ViewportToolbar({
     setGridAnchor(from ? anchorBelow(from) : null);
     setNumberPrompt("grid");
   };
-  const snapMenu = useLongPressMenu({
+  const snapMenu = useContextMenuGesture({
+    exclusive: true,
     suppressClickAfterHold: true,
     onMenu: () => openGridSettings("gizmo-snap-toggle"),
   });

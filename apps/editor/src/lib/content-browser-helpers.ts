@@ -16,12 +16,12 @@ import {
   walkAncestry,
   type TypeVisual,
 } from "@haptic/editor-kit";
-import { isLockedEngineClassId } from "@haptic/object-model";
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
   ENGINE_BASE_CLASSES,
   classIdFromClassAsset,
   classParentLookup,
+  isEngineClassId,
   newAssetFileName,
 } from "./class-asset-lookup";
 import { joinAssetFolderPath } from "./content-browser-tree";
@@ -516,10 +516,6 @@ export function contentBrowserContextActions(options: {
   }
   actions.push("delete");
   return actions;
-}
-
-function isEngineClassId(classId: string): boolean {
-  return isLockedEngineClassId(classId) || engineParentOf(classId) !== undefined;
 }
 
 /**

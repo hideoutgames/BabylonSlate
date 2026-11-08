@@ -90,7 +90,7 @@ import {
 } from "../services/diagnostic-navigation";
 import { requestDocumentFocus } from "../lib/document-focus-request";
 import { readStoredAssetDocument } from "@haptic/assets";
-import { attachLifecyclePause } from "../services/lifecycle-pause";
+import { attachLifecyclePause } from "@haptic/render/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
 import { setEditorQuiet } from "../lib/editor-quiet";
 import { subscribeEditorViewportFrameHold } from "../lib/editor-frame-hold";

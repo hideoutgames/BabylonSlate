@@ -11,7 +11,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { GpuBackend } from "@haptic/core";
 import { createProjectEngineController } from "../lib/project-engine";
 import { RenderingRetryError, retryProjectRendering, stopGameOnDeviceLoss } from "../lib/project-rendering-recovery";
-import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
+import { waitForSceneLoadingPaint } from "@haptic/render/scene-load-readiness";
 import {
   isUsableEngine,
   nextRegisteredSharedEngine,

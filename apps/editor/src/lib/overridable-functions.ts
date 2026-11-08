@@ -5,6 +5,7 @@ import type {
 } from "@haptic/core";
 import { engineParentOf, formatEventMemberName, formatEventTitle, walkAncestry } from "@haptic/editor-kit";
 import { TICKABLE_OBJECT_INTERFACE_GUID, TICKABLE_OBJECT_INTERFACE_NAME, engineScriptEventsFor } from "@haptic/object-model";
+import { nodeComponentId } from "./class-event-nodes";
 import {
   DEFAULT_FUNCTION_PINS,
   nativeEventStubs,
@@ -313,12 +314,6 @@ export function customEventsFromGraph(
     push(formatEventMemberName(raw), pins);
   }
   return rows;
-}
-
-function nodeComponentId(
-  node: NonNullable<SerializedGraph["nodes"]>[number],
-): string {
-  return typeof node.data.componentId === "string" ? node.data.componentId : "";
 }
 
 function graphHasEventBinding(

@@ -5,9 +5,11 @@ import {
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   useContextMenu,
+  useContextMenuGesture,
   type ContextMenuItem,
 } from "./use-context-menu";
 import { ContextMenuOverlay } from "./context-menu-overlay";
+import { useSuppressNativeContextMenu } from "./use-suppress-native-context-menu";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 
 function TestHost({
@@ -479,5 +481,98 @@ describe("useContextMenu", () => {
     const { getByTestId } = render(<CustomHost />);
     fireEvent.contextMenu(getByTestId("target"));
     expect(getByTestId("homepage-project-menu")).toBeTruthy();
+  });
+});
+
+describe("useContextMenuGesture", () => {
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  function NestedHost({ onTile }: { onTile: (clientX: number, clientY: number) => void }) {
+    const grid = useContextMenu({ items: [{ id: "a", label: "Action", onSelect: vi.fn() }] });
+    const tile = useContextMenuGesture({ exclusive: true, onMenu: onTile });
+    return (
+      <div data-testid="grid" {...grid.bind}>
+        <span data-testid="grid-state">{grid.menu?.open ? "open" : "closed"}</span>
+        <button type="button" data-testid="tile" {...tile}>
+          Tile
+        </button>
+      </div>
+    );
+  }
+
+  it("keeps an exclusive surface's contextmenu and hold from opening its ancestor's menu", async () => {
+    vi.useFakeTimers();
+    const onTile = vi.fn();
+    const { getByTestId } = render(<NestedHost onTile={onTile} />);
+    const notPrevented = fireEvent.contextMenu(getByTestId("tile"), { clientX: 3, clientY: 4 });
+    expect(notPrevented).toBe(false);
+    expect(onTile).toHaveBeenCalledExactlyOnceWith(3, 4);
+    dispatchPointerEvent(getByTestId("tile"), "pointerdown", ORIGIN);
+    await advancePastLongPress();
+    expect(onTile).toHaveBeenLastCalledWith(ORIGIN.clientX, ORIGIN.clientY);
+    expect(onTile).toHaveBeenCalledTimes(2);
+    expect(getByTestId("grid-state").textContent).toBe("closed");
+  });
+
+  function PortalHost({ onTile }: { onTile: () => void }) {
+    useSuppressNativeContextMenu();
+    const tile = useContextMenuGesture({ exclusive: true, onMenu: onTile });
+    return (
+      <div data-testid="tile" {...tile}>
+        {createPortal(
+          <div>
+            <span data-testid="portaled-text">Dialog</span>
+            <input data-testid="portaled-field" />
+          </div>,
+          document.body,
+        )}
+      </div>
+    );
+  }
+
+  it("keeps the app-wide native menu rule for a portaled descendant of an exclusive surface", () => {
+    const onTile = vi.fn();
+    const { getByTestId } = render(<PortalHost onTile={onTile} />);
+    expect(fireEvent.contextMenu(getByTestId("portaled-text"))).toBe(false);
+    expect(fireEvent.contextMenu(getByTestId("portaled-field"))).toBe(true);
+    expect(onTile).not.toHaveBeenCalled();
+  });
+
+  function SnapHost({ onMenu, onClick }: { onMenu: () => void; onClick: () => void }) {
+    const gesture = useContextMenuGesture({ suppressClickAfterHold: true, onMenu });
+    return (
+      <button type="button" data-testid="snap" onClick={onClick} {...gesture}>
+        Snap
+      </button>
+    );
+  }
+
+  it("consumes only the release click of the hold that asked for a menu", async () => {
+    vi.useFakeTimers();
+    const onMenu = vi.fn();
+    const onClick = vi.fn();
+    const { getByTestId } = render(<SnapHost onMenu={onMenu} onClick={onClick} />);
+    const snap = getByTestId("snap");
+    dispatchPointerEvent(snap, "pointerdown", ORIGIN);
+    await advancePastLongPress();
+    expect(onMenu).toHaveBeenCalledOnce();
+    dispatchPointerEvent(snap, "pointerup", ORIGIN);
+    fireEvent.click(snap, { detail: 1 });
+    expect(onClick).not.toHaveBeenCalled();
+    dispatchPointerEvent(snap, "pointerdown", ORIGIN);
+    dispatchPointerEvent(snap, "pointerup", ORIGIN);
+    fireEvent.click(snap, { detail: 1 });
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("lets keyboard activation through after a menu request", () => {
+    const onClick = vi.fn();
+    const { getByTestId } = render(<SnapHost onMenu={vi.fn()} onClick={onClick} />);
+    fireEvent.contextMenu(getByTestId("snap"));
+    fireEvent.click(getByTestId("snap"), { detail: 0 });
+    expect(onClick).toHaveBeenCalledOnce();
   });
 });

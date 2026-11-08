@@ -21,7 +21,7 @@ vi.mock("@haptic/vfs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@haptic/vfs")>()),
   createAppSettingsStore: () => ({ load: () => new Promise(() => {}) }),
 }));
-vi.mock("../services/lifecycle-pause", () => ({ attachLifecyclePause: () => () => {} }));
+vi.mock("@haptic/render/lifecycle-pause", () => ({ attachLifecyclePause: () => () => {} }));
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });

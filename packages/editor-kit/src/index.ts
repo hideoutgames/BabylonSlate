@@ -95,11 +95,15 @@ export {
 export { TOUCH_ROW_HEIGHT, isTouchUi, setTouchUi, useTouchUi } from "./touch-ui";
 export {
   useContextMenu,
+  useContextMenuGesture,
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   DRAG_ARM_MS,
+  type ContextMenuGestureBind,
   type ContextMenuItem,
   type ContextMenuState,
+  type UseContextMenuGestureOptions,
+  type UseContextMenuGestureResult,
   type UseContextMenuOptions,
   type UseContextMenuResult,
 } from "./use-context-menu";
