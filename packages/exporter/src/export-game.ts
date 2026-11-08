@@ -38,7 +38,7 @@ const JSON_TYPES = new Set<string>([
   ...PARTICLE_ASSET_TYPES,
   "Animation",
   "Skeleton",
-  "SceneLayer", "AudioMixer", "AudioChannel", "SoundAttenuation", "Water",
+  "SceneLayer", "AudioMixer", "AudioChannel", "SoundAttenuation", "CameraShake", "Water",
   "DataDefinition", "DataTree", "Structure", "Enum", "SaveGame", "FloatCurve", "VectorCurve", "ColorCurve",
   "GlobalParameterCollection",
 ]);

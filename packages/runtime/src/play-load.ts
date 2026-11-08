@@ -33,6 +33,7 @@ export function runtimeOptionsFromLoadControl(
   | "inputAssets"
   | "dataAssets"
   | "curveAssets"
+  | "cameraShakeAssets"
   | "timelineClipAssets"
   | "assetCatalog"
   | "physicsWorld"
@@ -108,6 +109,7 @@ export function runtimeOptionsFromLoadControl(
     renderSettings: msg.renderSettings,
     dataAssets: msg.dataAssets,
     ...(msg.curveAssets ? { curveAssets: msg.curveAssets } : {}),
+    ...(msg.cameraShakeAssets ? { cameraShakeAssets: msg.cameraShakeAssets } : {}),
     ...(msg.timelineClipAssets ? { timelineClipAssets: msg.timelineClipAssets } : {}),
     ...(msg.assetCatalog ? { assetCatalog: msg.assetCatalog } : {}),
     focusNavigation: msg.focusNavigation,

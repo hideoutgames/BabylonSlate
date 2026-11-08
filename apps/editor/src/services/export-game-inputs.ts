@@ -60,6 +60,7 @@ const JSON_TYPES = new Set<string>([
   "AudioMixer",
   "AudioChannel",
   "SoundAttenuation",
+  "CameraShake",
   // Basic emitters, Particle Graphs and Particle Systems.
   ...PARTICLE_ASSET_TYPES,
   "Water",

@@ -1,5 +1,5 @@
-import type { CurveAssetCatalogEntry, DataAssetCatalogEntry, GlobalParameterCatalog, TimelineClipAssetCatalogEntry } from "@haptic/core";
-import { CURVE_ASSET_TYPES, GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE, curveKindForAssetType, normalizeGlobalParameterCollection, isTimelineClipAssetType, normalizeCurveAssetPayload, timelineClipAssetCatalogEntry } from "@haptic/core";
+import type { CameraShakeCatalogEntry, CurveAssetCatalogEntry, DataAssetCatalogEntry, GlobalParameterCatalog, TimelineClipAssetCatalogEntry } from "@haptic/core";
+import { CAMERA_SHAKE_ASSET_TYPE, CURVE_ASSET_TYPES, GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE, normalizeCameraShakePayload, curveKindForAssetType, normalizeGlobalParameterCollection, isTimelineClipAssetType, normalizeCurveAssetPayload, timelineClipAssetCatalogEntry } from "@haptic/core";
 import { normalizeWaterDefinition, type WaterDefinition } from "@haptic/core";
 import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@haptic/core";
 import {
@@ -72,7 +72,7 @@ const JSON_CONTENT_TYPES = new Set([
   "Material", "MaterialInstance", "MaterialFunction", "AudioMixer", "AudioChannel",
   "SoundAttenuation", "Animation", "Audio",
   "DataDefinition", "DataTree", "Structure", "Enum", "FloatCurve", "VectorCurve", "ColorCurve",
-  "GlobalParameterCollection", "TimelineClip2D", "TimelineClip3D",
+  "GlobalParameterCollection", "TimelineClip2D", "TimelineClip3D", "CameraShake",
 ]);
 
 export type PackedAudioLibrary = {
@@ -87,6 +87,8 @@ export type PackedAudioLibrary = {
 export type PackedGameContent = {
   dataAssets: DataAssetCatalogEntry[];
   curveAssets: CurveAssetCatalogEntry[];
+  /** Camera Shake assets by guid; Play Camera Shake reads them. */
+  cameraShakeAssets: CameraShakeCatalogEntry[];
   /** Every Global Parameter Collection's parameters by guid. */
   globalParameterCatalog: GlobalParameterCatalog;
   timelineClipAssets: TimelineClipAssetCatalogEntry[];
@@ -178,6 +180,7 @@ function normalizeEntry(entry: GameAssetIndexEntry, parsed: unknown): unknown {
   if (type === GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE) return normalizeGlobalParameterCollection(parsed).parameters;
   const curveKind = curveKindForAssetType(type);
   if (curveKind) return normalizeCurveAssetPayload(curveKind, parsed);
+  if (type === CAMERA_SHAKE_ASSET_TYPE) return normalizeCameraShakePayload(parsed);
   // Keys, events and proxies only: the Editor Preview never ships.
   if (isTimelineClipAssetType(type)) return timelineClipAssetCatalogEntry(guid, type, name ?? guid, parsed);
   switch (type) {
@@ -244,6 +247,7 @@ function gameComplexCollisionModelGuids(game: GameSourceContent): Set<string> {
 export function packedContentFromGame(game: GameSourceContent): PackedGameContent {
   const dataAssets: DataAssetCatalogEntry[] = [];
   const curveAssets: CurveAssetCatalogEntry[] = [];
+  const cameraShakeAssets: CameraShakeCatalogEntry[] = [];
   const globalParameterCatalog: GlobalParameterCatalog = {};
   const timelineClipAssets: TimelineClipAssetCatalogEntry[] = [];
   const spritePayloads = new Map<string, SpritePayload>();
@@ -281,6 +285,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     if (entry.type === "DataDefinition" || entry.type === "DataTree" || entry.type === "Structure" || entry.type === "Enum") {
       dataAssets.push({ guid: entry.guid, type: entry.type, name, payload: value });
     } else if (entry.type === GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE) globalParameterCatalog[entry.guid] = value as GlobalParameterCatalog[string];
+    else if (entry.type === CAMERA_SHAKE_ASSET_TYPE) cameraShakeAssets.push({ guid: entry.guid, name, payload: value as CameraShakeCatalogEntry["payload"] });
     else if (curveKind) curveAssets.push({ guid: entry.guid, type: CURVE_ASSET_TYPES[curveKind], name, payload: value as CurveAssetCatalogEntry["payload"] });
     else if (isTimelineClipAssetType(entry.type)) timelineClipAssets.push(value as TimelineClipAssetCatalogEntry);
     else if (entry.type === "RenderTarget") renderTargets.set(entry.guid, value as RenderTargetPayload);
@@ -364,6 +369,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
   return {
     dataAssets,
     curveAssets,
+    cameraShakeAssets,
     globalParameterCatalog,
     timelineClipAssets,
     spritePayloads: sizedSprites,
@@ -496,7 +502,7 @@ export function packedSourceControls(game: GameSourceContent, content = packedCo
     type: "loadSceneContent", assetGuids: [...game.payloads.keys(), ...(game.decodedPayloads?.keys() ?? [])],
     sceneLayers: [...game.sceneLayers].map(([guid, layer]) => ({ guid, layer })),
     sceneNavmeshBytes: Object.fromEntries(game.navmeshBytes),
-    dataAssets: content.dataAssets, curveAssets: content.curveAssets, globalParameterCatalog: content.globalParameterCatalog, timelineClipAssets: content.timelineClipAssets, audioAssetGuids: game.manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
+    dataAssets: content.dataAssets, curveAssets: content.curveAssets, cameraShakeAssets: content.cameraShakeAssets, globalParameterCatalog: content.globalParameterCatalog, timelineClipAssets: content.timelineClipAssets, audioAssetGuids: game.manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
     materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
     particleParameterCatalog: buildParticleParameterCatalog(content.particleLibrary),
     materialTextureAssetGuids: materialParameterTextureAssetGuids(game.textureBytes, content.renderTargetTextures),

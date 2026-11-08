@@ -59,6 +59,7 @@ const ASSET_FILE_SUFFIXES = [
   ".mixer.hasset",
   ".channel.hasset",
   ".atten.hasset",
+  ".shake.hasset",
   ".plugin.hasset",
   ".skyboxcreator.hasset",
   ".emitter.hasset",

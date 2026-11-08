@@ -183,6 +183,8 @@ export interface RuntimeSceneContent {
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
   /** Float, Vector and Color Curve assets of the current sources; `Get <Type> Curve Object` reads them. */
   curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
+  /** Camera Shake assets of the current sources; Play Camera Shake reads them. */
+  cameraShakeAssets?: import("@haptic/core").CameraShakeCatalogEntry[];
   /** 2D and 3D Timeline Clip assets of the current sources, without their Editor Preview; Create makes instances of them. */
   timelineClipAssets?: import("@haptic/core").TimelineClipAssetCatalogEntry[];
   audioAssetGuids?: string[];
@@ -222,6 +224,7 @@ export type ControlMessage =
       saveGame?: import("@haptic/core").SaveGameConfiguration;
       dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
       curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
+      cameraShakeAssets?: import("@haptic/core").CameraShakeCatalogEntry[];
       timelineClipAssets?: import("@haptic/core").TimelineClipAssetCatalogEntry[];
       /** Packaged authored assets for the Asset Registry nodes, snapshotted when the session starts. */
       assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];

@@ -74,6 +74,7 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   InputAxis: ".inputaxis.hasset",
   AudioChannel: ".channel.hasset",
   SoundAttenuation: ".atten.hasset",
+  CameraShake: ".shake.hasset",
   ParticleEmitter: ".emitter.hasset",
   ParticleGraph: ".particlegraph.hasset",
   ParticleSystem: ".particles.hasset",

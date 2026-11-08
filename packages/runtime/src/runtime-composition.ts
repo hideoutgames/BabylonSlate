@@ -1,6 +1,6 @@
 import type { RuntimeGlobalParameters } from "./runtime-global-parameters";
 import type { TimelineRuntime } from "./timeline-runtime";
-import type { CurveAssetCatalogEntry } from "@haptic/core";
+import type { CameraShakeCatalogEntry, CurveAssetCatalogEntry } from "@haptic/core";
 import type { CommandMessage, GameSessionMode, SessionPauseReason } from "@haptic/bridge";
 import type {
   RenderTargetPayload,
@@ -193,6 +193,7 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   readonly layers: SceneLayers;
   readonly dataCatalog: RuntimeDataCatalog;
   readonly curveCatalog: ReadonlyMap<string, CurveAssetCatalogEntry>;
+  readonly cameraShakeCatalog: ReadonlyMap<string, CameraShakeCatalogEntry>;
   readonly scriptHost: ScriptHost;
   readonly scriptDebug: ScriptDebugObserver;
 

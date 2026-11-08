@@ -72,6 +72,8 @@ export interface RuntimeDriverOptions {
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
   /** Curve assets of the initial sources; later sources replace them with `registerSceneContent`. */
   curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
+  /** Camera Shake assets of the initial sources; later sources replace them with `registerSceneContent`. */
+  cameraShakeAssets?: import("@haptic/core").CameraShakeCatalogEntry[];
   /** 2D and 3D Timeline Clip assets of the initial sources; later sources replace them with `registerSceneContent`. */
   timelineClipAssets?: import("@haptic/core").TimelineClipAssetCatalogEntry[];
   /** Packaged authored assets the Asset Registry nodes query; omitted means an empty catalog. */

@@ -2,7 +2,7 @@ import type { SimulationSceneCaptureResult } from "./simulation-scene-capture";
 import type { SimulationSession } from "./simulation-session";
 import type { RuntimeInspectorService } from "./runtime-inspector-service";
 import { RuntimeDataCatalog } from "./data-catalog";
-import type { CurveAssetCatalogEntry, SaveGameService, TimelineClipAssetCatalogEntry } from "@haptic/core";
+import type { CameraShakeCatalogEntry, CurveAssetCatalogEntry, SaveGameService, TimelineClipAssetCatalogEntry } from "@haptic/core";
 import type { SessionBoundaries, RuntimeSaveGameOptions } from "./session-boundaries";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
@@ -386,6 +386,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly dataCatalog: RuntimeDataCatalog;
   /** Curve assets of the current sources, by guid; absent means not loaded. */
   readonly curveCatalog = new Map<string, CurveAssetCatalogEntry>();
+  /** Camera Shake assets of the current sources, by guid; absent means not loaded. */
+  readonly cameraShakeCatalog = new Map<string, CameraShakeCatalogEntry>();
   /** 2D and 3D Timeline Clip assets of the current sources, by guid, for Create. */
   readonly timelineClipCatalog = new Map<string, TimelineClipAssetCatalogEntry>();
   readonly scriptHost: ScriptHost;
@@ -548,6 +550,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     // 7. Script data and the ScriptHost.
     this.dataCatalog = new RuntimeDataCatalog(options.dataAssets);
     for (const entry of options.curveAssets ?? []) this.curveCatalog.set(entry.guid, entry);
+    for (const entry of options.cameraShakeAssets ?? []) this.cameraShakeCatalog.set(entry.guid, entry);
     for (const entry of options.timelineClipAssets ?? []) this.timelineClipCatalog.set(entry.guid, entry);
     for (const [guid, value] of Object.entries(options.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
     for (const [guid, value] of Object.entries(options.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
@@ -961,6 +964,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.dataCatalog.replace(content.dataAssets ?? []);
     this.curveCatalog.clear();
     for (const entry of content.curveAssets ?? []) this.curveCatalog.set(entry.guid, entry);
+    this.cameraShakeCatalog.clear();
+    for (const entry of content.cameraShakeAssets ?? []) this.cameraShakeCatalog.set(entry.guid, entry);
     this.timelineClipCatalog.clear();
     for (const entry of content.timelineClipAssets ?? []) this.timelineClipCatalog.set(entry.guid, entry);
   }

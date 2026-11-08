@@ -149,6 +149,11 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     label: "Sound Attenuation",
   },
   {
+    kind: "camera-shake",
+    keepKey: "camera-shake",
+    label: "Camera Shake",
+  },
+  {
     kind: "particle-emitter",
     keepKey: "particle-emitter",
     label: "Particle Emitter",
@@ -189,7 +194,7 @@ const FOCUS_KEEP_SECTIONS: Array<{ id: string; title: string; keys: FocusKeepSet
   { id: "curvesTimelines", title: "Curves And Timelines", keys: ["float-curve", "vector-curve", "color-curve", "timeline", "timeline-clip-2d", "timeline-clip-3d"] },
   { id: "twoD", title: "2D", keys: ["sprite", "sprite-animation", "tileset", "tilemap"] },
   { id: "materialsRendering", title: "Materials And Rendering", keys: ["material", "material-function", "material-instance", "water", "render-target", "render-target-texture", "skybox-creator", "texture"] },
-  { id: "animationAi", title: "Animation And AI", keys: ["anim-graph", "animGraphObject", "behaviour-tree", "model", "skeleton", "animation"] },
+  { id: "animationAi", title: "Animation And AI", keys: ["anim-graph", "animGraphObject", "behaviour-tree", "model", "skeleton", "animation", "camera-shake"] },
   { id: "audio", title: "Audio", keys: ["audio", "audio-mixer", "audio-channel", "sound-attenuation"] },
   { id: "particles", title: "Particles", keys: ["particle-emitter", "particle-graph", "particle-system"] },
   { id: "diagnostics", title: "Diagnostics", keys: ["trace"] },

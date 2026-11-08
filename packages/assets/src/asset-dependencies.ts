@@ -17,6 +17,9 @@ import {
   type DataFieldSnapshot,
   type GraphClassMember,
   type SerializedGraph,
+  CAMERA_SHAKE_ASSET_TYPE,
+  cameraShakeCurveGuids,
+  normalizeCameraShakePayload,
 } from "@haptic/core";
 import {
   materialDependencies,
@@ -429,6 +432,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   else if (assetType === "Tilemap") { for (const tileset of rows(payload.tilesets)) add(tileset.guid); }
   else if (assetType === "Font") addMany(values(payload.fallbackGuids));
   else if (assetType === "Water") add(payload.materialGuid);
+  // A shake needs its curves to play as authored.
+  else if (assetType === CAMERA_SHAKE_ASSET_TYPE) addMany(cameraShakeCurveGuids(normalizeCameraShakePayload(payload)));
   else if (assetType === "RenderTargetTexture") add(payload.renderTargetGuid);
   else if (assetType === "SkyboxCreator") addMany(skyboxCreatorAssetDependencies(assetType, payload), false);
   else if (["DataDefinition", "DataTree", "Structure", "Enum"].includes(assetType)) {

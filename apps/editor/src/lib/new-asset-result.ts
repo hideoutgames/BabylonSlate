@@ -7,6 +7,7 @@ import {
   createDataDefinitionAsset,
   createDataTreeAsset,
   createDefaultRenderTargetCaptureProperties,
+  createDefaultCameraShakePayload,
   createDefaultCurveAssetPayload,
   createDefaultGlobalParameterCollection,
   GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE,
@@ -367,6 +368,10 @@ export function buildNewAssetResult(options: {
   if (type === "FloatCurve" || type === "VectorCurve" || type === "ColorCurve") {
     const kind = curveKindForAssetType(type) ?? "float";
     return documentAsset(type, name, guid, createDefaultCurveAssetPayload(kind) as unknown as Record<string, unknown>);
+  }
+
+  if (type === "CameraShake") {
+    return documentAsset(type, name, guid, createDefaultCameraShakePayload() as unknown as Record<string, unknown>);
   }
 
   if (type === "SoundAttenuation") {
