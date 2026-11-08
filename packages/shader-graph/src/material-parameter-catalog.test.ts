@@ -117,6 +117,18 @@ describe("worker Material parameter catalog", () => {
     ).toEqual([0.1, 0.2, 0.3, 0.4]);
   });
 
+  it("follows a functions Map its host syncs in place as Material Functions load and release", () => {
+    const { document, fn } = fixture();
+    const documents = new Map([["post", document]]);
+    const functions = new Map<string, typeof fn>();
+    expect(buildMaterialParameterCatalog(documents, functions)).toEqual({});
+    // A cached failed lowering from before the function loaded must not be served.
+    functions.set("fn", fn);
+    expect(Object.keys(buildMaterialParameterCatalog(documents, functions))).toEqual(["post"]);
+    functions.delete("fn");
+    expect(buildMaterialParameterCatalog(documents, functions)).toEqual({});
+  });
+
   it("exposes Vector 2 and Vector 3 parameter defaults at their width", () => {
     const document = createDefaultMaterialDocument("Surface");
     document.nodes.push(

@@ -32,6 +32,7 @@ export {
 } from "./document";
 export {
   lowerMaterialDocument,
+  lowerMaterialDocumentCached,
   materialCompileKeyFromLowering,
   type MaterialBuildPlan,
   type MaterialBufferRequirements,

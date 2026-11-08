@@ -21,6 +21,7 @@ import {
   type GameManifest,
 } from "@haptic/exporter";
 import type { ScriptBundleEntry } from "@haptic/bridge";
+import type { DecoderPrefetch } from "./decoder-prefetch";
 import {
   AssetLoadingService,
   complexCollisionModelGuids,
@@ -87,12 +88,19 @@ function parseJsonAsset(bytes: Uint8Array): unknown {
 
 export async function loadGameFromFiles(
   files: Map<string, Uint8Array>,
-  options: { fetchImpl?: typeof fetch; baseUrl?: string; signal?: AbortSignal; readFile?: (path: string, signal: AbortSignal) => Promise<Uint8Array> } = {},
+  options: {
+    fetchImpl?: typeof fetch; baseUrl?: string; signal?: AbortSignal; readFile?: (path: string, signal: AbortSignal) => Promise<Uint8Array>;
+    /** Warms the decoder runtimes the textures and Models read here need, while the rest still downloads. */
+    prefetchDecoders?: DecoderPrefetch;
+    /** Runs once the catalog is parsed, before any asset is read. */
+    onManifest?: (manifest: GameManifest) => void;
+  } = {},
 ): Promise<LoadedGame> {
   // Invoke native fetch as a function, never as an options-object method: a
   // browser rejects the latter's receiver with an Illegal invocation error.
   const fetchAsset = options.fetchImpl;
   const manifest = parseGameManifest(textFromFiles(files, GAME_MANIFEST_FILE));
+  options.onManifest?.(manifest);
   // Compiled Class code arrives as CompiledScript sidecars when acquired.
   const scripts: ScriptBundleEntry[] = [];
   const scenes = new Map<string, SerializedScene>();
@@ -185,7 +193,10 @@ export async function loadGameFromFiles(
     };
     if (entry.type === "Scene") { const value = normalizeScene(document); install = () => { scenes.set(entry.guid, value); }; }
     else if (entry.type === "SceneLayer") { const value = normalizeSceneLayer(document); install = () => { sceneLayers.set(entry.guid, value); }; }
-    else if (entry.type === "Texture") install = () => { textureBytes.set(entry.guid, bytes); };
+    else if (entry.type === "Texture") {
+      options.prefetchDecoders?.texture(bytes);
+      install = () => { textureBytes.set(entry.guid, bytes); };
+    }
     else if (entry.type === AREA_EMISSION_EXPORT_TYPE) {
       const guid = textureGuidFromAreaEmissionExport(entry.guid);
       if (!guid) throw new Error(`Invalid area emission asset identity: ${entry.guid}`);
@@ -195,6 +206,7 @@ export async function loadGameFromFiles(
     } else if (entry.type === "Model") {
       const value = decodePackedModelAsset(bytes);
       if (!value) throw new Error(`Model ${entry.guid} is not a packed Model asset.`);
+      options.prefetchDecoders?.model(value.source);
       // Complex Collision is a separate representation, cooked in prepare() only when needed.
       model = value;
       install = () => { modelBytes.set(entry.guid, value.source); modelPayloads.set(entry.guid, value.payload); };
@@ -217,6 +229,8 @@ export async function loadGameFromFiles(
       install = () => { const index = scripts.findIndex(script => script.assetGuid === value.assetGuid && script.classId === value.classId); if (index >= 0) scripts[index] = value as ScriptBundleEntry; else scripts.push(value as ScriptBundleEntry); };
     } else if (entry.type === NAVMESH_EXPORT_TYPE) { const guid = sidecarOwner(sceneGuidFromNavmeshExport(entry.guid)); install = () => { navmeshBytes.set(guid, bytes); }; }
     else if (entry.type === AUDIO_REVERB_EXPORT_TYPE) { const guid = sidecarOwner(sceneGuidFromAudioReverbExport(entry.guid)); install = () => { audioReverbBytes.set(guid, bytes); }; }
+    // Every acquisition of a loaded asset publishes these same objects, and nothing edits them in place:
+    // boot's `loadedSourcesChanged` and `packedContentFromGame`'s per-payload documents rely on that identity.
     return { bytes, decodedBytes, document, model, publish: () => { payloads.set(entry.guid, bytes); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } };
   }
 
@@ -374,7 +388,8 @@ export async function loadGameFromFiles(
         else variants.add(guid);
       }
     }
-    const extraMetadata = [...closure].filter(id => !documentIds.includes(id));
+    // The closure only grows after the snapshot, so the Fonts requireFont added follow it in insertion order.
+    const extraMetadata = [...closure].slice(documentIds.length);
     // A Model's collision triangles are a separate cached representation, cooked
     // only when a Scene/Class in this closure uses Use Complex Collision.
     const needsCollision = complexCollisionModelGuids([...prepared.map(asset => asset.document), ...scripts]);
@@ -451,8 +466,9 @@ export function loadGameAudioClipBytes(
 export function createGameAudioSourceLoader(
   game: LoadedGame,
 ): (request: { assetGuid: string; chunkId: string; revision?: string }) => Promise<Uint8Array | null> {
+  const revisions = new Map(game.manifest.assets.map(entry => [entry.guid, entry.revision]));
   return async ({ assetGuid, chunkId, revision }) => {
-    const exportedRevision = game.manifest.assets.find(entry => entry.guid === assetGuid)?.revision;
+    const exportedRevision = revisions.get(assetGuid);
     if (revision && exportedRevision && revision !== exportedRevision) throw new Error(`Audio asset ${assetGuid} source revision is no longer available.`);
     const scope = game.assets.createScope(`audio:${assetGuid}:${chunkId}`);
     try {
@@ -467,11 +483,12 @@ export async function loadGameFromHttp(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
   signal?: AbortSignal,
+  options: Pick<NonNullable<Parameters<typeof loadGameFromFiles>[1]>, "prefetchDecoders" | "onManifest"> = {},
 ): Promise<LoadedGame> {
   const manifestUrl = new URL(GAME_MANIFEST_FILE, baseUrl).href;
   const manifestRes = await fetchImpl(manifestUrl, { signal });
   if (!manifestRes.ok) throw new Error("Export is missing game.json");
   const manifestBytes = new Uint8Array(await manifestRes.arrayBuffer());
   const files = new Map<string, Uint8Array>([[GAME_MANIFEST_FILE, manifestBytes]]);
-  return loadGameFromFiles(files, { fetchImpl, baseUrl, signal });
+  return loadGameFromFiles(files, { ...options, fetchImpl, baseUrl, signal });
 }

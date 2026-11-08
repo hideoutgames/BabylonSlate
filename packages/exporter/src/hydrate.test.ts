@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_COLLISION_PRESETS, DEFAULT_RENDER_PROJECT_SETTINGS } from "@haptic/core";
 import { createDefaultSpriteAnimationPayload, getTile, TERRAIN_E, TERRAIN_W } from "@haptic/assets";
+import { createDefaultMaterialDocument, createDefaultMaterialInstanceDocument } from "@haptic/shader-graph";
 import { packedContentFromGame, packedSourceControls } from "./hydrate";
 import { gameSourceSubset, type GameSourceContent } from "./source-content";
 import type { GameAssetIndexEntry } from "./types";
@@ -97,6 +98,23 @@ describe("packedContentFromGame", () => {
     });
     const level = packedContentFromGame(game).tilemapPayloads.get("level")!;
     expect([1, 2, 3].map((x) => getTile(level, "layer-1", x, 0))).toEqual([2, 3, 4]);
+  });
+
+  it("keeps a held payload's documents across refreshes and normalizes a replaced payload again", () => {
+    const game = sources([
+      { guid: "wall", type: "Material", name: "Wall", encoding: "json" },
+      { guid: "red-wall", type: "MaterialInstance", name: "Red Wall", encoding: "json" },
+    ], { wall: createDefaultMaterialDocument("Wall"), "red-wall": createDefaultMaterialInstanceDocument("Red Wall", "wall") });
+    const first = packedContentFromGame(game);
+    const refreshed = packedContentFromGame(game);
+    // The same payloads keep their documents, which the Material lowering cache is keyed on.
+    expect(refreshed.materialDocuments.get("wall")).toBe(first.materialDocuments.get("wall"));
+    expect(refreshed.materialDocuments.get("red-wall")).toBe(first.materialDocuments.get("red-wall"));
+    // A re-acquired Material arrives as a new payload: it and the instance materialized from it follow it.
+    game.payloads.set("wall", encoder.encode(JSON.stringify({ ...createDefaultMaterialDocument("Wall"), alphaCutoff: 0.25 })));
+    const reacquired = packedContentFromGame(game);
+    expect(reacquired.materialDocuments.get("wall")).toMatchObject({ name: "Wall", alphaCutoff: 0.25 });
+    expect(reacquired.materialDocuments.get("red-wall")).toMatchObject({ name: "Red Wall", instanceOf: "wall", alphaCutoff: 0.25 });
   });
 
   it("names data type schemas after their catalog entries", () => {

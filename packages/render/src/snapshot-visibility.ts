@@ -94,8 +94,8 @@ export function disposeWorldOverlayLeftovers(
   worldScene: Scene,
   slotId: number,
 ): void {
-  // Runs for every overlay actor on every applied snapshot, and almost always
-  // matches nothing. Collect first: dispose splices scene.meshes and children.
+  // Runs when a layer binds the slot or an overlay assignment lands, and almost
+  // always matches nothing. Collect first: dispose splices scene.meshes and children.
   const prefix = `actor-${slotId}`;
   let leftovers: AbstractMesh[] | undefined;
   for (const mesh of worldScene.meshes) {
@@ -108,10 +108,62 @@ export function disposeWorldOverlayLeftovers(
 }
 
 /**
+ * Meshes added to each world Scene, counted by one observer per Scene from its first sweep on. Babylon notifies
+ * additions on a timer, so the count only backs up the synchronous mesh count and newest mesh.
+ */
+const worldMeshAdditions = new WeakMap<Scene, { count: number }>();
+
+function meshAdditions(scene: Scene): { count: number } {
+  let additions = worldMeshAdditions.get(scene);
+  if (!additions) {
+    const counter = { count: 0 };
+    scene.onNewMeshAddedObservable.add(() => { counter.count++; });
+    worldMeshAdditions.set(scene, additions = counter);
+  }
+  return additions;
+}
+
+/** What each binding's last overlay leftover sweep saw: its world Scene and overlay slots, and the Scene's meshes. */
+type OverlaySweep = { scene: Scene; slots: Set<number>; meshCount: number; newestMesh: AbstractMesh | undefined; added: number };
+const overlaySweeps = new WeakMap<SnapshotSceneBinding, OverlaySweep>();
+
+/**
+ * {@link disposeWorldOverlayLeftoverSlots} for one applied snapshot, run only when it can find something. A leftover
+ * is a world mesh named for an overlay slot; names are set at construction, so one can appear only when a slot joins
+ * the overlay slots or the world Scene gains a mesh. The sweep therefore runs when the overlay slots differ from the
+ * last sweep's; when the world Scene's mesh count or newest mesh changed since (a mesh added since is the newest
+ * unless removed again, as meshes are appended) or it notified an addition; and when `force` (the pass moved or hid a
+ * visual, or stopped part way).
+ */
+export function sweepWorldOverlayLeftovers(
+  worldScene: Scene,
+  binding: SnapshotSceneBinding,
+  slotIds: ReadonlySet<number> | undefined,
+  force: boolean,
+): void {
+  if (!slotIds) {
+    // Without overlay slots there is nothing to sweep; the next overlay slot sweeps again.
+    overlaySweeps.delete(binding);
+    return;
+  }
+  const additions = meshAdditions(worldScene);
+  const meshes = worldScene.meshes;
+  const last = overlaySweeps.get(binding);
+  let due = force || !last || last.scene !== worldScene || last.meshCount !== meshes.length ||
+    last.newestMesh !== meshes.at(-1) || last.added !== additions.count || last.slots.size !== slotIds.size;
+  if (!due) for (const slotId of slotIds) if (!last!.slots.has(slotId)) { due = true; break; }
+  if (!due) return;
+  overlaySweeps.delete(binding);
+  const added = additions.count;
+  disposeWorldOverlayLeftoverSlots(worldScene, slotIds);
+  overlaySweeps.set(binding, { scene: worldScene, slots: new Set(slotIds), meshCount: meshes.length, newestMesh: meshes.at(-1), added });
+}
+
+/**
  * {@link disposeWorldOverlayLeftovers} for every overlay slot of one snapshot,
  * with a single pass over the world Scene's meshes instead of one per slot.
  */
-export function disposeWorldOverlayLeftoverSlots(
+function disposeWorldOverlayLeftoverSlots(
   worldScene: Scene,
   slotIds: ReadonlySet<number>,
 ): void {

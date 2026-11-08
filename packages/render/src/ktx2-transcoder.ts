@@ -104,15 +104,6 @@ function shouldForceKtx2Rgba(
 }
 
 /**
- * Preview Build always packs PNG/pixels so a cold iframe matches overlay Play.
- * Itch Export Game still packs KTX2 when the player files contain the
- * transcoder (`playerFilesHaveKtx2Transcoder` in `@haptic/assets`).
- */
-export function shouldPackKtx2ForPreviewBuild(): boolean {
-  return false;
-}
-
-/**
  * After Engine construction: pick a transcode target the GPU can upload.
  * Software WebGL often advertises S3TC/ASTC then fails `texImage2D`.
  */
@@ -133,30 +124,4 @@ export function configureKtx2DecoderRuntime(
   // texture off the 4x4 block grid. `undefined` leaves the key out.
   container.DefaultDecoderOptions.forceRGBA =
     shouldForceKtx2Rgba(options.caps, options.renderer) ? true : undefined;
-}
-
-/**
- * HEAD every self-hosted transcoder URL (JS and wasm). Used to decide
- * `fallback_uncompressed` and whether export should pack PNG instead of KTX2.
- * A 404 is missing; a host that refuses HEAD gets a one-byte ranged GET whose
- * body is cancelled, so the probe never downloads a decoder.
- */
-export async function probeKtx2TranscoderAvailable(
-  basePath: string = DEFAULT_KTX2_PUBLIC_BASE,
-  fetchImpl: typeof fetch = fetch,
-): Promise<boolean> {
-  const urls = Object.values(ktx2TranscoderUrls(basePath));
-  try {
-    for (const url of urls) {
-      const head = await fetchImpl(url, { method: "HEAD" });
-      if (head.ok) continue;
-      if (head.status === 404) return false;
-      const get = await fetchImpl(url, { method: "GET", headers: { Range: "bytes=0-0" } });
-      void get.body?.cancel().catch(() => {});
-      if (!get.ok) return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
 }

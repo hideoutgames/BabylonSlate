@@ -1,11 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureContainer2";
 import { playerFilesHaveKtx2Transcoder } from "@haptic/assets";
 import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
-  probeKtx2TranscoderAvailable,
-  shouldPackKtx2ForPreviewBuild,
 } from "./ktx2-transcoder";
 
 describe("ktx2 transcoder config", () => {
@@ -16,50 +14,6 @@ describe("ktx2 transcoder config", () => {
       "/assets/ktx2/babylon.ktx2Decoder.js",
     );
     expect(Object.values(mock.URLConfig).join(" ")).not.toMatch(/cdn|http/i);
-  });
-
-  it("probes missing transcoder files as unavailable", async () => {
-    const fetchImpl = vi.fn(async () => new Response(null, { status: 404 }));
-    await expect(
-      probeKtx2TranscoderAvailable("/missing/", fetchImpl as unknown as typeof fetch),
-    ).resolves.toBe(false);
-  });
-
-  it("probes present transcoder files as available", async () => {
-    const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
-    await expect(
-      probeKtx2TranscoderAvailable("/ktx2/", fetchImpl as unknown as typeof fetch),
-    ).resolves.toBe(true);
-  });
-
-  it("checks a host that refuses HEAD without downloading the decoder", async () => {
-    const cancelled = vi.fn();
-    const requests: RequestInit[] = [];
-    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      requests.push(init ?? {});
-      if (init?.method === "HEAD") return new Response(null, { status: 405 });
-      return new Response(new ReadableStream({ cancel: cancelled }), { status: 200 });
-    });
-    await expect(
-      probeKtx2TranscoderAvailable("/ktx2/", fetchImpl as unknown as typeof fetch),
-    ).resolves.toBe(true);
-    const gets = requests.filter((init) => init.method === "GET");
-    expect(gets.length).toBeGreaterThan(0);
-    for (const init of gets) expect(new Headers(init.headers).get("Range")).toBe("bytes=0-0");
-    expect(cancelled).toHaveBeenCalledTimes(gets.length);
-  });
-
-  it("treats a missing wasm module as unavailable even when the JS decoder exists", async () => {
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("babylon.ktx2Decoder.js") || url.endsWith("msc_basis_transcoder.js")) {
-        return new Response(null, { status: 200 });
-      }
-      return new Response(null, { status: 404 });
-    });
-    await expect(
-      probeKtx2TranscoderAvailable("/ktx2/", fetchImpl as unknown as typeof fetch),
-    ).resolves.toBe(false);
   });
 
   it("decodes packed player KTX2 on the main thread and uses RGBA without ASTC/BC7", () => {
@@ -170,9 +124,5 @@ describe("ktx2 transcoder config", () => {
     files.set("ktx2/uastc_r8_unorm.wasm", new Uint8Array([1]));
     files.set("ktx2/uastc_rg8_unorm.wasm", new Uint8Array([1]));
     expect(playerFilesHaveKtx2Transcoder(files)).toBe(true);
-  });
-
-  it("never packs KTX2 for Preview Build", () => {
-    expect(shouldPackKtx2ForPreviewBuild()).toBe(false);
   });
 });

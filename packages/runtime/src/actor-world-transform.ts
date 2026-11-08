@@ -14,7 +14,7 @@ export type ActorTransformMap = ReadonlyMap<string, Transform>;
 /** Resolve one current pose without caching transforms changed by this tick's scripts. */
 export function actorWorldTransform(
   actor: Actor,
-  actorsByGuid: ReadonlyMap<string, Actor>,
+  actorsByGuid: Pick<ReadonlyMap<string, Actor>, "get">,
 ): Transform | null {
   const chain = [actor.transform];
   let parentId = actorParentGuid(actor);
@@ -555,18 +555,31 @@ function multiplyQuaternionInto(
 export function inverseQuaternion(
   value: Transform["rotation"],
 ): Transform["rotation"] {
+  return inverseQuaternionInto(value, { x: 0, y: 0, z: 0, w: 1 });
+}
+
+/** `inverseQuaternion` written into `out`, which may be `value`. */
+export function inverseQuaternionInto(
+  value: Transform["rotation"],
+  out: Transform["rotation"],
+): Transform["rotation"] {
   const lengthSquared =
     value.x * value.x +
     value.y * value.y +
     value.z * value.z +
     value.w * value.w;
-  if (lengthSquared === 0) return { x: 0, y: 0, z: 0, w: 1 };
-  return {
-    x: -value.x / lengthSquared,
-    y: -value.y / lengthSquared,
-    z: -value.z / lengthSquared,
-    w: value.w / lengthSquared,
-  };
+  if (lengthSquared === 0) {
+    out.x = 0;
+    out.y = 0;
+    out.z = 0;
+    out.w = 1;
+    return out;
+  }
+  out.x = -value.x / lengthSquared;
+  out.y = -value.y / lengthSquared;
+  out.z = -value.z / lengthSquared;
+  out.w = value.w / lengthSquared;
+  return out;
 }
 
 export function rotateVector(
@@ -574,6 +587,15 @@ export function rotateVector(
   value: Transform["position"],
 ): Transform["position"] {
   return rotateInto(quaternion, value.x, value.y, value.z, { x: 0, y: 0, z: 0 });
+}
+
+/** `rotateVector` written into `out`, which may be `value`. */
+export function rotateVectorInto(
+  quaternion: Transform["rotation"],
+  value: Transform["position"],
+  out: Transform["position"],
+): Transform["position"] {
+  return rotateInto(quaternion, value.x, value.y, value.z, out);
 }
 
 /** `quaternion` applied to (vx, vy, vz), into `out`. */

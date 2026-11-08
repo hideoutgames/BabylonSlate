@@ -57,6 +57,16 @@ describe("Line Trace actor exclusions", () => {
       expect(backend.lineTrace(start, end, {
         ignoreActorIds: ["actor-0", "actor-1", "actor-2"],
       }).hit).toBe(false);
+      // A kept set (a collision channel's list) is ignored too, alone or beside the caller's own ids.
+      expect(backend.lineTrace(start, end, { ignoreActorSet: new Set(["actor-0"]) }).actorId).toBe("actor-1");
+      expect(backend.lineTrace(start, end, {
+        ignoreActorIds: ["actor-0"],
+        ignoreActorSet: new Set(["actor-1"]),
+      }).actorId).toBe("actor-2");
+      expect(backend.lineTrace(start, end, {
+        ignoreActorIds: ["actor-2"],
+        ignoreActorSet: new Set(["actor-0", "actor-1"]),
+      }).hit).toBe(false);
       expect(backend.lineTrace(start, end).actorId).toBe("actor-0");
     } finally {
       backend.dispose();
@@ -80,8 +90,19 @@ describe("Line Trace actor exclusions", () => {
       const setFilterInfo = vi.spyOn(havok, "HP_Shape_SetFilterInfo");
       expect(backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: 0, z: 0 }, { ignoreActorIds: ignored }).actorId)
         .toBe("target");
+      // A long kept set (a collision channel's list) is peeled the same way.
+      expect(backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: 0, z: 0 }, { ignoreActorSet: new Set(ignored) }).actorId)
+        .toBe("target");
       expect(setFilterInfo).not.toHaveBeenCalled();
       setFilterInfo.mockRestore();
+      // The caller's own ids are peeled beside a long kept set.
+      staticBox("floor", 0, 1);
+      backend.step(1 / 60);
+      expect(backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: 0, z: 0 },
+        { ignoreActorIds: ["target"], ignoreActorSet: new Set(ignored) }).actorId).toBe("floor");
+      expect(backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: 0, z: 0 },
+        { ignoreActorIds: ignored, ignoreActorSet: new Set(["target"]) }).actorId).toBe("floor");
+      expect(backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: 0, z: 0 }).actorId).toBe("target");
     } finally {
       backend.dispose();
     }

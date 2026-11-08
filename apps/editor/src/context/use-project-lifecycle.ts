@@ -22,7 +22,6 @@ import { ensureEngineExtensionStorage } from "../lib/engine-extensions";
 import { ensureEngineExtensionLibrary } from "../lib/engine-extension-library";
 import { ensureEnginePluginLibrary } from "../lib/engine-plugin-library";
 import type { CreateProjectOptions } from "../lib/create-project";
-import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import type { ProjectSaveState } from "../lib/project-save-state";
 import {
   EDITOR_UTILITY_EVENTS,
@@ -203,13 +202,6 @@ export function useProjectLifecycle({
       }
       setRoute("editor");
       setAnimEditorModes({});
-      const { probeKtx2TranscoderAvailable } = await import(
-        "@haptic/render/ktx2-transcoder"
-      );
-      const transcoderOk = await probeKtx2TranscoderAvailable(
-        editorKtx2PublicBase(),
-      );
-      await projectService.setTranscoderAvailable(transcoderOk);
       projectService.setDerivedStorage(derived);
       await refreshProjectList();
       await captureMtimeSnapshot();

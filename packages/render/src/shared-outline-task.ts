@@ -1,4 +1,5 @@
 import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
@@ -36,6 +37,8 @@ type MaskRecord = {
   drawPass?: FrameGraphRenderPass;
   /** Mesh list whose programs were last probed ready, while the group stayed active. */
   probed?: readonly unknown[];
+  /** The list an inactive group holds. */
+  inactive: AbstractMesh[];
 };
 
 /** Shared outline masks and composition with a bounded per-view pass budget. */
@@ -105,13 +108,15 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
         // no lighting, so the pass skips Babylon's per-pass light flag toggles.
         const objects = new LightNeutralObjectRendererTask(`${this.name} ${group} Mask`, graph, graph.scene, { doNotChangeAspectRatio: false });
         objects.targetTexture = clear.outputTexture; objects.depthTexture = clear.outputDepthTexture;
-        objects.camera = this.camera; objects.objectList = { meshes: [], particleSystems: [] };
+        // One list per group for the task's lifetime: `sync` swaps only its meshes.
+        const inactive: AbstractMesh[] = [];
+        objects.camera = this.camera; objects.objectList = { meshes: inactive, particleSystems: [] };
         objects.disableImageProcessing = true;
         objects.renderParticles = false; objects.renderSprites = false;
         objects.enableBoundingBoxRendering = false; objects.enableOutlineRendering = false;
         objects.depthTest = true; objects.depthWrite = true;
         this.view.owner.registerRenderPass(objects.objectRenderer.renderPassId);
-        this.masks.push({ group, mask, depth, clear, objects,
+        this.masks.push({ group, mask, depth, clear, objects, inactive,
           renderer: new SharedOutlineMaskRenderer(objects.objectRenderer, this.view, group, this.compileFailure) });
       }
     }
@@ -173,10 +178,12 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
       if (record.clearPass) record.clearPass.disabled = !active;
       if (record.drawPass) record.drawPass.disabled = !active;
       record.objects.camera = this.camera;
-      const meshes = !active ? [] : narrow && record.group === "strict"
+      // An inactive group's pass is disabled and never probed, so it keeps one empty list.
+      const meshes = !active ? record.inactive : narrow && record.group === "strict"
         ? this.view.strictOccludersFor(this.camera, this.width, this.height)
         : this.view.meshesForGroup(record.group);
-      record.objects.objectList = { meshes, particleSystems: [] };
+      const list = record.objects.objectList;
+      if (list.meshes !== meshes) list.meshes = meshes;
       record.renderer.prune();
     }
     if (this.composePass) this.composePass.disabled = !this.view.active;

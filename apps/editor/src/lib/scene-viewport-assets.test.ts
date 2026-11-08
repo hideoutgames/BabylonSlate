@@ -26,13 +26,12 @@ describe("viewport Texture keys", () => {
     const key = (asset: IndexedAsset) => sceneViewportAssetKey(null, [asset]);
     const before = key(queued);
 
-    const fallback = await indexed("Texture", "tex", { usage: "albedo", compressionState: "fallback_uncompressed" }, [sourceChunk("a")]);
     const failed = await indexed("Texture", "tex", { usage: "albedo", compressionState: "encode_failed", encodeError: "boom" }, [sourceChunk("a")]);
     const committed = await indexed("Texture", "tex", {
       usage: "albedo", compressionState: "compressed", encodeWallMs: 40, ktx2ChunkId: "ktx2:abc",
       ktx2Width: 4, ktx2Height: 4, ktx2BlockAlign: 4, ktx2Sha256: "k",
     }, [sourceChunk("a"), ktx2Chunk("k")]);
-    expect([fallback, failed, committed].map(key)).toEqual([before, before, before]);
+    expect([failed, committed].map(key)).toEqual([before, before]);
 
     const reimported = await indexed("Texture", "tex", { usage: "albedo", compressionState: "pending" }, [sourceChunk("b")]);
     const retuned = await indexed("Texture", "tex", { usage: "normal", compressionState: "pending" }, [sourceChunk("a")]);

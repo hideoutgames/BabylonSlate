@@ -54,6 +54,8 @@ export type BasicEmissionDriver = {
    * like an authored burst (one frame late, never during prewarm). Ignored once halted.
    */
   burst(count: number): void;
+  /** How many times the driver has written the target's lifetime (a Lifetime curve): a reader of it rereads only after one. */
+  readonly lifetimeWrites: number;
 };
 
 /**
@@ -73,6 +75,7 @@ export function createBasicEmissionDriver(
   let cycleTime = 0;
   let halted = false;
   let requested = 0;
+  let lifetimeWrites = 0;
   const manual = createManualEmission(target, () => target.emitRate);
 
   const writeCurves = () => {
@@ -82,10 +85,12 @@ export function createBasicEmissionDriver(
       const lifetime = sampleScalarCurve(current.lifetimeCurve, x);
       target.minLifeTime = lifetime;
       target.maxLifeTime = lifetime;
+      lifetimeWrites++;
     }
   };
 
   return {
+    get lifetimeWrites() { return lifetimeWrites; },
     advance(dt) {
       if (halted) return;
       manual.restore();
