@@ -160,7 +160,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     createTimelineClip: (timeline, assetGuid, inputs) => rt.timelines.createInstance(timeline, assetGuid, inputs),
     timelineProxy: (instance, action, proxyId, args) => timelineProxyControl(rt.timelines, instance, action, proxyId, args),
     timelineProxyGet: (instance, proxyId) => rt.timelines.bound(instance, proxyId),
-    ...createAudioHostBindings({ frameId, scriptVoiceId: () => rt.voices.scriptVoiceId(), emit }),
+    ...createAudioHostBindings({ frameId, scriptVoiceId: () => rt.voices.scriptVoiceId(), emit, voices: rt.voices }),
     isParticlesPlaying: (actorGuid, componentId) => rt.particles.isPlaying(actorGuid, componentId),
     spawnParticleEffect: (request, owner) => rt.particleEffects.spawn(request, owner),
     ...createParticleParameterBindings({

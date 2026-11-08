@@ -83,6 +83,7 @@ type QueuedCommand = Extract<
   | { type: "playSound" }
   | { type: "stopSound" }
   | { type: "setVoiceGain" }
+  | { type: "setVoicePitch" }
   | { type: "setVoicePaused" }
   | { type: "setChannelVolume" }
   | { type: "setGlobalVolume" }
@@ -96,7 +97,12 @@ type LiveVoice = {
   emitterActorGuid: string | null;
   spatial: AudioSpatialPlayOptions | null;
   gain: number;
+  /** The Audio asset's pitch draw times the play call's multiplier (Set Sound Pitch); Doppler composes on top. */
   pitch: number;
+  /** The Audio asset's pitch draw alone. */
+  assetPitch: number;
+  /** Play Sound At Location: the fixed spatial position used instead of the emitter's pose. */
+  fixedPose: AudioPose | null;
   reverbSend: boolean;
   muffleThroughWalls: boolean;
   previousPose: AudioPose | null;
@@ -120,6 +126,7 @@ function isAudioCommand(command: CommandMessage): command is QueuedCommand {
     command.type === "playSound" ||
     command.type === "stopSound" ||
     command.type === "setVoiceGain" ||
+    command.type === "setVoicePitch" ||
     command.type === "setVoicePaused" ||
     command.type === "setChannelVolume" ||
     command.type === "setGlobalVolume"
@@ -127,6 +134,18 @@ function isAudioCommand(command: CommandMessage): command is QueuedCommand {
 }
 
 type PlaySoundCommand = Extract<CommandMessage, { type: "playSound" }>;
+
+/** A play call's pitch multiplier: 0.25 to 4, as an Audio asset's own pitch; 1 when not a finite number. */
+function clampPitchMultiplier(value: unknown): number {
+  const pitch = Number(value);
+  return Number.isFinite(pitch) ? Math.min(4, Math.max(0.25, pitch)) : 1;
+}
+
+/** Play Sound At Location's position, or null when absent or not finite. */
+function finitePose(location: PlaySoundCommand["location"]): AudioPose | null {
+  if (!location || ![location.x, location.y, location.z].every(Number.isFinite)) return null;
+  return { x: location.x, y: location.y, z: location.z };
+}
 
 /** A runtime draw as the random source of one choice; without one the host draws. */
 function drawOr(roll: number | undefined, random: () => number): () => number {
@@ -492,7 +511,7 @@ export class AudioService {
   collectEmitterSlots(out: Set<number>): Set<number> {
     out.clear();
     for (const voice of this.voices.values()) {
-      if (!voice.spatial || voice.emitterActorGuid === null) continue;
+      if (!voice.spatial || voice.fixedPose || voice.emitterActorGuid === null) continue;
       const slotId = this.actorSlots.get(voice.emitterActorGuid);
       if (slotId !== undefined) out.add(slotId);
     }
@@ -660,6 +679,14 @@ export class AudioService {
       this.refreshVoiceGains();
       return;
     }
+    if (command.type === "setVoicePitch") {
+      const voice = this.voices.get(command.voiceId);
+      if (!voice) return;
+      voice.pitch = voice.assetPitch * clampPitchMultiplier(command.pitch);
+      // A Doppler voice takes the new pitch with its next snapshot's rate.
+      this.backend.setVoicePlaybackRate(voice.voiceId, voice.pitch);
+      return;
+    }
     await this.play(command, generation);
   }
 
@@ -750,7 +777,9 @@ export class AudioService {
     });
     // The runtime's seeded draws make the choice reproducible.
     const clip = pickWeightedAudioClip(payload.clips, drawOr(command.clipRoll, this.random));
-    const pitch = resolveAudioPitch(payload, drawOr(command.pitchRoll, this.random));
+    const assetPitch = resolveAudioPitch(payload, drawOr(command.pitchRoll, this.random));
+    const pitch = assetPitch * clampPitchMultiplier(command.pitch ?? 1);
+    const fixedPose = finitePose(command.location);
     const cacheKey = this.clipKey(assetGuid, clip.chunkId);
     const source = await this.resolveSourceBytes(assetGuid, clip.chunkId, cacheKey);
     if (!this.isCurrent(generation) || sourceOwner?.signal?.aborted || cacheKey !== this.clipKey(assetGuid, clip.chunkId) || this.retiredClipKeys.has(cacheKey)) return;
@@ -805,7 +834,7 @@ export class AudioService {
           doppler: attenuation.doppler,
         }
       : null;
-    if (attenuation && !emitter) {
+    if (attenuation && !emitter && !fixedPose) {
       spatial = null;
       this.onDiagnostic?.({
         code: "audio.missing_emitter",
@@ -834,6 +863,8 @@ export class AudioService {
       spatial,
       gain: resolved.gain,
       pitch,
+      assetPitch,
+      fixedPose,
       reverbSend: resolved.environmentReverb,
       muffleThroughWalls: resolved.muffleThroughWalls,
       previousPose: null,
@@ -870,7 +901,7 @@ export class AudioService {
    * instead of waiting for the next snapshot to place it.
    */
   private adoptEmitterPose(voice: LiveVoice): void {
-    if (!voice.spatial || voice.emitterActorGuid === null || !this.emitterPoseSource) return;
+    if (!voice.spatial || voice.fixedPose || voice.emitterActorGuid === null || !this.emitterPoseSource) return;
     const slotId = this.actorSlots.get(voice.emitterActorGuid);
     if (slotId === undefined || this.slotPoses.has(slotId)) return;
     const pose = this.emitterPoseSource(slotId);
@@ -943,7 +974,7 @@ export class AudioService {
           ? this.actorSlots.get(voice.emitterActorGuid)
           : undefined;
       const pose =
-        slotId !== undefined ? this.slotPoses.get(slotId) : undefined;
+        voice.fixedPose ?? (slotId !== undefined ? this.slotPoses.get(slotId) : undefined);
       if (!pose) {
         this.lastDistance = null;
         this.backend.setVoiceMuffle(voice.voiceId, 0);
@@ -1027,6 +1058,7 @@ export class AudioService {
   }
 
   private voiceEmitterPose(voice: LiveVoice): AudioPose | undefined {
+    if (voice.fixedPose) return voice.fixedPose;
     if (voice.emitterActorGuid === null) return undefined;
     const slotId = this.actorSlots.get(voice.emitterActorGuid);
     if (slotId === undefined) return undefined;

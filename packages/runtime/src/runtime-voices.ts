@@ -3,6 +3,8 @@ import { createSeededRng, type Rng } from "@haptic/core";
 import type { TraceAudioState, TraceVoice } from "@haptic/debugger";
 
 type LiveVoice = Omit<TraceVoice, "elapsedSeconds"> & { startedAt: number };
+/** A volume ramp (Fade In / Fade Out Sound): `from` to `to` over `seconds`, then a stop when `stopAtEnd`. */
+type VoiceFade = { from: number; to: number; seconds: number; elapsed: number; stopAtEnd: boolean };
 type PlaySound = Extract<CommandMessage, { type: "playSound" }>;
 
 /** Separates the voice draws from the World and script streams that share the session seed. */
@@ -21,6 +23,7 @@ const VOICE_STREAM_SALT = 0x564f4943;
  */
 export class RuntimeVoices {
   private readonly live = new Map<string, LiveVoice>();
+  private readonly fades = new Map<string, VoiceFade>();
   private readonly seed: () => number;
   private rng: Rng | null = null;
   private clockSeconds = 0;
@@ -32,9 +35,54 @@ export class RuntimeVoices {
     this.seed = seed;
   }
 
-  /** A tick starts: voices started from now on are that many seconds younger. */
-  advance(dtSeconds: number): void {
+  /**
+   * A tick starts: voices started from now on are that many seconds younger. Returns the commands that move each
+   * fading voice's volume on by `dtSeconds`, and stop a voice whose fade out has finished.
+   */
+  advance(dtSeconds: number): CommandMessage[] {
     this.clockSeconds += dtSeconds;
+    if (!this.fades.size) return [];
+    const commands: CommandMessage[] = [];
+    for (const [voiceId, fade] of [...this.fades]) {
+      fade.elapsed += dtSeconds;
+      commands.push(...this.fadeCommands(voiceId, fade));
+    }
+    return commands;
+  }
+
+  /**
+   * Ramp a live voice's play-call volume to `to` over `seconds` of real time, from `from` (its current volume when
+   * omitted), replacing any fade it had. Returns the commands for the ramp's start: the whole change, and the stop,
+   * when `seconds` is not above 0.
+   */
+  fade(voiceId: string, seconds: number, to: number, options: { from?: number; stopAtEnd?: boolean } = {}): CommandMessage[] {
+    const voice = this.live.get(voiceId);
+    if (!voice) return [];
+    const fade: VoiceFade = {
+      from: options.from ?? voice.volume,
+      to,
+      seconds: Number.isFinite(seconds) ? Math.max(0, seconds) : 0,
+      elapsed: 0,
+      stopAtEnd: options.stopAtEnd === true,
+    };
+    this.fades.set(voiceId, fade);
+    return this.fadeCommands(voiceId, fade);
+  }
+
+  private fadeCommands(voiceId: string, fade: VoiceFade): CommandMessage[] {
+    const done = fade.elapsed >= fade.seconds;
+    const volume = done ? fade.to : fade.from + (fade.to - fade.from) * (fade.elapsed / fade.seconds);
+    const commands: CommandMessage[] = [{ type: "setVoiceGain", voiceId, volume }];
+    if (done) {
+      this.fades.delete(voiceId);
+      if (fade.stopAtEnd) commands.push({ type: "stopSound", voiceId });
+    }
+    return commands;
+  }
+
+  /** Whether this session started the voice and it has not stopped or ended. */
+  isLive(voiceId: string): boolean {
+    return this.live.has(voiceId);
   }
 
   /** Gives a `playSound` that names an asset but no clip or pitch draws its draws. */
@@ -54,7 +102,7 @@ export class RuntimeVoices {
     return [...this.live.values()].map((voice) => [voice.voiceId, voice.emitterActorGuid ?? null]);
   }
 
-  /** A stable id for a script Play Sound that names no voice. */
+  /** A stable id for a script Play Sound that names no voice: `script:<n>`, whose `n` is its Sound Handle's Id. */
   scriptVoiceId(): string {
     return `script:${this.nextScriptVoice++}`;
   }
@@ -85,6 +133,7 @@ export class RuntimeVoices {
       // Hosts reset their audio session when the active Scene changes from the boot Scene onward.
       if (this.activeSceneGuid !== undefined && command.sceneAssetGuid !== this.activeSceneGuid) {
         this.live.clear();
+        this.fades.clear();
       }
       this.activeSceneGuid = command.sceneAssetGuid;
     }
@@ -97,6 +146,7 @@ export class RuntimeVoices {
 
   private drop(voiceId: string): void {
     this.live.delete(voiceId);
+    this.fades.delete(voiceId);
   }
 
   traceState(): TraceAudioState {

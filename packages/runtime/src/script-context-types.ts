@@ -279,6 +279,17 @@ export interface ScriptContext {
   getDisplayName(object: unknown): string;
   /** Ease: Alpha clamped to 0..1 and shaped by an Easing Curve member (`sampleEasingCurve` in core). */
   easeAlpha(curve: unknown, alpha: unknown): number;
+  /** Stop Sound: stops the handle's voice at once. */
+  stopSoundHandle(handle: unknown): void;
+  /** Set Sound Volume: the voice's play-call volume, 0..1, cancelling a fade. */
+  setSoundVolume(handle: unknown, volume: unknown): void;
+  /** Set Sound Pitch: the voice's pitch multiplier on its Audio's pitch. */
+  setSoundPitch(handle: unknown, pitch: unknown): void;
+  /** Fade In Sound: from silent to `volume` over `seconds`. */
+  fadeInSound(handle: unknown, seconds: unknown, volume: unknown): void;
+  /** Fade Out Sound: to silent over `seconds`, then stops the voice. */
+  fadeOutSound(handle: unknown, seconds: unknown): void;
+  isSoundPlaying(handle: unknown): boolean;
   /** Get Physics Linear Velocity, or Angular Velocity In Degrees (`angular`): the body's, zero without one. */
   physicsVelocity(actor: unknown, angular: boolean): Vec3;
   /** Set Physics Linear Velocity, or Angular Velocity In Degrees (`angular`), optionally added to the current one. */
@@ -620,7 +631,10 @@ export interface ScriptContext {
     translation: Vec3,
     offset?: number,
   ): void;
-  playSound(asset: string, volume?: number): void;
+  /** Play Sound: a Sound Handle naming the new voice (`script:<Id>`). */
+  playSound(asset: string, volume?: number): { Id: number };
+  /** Play Sound At Location: a voice at a fixed world position (spatial when its Audio has Sound Attenuation). */
+  playSoundAtLocation(asset: string, location: unknown, volume?: number, pitch?: unknown): { Id: number };
   spawnParticlesAtLocation(system: unknown, location: unknown, rotation: unknown, scale: unknown, autoDestroy?: unknown): Actor | null;
   spawnParticlesAttached(system: unknown, attachTo: unknown, bone: unknown, locationOffset: unknown, rotationOffset: unknown,
     autoDestroy?: unknown): Actor | null;
@@ -788,6 +802,7 @@ export type HostContextKey =
   | "randomSeedStep" | "setActorHidden" | "isActorHidden" | "setComponentVisible" | "isComponentVisible" | "componentTransform"
   | "setComponentTransform" | "actorDistance" | "addActorLocalOffset" | "addActorLocalRotation" | "addActorWorldRotation"
   | "teleportActor" | "getActorTags" | "setActorTags" | "getObjectClass" | "classIsChildOf" | "getDisplayName"
+  | "stopSoundHandle" | "setSoundVolume" | "setSoundPitch" | "fadeInSound" | "fadeOutSound" | "isSoundPlaying"
   | "easeAlpha" | "physicsVelocity" | "setPhysicsVelocity" | "addForce" | "addTorque" | "setMotionType" | "setActorCollisionEnabled"
   | "isActorCollisionEnabled"
   | "clearTimer" | "setTimerPaused" | "timerExists" | "isTimerActive" | "isTimerPaused" | "timerRemaining" | "timerElapsed" | "clampToRange" | "isInRange" | "lerpFloatRange"

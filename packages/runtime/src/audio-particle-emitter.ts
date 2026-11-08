@@ -3,6 +3,7 @@ import { parseParticleRetrigger } from "@haptic/core";
 import type { Actor, ActorComponent } from "@haptic/object-model";
 import type { OwnerAdmission } from "./owner-admission";
 import { particleComponentOverrides } from "./particle-parameter-bindings";
+import type { RuntimeVoices } from "./runtime-voices";
 import type { ScriptHostServices } from "./script-host";
 
 interface AudioParticleEmitterHost {
@@ -129,11 +130,14 @@ interface AudioHostDeps {
   /** Names a script voice that has no id, so it can be traced, stopped and resumed. */
   scriptVoiceId(): string;
   emit(command: CommandMessage): void;
+  /** The session's live voices and their fades (`RuntimeVoices`). */
+  voices: Pick<RuntimeVoices, "isLive" | "fade">;
 }
 
 /** Script audio and particle calls: sounds, particle playback and mixer volumes. */
 export function createAudioHostBindings(deps: AudioHostDeps): Pick<ScriptHostServices,
-  "playSound" | "stopSound" | "setParticlePlaying" | "emitParticleBurst" | "setChannelVolume" | "setGlobalVolume"> {
+  "playSound" | "stopSound" | "scriptVoiceId" | "soundVoices" | "setParticlePlaying" | "emitParticleBurst" |
+  "setChannelVolume" | "setGlobalVolume"> {
   return {
     playSound: (asset, volume, options) => {
       deps.emit({
@@ -144,10 +148,26 @@ export function createAudioHostBindings(deps: AudioHostDeps): Pick<ScriptHostSer
         emitterActorGuid: options?.emitterActorGuid ?? null,
         loop: options?.loop,
         voiceId: options?.voiceId ?? deps.scriptVoiceId(),
+        ...(options?.location ? { location: options.location } : {}),
+        ...(options?.pitch !== undefined && options.pitch !== 1 ? { pitch: options.pitch } : {}),
       });
     },
     stopSound: (voiceId) => {
       deps.emit({ type: "stopSound", voiceId });
+    },
+    scriptVoiceId: () => deps.scriptVoiceId(),
+    soundVoices: {
+      isPlaying: (voiceId) => deps.voices.isLive(voiceId),
+      // Only voices this session started and has not stopped: a stale handle sends nothing.
+      setVolume: (voiceId, volume) => {
+        if (deps.voices.isLive(voiceId)) for (const command of deps.voices.fade(voiceId, 0, volume)) deps.emit(command);
+      },
+      setPitch: (voiceId, pitch) => {
+        if (deps.voices.isLive(voiceId)) deps.emit({ type: "setVoicePitch", voiceId, pitch });
+      },
+      fade: (voiceId, seconds, to, options) => {
+        for (const command of deps.voices.fade(voiceId, seconds, to, options)) deps.emit(command);
+      },
     },
     setParticlePlaying: (actorGuid, playing, componentId, restart) => {
       deps.emit({

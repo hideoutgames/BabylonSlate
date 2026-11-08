@@ -344,9 +344,23 @@ export interface ScriptHostServices {
       emitterActorGuid?: string | null;
       loop?: boolean;
       voiceId?: string;
+      /** Play Sound At Location's fixed spatial position. */
+      location?: { x: number; y: number; z: number } | null;
+      /** Pitch multiplier on the Audio asset's pitch. */
+      pitch?: number;
     },
   ): void;
   stopSound?(voiceId: string): void;
+  /** A new script voice id, `script:<n>`; `n` is the voice's Sound Handle Id. */
+  scriptVoiceId?(): string;
+  /** Sound Handle nodes over the session's live voices, by voice id. */
+  soundVoices?: {
+    isPlaying(voiceId: string): boolean;
+    setVolume(voiceId: string, volume: number): void;
+    setPitch(voiceId: string, pitch: number): void;
+    /** Ramp to `to` over `seconds` of real time, from `from` or the current volume, then stop when `stopAtEnd`. */
+    fade(voiceId: string, seconds: number, to: number, options?: { from?: number; stopAtEnd?: boolean }): void;
+  };
   /** `restart`: Restart Particles, which cuts the run on screen whatever the component's Retrigger. */
   setParticlePlaying?(
     actorGuid: string,

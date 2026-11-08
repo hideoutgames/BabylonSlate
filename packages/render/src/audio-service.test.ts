@@ -628,6 +628,49 @@ describe("AudioService", () => {
     service.dispose();
   });
 
+  it("places a Play Sound At Location voice at its fixed position, whatever its emitter does", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const diagnostics: Array<{ code: string }> = [];
+    const service = new AudioService({ backend, onDiagnostic: (entry) => diagnostics.push(entry) });
+    service.setLibrary(library({
+      audio: { jump: { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" } },
+      attenuations: { near: { innerRadius: 1, maxRadius: 10, distanceModel: "linear", rolloff: 1, spatialisation: "equalPower", cone: null, doppler: null } },
+    }));
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.noteActorSlot("speaker", 1);
+    service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 1, voiceId: "here", location: { x: 4, y: 5, z: 6 } });
+    service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 1, voiceId: "there", emitterActorGuid: "speaker", location: { x: -1, y: 0, z: 0 } });
+    await service.flush();
+    service.syncSnapshot([{ slotId: 1, position: { x: 9, y: 9, z: 9 } }]);
+    expect(backend.plays.map((play) => play.spatial?.enabled)).toEqual([true, true]);
+    expect(backend.poses.get("here")).toEqual({ x: 4, y: 5, z: 6 });
+    expect(backend.poses.get("there")).toEqual({ x: -1, y: 0, z: 0 });
+    // A located voice needs no emitter, so nothing is reported missing and no actor is posed for it.
+    expect(diagnostics).toEqual([]);
+    expect([...service.collectEmitterSlots(new Set())]).toEqual([]);
+    service.dispose();
+  });
+
+  it("multiplies the authored pitch by the play call's and Set Sound Pitch's multiplier", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(library({ audio: { jump: { ...createDefaultAudioPayload(), pitch: 2 } } }));
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 1, voiceId: "v1", pitch: 1.5 });
+    await service.flush();
+    expect(backend.playbackRates.get("v1")).toBeCloseTo(3, 9);
+    service.handleCommand({ type: "setVoicePitch", voiceId: "v1", pitch: 0.5 });
+    await service.flush();
+    expect(backend.playbackRates.get("v1")).toBeCloseTo(1, 9);
+    // The multiplier is held to 0.25..4 like an Audio asset's own pitch.
+    service.handleCommand({ type: "setVoicePitch", voiceId: "v1", pitch: 100 });
+    await service.flush();
+    expect(backend.playbackRates.get("v1")).toBeCloseTo(8, 9);
+    service.dispose();
+  });
+
   it("follows snapshot poses and reports lastDistance", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const service = new AudioService({ backend });

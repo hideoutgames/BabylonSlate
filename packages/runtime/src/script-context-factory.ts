@@ -774,9 +774,23 @@ export function createScriptContext(
         offset,
       );
     };
-    context.playSound = (asset, volume) => {
+    // The handle's Id is the number in the voice id (`script:<Id>`); 0 when no host names voices.
+    const playScriptSound = (asset: unknown, volume: unknown, extra: { location?: { x: number; y: number; z: number }; pitch?: number }) => {
+      const voiceId = services.scriptVoiceId?.();
       services.playSound?.(String(asset ?? ""), Number(volume ?? 1), {
         emitterActorGuid: self?.guid ?? null,
+        ...(voiceId ? { voiceId } : {}),
+        ...extra,
+      });
+      return { Id: voiceId ? Number(voiceId.slice("script:".length)) || 0 : 0 };
+    };
+    context.playSound = (asset, volume) => playScriptSound(asset, volume, {});
+    context.playSoundAtLocation = (asset, location, volume, pitch) => {
+      const position = finiteVector(location as never, 0);
+      const multiplier = Number(pitch ?? 1);
+      return playScriptSound(asset, volume, {
+        ...(position ? { location: position } : {}),
+        pitch: Number.isFinite(multiplier) ? multiplier : 1,
       });
     };
     context.spawnParticlesAtLocation = (system, location, rotation, scale, autoDestroy = true) =>
