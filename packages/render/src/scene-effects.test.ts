@@ -45,7 +45,7 @@ it("activates local fog without global density and respects the post-processing 
 
 it("adds the Scene Linear and Display Color stages for PBR only", () => {
   const linear = effects({
-    colorPipeline: { version: 1, mode: "sceneLinear" },
+    colorPipeline: { mode: "sceneLinear" },
   });
   expect(planSceneEffects(linear, "pbr")).toEqual({
     sceneLinear: true,
@@ -60,7 +60,7 @@ it("adds the Scene Linear and Display Color stages for PBR only", () => {
 
 it("keeps CEL effects display-space with identity processing", () => {
   const linear = effects({
-    colorPipeline: { version: 1, mode: "sceneLinear" },
+    colorPipeline: { mode: "sceneLinear" },
     toneMapping: "aces",
     exposure: 2,
     bloom: { enabled: true, threshold: 0.5, weight: 0.4, kernel: 32, scale: 0.25 },
@@ -85,7 +85,7 @@ it("uses the display stage for the vignette on either pipeline", () => {
     colorGrading: null,
   });
   const linear = effects({
-    colorPipeline: { version: 1, mode: "sceneLinear" },
+    colorPipeline: { mode: "sceneLinear" },
     vignette: { enabled: true, weight: 1, color: [0, 0, 0] },
   });
   expect(planSceneEffects(linear, "pbr")?.imageProcessing).toEqual({
@@ -120,7 +120,7 @@ it("leaves screen effects out of a High Quality capture's plan and keeps what on
   const bloom = { enabled: true, threshold: 0.5, weight: 0.4, kernel: 32, scale: 0.25 };
   const vignette = { enabled: true, weight: 2, color: [0, 0, 0] as [number, number, number] };
   const linear = effects({
-    colorPipeline: { version: 1, mode: "sceneLinear" }, toneMapping: "aces", exposure: 2, contrast: 1.4,
+    colorPipeline: { mode: "sceneLinear" }, toneMapping: "aces", exposure: 2, contrast: 1.4,
     whiteBalance: { enabled: true, temperature: 4000, tint: 0.2 }, bloom, vignette,
     colorGrading: { enabled: true, lutTextureGuid: "lut" },
   });
@@ -192,7 +192,7 @@ it("plans Screen-Space Shadows on their own in PBR, never in CEL or with post-pr
 
 it("plans nothing while the post-processing toggle is off", () => {
   const linear = effects({
-    colorPipeline: { version: 1, mode: "sceneLinear" },
+    colorPipeline: { mode: "sceneLinear" },
   });
   expect(planSceneEffects(linear, "pbr", false, { fxaa: true })).toBeNull();
 });
@@ -242,7 +242,7 @@ it("holds processing at identity when the stage only carries a vignette", () => 
 
 it("changes the effects key on mode, settings and the session toggle", () => {
   const linear = effects({
-    colorPipeline: { version: 1, mode: "sceneLinear" },
+    colorPipeline: { mode: "sceneLinear" },
   });
   const base = sceneEffectsKey(linear, "pbr", true);
   expect(sceneEffectsKey(linear, "cel", true)).not.toBe(base);

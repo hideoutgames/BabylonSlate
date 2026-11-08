@@ -329,7 +329,7 @@ describe("EditorDebugOverlay", () => {
     const { scene } = createHandle();
     const linear = (toneMapping: "neutral" | "aces") => updateSceneRenderingSettings(scene, {
       mode: "pbr",
-      effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1, mode: "sceneLinear" }, toneMapping },
+      effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { mode: "sceneLinear" }, toneMapping },
     });
     linear("neutral");
     MeshBuilder.CreateBox("world", {}, scene).material = new StandardMaterial("surface", scene);

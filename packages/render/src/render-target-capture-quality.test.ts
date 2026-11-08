@@ -175,7 +175,7 @@ it.each([
   updateSceneRenderingSettings(scene, {
     mode: "pbr",
     effects: {
-      ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1, mode: "sceneLinear" }, toneMapping: "aces",
+      ...DEFAULT_RENDER_EFFECTS, colorPipeline: { mode: "sceneLinear" }, toneMapping: "aces",
       bloom: { enabled: true, threshold: 0.9, weight: 0.5, kernel: 32, scale: 0.5 },
     },
   });

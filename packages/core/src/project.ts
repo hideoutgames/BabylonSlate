@@ -179,7 +179,7 @@ const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
  */
 const NEW_3D_PROJECT_EFFECTS = {
   ...DEFAULT_RENDER_EFFECTS,
-  colorPipeline: { version: 1, mode: "sceneLinear" },
+  colorPipeline: { mode: "sceneLinear" },
   toneMapping: "neutral",
 } as const satisfies RenderEffectsSettings;
 

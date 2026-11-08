@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  AUDIO_REVERB_VERSION,
   createDefaultAudioPayload,
   dryAudioReverbFallbackBytes,
   encodeAudioReverbChunk,
@@ -257,7 +256,6 @@ describe("P16 audio acceptance", () => {
     service.setSourceBytes("dry", new Uint8Array([1]));
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: false,
         geometryHash: "h",
         probes: [

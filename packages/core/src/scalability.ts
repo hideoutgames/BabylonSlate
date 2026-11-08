@@ -67,7 +67,7 @@ const LIVE_FIELDS = new Set([
 /** Conservative application policy: shader/resource changes wait at the view boundary. */
 export function renderingApplicationPolicy(path: string): RenderingApplicationPolicy {
   if (path === "gpuBackend") return "restart";
-  if (path === "effects.colorPipeline.version" || /\.(profile|preset)$/.test(path)) return "authoring";
+  if (/\.(profile|preset)$/.test(path)) return "authoring";
   return LIVE_FIELDS.has(path) ? "live" : "rebuild";
 }
 

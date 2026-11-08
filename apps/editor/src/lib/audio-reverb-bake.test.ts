@@ -3,7 +3,6 @@ import {
   AUDIO_BAKE_DEBOUNCE_MS,
   AUDIO_BAKE_WORKER_TIMEOUT_MS,
   AUDIO_GEOMETRY_COLLECT_SLICE,
-  AUDIO_REVERB_VERSION,
   bakeAudioReverb,
   collectStaticAudioGeometry,
   decodeAudioReverbChunk,
@@ -241,7 +240,7 @@ describe("audio reverb bake controller", () => {
     expect(writes).toHaveLength(1);
     const field = decodeAudioReverbChunk(writes[0]!.bytes);
     expect(isDryAudioReverbFallback(field)).toBe(true);
-    expect(field?.version).toBe(AUDIO_REVERB_VERSION);
+    expect(field?.dryFallback).toBe(true);
     expect(diagnostics).toEqual([
       expect.objectContaining({ code: "audio.reverb_bake_failed" }),
     ]);

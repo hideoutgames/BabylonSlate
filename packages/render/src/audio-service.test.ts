@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AUDIO_MAX_CONCURRENT_VOICES,
   AUDIO_PRE_UNLOCK_QUEUE_CAP,
-  AUDIO_REVERB_VERSION,
   AUDIO_SPEED_OF_SOUND,
   audioClipCacheKey,
   createDefaultAudioPayload,
@@ -1020,7 +1019,6 @@ describe("AudioService", () => {
     service.setSourceBytes("jump", new Uint8Array([1]));
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: false,
         geometryHash: "h",
         probes: [
@@ -1075,7 +1073,6 @@ describe("AudioService", () => {
     service.setSourceBytes("jump", new Uint8Array([1]));
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: false,
         geometryHash: "h",
         probes: [
@@ -1151,7 +1148,6 @@ describe("AudioService", () => {
     service.setSourceBytes("jump", new Uint8Array([1]));
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: false,
         geometryHash: "h",
         probes: [
@@ -1214,7 +1210,6 @@ describe("AudioService", () => {
     service.setSourceBytes("jump", new Uint8Array([1]));
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: true,
         geometryHash: "h",
         probes: [],
@@ -1272,7 +1267,6 @@ describe("AudioService", () => {
     bits[0] = 0b0000_0110;
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: false,
         geometryHash: "occ",
         probes: [],
@@ -1349,7 +1343,6 @@ describe("AudioService", () => {
     bits[0] = 0b0000_0110;
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: false,
         geometryHash: "occ",
         probes: [],
@@ -1783,7 +1776,6 @@ describe("AudioService spatial refresh per applied snapshot", () => {
     bits[0] = 0b0000_0110;
     service.setReverbField(
       encodeAudioReverbChunk({
-        version: AUDIO_REVERB_VERSION,
         dryFallback: false,
         geometryHash: "occ",
         probes: [],

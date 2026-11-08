@@ -30,7 +30,7 @@ Unit tests use `FakeAudioPlaybackBackend` (NullEngine cannot decode). Overlay Pl
 - **SoundAttenuation** (`.atten.hasset`): opts into 3D (`null` = non-spatial); radii, distance model, rolloff, spatialisation, optional cone and Doppler.
 - Project Settings `audio`: `audioMixerGuid`, `occlusionEnabled`, reverb wet/decay/damping scales (0..2).
 - Header `dependencies[]` list channel, attenuation, parent and mixer channels for references and delete guards.
-- Scene `audioReverb` chunk: magic `BSAR`, v2 adds occupancy bitmap, ≤ 64 KiB. Export sidecar `audioReverb:<sceneGuid>`. Packed Audio uses a `BSAU` envelope.
+- Scene `audioReverb` chunk: magic `BSAR`, a format word (`2`; decode reads no field from a chunk with any other value), flags, geometry hash, probes and the occupancy bitmap, ≤ 64 KiB. Export sidecar `audioReverb:<sceneGuid>`. Packed Audio uses a `BSAU` envelope.
 
 ## Gain and commands
 

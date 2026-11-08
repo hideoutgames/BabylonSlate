@@ -53,7 +53,7 @@ export async function simulationParticleProject() {
   // Pixel hashes compare redraws: a fixed render resolution, so slow software-GL frames (MSAA) never rescale one.
   project.settings.render.quality = { ...project.settings.render.quality, resolution: { scale: 1, dynamic: false, minScale: 1, targetFps: 60 } };
   // The pixel checks classify pure red particles: no tone curve, which rolls overlapping additive particles toward white.
-  project.settings.render.effects = { ...project.settings.render.effects, colorPipeline: { version: 1, mode: "legacyDisplay" }, toneMapping: "none" };
+  project.settings.render.effects = { ...project.settings.render.effects, colorPipeline: { mode: "legacyDisplay" }, toneMapping: "none" };
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const assets = [
     { path: MAIN_SCENE_FILE, guid: "00000000-0000-4000-8000-000000000001", type: "Scene", name: "Main", payload: scene, dependencies: [systemGuid, blueMaterialGuid] },

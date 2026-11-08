@@ -83,8 +83,8 @@ export interface VolumetricLightingSettings {
 }
 
 export interface RenderEffectsSettings {
-  /** Stage contract version; Scene Linear renders HDR then resolves display. */
-  colorPipeline: { version: 1; mode: ColorPipelineMode };
+  /** Scene Linear renders HDR then resolves display. */
+  colorPipeline: { mode: ColorPipelineMode };
   toneMapping: RenderEffectsToneMapping;
   exposure: number;
   contrast: number;
@@ -141,7 +141,7 @@ export const RENDER_EFFECTS_LIMITS = {
 } as const;
 
 export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
-  colorPipeline: { version: 1, mode: "legacyDisplay" },
+  colorPipeline: { mode: "legacyDisplay" },
   // Applies in Scene Linear only: Neutral keeps hues and saturation and rolls highlights off.
   toneMapping: "neutral",
   exposure: 1,
@@ -215,7 +215,6 @@ export function normalizeRenderEffectsSettings(
   const color = colorTriple(vignette.color);
   return {
     colorPipeline: {
-      version: 1,
       mode:
         colorPipeline.mode === "sceneLinear" ? "sceneLinear" : "legacyDisplay",
     },
@@ -364,8 +363,7 @@ export function normalizeRenderEffectsOverrides(value: unknown): RenderEffectsOv
     const resolved = normalized[key] as Record<string, unknown>;
     const group: Record<string, unknown> = {};
     for (const [leaf, leafValue] of Object.entries(object(authored))) {
-      // The pipeline's stage contract version is not a choice.
-      if (leaf === "version" || !Object.hasOwn(fallback, leaf)) continue;
+      if (!Object.hasOwn(fallback, leaf)) continue;
       if (acceptsLeaf(leafValue, fallback[leaf], resolved[leaf])) group[leaf] = resolved[leaf];
     }
     if (Object.keys(group).length > 0) result[key] = group;
