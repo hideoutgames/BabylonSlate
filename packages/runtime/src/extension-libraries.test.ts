@@ -77,6 +77,6 @@ describe("Extension game libraries", () => {
 
   it("reach the runtime from the worker load message", () => {
     const base = library("base", { "game.js": "exports.ready = true;" });
-    expect(runtimeOptionsFromLoadControl({ type: "load", seed: 1, extensionLibraries: [base] }).extensionLibraries).toEqual([base]);
+    expect(runtimeOptionsFromLoadControl({ type: "load", seed: 1, sceneAssetGuid: "scene", extensionLibraries: [base] }).extensionLibraries).toEqual([base]);
   });
 });
