@@ -158,11 +158,28 @@ function reactsToClass(classId: string): boolean {
     classId === "LandscapeComponent" || classId === "WaterBuoyancyComponent";
 }
 
+const NO_ACTORS: readonly Actor[] = [];
+/** A buoyancy box's support corners on each horizontal axis, as fractions of its width and length. */
+const SUPPORT_CORNERS = [-0.5, 0.5] as const;
+
+/** The actors owning a component of a class the walk reacts to, destroyed ones included, in order. */
+function collectReactiveActors(actors: readonly Actor[]): Actor[] {
+  const reactive: Actor[] = [];
+  for (const actor of actors) {
+    for (const component of actor.components) {
+      if (reactsToClass(component.classId)) { reactive.push(actor); break; }
+    }
+  }
+  return reactive;
+}
+
 /** Component attachments have the same transform meaning in physics and rendering. */
 function componentWorldTransform(component: ActorComponent, actor: Actor, world: Transform): Transform {
+  // An unattached component composes its own transform alone; only a parent chain needs the walk.
+  if (!component.parentId) return composeParentChildTransform(world, component.transform);
   const chain = [component.transform];
   const seen = new Set([component.guid]);
-  let parentId = component.parentId;
+  let parentId: string | null = component.parentId;
   while (parentId && !seen.has(parentId)) {
     seen.add(parentId);
     const parent = actor.components.find((c) => c.guid === parentId && !c.destroyed);
@@ -181,6 +198,13 @@ export class WaterWorld {
   private readonly terrain = new WeakMap<object, { size: string; data: LandscapeProperties }>();
   private readonly normalizedBodies = new WeakMap<ActorComponent, Normalized<WaterBodyProperties>>();
   private readonly normalizedRemovals = new WeakMap<ActorComponent, Normalized<ReturnType<typeof normalizeWaterRemoval>>>();
+  private readonly normalizedBuoyancy = new WeakMap<ActorComponent, Normalized<ReturnType<typeof normalizeWaterBuoyancy>>>();
+  /** Buoyancy's spring solve over at most four supports: row-major coupling terms, free velocities and impulses. */
+  private readonly solveLinear = new Float64Array(16);
+  private readonly solveAngular = new Float64Array(16);
+  private readonly freeLinear = new Float64Array(4);
+  private readonly freeAngular = new Float64Array(4);
+  private readonly impulses = new Float64Array(4);
   /**
    * The physics step's evaluation: water sources, cutters and buoyant actors
    * (with ancestors) at the step clock. Buoyancy reads it during the step.
@@ -211,9 +235,9 @@ export class WaterWorld {
     this.lookupWorld ? this.lookupWorld.findActor(guid) : this.byGuid.get(guid);
   private readonly defaultWater = createDefaultWaterDefinition();
   private readonly worldOf: (actors: readonly Actor[]) => World | null;
-  /** The world structure last scanned for components water reacts to, and whether it held any. */
+  /** The world structure last scanned for components water reacts to, and the actors that own one. */
   private scannedIndex: WorldComponentIndex | null = null;
-  private scannedReactive = true;
+  private scannedActors: readonly Actor[] = NO_ACTORS;
   /** Per buoyancy component: each support's recent peak submersion, which weights its horizontal drag. */
   private readonly wetness = new WeakMap<ActorComponent, Float64Array>();
   private readonly drift = { x: 0, z: 0 };
@@ -324,7 +348,7 @@ export class WaterWorld {
     const { sourceActors, sourceComponents, sourceBodies, composed } = this;
     bodies.length = removals.length = landscapes.length = 0;
     let water = false;
-    for (const actor of this.mayReact(actors) ? actors : []) {
+    for (const actor of this.reactiveActors(actors)) {
       const surfaces = !actor.destroyed && !actor.sceneLayerId;
       for (const component of actor.components) {
         if (component.destroyed) continue;
@@ -379,21 +403,20 @@ export class WaterWorld {
   }
 
   /**
-   * False only for a world's own actor list when no actor owns a class the walk reacts to,
-   * so the walk would collect nothing. The answer follows the world structure.
+   * The actors the walk can collect from, in `actors` order. For a world's own actor list these are the actors owning
+   * a class the walk reacts to, and none while the world has no water surface, since nothing can then be sampled:
+   * every other actor adds nothing, so the walk's result is unchanged. The list follows the world structure. Any
+   * other list is walked whole.
    */
-  private mayReact(actors: readonly Actor[]): boolean {
+  private reactiveActors(actors: readonly Actor[]): readonly Actor[] {
     const world = this.worldOf(actors);
-    if (!world) return true;
+    if (!world) return actors;
     const index = worldComponentIndex(world);
     if (index !== this.scannedIndex) {
       this.scannedIndex = index;
-      this.scannedReactive = false;
-      for (const classId of index.classIds()) {
-        if (reactsToClass(classId)) { this.scannedReactive = true; break; }
-      }
+      this.scannedActors = this.hasSurfaces(world) ? collectReactiveActors(world.getActors()) : NO_ACTORS;
     }
-    return this.scannedReactive;
+    return this.scannedActors;
   }
 
   /**
@@ -445,7 +468,7 @@ export class WaterWorld {
     if (backend.kind !== "3d" || dt <= 0 || mass <= 0) return;
     const component = actor.components.find((c) => c.classId === "WaterBuoyancyComponent" && !c.destroyed && c.getVariable("enabled") !== false);
     if (!component) return;
-    const props = normalizeWaterBuoyancy(Object.fromEntries(component.variables));
+    const props = normalized(this.normalizedBuoyancy, component, "buoyancy", () => normalizeWaterBuoyancy(Object.fromEntries(component.variables)));
     const actorTransform = this.stepState.transforms.get(actor.guid);
     const pose = backend.getBodyTransform(bodyId), velocity = backend.getBodyVelocity(bodyId);
     if (!actorTransform || !pose || !velocity) return;
@@ -462,7 +485,7 @@ export class WaterWorld {
     wetness ??= new Float64Array(4);
     this.wetness.set(component, wetness);
     let index = -1;
-    for (const x of [-0.5, 0.5]) for (const z of [-0.5, 0.5]) {
+    for (const x of SUPPORT_CORNERS) for (const z of SUPPORT_CORNERS) {
       index++;
       const offset = quatRotateVector(transform.rotation, {
         x: (props.offset[0] + x * props.width) * transform.scale.x,
@@ -516,39 +539,45 @@ export class WaterWorld {
     const afterDrag = backend.getBodyVelocity(bodyId)!;
     // All four springs share the same body's translation and rotation. Solve them
     // together using collider inertia; independent springs can flip a light hull.
-    const solve = supports.map(({ r }) => supports.map(({ response }) => ({
-      linear: response.linear.y, angular: response.angular.z * r.x - response.angular.x * r.z,
-    })));
-    const free = supports.map(({ r, sample }) => ({
-      linear: afterDrag.linear.y - sample.velocity.y - Math.max(0, gravity) * dt,
-      angular: afterDrag.angular.z * r.x - afterDrag.angular.x * r.z,
-    }));
-    const impulses = supports.map(() => 0);
+    // Row i, column j: support j's response seen at support i, at [i * 4 + j].
+    const count = supports.length;
+    const { solveLinear, solveAngular, freeLinear, freeAngular, impulses } = this;
+    for (let i = 0; i < count; i++) {
+      const { r, sample } = supports[i]!;
+      for (let j = 0; j < count; j++) {
+        const { response } = supports[j]!;
+        solveLinear[i * 4 + j] = response.linear.y;
+        solveAngular[i * 4 + j] = response.angular.z * r.x - response.angular.x * r.z;
+      }
+      freeLinear[i] = afterDrag.linear.y - sample.velocity.y - Math.max(0, gravity) * dt;
+      freeAngular[i] = afterDrag.angular.z * r.x - afterDrag.angular.x * r.z;
+      impulses[i] = 0;
+    }
     // Projected Gauss-Seidel for the dry, surface and fully immersed branches.
     // The implicit solve bounds high-stiffness response without capping capacity.
     for (let iteration = 0; iteration < 32; iteration++) {
       let change = 0;
-      for (let n = 0; n < supports.length; n++) {
-        const i = iteration % 2 ? supports.length - n - 1 : n;
-        const support = supports[i]!, row = solve[i]!;
-        let relative = free[i]!.linear + free[i]!.angular;
-        let dragVelocity = free[i]!.linear + props.angularDrag * free[i]!.angular;
-        for (let j = 0; j < supports.length; j++) if (j !== i) {
-          relative += (row[j]!.linear + row[j]!.angular) * impulses[j]!;
-          dragVelocity += (row[j]!.linear + props.angularDrag * row[j]!.angular) * impulses[j]!;
+      for (let n = 0; n < count; n++) {
+        const i = iteration % 2 ? count - n - 1 : n;
+        const support = supports[i]!, row = i * 4;
+        let relative = freeLinear[i]! + freeAngular[i]!;
+        let dragVelocity = freeLinear[i]! + props.angularDrag * freeAngular[i]!;
+        for (let j = 0; j < count; j++) if (j !== i) {
+          relative += (solveLinear[row + j]! + solveAngular[row + j]!) * impulses[j]!;
+          dragVelocity += (solveLinear[row + j]! + props.angularDrag * solveAngular[row + j]!) * impulses[j]!;
         }
-        const dragFactor = 1 + support.drag * (row[i]!.linear + props.angularDrag * row[i]!.angular);
+        const dragFactor = 1 + support.drag * (solveLinear[row + i]! + props.angularDrag * solveAngular[row + i]!);
         const dragImpulse = -support.drag * dragVelocity;
         const next = Math.max(dragImpulse / dragFactor, Math.min(
           (support.maximumLift + dragImpulse) / dragFactor,
           (support.stiffness * dt * (support.sample.depth + height / 2 - relative * dt) + dragImpulse)
-            / (dragFactor + support.stiffness * dt * dt * (row[i]!.linear + row[i]!.angular)),
+            / (dragFactor + support.stiffness * dt * dt * (solveLinear[row + i]! + solveAngular[row + i]!)),
         ));
         change = Math.max(change, Math.abs(next - impulses[i]!));
         impulses[i] = next;
       }
       if (change < mass * 1e-7) break;
     }
-    supports.forEach(({ point }, i) => backend.addImpulseAtPoint(bodyId, { x: 0, y: impulses[i]!, z: 0 }, point));
+    for (let i = 0; i < count; i++) backend.addImpulseAtPoint(bodyId, { x: 0, y: impulses[i]!, z: 0 }, supports[i]!.point);
   }
 }

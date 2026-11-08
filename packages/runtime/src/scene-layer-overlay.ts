@@ -33,16 +33,15 @@ import { SceneLayerFocusNavigation } from "./scene-layer-focus";
 import { focusLayoutEntry, revealFocusedElement } from "./scene-layer-focus-layout";
 import { SceneLayerLayout } from "./scene-layer-layout";
 import { SceneLayerVirtualization } from "./scene-layer-virtualization";
+import { sceneLayerActors } from "./world-layer-index";
 import type { ScriptHost, ScriptHostServices } from "./script-host";
 import type { UIControls2DRuntime } from "./ui-controls2d-runtime";
 
-/** Every World actor by Scene Layer and by guid, as of one structural revision. */
-interface ActorIndex {
+/** Every World actor by guid, as of one structural revision. */
+interface ActorGuidIndex {
   revision: number;
-  byLayer: ReadonlyMap<string, readonly Actor[]>;
   byGuid: ReadonlyMap<string, Actor>;
 }
-const NO_ACTORS: readonly Actor[] = [];
 
 /** Objects the overlay holds from construction; none is replaced during a session. */
 interface SceneLayerOverlayDeps {
@@ -87,7 +86,7 @@ interface SceneLayerOverlayHost {
 export class SceneLayerOverlay {
   private readonly layout = new SceneLayerLayout();
   private readonly virtualization = new SceneLayerVirtualization();
-  private actorIndex: ActorIndex | null = null;
+  private actorGuids: ActorGuidIndex | null = null;
   private readonly focus: SceneLayerFocusNavigation;
   private readonly switchers: SceneLayerActorSwitchers;
   private readonly designPose = new Map<string, { x: number; y: number }>();
@@ -213,7 +212,7 @@ export class SceneLayerOverlay {
         // Only this layer's actors own its virtual items; the index holds them without scanning the World.
         if (this.virtualization.sync(layer.guid, this.layerActors(layer.guid), result?.entries ?? this.layout.entries(layer.guid),
           (owner, classId, defaults) => this.spawnActor(owner, classId, defaults),
-          (actor) => this.removeActorSubtree(actor), this.indexedActors().byGuid)) {
+          (actor) => this.removeActorSubtree(actor), () => this.actorGuidIndex())) {
           // Syncing spawned or retired actors; layerActors re-reads the index they invalidated.
           result = this.layout.update(layer.guid, this.layerActors(layer.guid), this.host.pixelsPerUnit(), texturePixelSizes, safeAreaInsets) ?? result;
         }
@@ -228,27 +227,24 @@ export class SceneLayerOverlay {
   }
 
   /**
-   * The World's actors grouped by Scene Layer. A spawn or destroy bumps the
-   * structural revision and an actor's layer and guid never change, so a
-   * publishing tick that changed no actors reuses the index. Scripts a sync
-   * runs may spawn into any layer, hence the check on every read.
+   * The World's actors by guid, built only for a layer with virtualized
+   * containers. A spawn or destroy bumps the structural revision and an
+   * actor's guid never changes, so a publishing tick that changed no actors
+   * reuses the index. Scripts a sync runs may spawn, hence the check on every read.
    */
-  private indexedActors(): ActorIndex {
+  private actorGuidIndex(): ReadonlyMap<string, Actor> {
     const world = this.deps.world;
     const revision = world.structuralRevision;
-    if (this.actorIndex?.revision === revision) return this.actorIndex;
-    const byLayer = new Map<string, Actor[]>(), byGuid = new Map<string, Actor>();
-    for (const actor of world.getActors()) {
-      byGuid.set(actor.guid, actor);
-      if (actor.sceneLayerId == null) continue;
-      const group = byLayer.get(actor.sceneLayerId);
-      if (group) group.push(actor); else byLayer.set(actor.sceneLayerId, [actor]);
-    }
-    return this.actorIndex = { revision, byLayer, byGuid };
+    if (this.actorGuids?.revision === revision) return this.actorGuids.byGuid;
+    const byGuid = new Map<string, Actor>();
+    for (const actor of world.getActors()) byGuid.set(actor.guid, actor);
+    this.actorGuids = { revision, byGuid };
+    return byGuid;
   }
 
+  /** The layer's actors in world order, from the World's per-structure layer index. */
   private layerActors(layerId: string): readonly Actor[] {
-    return this.indexedActors().byLayer.get(layerId) ?? NO_ACTORS;
+    return sceneLayerActors(this.deps.world, layerId);
   }
 
   /** A Save Game boundary ended: whether it deferred layout (cleared on read). */
@@ -407,7 +403,7 @@ export class SceneLayerOverlay {
     this.focus.clearFocus();
     this.layout.clear();
     this.virtualization.clear();
-    this.actorIndex = null;
+    this.actorGuids = null;
   }
 
   /** Spawn a prefab in its owner's overlay; transforms stay local to the parent. */
