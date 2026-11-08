@@ -355,14 +355,13 @@ describe("EditorExtensionService code files and gameplay packages", () => {
 
   it("mounts a package's content once it turns gameplay and releases it before deleting its files", async () => {
     const synced: { guids: string[]; folderExists: boolean }[] = [];
-    let project!: Awaited<ReturnType<typeof storage>>;
-    const fixtureResult = await fixture({
+    const created: { project?: Awaited<ReturnType<typeof storage>> } = {};
+    const { project, service } = await fixture({
       syncContentRoots: async (extensions) => {
-        synced.push({ guids: extensions.map((entry) => entry.extensionGuid), folderExists: await project.exists("extensions/tools") });
+        synced.push({ guids: extensions.map((entry) => entry.extensionGuid), folderExists: await created.project!.exists("extensions/tools") });
       },
     });
-    project = fixtureResult.project;
-    const { service } = fixtureResult;
+    created.project = project;
     await writeProjectExtension(project, "tools", enabledSettings("tools"), originalModule);
     await service.refresh();
     expect(synced).toEqual([]);

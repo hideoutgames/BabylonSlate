@@ -90,7 +90,7 @@ function codeFileLabel(path: string, settings: ExtensionSettings): string {
 }
 
 /** The `code/` path for a typed or picked file name; `.ts` when it has no extension. */
-export function extensionCodeFilePath(name: string): string | null {
+function extensionCodeFilePath(name: string): string | null {
   const trimmed = name.trim().replace(/^code\//, "");
   const withExtension = /\.(?:ts|js)$/i.test(trimmed) ? trimmed : /\.[^./]+$/.test(trimmed) ? null : `${trimmed}.ts`;
   if (!withExtension) return null;

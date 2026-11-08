@@ -29,5 +29,6 @@ Runs your own JavaScript function body inline, with custom input and output pins
 ## Notes
 
 - Add input and output pins in the **Inspector**; each pin name becomes a variable in the body.
-- Names must be valid JavaScript identifiers, not reserved words, and unique across inputs and outputs, or the node fails when it runs.
+- Names must be valid JavaScript identifiers, not reserved words or `extensions`, and unique across inputs and outputs, or the node fails when it runs.
+- The body can call gameplay extension libraries as `extensions.<Library Name>`. See [Execute JavaScript](../javascript.md#extension-libraries).
 - Outputs start at their type default and keep whatever the body assigns. Syntax errors appear in **Compiler Results**.

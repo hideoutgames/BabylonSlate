@@ -4,7 +4,7 @@ Content plugins: PluginSettings identity, discovery and enablement, mounted cont
 
 ## Decisions
 
-- A plugin is **content and classes only**: one `PluginSettings` asset plus its own `assets/` root. No native code and no script loader beyond the compiled-graph pipeline. Editor-only code tools are [editor extensions](editor-extensions.md), a separate format.
+- A plugin is **content and classes only**: one `PluginSettings` asset plus its own `assets/` root. No native code and no script loader beyond the compiled-graph pipeline. Code (editor tools, and game libraries with their own content root) is [extensions](editor-extensions.md), a separate format that never follows Show Plugin Content or export-preset plugin overrides.
 - Identity is the PluginSettings **asset guid** (`pluginGuid` = header guid), never the folder name, so `pluginOverrides` stay keyed. The Inspector shows it read-only.
 - Enablement layers, later wins: PluginSettings `enabledByDefault` < `project.json` `pluginOverrides[guid].enabled` (editor uses these two) < export-preset `pluginOverrides` (export / Preview Build only).
 - Version differences (engine or dependency) are **warnings** and never block mounts, editor utilities, Play or export. Missing or disabled dependencies and cycles block the affected plugin and its dependents; independent plugins still mount.

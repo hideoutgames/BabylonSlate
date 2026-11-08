@@ -131,4 +131,6 @@ Deleting asks for confirmation and cannot be undone.
 
 Plugin folders appear in the tree when **Project Settings > Plugins > Show Plugin Content** is on. Engine plugins are marked **(Read Only)**: you cannot create, import, move or delete there. See [Plugins](../projects/plugins.md).
 
+The content folder of an enabled gameplay extension appears when its **Appear In Content Browser** is on, whatever **Show Plugin Content** says. See [Gameplay extensions](../projects/extensions.md#gameplay-extensions).
+
 When [Source Control](../projects/source-control.md) is on, locked assets show a lock badge with the owner's name.

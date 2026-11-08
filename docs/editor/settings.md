@@ -43,7 +43,7 @@ Every page groups its settings into sub-categories, such as **Shadows** and **Po
 - **Keybinds**: change shortcuts. See [Keyboard Shortcuts](../start/shortcuts.md).
 - **Interface**: **Compact Mode**. See [Compact Mode](#compact-mode).
 - **About**: version and build. The desktop app also has **Automatic Updates** here.
-- **Templates**, **Engine Plugins** and **Engine Extensions**: what new projects start with. See [Plugins](../projects/plugins.md) and [Editor Extensions](../projects/extensions.md).
+- **Templates**, **Engine Plugins** and **Engine Extensions**: what new projects start with. See [Plugins](../projects/plugins.md) and [Extensions](../projects/extensions.md).
 
 ## Theme
 
@@ -91,7 +91,7 @@ Haptic is built with open-source software. To read the licences, open **Manage A
 | Graphics & Audio | Fonts | Default font and fallbacks |
 | Graphics & Audio | Audio | Audio Mixer, occlusion and reverb |
 | Plugins & Extensions | Plugins | Enable, create and import plugins |
-| Plugins & Extensions | Project Extensions | Editor tools in this project |
+| Plugins & Extensions | Project Extensions | Editor tools and game libraries in this project |
 
 Each topic's guide covers its settings: for example [Graphics](../graphics/index.md), [Collision](../physics/collision.md), [Save Games](../scripting/save-games.md), [Publishing](../publishing/index.md) and [Source Control](../projects/source-control.md).
 

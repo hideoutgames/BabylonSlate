@@ -1,12 +1,12 @@
 # Editor Extensions
 
-Editor-only tooling: Engine and Project Extensions (trusted JS/TS modules with an editor API) and the graph-based EditorUtilityObject, EditorFunctionLibrary and SkyboxCreator types.
+Engine and Project Extensions (trusted JS/TS packages with an editor API, and for gameplay packages a game library and content root) and the graph-based, editor-only EditorUtilityObject, EditorFunctionLibrary and SkyboxCreator types.
 
 ## Decisions
 
-- Two separate mechanisms. **Extensions** are editor-only JavaScript/TypeScript packages with their own manifest, archive (`.hextension`) and activation host. **Editor utility types** are ordinary graph assets run by the editor ScriptHost. Content plugins (`.hplugin`, [plugins.md](plugins.md)) are a third, content-only format.
-- Extensions execute as **trusted editor code**; the host is not a security sandbox. Imported Project Extensions stay disabled until enabled, and replacing imported executable code requires confirmation.
-- Extension folders never mount as content roots and their modules never reach Play or packed games. Assets an extension creates under `assets/` are ordinary project assets.
+- Two separate mechanisms. **Extensions** are JavaScript/TypeScript packages with their own manifest, archive (`.hextension`) and activation host. **Editor utility types** are ordinary graph assets run by the editor ScriptHost. Content plugins (`.hplugin`, [plugins.md](plugins.md)) are a third, content-only format.
+- Extensions execute as **trusted code**, in the editor and (gameplay packages) in games; neither host is a security sandbox. Imported Project Extensions stay disabled until enabled, and replacing imported executable code requires confirmation.
+- **Editor Only** (default on) keeps a package's code and folder out of Play and packed games. A gameplay package (Editor Only off) adds a game library and an `extension:<guid>` content root ([Gameplay extensions](#gameplay-extensions)); it is not a plugin, so Show Plugin Content and export-preset plugin overrides never apply. Assets an extension's API creates under the project `assets/` are ordinary project assets.
 - Editor-only assets and graphs are stripped from Play and export by one set of helpers; runtime graphs never see editor utility classes, their functions or editor-only nodes, even with Context Sensitive off.
 - The removed EditorUtilityInterface type (`.eui.hasset`) is not a document kind and not creatable; its header type stays editor-only so leftovers never enter Play or export. The game HUD / UserInterface is removed and must not return through this path.
 
@@ -16,9 +16,13 @@ Editor-only tooling: Engine and Project Extensions (trusted JS/TS modules with a
 | --- | --- |
 | Manifest (`extension.json`, `extensions/` dir, 256 KiB cap) | [`extension-settings.ts`](../../../packages/assets/src/extension-settings.ts) |
 | Discovery, shadowing, dependency resolution | [`extension-host.ts`](../../../packages/assets/src/extension-host.ts) |
+| Code file listing, content root mounting (`mountExtensionContentRoots`) | [`extension-host.ts`](../../../packages/assets/src/extension-host.ts), [`content-root.ts`](../../../packages/assets/src/content-root.ts) |
 | `.hextension` inspect / import / export and limits | [`extension-package.ts`](../../../packages/assets/src/extension-package.ts) |
-| Activation, transpile, command registry, API lifetime | [`apps/editor/src/lib/editor-extension-host.ts`](../../../apps/editor/src/lib/editor-extension-host.ts) |
-| Project lifetime, refresh, diagnostics | [`apps/editor/src/services/editor-extension-service.ts`](../../../apps/editor/src/services/editor-extension-service.ts) |
+| Linking: transpile, relative import resolution | [`apps/editor/src/lib/extension-modules.ts`](../../../apps/editor/src/lib/extension-modules.ts) |
+| Bundle evaluation, game library loading (plain data shared by editor, worker and player) | [`packages/core/src/extension-library.ts`](../../../packages/core/src/extension-library.ts) |
+| Activation, command registry, API lifetime | [`apps/editor/src/lib/editor-extension-host.ts`](../../../apps/editor/src/lib/editor-extension-host.ts) |
+| Project lifetime, refresh, diagnostics, code file saves, game library linking, content root sync | [`apps/editor/src/services/editor-extension-service.ts`](../../../apps/editor/src/services/editor-extension-service.ts) |
+| Game library in scripts | `ScriptHost.extensionLibraries` / `loadCompiledModule` in [`packages/runtime/`](../../../packages/runtime/src/); Play `load` control (`playSessionLoad`), `game.json` `extensionLibraries` (exporter), player `load` control |
 | Engine library and bundled catalog | [`engine-extension-library.ts`](../../../apps/editor/src/lib/engine-extension-library.ts), [`engine-library.ts`](../../../apps/editor/src/lib/engine-library.ts) (defaults file, name and guid conflicts, operation queue helper and import rollback, shared with Engine Plugins; each `EngineExtensionLibrary` keeps its own queue), [`engine-extensions.ts`](../../../apps/editor/src/lib/engine-extensions.ts), [`engine-extensions/`](../../../engine-extensions/) |
 | Editor-only predicates | [`packages/core/src/editor-only.ts`](../../../packages/core/src/editor-only.ts) |
 | Editor ScriptHost for utility graphs | [`editor-utility-scripts.ts`](../../../apps/editor/src/lib/editor-utility-scripts.ts), [`editor-utility-runtime.tsx`](../../../apps/editor/src/components/editor-utility-runtime.tsx) |
@@ -28,19 +32,26 @@ Editor-only tooling: Engine and Project Extensions (trusted JS/TS modules with a
 | Scope | Storage |
 | --- | --- |
 | Engine Extensions | Protected bundles in `engine-extensions/` plus an app-owned user library. Engine Settings → Engine Extensions manages new-project defaults, downloads and confirmed deletion of user entries; bundled entries cannot be deleted or replaced. |
-| Project Extensions | Editable `extensions/<folder>/extension.json` plus a package-relative `.ts`/`.js` entry. Project Settings → Project Extensions: enable, maturity badges, diagnostics, commands, New / Import / Export, settings and source editing. |
+| Project Extensions | Editable `extensions/<folder>/`: `extension.json`, the editor entry (`index.ts`), the game entry (`game.ts`, gameplay packages), added files under `code/`, content under `assets/`. Project Settings → Project Extensions: enable, maturity and Gameplay badges, diagnostics, commands, New / Import / Export, settings and code file editing. |
 
 - New projects copy the Engine library into editable Project Extensions; later library changes never rewrite copies. A project copy shadows an Engine extension with the same stable `extensionGuid`. `project.json` stores enable overrides by guid.
-- Manifest: `kind: "extension"`, `formatVersion`, `extensionGuid`, display name, version, description, author, category, Lucide `iconKey`, `experimental` / `beta` (confirm on enable), `enabledByDefault`, `engineVersion`, `extensionDependencies`, `entryPoint`.
+- Manifest: `kind: "extension"`, `formatVersion`, `extensionGuid`, display name, version, description, author, category, Lucide `iconKey`, `experimental` / `beta` (confirm on enable), `enabledByDefault`, `engineVersion`, `extensionDependencies`, `entryPoint`, `editorOnly` (absent = true), `gameEntryPoint` (default `game.ts`, never the editor entry, required in the package when `editorOnly` is false), `libraryName` (JS identifier, default camelCase of the display name), `appearInContentBrowser` (default false).
 - Missing or disabled dependencies and cycles block activation; version differences are diagnostics only. Malformed manifests and duplicate ids stay visible as disabled recovery entries that cannot activate or export.
-- Archive limits: 64 MiB compressed, 256 MiB expanded, 4096 files, 1 MiB entry source, 256 KiB manifest; paths are validated before writing.
+- Archive limits: 64 MiB compressed, 256 MiB expanded, 4096 files, 1 MiB per code file (`.ts`/`.js` outside `assets/`), 256 KiB manifest; paths are validated before writing. Exports carry the whole folder: every code file and `assets/`.
 
 ### Code entry
 
-- The entry exports `activate(api)` (ESM or CommonJS), may be async and may return a cleanup function. TypeScript is transpiled with `ts.transpileModule` without type checking.
-- One module only: imports, re-exports, `require`, dynamic imports and type-only imports are rejected. Extensions use the `api` object, never repository modules.
+- The editor entry exports `activate(api)` (ESM or CommonJS), may be async and may return a cleanup function. Each file is transpiled to CommonJS with `ts.transpileModule` without type checking.
+- `linkExtensionModules` follows value imports, re-exports and literal `require` from the entry: specifiers must be relative and stay inside the package; `.ts`, `.js`, `/index.ts`, `/index.js` and a `.js` name for a `.ts` file resolve. Dynamic `import()` and non-literal paths are rejected; type-only imports are erased and may name anything. The bundle is plain data (`{ entry, modules: [{ path, code, imports }] }`); `evaluateExtensionBundle` runs one `new Function` per module with its own `haptic-extension:///` source URL and CommonJS semantics. Extensions use the `api` object, never repository modules.
+- Code files: every `.ts`/`.js` outside `assets/` (`readExtensionCodeFiles`). Saves (`EditorExtensionService.save` with `{ write, remove }`) put new files only in `code/` or the entries, never remove an entry, cap each file at 1 MiB and roll back on failure. Refresh reads files from storage, so edits from an external IDE apply on the next refresh, Play or export.
 - API surface: `registerCommand` (fields are `text`/`multiline` strings), `assets.list/read/create/update` (JSON `.hasset` under `assets/`; updates to open documents are refused), `code.read/write` (`.ts`/`.js` under `code/`; writing never compiles or loads into the game), `materials.convertGlsl` (no save), `log`. The type lives in `editor-extension-host.ts`.
 - The project owns activation and commands. Disable, reload or project close removes commands, runs cleanup and invalidates old API references; the host drains outstanding API calls before releasing storage. A refresh with unchanged packages keeps running extensions and retries only failed ones and their dependents. Failures surface as extension diagnostics.
+
+### Gameplay extensions
+
+- `gameLibraries(overrides)` links the game entry of each enabled, valid, non-Editor-Only package in dependency order from current files; Play preparation (project overrides) and `exportProjectGameArtifact` (export document overrides) call it, and a link error or a Library Name claimed twice (also a refresh diagnostic) fails Play or export by name.
+- Libraries travel as data: Play `load.extensionLibraries` (worker and in-process), `game.json` `extensionLibraries` for exports and Preview Build. `ScriptHost` evaluates them once, before its first module (`loadExtensionGameLibraries`); each library sees earlier ones as `extensions`, the result is frozen, and a library that throws is reported through `reportError` and left out. Compiled modules receive `extensions` as their Function-shim parameter; Execute JavaScript reserves the name.
+- Content: the service calls `syncContentRoots` with the enabled gameplay packages whenever that set changes, and with a package excluded before its folder is replaced (import) or deleted. `ProjectService` mounts them with `mountExtensionContentRoots` (also on every registry remount) as `extension:<guid>` roots over `<folder>/assets` (engine packages read-only on engine storage). Export reads the live registry's non-plugin roots, so mounted extension content packs like project content. The Content Browser lists a mounted root only when `appearInContentBrowser` is on, whatever Show Plugin Content says.
 
 ### GLSL to Material
 

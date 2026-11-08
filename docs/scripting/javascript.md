@@ -27,9 +27,17 @@ died = newHealth <= 0;
 - The body runs in strict mode. Assign outputs directly; declaring one again with `let` or `const` is an error.
 - The body runs straight through: **Out** continues as soon as it finishes, and `await` is not available.
 
+## Extension libraries
+
+The body can call the game library of any enabled [gameplay extension](../projects/extensions.md#gameplay-extensions) through `extensions`, named by its **Library Name**:
+
+```js
+chance = extensions.weather.rainChance(humidity);
+```
+
 ## Pin names
 
-Pin names are case-sensitive variable names. Each must be a valid JavaScript identifier, must not be a reserved word, and must be unique across **Inputs** and **Outputs**. The **Inspector** shows an error under the lists when a name is not allowed, and the node fails when it runs.
+Pin names are case-sensitive variable names. Each must be a valid JavaScript identifier, must not be a reserved word or `extensions`, and must be unique across **Inputs** and **Outputs**. The **Inspector** shows an error under the lists when a name is not allowed, and the node fails when it runs.
 
 ## Errors
 
