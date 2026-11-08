@@ -14,6 +14,7 @@ import { createComponentHostBindings } from "./runtime-host-components";
 import { createNavigationHostBindings } from "./runtime-host-navigation";
 import { createOutputHostBindings } from "./runtime-host-output";
 import { createPhysicsHostBindings } from "./runtime-host-physics";
+import { createCameraShakeHostBindings } from "./runtime-camera-shakes";
 import {
   createIlluminationHostBindings,
   createMaterialHostBindings,
@@ -161,6 +162,12 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     timelineProxy: (instance, action, proxyId, args) => timelineProxyControl(rt.timelines, instance, action, proxyId, args),
     timelineProxyGet: (instance, proxyId) => rt.timelines.bound(instance, proxyId),
     ...createAudioHostBindings({ frameId, scriptVoiceId: () => rt.voices.scriptVoiceId(), emit, voices: rt.voices }),
+    ...createCameraShakeHostBindings({
+      shakes: rt.cameraShakes,
+      catalog: rt.cameraShakeCatalog,
+      curves: rt.curveCatalog,
+      warn: (message) => rt.reportLog(message, "warning", "Camera"),
+    }),
     isParticlesPlaying: (actorGuid, componentId) => rt.particles.isPlaying(actorGuid, componentId),
     spawnParticleEffect: (request, owner) => rt.particleEffects.spawn(request, owner),
     ...createParticleParameterBindings({

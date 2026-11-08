@@ -64,6 +64,7 @@ import {
   cameraComponentOf,
   clamp01,
   componentsOfType,
+  finiteVector,
   lightComponentOf,
   readActorLink,
   refuseParentCycle,
@@ -114,6 +115,12 @@ export interface HostMembersHost extends ComponentFunctionHost {
  * `HostContextKey`). Built once per host. Their closures must not capture a per-call value, which
  * `createScriptContext` owns; they live in their own module so that a reference to one is a compile error.
  */
+/** A handle structure's Id when it names one (a whole number from 1), else 0. */
+function handleId(handle: unknown): number {
+  const id = handle && typeof handle === "object" ? Number((handle as { Id?: unknown }).Id) : NaN;
+  return Number.isInteger(id) && id > 0 ? id : 0;
+}
+
 /** A Sound Handle's voice id, `script:<Id>`; null for Id 0 or a value that is no handle. */
 function soundVoiceId(handle: unknown): string | null {
   const id = handle && typeof handle === "object" ? Number((handle as { Id?: unknown }).Id) : NaN;
@@ -668,6 +675,38 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     },
     ...createObjectMembers(services),
     ...createPhysicsMembers(services),
+    playCameraShake: (asset, scale) => ({ Id: services.cameraShakes?.play(asset, { scale: scale ?? 1 }) ?? 0 }),
+    playCameraShakeOnSceneLayer: (layer, asset, scale) => {
+      const guid = layer instanceof SceneLayer && !layer.destroyed ? layer.guid : null;
+      return { Id: guid ? services.cameraShakes?.play(asset, { target: guid, scale: scale ?? 1 }) ?? 0 : 0 };
+    },
+    playWorldCameraShake: (asset, epicenter, innerRadius, outerRadius, falloff) => {
+      const point = finiteVector(epicenter as never, 0);
+      const inner = Number(innerRadius), outer = Number(outerRadius), exponent = Number(falloff);
+      if (!point || ![inner, outer, exponent].every(Number.isFinite)) return { Id: 0 };
+      return { Id: services.cameraShakes?.play(asset, { world: { epicenter: point, inner, outer, falloff: exponent } }) ?? 0 };
+    },
+    stopCameraShake: (handle, immediately) => {
+      const id = handleId(handle);
+      if (id) services.cameraShakes?.stop(id, immediately === true);
+    },
+    stopAllCameraShakes: (immediately) => services.cameraShakes?.stopAll(immediately === true),
+    setCameraShakePaused: (handle, paused) => {
+      const id = handleId(handle);
+      if (id) services.cameraShakes?.setPaused(id, paused === true);
+    },
+    setCameraShakeScale: (handle, scale) => {
+      const id = handleId(handle);
+      if (id) services.cameraShakes?.setScale(id, scale);
+    },
+    isCameraShakePlaying: (handle) => {
+      const id = handleId(handle);
+      return id ? services.cameraShakes?.isPlaying(id) ?? false : false;
+    },
+    isCameraShakePaused: (handle) => {
+      const id = handleId(handle);
+      return id ? services.cameraShakes?.isPaused(id) ?? false : false;
+    },
     stopSoundHandle: (handle) => {
       const voiceId = soundVoiceId(handle);
       if (voiceId && services.soundVoices?.isPlaying(voiceId)) services.stopSound?.(voiceId);

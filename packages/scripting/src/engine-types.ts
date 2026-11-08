@@ -57,6 +57,8 @@ export const ENGINE_SEED_STRUCT_ID = "engine:Seed";
 export const ENGINE_TIMER_HANDLE_STRUCT_ID = "engine:TimerHandle";
 /** Play Sound's handle: the voice's number (`script:<Id>` in runtime), 0 for none. */
 export const ENGINE_SOUND_HANDLE_STRUCT_ID = "engine:SoundHandle";
+/** Play Camera Shake's handle: the shake's id (`CameraShakes` in runtime), 0 for none. */
+export const ENGINE_CAMERA_SHAKE_HANDLE_STRUCT_ID = "engine:CameraShakeHandle";
 
 export const ENGINE_INT_RANGE_STRUCT_ID = "engine:IntRange";
 export const ENGINE_FLOAT_RANGE_STRUCT_ID = "engine:FloatRange";
@@ -373,6 +375,11 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
     // `RuntimeVoices.scriptVoiceId` numbers from 1; 0 names no sound.
     id: ENGINE_SOUND_HANDLE_STRUCT_ID,
     name: "Sound Handle",
+    fields: [{ name: "Id", typeId: "int", defaultValue: 0 }],
+  },
+  {
+    id: ENGINE_CAMERA_SHAKE_HANDLE_STRUCT_ID,
+    name: "Camera Shake Handle",
     fields: [{ name: "Id", typeId: "int", defaultValue: 0 }],
   },
 

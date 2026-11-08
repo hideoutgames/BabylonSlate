@@ -41,6 +41,7 @@ import { variableNodes } from "./variables";
 import { functionCallNodes } from "./functions";
 import { castingNodes } from "./casting";
 import { timerNodes } from "./timers";
+import { cameraShakeNodes } from "./camera-shake";
 import { timeNodes } from "./time";
 import { systemNodes } from "./system";
 import { randomNodes } from "./random";
@@ -165,6 +166,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...dispatcherNodes,
     ...castingNodes,
     ...timerNodes,
+    ...cameraShakeNodes,
     ...timeNodes,
     ...systemNodes,
     ...randomNodes,

@@ -125,6 +125,8 @@ function tickSceneSystems(rt: RuntimeComposition, simDt: number): void {
   const pausedOwner = gamePaused ? (owner: EngineObject | null | undefined) => ticksWhilePaused(rt.world, owner) : undefined;
   rt.delays.advance(simDt, pausedOwner);
   rt.timers.advance(simDt, pausedOwner);
+  // Shakes hold while the game is paused, keeping the view where the pause found it.
+  rt.cameraShakes.advance(simDt, gamePaused);
   // Animation, tile animation, behaviour trees and the crowd hold while the game is paused.
   if (gamePaused) return;
   if (rt.admission.canTickScene() || rt.admission.hasReadyLayers()) rt.animGraphs.tick(simDt);

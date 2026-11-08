@@ -126,6 +126,8 @@ import type { AnimGraphRuntime } from "./anim-graph-runtime";
 import type { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
 import { LatentDelays } from "./latent-delays";
 import { ScriptTimers } from "./script-timers";
+import type { CameraShakes } from "./camera-shakes";
+import { createCameraShakes } from "./runtime-camera-shakes";
 import type { EventDelegate } from "./script-dispatchers";
 import type { RuntimeCamera } from "./runtime-camera";
 import type { RuntimePropertyWrites } from "./runtime-property-writes";
@@ -356,6 +358,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly audioParticles: AudioParticleEmitter;
   readonly delays: LatentDelays;
   readonly timers: ScriptTimers;
+  readonly cameraShakes: CameraShakes;
   readonly navigation: RuntimeNavigation;
   readonly streams: SceneStreams;
   readonly sceneRealizer: SceneRealizer;
@@ -442,6 +445,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.audioParticles = createAudioParticles(this);
     this.delays = new LatentDelays(this.admission, () => this.world.clock.tickIndex);
     this.timers = new ScriptTimers(this.admission, (delegate) => this.fireTimer(delegate));
+    this.cameraShakes = createCameraShakes(this);
     this.navigation = createNavigation(this);
     this.streams = createStreams(this);
     this.sceneRealizer = createSceneRealizer(this);

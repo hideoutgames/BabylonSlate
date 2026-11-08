@@ -351,6 +351,20 @@ export interface ScriptHostServices {
     },
   ): void;
   stopSound?(voiceId: string): void;
+  /** Play Camera Shake and its handle nodes; ids from 1, 0 for no shake (`CameraShakes`). */
+  cameraShakes?: {
+    play(asset: unknown, options: {
+      target?: string | null;
+      scale?: unknown;
+      world?: { epicenter: Vec3; inner: number; outer: number; falloff: number } | null;
+    }): number;
+    stop(id: number, immediately: boolean): void;
+    stopAll(immediately: boolean, target?: string | null): void;
+    setPaused(id: number, paused: boolean): void;
+    setScale(id: number, scale: unknown): void;
+    isPlaying(id: number): boolean;
+    isPaused(id: number): boolean;
+  };
   /** A new script voice id, `script:<n>`; `n` is the voice's Sound Handle Id. */
   scriptVoiceId?(): string;
   /** Sound Handle nodes over the session's live voices, by voice id. */

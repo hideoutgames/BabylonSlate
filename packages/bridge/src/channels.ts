@@ -1103,6 +1103,15 @@ export type CommandMessage =
     }
   | { type: "stopSound"; voiceId: string }
   | { type: "setVoiceGain"; voiceId: string; volume: number }
+  /**
+   * Camera shake: the summed offset of the shakes playing on the main Scene's view (`sceneLayerId` null) or a Scene
+   * Layer's, in the view's own axes (X right, Y up, Z forward; rotation and Field Of View in degrees). Null: unshaken.
+   */
+  | {
+      type: "setCameraShake";
+      sceneLayerId: string | null;
+      offset: { x: number; y: number; z: number; pitch: number; yaw: number; roll: number; fov: number } | null;
+    }
   /** Set Sound Pitch: replaces the voice's play-call pitch multiplier. */
   | { type: "setVoicePitch"; voiceId: string; pitch: number }
   /** Game pause: hold or release one voice whose owner does not tick while the game is paused. */
