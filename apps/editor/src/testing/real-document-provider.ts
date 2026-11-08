@@ -12,8 +12,7 @@ import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/
  * - `../lib/engine-plugins`, `../lib/engine-extensions` and their `-library`
  *   modules: engine plugins and extensions are fetched from the app's public
  *   folder, so projects here start without any.
- * - `@haptic/render`: the KTX2 transcoder probe and the scene loading
- *   paint wait need a GPU page.
+ * - `@haptic/render`: the scene loading paint wait needs a GPU page.
  */
 
 /** Read-only, empty engine plugin or extension storage. */

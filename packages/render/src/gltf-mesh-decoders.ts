@@ -9,7 +9,6 @@ const DEFAULT_MESHOPT_PUBLIC_BASE = "/meshopt/";
 interface DracoDecoderUrls {
   wasmUrl: string;
   wasmBinaryUrl: string;
-  fallbackUrl: string;
 }
 
 interface GltfMeshDecoderUrls {
@@ -55,7 +54,6 @@ function gltfMeshDecoderUrls(
     draco: {
       wasmUrl: `${draco}draco_wasm_wrapper_gltf.js`,
       wasmBinaryUrl: `${draco}draco_decoder_gltf.wasm`,
-      fallbackUrl: `${draco}draco_decoder_gltf.js`,
     },
     meshopt: { url: `${meshopt}meshopt_decoder.js` },
   };
@@ -78,18 +76,20 @@ export function configureGltfMeshDecoders(
   const numWorkers = options.playMode === true ? 0 : undefined;
   const current = draco.DefaultConfiguration;
   // The static default decoder is page-global and lazily warmed; replace it
-  // only when its effective configuration changes.
+  // only when its effective configuration changes. Haptic requires
+  // WebAssembly, so no asm.js fallback ships: Babylon's default `fallbackUrl`
+  // names its CDN and must not survive the spread.
   if (
     current.wasmUrl !== urls.draco.wasmUrl ||
     current.wasmBinaryUrl !== urls.draco.wasmBinaryUrl ||
-    current.fallbackUrl !== urls.draco.fallbackUrl ||
+    current.fallbackUrl !== undefined ||
     current.numWorkers !== numWorkers
   ) {
     draco.DefaultConfiguration = {
       ...current,
       wasmUrl: urls.draco.wasmUrl,
       wasmBinaryUrl: urls.draco.wasmBinaryUrl,
-      fallbackUrl: urls.draco.fallbackUrl,
+      fallbackUrl: undefined,
       numWorkers,
     };
     draco.ResetDefault?.(true);

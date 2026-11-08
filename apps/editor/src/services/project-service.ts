@@ -304,7 +304,7 @@ export class ProjectService {
       pushDiagnostic: (line) => this.pushDiagnostic(line),
     }, options);
     return admitOwnerWrites(this, this.writeAdmission, [
-      "setTranscoderAvailable", "retryTextureEncoding", "retryAllFailedTextureEncoding",
+      "retryTextureEncoding", "retryAllFailedTextureEncoding",
       "prepareAreaEmission", "deleteListedProject", "openProject", "createEmptyProject",
       "createFromTemplate", "openListedProject", "closeProject", "renameListedProjectDisplayName",
       "updateListedProject", "reconnect", "loadCurrentProject", "syncPlugins", "applyPluginOverrides",
@@ -380,15 +380,6 @@ export class ProjectService {
     this.diagnostics.push(line);
     if (this.diagnostics.length > 200) this.diagnostics.shift();
     for (const listener of this.diagnosticListeners) listener(line);
-  }
-
-  /** When self-hosted transcoder files are missing, prefer source chunks. */
-  async setTranscoderAvailable(available: boolean): Promise<void> {
-    return this.textures.setTranscoderAvailable(available);
-  }
-
-  get isTranscoderAvailable(): boolean {
-    return this.textures.isTranscoderAvailable;
   }
 
   /** Bind app-private derived storage for thumbnail writes at import. */
@@ -1071,9 +1062,6 @@ export class ProjectService {
   /** Re-scan project assets after registry file operations (import, create, delete). */
   async remountRegistry(): Promise<AssetRegistry> {
     await this.mountAssetRegistry();
-    if (!this.textures.isTranscoderAvailable) {
-      await this.textures.markCompressedTexturesFallback();
-    }
     return this.registry!;
   }
 

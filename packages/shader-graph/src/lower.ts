@@ -502,6 +502,29 @@ export function lowerMaterialDocument(
   };
 }
 
+const NO_FUNCTIONS: Record<string, MaterialFunctionDocument> = {};
+const lowerings = new WeakMap<
+  MaterialDocument,
+  WeakMap<Record<string, MaterialFunctionDocument>, MaterialLowerResult>
+>();
+
+/**
+ * `lowerMaterialDocument` with only Material Functions for context, remembered per document
+ * object and functions record. For Play and packaged content, whose documents are replaced,
+ * never edited in place; a host builds a new record whenever its functions change, and
+ * callers must not change the result.
+ */
+export function lowerMaterialDocumentCached(
+  doc: MaterialDocument,
+  functions: Record<string, MaterialFunctionDocument> = NO_FUNCTIONS,
+): MaterialLowerResult {
+  let byFunctions = lowerings.get(doc);
+  if (!byFunctions) lowerings.set(doc, (byFunctions = new WeakMap()));
+  let result = byFunctions.get(functions);
+  if (!result) byFunctions.set(functions, (result = lowerMaterialDocument(doc, { functions })));
+  return result;
+}
+
 function costOf(operations: readonly MaterialOperation[]): MaterialCostFeatures {
   let weight = 0;
   let textureSamples = 0;

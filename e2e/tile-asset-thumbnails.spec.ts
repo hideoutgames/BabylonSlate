@@ -33,7 +33,7 @@ async function redBluePng(page: Page): Promise<Uint8Array> {
 /** The sheet, a Tileset of its two tiles, and a 2 × 1 Tilemap painting blue then red. */
 async function tileProject(page: Page): Promise<Map<string, Uint8Array>> {
   const files = await minimalProjectFiles();
-  const texture = { width: 32, height: 16, usage: "pixelArt", downsample: 1, compressionState: "fallback_uncompressed" };
+  const texture = { width: 32, height: 16, usage: "pixelArt", downsample: 1 };
   files.set(TEXTURE_PATH, await encodeAssetDocument(
     { guid: TEXTURE_GUID, type: "Texture", name: "Sheet", version: 1, payload: texture },
     { headerPayload: texture, extraChunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: await redBluePng(page) }] },

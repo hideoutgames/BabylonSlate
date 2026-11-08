@@ -297,7 +297,9 @@ describe("packedContentFromGame", () => {
     expect(controls.find((entry) => entry.type === "loadWater")).toMatchObject({ waters: [{ guid: "water-1", document: { waveHeight: 1.2 } }] });
     expect(controls.some((entry) => entry.type === "loadSprites")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadTilemaps")).toBe(true);
-    expect(controls.some((entry) => entry.type === "loadNavMesh")).toBe(true);
+    // The startup mesh travels once, in `load.sceneNavmeshBytes`: the control names no second copy.
+    expect(content.navmeshByScene.get("scene-1")).toBe(content.navmeshBytes);
+    expect(controls.filter((entry) => entry.type === "loadNavMesh")).toEqual([{ type: "loadNavMesh" }]);
     expect(controls.some((entry) => entry.type === "loadAnimGraphs")).toBe(true);
     expect(controls.some((entry) => entry.type === "loadBehaviourTrees")).toBe(true);
   });
