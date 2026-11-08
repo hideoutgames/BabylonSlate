@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { GraphCanvasDropApi } from "@haptic/graph-ui";
 import { useOptionalPrefabEditing } from "./prefab-editing-context";
+import { sameIds } from "./document-subscriptions";
 
 export interface GraphEditingContextValue {
   selectedNodeIds: string[];
@@ -29,13 +30,6 @@ export interface GraphEditingContextValue {
 const GraphEditingContext = createContext<GraphEditingContextValue | null>(
   null,
 );
-
-function sameIds(left: readonly string[], right: readonly string[]): boolean {
-  return (
-    left.length === right.length &&
-    left.every((id, index) => id === right[index])
-  );
-}
 
 /**
  * Inspector target: canvas selection first, then Compiler Results / Play focus.

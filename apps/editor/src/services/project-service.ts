@@ -1,5 +1,5 @@
 import { isProjectOpenElsewhere, SourceRevisionChangedError } from "@haptic/core";
-import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
+import { newGuid, normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, isAppOwnedFolder, pickImportFiles } from "@haptic/vfs";
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
@@ -118,7 +118,6 @@ import {
   assetName,
   fallbackDocumentType,
   headerMetaForSave,
-  newGuid,
   parentDir,
   suppliedChunkIds,
   withSavedTextureEncodeState,

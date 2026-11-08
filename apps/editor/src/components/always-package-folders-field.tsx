@@ -1,15 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
 import { FolderIcon } from "lucide-react";
-import type { FolderNode } from "@haptic/assets";
 import { normalizeAlwaysPackageFolders } from "@haptic/core";
 import { NamedListEditor } from "@haptic/editor-kit";
 import { Badge } from "@haptic/ui/components/badge";
 import { useRegistryState } from "../context/document-context";
+import { folderTreePaths } from "../lib/content-browser-tree";
 import { FolderPickerDialog } from "./folder-picker-dialog";
-
-function folderPaths(node: FolderNode): string[] {
-  return [node.path, ...node.children.flatMap(folderPaths)];
-}
 
 export interface AlwaysPackageFoldersFieldProps {
   folders: readonly string[];
@@ -25,7 +21,7 @@ export function AlwaysPackageFoldersField({ folders, onChange }: AlwaysPackageFo
     // The registry mutates in place; its epoch says when to read it again.
     [assetRegistry, registryEpoch],
   );
-  const existing = useMemo(() => new Set(folderTrees.flatMap(folderPaths)), [folderTrees]);
+  const existing = useMemo(() => new Set(folderTrees.flatMap(folderTreePaths)), [folderTrees]);
   const listed = useMemo(() => new Set(folders), [folders]);
   const isListed = useCallback((path: string) => listed.has(path), [listed]);
   return (
