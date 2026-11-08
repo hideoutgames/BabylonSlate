@@ -19,7 +19,6 @@ export type ExportIndexedAsset = {
   classReferences?: string[];
   requiredClassReferences?: string[];
   consoleCommand?: ConsoleCommandMetadata;
-  dependencyMetadataVersion?: number;
   rootId: string;
 };
 
@@ -74,7 +73,6 @@ export type ExportAssetBytes = {
   classReferences?: readonly string[];
   requiredClassReferences?: readonly string[];
   consoleCommand?: ConsoleCommandMetadata;
-  dependencyMetadataVersion?: number;
   /** A required project system independent of the initial scene. */
   startupRequired?: boolean;
   /** Scene guid this asset was reached through; boot assets use the startup scene. */

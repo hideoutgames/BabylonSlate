@@ -71,7 +71,6 @@ export function assetsFromIndexed(
     classReferences: asset.header.classReferences,
     requiredClassReferences: asset.header.requiredClassReferences,
     consoleCommand: asset.header.consoleCommand,
-    dependencyMetadataVersion: asset.header.dependencyMetadataVersion,
     rootId: asset.rootId,
   }));
 }
@@ -438,7 +437,6 @@ export async function collectAndExportGame(
         classReferences: asset.classReferences,
         requiredClassReferences: asset.requiredClassReferences,
         consoleCommand: asset.consoleCommand,
-        dependencyMetadataVersion: asset.dependencyMetadataVersion,
         startupRequired: asset.type === "InputAction" || asset.type === "InputAxis" || asset.guid === params.audioMixerGuid || (asset.type === "Class" && !!asset.path && !!params.gameInstanceClass && classIdForAssetPath(asset.path) === params.gameInstanceClass) || (asset.type === "Class" && !!asset.parentClass && subsystemBaseClassIdOf(subsystemHierarchy, asset.parentClass) !== null),
         type: asset.type,
         sceneGuid: packSceneGuidForAsset(
