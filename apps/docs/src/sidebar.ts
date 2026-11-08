@@ -129,7 +129,7 @@ function guideSidebar(): SidebarItem[] {
       "game-instance",
       "scene-scripts",
       "editor-scripting",
-      ...(existsSync(path.join(docsRoot, "scripting/javascript.md")) ? ["javascript"] : []),
+      "javascript",
     ]),
     section("Graphics", "graphics", [
       "lighting",
