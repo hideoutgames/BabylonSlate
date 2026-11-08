@@ -63,6 +63,8 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "setCursorVisible",
   "setGamepadRumble",
   "vibrateDevice",
+  "copyToClipboard",
+  "openUrl",
   "requestDeviceMotion",
   "animState",
   "tilemapAnimationTime",

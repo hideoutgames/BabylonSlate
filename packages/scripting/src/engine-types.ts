@@ -19,6 +19,8 @@ import { ENGINE_TIMELINE_LOOP_MODE_ENUM_ID, TIMELINE_LOOP_MODE_LABELS, TIMELINE_
 import { ENGINE_PARTICLES_FINISHED_REASON_ENUM_ID, PARTICLES_FINISHED_REASONS } from "@haptic/core";
 export { ENGINE_PARTICLES_FINISHED_REASON_ENUM_ID } from "@haptic/core";
 export { ENGINE_TIMELINE_LOOP_MODE_ENUM_ID } from "@haptic/core";
+import { DEVICE_PLATFORMS, ENGINE_PLATFORM_ENUM_ID } from "@haptic/core";
+export { ENGINE_PLATFORM_ENUM_ID } from "@haptic/core";
 /** Engine enum/struct registry (stable ids, not Content Browser assets). */
 
 import type { EnumMember, StructField } from "./type-assets";
@@ -218,6 +220,12 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
     id: ENGINE_TOUCH_TYPE_ENUM_ID,
     name: "Touch Type",
     members: TOUCH_TYPES.map((name, value) => ({ name, value })),
+  },
+  {
+    // Get Platform: the device's operating system (`GameEnvironment.platform` in core).
+    id: ENGINE_PLATFORM_ENUM_ID,
+    name: "Platform",
+    members: DEVICE_PLATFORMS.map((name, value) => ({ name, value })),
   },
 ];
 

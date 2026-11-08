@@ -188,6 +188,8 @@ export function playLoadControl(options: {
   traceByteBudget?: number;
   renderSettings?: Partial<import("@haptic/core").RenderProjectSettings>;
   project?: { name: string; version: string };
+  /** Where the session runs: the editor's device, inside the editor, a development build. */
+  environment?: import("@haptic/core").GameEnvironment;
   thirdPartyNoticesUrl?: string;
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
@@ -247,6 +249,7 @@ export function playLoadControl(options: {
     traceByteBudget: options.traceByteBudget,
     renderSettings: options.renderSettings,
     ...(options.project ? { project: options.project } : {}),
+    ...(options.environment ? { environment: options.environment } : {}),
     ...(options.thirdPartyNoticesUrl ? { thirdPartyNoticesUrl: options.thirdPartyNoticesUrl } : {}),
     inputAssets: options.inputAssets,
     dataAssets: options.dataAssets,

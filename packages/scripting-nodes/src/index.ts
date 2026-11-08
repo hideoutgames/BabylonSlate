@@ -41,6 +41,7 @@ import { functionCallNodes } from "./functions";
 import { castingNodes } from "./casting";
 import { timerNodes } from "./timers";
 import { timeNodes } from "./time";
+import { systemNodes } from "./system";
 import { tweenNodes } from "./tween";
 import { behaviourTreeNodes } from "./behaviour-tree";
 import { navigationNodes } from "./navigation";
@@ -98,6 +99,7 @@ export * from "./member-pins";
 export * from "./casting";
 export * from "./timers";
 export * from "./time";
+export * from "./system";
 export * from "./tween";
 export * from "./behaviour-tree";
 export * from "./navigation";
@@ -160,6 +162,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...castingNodes,
     ...timerNodes,
     ...timeNodes,
+    ...systemNodes,
     ...tweenNodes,
     ...behaviourTreeNodes,
     ...navigationNodes,

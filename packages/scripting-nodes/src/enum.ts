@@ -51,9 +51,13 @@ export {
 } from "@haptic/scripting";
 
 /** Display name for a Switch exec pin. Runtime values stay the member name. */
+/** Names whose own spelling is already the display name (Platform members). */
+const BRAND_SPELLINGS: ReadonlySet<string> = new Set(["iOS", "macOS"]);
+
 export function titleCaseEnumMember(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return name;
+  if (BRAND_SPELLINGS.has(trimmed)) return trimmed;
   return trimmed
     .replace(/[._-]+/g, " ")
     .replace(/([a-z])([A-Z])/g, "$1 $2")

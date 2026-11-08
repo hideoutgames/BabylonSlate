@@ -2,6 +2,7 @@ import {
   pin,
   structRef,
   type NodeDefinition,
+  EXEC,
   FLOAT,
   INT,
   ENGINE_DATE_STRUCT_ID,
@@ -9,9 +10,9 @@ import {
 } from "@haptic/scripting";
 
 /**
- * Time: global getters with no Target. Delta Seconds and Frame Count read the
- * simulation clock; Time Now, Date Now and Time MS read the wall clock in UTC,
- * so they differ between runs.
+ * Time: global nodes with no Target. Delta Seconds, Frame Count, Time Dilation and
+ * Game and Real Time read the simulation clock; Time Now, Date Now, their local
+ * variants and Time MS read the wall clock, so they differ between runs.
  */
 export const timeNodes: NodeDefinition[] = [
   {
@@ -53,6 +54,71 @@ export const timeNodes: NodeDefinition[] = [
     pure: true,
     pins: () => [pin("date", "Date", "out", structRef(ENGINE_DATE_STRUCT_ID))],
     codegen: () => ({ date: "ctx.getDateNow()" }),
+  },
+  {
+    id: "time.getLocalTimeNow",
+    title: "Get Local Time Now",
+    category: "time",
+    description: "Returns the current time of day in the device's time zone as a Time structure.",
+    searchAliases: ["clock", "local", "hour", "minute", "second", "time of day", "time zone"],
+    pure: true,
+    pins: () => [pin("time", "Time", "out", structRef(ENGINE_TIME_STRUCT_ID))],
+    codegen: () => ({ time: "ctx.getLocalTimeNow()" }),
+  },
+  {
+    id: "time.getLocalDateNow",
+    title: "Get Local Date Now",
+    category: "time",
+    description: "Returns today's date in the device's time zone as a Date structure.",
+    searchAliases: ["calendar", "today", "local", "year", "month", "day", "time zone"],
+    pure: true,
+    pins: () => [pin("date", "Date", "out", structRef(ENGINE_DATE_STRUCT_ID))],
+    codegen: () => ({ date: "ctx.getLocalDateNow()" }),
+  },
+  {
+    id: "time.getTimeDilation",
+    title: "Get Time Dilation",
+    category: "time",
+    description: "Returns how fast game time runs: 1 is normal speed, 0.5 half speed.",
+    searchAliases: ["slow motion", "slomo", "time scale", "game speed"],
+    pure: true,
+    pins: () => [pin("timeDilation", "Time Dilation", "out", FLOAT)],
+    codegen: () => ({ timeDilation: "ctx.getTimeDilation()" }),
+  },
+  {
+    id: "time.setTimeDilation",
+    title: "Set Time Dilation",
+    category: "time",
+    description: "Sets how fast game time runs, from 0 (frozen) to 8, starting with the next step.",
+    searchAliases: ["slow motion", "slomo", "time scale", "game speed", "bullet time"],
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("timeDilation", "Time Dilation", "in", FLOAT, "data", true, 1),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.setTimeDilation(${ctx.input("timeDilation")});`);
+    },
+  },
+  {
+    id: "time.getGameTimeSeconds",
+    title: "Get Game Time In Seconds",
+    category: "time",
+    description: "Returns the game time since Play started, in seconds, scaled by time dilation.",
+    searchAliases: ["elapsed", "time since start", "world time", "game clock"],
+    pure: true,
+    pins: () => [pin("seconds", "Seconds", "out", FLOAT)],
+    codegen: () => ({ seconds: "ctx.getGameTimeSeconds()" }),
+  },
+  {
+    id: "time.getRealTimeSeconds",
+    title: "Get Real Time Seconds",
+    category: "time",
+    description: "Returns the time since Play started, in seconds, ignoring time dilation.",
+    searchAliases: ["elapsed", "unscaled time", "real time", "time since start"],
+    pure: true,
+    pins: () => [pin("seconds", "Seconds", "out", FLOAT)],
+    codegen: () => ({ seconds: "ctx.getRealTimeSeconds()" }),
   },
   {
     id: "time.getTimeMs",

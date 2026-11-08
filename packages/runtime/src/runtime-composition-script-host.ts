@@ -1,6 +1,6 @@
 import { timelineClipControl, timelineProxyControl } from "./timeline-runtime";
 import type { CommandMessage } from "@haptic/bridge";
-import { createDefaultSceneSettings } from "@haptic/core";
+import { createDefaultSceneSettings, DEFAULT_GAME_ENVIRONMENT } from "@haptic/core";
 import type { Actor, ClassRegistry, EngineObject } from "@haptic/object-model";
 import { RuntimeAssetCatalog } from "./asset-catalog";
 import { createAudioHostBindings } from "./audio-particle-emitter";
@@ -188,6 +188,20 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     getProjectVersion: () => projectVersion,
     getDeltaSeconds: () => rt.world.clock.dt,
     getFrameCount: frameId,
+    getTimeDilation: () => rt.timeDilation,
+    setTimeDilation: (rate) => rt.setTimeDilation(rate),
+    getGameTimeSeconds: () => rt.gameTimeSeconds,
+    getRealTimeSeconds: () => rt.realTimeSeconds,
+    // As the `quit` console command, but after the current step returns, so no script runs on a stopped session.
+    quitGame: () => queueMicrotask(() => {
+      if (rt.stopped) return;
+      rt.stop();
+      rt.emit({ type: "sessionEnded" });
+    }),
+    environment: options.environment ?? DEFAULT_GAME_ENVIRONMENT,
+    getViewportSize: () => rt.overlay.reportedCanvasSize(),
+    copyToClipboard: (text) => emit({ type: "copyToClipboard", text, frameId: rt.frameId }),
+    openUrl: (url) => emit({ type: "openUrl", url, frameId: rt.frameId }),
     ...(getThirdPartyNotices ? { getThirdPartyNotices } : {}),
     setWorldGravity: (gravity) => {
       setWorldGravity(rt, gravity);

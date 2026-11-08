@@ -1,4 +1,4 @@
-import type { CurveAssetCatalogEntry, GlobalParameterType } from "@haptic/core";
+import type { CurveAssetCatalogEntry, GameEnvironment, GlobalParameterType } from "@haptic/core";
 import type {
   AssetLoadHandleState,
   InputTypeValue,
@@ -90,6 +90,21 @@ export interface ScriptHostServices {
   getDeltaSeconds?(): number;
   /** Frames finished since the session started. Absent outside a simulation. */
   getFrameCount?(): number;
+  getTimeDilation?(): number;
+  /** Clamped to 0..8 like `slomo`; applies from the next tick. */
+  setTimeDilation?(rate: number): void;
+  getGameTimeSeconds?(): number;
+  getRealTimeSeconds?(): number;
+  /** Quit Game: end the session as the `quit` console command does. Absent where nothing can end. */
+  quitGame?(): void;
+  /** Where the session runs; `DEFAULT_GAME_ENVIRONMENT` when absent. */
+  environment?: GameEnvironment;
+  /** The game view's size in CSS pixels, the space cursor and touch positions use. */
+  getViewportSize?(): { width: number; height: number };
+  /** Ask the host to write the clipboard; validated text only. */
+  copyToClipboard?(text: string): void;
+  /** Ask the host to open an http or https address the member already validated. */
+  openUrl?(url: string): void;
   /** The game's third-party notices text; rejects when the host has none or cannot read them. */
   getThirdPartyNotices?(): Promise<string>;
   /** When set, `ctx.callInterface` uses P3 dispatch (pin defaults on miss). */
