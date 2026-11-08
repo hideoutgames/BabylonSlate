@@ -41,7 +41,7 @@ A Structure variable's default is edited field by field in the **Inspector**. Re
 
 Haptic also provides Enums and Structures that are not assets but appear in the same pickers and **Add Node** lists, for example:
 
-- Enums: **Collision Channel**, **Curve Interpolation**, **Curve Extrapolation**, **Easing Curve**, **Key**, **Particles Finished Reason**, **Render Target Mode**, **Timeline Loop Mode**, **Touch Phase** and **Touch Type**.
+- Enums: **Collision Channel**, **Curve Interpolation**, **Curve Extrapolation**, **Easing Curve**, **Key**, **Particles Finished Reason**, **Platform** (returned by [Get Platform](class/get-platform.md)), **Render Target Mode**, **Timeline Loop Mode**, **Touch Phase** and **Touch Type**.
 - Structures: **Hit Result** (returned by collision events and traces), **TagContainer**, **Save Game Info**, **Touch** (returned by the [touch nodes](../input/index.md#touch)), and **Time** and **Date** (returned by [Get Time Now](class/get-time-now.md) and [Get Date Now](class/get-date-now.md)).
 - Ranges and curves: **Int Range**, **Float Range**, **Vector 2 Range**, **Vector Range**, **Rotator Range**, **Float Curve**, **Vector Curve** and **Color Curve**, with their nodes. See [Curves and ranges](curves-and-ranges.md).
 

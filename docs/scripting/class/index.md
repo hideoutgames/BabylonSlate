@@ -809,8 +809,14 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Current Frame Count](get-current-frame-count.md) | Returns how many frames the game has finished since Play started. |
 | [Get Date Now](get-date-now.md) | Returns today's date in UTC. |
 | [Get Delta Seconds](get-delta-seconds.md) | Returns the length of the current simulation step in seconds, scaled by time dilation. |
+| [Get Game Time In Seconds](get-game-time-in-seconds.md) | Returns the game time since Play started, scaled by time dilation. |
+| [Get Local Date Now](get-local-date-now.md) | Returns today's date in the device's time zone. |
+| [Get Local Time Now](get-local-time-now.md) | Returns the current time of day in the device's time zone. |
+| [Get Real Time Seconds](get-real-time-seconds.md) | Returns the time since Play started, ignoring time dilation. |
+| [Get Time Dilation](get-time-dilation.md) | Returns how fast game time runs. |
 | [Get Time MS](get-time-ms.md) | Returns the current Unix time in milliseconds. |
 | [Get Time Now](get-time-now.md) | Returns the current time of day in UTC. |
+| [Set Time Dilation](set-time-dilation.md) | Sets how fast game time runs, for slow motion or a freeze. |
 
 ## Timers
 
@@ -927,6 +933,21 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Project Name](get-project-name.md) | Returns the name of the project. |
 | [Get Project Version](get-project-version.md) | Returns the version of the project as text. |
 | [Get Third-Party Notices](get-third-party-notices.md) | Reads the licence notices of the open-source software the game runs on. |
+
+## System
+
+| Node | Description |
+| --- | --- |
+| [Copy To Clipboard](copy-to-clipboard.md) | Copies text to the device's clipboard. |
+| [Get Locale](get-locale.md) | Returns the player's language and region. |
+| [Get Platform](get-platform.md) | Returns the operating system of the device the game runs on. |
+| [Get Viewport Size](get-viewport-size.md) | Returns the size of the game view. |
+| [Is Development Build](is-development-build.md) | Returns true unless the game is a release export. |
+| [Is In Editor](is-in-editor.md) | Returns true while the game runs inside the editor. |
+| [Is Touch Device](is-touch-device.md) | Returns true when the device has a touch screen. |
+| [New GUID](new-guid.md) | Returns a new random identifier. |
+| [Open URL](open-url.md) | Opens a web address in a new browser tab. |
+| [Quit Game](quit-game.md) | Ends the game. |
 
 ## Debug
 

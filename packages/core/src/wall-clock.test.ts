@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { utcCalendarDate, utcTimeOfDay } from "./wall-clock";
+import { afterEach, describe, expect, it } from "vitest";
+import { localCalendarDate, localTimeOfDay, utcCalendarDate, utcTimeOfDay } from "./wall-clock";
 
 describe("wall clock", () => {
   it.each([
@@ -22,5 +22,30 @@ describe("wall clock", () => {
     const unixMs = Date.parse(iso);
     expect(utcTimeOfDay(unixMs)).toEqual(time);
     expect(utcCalendarDate(unixMs)).toEqual(date);
+  });
+
+  describe("in the device's time zone", () => {
+    const zone = process.env.TZ;
+    afterEach(() => {
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
+    });
+
+    it.each([
+      ["a half-hour zone past midnight into the new year", "Asia/Kolkata", "2024-12-31T20:00:00.250Z",
+        { Hour: 1, Minute: 30, Second: 0, Millisecond: 250 },
+        { Year: 2025, Month: 1, Day: 1, DayOfWeek: 3, DayOfYear: 1 }],
+      ["the day daylight saving starts", "America/New_York", "2024-03-10T12:00:00.000Z",
+        { Hour: 8, Minute: 0, Second: 0, Millisecond: 0 },
+        { Year: 2024, Month: 3, Day: 10, DayOfWeek: 0, DayOfYear: 70 }],
+      ["the day after, an hour short of whole days since New Year", "America/New_York", "2024-03-11T12:00:00.000Z",
+        { Hour: 8, Minute: 0, Second: 0, Millisecond: 0 },
+        { Year: 2024, Month: 3, Day: 11, DayOfWeek: 1, DayOfYear: 71 }],
+    ])("reads %s", (_label, tz, iso, time, date) => {
+      process.env.TZ = tz;
+      const unixMs = Date.parse(iso);
+      expect(localTimeOfDay(unixMs)).toEqual(time);
+      expect(localCalendarDate(unixMs)).toEqual(date);
+    });
   });
 });

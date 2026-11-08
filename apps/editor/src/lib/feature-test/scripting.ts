@@ -97,6 +97,7 @@ const CLASS = {
   interfaceProbe: "FT_ScriptInterfaceProbe",
   touchProbe: "FT_ScriptTouchProbe",
   statsCommand: "FT_ScriptStatsCommand",
+  systemCommand: "FT_ScriptSystemCommand",
   spawnCommand: "FT_ScriptSpawnCommand",
   streamCommand: "FT_ScriptStreamCommand",
   gameInstance: "FT_GameInstance",
@@ -398,6 +399,7 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
   const saveProbe = await saveSaveProbe(ctx, types, font, materials.surfaceInstance ?? null);
   const streamLoader = await saveStreamLoader(ctx);
   await saveStatsCommand(ctx);
+  await saveSystemCommand(ctx);
   await saveSpawnCommand(ctx);
   await saveStreamCommand(ctx);
   await saveEditorClasses(ctx);
@@ -1436,6 +1438,26 @@ async function saveDataProbe(
       gNode("time-ms", "time.getTimeMs", 5260, -380),
       gNode("time-ms-positive", "math.greater", 5500, -380),
       gNode("assert-time-ms", "debug.assert", 5260, -200, { "default:message": "Get Time MS read no Unix time" }),
+      gNode("dilation", "time.getTimeDilation", 5740, -380),
+      gNode("dilation-positive", "math.greater", 5980, -380),
+      gNode("assert-dilation", "debug.assert", 5740, -200, { "default:message": "Get Time Dilation read no game speed" }),
+      gNode("local-date", "time.getLocalDateNow", 6220, -560),
+      gNode("local-date-fields", "struct.break", 6460, -560, {
+        structGuid: "engine:Date", fields: [{ name: "Month", typeId: "int" }],
+      }),
+      gNode("local-month-valid", "math.greaterEqual", 6700, -380, { "default:b": 1 }),
+      gNode("assert-local-date", "debug.assert", 6220, -200, { "default:message": "Get Local Date Now has no Month" }),
+      // System nodes: the Assert family runs only in development builds, so Is Development Build reads true here.
+      gNode("development", "system.isDevelopmentBuild", 6940, -380),
+      gNode("assert-development", "debug.assert", 6940, -200, { "default:message": "Is Development Build read false where Development Only nodes run" }),
+      gNode("guid", "system.newGuid", 7180, -560),
+      gNode("guid-length", "string.length", 7420, -560),
+      gNode("guid-made", "math.greater", 7660, -380),
+      gNode("assert-guid", "debug.assert", 7180, -200, { "default:message": "New GUID returned no identifier" }),
+      gNode("locale", "system.getLocale", 7900, -560),
+      gNode("language-length", "string.length", 8140, -560),
+      gNode("language-known", "math.greater", 8380, -380),
+      gNode("assert-locale", "debug.assert", 7900, -200, { "default:message": "Get Locale returned no language" }),
       gNode("roll-in-range", "range.isFloatInRange", 1900, 400),
       gNode("assert-roll", "debug.assert", 1900, 0, { "default:message": "Sword Damage is outside its Damage Roll range" }),
       gNode("read", "data.readEntry", 220, 160, {
@@ -1453,7 +1475,8 @@ async function saveDataProbe(
     ],
     edges: [
       ...gChain("begin", "assert-found", "assert-weapons", "assert-falloff", "assert-spawn", "assert-roll", "assert-asset",
-        "set-global", "assert-global", "assert-delta", "assert-frame", "assert-time", "assert-date", "assert-time-ms", "print"),
+        "set-global", "assert-global", "assert-delta", "assert-frame", "assert-time", "assert-date", "assert-time-ms", "assert-dilation", "assert-local-date",
+        "assert-development", "assert-guid", "assert-locale", "print"),
       gWire("get-global", "value", "assert-global", "actual"),
       gWire("delta", "deltaSeconds", "delta-positive", "a"),
       gWire("delta-positive", "out", "assert-delta", "condition"),
@@ -1467,6 +1490,18 @@ async function saveDataProbe(
       gWire("month-valid", "out", "assert-date", "condition"),
       gWire("time-ms", "milliseconds", "time-ms-positive", "a"),
       gWire("time-ms-positive", "out", "assert-time-ms", "condition"),
+      gWire("dilation", "timeDilation", "dilation-positive", "a"),
+      gWire("dilation-positive", "out", "assert-dilation", "condition"),
+      gWire("local-date", "date", "local-date-fields", "in"),
+      gWire("local-date-fields", "Month", "local-month-valid", "a"),
+      gWire("local-month-valid", "out", "assert-local-date", "condition"),
+      gWire("development", "developmentBuild", "assert-development", "condition"),
+      gWire("guid", "guid", "guid-length", "in"),
+      gWire("guid-length", "out", "guid-made", "a"),
+      gWire("guid-made", "out", "assert-guid", "condition"),
+      gWire("locale", "language", "language-length", "in"),
+      gWire("language-length", "out", "language-known", "a"),
+      gWire("language-known", "out", "assert-locale", "condition"),
       gWire("falloff-object", "object", "falloff-at", "target"),
       gWire("falloff-at", "value", "assert-asset", "actual"),
       gWire("fields", "Damage", "roll-in-range", "value"),
@@ -1638,6 +1673,79 @@ async function saveStatsCommand(ctx: FeatureTestContext): Promise<void> {
     ],
   });
   await saveClass(ctx, CLASS.statsCommand, "DebugCommand", graph);
+}
+
+/** The Feature Test's link for `ft_system docs`: the public documentation. */
+const FEATURE_TEST_DOCS_URL = "https://hideoutgames.github.io/BabylonSlate/docs/";
+
+/**
+ * `ft_system <info|copy|docs|slomo|quit> [value]`: the System and time-control nodes whose
+ * results or side effects vary by device, so they run only when someone asks. `info` reports
+ * the device, view, locale and both clocks; `copy` copies that report; `docs` opens the
+ * documentation; `slomo` sets time dilation to `value`; `quit` ends the session.
+ */
+async function saveSystemCommand(ctx: FeatureTestContext): Promise<void> {
+  const graph = classGraph({
+    nodes: [
+      commandRun("ft_system", "Report the device, or copy, open docs, set slow motion or quit", [
+        { name: "action", type: "string" },
+        { name: "value", type: "float", optional: true, defaultValue: 1 },
+      ]),
+      gNode("action", "flow.switchString", 240, 0, { cases: ["info", "copy", "docs", "slomo", "quit"] }),
+      gNode("platform", "system.getPlatform", 0, 300),
+      gNode("platform-text", "enum.toString", 220, 300, { enumGuid: "engine:Platform" }),
+      gNode("touch", "system.isTouchDevice", 0, 400),
+      gNode("editor", "system.isInEditor", 0, 480),
+      gNode("development", "system.isDevelopmentBuild", 0, 560),
+      gNode("view", "system.getViewportSize", 0, 640),
+      gNode("locale", "system.getLocale", 0, 760),
+      gNode("game-time", "time.getGameTimeSeconds", 0, 860),
+      gNode("real-time", "time.getRealTimeSeconds", 0, 940),
+      gNode("dilation", "time.getTimeDilation", 0, 1020),
+      format("info-text", 480, 300,
+        "{platform}, touch {touch}, in editor {editor}, development {development}, view {view} ({aspect}), " +
+        "locale {locale}, game time {game}s, real time {real}s, dilation {dilation}"),
+      report("report-info", 720, -160, true),
+      gNode("copy", "system.copyToClipboard", 720, -40),
+      report("report-copy", 960, -40, true, "Copied the ft_system info report"),
+      gNode("docs", "system.openUrl", 720, 80, { "default:url": FEATURE_TEST_DOCS_URL }),
+      report("report-docs", 960, 80, true, "Opening the Haptic documentation"),
+      gNode("slomo", "time.setTimeDilation", 720, 200),
+      report("report-slomo", 960, 200, true, "Time dilation set from the next step"),
+      gNode("quit", "system.quitGame", 720, 320),
+      report("report-quit", 960, 320, true, "Quitting after this step"),
+      report("report-unknown", 720, 440, false, "Use ft_system info, copy, docs, slomo [rate] or quit"),
+    ],
+    edges: [
+      gExec("run", "action"),
+      gWire("run", "action", "action", "value"),
+      gWire("action", "case:info", "report-info", "execIn"),
+      gWire("action", "case:copy", "copy", "execIn"),
+      gWire("action", "case:docs", "docs", "execIn"),
+      gWire("action", "case:slomo", "slomo", "execIn"),
+      gWire("action", "case:quit", "quit", "execIn"),
+      gWire("action", "default", "report-unknown", "execIn"),
+      gExec("copy", "report-copy"),
+      gExec("docs", "report-docs"),
+      gExec("slomo", "report-slomo"),
+      gExec("quit", "report-quit"),
+      gWire("run", "value", "slomo", "timeDilation"),
+      gWire("platform", "platform", "platform-text", "in"),
+      gWire("platform-text", "out", "info-text", fmtArg("platform")),
+      gWire("touch", "touchDevice", "info-text", fmtArg("touch")),
+      gWire("editor", "inEditor", "info-text", fmtArg("editor")),
+      gWire("development", "developmentBuild", "info-text", fmtArg("development")),
+      gWire("view", "size", "info-text", fmtArg("view")),
+      gWire("view", "aspectRatio", "info-text", fmtArg("aspect")),
+      gWire("locale", "locale", "info-text", fmtArg("locale")),
+      gWire("game-time", "seconds", "info-text", fmtArg("game")),
+      gWire("real-time", "seconds", "info-text", fmtArg("real")),
+      gWire("dilation", "timeDilation", "info-text", fmtArg("dilation")),
+      gWire("info-text", "out", "report-info", "output"),
+      gWire("info-text", "out", "copy", "text"),
+    ],
+  });
+  await saveClass(ctx, CLASS.systemCommand, "DebugCommand", graph);
 }
 
 /** `ft_spawn [count]`: For Loop of Spawn Actor in a 10 × 10 grid, stacked in layers. */
@@ -1919,7 +2027,7 @@ function placeScriptingZone(ctx: FeatureTestContext, refs: ScriptingRefs, types:
 
   const font = requireRef(ctx.assets.fonts.facetype, "the facetype Font");
   add(actor("ft-scripting-console-sign", "Console Commands Sign", tf(zone.at(6, 2.4, 11)), [
-    textLabel("ft-scripting-console-sign-text", "Console: ft_spawn 10 | ft_stream | ft_stats", font, [0, 0, 0], 0.4),
+    textLabel("ft-scripting-console-sign-text", "Console: ft_spawn 10 | ft_stream | ft_stats | ft_system info", font, [0, 0, 0], 0.4),
   ]), zone.folderId);
 }
 

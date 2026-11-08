@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BOOL,
+  ENGINE_ENUMS,
   compileGraph,
   enumRef,
   type GraphNode,
@@ -73,6 +74,15 @@ describe("enum nodes", () => {
     expect(idlePins.find((pin) => pin.id === enumSwitchCasePinId("idle"))?.name).toBe(
       "Idle",
     );
+  });
+
+  it("labels the Platform enum's cases with their own spelling", () => {
+    const platform = ENGINE_ENUMS.find((entry) => entry.id === "engine:Platform")!;
+    const cases = createDefaultNodeRegistry().get("enum.switch")!
+      .pins({ enumGuid: platform.id, members: platform.members })
+      .filter((pin) => pin.kind === "exec" && pin.direction === "out")
+      .map((pin) => pin.name);
+    expect(cases).toEqual(["iOS", "Android", "Windows", "macOS", "Linux", "Other", "Default"]);
   });
 
   it("compiles Make Enum to the selected member name string", () => {
