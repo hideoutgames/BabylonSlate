@@ -12,6 +12,7 @@
 //   node scripts/check-public-hygiene.mjs --range A..B     # + lines each commit in A..B adds
 //   node scripts/check-public-hygiene.mjs --event E.json   # + issue/pull-request event text
 //   node scripts/check-public-hygiene.mjs --commits A..B   # + commit messages
+//   node scripts/check-public-hygiene.mjs --event-only E.json  # only the event text
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
@@ -338,21 +339,32 @@ function option(name, hint) {
   return value;
 }
 
+function readEvent(path) {
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
 function main() {
   // Validate arguments before the slow tracked-tree scan.
   const range = option("--range", "a git range, e.g. origin/main..HEAD");
   const eventPath = option("--event", "a GitHub event JSON path");
   const commits = option("--commits", "a git range");
+  const eventOnly = option("--event-only", "a GitHub event JSON path");
+  // A comment, review or title and body edit adds only text: its tree and commits were scanned by their own events.
+  if (eventOnly) {
+    if (range || eventPath || commits)
+      throw new Error("--event-only scans only the event text; it takes no other option");
+    report(scanEventMetadata(readEvent(eventOnly)));
+    return;
+  }
   const cwd = git(["rev-parse", "--show-toplevel"], process.cwd()).trim();
   const violations = scanTrackedFiles(cwd);
   if (range) violations.push(...scanAddedLines(range, cwd));
-  if (eventPath) {
-    violations.push(
-      ...scanEventMetadata(JSON.parse(readFileSync(eventPath, "utf8"))),
-    );
-  }
+  if (eventPath) violations.push(...scanEventMetadata(readEvent(eventPath)));
   if (commits) violations.push(...scanCommitMessages(commits, cwd));
+  report(violations);
+}
 
+function report(violations) {
   if (violations.length === 0) {
     process.stdout.write("public hygiene: no violations\n");
     return;

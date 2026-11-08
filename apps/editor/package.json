@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter player build && vite",
+    "dev": "pnpm --filter player exec vite build && vite",
     "build": "pnpm --filter player build && tsc -b && vite build",
     "test": "node ../../scripts/run-tests.mjs unit apps/editor",
     "typecheck": "tsc -b --noEmit",
