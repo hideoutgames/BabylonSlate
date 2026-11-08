@@ -2234,6 +2234,36 @@ describe("createPlayMesh", () => {
     overlay.dispose();
   });
 
+  it("disposes a world leftover that appears after the last sweep, by a joining slot or a replaced world mesh", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene, engine } = handle;
+    const overlay = new Scene(engine);
+    const plane = (name: string) => MeshBuilder.CreatePlane(name, { size: 1 }, scene);
+    const binding = createSnapshotSceneBinding();
+    for (const slotId of [1, 2]) binding.meshKinds.set(slotId, "box");
+    binding.sceneForSlot = () => overlay;
+    const apply = (frameId: number, slotIds: number[]) => applySnapshotToScene(scene, binding, {
+      frameId, tickIndex: frameId, actorCount: slotIds.length, actors: slotIds.map((slotId) => ({
+        slotId, flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY, position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } })) });
+    const strayForSlot2 = plane("actor-2");
+    const bystander = plane("bystander");
+    apply(1, [1]);
+    expect(strayForSlot2.isDisposed()).toBe(false);
+    // Slot 2 joins with no world mesh added: its own visual is built on the overlay Scene.
+    apply(2, [1, 2]);
+    expect(strayForSlot2.isDisposed()).toBe(true);
+    // A world mesh replaced by a leftover between snapshots keeps the world Scene's mesh count.
+    const count = scene.meshes.length;
+    bystander.dispose();
+    const leftover = plane("actor-1|part");
+    expect(scene.meshes.length).toBe(count);
+    apply(3, [1, 2]);
+    expect(leftover.isDisposed()).toBe(true);
+    overlay.dispose();
+  });
+
   it("keeps a command-built visual alive when a stale snapshot omits its slot", () => {
     const handle = createTestEngine();
     handles.push(handle);

@@ -36,6 +36,15 @@ describe("runtime splines", () => {
       expect(inside.direction.z).toBeCloseTo(-1, 6);
       // An open path stops at its last point.
       expect((rail.getVariable("past") as typeof inside).location.z).toBeCloseTo(-5, 6);
+      // The measured path follows a write to the points and a move of the actor.
+      const spline = rail.components.find((component) => component.classId === "SplineComponent")!;
+      spline.setVariable("points", [[0, 0, 0], [4, 0, 0]]);
+      runtime.invokeScriptEvent("Rider", "Sample", rail);
+      expect(rail.getVariable("length")).toBeCloseTo(8, 6);
+      rail.transform.position.y = 5;
+      runtime.invokeScriptEvent("Rider", "Sample", rail);
+      expect((rail.getVariable("inside") as typeof inside).location.y).toBeCloseTo(5, 6);
+      expect((rail.getVariable("past") as typeof inside).location.z).toBeCloseTo(-9, 6);
     } finally { runtime.stop(); }
   });
 });
