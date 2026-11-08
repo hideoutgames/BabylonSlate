@@ -234,3 +234,61 @@ describe("KeyframeTimeline", () => {
     expect(onMove.mock.calls.map(([, phase]) => phase)).toEqual(["start", "move", "end"]);
   });
 });
+
+describe("KeyframeTimeline lanes", () => {
+  let theme: Record<string, string>;
+  let fills: string[];
+  let clears: number;
+
+  beforeEach(() => {
+    theme = { "--border": "#101010", "--selection": "#202020", "--foreground": "#303030" };
+    fills = [];
+    clears = 0;
+    const context = {
+      fillStyle: "",
+      fillRect() { fills.push(context.fillStyle); },
+      clearRect() { clears += 1; },
+      setTransform() {}, save() {}, restore() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, arc() {},
+      rect() {}, clip() {}, fill() {}, stroke() {}, strokeRect() {}, fillText() {},
+      createLinearGradient: () => ({ addColorStop() {} }),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+      () => context as unknown as CanvasRenderingContext2D,
+    );
+    const computed = globalThis.getComputedStyle;
+    vi.spyOn(globalThis, "getComputedStyle").mockImplementation((element, pseudo) =>
+      element instanceof HTMLCanvasElement
+        ? ({ getPropertyValue: (name: string) => theme[name] ?? "" } as unknown as CSSStyleDeclaration)
+        : computed(element, pseudo));
+  });
+
+  it("redraws in the new theme's colours as soon as the theme stylesheet changes", async () => {
+    render(<Harness />);
+    expect(fills).toContain("#101010");
+    fills = [];
+    theme = { ...theme, "--border": "#a0a0a0" };
+    const stylesheet = document.createElement("style");
+    try {
+      await act(async () => {
+        document.head.append(stylesheet);
+        await Promise.resolve();
+      });
+      expect(fills).toContain("#a0a0a0");
+      expect(fills).not.toContain("#101010");
+    } finally {
+      stylesheet.remove();
+    }
+  });
+
+  it("moves the lane playhead line with the playhead without redrawing the lanes", () => {
+    render(<Harness />);
+    const line = screen.getByTestId("keyframe-timeline-lane-playhead");
+    expect(line.style.left).toBe(`${Math.round(x(0.5))}px`);
+    const drawn = clears;
+    act(() => {
+      fireEvent.keyDown(screen.getByRole("slider", { name: "Playhead" }), { key: "ArrowRight" });
+    });
+    expect(screen.getByTestId("keyframe-timeline-lane-playhead").style.left).toBe(`${Math.round(x(16 / 30))}px`);
+    expect(clears).toBe(drawn);
+  });
+});

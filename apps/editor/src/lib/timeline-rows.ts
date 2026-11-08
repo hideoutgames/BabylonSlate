@@ -108,10 +108,9 @@ export function timelineTrackLabel(actor: SerializedActor | undefined, track: Ti
 /** The summary key id a group row shows for every key on one frame. */
 const summaryKeyId = (frame: number) => `f${frame}`;
 
-export interface TimelineRowsOptions {
+export interface TimelineRowStructureOptions {
   scene: SerializedScene;
   clip: SerializedTimelineClip;
-  time: number;
   /** Object ids whose tracks are hidden. */
   collapsed: ReadonlySet<string>;
   filter: string;
@@ -120,35 +119,82 @@ export interface TimelineRowsOptions {
   assetName?: (guid: string) => string | undefined;
 }
 
+export interface TimelineRowsOptions extends TimelineRowStructureOptions {
+  time: number;
+}
+
+/** Each property track row's authored value, which its playhead value falls back to. */
+const authoredValues = new WeakMap<TimelineRowModel, unknown>();
+
 function trackRow(
   object: TimelineObjectTrack,
   actor: SerializedActor | undefined,
   track: TimelinePropertyTrack,
   label: string,
-  options: TimelineRowsOptions,
+  problem: TimelineTrackProblem | undefined,
+  options: TimelineRowStructureOptions,
 ): TimelineRowModel {
-  const { time, context } = options;
-  const authored = actor ? authoredTimelineValue(actor, track.target, track.valueType, context) : undefined;
-  const value = timelineKeyValueAt(track, time, authored);
   const interpolates = INTERPOLATED_VALUE_TYPES.has(track.valueType);
-  return {
+  const row: TimelineRowModel = {
     id: track.id,
     kind: "track",
     objectId: object.id,
     actor,
     track,
     label,
-    value: value === undefined ? undefined : formatTimelineValue(track.valueType, value, options.assetName),
+    value: undefined,
     keys: track.keys.map((key) => ({ id: key.id, time: key.Time, shape: timelineKeyShape(track.valueType, key.Interpolation) })),
     connect: interpolates && track.keys.length > 1 && track.valueType !== "color",
     ...(track.valueType === "color" && track.keys.length > 0
       ? { gradient: track.keys.map((key) => ({ time: key.Time, color: timelineCssColor(key.Value) })) }
       : {}),
     muted: track.muted === true || !actor,
+    ...(problem ? { problem } : {}),
   };
+  authoredValues.set(row, actor ? authoredTimelineValue(actor, track.target, track.valueType, options.context) : undefined);
+  return row;
 }
 
-export function timelineRows(options: TimelineRowsOptions): TimelineRowModel[] {
+/** A property track row's value at `time`, as text. */
+function trackValueAt(row: TimelineRowModel, time: number, assetName?: (guid: string) => string | undefined): string | undefined {
+  const value = timelineKeyValueAt(row.track!, time, authoredValues.get(row));
+  return value === undefined ? undefined : formatTimelineValue(row.track!.valueType, value, assetName);
+}
+
+/**
+ * The rows with each property track's value at `time`. `previous` is an
+ * earlier result for the same `structure`: its rows whose value is unchanged
+ * are reused, and so is the list when every row is.
+ */
+export function timelineRowValues(
+  structure: readonly TimelineRowModel[],
+  time: number,
+  assetName?: (guid: string) => string | undefined,
+  previous?: readonly TimelineRowModel[],
+): readonly TimelineRowModel[] {
+  let reused = previous?.length === structure.length;
+  const rows = structure.map((row, index) => {
+    if (row.kind !== "track" || !row.track) return row;
+    const value = trackValueAt(row, time, assetName);
+    const before = previous?.[index];
+    if (before && before.id === row.id && before.value === value) return before;
+    reused = false;
+    return { ...row, value };
+  });
+  return reused && previous ? previous : rows;
+}
+
+/** The rows the Timeline lists, with each track's value at `options.time`. */
+export function timelineRows(options: TimelineRowsOptions): readonly TimelineRowModel[] {
+  return timelineRowValues(timelineRowStructure(options), options.time, options.assetName);
+}
+
+/**
+ * The rows the Timeline lists, without the playhead: labels, problems, keys,
+ * gradients and connections. Property track values are left for
+ * `timelineRowValues`, so a playhead move does not rebuild them.
+ */
+export function timelineRowStructure(options: TimelineRowStructureOptions): TimelineRowModel[] {
   const { scene, clip, collapsed, filter, actorName, context } = options;
   const needle = filter.trim().toLowerCase();
   const rows: TimelineRowModel[] = [];
@@ -179,10 +225,7 @@ export function timelineRows(options: TimelineRowsOptions): TimelineRowModel[] {
       ...(actor ? {} : { problem: "missing_target" as const }),
     });
     if (!expanded) continue;
-    for (const entry of tracks) {
-      const row = trackRow(object, actor, entry.track, entry.label, options);
-      rows.push(entry.problem ? { ...row, problem: entry.problem } : row);
-    }
+    for (const entry of tracks) rows.push(trackRow(object, actor, entry.track, entry.label, entry.problem, options));
   }
   rows.push(...eventRows(options));
   return rows;
@@ -197,7 +240,7 @@ function eventKeyLabel(track: TimelineEventTrack, key: TimelineEventTrack["keys"
 }
 
 /** The Events group and, while it is open, a row per Custom Event Track. */
-function eventRows(options: TimelineRowsOptions): TimelineRowModel[] {
+function eventRows(options: TimelineRowStructureOptions): TimelineRowModel[] {
   const { clip, collapsed, filter } = options;
   if (clip.eventTracks.length === 0) return [];
   const needle = filter.trim().toLowerCase();
