@@ -52,10 +52,9 @@ export function traceSurfacePlacement(
   origin: Vector3,
   direction: Vector3,
   maxDistance: number,
-  isSurface: (mesh: AbstractMesh) => boolean = isPlacementSurface,
 ): SurfacePlacement {
   const forward = direction.normalizeToNew();
-  const pick = scene.pickWithRay(new Ray(origin, forward, maxDistance), isSurface, false);
+  const pick = scene.pickWithRay(new Ray(origin, forward, maxDistance), isPlacementSurface, false);
   if (pick?.hit && pick.pickedPoint && pick.distance <= maxDistance) {
     const normal = pick.getNormal(true, true) ?? forward.negate();
     // A back face (or a flipped normal) still places on the side facing the camera.
