@@ -9,6 +9,7 @@ export {
 } from "./global-parameter-values";
 export { installDirectViewReadSync, setDirectViewPresentationEnabled, syncDirectViewCanvas } from "./direct-view-presentation";
 export { whenSubmittedWorkDone } from "./presented-frame";
+export { applyClipboardWrite, applyOpenUrl } from "./browser-requests";
 export { sceneRenderTargetCaptures, RenderTargetCaptures } from "./render-target-capture";
 export { setSceneRenderSettings } from "./scene-render-mode";
 export type { RenderShadingSettings } from "./render-settings";

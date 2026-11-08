@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { ScriptHost, type ScriptHostServices } from "@haptic/runtime";
 import { ClassRegistry } from "@haptic/object-model";
+import { applyClipboardWrite, applyOpenUrl } from "@haptic/render";
+import { deviceEnvironment } from "@haptic/vfs";
 import {
   useDocumentActions,
   useProjectState,
@@ -92,6 +94,9 @@ export function EditorUtilityRuntime() {
       getAssetCatalog: createRegistryCatalogSource(() => latestRef.current.documents.assetRegistry),
       getProjectName: () => latestRef.current.metadata?.name ?? "",
       getProjectVersion: () => latestRef.current.metadata?.version ?? "",
+      environment: { ...deviceEnvironment(), inEditor: true, developmentBuild: true },
+      copyToClipboard: (text) => applyClipboardWrite({ text }),
+      openUrl: (url) => applyOpenUrl({ url }),
     });
     hostRef.current = host;
     void latestRef.current.collectScripts().then(async (scripts) => {

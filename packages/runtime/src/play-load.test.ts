@@ -74,6 +74,16 @@ describe("runtimeOptionsFromLoadControl", () => {
     expect(runtimeOptionsFromLoadControl({ type: "load", sceneAssetGuid: "play-scene" })).not.toHaveProperty("traceDebugDraw");
   });
 
+  it("forwards the host's environment with unknown fields at their defaults, and leaves it unset when absent", () => {
+    const environment = { platform: "Android", touchDevice: true, inEditor: false, developmentBuild: false } as const;
+    expect(runtimeOptionsFromLoadControl({ type: "load", sceneAssetGuid: "play-scene", environment }))
+      .toMatchObject({ environment });
+    const forged = { platform: "Amiga", touchDevice: 1 } as unknown as typeof environment;
+    expect(runtimeOptionsFromLoadControl({ type: "load", sceneAssetGuid: "play-scene", environment: forged }))
+      .toMatchObject({ environment: { platform: "Other", touchDevice: false, inEditor: false, developmentBuild: true } });
+    expect(runtimeOptionsFromLoadControl({ type: "load", sceneAssetGuid: "play-scene" })).not.toHaveProperty("environment");
+  });
+
   it("forwards audioAssetGuids onto the runtime", () => {
     expect(
       runtimeOptionsFromLoadControl({

@@ -224,6 +224,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   commandRevision = 0;
   lifecycleId = 0;
   timeDilation = 1;
+  gameTimeSeconds = 0;
+  realTimeSeconds = 0;
   tilemapAnimationTimeMs = 0;
   hasAnimatedTiles = false;
   /** Simulated water time: physics, buoyancy, script queries and Play water rendering share it. */

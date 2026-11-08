@@ -4,6 +4,7 @@ import { ejectPooledLeaf } from "./pooled-visuals";
 import { allowSceneOcclusionCulling, sceneOcclusionBuffer, setSceneOcclusionFrozen } from "./view-occlusion";
 import { applyGamepadRumble } from "./gamepad-rumble";
 import { applyDeviceVibration } from "./device-vibration";
+import { applyClipboardWrite, applyOpenUrl } from "./browser-requests";
 import { drainEngineAfterRelease } from "./idle-engine-drain";
 import { acquireEngineGpuTiming, observeEngineGpuTiming, type EngineGpuTimingLease, type EngineGpuTimingObservation } from "./engine-gpu-timing";
 import { RuntimeMaterialEditOwner } from "./runtime-material-edit";
@@ -2816,6 +2817,8 @@ function initializeEngine(
       }
       if (command.type === "setGamepadRumble") applyGamepadRumble(command);
       if (command.type === "vibrateDevice") applyDeviceVibration(command);
+      if (command.type === "copyToClipboard") applyClipboardWrite(command);
+      if (command.type === "openUrl") applyOpenUrl(command);
       if (command.type === "requestDeviceMotion") options.onDeviceMotionRequest?.();
       if (command.type === "spawn") {
         captureActorSlots.set(command.slotId, command.actorGuid);

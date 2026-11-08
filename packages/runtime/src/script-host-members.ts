@@ -29,6 +29,12 @@ import {
   rotatorUp,
   SaveGameError,
   slerpQuats,
+  DEFAULT_GAME_ENVIRONMENT,
+  localCalendarDate,
+  localTimeOfDay,
+  newGuid,
+  utcCalendarDate,
+  utcTimeOfDay,
   type CurveAssetCatalogEntry,
   type CurveKind,
   type Rng,
@@ -61,6 +67,28 @@ import {
 import type { ScriptMaterialOwnership } from "./script-material-ownership";
 import { scriptValuesEqual } from "./script-values-equal";
 import type { LatentFrameRoots } from "./latent-frame-roots";
+
+/** Get Locale: the JavaScript environment's default locale, which browsers take from the user's language. */
+function scriptLocale(): { locale: string; language: string } {
+  let locale = "en-US";
+  try {
+    locale = Intl.DateTimeFormat().resolvedOptions().locale || locale;
+  } catch {
+    // Keep the fallback where Intl is unavailable.
+  }
+  return { locale, language: locale.split("-")[0]!.toLowerCase() };
+}
+
+/** Open URL's address: an absolute http or https URL, or null. */
+function webAddress(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
 
 /** What `createHostMembers` reads from its `ScriptHost`. */
 export interface HostMembersHost extends ComponentFunctionHost {
@@ -417,6 +445,37 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     getSceneState: (target) => services.getSceneState?.(target) ?? "Unloaded",
     getProjectName: () => services.getProjectName?.() ?? "",
     getProjectVersion: () => services.getProjectVersion?.() ?? "",
+    getDeltaSeconds: () => services.getDeltaSeconds?.() ?? 0,
+    getFrameCount: () => services.getFrameCount?.() ?? 0,
+    getTimeNow: () => utcTimeOfDay(Date.now()),
+    getDateNow: () => utcCalendarDate(Date.now()),
+    getTimeMs: () => Date.now(),
+    getTimeDilation: () => services.getTimeDilation?.() ?? 1,
+    setTimeDilation: (rate) => {
+      const value = Number(rate);
+      if (Number.isFinite(value)) services.setTimeDilation?.(value);
+    },
+    getGameTimeSeconds: () => services.getGameTimeSeconds?.() ?? 0,
+    getRealTimeSeconds: () => services.getRealTimeSeconds?.() ?? 0,
+    getLocalTimeNow: () => localTimeOfDay(Date.now()),
+    getLocalDateNow: () => localCalendarDate(Date.now()),
+    quitGame: () => services.quitGame?.(),
+    getPlatform: () => (services.environment ?? DEFAULT_GAME_ENVIRONMENT).platform,
+    isTouchDevice: () => (services.environment ?? DEFAULT_GAME_ENVIRONMENT).touchDevice,
+    isInEditor: () => (services.environment ?? DEFAULT_GAME_ENVIRONMENT).inEditor,
+    isDevelopmentBuild: () => (services.environment ?? DEFAULT_GAME_ENVIRONMENT).developmentBuild,
+    getViewportSize: () => {
+      const size = services.getViewportSize?.();
+      return { x: size?.width ?? 0, y: size?.height ?? 0 };
+    },
+    getLocale: scriptLocale,
+    copyToClipboard: (text) => services.copyToClipboard?.(typeof text === "string" ? text : String(text ?? "")),
+    openUrl: (url) => {
+      const address = webAddress(url);
+      if (address) services.openUrl?.(address);
+      else services.log("warning", "Script", `Open URL opens only http and https addresses, not "${String(url ?? "")}".`);
+    },
+    newGuid: () => newGuid(),
     getThirdPartyNotices: async () => {
       if (!services.getThirdPartyNotices) {
         return { success: false, text: "", errorMessage: "Third-party notices are not available here." };

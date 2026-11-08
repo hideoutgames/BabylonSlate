@@ -16,6 +16,7 @@ import {
 } from "../lib/play-content";
 import { editorThirdPartyNoticesUrl } from "../lib/public-engine-assets";
 import type { GameWorkerHost } from "./game-worker-host";
+import { deviceEnvironment } from "@haptic/vfs";
 import { playLoadControl } from "./play-physics";
 import { resolvePlayFrameCap } from "./play-session-helpers";
 import type { PlaySessionOptions } from "./play-session-types";
@@ -117,6 +118,8 @@ export function playSessionLoad(options: PlaySessionOptions, sceneSourcesAvailab
   });
   const loadControl = playLoadControl({
     sessionMode: options.mode ?? "play",
+    // Play and Simulate run inside the editor and keep Development Only nodes.
+    environment: { ...deviceEnvironment(), inEditor: true, developmentBuild: true },
     sessionGeneration: options.sessionGeneration,
     simulationAssetGuids: options.simulationAssetGuids ? [...options.simulationAssetGuids] : undefined,
     saveGame: options.saveGame,

@@ -261,6 +261,8 @@ export type ControlMessage =
       sceneNavmeshBytes?: Record<string, Uint8Array>;
       /** Overlay documents the session compositor can instantiate by guid or name. */
       sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
+      /** Where the session runs: device platform, touch, editor and development build (the System nodes read it). */
+      environment?: import("@haptic/core").GameEnvironment;
       /** When false, debug-tier console commands are stripped in the player. */
       includeDebugCommands?: boolean;
       /** False strips the debug lines of Line Trace and Project Cursor To Scene, even for an explicit `drawDebug: true`. True when omitted; release players send false. */
@@ -953,6 +955,10 @@ export type CommandMessage =
   | { type: "requestDeviceMotion"; frameId: number }
   /** Vibrate the phone or tablet for `durationMs` (0 stops it); ignored where the browser cannot. */
   | { type: "vibrateDevice"; durationMs: number; frameId: number }
+  /** Copy To Clipboard: write `text` to the system clipboard; ignored where the browser refuses. */
+  | { type: "copyToClipboard"; text: string; frameId: number }
+  /** Open URL: open an http or https address in a new browser tab or the system browser; ignored where refused. */
+  | { type: "openUrl"; url: string; frameId: number }
   /** Rumble a pad by its Gamepad API index: intensity 0..1; zero intensity or duration stops it. */
   | {
       type: "setGamepadRumble";

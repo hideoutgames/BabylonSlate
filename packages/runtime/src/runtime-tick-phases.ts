@@ -27,6 +27,9 @@ export function runTick(rt: RuntimeComposition): void {
   const timeDilation = rt.timeDilation;
   const simDt = simulationDt(rt);
   rt.world.clock.dt = simDt;
+  // Game and real time include the step that is starting, so the first tick reads one step.
+  rt.gameTimeSeconds += simDt;
+  rt.realTimeSeconds += rt.dt;
   rt.waterClock.advance(simDt);
   // Voices play in real time, so their age follows the undilated step.
   rt.voices.advance(rt.dt);

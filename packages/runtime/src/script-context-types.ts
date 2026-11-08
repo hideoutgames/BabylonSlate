@@ -22,6 +22,9 @@ import type {
   SceneStreamingState,
   TouchInput,
   TweenValueType,
+  CalendarDate,
+  DevicePlatform,
+  TimeOfDay,
   WaterSample,
 } from "@haptic/core";
 import type { ScriptBundleEntry } from "@haptic/bridge";
@@ -362,6 +365,44 @@ export interface ScriptContext {
   getSceneState(target: unknown): SceneStreamingState;
   getProjectName(): string;
   getProjectVersion(): string;
+  /** Get Delta Seconds: the current simulation step (fixed step × time dilation); 0 outside a simulation. */
+  getDeltaSeconds(): number;
+  /** Get Current Frame Count: frames finished since Play started; 0 outside a simulation. */
+  getFrameCount(): number;
+  /** Get Time Now: the engine Time Structure for the wall clock in UTC. */
+  getTimeNow(): TimeOfDay;
+  /** Get Date Now: the engine Date Structure for the wall clock in UTC. */
+  getDateNow(): CalendarDate;
+  /** Get Time MS: Unix time in milliseconds. */
+  getTimeMs(): number;
+  /** Get Time Dilation: 1 is normal speed; 1 outside a simulation. */
+  getTimeDilation(): number;
+  /** Set Time Dilation: clamped to 0..8 like `slomo`; applies from the next tick. A non-number does nothing. */
+  setTimeDilation(rate: unknown): void;
+  /** Get Game Time In Seconds: dilated steps since the session started, including the current one. */
+  getGameTimeSeconds(): number;
+  /** Get Real Time Seconds: the same steps without time dilation. */
+  getRealTimeSeconds(): number;
+  /** Get Local Time Now: the engine Time Structure in the device's time zone. */
+  getLocalTimeNow(): TimeOfDay;
+  /** Get Local Date Now: the engine Date Structure in the device's time zone. */
+  getLocalDateNow(): CalendarDate;
+  /** Quit Game: ends the session after the current step, as the `quit` console command does. */
+  quitGame(): void;
+  getPlatform(): DevicePlatform;
+  isTouchDevice(): boolean;
+  isInEditor(): boolean;
+  isDevelopmentBuild(): boolean;
+  /** Get Viewport Size: the game view in CSS pixels; 0 × 0 where there is none. */
+  getViewportSize(): { x: number; y: number };
+  /** Get Locale: a BCP 47 tag such as `en-US` and its language, `en`. */
+  getLocale(): { locale: string; language: string };
+  /** Copy To Clipboard: best effort; the host may refuse. */
+  copyToClipboard(text: unknown): void;
+  /** Open URL: http and https only, anything else logs a warning; best effort, the host may refuse. */
+  openUrl(url: unknown): void;
+  /** New GUID: a new random identifier. */
+  newGuid(): string;
   /** Get Third-Party Notices: the notices text, or an error message when they cannot be read. */
   getThirdPartyNotices(): Promise<{ success: boolean; text: string; errorMessage: string }>;
   getSceneReference(): Scene | null;
@@ -662,7 +703,10 @@ export type HostContextKey =
   | "getAllComponentsOfType" | "getSceneLoadingProgress" | "getTargetSceneName" | "releaseAssetLoad"
   | "getAssetLoadHandleState" | "getAssetLoadHandleProgress" | "getAssetLoadState" | "loadSceneAsync"
   | "unloadSceneAsync" | "isSceneLoaded" | "getSceneLoadProgress" | "getSceneState" | "getProjectName"
-  | "getProjectVersion" | "getThirdPartyNotices" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
+  | "getProjectVersion" | "getDeltaSeconds" | "getFrameCount" | "getTimeNow" | "getDateNow" | "getTimeMs"
+  | "getTimeDilation" | "setTimeDilation" | "getGameTimeSeconds" | "getRealTimeSeconds" | "getLocalTimeNow"
+  | "getLocalDateNow" | "quitGame" | "getPlatform" | "isTouchDevice" | "isInEditor" | "isDevelopmentBuild"
+  | "getViewportSize" | "getLocale" | "copyToClipboard" | "openUrl" | "newGuid" | "getThirdPartyNotices" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
   | "setAnimGraphVariable" | "getAnimGraphCurrentState" | "jumpAnimGraphState" | "setChannelVolume"
   | "setGlobalVolume" | "changeScene" | "createSceneLayer" | "removeSceneLayer" | "clearSceneLayers"
   | "setFocusTarget" | "clearFocusTarget" | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"

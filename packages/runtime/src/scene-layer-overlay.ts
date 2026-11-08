@@ -97,6 +97,8 @@ export class SceneLayerOverlay {
   private safeAreaInsetsPixels: OverlaySafeAreaInsets = { left: 0, right: 0, top: 0, bottom: 0 };
   private canvasWidth = 1;
   private canvasHeight = 1;
+  /** Whether the host has reported the canvas size; Get Viewport Size reads 0 × 0 until it has. */
+  private canvasReported = false;
   /** Output width / height; unknown until the host first reports a size. */
   private viewportAspect = Number.NaN;
   private spawnDepth = 0;
@@ -147,6 +149,11 @@ export class SceneLayerOverlay {
   /** The Play canvas size the host last reported, in pixels. */
   canvasSize(): { width: number; height: number } {
     return { width: this.canvasWidth, height: this.canvasHeight };
+  }
+
+  /** The canvas size the host reported, or 0 × 0 before it has (a headless session never does). */
+  reportedCanvasSize(): { width: number; height: number } {
+    return this.canvasReported ? this.canvasSize() : { width: 0, height: 0 };
   }
 
   /** A layer's Play ortho extent: its Layer Width × Height widened to the output aspect, as the compositor draws it. */
@@ -283,6 +290,9 @@ export class SceneLayerOverlay {
     }
     if (typeof canvasHeight === "number" && canvasHeight > 0) {
       this.canvasHeight = canvasHeight;
+    }
+    if (typeof canvasWidth === "number" && canvasWidth > 0 && typeof canvasHeight === "number" && canvasHeight > 0) {
+      this.canvasReported = true;
     }
     const inset = (value: number | undefined) =>
       typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;

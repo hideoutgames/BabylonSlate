@@ -19,6 +19,7 @@ import type { AnimClipCatalogEntry, AnimGraphDocument } from "@haptic/anim-graph
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@haptic/assets";
 import type { BehaviourTreeDocument, BlackboardDocument } from "@haptic/behaviour-tree";
 import type {
+  GameEnvironment,
   CollisionTriangleMesh,
   FocusNavigationSettings,
   InputAssetDefinition,
@@ -81,6 +82,8 @@ export interface RuntimeDriverOptions {
   /** Serialized trace retention budget in bytes for this session. */
   traceByteBudget?: number;
   project?: { name: string; version: string };
+  /** Where the session runs (the System nodes read it); `DEFAULT_GAME_ENVIRONMENT` when omitted. */
+  environment?: GameEnvironment;
   /** URL of the game's `legal/THIRD-PARTY-NOTICES.txt` (same origin); Get Third-Party Notices fails without one. */
   thirdPartyNoticesUrl?: string;
   seed: number;

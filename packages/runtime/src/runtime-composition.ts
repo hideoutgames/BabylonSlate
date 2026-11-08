@@ -99,6 +99,10 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   readonly commandRevision: number;
   readonly lifecycleId: number;
   readonly timeDilation: number;
+  /** Get Game Time In Seconds: the dilated steps since the session started, advanced by the tick phases. */
+  gameTimeSeconds: number;
+  /** Get Real Time Seconds: the same steps without time dilation. */
+  realTimeSeconds: number;
   /** Reset by the Scene realizer's `startWorld`, advanced by the tick phases; the driver's `registerTileContent` re-sends it. */
   tilemapAnimationTimeMs: number;
   readonly hasAnimatedTiles: boolean;

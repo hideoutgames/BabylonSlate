@@ -1,5 +1,5 @@
 import type { CommandMessage, ControlMessage } from "@haptic/bridge";
-import { type SerializedScene, type SerializedSceneLayer } from "@haptic/core";
+import { normalizeGameEnvironment, type SerializedScene, type SerializedSceneLayer } from "@haptic/core";
 import { isSceneAssetClassId, isSceneLayerAssetClassId } from "@haptic/object-model";
 import {
   createInProcessRuntime,
@@ -29,6 +29,7 @@ export function runtimeOptionsFromLoadControl(
   | "pixelsPerUnit"
   | "texturePixelSizes"
   | "project"
+  | "environment"
   | "inputAssets"
   | "dataAssets"
   | "curveAssets"
@@ -119,6 +120,7 @@ export function runtimeOptionsFromLoadControl(
     renderTargets: msg.renderTargets,
     renderTargetTextures: msg.renderTargetTextures,
     ...(msg.project ? { project: msg.project } : {}),
+    ...(msg.environment ? { environment: normalizeGameEnvironment(msg.environment) } : {}),
     ...(msg.thirdPartyNoticesUrl ? { thirdPartyNoticesUrl: msg.thirdPartyNoticesUrl } : {}),
     ...(msg.inputAssets !== undefined ? { inputAssets: msg.inputAssets } : {}),
     physicsWorld: msg.physicsWorld === "2d" ? "2d" : "3d",

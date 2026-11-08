@@ -1,4 +1,5 @@
 import { Capacitor } from "@capacitor/core";
+import { browserDeviceFacts, type GameEnvironment } from "@haptic/core";
 import type {
   DirEntry,
   FileStat,
@@ -153,6 +154,18 @@ export function getHostPlatform(): HostPlatform {
 export function isMobilePlatform(): boolean {
   const platform = getHostPlatform();
   return platform === "ios" || platform === "android";
+}
+
+/**
+ * The device facts editor Play reports to its scripts (Get Platform, Is Touch Device). The
+ * native apps name their OS directly; a browser's comes from its user agent.
+ */
+export function deviceEnvironment(): Pick<GameEnvironment, "platform" | "touchDevice"> {
+  const facts = browserDeviceFacts(typeof navigator === "undefined" ? undefined : navigator);
+  const host = getHostPlatform();
+  if (host === "ios") return { ...facts, platform: "iOS" };
+  if (host === "android") return { ...facts, platform: "Android" };
+  return facts;
 }
 
 /** iPhone or iPad, in the iOS app or a browser. iPadOS Safari and WKWebView report a Mac; touch support gives it away. */
