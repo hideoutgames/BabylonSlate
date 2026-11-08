@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import {
@@ -41,9 +41,13 @@ export function useModelSlotMaterials({
   onApplied: () => void;
 }): { ready: boolean; error: string | null; release: () => void } {
   const { collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocumentActions();
-  const { assetRegistry } = useRegistryState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const { editorTextureLodEnabled, editorTextureLodQuality } = useEditorViewportPrefs();
-  const materialRevision = savedMaterialLibraryKey(assetRegistry?.list() ?? []);
+  // Depends on the registry alone, so Model payload edits do not rebuild it.
+  const materialRevision = useMemo(() => {
+    void registryEpoch;
+    return savedMaterialLibraryKey(assetRegistry?.list() ?? []);
+  }, [assetRegistry, registryEpoch]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ownerRef = useRef<(() => void) | null>(null);
