@@ -29,8 +29,8 @@ export { applyAttachToBone } from "./bone-attachment";
 import { slotKeysOf, type SnapshotSceneBinding } from "./snapshot-binding";
 import {
   appliedPlayVisibilityOf,
-  disposeWorldOverlayLeftoverSlots,
   setPlayVisualVisibility,
+  sweepWorldOverlayLeftovers,
 } from "./snapshot-visibility";
 import {
   applyMaterialToActorMeshes,
@@ -262,9 +262,12 @@ function reconcileSnapshotVisuals(
   animationScenes.add(scene);
   const count = snapshot.actorCount ?? snapshot.actors.length;
   binding.snapshotMeshes.length = count;
-  // World copies of all overlay slots are dropped in one pass. It also runs
-  // when a later slot throws, so earlier slots keep their per-slot cleanup.
+  // World copies of all overlay slots are dropped in one pass, when one can
+  // exist (`sweepWorldOverlayLeftovers`). It also runs when a later slot
+  // throws, so earlier slots keep their per-slot cleanup.
   let overlaySlots: Set<number> | undefined;
+  let movedOrHid = false;
+  let completed = false;
   try {
     for (let i = 0; i < count; i++) {
       const actor = snapshot.actors[i]!;
@@ -278,6 +281,7 @@ function reconcileSnapshotVisuals(
         // last pose; migration restores it once the layer Scene exists.
         const waiting = binding.meshes.get(actor.slotId);
         if (waiting?.getScene() === scene) setPlayVisualVisibility(binding, waiting, false);
+        movedOrHid = true;
         continue;
       }
       const hostScene = wantsOverlay ? overlayScene : scene;
@@ -285,6 +289,7 @@ function reconcileSnapshotVisuals(
       animationScenes.add(hostScene);
       let mesh = binding.meshes.get(actor.slotId) ?? null;
       if (mesh && mesh.getScene() !== hostScene) {
+        movedOrHid = true;
         mesh = migratePlaySlotVisual(hostScene, binding, actor.slotId);
       }
       if (!mesh) {
@@ -299,8 +304,9 @@ function reconcileSnapshotVisuals(
       // leaves a command-built visual protected from a stale buffer.
       seen.add(actor.slotId);
     }
+    completed = true;
   } finally {
-    if (overlaySlots) disposeWorldOverlayLeftoverSlots(scene, overlaySlots);
+    sweepWorldOverlayLeftovers(scene, binding, overlaySlots, movedOrHid || !completed);
   }
   for (const slotId of binding.meshes.keys()) {
     // A command-built visual not yet seen must survive a stale buffer.
@@ -320,19 +326,23 @@ export function applySnapshotToScene(
   sampleSceneWaterFrame(scene, snapshot.frameId);
   reconcileSnapshotVisuals(scene, binding, snapshot);
   const count = snapshot.actorCount ?? snapshot.actors.length;
-  // Without any light or camera there is nothing to look up for each actor.
+  // Without any light or camera there is nothing to look up for each actor; likewise fog volumes and slot light groups.
   const hasLightsOrCameras = binding.lights.size > 0 || binding.cameras.size > 0;
+  const hasFogVolumes = binding.fogVolumes.size > 0;
+  const hasSlotLightGroups = binding.areaLights.size > 0 || binding.lights2D.size > 0 || binding.occluders2D.size > 0;
   for (let i = 0; i < count; i++) {
     const actor = snapshot.actors[i]!;
     const mesh = binding.snapshotMeshes[i];
     if (!mesh) continue;
     writeActorTransform(mesh, actor);
-    const fogVolumes = binding.fogVolumes.get(actor.slotId);
+    const fogVolumes = hasFogVolumes ? binding.fogVolumes.get(actor.slotId) : undefined;
     if (fogVolumes) setFogVolumesVisible(scene, fogVolumes.actorId,
       (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE);
-    binding.areaLights.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
-    binding.lights2D.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
-    binding.occluders2D.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
+    if (hasSlotLightGroups) {
+      binding.areaLights.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
+      binding.lights2D.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
+      binding.occluders2D.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
+    }
     setPlayVisualVisibility(
       binding,
       mesh,
