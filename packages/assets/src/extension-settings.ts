@@ -1,6 +1,7 @@
 import { ENGINE_VERSION } from "@haptic/core";
 import { stableStringify } from "./bytes";
 import { isPortablePackagePath } from "./package-path";
+import { normalizeExtensionContributions, type ExtensionContributions } from "./extension-fields";
 
 export const EXTENSION_MANIFEST_FILE = "extension.json";
 export const EXTENSIONS_DIR = "extensions";
@@ -35,6 +36,8 @@ export interface ExtensionSettings {
   libraryName: string;
   /** Shows the mounted `assets/` root in the Content Browser tree (gameplay packages only). */
   appearInContentBrowser: boolean;
+  /** Declarative editor contributions, such as a Project Settings category. */
+  contributes: ExtensionContributions;
 }
 
 /** Shared by manifests and package writes; never resolve untrusted paths first. */
@@ -86,6 +89,7 @@ export function createDefaultExtensionSettings(options: {
     gameEntryPoint: DEFAULT_EXTENSION_GAME_ENTRY_POINT,
     libraryName: defaultExtensionLibraryName(options.displayName),
     appearInContentBrowser: false,
+    contributes: {},
   };
 }
 
@@ -152,6 +156,7 @@ export function normalizeExtensionSettings(value: unknown): ExtensionSettings {
     gameEntryPoint,
     libraryName,
     appearInContentBrowser: record.appearInContentBrowser === true,
+    contributes: normalizeExtensionContributions(record.contributes),
   };
 }
 

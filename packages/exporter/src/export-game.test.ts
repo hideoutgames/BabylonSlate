@@ -136,7 +136,7 @@ describe("exportGame", () => {
 
   it("ships gameplay Extension libraries in game.json for the player to load", async () => {
     const library = {
-      extensionGuid: "weather-guid", libraryName: "weather", label: "Weather",
+      extensionGuid: "weather-guid", libraryName: "weather", label: "Weather", settings: { region: "north" },
       bundle: { entry: "game.ts", modules: [{ path: "game.ts", code: "exports.rain = 1;", imports: {} }] },
     };
     const withLibrary = await exportGame({

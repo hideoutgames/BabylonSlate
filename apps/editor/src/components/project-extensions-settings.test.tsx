@@ -38,7 +38,7 @@ vi.mock("../context/document-context", async () => {
 
 const source = `export function activate(api) {
   api.registerCommand({ id: "write", title: "Write Code", fields: [
-    { id: "source", label: "Source", type: "multiline", defaultValue: "initial" }
+    { id: "source", label: "Source", type: "multiline", default: "initial" }
   ], async execute(values) {
     if (values.source === "invalid") throw new Error("Fix the source before saving");
     await api.code.write("scripts/output.ts", values.source);
@@ -188,6 +188,31 @@ describe("ProjectExtensionsSettings", () => {
     expect(await storage.exists("extensions/tools/code/notes.md")).toBe(false);
     expect(await storage.readText("extensions/tools/index.ts")).toBe(source);
     expect(within(screen.getByTestId("settings-extension-row-tools")).getByText("Gameplay")).toBeTruthy();
+  });
+
+  it("runs a command with typed fields and shows the message it returns", async () => {
+    await writeProjectExtension(storage, "typed", { ...createDefaultExtensionSettings({ extensionGuid: "typed", displayName: "Typed" }), enabledByDefault: true }, `export function activate(api) {
+  api.registerCommand({ id: "go", title: "Make Copies", fields: [
+    { id: "count", label: "Copies", type: "number", integer: true, min: 1, default: 2 },
+    { id: "mirror", label: "Mirror", type: "toggle" },
+    { id: "side", label: "Side", type: "choice", options: [{ value: "left", label: "Left" }, { value: "right", label: "Right" }] },
+    { id: "shader", label: "Shader", type: "code", language: "glsl", default: "void main() {}" },
+  ], async execute(values) {
+    await api.code.write("scripts/typed.json", JSON.stringify(values));
+    return values.mirror ? "Mirrored copies made." : undefined;
+  }});
+}`);
+    await harness.service!.refresh();
+    render(<ProjectExtensionsSettings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Make Copies" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Make Copies" }));
+    expect(await dialog.findByRole("group", { name: "Shader" })).toBeTruthy();
+    fireEvent.click(dialog.getByRole("checkbox", { name: "Mirror" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Run" }));
+
+    expect(await dialog.findByText("Mirrored copies made.")).toBeTruthy();
+    expect(JSON.parse(await storage.readText("scripts/typed.json"))).toEqual({ count: 2, mirror: true, side: "left", shader: "void main() {}" });
   });
 
   it("keeps installed code until import replacement is confirmed and leaves the replacement disabled", async () => {

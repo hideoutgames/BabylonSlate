@@ -17,5 +17,6 @@
   "editorOnly": true,
   "gameEntryPoint": "game.ts",
   "libraryName": "glslToMaterial",
-  "appearInContentBrowser": false
+  "appearInContentBrowser": false,
+  "contributes": {}
 }

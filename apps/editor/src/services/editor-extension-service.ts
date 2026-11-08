@@ -10,6 +10,7 @@ import {
 } from "@haptic/assets";
 import { EditorExtensionHost, type EditorExtensionServices, type EditorExtensionCommandDescriptor } from "../lib/editor-extension-host";
 import { linkExtensionModules } from "../lib/extension-modules";
+import { resolvedExtensionSettings, type ExtensionSettingValues } from "../lib/extension-settings-ui";
 
 /** Code file edits applied by one Save. */
 export interface ExtensionFileChanges {
@@ -35,6 +36,7 @@ function duplicateLibraryDiagnostics(order: readonly ExtensionDescriptor[]): str
 }
 
 export type ExtensionOverrides = Record<string, { enabled: boolean }>;
+
 export interface ExtensionSnapshot {
   entries: ExtensionDescriptor[];
   commands: EditorExtensionCommandDescriptor[];
@@ -58,6 +60,7 @@ export class EditorExtensionService {
   private engineStorage: ProjectStorage | null = null;
   private host: EditorExtensionHost;
   private overrides: ExtensionOverrides = {};
+  private settingValues: ExtensionSettingValues = {};
   private listeners = new Set<() => void>();
   private state: ExtensionSnapshot = { entries: [], commands: [], diagnostics: [] };
   private fingerprint = "";
@@ -197,6 +200,7 @@ export class EditorExtensionService {
         }
         if (await this.host.activate({
           id: entry.extensionGuid, label: entry.settings.displayName, entry: entry.settings.entryPoint, files,
+          settings: resolvedExtensionSettings(entry, this.settingValues),
         })) this.started.add(entry.extensionGuid);
       }
       this.packageDiagnostics = diagnostics;
@@ -311,7 +315,7 @@ export class EditorExtensionService {
    * Links the game module of every enabled gameplay package, dependencies first,
    * reading current files so edits made in another editor are picked up.
    */
-  gameLibraries(overrides: ExtensionOverrides = this.overrides): Promise<ExtensionGameLibrary[]> {
+  gameLibraries(overrides: ExtensionOverrides = this.overrides, settingValues: ExtensionSettingValues = this.settingValues): Promise<ExtensionGameLibrary[]> {
     return this.serialize(async () => {
       const entries = shadowEngineExtensions(
         await discoverProjectExtensions(this.storage),
@@ -328,6 +332,7 @@ export class EditorExtensionService {
             extensionGuid: entry.extensionGuid,
             libraryName: entry.settings.libraryName,
             label: entry.settings.displayName,
+            settings: resolvedExtensionSettings(entry, settingValues),
             bundle: await linkExtensionModules(files, entry.settings.gameEntryPoint),
           });
         } catch (cause) {
@@ -400,9 +405,19 @@ export class EditorExtensionService {
 
   getOverrides(): ExtensionOverrides { return { ...this.overrides }; }
 
-  run(extensionId: string, commandId: string, values: Record<string, string>): Promise<void> {
-    return this.serialize(async () => {
-      await this.host.run(extensionId, commandId, values);
-    });
+  /**
+   * The project's stored settings values. Running extensions see their
+   * resolved values through `api.settings`; nothing restarts.
+   */
+  setSettingValues(values: ExtensionSettingValues): void {
+    this.settingValues = values;
+    for (const entry of this.state.entries) {
+      if (this.started.has(entry.extensionGuid)) this.host.updateSettings(entry.extensionGuid, resolvedExtensionSettings(entry, values));
+    }
+  }
+
+  /** Runs a command; resolves to the message it returned, if any. */
+  run(extensionId: string, commandId: string, values: Readonly<Record<string, unknown>>): Promise<string | undefined> {
+    return this.serialize(() => this.host.run(extensionId, commandId, values));
   }
 }

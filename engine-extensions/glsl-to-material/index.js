@@ -4,10 +4,10 @@ export function activate(api) {
     title: "GLSL to Material",
     description: "Experimental. Converts straight-line fragment GLSL to editable nodes. Unsupported syntax is reported before creating a Material. UV and Time names are explicit optional bindings.",
     fields: [
-      { id: "name", label: "Material Name", type: "text", defaultValue: "Converted Material", required: true },
+      { id: "name", label: "Material Name", type: "text", default: "Converted Material", required: true },
       { id: "uv", label: "UV Variable", type: "text" },
       { id: "time", label: "Time Variable", type: "text" },
-      { id: "source", label: "GLSL Source", type: "multiline", defaultValue: "void main() {\n  gl_FragColor = vec4(1.0);\n}", required: true },
+      { id: "source", label: "GLSL Source", type: "code", language: "glsl", default: "void main() {\n  gl_FragColor = vec4(1.0);\n}", required: true },
     ],
     async execute(values) {
       const name = values.name.trim();
@@ -28,6 +28,7 @@ export function activate(api) {
         type: "Material", name, payload: result.document,
       });
       api.log(`Created Material: ${name}`);
+      return `${name} is available in the Content Browser.`;
     },
   });
 }

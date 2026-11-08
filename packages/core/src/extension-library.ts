@@ -4,9 +4,12 @@ export interface ExtensionModule {
   path: string;
   /** CommonJS JavaScript (the editor transpiles TypeScript before linking). */
   code: string;
-  /** Import specifier, as written, to the package-relative path it names. */
+  /** Import specifier, as written, to the package-relative path it names, or to a host module (`haptic:extension`). */
   imports: Record<string, string>;
 }
+
+/** The host module game code imports for its own extension's data. */
+export const EXTENSION_HOST_MODULE = "haptic:extension";
 
 /** Every module an entry reaches, linked in the editor; plain data, so it crosses workers and ships in game.json. */
 export interface ExtensionModuleBundle {
@@ -21,6 +24,8 @@ export interface ExtensionGameLibrary {
   libraryName: string;
   /** Display name, used in errors and source URLs. */
   label: string;
+  /** The extension's Project Settings values, resolved against its fields when linked. */
+  settings: Readonly<Record<string, string | number | boolean>>;
   bundle: ExtensionModuleBundle;
 }
 
@@ -39,6 +44,7 @@ export function evaluateExtensionBundle(
   bundle: ExtensionModuleBundle,
   label: string,
   scope: ExtensionModuleScope = {},
+  hostModules: Readonly<Record<string, unknown>> = {},
 ): Record<string, unknown> {
   const modules = new Map(bundle.modules.map((module) => [module.path, module]));
   const instances = new Map<string, { exports: Record<string, unknown> }>();
@@ -55,7 +61,14 @@ export function evaluateExtensionBundle(
       if (typeof specifier !== "string" || !Object.hasOwn(module.imports, specifier)) {
         throw new Error(`Extension module ${path} cannot import ${String(specifier)}.`);
       }
-      return load(module.imports[specifier]!);
+      const target = module.imports[specifier]!;
+      if (target.startsWith("haptic:")) {
+        if (!Object.hasOwn(hostModules, target)) {
+          throw new Error(`${target} is available in game code only. Editor code reads its settings with api.settings.`);
+        }
+        return hostModules[target];
+      }
+      return load(target);
     };
     const evaluate = new Function("exports", "module", "require", ...names,
       `${module.code}\n//# sourceURL=haptic-extension:///${encodeURIComponent(label)}/${module.path}`);
@@ -81,7 +94,8 @@ export function loadExtensionGameLibraries(
       if (Object.hasOwn(extensions, library.libraryName)) {
         throw new Error(`Library Name ${library.libraryName} is already used.`);
       }
-      extensions[library.libraryName] = evaluateExtensionBundle(library.bundle, library.label, { extensions });
+      const host = Object.freeze({ settings: Object.freeze({ ...library.settings }) });
+      extensions[library.libraryName] = evaluateExtensionBundle(library.bundle, library.label, { extensions }, { [EXTENSION_HOST_MODULE]: host });
     } catch (cause) {
       const error = new Error(`Extension ${library.label} failed to load: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
       if (!onError) throw error;

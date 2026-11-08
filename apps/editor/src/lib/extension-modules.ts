@@ -1,5 +1,5 @@
 import type { ExtensionCodeFile } from "@haptic/assets";
-import type { ExtensionModule, ExtensionModuleBundle } from "@haptic/core";
+import { EXTENSION_HOST_MODULE, type ExtensionModule, type ExtensionModuleBundle } from "@haptic/core";
 
 type TypeScript = typeof import("typescript");
 
@@ -24,6 +24,7 @@ function joinPackagePath(directory: string, specifier: string): string | null {
 }
 
 function resolveImport(from: string, specifier: string, sources: ReadonlyMap<string, string>): string {
+  if (specifier === EXTENSION_HOST_MODULE) return specifier;
   if (!specifier.startsWith("./") && !specifier.startsWith("../")) {
     throw new Error(`${from}: Extension code can import only files in its own extension, not "${specifier}".`);
   }
@@ -118,7 +119,7 @@ export async function linkExtensionModules(files: readonly ExtensionCodeFile[], 
     for (const specifier of valueImports(ts, path, source)) {
       const target = resolveImport(path, specifier, sources);
       imports[specifier] = target;
-      queue.push(target);
+      if (target !== EXTENSION_HOST_MODULE) queue.push(target);
     }
     modules.push({ path, code: transpile(ts, path, source), imports });
   }

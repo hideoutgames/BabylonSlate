@@ -4,6 +4,7 @@ import {
   decodeAssetDocument,
   encodeAssetDocument,
   exportExtensionZip,
+  normalizeExtensionContributions,
   writeProjectExtension,
   type ExtensionSettings,
 } from "@haptic/assets";
@@ -128,7 +129,7 @@ describe("EditorExtensionService lifecycle", () => {
     await project.writeText("extensions/broken/extension.json", "{}");
     await writeProjectExtension(project, "tools", enabledSettings("tools"), `
       export function activate(api) {
-        api.registerCommand({ id: "write", title: "Write", execute(values) {
+        api.registerCommand({ id: "write", title: "Write", fields: [{ id: "source", label: "Source", type: "text" }], execute(values) {
           if (values.source === "bad") throw new Error("Invalid source");
           return api.code.write("code/output.js", values.source);
         } });
@@ -341,6 +342,27 @@ describe("EditorExtensionService code files and gameplay packages", () => {
     const extensions = loadExtensionGameLibraries(libraries);
     expect((extensions.weather!.forecast as (value: number) => string)(3)).toBe("6 mm");
     expect((await service.gameLibraries({ off: { enabled: true } })).map((library) => library.libraryName)).toEqual(["base", "off", "weather"]);
+  });
+
+  it("links game libraries with their Project Settings values and tells running editor code when they change", async () => {
+    const { project, service, messages } = await fixture();
+    const contributes = normalizeExtensionContributions({ settings: { title: "Weather Setup", sections: [{ id: "general", title: "General", fields: [
+      { id: "region", label: "Region", type: "text", default: "north" },
+      { id: "scale", label: "Scale", type: "number", default: 1 },
+    ] }] } });
+    await gameplayPackage(project, "weather", "import { settings } from 'haptic:extension';\nexport const describe = () => `${settings.region}:${settings.scale}`;", { contributes });
+    await project.writeText("extensions/weather/index.ts", "export function activate(api) { api.log(`Region ${api.settings.get().region}`); api.settings.onChange((values) => api.log(`Region ${values.region}`)); }");
+    service.setSettingValues({ weather: { region: "west" } });
+    await service.refresh();
+
+    const [library] = await service.gameLibraries();
+    expect(library!.settings).toEqual({ region: "west", scale: 1 });
+    expect((loadExtensionGameLibraries([library!]).weather!.describe as () => string)()).toBe("west:1");
+    const [exported] = await service.gameLibraries({}, { weather: { scale: 3 } });
+    expect(exported!.settings).toEqual({ region: "north", scale: 3 });
+
+    service.setSettingValues({ weather: { region: "south" } });
+    expect(messages).toEqual(["Region west", "Region south"]);
   });
 
   it("rejects two enabled gameplay packages that claim one Library Name", async () => {

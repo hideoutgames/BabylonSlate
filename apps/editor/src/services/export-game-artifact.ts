@@ -71,7 +71,8 @@ export async function exportProjectGameArtifact(
   }
   let extensionLibraries: ExtensionGameLibrary[];
   try {
-    extensionLibraries = await projectService.extensions.gameLibraries(exportDocument?.settings.extensionOverrides);
+    extensionLibraries = await projectService.extensions.gameLibraries(
+      exportDocument?.settings.extensionOverrides, exportDocument?.settings.extensionSettings);
   } catch (error) {
     return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
   }

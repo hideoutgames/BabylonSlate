@@ -1,7 +1,9 @@
 import { ProjectSaveGamesSettings } from "./project-save-games-settings";
 import { FocusNavigationFields } from "./focus-navigation-fields";
 import { renderingDraft, mergeRenderingDraft, type RenderingDraft } from "../lib/render-settings-draft";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { ExtensionSettingsPage } from "./extension-settings-page";
+import { extensionSettingsCategories, extensionSettingsSearchFields, isExtensionSettingsCategoryId } from "../lib/extension-settings-ui";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -138,7 +140,8 @@ export function SettingsModal({
     prefillSourceControlFromGit,
   } = useDocumentActions();
   const { projectDocument: liveProjectDocument } = useProjectState();
-  const { projectGuid, assetRegistry, registryEpoch } = useRegistryState();
+  const { projectGuid, assetRegistry, registryEpoch, extensionService } = useRegistryState();
+  const extensionSnapshot = useSyncExternalStore(extensionService.subscribe, extensionService.getSnapshot);
   const { sourceControl } = useSourceControl();
   const [draft, setDraft] = useState<RenderingDraft | null>(null);
   const draftOwner = useRef<{ guid: string | null; base: RenderingDraft } | null>(null);
@@ -226,25 +229,32 @@ export function SettingsModal({
     [onEngineSaved, store],
   );
 
-  const source = scope === "engine" ? ENGINE_CATEGORIES : PROJECT_CATEGORIES;
+  // Enabled extensions may add Project Settings categories under titles they choose; never Engine Settings.
+  const extensionCategories = useMemo(() => scope === "project"
+    ? extensionSettingsCategories(extensionSnapshot.entries, liveProjectDocument?.settings.extensionOverrides ?? {})
+    : [], [extensionSnapshot.entries, liveProjectDocument?.settings.extensionOverrides, scope]);
+  const source = useMemo(() => scope === "engine" ? ENGINE_CATEGORIES : [...PROJECT_CATEGORIES, ...extensionCategories],
+    [extensionCategories, scope]);
   const showSourceControl = isSourceControlHost(
     getHostPlatform(),
     isTestModeEnabled(),
   );
   const groups = useMemo(() => {
     if (scope === "engine") return ENGINE_GROUPS;
-    if (showSourceControl) return PROJECT_GROUPS;
     return PROJECT_GROUPS.map((group) => ({
       ...group,
-      ids: group.ids.filter((id) => id !== "sourceControl"),
+      ids: [
+        ...group.ids.filter((id) => showSourceControl || id !== "sourceControl"),
+        ...(group.ids.includes("extensions") ? extensionCategories.map((category) => category.id) : []),
+      ],
     }));
-  }, [scope, showSourceControl]);
+  }, [extensionCategories, scope, showSourceControl]);
 
   const searching = search.trim().length > 0;
   const searchResults = useMemo((): SettingSearchField[] => {
     const words = search.trim().toLowerCase().split(/\s+/);
     const available = source.filter((category) => category.id !== "sourceControl" || showSourceControl);
-    const settingFields = scope === "engine" ? ENGINE_SETTING_FIELDS : PROJECT_SETTING_FIELDS;
+    const settingFields = scope === "engine" ? ENGINE_SETTING_FIELDS : [...PROJECT_SETTING_FIELDS, ...extensionSettingsSearchFields(extensionCategories)];
     return available.flatMap((category) => {
       const matches = settingFields.filter((field) =>
         field.categoryId === category.id &&
@@ -255,7 +265,7 @@ export function SettingsModal({
         ? [{ categoryId: category.id, label: category.label }]
         : [];
     });
-  }, [scope, search, source, showSourceControl]);
+  }, [extensionCategories, scope, search, source, showSourceControl]);
   const categories = useMemo(() => source.filter((category) =>
     (category.id !== "sourceControl" || showSourceControl) &&
     (!searching || searchResults.some((result) => result.categoryId === category.id)),
@@ -729,6 +739,14 @@ export function SettingsModal({
       {showProjectBody && projectDocument && activeCategoryId === "extensions" ? (
         <ProjectExtensionsSettings />
       ) : null}
+      {showProjectBody && projectDocument && isExtensionSettingsCategoryId(activeCategoryId) ? (() => {
+        const category = extensionCategories.find((value) => value.id === activeCategoryId);
+        return category ? <ExtensionSettingsPage
+          entry={category.entry}
+          stored={projectDocument.settings.extensionSettings}
+          onChange={(extensionSettings) => updateProjectSettings({ extensionSettings })}
+        /> : null;
+      })() : null}
 
       {showProjectBody && projectDocument && activeCategoryId === "export" ? (
         <ProjectExportSettings

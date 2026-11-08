@@ -448,6 +448,20 @@ describe("project schema", () => {
     expect(settings).not.toHaveProperty("token");
   });
 
+  it("keeps extension settings values that are plain text, numbers or toggles", () => {
+    expect(
+      normalizeProjectSettings({
+        extensionSettings: {
+          " discord ": { applicationId: "123", showElapsed: true, refresh: 15, nested: { a: 1 }, broken: Number.NaN },
+          "": { applicationId: "lost" },
+          empty: { nested: [] },
+          invalid: "text",
+        },
+      } as unknown as Partial<ProjectSettings>).extensionSettings,
+    ).toEqual({ discord: { applicationId: "123", showElapsed: true, refresh: 15 } });
+    expect(normalizeProjectSettings({}).extensionSettings).toEqual({});
+  });
+
   it("normalizes pluginOverrides keyed by guid", () => {
     expect(
       normalizeProjectSettings({

@@ -78,7 +78,8 @@ function inertExtensionService(): DocumentsValue["extensionService"] {
     getOverrides: () => ({}),
     gameLibraries: async () => [],
     getGameplayExtensions: () => [],
-    run: resolved,
+    setSettingValues: noop,
+    run: async () => undefined,
   };
   // The class's private fields are not part of the public contract.
   return service as unknown as DocumentsValue["extensionService"];

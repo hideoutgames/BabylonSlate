@@ -914,7 +914,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         const nextScripts = game.scripts;
         const nextDiagnostics: Diagnostic[] = [...prepared.diagnostics];
         // Linked from the files as they are now, so edits made in another editor play too.
-        setExtensionLibraries(await current(extensionService.gameLibraries()));
+        setExtensionLibraries(await current(extensionService.gameLibraries(
+          projectDocument.settings.extensionOverrides, projectDocument.settings.extensionSettings)));
         setScripts(nextScripts);
         setDiagnostics(nextDiagnostics);
         playContentActions.setPrepared(preparedPlayContent(prepared, {
