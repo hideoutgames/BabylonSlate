@@ -20,7 +20,7 @@ import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { DynamicRuntimeMeshGeometry, normalizeShadowSettings, SHADOW_FAR_CASTER_MIN_TEXELS } from "@haptic/core";
 import { applyDynamicRuntimeMeshUpdate, createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
-import { sceneShadowController } from "./shadow-controller";
+import { sceneShadowController, type SceneShadowController } from "./shadow-controller";
 import { attachModelLods, generateModelLods } from "./model-lod";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
@@ -36,6 +36,15 @@ afterEach(() => {
   vi.restoreAllMocks();
   for (const engine of engines.splice(0)) engine.dispose();
 });
+
+/**
+ * Production refreshes the admitted maps from the forward graph's shadow task (`ManagedShadowsTask`), after the frame's
+ * world matrices update and before any map draws. These fixtures draw with Babylon's Scene.render, which draws the maps
+ * itself, so they refresh at the same point: once per camera pass, after its active meshes are evaluated.
+ */
+function refreshLikeTheGraph(scene: Scene, controller: SceneShadowController): void {
+  scene.onAfterActiveMeshesEvaluationObservable.add(() => controller.refreshShadowMaps());
+}
 
 async function fixture(floatingOrigin = false) {
   const options = new NullEngineOptions();
@@ -67,6 +76,7 @@ async function fixture(floatingOrigin = false) {
   geometry.onGeometryUpdated = previousGeometryUpdate;
   const light = new PointLight("local", new Vector3(0, 3, 0), scene);
   const controller = sceneShadowController(scene);
+  refreshLikeTheGraph(scene, controller);
   controller.register(light, true);
   await added;
   controller.sync();
@@ -627,7 +637,7 @@ describe("local shadow refresh", () => {
   });
 });
 
-/** A cascaded sun over two boxes, drawn through the real native path. */
+/** A cascaded sun over two boxes. */
 async function cascadedSun() {
   const engine = new NullEngine();
   engines.push(engine);
@@ -655,6 +665,7 @@ async function cascadedSun() {
   const distant = box("distant caster", 200);
   const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
   const controller = sceneShadowController(scene);
+  refreshLikeTheGraph(scene, controller);
   controller.register(sun, true);
   await added;
   controller.sync();

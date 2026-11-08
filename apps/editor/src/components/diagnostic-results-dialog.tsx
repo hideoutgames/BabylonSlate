@@ -202,7 +202,7 @@ function CompareRow({ label, nested, before, after }: { label: string; nested: b
 }
 
 const STAGE_KIND_CLASS: Record<string, string> = {
-  task: "bg-trace-script", frameGraph: "bg-trace-physics", native: "bg-trace-physics",
+  task: "bg-trace-script", frameGraph: "bg-trace-physics",
   overlay: "bg-muted-foreground/60", composition: "bg-muted-foreground/60", auxiliary: "bg-muted-foreground/60",
 };
 const resourceText = (resource: RenderFrameReport["resources"][number]) => [

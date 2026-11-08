@@ -6,7 +6,7 @@ import { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPa
 
 export interface RenderFrameStageDescription {
   name: string;
-  kind: "frameGraph" | "task" | "native" | "overlay" | "composition" | "auxiliary";
+  kind: "frameGraph" | "task" | "overlay" | "composition" | "auxiliary";
   sceneId?: string;
   actorGuid?: string;
   detail?: string;

@@ -7,7 +7,7 @@ import type {
 } from "./render-frame-report";
 
 const FRAME_REPORT_FILE_KIND = "haptic-frame";
-const STAGE_KINDS = new Set<string>(["frameGraph", "task", "native", "overlay", "composition", "auxiliary"]);
+const STAGE_KINDS = new Set<string>(["frameGraph", "task", "overlay", "composition", "auxiliary"]);
 const BACKENDS = new Set<string>(["webgpu", "webgl2", "webgl1", "unknown"]);
 
 type Fields = Record<string, unknown>;

@@ -407,10 +407,9 @@ export class ManagedShadowsTask extends FrameGraphTask {
     this.bind();
     this.recorded = true;
     this._frameGraph.addPass(this.name).setExecuteFunc((context) => {
-      // Babylon's graph scene path updates world matrices after the ordinary
-      // target observable, so the controller skips its walk there (a graph
-      // scene) and this is the frame's only one, before consuming the RTT gate.
-      // A view draws inside the scene view's frame, after that walk.
+      // The frame's only caster walk, after Babylon's graph scene path has
+      // updated world matrices and before consuming the RTT gate. A view draws
+      // inside the scene view's frame, after that walk.
       if (!this.view) findSceneShadowController(this.scene)?.refreshShadowMaps();
       // onBeforeRender can change admission after render's preflight. External
       // RTTs do not alias graph allocations: bind the live maps now, then warm
