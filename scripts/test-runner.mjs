@@ -178,7 +178,7 @@ export function unitProfile(args) {
  * the whole suite's module graph in one main process. The hosted runner has the memory for one run, which transforms
  * the shared editor modules once and keeps its workers busy across every file.
  */
-export function editorDomBatches(files, hosted) {
+function editorDomBatches(files, hosted) {
   if (hosted) return [files];
   const batches = [];
   for (let index = 0; index < files.length; index += 50)

@@ -1,20 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  editorDomBatches,
   runStage,
   runTests,
   toolingArguments,
   unitProfile,
 } from "./test-runner.mjs";
 import { resolveExecutionPlan } from "./execution-plan.mjs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { toolCli } from "./process-runner.mjs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { acquireResources } from "./resource-admission.mjs";
 import { existsSync, writeFileSync } from "node:fs";
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { execFile, spawn } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 test("a stricter host policy before launch rejects stale worker settings and releases the nested scope", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "runner policy change "));
@@ -182,14 +183,79 @@ test("meets the other file", async () => {
   assert.deepEqual(toolingArguments([], local), ["--test", "--test-concurrency=1", "scripts/*.test.mjs"]);
 });
 
-test("hosted CI runs the editor DOM files in one Vitest run and local runs restart every 50 files", () => {
-  const files = Array.from({ length: 103 }, (_, index) => `apps/editor/src/file-${index}.test.tsx`);
-  assert.deepEqual(editorDomBatches(files, true), [files]);
-  assert.deepEqual(editorDomBatches(files, false), [
-    files.slice(0, 50),
-    files.slice(50, 100),
-    files.slice(100),
-  ]);
+test("hosted CI runs the editor DOM files in one Vitest run and local runs restart every 50 files", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "editor-batches-"));
+  let lease;
+  t.after(async () => {
+    await lease?.release();
+    await rm(directory, { recursive: true, force: true });
+  });
+  // Sorted names, as the runner sorts the files it lists.
+  const files = Array.from(
+    { length: 103 },
+    (_, index) => `apps/editor/src/file-${String(index).padStart(3, "0")}.test.tsx`,
+  );
+  const runs = join(directory, "runs.jsonl");
+  const stub = join(directory, "vitest-stub.mjs");
+  // Preloaded into every process the runner starts; only the Vitest CLI lists the fixture files and records its runs.
+  await writeFile(
+    stub,
+    `import { appendFileSync, writeSync } from "node:fs";
+if (process.argv[1] === ${JSON.stringify(toolCli("vitest"))}) {
+  const args = process.argv.slice(2);
+  if (args[0] === "list") writeSync(1, ${JSON.stringify(JSON.stringify(files.map((file) => ({ file }))))});
+  else appendFileSync(${JSON.stringify(runs)}, JSON.stringify(args) + "\\n");
+  process.exit(0);
+}
+`,
+  );
+  // The CLI runs as CI and developers start it, with the execution context in its own environment only.
+  const jsdomRuns = async (mode, env) => {
+    await rm(runs, { force: true });
+    await promisify(execFile)(
+      process.execPath,
+      [fileURLToPath(new URL("./run-tests.mjs", import.meta.url)), mode],
+      {
+        env: {
+          ...process.env,
+          NODE_TEST_CONTEXT: undefined,
+          ...env,
+          NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(stub).href}`,
+        },
+      },
+    );
+    return (await readFile(runs, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .filter((args) => args.includes("jsdom"))
+      .map((args) => args.filter((arg) => files.includes(arg)));
+  };
+  // Verify's unit job runs `pnpm test:coverage`.
+  assert.deepEqual(
+    await jsdomRuns("coverage", { ...hostedContext, HAPTIC_TEST_LEASE: undefined }),
+    [files],
+  );
+  // `pnpm test:editor-unit` under a reservation the runner nests its stages in.
+  const config = join(directory, "resources.json");
+  await writeFile(config, JSON.stringify({ version: 1, profile: "standard" }));
+  const env = {
+    HAPTIC_EXECUTION_POLICY: "local",
+    HAPTIC_TEST_PROFILE: "shared",
+    LOCALAPPDATA: directory,
+    HAPTIC_LOCAL_RESOURCE_CONFIG: config,
+  };
+  lease = await acquireResources(
+    { workers: 3, browsers: 0, memoryGiB: 2 },
+    { directory, env, freeMemory: () => 16 * 1024 ** 3 },
+  );
+  assert.deepEqual(
+    await jsdomRuns("editor", {
+      ...env,
+      HAPTIC_TEST_LEASE: JSON.stringify({ ticket: lease.ticket, token: lease.token }),
+    }),
+    [files.slice(0, 50), files.slice(50, 100), files.slice(100)],
+  );
 });
 
 test("a reader that closes early does not strand the stage's reservation", async (t) => {
