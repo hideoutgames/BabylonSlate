@@ -276,8 +276,8 @@ export interface ScriptHostServices {
   createTimelineClip?(timeline: TimelineObject, assetGuid: string, inputs: Record<string, unknown>): TimelineClipObject | null;
   /** A Timeline Proxy node on a clip asset instance (Bind Actor or Component to Timeline Proxy, Unbind, Unbind All). */
   timelineProxy?(instance: TimelineClipInstance, action: string, proxyId: string, args: Record<string, unknown>): void;
-  /** Get Timeline Proxy: the object bound to the proxy. */
-  timelineProxyGet?(instance: TimelineClipInstance, proxyId: string): EngineObject | null;
+  /** Get Timeline Proxy: the objects bound to the proxy, in bind order. */
+  timelineProxyGet?(instance: TimelineClipInstance, proxyId: string): EngineObject[];
   getCurrentSceneLayerActor?(target: unknown): Actor | null;
   setFocusTarget?(target: unknown): boolean;
   clearFocusTarget?(target: unknown): void;

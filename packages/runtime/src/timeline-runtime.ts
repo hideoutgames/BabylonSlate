@@ -60,6 +60,10 @@ export interface TimelineRuntimeHost {
 /** What one object track writes to: an actor, or a Component proxy's component, and the proxy's binding. */
 type TrackTarget = { object: Actor | ActorComponent; binding?: TimelineProxyBinding };
 
+/** A bound object that was destroyed, or a component whose actor was. */
+const boundTargetGone = ({ target }: TimelineProxyBinding): boolean =>
+  target.destroyed || (target instanceof ActorComponent && target.owner?.destroyed === true);
+
 const CHANNEL = { location: "position", rotation: "rotation", scale: "scale" } as const;
 
 /**
@@ -189,18 +193,26 @@ export class TimelineRuntime {
   }
 
   /**
-   * Binds a proxy to `object`, which must be a live actor for an Actor proxy
-   * or a component for a Component proxy. Relative keys offset the transform
-   * it has now; the next tick applies it. False when it cannot stand in.
+   * Adds `object` to a proxy's bound objects; it must be a live actor for an
+   * Actor proxy or a component for a Component proxy. Every bound object
+   * plays the proxy's tracks, Relative keys offsetting the transform each had
+   * when bound; the next tick applies it. Binding an object already bound
+   * there takes the new Absolute Transform and base. False when it cannot
+   * stand in.
    */
   bind(instance: TimelineClipInstance, proxyId: string, object: unknown, absolute: boolean): boolean {
     const proxy = instance.proxies.get(proxyId);
     if (instance.destroyed || !proxy || !timelineProxyAccepts(proxy.represents, object) || object.destroyed) return false;
-    instance.bindings.set(proxyId, { target: object, absolute, base: copyTransform(object.transform) });
+    const binding = { target: object, absolute, base: copyTransform(object.transform) };
+    const bound = instance.bindings.get(proxyId);
+    const index = bound?.findIndex((entry) => entry.target === object) ?? -1;
+    if (!bound) instance.bindings.set(proxyId, [binding]);
+    else if (index >= 0) bound[index] = binding;
+    else bound.push(binding);
     return true;
   }
 
-  /** Clears a proxy: its tracks stop applying. */
+  /** Clears every object bound to a proxy: its tracks stop applying. */
   unbind(instance: TimelineClipInstance, proxyId: string): void {
     instance.bindings.delete(proxyId);
   }
@@ -210,10 +222,9 @@ export class TimelineRuntime {
     instance.bindings.clear();
   }
 
-  /** The object bound to a proxy, or none (a destroyed one reads as none). */
-  bound(instance: TimelineClipInstance, proxyId: string): Actor | ActorComponent | null {
-    const binding = instance.bindings.get(proxyId);
-    return binding && !binding.target.destroyed ? binding.target : null;
+  /** The objects bound to a proxy, in bind order; destroyed ones are left out. */
+  bound(instance: TimelineClipInstance, proxyId: string): Array<Actor | ActorComponent> {
+    return (instance.bindings.get(proxyId) ?? []).filter((binding) => !boundTargetGone(binding)).map((binding) => binding.target);
   }
 
   /** Keeps playing instances alive: hands each to the collector's root visitor. */
@@ -389,42 +400,45 @@ export class TimelineRuntime {
     return live();
   }
 
-  /** Writes every unmuted track's value at the clip's time to its actor or bound object. */
+  /** Writes every unmuted track's value at the clip's time to its actor or bound objects. */
   apply(clip: TimelineClipObject): void {
     if (clip.destroyed) return;
     for (const object of clip.clip.objects) {
-      const target = this.trackTarget(clip, object.actorId, true);
-      if (!target) continue;
+      const targets = this.trackTargets(clip, object.actorId, true);
+      if (targets.length === 0) continue;
       for (const track of object.tracks) {
         if (track.muted) continue;
         const value = evaluateTimelineTrack(track, clip.playback.time);
-        if (value !== undefined) this.write(target, object.actorId, track, value);
+        if (value === undefined) continue;
+        for (const target of targets) this.write(target, object.actorId, track, value);
       }
     }
   }
 
   /**
-   * The object an object track animates: a scene clip's placed actor, or an
-   * instance's bound object (a destroyed one unbinds itself; an unbound
+   * The objects an object track animates: a scene clip's placed actor, or an
+   * instance's bound objects (destroyed ones unbind themselves; an unbound
    * proxy is reported once per Play when `report` is set).
    */
-  private trackTarget(clip: TimelineClipObject, actorId: string, report: boolean): TrackTarget | null {
+  private trackTargets(clip: TimelineClipObject, actorId: string, report: boolean): TrackTarget[] {
     if (!(clip instanceof TimelineClipInstance)) {
       const actor = this.host.ownedActor(clip.owner, actorId);
-      return actor && !actor.destroyed ? { object: actor } : null;
+      return actor && !actor.destroyed ? [{ object: actor }] : [];
     }
-    const binding = clip.bindings.get(actorId);
-    if (binding && (binding.target.destroyed || (binding.target instanceof ActorComponent && binding.target.owner?.destroyed))) {
-      clip.bindings.delete(actorId);
-    } else if (binding) {
-      return { object: binding.target, binding };
+    const bound = clip.bindings.get(actorId);
+    if (bound?.some(boundTargetGone)) {
+      const live = bound.filter((binding) => !boundTargetGone(binding));
+      if (live.length > 0) clip.bindings.set(actorId, live);
+      else clip.bindings.delete(actorId);
     }
+    const live = clip.bindings.get(actorId);
+    if (live) return live.map((binding) => ({ object: binding.target, binding }));
     if (report && !clip.unboundWarned.has(actorId)) {
       clip.unboundWarned.add(actorId);
       const proxy = clip.proxies.get(actorId);
       if (proxy) this.host.warn(`${clip.clip.name}: the ${proxy.name} proxy is not bound.`);
     }
-    return null;
+    return [];
   }
 
   private write({ object, binding }: TrackTarget, actorId: string, track: TimelinePropertyTrack, value: unknown): void {
@@ -491,37 +505,41 @@ export class TimelineRuntime {
     if (clip.restore || clip.clip.whenFinished !== "restore") return;
     const restore = new Map<string, () => void>();
     for (const object of clip.clip.objects) {
-      const bound = this.trackTarget(clip, object.actorId, false);
-      if (!bound) continue;
-      const owner = bound.object;
-      for (const track of object.tracks) {
-        const { target } = track;
-        const key = `${object.actorId}:${target.kind}:${target.componentId ?? ""}:${target.property}`;
-        if (restore.has(key)) continue;
-        if (target.kind === "transform") {
-          const channel = CHANNEL[target.property as keyof typeof CHANNEL];
-          if (!channel) continue;
-          const saved = structuredClone(owner.transform[channel]);
-          restore.set(key, () => {
-            if (owner.destroyed) return;
-            Object.assign(owner.transform[channel], saved);
-            if (owner instanceof Actor) this.host.teleportActor(owner);
-            else this.host.refreshComponent(owner, "transform");
-          });
-          continue;
-        }
-        const component = target.kind === "component" ? this.trackComponent(owner, object.actorId, target.componentId) : owner;
-        if (!component) continue;
-        const name = target.kind === "visible" ? "visible" : target.property;
-        const saved = structuredClone(component.getVariable(name));
-        restore.set(key, () => {
-          if (component.destroyed) return;
-          component.setVariable(name, structuredClone(saved));
-          if (component instanceof ActorComponent) this.host.refreshComponent(component, name);
-        });
+      for (const { object: owner } of this.trackTargets(clip, object.actorId, false)) {
+        this.captureRestoreOf(restore, owner, object.actorId, object.tracks);
       }
     }
     clip.restore = restore;
+  }
+
+  /** One animated object's values, keyed by the object and the property, so each bound object restores its own. */
+  private captureRestoreOf(restore: Map<string, () => void>, owner: Actor | ActorComponent, actorId: string, tracks: readonly TimelinePropertyTrack[]): void {
+    for (const track of tracks) {
+      const { target } = track;
+      const key = `${owner.guid}:${actorId}:${target.kind}:${target.componentId ?? ""}:${target.property}`;
+      if (restore.has(key)) continue;
+      if (target.kind === "transform") {
+        const channel = CHANNEL[target.property as keyof typeof CHANNEL];
+        if (!channel) continue;
+        const saved = structuredClone(owner.transform[channel]);
+        restore.set(key, () => {
+          if (owner.destroyed) return;
+          Object.assign(owner.transform[channel], saved);
+          if (owner instanceof Actor) this.host.teleportActor(owner);
+          else this.host.refreshComponent(owner, "transform");
+        });
+        continue;
+      }
+      const component = target.kind === "component" ? this.trackComponent(owner, actorId, target.componentId) : owner;
+      if (!component) continue;
+      const name = target.kind === "visible" ? "visible" : target.property;
+      const saved = structuredClone(component.getVariable(name));
+      restore.set(key, () => {
+        if (component.destroyed) return;
+        component.setVariable(name, structuredClone(saved));
+        if (component instanceof ActorComponent) this.host.refreshComponent(component, name);
+      });
+    }
   }
 
   /** Puts the values from when Play started back; the next Play captures them again. */

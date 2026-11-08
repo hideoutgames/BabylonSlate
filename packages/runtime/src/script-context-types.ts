@@ -262,8 +262,8 @@ export interface ScriptContext {
   createTimelineClip(target: unknown, assetGuid: string, inputs: Record<string, unknown>): EngineObject | null;
   /** Bind (`args.object`, `args.absolute`), Unbind or Unbind All on a clip asset instance's proxies. */
   timelineProxy(target: unknown, action: string, proxyId: string, args: Record<string, unknown>): void;
-  /** The object bound to a clip asset instance's proxy, or null. */
-  timelineProxyGet(target: unknown, proxyId: string): EngineObject | null;
+  /** The objects bound to a clip asset instance's proxy, in bind order; empty while it is unbound. */
+  timelineProxyGet(target: unknown, proxyId: string): EngineObject[];
   /** A copy of the asset's curve as a curve Structure value. */
   curveObjectCurve(kind: CurveKind, target: unknown): unknown;
   getAllActorsOfClass(classId: string): Actor[];

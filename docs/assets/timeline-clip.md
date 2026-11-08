@@ -53,7 +53,7 @@ A clip asset never plays by itself: a script creates an instance of it, and each
 4. Play it with the [Timeline Clip nodes](../scenes/timeline.md#control-a-clip-from-a-script), and Bind to its events, such as **On Swing Open**, or to the Timeline's **On Swing Open (Door Swing)**.
 
 - Create binds each connected proxy **Relative**: transform keys offset the object from where it stood when it was bound, turned with it, so one swing works on every door whatever its position and facing. Scale keys multiply its scale.
-- A proxy with nothing connected is unbound: its tracks are skipped, and the **Output Log** warns once, such as **Door Swing: the Handle Glow proxy is not bound.** A bound object that is destroyed unbinds itself.
+- A proxy with nothing connected is unbound: its tracks are skipped, and the **Output Log** warns once, such as **Door Swing: the Handle Glow proxy is not bound.** A bound object that is destroyed unbinds itself; the proxy's other objects keep playing.
 - An instance lives while a variable, array, map or structure holds it, or while it plays, and is then collected. Every placed actor that creates one gets its own; there is no limit.
 - The clip asset ships with the game when a script creates it. Play and exports carry its keys, events and proxies, never its Editor Preview.
 
@@ -63,16 +63,17 @@ Drag from an instance's **Timeline Clip** pin for each proxy's nodes, titled wit
 
 | Node | Does |
 | --- | --- |
-| [Bind Actor to Timeline Proxy](../scripting/class/bind-actor-to-timeline-proxy.md), such as **Bind Door Proxy** | Binds an Actor proxy to an actor. |
-| [Bind Component to Timeline Proxy](../scripting/class/bind-component-to-timeline-proxy.md), such as **Bind Handle Glow Proxy** | Binds a Component proxy to a component. |
-| [Unbind Timeline Proxy](../scripting/class/unbind-timeline-proxy.md) | Clears the proxy: its tracks stop applying. |
-| [Get Timeline Proxy](../scripting/class/get-timeline-proxy.md) | Returns the object bound to the proxy, or None. |
+| [Bind Actor to Timeline Proxy](../scripting/class/bind-actor-to-timeline-proxy.md), such as **Bind Door Proxy** | Adds an actor to an Actor proxy. |
+| [Bind Component to Timeline Proxy](../scripting/class/bind-component-to-timeline-proxy.md), such as **Bind Handle Glow Proxy** | Adds a component to a Component proxy. |
+| [Unbind Timeline Proxy](../scripting/class/unbind-timeline-proxy.md) | Clears every object bound to the proxy: its tracks stop applying. |
+| [Get Timeline Proxy](../scripting/class/get-timeline-proxy.md) | Returns the objects bound to the proxy, as an array. |
 | [Unbind All Timeline Proxies](../scripting/class/unbind-all-timeline-proxies.md) | Clears every proxy of the instance. |
 
 - **Proxy** in the **Inspector** picks which proxy a node acts on.
+- A proxy holds as many objects as you bind to it, and every one plays the proxy's tracks. For example, three **Bind Mannequin Proxy** nodes on one instance, each with its own Mannequin, animate all three; **Unbind Mannequin Proxy** clears all three. Binding an object that is already bound to the proxy only updates it.
 - A Bind node's **Absolute Transform** decides how transform keys apply. Off (Relative): they offset the object from where it stands when it is bound. On: they set an actor's world transform, or a component's transform relative to its parent.
 - A new binding applies from the next frame, while the instance plays.
-- When Finished: Restore State puts back the values of the objects bound when the instance started playing.
+- When Finished: Restore State puts back the values of every object bound when the instance started playing.
 
 ## Checks
 

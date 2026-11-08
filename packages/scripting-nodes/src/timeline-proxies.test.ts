@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOOL, EXEC, compileGraph, objectRef, type GraphNode, type LogicGraph } from "@haptic/scripting";
+import { BOOL, EXEC, arrayOf, compileGraph, objectRef, type GraphNode, type LogicGraph } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 import {
   TIMELINE_PROXY_BIND_ACTOR_NODE_ID,
@@ -21,7 +21,7 @@ const pins = (typeId: string, properties: Record<string, unknown> = {}) =>
   registry.get(typeId)!.pins(properties).map((entry) => [entry.id, entry.type, entry.optional === true]);
 
 describe("Timeline Proxy nodes", () => {
-  it("type the Target by the clip asset and the object by the picked proxy's Class", () => {
+  it("type the Target by the clip asset and the objects by the picked proxy's Class", () => {
     expect(pins(TIMELINE_PROXY_BIND_ACTOR_NODE_ID, door)).toEqual([
       ["execIn", EXEC, false],
       ["execOut", EXEC, false],
@@ -32,7 +32,8 @@ describe("Timeline Proxy nodes", () => {
     expect(pins(TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, glow)[3]).toEqual(["component", objectRef("LightComponent"), false]);
     expect(pins(TIMELINE_PROXY_GET_NODE_ID, glow)).toEqual([
       ["target", objectRef("TimelineClip:swing:clip"), false],
-      ["object", objectRef("LightComponent"), false],
+      // A proxy holds any number of bound objects.
+      ["objects", arrayOf(objectRef("LightComponent")), false],
     ]);
     // Before a proxy is picked: the base classes.
     expect(pins(TIMELINE_PROXY_BIND_ACTOR_NODE_ID)[2]).toEqual(["target", objectRef("TimelineClip"), false]);
@@ -59,6 +60,7 @@ describe("Timeline Proxy nodes", () => {
         node("unbind", TIMELINE_PROXY_UNBIND_NODE_ID, glow),
         node("all", TIMELINE_PROXY_UNBIND_ALL_NODE_ID),
         node("get", TIMELINE_PROXY_GET_NODE_ID, door),
+        node("count", "array.length"),
         node("print", "debug.print"),
       ],
       edges: [
@@ -68,7 +70,8 @@ describe("Timeline Proxy nodes", () => {
         { id: "x4", sourceNodeId: "print", sourcePinId: "execOut", targetNodeId: "all", targetPinId: "execIn" },
         ...["bind", "unbind", "all", "get"].map((target) => ({ id: `t-${target}`, sourceNodeId: "clip", sourcePinId: "value", targetNodeId: target, targetPinId: "target" })),
         { id: "w1", sourceNodeId: "self", sourcePinId: "out", targetNodeId: "bind", targetPinId: "actor" },
-        { id: "w2", sourceNodeId: "get", sourcePinId: "object", targetNodeId: "print", targetPinId: "value" },
+        { id: "w2", sourceNodeId: "get", sourcePinId: "objects", targetNodeId: "count", targetPinId: "array" },
+        { id: "w3", sourceNodeId: "count", sourcePinId: "out", targetNodeId: "print", targetPinId: "value" },
       ],
     };
     const { source } = compileGraph(graph, { assetGuid: "class:door", registry });

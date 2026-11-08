@@ -73,7 +73,8 @@ export class TimelineClipInstance extends TimelineClipObject {
   readonly assetGuid: string;
   /** Each proxy's kind, by proxy id (the clip's object track actor ids). */
   readonly proxies: ReadonlyMap<string, { name: string; represents: "actor" | "component" }>;
-  readonly bindings = new Map<string, TimelineProxyBinding>();
+  /** Each proxy's bound objects, in the order they were bound; every one plays the proxy's tracks. */
+  readonly bindings = new Map<string, TimelineProxyBinding[]>();
   /** Proxies already reported unbound to the Output Log. */
   readonly unboundWarned = new Set<string>();
 

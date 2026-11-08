@@ -1,4 +1,4 @@
-import { BOOL, EXEC, objectRef, pin, type NodeDefinition } from "@haptic/scripting";
+import { BOOL, EXEC, arrayOf, objectRef, pin, type NodeDefinition } from "@haptic/scripting";
 import { subject } from "./self-pin";
 import { TIMELINE_CLIP_CATEGORY } from "./timeline-clips";
 
@@ -6,9 +6,9 @@ import { TIMELINE_CLIP_CATEGORY } from "./timeline-clips";
 export const TIMELINE_PROXY_BIND_ACTOR_NODE_ID = "timelineProxy.bindActor";
 /** Bind Component to Timeline Proxy: binds a Component proxy. Hidden; one row per Component proxy. */
 export const TIMELINE_PROXY_BIND_COMPONENT_NODE_ID = "timelineProxy.bindComponent";
-/** Unbind Timeline Proxy: clears one proxy. Hidden; one row per proxy. */
+/** Unbind Timeline Proxy: clears every object bound to one proxy. Hidden; one row per proxy. */
 export const TIMELINE_PROXY_UNBIND_NODE_ID = "timelineProxy.unbind";
-/** Get Timeline Proxy: the object a proxy is bound to. Hidden; one row per proxy. */
+/** Get Timeline Proxy: the objects a proxy is bound to. Hidden; one row per proxy. */
 export const TIMELINE_PROXY_GET_NODE_ID = "timelineProxy.get";
 /** Unbind All Timeline Proxies: clears every proxy of an instance. */
 export const TIMELINE_PROXY_UNBIND_ALL_NODE_ID = "timelineProxy.unbindAll";
@@ -91,19 +91,20 @@ function bindNode(id: string, title: string, objectPin: { id: string; name: stri
 
 /**
  * Bind, Unbind and Get on one proxy of a 2D or 3D Timeline Clip asset
- * instance (the proxy is picked on the node), and Unbind All. A rebind
- * applies from the next tick.
+ * instance (the proxy is picked on the node), and Unbind All. A proxy holds
+ * any number of objects: each Bind adds one, Unbind clears them all, Get
+ * returns them as an array. A new binding applies from the next tick.
  */
 export const timelineProxyNodes: NodeDefinition[] = [
   bindNode(TIMELINE_PROXY_BIND_ACTOR_NODE_ID, "Bind Actor to Timeline Proxy", { id: "actor", name: "Actor", base: "Actor" },
-    "Binds an Actor proxy of the clip to an actor. Off, Absolute Transform makes the proxy's transform keys offsets from where the actor stands now; on, they set its world transform."),
+    "Adds an actor to an Actor proxy of the clip; every actor bound to it plays its tracks. Off, Absolute Transform makes the proxy's transform keys offsets from where the actor stands now; on, they set its world transform."),
   bindNode(TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, "Bind Component to Timeline Proxy", { id: "component", name: "Component", base: "ActorComponent" },
-    "Binds a Component proxy of the clip to a component. Off, Absolute Transform makes the proxy's transform keys offsets from the component's transform now; on, they set it relative to its parent."),
+    "Adds a component to a Component proxy of the clip; every component bound to it plays its tracks. Off, Absolute Transform makes the proxy's transform keys offsets from the component's transform now; on, they set it relative to its parent."),
   {
     id: TIMELINE_PROXY_UNBIND_NODE_ID,
     title: "Unbind Timeline Proxy",
     category: TIMELINE_CLIP_CATEGORY,
-    description: "Clears the picked proxy of the clip: its tracks stop applying.",
+    description: "Clears every object bound to the picked proxy of the clip: its tracks stop applying.",
     pins: (properties) => [pin("execIn", "exec", "in", EXEC), pin("execOut", "then", "out", EXEC), clipTarget(properties)],
     codegen: (ctx) => {
       const { proxyId } = timelineProxyNodeProperties(ctx.node.properties);
@@ -114,18 +115,18 @@ export const timelineProxyNodes: NodeDefinition[] = [
     id: TIMELINE_PROXY_GET_NODE_ID,
     title: "Get Timeline Proxy",
     category: TIMELINE_CLIP_CATEGORY,
-    description: "The object the picked proxy of the clip is bound to, or None.",
+    description: "The objects bound to the picked proxy of the clip, in the order they were bound; empty while it is unbound.",
     pure: true,
     pins: (properties) => {
       const { proxyClassId, represents } = timelineProxyNodeProperties(properties);
       return [
         clipTarget(properties),
-        pin("object", "Object", "out", objectRef(proxyClassId || (represents === "component" ? "ActorComponent" : "Actor"))),
+        pin("objects", "Objects", "out", arrayOf(objectRef(proxyClassId || (represents === "component" ? "ActorComponent" : "Actor")))),
       ];
     },
     codegen: (ctx) => {
       const { proxyId } = timelineProxyNodeProperties(ctx.node.properties);
-      return { object: `ctx.timelineProxyGet(${ctx.input("target")}, ${JSON.stringify(proxyId)})` };
+      return { objects: `ctx.timelineProxyGet(${ctx.input("target")}, ${JSON.stringify(proxyId)})` };
     },
   },
   {
