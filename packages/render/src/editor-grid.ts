@@ -72,12 +72,6 @@ interface EditorGridOptions {
     ArcRotateCamera,
     "target" | "radius" | "alpha" | "beta" | "orthoTop" | "orthoRight" | "maxZ"
   >;
-  /** World units between major grid lines; the 2D tile size. */
-  spacing?: number;
-  /** Minor lines drawn between two major lines; 1 disables the minor grid. */
-  subdivisions?: number;
-  color?: Color3;
-  minorColor?: Color3;
 }
 
 interface GridCoverageCamera {
@@ -446,10 +440,10 @@ export function createEditorGrid(
   ensureBoundsShaders();
 
   let mode: ViewportMode = options.mode ?? "3d";
-  let spacing = options.spacing ?? 1;
-  let subdivisions = Math.max(1, Math.round(options.subdivisions ?? 4));
-  const color = options.color ?? GRID_MAJOR_COLOR;
-  const minorColor = options.minorColor ?? GRID_MINOR_COLOR;
+  // World units between major grid lines (the 2D tile size) and minor lines between two major ones; the viewport
+  // sets both through setSpacing and setSubdivisions.
+  let spacing = 1;
+  let subdivisions = 4;
   const camera = options.camera ?? null;
 
   let requestedBounds: EditorCameraBounds2D | null = null;
@@ -514,8 +508,8 @@ export function createEditorGrid(
     material.setFloat("subdivisions", subdivisions);
     // The shader's minor level takes its log cell size as the major level's minus this.
     material.setFloat("logSubdivisions", Math.log(subdivisions));
-    material.setColor3("majorColor", sceneColor(color));
-    material.setColor3("minorColor", sceneColor(minorColor));
+    material.setColor3("majorColor", sceneColor(GRID_MAJOR_COLOR));
+    material.setColor3("minorColor", sceneColor(GRID_MINOR_COLOR));
     // The plane's u axis is world X; v is world Z in 3D and world Y in 2D.
     material.setColor3("axisColorU", sceneColor(GIZMO_AXIS_COLORS.x));
     material.setColor3("axisColorV", sceneColor(mode === "3d" ? GIZMO_AXIS_COLORS.z : GIZMO_AXIS_COLORS.y));
