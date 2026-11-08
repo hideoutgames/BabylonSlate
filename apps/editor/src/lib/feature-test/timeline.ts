@@ -241,11 +241,12 @@ export async function placeTimelineListener(ctx: FeatureTestContext, scene: Seri
 
 /**
  * `FT_SwingDoor`: a door panel hinged at the actor with a light at its
- * handle. Begin Play: Create FT_DoorSwing Timeline Clip on FT_Timeline's
- * Timeline with Door bound to Self, keep the instance in `Swing`, Bind Handle
- * Glow Proxy to its light (both Relative, so each door swings from where it
- * stands), Bind Event to its On Swing Open, play it and assert Get Door Proxy
- * is valid. Two are placed, turned differently, beside the pavilion.
+ * handle on each face. Begin Play: Create FT_DoorSwing Timeline Clip on
+ * FT_Timeline's Timeline with Door bound to Self, keep the instance in
+ * `Swing`, Bind Handle Glow Proxy to both lights (one proxy holds both; all
+ * Relative, so each door swings from where it stands), Bind Event to its On
+ * Swing Open, play it and assert Get Handle Glow Proxy holds the two lights.
+ * Two are placed, turned differently, beside the pavilion.
  */
 export async function placeTimelineSwingDoors(ctx: FeatureTestContext, scene: SerializedScene, positions: ReadonlyArray<{ position: Vec3; yaw: number }>): Promise<void> {
   const timelineGuid = requireRef(ctx.assets.timeline, "FT_Timeline");
@@ -255,40 +256,50 @@ export async function placeTimelineSwingDoors(ctx: FeatureTestContext, scene: Se
   const swing = varMember("ft-swing-door-swing", "Swing", "object", undefined, { typeClassId: clipClassId });
   const opened: GraphClassMember = { id: "ft-swing-door-opened", kind: "event", name: "Swing Opened", pins: [] };
   const half = DOOR.width / 2;
+  const handleLight = { enabled: true, lightKind: "point", color: [WARM.x, WARM.y, WARM.z], intensity: LAMP.intensity, range: 4, castShadows: false, shadowPriority: 0 };
+  const lights = [{ id: "ft-swing-door-glow", name: "Front Glow", z: 0.2 }, { id: "ft-swing-door-glow-back", name: "Back Glow", z: -0.2 }];
+  const glowProxy = proxyNodeData(TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, create, DOOR_SWING_PROXIES[1]!);
   const graph = classGraph({
     members: [swing, opened],
     components: [
       box("ft-swing-door-panel", [half, DOOR.height / 2, 0], [DOOR.width, DOOR.height, DOOR.depth]),
-      comp("ft-swing-door-glow", "LightComponent", {
-        enabled: true, lightKind: "point", color: [WARM.x, WARM.y, WARM.z], intensity: LAMP.intensity, range: 4, castShadows: false, shadowPriority: 0,
-      }, tf([DOOR.width - 0.15, DOOR.height / 2, 0.2])),
+      ...lights.map((light) => comp(light.id, "LightComponent", handleLight, tf([DOOR.width - 0.15, DOOR.height / 2, light.z]), { name: light.name })),
     ],
     nodes: [
       gNode("begin", "flow.event.beginPlay", 0, 0),
       gNode("timeline", TIMELINE_FROM_ASSET_NODE_ID, 0, 200, { "default:timelineAsset": timelineGuid }),
       gNode("self", "actor.getSelf", 0, 320),
-      gNode("glow", "component.getNamed", 0, 420, { componentClassId: "LightComponent", implicitSelf: true }),
+      ...lights.map((light, index) => gNode(light.id, "variables.get", 0, 420 + index * 100, {
+        variableName: light.name, typeId: "object", typeClassId: "LightComponent", implicitSelf: true, componentId: light.id,
+      })),
       gNode("create", TIMELINE_CREATE_CLIP_NODE_ID, 280, 0, create),
       setVar("keep", swing, 560, 0),
       gNode("bind", "flow.dispatcher.bind", 820, 0, {
         title: `Bind Event to ${SWING_OPEN_EVENT}`, name: SWING_OPEN_EVENT, classId: clipClassId, implicitSelf: false, pins: [],
       }),
-      gNode("bind-glow", TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, 700, 200, proxyNodeData(TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, create, DOOR_SWING_PROXIES[1]!)),
+      gNode("bind-glow", TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, 700, 200, { ...glowProxy }),
+      gNode("bind-back-glow", TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, 700, 400, { ...glowProxy }),
       gNode("play", "timelineClip.play", 1080, 0),
-      gNode("get-door", TIMELINE_PROXY_GET_NODE_ID, 1080, 200, proxyNodeData(TIMELINE_PROXY_GET_NODE_ID, create, DOOR_SWING_PROXIES[0]!)),
-      gNode("assert-door", "debug.assertIsValid", 1320, 0, { "default:message": `${FEATURE_TEST_SWING_DOOR} found nothing bound to its Door proxy` }),
+      gNode("get-glows", TIMELINE_PROXY_GET_NODE_ID, 1080, 200, proxyNodeData(TIMELINE_PROXY_GET_NODE_ID, create, DOOR_SWING_PROXIES[1]!)),
+      gNode("glow-count", "array.length", 1320, 200),
+      gNode("assert-glows", "debug.assertEqual", 1320, 0, {
+        "default:expected": lights.length, "default:message": `${FEATURE_TEST_SWING_DOOR} should bind both handle lights to its Handle Glow proxy`,
+      }),
       printString("ready", 1560, 0, `${FEATURE_TEST_SWING_DOOR} plays its own ${DOOR_SWING}`),
       gNode(opened.id, "flow.event.custom", 0, 600, { title: `Event ${opened.name}`, name: opened.name, pins: [] }),
       printString("heard", 280, 600, `${FEATURE_TEST_SWING_DOOR} heard ${SWING_OPEN_EVENT} (${DOOR_SWING})`),
     ],
     edges: [
-      ...gChain("begin", "create", "keep", "bind-glow", "bind", "play", "assert-door", "ready"),
+      ...gChain("begin", "create", "keep", "bind-glow", "bind-back-glow", "bind", "play", "assert-glows", "ready"),
       gWire("timeline", "timeline", "create", "target"),
       gWire("self", "out", "create", timelineProxyPinId(DOOR_SWING_PROXIES[0]!.id)),
-      gWire("glow", "out", "bind-glow", "component"),
+      gWire(lights[0]!.id, "value", "bind-glow", "component"),
+      gWire(lights[1]!.id, "value", "bind-back-glow", "component"),
       gWire("create", "clip", "bind-glow", "target"),
-      gWire("create", "clip", "get-door", "target"),
-      gWire("get-door", "object", "assert-door", "object"),
+      gWire("create", "clip", "bind-back-glow", "target"),
+      gWire("create", "clip", "get-glows", "target"),
+      gWire("get-glows", "objects", "glow-count", "array"),
+      gWire("glow-count", "out", "assert-glows", "actual"),
       gWire("create", "clip", "keep", "value"),
       gWire("create", "clip", "bind", "target"),
       gWire("create", "clip", "play", "target"),

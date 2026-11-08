@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@haptic/core";
 import { createText3DComponent } from "@haptic/core";
-import { objectRef } from "@haptic/scripting";
+import { arrayOf, objectRef } from "@haptic/scripting";
 import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@haptic/scripting-nodes";
 import { filterPaletteForPin, type SerializedPin } from "@haptic/graph-ui";
 import { ownedTimelineClipDispatcherSymbols } from "../lib/owned-actor-gets";
@@ -149,7 +149,7 @@ describe("Timeline Asset scripting", () => {
     // Each proxy has Bind (of its kind), Unbind and Get rows; Unbind All is the plain row.
     expect(nodes.filter((node) => node.id.startsWith("timelineProxy.") && node.id.endsWith(":swing:door")).map((node) => node.title))
       .toEqual(["Bind Door Proxy", "Unbind Door Proxy", "Get Door Proxy"]);
-    expect(nodes.find((node) => node.id === "timelineProxy.get:swing:door")?.pins?.map((pin) => pin.type)).toEqual([objectRef("TimelineClip:swing:clip"), objectRef("Door")]);
+    expect(nodes.find((node) => node.id === "timelineProxy.get:swing:door")?.pins?.map((pin) => pin.type)).toEqual([objectRef("TimelineClip:swing:clip"), arrayOf(objectRef("Door"))]);
     expect(nodes.some((node) => node.id === "timelineProxy.bindActor")).toBe(false);
     expect(nodes.some((node) => node.id === "timelineProxy.unbindAll")).toBe(true);
     // Without Timeline Assets a Class reaches no Timeline Clip.

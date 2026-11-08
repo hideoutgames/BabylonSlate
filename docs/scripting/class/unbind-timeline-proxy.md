@@ -4,7 +4,7 @@ node: timelineProxy.unbind
 
 # Unbind Timeline Proxy
 
-Clears one proxy of a Timeline Clip asset instance, so its tracks stop applying.
+Clears every object bound to one proxy of a Timeline Clip asset instance, so its tracks stop applying.
 
 ## Inputs
 
@@ -22,5 +22,6 @@ Clears one proxy of a Timeline Clip asset instance, so its tracks stop applying.
 ## Notes
 
 - Add Node lists one for each proxy of a clip asset, such as **Unbind Door Proxy**. Pick another under **Proxy** in the **Inspector**.
-- The object keeps the values the clip last wrote.
+- A proxy can hold several objects, one per Bind; Unbind clears them all. For example, **Unbind Mannequin Proxy** clears every Mannequin bound with **Bind Mannequin Proxy**.
+- The objects keep the values the clip last wrote.
 - [Unbind All Timeline Proxies](unbind-all-timeline-proxies.md) clears every proxy at once.

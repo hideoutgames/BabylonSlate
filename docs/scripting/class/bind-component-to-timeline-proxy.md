@@ -4,7 +4,7 @@ node: timelineProxy.bindComponent
 
 # Bind Component to Timeline Proxy
 
-Binds a Component proxy of a Timeline Clip asset instance to a component, so the proxy's tracks animate it.
+Adds a component to a Component proxy of a Timeline Clip asset instance, so the proxy's tracks animate it.
 
 ## Inputs
 
@@ -24,6 +24,7 @@ Binds a Component proxy of a Timeline Clip asset instance to a component, so the
 ## Notes
 
 - Add Node lists one for each Component proxy of a clip asset, titled with its name, such as **Bind Handle Glow Proxy**. Pick another of the clip's Component proxies under **Proxy** in the **Inspector**; the Component input takes its Class.
-- A proxy holds one object: binding replaces the one bound before, from the next frame.
+- A proxy holds any number of components: each Bind adds one, from the next frame, and every bound component plays the proxy's tracks. Binding a component that is already bound to the proxy keeps it once, with the new **Absolute Transform**.
+- [Unbind Timeline Proxy](unbind-timeline-proxy.md) clears every component bound to the proxy, and [Get Timeline Proxy](get-timeline-proxy.md) returns them.
 - If the proxy is removed from the clip, or becomes an Actor proxy, the node shows an error until you pick another.
 - See [Play a clip asset](../../assets/timeline-clip.md#play-a-clip-asset).

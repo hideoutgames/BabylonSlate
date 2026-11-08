@@ -270,7 +270,7 @@ describe("TimelineRuntime", () => {
 });
 
 /** A 3D clip asset, Door Swing, bound to the Timeline Asset `story`: a Door actor proxy and a Glow light proxy. */
-function instanceSetup() {
+function instanceSetup(overrides: { whenFinished?: "keep" | "restore" } = {}) {
   const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
   const quarterTurn = rotatorToQuat({ pitch: 0, yaw: 90, roll: 0 });
   const makeDoor = (guid: string, x: number) => {
@@ -299,6 +299,7 @@ function instanceSetup() {
     ],
     eventTracks: [{ id: "e", name: "On Open", inputs: [], keys: [{ id: "k", time: 0.5, values: {} }] }],
     editorPreview: { proxies: {} },
+    ...overrides,
   };
   const catalog = new Map<string, TimelineClipAssetCatalogEntry>([
     ["swing", timelineClipAssetCatalogEntry("swing", "TimelineClip3D", "Door Swing", payload)],
@@ -391,32 +392,63 @@ describe("Timeline Clip asset instances", () => {
     ]);
   });
 
-  it("unbinds a bound object that was destroyed", () => {
-    const { runtime, timeline, front } = instanceSetup();
+  it("unbinds a bound object that was destroyed, and keeps playing the proxy's others", () => {
+    const { runtime, timeline, front, back } = instanceSetup();
     const swing = runtime.createInstance(timeline, "swing", { door: front })!;
+    runtime.bind(swing, "door", back, true);
     front.destroyed = true;
+    expect(runtime.bound(swing, "door")).toEqual([back]);
     runtime.setPosition(swing, 1);
+    expect(swing.bindings.get("door")?.map((binding) => binding.target)).toEqual([back]);
+    near(back.transform.position, { x: 1, y: 0, z: 0 });
+    back.destroyed = true;
+    runtime.setPosition(swing, 2);
     expect(swing.bindings.has("door")).toBe(false);
   });
 
-  it("rebinds a proxy from the next apply, reads what it is bound to, and unbinds one or all", () => {
-    const { runtime, timeline, front, back, lamp } = instanceSetup();
+  it("binds any number of objects to a proxy, each its own way, lists them, and unbinds them all at once", () => {
+    const { runtime, timeline, front, back, lamp, quarterTurn } = instanceSetup();
     const swing = runtime.createInstance(timeline, "swing", { door: front, glow: lamp })!;
-    expect(runtime.bound(swing, "door")).toBe(front);
-    // Absolute Transform: the key is the world location.
+    expect(runtime.bound(swing, "door")).toEqual([front]);
+    // A second Bind adds the object; with Absolute Transform its key is the world location.
     timelineProxyControl(runtime, swing, "bind", "door", { object: back, absolute: true });
-    expect(runtime.bound(swing, "door")).toBe(back);
+    expect(runtime.bound(swing, "door")).toEqual([front, back]);
     runtime.setPosition(swing, 2);
     near(back.transform.position, { x: 2, y: 0, z: 0 });
-    near(front.transform.position, { x: 10, y: 0, z: 0 });
+    // The Relative one is offset by (2, 0, 0), turned with it, from where it stood when bound.
+    const offset = quatRotateVector(quarterTurn, { x: 2, y: 0, z: 0 });
+    near(front.transform.position, { x: 10 + offset.x, y: offset.y, z: offset.z });
+    // Binding an object again takes its new setting instead of adding it twice.
+    timelineProxyControl(runtime, swing, "bind", "door", { object: front, absolute: true });
+    expect(runtime.bound(swing, "door")).toEqual([front, back]);
+    runtime.setPosition(swing, 1);
+    near(front.transform.position, { x: 1, y: 0, z: 0 });
+    // Unbind clears every object bound to the proxy; the others keep theirs.
     timelineProxyControl(runtime, swing, "unbind", "door", {});
-    expect(runtime.bound(swing, "door")).toBeNull();
-    expect(runtime.bound(swing, "glow")).toBe(lamp);
+    expect(runtime.bound(swing, "door")).toEqual([]);
+    expect(runtime.bound(swing, "glow")).toEqual([lamp]);
+    runtime.setPosition(swing, 2);
+    near(front.transform.position, { x: 1, y: 0, z: 0 });
+    near(back.transform.position, { x: 1, y: 0, z: 0 });
     timelineProxyControl(runtime, swing, "unbindAll", "", {});
     expect(swing.bindings.size).toBe(0);
     lamp.setVariable("intensity", 1);
     runtime.setPosition(swing, 1);
     expect(lamp.getVariable("intensity")).toBe(1);
+  });
+
+  it("restores each object bound to a proxy when a Restore clip finishes", () => {
+    const { runtime, timeline, front, back } = instanceSetup({ whenFinished: "restore" });
+    const swing = runtime.createInstance(timeline, "swing", { door: front })!;
+    runtime.bind(swing, "door", back, false);
+    runtime.play(swing);
+    runtime.advance(1, [], () => true);
+    // Both doors swing: turned a quarter, the 1 m offset moves each along z.
+    expect(Math.abs(front.transform.position.z)).toBeCloseTo(1);
+    expect(Math.abs(back.transform.position.z)).toBeCloseTo(1);
+    runtime.advance(1.5, [], () => true);
+    near(front.transform.position, { x: 10, y: 0, z: 0 });
+    near(back.transform.position, { x: -10, y: 0, z: 0 });
   });
 
   it("lets the instance created later win a property both instances animate on one object", () => {

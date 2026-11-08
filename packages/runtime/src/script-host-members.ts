@@ -369,8 +369,8 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
       if (target instanceof TimelineClipInstance && !target.destroyed) services.timelineProxy?.(target, String(action), String(proxyId), args ?? {});
     },
     timelineProxyGet: (target, proxyId) => target instanceof TimelineClipInstance && !target.destroyed
-      ? services.timelineProxyGet?.(target, String(proxyId)) ?? null
-      : null,
+      ? services.timelineProxyGet?.(target, String(proxyId)) ?? []
+      : [],
     curveObjectCurve: (kind, target) => {
       const object = curveObjectOf(target);
       return structuredClone(object && object.kind === kind ? object.curve : EMPTY_CURVE);
