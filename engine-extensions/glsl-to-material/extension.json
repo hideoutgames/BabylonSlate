@@ -13,5 +13,9 @@
   "enabledByDefault": false,
   "engineVersion": "0.0.1",
   "extensionDependencies": [],
-  "entryPoint": "index.js"
+  "entryPoint": "index.js",
+  "editorOnly": true,
+  "gameEntryPoint": "game.ts",
+  "libraryName": "glslToMaterial",
+  "appearInContentBrowser": false
 }

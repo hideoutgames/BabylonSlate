@@ -44,9 +44,15 @@ export interface ExtensionSnapshot {
 export interface EditorExtensionWriteOptions {
   /** Project owner admission spans queued package operations and guest writes. */
   runAuthoringWrite?: <T>(operation: () => Promise<T>) => Promise<T>;
+  /**
+   * Mounts exactly these gameplay packages' `assets/` roots (dependencies first)
+   * and unmounts every other extension root. Called when that set changes and
+   * before a package's files are replaced or deleted.
+   */
+  syncContentRoots?: (extensions: readonly ExtensionDescriptor[]) => Promise<void>;
 }
 
-/** A project lifetime owns code activation; extension files never mount as game assets. */
+/** A project lifetime owns code activation and the content roots of its gameplay packages. */
 export class EditorExtensionService {
   private readonly storage: ProjectStorage;
   private engineStorage: ProjectStorage | null = null;
@@ -66,10 +72,14 @@ export class EditorExtensionService {
   /** Enabled packages of the last refresh, dependencies first. */
   private order: ExtensionDescriptor[] = [];
   private readonly runAuthoringWrite: <T>(operation: () => Promise<T>) => Promise<T>;
+  private readonly syncRoots: (extensions: readonly ExtensionDescriptor[]) => Promise<void>;
+  /** The gameplay packages whose roots were last synced. */
+  private contentRootsKey = "[]";
 
   constructor(storage: ProjectStorage, services: EditorExtensionServices, options: EditorExtensionWriteOptions = {}) {
     this.storage = storage;
     this.runAuthoringWrite = options.runAuthoringWrite ?? (operation => operation());
+    this.syncRoots = options.syncContentRoots ?? (async () => {});
     this.services = {
       ...services,
       assets: {
@@ -128,6 +138,18 @@ export class EditorExtensionService {
     this.host = this.createHost();
     this.started = new Set();
   }
+  private async syncContentRoots(extensions: readonly ExtensionDescriptor[]): Promise<void> {
+    const gameplay = gameplayExtensions(extensions);
+    const key = JSON.stringify(gameplay.map((entry) => [entry.extensionGuid, entry.source, entry.contentPath]));
+    if (key === this.contentRootsKey) return;
+    this.contentRootsKey = key;
+    await this.syncRoots(gameplay);
+  }
+  /** Unmounts a package's root before its files are replaced or deleted. */
+  private async releaseContentRoot(guid: string): Promise<void> {
+    if (!this.order.some((entry) => entry.extensionGuid === guid && !entry.settings.editorOnly)) return;
+    await this.syncContentRoots(this.order.filter((entry) => entry.extensionGuid !== guid));
+  }
   private storageFor(entry: ExtensionDescriptor): ProjectStorage {
     const storage = entry.source === "engine" ? this.engineStorage : this.storage;
     if (!storage) throw new Error("Extension storage is unavailable.");
@@ -160,6 +182,7 @@ export class EditorExtensionService {
         }
       }
       this.order = graph.order;
+      await this.syncContentRoots(graph.order);
       const fingerprint = JSON.stringify([entries, modules, overrides]);
       if (fingerprint !== this.fingerprint) {
         await this.resetHost();
@@ -182,6 +205,7 @@ export class EditorExtensionService {
       await this.resetHost();
       this.fingerprint = "";
       this.order = [];
+      await this.syncContentRoots([]).catch(() => undefined);
       this.packageDiagnostics = [String(cause)];
       this.publishHostState([]);
       throw cause;
@@ -196,6 +220,7 @@ export class EditorExtensionService {
       this.cleanupDiagnostics = [];
       this.packageDiagnostics = [];
       this.order = [];
+      await this.syncContentRoots([]);
       this.publishHostState([]);
     });
   }
@@ -326,6 +351,7 @@ export class EditorExtensionService {
       }
       await this.resetHost();
       this.fingerprint = "";
+      await this.releaseContentRoot(guid);
       try {
         await this.storage.remove(entry.folderPath);
       } catch (cause) {
@@ -358,6 +384,7 @@ export class EditorExtensionService {
       }
       await this.resetHost();
       this.fingerprint = "";
+      if (plan.kind === "update" || plan.kind === "conflict") await this.releaseContentRoot(plan.existingGuid);
       try {
         await applyExtensionImport(this.storage, incoming, plan.kind === "conflict" ? { ...plan, replace: true } : plan);
       } catch (cause) {

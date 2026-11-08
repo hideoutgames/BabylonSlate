@@ -6,7 +6,7 @@ import source from "../../../../engine-extensions/glsl-to-material/index.js?raw"
 
 let bundled: Promise<ProjectStorage> | null = null;
 
-/** Bundled editor code never enters the player bundle or project asset registry. */
+/** Bundled extensions; only a gameplay (not Editor Only) one reaches games, as a linked library and a content root. */
 export function ensureEngineExtensionStorage(): Promise<ProjectStorage> {
   bundled ??= (async () => {
     const storage = new MemoryStorageAdapter("opfs");

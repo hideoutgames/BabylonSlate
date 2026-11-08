@@ -1,5 +1,7 @@
 import { ENGINE_VERSION, newGuid, type ProjectStorage } from "@haptic/core";
 import { resolvePluginGraph, type PluginDiagnostic, type PluginGraphInput } from "./plugin-host";
+import { extensionContentRoot, extensionContentRootId } from "./content-root";
+import type { AssetRegistry } from "./registry";
 import {
   createDefaultExtensionSettings,
   decodeExtensionSettings,
@@ -190,7 +192,7 @@ function extensionDiagnostic(diagnostic: PluginDiagnostic): ExtensionDiagnostic 
   };
 }
 
-/** Resolve only enabled editor modules. This deliberately never mounts runtime asset roots. */
+/** Resolve enabled packages, dependencies first; mounting gameplay content is `mountExtensionContentRoots`. */
 export function resolveExtensionGraph(
   extensions: readonly ExtensionDescriptor[],
   engineVersion = ENGINE_VERSION,
@@ -214,4 +216,30 @@ export function resolveExtensionGraph(
       ...result.diagnostics.map(extensionDiagnostic),
     ],
   };
+}
+
+/**
+ * Mounts the `assets/` root of each given gameplay extension (enabled, valid,
+ * not Editor Only) as `extension:<guid>` and unmounts every other extension
+ * root, so their content reaches pickers, Play and export like a plugin's.
+ */
+export async function mountExtensionContentRoots(
+  registry: AssetRegistry,
+  extensions: readonly ExtensionDescriptor[],
+  options: { storageFor?: (extension: ExtensionDescriptor) => ProjectStorage | undefined } = {},
+): Promise<void> {
+  const mount = extensions.filter((extension) => !extension.invalid && !extension.settings.editorOnly);
+  const ids = new Set(mount.map((extension) => extensionContentRootId(extension.extensionGuid)));
+  for (const root of registry.listRoots()) {
+    if (root.kind === "extension" && !ids.has(root.id)) registry.unmountRoot(root.id);
+  }
+  for (const extension of mount) {
+    // Remounting rescans, so files an import or another editor changed are indexed.
+    await registry.mountRoot(extensionContentRoot({
+      extensionGuid: extension.extensionGuid,
+      pathPrefix: extension.contentPath,
+      readOnly: extension.readOnly,
+      storage: options.storageFor?.(extension),
+    }));
+  }
 }

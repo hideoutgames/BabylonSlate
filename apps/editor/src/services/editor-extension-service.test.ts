@@ -7,6 +7,7 @@ import {
   writeProjectExtension,
   type ExtensionSettings,
 } from "@haptic/assets";
+import { loadExtensionGameLibraries } from "@haptic/core";
 import { convertGlslToMaterial } from "@haptic/shader-graph";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { EditorExtensionService, type EditorExtensionWriteOptions } from "./editor-extension-service";
@@ -270,5 +271,109 @@ describe("EditorExtensionService lifecycle", () => {
     await expect(service.run("dependent", "run", {})).rejects.toThrow(/unavailable/);
     await service.run("independent", "run", {});
     expect(await project.readText("code/independent.js")).toBe("export const worked = true;");
+  });
+});
+
+describe("EditorExtensionService code files and gameplay packages", () => {
+  async function gameplayPackage(project: Awaited<ReturnType<typeof storage>>, guid: string, game: string, extra: Partial<ExtensionSettings> = {}, files: Record<string, string> = {}) {
+    await writeProjectExtension(project, guid, enabledSettings(guid, { editorOnly: false, libraryName: guid, ...extra }), "export function activate() {}");
+    await project.writeText(`extensions/${guid}/game.ts`, game);
+    for (const [path, source] of Object.entries(files)) {
+      await project.mkdir(`extensions/${guid}/${path.slice(0, path.lastIndexOf("/"))}`, true);
+      await project.writeText(`extensions/${guid}/${path}`, source);
+    }
+  }
+
+  it("saves new code files under code/, links them from the entry and deletes removed ones", async () => {
+    const { project, service } = await fixture();
+    await writeProjectExtension(project, "tools", enabledSettings("tools"), originalModule);
+    await service.refresh();
+    const linked = `
+      import { title } from "./code/title";
+      export function activate(api) { api.registerCommand({ id: "run", title, execute() {} }); }
+    `;
+
+    await service.save("tools", enabledSettings("tools"), { write: [
+      { path: "index.ts", source: linked },
+      { path: "code/title.ts", source: "export const title = 'Linked Title';" },
+    ], remove: [] });
+
+    expect(await project.readText("extensions/tools/code/title.ts")).toBe("export const title = 'Linked Title';");
+    expect(service.getSnapshot().commands.map((command) => command.title)).toEqual(["Linked Title"]);
+    expect((await service.readFiles("tools")).map((file) => file.path)).toEqual(["code/title.ts", "index.ts"]);
+    await expect(service.save("tools", enabledSettings("tools"), { write: [{ path: "lib/other.ts", source: "" }], remove: [] }))
+      .rejects.toThrow(/New Extension code files go in code\//);
+    await expect(service.save("tools", enabledSettings("tools"), { write: [], remove: ["index.ts"] })).rejects.toThrow(/entry files/);
+    expect(await project.exists("extensions/tools/lib/other.ts")).toBe(false);
+
+    await service.save("tools", enabledSettings("tools"), { write: [{ path: "index.ts", source: originalModule }], remove: ["code/title.ts"] });
+
+    expect(await project.exists("extensions/tools/code/title.ts")).toBe(false);
+    expect(service.getSnapshot().commands.map((command) => command.title)).toEqual(["Run Original"]);
+  });
+
+  it("refuses to make a package gameplay without its game entry", async () => {
+    const { project, service } = await fixture();
+    await writeProjectExtension(project, "tools", enabledSettings("tools"), originalModule);
+    await service.refresh();
+
+    await expect(service.save("tools", enabledSettings("tools", { editorOnly: false }), { write: [], remove: [] })).rejects.toThrow(/game entry: game.ts/);
+
+    expect((await service.readFiles("tools")).map((file) => file.path)).toEqual(["index.ts"]);
+    expect(service.getSnapshot().entries[0]?.settings.editorOnly).toBe(true);
+  });
+
+  it("links enabled gameplay libraries dependencies first, leaving out Editor Only and disabled packages", async () => {
+    const { project, service } = await fixture();
+    await gameplayPackage(project, "weather", "import { rain } from './code/rain';\nexport const forecast = (value) => rain(extensions.base.double(value));", {
+      extensionDependencies: [{ guid: "base", version: "1.0.0" }],
+    }, { "code/rain.ts": "export const rain = (value: number): string => `${value} mm`;" });
+    await gameplayPackage(project, "base", "export const double = (value) => value * 2;");
+    await gameplayPackage(project, "off", "export const off = true;", { enabledByDefault: false });
+    await writeProjectExtension(project, "tools", enabledSettings("tools"), originalModule);
+    await project.writeText("extensions/tools/game.ts", "export const editorOnly = true;");
+    await service.refresh();
+
+    const libraries = await service.gameLibraries();
+
+    expect(libraries.map((library) => library.libraryName)).toEqual(["base", "weather"]);
+    expect(service.getGameplayExtensions().map((entry) => entry.extensionGuid)).toEqual(["base", "weather"]);
+    const extensions = loadExtensionGameLibraries(libraries);
+    expect((extensions.weather!.forecast as (value: number) => string)(3)).toBe("6 mm");
+    expect((await service.gameLibraries({ off: { enabled: true } })).map((library) => library.libraryName)).toEqual(["base", "off", "weather"]);
+  });
+
+  it("rejects two enabled gameplay packages that claim one Library Name", async () => {
+    const { project, service } = await fixture();
+    await gameplayPackage(project, "first", "export const a = 1;", { libraryName: "shared" });
+    await gameplayPackage(project, "second", "export const b = 2;", { libraryName: "shared" });
+    await service.refresh();
+
+    expect(service.getSnapshot().diagnostics).toContain("Library Name shared is used by first, second.");
+    await expect(service.gameLibraries()).rejects.toThrow("Library Name shared is used by first, second.");
+  });
+
+  it("mounts a package's content once it turns gameplay and releases it before deleting its files", async () => {
+    const synced: { guids: string[]; folderExists: boolean }[] = [];
+    let project!: Awaited<ReturnType<typeof storage>>;
+    const fixtureResult = await fixture({
+      syncContentRoots: async (extensions) => {
+        synced.push({ guids: extensions.map((entry) => entry.extensionGuid), folderExists: await project.exists("extensions/tools") });
+      },
+    });
+    project = fixtureResult.project;
+    const { service } = fixtureResult;
+    await writeProjectExtension(project, "tools", enabledSettings("tools"), originalModule);
+    await service.refresh();
+    expect(synced).toEqual([]);
+
+    await service.save("tools", enabledSettings("tools", { editorOnly: false }), { write: [{ path: "game.ts", source: "export const ready = true;" }], remove: [] });
+    expect(synced).toEqual([{ guids: ["tools"], folderExists: true }]);
+    await service.refresh();
+    expect(synced).toHaveLength(1);
+
+    await service.remove("tools");
+    expect(synced).toEqual([{ guids: ["tools"], folderExists: true }, { guids: [], folderExists: true }]);
+    expect(await project.exists("extensions/tools")).toBe(false);
   });
 });

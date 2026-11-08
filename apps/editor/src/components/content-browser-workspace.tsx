@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { ArrowUpRightIcon } from "lucide-react";
 import type { IndexedAsset } from "@haptic/assets";
@@ -132,6 +133,7 @@ function ContentBrowserWorkspaceBody({
     if (hidden || !phone) setFoldersOpen(false);
   }, [hidden, phone]);
   const { projectGuid, assetRegistry, registryEpoch, encodingTextures, pluginDescriptors, showPluginContent } = registry;
+  const extensionSnapshot = useSyncExternalStore(registry.extensionService.subscribe, registry.extensionService.getSnapshot);
   const {
     refreshAssetRegistry,
     noteAssetsCreated,
@@ -246,6 +248,7 @@ function ContentBrowserWorkspaceBody({
     assetRegistry,
     registryEpoch,
     pluginDescriptors,
+    extensions: extensionSnapshot.entries,
     showPluginContent,
     projectDocument,
     selectedFolderPath,

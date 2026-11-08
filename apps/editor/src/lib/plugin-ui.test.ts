@@ -105,6 +105,21 @@ describe("content browser plugin roots", () => {
     expect(canMutateContentBrowserRoot(roots[2])).toBe(true);
   });
 
+  it("shows a gameplay extension's tree only when it appears in the Content Browser, whatever Show Plugin Content says", () => {
+    const extensions = [
+      { extensionGuid: "weather", displayName: "Weather", contentPath: "extensions/weather/assets", source: "project" as const, appearInContentBrowser: true },
+      { extensionGuid: "hidden", displayName: "Hidden", contentPath: "extensions/hidden/assets", source: "project" as const, appearInContentBrowser: false },
+      { extensionGuid: "bundled", displayName: "Bundled", contentPath: "bundled/assets", source: "engine" as const, appearInContentBrowser: true },
+    ];
+    expect(contentBrowserRoots({ showPluginContent: false, plugins, extensions }).map((root) => root.id))
+      .toEqual(["project", "extension:weather", "extension:bundled"]);
+    const roots = contentBrowserRoots({ showPluginContent: true, plugins, extensions });
+    expect(roots.map((root) => root.id)).toEqual(["project", "plugin:engine-1", "plugin:proj-1", "extension:weather", "extension:bundled"]);
+    expect(rootIdForFolderPath("extensions/weather/assets/rain", roots)).toBe("extension:weather");
+    expect(roots.find((root) => root.id === "extension:weather")).toMatchObject({ label: "Weather", readOnly: false });
+    expect(roots.find((root) => root.id === "extension:bundled")?.readOnly).toBe(true);
+  });
+
   it("maps a selected folder to its content root", () => {
     const roots = contentBrowserRoots({ showPluginContent: true, plugins });
     expect(rootIdForFolderPath("assets/fx", roots)).toBe("project");

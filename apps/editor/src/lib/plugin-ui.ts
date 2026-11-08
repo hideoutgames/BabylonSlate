@@ -1,4 +1,4 @@
-import { pluginFolderSlug, resolvePluginEnabled } from "@haptic/assets";
+import { extensionContentRootId, pluginFolderSlug, resolvePluginEnabled } from "@haptic/assets";
 
 export function pluginDownloadFileName(displayName: string): string {
   return `${pluginFolderSlug(displayName)}.hplugin`;
@@ -48,6 +48,17 @@ export function contentBrowserRoots(options: {
     source: "project" | "engine";
     enabled: boolean;
   }>;
+  /**
+   * Gameplay extensions whose roots are mounted. They are not plugins: each
+   * shows when its Appear In Content Browser is on, whatever Show Plugin Content says.
+   */
+  extensions?: ReadonlyArray<{
+    extensionGuid: string;
+    displayName: string;
+    contentPath: string;
+    source: "project" | "engine";
+    appearInContentBrowser: boolean;
+  }>;
 }): ContentBrowserRoot[] {
   const project: ContentBrowserRoot = {
     id: PROJECT_CONTENT_ROOT_ID,
@@ -56,10 +67,8 @@ export function contentBrowserRoots(options: {
     readOnly: false,
     source: "project",
   };
-  if (!options.showPluginContent) return [project];
-  return [
-    project,
-    ...options.plugins
+  const plugins = options.showPluginContent
+    ? options.plugins
       .filter((plugin) => plugin.enabled)
       .map((plugin) => ({
         id: pluginRootId(plugin.pluginGuid),
@@ -67,8 +76,18 @@ export function contentBrowserRoots(options: {
         pathPrefix: plugin.contentPath,
         readOnly: plugin.source === "engine",
         source: plugin.source,
-      })),
-  ];
+      }))
+    : [];
+  const extensions = (options.extensions ?? [])
+    .filter((extension) => extension.appearInContentBrowser)
+    .map((extension) => ({
+      id: extensionContentRootId(extension.extensionGuid),
+      label: extension.displayName,
+      pathPrefix: extension.contentPath,
+      readOnly: extension.source === "engine",
+      source: extension.source,
+    }));
+  return [project, ...plugins, ...extensions];
 }
 
 export function rootIdForFolderPath(
