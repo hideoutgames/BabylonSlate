@@ -61,7 +61,7 @@ Material, Material Function and Material Instance documents: the Babylon-free IR
 
 - Codes are `material.*`, each anchored to a node, pin or edge for Compiler Results. `material.postProcessCost` is a warning. `material.stageMismatch` fires when a fragment-only node (derivatives, `texture.sampleLod`, Normal Map, …) reaches World Position Offset, including through functions.
 - Function validation visits each referenced function once (including disconnected calls); recursion and missing functions are errors.
-- `lowerMaterialDocument` produces a deterministic `MaterialBuildPlan`: ordered operations, explicit conversions, texture bindings, `bufferRequirements` (`sceneColor`/`sceneDepth`/`sceneNormal`), cost features and a hash that **ignores node positions**. A call input is lowered only when the body reads it. Lowering is memoized per document, shading variant and functions-record identity, so replace function records, never mutate them.
+- `lowerMaterialDocument` produces a deterministic `MaterialBuildPlan`: ordered operations, explicit conversions, texture bindings, `bufferRequirements` (`sceneColor`/`sceneDepth`/`sceneNormal`), cost features and a hash that **ignores node positions**. A call input is lowered only when the body reads it. Lowering is memoized per document, shading variant and functions-record identity, so replace function records, never mutate them. `buildMaterialParameterCatalog` (Play and packaged content only) lowers through `lowerMaterialDocumentCached`, per document and functions record, and rebuilds a functions Map's record whenever its entries change, since hosts sync one Map in place.
 
 ## Compilation
 

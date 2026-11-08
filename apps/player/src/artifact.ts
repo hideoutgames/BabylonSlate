@@ -217,6 +217,8 @@ export async function loadGameFromFiles(
       install = () => { const index = scripts.findIndex(script => script.assetGuid === value.assetGuid && script.classId === value.classId); if (index >= 0) scripts[index] = value as ScriptBundleEntry; else scripts.push(value as ScriptBundleEntry); };
     } else if (entry.type === NAVMESH_EXPORT_TYPE) { const guid = sidecarOwner(sceneGuidFromNavmeshExport(entry.guid)); install = () => { navmeshBytes.set(guid, bytes); }; }
     else if (entry.type === AUDIO_REVERB_EXPORT_TYPE) { const guid = sidecarOwner(sceneGuidFromAudioReverbExport(entry.guid)); install = () => { audioReverbBytes.set(guid, bytes); }; }
+    // Every acquisition of a loaded asset publishes these same objects, and nothing edits them in place:
+    // boot's `loadedSourcesChanged` and `packedContentFromGame`'s per-payload documents rely on that identity.
     return { bytes, decodedBytes, document, model, publish: () => { payloads.set(entry.guid, bytes); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } };
   }
 
