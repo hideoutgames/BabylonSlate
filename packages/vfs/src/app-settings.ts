@@ -76,6 +76,7 @@ const DEFAULT_FOCUS_KEEP_PANELS = {
   "input-axis": ["input-bindings"],
   "audio-channel": ["audio-channel-details"],
   "sound-attenuation": ["sound-attenuation-details"],
+  "camera-shake": ["camera-shake-details"],
   "particle-emitter": ["particle-emitter-preview"],
   "particle-graph": ["particle-graph-canvas"],
   "particle-system": ["particle-system-preview"],

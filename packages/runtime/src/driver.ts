@@ -2,7 +2,7 @@ import type { SimulationSceneCaptureResult } from "./simulation-scene-capture";
 import type { SimulationSession } from "./simulation-session";
 import type { RuntimeInspectorService } from "./runtime-inspector-service";
 import { RuntimeDataCatalog } from "./data-catalog";
-import type { CurveAssetCatalogEntry, SaveGameService, TimelineClipAssetCatalogEntry } from "@haptic/core";
+import type { CameraShakeCatalogEntry, CurveAssetCatalogEntry, SaveGameService, TimelineClipAssetCatalogEntry } from "@haptic/core";
 import type { SessionBoundaries, RuntimeSaveGameOptions } from "./session-boundaries";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { RuntimeAssetPreloads } from "./asset-preloads";
@@ -126,6 +126,8 @@ import type { AnimGraphRuntime } from "./anim-graph-runtime";
 import type { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
 import { LatentDelays } from "./latent-delays";
 import { ScriptTimers } from "./script-timers";
+import type { CameraShakes } from "./camera-shakes";
+import { createCameraShakes } from "./runtime-camera-shakes";
 import type { EventDelegate } from "./script-dispatchers";
 import type { RuntimeCamera } from "./runtime-camera";
 import type { RuntimePropertyWrites } from "./runtime-property-writes";
@@ -356,6 +358,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly audioParticles: AudioParticleEmitter;
   readonly delays: LatentDelays;
   readonly timers: ScriptTimers;
+  readonly cameraShakes: CameraShakes;
   readonly navigation: RuntimeNavigation;
   readonly streams: SceneStreams;
   readonly sceneRealizer: SceneRealizer;
@@ -386,6 +389,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly dataCatalog: RuntimeDataCatalog;
   /** Curve assets of the current sources, by guid; absent means not loaded. */
   readonly curveCatalog = new Map<string, CurveAssetCatalogEntry>();
+  /** Camera Shake assets of the current sources, by guid; absent means not loaded. */
+  readonly cameraShakeCatalog = new Map<string, CameraShakeCatalogEntry>();
   /** 2D and 3D Timeline Clip assets of the current sources, by guid, for Create. */
   readonly timelineClipCatalog = new Map<string, TimelineClipAssetCatalogEntry>();
   readonly scriptHost: ScriptHost;
@@ -440,6 +445,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.audioParticles = createAudioParticles(this);
     this.delays = new LatentDelays(this.admission, () => this.world.clock.tickIndex);
     this.timers = new ScriptTimers(this.admission, (delegate) => this.fireTimer(delegate));
+    this.cameraShakes = createCameraShakes(this);
     this.navigation = createNavigation(this);
     this.streams = createStreams(this);
     this.sceneRealizer = createSceneRealizer(this);
@@ -548,6 +554,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     // 7. Script data and the ScriptHost.
     this.dataCatalog = new RuntimeDataCatalog(options.dataAssets);
     for (const entry of options.curveAssets ?? []) this.curveCatalog.set(entry.guid, entry);
+    for (const entry of options.cameraShakeAssets ?? []) this.cameraShakeCatalog.set(entry.guid, entry);
     for (const entry of options.timelineClipAssets ?? []) this.timelineClipCatalog.set(entry.guid, entry);
     for (const [guid, value] of Object.entries(options.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
     for (const [guid, value] of Object.entries(options.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
@@ -961,6 +968,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.dataCatalog.replace(content.dataAssets ?? []);
     this.curveCatalog.clear();
     for (const entry of content.curveAssets ?? []) this.curveCatalog.set(entry.guid, entry);
+    this.cameraShakeCatalog.clear();
+    for (const entry of content.cameraShakeAssets ?? []) this.cameraShakeCatalog.set(entry.guid, entry);
     this.timelineClipCatalog.clear();
     for (const entry of content.timelineClipAssets ?? []) this.timelineClipCatalog.set(entry.guid, entry);
   }

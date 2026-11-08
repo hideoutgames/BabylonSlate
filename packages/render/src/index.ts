@@ -84,6 +84,7 @@ export * from "./material-block-registry";
 export * from "./material-compiler";
 export * from "./material-library";
 export * from "./material-preview";
+export * from "./camera-shake-preview";
 export * from "./preview-environment";
 export * from "./post-process-material";
 export * from "./scene-layer-compositor";

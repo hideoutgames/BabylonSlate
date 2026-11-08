@@ -671,10 +671,20 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Field Of View](get-field-of-view.md) | Returns a camera's field of view in degrees. |
 | [Get Orthographic Size](get-orthographic-size.md) | Returns half the height of an orthographic camera's view, in world units. |
 | [Get Scene Camera Manager](get-scene-camera-manager.md) | Returns the Scene Camera Manager, which reports what the Scene's view looks through. |
+| [Is Camera Shake Paused](is-camera-shake-paused.md) | Returns whether a camera shake is paused. |
+| [Is Camera Shake Playing](is-camera-shake-playing.md) | Returns whether a camera shake is still playing. |
+| [Pause Camera Shake](pause-camera-shake.md) | Holds a camera shake where it is. |
+| [Play Camera Shake](play-camera-shake.md) | Shakes the player's view with a Camera Shake asset. |
+| [Play Camera Shake On Scene Layer](play-camera-shake-on-scene-layer.md) | Shakes a Scene Layer's own view with a Camera Shake asset. |
+| [Play World Camera Shake](play-world-camera-shake.md) | Shakes the view more the closer it is to a point, as an explosion would. |
 | [Possess Camera](possess-camera.md) | Makes the camera on an actor the view the player sees. |
 | [Possess Camera With Blend](possess-camera-with-blend.md) | Makes the camera on an actor the view the player sees, moving the view there smoothly. |
+| [Resume Camera Shake](resume-camera-shake.md) | Lets a paused camera shake play on. |
+| [Set Camera Shake Scale](set-camera-shake-scale.md) | Changes how strongly a playing camera shake moves the view. |
 | [Set Field Of View](set-field-of-view.md) | Sets a camera's field of view in degrees. |
 | [Set Orthographic Size](set-orthographic-size.md) | Sets half the height of an orthographic camera's view, in world units. |
+| [Stop All Camera Shakes](stop-all-camera-shakes.md) | Stops every playing camera shake. |
+| [Stop Camera Shake](stop-camera-shake.md) | Stops a playing camera shake. |
 
 ## Light
 

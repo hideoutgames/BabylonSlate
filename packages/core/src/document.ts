@@ -37,6 +37,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "audio-mixer",
   "audio-channel",
   "sound-attenuation",
+  "camera-shake",
   "particle-emitter",
   "particle-graph",
   "particle-system",
@@ -156,6 +157,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "AudioChannel";
     case "sound-attenuation":
       return "SoundAttenuation";
+    case "camera-shake":
+      return "CameraShake";
     case "particle-emitter":
       return "ParticleEmitter";
     case "particle-graph":
@@ -255,6 +258,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "audio-channel";
     case "SoundAttenuation":
       return "sound-attenuation";
+    case "CameraShake":
+      return "camera-shake";
     case "ParticleEmitter":
       return "particle-emitter";
     case "ParticleGraph":
@@ -356,6 +361,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Audio Channel";
     case "sound-attenuation":
       return "Sound Attenuation";
+    case "camera-shake":
+      return "Camera Shake";
     case "particle-emitter":
       return "Particle Emitter";
     case "particle-graph":
@@ -443,7 +450,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim|material|matfunc|matinst|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame|bt|blackboard|water|globalparams)\.hasset$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim|material|matfunc|matinst|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|shake|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame|bt|blackboard|water|globalparams)\.hasset$/i,
         "",
       )
       .replace(/\.hasset$/i, "")

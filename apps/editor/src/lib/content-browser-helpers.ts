@@ -254,6 +254,7 @@ export const CREATABLE_ASSET_TYPES = [
   "AudioMixer",
   "AudioChannel",
   "SoundAttenuation",
+  "CameraShake",
   "InputAction",
   "InputAxis",
   "ParticleEmitter",
@@ -291,7 +292,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "animation",
     label: "Animation",
-    types: ["AnimationGraph", "SpriteAnimation", "Timeline", "TimelineClip2D", "TimelineClip3D"],
+    types: ["AnimationGraph", "SpriteAnimation", "Timeline", "TimelineClip2D", "TimelineClip3D", "CameraShake"],
   },
   {
     id: "rendering",
@@ -343,6 +344,7 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   AudioMixer: "Global and per-channel default volumes for Play.",
   AudioChannel: "A routing bus with an optional parent and reverb send.",
   SoundAttenuation: "Distance falloff that opts Audio into 3D playback.",
+  CameraShake: "A noise, wave or curve shake that scripts play on the view.",
   ParticleEmitter:
     "A GPU emitter built from a stack of modules for spawn, shape, motion, and color. Its look comes from a particle Material.",
   ParticleGraph:

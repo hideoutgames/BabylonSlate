@@ -16,6 +16,7 @@ test-results
 .capacitor
 **/.vitepress/cache
 **/.vitepress/dist
+**/.vitepress/.temp
 
 # Public repository: keep credentials and local environment artifacts out of git.
 *.p12

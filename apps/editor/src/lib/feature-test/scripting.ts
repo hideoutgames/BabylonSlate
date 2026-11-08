@@ -17,6 +17,8 @@ import {
   type SerializedActor,
   type SerializedComponent,
   type SerializedGraph,
+  createDefaultCameraShakePayload,
+  type CameraShakePayload,
 } from "@haptic/core";
 import { newAssetFileName } from "../content-browser-helpers";
 import { instanceOverrideKeys } from "../prefab-instance-sync";
@@ -91,6 +93,7 @@ const CLASS = {
   dataObject: "FT_ScriptDataObject",
   ticker: "FT_ScriptTicker",
   objectProbe: "FT_ScriptObjectProbe",
+  cameraShakeProbe: "FT_ScriptCameraShakeProbe",
   pulseComponent: "FT_ScriptPulseComponent",
   spawned: "FT_ScriptSpawned",
   spinner: "FT_ScriptSpinner",
@@ -211,6 +214,7 @@ interface ScriptingRefs {
   spinner: PlacedClass;
   interfaceProbe: PlacedClass;
   objectProbe: PlacedClass;
+  cameraShakeProbe: PlacedClass;
   touchProbe: PlacedClass;
   dataProbe: PlacedClass;
   saveProbe: PlacedClass;
@@ -395,6 +399,7 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
   await saveGameInstance(ctx);
   const interfaceProbe = await saveInterfaceProbe(ctx, types, font, materials.surfaceInstance ?? null);
   const objectProbe = await saveObjectProbe(ctx, font, materials.surfaceInstance ?? null);
+  const cameraShakeProbe = await saveCameraShakeProbe(ctx, await saveCameraShakes(ctx), font, materials.surfaceInstance ?? null);
   const touchProbe = await saveTouchProbe(ctx, types, font, materials.surfaceInstance ?? null);
   const dataProbe = await saveDataProbe(ctx, types, font, materials.surfaceInstance ?? null);
   const saveProbe = await saveSaveProbe(ctx, types, font, materials.surfaceInstance ?? null);
@@ -414,7 +419,7 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
     garbageCollectionIntervalTicks: 30,
     editorUtilityObjects: [...new Set([...settings.editorUtilityObjects, CLASS.editorProbe])],
   }));
-  refsByContext.set(ctx, { spinner, interfaceProbe, objectProbe, touchProbe, dataProbe, saveProbe, streamLoader, marker, roomGuid: room });
+  refsByContext.set(ctx, { spinner, interfaceProbe, objectProbe, cameraShakeProbe, touchProbe, dataProbe, saveProbe, streamLoader, marker, roomGuid: room });
 }
 
 /** Scripting zone (Spinner grid, Fast Spinner, probes, Prefab instances) and the Stream Loader. */
@@ -1223,6 +1228,98 @@ async function saveInterfaceProbe(
  * clears it and runs Collect Garbage. Begin Play then asserts that the ticker
  * ticked, stopped once collected, and that the kept object is still valid.
  */
+/** The Feature Test's Camera Shake assets: a noise hit faded by a Float Curve, an endless sine sway and a keyed Curves path. */
+export interface FeatureTestCameraShakes {
+  hit: string;
+  sway: string;
+  path: string;
+}
+
+const cameraShakesByContext = new WeakMap<FeatureTestContext, FeatureTestCameraShakes>();
+
+/** The Camera Shake assets `buildFeatureTestScripting` made, for areas built after it (the overlay layer's camera rig). */
+export function featureTestCameraShakes(ctx: FeatureTestContext): FeatureTestCameraShakes {
+  const shakes = cameraShakesByContext.get(ctx);
+  if (!shakes) throw new Error("Feature Test Camera Shakes are built with the scripting area.");
+  return shakes;
+}
+
+async function saveCameraShakes(ctx: FeatureTestContext): Promise<FeatureTestCameraShakes> {
+  const key = (Time: number, Value: unknown, zero: unknown) => ({ Time, Value, Interpolation: "linear", ArriveTangent: zero, LeaveTangent: zero });
+  const curve = (keys: unknown[]) => ({ curve: { Keys: keys, Before: "constant", After: "constant" } });
+  const zero3 = { x: 0, y: 0, z: 0 };
+  const fade = (await ctx.createAsset("FloatCurve", DATA_FOLDER, "FT_CameraShakeFade", {
+    payload: () => curve([key(0, 1, 0), key(0.6, 0, 0)]),
+  })).guid;
+  const pathCurve = (await ctx.createAsset("VectorCurve", DATA_FOLDER, "FT_CameraShakePathCurve", {
+    payload: () => curve([key(0, zero3, zero3), key(0.25, { x: 0.08, y: -0.05, z: 0 }, zero3), key(0.5, { x: -0.06, y: 0.04, z: 0 }, zero3), key(1, zero3, zero3)]),
+  })).guid;
+  const shake = async (name: string, payload: Partial<CameraShakePayload>) => (await ctx.createAsset("CameraShake", SCRIPT_FOLDER, name, {
+    payload: () => ({ ...createDefaultCameraShakePayload(), ...payload }) as unknown as Record<string, unknown>,
+  })).guid;
+  const shakes = {
+    hit: await shake("FT_CameraShakeHit", { pattern: "noise", duration: 0.6, intensityCurveGuid: fade }),
+    sway: await shake("FT_CameraShakeSway", {
+      pattern: "sine", duration: 0, blendInTime: 0.3, blendOutTime: 0.3,
+      locationAmplitude: { x: 0.02, y: 0.03, z: 0 }, locationFrequency: { x: 0.5, y: 0.8, z: 0 },
+      rotationAmplitude: { pitch: 0.4, yaw: 0.3, roll: 0.6 }, rotationFrequency: { pitch: 0.7, yaw: 0.5, roll: 0.6 },
+    }),
+    path: await shake("FT_CameraShakePath", { pattern: "curves", duration: 1, blendOutTime: 0.2, locationCurveGuid: pathCurve }),
+  };
+  cameraShakesByContext.set(ctx, shakes);
+  return shakes;
+}
+
+/**
+ * Every Camera Shake node on the main view: a scaled noise hit, a world sway that it pauses, resumes and halves,
+ * and a Curves path; then Stop (blending) and Stop All (at once), asserting each handle's state on the way.
+ */
+async function saveCameraShakeProbe(ctx: FeatureTestContext, shakes: FeatureTestCameraShakes, font: string, materialGuid: string | null): Promise<PlacedClass> {
+  const components = [
+    scaledMesh("prefab-mesh", "box", 0.6, materialGuid),
+    textLabel("prefab-label", "Camera Shake Probe", font, [0, 1, 0]),
+  ];
+  const graph = classGraph({
+    components,
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, 0),
+      delay("settle", 240, 0, 1),
+      gNode("hit", "camera.playShake", 480, 0, { "default:shake": shakes.hit, "default:scale": 0.5 }),
+      gNode("hit-playing", "camera.isShakePlaying", 720, 240),
+      gNode("assert-hit", "debug.assert", 720, 0, { "default:message": "Play Camera Shake started no shake" }),
+      gNode("sway", "camera.playWorldShake", 960, 0, {
+        "default:shake": shakes.sway, "default:epicenter": { x: -32, y: 1, z: 64 }, "default:innerRadius": 12, "default:outerRadius": 60,
+      }),
+      gNode("pause", "camera.pauseShake", 1200, 0),
+      gNode("sway-paused", "camera.isShakePaused", 1440, 240),
+      gNode("assert-paused", "debug.assert", 1440, 0, { "default:message": "Pause Camera Shake did not pause it" }),
+      gNode("resume", "camera.resumeShake", 1680, 0),
+      gNode("halve", "camera.setShakeScale", 1920, 0, { "default:scale": 0.5 }),
+      gNode("path", "camera.playShake", 2160, 0, { "default:shake": shakes.path }),
+      delay("shaking", 2400, 0, 1.5),
+      gNode("stop-sway", "camera.stopShake", 2640, 0),
+      gNode("stop-all", "camera.stopAllShakes", 2880, 0, { "default:immediately": true }),
+      gNode("path-playing", "camera.isShakePlaying", 3120, 240),
+      gNode("path-stopped", "boolean.not", 3120, 400),
+      gNode("assert-stopped", "debug.assert", 3120, 0, { "default:message": "Stop All Camera Shakes left a shake playing" }),
+      printText("report", 3360, 0, "ft-script-camera-shake", "Camera Shake: hit, world sway, path, stopped", 8),
+    ],
+    edges: [
+      ...gChain("begin", "settle", "hit", "assert-hit", "sway", "pause", "assert-paused", "resume", "halve", "path", "shaking",
+        "stop-sway", "stop-all", "assert-stopped", "report"),
+      gWire("hit", "handle", "hit-playing", "handle"),
+      gWire("hit-playing", "playing", "assert-hit", "condition"),
+      ...["pause", "sway-paused", "resume", "halve", "stop-sway"].map((target) => gWire("sway", "handle", target, "handle")),
+      gWire("sway-paused", "paused", "assert-paused", "condition"),
+      gWire("path", "handle", "path-playing", "handle"),
+      gWire("path-playing", "playing", "path-stopped", "in"),
+      gWire("path-stopped", "out", "assert-stopped", "condition"),
+    ],
+  });
+  const ref = await saveClass(ctx, CLASS.cameraShakeProbe, "Actor", graph);
+  return { ref, components };
+}
+
 async function saveObjectProbe(ctx: FeatureTestContext, font: string, materialGuid: string | null): Promise<PlacedClass> {
   const kept = varMember("ft-script-var-kept-object", "KeptObject", "object", null, { typeClassId: CLASS.dataObject });
   const ticker = varMember("ft-script-var-ticker", "Ticker", "object", null, { typeClassId: CLASS.ticker });
@@ -2158,6 +2255,7 @@ function placeScriptingZone(ctx: FeatureTestContext, refs: ScriptingRefs, types:
 
   placeClass("ft-scripting-interface-probe", "Interface Probe", refs.interfaceProbe, zone.at(4.5, 0.6, -9), probesFolder);
   placeClass("ft-scripting-object-probe", "Object Probe", refs.objectProbe, zone.at(7, 0.6, -6), probesFolder);
+  placeClass("ft-scripting-camera-shake-probe", "Camera Shake Probe", refs.cameraShakeProbe, zone.at(9.5, 0.6, -6), probesFolder);
   placeClass("ft-scripting-touch-probe", "Touch Probe", refs.touchProbe, zone.at(4.5, 0.6, -6), probesFolder);
   // The placed probe overrides its Class's Tags, adding Perf.Heavy.
   placeClass("ft-scripting-data-probe", "Data Probe", refs.dataProbe, zone.at(7, 0.45, -9), probesFolder, {

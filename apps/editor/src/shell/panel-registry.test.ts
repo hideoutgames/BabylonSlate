@@ -39,6 +39,7 @@ const KINDS = Object.keys({
   "audio-mixer": true,
   "audio-channel": true,
   "sound-attenuation": true,
+  "camera-shake": true,
   "particle-emitter": true,
   "particle-graph": true,
   "particle-system": true,

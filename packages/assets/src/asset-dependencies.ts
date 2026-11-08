@@ -17,6 +17,9 @@ import {
   type DataFieldSnapshot,
   type GraphClassMember,
   type SerializedGraph,
+  CAMERA_SHAKE_ASSET_TYPE,
+  cameraShakeCurveGuids,
+  normalizeCameraShakePayload,
 } from "@haptic/core";
 import {
   materialDependencies,
@@ -92,6 +95,10 @@ const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
     [`globalParameters.${action}${kind}Parameter`, "collection"]))),
   "timeline.fromAsset": "timelineAsset",
   "audio.play": "asset",
+  "audio.playAtLocation": "asset",
+  "camera.playShake": "shake",
+  "camera.playShakeOnSceneLayer": "shake",
+  "camera.playWorldShake": "shake",
   "particles.spawnAtLocation": "system",
   "particles.spawnAttached": "system",
   "audio.setChannelVolume": "channel",
@@ -367,6 +374,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         ["data.readEntry", "data.readUnknownEntry", "data.getChildren", "data.getDescendants", "data.getParent"].includes(entry.nodeType) ||
         // Get <Type> Curve Object reads the asset synchronously, so its Curve Asset loads with the owner.
         entry.nodeType.startsWith("curveObject.get") ||
+        // Play Camera Shake reads its Camera Shake (and the shake's curves) from the session catalog.
+        ["camera.playShake", "camera.playShakeOnSceneLayer", "camera.playWorldShake"].includes(entry.nodeType) ||
         // Set and Get Global Parameter resolve their collection from the session catalog the owner loads with.
         entry.nodeType.startsWith("globalParameters.")) requireInputs(String(entry.node.id));
       for (const { node, properties, nodeType, pins } of nodes) {
@@ -429,6 +438,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   else if (assetType === "Tilemap") { for (const tileset of rows(payload.tilesets)) add(tileset.guid); }
   else if (assetType === "Font") addMany(values(payload.fallbackGuids));
   else if (assetType === "Water") add(payload.materialGuid);
+  // A shake needs its curves to play as authored.
+  else if (assetType === CAMERA_SHAKE_ASSET_TYPE) addMany(cameraShakeCurveGuids(normalizeCameraShakePayload(payload)));
   else if (assetType === "RenderTargetTexture") add(payload.renderTargetGuid);
   else if (assetType === "SkyboxCreator") addMany(skyboxCreatorAssetDependencies(assetType, payload), false);
   else if (["DataDefinition", "DataTree", "Structure", "Enum"].includes(assetType)) {

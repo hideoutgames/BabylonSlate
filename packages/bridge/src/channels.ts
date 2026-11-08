@@ -183,6 +183,8 @@ export interface RuntimeSceneContent {
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
   /** Float, Vector and Color Curve assets of the current sources; `Get <Type> Curve Object` reads them. */
   curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
+  /** Camera Shake assets of the current sources; Play Camera Shake reads them. */
+  cameraShakeAssets?: import("@haptic/core").CameraShakeCatalogEntry[];
   /** 2D and 3D Timeline Clip assets of the current sources, without their Editor Preview; Create makes instances of them. */
   timelineClipAssets?: import("@haptic/core").TimelineClipAssetCatalogEntry[];
   audioAssetGuids?: string[];
@@ -222,6 +224,7 @@ export type ControlMessage =
       saveGame?: import("@haptic/core").SaveGameConfiguration;
       dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
       curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
+      cameraShakeAssets?: import("@haptic/core").CameraShakeCatalogEntry[];
       timelineClipAssets?: import("@haptic/core").TimelineClipAssetCatalogEntry[];
       /** Packaged authored assets for the Asset Registry nodes, snapshotted when the session starts. */
       assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
@@ -1100,6 +1103,15 @@ export type CommandMessage =
     }
   | { type: "stopSound"; voiceId: string }
   | { type: "setVoiceGain"; voiceId: string; volume: number }
+  /**
+   * Camera shake: the summed offset of the shakes playing on the main Scene's view (`sceneLayerId` null) or a Scene
+   * Layer's, in the view's own axes (X right, Y up, Z forward; rotation and Field Of View in degrees). Null: unshaken.
+   */
+  | {
+      type: "setCameraShake";
+      sceneLayerId: string | null;
+      offset: { x: number; y: number; z: number; pitch: number; yaw: number; roll: number; fov: number } | null;
+    }
   /** Set Sound Pitch: replaces the voice's play-call pitch multiplier. */
   | { type: "setVoicePitch"; voiceId: string; pitch: number }
   /** Game pause: hold or release one voice whose owner does not tick while the game is paused. */

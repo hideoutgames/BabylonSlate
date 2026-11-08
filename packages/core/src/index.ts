@@ -43,6 +43,7 @@ export * from "./random-seed";
 export * from "./wall-clock";
 export * from "./game-environment";
 export * from "./curve-assets";
+export * from "./camera-shake";
 export * from "./global-parameters";
 export * from "./tween";
 export * from "./cursor-ray";

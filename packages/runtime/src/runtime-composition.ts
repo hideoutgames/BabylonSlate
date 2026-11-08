@@ -1,6 +1,6 @@
 import type { RuntimeGlobalParameters } from "./runtime-global-parameters";
 import type { TimelineRuntime } from "./timeline-runtime";
-import type { CurveAssetCatalogEntry } from "@haptic/core";
+import type { CameraShakeCatalogEntry, CurveAssetCatalogEntry } from "@haptic/core";
 import type { CommandMessage, GameSessionMode, SessionPauseReason } from "@haptic/bridge";
 import type {
   RenderTargetPayload,
@@ -24,6 +24,7 @@ import type { RuntimeDriver } from "./driver-types";
 import type { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import type { LatentDelays } from "./latent-delays";
 import type { ScriptTimers } from "./script-timers";
+import type { CameraShakes } from "./camera-shakes";
 import type { LogRingBuffer } from "./log-ring";
 import type { MovementWorldSync } from "./movement";
 import type { OwnerAdmission } from "./owner-admission";
@@ -163,6 +164,7 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   readonly audioParticles: AudioParticleEmitter;
   readonly delays: LatentDelays;
   readonly timers: ScriptTimers;
+  readonly cameraShakes: CameraShakes;
   readonly navigation: RuntimeNavigation;
   readonly streams: SceneStreams;
   readonly sceneRealizer: SceneRealizer;
@@ -193,6 +195,7 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   readonly layers: SceneLayers;
   readonly dataCatalog: RuntimeDataCatalog;
   readonly curveCatalog: ReadonlyMap<string, CurveAssetCatalogEntry>;
+  readonly cameraShakeCatalog: ReadonlyMap<string, CameraShakeCatalogEntry>;
   readonly scriptHost: ScriptHost;
   readonly scriptDebug: ScriptDebugObserver;
 
@@ -238,6 +241,7 @@ export function setWorldGravity(rt: RuntimeComposition, gravity: { x: number; y:
 export function registerRuntimeSubsystems(rt: RuntimeComposition): void {
   rt.subsystems.register(rt.delays);
   rt.subsystems.register(rt.timers);
+  rt.subsystems.register(rt.cameraShakes);
   rt.subsystems.register(rt.streams);
   rt.subsystems.register(rt.ragdolls);
   rt.subsystems.register(rt.cables);

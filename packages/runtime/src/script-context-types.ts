@@ -279,6 +279,19 @@ export interface ScriptContext {
   getDisplayName(object: unknown): string;
   /** Ease: Alpha clamped to 0..1 and shaped by an Easing Curve member (`sampleEasingCurve` in core). */
   easeAlpha(curve: unknown, alpha: unknown): number;
+  /** Play Camera Shake: a shake of the main Scene's view, whichever camera is in view; `{ Id: 0 }` when none plays. */
+  playCameraShake(asset: unknown, scale: unknown): { Id: number };
+  /** Play Camera Shake On Scene Layer: a shake of the Scene Layer's own view. */
+  playCameraShakeOnSceneLayer(layer: unknown, asset: unknown, scale: unknown): { Id: number };
+  /** Play World Camera Shake: the main view's shake, strongest near Epicenter (`worldCameraShakeScale`). */
+  playWorldCameraShake(asset: unknown, epicenter: unknown, innerRadius: unknown, outerRadius: unknown, falloff: unknown): { Id: number };
+  /** Stop Camera Shake: blends it out, or ends it now with `immediately`. */
+  stopCameraShake(handle: unknown, immediately: unknown): void;
+  stopAllCameraShakes(immediately: unknown): void;
+  setCameraShakePaused(handle: unknown, paused: boolean): void;
+  setCameraShakeScale(handle: unknown, scale: unknown): void;
+  isCameraShakePlaying(handle: unknown): boolean;
+  isCameraShakePaused(handle: unknown): boolean;
   /** Stop Sound: stops the handle's voice at once. */
   stopSoundHandle(handle: unknown): void;
   /** Set Sound Volume: the voice's play-call volume, 0..1, cancelling a fade. */
@@ -804,6 +817,8 @@ export type HostContextKey =
   | "randomSeedStep" | "setActorHidden" | "isActorHidden" | "setComponentVisible" | "isComponentVisible" | "componentTransform"
   | "setComponentTransform" | "actorDistance" | "addActorLocalOffset" | "addActorLocalRotation" | "addActorWorldRotation"
   | "teleportActor" | "getActorTags" | "setActorTags" | "getObjectClass" | "classIsChildOf" | "getDisplayName"
+  | "playCameraShake" | "playCameraShakeOnSceneLayer" | "playWorldCameraShake" | "stopCameraShake" | "stopAllCameraShakes"
+  | "setCameraShakePaused" | "setCameraShakeScale" | "isCameraShakePlaying" | "isCameraShakePaused"
   | "stopSoundHandle" | "setSoundVolume" | "setSoundPitch" | "fadeInSound" | "fadeOutSound" | "isSoundPlaying"
   | "easeAlpha" | "physicsVelocity" | "setPhysicsVelocity" | "addForce" | "addTorque" | "setMotionType" | "setActorCollisionEnabled"
   | "isActorCollisionEnabled"
