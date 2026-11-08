@@ -871,6 +871,25 @@ describe("exportGame", () => {
     ).toBe(false);
   });
 
+  it("writes the Font Global Fallback into game.json, sans-serif when unset", async () => {
+    const exportWith = (globalFallback?: string) => exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      ...(globalFallback === undefined ? {} : { globalFallback }),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [{ guid: "scene-1", type: "Scene", sceneGuid: "scene-1", bytes: new Uint8Array([1]) }],
+      playerFiles: stubPlayer(),
+    });
+    const serif = await exportWith(" serif ");
+    if (!serif.ok) throw new Error(serif.error);
+    expect(serif.value.manifest.globalFallback).toBe("serif");
+    expect(parseGameManifest(new TextDecoder().decode(serif.value.files.get(GAME_MANIFEST_FILE)!)).globalFallback).toBe("serif");
+    const unset = await exportWith();
+    if (!unset.ok) throw new Error(unset.error);
+    expect(unset.value.manifest.globalFallback).toBe("sans-serif");
+  });
+
   it("writes Audio reverb scales into game.json", async () => {
     const result = await exportGame({
       bundleDebugger: false,

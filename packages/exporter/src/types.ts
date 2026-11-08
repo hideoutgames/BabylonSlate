@@ -127,6 +127,8 @@ export type GameManifest = {
   gameInstanceClass?: string;
   audioMixerGuid?: string;
   defaultFontGuid?: string;
+  /** Project Global Fallback: the generic CSS family that ends every Bitmap 2D Text font stack. */
+  globalFallback: string;
   occlusionEnabled?: boolean;
   reverbWetScale?: number;
   reverbDecayScale?: number;
@@ -157,6 +159,8 @@ export type ExportGameOptions = {
   /** Editor-hosted Preview only; never enables diagnostics in ordinary exports. */
   includePreviewDiagnostics?: boolean;
   defaultFontGuid?: string | null;
+  /** Project Global Fallback; missing or blank writes `sans-serif`. */
+  globalFallback?: string;
   saveGame?: import("@haptic/core").SaveGameConfiguration;
   project?: { name: string; version: string };
   inputAssets?: import("@haptic/core").InputAssetDefinition[];

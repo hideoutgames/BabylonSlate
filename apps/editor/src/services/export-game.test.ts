@@ -1308,7 +1308,7 @@ describe("collectAndExportGame", () => {
     ).toMatchObject({ width: 1024, height: 512 });
   });
 
-  it("records pixelsPerUnit and Font family names from payloads", async () => {
+  it("records pixelsPerUnit, the Font Global Fallback and Font family names from payloads", async () => {
     const scene = {
       ...createDefaultScene(),
       actors: [
@@ -1345,12 +1345,14 @@ describe("collectAndExportGame", () => {
       physicsWorld: "3d",
       pixelsPerUnit: 64,
       pixelPerfect: true,
+      globalFallback: "monospace",
       playerFiles,
     });
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
     expect(result.value.manifest.pixelsPerUnit).toBe(64);
     expect(result.value.manifest.pixelPerfect).toBe(true);
+    expect(result.value.manifest.globalFallback).toBe("monospace");
     expect(
       result.value.manifest.assets.find((entry) => entry.guid === "font-1")
         ?.name,

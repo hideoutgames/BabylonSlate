@@ -304,6 +304,7 @@ async function acquirePlayAssetSourcesAttempt(
       pixelsPerUnit: project.settings.twoD.pixelsPerUnit, sortingLayers: project.settings.twoD.sortingLayers,
       pixelPerfect: project.settings.twoD.pixelPerfect, nearestTextures: nearestTextureFiltering(project.settings.twoD), physicsWorld: "3d", collisionPresets: project.settings.physics.collisionPresets,
       audioMixerGuid: project.settings.audio.audioMixerGuid ?? undefined,
+      globalFallback: project.settings.fonts.globalFallback,
       assets: [],
     },
     scripts: [], scenes: new Map(), sceneLayers: new Map(), textureBytes: new Map(), areaEmissions: new Map(),

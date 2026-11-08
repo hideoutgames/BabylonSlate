@@ -29,7 +29,7 @@ Font assets, optional facetype/MSDF chunks, CSS fallback stacks and the main-thr
 
 - Duplicates drop. Families are always quoted, so a Font named `serif` still names its own face.
 - The stack always ends in a generic family so a failed load is never a silent Arial.
-- `compileText2DFontStacks` gives editor viewport, Play and player a project default stack plus a per-Font map (`fontCssStack` / `fontCssStackByGuid`). Play compiles them from every project Font in each source acquisition (`playText2DFontStacks` in `play-asset-sources.ts`), because engine source unions keep the last acquisition's `fontCssStack`; the player compiles them from the manifest's Fonts.
+- `compileText2DFontStacks` gives editor viewport, Play and player a project default stack plus a per-Font map (`fontCssStack` / `fontCssStackByGuid`). Play compiles them from every project Font in each source acquisition (`playText2DFontStacks` in `play-asset-sources.ts`), because engine source unions keep the last acquisition's `fontCssStack`; the player compiles them from the manifest's Fonts and its `globalFallback` (Project Settings **Global Fallback**).
 - A stack that leaves out the Font draws the generic face without any error, so all three hosts must compile stacks the same way.
 
 ## FontRegistry rules
@@ -48,7 +48,7 @@ Bitmap 2D Text measures and rasterizes its glyphs once, when its mesh is built, 
 - Play and the player install a command source loader before the game worker starts. `CommandSourcePreparation` holds every text `assignMesh` (an empty Font guid means the project default) until `acquireSceneSources` has registered the slot's faces through the Engine's native preparation queue. Requests naming the same sources (GUIDs and font modes) share one loader call: those still waiting join it, later ones join while any slot holds its sources, and the loader's release runs when the last slot lets go (a HUD's widgets mostly name one Font and one Text Material, and each loader call walks the assets' catalog through storage). A face that fails to load rejects the slot with the registry's reason (`Font "<family>" failed to load: …`), and Scene or Scene Layer readiness reports `Scene loading failed` (Play: the session ends and its report lists the error; player: diagnostic, `[player]` console error, playback halts).
 - `createEngine({ fontFaceEntries })` also registers the startup faces and world readiness awaits them, but its failures stay registry warnings; the per-slot gate is what fails loudly.
 - Proof (`e2e/p14-preview-build.spec.ts`): on a cold load, Play and Preview Build lay out explicit- and default-Font text with the Font's own advances, read as each Text mesh's laid-out width (`EngineHandle.playText2DLayouts`, the test hosts' `text2dLayouts`) and compared, as equal-length digit runs, with an independently loaded copy of the Font. A Font that cannot load ends Play with the error in its session report.
-- Gaps: Play and player FontFace entries carry no weight or style (every face registers as 400 normal); the export manifest carries no Global Fallback, so the player always ends stacks in `sans-serif`.
+- Gap: Play and player FontFace entries carry no weight or style (every face registers as 400 normal).
 
 ## 3D Text
 

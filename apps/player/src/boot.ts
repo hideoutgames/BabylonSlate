@@ -216,7 +216,7 @@ function initializePlayer(
   };
   const fontIds = new Set(manifest.assets.filter(entry => entry.type === "Font").map(entry => entry.guid));
   const fontFallbacks = new Map(manifest.assets.filter(entry => entry.type === "Font").map(entry => [entry.guid, entry.requiredDependencies?.filter(id => fontIds.has(id)) ?? []]));
-  const fontCss = packedFontCssStacks(game.fontFamilies, "sans-serif", manifest.defaultFontGuid, fontFallbacks);
+  const fontCss = packedFontCssStacks(game.fontFamilies, manifest.globalFallback, manifest.defaultFontGuid, fontFallbacks);
   const installs = createPlayerSourceInstalls(game);
 
   let worker: PlayerWorkerHost | null = null;
@@ -806,7 +806,7 @@ function initializePlayer(
   };
   const renderSources = (sources: GameSourceContent) => {
     const prepared = packedContentFromGame(sources);
-    const fonts = packedFontCssStacks(sources.fontFamilies, "sans-serif", manifest.defaultFontGuid, fontFallbacks);
+    const fonts = packedFontCssStacks(sources.fontFamilies, manifest.globalFallback, manifest.defaultFontGuid, fontFallbacks);
     return {
       assets: {
         textureBytes: installs.textures(sources.textureBytes), areaEmissions: sources.areaEmissions,

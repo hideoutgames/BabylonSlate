@@ -103,6 +103,7 @@ export async function exportProjectGameArtifact(
     projectId: projectService.guid ?? undefined,
     saveGameSettings: exportDocument?.settings.saveGame,
     defaultFontGuid: exportDocument?.settings.fonts.defaultFontGuid ?? null,
+    globalFallback: exportDocument?.settings.fonts.globalFallback,
     gameInstanceClass: exportDocument?.settings.gameInstanceClass ?? null,
     audioMixerGuid: exportDocument?.settings.audio.audioMixerGuid ?? null,
     occlusionEnabled:
