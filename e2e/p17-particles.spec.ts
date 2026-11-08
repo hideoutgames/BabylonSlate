@@ -9,42 +9,17 @@ import {
   pickMaterialNodeTexture,
 } from "./material-graph";
 import {
+  closeWindowsMenu,
   createContentBrowserAsset,
   openAssetFromBrowser,
   openContentBrowser,
   openMainScene,
   openTestProject,
+  openWindowsMenu,
+  pickAsset,
 } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
-
-async function pickAsset(
-  page: Page,
-  pickerTestId: string,
-  guid: string,
-): Promise<void> {
-  await expect(page.getByTestId(pickerTestId)).toBeVisible();
-  await page.getByTestId(`search-item-${guid}`).click();
-  await expect(page.getByTestId(pickerTestId)).toHaveCount(0);
-}
-
-async function openWindowsMenu(page: Page): Promise<void> {
-  const content = page.getByTestId("windows-menu-content");
-  if (await content.isVisible()) return;
-  await page.getByTestId("windows-menu").click();
-  await expect(content).toBeVisible();
-}
-
-async function closeWindowsMenu(page: Page): Promise<void> {
-  const content = page.getByTestId("windows-menu-content");
-  if (!(await content.isVisible())) return;
-  await page.keyboard.press("Escape");
-  await page.keyboard.press("Escape");
-  if (await content.isVisible()) {
-    await page.mouse.click(12, 12);
-  }
-  await expect(content).toHaveCount(0);
-}
 
 /** Picks a Value Mode for a Basic emitter Details row (`value-mode-<rowId>`). */
 async function chooseValueMode(

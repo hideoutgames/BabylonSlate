@@ -8,7 +8,7 @@ import {
 } from "../packages/core/src/index";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene } from "./open-test-project";
-import { clickPlayAndWaitForOverlay } from "./play";
+import { clickPlayAndWaitForOverlay, startSimulation } from "./play";
 import { setPreviewScene } from "./preview-parity";
 
 type TestHost = typeof globalThis & {
@@ -60,15 +60,6 @@ const pinSide = (page: Page, nodeId: string, pinId: string) =>
 async function focusClassGraph(page: Page) {
   await page.locator('[data-testid="document-tab"][data-document-kind="graph"]').getByTestId("document-tab-select").click();
   await expect(graphPanel(page).locator('.react-flow__node[data-id="printB"]')).toBeVisible({ timeout: 15_000 });
-}
-
-async function startSimulation(page: Page) {
-  await page.evaluate(() => (globalThis as TestHost).__hapticSimulationTest.start());
-  await expect(page.getByTestId("play-overlay")).toHaveAttribute("data-mode", "simulate", { timeout: 60_000 });
-  await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 60_000 });
-  await expect
-    .poll(() => page.evaluate(() => (globalThis as TestHost).__hapticPlayTest.tickIndex()), { timeout: 30_000 })
-    .toBeGreaterThan(2);
 }
 
 type Flashed = {

@@ -1,14 +1,8 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { openMinimalTestProject as openTestProject } from "./minimal-project";
+import { openWindowsMenu } from "./open-test-project";
 
 const E2E_TIMEOUT_MS = 90_000;
-
-async function openWindowsMenu(page: Page) {
-  const content = page.getByTestId("windows-menu-content");
-  if (await content.isVisible()) return;
-  await page.getByTestId("windows-menu").click();
-  await expect(content).toBeVisible();
-}
 
 test.describe("Windows menu", () => {
 

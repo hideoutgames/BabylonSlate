@@ -9,6 +9,7 @@ import {
 import { openMinimalTestProject } from "./minimal-project";
 import { enableTouchLayout, openMainScene } from "./open-test-project";
 import { setPreviewScene } from "./preview-parity";
+import { startSimulation } from "./play";
 
 type TestHost = typeof globalThis & {
   __hapticSimulationTest: { start(): Promise<void> };
@@ -51,15 +52,6 @@ async function expectNoOverlap(page: Page) {
   expect(overlaps).toEqual([]);
   const width = page.viewportSize()!.width;
   for (const control of controls) expect(control.right, `${control.id} stays on screen`).toBeLessThanOrEqual(width + 1);
-}
-
-async function startSimulation(page: Page) {
-  await page.evaluate(() => (globalThis as TestHost).__hapticSimulationTest.start());
-  await expect(page.getByTestId("play-overlay")).toHaveAttribute("data-mode", "simulate", { timeout: 60_000 });
-  await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 60_000 });
-  await expect
-    .poll(() => page.evaluate(() => (globalThis as TestHost).__hapticPlayTest.tickIndex()), { timeout: 30_000 })
-    .toBeGreaterThan(2);
 }
 
 /** A project with a Class graph and an instance of it, opened at tablet size so every window is reachable. */

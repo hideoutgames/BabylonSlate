@@ -10,7 +10,7 @@ import {
   waitForTextureEncodes,
   type FeatureTestSceneName,
 } from "./feature-test-project";
-import { clickPlayAndWaitForOverlay } from "./play";
+import { clickPlayAndWaitForOverlay, runConsoleCommand } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
@@ -392,13 +392,6 @@ async function flyScene(page: Page, cdp: CDPSession, scene: FeatureTestSceneName
       instrumented: result.instrumented,
     },
   };
-}
-
-async function runConsoleCommand(page: Page, command: string): Promise<void> {
-  await page.getByTestId("play-console-open").click();
-  await page.getByTestId("debug-console-input").fill(command);
-  await page.getByTestId("debug-console-submit").click();
-  await page.keyboard.press("Escape");
 }
 
 /** Overlay Play with the free camera, flown along the editor path. */

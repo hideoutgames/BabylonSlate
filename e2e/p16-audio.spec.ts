@@ -1,5 +1,5 @@
 import path from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
 import {
   createContentBrowserAsset,
@@ -7,31 +7,14 @@ import {
   openContentBrowser,
   openMainScene,
   openTestProject,
+  pickAsset,
 } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 import { openAudioTestProject } from "./audio-project";
+import { guidForPath } from "./material-graph";
 
 const BEEP_WAV = path.join(process.cwd(), "e2e/fixtures/beep.wav");
-
-async function guidForPath(page: Page, assetPath: string): Promise<string> {
-  return page.evaluate((target) => {
-    const host = globalThis as {
-      __hapticTest?: { guidForPath: (path: string) => string | null };
-    };
-    return host.__hapticTest?.guidForPath(target) ?? "";
-  }, assetPath);
-}
-
-async function pickAsset(
-  page: Page,
-  pickerTestId: string,
-  guid: string,
-): Promise<void> {
-  await expect(page.getByTestId(pickerTestId)).toBeVisible();
-  await page.getByTestId(`search-item-${guid}`).click();
-  await expect(page.getByTestId(pickerTestId)).toHaveCount(0);
-}
 
 test.describe("P16 audio", () => {
 

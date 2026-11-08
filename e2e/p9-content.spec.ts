@@ -2,10 +2,12 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import {
+  closeWindowsMenu,
   createContentBrowserAsset,
   openAssetFromBrowser,
   openMainScene,
   openTestProject,
+  openWindowsMenu,
 } from "./open-test-project";
 import {
   addMaterialPaletteNode,
@@ -31,37 +33,6 @@ async function showContentBrowser(page: Page): Promise<void> {
   await expect(
     page.getByTestId("document-workspace-content-browser"),
   ).toBeVisible();
-}
-
-async function createAsset(
-  page: Page,
-  type:
-    | "Sprite"
-    | "SpriteAnimation"
-    | "AnimationGraph"
-    | "Material"
-    | "MaterialFunction",
-  name: string,
-): Promise<void> {
-  await createContentBrowserAsset(page, type, name);
-}
-
-async function openWindowsMenu(page: Page): Promise<void> {
-  const content = page.getByTestId("windows-menu-content");
-  if (await content.isVisible()) return;
-  await page.getByTestId("windows-menu").click();
-  await expect(content).toBeVisible();
-}
-
-async function closeWindowsMenu(page: Page): Promise<void> {
-  const content = page.getByTestId("windows-menu-content");
-  if (!(await content.isVisible())) return;
-  await page.keyboard.press("Escape");
-  await page.keyboard.press("Escape");
-  if (await content.isVisible()) {
-    await page.mouse.click(12, 12);
-  }
-  await expect(content).toHaveCount(0);
 }
 
 function animStateMachine(page: Page) {
@@ -176,7 +147,7 @@ test.describe("P9 content systems", () => {
     test.setTimeout(180_000);
     await openTestProject(page);
     const materialPath = "assets/RefreshMaterial.material.hasset";
-    await createAsset(page, "Material", "RefreshMaterial");
+    await createContentBrowserAsset(page, "Material", "RefreshMaterial");
     const materialGuid = await guidForPath(page, materialPath);
     expect(materialGuid).not.toBe("");
     await openMainScene(page);
@@ -316,7 +287,7 @@ test.describe("P9 content systems", () => {
     page,
   }) => {
     await openTestProject(page);
-    await createAsset(page, "Sprite", "Hero");
+    await createContentBrowserAsset(page, "Sprite", "Hero");
     await page
       .locator('[data-asset-path="assets/Hero.sprite.hasset"]')
       .dblclick();
@@ -325,7 +296,7 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("sprite-editor")).toBeVisible();
     await expect(page.getByTestId("property-texture")).toBeVisible();
 
-    await createAsset(page, "SpriteAnimation", "Walk");
+    await createContentBrowserAsset(page, "SpriteAnimation", "Walk");
     await page
       .locator('[data-asset-path="assets/Walk.spriteanim.hasset"]')
       .dblclick();
@@ -336,7 +307,7 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("sprite-animation-play")).toBeVisible();
     await expect(page.getByTestId("sprite-animation-editor")).toBeVisible();
 
-    await createAsset(page, "AnimationGraph", "Loco");
+    await createContentBrowserAsset(page, "AnimationGraph", "Loco");
     await page
       .locator('[data-asset-path="assets/Loco.anim.hasset"]')
       .dblclick();
@@ -356,7 +327,7 @@ test.describe("P9 content systems", () => {
     ).toBeVisible();
     await expect(page.getByTestId("anim-graph-add-state")).toBeVisible();
 
-    await createAsset(page, "Material", "Surface");
+    await createContentBrowserAsset(page, "Material", "Surface");
     await page
       .locator('[data-asset-path="assets/Surface.material.hasset"]')
       .dblclick();
@@ -369,7 +340,7 @@ test.describe("P9 content systems", () => {
     page,
   }) => {
     await openTestProject(page);
-    await createAsset(page, "Material", "Rock");
+    await createContentBrowserAsset(page, "Material", "Rock");
     await page
       .locator('[data-asset-path="assets/Rock.material.hasset"]')
       .dblclick();
@@ -478,7 +449,7 @@ test.describe("P9 content systems", () => {
   }, testInfo) => {
     test.setTimeout(90_000);
     await openMinimalTestProject(page);
-    await createAsset(page, "Material", "Glsl");
+    await createContentBrowserAsset(page, "Material", "Glsl");
     await page
       .locator('[data-asset-path="assets/Glsl.material.hasset"]')
       .dblclick();
@@ -555,7 +526,7 @@ test.describe("P9 content systems", () => {
     test.setTimeout(90_000);
     await openMinimalTestProject(page);
     const albedoGuid = await importAlbedoTexture(page);
-    await createAsset(page, "Material", "ParamSample");
+    await createContentBrowserAsset(page, "Material", "ParamSample");
     await openAssetFromBrowser(page, "assets/ParamSample.material.hasset");
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
     await addMaterialPaletteNode(page, "Texture Parameter", "param.texture");
@@ -593,7 +564,7 @@ test.describe("P9 content systems", () => {
   }) => {
     test.setTimeout(180_000);
     await openTestProject(page);
-    await createAsset(page, "Material", "Bloom");
+    await createContentBrowserAsset(page, "Material", "Bloom");
     await page
       .locator('[data-asset-path="assets/Bloom.material.hasset"]')
       .dblclick();
@@ -665,7 +636,7 @@ test.describe("P9 content systems", () => {
   test("Play assigns a MeshComponent surface material", async ({ page }) => {
     test.setTimeout(180_000);
     await openTestProject(page);
-    await createAsset(page, "Material", "Rock");
+    await createContentBrowserAsset(page, "Material", "Rock");
     await saveAllIfEnabled(page);
     await openMainScene(page);
     await page.getByTestId("outliner-add-actor").click();
@@ -695,7 +666,7 @@ test.describe("P9 content systems", () => {
     page,
   }) => {
     await openTestProject(page);
-    await createAsset(page, "MaterialFunction", "Tint");
+    await createContentBrowserAsset(page, "MaterialFunction", "Tint");
     await page
       .locator('[data-asset-path="assets/Tint.matfunc.hasset"]')
       .dblclick();

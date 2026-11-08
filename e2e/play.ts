@@ -48,6 +48,29 @@ export async function clickPlayAndWaitForOverlay(page: Page): Promise<void> {
   await waitForPlayOverlay(page);
 }
 
+type SimulationTestHost = typeof globalThis & {
+  __hapticSimulationTest: { start(): Promise<void> };
+  __hapticPlayTest: { tickIndex(): number };
+};
+
+/** Start a Simulation and wait until its Scene has loaded and the session has ticked. */
+export async function startSimulation(page: Page): Promise<void> {
+  await page.evaluate(() => (globalThis as SimulationTestHost).__hapticSimulationTest.start());
+  await expect(page.getByTestId("play-overlay")).toHaveAttribute("data-mode", "simulate", { timeout: 60_000 });
+  await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 60_000 });
+  await expect
+    .poll(() => page.evaluate(() => (globalThis as SimulationTestHost).__hapticPlayTest.tickIndex()), { timeout: 30_000 })
+    .toBeGreaterThan(2);
+}
+
+/** Run a command in the Play overlay's console and close the console. */
+export async function runConsoleCommand(page: Page, command: string): Promise<void> {
+  await page.getByTestId("play-console-open").click();
+  await page.getByTestId("debug-console-input").fill(command);
+  await page.getByTestId("debug-console-submit").click();
+  await page.keyboard.press("Escape");
+}
+
 type PreviewPlayerState = {
   booted: string | null;
   ticks: number;

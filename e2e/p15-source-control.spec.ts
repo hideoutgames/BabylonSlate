@@ -1,21 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
+  closeSettings,
   openAssetFromBrowser,
   openContentBrowser,
   openMainScene,
   openTestProject,
+  openWindowsMenu,
 } from "./open-test-project";
 
 const SCENE_PATH = "assets/main.scene.hasset";
 const CLASS_PATH = "assets/Mannequin.class.hasset";
-
-async function closeSettings(page: Page): Promise<void> {
-  await page
-    .getByTestId("settings-modal")
-    .locator('[data-slot="dialog-close"]')
-    .click();
-  await expect(page.getByTestId("settings-modal")).toHaveCount(0);
-}
 
 async function enableSourceControl(page: Page): Promise<void> {
   await page.getByTestId("settings-menu").click();
@@ -40,13 +34,6 @@ async function enableSourceControl(page: Page): Promise<void> {
       }),
     )
     .toBe(true);
-}
-
-async function openWindowsMenu(page: Page): Promise<void> {
-  const content = page.getByTestId("windows-menu-content");
-  if (await content.isVisible()) return;
-  await page.getByTestId("windows-menu").click();
-  await expect(content).toBeVisible();
 }
 
 function visibleLocksPanel(page: Page) {
