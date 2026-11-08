@@ -283,12 +283,15 @@ export class ReflectionProbes {
     for (const probes of this.probes.values()) for (const probe of probes) this.place(probe);
     if (this.dirtyAt < 0 || performance.now() - this.dirtyAt < REFLECTION_PROBE_RECAPTURE_DELAY_MS) return;
     // One capture per frame: six draws of the static scene are the CPU cost.
-    const signature = this.staticSignature();
+    // The signature is built once, for the first probe that can take a capture: none while every probe is busy.
+    let signature: string | undefined;
     let pending = false;
     let refused = false;
     for (const probes of this.probes.values()) for (const probe of probes) {
       if (probe.busy) { pending = true; continue; }
-      if (probe.failed || probe.captured === signature) continue;
+      if (probe.failed) continue;
+      signature ??= this.staticSignature();
+      if (probe.captured === signature) continue;
       if (this.capture(probe, signature)) return;
       // The ledger refused a published probe's new capture cube: let the next probe take this frame's capture.
       refused = true;
