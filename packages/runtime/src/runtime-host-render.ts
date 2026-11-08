@@ -31,15 +31,15 @@ interface IlluminationHostDeps {
   slot(actor: Actor): number | undefined;
   /** Resend the actor's component render commands, lights included. */
   emitMeshAssignment(actor: Actor, slotId: number): void;
-  possessCamera(target: unknown): void;
+  possessCamera(target: unknown, blend?: { seconds: number; curve: string }): void;
 }
 
 /** Script illumination and camera calls: Update Illumination and Possess Camera. */
 export function createIlluminationHostBindings(deps: IlluminationHostDeps): Pick<ScriptHostServices,
   "possessCamera" | "updateIllumination"> {
   return {
-    possessCamera: (target) => {
-      deps.possessCamera(target);
+    possessCamera: (target, blend) => {
+      deps.possessCamera(target, blend);
     },
     updateIllumination: (target) => {
       const actor = actorFromIlluminationTarget(target);

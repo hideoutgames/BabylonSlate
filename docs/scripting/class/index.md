@@ -674,6 +674,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Possess Camera](possess-camera.md) | Makes the camera on an actor the view the player sees. |
 | [Set Field Of View](set-field-of-view.md) | Sets a camera's field of view in degrees. |
 | [Set Orthographic Size](set-orthographic-size.md) | Sets half the height of an orthographic camera's view, in world units. |
+| [Set View Target With Blend](set-view-target-with-blend.md) | Makes the camera on an actor the view the player sees, moving the view there smoothly. |
 
 ## Light
 

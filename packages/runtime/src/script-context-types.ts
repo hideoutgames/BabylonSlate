@@ -704,6 +704,8 @@ export interface ScriptContext {
   getMaterialAsset(material: unknown): string | null;
   /** View through `target`'s first Camera component; None (or an actor without one) returns the view to the Scene's Layer Camera. */
   possessCamera(target: unknown): void;
+  /** Set View Target With Blend: Possess Camera, easing the view over `seconds` along an Easing Curve member. */
+  setViewTargetWithBlend(target: unknown, seconds: unknown, curve: unknown): void;
   /** The session's Scene Camera Manager. */
   getSceneCameraManager(): EngineObject | null;
   getRenderTargetMode(guid: string | null): RenderTargetMode;
@@ -821,7 +823,7 @@ export type HostContextKey =
   | "setFocusTarget" | "clearFocusTarget" | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"
   | "registerScenePostProcess" | "unregisterScenePostProcess"
   | "getOwningSceneLayer"
-  | "getScalability" | "requestScalability" | "possessCamera" | "getSceneCameraManager" | "getRenderTargetMode"
+  | "getScalability" | "requestScalability" | "possessCamera" | "setViewTargetWithBlend" | "getSceneCameraManager" | "getRenderTargetMode"
   | "getRenderTargetTextureTarget" | "captureRenderTarget" | "recaptureReflectionProbes" | "getRenderTargetCaptureProperty"
   | "setRenderTargetCaptureProperty" | "getCameraFieldOfView" | "setCameraFieldOfView" | "getCameraOrthographicSize"
   | "setCameraOrthographicSize" | "setLightEnabled" | "setLightColor" | "setLightIntensity" | "findPathTo"

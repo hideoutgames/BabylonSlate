@@ -134,7 +134,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     ...createIlluminationHostBindings({
       slot,
       emitMeshAssignment: (actor, slotId) => rt.renderEmitter.emitMeshAssignment(actor, slotId),
-      possessCamera: (target) => rt.camera.possess(target),
+      possessCamera: (target, blend) => rt.camera.possess(target, blend),
     }),
     ...createRenderTargetHostBindings({
       renderTargets: rt.sourceRenderTargets,

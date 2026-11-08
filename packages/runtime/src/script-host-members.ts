@@ -603,6 +603,9 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     possessCamera: (target) => {
       services.possessCamera?.(target);
     },
+    setViewTargetWithBlend: (target, seconds, curve) => {
+      services.possessCamera?.(target, { seconds: Number(seconds), curve: typeof curve === "string" ? curve : "linear" });
+    },
     getSceneCameraManager: () => services.getSceneCameraManager?.() ?? null,
     getRenderTargetMode: (guid) => typeof guid === "string" ? services.getRenderTargetMode?.(guid) ?? "SceneColor" : "SceneColor",
     getRenderTargetTextureTarget: (guid) => typeof guid === "string" ? services.getRenderTargetTextureTarget?.(guid) ?? null : null,

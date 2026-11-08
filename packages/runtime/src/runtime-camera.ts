@@ -118,20 +118,22 @@ export class RuntimeCamera implements RuntimeSubsystem {
    * Script and console `Possess Camera`. None returns the view to the Scene's
    * Layer Camera; so does an actor without a Camera component (with a warning).
    */
-  possess(target: unknown): void {
+  possess(target: unknown, blend?: { seconds: number; curve: string }): void {
     const actor = actorFromIlluminationTarget(target);
     this.possessedByScript = true;
+    // Set View Target With Blend: only a positive blend time eases; anything else cuts like Possess Camera.
+    const eased = blend && Number.isFinite(blend.seconds) && blend.seconds > 0 ? { blend: { seconds: blend.seconds, curve: String(blend.curve) } } : {};
     if (actor && !actor.destroyed && liveCameraComponent(actor)) {
       const slotId = this.host.slot(actor);
       if (slotId === undefined) return;
       this.possessedSlotId = slotId;
-      this.host.emit({ type: "possessCamera", slotId });
+      this.host.emit({ type: "possessCamera", slotId, ...eased });
       return;
     }
     if (actor) this.host.warn(`Possess Camera: "${actor.getVariable("name") ?? actor.guid}" has no Camera component, so the view returns to the Layer Camera.`);
     if (this.possessedSlotId === null) return;
     this.possessedSlotId = null;
-    this.host.emit({ type: "possessCamera", slotId: null });
+    this.host.emit({ type: "possessCamera", slotId: null, ...eased });
   }
 
   /** The possessed actor the main Scene's view looks through, or null while the Layer Camera is in view. */

@@ -402,7 +402,7 @@ export interface ScriptHostServices {
   getPostProcessEntry?(owner: Scene | SceneLayer, entryId: string): PostProcessMaterialObject | null;
   getMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): MaterialParameterValue | null;
   resetMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): boolean;
-  possessCamera?(target: unknown): void;
+  possessCamera?(target: unknown, blend?: { seconds: number; curve: string }): void;
   getRenderTargetMode?(guid: string): RenderTargetMode;
   getRenderTargetTextureTarget?(guid: string): string | null;
   captureRenderTarget?(target: Actor): void;
