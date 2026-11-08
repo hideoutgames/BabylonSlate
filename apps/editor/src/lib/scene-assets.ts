@@ -18,15 +18,36 @@ import {
 } from "./place-actors";
 
 /** What an Assets panel entry places: the filter and sort key. */
-export type SceneAssetKind = "model" | "actor" | "prefab" | "element" | "layer-actor";
+export type SceneAssetKind =
+  | "model"
+  | "actor"
+  | "prefab"
+  | "sprite"
+  | "tilemap"
+  | "element"
+  | "layer-actor";
 
 export const SCENE_ASSET_KIND_LABELS: Record<SceneAssetKind, string> = {
   model: "Model",
   actor: "Actor Class",
   prefab: "Prefab",
+  sprite: "Sprite",
+  tilemap: "Tilemap",
   element: "2D Element",
   "layer-actor": "Layer Actor Class",
 };
+
+/**
+ * Asset Types shown until the user changes them, for both hosts: every kind
+ * but Sprites and Tilemaps, which the user turns on in the filter.
+ */
+export const DEFAULT_SCENE_ASSET_KINDS: readonly SceneAssetKind[] = [
+  "model",
+  "actor",
+  "prefab",
+  "element",
+  "layer-actor",
+];
 
 /** The Asset Types filter of a host, in menu order. */
 export function sceneAssetFilterKinds(
@@ -37,12 +58,30 @@ export function sceneAssetFilterKinds(
         { kind: "element", label: "2D Elements" },
         { kind: "layer-actor", label: "Layer Actor Classes" },
         { kind: "model", label: "Models" },
+        { kind: "sprite", label: "Sprites" },
+        { kind: "tilemap", label: "Tilemaps" },
       ]
     : [
         { kind: "model", label: "Models" },
         { kind: "actor", label: "Actor Classes" },
         { kind: "prefab", label: "Prefabs" },
+        { kind: "sprite", label: "Sprites" },
+        { kind: "tilemap", label: "Tilemaps" },
       ];
+}
+
+/**
+ * The host's Asset Types whose shown state differs from the default, in menu
+ * order: each is a filter chip and counts toward the Filter button's badge.
+ */
+export function changedSceneAssetKinds(
+  overlay: boolean,
+  shownKinds: readonly SceneAssetKind[],
+): Array<{ kind: SceneAssetKind; label: string; shown: boolean }> {
+  return sceneAssetFilterKinds(overlay).flatMap(({ kind, label }) => {
+    const shown = shownKinds.includes(kind);
+    return shown === DEFAULT_SCENE_ASSET_KINDS.includes(kind) ? [] : [{ kind, label, shown }];
+  });
 }
 
 export type SceneAssetItem = {
@@ -78,9 +117,10 @@ function folderOf(path: string | undefined): string {
 }
 
 /**
- * The entries of an Assets panel. A Scene lists Models, Classes deriving from
- * Actor and Prefabs; a Scene Layer lists its built-in 2D elements first, then
- * Classes deriving from SceneLayerActor and Models. `projectItems` is
+ * The entries of an Assets panel, whatever the Asset Types filter shows. A
+ * Scene lists Models, Classes deriving from Actor, Prefabs, Sprites and
+ * Tilemaps; a Scene Layer lists its built-in 2D elements first, then Classes
+ * deriving from SceneLayerActor, Models, Sprites and Tilemaps. `projectItems` is
  * `projectPlaceActors` for the same host; `assets` supplies each asset's
  * content root (project or plugin) and the Class ancestry.
  */
@@ -125,6 +165,8 @@ export function sceneAssetItems(options: {
     const { assetType, guid, path } = item.kind;
     let kind: SceneAssetKind | null = null;
     if (assetType === "Model") kind = "model";
+    else if (assetType === "Sprite") kind = "sprite";
+    else if (assetType === "Tilemap") kind = "tilemap";
     else if (assetType === "Prefab") kind = overlay ? null : "prefab";
     else if (assetType === "Class") {
       const classId = item.kind.classId ?? classIdFromClassAsset({
@@ -154,8 +196,8 @@ export function sceneAssetItems(options: {
 
 export type SceneAssetFilter = {
   search: string;
-  /** Kinds to keep; empty keeps every kind. */
-  kinds: readonly SceneAssetKind[];
+  /** Kinds to keep; empty keeps none. */
+  shownKinds: readonly SceneAssetKind[];
   showPluginContent: boolean;
   /** Folder to keep; empty keeps every folder. */
   folder: string;
@@ -169,7 +211,7 @@ export function filterSceneAssets(
   const needle = filter.search.trim().toLowerCase();
   return items.filter((entry) => {
     if (!filter.showPluginContent && entry.pluginName !== null) return false;
-    if (filter.kinds.length > 0 && !filter.kinds.includes(entry.kind)) return false;
+    if (!filter.shownKinds.includes(entry.kind)) return false;
     if (filter.folder && entry.folder !== filter.folder) return false;
     if (!needle) return true;
     return [entry.title, SCENE_ASSET_KIND_LABELS[entry.kind], entry.folder, entry.pluginName ?? ""]

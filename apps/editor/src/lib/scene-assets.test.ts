@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { projectPlaceActors } from "./place-actors";
 import {
+  changedSceneAssetKinds,
   draggedSceneAssetIds,
   filterSceneAssets,
   sceneAssetDropPositions,
+  sceneAssetFilterKinds,
   sceneAssetItems,
   selectSceneAsset,
   sortSceneAssets,
@@ -17,6 +19,8 @@ const ASSETS = [
   { rootId: "project", path: "assets/Game.class.hasset", header: { guid: "game", name: "Game", type: "Class", parentClass: "GameInstance" } },
   { rootId: "project", path: "assets/ui/Health Bar.class.hasset", header: { guid: "health", name: "Health Bar", type: "Class", parentClass: "SceneLayerActor" } },
   { rootId: "project", path: "assets/props/Stack.prefab.hasset", header: { guid: "stack", name: "Stack", type: "Prefab" } },
+  { rootId: "project", path: "assets/2d/Hero.sprite.hasset", header: { guid: "hero", name: "Hero", type: "Sprite" } },
+  { rootId: "project", path: "assets/2d/Level.tilemap.hasset", header: { guid: "level", name: "Level", type: "Tilemap" } },
   { rootId: "project", path: "assets/audio/Wind.audio.hasset", header: { guid: "wind", name: "Wind", type: "Audio" } },
   { rootId: "plugin:kit", path: "plugins/kit/assets/Cone.model.hasset", header: { guid: "cone", name: "Cone", type: "Model" } },
 ];
@@ -34,17 +38,19 @@ const summary = (items: readonly SceneAssetItem[]) =>
   items.map((entry) => [entry.title, entry.kind, entry.folder, entry.pluginName]);
 
 describe("sceneAssetItems", () => {
-  it("lists a Scene's Models, Actor Classes at any depth and Prefabs, with their plugin", () => {
+  it("lists a Scene's Models, Actor Classes at any depth, Prefabs, Sprites and Tilemaps, with their plugin", () => {
     expect(summary(entries(false))).toEqual([
       ["Crate", "model", "assets/props", null],
       ["Door", "actor", "assets/gameplay", null],
       ["Locked Door", "actor", "assets/gameplay", null],
       ["Stack", "prefab", "assets/props", null],
+      ["Hero", "sprite", "assets/2d", null],
+      ["Level", "tilemap", "assets/2d", null],
       ["Cone", "model", "plugins/kit/assets", "Props Kit"],
     ]);
   });
 
-  it("lists a Scene Layer's built-in 2D elements first, then Layer Actor Classes and Models", () => {
+  it("lists a Scene Layer's built-in 2D elements first, then Layer Actor Classes, Models, Sprites and Tilemaps", () => {
     const layer = entries(true);
     const elements = layer.filter((entry) => entry.kind === "element");
     expect(elements.slice(0, 3).map((entry) => entry.title)).toEqual(["2D Panel", "2D Text", "2D Rich Text"]);
@@ -52,6 +58,8 @@ describe("sceneAssetItems", () => {
     expect(summary(layer.slice(elements.length))).toEqual([
       ["Crate", "model", "assets/props", null],
       ["Health Bar", "layer-actor", "assets/ui", null],
+      ["Hero", "sprite", "assets/2d", null],
+      ["Level", "tilemap", "assets/2d", null],
       ["Cone", "model", "plugins/kit/assets", "Props Kit"],
     ]);
   });
@@ -59,24 +67,45 @@ describe("sceneAssetItems", () => {
 
 describe("filterSceneAssets", () => {
   const all = entries(false);
+  const allKinds = sceneAssetFilterKinds(false).map((entry) => entry.kind);
   const titles = (items: readonly SceneAssetItem[]) => items.map((entry) => entry.title);
 
-  it("hides plugin content, keeps chosen kinds and one folder", () => {
-    expect(titles(filterSceneAssets(all, { search: "", kinds: [], showPluginContent: false, folder: "" })))
-      .toEqual(["Crate", "Door", "Locked Door", "Stack"]);
-    expect(titles(filterSceneAssets(all, { search: "", kinds: ["model", "prefab"], showPluginContent: true, folder: "" })))
+  it("keeps only the shown kinds, hides plugin content and keeps one folder", () => {
+    expect(titles(filterSceneAssets(all, { search: "", shownKinds: ["model", "prefab"], showPluginContent: true, folder: "" })))
       .toEqual(["Crate", "Stack", "Cone"]);
-    expect(titles(filterSceneAssets(all, { search: "", kinds: [], showPluginContent: true, folder: "assets/props" })))
+    expect(titles(filterSceneAssets(all, { search: "", shownKinds: ["sprite", "tilemap"], showPluginContent: true, folder: "" })))
+      .toEqual(["Hero", "Level"]);
+    expect(filterSceneAssets(all, { search: "", shownKinds: [], showPluginContent: true, folder: "" })).toEqual([]);
+    expect(titles(filterSceneAssets(all, { search: "", shownKinds: allKinds, showPluginContent: false, folder: "" })))
+      .toEqual(["Crate", "Door", "Locked Door", "Stack", "Hero", "Level"]);
+    expect(titles(filterSceneAssets(all, { search: "", shownKinds: allKinds, showPluginContent: true, folder: "assets/props" })))
       .toEqual(["Crate", "Stack"]);
   });
 
   it("searches names, type labels, folders and plugin names", () => {
     const search = (text: string) =>
-      titles(filterSceneAssets(all, { search: text, kinds: [], showPluginContent: true, folder: "" }));
+      titles(filterSceneAssets(all, { search: text, shownKinds: allKinds, showPluginContent: true, folder: "" }));
     expect(search("door")).toEqual(["Door", "Locked Door"]);
     expect(search("actor class")).toEqual(["Door", "Locked Door"]);
     expect(search("GAMEPLAY")).toEqual(["Door", "Locked Door"]);
     expect(search("props kit")).toEqual(["Cone"]);
+    expect(search("tilemap")).toEqual(["Level"]);
+  });
+});
+
+describe("changedSceneAssetKinds", () => {
+  it("names the host's Asset Types shown or hidden against the default, in menu order", () => {
+    expect(changedSceneAssetKinds(false, ["actor", "prefab", "tilemap", "element", "layer-actor"])).toEqual([
+      { kind: "model", label: "Models", shown: false },
+      { kind: "tilemap", label: "Tilemaps", shown: true },
+    ]);
+    // Kinds the other host offers are not this host's changes.
+    expect(changedSceneAssetKinds(true, ["model", "actor", "prefab", "element", "layer-actor"])).toEqual([]);
+    expect(changedSceneAssetKinds(true, ["model", "sprite"])).toEqual([
+      { kind: "element", label: "2D Elements", shown: false },
+      { kind: "layer-actor", label: "Layer Actor Classes", shown: false },
+      { kind: "sprite", label: "Sprites", shown: true },
+    ]);
   });
 });
 
@@ -88,9 +117,9 @@ describe("sortSceneAssets", () => {
       sortSceneAssets(layer, sort).slice(elementTitles.length).map((entry) => entry.title);
     expect(sortSceneAssets(layer, "name").slice(0, elementTitles.length).map((entry) => entry.title))
       .toEqual(elementTitles);
-    expect(rest("name")).toEqual(["Cone", "Crate", "Health Bar"]);
-    expect(rest("type")).toEqual(["Health Bar", "Cone", "Crate"]);
-    expect(rest("folder")).toEqual(["Crate", "Health Bar", "Cone"]);
+    expect(rest("name")).toEqual(["Cone", "Crate", "Health Bar", "Hero", "Level"]);
+    expect(rest("type")).toEqual(["Health Bar", "Cone", "Crate", "Hero", "Level"]);
+    expect(rest("folder")).toEqual(["Hero", "Level", "Crate", "Health Bar", "Cone"]);
   });
 });
 

@@ -77,7 +77,9 @@ import type { AssetsPanelPreferences } from "../lib/editor-session-state";
 import type { PlaceActorItem } from "../lib/place-actors";
 import { pluginRootId } from "../lib/plugin-ui";
 import {
+  DEFAULT_SCENE_ASSET_KINDS,
   SCENE_ASSET_KIND_LABELS,
+  changedSceneAssetKinds,
   draggedSceneAssetIds,
   filterSceneAssets,
   sceneAssetDropPositions,
@@ -87,7 +89,6 @@ import {
   selectSceneAsset,
   sortSceneAssets,
   type SceneAssetItem,
-  type SceneAssetKind,
   type SceneAssetSelection,
   type SceneAssetSort,
 } from "../lib/scene-assets";
@@ -109,9 +110,17 @@ const SORT_OPTIONS: ReadonlyArray<{ id: SceneAssetSort; label: string }> = [
   { id: "folder", label: "Folder" },
 ];
 
-/** Classes and Models have captured thumbnails; the rest keep their type icon. */
+/** Kinds whose assets have captured thumbnails; the rest keep their type icon. */
+const THUMBNAIL_KINDS: ReadonlySet<SceneAssetItem["kind"]> = new Set([
+  "model",
+  "actor",
+  "layer-actor",
+  "sprite",
+  "tilemap",
+]);
+
 function hasThumbnail(entry: SceneAssetItem): boolean {
-  return entry.guid !== null && (entry.kind === "model" || entry.kind === "actor" || entry.kind === "layer-actor");
+  return entry.guid !== null && THUMBNAIL_KINDS.has(entry.kind);
 }
 
 function PluginMark({ name }: { name: string }) {
@@ -171,11 +180,13 @@ const AssetCard = memo(function AssetCard({
 });
 
 /**
- * Scene and Scene Layer Design mode: the project's placeable Models and
- * Actor Classes (a Scene Layer adds its built-in 2D elements first) as
- * compact cards or a list. Search, Asset Types, Folder and Show Plugin
- * Content narrow it; picks follow the Outliner's multi-selection; drag one
- * entry or the selection onto the Viewport, or use Place, to add actors.
+ * Scene and Scene Layer Design mode: the project's placeable Models, Actor
+ * Classes, Prefabs, Sprites and Tilemaps (a Scene Layer adds its built-in 2D
+ * elements first) as compact cards or a list. Asset Types chooses which kinds
+ * are listed (Sprites and Tilemaps start hidden); Search, Folder and Show
+ * Plugin Content narrow it further; picks follow the Outliner's
+ * multi-selection; drag one entry or the selection onto the Viewport, or use
+ * Place, to add actors.
  */
 export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
   const touchSizing = usePhoneTouchSizing();
@@ -203,9 +214,8 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
     },
     [sessionState],
   );
-  const { view, sort, showPluginContent } = preferences;
+  const { view, sort, showPluginContent, shownKinds } = preferences;
   const [search, setSearch] = useState("");
-  const [kinds, setKinds] = useState<SceneAssetKind[]>([]);
   const [folder, setFolder] = useState("");
   const [selection, setSelection] = useState<SceneAssetSelection>(NO_SELECTION);
   const [dropHint, setDropHint] = useState<GraphDropHintState | null>(null);
@@ -232,14 +242,15 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
     });
   }, [assetRegistry, overlay, pluginDescriptors, projectItems, registryEpoch]);
   const byId = useMemo(() => new Map(allEntries.map((entry) => [entry.id, entry])), [allEntries]);
-  const pluginEntries = useMemo(
-    () => (showPluginContent ? allEntries : allEntries.filter((entry) => entry.pluginName === null)),
-    [allEntries, showPluginContent],
+  // The Folder filter offers the folders of the shown types and plugins.
+  const folders = useMemo(
+    () =>
+      sceneAssetFolders(filterSceneAssets(allEntries, { search: "", shownKinds, showPluginContent, folder: "" })),
+    [allEntries, showPluginContent, shownKinds],
   );
-  const folders = useMemo(() => sceneAssetFolders(pluginEntries), [pluginEntries]);
   const visible = useMemo(
-    () => sortSceneAssets(filterSceneAssets(allEntries, { search, kinds, showPluginContent, folder }), sort),
-    [allEntries, folder, kinds, search, showPluginContent, sort],
+    () => sortSceneAssets(filterSceneAssets(allEntries, { search, shownKinds, showPluginContent, folder }), sort),
+    [allEntries, folder, search, showPluginContent, shownKinds, sort],
   );
   const orderedIds = useMemo(() => visible.map((entry) => entry.id), [visible]);
   // Entries hidden by search or filters leave the selection: Place and drag act on what is shown.
@@ -454,18 +465,23 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
   );
 
   const filterKinds = sceneAssetFilterKinds(overlay);
-  const activeFilters = kinds.length + (showPluginContent ? 0 : 1) + (folder ? 1 : 0);
+  const changedKinds = changedSceneAssetKinds(overlay, shownKinds);
+  const activeFilters = changedKinds.length + (showPluginContent ? 0 : 1) + (folder ? 1 : 0);
+  const setKindShown = (kind: SceneAssetItem["kind"], shown: boolean) => {
+    // The store is written synchronously, so it already holds a toggle this render has not shown yet.
+    const rest = sessionState.readAssetsPanelPreferences().shownKinds.filter((entry) => entry !== kind);
+    updatePreferences({ shownKinds: shown ? [...rest, kind] : rest });
+  };
   const clearFilters = () => {
     setSearch("");
-    setKinds([]);
     setFolder("");
-    updatePreferences({ showPluginContent: true });
+    updatePreferences({ showPluginContent: true, shownKinds: DEFAULT_SCENE_ASSET_KINDS });
   };
   const chips: Array<{ id: string; label: string; clear: () => void }> = [
-    ...kinds.map((kind) => ({
+    ...changedKinds.map(({ kind, label, shown }) => ({
       id: `kind-${kind}`,
-      label: filterKinds.find((entry) => entry.kind === kind)?.label ?? kind,
-      clear: () => setKinds((current) => current.filter((entry) => entry !== kind)),
+      label: `${label} ${shown ? "Shown" : "Hidden"}`,
+      clear: () => setKindShown(kind, !shown),
     })),
     ...(showPluginContent
       ? []
@@ -485,23 +501,29 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
         <EmptyHeader>
           <EmptyTitle>No Assets Yet</EmptyTitle>
           <EmptyDescription>
-            Import a Model or create a Class whose parent is Actor to list it here.
+            Import a Model, or create a Class whose parent is Actor, a Sprite or a Tilemap, to list it here.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
     );
   } else if (visible.length === 0) {
+    // At the defaults, Clear Filters would change nothing: point at the hidden types instead.
+    const filtered = search.trim() !== "" || activeFilters > 0;
     body = (
       <Empty className="py-10" data-testid="scene-assets-no-matches">
         <EmptyHeader>
           <EmptyTitle>No Matches</EmptyTitle>
-          <EmptyDescription>No assets match these filters.</EmptyDescription>
+          <EmptyDescription>
+            {filtered ? "No assets match these filters." : "No assets of the shown types. Show more Asset Types in Filter."}
+          </EmptyDescription>
         </EmptyHeader>
-        <EmptyContent>
-          <Button type="button" variant="outline" size="sm" onClick={clearFilters}>
-            Clear Filters
-          </Button>
-        </EmptyContent>
+        {filtered ? (
+          <EmptyContent>
+            <Button type="button" variant="outline" size="sm" onClick={clearFilters}>
+              Clear Filters
+            </Button>
+          </EmptyContent>
+        ) : null}
       </Empty>
     );
   } else if (view === "list") {
@@ -586,15 +608,9 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
                   {filterKinds.map(({ kind, label }) => (
                     <DropdownMenuCheckboxItem
                       key={kind}
-                      checked={kinds.includes(kind)}
+                      checked={shownKinds.includes(kind)}
                       data-testid={`scene-assets-filter-${kind}`}
-                      onCheckedChange={(checked) =>
-                        setKinds((current) =>
-                          checked === true
-                            ? [...current.filter((entry) => entry !== kind), kind]
-                            : current.filter((entry) => entry !== kind),
-                        )
-                      }
+                      onCheckedChange={(checked) => setKindShown(kind, checked === true)}
                     >
                       {label}
                     </DropdownMenuCheckboxItem>

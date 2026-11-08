@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createDefaultScene, type SerializedScene } from "@haptic/core";
+import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { SceneAssetsPanel } from "./scene-assets-panel";
 
 /**
@@ -29,6 +30,8 @@ const ASSETS = [
   { rootId: "project", path: "assets/Game.class.hasset", header: { guid: "game", name: "Game", type: "Class", parentClass: "GameInstance" } },
   { rootId: "project", path: "assets/ui/Health Bar.class.hasset", header: { guid: "health", name: "Health Bar", type: "Class", parentClass: "SceneLayerActor" } },
   { rootId: "project", path: "assets/props/Stack.prefab.hasset", header: { guid: "stack", name: "Stack", type: "Prefab", payload: { components: [] } } },
+  { rootId: "project", path: "assets/2d/Hero.sprite.hasset", header: { guid: "hero", name: "Hero", type: "Sprite" } },
+  { rootId: "project", path: "assets/2d/Level.tilemap.hasset", header: { guid: "level", name: "Level", type: "Tilemap" } },
   { rootId: "plugin:kit", path: "plugins/kit/assets/Cone.model.hasset", header: { guid: "cone", name: "Cone", type: "Model" } },
 ];
 
@@ -117,10 +120,74 @@ describe("SceneAssetsPanel", () => {
     fireEvent.click(screen.getByTestId("scene-assets-filter"));
     fireEvent.click(await screen.findByTestId("scene-assets-show-plugins"));
     await waitFor(() => expect(cardIds()).toEqual(["asset-crate", "asset-door", "asset-stack"]));
-    expect(screen.getByTestId("scene-assets-count").textContent).toBe("3 of 4 Assets");
+    expect(screen.getByTestId("scene-assets-count").textContent).toBe("3 of 6 Assets");
 
     fireEvent.click(screen.getByTestId("scene-assets-chip-plugins"));
     expect(cardIds()).toEqual(["asset-cone", "asset-crate", "asset-door", "asset-stack"]);
+  });
+
+  it("shows Sprites and Tilemaps when turned on in Asset Types and places them with their asset", async () => {
+    const scene = renderPanel();
+    expect(cardIds()).toEqual(["asset-cone", "asset-crate", "asset-door", "asset-stack"]);
+    expect(screen.getByTestId("scene-assets-count").textContent).toBe("4 of 6 Assets");
+
+    fireEvent.click(screen.getByTestId("scene-assets-filter"));
+    fireEvent.click(await screen.findByTestId("scene-assets-filter-sprite"));
+    fireEvent.click(screen.getByTestId("scene-assets-filter-tilemap"));
+    fireEvent.click(screen.getByTestId("scene-assets-filter-model"));
+    await waitFor(() => expect(cardIds()).toEqual(["asset-door", "asset-hero", "asset-level", "asset-stack"]));
+    expect(screen.getByTestId("scene-assets-filter").getAttribute("aria-label")).toBe("Filter (3)");
+    expect(screen.getByTestId("scene-assets-chip-kind-model").textContent).toBe("Models Hidden");
+    expect(screen.getByTestId("scene-assets-chip-kind-sprite").textContent).toBe("Sprites Shown");
+
+    // Removing a tag restores that type's default.
+    fireEvent.click(screen.getByTestId("scene-assets-chip-kind-model"));
+    expect(cardIds()).toEqual(["asset-cone", "asset-crate", "asset-door", "asset-hero", "asset-level", "asset-stack"]);
+
+    fireEvent.click(card("hero"));
+    fireEvent.click(card("level"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("scene-assets-place"));
+    expect(applySceneChange).toHaveBeenCalledTimes(1);
+    const placed = applySceneChange.mock.calls[0]![1].actors.slice(scene.actors.length);
+    expect(placed.map((actor) => [actor.name, actor.components.map((component) => [
+      component.classId,
+      component.properties.assetGuid,
+    ])])).toEqual([
+      ["Hero", [["SpriteComponent", "hero"]]],
+      ["Level", [["TilemapComponent", "level"]]],
+    ]);
+  });
+
+  it("clears type filters back to the default types", async () => {
+    renderPanel();
+    fireEvent.click(screen.getByTestId("scene-assets-filter"));
+    fireEvent.click(await screen.findByTestId("scene-assets-filter-sprite"));
+    for (const kind of ["model", "actor", "prefab"]) fireEvent.click(screen.getByTestId(`scene-assets-filter-${kind}`));
+    await waitFor(() => expect(cardIds()).toEqual(["asset-hero"]));
+    fireEvent.click(screen.getByTestId("scene-assets-filter-sprite"));
+    await screen.findByTestId("scene-assets-no-matches");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear Filters" }));
+    expect(cardIds()).toEqual(["asset-cone", "asset-crate", "asset-door", "asset-stack"]);
+  });
+
+  it("keeps the shown types for every Assets panel of the session", async () => {
+    harness.scene = createDefaultScene();
+    const session = (panel: boolean) => (
+      <EditorSessionStateProvider>
+        {panel ? <SceneAssetsPanel {...({} as IDockviewPanelProps)} /> : null}
+      </EditorSessionStateProvider>
+    );
+    const { rerender } = render(session(true));
+    fireEvent.click(screen.getByTestId("scene-assets-filter"));
+    fireEvent.click(await screen.findByTestId("scene-assets-filter-tilemap"));
+    await waitFor(() => expect(cardIds()).toContain("asset-level"));
+
+    // A panel mounted afresh in the same session, as in another Scene tab, reads the choice.
+    rerender(session(false));
+    expect(screen.queryByTestId("scene-assets-panel")).toBeNull();
+    rerender(session(true));
+    expect(cardIds()).toEqual(["asset-cone", "asset-crate", "asset-door", "asset-level", "asset-stack"]);
   });
 
   it("lists a Scene Layer's built-in 2D elements before its Layer Actor Classes and Models", () => {
