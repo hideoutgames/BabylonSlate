@@ -240,11 +240,6 @@ export class SceneInstancePool {
     markSceneReadinessDirty(this.scene);
   }
 
-  /** The group source drawing `member`, or undefined for a mesh outside the pool. */
-  sourceOf(member: InstancedMesh): Mesh | undefined {
-    return this.memberGroups.get(member)?.source;
-  }
-
   /** `member`'s group key, or undefined for a mesh outside the pool. */
   keyOf(member: InstancedMesh): InstanceGroupKey | undefined {
     return this.memberGroups.get(member)?.key;
