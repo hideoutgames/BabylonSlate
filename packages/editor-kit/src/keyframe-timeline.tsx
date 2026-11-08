@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -88,6 +89,66 @@ export interface KeyframeTimelineProps {
   "data-testid"?: string;
 }
 
+/** The colour tokens the lanes draw with. */
+const LANE_COLOR_TOKENS = {
+  accent: "--accent",
+  stripe: "--list-stripe",
+  border: "--border",
+  background: "--background",
+  mutedForeground: "--muted-foreground",
+  foreground: "--foreground",
+  selection: "--selection",
+} as const;
+
+type LanePalette = Record<keyof typeof LANE_COLOR_TOKENS, string>;
+
+function resolveLanePalette(element: Element): LanePalette {
+  const style = getComputedStyle(element);
+  const palette = {} as LanePalette;
+  for (const [name, token] of Object.entries(LANE_COLOR_TOKENS) as [keyof LanePalette, string][]) {
+    palette[name] = style.getPropertyValue(token).trim() || "#888";
+  }
+  return palette;
+}
+
+/** What the canvas draws of a row: everything but its track list label, value and actions. */
+type LaneRow = Pick<KeyframeTimelineRow, "id" | "kind" | "keys" | "connect" | "gradient" | "muted">;
+
+function sameLaneRows(a: readonly LaneRow[], b: readonly LaneRow[]): boolean {
+  return a.length === b.length && a.every((row, index) => {
+    const other = b[index]!;
+    return row.id === other.id && row.kind === other.kind && row.keys === other.keys &&
+      row.connect === other.connect && row.gradient === other.gradient && row.muted === other.muted;
+  });
+}
+
+/**
+ * Calls `onChange` when the theme may have changed its colour tokens: the
+ * root element's class, theme or style, a stylesheet added, removed or
+ * rewritten in the document head (the editor theme is one), or the system
+ * colour scheme.
+ */
+function observeTheme(onChange: () => void): () => void {
+  const scheme = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
+  scheme?.addEventListener?.("change", onChange);
+  if (typeof MutationObserver === "undefined") return () => scheme?.removeEventListener?.("change", onChange);
+  const root = new MutationObserver(onChange);
+  root.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme", "style"] });
+  const isStylesheet = (node: Node) => node.nodeName === "STYLE" || node.nodeName === "LINK";
+  const head = new MutationObserver((records) => {
+    const changed = records.some((record) =>
+      isStylesheet(record.target) || (record.target.parentNode !== null && isStylesheet(record.target.parentNode)) ||
+      [...record.addedNodes, ...record.removedNodes].some(isStylesheet));
+    if (changed) onChange();
+  });
+  head.observe(document.head, { childList: true, subtree: true, characterData: true });
+  return () => {
+    scheme?.removeEventListener?.("change", onChange);
+    root.disconnect();
+    head.disconnect();
+  };
+}
+
 const RULER_PX = 24;
 const TRACK_LIST_WIDTH_PX = 264;
 const DRAG_PX = 4;
@@ -108,8 +169,8 @@ type Press =
  * A keyframe editor: a track list beside a time ruler and canvas-drawn key
  * lanes that share one vertical scroll. Rows are groups (objects, whose lane
  * sums their tracks' keys) or tracks. The canvas draws shapes only; labels,
- * values and the ruler are HTML. Colours are CSS custom properties read on
- * every draw.
+ * values, the ruler and the playhead line are HTML. Colours are CSS custom
+ * properties, read once per theme change; the lanes redraw when it changes.
  *
  * Mouse: drag the ruler to scrub, or the clip's end on it to change the
  * length; click a key to select it (Shift adds, Ctrl/⌘ toggles) and drag to
@@ -187,18 +248,15 @@ export function KeyframeTimeline({
   }, [length]);
   useEffect(() => setZoomed(null), [fitToken]);
 
-  // The colours are tokens: redraw when the theme or the system scheme changes.
-  useEffect(() => {
-    const redraw = () => setThemeRevision((revision) => revision + 1);
-    const scheme = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
-    scheme?.addEventListener?.("change", redraw);
-    const observer = typeof MutationObserver === "undefined" ? null : new MutationObserver(redraw);
-    observer?.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme", "style"] });
-    return () => {
-      scheme?.removeEventListener?.("change", redraw);
-      observer?.disconnect();
-    };
-  }, []);
+  // The colours are tokens: read them again and redraw when the theme changes.
+  useEffect(() => observeTheme(() => setThemeRevision((revision) => revision + 1)), []);
+  const palette = useRef<{ revision: number; colors: LanePalette } | null>(null);
+
+  // What the canvas draws of the rows. It keeps its identity while only the
+  // track list's values change, so a playhead move leaves the canvas alone.
+  const lanes = useRef<readonly LaneRow[]>(rows);
+  if (lanes.current !== rows && !sameLaneRows(lanes.current, rows)) lanes.current = rows;
+  const laneRows = lanes.current;
 
   // Ctrl/⌘+wheel zooms and Shift+wheel pans; React's wheel listener is passive, so this one is native.
   useEffect(() => {
@@ -226,45 +284,51 @@ export function KeyframeTimeline({
     const canvas = canvasRef.current;
     if (!canvas || laneWidth <= 0 || drawHeight <= 0) return;
     const ratio = typeof devicePixelRatio === "number" && devicePixelRatio > 0 ? devicePixelRatio : 1;
-    canvas.width = Math.round(laneWidth * ratio);
-    canvas.height = Math.round(drawHeight * ratio);
+    // Resizing reallocates and clears the bitmap, so only a new size does it.
+    const width = Math.round(laneWidth * ratio);
+    const height = Math.round(drawHeight * ratio);
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
     const context = canvas.getContext("2d");
     if (!context) return;
-    const style = getComputedStyle(canvas);
-    const color = (property: string) => style.getPropertyValue(property).trim() || "#888";
+    if (palette.current?.revision !== themeRevision) {
+      palette.current = { revision: themeRevision, colors: resolveLanePalette(canvas) };
+    }
+    const color = palette.current.colors;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.globalAlpha = 1;
     context.clearRect(0, 0, laneWidth, drawHeight);
     const x = (seconds: number) => timeToX(view, seconds);
     const end = x(length);
     const firstRow = Math.max(0, Math.floor(scrollTop / rowHeight));
-    const lastRow = Math.min(rows.length - 1, Math.floor((scrollTop + drawHeight) / rowHeight));
+    const lastRow = Math.min(laneRows.length - 1, Math.floor((scrollTop + drawHeight) / rowHeight));
 
     // Row backgrounds and separators.
     for (let index = firstRow; index <= lastRow; index++) {
-      const row = rows[index]!;
+      const row = laneRows[index]!;
       const top = index * rowHeight - scrollTop;
       if (row.id === selectedRowId) {
-        context.fillStyle = color("--accent");
+        context.fillStyle = color.accent;
         context.fillRect(0, top, laneWidth, rowHeight);
       } else if (row.kind === "group") {
-        context.fillStyle = color("--list-stripe");
+        context.fillStyle = color.stripe;
         context.fillRect(0, top, laneWidth, rowHeight);
       }
-      context.fillStyle = color("--border");
+      context.fillStyle = color.border;
       context.fillRect(0, top + rowHeight - 1, laneWidth, 1);
     }
     // Labelled seconds as faint lines.
     context.globalAlpha = 0.5;
-    context.fillStyle = color("--border");
+    context.fillStyle = color.border;
     for (const tick of ticks) if (tick.label) context.fillRect(Math.round(x(tick.time)), 0, 1, drawHeight);
     context.globalAlpha = 1;
     // After the clip's end.
     if (end < laneWidth) {
-      context.fillStyle = color("--background");
+      context.fillStyle = color.background;
       context.globalAlpha = 0.6;
       context.fillRect(Math.max(0, end), 0, laneWidth - Math.max(0, end), drawHeight);
       context.globalAlpha = 0.35;
-      context.strokeStyle = color("--border");
+      context.strokeStyle = color.border;
       context.lineWidth = 1;
       context.save();
       context.beginPath();
@@ -282,8 +346,10 @@ export function KeyframeTimeline({
 
     const keySize = coarse ? 12 : 9;
     for (let index = firstRow; index <= lastRow; index++) {
-      const row = rows[index]!;
+      const row = laneRows[index]!;
       const centre = index * rowHeight - scrollTop + rowHeight / 2;
+      const labelled = row.keys.some((key) => key.label);
+      const sorted = (row.connect && row.keys.length > 1) || labelled ? [...row.keys].sort((a, b) => a.time - b.time) : row.keys;
       context.globalAlpha = row.muted ? 0.4 : 1;
       if (row.gradient && row.gradient.length > 0) {
         const barHeight = Math.min(rowHeight - 10, 12);
@@ -297,18 +363,16 @@ export function KeyframeTimeline({
           context.fillRect(left, centre - barHeight / 2, right - left, barHeight);
         }
       } else if (row.connect && row.keys.length > 1) {
-        context.fillStyle = color("--muted-foreground");
-        const sorted = [...row.keys].sort((a, b) => a.time - b.time);
+        context.fillStyle = color.mutedForeground;
         const from = x(sorted[0]!.time);
         const to = x(sorted[sorted.length - 1]!.time);
         context.fillRect(from, Math.round(centre), to - from, 1);
       }
       const size = row.kind === "group" ? keySize - 2 : keySize;
-      if (row.keys.some((key) => key.label)) {
-        const sorted = [...row.keys].sort((a, b) => a.time - b.time);
+      if (labelled) {
         context.font = "10px ui-sans-serif, system-ui, sans-serif";
         context.textBaseline = "middle";
-        context.fillStyle = color("--muted-foreground");
+        context.fillStyle = color.mutedForeground;
         sorted.forEach((key, order) => {
           if (!key.label) return;
           const left = x(key.time) + size / 2 + 3;
@@ -326,33 +390,26 @@ export function KeyframeTimeline({
         const kx = x(key.time);
         if (kx < -size || kx > laneWidth + size) continue;
         const selected = selectedKeys.has(keyRefId({ rowId: row.id, keyId: key.id }));
-        context.fillStyle = selected ? color("--selection") : row.kind === "group" ? color("--muted-foreground") : color("--foreground");
-        context.strokeStyle = color("--background");
+        context.fillStyle = selected ? color.selection : row.kind === "group" ? color.mutedForeground : color.foreground;
+        context.strokeStyle = color.background;
         context.lineWidth = 1.5;
         drawKey(context, key.shape, kx, centre, size);
       }
       context.globalAlpha = 1;
     }
 
-    // Playhead.
-    const playhead = Math.round(x(time));
-    if (playhead >= 0 && playhead <= laneWidth) {
-      context.fillStyle = color("--selection");
-      context.fillRect(playhead, 0, 1, drawHeight);
-    }
     if (marquee) {
       const top = marquee.top - scrollTop;
-      context.fillStyle = color("--selection");
+      context.fillStyle = color.selection;
       context.globalAlpha = 0.12;
       context.fillRect(marquee.left, top, marquee.right - marquee.left, marquee.bottom - marquee.top);
       context.globalAlpha = 0.8;
-      context.strokeStyle = color("--selection");
+      context.strokeStyle = color.selection;
       context.lineWidth = 1;
       context.strokeRect(marquee.left + 0.5, top + 0.5, marquee.right - marquee.left - 1, marquee.bottom - marquee.top - 1);
       context.globalAlpha = 1;
     }
-    // themeRevision: the colours were read again for the new theme.
-  }, [rows, view, ticks, laneWidth, drawHeight, scrollTop, rowHeight, selectedKeys, selectedRowId, length, time, marquee, coarse, themeRevision]);
+  }, [laneRows, view, ticks, laneWidth, drawHeight, scrollTop, rowHeight, selectedKeys, selectedRowId, length, marquee, coarse, themeRevision]);
 
   const lanePoint = (event: { clientX: number; clientY: number }) => {
     const rect = lanesRef.current!.getBoundingClientRect();
@@ -647,7 +704,7 @@ export function KeyframeTimeline({
         <div className="grid" style={gridStyle}>
           <div role="tree" aria-label={`${ariaLabel} Tracks`} className="min-w-0 border-r">
             {rows.map((row) => (
-              <TrackListRow
+              <MemoTrackListRow
                 key={row.id}
                 row={row}
                 height={rowHeight}
@@ -679,6 +736,14 @@ export function KeyframeTimeline({
               className="pointer-events-none sticky top-0 left-0 block w-full"
               style={{ height: drawHeight }}
             />
+            {Math.round(playheadX) >= 0 && Math.round(playheadX) <= laneWidth ? (
+              <div
+                aria-hidden="true"
+                data-testid="keyframe-timeline-lane-playhead"
+                className="pointer-events-none absolute inset-y-0 w-px bg-selection"
+                style={{ left: Math.round(playheadX) }}
+              />
+            ) : null}
           </div>
         </div>
       </div>
@@ -769,6 +834,9 @@ function TrackListRow({
     </div>
   );
 }
+
+/** Rows whose props are unchanged skip rendering, as most do on a playhead move. */
+const MemoTrackListRow = memo(TrackListRow);
 
 function drawKey(context: CanvasRenderingContext2D, shape: KeyframeShape, x: number, y: number, size: number) {
   const half = size / 2;

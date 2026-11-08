@@ -72,8 +72,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   ],
   applyGraphChange,
   projectDocument: { settings: {} },
-  assetRegistry: {
-    list: () => [
+  assetRegistry: (() => {
+    const assets = () => [
       {
         header: {
           guid: "audio-2",
@@ -83,8 +83,9 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         },
         path: "assets/Hit.audio.hasset",
       },
-    ],
-  },
+    ];
+    return { list: assets, getByPath: (path: string) => assets().find((asset) => asset.path === path) };
+  })(),
 })));
 
 vi.mock("../context/validation-context", () => ({

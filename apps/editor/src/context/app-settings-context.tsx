@@ -200,10 +200,21 @@ export function AppSettingsProvider({
     }),
     [snapshot, updateSettings, updateDebuggerDefaults],
   );
+  const {
+    graphAssistantEnabled: assistantEnabled,
+    graphAssistantDistance: assistantDistance,
+    graphShakeEnabled: shakeEnabled,
+    readOnlyPinDefaults,
+    graphAddNodeHistoryEnabled: addNodeHistoryEnabled,
+  } = snapshot.settings;
+  const graphInteractions = useMemo(
+    () => ({ assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled }),
+    [assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled],
+  );
   return (
     <AppSettingsContext.Provider value={value}>
       <AppSettingsOwnerContext.Provider value={owner}>
-      <GraphInteractionSettingsContext.Provider value={{ assistantEnabled: snapshot.settings.graphAssistantEnabled, assistantDistance: snapshot.settings.graphAssistantDistance, shakeEnabled: snapshot.settings.graphShakeEnabled, readOnlyPinDefaults: snapshot.settings.readOnlyPinDefaults, addNodeHistoryEnabled: snapshot.settings.graphAddNodeHistoryEnabled }}>
+      <GraphInteractionSettingsContext.Provider value={graphInteractions}>
         {children}
       </GraphInteractionSettingsContext.Provider>
       </AppSettingsOwnerContext.Provider>

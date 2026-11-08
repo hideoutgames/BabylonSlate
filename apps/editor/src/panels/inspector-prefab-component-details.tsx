@@ -39,8 +39,7 @@ import {
   type ComponentPropertyUpdate,
 } from "../lib/component-property-rows";
 import { materialDomainsFromAssets } from "../lib/content-browser-helpers";
-import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
-import { classIdForGraphPath } from "../services/script-compiler";
+import { useClassGraphs } from "../lib/use-class-graphs";
 import {
   MATERIAL_DOCUMENT_KINDS,
   useOpenDocumentsOfKinds,
@@ -52,7 +51,6 @@ import { NineSlicePreview } from "../components/nine-slice-preview";
 import { particleParameterOverrideRows } from "../lib/particle-parameter-override-rows";
 import { particleSystemGuidsOf, useParticleSystemParameters } from "../lib/use-particle-system-parameters";
 
-const CLASS_KINDS = ["graph"] as const;
 const MODEL_KINDS = ["model"] as const;
 
 export function PrefabComponentDetails({
@@ -104,13 +102,9 @@ export function PrefabComponentDetails({
   const areaEmissionStatus = useAreaEmissionStatus();
   const linkedScale = useLinkedScale();
   // Open Class and Model tabs override saved content in these rows.
-  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_KINDS);
   // Kept across renders, so a gizmo drag does not walk every Class again.
-  const classGraphs = useMemo(() => {
-    void registryEpoch;
-    return collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments: classDocuments, classIdForPath: classIdForGraphPath });
-  }, [assetRegistry, classDocuments, registryEpoch]);
+  const classGraphs = useClassGraphs();
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   // An open Material tab's unsaved domain wins over its saved header.
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);

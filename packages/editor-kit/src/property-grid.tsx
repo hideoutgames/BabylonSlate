@@ -464,7 +464,7 @@ function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }
 
 type Vector3Row = Extract<PropertyRow, { kind: "vector3" }>;
 
-function Vector3RowControl({ row, linkable }: { row: Vector3Row; linkable: boolean }) {
+function Vector3RowControl({ row, name, linkable }: { row: Vector3Row; name: string; linkable: boolean }) {
   const axes = row.axes ?? ["X", "Y", "Z"];
   const items = row.itemValues && row.onItemValuesChange ? row.itemValues : undefined;
   const itemLinked = items?.map((_, index) => row.itemLinked?.[index] ?? row.linked === true);
@@ -509,7 +509,7 @@ function Vector3RowControl({ row, linkable }: { row: Vector3Row; linkable: boole
         <div key={axis} className="min-w-0 flex-1">
           <NumericDragField
             label={axis}
-            aria-label={`${humanizePropertyLabel(row.label)} ${axis}`}
+            aria-label={`${name} ${axis}`}
             value={row.value[index] ?? 0}
             mixed={row.mixedAxes?.[index] ?? row.mixed}
             accent={axis.toLowerCase() as "x" | "y" | "z"}
@@ -551,12 +551,14 @@ function Vector3RowControl({ row, linkable }: { row: Vector3Row; linkable: boole
 
 function LinkAxesToggle({
   row,
+  name: rowName,
   onLinkedChange,
 }: {
   row: Vector3Row;
+  name: string;
   onLinkedChange: (linked: boolean) => void;
 }) {
-  const name = `Link ${humanizePropertyLabel(row.label)} Axes`;
+  const name = `Link ${rowName} Axes`;
   const linked = row.linked === true;
   const Icon = linked ? Link2Icon : Link2OffIcon;
   return (
@@ -581,14 +583,14 @@ function LinkAxesToggle({
   );
 }
 
-function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: boolean }) {
+function RowControl({ row, name, linkable = false }: { row: PropertyRow; name: string; linkable?: boolean }) {
   switch (row.kind) {
     case "tag":
       return <TagPicker mode="single" id={`property-${row.id}`} value={row.value} onChange={row.onChange}
-        disabled={row.disabled} mixed={row.mixed} aria-label={humanizePropertyLabel(row.label)} data-testid={`property-${row.id}`} />;
+        disabled={row.disabled} mixed={row.mixed} aria-label={name} data-testid={`property-${row.id}`} />;
     case "tag-container":
       return <TagPicker mode="multiple" id={`property-${row.id}`} value={row.value} onChange={row.onChange}
-        disabled={row.disabled} mixed={row.mixed} aria-label={humanizePropertyLabel(row.label)} data-testid={`property-${row.id}`} />;
+        disabled={row.disabled} mixed={row.mixed} aria-label={name} data-testid={`property-${row.id}`} />;
     case "number":
       return (
         <NumericDragField
@@ -608,7 +610,7 @@ function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: bo
         />
       );
     case "vector3":
-      return <Vector3RowControl row={row} linkable={linkable} />;
+      return <Vector3RowControl row={row} name={name} linkable={linkable} />;
     case "boolean":
       return (
         <FieldLabel
@@ -678,7 +680,7 @@ function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: bo
       return (
         <ColorField
           id={`property-${row.id}`}
-          aria-label={humanizePropertyLabel(row.label)}
+          aria-label={name}
           value={row.value}
           disabled={row.disabled}
           onChange={row.onChange}
@@ -689,7 +691,7 @@ function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: bo
       return (
         <div className="flex min-w-0 items-center gap-2">
           <Slider
-            aria-label={humanizePropertyLabel(row.label)}
+            aria-label={name}
             className="min-w-0 flex-1"
             value={row.value}
             min={row.min}
@@ -776,7 +778,7 @@ function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: bo
       return (
         <RangeField
           kind="float"
-          aria-label={humanizePropertyLabel(row.label)}
+          aria-label={name}
           value={{ Min: low, Max: high }}
           mixed={row.mixed}
           min={row.min}
@@ -793,7 +795,7 @@ function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: bo
       return (
         <RangeField
           kind={row.rangeKind}
-          aria-label={humanizePropertyLabel(row.label)}
+          aria-label={name}
           value={row.value}
           unit={row.unit}
           mixed={row.mixed}
@@ -807,7 +809,7 @@ function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: bo
       return (
         <CurveValueField
           kind={row.curveKind}
-          aria-label={humanizePropertyLabel(row.label)}
+          aria-label={name}
           value={row.value}
           disabled={row.disabled}
           onChange={row.onChange}
@@ -818,7 +820,7 @@ function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: bo
       return (
         <CurveField
           id={`property-${row.id}`}
-          aria-label={humanizePropertyLabel(row.label)}
+          aria-label={name}
           value={row.value}
           valueMin={row.valueMin}
           valueMax={row.valueMax}
@@ -835,7 +837,7 @@ function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: bo
       return (
         <GradientField
           id={`property-${row.id}`}
-          aria-label={humanizePropertyLabel(row.label)}
+          aria-label={name}
           value={row.value}
           minStops={row.minStops}
           maxStops={row.maxStops}
@@ -850,7 +852,7 @@ function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: bo
       return (
         <ColorField
           id={`property-${row.id}`}
-          aria-label={humanizePropertyLabel(row.label)}
+          aria-label={name}
           value={[r, g, b]}
           alpha={a}
           disabled={row.disabled}
@@ -863,7 +865,7 @@ function RowControl({ row, linkable = false }: { row: PropertyRow; linkable?: bo
   }
 }
 
-function rowResetButton(row: PropertyRow) {
+function rowResetButton(row: PropertyRow, name: string) {
   if (!hasDefault(row) || row.disabled || (row.kind === "text" && row.readOnly)) return null;
   return (
     <Button
@@ -871,7 +873,7 @@ function rowResetButton(row: PropertyRow) {
       size="icon-sm"
       className="text-muted-foreground"
       disabled={isAtDefault(row)}
-      aria-label={`Reset ${humanizePropertyLabel(row.label)}`}
+      aria-label={`Reset ${name}`}
       onClick={() => resetRow(row)}
       data-testid={`property-${row.id}-reset`}
     >
@@ -1022,6 +1024,7 @@ export function PropertyGrid({
       <FieldGroup className="gap-0">
         {rows.map((source) => {
           const row = readOnly ? readOnlyPropertyRow(source) : source;
+          const name = humanizePropertyLabel(row.label);
           const onLinkedChange =
             orientation === "vertical" && row.kind === "vector3" ? row.onLinkedChange : undefined;
           const label = (
@@ -1038,7 +1041,7 @@ export function PropertyGrid({
                     )
               }
             >
-              {humanizePropertyLabel(row.label)}
+              {name}
               {row.unit && !inlineUnit(row) ? (
                 <span className="font-normal text-muted-foreground">
                   {` (${row.unit})`}
@@ -1074,7 +1077,7 @@ export function PropertyGrid({
                 <>
                   {hinted}
                   <FieldContent className="min-w-0">
-                    <RowControl row={row} />
+                    <RowControl row={row} name={name} />
                     {description}
                   </FieldContent>
                 </>
@@ -1083,13 +1086,13 @@ export function PropertyGrid({
                   <div className="flex min-w-0 items-center gap-1">
                     {hinted}
                     {onLinkedChange && row.kind === "vector3" ? (
-                      <LinkAxesToggle row={row} onLinkedChange={onLinkedChange} />
+                      <LinkAxesToggle row={row} name={name} onLinkedChange={onLinkedChange} />
                     ) : null}
                     {row.labelAccessory}
-                    {rowResetButton(row)}
+                    {rowResetButton(row, name)}
                   </div>
                   <div className="min-w-0">
-                    <RowControl row={row} linkable />
+                    <RowControl row={row} name={name} linkable />
                     {description}
                   </div>
                 </>

@@ -48,11 +48,24 @@ function splitIdentifier(token: string): string {
     .replace(/[._-]+/g, " ");
 }
 
+/** Labels already formatted; the inputs are a small set of keys, so it is bounded but rarely cleared. */
+const labelCache = new Map<string, string>();
+const LABEL_CACHE_LIMIT = 4096;
+
 /**
  * Title Case a camelCase, snake_case, or already-spaced label.
  * Keeps 2D/3D (and similar) as acronyms instead of "2 d".
  */
 export function humanizePropertyLabel(key: string): string {
+  const cached = labelCache.get(key);
+  if (cached !== undefined) return cached;
+  const label = formatPropertyLabel(key);
+  if (labelCache.size >= LABEL_CACHE_LIMIT) labelCache.clear();
+  labelCache.set(key, label);
+  return label;
+}
+
+function formatPropertyLabel(key: string): string {
   const trimmed = key.trim();
   if (!trimmed) return key;
   const joined = trimmed.replace(/\b([23])\s+[Dd]\b/g, "$1D");

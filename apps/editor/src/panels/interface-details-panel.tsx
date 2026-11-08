@@ -18,12 +18,11 @@ import { useTypeAssetEditing } from "../context/type-asset-editing-context";
 import { patchScriptInterfaceMethod } from "../lib/asset-settings";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import {
-  collectClassGraphsForPalette,
   collectGraphTypeAssets,
   typeAssetPickerEntries,
 } from "../lib/logic-graph-document";
 import { delegateSignatureEntries } from "../lib/delegate-signatures";
-import { classIdForGraphPath } from "../services/script-compiler";
+import { useClassGraphs } from "../lib/use-class-graphs";
 import {
   asScriptInterfaceAsset,
   parseMemberIndex,
@@ -32,15 +31,14 @@ import {
 
 /** Open Structure, Enum and Data Definition tabs override their saved types. */
 const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
-const CLASS_KINDS = ["graph"] as const;
 
 export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange } = useDocumentActions();
-  const { assetRegistry, registryEpoch } = useRegistryState();
+  const { assetRegistry } = useRegistryState();
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
-  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
+  const classGraphs = useClassGraphs();
   const { selectedMemberId, selectedPinId, setSelectedPinId } =
     useTypeAssetEditing();
   const doc = useOpenDocument(documentId);
@@ -68,13 +66,8 @@ export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
   }, [method, selectedIndex]);
   // Event Dispatchers of every Class, for a Delegate pin's Signature.
   const delegateSignatures = useMemo(() => {
-    void registryEpoch;
-    return delegateSignatureEntries(collectClassGraphsForPalette({
-      assets: assetRegistry?.list() ?? [],
-      openDocuments: classDocuments,
-      classIdForPath: classIdForGraphPath,
-    }));
-  }, [assetRegistry, classDocuments, registryEpoch]);
+    return delegateSignatureEntries(classGraphs);
+  }, [classGraphs]);
 
   if (!method || selectedIndex === null) {
     return (

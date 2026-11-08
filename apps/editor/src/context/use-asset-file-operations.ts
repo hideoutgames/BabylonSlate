@@ -123,7 +123,7 @@ export function useAssetFileOperations({
     const definitionFields = (guid: string) => schemas.structs?.[guid]?.fields;
     const openChanges = documentService.getOpenDocumentsOrdered().flatMap((doc) => {
       if (doc.ref.kind === "content-browser" || doc.ref.kind === "trace" || !doc.content) return [];
-      const asset = registry?.list().find((entry) => entry.path === doc.ref.path);
+      const asset = registry?.getByPath(doc.ref.path);
       if (asset && deletingGuids.has(asset.header.guid)) return [];
       const walked = replaceClassAssetReferences(doc.content, replacements, definitionFields);
       if (!walked.changed) return [];
@@ -172,7 +172,7 @@ export function useAssetFileOperations({
         if (!doc.content || doc.ref.kind === "content-browser" || doc.ref.kind === "trace") return [];
         const walked = replaceClassAssetReferences(doc.content, replacements, definitionFields);
         if (!walked.changed) return [];
-        const asset = registry.list().find((entry) => entry.path === doc.ref.path);
+        const asset = registry.getByPath(doc.ref.path);
         if ((asset && registry.getRoot(asset.rootId)?.readOnly) || isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
           throw new Error(`${doc.ref.path} is read-only and still references this Class.`);
         }
