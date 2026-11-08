@@ -351,12 +351,26 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
         settings: { ...scene.settings, layerPhysicsEnabled },
       }),
   };
+  const layerTickOnPauseRow: PropertyRow = {
+    kind: "boolean",
+    id: "scene-layer-tick-on-pause",
+    label: "Tick On Pause",
+    description: "While the game is paused, every actor in this layer and its Scene Layer Script keep ticking, whatever their own Tick On Pause.",
+    value: scene.settings.layerTickOnPause === true,
+    defaultValue: false,
+    onChange: (layerTickOnPause) =>
+      mutate({
+        ...scene,
+        settings: { ...scene.settings, layerTickOnPause },
+      }),
+  };
   const row = (id: string) => settingsRows.find((entry) => entry.id === id)!;
   const [layerLocation, layerWidth, layerHeight] = layerCameraRows(scene, mutate);
   // A Scene Layer's canvas is its camera's view: Layer Width and Height, and where its Layer Camera starts.
   const overlaySettingsRows: PropertyRow[] = [
     row("scene-name"),
     layerPhysicsRow,
+    layerTickOnPauseRow,
     row("scene-gravity"),
     { ...layerWidth!, label: "Layer Width" },
     { ...layerHeight!, label: "Layer Height" },

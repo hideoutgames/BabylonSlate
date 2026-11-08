@@ -326,6 +326,12 @@ export interface RuntimeDriver {
   stopTrace(): TracePayload | null;
   /** Time dilation (`slomo`) from the next tick, clamped to `0..8`; non-finite rates are ignored. */
   setTimeDilation(rate: number): void;
+  /**
+   * Game pause (Set Game Paused), from the next tick: only what ticks on pause runs (`runtime-game-pause.ts`).
+   * Unlike `pause`, the session keeps ticking.
+   */
+  setGamePaused(paused: boolean): void;
+  isGamePaused(): boolean;
   registerAnimGraph(guid: string, document: AnimGraphDocument): void;
   registerBehaviourTree(guid: string, document: BehaviourTreeDocument): void;
   registerBlackboard(guid: string, document: BlackboardDocument): void;

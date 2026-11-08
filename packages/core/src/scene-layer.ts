@@ -131,6 +131,11 @@ export interface SceneLayerSettings {
    * nor collide and fire no collision events.
    */
   physicsEnabled: boolean;
+  /**
+   * While a script has paused the game, every actor in each instance keeps ticking, whatever its
+   * own Tick On Pause, and so does the SceneLayerScript. Off by default.
+   */
+  tickOnPause: boolean;
 }
 
 export interface SerializedSceneLayer {
@@ -187,6 +192,7 @@ export function createDefaultSceneLayerSettings(): SceneLayerSettings {
     layerBounds: { ...SCENE_LAYER_DEFAULT_LAYER_BOUNDS },
     cameraLocation: [0, 0],
     physicsEnabled: false,
+    tickOnPause: false,
   };
 }
 
@@ -243,6 +249,7 @@ export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
       layerBounds,
       cameraLocation: normalizeCameraLocation2D(sourceSettings.cameraLocation),
       physicsEnabled: sourceSettings.physicsEnabled === true,
+      tickOnPause: sourceSettings.tickOnPause === true,
     },
     actors: scene.actors.map(stripDeniedComponents),
     folders: scene.folders,
@@ -511,6 +518,7 @@ export function editorSceneToSceneLayer(
       layerBounds: scene.settings.cameraBounds2D,
       cameraLocation: scene.settings.cameraLocation2D,
       physicsEnabled: scene.settings.layerPhysicsEnabled === true,
+      tickOnPause: scene.settings.layerTickOnPause === true,
     },
     actors: scene.actors,
     folders: scene.folders,
@@ -537,6 +545,7 @@ export function sceneLayerToEditorScene(
       cameraBounds2D: { ...layer.settings.layerBounds },
       cameraLocation2D: [...layer.settings.cameraLocation],
       layerPhysicsEnabled: layer.settings.physicsEnabled,
+      layerTickOnPause: layer.settings.tickOnPause,
     },
     actors: layer.actors,
     folders: layer.folders,

@@ -110,6 +110,43 @@ describe("World tick", () => {
     expect(order).toEqual(["actor", "component", "first", "late", "physics"]);
   });
 
+  it("ticks only what ticks on pause while the game is paused: no subsystems, Tickable Objects or physics", () => {
+    const order: string[] = [];
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(), onPhysics: () => { order.push("physics"); } });
+    world.setGameInstance(new GameInstance({ classId: "GameInstance", guid: "gi", hooks: { onTick: () => { order.push("gi"); } } }));
+    const actor = (name: string, options: { sceneLayerId?: string; tickOnPause?: boolean } = {}) => {
+      const created = world.createActor({ classId: "Actor", sceneLayerId: options.sceneLayerId ?? null, hooks: { onTick: () => { order.push(name); } } });
+      created.tickOnPause = options.tickOnPause === true;
+      created.attachComponent(world.createComponent({ classId: "ActorComponent", hooks: { onTick: () => { order.push(`${name} component`); } } }));
+      world.spawnActorNow(created);
+      return created;
+    };
+    const pausingLayer = world.createSceneLayer({ assetGuid: "menu-layer", zOrder: 0, tickOnPause: true });
+    const plainLayer = world.createSceneLayer({ assetGuid: "hud-layer", zOrder: 1 });
+    actor("player");
+    actor("menu", { tickOnPause: true });
+    actor("menu row", { sceneLayerId: pausingLayer.guid });
+    actor("health bar", { sceneLayerId: plainLayer.guid });
+    world.addTickingObject(world.createObject({ classId: "Object", hooks: { onTick: () => { order.push("object"); } } }));
+
+    world.gamePaused = true;
+    world.tick();
+    expect(order).toEqual(["menu", "menu row", "menu component", "menu row component"]);
+
+    order.length = 0;
+    world.gameInstance!.tickOnPause = true;
+    world.tick();
+    expect(order).toEqual(["gi", "menu", "menu row", "menu component", "menu row component"]);
+
+    order.length = 0;
+    world.gamePaused = false;
+    world.tick();
+    expect(order).toEqual([
+      "gi", "player", "menu", "menu row", "health bar",
+      "player component", "menu component", "menu row component", "health bar component", "object", "physics",
+    ]);
+  });
+
   it("hands every phase of a tick one context and builds a new one for the next tick", () => {
     const seen: Array<{ phase: string; ctx: TickContext }> = [];
     const world = new World({

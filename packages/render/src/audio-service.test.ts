@@ -41,6 +41,23 @@ function library(options?: {
 }
 
 describe("AudioService", () => {
+  it("holds and releases a voice for a game pause after the voice it names has started", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend, loadSourceBytes: async () => new Uint8Array([1, 2, 3]) });
+    try {
+      service.setLibrary(library({ audio: { music: createDefaultAudioPayload() } }), true);
+      await service.unlockAsync();
+      service.handleCommand({ type: "playSound", assetGuid: "music", voiceId: "music-voice", volume: 1, frameId: 1 });
+      service.handleCommand({ type: "setVoicePaused", voiceId: "music-voice", paused: true });
+      await service.flush();
+      expect(backend.plays.map((play) => play.voiceId)).toEqual(["music-voice"]);
+      expect([...backend.pausedVoices]).toEqual(["music-voice"]);
+      service.handleCommand({ type: "setVoicePaused", voiceId: "music-voice", paused: false });
+      await service.flush();
+      expect([...backend.pausedVoices]).toEqual([]);
+    } finally { service.dispose(); }
+  });
+
   it("prepares ordinary cold Audio before playback and releases its scope when the voice ends", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const release = vi.fn();

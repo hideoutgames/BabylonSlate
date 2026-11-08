@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  resolveActorDefaults,
+  resolveGameInstanceDefaults,
   createDefaultScene,
   createEmptyProject,
   DEFAULT_CAMERA_FIELD_OF_VIEW,
@@ -203,6 +205,15 @@ describe("project schema", () => {
     expect(settings.physics.collisionLayers).toContain("Enemy");
     expect(settings.physics.collisionLayers).toHaveLength(32);
     expect(new Set(settings.physics.collisionLayers).size).toBe(32);
+  });
+
+  it("resolves Tick On Pause off by default and from the nearest Class that sets it", () => {
+    expect(resolveActorDefaults([]).tickOnPause).toBe(false);
+    expect(resolveActorDefaults([{ generateHitEvents: false }, { tickOnPause: true }]).tickOnPause).toBe(true);
+    expect(resolveActorDefaults([{ tickOnPause: false }, { tickOnPause: true }]).tickOnPause).toBe(false);
+    expect(resolveGameInstanceDefaults([]).tickOnPause).toBe(false);
+    expect(resolveGameInstanceDefaults([undefined, { tickOnPause: true }]).tickOnPause).toBe(true);
+    expect(resolveGameInstanceDefaults([{ tickOnPause: false }, { tickOnPause: true }]).tickOnPause).toBe(false);
   });
 
   it("defaults playFrameCap to 60 and keeps a positive override", () => {

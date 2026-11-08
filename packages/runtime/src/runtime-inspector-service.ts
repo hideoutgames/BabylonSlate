@@ -182,10 +182,12 @@ export class RuntimeInspectorService {
         const priorSourcePresent = materialAssignment && target.variables.has("materialSource");
         const priorSource = materialAssignment ? target.getVariable("materialSource") : undefined;
         const prior = target instanceof Actor && key === "generateHitEvents" ? target.generateHitEvents :
-          target instanceof Actor && key === "generateOverlapEvents" ? target.generateOverlapEvents : target.getVariable(key);
+          target instanceof Actor && key === "generateOverlapEvents" ? target.generateOverlapEvents :
+          target instanceof Actor && key === "tickOnPause" ? target.tickOnPause : target.getVariable(key);
         const apply = (next: unknown) => {
           if (target instanceof Actor && key === "generateHitEvents") target.generateHitEvents = next as boolean;
           else if (target instanceof Actor && key === "generateOverlapEvents") target.generateOverlapEvents = next as boolean;
+          else if (target instanceof Actor && key === "tickOnPause") target.tickOnPause = next as boolean;
           else target.setVariable(key, next);
           if (target instanceof ActorComponent) this.host.refreshComponent(target, key);
         };

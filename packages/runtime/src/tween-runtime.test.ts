@@ -25,6 +25,19 @@ describe("simulation-owned tweens", () => {
     expect(values).toHaveLength(3);
   });
 
+  it("advances only the tweens whose owner a game pause lets advance, and the rest hold where they are", () => {
+    const menu = new Actor({ classId: "Actor" }), player = new Actor({ classId: "Actor" });
+    const runtime = new TweenRuntime(), menuValues: unknown[] = [], playerValues: unknown[] = [];
+    void runtime.start({ ...floatRequest(menuValues, {}), owner: menu });
+    void runtime.start({ ...floatRequest(playerValues, {}), owner: player });
+    runtime.advance(0.5, (owner) => owner === menu);
+    expect(menuValues).toEqual([2, 4]);
+    expect(playerValues).toEqual([2]);
+    runtime.advance(0.5);
+    expect(menuValues).toEqual([2, 4, 6]);
+    expect(playerValues).toEqual([2, 4]);
+  });
+
   it("captures endpoints and waits for both calling and target owners to be admitted", async () => {
     const caller = new Actor({ classId: "Actor" }), target = new Actor({ classId: "Actor" });
     const admitted = new Set([caller]);

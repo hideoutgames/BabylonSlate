@@ -131,6 +131,34 @@ describe("Get <Actor> and Get <Component> (<Actor>)", () => {
     return { classId, parentClassId, assetGuid: classId, source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints };
   }
 
+  it("keeps only the SceneLayerScripts of layers with Tick On Pause ticking while the game is paused", async () => {
+    const pauseMenu = { ...createDefaultSceneLayer(), settings: { ...createDefaultSceneLayer().settings, tickOnPause: true } };
+    const runtime = createInProcessRuntime({
+      seed: 1, preferSoftwarePhysics: true,
+      playScene: scene("Level1", ["hud", "pause-menu"]), playSceneGuid: "level-1",
+      sceneLayerLibrary: { hud: createDefaultSceneLayer(), "pause-menu": pauseMenu },
+    });
+    await runtime.loadScripts([
+      lifecycleScript(sceneAssetClassId("level-1"), "Scene"),
+      lifecycleScript(sceneLayerAssetClassId("hud"), "SceneLayer"),
+      lifecycleScript(sceneLayerAssetClassId("pause-menu"), "SceneLayer"),
+    ]);
+    runtime.realizePlayWorld();
+    runtime.start();
+    const world = runtime.getWorld();
+    const ticks = () => [world.currentScene!, ...world.getSceneLayers()].map((owner) => [owner.classId, owner.getVariable("ticks") ?? 0]);
+    runtime.tick();
+    runtime.setGamePaused(true);
+    runtime.tick();
+    runtime.tick();
+    expect(ticks()).toEqual([
+      [sceneAssetClassId("level-1"), 1],
+      [sceneLayerAssetClassId("hud"), 1],
+      [sceneLayerAssetClassId("pause-menu"), 3],
+    ]);
+    runtime.stop();
+  });
+
   it("resolves the owner's own placed actor and component, per Scene Layer instance", async () => {
     const commands: CommandMessage[] = [];
     const panel = (classId: string) => createActor("panel", "Panel", { classId, components: [createMeshComponent("panel-mesh", "box")] });

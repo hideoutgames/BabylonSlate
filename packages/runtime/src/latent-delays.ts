@@ -64,7 +64,8 @@ export class LatentDelays implements RuntimeSubsystem {
    * ones in order. A destroyed owner's waiter resumes at once, so its
    * continuation ends (an owner cancellation) rather than staying pending.
    */
-  advance(dt: number): void {
+  /** `canAdvance`, while the game is paused: whether a waiter's owner ticks on pause; the rest hold. */
+  advance(dt: number, canAdvance?: (owner: EngineObject | null | undefined) => boolean): void {
     const waiters = this.waiters;
     if (waiters.length === 0) return;
     const tick = this.tickIndex();
@@ -77,6 +78,10 @@ export class LatentDelays implements RuntimeSubsystem {
         continue;
       }
       if (waiter.owner && !this.admission.canRunActions(waiter.owner)) {
+        waiters[kept++] = waiter;
+        continue;
+      }
+      if (canAdvance && !canAdvance(waiter.owner)) {
         waiters[kept++] = waiter;
         continue;
       }

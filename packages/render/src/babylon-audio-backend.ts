@@ -69,6 +69,8 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   private readonly voiceLevels = new Map<string, { gain: number; muffle: number }>();
   private muffleFilter: BiquadFilterNode | null = null;
   private paused = false;
+  /** Voices a game pause holds; they stay paused when the whole backend resumes. */
+  private readonly pausedVoices = new Set<string>();
   private disposed = false;
   private readonly pendingVoices = new Map<string, symbol>();
   onVoiceEnded: ((voiceId: string) => void) | null = null;
@@ -159,7 +161,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
       this.onVoiceEnded?.(request.voiceId);
     });
     sound.play();
-    if (this.paused) this.pauseSound(sound);
+    if (this.paused || this.pausedVoices.has(request.voiceId)) this.pauseSound(sound);
   }
 
   stop(voiceId: string): void {
@@ -269,9 +271,9 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     if (this.paused === paused) return;
     this.paused = paused;
     let usedSoundPause = false;
-    for (const sound of this.voices.values()) {
+    for (const [voiceId, sound] of this.voices) {
       if (paused) usedSoundPause = this.pauseSound(sound) || usedSoundPause;
-      else usedSoundPause = this.resumeSound(sound) || usedSoundPause;
+      else if (!this.pausedVoices.has(voiceId)) usedSoundPause = this.resumeSound(sound) || usedSoundPause;
     }
     if (usedSoundPause) return;
     const ctx = this.audioContext;
@@ -347,6 +349,17 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
 
   private resumeAudioContext(): void {
     this.resumeContext();
+  }
+
+  setVoicePaused(voiceId: string, paused: boolean): void {
+    if (paused) this.pausedVoices.add(voiceId);
+    else this.pausedVoices.delete(voiceId);
+    // A whole-backend pause holds every voice; its resume applies the held set.
+    if (this.paused) return;
+    const sound = this.voices.get(voiceId);
+    if (!sound) return;
+    if (paused) this.pauseSound(sound);
+    else this.resumeSound(sound);
   }
 
   private pauseSound(sound: StaticSound): boolean {

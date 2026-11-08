@@ -110,6 +110,7 @@ export const SCENE_RENDER_SETTING_OWNERS = {
   showNavmesh: "non-rendering",
   foliageGroups: "non-rendering",
   layerPhysicsEnabled: "non-rendering",
+  layerTickOnPause: "non-rendering",
 } as const satisfies Record<
   keyof SceneSettings,
   QualityGroup | "independent" | "non-rendering"

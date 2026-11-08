@@ -73,11 +73,12 @@ export class TweenRuntime {
     });
   }
 
-  advance(deltaSeconds: number): void {
+  /** `canAdvance`, while the game is paused: whether a tween's owner ticks on pause; the rest hold. */
+  advance(deltaSeconds: number, canAdvance?: (owner: EngineObject | null | undefined) => boolean): void {
     if (this.active.size === 0) return;
     const delta = Number.isFinite(deltaSeconds) && deltaSeconds > 0 ? deltaSeconds : 0;
     // A setter may synchronously start another action; it begins advancing next tick.
-    const current = [...this.active];
+    const current = canAdvance ? [...this.active].filter((tween) => canAdvance(tween.owner)) : [...this.active];
     for (const tween of current) {
       if (!tween.reference.worldTransformDepth && this.active.has(tween)) this.advanceOne(tween, delta);
     }

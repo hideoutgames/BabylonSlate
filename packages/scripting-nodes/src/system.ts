@@ -133,6 +133,31 @@ export const systemNodes: NodeDefinition[] = [
     },
   },
   {
+    id: "system.setGamePaused",
+    title: "Set Game Paused",
+    category: "system",
+    description: "Pauses or resumes the game from the next step. While paused, only the Game Instance, actors and Scene Layers with Tick On Pause keep ticking.",
+    searchAliases: ["pause", "resume", "unpause", "pause menu", "freeze"],
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("paused", "Paused", "in", BOOL, "data", true, true),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.setGamePaused(${ctx.input("paused")});`);
+    },
+  },
+  {
+    id: "system.isGamePaused",
+    title: "Is Game Paused",
+    category: "system",
+    description: "Returns true while the game is paused by Set Game Paused.",
+    searchAliases: ["pause", "paused"],
+    pure: true,
+    pins: () => [pin("paused", "Paused", "out", BOOL)],
+    codegen: () => ({ paused: "ctx.isGamePaused()" }),
+  },
+  {
     id: "system.quitGame",
     title: "Quit Game",
     category: "system",

@@ -53,6 +53,11 @@ export interface AudioPlaybackBackend {
   setVoiceMuffle(voiceId: string, factor: number): void;
   /** Pause or resume live voices without stopping them. */
   setPaused(paused: boolean): void;
+  /**
+   * Hold or release one voice (game pause). A held voice, or one that starts while held, stays
+   * paused when `setPaused(false)` resumes the rest.
+   */
+  setVoicePaused(voiceId: string, paused: boolean): void;
   /** Resume the audio context even when not explicitly paused (e.g. after an audio route change). */
   resumeContext(): void;
   /** Drop a decoded clip when the PCM LRU evicts it. */
@@ -138,6 +143,13 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
 
   setPaused(paused: boolean): void {
     this.paused = paused;
+  }
+
+  readonly pausedVoices = new Set<string>();
+
+  setVoicePaused(voiceId: string, paused: boolean): void {
+    if (paused) this.pausedVoices.add(voiceId);
+    else this.pausedVoices.delete(voiceId);
   }
 
   resumeContext(): void {

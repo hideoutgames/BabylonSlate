@@ -1,6 +1,7 @@
 import { isInfiniteLoopError } from "@haptic/debugger";
 import type { RawInputEvent } from "@haptic/input";
 import type { Actor, EngineObject } from "@haptic/object-model";
+import { ticksWhilePaused } from "./runtime-game-pause";
 import { actorGuidIndex } from "./actor-world-transform";
 import type { RuntimeComposition } from "./runtime-composition";
 
@@ -24,13 +25,17 @@ import type { RuntimeComposition } from "./runtime-composition";
  */
 export function runTick(rt: RuntimeComposition): void {
   rt.breakpointReported = false;
+  // A Set Game Paused made during the previous tick applies from this one.
+  rt.gamePauseVoices.sync(rt);
+  const gamePaused = rt.world.gamePaused;
   const timeDilation = rt.timeDilation;
   const simDt = simulationDt(rt);
   rt.world.clock.dt = simDt;
   // Game and real time include the step that is starting, so the first tick reads one step.
-  rt.gameTimeSeconds += simDt;
+  // Game time and the water clock hold while the game is paused; real time does not.
+  if (!gamePaused) rt.gameTimeSeconds += simDt;
   rt.realTimeSeconds += rt.dt;
-  rt.waterClock.advance(simDt);
+  if (!gamePaused) rt.waterClock.advance(simDt);
   // Voices play in real time, so their age follows the undilated step.
   rt.voices.advance(rt.dt);
   const pending = resolveTickInput(rt, simDt);
@@ -88,20 +93,25 @@ export function requestDeviceMotion(rt: RuntimeComposition): void {
 /** Tick phase 2. An infinite-loop abort ends the phase early. */
 function tickWorld(rt: RuntimeComposition, pending: readonly RawInputEvent[], simDt: number): void {
   rt.loopGuard.reset();
-  rt.tweens.advance(simDt);
+  const gamePaused = rt.world.gamePaused;
+  // While the game is paused only what ticks on pause advances: its tweens, text reveals and painters.
+  const pausedOwner = gamePaused ? (owner: EngineObject | null | undefined) => ticksWhilePaused(rt.world, owner) : undefined;
+  const canTickActor = (actor: Actor) => rt.admission.canTickActor(actor) && (!gamePaused || rt.world.ticksWhilePaused(actor));
+  rt.tweens.advance(simDt, pausedOwner);
   // Timeline Clips after tweens, before actors tick and physics syncs, so both see the animated values.
-  rt.timelines.advance(simDt, timelineOwners(rt), (owner) => rt.admission.canRun(owner));
-  rt.textAppear.advance(rt.world, simDt, (actor) => rt.admission.canTickActor(actor));
-  rt.painters.beginFrame(rt.world, (actor) => rt.admission.canTickActor(actor));
+  if (!gamePaused) rt.timelines.advance(simDt, timelineOwners(rt), (owner) => rt.admission.canRun(owner));
+  rt.textAppear.advance(rt.world, simDt, canTickActor);
+  rt.painters.beginFrame(rt.world, canTickActor);
   try {
     rt.overlay.tickFocus(pending, rt.resolvedInput, simDt);
     rt.world.tick();
     // World committed actors queued by this tick; deliver their deferred
     // notifications after actor and component creation hooks have completed.
     rt.admission.flush();
-    if (rt.admission.canTickScene()) rt.streams.tickScenes(simDt, () => rt.admission.canTickScene());
-    // The main Scene's SceneScript and each ready Scene Layer's SceneLayerScript.
-    rt.scriptRuntime.tickEmbeddedScripts(simDt);
+    if (!gamePaused && rt.admission.canTickScene()) rt.streams.tickScenes(simDt, () => rt.admission.canTickScene());
+    // The main Scene's SceneScript and each ready Scene Layer's SceneLayerScript; while the game is
+    // paused, only the scripts of Scene Layers with Tick On Pause.
+    rt.scriptRuntime.tickEmbeddedScripts(simDt, gamePaused);
   } catch (error) {
     if (!isInfiniteLoopError(error)) throw error;
   }
@@ -111,7 +121,10 @@ function tickWorld(rt: RuntimeComposition, pending: readonly RawInputEvent[], si
 function tickSceneSystems(rt: RuntimeComposition, simDt: number): void {
   rt.ticks.markPhase("sceneSystems");
   rt.tweens.cancelInvalid();
-  rt.delays.advance(simDt);
+  const gamePaused = rt.world.gamePaused;
+  rt.delays.advance(simDt, gamePaused ? (owner) => ticksWhilePaused(rt.world, owner) : undefined);
+  // Animation, tile animation, behaviour trees and the crowd hold while the game is paused.
+  if (gamePaused) return;
   if (rt.admission.canTickScene() || rt.admission.hasReadyLayers()) rt.animGraphs.tick(simDt);
   if (rt.admission.canTickScene() || rt.admission.hasReadyLayers()) {
     rt.tilemapAnimationTimeMs += simDt * 1000;

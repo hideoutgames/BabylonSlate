@@ -60,6 +60,27 @@ describe("Babylon audio backend lifecycle", () => {
     backend.dispose();
   });
 
+  it("holds a game-paused voice through a whole-backend resume, and pauses a held voice that starts", async () => {
+    const backend = new BabylonAudioPlaybackBackend();
+    await backend.play({ ...request, voiceId: "music" });
+    await backend.play({ ...request, voiceId: "menu" });
+    const [music, menu] = await Promise.all(audio.createSound.mock.results.map((result) => result.value)) as ReturnType<typeof audio.sound>[];
+    backend.setVoicePaused("music", true);
+    expect(music!.pause).toHaveBeenCalledTimes(1);
+    expect(menu!.pause).not.toHaveBeenCalled();
+    backend.setPaused(true);
+    backend.setPaused(false);
+    expect(music!.resume).not.toHaveBeenCalled();
+    expect(menu!.resume).toHaveBeenCalledTimes(1);
+    backend.setVoicePaused("music", false);
+    expect(music!.resume).toHaveBeenCalledTimes(1);
+    backend.setVoicePaused("late", true);
+    await backend.play({ ...request, voiceId: "late" });
+    const late = await audio.createSound.mock.results[2]!.value as ReturnType<typeof audio.sound>;
+    expect(late.pause).toHaveBeenCalledTimes(1);
+    backend.dispose();
+  });
+
   it("uses each selected clip's bytes rather than reusing the first preview buffer", async () => {
     const backend = new BabylonAudioPlaybackBackend();
     await backend.play({ ...request, clipChunkId: "first" });

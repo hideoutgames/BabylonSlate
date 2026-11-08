@@ -83,6 +83,7 @@ type QueuedCommand = Extract<
   | { type: "playSound" }
   | { type: "stopSound" }
   | { type: "setVoiceGain" }
+  | { type: "setVoicePaused" }
   | { type: "setChannelVolume" }
   | { type: "setGlobalVolume" }
 >;
@@ -119,6 +120,7 @@ function isAudioCommand(command: CommandMessage): command is QueuedCommand {
     command.type === "playSound" ||
     command.type === "stopSound" ||
     command.type === "setVoiceGain" ||
+    command.type === "setVoicePaused" ||
     command.type === "setChannelVolume" ||
     command.type === "setGlobalVolume"
   );
@@ -644,6 +646,11 @@ export class AudioService {
     }
     if (command.type === "stopSound") {
       this.stopVoice(command.voiceId);
+      return;
+    }
+    if (command.type === "setVoicePaused") {
+      // Queued behind the voice's playSound, so a voice that is still loading is held as it starts.
+      this.backend.setVoicePaused(command.voiceId, command.paused);
       return;
     }
     if (command.type === "setVoiceGain") {

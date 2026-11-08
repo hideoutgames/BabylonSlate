@@ -1,5 +1,5 @@
 import { SimulationInspector } from "./simulation-inspector";
-import { ActorDefaultsGrid } from "./actor-defaults-grid";
+import { ActorDefaultsGrid, GameInstanceDefaultsGrid } from "./actor-defaults-grid";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
 import { normalizeClassMemberCategory } from "@haptic/core";
@@ -512,6 +512,13 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           }}
         />
         {walkAncestry(parentClass ?? "Actor", parentOf).includes("SceneLayerActorSwitcher") ? <SceneLayerSwitcherFields classId={selfClassId} properties={defaults.properties ?? {}} onChange={properties => persistGraph({ ...graph, actorDefaults: { ...defaults, properties } })} /> : null}
+        {walkAncestry(parentClass ?? "Actor", parentOf).includes("GameInstance") ? (
+          <GameInstanceDefaultsGrid
+            parentClass={parentClass ?? "GameInstance"}
+            defaults={graph.gameInstanceDefaults ?? {}}
+            onChange={(gameInstanceDefaults) => persistGraph({ ...graph, gameInstanceDefaults })}
+          />
+        ) : null}
         {showActorDefaults ? <>
         <ActorDefaultsGrid
           parentClass={parentClass ?? "Actor"}
@@ -531,8 +538,18 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   }
 
   if (!graph || !selectedNode) {
+    // With nothing selected at all, a Game Instance class still shows its class defaults.
+    const gameInstanceGraph = graph && doc?.ref.kind === "graph" && parentClass &&
+      walkAncestry(parentClass, parentOf).includes("GameInstance") ? graph : null;
     return (
       <PanelFrame data-testid="inspector-panel">
+        {gameInstanceGraph && parentClass ? (
+          <GameInstanceDefaultsGrid
+            parentClass={parentClass}
+            defaults={gameInstanceGraph.gameInstanceDefaults ?? {}}
+            onChange={(gameInstanceDefaults) => persistGraph({ ...gameInstanceGraph, gameInstanceDefaults })}
+          />
+        ) : null}
         <p
           className="p-4 text-sm text-muted-foreground"
           data-testid={openRuleId ? "anim-rule-details-empty" : undefined}

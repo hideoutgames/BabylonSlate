@@ -427,6 +427,7 @@ export class SceneLayers implements RuntimeSubsystem {
       })),
       layerBounds: document.settings.layerBounds,
       cameraLocation: document.settings.cameraLocation,
+      tickOnPause: document.settings.tickOnPause,
     });
     this.host.markUnsupportedInstance(layer.guid);
     this.host.addLayerPhysics(layer.guid, guid, document.settings, Array.isArray(raw.actors) ? raw.actors : []);

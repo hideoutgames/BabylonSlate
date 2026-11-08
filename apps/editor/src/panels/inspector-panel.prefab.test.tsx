@@ -223,6 +223,32 @@ describe("Inspector prefab component details", () => {
     },
   );
 
+  it("shows Tick On Pause in Actor Defaults, off unless set, and writes it as an override", () => {
+    renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
+    const tickOnPause = screen.getByTestId("property-tickOnPause");
+    expect(tickOnPause.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(tickOnPause);
+    expect(applyGraphChange.mock.calls.at(-1)![1].actorDefaults).toEqual({ tickOnPause: true });
+  });
+
+  it("shows Game Instance Defaults with Tick On Pause beside a Game Instance class's Parent Class", () => {
+    classState.parentClass = "GameInstance";
+    renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
+    expect(screen.getByTestId("inspector-parent-class").textContent).toContain("GameInstance");
+    const tickOnPause = screen.getByTestId("property-tickOnPause");
+    expect(tickOnPause.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(tickOnPause);
+    const next = applyGraphChange.mock.calls.at(-1)![1];
+    expect(next.gameInstanceDefaults).toEqual({ tickOnPause: true });
+    expect(next.actorDefaults).toBeUndefined();
+  });
+
+  it.each(["Actor", "Object"])("shows no Game Instance Defaults for %s classes", (parentClass) => {
+    classState.parentClass = parentClass;
+    renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
+    expect(screen.queryByTestId("inspector-game-instance-defaults")).toBeNull();
+  });
+
   it("shows inherited Actor Defaults and writes only overrides", async () => {
     classState.parentClass = "Quiet";
     renderInspector({ selectedComponentId: PREFAB_ROOT_ID });

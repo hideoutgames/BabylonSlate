@@ -147,6 +147,17 @@ describe("SceneLayer schema", () => {
     expect(normalizeSceneLayer({}).settings.cameraLocation).toEqual([0, 0]);
   });
 
+  it("keeps Tick On Pause off unless set, and round-trips it through the editor scene", () => {
+    expect(normalizeSceneLayer({}).settings.tickOnPause).toBe(false);
+    expect(normalizeSceneLayer({ settings: { tickOnPause: "yes" } }).settings.tickOnPause).toBe(false);
+    const layer = normalizeSceneLayer({ name: "Pause Menu", settings: { tickOnPause: true } });
+    expect(layer.settings.tickOnPause).toBe(true);
+    const scene = sceneLayerToEditorScene(layer);
+    expect(scene.settings.layerTickOnPause).toBe(true);
+    expect(editorSceneToSceneLayer(scene).settings.tickOnPause).toBe(true);
+    expect(editorSceneToSceneLayer({ ...scene, settings: { ...scene.settings, layerTickOnPause: false } }).settings.tickOnPause).toBe(false);
+  });
+
   it("keeps an Outliner anchor pose-free without consuming its layout offsets on save", () => {
     const layer = normalizeSceneLayer({
       name: "HUD",

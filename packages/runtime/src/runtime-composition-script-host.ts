@@ -192,6 +192,8 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     setTimeDilation: (rate) => rt.setTimeDilation(rate),
     getGameTimeSeconds: () => rt.gameTimeSeconds,
     getRealTimeSeconds: () => rt.realTimeSeconds,
+    setGamePaused: (paused) => rt.setGamePaused(paused),
+    isGamePaused: () => rt.gamePaused,
     // As the `quit` console command, but after the current step returns, so no script runs on a stopped session.
     quitGame: () => queueMicrotask(() => {
       if (rt.stopped) return;
