@@ -235,16 +235,6 @@ export function withOpenFunctionLibraries(
   return libraries;
 }
 
-/** Closed FunctionLibrary assets use header.payload.functions; open docs prefer members. */
-export function collectFunctionLibrariesForPalette(options: {
-  assets: FunctionLibraryAssets;
-  openDocuments: GraphDocuments;
-  parentOf: (id: string) => string | null | undefined;
-  classIdForPath: (path: string) => string;
-}): FunctionLibraryPaletteEntry[] {
-  return withOpenFunctionLibraries(functionLibrariesFromHeaders(options), options);
-}
-
 export type SubsystemClassEntry = {
   classId: string;
   base: SubsystemBaseClassId;

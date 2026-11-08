@@ -122,10 +122,6 @@ export interface TimelineRowStructureOptions {
   assetName?: (guid: string) => string | undefined;
 }
 
-export interface TimelineRowsOptions extends TimelineRowStructureOptions {
-  time: number;
-}
-
 function trackRow(
   object: TimelineObjectTrack,
   actor: SerializedActor | undefined,
@@ -219,10 +215,6 @@ export function withTimelineValues(
     cache?.set(row, next);
     return next;
   });
-}
-
-export function timelineRows(options: TimelineRowsOptions): TimelineRowModel[] {
-  return withTimelineValues(timelineRowStructure(options), options.time, options.assetName);
 }
 
 /** An event key's label: its first input's value, or the event's name when it has no inputs. */

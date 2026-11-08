@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { useEffect } from "react";
+import { createElement, useEffect } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   createActor,
@@ -9,6 +9,7 @@ import {
   type SerializedTimelineClip,
   type TimelineKey,
 } from "@haptic/core";
+import type { KeyframeTimelineProps, KeyframeTimelineTrackRow } from "@haptic/editor-kit";
 import { KeybindProvider } from "../context/keybind-context";
 import { SceneToolsProvider, useSceneTools } from "../context/scene-tools-context";
 import { TimelinePanel } from "./timeline-panel";
@@ -48,6 +49,31 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 vi.mock("../lib/timeline-property-catalog", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/timeline-property-catalog")>();
   return { ...actual, timelinePropertyEntries: vi.fn(actual.timelinePropertyEntries) };
+});
+// Counted: the ids of the track list rows that render. Each row the panel passes gets one stand-in, so a row the
+// panel keeps between renders stays the same row for the track list; the track list reads a row's depth to render it.
+const trackListRenders = vi.hoisted(() => new Set<string>());
+vi.mock("@haptic/editor-kit", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/editor-kit")>();
+  const standIns = new WeakMap<KeyframeTimelineTrackRow, KeyframeTimelineTrackRow>();
+  const counted = (row: KeyframeTimelineTrackRow) => {
+    let standIn = standIns.get(row);
+    if (!standIn) {
+      standIn = Object.defineProperty({ ...row }, "depth", {
+        get: () => {
+          trackListRenders.add(row.id);
+          return row.depth;
+        },
+      });
+      standIns.set(row, standIn);
+    }
+    return standIn;
+  };
+  return {
+    ...actual,
+    KeyframeTimeline: (props: KeyframeTimelineProps) =>
+      createElement(actual.KeyframeTimeline, { ...props, rows: props.rows.map(counted) }),
+  };
 });
 vi.mock("../context/scene-editing-context", () => ({
   useOptionalSceneEditing: () => ({ selectedActorIds: harness.selectedActorIds, selectActor: harness.selectActor }),
@@ -136,7 +162,7 @@ describe("Timeline window", () => {
     expect(screen.getByTestId("timeline-row-t-loc").textContent).toContain("4, 0, 0");
   });
 
-  it("moves the playhead without rebuilding the rows, updating only the values it changes", () => {
+  it("moves the playhead without rebuilding the row structure", () => {
     harness.scene = sceneWith(animated());
     renderPanel();
     expect(screen.getByTestId("timeline-row-t-loc").textContent).toContain("0, 0, 0");
@@ -150,6 +176,29 @@ describe("Timeline window", () => {
     // A collapsed object is a new structure.
     fireEvent.click(within(screen.getByTestId("timeline-row-o-door")).getByRole("button", { name: "Collapse" }));
     expect(vi.mocked(timelinePropertyEntries).mock.calls.length).toBeGreaterThan(builds);
+  });
+
+  it("re-renders only the track rows whose shown value a playhead move changes", () => {
+    const [door] = animated().objects;
+    harness.scene = sceneWith({
+      ...animated(),
+      objects: [{ ...door!, tracks: [
+        ...door!.tracks,
+        { id: "t-vis", target: { kind: "visible", property: "visible" }, valueType: "bool", keys: [key("v0", 0, true)] },
+      ] }],
+    });
+    renderPanel();
+    const ruler = screen.getByTestId("keyframe-timeline-ruler");
+    act(() => ruler.focus());
+    // One frame on, off every key: neither track is keyed at the playhead from here.
+    fireEvent.keyDown(ruler, { key: "ArrowRight" });
+    expect(screen.getByTestId("timeline-row-t-loc").textContent).toContain("0.07, 0, 0");
+    trackListRenders.clear();
+    fireEvent.keyDown(ruler, { key: "ArrowRight" });
+    // Location moved; Visible and the Door group show what they showed, so their rows do not render again.
+    expect(screen.getByTestId("timeline-row-t-loc").textContent).toContain("0.13, 0, 0");
+    expect(screen.getByTestId("timeline-row-t-vis").textContent).toContain("True");
+    expect([...trackListRenders]).toEqual(["t-loc"]);
   });
 
   it("sets and removes the key on the playhead's frame from a track row", () => {

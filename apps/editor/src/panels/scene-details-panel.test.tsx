@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { RenderEffectsSettings, SerializedComponent, SerializedScene, ShadowSettings } from "@haptic/core";
+import type { RenderEffectsSettings, SerializedComponent, SerializedGraph, SerializedScene, ShadowSettings } from "@haptic/core";
 import {
   createActor,
   createDefaultScene,
@@ -29,6 +29,7 @@ import { persistableDocumentContent } from "../lib/scene-layer-document";
 import { diffSceneCommands, EditSession } from "@haptic/edit";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";
 import { mergedPrefabComponentsForClass, prefabAssetTemplates } from "../lib/prefab-instance-sync";
+import { indexedAssetRegistry } from "../testing/indexed-asset-registry";
 
 if (
   typeof window !== "undefined" &&
@@ -50,6 +51,12 @@ const harness = vi.hoisted(() => ({
   prefabComponents: [] as SerializedComponent[],
   /** Assets a test creates after mount; the registry mock lists them. */
   createdAssets: [] as Array<{ header: Record<string, unknown>; path: string }>,
+  /** A registry that keeps its identity between renders, in place of the fixture's, which is new on every render. */
+  registry: null as unknown,
+  /** Open documents beside the Scene, such as Class tabs. */
+  otherDocuments: [] as unknown[],
+  /** Per-kind revisions; while unset, every kind advances on every render. */
+  documentRevisions: undefined as Record<string, number> | undefined,
   documentKind: "scene" as "scene" | "scene-layer",
   documentId: "scene:assets/Main.scene.hasset",
   render: {
@@ -100,7 +107,9 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       layout: null,
       dirty: false,
     },
+    ...harness.otherDocuments,
   ],
+  ...(harness.documentRevisions ? { documentRevisions: harness.documentRevisions } : {}),
   applySceneChange: harness.applySceneChange,
   projectDocument: {
     settings: {
@@ -109,7 +118,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       render: harness.render,
     },
   },
-  assetRegistry: {
+  assetRegistry: harness.registry ?? {
     list: () => [
       ...harness.createdAssets,
       ...(harness.prefabComponents.length ? [{
@@ -205,6 +214,9 @@ beforeEach(() => {
   harness.scene = createDefaultScene();
   harness.prefabComponents = [];
   harness.createdAssets = [];
+  harness.registry = null;
+  harness.otherDocuments = [];
+  harness.documentRevisions = undefined;
   harness.applySceneChange.mockClear();
   vi.mocked(mergedPrefabComponentsForClass).mockClear();
   vi.mocked(prefabAssetTemplates).mockClear();
@@ -1483,6 +1495,49 @@ describe("SceneDetailsPanel authoring", () => {
     const read = vi.mocked(prefabAssetTemplates).mock.calls.flatMap(([options]) => options.assets.map((asset) => asset.header.guid));
     expect(new Set(read)).toEqual(new Set(["prefab-sign"]));
     expect(mergedPrefabComponentsForClass).not.toHaveBeenCalled();
+  });
+
+  it("overlays an edited Class tab on the Class graphs without reading any Class header again", () => {
+    const reads: string[] = [];
+    const classAsset = (name: string, payload: Record<string, unknown>) => ({
+      rootId: "project",
+      path: `assets/${name}.class.hasset`,
+      header: {
+        guid: `${name}-guid`, type: "Class", name, parentClass: "Actor",
+        get payload() {
+          reads.push(name);
+          return payload;
+        },
+      },
+    });
+    harness.registry = indexedAssetRegistry([
+      classAsset("Door", { variables: [{ id: "open", name: "Open", typeId: "bool" }] }),
+      classAsset("Lamp", { variables: [{ id: "lit", name: "Lit", typeId: "bool" }] }),
+    ]);
+    const doorTab = (names: string[]) => ({
+      id: "graph:assets/Door.class.hasset",
+      ref: { kind: "graph", path: "assets/Door.class.hasset", label: "Door" },
+      content: { nodes: [], edges: [], members: names.map((name) => ({ id: name, kind: "variable", name, typeId: "bool" })) },
+      layout: null,
+      dirty: true,
+    });
+    harness.otherDocuments = [doorTab(["Open"])];
+    harness.documentRevisions = { scene: 1, graph: 1 };
+    scene().actors = [createActor("door", "Front Door", { classId: "Door" })];
+    harness.selectedActorIds = ["door"];
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(reads).toContain("Lamp");
+    reads.length = 0;
+
+    // An edit to the open Door tab, which advances only the Class documents.
+    harness.otherDocuments = [doorTab(["Open", "Locked"])];
+    harness.documentRevisions = { scene: 1, graph: 2 };
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    // The panel hands the template its Class graphs.
+    const graphs = vi.mocked(mergedPrefabComponentsForClass).mock.calls.at(-1)![0].graphs as Readonly<Record<string, SerializedGraph | undefined>>;
+    expect(graphs.Door?.members?.map((member) => member.name)).toEqual(["Open", "Locked"]);
+    expect(graphs.Lamp?.members?.map((member) => member.name)).toEqual(["Lit"]);
+    expect(reads).toEqual([]);
   });
 
   it("opens markup tag suggestions for 2D Rich Text in the modal editor", () => {

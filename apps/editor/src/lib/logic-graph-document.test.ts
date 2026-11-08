@@ -5,14 +5,15 @@ import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
 import {
   classGraphFromHeaderPayload,
   collectClassGraphsForPalette,
-  collectFunctionLibrariesForPalette,
   collectGraphTypeAssets,
   typeSchemasFromGraphAssets,
   collectSceneDocumentsForPalette,
   collectSubsystemClassesForPalette,
   commitLogicGraph,
+  functionLibrariesFromHeaders,
   replaceSerializedGraphInDocument,
   serializedGraphFromDocument,
+  withOpenFunctionLibraries,
 } from "./logic-graph-document";
 import { classParentLookup } from "./content-browser-helpers";
 import { classIdForGraphPath } from "../services/script-compiler";
@@ -86,7 +87,7 @@ describe("collectSubsystemClassesForPalette", () => {
   });
 });
 
-describe("collectFunctionLibrariesForPalette", () => {
+describe("function libraries for the palette", () => {
   const parentOf = (id: string) => {
     if (id === "MathLib") return "FunctionLibrary";
     if (id === "FunctionLibrary") return "Object";
@@ -97,7 +98,13 @@ describe("collectFunctionLibrariesForPalette", () => {
   };
 
   it("reads header functions for closed libraries and live members for open ones", () => {
-    const libraries = collectFunctionLibrariesForPalette({
+    const classIdForPath = (path: string) =>
+      path.includes("MathLib")
+        ? "MathLib"
+        : path.includes("EditorMath")
+          ? "EditorMath"
+          : "Hero";
+    const headerLibraries = functionLibrariesFromHeaders({
       assets: [
         {
           path: "assets/MathLib.class.hasset",
@@ -142,6 +149,10 @@ describe("collectFunctionLibrariesForPalette", () => {
           },
         },
       ],
+      parentOf,
+      classIdForPath,
+    });
+    const libraries = withOpenFunctionLibraries(headerLibraries, {
       openDocuments: [
         {
           ref: { kind: "graph", path: "assets/EditorMath.class.hasset" },
@@ -153,12 +164,7 @@ describe("collectFunctionLibrariesForPalette", () => {
         },
       ],
       parentOf,
-      classIdForPath: (path) =>
-        path.includes("MathLib")
-          ? "MathLib"
-          : path.includes("EditorMath")
-            ? "EditorMath"
-            : "Hero",
+      classIdForPath,
     });
     expect(libraries).toEqual([
       {
