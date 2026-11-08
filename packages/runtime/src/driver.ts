@@ -109,6 +109,7 @@ import type { SnapshotPublisher } from "./snapshot-publisher";
 import type { RenderCommandEmitter } from "./render-command-emitter";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import { RuntimeVoices } from "./runtime-voices";
+import { GamePauseVoices } from "./runtime-game-pause";
 import { RuntimeGlobalParameters } from "./runtime-global-parameters";
 import { RuntimeParticles } from "./runtime-particles";
 import type { RuntimeParticleEffects } from "./runtime-particle-effects";
@@ -224,6 +225,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   commandRevision = 0;
   lifecycleId = 0;
   timeDilation = 1;
+  gamePaused = false;
+  readonly gamePauseVoices = new GamePauseVoices();
   gameTimeSeconds = 0;
   realTimeSeconds = 0;
   tilemapAnimationTimeMs = 0;
@@ -897,9 +900,21 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.publishTimeDilation();
   }
 
-  /** Render-side clocks (particles) follow the dilation the simulation steps with. */
+  /** Render-side clocks (particles) follow the dilation the simulation steps with, and stand still while the game is paused. */
   private publishTimeDilation(): void {
-    this.emit({ type: "setSimulationTimeScale", scale: this.timeDilation });
+    this.emit({ type: "setSimulationTimeScale", scale: this.world.gamePaused ? 0 : this.timeDilation });
+  }
+
+  setGamePaused(paused: boolean): void {
+    this.gamePaused = paused === true;
+  }
+
+  isGamePaused(): boolean {
+    return this.gamePaused;
+  }
+
+  liveVoiceOwners(): Iterable<[voiceId: string, ownerGuid: string | null]> {
+    return this.voices.liveVoiceOwners();
   }
 
   registerAnimGraph(guid: string, document: AnimGraphDocument): void {
@@ -1282,6 +1297,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.voices.observe(command);
     this.particles.observe(command);
     this.onCommand?.(command);
+    // After the playSound, so the host holds a voice that starts while the game is paused.
+    this.gamePauseVoices.started(this, command);
   }
 }
 

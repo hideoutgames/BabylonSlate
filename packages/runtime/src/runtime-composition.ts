@@ -42,6 +42,7 @@ import type { RuntimeVoices } from "./runtime-voices";
 import type { RuntimeParticles } from "./runtime-particles";
 import type { RuntimeParticleEffects } from "./runtime-particle-effects";
 import type { SceneLayerOverlay } from "./scene-layer-overlay";
+import type { GamePauseVoices } from "./runtime-game-pause";
 import type { SceneLayers } from "./scene-layers";
 import type { CooperativeSceneLoadingOptions } from "./scene-realization-work";
 import type { SceneRealizer } from "./scene-realizer";
@@ -74,7 +75,7 @@ import type { RuntimeObjectLifetime } from "./object-lifetime";
  * run. Only the members those modules write are mutable.
  */
 export interface RuntimeComposition extends Pick<RuntimeDriver,
-  "stop" | "pause" | "resume" | "tick" | "setTimeDilation" | "reportError" | "reportLog" | "registerAnchors" |
+  "stop" | "pause" | "resume" | "tick" | "setTimeDilation" | "setGamePaused" | "reportError" | "reportLog" | "registerAnchors" |
   "registerSaveActor" | "inspectWorld" | "removeSceneLayer" | "requestScalability" | "getScalability"> {
   // Session configuration, fixed at construction.
   readonly sessionGeneration: number;
@@ -99,6 +100,10 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   readonly commandRevision: number;
   readonly lifecycleId: number;
   readonly timeDilation: number;
+  /** Set Game Paused's requested state; `GamePauseVoices.sync` applies it to the World before a tick. */
+  readonly gamePaused: boolean;
+  readonly gamePauseVoices: GamePauseVoices;
+  liveVoiceOwners(): Iterable<[voiceId: string, ownerGuid: string | null]>;
   /** Get Game Time In Seconds: the dilated steps since the session started, advanced by the tick phases. */
   gameTimeSeconds: number;
   /** Get Real Time Seconds: the same steps without time dilation. */

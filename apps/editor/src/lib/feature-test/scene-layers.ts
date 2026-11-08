@@ -203,6 +203,8 @@ type Rgba = [number, number, number, number];
 function hudLayer(refs: LayerRefs): SerializedSceneLayer {
   const layer: SerializedSceneLayer = { ...createDefaultSceneLayer(), name: NAMES.hud };
   layer.settings.layerBounds = { width: 32, height: 18 };
+  // The HUD and its Scene Layer Script stay live while `ft_system pause` pauses the game.
+  layer.settings.tickOnPause = true;
   layer.folders = [
     { id: "ft-ui-folder-header", name: "Header", parentFolderId: null },
     { id: "ft-ui-folder-forms", name: "Form Controls", parentFolderId: null },

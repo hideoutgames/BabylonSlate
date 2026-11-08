@@ -431,6 +431,8 @@ export interface SerializedGraph {
   >;
   /** Prefab Root Actor Defaults copied onto spawned / scene-realized actors. */
   actorDefaults?: ActorDefaults;
+  /** Game Instance class defaults, read when the session creates its Game Instance. */
+  gameInstanceDefaults?: GameInstanceDefaults;
   /** Editor-only SceneLayerActor Prefab frame; never read by Play. */
   overlayDesign?: SceneLayerActorDesign;
 }
@@ -445,17 +447,39 @@ export type ActorDefaults = {
   generateHitEvents?: boolean;
   generateOverlapEvents?: boolean;
   eventTick?: ActorEventTickMode;
+  /** Keep ticking while a script has paused the game (Set Game Paused). */
+  tickOnPause?: boolean;
 };
 
 export type ResolvedActorDefaults = {
   generateHitEvents: boolean;
   generateOverlapEvents: boolean;
   eventTick: boolean;
+  tickOnPause: boolean;
 };
+
+/** Game Instance class defaults. Omitted flags inherit from the parent Class. */
+export type GameInstanceDefaults = {
+  /** Keep ticking while a script has paused the game. */
+  tickOnPause?: boolean;
+};
+
+export type ResolvedGameInstanceDefaults = { tickOnPause: boolean };
+
+/** Resolve Game Instance defaults along a Class chain ordered nearest first; Tick On Pause is off unless set. */
+export function resolveGameInstanceDefaults(
+  chain: Iterable<GameInstanceDefaults | undefined>,
+): ResolvedGameInstanceDefaults {
+  for (const defaults of chain) {
+    if (typeof defaults?.tickOnPause === "boolean") return { tickOnPause: defaults.tickOnPause };
+  }
+  return { tickOnPause: false };
+}
 
 /**
  * Resolve Actor Defaults along a Class chain ordered nearest first. The
- * nearest explicit value wins; engine base classes leave every flag enabled.
+ * nearest explicit value wins; engine base classes leave every flag enabled
+ * except Tick On Pause, which is off.
  */
 export function resolveActorDefaults(
   chain: Iterable<ActorDefaults | undefined>,
@@ -463,6 +487,7 @@ export function resolveActorDefaults(
   let generateHitEvents: boolean | undefined;
   let generateOverlapEvents: boolean | undefined;
   let eventTick: boolean | undefined;
+  let tickOnPause: boolean | undefined;
   for (const defaults of chain) {
     if (!defaults) continue;
     if (generateHitEvents === undefined && typeof defaults.generateHitEvents === "boolean") {
@@ -474,11 +499,15 @@ export function resolveActorDefaults(
     if (eventTick === undefined && (defaults.eventTick === "enabled" || defaults.eventTick === "disabled")) {
       eventTick = defaults.eventTick === "enabled";
     }
+    if (tickOnPause === undefined && typeof defaults.tickOnPause === "boolean") {
+      tickOnPause = defaults.tickOnPause;
+    }
   }
   return {
     generateHitEvents: generateHitEvents ?? true,
     generateOverlapEvents: generateOverlapEvents ?? true,
     eventTick: eventTick ?? true,
+    tickOnPause: tickOnPause ?? false,
   };
 }
 

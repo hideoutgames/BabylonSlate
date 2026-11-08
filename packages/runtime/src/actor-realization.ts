@@ -220,6 +220,7 @@ export class ActorRealization {
     actor.generateHitEvents = resolved.generateHitEvents;
     actor.generateOverlapEvents = resolved.generateOverlapEvents;
     actor.tickEnabled = resolved.eventTick;
+    actor.tickOnPause = resolved.tickOnPause;
   }
 
   /**

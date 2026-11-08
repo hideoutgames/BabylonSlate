@@ -1055,6 +1055,8 @@ async function saveSpinnerFast(ctx: FeatureTestContext, types: ScriptingTypes): 
       }),
       [describe.id]: literalOutput(describe, "Label", "Fast Spinner (override)"),
     },
+    // Keeps spinning while `ft_system pause` pauses the game, beside the plain Spinners that stop.
+    actorDefaults: { tickOnPause: true },
   });
   await saveClass(ctx, CLASS.spinnerFast, CLASS.spinner, graph);
 }
@@ -1158,6 +1160,8 @@ async function saveGameInstance(ctx: FeatureTestContext): Promise<void> {
       gWire("stats", "success", "assert-stats", "condition"),
       gWire("stats", "output", "stats-print", "inString"),
     ],
+    // Its Object Ticks counter keeps counting while `ft_system pause` pauses the game.
+    gameInstanceDefaults: { tickOnPause: true },
   });
   await saveClass(ctx, CLASS.gameInstance, "GameInstance", graph);
 }
@@ -1458,6 +1462,8 @@ async function saveDataProbe(
       gNode("language-length", "string.length", 8140, -560),
       gNode("language-known", "math.greater", 8380, -380),
       gNode("assert-locale", "debug.assert", 7900, -200, { "default:message": "Get Locale returned no language" }),
+      gNode("game-paused", "system.isGamePaused", 8620, -380),
+      gNode("assert-not-paused", "debug.assertEqual", 8620, -200, { "default:expected": false, "default:message": "Is Game Paused read true before anything paused the game" }),
       gNode("roll-in-range", "range.isFloatInRange", 1900, 400),
       gNode("assert-roll", "debug.assert", 1900, 0, { "default:message": "Sword Damage is outside its Damage Roll range" }),
       gNode("read", "data.readEntry", 220, 160, {
@@ -1476,7 +1482,7 @@ async function saveDataProbe(
     edges: [
       ...gChain("begin", "assert-found", "assert-weapons", "assert-falloff", "assert-spawn", "assert-roll", "assert-asset",
         "set-global", "assert-global", "assert-delta", "assert-frame", "assert-time", "assert-date", "assert-time-ms", "assert-dilation", "assert-local-date",
-        "assert-development", "assert-guid", "assert-locale", "print"),
+        "assert-development", "assert-guid", "assert-locale", "assert-not-paused", "print"),
       gWire("get-global", "value", "assert-global", "actual"),
       gWire("delta", "deltaSeconds", "delta-positive", "a"),
       gWire("delta-positive", "out", "assert-delta", "condition"),
@@ -1502,6 +1508,7 @@ async function saveDataProbe(
       gWire("locale", "language", "language-length", "in"),
       gWire("language-length", "out", "language-known", "a"),
       gWire("language-known", "out", "assert-locale", "condition"),
+      gWire("game-paused", "paused", "assert-not-paused", "actual"),
       gWire("falloff-object", "object", "falloff-at", "target"),
       gWire("falloff-at", "value", "assert-asset", "actual"),
       gWire("fields", "Damage", "roll-in-range", "value"),
@@ -1691,7 +1698,7 @@ async function saveSystemCommand(ctx: FeatureTestContext): Promise<void> {
         { name: "action", type: "string" },
         { name: "value", type: "float", optional: true, defaultValue: 1 },
       ]),
-      gNode("action", "flow.switchString", 240, 0, { cases: ["info", "copy", "docs", "slomo", "quit"] }),
+      gNode("action", "flow.switchString", 240, 0, { cases: ["info", "copy", "docs", "slomo", "pause", "resume", "quit"] }),
       gNode("platform", "system.getPlatform", 0, 300),
       gNode("platform-text", "enum.toString", 220, 300, { enumGuid: "engine:Platform" }),
       gNode("touch", "system.isTouchDevice", 0, 400),
@@ -1702,9 +1709,10 @@ async function saveSystemCommand(ctx: FeatureTestContext): Promise<void> {
       gNode("game-time", "time.getGameTimeSeconds", 0, 860),
       gNode("real-time", "time.getRealTimeSeconds", 0, 940),
       gNode("dilation", "time.getTimeDilation", 0, 1020),
+      gNode("game-paused", "system.isGamePaused", 0, 1100),
       format("info-text", 480, 300,
         "{platform}, touch {touch}, in editor {editor}, development {development}, view {view} ({aspect}), " +
-        "locale {locale}, game time {game}s, real time {real}s, dilation {dilation}"),
+        "locale {locale}, game time {game}s, real time {real}s, dilation {dilation}, paused {paused}"),
       report("report-info", 720, -160, true),
       gNode("copy", "system.copyToClipboard", 720, -40),
       report("report-copy", 960, -40, true, "Copied the ft_system info report"),
@@ -1712,9 +1720,13 @@ async function saveSystemCommand(ctx: FeatureTestContext): Promise<void> {
       report("report-docs", 960, 80, true, "Opening the Haptic documentation"),
       gNode("slomo", "time.setTimeDilation", 720, 200),
       report("report-slomo", 960, 200, true, "Time dilation set from the next step"),
+      gNode("pause", "system.setGamePaused", 720, 440, { "default:paused": true }),
+      report("report-pause", 960, 440, true, "Game paused: FT_HUD, the Fast Spinner and the Game Instance keep ticking"),
+      gNode("resume", "system.setGamePaused", 720, 560, { "default:paused": false }),
+      report("report-resume", 960, 560, true, "Game resumed"),
       gNode("quit", "system.quitGame", 720, 320),
       report("report-quit", 960, 320, true, "Quitting after this step"),
-      report("report-unknown", 720, 440, false, "Use ft_system info, copy, docs, slomo [rate] or quit"),
+      report("report-unknown", 720, 680, false, "Use ft_system info, copy, docs, slomo [rate], pause, resume or quit"),
     ],
     edges: [
       gExec("run", "action"),
@@ -1723,11 +1735,15 @@ async function saveSystemCommand(ctx: FeatureTestContext): Promise<void> {
       gWire("action", "case:copy", "copy", "execIn"),
       gWire("action", "case:docs", "docs", "execIn"),
       gWire("action", "case:slomo", "slomo", "execIn"),
+      gWire("action", "case:pause", "pause", "execIn"),
+      gWire("action", "case:resume", "resume", "execIn"),
       gWire("action", "case:quit", "quit", "execIn"),
       gWire("action", "default", "report-unknown", "execIn"),
       gExec("copy", "report-copy"),
       gExec("docs", "report-docs"),
       gExec("slomo", "report-slomo"),
+      gExec("pause", "report-pause"),
+      gExec("resume", "report-resume"),
       gExec("quit", "report-quit"),
       gWire("run", "value", "slomo", "timeDilation"),
       gWire("platform", "platform", "platform-text", "in"),
@@ -1741,6 +1757,7 @@ async function saveSystemCommand(ctx: FeatureTestContext): Promise<void> {
       gWire("game-time", "seconds", "info-text", fmtArg("game")),
       gWire("real-time", "seconds", "info-text", fmtArg("real")),
       gWire("dilation", "timeDilation", "info-text", fmtArg("dilation")),
+      gWire("game-paused", "paused", "info-text", fmtArg("paused")),
       gWire("info-text", "out", "report-info", "output"),
       gWire("info-text", "out", "copy", "text"),
     ],

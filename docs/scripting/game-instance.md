@@ -61,4 +61,5 @@ A Scene Subsystem's **On Init** runs before any actor in its scene begins play, 
 ## Notes
 
 - The Game Instance and subsystems cannot be spawned or placed in a scene.
+- While the game is paused by [Set Game Paused](class/set-game-paused.md), the Game Instance and subsystems stop ticking. To keep the Game Instance ticking, turn on **Tick On Pause** under **Game Instance Defaults** in the **Inspector** of its class.
 - [Get Game Instance](class/get-game-instance.md) and the subsystem Get nodes are not available in editor tools.

@@ -775,9 +775,10 @@ export function commitLogicGraph(
   next = pruneEventMembersToNodes(next);
   if ((kind === "scene" || kind === "scene-layer") && isRecord(content)) {
     // A script has no prefab: never store components or Actor Defaults on it.
-    const { components: _components, actorDefaults: _actorDefaults, overlayDesign: _overlayDesign, ...script } = next;
+    const { components: _components, actorDefaults: _actorDefaults, gameInstanceDefaults: _gameInstanceDefaults, overlayDesign: _overlayDesign, ...script } = next;
     void _components;
     void _actorDefaults;
+    void _gameInstanceDefaults;
     void _overlayDesign;
     return { kind: "scene", scene: { ...(content as unknown as SerializedScene), script } };
   }

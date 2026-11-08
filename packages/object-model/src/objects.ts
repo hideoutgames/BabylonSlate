@@ -238,6 +238,8 @@ export class Actor extends EngineObject {
   generateOverlapEvents = true;
   /** When false, World skips this actor's Event Tick (`onTick`). Components still tick. */
   tickEnabled = true;
+  /** Keeps the actor and its components ticking while the game is paused (`World.gamePaused`). */
+  tickOnPause = false;
   /** Owning overlay instance; null for world-scene actors. */
   sceneLayerId: Guid | null = null;
   readonly suppressedComponentSourceIds: readonly string[];
@@ -530,6 +532,8 @@ export class SceneLayer extends EngineObject {
   ownerSceneGuid: string | null;
   postProcessStack: ScenePostProcessEntry[];
   layerBounds: { width: number; height: number };
+  /** Its actors and SceneLayerScript keep ticking while the game is paused, whatever their own Tick On Pause. */
+  tickOnPause: boolean;
   /** Its Play camera: every instance starts on the asset's Camera Location and scripts move it. */
   readonly camera: LayerCamera;
 
@@ -543,6 +547,7 @@ export class SceneLayer extends EngineObject {
     postProcessStack?: ScenePostProcessEntry[];
     layerBounds?: { width: number; height: number };
     cameraLocation?: readonly [number, number] | null;
+    tickOnPause?: boolean;
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }) {
@@ -556,6 +561,7 @@ export class SceneLayer extends EngineObject {
     this.assetGuid = options.assetGuid;
     this.zOrder = options.zOrder;
     this.ownerSceneGuid = options.ownerSceneGuid ?? null;
+    this.tickOnPause = options.tickOnPause === true;
     this.postProcessStack = normalizeScenePostProcessStack(options.postProcessStack);
     this.layerBounds = {
       width: options.layerBounds?.width && options.layerBounds.width > 0
@@ -651,6 +657,8 @@ export function getPostProcessMaterialObject(
 
 export class GameInstance extends EngineObject {
   private readonly gameHooks: GameInstanceHooks;
+  /** Keeps ticking while the game is paused (`World.gamePaused`); from the Game Instance class defaults. */
+  tickOnPause = false;
 
   constructor(
     options: {

@@ -145,6 +145,7 @@ export function classGraph(parts: {
   components?: SerializedComponent[];
   functionGraphs?: SerializedGraph["functionGraphs"];
   actorDefaults?: SerializedGraph["actorDefaults"];
+  gameInstanceDefaults?: SerializedGraph["gameInstanceDefaults"];
 }): SerializedGraph {
   return {
     nodes: parts.nodes ?? [],
@@ -153,5 +154,6 @@ export function classGraph(parts: {
     ...(parts.components ? { components: parts.components } : {}),
     ...(parts.functionGraphs ? { functionGraphs: parts.functionGraphs } : {}),
     ...(parts.actorDefaults ? { actorDefaults: parts.actorDefaults } : {}),
+    ...(parts.gameInstanceDefaults ? { gameInstanceDefaults: parts.gameInstanceDefaults } : {}),
   };
 }

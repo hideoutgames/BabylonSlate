@@ -311,6 +311,7 @@ function classMetadataFromGraph(
   | "variables"
   | "interfaceImplementations"
   | "actorDefaults"
+  | "gameInstanceDefaults"
 > {
   const members: GraphClassMember[] = isLogicGraphPayload(content)
     ? []
@@ -359,6 +360,10 @@ function classMetadataFromGraph(
     !isLogicGraphPayload(content) && content.actorDefaults
       ? content.actorDefaults
       : undefined;
+  const gameInstanceDefaults =
+    !isLogicGraphPayload(content) && content.gameInstanceDefaults
+      ? content.gameInstanceDefaults
+      : undefined;
   return {
     ...(parent ? { parentClassId: parent } : {}),
     ...(implementedInterfaces.length > 0 ? { implementedInterfaces } : {}),
@@ -367,6 +372,7 @@ function classMetadataFromGraph(
       : {}),
     ...(variables.length > 0 ? { variables } : {}),
     ...(actorDefaults ? { actorDefaults } : {}),
+    ...(gameInstanceDefaults ? { gameInstanceDefaults } : {}),
   };
 }
 
@@ -428,6 +434,8 @@ function documentCompileFingerprint(content: SerializedGraph): string {
     functionGraphs: compileFunctionGraphFingerprint(content.functionGraphs),
     // Copied onto the compiled bundle (`classMetadataFromGraph`).
     actorDefaults: content.actorDefaults ?? null,
+    // Only Game Instance classes set it; omitting it keeps every other key as short as before.
+    ...(content.gameInstanceDefaults ? { gameInstanceDefaults: content.gameInstanceDefaults } : {}),
   });
   documentFingerprints.set(content, fingerprint);
   return fingerprint;

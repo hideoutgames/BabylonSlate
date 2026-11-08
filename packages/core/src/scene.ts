@@ -210,6 +210,8 @@ export interface SceneSettings {
    * always simulate physics and omit it.
    */
   layerPhysicsEnabled?: boolean;
+  /** SceneLayer tabs only: the hosted layer's `tickOnPause`. World Scenes omit it. */
+  layerTickOnPause?: boolean;
 }
 
 /** One entry of the scene's ordered post-process chain. */
@@ -265,10 +267,11 @@ export function normalizeEmbeddedScript(value: unknown): SerializedGraph | undef
   if (!value || typeof value !== "object") return undefined;
   const source = value as Record<string, unknown>;
   if (!Array.isArray(source.nodes) || !Array.isArray(source.edges)) return undefined;
-  const { components: _components, actorDefaults: _actorDefaults, overlayDesign: _overlayDesign, ...script } =
+  const { components: _components, actorDefaults: _actorDefaults, gameInstanceDefaults: _gameInstanceDefaults, overlayDesign: _overlayDesign, ...script } =
     source as unknown as SerializedGraph;
   void _components;
   void _actorDefaults;
+  void _gameInstanceDefaults;
   void _overlayDesign;
   return script;
 }
@@ -744,6 +747,7 @@ export function normalizeSceneSettings(
     sceneLayers: normalizeSceneLayerSpawnList(source.sceneLayers),
     ...(source.foliageGroups !== undefined ? { foliageGroups: normalizeFoliageGroups(source.foliageGroups) } : {}),
     ...(source.layerPhysicsEnabled !== undefined ? { layerPhysicsEnabled: source.layerPhysicsEnabled === true } : {}),
+    ...(source.layerTickOnPause !== undefined ? { layerTickOnPause: source.layerTickOnPause === true } : {}),
   };
 }
 

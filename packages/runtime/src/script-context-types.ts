@@ -387,6 +387,10 @@ export interface ScriptContext {
   getLocalTimeNow(): TimeOfDay;
   /** Get Local Date Now: the engine Date Structure in the device's time zone. */
   getLocalDateNow(): CalendarDate;
+  /** Set Game Paused: from the next step only what ticks on pause runs; the session keeps ticking. */
+  setGamePaused(paused: unknown): void;
+  /** Is Game Paused: the last Set Game Paused, even before the next step applies it. */
+  isGamePaused(): boolean;
   /** Quit Game: ends the session after the current step, as the `quit` console command does. */
   quitGame(): void;
   getPlatform(): DevicePlatform;
@@ -705,7 +709,7 @@ export type HostContextKey =
   | "unloadSceneAsync" | "isSceneLoaded" | "getSceneLoadProgress" | "getSceneState" | "getProjectName"
   | "getProjectVersion" | "getDeltaSeconds" | "getFrameCount" | "getTimeNow" | "getDateNow" | "getTimeMs"
   | "getTimeDilation" | "setTimeDilation" | "getGameTimeSeconds" | "getRealTimeSeconds" | "getLocalTimeNow"
-  | "getLocalDateNow" | "quitGame" | "getPlatform" | "isTouchDevice" | "isInEditor" | "isDevelopmentBuild"
+  | "getLocalDateNow" | "setGamePaused" | "isGamePaused" | "quitGame" | "getPlatform" | "isTouchDevice" | "isInEditor" | "isDevelopmentBuild"
   | "getViewportSize" | "getLocale" | "copyToClipboard" | "openUrl" | "newGuid" | "getThirdPartyNotices" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
   | "setAnimGraphVariable" | "getAnimGraphCurrentState" | "jumpAnimGraphState" | "setChannelVolume"
   | "setGlobalVolume" | "changeScene" | "createSceneLayer" | "removeSceneLayer" | "clearSceneLayers"

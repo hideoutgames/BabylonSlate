@@ -49,6 +49,11 @@ export class RuntimeVoices {
     };
   }
 
+  /** Each live voice and the guid of the object that played it (its emitter), in start order. */
+  liveVoiceOwners(): Array<[voiceId: string, ownerGuid: string | null]> {
+    return [...this.live.values()].map((voice) => [voice.voiceId, voice.emitterActorGuid ?? null]);
+  }
+
   /** A stable id for a script Play Sound that names no voice. */
   scriptVoiceId(): string {
     return `script:${this.nextScriptVoice++}`;

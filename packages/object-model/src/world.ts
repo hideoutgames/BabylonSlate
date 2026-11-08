@@ -122,6 +122,13 @@ export class World {
   readonly classRegistry: ClassRegistry;
   readonly interfaceRegistry: InterfaceRegistry;
   readonly clock: TickClock;
+  /**
+   * A script paused the game (Set Game Paused). A tick then runs only what ticks on pause: the
+   * Game Instance with Tick On Pause, and actors (with their components) for which
+   * `ticksWhilePaused` holds. Game and Scene Subsystems, Tickable Objects and physics wait.
+   * The runtime sets it before each tick.
+   */
+  gamePaused = false;
   readonly rng: Rng;
   private readonly guidFactory?: GuidFactory;
   private readonly onPhase?: PhaseHook;
@@ -554,6 +561,7 @@ export class World {
     postProcessStack?: ScenePostProcessEntry[];
     layerBounds?: { width: number; height: number };
     cameraLocation?: readonly [number, number] | null;
+    tickOnPause?: boolean;
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }): SceneLayer {
@@ -812,6 +820,12 @@ export class World {
     };
   }
 
+  /** An actor ticks while the game is paused when it, or the Scene Layer it belongs to, has Tick On Pause. */
+  ticksWhilePaused(actor: Actor): boolean {
+    if (actor.tickOnPause) return true;
+    return actor.sceneLayerId !== null && this.findSceneLayer(actor.sceneLayerId)?.tickOnPause === true;
+  }
+
   /** Scene work continues only while the session lives and the scene may tick. */
   private sceneTickable(): boolean {
     return !this.ended && this.canTickScene();
@@ -825,6 +839,10 @@ export class World {
     try {
       switch (phase) {
         case "gameInstance":
+          if (this.gamePaused) {
+            if (this.gameInstance?.tickOnPause) this.gameInstance.callOnTick(ctx);
+            break;
+          }
           this.gameInstance?.callOnTick(ctx);
           for (const subsystem of liveInto(this.gameSubsystems, this.tickGameSubsystems)) {
             if (this.ended) break;
@@ -832,6 +850,7 @@ export class World {
           }
           break;
         case "sceneSubsystems":
+          if (this.gamePaused) break;
           for (const subsystem of liveInto(this.sceneSubsystems, this.tickSceneSubsystems)) {
             if (!this.sceneTickable()) break;
             if (!subsystem.ended && this.canTickSceneSubsystem(subsystem)) {
@@ -846,10 +865,10 @@ export class World {
           this.tickComponents(ctx);
           break;
         case "objects":
-          this.tickObjects(ctx);
+          if (!this.gamePaused) this.tickObjects(ctx);
           break;
         case "physics":
-          this.onPhysics?.(ctx);
+          if (!this.gamePaused) this.onPhysics?.(ctx);
           break;
         // postPhysics has no built-in work; onPhase marks its boundary.
       }
@@ -873,6 +892,7 @@ export class World {
       for (let i = 0; i < iteration.length; i++) {
         const actor = iteration.list[i]!;
         if (!actor.ticks || !actor.tickEnabled || actor.destroyed) continue;
+        if (this.gamePaused && !this.ticksWhilePaused(actor)) continue;
         if (!this.sceneTickable()) break;
         if (this.canTickActor(actor)) actor.callOnTick(ctx);
       }
@@ -894,6 +914,7 @@ export class World {
       for (let i = 0; tickable && i < iteration.length; i++) {
         const actor = iteration.list[i]!;
         if (actor.destroyed) continue;
+        if (this.gamePaused && !this.ticksWhilePaused(actor)) continue;
         const components = actor.components;
         const count = components.length;
         // No hook runs before the first ticking component, so the list is still as the actor started.

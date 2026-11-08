@@ -61,13 +61,14 @@ Select events in the **Class** window, choose **Copy**, then choose **Paste** in
 
 ## Actor Defaults
 
-For actor classes, select **Prefab Root** in **Components**. **Actor Defaults** in the **Inspector** controls which events reach the class's scripts:
+For actor classes, **Actor Defaults** in the **Inspector** controls which events reach the class's scripts. It shows while nothing is selected, or with **Prefab Root** selected in **Components**:
 
 | Setting | Description |
 | --- | --- |
 | Generate Hit Events | Turn off to stop **Event On Hit** for this actor. Physics still simulates. |
 | Generate Overlap Events | Turn off to stop the overlap events for this actor. |
 | Event Tick | **Inherit**, **Enabled** or **Disabled**. Disabled stops the actor's **Event Tick**; its components keep ticking. |
+| Tick On Pause | Off by default. Keeps the actor's **Event Tick**, input events, Delays and tweens running while the game is paused by [Set Game Paused](class/set-game-paused.md). |
 
 ## Notes
 

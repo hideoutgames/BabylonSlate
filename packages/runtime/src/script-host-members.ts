@@ -459,6 +459,8 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     getRealTimeSeconds: () => services.getRealTimeSeconds?.() ?? 0,
     getLocalTimeNow: () => localTimeOfDay(Date.now()),
     getLocalDateNow: () => localCalendarDate(Date.now()),
+    setGamePaused: (paused) => services.setGamePaused?.(paused === true),
+    isGamePaused: () => services.isGamePaused?.() ?? false,
     quitGame: () => services.quitGame?.(),
     getPlatform: () => (services.environment ?? DEFAULT_GAME_ENVIRONMENT).platform,
     isTouchDevice: () => (services.environment ?? DEFAULT_GAME_ENVIRONMENT).touchDevice,

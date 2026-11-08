@@ -1,4 +1,5 @@
 import type { UserCommandDef } from "@haptic/debugger";
+import { resolveGameInstanceDefaults } from "@haptic/core";
 import {
   GAME_SUBSYSTEM_CLASS_ID,
   SCENE_SUBSYSTEM_CLASS_ID,
@@ -8,6 +9,7 @@ import {
   isCreatableObjectChain,
   isLockedEngineClassId,
   hydrateClassVariableValue,
+  SceneLayer,
   type Actor,
   type EngineObject,
   type ClassKind,
@@ -37,7 +39,7 @@ interface ScriptRuntimeOptions {
 interface ScriptRuntimeHost {
   world(): World;
   stopped(): boolean;
-  scriptHost(): Pick<ScriptHost, "replaceScripts" | "hooksFor" | "invokeEvent" | "invokeGameShutdownEvent" | "bindInterfaceHandlers">;
+  scriptHost(): Pick<ScriptHost, "replaceScripts" | "hooksFor" | "invokeEvent" | "invokeGameShutdownEvent" | "bindInterfaceHandlers" | "scriptsFor">;
   /** Live streamed Scenes, whose classes keep their sources on replacement. */
   streams(): Pick<SceneStreams, "scenes">;
   registerAnchors(label: string, anchors: readonly AnchorEntry[]): void;
@@ -220,10 +222,12 @@ export class ScriptRuntime {
   }
 
   /** Tick the main Scene's script and each ready Scene Layer's, once their Begin Play has run. */
-  tickEmbeddedScripts(dt: number): void {
+  /** While the game is paused, only the SceneLayerScripts of layers with Tick On Pause tick. */
+  tickEmbeddedScripts(dt: number, gamePaused = false): void {
     const world = this.host.world();
     const ctx = { dt, tickIndex: world.clock.tickIndex, world };
     for (const owner of [world.currentScene, ...world.getSceneLayers()]) {
+      if (gamePaused && !(owner instanceof SceneLayer && owner.tickOnPause)) continue;
       if (owner && !owner.destroyed && this.admission.isCreated(owner) && this.admission.canRun(owner)) owner.callOnTick(ctx);
     }
   }
@@ -315,8 +319,14 @@ export class ScriptRuntime {
    * on the instance win, as with `World.createGameInstance`.
    */
   private applyGameInstanceClassDefaults(): void {
-    const gameInstance = this.host.world().gameInstance;
-    if (gameInstance) this.applyClassDefaults(gameInstance);
+    const world = this.host.world();
+    const gameInstance = world.gameInstance;
+    if (!gameInstance) return;
+    this.applyClassDefaults(gameInstance);
+    const scripts = this.host.scriptHost();
+    gameInstance.tickOnPause = resolveGameInstanceDefaults(
+      world.classRegistry.ancestry(gameInstance.classId).map((classId) => scripts.scriptsFor(classId)[0]?.gameInstanceDefaults),
+    ).tickOnPause;
   }
 
   /**

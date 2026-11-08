@@ -32,6 +32,7 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "playSound",
   "stopSound",
   "setVoiceGain",
+  "setVoicePaused",
   "setChannelVolume",
   "setGlobalVolume",
   "setScalability",

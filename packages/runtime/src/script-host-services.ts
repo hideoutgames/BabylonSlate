@@ -95,6 +95,9 @@ export interface ScriptHostServices {
   setTimeDilation?(rate: number): void;
   getGameTimeSeconds?(): number;
   getRealTimeSeconds?(): number;
+  /** Set Game Paused: from the next tick only what ticks on pause runs. Absent outside a simulation. */
+  setGamePaused?(paused: boolean): void;
+  isGamePaused?(): boolean;
   /** Quit Game: end the session as the `quit` console command does. Absent where nothing can end. */
   quitGame?(): void;
   /** Where the session runs; `DEFAULT_GAME_ENVIRONMENT` when absent. */

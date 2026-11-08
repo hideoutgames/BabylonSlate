@@ -32,7 +32,7 @@ Classes that do not descend from Actor, such as Actor Component and Function Lib
 
 ## Settings
 
-Select **Prefab Root** in **Components** to show the class settings in the **Inspector**.
+The **Inspector** shows the class settings while nothing is selected, and when you select **Prefab Root** in **Components**.
 
 | Setting | Description |
 | --- | --- |
@@ -40,8 +40,11 @@ Select **Prefab Root** in **Components** to show the class settings in the **Ins
 | Generate Hit Events | Turn off to stop **Event On Hit** for this actor. Physics still simulates. |
 | Generate Overlap Events | Turn off to stop the overlap events for this actor. |
 | Event Tick | **Inherit**, **Enabled** or **Disabled**. Disabled stops the actor's [Event Tick](../scripting/class/event-tick.md); its components keep ticking. |
+| Tick On Pause | Off by default. Turn on to keep the actor, its components, Delays, tweens and sounds running while the game is paused by [Set Game Paused](../scripting/class/set-game-paused.md). |
 
 Parent Class and Actor Defaults appear for actor classes. Some parents add their own fields, such as the Scene Layer Actor Switcher.
+
+For a class whose parent is a Game Instance class, the **Inspector** shows **Game Instance Defaults** with **Tick On Pause** instead: off by default, it keeps the Game Instance ticking while the game is paused.
 
 ## Related
 

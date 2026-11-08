@@ -147,7 +147,7 @@ export class RuntimeInspector {
   private descriptors(target: Target): Descriptor[] {
     const values = new Map<string, Descriptor>();
     if (target instanceof Actor) {
-      for (const [key, name, typeId] of [["name", "Name", "string"], ["visible", "Visible", "bool"], ["generateHitEvents", "Generate Hit Events", "bool"], ["generateOverlapEvents", "Generate Overlap Events", "bool"]])
+      for (const [key, name, typeId] of [["name", "Name", "string"], ["visible", "Visible", "bool"], ["generateHitEvents", "Generate Hit Events", "bool"], ["generateOverlapEvents", "Generate Overlap Events", "bool"], ["tickOnPause", "Tick On Pause", "bool"]])
         values.set(key!, { key: key!, name: name!, typeId: typeId!, capability: "live" });
     }
     for (const classId of this.host.world.classRegistry.ancestry(target.classId).reverse()) {
@@ -184,6 +184,7 @@ export class RuntimeInspector {
   private read(target: Target, descriptor: Descriptor): unknown {
     if (target instanceof Actor && descriptor.key === "generateHitEvents") return target.generateHitEvents;
     if (target instanceof Actor && descriptor.key === "generateOverlapEvents") return target.generateOverlapEvents;
+    if (target instanceof Actor && descriptor.key === "tickOnPause") return target.tickOnPause;
     if (target instanceof ActorComponent && descriptor.key.startsWith("material:")) {
       const material = target.getVariable("materialObject");
       return material instanceof MaterialObject ? this.host.materials.describe(material)?.[descriptor.key.slice(9)] : undefined;

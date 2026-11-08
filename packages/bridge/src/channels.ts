@@ -1,7 +1,7 @@
 import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, LayerCameraState } from "@haptic/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
-import type { ActorDefaults, CollisionTriangleMesh, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@haptic/core";
+import type { ActorDefaults, CollisionTriangleMesh, GameInstanceDefaults, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@haptic/core";
 
 /** Rest-pose Complex Collision triangles for one Model; typed arrays clone as one memcpy. */
 export type CookedCollisionMeshEntry = { guid: string } & CollisionTriangleMesh;
@@ -169,6 +169,8 @@ export type ScriptBundleEntry = {
   }>;
   /** Omitted flags inherit from the parent Class; engine bases are enabled. */
   actorDefaults?: ActorDefaults;
+  /** Game Instance class defaults; omitted flags inherit from the parent Class. */
+  gameInstanceDefaults?: GameInstanceDefaults;
   /** Effective prefab component templates for runtime Spawn Actor. */
   components?: SerializedComponent[];
 };
@@ -1088,6 +1090,8 @@ export type CommandMessage =
     }
   | { type: "stopSound"; voiceId: string }
   | { type: "setVoiceGain"; voiceId: string; volume: number }
+  /** Game pause: hold or release one voice whose owner does not tick while the game is paused. */
+  | { type: "setVoicePaused"; voiceId: string; paused: boolean }
   | { type: "setChannelVolume"; channelGuid: string; volume: number }
   | { type: "setGlobalVolume"; volume: number }
   | {
