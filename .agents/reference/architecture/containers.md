@@ -75,6 +75,7 @@ MyGame/                      (directory) or MyGame.zip
 - `.hplugin` zip (kind `plugin`): `plugin.json` + PluginSettings + `assets/`, no `layout.json`. `plugin.json` is the zip manifest only; in-project discovery scans for `type: "PluginSettings"` ([plugins](plugins.md)).
 - Directory backend writes incrementally (OPFS, Documents, external folders, desktop); the folder name is the display name. Zip backend (`fflate`) is for Export Project and interchange.
 - `project.json` without a project `guid` does not open (the guid namespaces saves and derived data).
+- `project.json` holds `metadata` (the project's `name`), `settings`, `scenes` and `graphs`. A manifest missing any of them does not open and its Homepage identity cannot be edited; nothing rebuilds an empty project from it. Only `plugin.json` keeps a top-level `name`, which templates rewrite.
 - Export Game output (`assets/data-<n>.bin` + `game.json`) is export-only; the editor project stays one `.hasset` per asset ([exporter](exporter.md)).
 
 ## Derived data

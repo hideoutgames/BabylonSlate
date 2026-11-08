@@ -109,6 +109,7 @@ export async function exportProjectZip(
 
 /**
  * Rewrite only project name and identity when instantiating from a template (§7.1).
+ * A project names itself in `metadata.name`; a plugin manifest keeps its top-level `name`.
  */
 export function rewriteProjectIdentity(
   files: ProjectTreeFile[],
@@ -123,7 +124,7 @@ export function rewriteProjectIdentity(
       unknown
     >;
     json.guid = options.guid;
-    json.name = options.name;
+    if (file.path === PLUGIN_MANIFEST_FILE) json.name = options.name;
     if (json.metadata && typeof json.metadata === "object") {
       const metadata = json.metadata as Record<string, unknown>;
       metadata.name = options.name;
