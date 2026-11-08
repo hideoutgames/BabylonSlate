@@ -544,8 +544,6 @@ function initializePlayer(
     renderTargets: Object.fromEntries(content.renderTargets),
     renderTargetTextures: Object.fromEntries(content.renderTargetTextures),
     animClipCatalog: content.animClipCatalog,
-    deferSceneModelsReady: true,
-    deferSceneLoadingPaint: true,
   };
 
   let ticks = 0;

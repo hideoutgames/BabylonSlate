@@ -25,8 +25,13 @@ import {
 } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
-import { createRuntimeFromLoad } from "./play-load";
+import { createRuntimeFromLoad, runtimeOptionsFromLoadControl, type PlayLoadControl } from "./play-load";
 import type { CompiledScript } from "./script-host";
+
+/** A worker `load` on the immediate in-process harness: no host paints Loading UI or acknowledges model readiness. */
+function immediateRuntimeFromLoad(msg: PlayLoadControl, onCommand: (command: CommandMessage) => void) {
+  return createInProcessRuntime({ ...runtimeOptionsFromLoadControl(msg), deferSceneModelsReady: false, deferSceneLoadingPaint: false, onCommand });
+}
 
 function fallingBoxScene(): SerializedScene {
   return {
@@ -637,7 +642,7 @@ describe("p7-play-scene-load", () => {
         ],
       }),
     );
-    const runtime = createRuntimeFromLoad(
+    const runtime = immediateRuntimeFromLoad(
       {
         type: "load",
         sceneAssetGuid: "assets/possess.scene.hasset",
@@ -1301,7 +1306,7 @@ describe("p7-play-scene-load", () => {
     const level2 = cameraPossessScene(true);
     level2.name = "Level2";
     const commands: CommandMessage[] = [];
-    const runtime = createRuntimeFromLoad(
+    const runtime = immediateRuntimeFromLoad(
       {
         type: "load",
         sceneAssetGuid: "scene-1",
@@ -1397,7 +1402,7 @@ describe("p7-play-scene-load", () => {
       actors: [createActor("other", "Other")],
     };
     const commands: CommandMessage[] = [];
-    const runtime = createRuntimeFromLoad(
+    const runtime = immediateRuntimeFromLoad(
       {
         type: "load",
         sceneAssetGuid: "scene-1",

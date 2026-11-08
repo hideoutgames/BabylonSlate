@@ -279,7 +279,5 @@ export function playLoadControl(options: {
     renderTargets: options.renderTargets,
     renderTargetTextures: options.renderTargetTextures,
     animClipCatalog: options.animClipCatalog,
-    deferSceneModelsReady: true,
-    deferSceneLoadingPaint: true,
   };
 }

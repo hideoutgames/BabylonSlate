@@ -35,6 +35,8 @@ describe("runtimeOptionsFromLoadControl", () => {
     expect(runtimeOptionsFromLoadControl(msg)).toEqual({
       seed: 7,
       cooperativeSceneLoading: true,
+      deferSceneLoadingPaint: true,
+      deferSceneModelsReady: true,
       physicsWorld: "2d",
       gravity: [0, -20, 0],
       havokWasmUrl: "/havok/HavokPhysics.wasm",
@@ -112,13 +114,11 @@ describe("runtimeOptionsFromLoadControl", () => {
     });
   });
 
-  it("forwards host paint and model readiness gates onto the runtime", () => {
+  it("holds every load's Scene for the host's loading paint and model readiness", () => {
     expect(
       runtimeOptionsFromLoadControl({
         type: "load",
         sceneAssetGuid: "play-scene",
-        deferSceneModelsReady: true,
-        deferSceneLoadingPaint: true,
       }),
     ).toMatchObject({
       deferSceneModelsReady: true,
@@ -199,6 +199,8 @@ describe("runtimeOptionsFromLoadControl", () => {
     ).toEqual({
       seed: 1,
       cooperativeSceneLoading: true,
+      deferSceneLoadingPaint: true,
+      deferSceneModelsReady: true,
       physicsWorld: "3d",
       gravity: [0, -9.81, 0],
       havokWasmUrl: undefined,

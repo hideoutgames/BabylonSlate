@@ -188,7 +188,7 @@ describe("Post Process owner reads and resets", () => {
           "new-image",
         ],
       }),
-      cooperativeSceneLoading: false,
+      cooperativeSceneLoading: false, deferSceneModelsReady: false, deferSceneLoadingPaint: false,
       onCommand: (command) => commands.push(command),
     });
     try {

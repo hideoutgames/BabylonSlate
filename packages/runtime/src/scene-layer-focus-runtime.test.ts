@@ -55,7 +55,8 @@ describe("SceneLayer focus runtime integration", () => {
         sceneLayers: [{ guid: "menu-layer", layer }],
         focusNavigation: normalizeFocusNavigationSettings({ enabled }),
       }),
-      cooperativeSceneLoading: false, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command),
+      cooperativeSceneLoading: false, deferSceneModelsReady: false, deferSceneLoadingPaint: false,
+      preferSoftwarePhysics: true, onCommand: (command) => commands.push(command),
     });
     try {
       await runtime.loadScripts([{

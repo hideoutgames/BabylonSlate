@@ -180,6 +180,8 @@ describe("worker entry snapshot transport", () => {
       saveStorage = storage!;
       runtime = createInProcessRuntime({
         ...runtimeOptionsFromLoadControl(control),
+        // This fake host acknowledges no Scene load: the immediate in-process harness.
+        deferSceneModelsReady: false, deferSceneLoadingPaint: false,
         preferSoftwarePhysics: true,
         sceneLayerLibrary: { hud },
         onCommand: (command) => {

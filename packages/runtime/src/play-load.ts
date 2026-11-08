@@ -96,7 +96,11 @@ export function runtimeOptionsFromLoadControl(
     sessionGeneration: msg.sessionGeneration,
     sessionMode: msg.sessionMode,
     simulationAssetGuids: msg.simulationAssetGuids,
+    // The worker's loading contract: every host paints its Loading UI before a
+    // Scene departs and acknowledges `sceneModelsReady` before On Scene Finish Loading.
     cooperativeSceneLoading: true,
+    deferSceneLoadingPaint: true,
+    deferSceneModelsReady: true,
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
     ...(msg.garbageCollectionIntervalTicks !== undefined ? { garbageCollectionIntervalTicks: msg.garbageCollectionIntervalTicks } : {}),
     ...(msg.traceByteBudget !== undefined ? { traceByteBudget: msg.traceByteBudget } : {}),
@@ -142,9 +146,7 @@ export function runtimeOptionsFromLoadControl(
     ...(msg.animClipCatalog && msg.animClipCatalog.length > 0
       ? { animClipCatalog: msg.animClipCatalog }
       : {}),
-    ...(msg.deferSceneLoadingPaint ? { deferSceneLoadingPaint: true } : {}),
     ...(msg.deferMaterialEdits ? { deferMaterialEdits: true } : {}),
-    ...(msg.deferSceneModelsReady ? { deferSceneModelsReady: true } : {}),
   };
 }
 

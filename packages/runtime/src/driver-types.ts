@@ -165,13 +165,13 @@ export interface RuntimeDriverOptions {
   pixelsPerUnit?: number;
   texturePixelSizes?: Readonly<Record<string, { width: number; height: number }>>;
   /**
-   * Hold OnSceneFinishLoading until `notifySceneModelsReady`. Play overlay and
-   * the exported player set this; in-process tests leave it false.
+   * Hold OnSceneFinishLoading until `notifySceneModelsReady`. Every worker
+   * `load` sets this; in-process tests leave it false.
    */
   deferSceneModelsReady?: boolean;
   deferMaterialEdits?: boolean;
   simulationAssetGuids?: string[];
-  /** Wait for the host Loading UI to paint before retiring or realizing a Scene. */
+  /** Wait for the host Loading UI to paint before retiring or realizing a Scene; every worker `load` sets this. */
   deferSceneLoadingPaint?: boolean;
   /** Real Play/player yield actor work; immediate harnesses keep the default. */
   cooperativeSceneLoading?: boolean | CooperativeSceneLoadingOptions;

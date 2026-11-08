@@ -293,13 +293,6 @@ export type ControlMessage =
         skeletonGuid?: string | null;
         modelGuid?: string;
       }>;
-      /**
-       * Play overlay / player: hold OnSceneFinishLoading until the host posts
-       * `sceneModelsReady`. Headless tests omit this so finish is synchronous.
-       */
-      deferSceneModelsReady?: boolean;
-      /** Acquire/paint host Loading UI before departing Scene teardown. */
-      deferSceneLoadingPaint?: boolean;
     }
   | {
       type: "loadScripts";

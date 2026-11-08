@@ -52,7 +52,7 @@ describe("render target graph runtime", () => {
         renderTargets: { depth: { mode: "DepthPass", width: 128, height: 64 } },
         renderTargetTextures: { image: { renderTargetGuid: "depth" } },
       }),
-      cooperativeSceneLoading: false, preferSoftwarePhysics: true,
+      cooperativeSceneLoading: false, deferSceneModelsReady: false, deferSceneLoadingPaint: false, preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command),
     });
     try {
