@@ -22,6 +22,8 @@ import type {
   SceneStreamingState,
   TouchInput,
   TweenValueType,
+  UtcCalendarDate,
+  UtcTimeOfDay,
   WaterSample,
 } from "@haptic/core";
 import type { ScriptBundleEntry } from "@haptic/bridge";
@@ -362,6 +364,16 @@ export interface ScriptContext {
   getSceneState(target: unknown): SceneStreamingState;
   getProjectName(): string;
   getProjectVersion(): string;
+  /** Get Delta Seconds: the current simulation step (fixed step × time dilation); 0 outside a simulation. */
+  getDeltaSeconds(): number;
+  /** Get Current Frame Count: frames finished since Play started; 0 outside a simulation. */
+  getFrameCount(): number;
+  /** Get Time Now: the engine Time Structure for the wall clock in UTC. */
+  getTimeNow(): UtcTimeOfDay;
+  /** Get Date Now: the engine Date Structure for the wall clock in UTC. */
+  getDateNow(): UtcCalendarDate;
+  /** Get Time MS: Unix time in milliseconds. */
+  getTimeMs(): number;
   /** Get Third-Party Notices: the notices text, or an error message when they cannot be read. */
   getThirdPartyNotices(): Promise<{ success: boolean; text: string; errorMessage: string }>;
   getSceneReference(): Scene | null;
@@ -662,7 +674,7 @@ export type HostContextKey =
   | "getAllComponentsOfType" | "getSceneLoadingProgress" | "getTargetSceneName" | "releaseAssetLoad"
   | "getAssetLoadHandleState" | "getAssetLoadHandleProgress" | "getAssetLoadState" | "loadSceneAsync"
   | "unloadSceneAsync" | "isSceneLoaded" | "getSceneLoadProgress" | "getSceneState" | "getProjectName"
-  | "getProjectVersion" | "getThirdPartyNotices" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
+  | "getProjectVersion" | "getDeltaSeconds" | "getFrameCount" | "getTimeNow" | "getDateNow" | "getTimeMs" | "getThirdPartyNotices" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
   | "setAnimGraphVariable" | "getAnimGraphCurrentState" | "jumpAnimGraphState" | "setChannelVolume"
   | "setGlobalVolume" | "changeScene" | "createSceneLayer" | "removeSceneLayer" | "clearSceneLayers"
   | "setFocusTarget" | "clearFocusTarget" | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"

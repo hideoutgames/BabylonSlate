@@ -186,6 +186,8 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     waitForSimulation: (owner) => rt.waits.continueSimulation(owner) ?? Promise.resolve(),
     getProjectName: () => projectName,
     getProjectVersion: () => projectVersion,
+    getDeltaSeconds: () => rt.world.clock.dt,
+    getFrameCount: frameId,
     ...(getThirdPartyNotices ? { getThirdPartyNotices } : {}),
     setWorldGravity: (gravity) => {
       setWorldGravity(rt, gravity);

@@ -42,6 +42,10 @@ export const ENGINE_ASSET_LOAD_PRIORITY_ENUM_ID = "engine:AssetLoadPriority";
 export const ENGINE_COLLISION_CHANNEL_ENUM_ID = "engine:CollisionChannel";
 export const ENGINE_NAV_OBSTACLE_KIND_ENUM_ID = "engine:NavObstacleKind";
 export const ENGINE_HIT_RESULT_STRUCT_ID = "engine:HitResult";
+/** Get Time Now: the UTC time of day, each field a whole-number Float. */
+export const ENGINE_TIME_STRUCT_ID = "engine:Time";
+/** Get Date Now: the UTC calendar date, Int fields. */
+export const ENGINE_DATE_STRUCT_ID = "engine:Date";
 
 export const ENGINE_INT_RANGE_STRUCT_ID = "engine:IntRange";
 export const ENGINE_FLOAT_RANGE_STRUCT_ID = "engine:FloatRange";
@@ -303,6 +307,29 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
       { name: "Normal", typeId: "vec3" },
       { name: "Actor", typeId: "object", typeClassId: "Actor" },
       { name: "Distance", typeId: "float" },
+    ],
+  },
+  {
+    // `utcTimeOfDay` in core produces this shape.
+    id: ENGINE_TIME_STRUCT_ID,
+    name: "Time",
+    fields: [
+      { name: "Hour", typeId: "float", defaultValue: 0 },
+      { name: "Minute", typeId: "float", defaultValue: 0 },
+      { name: "Second", typeId: "float", defaultValue: 0 },
+      { name: "Millisecond", typeId: "float", defaultValue: 0 },
+    ],
+  },
+  {
+    // `utcCalendarDate` in core produces this shape; Day Of Week counts from Sunday (0).
+    id: ENGINE_DATE_STRUCT_ID,
+    name: "Date",
+    fields: [
+      { name: "Year", typeId: "int", defaultValue: 1970 },
+      { name: "Month", typeId: "int", defaultValue: 1 },
+      { name: "Day", typeId: "int", defaultValue: 1 },
+      { name: "DayOfWeek", typeId: "int", defaultValue: 4 },
+      { name: "DayOfYear", typeId: "int", defaultValue: 1 },
     ],
   },
 

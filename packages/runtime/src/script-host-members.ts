@@ -29,6 +29,8 @@ import {
   rotatorUp,
   SaveGameError,
   slerpQuats,
+  utcCalendarDate,
+  utcTimeOfDay,
   type CurveAssetCatalogEntry,
   type CurveKind,
   type Rng,
@@ -417,6 +419,11 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     getSceneState: (target) => services.getSceneState?.(target) ?? "Unloaded",
     getProjectName: () => services.getProjectName?.() ?? "",
     getProjectVersion: () => services.getProjectVersion?.() ?? "",
+    getDeltaSeconds: () => services.getDeltaSeconds?.() ?? 0,
+    getFrameCount: () => services.getFrameCount?.() ?? 0,
+    getTimeNow: () => utcTimeOfDay(Date.now()),
+    getDateNow: () => utcCalendarDate(Date.now()),
+    getTimeMs: () => Date.now(),
     getThirdPartyNotices: async () => {
       if (!services.getThirdPartyNotices) {
         return { success: false, text: "", errorMessage: "Third-party notices are not available here." };

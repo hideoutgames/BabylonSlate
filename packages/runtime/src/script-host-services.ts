@@ -86,6 +86,10 @@ export interface ScriptHostServices {
   getInputState?: (input: InputTypeValue) => InputValueState | null;
   getProjectName?(): string;
   getProjectVersion?(): string;
+  /** The simulation step the current tick captured (fixed step × time dilation). Absent outside a simulation. */
+  getDeltaSeconds?(): number;
+  /** Frames finished since the session started. Absent outside a simulation. */
+  getFrameCount?(): number;
   /** The game's third-party notices text; rejects when the host has none or cannot read them. */
   getThirdPartyNotices?(): Promise<string>;
   /** When set, `ctx.callInterface` uses P3 dispatch (pin defaults on miss). */
