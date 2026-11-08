@@ -17,16 +17,6 @@ import {
 import { uploadedTextureBytes } from "./uploaded-texture-bytes";
 import { deviceProfile } from "./device-profile";
 
-export interface ResourceCacheOptions {
-  /** Accounted byte ceiling before evicting unreferenced LRU entries. */
-  byteCeiling?: number;
-  /** When false, skip LRU eviction. */
-  budgetEnabled?: boolean;
-  /** The most any budget may hold on this device class (`deviceProfile().textureByteCeiling` by default). */
-  deviceByteCeiling?: number;
-  onEvict?: (assetGuid: string, reason: string) => void;
-}
-
 /** Canonical sampling options — part of the engine InternalTexture cache key. */
 export interface TextureSamplingOptions {
   noMipmap?: boolean;
@@ -353,11 +343,10 @@ export function describeEngineTexture(engine: AbstractEngine, texture: InternalT
  * Texture construction must go through this cache (lint-enforced).
  */
 export class ResourceCache {
-  private ceiling: number;
-  private readonly deviceCeiling: number;
+  /** The most any budget may hold on this device class. */
+  private readonly deviceCeiling = deviceProfile().textureByteCeiling;
+  /** Each view's budget (`ResourceCacheOwner`); the cache has no budget of its own. */
   private readonly clientBudgets = new Map<object, { bytes?: number; enabled?: boolean }>();
-  private budgetEnabled: boolean;
-  private readonly onEvict?: (assetGuid: string, reason: string) => void;
   private readonly entries = new Map<string, CacheEntry>();
   private readonly blobs = new Map<string, Blob>();
   private readonly readiness = new WeakMap<BaseTexture, Promise<void>>();
@@ -373,13 +362,6 @@ export class ResourceCache {
   private totalBytes = 0;
   private handover: TextureHandover | null = null;
   private handoverGeneration = 0;
-
-  constructor(options: ResourceCacheOptions = {}) {
-    this.ceiling = options.byteCeiling ?? TEXTURE_BYTE_CEILING;
-    this.deviceCeiling = options.deviceByteCeiling ?? deviceProfile().textureByteCeiling;
-    this.budgetEnabled = options.budgetEnabled !== false;
-    this.onEvict = options.onEvict;
-  }
 
   /** A lease owns one exact generation. Reading its resource never acquires again. */
   acquireTexture(assetGuid: string, engine: AbstractEngine, bytes: Uint8Array | Blob,
@@ -420,13 +402,12 @@ export class ResourceCache {
     } };
   }
 
-  /** Null when any view (or, without view flags, the cache) disables budgeting. */
+  /** Null when any view disables budgeting; without a view's cap, `TEXTURE_BYTE_CEILING`. */
   private effectiveCeiling(): number | null {
     const policies = [...this.clientBudgets.values()];
-    const flags = policies.flatMap((policy) => policy.enabled === undefined ? [] : [policy.enabled]);
-    if (flags.length ? flags.includes(false) : !this.budgetEnabled) return null;
+    if (policies.some((policy) => policy.enabled === false)) return null;
     const caps = policies.flatMap((policy) => policy.bytes === undefined ? [] : [policy.bytes]);
-    return Math.min(caps.length ? Math.max(...caps) : this.ceiling, this.deviceCeiling);
+    return Math.min(caps.length ? Math.max(...caps) : TEXTURE_BYTE_CEILING, this.deviceCeiling);
   }
 
   private assertAdmitted(): void {
@@ -600,12 +581,6 @@ export class ResourceCache {
       } };
   }
 
-  setByteCeiling(bytes: number): void {
-    if (!Number.isFinite(bytes) || bytes <= 0) return;
-    this.ceiling = bytes;
-    this.evictToCeiling();
-  }
-
   /** Largest live view cap wins; null releases that view's complete budget policy. */
   setClientBudget(client: object, bytes: number | null): void {
     if (bytes === null) this.clientBudgets.delete(client);
@@ -619,11 +594,6 @@ export class ResourceCache {
   setClientBudgetEnabled(client: object, enabled: boolean): void {
     this.clientBudgets.set(client, { ...this.clientBudgets.get(client), enabled });
     this.evictToCeiling();
-  }
-
-  setBudgetEnabled(enabled: boolean): void {
-    this.budgetEnabled = enabled;
-    if (enabled) this.evictToCeiling();
   }
 
   private isUnreferenced(entry: CacheEntry): boolean {
@@ -873,29 +843,10 @@ export class ResourceCache {
     }
   }
 
-  /**
-   * Set an entry's accounted bytes and evict to the ceiling. Production only
-   * re-measures acquired entries; an unknown key creates an accounting-only
-   * entry holding one reference (released with `releaseAccounting`), which
-   * tests use to drive eviction and budgets without allocating textures.
-   */
+  /** Set an acquired entry's accounted bytes and evict to the ceiling; an unknown key accounts nothing. */
   account(assetGuid: string, bytes: number): void {
     const entry = this.entries.get(this.resourceKey(assetGuid));
-    if (!entry) {
-      this.entries.set(assetGuid, {
-        assetGuid,
-        key: assetGuid,
-        blobUrl: "",
-        extraBlobUrls: [],
-        bytes,
-        refCount: 1,
-        lastUsed: ++this.clock,
-        textures: new Map(),
-      });
-      this.totalBytes += bytes;
-      this.evictToCeiling();
-      return;
-    }
+    if (!entry) return;
     this.totalBytes -= entry.bytes;
     entry.bytes = bytes;
     this.totalBytes += bytes;
@@ -958,9 +909,6 @@ export class ResourceCache {
     if (extra >= 0) entry.extraBlobUrls.splice(extra, 1);
     revokeBlobUrl(url);
   }
-
-  /** Drop one reference on `key`; tests use it to release the reference an accounting-only `account()` entry holds. */
-  releaseAccounting(key: string): void { this.release(key); }
 
   accountedBytes(): number {
     return this.totalBytes;
@@ -1086,7 +1034,6 @@ export class ResourceCache {
     disposeEntryTextures(entry);
     revokeEntryBlobUrls(entry);
     console.info(`[resource-cache] evict ${assetGuid} (${reason})`);
-    this.onEvict?.(entry.assetGuid, reason);
   }
 
   dispose(): void {
@@ -1107,7 +1054,7 @@ export interface ResourceLease<T> {
 }
 
 /** The public ResourceCache surface a per-view owner forwards; raw accounting and the Engine's handover stay on the cache. */
-export type TextureResources = Omit<ResourceCache, "account" | "releaseAccounting" | "holdForHandover" | "claimHandover">;
+export type TextureResources = Omit<ResourceCache, "account" | "holdForHandover" | "claimHandover">;
 
 /** A view retains only its currently outstanding leases, never acquisition history. */
 export class ResourceCacheOwner implements TextureResources {

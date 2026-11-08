@@ -8,8 +8,9 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
-import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls } from "@haptic/render";
+import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, type SharedOutlineContribution } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
+import { removeOutlineContribution, setOutlineContribution } from "@haptic/render/shared-outline-contributions";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 
 export interface SharedOutlineProofProgress {
@@ -61,8 +62,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
   const view = owner.createView("shared-outline-proof");
   const renderer = new SceneRenderCoordinator(scene);
   const detach = renderer.attachSharedOutline(view);
-  type Contribution = Parameters<typeof view.setContribution>[1];
-  const contributions: Record<string, Contribution> = {
+  const contributions: Record<string, SharedOutlineContribution> = {
     global: { kind: "global", targets: [targets[0]!], color: [1, 0, 0], width: 2, throughMeshes: false },
     component: { kind: "component", targets: [targets[1]!], color: [0, 0, 1], width: 2, throughMeshes: false },
     selection: { kind: "selection", targets: [targets[2]!], color: [0, 1, 0], width: 2, throughMeshes: true },
@@ -151,9 +151,9 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     return snapshot;
   };
   const mount = (key: string, contribution = contributions[key]!) => {
-    view.setContribution(key, contribution);
+    setOutlineContribution(view, key, contribution);
     // This is the same cleanup a component/view host owns on disposal.
-    return () => view.removeContribution(key);
+    return () => removeOutlineContribution(view, key);
   };
   const retireWithoutDrawing = async () => {
     await onProgress?.({ stage: "unpresented-retirement", state: "preparing" });
@@ -169,7 +169,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     const unpresentedDetach = unpresentedRenderer.attachSharedOutline(unpresentedView);
     let deadline: number | undefined;
     try {
-      unpresentedView.setContribution("selection", {
+      setOutlineContribution(unpresentedView, "selection", {
         kind: "selection", targets: [{ key: "unpresented-actor", meshes: [mesh] }],
         color: [0, 1, 0], width: 2, throughMeshes: true,
       });
@@ -253,7 +253,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     }
     mount("component");
     const siblingView = owner.createView("unpresented-sibling-view");
-    siblingView.setContribution("selection", { ...contributions.selection!, targets: [targets[0]!] });
+    setOutlineContribution(siblingView, "selection", { ...contributions.selection!, targets: [targets[0]!] });
     await capture("sibling-view-selection-isolated");
     siblingView.dispose();
     await capture("sibling-view-disposed");
@@ -280,13 +280,13 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     mount("default-material-selection", { ...contributions.selection!, targets: [{ key: "default-material-actor", meshes: [defaultMaterialMesh] }] });
     renderer.invalidate();
     await capture("no-assigned-material-selected");
-    view.removeContribution("default-material-selection");
+    removeOutlineContribution(view, "default-material-selection");
     defaultMaterialMesh.dispose();
     renderer.invalidate();
     await capture("no-assigned-material-removed");
 
     for (const removed of ["component", "global", "selection"]) {
-      view.removeContribution(removed);
+      removeOutlineContribution(view, removed);
       await capture(`remove-${removed}`);
       const dispose = mount(removed);
       await capture(`restore-${removed}`);
@@ -296,19 +296,19 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     }
 
     // Registration order and membership order must not repurpose mesh-owned IDs.
-    for (const key of ["global", "component", "selection"]) view.removeContribution(key);
+    for (const key of ["global", "component", "selection"]) removeOutlineContribution(view, key);
     for (const key of ["selection", "component", "global"]) mount(key);
     await capture("consumer-order-reversed");
-    const allGlobal: Contribution = { ...contributions.global!, targets: [...targets] };
+    const allGlobal: SharedOutlineContribution = { ...contributions.global!, targets: [...targets] };
     mount("global", allGlobal);
     await capture("overlap-with-global");
     mount("global", { ...allGlobal, targets: [...targets].reverse() });
     await capture("membership-order-reversed");
     mount("selection", { ...contributions.selection!, targets: [targets[1]!] });
     await capture("same-instance-selection-wins");
-    view.removeContribution("selection");
+    removeOutlineContribution(view, "selection");
     await capture("same-instance-component-survives");
-    view.removeContribution("component");
+    removeOutlineContribution(view, "component");
     await capture("same-instance-global-revealed");
 
     // Geometry stays fixed when comparing strict and intentional through visibility.
@@ -322,7 +322,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     await capture("strict-full-and-partial-occlusion");
     mount("component", { ...contributions.component!, targets: [targets[2]!], throughMeshes: true });
     await capture("through-component-keeps-global-strict");
-    view.removeContribution("component");
+    removeOutlineContribution(view, "component");
     await capture("through-component-removed");
     for (const mesh of occluders) mesh.dispose();
     renderer.invalidate();
@@ -355,9 +355,9 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     });
     renderer.invalidate();
     await capture("forty-eight-independent-styles");
-    for (let index = 0; index < many.length; index++) view.removeContribution(`style-${index}`);
+    for (let index = 0; index < many.length; index++) removeOutlineContribution(view, `style-${index}`);
     for (const mesh of many) mesh.dispose();
-    for (const key of ["global", "component", "selection"]) view.removeContribution(key);
+    for (const key of ["global", "component", "selection"]) removeOutlineContribution(view, key);
 
     // Populate CPU identities with empty geometry, then draw three exact IDs.
     // Different colors distinguish 2048/2049 aliasing in a half-float mask;
@@ -376,9 +376,9 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     renderer.invalidate();
     await capture("high-identity-colors");
     const highIdentities = desiredIds.map((id) => owner.identityForKey(highTargetFor(id).key));
-    view.removeContribution("component");
+    removeOutlineContribution(view, "component");
     await capture("high-identity-component-removed");
-    for (const key of ["high-id-global", "component", "selection"]) view.removeContribution(key);
+    for (const key of ["high-id-global", "component", "selection"]) removeOutlineContribution(view, key);
     renderer.invalidate();
     await capture("all-disabled-retired");
     await capture("all-disabled-steady");

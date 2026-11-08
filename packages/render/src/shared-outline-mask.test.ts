@@ -16,6 +16,7 @@ import { acquireAuthoredOutlineVariant, compileMaterialPlan } from "./material-c
 import { SharedOutlineOwner } from "./shared-outline";
 import { SharedOutlineMaskRenderer } from "./shared-outline-mask";
 import { registerSharedOutlineShaders } from "./shared-outline-shaders";
+import { setOutlineContribution } from "./test-support/shared-outline-contributions";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -27,7 +28,7 @@ it("retains a live instance mask program across pruning and releases it with its
   const source = MeshBuilder.CreateBox("source", {}, scene);
   const instance = source.createInstance("actor");
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
-  view.setContribution("actor", { kind: "component", targets: [{ key: "actor", meshes: [instance] }],
+  setOutlineContribution(view, "actor", { kind: "component", targets: [{ key: "actor", meshes: [instance] }],
     color: [1, 0, 0], width: 1 });
   registerSharedOutlineShaders(false);
   const objects = new ObjectRenderer("mask", scene);
@@ -71,7 +72,7 @@ it("masks a Mirror surface with the built-in mirror material as opaque coverage"
   const outlined = MeshBuilder.CreateBox("actor", {}, scene);
   const mirror = createMirrorSurfaceMesh(scene, "mirror", parseMirrorProperties({ width: 2, height: 2 }));
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
-  view.setContribution("actor", { kind: "component", targets: [{ key: "actor", meshes: [outlined] }],
+  setOutlineContribution(view, "actor", { kind: "component", targets: [{ key: "actor", meshes: [outlined] }],
     color: [1, 0, 0], width: 1 });
   registerSharedOutlineShaders(false);
   const objects = new ObjectRenderer("mask", scene);
@@ -100,7 +101,7 @@ it("revalidates coverage edited after a drawn mask pass for readiness and the ne
   source.material = material;
   const instance = source.createInstance("actor");
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
-  view.setContribution("actor", { kind: "component", targets: [{ key: "actor", meshes: [instance] }],
+  setOutlineContribution(view, "actor", { kind: "component", targets: [{ key: "actor", meshes: [instance] }],
     color: [1, 0, 0], width: 1 });
   registerSharedOutlineShaders(false);
   const objects = new ObjectRenderer("mask", scene);
@@ -157,7 +158,7 @@ it("releases the authored coverage variants of pruned and disposed mask programs
   const outside = acquireAuthoredOutlineVariant(authored.material)!;
   expect(await outside.compiled.ready).toEqual([]);
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
-  view.setContribution("actors", { kind: "component", targets: meshes.map((mesh) => ({ key: mesh.name, meshes: [mesh] })),
+  setOutlineContribution(view, "actors", { kind: "component", targets: meshes.map((mesh) => ({ key: mesh.name, meshes: [mesh] })),
     color: [1, 0, 0], width: 1 });
   registerSharedOutlineShaders(false);
   const objects = new ObjectRenderer("mask", scene);

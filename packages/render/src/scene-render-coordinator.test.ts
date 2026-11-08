@@ -46,6 +46,7 @@ import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
 import { registerPipelineWarmPasses, withPipelineWarmupRound } from "./variant-pipeline-warmup";
 import { setSceneBindsPreviousEffects } from "./variant-swaps";
+import { setOutlineContribution } from "./test-support/shared-outline-contributions";
 
 // NullEngine is not WebGPU, so the deferral itself never engages; its scopes are the seam here.
 vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
@@ -1218,7 +1219,7 @@ it("composes a multisampled WebGL2 view's outlines onto the backbuffer after its
   updateSceneRenderingSettings(scene, {});
   const box = MeshBuilder.CreateBox("outlined", {}, scene);
   const view = SharedOutlineOwner.forScene(scene).createView("editor");
-  view.setContribution("selection", {
+  setOutlineContribution(view, "selection", {
     kind: "selection", targets: [{ key: "actor", meshes: [box] }], color: [1, 0, 0], width: 1, throughMeshes: true,
   });
   const detach = renderer.attachSharedOutline(view);
@@ -1240,7 +1241,7 @@ it("rejects an outlined view on a scene the graph cannot draw without drawing it
   const { scene, renderer } = host();
   const box = MeshBuilder.CreateBox("outlined", {}, scene);
   const view = SharedOutlineOwner.forScene(scene).createView("editor");
-  view.setContribution("selection", {
+  setOutlineContribution(view, "selection", {
     kind: "selection", targets: [{ key: "actor", meshes: [box] }],
     color: [1, 0, 0], width: 1, throughMeshes: true,
   });
@@ -1281,7 +1282,7 @@ describe("selection outline changes", () => {
     expect(renderer.taskNames()).toContain("Shared outlines");
     const { graphBuilds } = renderer.diagnostics();
     const strict = renderer.strictReadinessChecks;
-    const outline = renderer.outlineReadinessChecks;
+    const outline = renderer.diagnostics().outlineReadinessChecks;
     // The new selection's mask program is still compiling: no frame may present before it is ready.
     let compiled = false;
     const isReady = Effect.prototype.isReady;
@@ -1295,11 +1296,11 @@ describe("selection outline changes", () => {
     expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
     expect(renderer.strictReadinessChecks).toBe(strict);
     expect(renderer.diagnostics().graphBuilds).toBe(graphBuilds);
-    expect(renderer.outlineReadinessChecks).toBeGreaterThan(outline);
+    expect(renderer.diagnostics().outlineReadinessChecks).toBeGreaterThan(outline);
     // Admitted again: steady frames add no probe of any kind.
-    const settled = renderer.outlineReadinessChecks;
+    const settled = renderer.diagnostics().outlineReadinessChecks;
     expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
-    expect(renderer.outlineReadinessChecks).toBe(settled);
+    expect(renderer.diagnostics().outlineReadinessChecks).toBe(settled);
     expect(renderer.strictReadinessChecks).toBe(strict);
     renderer.dispose();
   });

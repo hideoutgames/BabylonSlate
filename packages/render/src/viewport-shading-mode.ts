@@ -46,10 +46,6 @@ export class ViewportShadingOverlay {
     this.scene = scene;
   }
 
-  get mode(): ViewportShadingMode {
-    return this.current;
-  }
-
   setMode(mode: ViewportShadingMode): void {
     this.current = mode;
     this.apply();

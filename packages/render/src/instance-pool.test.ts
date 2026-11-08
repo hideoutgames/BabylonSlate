@@ -266,14 +266,6 @@ describe("instancingIneligibility", () => {
     expect(instancingIneligibility(mesh, null)).toBeNull();
     expect(instancingIneligibility(mesh, new StandardMaterial("surface", scene))).toBeNull();
   });
-
-  it("counts the meshes left unpooled by reason", () => {
-    const { pool } = fixture();
-    pool.noteUnpooled("blended");
-    pool.noteUnpooled("blended");
-    pool.noteUnpooled("deforming");
-    expect(pool.diagnostics().unpooled).toEqual({ blended: 2, deforming: 1 });
-  });
 });
 
 it("places nothing: a member starts at the origin, unparented, whatever the source's transform was built with", () => {

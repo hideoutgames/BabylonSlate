@@ -26,7 +26,7 @@ import { advanceBlendRebuild, markBlendDirty, syncSceneBlend } from "./water-mes
 import { blendNormals, globalReachRows, liveBlendInputs, placeBlend, placeGlobalBlend, sceneBlends } from "./water-mesh-blend-data";
 import { REBUILT, RECENTRED, syncGlobalIndices, syncQuality, updateLayout } from "./water-mesh-grid";
 import { centredGrid, restDataRange, uploadRestData } from "./water-mesh-rest-data";
-import { L_CX, L_CZ, LAYOUT_STATE, NO_PARTNERS, type Surface } from "./water-mesh-surface";
+import { isWaterSurfaceMesh, L_CX, L_CZ, LAYOUT_STATE, markWaterSurfaceMesh, NO_PARTNERS, type Surface } from "./water-mesh-surface";
 import { advanceSceneWaterClock, deleteSceneWaterClock, sceneWaterTime } from "./water-scene-clock";
 export { WATER_BLEND_REFRESH_MS } from "./water-mesh-blend";
 export { WATER_FINITE_CELL_BUDGET, WATER_GLOBAL_CELL_BUDGET, WATER_OCEAN_CELL_BUDGET } from "./water-mesh-grid";
@@ -369,7 +369,7 @@ export function markBuiltInWaterMaterial(material: Material): void {
  * pre-graph probe cannot know: only the view's graph probes it, under the real pass.
  */
 export function isBuiltInWaterMesh(mesh: AbstractMesh): boolean {
-  if ((mesh.metadata as { slateWater?: unknown } | null)?.slateWater !== true) return false;
+  if (!isWaterSurfaceMesh(mesh)) return false;
   const surface = surfaceByMesh.get(mesh);
   return surface !== undefined && mesh.material !== null && builtInMaterials.has(waterVariantBase(mesh.material));
 }
@@ -380,7 +380,7 @@ export function isBuiltInWaterMesh(mesh: AbstractMesh): boolean {
  * A per-frame check: no allocation.
  */
 export function waterMeshSamplesSceneCopy(mesh: AbstractMesh, refraction: boolean, screenSpace: boolean): boolean {
-  if ((mesh.metadata as { slateWater?: unknown } | null)?.slateWater !== true) return false;
+  if (!isWaterSurfaceMesh(mesh)) return false;
   const surface = surfaceByMesh.get(mesh);
   if (!surface || !surface.nodeCopyUse || !mesh.material?.needAlphaBlendingForMesh(mesh)) return false;
   const use = copyUse(surface);
@@ -584,7 +584,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   const body = normalizeWaterBody(input, input.kind), water = normalizeWaterDefinition(definition ?? createDefaultWaterDefinition());
   const mesh = new Mesh(name, scene);
   mesh.setEnabled(body.enabled);
-  mesh.metadata = { ...(mesh.metadata ?? {}), slateWater: true };
+  markWaterSurfaceMesh(mesh);
   const gridOffset = new Float64Array(2);
   // A GPU Global grid is uploaded relative to its snapped centre, which the Water Waves node's vertex shader adds back: picks undo it, and it is zero for every surface that uploads absolute positions.
   setWaterGridOffsetSource(mesh, gridOffset);
