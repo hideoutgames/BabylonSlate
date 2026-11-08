@@ -134,7 +134,9 @@ describe("Water material nodes", () => {
       expect(fragment).toMatch(/if \((uniforms\.)?slateWaterFieldStep\.w > 0\.0 && swnField\.w > [\d.]+\) \{/);
       expect(fragment).toMatch(/swShoreSlope = mix\(length\(swTerrainSlope\), 1\.0, swFineClamped\);/);
       expect(fragment).toMatch(/smoothstep\(0\.35, 1\.0, swShoreSlope\)/);
-      expect(fragment).toContain("swCopyTexel");
+      // Beside the silhouette of something in front of the water, Water Scene Color and Water Depth Fade both take the copy
+      // texel behind the water, from the four neighbour depths the fragment loads once.
+      expect(fragment.match(/swCopyBehind\(swnUv, swnWaterZ, swnSceneZ\)/g)).toHaveLength(2);
       // It lets nothing through over open sky, nor one copy texel in from it: a multisampled silhouette's resolved colour
       // there holds the background while its depth is the surface's (dark dashes along a submerged landscape's border).
       expect(fragment).toMatch(/swnOpenSky = step\([\d.]+, max\(swnSceneZ, swnNearSky\)\);/);
@@ -372,11 +374,11 @@ describe("Water Shading Detail", () => {
     updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { shadingDetail, reflections } }) });
 
   it.each([
-    // Shoreline taps, contact foam, edge foam's finer octaves, the silhouette fallback.
-    ["low", 0, [false, false, false, false]],
-    ["medium", 1, [true, true, true, false]],
-    ["high", 2, [true, true, true, true]],
-    ["ultra", 3, [true, true, true, true]],
+    // Shoreline taps, contact foam, edge foam's finer octaves.
+    ["low", 0, [false, false, false]],
+    ["medium", 1, [true, true, true]],
+    ["high", 2, [true, true, true]],
+    ["ultra", 3, [true, true, true]],
   ] as const)("at %s draws the water nodes' terms of level %i", async (level, value, terms) => {
     const scene = host();
     overlook(scene);
@@ -390,11 +392,10 @@ describe("Water Shading Detail", () => {
       fragment.includes("swTerrainSlope"),
       /swnContactAmount = swnContactFoamAmount\(/.test(fragment),
       fragment.includes("p * 6.1"),
-      fragment.includes("swCopyTexel"),
     ]).toEqual(terms);
-    // Cheap terms stay at every level: the haze and aerial perspective, the slope-variance roughness, the transmittance
-    // and edge foam's broadest noise.
-    for (const kept of ["swAirOn", "swHaze =", "swnShadePixel", "swnTCosT", "p * 0.7"]) expect(fragment, kept).toContain(kept);
+    // Cheap terms stay at every level: the haze and aerial perspective, the slope-variance roughness, the transmittance,
+    // edge foam's broadest noise and the refraction's fallback beside silhouettes (no texture loads of its own).
+    for (const kept of ["swAirOn", "swHaze =", "swnShadePixel", "swnTCosT", "p * 0.7", "swCopyBehind("]) expect(fragment, kept).toContain(kept);
   });
 
   it("never overrides the Reflections setting: Low still mirrors the view's planar reflection", async () => {

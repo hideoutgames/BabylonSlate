@@ -43,11 +43,10 @@ export const WATER_BLEND_DEFINE = "SLATE_WATER_BLEND";
 export const WATER_EFFECTS_GEOMETRY_DEFINE = "SLATE_WATER_EFFECTS_GEOMETRY";
 /**
  * The device-clamped project Water Shading Detail as a level, 0 (Low) to 3 (Ultra), which every water node block sets
- * (`#if SLATE_WATER_DETAIL >= n`). It scales only the water nodes' costliest per-pixel terms: Medium drops Water Scene
- * Color's silhouette fallback (four depth loads), Low also the four-tap shoreline under the waves (Water Foam's and
- * Water Depth Fade's), the contact foam's tap and pattern and edge foam's two finer noise octaves. High and Ultra draw
- * every term. Reflections, Refraction, Reflection Steps and FFT Cascades are settings of their own, which it never
- * overrides.
+ * (`#if SLATE_WATER_DETAIL >= n`). It scales only the water nodes' costliest per-pixel terms: Low drops the four-tap
+ * shoreline under the waves (Water Foam's and Water Depth Fade's), the contact foam's tap and pattern and edge foam's two
+ * finer noise octaves. Medium, High and Ultra draw every term. Reflections, Refraction, Reflection Steps and FFT Cascades
+ * are settings of their own, which it never overrides.
  */
 export const WATER_DETAIL_DEFINE = "SLATE_WATER_DETAIL";
 export const WATER_DETAIL_LEVELS: Readonly<Record<WaterShadingDetail, number>> = { low: 0, medium: 1, high: 2, ultra: 3 };

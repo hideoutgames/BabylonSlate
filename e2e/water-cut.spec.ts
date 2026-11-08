@@ -80,6 +80,27 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       return count;
     };
     expect({ default: bled(result.fogThrough), half: bled(result.fogThroughHalf) }).toEqual({ default: 0, half: 0 });
+    // A box hovering above the water changes nothing about the water around it: where a downsampled copy texel holds
+    // the box (in front of the water), Water Scene Color and Water Depth Fade take the neighbouring texel that lies
+    // behind the water, so Available (red) stays 1 and Fade (green) stays what the floor gives. Without that, Available
+    // fell to 0 and Fade to the body's depth there: an outline one copy texel wide around everything in front of water.
+    const blue = (pixels: number[], index: number) => pixels[index + 2]! > 200 && pixels[index]! < 60 && pixels[index + 1]! < 60;
+    const nearBox = (x: number, y: number) => [-2, -1, 0, 1, 2].some((dy) => [-2, -1, 0, 1, 2].some((dx) =>
+      x + dx >= 0 && y + dy >= 0 && x + dx < result.width && y + dy < result.height &&
+      blue(result.probeBeside, ((y + dy) * result.width + x + dx) * 4)));
+    let boxed = 0, beside = 0;
+    const changed: { x: number; y: number; open: number[]; beside: number[] }[] = [];
+    for (let y = 0; y < result.height; y++) for (let x = 0; x < result.width; x++) {
+      const index = (y * result.width + x) * 4;
+      if (blue(result.probeBeside, index)) { boxed++; continue; }
+      if (background(result.probeOpen, index) || background(result.probeBeside, index)) continue;
+      if (nearBox(x, y)) beside++;
+      if (Math.abs(result.probeOpen[index]! - result.probeBeside[index]!) > 64 || Math.abs(result.probeOpen[index + 1]! - result.probeBeside[index + 1]!) > 16)
+        changed.push({ x, y, open: result.probeOpen.slice(index, index + 3), beside: result.probeBeside.slice(index, index + 3) });
+    }
+    expect(boxed).toBeGreaterThan(40);
+    expect(beside).toBeGreaterThan(40);
+    expect(changed).toEqual([]);
     // The glint's coverage rose by its brightest channel (to 60% over the magenta background, not 20% of a clipped white).
     let raised = 0;
     for (let index = 0; index < result.glintPixels.length; index += 4) if (result.glintPixels[index + 1]! > 120) raised++;

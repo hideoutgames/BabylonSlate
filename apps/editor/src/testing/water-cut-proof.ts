@@ -4,7 +4,9 @@
  * HapticLightingBlock), each without and with a removal volume over part of it; and the water starter graph, which
  * reads every water node, drawn once with ambient occlusion and Real-Time Reflections, so it also draws the scene
  * effects' geometry pass; in dense fog, water that shows only what Water Scene Color refracts, unbent, over a floor
- * (at the Default tier's copy resolution and at half), and the floor without it; and a faint translucent Material three times brighter than white, whose coverage rises.
+ * (at the Default tier's copy resolution and at half), and the floor without it; still water over the floor that shows
+ * Water Scene Color's Available and Water Depth Fade's Fade, without and with a box hovering above it; and a faint
+ * translucent Material three times brighter than white, whose coverage rises.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
@@ -19,7 +21,8 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { createDefaultWaterDefinition, normalizeRenderEffectsSettings, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
 import {
-  compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, createWaterRemovalMesh, setSceneRenderSettings, updateSceneWater,
+  compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, createWaterRemovalMesh, setSceneRenderSettings,
+  setSceneWaterTime, updateSceneWater,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey, type MaterialDocument } from "@haptic/shader-graph";
@@ -41,6 +44,29 @@ function waterDocument(kind: (typeof MATERIALS)[number]): MaterialDocument {
     doc.nodes.push({ id: "waves", type: "input.waterWaves", position: { x: 0, y: 0 }, properties: {} });
     doc.edges.push({ id: "offset", sourceNodeId: "waves", sourcePinId: "offset", targetNodeId: "output", targetPinId: "worldPositionOffset" });
   }
+  return doc;
+}
+
+/** Unlit water that shows Water Scene Color's Available in red and Water Depth Fade's Fade in green. */
+function probeDocument(): MaterialDocument {
+  const doc = createDefaultMaterialDocument("Probe");
+  doc.shadingModel = "unlit";
+  doc.blendMode = "translucent";
+  doc.edges = doc.edges.filter((edge) => edge.targetNodeId !== "output");
+  const output = doc.nodes.find((node) => node.id === "output")!.properties;
+  output[materialPinDefaultPropertyKey("baseColor")] = [0, 0, 0];
+  // Just under 1, so it blends and reads the scene copy (a constant 1 compiles opaque).
+  output[materialPinDefaultPropertyKey("opacity")] = [0.99];
+  doc.nodes.push(
+    { id: "scene", type: "input.waterSceneColor", position: { x: 0, y: 0 }, properties: {} },
+    { id: "depth", type: "input.waterDepthFade", position: { x: 0, y: 200 }, properties: {} },
+    { id: "probe", type: "vector.combine", position: { x: 200, y: 0 }, properties: {} },
+  );
+  doc.edges.push(
+    { id: "available", sourceNodeId: "scene", sourcePinId: "available", targetNodeId: "probe", targetPinId: "x" },
+    { id: "fade", sourceNodeId: "depth", sourcePinId: "fade", targetNodeId: "probe", targetPinId: "y" },
+    { id: "shown", sourceNodeId: "probe", sourcePinId: "xyz", targetNodeId: "output", targetPinId: "emissive" },
+  );
   return doc;
 }
 
@@ -93,10 +119,12 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     sun.intensity = 1.5;
     const graph = new ForwardSceneFrameGraph(scene);
-    const draw = async (frames = 1) => {
+    const draw = async (frames = 1, still = false) => {
       for (let frame = 0; frame < frames; frame++) {
         // Each draw is a new render: water picks its removal volumes once per render.
         scene.incrementRenderId();
+        // Still water shades the same surface in every draw.
+        if (still) setSceneWaterTime(scene, 0);
         updateSceneWater(scene);
         await graph.prepare(camera);
         engine.beginFrame();
@@ -169,10 +197,32 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     setSceneRenderSettings(scene, { mode: "pbr", quality: normalizeRenderingQuality({}), shadows });
     windowWater.dispose();
     glass.dispose();
+    // Still water over the same floor, raised to shallower than the body's own depth there, without fog, that shows
+    // Water Scene Color's Available and Water Depth Fade's Fade; then with a blue box hovering above it. At the default
+    // tier's half-resolution copy, the copy texels around the box hold the box, which lies in front of the water.
+    Object.assign(scene, { fogStart: 400, fogEnd: 800 });
+    floor.position.y = -0.4;
+    const probePlan = lowerMaterialDocument(probeDocument());
+    if (!probePlan.ok) throw new Error("The probe water did not lower");
+    const probe = compileMaterialPlan(probePlan.plan, { scene, name: "probe" });
+    if (!probe.ok) throw new Error("The probe water did not compile");
+    await probe.ready;
+    const probeWater = createWaterMesh(scene, "probe water", normalizeWaterBody({ width: 8, length: 8, resolution: 8 }), createDefaultWaterDefinition(), probe.material);
+    const probeOpen = await draw(6, true);
+    const box = MeshBuilder.CreateBox("box", { size: 1.2 }, scene);
+    box.position.set(-0.5, 1.6, 0.5);
+    const boxMaterial = new StandardMaterial("box", scene);
+    boxMaterial.disableLighting = true;
+    boxMaterial.emissiveColor = new Color3(0, 0, 1);
+    box.material = boxMaterial;
+    const probeBeside = await draw(2, true);
+    box.dispose();
+    boxMaterial.dispose();
+    probeWater.dispose();
+    probe.dispose();
     floor.dispose();
     floorMaterial.dispose();
     // A glint: 20% coverage of light three times brighter than white, which an 8-bit target would clip to a dim white.
-    Object.assign(scene, { fogStart: 400, fogEnd: 800 });
     const glintDoc = waterDocument("translucent");
     const glintOutput = glintDoc.nodes.find((node) => node.id === "output")!.properties;
     // A display-space colour: about 3 in linear.
@@ -196,7 +246,7 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     graph.dispose();
     return {
       width: canvas.width, height: canvas.height, holeX, captures, prePassEffects, geometryEffects, starterPixels, starterCopied,
-      fogDirect, fogThrough, fogThroughHalf, glintPixels,
+      fogDirect, fogThrough, fogThroughHalf, probeOpen, probeBeside, glintPixels,
     };
   } finally {
     scene.dispose();

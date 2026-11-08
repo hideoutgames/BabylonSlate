@@ -218,7 +218,15 @@ float swnContactAt(vec2 xz, float height) {
   state._emitFunction("swnFieldAt", `#ifdef ${WATER_SURFACE_DEFINE}\n${taps}${bind(code, wgsl)}#endif\n`, "");
 }
 
-/** The scene copy's taps (`swSceneColor`, `swSceneDepth`, `swSceneTexel`, `swSceneTexelUv`), as built-in water's. */
+/**
+ * The scene copy's taps (`swSceneColor`, `swSceneDepth`, `swSceneTexel`, `swSceneTexelUv`), as built-in water's, and the
+ * fragment's copy neighbourhood (`swCopyNear`, `swCopyBehind`): the depths of the four copy texels beside the fragment's
+ * own (+x, −x, +y, −y), loaded once per fragment by whichever water node asks first and kept in private globals, so
+ * Water Depth Fade (every fragment) and Water Scene Color (beside a silhouette) share one set of four loads. Every caller
+ * passes the fragment's own, unbent copy uv. `swCopyBehind` picks the farthest of the four that lies behind the water
+ * (beside an object, what lies beyond it rather than the object's own edge, which can lie just past the water): its
+ * offset in copy texels and its depth, or no offset and the given depth when none does.
+ */
 function emitCopyHelpers(state: NodeMaterialBuildState): void {
   const wgsl = wgslOf(state), s = WATER_NODE_SCENE_SAMPLER;
   state._emitUniformFromString(SCREEN_UNIFORM, Types.Vector4);
@@ -227,6 +235,8 @@ function emitCopyHelpers(state: NodeMaterialBuildState): void {
   // Filtering blends the copy's depth (alpha) with its colour: a texel filtered far beyond its own depth took in open sky
   // beside it, whose colour water shows nothing of, so the texel's own colour stands there.
   const skyBlend = f(WATER_SCENE_COPY_SKY_DEPTH * 0.01);
+  const behind = (vec3: string) => [["x", 1, 0], ["y", -1, 0], ["z", 0, 1], ["w", 0, -1]].map(([c, x, y]) =>
+    `  if (swZ.${c} >= swBest) { swBest = swZ.${c}; swB = ${vec3}(${f(x as number)}, ${f(y as number)}, swZ.${c}); }`).join("\n");
   const code = wgsl ? `
 fn swSceneTexel(uv: vec2f) -> vec4f {
   let swSize = vec2i(textureDimensions(${s}, 0));
@@ -239,6 +249,23 @@ fn swSceneColor(uv: vec2f) -> vec3f {
 }
 fn swSceneDepth(uv: vec2f) -> f32 { return swSceneTexel(uv).a; }
 fn swSceneTexelUv() -> vec2f { return 1.0 / vec2f(textureDimensions(${s}, 0)); }
+var<private> swCopyNearZ: vec4f;
+var<private> swCopyNearLoaded: bool;
+fn swCopyNear(uv: vec2f) -> vec4f {
+  if (!swCopyNearLoaded) {
+    let swT = swSceneTexelUv();
+    swCopyNearZ = vec4f(swSceneDepth(uv + vec2f(swT.x, 0.0)), swSceneDepth(uv - vec2f(swT.x, 0.0)), swSceneDepth(uv + vec2f(0.0, swT.y)), swSceneDepth(uv - vec2f(0.0, swT.y)));
+    swCopyNearLoaded = true;
+  }
+  return swCopyNearZ;
+}
+fn swCopyBehind(uv: vec2f, waterZ: f32, z: f32) -> vec3f {
+  let swZ = swCopyNear(uv);
+  var swB = vec3f(0.0, 0.0, z);
+  var swBest = waterZ;
+${behind("vec3f")}
+  return swB;
+}
 ` : `
 vec4 swSceneTexel(vec2 uv) {
   ivec2 swSize = textureSize(${s}, 0);
@@ -251,6 +278,23 @@ vec3 swSceneColor(vec2 uv) {
 }
 float swSceneDepth(vec2 uv) { return swSceneTexel(uv).a; }
 vec2 swSceneTexelUv() { return 1.0 / vec2(textureSize(${s}, 0)); }
+vec4 swCopyNearZ = vec4(0.0);
+bool swCopyNearLoaded = false;
+vec4 swCopyNear(vec2 uv) {
+  if (!swCopyNearLoaded) {
+    vec2 swT = swSceneTexelUv();
+    swCopyNearZ = vec4(swSceneDepth(uv + vec2(swT.x, 0.0)), swSceneDepth(uv - vec2(swT.x, 0.0)), swSceneDepth(uv + vec2(0.0, swT.y)), swSceneDepth(uv - vec2(0.0, swT.y)));
+    swCopyNearLoaded = true;
+  }
+  return swCopyNearZ;
+}
+vec3 swCopyBehind(vec2 uv, float waterZ, float z) {
+  vec4 swZ = swCopyNear(uv);
+  vec3 swB = vec3(0.0, 0.0, z);
+  float swBest = waterZ;
+${behind("vec3")}
+  return swB;
+}
 `;
   state._emitFunction("swSceneColor", `#ifdef ${WATER_NODE_COPY_DEFINE}\n${code}#endif\n`, "");
 }
@@ -506,7 +550,8 @@ RegisterClass("BABYLON.WaterFoamBlock", WaterFoamBlock);
  * (`transmittanceSource`, with the asset's absorption, at the Water Waves block's normal; none where the copy holds
  * nothing behind the water). Where the pass has the view's scene copy, Depth is what the copy holds behind the surface
  * (any geometry under the water), measured straight down; elsewhere the terrain the water mesh knows, else the body's
- * shelving bank and Depth.
+ * shelving bank and Depth. Beside a silhouette of something in front of the water, the neighbouring copy texel behind
+ * the water stands in, as for Water Scene Color (from the fragment's copy neighbourhood, which this block loads anyway).
  */
 export class WaterDepthFadeBlock extends WaterNodeBlock {
   constructor(name: string) {
@@ -567,6 +612,11 @@ export class WaterDepthFadeBlock extends WaterNodeBlock {
 vec2 swnUv = ${fragCoord(state)}.xy * U.${SCREEN_UNIFORM}.xy;
 float swnWaterZ = abs((${view} * vec4(${position}.xyz, 1.0)).z);
 float swnSceneZ = swSceneDepth(swnUv);
+vec4 swnNear = swCopyNear(swnUv);
+// Beside the silhouette of something in front of the water, the copy texel holds that object (a downsampled texel's
+// nearest depth, a multisampled pixel's one sample): the neighbouring texel behind the water stands in, as for Water
+// Scene Color, so the depth there is not the body's own estimate (an outline one copy texel wide).
+if (swnSceneZ < swnWaterZ) { swnSceneZ = swCopyBehind(swnUv, swnWaterZ, swnSceneZ).z; }
 float swnOrtho = U.${LOOK_UNIFORM}.w;
 float swnDrop = mix(abs(${eye}.y - ${position}.y) / max(swnWaterZ, 0.001), abs(${view}[1][2]), swnOrtho);
 float swnBehind = step(swnWaterZ, swnSceneZ);
@@ -574,9 +624,7 @@ swnDepth = mix(swnDepth, min(swnDepth, max(swnSceneZ - swnWaterZ, 0.0) * swnDrop
 // No geometry behind the water in the copy (its sky depth): open water lets nothing through, as built-in water. Nor
 // beside it, one copy texel in: a silhouette there against open sky (an underwater landscape's border) has its colour
 // blended with the background by the view's multisampled resolve, while its depth is one sample's, the surface's.
-vec2 swnTexel = swSceneTexelUv();
-float swnNearSky = max(max(swSceneDepth(swnUv + vec2(swnTexel.x, 0.0)), swSceneDepth(swnUv - vec2(swnTexel.x, 0.0))),
-  max(swSceneDepth(swnUv + vec2(0.0, swnTexel.y)), swSceneDepth(swnUv - vec2(0.0, swnTexel.y))));
+float swnNearSky = max(max(swnNear.x, swnNear.y), max(swnNear.z, swnNear.w));
 swnOpenSky = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, max(swnSceneZ, swnNearSky));
 `, wgsl)
       + "#endif\n"
@@ -598,11 +646,12 @@ RegisterClass("BABYLON.WaterDepthFadeBlock", WaterDepthFadeBlock);
  * Water Scene Color: the view's scene copy behind this pixel (linear colour), bent by the surface's tilt through the
  * water behind it as built-in Refraction bends it (Refraction where connected, else the asset's), never taking anything
  * in front of the water: beside a silhouette, a neighbouring copy texel behind the water stands in, as built-in water's
- * (`silhouetteFallbackSource`, at High and Ultra Water Shading Detail). Available is 1 where the colour came from the copy, easing to 0 just behind what is in
- * front of the water as built-in water's refracted share does, and 0 where the pass has none (a material preview, a
- * capture, an opaque Material, Water Refraction off): Color is black there. The copy is fogged already, so in the
- * scene's fog Color comes with the Material's own fog undone (built-in water's pre-division, by the Scene Fog block's
- * factor and colour): mixed into the Material's colour by any share, the background keeps its own fog only.
+ * (`silhouetteFallbackSource`, at every Water Shading Detail). Available is 1 where the colour came from the copy, easing
+ * to 0 just behind what is in front of the water as built-in water's refracted share does, and 0 where the pass has
+ * none (a material preview, a capture, an opaque Material, Water Refraction off): Color is black there. The copy is
+ * fogged already, so in the scene's fog Color comes with the Material's own fog undone (built-in water's pre-division,
+ * by the Scene Fog block's factor and colour): mixed into the Material's colour by any share, the background keeps its
+ * own fog only.
  */
 export class WaterSceneColorBlock extends WaterNodeBlock {
   constructor(name: string) {
@@ -664,7 +713,7 @@ float swnZ1 = swSceneDepth(swnBent);
 float swnLeak = max(step(swnZ1, swnWaterZ), step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swnZ1) * step(swnZ0, ${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}));
 swnBent = mix(swnBent, swnUv, swnLeak);
 float swnSceneZ = mix(swnZ1, swnZ0, swnLeak);
-${silhouetteFallbackSource("swnBent", "swnSceneZ", "swnWaterZ", `U.${SCREEN_UNIFORM}.x`)}
+${silhouetteFallbackSource("swnBent", "swnUv", "swnSceneZ", "swnWaterZ")}
 `, wgsl)
       + (this.color.hasEndpoints ? `${color} = swSceneColor(swnBent);\n`
         // The copy is already fogged: undo the Material's own fog on it, which the Scene Fog block applies after (its
