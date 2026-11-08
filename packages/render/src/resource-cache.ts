@@ -317,7 +317,10 @@ export function releaseResourceCacheForEngine(engine: AbstractEngine): void {
 
 /** A native texture as a leak report names it. */
 export interface EngineTextureDescription {
-  /** Its upload URL (a ResourceCache blob URL for assets), else the kind of source that created it. */
+  /**
+   * Its upload URL (for an asset, a ResourceCache object URL, or a never-fetched `haptic-buffer:` name for a 2D KTX2
+   * decoded from its buffer), else the kind of source that created it.
+   */
   name: string;
   size: string;
   cube: boolean;
