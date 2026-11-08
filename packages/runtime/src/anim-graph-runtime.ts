@@ -109,25 +109,6 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   }
 
   /**
-   * Replace evaluation, initialization and pending jumps with a trace frame's,
-   * so each graph continues mid-state without re-running its initialization.
-   */
-  restoreFromTrace(rows: readonly TraceAnimGraphState[]): void {
-    this.evalByComponent.clear();
-    this.initializedGraphByComponent.clear();
-    this.pendingJumpByComponent.clear();
-    this.graphByComponent.clear();
-    for (const row of rows) {
-      if (row.graphGuid !== undefined && row.state) {
-        this.evalByComponent.set(row.componentGuid, structuredClone(row.state) as unknown as AnimEvalState);
-        this.initializedGraphByComponent.set(row.componentGuid, row.graphGuid);
-        this.graphByComponent.set(row.componentGuid, row.graphGuid);
-      }
-      if (row.pendingJumpStateId) this.pendingJumpByComponent.set(row.componentGuid, row.pendingJumpStateId);
-    }
-  }
-
-  /**
    * Bind a component's evaluation and queued jump to `graphGuid`. When the
    * component switches to another graph, the old graph's state and jump are
    * dropped so the new graph starts at its entry state. A first binding keeps

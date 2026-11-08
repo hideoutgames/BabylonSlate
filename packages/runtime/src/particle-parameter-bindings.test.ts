@@ -108,32 +108,6 @@ describe("particle parameters in Class graphs", () => {
     expect(warnings.map((command) => command.type === "log" && command.message.match(/"(\w+)"/)?.[1])).toEqual(["Missing", "Tint"]);
     runtime.stop();
   });
-
-  it("keeps runtime values in later assignments and records and restores them through trace frames", async () => {
-    const commands: CommandMessage[] = [];
-    const runtime = await runtimeWith([
-      "export function onBeginPlay(ctx) {",
-      '  for (const id of ["sparks", "smoke"]) {',
-      '    ctx.callComponentFunction(ctx.getComponentById(ctx.self, id), "setParticleFloatParameter", { name: "Heat", value: 5 });',
-      "  }",
-      "}",
-    ], commands);
-    runtime.executeConsoleCommand("snapshot start");
-    runtime.tick();
-    runtime.executeConsoleCommand("snapshot stop");
-    const frame = runtime.stopTrace()!.frames[0]!;
-    expect(frame.particles?.parameters).toEqual([
-      { actorGuid: "emitter", componentGuid: "sparks", values: { Heat: [5] } },
-      { actorGuid: "emitter", componentGuid: "smoke", values: { Heat: [5, 5, 5] } },
-    ]);
-    commands.length = 0;
-    runtime.restoreFromTrace(frame);
-    expect(parameterCommands(commands)).toEqual([
-      { type: "setParticleParameter", actorGuid: "emitter", componentId: "sparks", name: "Heat", value: [5] },
-      { type: "setParticleParameter", actorGuid: "emitter", componentId: "smoke", name: "Heat", value: [5, 5, 5] },
-    ]);
-    runtime.stop();
-  });
 });
 
 describe("Parameter Overrides and live edits", () => {
@@ -192,20 +166,5 @@ describe("RuntimeParticles parameter values", () => {
     expect(particles.prepare(assign("b"))).not.toHaveProperty("parameters");
     particles.observe({ type: "assignParticle", slotId: 1, actorGuid: "actor", componentId: "a", particleSystemGuid: null });
     expect(particles.value("actor", "a", "Heat")).toBeUndefined();
-  });
-
-  it("restore resets values set after the frame to the override, or to the default without one", () => {
-    const particles = new RuntimeParticles();
-    particles.setValue("actor", "a", "Heat", [5]);
-    const frame = particles.traceState();
-    particles.setValue("actor", "a", "Tint", [1, 0, 0, 1]);
-    particles.setValue("actor", "b", "Heat", [9]);
-    const overrides = (_actor: string, component: string): Record<string, number[]> => (component === "a" ? { Tint: [0, 1, 0, 1] } : {});
-    expect(particles.restoreParameterCommands(frame, overrides)).toEqual([
-      { type: "setParticleParameter", actorGuid: "actor", componentId: "b", name: "Heat", value: null },
-      { type: "setParticleParameter", actorGuid: "actor", componentId: "a", name: "Tint", value: [0, 1, 0, 1] },
-      { type: "setParticleParameter", actorGuid: "actor", componentId: "a", name: "Heat", value: [5] },
-    ]);
-    expect(particles.traceState().parameters).toEqual(frame.parameters);
   });
 });

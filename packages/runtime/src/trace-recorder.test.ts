@@ -305,22 +305,5 @@ describe("runtime trace recorder", () => {
       expect(replayed).toEqual(payload.frames.map((frame) => frame.snapshotText));
       replay.stop();
     });
-
-    it("restores a frame's dilation so the next tick takes the recorded step", () => {
-      const recorded = probeRuntime();
-      recorded.executeConsoleCommand("slomo 0.5");
-      recorded.executeConsoleCommand("snapshot start");
-      recorded.tick();
-      recorded.executeConsoleCommand("snapshot stop");
-      const frame = recorded.stopTrace()!.frames.at(-1)!;
-      recorded.stop();
-
-      const replay = probeRuntime();
-      replay.restoreFromTrace(frame);
-      expect(replay.executeConsoleCommand("slomo").output).toBe("slomo 0.5");
-      replay.tick();
-      expect(replay.getWorld().clock.dt).toBe(0.5 / 60);
-      replay.stop();
-    });
   });
 });

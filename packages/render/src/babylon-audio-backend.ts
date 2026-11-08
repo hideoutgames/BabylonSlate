@@ -26,15 +26,6 @@ function sourceBuffer(bytes: Uint8Array): ArrayBuffer {
   ) as ArrayBuffer;
 }
 
-/** Where a resumed voice starts in its clip; `null` when a one-shot already ended. */
-function clipStartOffset(request: AudioPlayRequest, duration: number): number | null {
-  const offset = request.startOffsetSeconds ?? 0;
-  if (!Number.isFinite(offset) || offset <= 0) return 0;
-  if (!Number.isFinite(duration) || duration <= 0) return request.loop ? 0 : offset;
-  if (request.loop) return offset % duration;
-  return offset < duration ? offset : null;
-}
-
 /**
  * Largest share of a voice's high band a wall can remove (-20 dB). The lowpass
  * send restores the low band by `muffle / (1 - muffle)`, which must stay finite.
@@ -137,13 +128,6 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
       this.buffers.set(cacheKey, buffer);
     }
     if (!isCurrent()) return;
-    const startOffset = clipStartOffset(request, buffer.duration);
-    if (startOffset === null) {
-      // A resumed one-shot already finished: report it ended instead of replaying silence.
-      this.pendingVoices.delete(request.voiceId);
-      this.onVoiceEnded?.(request.voiceId);
-      return;
-    }
     const spatial = request.spatial;
     const sound = await CreateSoundAsync(
       request.voiceId,
@@ -180,7 +164,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     sound.onEndedObservable.addOnce(() => {
       this.onVoiceEnded?.(request.voiceId);
     });
-    sound.play(startOffset > 0 ? { startOffset } : undefined);
+    sound.play();
     if (this.paused) this.pauseSound(sound);
   }
 

@@ -75,7 +75,6 @@ import {
   type CommandResult,
   type InfiniteLoopGuard,
   type RegisteredCommand,
-  type TraceFrame,
   type TracePayload,
   type UserCommandDef,
 } from "@haptic/debugger";
@@ -110,7 +109,6 @@ import type { SnapshotPublisher } from "./snapshot-publisher";
 import type { RenderCommandEmitter } from "./render-command-emitter";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import { RuntimeVoices } from "./runtime-voices";
-import { particleComponentOverrides } from "./particle-parameter-bindings";
 import { RuntimeGlobalParameters } from "./runtime-global-parameters";
 import { RuntimeParticles } from "./runtime-particles";
 import type { RuntimeParticleEffects } from "./runtime-particle-effects";
@@ -900,53 +898,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   /** Render-side clocks (particles) follow the dilation the simulation steps with. */
   private publishTimeDilation(): void {
     this.emit({ type: "setSimulationTimeScale", scale: this.timeDilation });
-  }
-
-  /**
-   * Resume a trace frame's time dilation (always published as `setSimulationTimeScale`), behaviour trees, Animation Graphs,
-   * sprite clips and voices on the live World (actors match by guid, BT rows by
-   * render slot). Order: dilation, BT evaluation and ownership, Animation Graph
-   * evaluation, then each live actor's sprite clip in World order (`animState` for a recorded clip,
-   * collider clip cleared otherwise), then `stopSound` for live voices the
-   * frame lacks and `playSound` at the recorded offset, clip and pitch for each
-   * recorded voice, then each tracked ParticleComponent's Play state and generation
-   * (`setParticlePlaying`).
-   */
-  restoreFromTrace(frame: TraceFrame): void {
-    const dilation = this.timeDilation;
-    this.setTimeDilation(frame.timeDilation);
-    // An unchanged dilation is published too, so the render host's clocks match the frame.
-    if (this.timeDilation === dilation) this.publishTimeDilation();
-    this.behaviourTrees.restoreFromTrace(frame.bt ?? []);
-    this.animGraphs.restoreFromTrace(frame.animGraphs ?? []);
-    const recordedClips = new Map((frame.sprites ?? []).map((clip) => [clip.actorGuid, clip]));
-    for (const actor of this.world.getActors()) {
-      if (actor.destroyed) continue;
-      const recorded = recordedClips.get(actor.guid);
-      if (!recorded) {
-        if (this.spriteClips.get(actor)) this.setActorSpriteClip(actor, null);
-        continue;
-      }
-      const { assetGuid, clipName, normalisedTime, stateId } = recorded;
-      this.setActorSpriteClip(actor, { assetGuid, clipName, normalisedTime, stateId });
-      const slotId = this.actorSlot(actor);
-      if (slotId === undefined) continue;
-      this.emit({
-        type: "animState", slotId, stateId, normalisedTime, blendWeights: { [stateId]: 1 },
-        clipName, clipKind: "sprite", clipAssetGuid: assetGuid, justFinished: false, justLooped: false,
-        layers: [{ stateId, clipAssetGuid: assetGuid, clipName, clipKind: "sprite", normalisedTime, weight: 1 }],
-      });
-    }
-    const audio = frame.audio ?? { voices: [], nextScriptVoice: 1 };
-    for (const command of this.voices.restoreCommands(audio, this.frameId)) this.emit(command);
-    const particles = frame.particles ?? { components: [], nextGeneration: 1 };
-    for (const command of this.particles.restoreCommands(particles)) this.emit(command);
-    const overrides = (actorGuid: string, componentId: string) => {
-      const component = this.world.findActor(actorGuid)?.components.find((entry) => entry.guid === componentId);
-      return component ? particleComponentOverrides(component) : {};
-    };
-    for (const command of this.particles.restoreParameterCommands(particles, overrides)) this.emit(command);
-    this.globalParameters.restoreFromTrace(frame.globalParameters ?? []);
   }
 
   registerAnimGraph(guid: string, document: AnimGraphDocument): void {

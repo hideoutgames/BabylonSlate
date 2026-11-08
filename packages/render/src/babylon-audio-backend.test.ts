@@ -28,8 +28,6 @@ vi.mock("@babylonjs/core/AudioV2", () => ({
   CreateSoundBufferAsync: audio.createBuffer,
   CreateSoundAsync: audio.createSound,
 }));
-import { createDefaultAudioPayload } from "@haptic/assets";
-import { AudioService } from "./audio-service";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 
 const request = { voiceId: "voice", assetGuid: "audio", source: new Uint8Array([1]), gain: 1, loop: false, reverbSend: false };
@@ -71,21 +69,6 @@ describe("Babylon audio backend lifecycle", () => {
     backend.dispose();
   });
 
-  it("resumes voices at their clip offset, wrapping loops and ending finished one-shots", async () => {
-    audio.createBuffer.mockImplementationOnce(async (source: ArrayBuffer) => ({ length: source.byteLength, channelCount: 1, duration: 2 }));
-    const backend = new BabylonAudioPlaybackBackend();
-    const ended: string[] = [];
-    backend.onVoiceEnded = (voiceId) => ended.push(voiceId);
-    await backend.play({ ...request, voiceId: "loop", loop: true, startOffsetSeconds: 5 });
-    await backend.play({ ...request, voiceId: "once", startOffsetSeconds: 0.5 });
-    await backend.play({ ...request, voiceId: "done", startOffsetSeconds: 3 });
-    const sounds = await Promise.all(audio.createSound.mock.results.map((result) => result.value as ReturnType<typeof audio.sound>));
-    expect(audio.createSound.mock.calls.map((call) => (call as unknown[])[0])).toEqual(["loop", "once"]);
-    expect(sounds.map((sound) => sound.play.mock.calls[0])).toEqual([[{ startOffset: 1 }], [{ startOffset: 0.5 }]]);
-    expect(ended).toEqual(["done"]);
-    backend.dispose();
-  });
-
   it("muffles a voice by lowering its dry level while the lowpass send keeps the low band", async () => {
     const backend = new BabylonAudioPlaybackBackend();
     await backend.play({ ...request, gain: 0.8 });
@@ -101,26 +84,6 @@ describe("Babylon audio backend lifecycle", () => {
     expect(sound.volume).toBeCloseTo(0.6);
     expect(send.gain.value).toBe(0);
     backend.dispose();
-  });
-
-  it("catches restored voices up by the audio clock time they waited for the unlock: a passed one-shot ends, a loop wraps", async () => {
-    audio.createBuffer.mockImplementationOnce(async (source: ArrayBuffer) => ({ length: source.byteLength, channelCount: 1, duration: 2 }));
-    const ended: string[] = [];
-    const service = new AudioService({ backend: new BabylonAudioPlaybackBackend(), onVoiceEnded: (voiceId) => ended.push(voiceId) });
-    service.setLibrary({ mixerGuid: null, mixers: new Map(), channels: new Map(), attenuations: new Map(),
-      audio: new Map([["clip", createDefaultAudioPayload()]]) });
-    service.setSourceBytes("clip", new Uint8Array([1]));
-    const restored = { type: "playSound", assetGuid: "clip", volume: 1, frameId: 1, startOffsetSeconds: 0.5, restoredAtSeconds: 10 } as const;
-    service.handleCommand({ ...restored, voiceId: "once" });
-    service.handleCommand({ ...restored, voiceId: "loop", loop: true });
-    service.handleCommand({ type: "audioSimTime", seconds: 11.75 });
-    await service.unlockAsync();
-    // 0.5 s + 1.75 s waited in the 2 s clip.
-    expect(audio.createSound.mock.calls.map((call) => (call as unknown[])[0])).toEqual(["loop"]);
-    const sound = await (audio.createSound.mock.results[0]!.value as Promise<ReturnType<typeof audio.sound>>);
-    expect(sound.play.mock.calls).toEqual([[{ startOffset: 0.25 }]]);
-    expect(ended).toEqual(["once"]);
-    service.dispose();
   });
 
   it("does not start a sound when Stop arrives during native sound creation", async () => {

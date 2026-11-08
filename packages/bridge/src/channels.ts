@@ -1073,23 +1073,13 @@ export type CommandMessage =
       emitterActorGuid?: string | null;
       loop?: boolean;
       voiceId?: string;
-      /** Seconds of the voice already played (trace restore); omitted starts at the beginning. */
-      startOffsetSeconds?: number;
       /**
-       * The runtime's uniform [0, 1) draws for the weighted clip and the random pitch, so a trace
-       * restore plays the same clip at the same pitch. Omitted draws are random on the host.
+       * The runtime's uniform [0, 1) draws for the weighted clip and the random pitch, from the
+       * session seed, so traces record the choice. Omitted draws are random on the host.
        */
       clipRoll?: number;
       pitchRoll?: number;
-      /**
-       * Trace restore only: the runtime's audio clock (undilated simulation time, excluding pauses)
-       * when it issued the voice. A restored voice that waits for the audio unlock starts later by
-       * the audio clock time it waited.
-       */
-      restoredAtSeconds?: number;
     }
-  /** Runtime audio clock (undilated simulation seconds, excluding pauses); sent each tick while trace-restored voices are live. */
-  | { type: "audioSimTime"; seconds: number }
   | { type: "stopSound"; voiceId: string }
   | { type: "setVoiceGain"; voiceId: string; volume: number }
   | { type: "setChannelVolume"; channelGuid: string; volume: number }
@@ -1109,7 +1099,7 @@ export type CommandMessage =
       generation?: number;
       /**
        * The component's current parameter values by name (its overrides merged with runtime
-       * sets), so a reassignment, respawn or trace restore starts with them.
+       * sets), so a reassignment or respawn starts with them.
        */
       parameters?: Record<string, number[]>;
     }
@@ -1155,7 +1145,7 @@ export type CommandMessage =
   | { type: "sessionPaused"; paused: boolean; cause?: SessionPauseCause }
   /**
    * The session's simulation time dilation (`slomo`): render-side simulation that runs on its own
-   * clock (particles) runs at this rate. Sent when it changes, at session start and on trace restore.
+   * clock (particles) runs at this rate. Sent at session start and when it changes.
    */
   | { type: "setSimulationTimeScale"; scale: number }
   | { type: "setScalability"; transaction: ScalabilityTransaction }

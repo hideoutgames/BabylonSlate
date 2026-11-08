@@ -1,6 +1,5 @@
 import type { CommandMessage, ControlMessage } from "@haptic/bridge";
 import type { ParticleParameterCatalog, ParticleParameterCatalogEntry } from "@haptic/core";
-import type { TraceParticleComponent, TraceParticleParameters, TraceParticleState } from "@haptic/debugger";
 
 type ComponentState = { playing: boolean; generation: number };
 type PlaybackEnded = Extract<ControlMessage, { type: "particlePlaybackEnded" }>;
@@ -9,14 +8,14 @@ const valueKey = (actorGuid: string, componentId: string) => `${actorGuid}\n${co
 
 /**
  * Which ParticleComponents this session's commands are playing, so Is Particles Playing can
- * read it, the render host's `particlePlaybackEnded` reports can end it, and trace frames can
- * record and restore it. It owns the Play generation: every Play gets a new one (`prepare`),
- * the render host echoes it, and a report older than the component's latest Play is stale.
- * Stop keeps the generation, so the drain it starts reports as current.
+ * read it and the render host's `particlePlaybackEnded` reports can end it. It owns the Play
+ * generation: every Play gets a new one (`prepare`), the render host echoes it, and a report
+ * older than the component's latest Play is stale. Stop keeps the generation, so the drain it
+ * starts reports as current.
  *
  * It also holds each component's runtime parameter values (Set Particle Parameter; never saved)
- * against the session's parameter catalog, adds them to every `assignParticle` so a respawn or
- * reassignment keeps them, and records them in trace frames.
+ * against the session's parameter catalog and adds them to every `assignParticle` so a respawn
+ * or reassignment keeps them.
  */
 export class RuntimeParticles {
   private readonly byActor = new Map<string, Map<string, ComponentState>>();
@@ -127,77 +126,6 @@ export class RuntimeParticles {
   /** True while the component (or, without `componentId`, any ParticleComponent of the actor) plays. */
   isPlaying(actorGuid: string, componentId?: string): boolean {
     return this.components(actorGuid, componentId).some(([, state]) => state.playing);
-  }
-
-  traceState(): TraceParticleState {
-    const components: TraceParticleComponent[] = [];
-    for (const [actorGuid, states] of this.byActor) {
-      for (const [componentGuid, state] of states) components.push({ actorGuid, componentGuid, ...state });
-    }
-    const parameters: TraceParticleParameters[] = [];
-    for (const [key, values] of this.values) {
-      const [actorGuid = "", componentGuid = ""] = key.split("\n");
-      parameters.push({ actorGuid, componentGuid, values: Object.fromEntries([...values].map(([name, value]) => [name, [...value]])) });
-    }
-    return { components, nextGeneration: this.nextGeneration, ...(parameters.length ? { parameters } : {}) };
-  }
-
-  /**
-   * Resumes a trace frame's runtime parameter values: sets each recorded value and resets each
-   * value set since, back to the component's override (`overrides`) or, without one, its default.
-   */
-  restoreParameterCommands(
-    state: TraceParticleState,
-    overrides: (actorGuid: string, componentId: string) => Readonly<Record<string, readonly number[]>>,
-  ): CommandMessage[] {
-    const recorded = new Map((state.parameters ?? []).map((entry) => [valueKey(entry.actorGuid, entry.componentGuid), entry]));
-    const commands: CommandMessage[] = [];
-    for (const [key, values] of [...this.values]) {
-      if (recorded.has(key)) continue;
-      const [actorGuid = "", componentId = ""] = key.split("\n");
-      for (const name of values.keys()) {
-        const override = overrides(actorGuid, componentId)[name];
-        commands.push({ type: "setParticleParameter", actorGuid, componentId, name, value: override ? [...override] : null });
-      }
-      this.values.delete(key);
-    }
-    for (const [key, entry] of recorded) {
-      const current = this.values.get(key);
-      const override = overrides(entry.actorGuid, entry.componentGuid);
-      for (const name of current?.keys() ?? []) {
-        if (name in entry.values) continue;
-        commands.push({ type: "setParticleParameter", actorGuid: entry.actorGuid, componentId: entry.componentGuid, name,
-          value: override[name] ? [...override[name]!] : null });
-      }
-      this.values.set(key, new Map(Object.entries(entry.values).map(([name, value]) => [name, [...value]])));
-      for (const [name, value] of Object.entries(entry.values)) {
-        commands.push({ type: "setParticleParameter", actorGuid: entry.actorGuid, componentId: entry.componentGuid, name, value: [...value] });
-      }
-    }
-    return commands;
-  }
-
-  /**
-   * Resumes a trace frame's playback flags and generations on the tracked components: Play with
-   * the recorded generation for each one that was playing (so the render host echoes it), and Stop
-   * for each one that plays now but was not playing then.
-   */
-  restoreCommands(state: TraceParticleState): CommandMessage[] {
-    this.nextGeneration = Math.max(this.nextGeneration, state.nextGeneration);
-    const recorded = new Map(state.components.map((entry) => [`${entry.actorGuid}:${entry.componentGuid}`, entry]));
-    const commands: CommandMessage[] = [];
-    for (const [actorGuid, states] of this.byActor) {
-      for (const [componentId, current] of states) {
-        const entry = recorded.get(`${actorGuid}:${componentId}`);
-        if (entry?.playing) {
-          commands.push({ type: "setParticlePlaying", actorGuid, componentId, playing: true, generation: entry.generation });
-        } else if (current.playing) {
-          commands.push({ type: "setParticlePlaying", actorGuid, componentId, playing: false });
-        }
-        if (entry) current.generation = entry.generation;
-      }
-    }
-    return commands;
   }
 
   private component(actorGuid: string, componentId: string): ComponentState | undefined {

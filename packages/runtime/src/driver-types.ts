@@ -40,7 +40,7 @@ import type {
   Transform,
   WaterDefinition,
 } from "@haptic/core";
-import type { RegisteredCommand, TraceFrame, TracePayload } from "@haptic/debugger";
+import type { RegisteredCommand, TracePayload } from "@haptic/debugger";
 import type { InputBindingControls, RawInputEvent, ResolvedInputTick } from "@haptic/input";
 import type { NavObstacleKind, NavPoint } from "@haptic/navigation";
 import type { Actor, EngineObject, DebugInspectSnapshot, Scene, SceneLayer, World } from "@haptic/object-model";
@@ -323,8 +323,6 @@ export interface RuntimeDriver {
   stopTrace(): TracePayload | null;
   /** Time dilation (`slomo`) from the next tick, clamped to `0..8`; non-finite rates are ignored. */
   setTimeDilation(rate: number): void;
-  /** Resume a frame's time dilation, behaviour trees, Animation Graphs, sprite clips and voices. */
-  restoreFromTrace(frame: TraceFrame): void;
   registerAnimGraph(guid: string, document: AnimGraphDocument): void;
   registerBehaviourTree(guid: string, document: BehaviourTreeDocument): void;
   registerBlackboard(guid: string, document: BlackboardDocument): void;

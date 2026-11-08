@@ -60,44 +60,13 @@ describe("RuntimeParticles", () => {
     send(particles, { type: "activeScene", sceneAssetGuid: "boot" } as CommandMessage);
     send(particles, assign("a"));
     send(particles, { ...assign("a"), particleSystemGuid: null });
-    expect(particles.traceState().components).toEqual([]);
+    // A forgotten component's report of its last Play is no longer current.
+    expect(particles.ended(ended("a", 1))).toBe(false);
     send(particles, assign("a"));
     send(particles, { type: "activeScene", sceneAssetGuid: "boot" } as CommandMessage);
     expect(particles.isPlaying("actor")).toBe(true);
     send(particles, { type: "activeScene", sceneAssetGuid: "next" } as CommandMessage);
     expect(particles.isPlaying("actor")).toBe(false);
-  });
-
-  it("restores a trace frame's Play state and generations through the render host", () => {
-    const recorded = new RuntimeParticles();
-    send(recorded, assign("a"));
-    send(recorded, assign("b"));
-    send(recorded, assign("c", false));
-    recorded.ended(ended("b", 2));
-    const frame = recorded.traceState();
-    expect(frame).toEqual({
-      components: [
-        { actorGuid: "actor", componentGuid: "a", playing: true, generation: 1 },
-        { actorGuid: "actor", componentGuid: "b", playing: false, generation: 2 },
-        { actorGuid: "actor", componentGuid: "c", playing: false, generation: 0 },
-      ],
-      nextGeneration: 3,
-    });
-
-    // A live run whose components all play under other generations.
-    const live = new RuntimeParticles();
-    for (const id of ["a", "b", "c"]) send(live, assign(id));
-    const commands = live.restoreCommands(frame).map((command) => send(live, command));
-    expect(commands).toEqual([
-      { type: "setParticlePlaying", actorGuid: "actor", componentId: "a", playing: true, generation: 1 },
-      { type: "setParticlePlaying", actorGuid: "actor", componentId: "b", playing: false },
-      { type: "setParticlePlaying", actorGuid: "actor", componentId: "c", playing: false },
-    ]);
-    expect(live.traceState().components).toEqual(frame.components);
-    // The next Play is newer than any the frame or the live run gave out.
-    expect(send(live, playing(true, "a"))).toMatchObject({ generation: 4 });
-    // The recorded generation is current again: its report ends playback.
-    expect(live.ended(ended("a", 4))).toBe(true);
   });
 });
 
@@ -172,29 +141,6 @@ describe("particle playback reports in the runtime", () => {
     runtime.applyParticlePlaybackEnded({ type: "particlePlaybackEnded", actorGuid: "emitter", componentId: "sparks",
       generation, reason: "stopped" });
     expect(finishedLogs(commands)).toEqual(["Stopped:false"]);
-    runtime.stop();
-  });
-
-  it("records the playing flag and generation in trace frames and restores them", async () => {
-    const commands: CommandMessage[] = [];
-    const runtime = await runtimeWithHandler(commands);
-    runtime.executeConsoleCommand("snapshot start");
-    runtime.tick();
-    runtime.executeConsoleCommand("snapshot stop");
-    const frame = runtime.stopTrace()!.frames[0]!;
-    const generation = lastPlay(commands);
-    expect(frame.particles).toEqual({
-      components: [{ actorGuid: "emitter", componentGuid: "sparks", playing: true, generation }],
-      nextGeneration: generation + 1,
-    });
-    // The run then finishes; a restore plays it again under the recorded generation.
-    runtime.applyParticlePlaybackEnded({ type: "particlePlaybackEnded", actorGuid: "emitter", componentId: "sparks",
-      generation, reason: "finished" });
-    commands.length = 0;
-    runtime.restoreFromTrace(frame);
-    expect(commands.filter((command) => command.type === "setParticlePlaying")).toEqual([
-      { type: "setParticlePlaying", actorGuid: "emitter", componentId: "sparks", playing: true, generation },
-    ]);
     runtime.stop();
   });
 });

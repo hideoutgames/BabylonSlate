@@ -1,5 +1,4 @@
 import type { CommandMessage } from "@haptic/bridge";
-import type { TraceGlobalParameterValue } from "@haptic/debugger";
 import {
   normalizeGlobalParameterCatalog,
   resizeGlobalParameterValue,
@@ -98,32 +97,6 @@ export class RuntimeGlobalParameters {
     const resolved = this.resolve(collection, name, types);
     if (!resolved) return { found: false, value: [] };
     return { found: true, value: [...this.valueOf(resolved.guid, resolved.parameter)] };
-  }
-
-  /** The values set this session, for a trace frame. */
-  traceState(): TraceGlobalParameterValue[] {
-    return [...this.values].map(([key, value]) => {
-      const [collectionGuid = "", parameterId = ""] = key.split("\n");
-      return { collectionGuid, parameterId, value: [...value] };
-    });
-  }
-
-  /** Resume a trace frame's values: each one the frame lacks returns to its default. */
-  restoreFromTrace(values: readonly TraceGlobalParameterValue[]): void {
-    const restored = new Map(values.map((entry) => [valueKey(entry.collectionGuid, entry.parameterId), entry]));
-    for (const key of [...this.values.keys()]) {
-      if (restored.has(key)) continue;
-      const [collectionGuid = "", parameterId = ""] = key.split("\n");
-      this.values.delete(key);
-      this.emit({ type: "setGlobalParameter", collectionGuid, parameterId, value: null });
-    }
-    for (const [key, entry] of restored) {
-      const parameter = this.catalog[entry.collectionGuid]?.find((candidate) => candidate.id === entry.parameterId);
-      if (!parameter) continue;
-      const value = resizeGlobalParameterValue(entry.value, parameter.type);
-      this.values.set(key, value);
-      this.emit({ type: "setGlobalParameter", collectionGuid: entry.collectionGuid, parameterId: entry.parameterId, value: [...value] });
-    }
   }
 
   private valueOf(collectionGuid: string, parameter: GlobalParameter): readonly number[] {

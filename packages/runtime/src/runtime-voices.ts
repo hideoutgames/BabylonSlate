@@ -10,20 +10,17 @@ const VOICE_STREAM_SALT = 0x564f4943;
 
 /**
  * The voices this session's commands started and have not stopped, so trace
- * frames can record them and a trace restore can resume them. It watches the
- * outgoing `playSound` / `stopSound` / `setVoiceGain` commands and the host's
- * `audioVoiceEnded` reports. Voice age is undilated fixed steps: audio plays in
- * real time, which the fixed step tracks, while `slomo` only slows simulation.
+ * frames can record them. It watches the outgoing `playSound` / `stopSound` /
+ * `setVoiceGain` commands and the host's `audioVoiceEnded` reports. Voice age
+ * is undilated fixed steps (excluding pauses): audio plays in real time, which
+ * the fixed step tracks, while `slomo` only slows simulation.
  *
  * It also draws each new voice's clip and pitch choice (`prepare`) from a
- * seeded stream of its own, so traces record the choice and restores replay it,
- * and its voice-age clock (undilated simulation time, excluding pauses) is
- * the audio clock restored voices catch up by.
+ * seeded stream of its own, so a run with the same seed plays the same clips
+ * and pitches and traces record the choice.
  */
 export class RuntimeVoices {
   private readonly live = new Map<string, LiveVoice>();
-  /** Ids of the live voices a trace restore started; every `live` removal also clears its id. */
-  private readonly restored = new Set<string>();
   private readonly seed: () => number;
   private rng: Rng | null = null;
   private clockSeconds = 0;
@@ -38,16 +35,6 @@ export class RuntimeVoices {
   /** A tick starts: voices started from now on are that many seconds younger. */
   advance(dtSeconds: number): void {
     this.clockSeconds += dtSeconds;
-  }
-
-  /** The audio clock: undilated simulation seconds this session has ticked, excluding pauses. */
-  get audioTime(): number {
-    return this.clockSeconds;
-  }
-
-  /** True while a voice a trace restore started is live; the host then needs `audioSimTime`. */
-  get hasRestoredVoices(): boolean {
-    return this.restored.size > 0;
   }
 
   /** Gives a `playSound` that names an asset but no clip or pitch draws its draws. */
@@ -81,10 +68,9 @@ export class RuntimeVoices {
         ...(command.loop !== undefined ? { loop: command.loop } : {}),
         ...(command.emitterActorGuid ? { emitterActorGuid: command.emitterActorGuid } : {}),
         ...rolls(command),
-        startedAt: this.clockSeconds - (command.startOffsetSeconds ?? 0),
+        startedAt: this.clockSeconds,
       };
       this.live.set(voiceId, voice);
-      if (command.restoredAtSeconds !== undefined) this.restored.add(voiceId);
     } else if (command.type === "stopSound") {
       this.drop(command.voiceId);
     } else if (command.type === "setVoiceGain") {
@@ -94,7 +80,6 @@ export class RuntimeVoices {
       // Hosts reset their audio session when the active Scene changes from the boot Scene onward.
       if (this.activeSceneGuid !== undefined && command.sceneAssetGuid !== this.activeSceneGuid) {
         this.live.clear();
-        this.restored.clear();
       }
       this.activeSceneGuid = command.sceneAssetGuid;
     }
@@ -107,7 +92,6 @@ export class RuntimeVoices {
 
   private drop(voiceId: string): void {
     this.live.delete(voiceId);
-    this.restored.delete(voiceId);
   }
 
   traceState(): TraceAudioState {
@@ -118,36 +102,6 @@ export class RuntimeVoices {
       })),
       nextScriptVoice: this.nextScriptVoice,
     };
-  }
-
-  /**
-   * Commands that make the host's voices the recorded ones: `stopSound` for
-   * each live voice the frame lacks (start order), then `playSound` at its
-   * recorded offset and clip and pitch draws for each recorded voice (recorded
-   * start order), stamped with the audio clock at the restore.
-   */
-  restoreCommands(state: TraceAudioState, frameId: number): CommandMessage[] {
-    const recorded = new Set(state.voices.map((voice) => voice.voiceId));
-    const commands: CommandMessage[] = [];
-    for (const voiceId of this.live.keys()) {
-      if (!recorded.has(voiceId)) commands.push({ type: "stopSound", voiceId });
-    }
-    this.nextScriptVoice = state.nextScriptVoice;
-    for (const voice of state.voices) {
-      commands.push({
-        type: "playSound",
-        assetGuid: voice.assetGuid,
-        volume: voice.volume,
-        frameId,
-        ...(voice.emitterActorGuid ? { emitterActorGuid: voice.emitterActorGuid } : {}),
-        ...(voice.loop !== undefined ? { loop: voice.loop } : {}),
-        voiceId: voice.voiceId,
-        ...(voice.elapsedSeconds > 0 ? { startOffsetSeconds: voice.elapsedSeconds } : {}),
-        ...rolls(voice),
-        restoredAtSeconds: this.clockSeconds,
-      });
-    }
-    return commands;
   }
 }
 

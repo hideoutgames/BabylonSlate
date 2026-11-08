@@ -44,7 +44,8 @@ function groundPrism(): { positions: number[]; indices: number[] } {
   };
 }
 
-function patrolTree(): BehaviourTreeDocument {
+/** Without `alertAfterMs`, nothing sets `alert`; with it, a Set Blackboard service on the root sets it after that long. */
+function patrolTree(alertAfterMs?: number): BehaviourTreeDocument {
   return {
     name: "Patrol",
     rootId: "root",
@@ -56,7 +57,10 @@ function patrolTree(): BehaviourTreeDocument {
         classId: "bt.composite.selector",
         children: ["alert", "move"],
         decorators: [],
-        services: [],
+        services: alertAfterMs === undefined ? [] : [{
+          id: "alarm", classId: "bt.service.setBlackboard", intervalMs: alertAfterMs, randomDeviationMs: 0,
+          properties: { key: "alert", value: true },
+        }],
         properties: {},
       },
       {
@@ -458,26 +462,18 @@ describe("P11 §18 acceptance", () => {
       maxActors: 8,
       dt: 1 / 30,
       playScene: agentScene("3d"),
-      behaviourTrees: { "tree-1": patrolTree() },
+      // The alarm sets `alert` on the 25th tick.
+      behaviourTrees: { "tree-1": patrolTree(820) },
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadNavMesh(soloBytes);
     runtime.start();
     runtime.realizePlayWorld();
     followBehaviourTree(runtime, commands, "tree-1");
-    runtime.executeConsoleCommand("snapshot start");
     for (let i = 0; i < 20; i += 1) runtime.tick();
     const running = commands.filter((command) => command.type === "btState").at(-1);
     expect(running).toMatchObject({ type: "btState", btNodeId: "move" });
-    runtime.executeConsoleCommand("snapshot stop");
-    const payload = runtime.stopTrace();
-    const last = payload?.frames.at(-1)?.bt?.[0];
-    expect(last).toBeDefined();
-    runtime.restoreFromTrace({
-      ...payload!.frames.at(-1)!,
-      bt: [{ ...last!, blackboard: { ...last!.blackboard, alert: true } }],
-    });
-    runtime.tick();
+    for (let i = 0; i < 6; i += 1) runtime.tick();
     const aborted = commands.filter((command) => command.type === "btState").at(-1);
     expect(aborted).toMatchObject({ type: "btState", status: "success" });
     expect(aborted && aborted.type === "btState" ? aborted.btNodeId : "move").not.toBe(
@@ -493,7 +489,8 @@ describe("P11 §18 acceptance", () => {
       maxActors: 8,
       dt: 1 / 30,
       playScene: agentScene("3d"),
-      behaviourTrees: { "tree-1": patrolTree() },
+      // The alarm sets `alert` on the 25th tick.
+      behaviourTrees: { "tree-1": patrolTree(820) },
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadNavMesh(soloBytes);
@@ -506,16 +503,7 @@ describe("P11 §18 acceptance", () => {
     const movingX = agentX(runtime);
     expect(movingX).toBeGreaterThan(-4);
 
-    runtime.executeConsoleCommand("snapshot start");
     runtime.tick();
-    runtime.executeConsoleCommand("snapshot stop");
-    const frame = runtime.stopTrace()!.frames.at(-1)!;
-    const last = frame.bt?.[0];
-    expect(last).toBeDefined();
-    runtime.restoreFromTrace({
-      ...frame,
-      bt: [{ ...last!, blackboard: { ...last!.blackboard, alert: true } }],
-    });
     runtime.tick();
     for (let i = 0; i < 5; i += 1) runtime.tick();
     const xStopped = agentX(runtime);
@@ -629,7 +617,7 @@ describe("P11 §18 acceptance", () => {
     runtime.stop();
   });
 
-  it("replays recorded BT decisions from a .htrace payload", async () => {
+  it("records BT decisions in a .htrace payload that round-trips", async () => {
     const options = {
       seed: 1,
       maxActors: 8,
@@ -659,20 +647,8 @@ describe("P11 §18 acceptance", () => {
     ).frames;
     const last = restoredFrames.at(-1)?.bt?.[0];
     expect(last?.btNodeId).toBe("move");
+    expect(last?.stack.some((frame) => frame.nodeId === "move")).toBe(true);
     recorded.stop();
-
-    const replay = createInProcessRuntime(options);
-    await replay.loadNavMesh(soloBytes);
-    replay.start();
-    replay.realizePlayWorld();
-    replay.restoreFromTrace(restoredFrames.at(-1)!);
-    replay.executeConsoleCommand("snapshot start");
-    replay.tick();
-    replay.executeConsoleCommand("snapshot stop");
-    const continued = replay.stopTrace()?.frames[0]?.bt?.[0];
-    expect(continued?.btNodeId).toBe("move");
-    expect(continued?.stack.some((frame) => frame.nodeId === "move")).toBe(true);
-    replay.stop();
   });
 
   it("fails a Wait when a subclassed decorator returns false from On Evaluate", async () => {
@@ -739,7 +715,11 @@ describe("P11 §18 acceptance", () => {
               properties: { key: "ok" },
             },
           ],
-          services: [],
+          // Clears `ok` on the second tick, while the Hold task runs.
+          services: [{
+            id: "clear", classId: "bt.service.setBlackboard", intervalMs: 100, randomDeviationMs: 0,
+            properties: { key: "ok", value: false },
+          }],
           properties: {},
         },
         {
@@ -771,15 +751,11 @@ describe("P11 §18 acceptance", () => {
     runtime.start();
     runtime.realizePlayWorld();
     followBehaviourTree(runtime, commands, "tree-1");
-    runtime.executeConsoleCommand("snapshot start");
     runtime.tick();
     const running = commands.filter((command) => command.type === "btState").at(-1);
     expect(running).toMatchObject({ type: "btState", status: "running", btNodeId: "hold" });
-    runtime.executeConsoleCommand("snapshot stop");
-    const payload = runtime.stopTrace();
-    const last = payload?.frames.at(-1)?.bt?.[0];
-    expect(last).toBeDefined();
-    runtime.restoreFromTrace({ ...payload!.frames.at(-1)!, bt: [{ ...last!, blackboard: {} }] });
+    expect(commands.some((command) => command.type === "log" && String(command.message).includes("aborted"))).toBe(false);
+    runtime.tick();
     runtime.tick();
     const logs = commands.filter((command) => command.type === "log");
     expect(

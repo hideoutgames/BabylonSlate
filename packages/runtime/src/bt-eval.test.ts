@@ -310,7 +310,7 @@ describe("runtime behaviour tree evaluation", () => {
     runtime.stop();
   });
 
-  it("records BT stack/blackboard and restores them from the trace", () => {
+  it("records the BT stack and node memory in trace frames", () => {
     const waitTree = {
       name: "Wait",
       rootId: "wait",
@@ -348,19 +348,6 @@ describe("runtime behaviour tree evaluation", () => {
     const elapsed = Number(last?.nodeMemory?.wait?.elapsedMs ?? 0);
     expect(elapsed).toBeGreaterThan(100);
     recorded.stop();
-
-    const replay = createInProcessRuntime(options);
-    replay.start();
-    replay.realizePlayWorld();
-    replay.restoreFromTrace(payload!.frames.at(-1)!);
-    replay.executeConsoleCommand("snapshot start");
-    replay.tick();
-    replay.executeConsoleCommand("snapshot stop");
-    const restored = replay.stopTrace()?.frames[0]?.bt?.[0];
-    expect(Number(restored?.nodeMemory?.wait?.elapsedMs ?? 0)).toBeGreaterThan(
-      elapsed,
-    );
-    replay.stop();
   });
 
   it("Play Sound fails when the Audio guid is missing from the Play library", () => {

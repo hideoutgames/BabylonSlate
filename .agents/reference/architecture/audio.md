@@ -36,10 +36,10 @@ Unit tests use `FakeAudioPlaybackBackend` (NullEngine cannot decode). Overlay Pl
 
 - `outputGain = assetVolume × playCallVolume × channelGain × parentGains… × globalGain`, each clamped 0..1. Channel-less sounds never take channel gain or effects.
 - Set Channel / Set Global Volume replace session values only and require a selected mixer containing the channel (`audio.no_mixer` / `audio.unknown_channel`). Stop or scene change reloads mixer defaults.
-- Worker → main ([bridge.md](bridge.md)): `playSound`, `stopSound`, `setVoiceGain`, `setChannelVolume`, `setGlobalVolume`, `audioSimTime`. Main → worker: `audioVoiceEnded` for non-looping voices only → Event On Audio Finished.
+- Worker → main ([bridge.md](bridge.md)): `playSound`, `stopSound`, `setVoiceGain`, `setChannelVolume`, `setGlobalVolume`. Main → worker: `audioVoiceEnded` for non-looping voices only → Event On Audio Finished.
 - Loop when `command.loop` or `payload.loop`. Graph and BT Play Sound omit `loop`; `AudioComponent.loop` forces it. A looping voice is one Babylon voice; never retrigger it per tick.
 - Voice ids: component guid (AudioComponent), `script:<n>` (graph Play Sound), `bt:${actor.guid}:${node.id}` (BT). Replaying an id stops the previous voice.
-- `clipRoll` / `pitchRoll` come from a seeded per-session stream so traces replay the same clip and pitch. `startOffsetSeconds` / `restoredAtSeconds` are for trace restore only.
+- `clipRoll` / `pitchRoll` come from a seeded per-session stream, so a run with the same seed plays the same clip and pitch, and trace frames record them.
 - There is no per-voice pause; AudioV2 pause is global and follows game pause.
 
 ## Spatial

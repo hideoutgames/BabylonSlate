@@ -675,58 +675,6 @@ describe("P19 behaviour tree task hosts", () => {
     });
   }
 
-  it("Play Animation keeps its slot after a trace restore, as in the uninterrupted run", () => {
-    const recordedCommands: CommandMessage[] = [];
-    const recorded = graphAndPlayAnimationRuntime(recordedCommands);
-    recorded.start();
-    recorded.realizePlayWorld();
-    recorded.executeConsoleCommand("snapshot start");
-    recorded.tick();
-    recordedCommands.length = 0;
-    recorded.tick();
-    recorded.executeConsoleCommand("snapshot stop");
-    const uninterrupted = recordedCommands.filter((command) => command.type === "animState");
-    expect(uninterrupted).toEqual([expect.objectContaining({ stateId: "bt.playAnimation" })]);
-    const frame = recorded.stopTrace()!.frames[0]!;
-    recorded.stop();
-
-    const replayCommands: CommandMessage[] = [];
-    const replay = graphAndPlayAnimationRuntime(replayCommands);
-    replay.start();
-    replay.realizePlayWorld();
-    replay.restoreFromTrace(frame);
-    replayCommands.length = 0;
-    replay.tick();
-    expect(replayCommands.filter((command) => command.type === "animState")).toEqual(uninterrupted);
-    replay.stop();
-  });
-
-  it("trace restore drops Play Animation ownership the restored state does not hold", () => {
-    const freshCommands: CommandMessage[] = [];
-    const fresh = graphAndPlayAnimationRuntime(freshCommands);
-    fresh.start();
-    fresh.realizePlayWorld();
-    fresh.tick();
-    const stateIds = (commands: CommandMessage[]) =>
-      commands.flatMap((command) => (command.type === "animState" ? [command.stateId] : []));
-    const firstTick = stateIds(freshCommands);
-    expect(firstTick).toHaveLength(2);
-    fresh.stop();
-
-    const commands: CommandMessage[] = [];
-    const runtime = graphAndPlayAnimationRuntime(commands);
-    runtime.start();
-    runtime.realizePlayWorld();
-    runtime.executeConsoleCommand("snapshot start");
-    runtime.tick();
-    runtime.executeConsoleCommand("snapshot stop");
-    runtime.restoreFromTrace({ ...runtime.stopTrace()!.frames[0]!, bt: [] });
-    commands.length = 0;
-    runtime.tick();
-    expect(stateIds(commands)).toEqual(firstTick);
-    runtime.stop();
-  });
-
   it("Animation Graph drives the slot again once a running Play Animation's tree is switched to one that is not loaded", () => {
     const commands: CommandMessage[] = [];
     const runtime = graphAndPlayAnimationRuntime(commands);
@@ -748,7 +696,7 @@ describe("P19 behaviour tree task hosts", () => {
   });
 });
 
-describe("trace restore of Play Sound voices", () => {
+describe("Play Sound voices", () => {
   function task(id: string, classId: string, properties: Record<string, unknown>) {
     return { id, kind: "task" as const, classId, children: [], decorators: [], services: [], properties };
   }
@@ -792,63 +740,26 @@ describe("trace restore of Play Sound voices", () => {
   }
 
   const audioCommands = (commands: CommandMessage[]) => commands.flatMap((command) =>
-    command.type === "playSound" || command.type === "stopSound"
-      ? [command.type === "playSound"
-          ? { type: command.type, voiceId: command.voiceId, offset: command.startOffsetSeconds }
-          : { type: command.type, voiceId: command.voiceId }]
-      : []);
+    command.type === "playSound" || command.type === "stopSound" ? [{ type: command.type, voiceId: command.voiceId }] : []);
 
-  it("resumes a voice mid-sound at its recorded offset, and a later abort stops it", () => {
-    const recordedCommands: CommandMessage[] = [];
-    const recorded = soundRuntime(["sound", "wait"], 350, recordedCommands);
-    recorded.executeConsoleCommand("snapshot start");
-    for (let i = 0; i < 3; i += 1) recorded.tick();
-    recorded.executeConsoleCommand("snapshot stop");
-    recordedCommands.length = 0;
-    recorded.tick();
-    expect(audioCommands(recordedCommands)).toEqual([{ type: "stopSound", voiceId: "bt:guard:sound" }]);
-    const frame = recorded.stopTrace()!.frames.at(-1)!;
-    recorded.stop();
-
+  it("records every voice the tree started in trace frames, and an abort stops them all", () => {
     const commands: CommandMessage[] = [];
-    const replay = soundRuntime(["sound", "wait"], 350, commands);
-    commands.length = 0;
-    replay.restoreFromTrace(frame);
-    expect(commands.filter((command) => command.type === "playSound" || command.type === "stopSound")).toEqual([
-      expect.objectContaining({
-        type: "playSound", assetGuid: "audio-1", volume: 0.4, voiceId: "bt:guard:sound",
-        emitterActorGuid: "guard", startOffsetSeconds: expect.closeTo(0.2, 9),
-      }),
-    ]);
-    commands.length = 0;
-    replay.tick();
-    expect(audioCommands(commands)).toEqual([{ type: "stopSound", voiceId: "bt:guard:sound" }]);
-    replay.stop();
-  });
-
-  it("restores ownership of every voice the tree started, so an abort stops them all", () => {
-    const recordedCommands: CommandMessage[] = [];
-    const recorded = soundRuntime(["sound", "sound2", "wait"], 350, recordedCommands);
-    recorded.executeConsoleCommand("snapshot start");
-    for (let i = 0; i < 3; i += 1) recorded.tick();
-    recorded.executeConsoleCommand("snapshot stop");
-    const frame = recorded.stopTrace()!.frames.at(-1)!;
+    const runtime = soundRuntime(["sound", "sound2", "wait"], 350, commands);
+    runtime.executeConsoleCommand("snapshot start");
+    for (let i = 0; i < 3; i += 1) runtime.tick();
+    runtime.executeConsoleCommand("snapshot stop");
+    const frame = runtime.stopTrace()!.frames.at(-1)!;
     expect(frame.bt?.[0]?.playSoundVoiceIds).toEqual(["bt:guard:sound", "bt:guard:sound2"]);
-    recorded.stop();
-
-    const commands: CommandMessage[] = [];
-    const replay = soundRuntime(["sound", "sound2", "wait"], 350, commands);
-    replay.restoreFromTrace(frame);
     commands.length = 0;
-    replay.tick();
+    runtime.tick();
     expect(audioCommands(commands)).toEqual([
       { type: "stopSound", voiceId: "bt:guard:sound" },
       { type: "stopSound", voiceId: "bt:guard:sound2" },
     ]);
-    replay.stop();
+    runtime.stop();
   });
 
-  it("draws a voice's clip and pitch from the session seed, traces the draws and replays them on restore", () => {
+  it("draws a voice's clip and pitch from the session seed and traces the draws", () => {
     const draws = (commands: CommandMessage[]) => commands.flatMap((command) =>
       command.type === "playSound" ? [[command.clipRoll, command.pitchRoll]] : []);
     const commands: CommandMessage[] = [];
@@ -862,40 +773,13 @@ describe("trace restore of Play Sound voices", () => {
     for (const draw of played!) expect(draw).toSatisfy((value: unknown) => typeof value === "number" && value >= 0 && value < 1);
     expect(frame.audio?.voices).toEqual([expect.objectContaining({ voiceId: "bt:guard:sound", clipRoll: played![0], pitchRoll: played![1] })]);
 
-    // Another session with the seed draws the same; a restore replays the recorded draws, not new ones.
+    // Another session with the seed draws the same.
     const replayCommands: CommandMessage[] = [];
     const replay = soundRuntime(["delay", "sound", "wait"], null, replayCommands);
     replay.tick();
     replay.tick();
     expect(draws(replayCommands)).toEqual([played]);
-    replayCommands.length = 0;
-    replay.restoreFromTrace(frame);
-    expect(draws(replayCommands)).toEqual([played]);
     replay.stop();
-  });
-
-  it("stops a live voice the restored frame was not playing, then replays the recorded run", () => {
-    const commands: CommandMessage[] = [];
-    const runtime = soundRuntime(["delay", "sound", "wait"], null, commands);
-    runtime.executeConsoleCommand("snapshot start");
-    runtime.tick();
-    commands.length = 0;
-    runtime.tick();
-    runtime.tick();
-    runtime.executeConsoleCommand("snapshot stop");
-    const uninterrupted = audioCommands(commands);
-    expect(uninterrupted).toEqual([{ type: "playSound", voiceId: "bt:guard:sound", offset: undefined }]);
-    const frames = runtime.stopTrace()!.frames;
-    expect(frames[0]!.audio?.voices).toEqual([]);
-
-    commands.length = 0;
-    runtime.restoreFromTrace(frames[0]!);
-    expect(audioCommands(commands)).toEqual([{ type: "stopSound", voiceId: "bt:guard:sound" }]);
-    commands.length = 0;
-    runtime.tick();
-    runtime.tick();
-    expect(audioCommands(commands)).toEqual(uninterrupted);
-    runtime.stop();
   });
 });
 
