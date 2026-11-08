@@ -446,18 +446,18 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     );
   }
 
-  if (
-    prefabSelectedId === PREFAB_ROOT_ID &&
-    doc?.ref.kind === "graph" &&
-    graph
-  ) {
+  /**
+   * A Class's own settings: Parent Class, the Scene Layer Actor Switcher fields, and its Actor Defaults or Game
+   * Instance Defaults. Prefab Root shows them, and so does a Class with nothing selected.
+   */
+  const classSettings = (classDoc: { id: string; path: string; label: string }, classGraph: SerializedGraph) => {
     const showActorDefaults = classDocumentShowsPrefab(parentClass, parentOf);
-    const defaults = graph.actorDefaults ?? {};
+    const defaults = classGraph.actorDefaults ?? {};
     const selfClassId = classIdFromClassAsset({
-      path: doc.ref.path,
+      path: classDoc.path,
       header: {
         type: indexed?.header.type ?? "Class",
-        name: indexed?.header.name ?? doc.ref.label,
+        name: indexed?.header.name ?? classDoc.label,
         parentClass,
       },
     });
@@ -474,7 +474,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         .map(({ id, name, group }) => ({ id, name, group })),
     ];
     return (
-      <PanelFrame data-testid="inspector-panel">
+      <>
         <FieldGroup className="p-4">
           <Field>
             <FieldLabel>Parent Class</FieldLabel>
@@ -506,50 +506,62 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           data-testid="inspector-parent-class-picker"
           onPick={(classId) => {
             if (!classId || classId === (parentClass ?? "Actor")) return;
-            void reparentClassDocument(doc.id, classId).then((error) => {
+            void reparentClassDocument(classDoc.id, classId).then((error) => {
               setParentClassError(error);
             });
           }}
         />
-        {walkAncestry(parentClass ?? "Actor", parentOf).includes("SceneLayerActorSwitcher") ? <SceneLayerSwitcherFields classId={selfClassId} properties={defaults.properties ?? {}} onChange={properties => persistGraph({ ...graph, actorDefaults: { ...defaults, properties } })} /> : null}
+        {walkAncestry(parentClass ?? "Actor", parentOf).includes("SceneLayerActorSwitcher") ? <SceneLayerSwitcherFields classId={selfClassId} properties={defaults.properties ?? {}} onChange={properties => persistGraph({ ...classGraph, actorDefaults: { ...defaults, properties } })} /> : null}
         {walkAncestry(parentClass ?? "Actor", parentOf).includes("GameInstance") ? (
           <GameInstanceDefaultsGrid
             parentClass={parentClass ?? "GameInstance"}
-            defaults={graph.gameInstanceDefaults ?? {}}
-            onChange={(gameInstanceDefaults) => persistGraph({ ...graph, gameInstanceDefaults })}
+            defaults={classGraph.gameInstanceDefaults ?? {}}
+            onChange={(gameInstanceDefaults) => persistGraph({ ...classGraph, gameInstanceDefaults })}
           />
         ) : null}
-        {showActorDefaults ? <>
-        <ActorDefaultsGrid
-          parentClass={parentClass ?? "Actor"}
-          defaults={defaults}
-          onChange={(actorDefaults) => persistGraph({ ...graph, actorDefaults })}
-        />
-        <p
-          className="p-4 text-sm text-muted-foreground"
-          data-testid="inspector-prefab-origin"
-        >
-          Prefab Origin is the actor transform in the Scene. Drag the viewport
-          gizmo on Prefab Root to move that origin relative to the components.
-        </p>
-        </> : null}
+        {showActorDefaults ? (
+          <ActorDefaultsGrid
+            parentClass={parentClass ?? "Actor"}
+            defaults={defaults}
+            onChange={(actorDefaults) => persistGraph({ ...classGraph, actorDefaults })}
+          />
+        ) : null}
+      </>
+    );
+  };
+
+  if (
+    prefabSelectedId === PREFAB_ROOT_ID &&
+    doc?.ref.kind === "graph" &&
+    graph
+  ) {
+    return (
+      <PanelFrame data-testid="inspector-panel">
+        {classSettings({ id: doc.id, path: doc.ref.path, label: doc.ref.label }, graph)}
+        {classDocumentShowsPrefab(parentClass, parentOf) ? (
+          <p
+            className="p-4 text-sm text-muted-foreground"
+            data-testid="inspector-prefab-origin"
+          >
+            Prefab Origin is the actor transform in the Scene. Drag the viewport
+            gizmo on Prefab Root to move that origin relative to the components.
+          </p>
+        ) : null}
       </PanelFrame>
     );
   }
 
   if (!graph || !selectedNode) {
-    // With nothing selected at all, a Game Instance class still shows its class defaults.
-    const gameInstanceGraph = graph && doc?.ref.kind === "graph" && parentClass &&
-      walkAncestry(parentClass, parentOf).includes("GameInstance") ? graph : null;
+    // A Class with nothing selected shows its own settings, as Prefab Root does.
+    if (!openRuleId && doc?.ref.kind === "graph" && graph) {
+      return (
+        <PanelFrame data-testid="inspector-panel">
+          {classSettings({ id: doc.id, path: doc.ref.path, label: doc.ref.label }, graph)}
+        </PanelFrame>
+      );
+    }
     return (
       <PanelFrame data-testid="inspector-panel">
-        {gameInstanceGraph && parentClass ? (
-          <GameInstanceDefaultsGrid
-            parentClass={parentClass}
-            defaults={gameInstanceGraph.gameInstanceDefaults ?? {}}
-            onChange={(gameInstanceDefaults) => persistGraph({ ...gameInstanceGraph, gameInstanceDefaults })}
-          />
-        ) : null}
         <p
           className="p-4 text-sm text-muted-foreground"
           data-testid={openRuleId ? "anim-rule-details-empty" : undefined}

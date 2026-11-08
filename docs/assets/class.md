@@ -32,7 +32,7 @@ Classes that do not descend from Actor, such as Actor Component and Function Lib
 
 ## Settings
 
-Select **Prefab Root** in **Components** to show the class settings in the **Inspector**.
+The **Inspector** shows the class settings while nothing is selected, and when you select **Prefab Root** in **Components**.
 
 | Setting | Description |
 | --- | --- |

@@ -117,7 +117,7 @@ function renderInspector(options?: {
 }) {
   return render(
     <PrefabEditingProvider
-      initialSelectedId={options?.selectedComponentId ?? PREFAB_ROOT_ID}
+      initialSelectedId={options && "selectedComponentId" in options ? options.selectedComponentId : PREFAB_ROOT_ID}
       initialSelectedIds={options?.selectedComponentIds}
     >
       <GraphEditingProvider
@@ -241,6 +241,24 @@ describe("Inspector prefab component details", () => {
     const next = applyGraphChange.mock.calls.at(-1)![1];
     expect(next.gameInstanceDefaults).toEqual({ tickOnPause: true });
     expect(next.actorDefaults).toBeUndefined();
+  });
+
+  it("shows an actor class's Parent Class and Actor Defaults when nothing is selected, without the Prefab Origin note", () => {
+    renderInspector({ selectedComponentId: null });
+    expect(screen.getByTestId("inspector-parent-class").textContent).toContain("Actor");
+    expect(screen.getByTestId("inspector-actor-defaults")).toBeTruthy();
+    expect(screen.queryByTestId("inspector-prefab-origin")).toBeNull();
+    fireEvent.click(screen.getByTestId("property-tickOnPause"));
+    expect(applyGraphChange.mock.calls.at(-1)![1].actorDefaults).toEqual({ tickOnPause: true });
+  });
+
+  it("shows a Game Instance class's Game Instance Defaults when nothing is selected", () => {
+    classState.parentClass = "GameInstance";
+    renderInspector({ selectedComponentId: null });
+    expect(screen.getByTestId("inspector-game-instance-defaults")).toBeTruthy();
+    expect(screen.queryByTestId("inspector-actor-defaults")).toBeNull();
+    fireEvent.click(screen.getByTestId("property-tickOnPause"));
+    expect(applyGraphChange.mock.calls.at(-1)![1].gameInstanceDefaults).toEqual({ tickOnPause: true });
   });
 
   it.each(["Actor", "Object"])("shows no Game Instance Defaults for %s classes", (parentClass) => {

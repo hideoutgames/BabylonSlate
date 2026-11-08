@@ -61,7 +61,7 @@ Select events in the **Class** window, choose **Copy**, then choose **Paste** in
 
 ## Actor Defaults
 
-For actor classes, select **Prefab Root** in **Components**. **Actor Defaults** in the **Inspector** controls which events reach the class's scripts:
+For actor classes, **Actor Defaults** in the **Inspector** controls which events reach the class's scripts. It shows while nothing is selected, or with **Prefab Root** selected in **Components**:
 
 | Setting | Description |
 | --- | --- |

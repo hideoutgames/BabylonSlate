@@ -81,7 +81,7 @@ A class inherits its parent's variables, functions, events, interfaces and compo
 - Inherited members appear in the **Class** window with an **Inherited** badge. Double-tap one, or choose **Open Parent Class** from its context menu, to edit it in the parent.
 - To let child classes replace a function, turn on **Overridable** for it in the parent. The child then picks it from the **Functions** **+** menu.
 - A new class's starting events, and the native events and inherited custom events you add from the **Events** **+** menu, come wired to a [Call Parent Event](class/call-parent-event.md) node so the parent's logic still runs. Delete that node to replace the parent's behaviour.
-- To change an actor class's parent, select **Prefab Root** in **Components**, then choose **Parent Class** in the **Inspector**. Only actor parents are offered.
+- To change an actor class's parent, choose **Parent Class** in the **Inspector** while nothing is selected, or with **Prefab Root** selected in **Components**. Only actor parents are offered.
 - Classes can inherit up to 16 levels deep.
 
 Use [Cast To](class/cast-to.md) to treat an object as one of its subclasses.
