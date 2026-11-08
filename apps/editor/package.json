@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm --filter player exec vite build && vite",
-    "build": "pnpm --filter player build && tsc -b && vite build",
+    "build": "pnpm --filter player build && tsc -b && vite build && node ../desktop/scripts/build-game-shells.mjs --out dist/game-shells",
     "test": "node ../../scripts/run-tests.mjs unit apps/editor",
     "typecheck": "tsc -b --noEmit",
     "preview": "vite preview",

@@ -48,6 +48,9 @@ jobs:
       - name: Generate non-publishable inspection identity
         run: node scripts/distribution/inspect-identity.mjs windows ${{ inputs.channel }}
       - run: pnpm --filter editor build
+        env:
+          HAPTIC_GAME_SHELLS: linux-x64
+          HAPTIC_GAME_SHELL_OWN: windows-x64
       - run: pnpm --filter desktop build:host
       - run: pnpm --filter desktop package:windows
       - name: Exercise installed desktop package
@@ -76,6 +79,8 @@ jobs:
       - name: Generate non-publishable inspection identity
         run: node scripts/distribution/inspect-identity.mjs macos ${{ inputs.channel }}
       - run: pnpm --filter editor build
+        env:
+          HAPTIC_GAME_SHELLS: windows-x64,linux-x64
       - run: pnpm --filter desktop build:host
       - run: pnpm --filter desktop package:macos
       - name: Exercise installed desktop package
@@ -101,6 +106,9 @@ jobs:
       - name: Generate non-publishable inspection identity
         run: node scripts/distribution/inspect-identity.mjs linux ${{ inputs.channel }}
       - run: pnpm --filter editor build
+        env:
+          HAPTIC_GAME_SHELLS: windows-x64
+          HAPTIC_GAME_SHELL_OWN: linux-x64
       - run: pnpm --filter desktop build:host
       - run: pnpm --filter desktop package:linux
       - name: Exercise installed desktop package

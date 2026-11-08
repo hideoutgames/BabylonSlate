@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { isLibraryFolder } from "@haptic/vfs/library-folders";
+import { isRuntimeFileName, MAX_RUNTIME_FILES } from "./game-runtime";
 
 /** Largest payload one project IPC call may move through the main process. */
 export const MAX_IPC_BYTES = 512 * 1024 * 1024;
@@ -9,13 +10,14 @@ function requireValue(condition: unknown): asserts condition {
   if (!condition) throw new Error("Invalid desktop request");
 }
 
-export function rendererFile(rawUrl: string, root: string): string {
+/** A file under `root` that `app://<host>/<path>` names; anything that could leave `root` is refused. */
+function bundledFile(rawUrl: string, root: string, host: string): string {
   // Check before WHATWG URL normalization can erase dot segments.
   const decoded = decodeURIComponent(rawUrl);
   requireValue(!/[\\%]/.test(decoded) && !decoded.includes("\0"));
   requireValue(!decoded.split(/[/?#]/).some(part => part === ".." || part === "."));
   const url = new URL(rawUrl);
-  requireValue(url.protocol === "app:" && url.host === "babylonslate" && !url.username && !url.password);
+  requireValue(url.protocol === "app:" && url.host === host && !url.username && !url.password);
   const pathname = decodeURIComponent(url.pathname);
   requireValue(!pathname.includes(":"));
   // Win32 drops trailing dots and spaces from each segment, so `.. ` would
@@ -25,6 +27,40 @@ export function rendererFile(rawUrl: string, root: string): string {
   const within = relative(resolve(root), file);
   requireValue(within !== ".." && !within.startsWith("..") && !isAbsolute(within));
   return file;
+}
+
+/** The editor's bundled file for an `app://babylonslate/` URL. */
+export function rendererFile(rawUrl: string, root: string): string {
+  return bundledFile(rawUrl, root, "babylonslate");
+}
+
+/** An exported game's file for an `app://game/` URL, under its `resources/game` folder. */
+export function gameFile(rawUrl: string, root: string): string {
+  return bundledFile(rawUrl, root, GAME_HOST);
+}
+
+/** The origin an exported desktop game runs at. */
+export const GAME_HOST = "game";
+
+/** Whether a URL is the exported game's own page or a file beside it. */
+export function isGameUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    return url.protocol === "app:" && url.host === GAME_HOST && !url.username && !url.password;
+  } catch { return false; }
+}
+
+/** Web permissions an exported game's own page may use: full screen and pointer lock. */
+export function allowsGamePermission(permission: string, requestingUrl: string): boolean {
+  return (permission === "fullscreen" || permission === "pointerLock") && isGameUrl(requestingUrl);
+}
+
+/** Links a game opens leave the game for the system browser over HTTP(S); anything else is denied. */
+export function gameExternalUrl(rawUrl: string): string | null {
+  try {
+    const url = new URL(rawUrl);
+    return (url.protocol === "https:" || url.protocol === "http:") && !url.username && !url.password ? url.href : null;
+  } catch { return null; }
 }
 
 function bundledUrl(rawUrl: string): URL | null {
@@ -206,7 +242,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     "lfs:fetch": 1, "auth:open-browser": 2, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
     "project:list": 0, "project:delete": 1, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,
     "project:writeBinary": 2, "project:exists": 1, "project:readdir": 1, "project:mkdir": 2,
-    "project:remove": 1, "project:stat": 1, "file:save": 2,
+    "project:remove": 1, "project:stat": 1, "file:save": 2, "game-shell:runtime": 2,
   };
   requireValue(Object.hasOwn(counts, channel) && args.length === counts[channel]);
   if (channel.startsWith("save-games:")) {
@@ -218,6 +254,9 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
         path.split("/").every(part => part.length > 0 && part !== "." && part !== ".."));
     }
     if (channel === "save-games:write") text(args[1], 32 * 1024 * 1024);
+  } else if (channel === "game-shell:runtime") {
+    requireValue(Array.isArray(args[0]) && args[0].length <= MAX_RUNTIME_FILES && args[0].every(isRuntimeFileName));
+    text(args[1], 32);
   } else if (channel === "settings:write") {
     text(args[0]);
     const parsed: unknown = JSON.parse(args[0]);

@@ -30,7 +30,7 @@ Shipped systems beyond the core (do not rebuild): Save Games (typed definitions,
 ## Non-goals
 
 - No multiplayer or networking of any kind.
-- Games export to **web only**. Capacitor (iPad, Android) and Electron (desktop) shells run the *editor*, not games.
+- Games export as a web zip or a native package that wraps the same web build (Electron for desktop, Capacitor for mobile) for parity. Each editor build carries, as files loaded only when packaging, the prebuilt shells for the targets its platform can build; there is no download or release step ([exporter.md](architecture/exporter.md#native-packages)). Windows and Linux ship from every editor; macOS and iOS are planned for the macOS desktop editor only, Android for every editor.
 - No native code plugins; plugins are content and classes.
 - One parent world Scene and one physics world at a time. Streaming adds owned instances beneath it; SceneLayers are a separate overlay stack.
 - No live property editing of authored content while playing (stop, edit, play). Simulate edits runtime objects only; authored documents stay read-only until it stops.

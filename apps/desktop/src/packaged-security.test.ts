@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { allowsEditorPermission, externalOpenUrl, insidePreviewFrame, isBillingFrameUrl, knownProjectFolder, rendererFile, isEditorSender, isPreviewFrameUrl, validateIpcArguments } from "./packaged-security";
+import { allowsEditorPermission, allowsGamePermission, externalOpenUrl, gameExternalUrl, gameFile, insidePreviewFrame, isBillingFrameUrl, isGameUrl, knownProjectFolder, rendererFile, isEditorSender, isPreviewFrameUrl, validateIpcArguments } from "./packaged-security";
 
 describe("packaged renderer boundary", () => {
   it("resolves encoded asset filenames without treating filename characters as URL delimiters", () => {
@@ -14,6 +14,31 @@ describe("packaged renderer boundary", () => {
     expect(rendererFile("app://babylonslate/assets/physics.wasm", "renderer")).toBe(resolve("renderer/assets/physics.wasm"));
     for (const url of ["file:///secret", "app://other/index.html", "app://babylonslate/%2e%2e/secret", "app://babylonslate/..%5csecret", "app://babylonslate/C:/secret", "app://babylonslate/%252e%252e/secret", "app://babylonslate/assets/key%00", "app://babylonslate/..%20/secret", "app://babylonslate/assets/..%20./secret", "app://babylonslate/.../secret"]) {
       expect(() => rendererFile(url, "renderer")).toThrow();
+    }
+  });
+  it("serves an exported game only from its own folder at app://game/", () => {
+    expect(gameFile("app://game/index.html", "game")).toBe(resolve("game/index.html"));
+    expect(gameFile("app://game/", "game")).toBe(resolve("game/index.html"));
+    expect(gameFile("app://game/assets/My%20Song.ogg", "game")).toBe(resolve("game/assets/My Song.ogg"));
+    for (const url of ["app://babylonslate/index.html", "app://game/%2e%2e/secret", "app://game/..%5csecret", "app://game/C:/secret", "file:///etc/passwd"]) {
+      expect(() => gameFile(url, "game")).toThrow();
+    }
+    // The editor's resolver never serves the game origin, and the game's never serves the editor's.
+    expect(() => rendererFile("app://game/index.html", "renderer")).toThrow();
+  });
+  it("lets an exported game use full screen and pointer lock, stay on its origin and open web links outside", () => {
+    expect(isGameUrl("app://game/index.html")).toBe(true);
+    expect(isGameUrl("app://babylonslate/index.html")).toBe(false);
+    expect(isGameUrl("https://game/")).toBe(false);
+    expect(allowsGamePermission("fullscreen", "app://game/index.html")).toBe(true);
+    expect(allowsGamePermission("pointerLock", "app://game/index.html")).toBe(true);
+    for (const permission of ["media", "geolocation", "clipboard-read", "notifications", "openExternal"]) {
+      expect(allowsGamePermission(permission, "app://game/index.html")).toBe(false);
+    }
+    expect(allowsGamePermission("fullscreen", "https://example.com/")).toBe(false);
+    expect(gameExternalUrl("https://example.com/store")).toBe("https://example.com/store");
+    for (const url of ["file:///etc/passwd", "javascript:alert(1)", "app://game/other.html", "https://user:pass@example.com/", "smb://share"]) {
+      expect(gameExternalUrl(url)).toBeNull();
     }
   });
   it("only accepts the main editor frame as a privileged IPC sender", () => {

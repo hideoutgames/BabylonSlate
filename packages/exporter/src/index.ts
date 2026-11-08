@@ -78,3 +78,5 @@ export { createPreviewAssetClient, createPreviewAssetServer } from "./preview-as
 
 export { packedContentFromGame, packedPlayControls, packedBootControls, packedSourceControls, type PackedAudioLibrary, type PackedGameContent } from "./hydrate";
 export { gameSourceSubset, requiredGameAssets, type GameSourceContent } from "./source-content";
+export { DESKTOP_GAME_TARGETS, desktopGameNames, packageDesktopGame, type DesktopGameNames, type DesktopGamePackageInput, type DesktopGameTarget } from "./native-desktop";
+export { readZipEntries, writeZip, type ZipCopy, type ZipEntry } from "./zip-merge";
