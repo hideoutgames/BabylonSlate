@@ -23,6 +23,16 @@ interface FolderTreeLike {
   children: FolderTreeLike[];
 }
 
+interface FolderPathTree {
+  path: string;
+  children: readonly FolderPathTree[];
+}
+
+/** Every folder path in `tree`, the root first, each folder before its children. */
+export function folderTreePaths(tree: FolderPathTree): string[] {
+  return [tree.path, ...tree.children.flatMap(folderTreePaths)];
+}
+
 export function collectFolderGuids(
   folderPath: string,
   tree: FolderTreeLike,

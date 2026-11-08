@@ -9,6 +9,7 @@ import {
   DEFAULT_FUNCTION_PINS,
   nativeEventStubs,
 } from "./class-members";
+import { nodeComponentId } from "./class-event-nodes";
 import {
   componentGraphMembers,
   mergedPrefabViewsForGraph,
@@ -313,12 +314,6 @@ export function customEventsFromGraph(
     push(formatEventMemberName(raw), pins);
   }
   return rows;
-}
-
-function nodeComponentId(
-  node: NonNullable<SerializedGraph["nodes"]>[number],
-): string {
-  return typeof node.data.componentId === "string" ? node.data.componentId : "";
 }
 
 function graphHasEventBinding(

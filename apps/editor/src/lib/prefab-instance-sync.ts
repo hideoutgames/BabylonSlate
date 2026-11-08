@@ -9,7 +9,7 @@ import {
   type SerializedTransform,
 } from "@haptic/core";
 import { stableStringify } from "@haptic/assets";
-import { mergePrefabComponents } from "./prefab-preview";
+import { cloneTransform, mergePrefabComponents } from "./prefab-preview";
 
 export const PREFAB_TRANSFORM_OVERRIDE = "transform";
 export const PREFAB_PARENT_OVERRIDE = "parentId";
@@ -69,17 +69,6 @@ export function prefabAssetTemplates(options: {
     if (guid) templates[prefabAssetTemplateKey(guid)] = normalizePrefab(doc.content).components;
   }
   return templates;
-}
-
-function cloneTransform(
-  transform: SerializedTransform | undefined,
-): SerializedTransform {
-  const source = transform ?? identitySerializedTransform();
-  return {
-    position: [...source.position] as [number, number, number],
-    rotation: [...source.rotation] as [number, number, number, number],
-    scale: [...source.scale] as [number, number, number],
-  };
 }
 
 /**

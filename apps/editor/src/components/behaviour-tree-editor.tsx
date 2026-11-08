@@ -24,14 +24,12 @@ import {
   BT_SERVICE_CATALOG,
   BT_TASK_CATALOG,
   canReparentNode,
-  createDefaultBehaviourTree,
   defaultPropertiesForClassId,
   deleteSubtree,
   duplicateSubtrees,
   hydrateBehaviourTreeForEditor,
   kindForCatalogClassId,
   moveAttachment,
-  parseBehaviourTreeDocument,
   parseBlackboardDocument,
   pinsForBtKind,
   propertyFieldsForClassId,
@@ -83,7 +81,7 @@ import {
   useRegistryState,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
+import { asTree, useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
 import { usePlay } from "../context/play-context";
 import { useBreakpointStore } from "../context/breakpoints-context";
 import { useKeybindChord } from "../context/keybind-context";
@@ -102,10 +100,6 @@ const BT_HIDDEN_TOOLBAR_ACTIONS: Array<"copy" | "paste" | "breakLinks" | "format
   "breakLinks",
   "format",
 ];
-
-function asTree(payload: Record<string, unknown>): BehaviourTreeDocument {
-  return parseBehaviourTreeDocument(payload) ?? createDefaultBehaviourTree();
-}
 
 function catalogPalette(entries: readonly BtCatalogEntry[]): PaletteNode[] {
   return entries.map((entry) => ({

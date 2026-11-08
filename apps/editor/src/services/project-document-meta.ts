@@ -202,13 +202,6 @@ export function fallbackDocumentType(kind: Exclude<DocumentKind, "content-browse
   return isAssetDocumentKind(kind) ? assetTypeForDocumentKind(kind) : "Class";
 }
 
-export function newGuid(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `proj-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 export function assetName(path: string): string {
   const file = path.split("/").pop() ?? path;
   return stripAssetFileSuffix(file) || file.replace(/\.hasset$/, "");

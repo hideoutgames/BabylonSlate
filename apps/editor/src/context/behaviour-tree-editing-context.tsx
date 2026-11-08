@@ -32,7 +32,8 @@ export interface BehaviourTreeEditingContextValue {
 const BehaviourTreeEditingContext =
   createContext<BehaviourTreeEditingContextValue | null>(null);
 
-function asTree(payload: Record<string, unknown>) {
+/** The Behaviour Tree a document body holds, or a new default tree when it holds none. */
+export function asTree(payload: Record<string, unknown>) {
   return parseBehaviourTreeDocument(payload) ?? createDefaultBehaviourTree();
 }
 

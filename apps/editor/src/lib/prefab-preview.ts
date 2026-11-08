@@ -15,6 +15,7 @@ import {
   type ViewportMode,
 } from "@haptic/core";
 import type { TreeDropPlacement } from "@haptic/editor-kit";
+import { moveIdsRelativeTo } from "./move-ids-relative-to";
 
 export const PREFAB_ROOT_ID = "prefab-root";
 
@@ -222,21 +223,6 @@ export function componentSubtreeIds(
   return ids;
 }
 
-function moveIdsRelativeTo<T extends { id: string }>(
-  items: readonly T[],
-  ids: readonly string[],
-  anchorId: string,
-  placement: "before" | "after",
-): T[] {
-  const movingSet = new Set(ids);
-  const moving = items.filter((item) => movingSet.has(item.id));
-  const rest = items.filter((item) => !movingSet.has(item.id));
-  const index = rest.findIndex((item) => item.id === anchorId);
-  if (index < 0) return [...rest, ...moving];
-  const insertAt = placement === "before" ? index : index + 1;
-  return [...rest.slice(0, insertAt), ...moving, ...rest.slice(insertAt)];
-}
-
 /** Drop on Prefab Root / null unparents; drop on a row makes that row the parent. */
 export function reparentPrefabComponents(
   components: SerializedComponent[],
@@ -318,11 +304,15 @@ export function applyPrefabComponentTransform(
 
 const TRANSFORM_EPS = 1e-8;
 
-function cloneTransform(transform: SerializedTransform): SerializedTransform {
+/** A copy of `transform`, or the identity transform when there is none. */
+export function cloneTransform(
+  transform: SerializedTransform | undefined,
+): SerializedTransform {
+  const source = transform ?? identitySerializedTransform();
   return {
-    position: [...transform.position] as [number, number, number],
-    rotation: [...transform.rotation] as [number, number, number, number],
-    scale: [...transform.scale] as [number, number, number],
+    position: [...source.position] as [number, number, number],
+    rotation: [...source.rotation] as [number, number, number, number],
+    scale: [...source.scale] as [number, number, number],
   };
 }
 

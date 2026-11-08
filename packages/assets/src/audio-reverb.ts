@@ -464,18 +464,17 @@ function pushMeshTriangles(
   }
 }
 
-function isDynamicRigidBody(actor: SerializedActor): boolean {
-  return actor.components.some(
-    (component) =>
-      component.classId === "RigidBodyComponent" &&
-      component.properties.motionType === "dynamic",
-  );
-}
-
-function hasMeshComponent(actor: SerializedActor): boolean {
-  return actor.components.some(
-    (component) => component.classId === "MeshComponent",
-  );
+/**
+ * Whether the reverb bake reads this actor's geometry: it has a MeshComponent
+ * and is not a dynamic rigid body. Bake-input fingerprints use the same rule.
+ */
+export function isStaticAudioGeometryActor(actor: SerializedActor): boolean {
+  let hasMesh = false;
+  for (const component of actor.components) {
+    if (component.classId === "RigidBodyComponent" && component.properties.motionType === "dynamic") return false;
+    if (component.classId === "MeshComponent") hasMesh = true;
+  }
+  return hasMesh;
 }
 
 /**
@@ -493,8 +492,7 @@ export async function collectStaticAudioGeometry(options: {
   const meshes = new Map<string, CollisionTriangleMesh>();
   let processed = 0;
   for (const actor of options.actors) {
-    if (isDynamicRigidBody(actor)) continue;
-    if (!hasMeshComponent(actor)) continue;
+    if (!isStaticAudioGeometryActor(actor)) continue;
     const world = actorWorld(actor);
     for (const component of world ? actor.components : []) {
       if (component.classId !== "MeshComponent") continue;

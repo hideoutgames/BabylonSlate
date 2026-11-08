@@ -1,5 +1,6 @@
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
+  normalizeAnimationPayload,
   parseSpriteAnimationPayload,
   spriteAnimationDurationMs,
 } from "@haptic/assets";
@@ -10,20 +11,9 @@ function stringList(value: unknown): string[] {
   return value.filter((entry): entry is string => typeof entry === "string");
 }
 
-function trimmed(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
-
 function nullableGuid(value: unknown): string | null {
-  const guid = trimmed(value);
+  const guid = typeof value === "string" ? value.trim() : "";
   return guid.length > 0 ? guid : null;
-}
-
-function optionalDurationMs(value: unknown): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    return undefined;
-  }
-  return value;
 }
 
 function spriteAnimationCatalogDuration(payload: Record<string, unknown>): number | undefined {
@@ -50,18 +40,18 @@ export function animClipCatalogFromAssets(
 ): AnimClipCatalogEntry[] {
   return assets.map((asset) => {
     const payload = asRecord(asset.header.payload);
+    const animation =
+      asset.header.type === "Animation" ? normalizeAnimationPayload(payload) : null;
     const durationMs =
       asset.header.type === "SpriteAnimation"
         ? spriteAnimationCatalogDuration(payload)
-        : asset.header.type === "Animation"
-          ? optionalDurationMs(payload.durationMs)
-          : undefined;
-    const skeletonGuid =
-      asset.header.type === "Model" || asset.header.type === "Animation"
+        : animation?.durationMs;
+    const skeletonGuid = animation
+      ? animation.skeletonGuid
+      : asset.header.type === "Model"
         ? nullableGuid(payload.skeletonGuid)
         : undefined;
-    const modelGuid =
-      asset.header.type === "Animation" ? trimmed(payload.modelGuid) : "";
+    const modelGuid = animation?.modelGuid ?? "";
     return {
       guid: asset.header.guid,
       type: asset.header.type,

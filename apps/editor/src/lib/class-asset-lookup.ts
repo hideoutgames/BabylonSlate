@@ -6,7 +6,7 @@
  */
 import type { AssetRegistry } from "@haptic/assets";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
-import { GAME_SUBSYSTEM_CLASS_ID, SCENE_SUBSYSTEM_CLASS_ID, documentClassParentOf } from "@haptic/object-model";
+import { GAME_SUBSYSTEM_CLASS_ID, SCENE_SUBSYSTEM_CLASS_ID, documentClassParentOf, isLockedEngineClassId } from "@haptic/object-model";
 import { classIdForGraphPath } from "../services/script-compiler";
 import type { CreatableAssetType } from "./content-browser-helpers";
 
@@ -31,6 +31,11 @@ export const ENGINE_BASE_CLASSES = [
   "BTService",
   "BTComposite",
 ] as const;
+
+/** An engine class id (locked or with an engine parent), which no project Class may take. */
+export function isEngineClassId(classId: string): boolean {
+  return isLockedEngineClassId(classId) || engineParentOf(classId) !== undefined;
+}
 
 export type ClassAssetRef = {
   path?: string;

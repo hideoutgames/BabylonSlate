@@ -8,7 +8,8 @@ import { flowNodes } from "@haptic/scripting-nodes";
 import { NATIVE_EVENT_TITLES, type ClassEventOptions } from "./class-event-catalog";
 import { nextId } from "./class-member-nodes";
 
-function nodeComponentId(
+/** The component an event node binds to, or "" for the actor's own event. */
+export function nodeComponentId(
   node: SerializedGraph["nodes"][number],
 ): string {
   return typeof node.data.componentId === "string" ? node.data.componentId : "";
