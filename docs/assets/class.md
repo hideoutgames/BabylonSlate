@@ -41,6 +41,7 @@ The **Inspector** shows the class settings while nothing is selected, and when y
 | Generate Overlap Events | Turn off to stop the overlap events for this actor. |
 | Event Tick | **Inherit**, **Enabled** or **Disabled**. Disabled stops the actor's [Event Tick](../scripting/class/event-tick.md); its components keep ticking. |
 | Tick On Pause | Off by default. Turn on to keep the actor, its components, Delays, tweens and sounds running while the game is paused by [Set Game Paused](../scripting/class/set-game-paused.md). |
+| Tags | The [Tags](../scripting/tags.md#actor-tags) every actor of this class starts with. A child class inherits them until it sets its own, and a placed actor can change its own in the **Inspector**. |
 
 Parent Class and Actor Defaults appear for actor classes. Some parents add their own fields, such as the Scene Layer Actor Switcher.
 

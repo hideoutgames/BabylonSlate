@@ -50,6 +50,8 @@ export const ENGINE_TIME_STRUCT_ID = "engine:Time";
 export const ENGINE_DATE_STRUCT_ID = "engine:Date";
 /** A random sequence (Seed text) and the number of values drawn from it (Step): `RandomSeed` in core. */
 export const ENGINE_SEED_STRUCT_ID = "engine:Seed";
+/** Set Timer By Event's handle: the timer's id, 0 for none (`ScriptTimers` in runtime). */
+export const ENGINE_TIMER_HANDLE_STRUCT_ID = "engine:TimerHandle";
 
 export const ENGINE_INT_RANGE_STRUCT_ID = "engine:IntRange";
 export const ENGINE_FLOAT_RANGE_STRUCT_ID = "engine:FloatRange";
@@ -350,6 +352,12 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
       { name: "Seed", typeId: "string", defaultValue: "" },
       { name: "Step", typeId: "int", defaultValue: 0 },
     ],
+  },
+  {
+    // `ScriptTimers` ids from 1; 0 names no timer.
+    id: ENGINE_TIMER_HANDLE_STRUCT_ID,
+    name: "Timer Handle",
+    fields: [{ name: "Id", typeId: "int", defaultValue: 0 }],
   },
 
   ...RANGE_STRUCTS,

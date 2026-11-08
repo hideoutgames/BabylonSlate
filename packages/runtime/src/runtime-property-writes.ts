@@ -110,6 +110,11 @@ export class RuntimePropertyWrites {
     if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
     const slotId = this.host.renderSlots().recordedSlot(owner);
     const renderEmitter = this.host.renderEmitter();
+    // Set Visibility changes only what the component draws: physics, sound and navigation stay as they are.
+    if (propertyName === "visible") {
+      if (slotId !== undefined) renderEmitter.emitMeshAssignment(owner, slotId);
+      return;
+    }
     if (component.classId === "DeformerComponent") {
       if (slotId !== undefined) {
         if (this.host.ticks().processing) renderEmitter.queueDeformers(owner);

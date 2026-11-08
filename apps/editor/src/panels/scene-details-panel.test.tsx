@@ -509,6 +509,16 @@ describe("shared actor Details", () => {
 });
 
 describe("SceneDetailsPanel authoring", () => {
+  it("shows a placed actor's Tags only while one actor is selected", () => {
+    harness.selectedActorIds = [scene().actors[0]!.id];
+    const { unmount } = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("property-actor-tags")).toBeTruthy();
+    unmount();
+    harness.selectedActorIds = scene().actors.slice(0, 2).map((actor) => actor.id);
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.queryByTestId("property-actor-tags")).toBeNull();
+  });
+
   it("edits an Outliner anchor's offsets without exposing a transform or visibility", () => {
     scene().actors = [createActor("pin", "2D Anchor", { components: [
       { id: "anchor", classId: "2DAnchorComponent", properties: { anchor: "topLeft", offsetX: 0, offsetY: 0 } },

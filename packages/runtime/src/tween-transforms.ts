@@ -90,6 +90,13 @@ function parentFrame(target: TweenTransformTarget, findActor: ActorLookup): Tran
   return frame;
 }
 
+/** A live component's world transform, or null when its owner or attachment chain is not live. */
+export function componentWorldTransform(component: ActorComponent, findActor: ActorLookup): Transform | null {
+  if (!liveSpatialOwner(component, findActor)) return null;
+  const parent = parentFrame(component, findActor);
+  return parent ? composeParentChildTransform(parent, component.transform) : null;
+}
+
 /**
  * Apply one authored tween sample. World values are converted through the live
  * parent pose on every call. The caller owns physics and component publication.

@@ -41,7 +41,7 @@ import type {
   ScriptExtras,
 } from "./script-context-types";
 import type { ScriptDebugTrace } from "./script-debug";
-import { DISPATCHER_MAX_DEPTH, type DispatcherBindings } from "./script-dispatchers";
+import { EventDelegate, DISPATCHER_MAX_DEPTH, type DispatcherBindings } from "./script-dispatchers";
 import {
   asActor,
   asActorComponent,
@@ -403,6 +403,10 @@ export function createScriptContext(
       const key = flowNamespace ? `${flowNamespace}\0${String(nodeId)}` : String(nodeId);
       return services.retriggerableDelay(key, seconds, self);
     };
+    // The timer belongs to the object running the graph: it ends with it, and pauses with it.
+    context.setTimer = (delegate, time, looping, firstDelay) => ({
+      Id: delegate instanceof EventDelegate ? services.timers?.set(self ?? null, delegate, time, looping, firstDelay) ?? 0 : 0,
+    });
     context.callInterface = (target, interfaceGuid, method, args) => {
       const registry = services.interfaceRegistry;
       if (!registry) return {};

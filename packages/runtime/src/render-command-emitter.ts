@@ -813,7 +813,8 @@ function lightAssignPayload(component: ActorComponent): NonNullable<Extract<Comm
   return {
     color: rgbTuple(component.getVariable("color")),
     intensity: Number(component.getVariable("intensity") ?? (fill ? 0.9 : 1)),
-    enabled: component.getVariable("enabled") !== false,
+    // Set Visibility off turns the light off too, like Set Light Enabled.
+    enabled: component.getVariable("enabled") !== false && component.getVariable("visible") !== false,
     ...(fill ? { groundColor: ground == null ? [0, 0, 0] as [number, number, number] : rgbTuple(ground) } : {
       range: Number(component.getVariable("range") ?? 10),
       innerAngle: Number(component.getVariable("innerAngle") ?? 30),
@@ -833,6 +834,7 @@ function playMeshPartOf(
   const { position, rotation, scale } = component.transform;
   return {
     componentId: component.guid,
+    ...(component.getVariable("visible") === false ? { hidden: true } : {}),
     ...(component.classId === "LandscapeComponent" ? { landscape: parseLandscapeProperties(Object.fromEntries(
       ["width", "depth", "subdivisions", "heights", "weights", "materialGuid", "collisionsEnabled"].map((key) => [key, component.getVariable(key)]),
     )) } : {}),

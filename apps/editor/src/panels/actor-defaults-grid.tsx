@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PropertyGrid, walkAncestry, type PropertyRow } from "@haptic/editor-kit";
 import {
+  ACTOR_TAGS_PROPERTY,
+  normalizeTagContainer,
   resolveActorDefaults,
+  resolveActorTags,
   resolveGameInstanceDefaults,
   type ActorDefaults,
   type ActorEventTickMode,
   type GameInstanceDefaults,
   type SerializedGraph,
+  type TagContainer,
 } from "@haptic/core";
 import { useDocumentActions, useRegistryState } from "../context/document-context";
 import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
@@ -46,7 +50,10 @@ function useAncestorClassDefaults(parentClass: string): { ancestors: string[]; d
     void Promise.all(ancestorAssets.filter(asset => closed.has(asset.path)).map(async asset => {
       const graph = await loadGraphDocument(asset.path).catch(() => null);
       return [classIdFromClassAsset(asset), classDefaultsOf(graph)] as const;
-    })).then(entries => { if (active) setSavedDefaults(Object.fromEntries(entries)); });
+    })).then(entries => {
+      // Nothing loaded keeps the same state, so a Class without saved ancestors never re-renders its host.
+      if (active) setSavedDefaults(previous => entries.length === 0 && Object.keys(previous).length === 0 ? previous : Object.fromEntries(entries));
+    });
     return () => { active = false; };
   }, [ancestorAssets, closedAncestorPaths, loadGraphDocument]);
   const openDefaults = useMemo(() => Object.fromEntries(ancestorAssets.flatMap(asset => {
@@ -61,6 +68,34 @@ function useAncestorClassDefaults(parentClass: string): { ancestors: string[]; d
     [openDefaults, savedDefaults],
   );
   return { ancestors, defaultsOf };
+}
+
+/** The Tags a Class gives its actors: its own Actor Defaults, else the nearest ancestor's. */
+export function useInheritedActorTags(classId: string): TagContainer {
+  const { ancestors, defaultsOf } = useAncestorClassDefaults(classId);
+  return resolveActorTags(ancestors.map(id => defaultsOf[id]?.actorDefaults));
+}
+
+/** Two Tag Containers hold the same Tags, in any order. */
+export function sameActorTags(a: TagContainer, b: TagContainer): boolean {
+  const left = new Set(normalizeTagContainer(a).Tags);
+  const right = normalizeTagContainer(b).Tags;
+  return left.size === right.length && right.every(tag => left.has(tag));
+}
+
+/**
+ * `properties` with the Tags set, or without them when they equal the inherited ones, so the placed
+ * actor or child Class keeps following its Class. Empty properties are dropped.
+ */
+export function withActorTags(
+  properties: Record<string, unknown> | undefined,
+  tags: TagContainer,
+  inherited: TagContainer,
+): Record<string, unknown> | undefined {
+  const next = { ...properties };
+  if (sameActorTags(tags, inherited)) delete next[ACTOR_TAGS_PROPERTY];
+  else next[ACTOR_TAGS_PROPERTY] = normalizeTagContainer(tags);
+  return Object.keys(next).length > 0 ? next : undefined;
 }
 
 function classDefaultsOf(graph: SerializedGraph | null | undefined): ClassDefaults | undefined {
@@ -79,6 +114,8 @@ export function ActorDefaultsGrid({
 }) {
   const { ancestors, defaultsOf } = useAncestorClassDefaults(parentClass);
   const inherited = resolveActorDefaults(ancestors.map(id => defaultsOf[id]?.actorDefaults));
+  const inheritedTags = resolveActorTags(ancestors.map(id => defaultsOf[id]?.actorDefaults));
+  const ownTags = defaults.properties?.[ACTOR_TAGS_PROPERTY];
 
   const writeFlag = (key: ActorDefaultFlag, value: boolean) => {
     const next = { ...defaults };
@@ -106,6 +143,21 @@ export function ActorDefaultsGrid({
         {
           ...flagRow("tickOnPause", "Tick On Pause"),
           description: "Keep ticking, with this actor's components, Delays and tweens, while the game is paused.",
+        },
+        {
+          id: "actorTags",
+          kind: "tag-container",
+          label: "Tags",
+          value: ownTags === undefined ? inheritedTags : normalizeTagContainer(ownTags),
+          defaultValue: inheritedTags,
+          description: "Tags every actor of this Class starts with; a placed actor can change its own.",
+          onChange: (tags: TagContainer) => {
+            const next = { ...defaults };
+            const properties = withActorTags(defaults.properties, tags, inheritedTags);
+            if (properties) next.properties = properties;
+            else delete next.properties;
+            onChange(next);
+          },
         },
         {
           id: "eventTick",

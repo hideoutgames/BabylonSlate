@@ -231,6 +231,11 @@ describe("Inspector prefab component details", () => {
     expect(applyGraphChange.mock.calls.at(-1)![1].actorDefaults).toEqual({ tickOnPause: true });
   });
 
+  it("shows Tags in Actor Defaults", () => {
+    renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
+    expect(screen.getByTestId("inspector-actor-defaults").contains(screen.getByTestId("property-actorTags"))).toBe(true);
+  });
+
   it("shows Game Instance Defaults with Tick On Pause beside a Game Instance class's Parent Class", () => {
     classState.parentClass = "GameInstance";
     renderInspector({ selectedComponentId: PREFAB_ROOT_ID });

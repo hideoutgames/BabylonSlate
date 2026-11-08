@@ -56,7 +56,7 @@ Deleting from the row menu with several actors selected offers **Delete This Obj
 
 ## Edit in the Inspector
 
-Selecting an actor shows its **Name**, **Position**, **Rotation** (in degrees), **Scale**, **Visible** and **Locked**. In a 2D scene, Position and Scale show X and Y, Rotation shows Z, and **Z-Order** sets which actors draw in front: a higher Z-Order is nearer the camera.
+Selecting an actor shows its **Name**, **Position**, **Rotation** (in degrees), **Scale**, **Visible**, **Locked** and its [Tags](../scripting/tags.md#actor-tags), which start as its class's. In a 2D scene, Position and Scale show X and Y, Rotation shows Z, and **Z-Order** sets which actors draw in front: a higher Z-Order is nearer the camera.
 
 The link button beside **Scale** keeps the actor's proportions: while it is on, changing one axis scales the others by the same amount. If the axis you change is 0, the other axes take the same value. The **Scale** gizmo follows the link too: dragging its X, Y or Z handle scales the other axes by the same amount. In a [Scene Layer](scene-layers.md), the box around the actor keeps its proportions the same way. The link starts off. Each actor, component and collider remembers its own link on this device; it is not saved in the project.
 
@@ -76,6 +76,8 @@ Some components work only in world scenes and others only in [Scene Layers](scen
 
 - [Spawn Actor (Async)](../scripting/class/spawn-actor-async.md) or [Spawn Actor (Blocking)](../scripting/class/spawn-actor-blocking.md) create actors during Play, and [Destroy Actor](../scripting/class/destroy-actor.md) removes them.
 - [Get Actor Of Class](../scripting/class/get-actor-of-class.md) and [Get All Actors Of Class](../scripting/class/get-all-actors-of-class.md) find placed actors.
-- [Set Actor Location](../scripting/class/set-actor-location.md) and [Attach Actor](../scripting/class/attach-actor.md) move and parent them.
+- [Set Actor Location](../scripting/class/set-actor-location.md) and [Attach Actor](../scripting/class/attach-actor.md) move and parent them; [Get Component World Location](../scripting/class/get-component-world-location.md) and its siblings read and move single components.
+- [Set Actor Hidden In Game](../scripting/class/set-actor-hidden-in-game.md) hides an actor and [Set Visibility](../scripting/class/set-visibility.md) one of its components.
+- [Get All Actors With Tag](../scripting/class/get-all-actors-with-tag.md) finds actors by their [Tags](../scripting/tags.md#actor-tags).
 
 To give an actor its own events and variables, make it from a Class. See [Classes](../scripting/classes.md) and [Prefabs](prefabs.md).

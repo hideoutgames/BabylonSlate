@@ -69,6 +69,7 @@ import {
 } from "./snapshot-binding";
 import {
   appliedPlayVisibilityOf,
+  rememberComponentPartVisibility,
   setPlayVisualVisibility,
 } from "./snapshot-visibility";
 import { applyLoadedModelMaterials } from "./snapshot-materials";
@@ -164,6 +165,11 @@ function parsePlayColliderShape(encoded: string): ColliderShape {
   return { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } };
 }
 
+/** The component ids of the parts Set Visibility turned off. */
+function hiddenPartIds(parts: readonly AssignMeshPart[] | undefined): Set<string> {
+  return new Set((parts ?? []).flatMap((part) => part.hidden ? [part.componentId] : []));
+}
+
 export function createPlayVisual(
   scene: Scene,
   slotId: number,
@@ -180,7 +186,9 @@ export function createPlayVisual(
     if (componentId) {
       const style = binding.overlayStyles.get(slotId)?.get(componentId);
       if (style) applyOverlayVisualStyle(mesh, style);
-      rememberPlayVisualComponents(mesh, new Map([[componentId, mesh]]));
+      const components = new Map([[componentId, mesh]]);
+      rememberPlayVisualComponents(mesh, components);
+      rememberComponentPartVisibility(components, hiddenPartIds(parts));
     }
     restoreComponentPoses(binding, slotId, mesh);
     applyPlayVisualSorting(mesh, slotId, binding);
@@ -249,6 +257,7 @@ export function createPlayVisual(
       }
     }
     attachPlaySpringArms(binding, root, slotId, parts ?? [], meshes);
+    rememberComponentPartVisibility(meshes, hiddenPartIds(parts));
     if (illumination.length) setActorIllumination(root, illumination);
     if (!targets && illumination.some(helper => helper.light)) applyPlayShadows(scene);
     rememberPlayVisualComponents(root, meshes);

@@ -7,6 +7,7 @@ import {
   createTag,
   createText3DComponent,
   findTag,
+  ACTOR_TAGS_PROPERTY,
   normalizeInputAssetPayload,
   normalizeTagRegistry,
   validateSaveGameDefinition,
@@ -1424,6 +1425,7 @@ async function saveDataProbe(
   });
   const rewindLoot = fnMember("ft-data-fn-rewind-loot", "RewindLoot", [seedByReference], { category: "Random" });
   const graph = classGraph({
+    actorDefaults: { properties: { [ACTOR_TAGS_PROPERTY]: { Tags: [types.tags.scripting] } } },
     members: [spawnCount, damageFalloff, lootSeed, rollLoot, rewindLoot],
     functionGraphs: {
       [rollLoot.id]: fnGraph(rollLoot, {
@@ -1529,6 +1531,28 @@ async function saveDataProbe(
       gNode("shuffled", "random.shuffleArray", 11020, -380),
       gNode("shuffled-count", "array.length", 11260, -380),
       gNode("assert-shuffled", "debug.assertEqual", 11260, -200, { "default:expected": 3, "default:message": "Shuffle Array lost items" }),
+      // Actor Tags (Scripting from Actor Defaults, Perf.Heavy from the placed probe), visibility, class and component reads.
+      gNode("own-tag", "tags.actorHasTag", 11500, -380, { "default:tag": types.tags.perfHeavy, "default:exact": true }),
+      gNode("assert-own-tag", "debug.assert", 11500, -200, { "default:message": "The placed Data Probe lost its Perf.Heavy Tag" }),
+      gNode("class-tag", "tags.actorHasTag", 11740, -380, { "default:tag": types.tags.scripting }),
+      gNode("assert-class-tag", "debug.assert", 11740, -200, { "default:message": "The Data Probe lost its Class's Scripting Tag" }),
+      gNode("tagged", "tags.getAllActorsWithTag", 11980, -560, { "default:tag": types.tags.perfHeavy, "default:exact": true }),
+      gNode("tagged-count", "array.length", 11980, -380),
+      gNode("tagged-found", "math.greaterEqual", 12220, -380, { "default:b": 1 }),
+      gNode("assert-tagged-found", "debug.assert", 12220, -200, { "default:message": "Get All Actors With Tag missed the Data Probe" }),
+      gNode("probe-hidden", "actor.isHiddenInGame", 12460, -380),
+      gNode("assert-not-hidden", "debug.assertEqual", 12460, -200, { "default:expected": false, "default:message": "Is Actor Hidden In Game read true for a visible probe" }),
+      gNode("probe-mesh", "component.get", 12700, -560, { "default:classId": "MeshComponent" }),
+      gNode("mesh-visible", "component.isVisible", 12700, -380),
+      gNode("assert-mesh-visible", "debug.assert", 12700, -200, { "default:message": "Is Visible read false for the probe's box" }),
+      gNode("probe-self", "actor.getSelf", 12940, -740),
+      gNode("probe-class", "object.getClass", 12940, -560),
+      gNode("probe-is-actor", "object.classIsChildOf", 12940, -380, { "default:parentClass": "Actor" }),
+      gNode("assert-is-actor", "debug.assert", 12940, -200, { "default:message": "Class Is Child Of did not find Actor above the Data Probe's Class" }),
+      gNode("mesh-world", "transform.getComponentWorldLocation", 13180, -560),
+      gNode("probe-location", "transform.getLocation", 13180, -740),
+      gNode("mesh-offset", "vector.distance3", 13180, -380),
+      gNode("assert-mesh-at-origin", "debug.assertEqual", 13180, -200, { "default:expected": 0, "default:message": "Get Component World Location moved the probe's box off the actor" }),
       gNode("roll-in-range", "range.isFloatInRange", 1900, 400),
       gNode("assert-roll", "debug.assert", 1900, 0, { "default:message": "Sword Damage is outside its Damage Roll range" }),
       gNode("read", "data.readEntry", 220, 160, {
@@ -1553,7 +1577,23 @@ async function saveDataProbe(
       ...gChain("assert-loot-roll", "assert-loot-step"),
       gWire("assert-loot-step", "execOut", "call-rewind-loot", "exec"),
       gWire("call-rewind-loot", "then", "assert-loot-rewound", "execIn"),
-      ...gChain("assert-loot-rewound", "set-global-seed", "assert-global-roll", "assert-global-step", "assert-weighted", "assert-shuffled", "print"),
+      ...gChain("assert-loot-rewound", "set-global-seed", "assert-global-roll", "assert-global-step", "assert-weighted", "assert-shuffled",
+        "assert-own-tag", "assert-class-tag", "assert-tagged-found", "assert-not-hidden", "assert-mesh-visible", "assert-is-actor", "assert-mesh-at-origin", "print"),
+      gWire("own-tag", "out", "assert-own-tag", "condition"),
+      gWire("class-tag", "out", "assert-class-tag", "condition"),
+      gWire("tagged", "actors", "tagged-count", "array"),
+      gWire("tagged-count", "out", "tagged-found", "a"),
+      gWire("tagged-found", "out", "assert-tagged-found", "condition"),
+      gWire("probe-hidden", "hidden", "assert-not-hidden", "actual"),
+      gWire("probe-mesh", "out", "mesh-visible", "target"),
+      gWire("mesh-visible", "visible", "assert-mesh-visible", "condition"),
+      gWire("probe-self", "out", "probe-class", "object"),
+      gWire("probe-class", "class", "probe-is-actor", "testClass"),
+      gWire("probe-is-actor", "out", "assert-is-actor", "condition"),
+      gWire("probe-mesh", "out", "mesh-world", "target"),
+      gWire("mesh-world", "out", "mesh-offset", "a"),
+      gWire("probe-location", "out", "mesh-offset", "b"),
+      gWire("mesh-offset", "out", "assert-mesh-at-origin", "actual"),
       gWire("get-loot", "value", "call-roll-loot", "Seed"),
       gWire("call-roll-loot", "Roll", "assert-loot-roll", "actual"),
       gWire("get-loot", "value", "loot-step", "seed"),
@@ -2119,7 +2159,10 @@ function placeScriptingZone(ctx: FeatureTestContext, refs: ScriptingRefs, types:
   placeClass("ft-scripting-interface-probe", "Interface Probe", refs.interfaceProbe, zone.at(4.5, 0.6, -9), probesFolder);
   placeClass("ft-scripting-object-probe", "Object Probe", refs.objectProbe, zone.at(7, 0.6, -6), probesFolder);
   placeClass("ft-scripting-touch-probe", "Touch Probe", refs.touchProbe, zone.at(4.5, 0.6, -6), probesFolder);
-  placeClass("ft-scripting-data-probe", "Data Probe", refs.dataProbe, zone.at(7, 0.45, -9), probesFolder);
+  // The placed probe overrides its Class's Tags, adding Perf.Heavy.
+  placeClass("ft-scripting-data-probe", "Data Probe", refs.dataProbe, zone.at(7, 0.45, -9), probesFolder, {
+    properties: { [ACTOR_TAGS_PROPERTY]: { Tags: [types.tags.scripting, types.tags.perfHeavy] } },
+  });
   placeClass("ft-scripting-save-probe", "Save Probe", refs.saveProbe, zone.at(9.5, 0.45, -9), probesFolder);
 
   [3, 6, 9].forEach((x, index) => {

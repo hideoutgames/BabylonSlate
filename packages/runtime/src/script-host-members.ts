@@ -46,6 +46,7 @@ import {
 } from "@haptic/core";
 import { Actor, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipInstance, TimelineClipObject, TimelineObject } from "@haptic/object-model";
 import { timelineClipState } from "./timeline-runtime";
+import { createObjectMembers } from "./script-object-members";
 import { isInfiniteLoopError } from "@haptic/debugger";
 import { EMPTY_ASSET_CATALOG } from "./asset-catalog";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
@@ -647,6 +648,14 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     removeObstacle: (id) => {
       services.removeObstacle?.(id);
     },
+    ...createObjectMembers(services),
+    clearTimer: (handle) => services.timers?.clear(timerId(handle)),
+    setTimerPaused: (handle, paused) => services.timers?.setPaused(timerId(handle), paused === true),
+    timerExists: (handle) => services.timers?.exists(timerId(handle)) ?? false,
+    isTimerActive: (handle) => services.timers?.isActive(timerId(handle)) ?? false,
+    isTimerPaused: (handle) => services.timers?.isPaused(timerId(handle)) ?? false,
+    timerRemaining: (handle) => services.timers?.remaining(timerId(handle)) ?? -1,
+    timerElapsed: (handle) => services.timers?.elapsed(timerId(handle)) ?? -1,
   };
   return members;
 }
@@ -685,4 +694,10 @@ class CurveObjectCache {
     this.objects.set(guid, { entry, object });
     return object;
   }
+}
+
+/** A Timer Handle's id; anything else is 0, no timer. */
+function timerId(handle: unknown): number {
+  const id = Number((handle as { Id?: unknown } | null | undefined)?.Id);
+  return Number.isInteger(id) && id > 0 ? id : 0;
 }

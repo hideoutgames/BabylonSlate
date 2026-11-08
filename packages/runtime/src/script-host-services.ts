@@ -200,6 +200,8 @@ export interface ScriptHostServices {
   delayOneTick?(owner?: EngineObject | null): Promise<void>;
   /** Restarts `key`'s wait for `owner`; the earlier wait rejects with a `retriggered` cancellation. */
   retriggerableDelay?(key: string, seconds: number, owner?: EngineObject | null): Promise<void>;
+  /** Set Timer By Event and the Timer Handle nodes (`ScriptTimers`). */
+  timers?: import("./runtime-host-timing").ScriptTimerService;
   tween?(request: TweenRequest): Promise<boolean>;
   isTweenSessionActive?(): boolean;
   reportError(error: unknown): void;

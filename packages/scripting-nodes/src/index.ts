@@ -43,6 +43,7 @@ import { timerNodes } from "./timers";
 import { timeNodes } from "./time";
 import { systemNodes } from "./system";
 import { randomNodes } from "./random";
+import { sceneObjectNodes } from "./scene-objects";
 import { tweenNodes } from "./tween";
 import { behaviourTreeNodes } from "./behaviour-tree";
 import { navigationNodes } from "./navigation";
@@ -165,6 +166,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...timeNodes,
     ...systemNodes,
     ...randomNodes,
+    ...sceneObjectNodes,
     ...tweenNodes,
     ...behaviourTreeNodes,
     ...navigationNodes,

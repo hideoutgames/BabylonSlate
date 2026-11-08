@@ -103,6 +103,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     ...createTimingHostBindings({
       tweens: rt.tweens,
       delays: rt.delays,
+      timers: rt.timers,
       stopped: () => rt.stopped,
       continueSimulation,
     }),

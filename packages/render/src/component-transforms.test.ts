@@ -86,3 +86,22 @@ it("updates visual and nonvisual ancestor poses in place while retaining nested 
   expect([a.geometry, a.material, b.geometry, b.material]).toEqual(resources);
   expect(a.isDisposed() || b.isDisposed()).toBe(false);
 });
+
+it("keeps a hidden component's drawing hidden through actor visibility changes while attached parts follow the actor", () => {
+  const { scene } = host(), binding = createSnapshotSceneBinding(), snapshot = sample();
+  applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshKind: "box", meshAssetGuid: null, parts: [
+    { componentId: "body", meshKind: "box", hidden: true, ...identitySerializedTransform() },
+    { componentId: "hat", parentId: "body", meshKind: "sphere", ...identitySerializedTransform(), position: [0, 2, 0] },
+  ] });
+  applySnapshotToScene(scene, binding, snapshot);
+  const body = scene.getMeshByName("actor-0|body") as Mesh, hat = scene.getMeshByName("actor-0|hat") as Mesh;
+  expect([body.isVisible, hat.isVisible]).toEqual([false, true]);
+  // The hat still sits on the hidden body.
+  expect(hat.parent).toBe(body);
+  expect(hat.computeWorldMatrix(true).getTranslation().y).toBeCloseTo(3);
+  for (const flags of [0, SNAPSHOT_FLAG_VISIBLE]) {
+    snapshot.actors[0]!.flags = flags;
+    applySnapshotToScene(scene, binding, snapshot);
+  }
+  expect([body.isVisible, hat.isVisible]).toEqual([false, true]);
+});

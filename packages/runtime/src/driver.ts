@@ -125,6 +125,8 @@ import type { OwnerAdmission } from "./owner-admission";
 import type { AnimGraphRuntime } from "./anim-graph-runtime";
 import type { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
 import { LatentDelays } from "./latent-delays";
+import { ScriptTimers } from "./script-timers";
+import type { EventDelegate } from "./script-dispatchers";
 import type { RuntimeCamera } from "./runtime-camera";
 import type { RuntimePropertyWrites } from "./runtime-property-writes";
 import { SimulationBlocks } from "./simulation-blocks";
@@ -353,6 +355,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly renderEmitter: RenderCommandEmitter;
   readonly audioParticles: AudioParticleEmitter;
   readonly delays: LatentDelays;
+  readonly timers: ScriptTimers;
   readonly navigation: RuntimeNavigation;
   readonly streams: SceneStreams;
   readonly sceneRealizer: SceneRealizer;
@@ -436,6 +439,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.renderEmitter = createRenderEmitter(this);
     this.audioParticles = createAudioParticles(this);
     this.delays = new LatentDelays(this.admission, () => this.world.clock.tickIndex);
+    this.timers = new ScriptTimers(this.admission, (delegate) => this.fireTimer(delegate));
     this.navigation = createNavigation(this);
     this.streams = createStreams(this);
     this.sceneRealizer = createSceneRealizer(this);
@@ -901,6 +905,13 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   }
 
   /** Render-side clocks (particles) follow the dilation the simulation steps with, and stand still while the game is paused. */
+  /** A due timer runs its event or function on the delegate's object, in this step's frame. */
+  private fireTimer(delegate: EventDelegate): void {
+    const context = this.scriptHost.createContext(delegate.object, this.world.clock.dt, this.world.clock.tickIndex);
+    if (delegate.kind === "function") void context.invokeFunction(delegate.object, delegate.name, {});
+    else context.invokeCustomEvent(delegate.object, delegate.name, {});
+  }
+
   private publishTimeDilation(): void {
     this.emit({ type: "setSimulationTimeScale", scale: this.world.gamePaused ? 0 : this.timeDilation });
   }
