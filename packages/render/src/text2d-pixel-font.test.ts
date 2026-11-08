@@ -7,6 +7,7 @@ import {
   measurePixelGlyph,
   pixelGlyphKey,
   pixelScaleOf,
+  rasterizePixelFontLine,
   rasterizePixelGlyph,
   resolveText2DFont,
 } from "./text2d-bitmap";
@@ -117,6 +118,24 @@ describe("pixel font glyphs", () => {
       expect({ width: measured.width, height: measured.height, originX: measured.originX, advance: measured.advance, key: measured.key })
         .toEqual({ width: cell.width, height: cell.height, originX: cell.originX, advance: cell.advance, key: cell.key });
     });
+  });
+});
+
+describe("rasterizePixelFontLine", () => {
+  it("draws a line at the native size with the glyphs' coverage cut", () => {
+    withPixelCanvas(block, () => {
+      const line = rasterizePixelFontLine("AB", '"Ark"', PIXEL_SIZE)!;
+      // Two 6 px advances; a 10 px ascent over a 2 px descent, baseline at the ascent.
+      expect({ width: line.width, height: line.height, baseline: line.baseline }).toEqual({ width: 12, height: 12, baseline: 10 });
+      expect([...new Set(line.alpha)].sort((a, b) => a - b)).toEqual([0, 255]);
+      expect(line.alpha[5 * line.width + 4]).toBe(255);
+      expect(line.alpha[5 * line.width + 1]).toBe(0);
+    });
+  });
+
+  it("draws nothing for an ordinary font or without a canvas", () => {
+    withPixelCanvas(block, () => expect(rasterizePixelFontLine("A", '"Body"', 0)).toBeNull());
+    expect(rasterizePixelFontLine("A", '"Ark"', PIXEL_SIZE)).toBeNull();
   });
 });
 

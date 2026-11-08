@@ -195,4 +195,58 @@ describe("Font editor", () => {
       undefined,
     );
   });
+  it("previews a pixel font at whole Scales instead of free sizes", () => {
+    render(<FontPreview path={PATH} payload={createFontPayload("Display", { pixelSize: 12 }) as unknown as Record<string, unknown>} />);
+    expect(screen.queryByTestId("font-sample-size")).toBeNull();
+    expect(screen.getByTestId("font-sample-scale")).toBeTruthy();
+    expect(screen.getByTestId("font-sample-pixel-size").textContent).toBe("48 px");
+    expect(screen.getByTestId("font-sample-preview").getAttribute("data-pixel-size")).toBe("12");
+    const rows = [1, 2, 3, 4].map((scale) => screen.getByTestId(`font-waterfall-scale-${scale}`).firstElementChild?.textContent);
+    expect(rows).toEqual(["12", "24", "36", "48"]);
+  });
+  it("draws a pixel font's sample as whole device-pixel blocks in the text colour", () => {
+    // A 6 px advance per character, a 10 px ascent and 2 px descent, and one drawn texel.
+    const context = {
+      font: "", textBaseline: "alphabetic", textAlign: "left", fillStyle: "",
+      measureText: (text: string) => ({
+        width: text.length * 6, actualBoundingBoxLeft: 0, actualBoundingBoxRight: text.length * 6,
+        fontBoundingBoxAscent: 10, fontBoundingBoxDescent: 2,
+      }),
+      clearRect() {}, fillText() {}, putImageData() {},
+      getImageData: (_x: number, _y: number, w: number, h: number) => {
+        const data = new Uint8ClampedArray(w * h * 4);
+        data[3] = 255;
+        return { data };
+      },
+    };
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((() => context) as never);
+    const toDataUrl = vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,AA==");
+    vi.stubGlobal("ImageData", class {
+      data: Uint8ClampedArray;
+      width: number;
+      height: number;
+      constructor(data: Uint8ClampedArray, width: number, height: number) {
+        this.data = data;
+        this.width = width;
+        this.height = height;
+      }
+    });
+    vi.stubGlobal("devicePixelRatio", 2);
+    try {
+      render(<FontPreview path={PATH} payload={createFontPayload("Display", { pixelSize: 12 }) as unknown as Record<string, unknown>} />);
+      fireEvent.change(screen.getByTestId("font-sample-input"), { target: { value: "Hi" } });
+      const sample = screen.getByTestId("font-sample-preview").querySelector<HTMLElement>("[data-pixel-preview]")!;
+      expect(sample.getAttribute("data-pixel-preview")).toBe("image");
+      // Scale 4 at a device pixel ratio of 2: each font pixel is an 8 × 8 device-pixel block.
+      expect(sample.getAttribute("data-pixel-texel")).toBe("8");
+      expect(sample.getAttribute("aria-label")).toBe("Hi");
+      expect(sample.style.width).toBe("48px");
+      expect(sample.style.height).toBe("48px");
+      expect(sample.className).toContain("bg-current");
+    } finally {
+      getContext.mockRestore();
+      toDataUrl.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
 });

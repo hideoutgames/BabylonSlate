@@ -12,7 +12,7 @@ To add an MSDF atlas to an existing Font, hold the Font in the **Content Browser
 
 Double-tap a Font to open it. The window has **Preview** and an **Inspector**.
 
-- **Preview**: type in the sample field and set **Size** to see the font. Below the sample, a waterfall shows it from 12 to 48 pixels, and **Glyphs** shows letters, digits and common symbols. The toolbar lists any sample characters that fall back to another font.
+- **Preview**: type in the sample field and set **Size** to see the font. Below the sample, a waterfall shows it from 12 to 48 pixels, and **Glyphs** shows letters, digits and common symbols. The toolbar lists any sample characters that fall back to another font. For a [pixel font](#pixel-fonts), **Scale** replaces **Size**, with the resulting size in pixels beside it, and the sample, a waterfall at Scales 1 to 4 and the glyphs draw as 2D Text draws them: every font pixel a sharp square of whole screen pixels.
 - **Inspector**: **Family**; **Pixel Size**, which makes the Font a pixel font; **Fallbacks**, other Fonts tried in order for characters this font does not cover; and **Representations**, which shows whether the Font has a **Source Font**, **Typeface**, **MSDF JSON** and **MSDF Atlas** (**Present** or **Missing**). **Import MSDF Atlas** sits on the Representations header.
 
 ## Settings
@@ -21,7 +21,7 @@ Double-tap a Font to open it. The window has **Preview** and an **Inspector**.
 | --- | --- |
 | Family | The family name of the font. |
 | Pixel Size | For a pixel font: the height in pixels it was drawn for, from 1 to 128. 0 (default) is an ordinary font. See [Pixel fonts](#pixel-fonts). |
-| Sample text and Size | The preview's text and size only; not saved. |
+| Sample text and Size | The preview's text and size only; not saved. A pixel font's preview has **Scale**, from 1 to 16, instead of Size. |
 | Fallbacks | Other Fonts to try, in order, for characters this font lacks. **Add Fallback** picks a Font. |
 | MSDF Atlas | **Import MSDF Atlas** attaches a JSON and PNG pair to this Font. Pick one JSON and the PNG it names. A JSON that names no atlas page pairs only with a PNG of the same name that contains `msdf`, such as `Ui-msdf.png` for `Ui-msdf.json`. A second JSON or any other PNG in the pick is refused. |
 
