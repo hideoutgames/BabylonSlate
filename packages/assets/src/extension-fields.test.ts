@@ -86,6 +86,18 @@ describe("Extension fields", () => {
     expect(() => normalizeExtensionContributions({ nodes: [node] })).toThrow(message);
   });
 
+  it("normalize menu entries and reject unknown menus or a command listed twice in one menu", () => {
+    expect(normalizeExtensionContributions({ menus: [
+      { menu: "contentBrowser.asset", command: "inspect", title: " Inspect Asset " },
+      { menu: "outliner.actor", command: "inspect" },
+    ] }).menus).toEqual([
+      { menu: "contentBrowser.asset", command: "inspect", title: "Inspect Asset" },
+      { menu: "outliner.actor", command: "inspect" },
+    ]);
+    expect(() => normalizeExtensionContributions({ menus: [{ menu: "toolbar", command: "x" }] })).toThrow("Unknown extension menu: toolbar");
+    expect(() => normalizeExtensionContributions({ menus: [{ menu: "debug", command: "x" }, { menu: "debug", command: "x" }] })).toThrow(/appears twice/);
+  });
+
   it("round-trip in the manifest and reject a malformed command form", () => {
     const contributes = normalizeExtensionContributions({ settings });
     const manifest = { ...createDefaultExtensionSettings({ extensionGuid: "discord", displayName: "Discord" }), contributes };

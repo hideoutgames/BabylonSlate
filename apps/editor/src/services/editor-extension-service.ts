@@ -8,7 +8,7 @@ import {
   uniqueExtensionFolderName, writeProjectExtension,
   type ExtensionCodeFile, type ExtensionDescriptor, type ExtensionSettings,
 } from "@haptic/assets";
-import { EditorExtensionHost, type EditorExtensionServices, type EditorExtensionCommandDescriptor } from "../lib/editor-extension-host";
+import { EditorExtensionHost, type EditorExtensionServices, type EditorExtensionCommandDescriptor, type ExtensionMenuContext } from "../lib/editor-extension-host";
 import { linkExtensionModules } from "../lib/extension-modules";
 import { resolvedExtensionSettings, type ExtensionSettingValues } from "../lib/extension-settings-ui";
 
@@ -438,7 +438,7 @@ export class EditorExtensionService {
   }
 
   /** Runs a command; resolves to the message it returned, if any. */
-  run(extensionId: string, commandId: string, values: Readonly<Record<string, unknown>>): Promise<string | undefined> {
-    return this.serialize(() => this.host.run(extensionId, commandId, values));
+  run(extensionId: string, commandId: string, values: Readonly<Record<string, unknown>>, context: ExtensionMenuContext = {}): Promise<string | undefined> {
+    return this.serialize(() => this.host.run(extensionId, commandId, values, context));
   }
 }

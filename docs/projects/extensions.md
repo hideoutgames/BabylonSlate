@@ -1,6 +1,6 @@
 # Extensions
 
-Extensions are small JavaScript or TypeScript packages. Every extension can add editor commands that read and create assets and project code. An extension with **Editor Only** turned off also adds a game library and content to Play and packaged games.
+Extensions are small JavaScript or TypeScript packages. Every extension can add editor commands that read and create assets and project code, and place them in editor menus. An extension with **Editor Only** turned off also adds a game library and content to Play and packaged games.
 
 For editor tools built with visual scripting instead of code, see [Editor Scripting](../scripting/editor-scripting.md).
 
@@ -15,7 +15,7 @@ For editor tools built with visual scripting instead of code, see [Editor Script
 
 1. Open **Project Settings > Project Extensions**.
 2. Turn on **Enable** for the extension. Haptic asks you to confirm, because its code can change your project's assets and code, and a gameplay extension's code also runs in your game. Enable only code you trust.
-3. The extension's commands appear as buttons in its row. Choose one, fill in the fields and run it.
+3. The extension's commands appear as buttons in its row, and in the editor menus the extension adds them to. Choose one, fill in the fields and run it.
 
 Rows also show **Experimental**, **Beta** and **Gameplay** badges, the version, dependencies and any errors. An extension whose dependency is missing, disabled or circular does not start.
 
@@ -70,7 +70,7 @@ The editor entry exports an `activate(api)` function. It can be `async` and can 
 
 | API | Use |
 | --- | --- |
-| `api.registerCommand({ id, title, description, fields, execute })` | Add a command button. `fields` use the [field types](#field-types). `execute(values)` receives each field's value, and the text it returns is shown when the command completes. |
+| `api.registerCommand({ id, title, description, fields, execute })` | Add a command button. `fields` use the [field types](#field-types). `execute(values, context)` receives each field's value and, when the command runs from a [menu](#menus), what the menu was opened on. The text it returns is shown when the command completes. |
 | `api.settings.get()` / `api.settings.onChange(listener)` | Read the extension's [Project Settings](#project-settings) values, and run `listener` when they change. `onChange` returns a function that stops it. |
 | `api.assets.list()` | List the project's assets. |
 | `api.assets.read(path)` | Read an asset document. |
@@ -136,6 +136,51 @@ Settings and command fields share these types. Each field has an `id`, a `label`
 | `number` | A number | `min`, `max`, `integer`, `unit` |
 | `toggle` | On or off | |
 | `choice` | One of a list | `options`: a list of `{ "value", "label" }` |
+
+## Menus
+
+An extension can add its commands to editor menus. List them under `menus` in **Contributions**:
+
+```json
+{
+  "menus": [
+    { "menu": "contentBrowser.asset", "command": "inspect", "title": "Inspect Asset" },
+    { "menu": "outliner.actor", "command": "inspect" }
+  ]
+}
+```
+
+- `command` is the `id` of a command the extension registers. The entry appears only while the extension runs and has registered that command.
+- `title` is the entry's label. Without it, the entry uses the command's title.
+- Entries appear after the menu's own items, with the extension's icon, in the order of the extensions and of their `menus` list. A command can be listed in several menus, but only once per menu.
+- A command with fields opens its dialog first. A command without fields runs at once, and its returned text or its error is shown in a message.
+
+| `menu` | Where | `context` |
+| --- | --- | --- |
+| `settings` | The **Settings** menu in the toolbar | `{}` |
+| `debug` | The **Debug** menu next to **Play** | `{}` |
+| `contentBrowser.asset` | The context menu of assets in the **Content Browser** | `{ assets: [{ path, type, name, guid }] }` |
+| `contentBrowser.folder` | The context menu of folders in the **Content Browser** | `{ folders: [path] }` |
+| `contentBrowser.empty` | The context menu of empty space in the **Content Browser** grid | `{ folder }`: the folder being shown |
+| `outliner.actor` | The context menu of actors in the **Outliner** | `{ scene, actors: [{ id, name, classId }] }` |
+| `outliner.folder` | The context menu of a folder in the **Outliner** | `{ scene, folder: { id, name } }` |
+| `viewport` | The viewport's context menu | `{ scene, actors: [{ id, name, classId }] }`: the selected actors |
+| `graph.node` | The context menu of a node in a graph | `{ asset, graphId, node: { id, type } }` |
+
+Context menus open with a right-click, or a long-press on touch. Asset and folder entries appear when the selection holds only assets or only folders. `scene` and `asset` are asset paths. The `context` is a copy, so changing it changes nothing in the editor; use `api.assets` to make changes.
+
+```js
+export function activate(api) {
+  api.registerCommand({
+    id: "inspect",
+    title: "Inspect",
+    execute(values, context) {
+      const names = (context.assets ?? context.actors ?? []).map((item) => item.name);
+      return names.length > 0 ? names.join("\n") : "Nothing selected.";
+    },
+  });
+}
+```
 
 ## Graph nodes
 

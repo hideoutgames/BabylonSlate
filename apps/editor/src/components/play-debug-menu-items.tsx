@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { TraceDocumentEntry } from "@haptic/assets";
 import { DEFAULT_TRACES_KEPT } from "@haptic/core";
 import {
@@ -51,6 +51,8 @@ export type PlayDebugMenuItemsProps = {
   onOpenTrace?: (path: string) => void;
   /** How many traces Recent Traces lists: the Traces Kept setting. */
   recentTraceLimit?: number;
+  /** Entries extensions add to the Debug menu, after the built-in ones. */
+  extensionItems?: ReactNode;
 };
 
 const traceTime = (entry: TraceDocumentEntry) => entry.recordedAt === null ? entry.fileName : new Date(entry.recordedAt).toLocaleString(undefined, {
@@ -109,6 +111,7 @@ export function PlayDebugMenuItems({
   listRecentTraces,
   onOpenTrace,
   recentTraceLimit = DEFAULT_TRACES_KEPT,
+  extensionItems,
 }: PlayDebugMenuItemsProps) {
   return (
     <DropdownMenuContent align="center" className="w-max min-w-52 whitespace-nowrap">
@@ -203,6 +206,7 @@ export function PlayDebugMenuItems({
           Run Feature Test Check…
         </DropdownMenuItem>
       ) : null}
+      {extensionItems}
     </DropdownMenuContent>
   );
 }

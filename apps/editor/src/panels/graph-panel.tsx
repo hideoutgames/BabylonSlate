@@ -79,6 +79,7 @@ import { refreshTimelineClipNodes, timelineGraphDiagnostics, timelineScriptClass
 import { useAnimObjectGraphRunTrace, useClassGraphRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
 import { useSimulationControls } from "../context/simulation-controls-context";
 import { GraphSteppingBar } from "../components/graph-stepping-bar";
+import { useExtensionMenuItems } from "../components/use-extension-menu-items";
 import type { GraphDebugStepPosition } from "../services/graph-debug-store";
 import { sceneAssetClassId } from "@haptic/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
@@ -721,8 +722,20 @@ export function GraphPanel(
     () => setFocusDiagnostic(null),
     [setFocusDiagnostic],
   );
+  // Extension entries read the node the menu was opened on when they run.
+  const extensionNodeRef = useRef<{ id: string; type: string | null } | null>(null);
+  const nodeExtensionItems = useExtensionMenuItems("graph.node", useCallback(() => ({
+    asset: doc?.ref.path ?? null,
+    graphId: runGraphId,
+    node: extensionNodeRef.current,
+  }), [doc?.ref.path, runGraphId]));
   const contextMenuItemsForNode = useCallback(
     (nodeId: string) => {
+      const withExtensions = (entries: NestedMenuItem[]) => {
+        const clicked = latestGraph.current.nodes.find((candidate) => candidate.id === nodeId);
+        extensionNodeRef.current = { id: nodeId, type: clicked?.type ?? null };
+        return [...entries, ...nodeExtensionItems];
+      };
       const items: NestedMenuItem[] = graphContent && canRenameCustomEvent(graphContent, nodeId)
         ? [{ id: "rename-event", label: "Rename Event", onSelect: () => setRenameEventId(nodeId) }]
         : [];
@@ -735,7 +748,7 @@ export function GraphPanel(
           label: { ...breakpointLabel(nodeId), className: classId ?? watchAsset, pinName: pin.name },
         })));
       }
-      if (!breakpointStore || !breakpointAsset || !canBreakOnNode(node?.data)) return items;
+      if (!breakpointStore || !breakpointAsset || !canBreakOnNode(node?.data)) return withExtensions(items);
       const location = { assetGuid: breakpointAsset, graphId: runGraphId, nodeId };
       const edit = () => {
         const { nodes, edges } = latestGraph.current;
@@ -747,12 +760,12 @@ export function GraphPanel(
             (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId)),
         });
       };
-      return [
+      return withExtensions([
         ...items,
         ...breakpointMenuItems(breakpointStore, location, () => breakpointLabel(nodeId), toggleBreakpointChord, edit),
-      ];
+      ]);
     },
-    [breakpointAsset, breakpointLabel, breakpointStore, classId, editBreakpoint, graphContent, runGraphId, toggleBreakpointChord, watchAsset, watchStore],
+    [breakpointAsset, breakpointLabel, breakpointStore, classId, editBreakpoint, graphContent, nodeExtensionItems, runGraphId, toggleBreakpointChord, watchAsset, watchStore],
   );
 
   // In a function graph, a wire dropped on the Input or Output node's body adds a pin of its type.
