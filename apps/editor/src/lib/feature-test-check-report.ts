@@ -364,12 +364,10 @@ function holdRateText(rate: NonNullable<FeatureTestCheckSceneResult["play"]["pro
   return `the warm-up held ${rate.heldPerSecond.toFixed(1)} frames/s, ${percent(rate.share)} of attempts; each step waits for a ${PROFILE_HOLD_WINDOW_MS / 1000} s window holding at most ${percent(rate.share + PROFILE_HOLD_MARGIN)} (+${Math.round(PROFILE_HOLD_MARGIN * 100)} points)`;
 }
 
-/** The instance pool line: groups, pooled members and meshes left unpooled by reason. */
+/** The instance pool line: groups, pooled members and empty groups retained. */
 function instancePoolText(pool: NonNullable<FeatureTestCheckSceneResult["play"]["profile"]>["instancePool"]): string {
   if (!pool) return "unreported";
-  const unpooled = Object.entries(pool.unpooled).filter(([, count]) => count).sort(([, a], [, b]) => b - a);
-  const total = unpooled.reduce((sum, [, count]) => sum + count, 0);
-  return `${pool.groups} groups · ${pool.pooled} pooled · ${pool.retained} retained empty · unpooled ${total}${unpooled.length ? ` (${unpooled.map(([reason, count]) => `${reason} ${count}`).join(", ")})` : ""}`;
+  return `${pool.groups} groups · ${pool.pooled} pooled · ${pool.retained} retained empty`;
 }
 
 /** A Profile's section: settings, pool, restore check, the rows, their draws per pass, and the steps ranked by saving. */

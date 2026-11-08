@@ -122,8 +122,6 @@ export interface InstancePoolDiagnostics {
   pooled: number;
   /** Members moved to another group (a Material, receive or rendering group change). */
   rekeys: number;
-  /** Meshes left unpooled, by reason (`noteUnpooled`). */
-  unpooled: Partial<Record<InstancingIneligibility, number>>;
 }
 
 interface InstanceGroup {
@@ -196,7 +194,6 @@ export class SceneInstancePool {
   private readonly memberGroups = new WeakMap<InstancedMesh, InstanceGroup>();
   private rekeys = 0;
   private sourceCount = 0;
-  private readonly unpooled: Partial<Record<InstancingIneligibility, number>> = {};
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -283,11 +280,6 @@ export class SceneInstancePool {
     return mesh;
   }
 
-  /** Counts a mesh the routing left unpooled for `reason`. */
-  noteUnpooled(reason: InstancingIneligibility): void {
-    this.unpooled[reason] = (this.unpooled[reason] ?? 0) + 1;
-  }
-
   /** Disposes the empty groups kept for a respawn: a new world load's, before its meshes arrive. */
   releaseRetained(): void {
     for (const group of [...this.retained.values()]) this.dispose(group);
@@ -301,7 +293,7 @@ export class SceneInstancePool {
       groups += 1;
       pooled += group.members.size;
     }
-    return { groups, retained: this.retained.size, pooled, rekeys: this.rekeys, unpooled: { ...this.unpooled } };
+    return { groups, retained: this.retained.size, pooled, rekeys: this.rekeys };
   }
 
   dispose(): void;
