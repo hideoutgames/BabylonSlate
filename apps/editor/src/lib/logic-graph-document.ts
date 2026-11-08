@@ -10,6 +10,8 @@ import {
   type DelegateSignatureType,
   type GraphClassMember,
   type GraphClassMemberPin,
+  type SerializedActor,
+  type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
 } from "@haptic/core";
@@ -164,73 +166,103 @@ function normalizeHeaderSignature(value: unknown): DelegateSignatureType[] {
   });
 }
 
-/** Closed FunctionLibrary assets use header.payload.functions; open docs prefer members. */
-export function collectFunctionLibrariesForPalette(options: {
-  assets: ReadonlyArray<{
-    path: string;
-    header: {
-      type: string;
-      name: string;
-      parentClass?: string | null;
-      payload?: Record<string, unknown>;
-    };
-  }>;
-  openDocuments: ReadonlyArray<{
-    ref: { kind: string; path: string };
-    content: unknown;
-  }>;
-  parentOf: (id: string) => string | null | undefined;
-  classIdForPath: (path: string) => string;
-}): FunctionLibraryPaletteEntry[] {
-  const openByClassId = new Map<string, SerializedGraph>();
-  for (const doc of options.openDocuments) {
+type LibraryAsset = {
+  path: string;
+  header: {
+    type: string;
+    name: string;
+    parentClass?: string | null;
+    payload?: Record<string, unknown>;
+  };
+};
+
+type GraphDocument = {
+  ref: { kind: string; path: string };
+  content: unknown;
+};
+
+/** Open Class documents' graphs by class id, in tab order. */
+function openClassGraphs(
+  openDocuments: ReadonlyArray<GraphDocument>,
+  classIdForPath: (path: string) => string,
+): Map<string, SerializedGraph> {
+  const byClassId = new Map<string, SerializedGraph>();
+  for (const doc of openDocuments) {
     if (doc.ref.kind !== "graph") continue;
     const graph = serializedGraphFromDocument(doc.ref.kind, doc.content);
     if (!graph) continue;
-    openByClassId.set(options.classIdForPath(doc.ref.path), graph);
+    byClassId.set(classIdForPath(doc.ref.path), graph);
   }
+  return byClassId;
+}
 
+function isFunctionLibraryEntry(
+  classId: string,
+  parentClass: string | null | undefined,
+  parentOf: (id: string) => string | null | undefined,
+): boolean {
+  return isFunctionLibraryClass(classId, parentOf) || isFunctionLibraryClass(parentClass, parentOf);
+}
+
+/** Function Libraries from closed Class headers (header.payload.functions); they depend on the registry alone. */
+export function collectFunctionLibraryHeaders(options: {
+  assets: ReadonlyArray<LibraryAsset>;
+  parentOf: (id: string) => string | null | undefined;
+  classIdForPath: (path: string) => string;
+}): FunctionLibraryPaletteEntry[] {
   const libraries: FunctionLibraryPaletteEntry[] = [];
   const seen = new Set<string>();
-  const consider = (
-    classId: string,
-    parentClass: string | null | undefined,
-    headerFunctions: FunctionLibraryPaletteEntry["functions"],
-  ) => {
-    if (seen.has(classId)) return;
-    if (
-      !isFunctionLibraryClass(classId, options.parentOf) &&
-      !isFunctionLibraryClass(parentClass, options.parentOf)
-    ) {
-      return;
-    }
-    seen.add(classId);
-    const open = openByClassId.get(classId);
-    libraries.push({
-      classId,
-      parentClass,
-      functions: open ? functionsFromMembers(open.members) : headerFunctions,
-    });
-  };
-
   for (const asset of options.assets) {
     if (asset.header.type !== "Class") continue;
-    consider(
-      options.classIdForPath(asset.path),
-      asset.header.parentClass,
-      functionsFromHeaderPayload(asset.header.payload),
-    );
-  }
-
-  for (const [classId, graph] of openByClassId) {
-    consider(
+    const classId = options.classIdForPath(asset.path);
+    if (seen.has(classId) || !isFunctionLibraryEntry(classId, asset.header.parentClass, options.parentOf)) continue;
+    seen.add(classId);
+    libraries.push({
       classId,
-      options.parentOf(classId) ?? null,
-      functionsFromMembers(graph.members),
-    );
+      parentClass: asset.header.parentClass,
+      functions: functionsFromHeaderPayload(asset.header.payload),
+    });
   }
-
   return libraries;
+}
+
+/**
+ * Header Function Libraries with the open Class documents laid over them: an
+ * open tab's members replace its header functions, and an open library with
+ * no header entry joins at the end.
+ */
+export function withOpenFunctionLibraries(
+  headers: readonly FunctionLibraryPaletteEntry[],
+  options: {
+    openDocuments: ReadonlyArray<GraphDocument>;
+    parentOf: (id: string) => string | null | undefined;
+    classIdForPath: (path: string) => string;
+  },
+): FunctionLibraryPaletteEntry[] {
+  const open = openClassGraphs(options.openDocuments, options.classIdForPath);
+  const seen = new Set<string>();
+  const libraries = headers.map((entry) => {
+    seen.add(entry.classId);
+    const graph = open.get(entry.classId);
+    return graph ? { ...entry, functions: functionsFromMembers(graph.members) } : entry;
+  });
+  for (const [classId, graph] of open) {
+    const parentClass = options.parentOf(classId) ?? null;
+    if (seen.has(classId) || !isFunctionLibraryEntry(classId, parentClass, options.parentOf)) continue;
+    seen.add(classId);
+    libraries.push({ classId, parentClass, functions: functionsFromMembers(graph.members) });
+  }
+  return libraries;
+}
+
+/** Closed FunctionLibrary assets use header.payload.functions; open docs prefer members. */
+export function collectFunctionLibrariesForPalette(options: {
+  assets: ReadonlyArray<LibraryAsset>;
+  openDocuments: ReadonlyArray<GraphDocument>;
+  parentOf: (id: string) => string | null | undefined;
+  classIdForPath: (path: string) => string;
+}): FunctionLibraryPaletteEntry[] {
+  return withOpenFunctionLibraries(collectFunctionLibraryHeaders(options), options);
 }
 
 export type SubsystemClassEntry = {
@@ -519,21 +551,9 @@ export function collectScriptInterfacesForPalette(options: {
   return [...byGuid.values()];
 }
 
-/** Closed Class headers plus open documents, keyed by class id. */
-export function collectClassGraphsForPalette(options: {
-  assets: ReadonlyArray<{
-    path: string;
-    header: {
-      type: string;
-      name: string;
-      parentClass?: string | null;
-      payload?: Record<string, unknown>;
-    };
-  }>;
-  openDocuments: ReadonlyArray<{
-    ref: { kind: string; path: string };
-    content: unknown;
-  }>;
+/** Closed Class header graphs keyed by class id; they depend on the registry alone. */
+export function collectClassHeaderGraphs(options: {
+  assets: ReadonlyArray<LibraryAsset>;
   classIdForPath: (path: string) => string;
 }): Record<string, SerializedGraph> {
   const graphs: Record<string, SerializedGraph> = {};
@@ -541,14 +561,30 @@ export function collectClassGraphsForPalette(options: {
     if (asset.header.type !== "Class") continue;
     graphs[options.classIdForPath(asset.path)] = classGraphFromHeaderPayload(asset.header.payload);
   }
-  for (const doc of options.openDocuments) {
-    if (doc.ref.kind !== "graph") continue;
-    const graph = serializedGraphFromDocument(doc.ref.kind, doc.content);
-    if (!graph) continue;
-    const classId = options.classIdForPath(doc.ref.path);
-    graphs[classId] = graph;
-  }
   return graphs;
+}
+
+/**
+ * Header graphs with the open Class documents' graphs over them, as a fresh
+ * record the caller may extend; the header record is never changed.
+ */
+export function withOpenClassGraphs(
+  headerGraphs: Readonly<Record<string, SerializedGraph>>,
+  openDocuments: ReadonlyArray<GraphDocument>,
+  classIdForPath: (path: string) => string,
+): Record<string, SerializedGraph> {
+  const graphs = { ...headerGraphs };
+  for (const [classId, graph] of openClassGraphs(openDocuments, classIdForPath)) graphs[classId] = graph;
+  return graphs;
+}
+
+/** Closed Class headers plus open documents, keyed by class id. */
+export function collectClassGraphsForPalette(options: {
+  assets: ReadonlyArray<LibraryAsset>;
+  openDocuments: ReadonlyArray<GraphDocument>;
+  classIdForPath: (path: string) => string;
+}): Record<string, SerializedGraph> {
+  return withOpenClassGraphs(collectClassHeaderGraphs(options), options.openDocuments, options.classIdForPath);
 }
 
 export type PaletteSceneDocument = {
@@ -573,15 +609,89 @@ function paletteSceneFromContent(
   return {
     guid,
     name: scene.name || fallbackName,
-    actors: scene.actors.map((actor) => ({
-      name: actor.name,
-      components: actor.components.map((component) => ({
-        id: component.id,
-        classId: component.classId,
-        properties: component.properties,
-      })),
-    })),
+    actors: paletteActors(scene.actors),
   };
+}
+
+type PaletteActors = PaletteSceneDocument["actors"];
+type PaletteComponents = PaletteActors[number]["components"];
+
+// Projections by the list they came from: an edit replaces only the lists it
+// touches, so a Scene edit projects again only the actors it changed.
+const paletteActorsByList = new WeakMap<readonly SerializedActor[], PaletteActors>();
+const paletteComponentsByList = new WeakMap<readonly SerializedComponent[], PaletteComponents>();
+
+function paletteComponents(components: readonly SerializedComponent[]): PaletteComponents {
+  let projected = paletteComponentsByList.get(components);
+  if (!projected) {
+    projected = components.map((component) => ({
+      id: component.id,
+      classId: component.classId,
+      properties: component.properties,
+    }));
+    paletteComponentsByList.set(components, projected);
+  }
+  return projected;
+}
+
+function paletteActors(actors: readonly SerializedActor[]): PaletteActors {
+  let projected = paletteActorsByList.get(actors);
+  if (!projected) {
+    projected = actors.map((actor) => ({
+      name: actor.name,
+      components: paletteComponents(actor.components),
+    }));
+    paletteActorsByList.set(actors, projected);
+  }
+  return projected;
+}
+
+/** Closed Scene headers in registry order; they depend on the registry alone. */
+export function collectSceneHeadersForPalette(
+  assets: ReadonlyArray<{
+    header: {
+      guid?: string;
+      type: string;
+      name: string;
+      payload?: Record<string, unknown>;
+    };
+  }>,
+): PaletteSceneDocument[] {
+  const byGuid = new Map<string, PaletteSceneDocument>();
+  for (const asset of assets) {
+    if (asset.header.type !== "Scene") continue;
+    const guid = asset.header.guid?.trim();
+    if (!guid) continue;
+    byGuid.set(
+      guid,
+      paletteSceneFromContent(guid, asset.header.payload ?? {}, asset.header.name),
+    );
+  }
+  return [...byGuid.values()];
+}
+
+/**
+ * Header Scenes with the open Scene documents in their place. An open
+ * document's content is already a normalised `SerializedScene`, so it is
+ * projected as it is, reusing the projection of every actor list it kept.
+ */
+export function withOpenScenesForPalette(
+  headers: readonly PaletteSceneDocument[],
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string; path: string };
+    content: unknown;
+  }>,
+  guidForPath: (path: string) => string | undefined,
+): PaletteSceneDocument[] {
+  const byGuid = new Map(headers.map((scene) => [scene.guid, scene]));
+  for (const doc of openDocuments) {
+    if (doc.ref.kind !== "scene") continue;
+    const guid = guidForPath(doc.ref.path);
+    if (!guid) continue;
+    const scene = doc.content as SerializedScene;
+    byGuid.set(guid, { guid, name: scene.name || guid, actors: paletteActors(scene.actors) });
+  }
+  return [...byGuid.values()];
 }
 
 export function collectSceneDocumentsForPalette(options: {
@@ -599,25 +709,11 @@ export function collectSceneDocumentsForPalette(options: {
     content: unknown;
   }>;
 }): PaletteSceneDocument[] {
-  const byGuid = new Map<string, PaletteSceneDocument>();
-  for (const asset of options.assets) {
-    if (asset.header.type !== "Scene") continue;
-    const guid = asset.header.guid?.trim();
-    if (!guid) continue;
-    byGuid.set(
-      guid,
-      paletteSceneFromContent(guid, asset.header.payload ?? {}, asset.header.name),
-    );
-  }
-  for (const doc of options.openDocuments) {
-    if (doc.ref.kind !== "scene") continue;
-    const guid = options.assets.find(
-      (asset) => asset.path === doc.ref.path,
-    )?.header.guid;
-    if (!guid) continue;
-    byGuid.set(guid, paletteSceneFromContent(guid, doc.content, guid));
-  }
-  return [...byGuid.values()];
+  return withOpenScenesForPalette(
+    collectSceneHeadersForPalette(options.assets),
+    options.openDocuments,
+    (path) => options.assets.find((asset) => asset.path === path)?.header.guid,
+  );
 }
 
 type LogicGraphCommit =

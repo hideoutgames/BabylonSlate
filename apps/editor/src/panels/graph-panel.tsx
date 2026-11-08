@@ -237,11 +237,13 @@ export function GraphPanel(
     const seen = new Set<string>();
     return symbols.filter((symbol) => !seen.has(symbol.id) && Boolean(seen.add(symbol.id)));
   }, [classId, graphContent, otherClassGraphs, ownedTimelineClips, parentOf, timelineAssets]);
+  // Keyed on the Scene class ids alone: Scene content edits never change them.
+  const sceneClassIdsKey = sceneDocuments.map((scene) => sceneAssetClassId(scene.guid)).join("\n");
   const knownClassIds = useMemo(
     () =>
       knownClassIdSet(parentOf, [
         ...Object.keys(otherClassGraphs),
-        ...sceneDocuments.map((scene) => sceneAssetClassId(scene.guid)),
+        ...(sceneClassIdsKey ? sceneClassIdsKey.split("\n") : []),
         // A Scene Layer script's own `SceneLayer:<guid>` class.
         ...(classId ? [classId] : []),
         // ... and its Timeline Clips' `TimelineClip:<guid>:<clip>` classes.
@@ -249,7 +251,7 @@ export function GraphPanel(
         // Each Timeline Asset's `Timeline:<guid>` and its clips' classes.
         ...timelineScriptClassIds(timelineAssets),
       ]),
-    [classId, otherClassGraphs, ownedTimelineClips, parentOf, sceneDocuments, timelineAssets],
+    [classId, otherClassGraphs, ownedTimelineClips, parentOf, sceneClassIdsKey, timelineAssets],
   );
   const pinCompatibility = useMemo(
     () => scriptPinCompatibility(hierarchy),
