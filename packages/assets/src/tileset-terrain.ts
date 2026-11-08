@@ -5,8 +5,7 @@
 
 import { fnv1a } from "@haptic/core";
 import {
-  tilesetAtlasColumns,
-  tilesetAtlasRows,
+  tilesetAtlasTileCount,
   tilesetTerrainById,
   type TilesetPayload,
   type TilesetTerrainStyle,
@@ -120,11 +119,6 @@ interface TerrainMemberTile {
   mask: number;
 }
 
-/** Tiles of the atlas grid; a member tile past it never draws, so terrain code ignores it. */
-function atlasTileCount(tileset: TilesetPayload): number {
-  return tilesetAtlasColumns(tileset) * tilesetAtlasRows(tileset);
-}
-
 /**
  * Variant picker for one terrain of `tileset`, or `null` when the terrain does
  * not exist or has no tiles. `maxTileId` limits members to the ids a map's
@@ -139,7 +133,7 @@ export function createTerrainResolver(
   const terrain = tilesetTerrainById(tileset, terrainId);
   if (!terrain) return null;
   const declared = new Set(terrain.borders ?? []);
-  const limit = Math.min(maxTileId, atlasTileCount(tileset));
+  const limit = Math.min(maxTileId, tilesetAtlasTileCount(tileset));
   const all: TerrainMemberTile[] = [];
   // Sets by border id; the default set is "".
   const sets = new Map<string, TerrainMemberTile[]>();
@@ -268,7 +262,7 @@ function inTerrainSet(tile: Pick<TilesetTile, "terrain"> | undefined, terrainId:
 export function missingTerrainVariants(tileset: TilesetPayload, terrainId: string, border?: string): number[] {
   const terrain = tilesetTerrainById(tileset, terrainId);
   if (!terrain || (border !== undefined && !terrain.borders?.includes(border))) return [];
-  const limit = atlasTileCount(tileset);
+  const limit = tilesetAtlasTileCount(tileset);
   const drawn = new Set(
     tileset.tiles.flatMap((tile) =>
       inTerrainSet(tile, terrainId, border) && tile.id <= limit ? [canonicalTerrainMask(terrain.style, tile.terrain!.mask)] : []),
@@ -295,7 +289,7 @@ export function tilesetTerrainStamp(tileset: TilesetPayload): string {
   let stamp = NO_TERRAIN_STAMP;
   if (terrains.length > 0) {
     const ids = new Set(terrains.map((terrain) => terrain.id));
-    const limit = atlasTileCount(tileset);
+    const limit = tilesetAtlasTileCount(tileset);
     const data = [
       terrains
         .map((terrain) => [terrain.id, terrain.style, [...(terrain.borders ?? [])].sort()] as const)

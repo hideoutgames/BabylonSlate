@@ -24,6 +24,7 @@ import {
 import {
   tilesetAtlasColumns,
   tilesetAtlasRows,
+  tilesetAtlasTileCount,
   tilesetTerrainById,
   type TilesetPayload,
   type TilesetTerrainStyle,
@@ -88,11 +89,6 @@ function withoutTerrain(tile: TilesetTile): TilesetTile {
   const next = { ...tile };
   delete next.terrain;
   return next;
-}
-
-/** Tiles of the atlas grid; a tile past it never draws. */
-function atlasTileCount(tileset: TilesetPayload): number {
-  return tilesetAtlasColumns(tileset) * tilesetAtlasRows(tileset);
 }
 
 /**
@@ -251,7 +247,7 @@ export const AUTOTILE_PIECE_GROUPS: Readonly<Record<TilesetTerrainStyle, readonl
 export function autotileReady(tileset: TilesetPayload, terrainId: string): boolean {
   const terrain = tilesetTerrainById(tileset, terrainId);
   if (!terrain) return false;
-  const limit = atlasTileCount(tileset);
+  const limit = tilesetAtlasTileCount(tileset);
   const drawn = new Set(
     tileset.tiles.flatMap((tile) =>
       tile.id <= limit && autotilePieceSetHas({ terrainId }, tile.terrain) ? [canonicalTerrainMask(terrain.style, tile.terrain!.mask)] : []),
@@ -452,7 +448,7 @@ function paintPreview(
  * on the default set. `tileset` itself when none is needed.
  */
 function previewWantTileset(tileset: TilesetPayload, set: AutotilePieceSet): TilesetPayload {
-  const atlas = atlasTileCount(tileset);
+  const atlas = tilesetAtlasTileCount(tileset);
   const stride = tileset.tileHeight + tileset.spacing;
   if (stride <= 0) return tileset;
   const tiles = tileset.tiles.filter((tile) => tile.id <= atlas);

@@ -4,11 +4,8 @@ import {
   msdfJsonAtlasPageNames,
 } from "./font";
 import type { ImportFileBytes } from "./obj-import-batch";
+import { fileNameOf } from "./file-name";
 import { extensionOf } from "./util";
-
-function fileNameOf(fileName: string): string {
-  return (fileName.split(/[\\/]/).pop() ?? fileName).toLowerCase();
-}
 
 /**
  * A JSON that names its atlas page pairs only with that file; one that names

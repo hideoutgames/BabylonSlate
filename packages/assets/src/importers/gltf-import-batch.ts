@@ -5,16 +5,13 @@ import {
   sidecarBytesForUri,
 } from "./glb-parse";
 import type { ImportFileBytes } from "./obj-import-batch";
+import { fileNameOf } from "./file-name";
 import { extensionOf } from "./util";
 
 export type { ImportFileBytes } from "./obj-import-batch";
 
 const GLTF_EXTENSIONS = new Set(["glb", "gltf"]);
 const GLTF_SIDECAR_EXTENSIONS = new Set([...IMAGE_EXTENSIONS, "bin"]);
-
-function fileNameOf(fileName: string): string {
-  return (fileName.split(/[\\/]/).pop() ?? fileName).toLowerCase();
-}
 
 function sidecarLookupMap(
   files: readonly ImportFileBytes[],
