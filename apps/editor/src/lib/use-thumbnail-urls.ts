@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { syncContentBrowserThumbnailUrls, type ThumbnailUrlMap } from "./content-browser-thumbnails";
 
 export type LoadThumbnail = (guid: string) => Promise<Uint8Array | null>;
@@ -28,15 +28,25 @@ export function useThumbnailUrls(
   const urlsRef = useRef(urls);
   // The versions behind the current URLs, and the loader that read them.
   const loadedRef = useRef<{ load?: LoadThumbnail; versions: Readonly<Record<string, number>> }>({ versions: {} });
-  // URLs a commit stopped showing, tagged with the map that dropped them. Each
-  // is revoked once that map has rendered, so no <img> shows a revoked URL.
-  const retiredRef = useRef<Array<{ shown: ThumbnailUrlMap; urls: readonly string[] }>>([]);
+  // Each committed map's place in commit order.
+  const commitCount = useRef(0);
+  const commitOrder = useRef(new WeakMap<ThumbnailUrlMap, number>());
+  // URLs a commit stopped showing, tagged with that commit's place. They are
+  // revoked once that commit or a later one has rendered, so no <img> shows a
+  // revoked URL; commits React batches into one render all release theirs.
+  const retiredRef = useRef<Array<{ commit: number; urls: readonly string[] }>>([]);
+  const show = useCallback((next: ThumbnailUrlMap) => {
+    commitOrder.current.set(next, ++commitCount.current);
+    urlsRef.current = next;
+    setUrls(next);
+  }, []);
 
   useEffect(() => {
+    const rendered = commitOrder.current.get(urls);
+    if (rendered === undefined) return;
     const retired = retiredRef.current;
-    const rendered = retired.findLastIndex((entry) => entry.shown === urls);
-    if (rendered < 0) return;
-    for (const entry of retired.splice(0, rendered + 1)) {
+    const released = retired.findIndex((entry) => entry.commit > rendered);
+    for (const entry of retired.splice(0, released < 0 ? retired.length : released)) {
       for (const url of entry.urls) URL.revokeObjectURL(url);
     }
   }, [urls]);
@@ -49,10 +59,8 @@ export function useThumbnailUrls(
       loadedRef.current = { versions: {} };
       const shown = Object.values(urlsRef.current);
       if (shown.length === 0) return;
-      const next: ThumbnailUrlMap = {};
-      retiredRef.current.push({ shown: next, urls: shown });
-      urlsRef.current = next;
-      setUrls(next);
+      show({});
+      retiredRef.current.push({ commit: commitCount.current, urls: shown });
       return;
     }
     const wanted: Record<string, number> = {};
@@ -76,7 +84,8 @@ export function useThumbnailUrls(
       revokeObjectURL: (url) => URL.revokeObjectURL(url),
       isCancelled: () => cancelled,
       retireObjectURLs: (retiring) => {
-        if (retiring.length > 0) retiredRef.current.push({ shown: urlsRef.current, urls: retiring });
+        // The commit just made dropped them.
+        if (retiring.length > 0) retiredRef.current.push({ commit: commitCount.current, urls: retiring });
       },
       commit: (next, { loaded: read, done }) => {
         // A cancelled sync leaves later guids unloaded, so only a finished one
@@ -88,15 +97,13 @@ export function useThumbnailUrls(
             ? wanted
             : { ...previous, ...Object.fromEntries(read.map((guid) => [guid, wanted[guid]!])) },
         };
-        if (sameUrls(urlsRef.current, next)) return;
-        urlsRef.current = next;
-        setUrls(next);
+        if (!sameUrls(urlsRef.current, next)) show(next);
       },
     });
     return () => {
       cancelled = true;
     };
-  }, [key, load]);
+  }, [key, load, show]);
 
   useEffect(() => {
     // The queue is only ever mutated in place, so this is the list the syncs fill.

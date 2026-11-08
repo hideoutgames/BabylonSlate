@@ -52,6 +52,27 @@ describe("useThumbnailUrls", () => {
     expect(revoked).toEqual(["blob:2"]);
   });
 
+  it("releases replaced URLs when React renders only a later commit of the same sync", async () => {
+    const load = vi.fn(async (): Promise<Uint8Array | null> => PNG);
+    const { result, rerender } = renderUrls(load, { guids: ["a", "b", "c", "d"], versions: {}, enabled: true });
+    await waitFor(() => expect(result.current).toEqual({ a: "blob:1", b: "blob:2", c: "blob:3", d: "blob:4" }));
+
+    // The first batch replaces a-d; the second only adds e and drops nothing.
+    const held: Array<() => void> = [];
+    load.mockImplementation((guid: string) => guid === "e"
+      ? Promise.resolve(PNG)
+      : new Promise((resolve) => { held.push(() => resolve(PNG)); }));
+    rerender({ guids: ["a", "b", "c", "d", "e"], versions: { a: 1, b: 1, c: 1, d: 1 }, enabled: true });
+    expect(held).toHaveLength(4);
+    // Both commits land before React renders, so it renders only the second map.
+    await act(async () => {
+      for (const release of held) release();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(result.current).toEqual({ a: "blob:5", b: "blob:6", c: "blob:7", d: "blob:8", e: "blob:9" });
+    expect(revoked).toEqual(["blob:1", "blob:2", "blob:3", "blob:4"]);
+  });
+
   it("releases the URL of a guid that leaves the list, and every URL when disabled", async () => {
     const load = vi.fn(async () => PNG);
     const { result, rerender } = renderUrls(load, { guids: ["a", "b"], versions: {}, enabled: true });
