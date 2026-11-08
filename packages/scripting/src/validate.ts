@@ -1455,6 +1455,27 @@ function validateUnexecutedSources(
   return out;
 }
 
+/** Catalog ids of nodes an extension contributes: `extension.<extensionGuid>.<nodeId>`. */
+export const EXTENSION_NODE_TYPE_PREFIX = "extension.";
+
+export function extensionNodeTypeId(extensionGuid: string, nodeId: string): string {
+  return `${EXTENSION_NODE_TYPE_PREFIX}${extensionGuid}.${nodeId}`;
+}
+
+/** An extension node whose definition is not registered: its extension is disabled, Editor Only or gone. */
+function validateExtensionNodes(graph: LogicGraph, ctx: TypeContext, registry: ValidateOptions["registry"]): Diagnostic[] {
+  if (!registry) return [];
+  return graph.nodes
+    .filter((node) => node.typeId.startsWith(EXTENSION_NODE_TYPE_PREFIX) && !registry.get(node.typeId))
+    .map((node) => diagnostic({
+      code: "node.missing_extension",
+      message: `This node comes from an extension that is disabled, Editor Only or missing (${node.typeId.slice(EXTENSION_NODE_TYPE_PREFIX.length)}). Enable it or remove the node.`,
+      assetGuid: ctx.assetGuid,
+      graphId: graph.id,
+      nodeId: node.id,
+    }));
+}
+
 export function validateGraphs(
   graphs: readonly LogicGraph[],
   ctx: TypeContext,
@@ -1482,6 +1503,7 @@ export function validateGraphs(
     diagnostics.push(...keep(validateComponentAndInheritedBindings(graph, ctx)));
     diagnostics.push(...keep(validateTypeRefs(graph, ctx)));
     diagnostics.push(...keep(validateFlowSwitchCases(graph, ctx)));
+    diagnostics.push(...keep(validateExtensionNodes(graph, ctx, options.registry)));
   }
   diagnostics.push(...validateMemberTypes(graphs, ctx));
   diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));

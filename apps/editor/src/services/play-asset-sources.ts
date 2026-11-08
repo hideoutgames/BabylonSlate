@@ -19,6 +19,7 @@ import { assetHeaderDependencyMetadata, classIdFromClassAsset } from "../lib/con
 import { ownedActorsOfScene, ownedTimelineClipsOfScene } from "../lib/owned-actor-gets";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import type { OpenDocument } from "./document-service";
+import { extensionNodesFingerprint } from "./extension-nodes";
 
 export interface PlayDocumentOverride {
   readonly payload: Record<string, unknown>;
@@ -539,7 +540,7 @@ async function acquirePlayAssetSourcesAttempt(
     const compiled = compileRoot ? await scope.acquire(compileRoot, {
       key: `play-scripts:v2:${JSON.stringify([compileInputs, embeddedScripts])}:${playCompileCatalogKey(host)}:${JSON.stringify([
         project.settings.tags, project.settings.infiniteLoopDetection, project.settings.loopCount,
-        host.traceExecution === true])}`,
+        host.traceExecution === true, extensionNodesFingerprint()])}`,
       estimate: { sourceBytes: 0, decodedBytes: Math.max(4096, compileInputBytes * 8), temporaryBytes: Math.max(4096, compileInputBytes * 4) },
       load: async (_asset, signal) => {
         signal.throwIfAborted();

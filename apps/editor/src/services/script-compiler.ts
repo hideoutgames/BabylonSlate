@@ -41,6 +41,7 @@ import {
   type HydrateGraphOptions,
 } from "./graph-validation";
 import { mergedPrefabComponentsForClass } from "../lib/prefab-instance-sync";
+import { extensionNodesFingerprint } from "./extension-nodes";
 
 
 type ClassPrefabContext = {
@@ -459,10 +460,13 @@ export function graphCompileSignature(
       ...(doc.parentClassId ? { parentClassId: doc.parentClassId } : {}),
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
+  // Extension nodes change what the same graphs compile to; a short hash keeps keys compact.
+  const nodes = extensionNodesFingerprint();
+  const extensionNodes = nodes === "[]" ? {} : { extensionNodes: fnv1a(nodes) };
   return JSON.stringify(
     inputAssets === undefined && tagRegistry === undefined && dataAssets === undefined && typeSchemas === undefined
-      ? payload
-      : { graphs: payload, inputAssets, tags: tagRegistryCompileFingerprint(tagRegistry), dataAssets, typeSchemas },
+      ? (nodes === "[]" ? payload : { graphs: payload, ...extensionNodes })
+      : { graphs: payload, inputAssets, tags: tagRegistryCompileFingerprint(tagRegistry), dataAssets, typeSchemas, ...extensionNodes },
   );
 }
 

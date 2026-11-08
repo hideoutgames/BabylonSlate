@@ -113,7 +113,8 @@ import {
   type CreateProjectOptions,
 } from "../lib/create-project";
 import type { UpdateListedProjectOptions } from "../lib/listed-projects";
-import { createDefaultLogicGraphSerialized, requireClassGraphPayload } from "./graph-validation";
+import { createDefaultLogicGraphSerialized, defaultNodeRegistry, requireClassGraphPayload } from "./graph-validation";
+import { syncExtensionNodes } from "./extension-nodes";
 import {
   assetName,
   fallbackDocumentType,
@@ -294,6 +295,8 @@ export class ProjectService {
         await this.mountExtensionContent(registry, extensions);
         this.emitRegistryChange();
       },
+      // Graph nodes join the editor's one node registry, which compile, validation and Add Node read.
+      syncNodes: (extensions) => syncExtensionNodes(defaultNodeRegistry(), extensions),
     });
     this.blobs = createVfsBlobStore(storage);
     this.projectPlugins = new ProjectPlugins({

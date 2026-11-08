@@ -63,6 +63,29 @@ describe("Extension fields", () => {
     expect(resolveExtensionFieldValues(fields)).toEqual({ applicationId: "", showElapsed: true, refresh: 5, count: 3, mode: "solo", notes: "" });
   });
 
+  it("normalize graph nodes with their pins, hosts and call", () => {
+    expect(normalizeExtensionContributions({ nodes: [
+      { id: "update", title: "Update Presence", call: "updatePresence", hosts: ["GameInstance"], latent: true,
+        inputs: [{ id: "details", name: "Details", type: "string", default: "In Menus" }], outputs: [{ id: "ok", name: "Success", type: "bool" }] },
+    ] }).nodes).toEqual([{
+      id: "update", title: "Update Presence", call: "updatePresence", pure: false, latent: true, hosts: ["GameInstance"],
+      inputs: [{ id: "details", name: "Details", type: "string", default: "In Menus" }], outputs: [{ id: "ok", name: "Success", type: "bool" }],
+    }]);
+    expect(normalizeExtensionContributions({ nodes: [] })).toEqual({});
+  });
+
+  it.each([
+    ["a call that is not an identifier", { id: "n", title: "N", call: "a.b" }, /must name a game library export/],
+    ["a pure latent node", { id: "n", title: "N", call: "f", pure: true, latent: true, outputs: [{ id: "o", name: "O", type: "int" }] }, /both pure and latent/],
+    ["a pure node without outputs", { id: "n", title: "N", call: "f", pure: true }, /needs an output/],
+    ["an exec pin id", { id: "n", title: "N", call: "f", inputs: [{ id: "execIn", name: "X", type: "int" }] }, /other than execIn or execOut/],
+    ["an unknown pin type", { id: "n", title: "N", call: "f", inputs: [{ id: "x", name: "X", type: "actor" }] }, /unknown type: actor/],
+    ["one pin id twice", { id: "n", title: "N", call: "f", inputs: [{ id: "x", name: "X", type: "int" }], outputs: [{ id: "x", name: "Y", type: "int" }] }, /duplicate pin ids/],
+    ["an input default of the wrong type", { id: "n", title: "N", call: "f", inputs: [{ id: "x", name: "X", type: "int", default: "2" }] }, /does not match its type/],
+  ])("reject a node with %s", (_name, node, message) => {
+    expect(() => normalizeExtensionContributions({ nodes: [node] })).toThrow(message);
+  });
+
   it("round-trip in the manifest and reject a malformed command form", () => {
     const contributes = normalizeExtensionContributions({ settings });
     const manifest = { ...createDefaultExtensionSettings({ extensionGuid: "discord", displayName: "Discord" }), contributes };

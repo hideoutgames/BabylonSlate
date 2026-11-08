@@ -45,7 +45,7 @@ Unsupported code is reported before anything is created. See [Materials](../grap
 | Library Name | Shown when Editor Only is off. The name games use to reach the game library. |
 | Appear In Content Browser | Shown when Editor Only is off, and off by default. Shows the extension's content folder in the Content Browser. |
 | Extension Dependencies | Other extensions it needs. |
-| Contributions | What the extension adds to the editor, as JSON. See [Project Settings](#project-settings). |
+| Contributions | What the extension adds to the editor, as JSON. See [Project Settings](#project-settings) and [Graph nodes](#graph-nodes). |
 | Code Files | Chooses the file the code editor shows. **New Code File** and **Add Code File** add files; **Remove Code File** removes an added file. |
 
 ### Code files
@@ -136,6 +136,44 @@ Settings and command fields share these types. Each field has an `id`, a `label`
 | `number` | A number | `min`, `max`, `integer`, `unit` |
 | `toggle` | On or off | |
 | `choice` | One of a list | `options`: a list of `{ "value", "label" }` |
+
+## Graph nodes
+
+A [gameplay extension](#gameplay-extensions) can add nodes to Class graphs. Each node calls a function its game entry exports. Declare them under `nodes` in **Contributions**:
+
+```json
+{
+  "nodes": [
+    {
+      "id": "setPresence",
+      "title": "Set Presence",
+      "category": "Presence",
+      "description": "Shows what the player is doing.",
+      "call": "setPresence",
+      "hosts": ["GameInstance"],
+      "inputs": [
+        { "id": "details", "name": "Details", "type": "string", "default": "In Menus" },
+        { "id": "party", "name": "Party Size", "type": "int", "default": 1 }
+      ],
+      "outputs": [{ "id": "ok", "name": "Success", "type": "bool" }]
+    }
+  ]
+}
+```
+
+```js
+export function setPresence(details, party) {
+  // Inputs arrive as arguments in the order they are listed.
+  return true;
+}
+```
+
+- The node's inputs are the function's arguments, in order. With one output, the node outputs what the function returns. With several, it reads each output's `id` from the object the function returns.
+- `pure` makes a node without execution pins, evaluated where its outputs are read. `latent` makes the node wait for the promise the function returns before it continues.
+- `hosts` lists Classes whose graphs offer the node, including their child Classes. `["GameInstance"]` limits it to Game Instance graphs. Without `hosts`, every Class graph offers it.
+- Pin types are `bool`, `int`, `float`, `string`, `vec2`, `vec3`, `vec4`, `rotator`, `quat`, `transform` and `color`. Inputs of `bool`, `int`, `float` and `string` can have a `default`.
+- Nodes appear in **Add Node** under their `category` (the extension's name if none) while the extension is enabled and **Editor Only** is off. Editor Scripting graphs and Animation Graphs do not offer them.
+- If the extension is disabled, set to Editor Only or removed, graphs keep its nodes, and **Compiler Results** lists each one as an error until the extension returns or you delete the node.
 
 ## Gameplay extensions
 
