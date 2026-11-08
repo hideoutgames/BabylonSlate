@@ -1,11 +1,14 @@
 import { ENGINE_VERSION, newGuid, type ProjectStorage } from "@haptic/core";
 import { resolvePluginGraph, type PluginDiagnostic, type PluginGraphInput } from "./plugin-host";
+import { extensionContentRoot, extensionContentRootId } from "./content-root";
+import type { AssetRegistry } from "./registry";
 import {
   createDefaultExtensionSettings,
   decodeExtensionSettings,
   encodeExtensionSettings,
   EXTENSION_MANIFEST_FILE,
   EXTENSIONS_DIR,
+  isExtensionCodePath,
   isExtensionPackagePath,
   normalizeExtensionSettings,
   type ExtensionSettings,
@@ -124,6 +127,33 @@ export async function writeProjectExtension(
   return describeExtension(folderPath, "project", normalized);
 }
 
+/** Starting game entry for a package whose Editor Only is turned off. */
+export const DEFAULT_EXTENSION_GAME_SOURCE = "// Exports from this file are the extension's game library.\n// Execute JavaScript nodes call them through extensions.<Library Name>.\nexport function describe(value) {\n  return `Value: ${value}`;\n}\n";
+
+export interface ExtensionCodeFile {
+  /** Package-relative path. */
+  path: string;
+  source: string;
+}
+
+/** Every `.ts` / `.js` file of a package outside its `assets/` root, sorted by path. */
+export async function readExtensionCodeFiles(storage: ProjectStorage, folderPath: string): Promise<ExtensionCodeFile[]> {
+  const files: ExtensionCodeFile[] = [];
+  const walk = async (relative: string): Promise<void> => {
+    const entries = await storage.readdir(relative ? `${folderPath}/${relative}` : folderPath);
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = relative ? `${relative}/${entry.name}` : entry.name;
+      if (entry.isDir) {
+        if (relative || entry.name.toLowerCase() !== "assets") await walk(path);
+      } else if (isExtensionCodePath(path)) {
+        files.push({ path, source: await storage.readText(`${folderPath}/${path}`) });
+      }
+    }
+  };
+  await walk("");
+  return files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
 export function shadowEngineExtensions(
   projectExtensions: readonly ExtensionDescriptor[],
   engineExtensions: readonly ExtensionDescriptor[],
@@ -162,7 +192,7 @@ function extensionDiagnostic(diagnostic: PluginDiagnostic): ExtensionDiagnostic 
   };
 }
 
-/** Resolve only enabled editor modules. This deliberately never mounts runtime asset roots. */
+/** Resolve enabled packages, dependencies first; mounting gameplay content is `mountExtensionContentRoots`. */
 export function resolveExtensionGraph(
   extensions: readonly ExtensionDescriptor[],
   engineVersion = ENGINE_VERSION,
@@ -186,4 +216,30 @@ export function resolveExtensionGraph(
       ...result.diagnostics.map(extensionDiagnostic),
     ],
   };
+}
+
+/**
+ * Mounts the `assets/` root of each given gameplay extension (enabled, valid,
+ * not Editor Only) as `extension:<guid>` and unmounts every other extension
+ * root, so their content reaches pickers, Play and export like a plugin's.
+ */
+export async function mountExtensionContentRoots(
+  registry: AssetRegistry,
+  extensions: readonly ExtensionDescriptor[],
+  options: { storageFor?: (extension: ExtensionDescriptor) => ProjectStorage | undefined } = {},
+): Promise<void> {
+  const mount = extensions.filter((extension) => !extension.invalid && !extension.settings.editorOnly);
+  const ids = new Set(mount.map((extension) => extensionContentRootId(extension.extensionGuid)));
+  for (const root of registry.listRoots()) {
+    if (root.kind === "extension" && !ids.has(root.id)) registry.unmountRoot(root.id);
+  }
+  for (const extension of mount) {
+    // Remounting rescans, so files an import or another editor changed are indexed.
+    await registry.mountRoot(extensionContentRoot({
+      extensionGuid: extension.extensionGuid,
+      pathPrefix: extension.contentPath,
+      readOnly: extension.readOnly,
+      storage: options.storageFor?.(extension),
+    }));
+  }
 }

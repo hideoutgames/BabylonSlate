@@ -120,6 +120,8 @@ export interface PlayOverlayProps {
   sharedEngine: AbstractEngine;
   injectFixtureThrow?: boolean;
   scripts?: readonly ScriptBundleEntry[];
+  /** Game libraries of enabled gameplay Extensions, fixed for the session. */
+  extensionLibraries?: readonly import("@haptic/core").ExtensionGameLibrary[];
   physics?: PlayPhysicsSettings;
   sceneAssetGuid?: string;
   scene?: SerializedScene;
@@ -268,6 +270,7 @@ function PlayOverlayView({
   sharedEngine,
   injectFixtureThrow,
   scripts,
+  extensionLibraries,
   physics,
   sceneAssetGuid,
   scene,
@@ -627,6 +630,8 @@ function PlayOverlayView({
 
   const scriptsRef = useRef(scripts);
   scriptsRef.current = scripts;
+  const extensionLibrariesRef = useRef(extensionLibraries);
+  extensionLibrariesRef.current = extensionLibraries;
   const animGraphsRef = useRef(animGraphs);
   animGraphsRef.current = animGraphs;
   const behaviourTreesRef = useRef(behaviourTrees);
@@ -861,6 +866,7 @@ function PlayOverlayView({
           onRetentionUnavailable: reason => simulationSession?.reportRetentionUnavailable(reason),
           injectFixtureThrow,
           scripts: scriptsRef.current,
+          ...(extensionLibrariesRef.current?.length ? { extensionLibraries: extensionLibrariesRef.current } : {}),
           physics: physicsRef.current,
           sceneAssetGuid: sceneRef.current.sceneAssetGuid,
           scene: sceneRef.current.scene,

@@ -220,6 +220,8 @@ describe("Execute JavaScript", () => {
     [[{ name: "eval", type: { kind: "float" } }], []],
     [[{ name: "null", type: { kind: "float" } }], []],
     [[], [{ name: "arguments", type: { kind: "float" } }]],
+    // Would hide the gameplay Extension libraries from the body.
+    [[{ name: "extensions", type: { kind: "float" } }], []],
     [[{ name: "x", type: { kind: "float" } }], [{ name: "x", type: { kind: "float" } }]],
   ])("keeps the module loadable and fails at run time for inputs %j and outputs %j", (inputs, outputs) => {
     const registry = createDefaultNodeRegistry();

@@ -9,7 +9,7 @@ A Haptic project is an ordinary folder that holds your game's settings and asset
 | `project.json` | The project's name and Project Settings. |
 | `assets/` | Every asset, one `.hasset` file each, in the same folders the Content Browser shows. |
 | `plugins/` | The project's [plugins](plugins.md). |
-| `extensions/` | The project's [editor extensions](extensions.md). |
+| `extensions/` | The project's [extensions](extensions.md). |
 
 Haptic names the folder after the project when you create it. Create, rename and move assets in the Content Browser rather than in a file manager; it keeps references, open documents and [locks](source-control.md) up to date.
 
@@ -53,5 +53,5 @@ You can also turn a backup into a template: choose **Add Template** in the templ
 
 - [Where Projects Live](storage.md): default storage on each platform, your own folders and reconnecting.
 - [Plugins](plugins.md): bundles of assets and Classes you can enable per project.
-- [Editor Extensions](extensions.md): code tools that run in the editor.
+- [Extensions](extensions.md): code tools for the editor, and game libraries and content for Play and packaged games.
 - [Source Control](source-control.md): Git LFS file locking for teams.

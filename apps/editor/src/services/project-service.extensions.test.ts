@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEmptyProject, normalizeProjectSettings } from "@haptic/core";
-import { createExtensionSettings, writeProjectExtension, type ExtensionDescriptor } from "@haptic/assets";
+import { createExtensionSettings, encodeAssetDocument, writeProjectExtension, type ExtensionDescriptor } from "@haptic/assets";
 import { createEmptyProjectFiles } from "../../../../packages/assets/src/test-support/project-files";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { lowerMaterialDocument } from "@haptic/shader-graph";
@@ -123,6 +123,29 @@ describe("Editor Extensions in a project", () => {
     const settings = normalizeProjectSettings({ ...createEmptyProject("Example").settings, extensionOverrides: { [entry.extensionGuid]: { enabled: true } } });
     expect(settings.extensionOverrides[entry.extensionGuid]?.enabled).toBe(true);
     expect(settings.pluginOverrides).toEqual({});
+    await service.closeProject();
+  });
+
+  it("mounts a gameplay extension's assets for the project and export, keeps them across a rescan and unmounts them when disabled", async () => {
+    const { service, storage } = await setup();
+    const entry = await writeProjectExtension(storage, "weather", { ...createExtensionSettings("Weather", "weather"), editorOnly: false }, "export function activate() {}");
+    await storage.writeText("extensions/weather/game.ts", "export const ready = true;");
+    await storage.writeBinary("extensions/weather/assets/Rain.material.hasset", await encodeAssetDocument({ type: "Material", name: "Rain", guid: "rain", version: 1, payload: {} }));
+    let changes = 0;
+    service.onRegistryChange(() => { changes += 1; });
+
+    await enable(service, entry);
+
+    expect(changes).toBeGreaterThan(0);
+    expect(service.registry?.getByGuid("rain")?.rootId).toBe("extension:weather");
+    expect((await service.listExportAssets(new Set())).some((asset) => asset.header.guid === "rain")).toBe(true);
+    await service.remountRegistry();
+    expect(service.registry?.getByGuid("rain")?.path).toBe("extensions/weather/assets/Rain.material.hasset");
+
+    await service.extensions.refresh({ weather: { enabled: false } });
+
+    expect(service.registry?.getRoot("extension:weather")).toBeUndefined();
+    expect(service.registry?.getByGuid("rain")).toBeUndefined();
     await service.closeProject();
   });
 });

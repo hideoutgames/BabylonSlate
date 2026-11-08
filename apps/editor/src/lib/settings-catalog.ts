@@ -64,7 +64,7 @@ export const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> =
   {
     id: "extensions",
     label: "Project Extensions",
-    keywords: "extensions editor code typescript javascript GLSL material converter hextension",
+    keywords: "extensions editor code typescript javascript gameplay game library editor only content GLSL material converter hextension",
   },
 ];
 

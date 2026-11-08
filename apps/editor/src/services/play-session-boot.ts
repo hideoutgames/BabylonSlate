@@ -163,6 +163,7 @@ export function playSessionLoad(options: PlaySessionOptions, sceneSourcesAvailab
   if (sceneSourcesAvailable) loadControl.sceneCatalog = options.sceneCatalog ?? [];
   if (options.classAssetGuids) loadControl.classAssetGuids = options.classAssetGuids;
   if (options.consoleCommands) loadControl.consoleCommands = options.consoleCommands;
+  if (options.extensionLibraries?.length) loadControl.extensionLibraries = [...options.extensionLibraries];
   return { loadControl, scripts, animGraphs };
 }
 

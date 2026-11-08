@@ -12,7 +12,7 @@ type CodeBodyEditorProps = JsBodyEditorProps & { language: "javascript" | "glsl"
 export function LazyCodeBodyEditor(props: CodeBodyEditorProps) {
   return (
     <Suspense fallback={(
-      <div className="flex min-h-40 flex-1 flex-col" aria-busy="true">
+      <div className="flex min-h-40 min-w-0 flex-1 flex-col" aria-busy="true">
         <pre className="m-0 min-h-0 flex-1 overflow-auto whitespace-pre px-2 py-2 text-left font-mono text-xs leading-5 text-muted-foreground">{props.value}</pre>
       </div>
     )}>

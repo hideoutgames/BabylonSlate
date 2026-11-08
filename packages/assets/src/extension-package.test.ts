@@ -109,7 +109,24 @@ describe("Extension packages", () => {
     const oversizedSource = incoming.files.map((file) => file.path === "index.ts"
       ? { ...file, data: new Uint8Array(1024 * 1024 + 1) }
       : file);
-    await expect(inspectHextension(encodeProjectZip(oversizedSource))).rejects.toThrow(/Entry Point exceeds/);
+    await expect(inspectHextension(encodeProjectZip(oversizedSource))).rejects.toThrow(/code file exceeds 1 MiB: index.ts/);
+    const oversizedCodeFile = [...incoming.files, { path: "code/large.js", data: new Uint8Array(1024 * 1024 + 1) }];
+    await expect(inspectHextension(encodeProjectZip(oversizedCodeFile))).rejects.toThrow(/code file exceeds 1 MiB: code\/large.js/);
+    // The cap is for code: other package files may be larger.
+    const largeData = [...incoming.files, { path: "data.bin", data: new Uint8Array(1024 * 1024 + 1) }];
+    await expect(inspectHextension(encodeProjectZip(largeData))).resolves.toMatchObject({ settings: { extensionGuid: "tools" } });
+  });
+
+  it("requires a gameplay package's game entry and keeps added code files in exports", async () => {
+    const { incoming } = await extensionPackage();
+    const gameplay = (files: typeof incoming.files) => files.map((file) => file.path === "extension.json"
+      ? { ...file, data: encodeExtensionSettings({ ...incoming.settings, editorOnly: false }) }
+      : file);
+    await expect(inspectHextension(encodeProjectZip(gameplay(incoming.files)))).rejects.toThrow(/Game Entry Point is missing: game.ts/);
+    const withGame = gameplay([...incoming.files, { path: "game.ts", data: text("export const ready = true;") }, { path: "code/util.ts", data: text("export const util = 1;") }]);
+    const inspected = await inspectHextension(encodeProjectZip(withGame));
+    expect(inspected.settings).toMatchObject({ editorOnly: false, gameEntryPoint: "game.ts" });
+    expect(inspected.files.map((file) => file.path)).toEqual(expect.arrayContaining(["game.ts", "code/util.ts"]));
   });
 
   it("rejects malformed manifest identities and unsupported formats instead of installing defaults", async () => {
@@ -119,6 +136,9 @@ describe("Extension packages", () => {
       { kind: "extension", formatVersion: 2, ...incoming.settings },
       { kind: "extension", formatVersion: 1, ...incoming.settings, extensionGuid: " " },
       { kind: "extension", formatVersion: 1, ...incoming.settings, entryPoint: "assets/../index.ts" },
+      { kind: "extension", formatVersion: 1, ...incoming.settings, gameEntryPoint: "assets/game.ts" },
+      { kind: "extension", formatVersion: 1, ...incoming.settings, gameEntryPoint: "index.ts" },
+      { kind: "extension", formatVersion: 1, ...incoming.settings, libraryName: "my-tools" },
     ]) {
       const files = incoming.files.map((file) => file.path === "extension.json" ? { ...file, data: text(JSON.stringify(replacement)) } : file);
       await expect(inspectHextension(encodeProjectZip(files))).rejects.toThrow();

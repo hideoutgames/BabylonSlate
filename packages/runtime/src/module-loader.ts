@@ -1,3 +1,5 @@
+import type { ExtensionLibraries } from "@haptic/core";
+
 /** Function constructor wrapper (two lines), then the strict directive. */
 export const COMPILED_MODULE_LINE_OFFSET = 3;
 
@@ -30,11 +32,18 @@ const EXPORT_DECLARATION = /(?<=^[ \t]*)export(?= (?:async )?function ([A-Za-z_$
 export async function loadCompiledModule(
   module: CompiledModuleSource,
   label: string,
+  extensions: ExtensionLibraries = EMPTY_EXTENSIONS,
 ): Promise<CompiledModuleExports> {
-  return loadViaFunctionShim(module, label);
+  return loadViaFunctionShim(module, label, extensions);
 }
 
-function loadViaFunctionShim({ source, entryPoints }: CompiledModuleSource, label: string): CompiledModuleExports {
+const EMPTY_EXTENSIONS: ExtensionLibraries = Object.freeze(Object.create(null) as ExtensionLibraries);
+
+/**
+ * `extensions` (gameplay Extension libraries) is the shim's one parameter, a
+ * free name for every function in the module, Execute JavaScript bodies included.
+ */
+function loadViaFunctionShim({ source, entryPoints }: CompiledModuleSource, label: string, extensions: ExtensionLibraries): CompiledModuleExports {
   const declarations = new Map<string, number[]>(entryPoints.map((point) => [point.name, []]));
   const names = [...declarations.keys()];
   // Only listed names are exports: a line-start lookalike with another name
@@ -56,6 +65,7 @@ function loadViaFunctionShim({ source, entryPoints }: CompiledModuleSource, labe
   const members = names.map((name) => `[${JSON.stringify(name)}]: ${name}`).join(",");
   // A final real directive supersedes previous source labels without rewriting
   // authored text that happens to contain a sourceURL-looking template line.
-  const fn = new Function(`"use strict";\n${body}\nreturn {${members}};\n//# sourceURL=haptic:///${label}.js\n`);
-  return fn() as CompiledModuleExports;
+  // The parameter list stays on the wrapper's first line, so COMPILED_MODULE_LINE_OFFSET holds.
+  const fn = new Function("extensions", `"use strict";\n${body}\nreturn {${members}};\n//# sourceURL=haptic:///${label}.js\n`);
+  return fn(extensions) as CompiledModuleExports;
 }

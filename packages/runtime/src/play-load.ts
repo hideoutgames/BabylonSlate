@@ -36,6 +36,7 @@ export function runtimeOptionsFromLoadControl(
   | "cameraShakeAssets"
   | "timelineClipAssets"
   | "assetCatalog"
+  | "extensionLibraries"
   | "physicsWorld"
   | "gravity"
   | "collisionPresets"
@@ -112,6 +113,7 @@ export function runtimeOptionsFromLoadControl(
     ...(msg.cameraShakeAssets ? { cameraShakeAssets: msg.cameraShakeAssets } : {}),
     ...(msg.timelineClipAssets ? { timelineClipAssets: msg.timelineClipAssets } : {}),
     ...(msg.assetCatalog ? { assetCatalog: msg.assetCatalog } : {}),
+    ...(msg.extensionLibraries?.length ? { extensionLibraries: msg.extensionLibraries } : {}),
     focusNavigation: msg.focusNavigation,
     pixelsPerUnit: msg.pixelsPerUnit,
     texturePixelSizes: msg.texturePixelSizes,

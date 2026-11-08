@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { ENGINE_VERSION } from "@haptic/core";
 import { MemoryStorageAdapter } from "@haptic/vfs";
-import { createExtensionSettings, discoverProjectExtensions, resolveExtensionGraph, writeProjectExtension, type ExtensionDescriptor } from "./extension-host";
+import { encodeAssetDocument } from "./asset-document";
+import { projectContentRoot } from "./content-root";
+import { createExtensionSettings, discoverProjectExtensions, mountExtensionContentRoots, readExtensionCodeFiles, resolveExtensionGraph, writeProjectExtension, type ExtensionDescriptor } from "./extension-host";
+import { normalizeExtensionSettings } from "./extension-settings";
+import { AssetRegistry } from "./registry";
 
 function extension(guid: string, dependencies: string[] = []): ExtensionDescriptor {
   return {
@@ -89,5 +93,55 @@ describe("Extension enablement", () => {
     const recovered = await discoverProjectExtensions(storage);
     expect(recovered.find((entry) => entry.folderName === "first")).toMatchObject({ extensionGuid: "duplicate", settings: { enabledByDefault: true } });
     expect(resolveExtensionGraph(recovered).order.map((entry) => entry.extensionGuid)).toEqual(["duplicate", "healthy"]);
+  });
+});
+
+describe("Gameplay extensions", () => {
+  it("start Editor Only with a game entry and a Library Name from the display name", () => {
+    expect(createExtensionSettings("GLSL to Material", "g")).toMatchObject({
+      editorOnly: true, gameEntryPoint: "game.ts", libraryName: "glslToMaterial", appearInContentBrowser: false,
+    });
+    expect(createExtensionSettings("3D Tools", "t").libraryName).toBe("_3dTools");
+    // Hand-written manifests may leave the gameplay fields out.
+    const { editorOnly, gameEntryPoint, libraryName, appearInContentBrowser, ...minimal } = createExtensionSettings("Weather Kit", "w");
+    void [editorOnly, gameEntryPoint, libraryName, appearInContentBrowser];
+    expect(normalizeExtensionSettings(minimal)).toMatchObject({ editorOnly: true, gameEntryPoint: "game.ts", libraryName: "weatherKit", appearInContentBrowser: false });
+    expect(normalizeExtensionSettings({ ...minimal, editorOnly: false, libraryName: " weather ", appearInContentBrowser: true }))
+      .toMatchObject({ editorOnly: false, libraryName: "weather", appearInContentBrowser: true });
+  });
+
+  it("read every code file of a package except its assets", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Code Files");
+    await writeProjectExtension(storage, "tools", createExtensionSettings("Tools", "tools"), "export function activate() {}");
+    await storage.mkdir("extensions/tools/code/nested", true);
+    await storage.writeText("extensions/tools/code/nested/util.ts", "export const util = 1;");
+    await storage.writeText("extensions/tools/code/notes.md", "not code");
+    await storage.writeText("extensions/tools/assets/script.js", "asset data, not code");
+    expect((await readExtensionCodeFiles(storage, "extensions/tools")).map((file) => file.path)).toEqual(["code/nested/util.ts", "index.ts"]);
+  });
+
+  it("mount the assets of gameplay packages only, and unmount a package that becomes Editor Only", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Roots");
+    const gameplay = { ...extension("weather"), settings: { ...extension("weather").settings, editorOnly: false } };
+    const editorOnly = extension("tools");
+    for (const entry of [gameplay, editorOnly]) {
+      await storage.mkdir(entry.contentPath, true);
+      await storage.writeBinary(`${entry.contentPath}/Rain.material.hasset`, await encodeAssetDocument({ type: "Material", name: "Rain", guid: `${entry.extensionGuid}-rain`, version: 1, payload: {} }));
+    }
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    await mountExtensionContentRoots(registry, [gameplay, editorOnly]);
+    expect(registry.listRoots().map((root) => [root.id, root.kind, root.pathPrefix])).toEqual([
+      ["project", "project", "assets"], ["extension:weather", "extension", "extensions/weather/assets"],
+    ]);
+    expect(registry.getByGuid("weather-rain")?.rootId).toBe("extension:weather");
+    expect(registry.getByGuid("tools-rain")).toBeUndefined();
+
+    await mountExtensionContentRoots(registry, [{ ...gameplay, settings: { ...gameplay.settings, editorOnly: true } }]);
+    expect(registry.listRoots().map((root) => root.id)).toEqual(["project"]);
+    expect(registry.getByGuid("weather-rain")).toBeUndefined();
   });
 });

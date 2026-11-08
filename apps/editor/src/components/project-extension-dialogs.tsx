@@ -1,12 +1,17 @@
 import { useRef, useState } from "react";
-import type { ExtensionDescriptor, ExtensionSettings } from "@haptic/assets";
-import { LabelHint, SearchDropdown } from "@haptic/editor-kit";
+import {
+  DEFAULT_EXTENSION_GAME_SOURCE, EXTENSION_CODE_DIR, EXTENSION_SOURCE_MAX_BYTES, isExtensionCodePath, isExtensionLibraryName,
+  type ExtensionCodeFile, type ExtensionDescriptor, type ExtensionSettings,
+} from "@haptic/assets";
+import { LabelHint, NamePromptDialog, SearchDropdown } from "@haptic/editor-kit";
+import { pickImportFiles } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
 import { Input } from "@haptic/ui/components/input";
 import { Textarea } from "@haptic/ui/components/textarea";
 import { Switch } from "@haptic/ui/components/switch";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
-import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
+import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@haptic/ui/components/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@haptic/ui/components/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@haptic/ui/components/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@haptic/ui/components/alert-dialog";
 import type { EditorExtensionCommandDescriptor } from "../lib/editor-extension-host";
@@ -46,13 +51,13 @@ export function ExtensionCommandDialog({ command, service, onClose }: {
   const { busy, error, run } = useExtensionAction();
   const setValue = (id: string, value: string) => { setValues((previous) => ({ ...previous, [id]: value })); setSucceeded(false); };
   return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-    <DialogContent className="editor-dialog-large sm:max-w-2xl" bodyClassName="flex flex-col overflow-hidden">
+    <DialogContent className="editor-dialog-large sm:max-w-2xl" bodyClassName="flex min-w-0 flex-col overflow-hidden">
       <DialogHeader><DialogTitle>{command.title}</DialogTitle><DialogDescription>{command.description ?? "Run this editor extension command."}</DialogDescription></DialogHeader>
-      <FieldGroup className="min-h-0 flex-1 overflow-y-auto">
+      <FieldGroup className="-mx-3 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3">
         {command.fields.map((field) => <Field key={field.id}>
           <FieldLabel htmlFor={`extension-command-${field.id}`}>{field.label}{field.required ? " *" : ""}</FieldLabel>
           {field.type === "multiline" && command.id === "glsl-to-material" && field.id === "source" ?
-            <div className="h-64 min-h-0 overflow-hidden rounded-md border border-border" role="group" aria-label={field.label}>
+            <div className="flex h-64 min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border" role="group" aria-label={field.label}>
               <LazyCodeBodyEditor language="glsl" ariaLabel={field.label} value={values[field.id] ?? ""} onChange={(value) => setValue(field.id, value)} />
             </div> : field.type === "multiline" ?
               <Textarea id={`extension-command-${field.id}`} value={values[field.id] ?? ""} disabled={busy} onChange={(event) => setValue(field.id, event.target.value)} /> :
@@ -72,21 +77,82 @@ export function ExtensionCommandDialog({ command, service, onClose }: {
   </Dialog>;
 }
 
-export function ExtensionEditorDialog({ entry, entries, initialSource, service, onClose }: {
+/** Entry first, then the game entry, then every other file by path. */
+function orderedCodePaths(paths: Iterable<string>, settings: ExtensionSettings): string[] {
+  const rank = (path: string) => path === settings.entryPoint ? 0 : path === settings.gameEntryPoint ? 1 : 2;
+  return [...paths].sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
+}
+
+function codeFileLabel(path: string, settings: ExtensionSettings): string {
+  if (path === settings.entryPoint) return `${path} (Editor Entry)`;
+  if (path === settings.gameEntryPoint) return `${path} (Game Entry)`;
+  return path;
+}
+
+/** The `code/` path for a typed or picked file name; `.ts` when it has no extension. */
+function extensionCodeFilePath(name: string): string | null {
+  const trimmed = name.trim().replace(/^code\//, "");
+  const withExtension = /\.(?:ts|js)$/i.test(trimmed) ? trimmed : /\.[^./]+$/.test(trimmed) ? null : `${trimmed}.ts`;
+  if (!withExtension) return null;
+  const path = `${EXTENSION_CODE_DIR}/${withExtension}`;
+  return isExtensionCodePath(path) ? path : null;
+}
+
+export function ExtensionEditorDialog({ entry, entries, initialFiles, service, onClose }: {
   entry: ExtensionDescriptor;
   entries: ExtensionDescriptor[];
-  initialSource: string;
+  initialFiles: readonly ExtensionCodeFile[];
   service: EditorExtensionService;
   onClose(): void;
 }) {
   const [settings, setSettings] = useState<ExtensionSettings>(() => structuredClone(entry.settings));
-  const [source, setSource] = useState(initialSource);
+  const [original] = useState(() => new Map(initialFiles.map((file) => [file.path, file.source])));
+  const [sources, setSources] = useState<Map<string, string>>(() => new Map(original));
+  const [activePath, setActivePath] = useState(entry.settings.entryPoint);
+  const [newFileOpen, setNewFileOpen] = useState(false);
   const { busy, error, run } = useExtensionAction();
+  const [fileError, setFileError] = useState<string | null>(null);
   const patch = (value: Partial<ExtensionSettings>) => setSettings((previous) => ({ ...previous, ...value }));
+  // A gameplay package edits its game entry, starting from a template when it has none.
+  const visible = new Map(sources);
+  if (!settings.editorOnly && !visible.has(settings.gameEntryPoint)) visible.set(settings.gameEntryPoint, DEFAULT_EXTENSION_GAME_SOURCE);
+  const paths = orderedCodePaths(visible.keys(), settings);
+  const shownPath = visible.has(activePath) ? activePath : settings.entryPoint;
+  const setSource = (path: string, source: string) => setSources((previous) => new Map(previous).set(path, source));
+  const removable = shownPath !== settings.entryPoint && shownPath !== settings.gameEntryPoint;
+  const libraryError = !settings.editorOnly && !isExtensionLibraryName(settings.libraryName.trim())
+    ? "Use letters, digits, _ or $, not starting with a digit." : null;
+  const addFiles = async () => {
+    setFileError(null);
+    const picked = await pickImportFiles({ multiple: true, accept: ".ts,.js" });
+    const next = new Map(sources);
+    const problems: string[] = [];
+    for (const file of picked) {
+      const path = /\.(?:ts|js)$/i.test(file.name) ? extensionCodeFilePath(file.name.split("/").pop() ?? file.name) : null;
+      if (!path) problems.push(`${file.name} is not a .ts or .js file.`);
+      else if (next.has(path)) problems.push(`${path} already exists.`);
+      else if (file.bytes.byteLength > EXTENSION_SOURCE_MAX_BYTES) problems.push(`${file.name} exceeds 1 MiB.`);
+      else next.set(path, new TextDecoder().decode(file.bytes));
+    }
+    setSources(next);
+    const added = [...next.keys()].find((path) => !sources.has(path));
+    if (added) setActivePath(added);
+    if (problems.length) setFileError(problems.join("\n"));
+  };
+  const save = async () => {
+    const final = new Map(sources);
+    if (!settings.editorOnly && !final.has(settings.gameEntryPoint)) final.set(settings.gameEntryPoint, DEFAULT_EXTENSION_GAME_SOURCE);
+    await service.save(entry.extensionGuid, { ...settings, libraryName: settings.libraryName.trim() }, {
+      write: [...final].filter(([path, source]) => original.get(path) !== source).map(([path, source]) => ({ path, source })),
+      remove: [...original.keys()].filter((path) => !final.has(path)),
+    });
+    onClose();
+  };
   return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-    <DialogContent className="editor-dialog-large sm:max-w-3xl" bodyClassName="flex flex-col overflow-hidden">
-      <DialogHeader><DialogTitle>Edit Extension</DialogTitle><DialogDescription>Saving reloads enabled extensions. Code runs in the editor and can modify project assets and code.</DialogDescription></DialogHeader>
-      <FieldGroup className="min-h-0 flex-1 overflow-y-auto">
+    <DialogContent className="editor-dialog-large sm:max-w-3xl" bodyClassName="flex min-w-0 flex-col overflow-hidden">
+      <DialogHeader><DialogTitle>Edit Extension</DialogTitle><DialogDescription>Saving reloads enabled extensions. Code runs in the editor, and in games when Editor Only is off.</DialogDescription></DialogHeader>
+      {/* The gutter holds the Switches' touch hit areas, which reach past the controls, so the list scrolls only vertically. */}
+      <FieldGroup className="-mx-3 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3" data-testid="extension-editor-fields">
         <Field><FieldLabel htmlFor="extension-edit-guid">Extension ID</FieldLabel><Input id="extension-edit-guid" value={entry.extensionGuid} readOnly /></Field>
         {([['displayName', 'Display Name'], ['version', 'Version'], ['author', 'Author'], ['category', 'Category']] as const).map(([key, label]) => <Field key={key}>
           <FieldLabel htmlFor={`extension-edit-${key}`}>{label}</FieldLabel>
@@ -99,6 +165,21 @@ export function ExtensionEditorDialog({ entry, entries, initialSource, service, 
         {([['experimental', 'Experimental'], ['beta', 'Beta'], ['enabledByDefault', 'Enabled By Default']] as const).map(([key, label]) => <Field key={key} orientation="horizontal">
           <FieldContent><FieldLabel htmlFor={`extension-edit-${key}`}>{label}</FieldLabel></FieldContent><Switch id={`extension-edit-${key}`} checked={settings[key]} disabled={busy} onCheckedChange={(checked) => patch({ [key]: checked === true })} />
         </Field>)}
+        <Field orientation="horizontal">
+          <FieldContent><LabelHint hint="Turn off to add a game library and content that Play and packaged games include."><FieldLabel htmlFor="extension-edit-editorOnly">Editor Only</FieldLabel></LabelHint></FieldContent>
+          <Switch id="extension-edit-editorOnly" checked={settings.editorOnly} disabled={busy} onCheckedChange={(checked) => patch({ editorOnly: checked === true })} />
+        </Field>
+        {!settings.editorOnly ? <>
+          <Field data-invalid={libraryError ? true : undefined}>
+            <LabelHint hint="Execute JavaScript nodes call the game entry's exports as extensions.<Library Name>."><FieldLabel htmlFor="extension-edit-libraryName">Library Name</FieldLabel></LabelHint>
+            <Input id="extension-edit-libraryName" value={settings.libraryName} disabled={busy} aria-invalid={libraryError ? true : undefined} onChange={(event) => patch({ libraryName: event.target.value })} />
+            {libraryError ? <FieldError>{libraryError}</FieldError> : null}
+          </Field>
+          <Field orientation="horizontal">
+            <FieldContent><LabelHint hint="Shows the extension's assets folder in the Content Browser tree."><FieldLabel htmlFor="extension-edit-appearInContentBrowser">Appear In Content Browser</FieldLabel></LabelHint></FieldContent>
+            <Switch id="extension-edit-appearInContentBrowser" checked={settings.appearInContentBrowser} disabled={busy} onCheckedChange={(checked) => patch({ appearInContentBrowser: checked === true })} />
+          </Field>
+        </> : null}
         <FieldSet><FieldLegend>Extension Dependencies</FieldLegend>
           {settings.extensionDependencies.map((dependency) => {
             const name = entries.find((value) => value.extensionGuid === dependency.guid)?.settings.displayName ?? dependency.guid;
@@ -111,12 +192,32 @@ export function ExtensionEditorDialog({ entry, entries, initialSource, service, 
             <Button variant="outline" size="sm" disabled={busy} className="w-fit">Add Dependency</Button>
           </SearchDropdown>
         </FieldSet>
-        <Field><LabelHint hint="Export activate(api). Module imports are not supported."><FieldLabel>Entry Source</FieldLabel></LabelHint><FieldDescription>{settings.entryPoint}</FieldDescription>
-          <div className="h-72 min-h-0 overflow-hidden rounded-md border border-border" role="group" aria-label="Extension Source"><LazyCodeBodyEditor language="javascript" ariaLabel="Extension Source" value={source} onChange={setSource} /></div>
+        <Field className="min-w-0">
+          <LabelHint hint={`Saved in extensions/${entry.folderName}/ in the project folder, so other code editors can open them. Files import each other with relative paths.`}><FieldLabel htmlFor="extension-edit-file">Code Files</FieldLabel></LabelHint>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Select value={shownPath} onValueChange={(value) => setActivePath(String(value))}>
+              <SelectTrigger id="extension-edit-file" size="sm" className="min-w-0 max-w-full sm:w-72" disabled={busy}>
+                <SelectValue>{codeFileLabel(shownPath, settings)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {paths.map((path) => <SelectItem key={path} value={path}>{codeFileLabel(path, settings)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => setNewFileOpen(true)}>New Code File</Button>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => void run(addFiles)}>Add Code File</Button>
+            <Button variant="outline" size="sm" disabled={busy || !removable} onClick={() => setSources((previous) => { const next = new Map(previous); next.delete(shownPath); return next; })}>Remove Code File</Button>
+          </div>
+          {fileError ? <FieldError className="whitespace-pre-wrap">{fileError}</FieldError> : null}
+          <div className="flex h-96 min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border" role="group" aria-label="Extension Source" data-testid="extension-source-editor">
+            <LazyCodeBodyEditor key={shownPath} language="javascript" ariaLabel={`${shownPath} Source`} value={visible.get(shownPath) ?? ""} onChange={(value) => setSource(shownPath, value)} />
+          </div>
         </Field>
       </FieldGroup>
       <ActionError message={error} />
-      <DialogFooter><Button variant="outline" size="sm" disabled={busy} onClick={onClose}>Cancel</Button><Button size="sm" disabled={busy || !settings.displayName.trim() || !settings.version.trim()} onClick={() => void run(async () => { await service.save(entry.extensionGuid, settings, source); onClose(); })}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
+      <DialogFooter><Button variant="outline" size="sm" disabled={busy} onClick={onClose}>Cancel</Button><Button size="sm" disabled={busy || !settings.displayName.trim() || !settings.version.trim() || Boolean(libraryError)} onClick={() => void run(save)}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
+      <NamePromptDialog open={newFileOpen} onOpenChange={setNewFileOpen} title="New Code File" label="File Name" confirmLabel="Create"
+        validate={(name) => { const path = extensionCodeFilePath(name); return !path ? "Use a .ts or .js file name." : visible.has(path) ? `${path} already exists.` : null; }}
+        onSubmit={(name) => { const path = extensionCodeFilePath(name)!; setSource(path, ""); setActivePath(path); setNewFileOpen(false); }} />
     </DialogContent>
   </Dialog>;
 }

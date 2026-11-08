@@ -40,4 +40,4 @@ These nodes wait until the change finishes, then report **Success** and an **Err
 
 - Editor tools cannot use [Get Game Instance](class/get-game-instance.md) or the subsystem Get nodes, because no game is running.
 - Editor tool classes are left out of exported games.
-- For tools written in JavaScript or TypeScript with access to project files, see [Editor Extensions](../projects/extensions.md).
+- For tools written in JavaScript or TypeScript with access to project files, see [Extensions](../projects/extensions.md).

@@ -88,6 +88,8 @@ export interface RuntimeDriverOptions {
   environment?: GameEnvironment;
   /** URL of the game's `legal/THIRD-PARTY-NOTICES.txt` (same origin); Get Third-Party Notices fails without one. */
   thirdPartyNoticesUrl?: string;
+  /** Game libraries of enabled gameplay Extensions, dependencies first (`extensions.<libraryName>` in scripts). */
+  extensionLibraries?: readonly import("@haptic/core").ExtensionGameLibrary[];
   seed: number;
   dt?: number;
   maxActors?: number;

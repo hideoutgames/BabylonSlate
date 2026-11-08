@@ -2,7 +2,7 @@
 
 A plugin is a self-contained bundle of assets and Classes that you can turn on or off in a project and share between projects.
 
-Plugins contain content only: Classes, scenes, materials, textures and other assets. They add no native code. To add editor tools written in code, use [Editor Extensions](extensions.md).
+Plugins contain content only: Classes, scenes, materials, textures and other assets. They add no native code. To add editor tools or a game library written in code, use [Extensions](extensions.md).
 
 ## Manage plugins
 

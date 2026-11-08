@@ -6,7 +6,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { resolvePluginEnabled, type IndexedAsset } from "@haptic/assets";
+import { resolvePluginEnabled, type ExtensionDescriptor, type IndexedAsset } from "@haptic/assets";
 import type { TypeVisual } from "@haptic/editor-kit";
 import type { useProjectState, useRegistryState } from "../context/document-context";
 import { resolvePluginIcon } from "../lib/plugin-icons";
@@ -40,6 +40,8 @@ export interface ContentBrowserModelDeps {
   /** Advances on every index change; the memos list it because the registry mutates in place. */
   registryEpoch: RegistryState["registryEpoch"];
   pluginDescriptors: RegistryState["pluginDescriptors"];
+  /** Every discovered extension; a gameplay one's root shows only while mounted. */
+  extensions: readonly ExtensionDescriptor[];
   showPluginContent: RegistryState["showPluginContent"];
   projectDocument: ReturnType<typeof useProjectState>["projectDocument"];
   selectedFolderPath: string;
@@ -59,6 +61,7 @@ export function useContentBrowserModel(deps: ContentBrowserModelDeps) {
     assetRegistry,
     registryEpoch,
     pluginDescriptors,
+    extensions,
     showPluginContent,
     projectDocument,
     selectedFolderPath,
@@ -82,8 +85,15 @@ export function useContentBrowserModel(deps: ContentBrowserModelDeps) {
               ?.enabled,
           ),
         })),
+        extensions: extensions.filter((extension) => !extension.invalid && !extension.settings.editorOnly).map((extension) => ({
+          extensionGuid: extension.extensionGuid,
+          displayName: extension.settings.displayName,
+          contentPath: extension.contentPath,
+          source: extension.source,
+          appearInContentBrowser: extension.settings.appearInContentBrowser,
+        })),
       }),
-    [pluginDescriptors, projectDocument, showPluginContent],
+    [extensions, pluginDescriptors, projectDocument, showPluginContent],
   );
   const rootPrefixes = useMemo(
     () => browserRoots.map((root) => root.pathPrefix),
@@ -98,11 +108,11 @@ export function useContentBrowserModel(deps: ContentBrowserModelDeps) {
     [pluginDescriptors],
   );
   const pluginRootIcons = useMemo(
-    () => new Map(pluginDescriptors.map((plugin) => [
-      plugin.contentPath,
-      resolvePluginIcon(plugin.settings.iconKey),
+    () => new Map([...pluginDescriptors, ...extensions].map((descriptor) => [
+      descriptor.contentPath,
+      resolvePluginIcon(descriptor.settings.iconKey),
     ])),
-    [pluginDescriptors],
+    [extensions, pluginDescriptors],
   );
   const selectedRoot = useMemo(
     () => contentBrowserFolderOps(selectedFolderPath, browserRoots),
@@ -127,6 +137,12 @@ export function useContentBrowserModel(deps: ContentBrowserModelDeps) {
       setSelectedFolderPath(ASSETS_ROOT);
     }
   }, [pluginContentPrefixes, selectedFolderPath, setSelectedFolderPath, showPluginContent]);
+  // An extension folder leaves the tree when its extension stops showing there or unmounts.
+  useLayoutEffect(() => {
+    const shown = new Set(browserRoots.filter((root) => assetRegistry?.getRoot(root.id)).map((root) => root.pathPrefix));
+    const hidden = extensions.map((extension) => extension.contentPath).filter((prefix) => !shown.has(prefix));
+    if (isPluginContentFolderPath(selectedFolderPath, hidden)) setSelectedFolderPath(ASSETS_ROOT);
+  }, [assetRegistry, browserRoots, extensions, registryEpoch, selectedFolderPath, setSelectedFolderPath]);
 
   const folderTrees = useMemo(() => {
     if (!assetRegistry) return [];

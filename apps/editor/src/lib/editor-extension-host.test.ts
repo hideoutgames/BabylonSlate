@@ -40,12 +40,17 @@ function fixture() {
   return { assets, code, services, host: new EditorExtensionHost(services) };
 }
 
+/** A package whose entry is `path`, plus any other files it may import. */
+function entry(id: string, path: string, source: string, files: Record<string, string> = {}) {
+  return { id, entry: path, files: [{ path, source }, ...Object.entries(files).map(([file, text]) => ({ path: file, source: text }))] };
+}
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("EditorExtensionHost", () => {
   it("runs an ESM JavaScript extension against asset and project-code APIs", async () => {
     const { host, assets, code } = fixture();
-    expect(await host.activate({ id: "asset-tools", path: "index.js", source: `
+    expect(await host.activate(entry("asset-tools", "index.js", `
       export function activate(api) {
         api.registerCommand({ id: "edit", title: "Edit Assets", execute: async () => {
           const [entry] = await api.assets.list();
@@ -57,7 +62,7 @@ describe("EditorExtensionHost", () => {
           await api.code.write("Code/game.ts", source.replace("1", "2"));
         }});
       }
-    ` })).toBe(true);
+    `))).toBe(true);
 
     await host.run("asset-tools", "edit");
 
@@ -71,7 +76,7 @@ describe("EditorExtensionHost", () => {
 
   it("transpiles typed TypeScript and supplies command defaults and conversion options", async () => {
     const { host, assets } = fixture();
-    expect(await host.activate({ id: "convert", path: "entry.ts", source: `
+    expect(await host.activate(entry("convert", "entry.ts", `
       type Values = Record<string, string>;
       export function activate(api: {
         registerCommand(command: { id: string; title: string; fields: object[]; execute: (values: Values) => Promise<void> }): void;
@@ -87,7 +92,7 @@ describe("EditorExtensionHost", () => {
           await api.assets.create("Content/Converted.hasset", { type: "Material", name: values.name, payload: result.document });
         }});
       }
-    ` })).toBe(true);
+    `))).toBe(true);
 
     await expect(host.run("convert", "convert", { source: " " })).rejects.toThrow(/required/i);
     expect(assets.has("Content/Converted.hasset")).toBe(false);
@@ -99,8 +104,34 @@ describe("EditorExtensionHost", () => {
     ]));
   });
 
+  it("links relative imports, re-exports and require between files of one package", async () => {
+    const { host, code } = fixture();
+    expect(await host.activate(entry("linked", "index.ts", `
+      import { label } from "./code/names";
+      import type { Unused } from "@haptic/types-only";
+      export { activate } from "./code/activate.js";
+      export const loaded: Unused | string = label;
+    `, {
+      "code/names.ts": "export const label: string = 'Linked';",
+      "code/activate.ts": `
+        const { label } = require("./names.ts");
+        import { write } from "../lib";
+        export function activate(api) {
+          api.registerCommand({ id: "write", title: label, execute: () => write(api) });
+        }
+      `,
+      "lib/index.js": "exports.write = (api) => api.code.write('Code/linked.js', 'linked');",
+    }))).toBe(true);
+
+    expect(host.listCommands().map((command) => command.title)).toEqual(["Linked"]);
+    await host.run("linked", "write");
+    expect(code.get("Code/linked.js")).toBe("linked");
+  });
+
   it.each([
-    ["import", "import './other.js'; export function activate() {}"],
+    ["missing import", "import './other.js'; export function activate() {}"],
+    ["package import", "import { x } from 'lodash'; export function activate() { return x; }"],
+    ["import outside the package", "import '../other.js'; export function activate() {}"],
     ["re-export", "export { activate } from './other.js';"],
     ["require", "const other = require('./other.js'); exports.activate = other.activate;"],
     ["dynamic import", "export function activate() { return import('./other.js'); }"],
@@ -108,13 +139,13 @@ describe("EditorExtensionHost", () => {
     ["missing activate", "export const description = 'No entry point';"],
   ])("reports %s entry failure without losing a different extension", async (_name, source) => {
     const { host, code } = fixture();
-    await host.activate({ id: "healthy", path: "healthy.js", source: `
+    await host.activate(entry("healthy", "healthy.js", `
       module.exports = { activate(api) {
         api.registerCommand({ id: "write", title: "Write", execute() { return api.code.write("Code/healthy.js", "ok"); } });
       }};
-    ` });
+    `));
 
-    expect(await host.activate({ id: "broken", path: "broken.js", source })).toBe(false);
+    expect(await host.activate(entry("broken", "broken.js", source))).toBe(false);
     expect(host.getDiagnostics()).toEqual([expect.objectContaining({ extensionId: "broken", phase: "activate" })]);
     await host.run("healthy", "write");
     expect(code.get("Code/healthy.js")).toBe("ok");
@@ -122,20 +153,20 @@ describe("EditorExtensionHost", () => {
 
   it("removes partial commands after failed activation and allows a repaired activation", async () => {
     const { host } = fixture();
-    expect(await host.activate({ id: "tools", path: "tools.js", source: `
+    expect(await host.activate(entry("tools", "tools.js", `
       export function activate(api) {
         api.registerCommand({ id: "partial", title: "Partial", execute() {} });
         throw new Error("Could not initialize");
       }
-    ` })).toBe(false);
+    `))).toBe(false);
     expect(host.listCommands()).toEqual([]);
     await expect(host.run("tools", "partial")).rejects.toThrow(/unavailable/i);
 
-    expect(await host.activate({ id: "tools", path: "tools.js", source: `
+    expect(await host.activate(entry("tools", "tools.js", `
       export function activate(api) {
         api.registerCommand({ id: "fixed", title: "Fixed", execute() {} });
       }
-    ` })).toBe(true);
+    `))).toBe(true);
     await expect(host.run("tools", "fixed")).resolves.toBeUndefined();
   });
 
@@ -143,19 +174,19 @@ describe("EditorExtensionHost", () => {
     const { host } = fixture();
     const events: string[] = [];
     vi.stubGlobal("__extensionHostEvents", events);
-    await host.activate({ id: "tools", path: "tools.js", source: `
+    await host.activate(entry("tools", "tools.js", `
       export function activate(api) {
         api.registerCommand({ id: "old", title: "Old", execute() {} });
         return () => globalThis.__extensionHostEvents.push("old disposed");
       }
-    ` });
-    await host.activate({ id: "tools", path: "tools.js", source: `
+    `));
+    await host.activate(entry("tools", "tools.js", `
       export function activate(api) {
         globalThis.__extensionHostEvents.push("new activated");
         api.registerCommand({ id: "new", title: "New", execute() {} });
         return () => globalThis.__extensionHostEvents.push("new disposed");
       }
-    ` });
+    `));
 
     await expect(host.run("tools", "old")).rejects.toThrow(/unavailable/i);
     await host.deactivate("tools");
@@ -171,7 +202,7 @@ describe("EditorExtensionHost", () => {
     let capturedApi!: EditorExtensionApi;
     vi.stubGlobal("__extensionHostCapture", (api: EditorExtensionApi) => { capturedApi = api; });
     services.code.read = () => { started.resolve(); return read.promise; };
-    await host.activate({ id: "slow", path: "slow.js", source: `
+    await host.activate(entry("slow", "slow.js", `
       export function activate(api) {
         globalThis.__extensionHostCapture(api);
         api.registerCommand({ id: "write", title: "Write", execute: async () => {
@@ -179,7 +210,7 @@ describe("EditorExtensionHost", () => {
           await api.code.write("Code/game.ts", source + " stale edit");
         }});
       }
-    ` });
+    `));
 
     const run = host.run("slow", "write");
     const rejected = expect(run).rejects.toThrow(/no longer active/i);
@@ -203,11 +234,11 @@ describe("EditorExtensionHost", () => {
       await gate.promise;
       code.set(path, source);
     };
-    await host.activate({ id: "writer", path: "writer.js", source: `
+    await host.activate(entry("writer", "writer.js", `
       export function activate(api) {
         void api.code.write('Code/pending.js', 'saved');
       }
-    ` });
+    `));
     await started.promise;
     let closed = false;
     const closing = host.dispose().then(() => { closed = true; });
@@ -227,14 +258,14 @@ describe("EditorExtensionHost", () => {
     vi.stubGlobal("__extensionHostGate", gate.promise);
     vi.stubGlobal("__extensionHostStarted", started.resolve);
     vi.stubGlobal("__extensionHostEvents", events);
-    const activation = host.activate({ id: "slow", path: "slow.js", source: `
+    const activation = host.activate(entry("slow", "slow.js", `
       export async function activate(api) {
         api.registerCommand({ id: "pending", title: "Pending", execute() {} });
         globalThis.__extensionHostStarted();
         await globalThis.__extensionHostGate;
         return () => globalThis.__extensionHostEvents.push("disposed");
       }
-    ` });
+    `));
     await started.promise;
     expect(host.listCommands()).toEqual([]);
     await host.dispose();
@@ -243,19 +274,19 @@ describe("EditorExtensionHost", () => {
     expect(await activation).toBe(false);
     expect(events).toEqual(["disposed"]);
     expect(host.listCommands()).toEqual([]);
-    await expect(host.activate({ id: "later", path: "later.js", source: "" })).rejects.toThrow(/disposed/i);
+    await expect(host.activate(entry("later", "later.js", ""))).rejects.toThrow(/disposed/i);
   });
 
   it("keeps a command available for corrected input after reporting an execution error", async () => {
     const { host, code } = fixture();
-    await host.activate({ id: "validate", path: "validate.js", source: `
+    await host.activate(entry("validate", "validate.js", `
       export function activate(api) {
         api.registerCommand({ id: "save", title: "Save", execute(values) {
           if (values.source === "bad") throw new Error("Invalid source");
           return api.code.write("Code/output.js", values.source);
         }});
       }
-    ` });
+    `));
 
     await expect(host.run("validate", "save", { source: "bad" })).rejects.toThrow("Invalid source");
     expect(host.getDiagnostics()).toEqual([expect.objectContaining({ extensionId: "validate", phase: "command" })]);
@@ -269,15 +300,15 @@ describe("EditorExtensionHost", () => {
     const { host } = fixture();
     const events: string[] = [];
     vi.stubGlobal("__extensionHostEvents", events);
-    await host.activate({ id: "healthy", path: "healthy.js", source: `
+    await host.activate(entry("healthy", "healthy.js", `
       export function activate() { return () => globalThis.__extensionHostEvents.push("cleaned"); }
-    ` });
-    await host.activate({ id: "broken", path: "broken.js", source: `
+    `));
+    await host.activate(entry("broken", "broken.js", `
       export function activate(api) {
         api.registerCommand({ id: "action", title: "Action", execute() {} });
         return () => { throw new Error("Cleanup failed"); };
       }
-    ` });
+    `));
 
     await host.dispose();
 

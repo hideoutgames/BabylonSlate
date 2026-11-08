@@ -5,7 +5,7 @@ import {
   useRegistryState,
 } from "../context/document-context";
 
-/** Mirrors editor utility startup while keeping code modules out of Play. */
+/** Mirrors editor utility startup: activates editor entries; Play links gameplay libraries separately. */
 export function EditorExtensionsRuntime() {
   const { getOpenDocuments } = useDocumentActions();
   const { projectDocument } = useProjectState();

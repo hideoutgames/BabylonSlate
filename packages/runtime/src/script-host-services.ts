@@ -102,6 +102,8 @@ export interface ScriptHostServices {
   quitGame?(): void;
   /** Where the session runs; `DEFAULT_GAME_ENVIRONMENT` when absent. */
   environment?: GameEnvironment;
+  /** Gameplay Extension libraries, evaluated with the first script load; compiled modules see them as `extensions`. */
+  extensionLibraries?: readonly import("@haptic/core").ExtensionGameLibrary[];
   /** The game view's size in CSS pixels, the space cursor and touch positions use. */
   getViewportSize?(): { width: number; height: number };
   /** Ask the host to write the clipboard; validated text only. */

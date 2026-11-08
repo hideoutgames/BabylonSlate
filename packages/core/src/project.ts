@@ -228,7 +228,7 @@ export interface ProjectSettings {
   editorUtilityObjects: string[];
   /** Per-plugin enable overrides keyed by plugin guid (engineplan §10.4). */
   pluginOverrides: Record<string, PluginEnableOverride>;
-  /** Editor-only code extension enablement; never used by game export. */
+  /** Extension enablement keyed by extension guid; gameplay (not Editor Only) extensions also follow it in Play and export. */
   extensionOverrides: Record<string, { enabled: boolean }>;
   /** Named export presets; each may override plugin enablement (layer 3). */
   exportPresets: ExportPreset[];

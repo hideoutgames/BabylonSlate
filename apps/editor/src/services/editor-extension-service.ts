@@ -1,13 +1,38 @@
-import { ENGINE_VERSION, type ProjectStorage } from "@haptic/core";
+import { ENGINE_VERSION, type ExtensionGameLibrary, type ProjectStorage } from "@haptic/core";
 import {
   applyExtensionImport, createExtensionSettings, discoverEngineExtensions,
   discoverProjectExtensions, encodeExtensionSettings, exportExtensionZip,
-  inspectHextension, isExtensionPackagePath, normalizeExtensionSettings,
-  planExtensionImport, resolveExtensionGraph, shadowEngineExtensions,
+  EXTENSION_CODE_DIR, EXTENSION_SOURCE_MAX_BYTES, inspectHextension, isExtensionCodePath,
+  isExtensionPackagePath, normalizeExtensionSettings,
+  planExtensionImport, readExtensionCodeFiles, resolveExtensionGraph, shadowEngineExtensions,
   uniqueExtensionFolderName, writeProjectExtension,
-  type ExtensionDescriptor, type ExtensionSettings,
+  type ExtensionCodeFile, type ExtensionDescriptor, type ExtensionSettings,
 } from "@haptic/assets";
 import { EditorExtensionHost, type EditorExtensionServices, type EditorExtensionCommandDescriptor } from "../lib/editor-extension-host";
+import { linkExtensionModules } from "../lib/extension-modules";
+
+/** Code file edits applied by one Save. */
+export interface ExtensionFileChanges {
+  /** Entry, game entry or `code/` files to create or replace. */
+  write: readonly ExtensionCodeFile[];
+  /** `code/` files to delete. */
+  remove: readonly string[];
+}
+
+/** Enabled, valid gameplay (not Editor Only) packages of a resolved order, keeping its dependency order. */
+export function gameplayExtensions(order: readonly ExtensionDescriptor[]): ExtensionDescriptor[] {
+  return order.filter((entry) => !entry.invalid && !entry.settings.editorOnly);
+}
+
+/** Two enabled gameplay packages claiming one Library Name cannot both reach games. */
+function duplicateLibraryDiagnostics(order: readonly ExtensionDescriptor[]): string[] {
+  const owners = new Map<string, string[]>();
+  for (const entry of gameplayExtensions(order)) {
+    owners.set(entry.settings.libraryName, [...owners.get(entry.settings.libraryName) ?? [], entry.settings.displayName]);
+  }
+  return [...owners].filter(([, names]) => names.length > 1)
+    .map(([library, names]) => `Library Name ${library} is used by ${names.join(", ")}.`);
+}
 
 export type ExtensionOverrides = Record<string, { enabled: boolean }>;
 export interface ExtensionSnapshot {
@@ -19,9 +44,15 @@ export interface ExtensionSnapshot {
 export interface EditorExtensionWriteOptions {
   /** Project owner admission spans queued package operations and guest writes. */
   runAuthoringWrite?: <T>(operation: () => Promise<T>) => Promise<T>;
+  /**
+   * Mounts exactly these gameplay packages' `assets/` roots (dependencies first)
+   * and unmounts every other extension root. Called when that set changes and
+   * before a package's files are replaced or deleted.
+   */
+  syncContentRoots?: (extensions: readonly ExtensionDescriptor[]) => Promise<void>;
 }
 
-/** A project lifetime owns code activation; extension files never mount as game assets. */
+/** A project lifetime owns code activation and the content roots of its gameplay packages. */
 export class EditorExtensionService {
   private readonly storage: ProjectStorage;
   private engineStorage: ProjectStorage | null = null;
@@ -38,11 +69,17 @@ export class EditorExtensionService {
   private cleanupDiagnostics: string[] = [];
   private packageDiagnostics: string[] = [];
   private unsubscribeHost: () => void = () => {};
+  /** Enabled packages of the last refresh, dependencies first. */
+  private order: ExtensionDescriptor[] = [];
   private readonly runAuthoringWrite: <T>(operation: () => Promise<T>) => Promise<T>;
+  private readonly syncRoots: (extensions: readonly ExtensionDescriptor[]) => Promise<void>;
+  /** The gameplay packages whose roots were last synced. */
+  private contentRootsKey = "[]";
 
   constructor(storage: ProjectStorage, services: EditorExtensionServices, options: EditorExtensionWriteOptions = {}) {
     this.storage = storage;
     this.runAuthoringWrite = options.runAuthoringWrite ?? (operation => operation());
+    this.syncRoots = options.syncContentRoots ?? (async () => {});
     this.services = {
       ...services,
       assets: {
@@ -101,6 +138,18 @@ export class EditorExtensionService {
     this.host = this.createHost();
     this.started = new Set();
   }
+  private async syncContentRoots(extensions: readonly ExtensionDescriptor[]): Promise<void> {
+    const gameplay = gameplayExtensions(extensions);
+    const key = JSON.stringify(gameplay.map((entry) => [entry.extensionGuid, entry.source, entry.contentPath]));
+    if (key === this.contentRootsKey) return;
+    this.contentRootsKey = key;
+    await this.syncRoots(gameplay);
+  }
+  /** Unmounts a package's root before its files are replaced or deleted. */
+  private async releaseContentRoot(guid: string): Promise<void> {
+    if (!this.order.some((entry) => entry.extensionGuid === guid && !entry.settings.editorOnly)) return;
+    await this.syncContentRoots(this.order.filter((entry) => entry.extensionGuid !== guid));
+  }
   private storageFor(entry: ExtensionDescriptor): ProjectStorage {
     const storage = entry.source === "engine" ? this.engineStorage : this.storage;
     if (!storage) throw new Error("Extension storage is unavailable.");
@@ -123,35 +172,40 @@ export class EditorExtensionService {
         this.engineStorage ? await discoverEngineExtensions(this.engineStorage) : [],
       );
       const graph = resolveExtensionGraph(entries, ENGINE_VERSION, overrides);
-      const diagnostics = graph.diagnostics.map((value) => value.message);
-      const modules = [];
+      const diagnostics = [...graph.diagnostics.map((value) => value.message), ...duplicateLibraryDiagnostics(graph.order)];
+      const modules: { entry: ExtensionDescriptor; files: ExtensionCodeFile[] }[] = [];
       for (const entry of graph.order) {
-        const path = `${entry.folderPath}/${entry.settings.entryPoint}`;
         try {
-          modules.push({ entry, path, source: await this.storageFor(entry).readText(path) });
+          modules.push({ entry, files: await readExtensionCodeFiles(this.storageFor(entry), entry.folderPath) });
         } catch (cause) {
           diagnostics.push(`${entry.settings.displayName}: ${String(cause)}`);
         }
       }
+      this.order = graph.order;
+      await this.syncContentRoots(graph.order);
       const fingerprint = JSON.stringify([entries, modules, overrides]);
       if (fingerprint !== this.fingerprint) {
         await this.resetHost();
         this.fingerprint = fingerprint;
       }
       // Unchanged packages keep running; only those that did not start are retried.
-      for (const { entry, path, source } of modules) {
+      for (const { entry, files } of modules) {
         if (this.started.has(entry.extensionGuid)) continue;
         if (entry.settings.extensionDependencies.some((dependency) => !this.started.has(dependency.guid))) {
           diagnostics.push(`${entry.settings.displayName}: a required Extension failed to start.`);
           continue;
         }
-        if (await this.host.activate({ id: entry.extensionGuid, path, source })) this.started.add(entry.extensionGuid);
+        if (await this.host.activate({
+          id: entry.extensionGuid, label: entry.settings.displayName, entry: entry.settings.entryPoint, files,
+        })) this.started.add(entry.extensionGuid);
       }
       this.packageDiagnostics = diagnostics;
       this.publishHostState(entries);
     } catch (cause) {
       await this.resetHost();
       this.fingerprint = "";
+      this.order = [];
+      await this.syncContentRoots([]).catch(() => undefined);
       this.packageDiagnostics = [String(cause)];
       this.publishHostState([]);
       throw cause;
@@ -165,6 +219,8 @@ export class EditorExtensionService {
       this.overrides = {};
       this.cleanupDiagnostics = [];
       this.packageDiagnostics = [];
+      this.order = [];
+      await this.syncContentRoots([]);
       this.publishHostState([]);
     });
   }
@@ -179,24 +235,48 @@ export class EditorExtensionService {
     }));
   }
 
-  readSource(guid: string): Promise<string> {
+  /** The package's code files: its entries and everything under `code/`. */
+  readFiles(guid: string): Promise<ExtensionCodeFile[]> {
     const entry = this.entry(guid);
     if (entry.invalid) throw new Error(entry.invalid);
-    return this.storageFor(entry).readText(`${entry.folderPath}/${entry.settings.entryPoint}`);
+    return readExtensionCodeFiles(this.storageFor(entry), entry.folderPath);
   }
 
-  save(guid: string, settings: ExtensionSettings, source: string): Promise<void> {
+  save(guid: string, settings: ExtensionSettings, changes: ExtensionFileChanges): Promise<void> {
     return this.runAuthoringWrite(() => this.serialize(async () => {
       const entry = this.entry(guid);
       if (entry.invalid) throw new Error(entry.invalid);
       if (entry.readOnly) throw new Error("Engine Extensions are read-only. Import a project copy to edit it.");
-      if (settings.extensionGuid !== guid || settings.entryPoint !== entry.settings.entryPoint) {
-        throw new Error("Extension identity and Entry Point cannot change while editing.");
+      if (settings.extensionGuid !== guid || settings.entryPoint !== entry.settings.entryPoint
+        || settings.gameEntryPoint !== entry.settings.gameEntryPoint) {
+        throw new Error("Extension identity and Entry Points cannot change while editing.");
       }
-      const path = `${entry.folderPath}/${entry.settings.entryPoint}`;
-      const previousSource = await this.storage.readText(path);
+      const entries = new Set([entry.settings.entryPoint, entry.settings.gameEntryPoint]);
+      const touched = [...new Set([...changes.write.map((file) => file.path), ...changes.remove])];
+      const previous = new Map<string, string | null>();
+      for (const path of touched) {
+        if (!isExtensionCodePath(path)) throw new Error(`Extension code files are .ts or .js files outside assets/: ${path}`);
+        const full = `${entry.folderPath}/${path}`;
+        previous.set(path, await this.storage.exists(full) ? await this.storage.readText(full) : null);
+      }
+      // New files go in code/ so the package stays tidy; existing files keep their place.
+      for (const file of changes.write) {
+        if (previous.get(file.path) === null && !entries.has(file.path) && !file.path.startsWith(`${EXTENSION_CODE_DIR}/`)) {
+          throw new Error(`New Extension code files go in ${EXTENSION_CODE_DIR}/: ${file.path}`);
+        }
+        if (new TextEncoder().encode(file.source).byteLength > EXTENSION_SOURCE_MAX_BYTES) {
+          throw new Error(`Extension code file exceeds 1 MiB: ${file.path}`);
+        }
+      }
+      if (changes.remove.some((path) => entries.has(path))) throw new Error("An Extension's entry files cannot be removed.");
+      const gameEntryWritten = changes.write.some((file) => file.path === entry.settings.gameEntryPoint);
+      if (!settings.editorOnly && !gameEntryWritten
+        && !(await this.storage.exists(`${entry.folderPath}/${entry.settings.gameEntryPoint}`))) {
+        throw new Error(`A gameplay Extension needs its game entry: ${entry.settings.gameEntryPoint}`);
+      }
       const previousManifest = await this.storage.readBinary(entry.settingsPath);
-      const authored = source !== previousSource || settings.version !== entry.settings.version;
+      const authored = settings.version !== entry.settings.version || changes.remove.length > 0
+        || changes.write.some((file) => previous.get(file.path) !== file.source);
       const normalized = normalizeExtensionSettings({ ...settings,
         engineVersion: authored ? ENGINE_VERSION : entry.settings.engineVersion,
         extensionDependencies: settings.extensionDependencies.map((dependency) => ({ ...dependency,
@@ -204,16 +284,63 @@ export class EditorExtensionService {
         })),
       });
       try {
-        await this.storage.writeText(path, source);
+        for (const file of changes.write) {
+          const full = `${entry.folderPath}/${file.path}`;
+          await this.storage.mkdir(full.slice(0, full.lastIndexOf("/")), true);
+          await this.storage.writeText(full, file.source);
+        }
+        for (const path of changes.remove) {
+          if (previous.get(path) !== null) await this.storage.remove(`${entry.folderPath}/${path}`);
+        }
         await this.storage.writeBinary(entry.settingsPath, encodeExtensionSettings(normalized));
       } catch (cause) {
-        await this.storage.writeText(path, previousSource);
+        for (const [path, source] of previous) {
+          const full = `${entry.folderPath}/${path}`;
+          if (source === null) { if (await this.storage.exists(full)) await this.storage.remove(full); }
+          else await this.storage.writeText(full, source);
+        }
         await this.storage.writeBinary(entry.settingsPath, previousManifest);
         throw cause;
       }
       this.fingerprint = "";
       await this.refreshNow(this.overrides);
     }));
+  }
+
+  /**
+   * Links the game module of every enabled gameplay package, dependencies first,
+   * reading current files so edits made in another editor are picked up.
+   */
+  gameLibraries(overrides: ExtensionOverrides = this.overrides): Promise<ExtensionGameLibrary[]> {
+    return this.serialize(async () => {
+      const entries = shadowEngineExtensions(
+        await discoverProjectExtensions(this.storage),
+        this.engineStorage ? await discoverEngineExtensions(this.engineStorage) : [],
+      );
+      const order = resolveExtensionGraph(entries, ENGINE_VERSION, overrides).order;
+      const duplicates = duplicateLibraryDiagnostics(order);
+      if (duplicates.length > 0) throw new Error(duplicates.join("\n"));
+      const libraries: ExtensionGameLibrary[] = [];
+      for (const entry of gameplayExtensions(order)) {
+        try {
+          const files = await readExtensionCodeFiles(this.storageFor(entry), entry.folderPath);
+          libraries.push({
+            extensionGuid: entry.extensionGuid,
+            libraryName: entry.settings.libraryName,
+            label: entry.settings.displayName,
+            bundle: await linkExtensionModules(files, entry.settings.gameEntryPoint),
+          });
+        } catch (cause) {
+          throw new Error(`Extension ${entry.settings.displayName}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+        }
+      }
+      return libraries;
+    });
+  }
+
+  /** Enabled gameplay packages of the last refresh, dependencies first. */
+  getGameplayExtensions(): ExtensionDescriptor[] {
+    return gameplayExtensions(this.order);
   }
 
   remove(guid: string): Promise<void> {
@@ -224,6 +351,7 @@ export class EditorExtensionService {
       }
       await this.resetHost();
       this.fingerprint = "";
+      await this.releaseContentRoot(guid);
       try {
         await this.storage.remove(entry.folderPath);
       } catch (cause) {
@@ -256,6 +384,7 @@ export class EditorExtensionService {
       }
       await this.resetHost();
       this.fingerprint = "";
+      if (plan.kind === "update" || plan.kind === "conflict") await this.releaseContentRoot(plan.existingGuid);
       try {
         await applyExtensionImport(this.storage, incoming, plan.kind === "conflict" ? { ...plan, replace: true } : plan);
       } catch (cause) {

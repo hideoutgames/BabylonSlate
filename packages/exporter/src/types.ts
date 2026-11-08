@@ -148,6 +148,8 @@ export type GameManifest = {
   physicsWorld: "2d" | "3d";
   /** Project Collision Presets. */
   collisionPresets: import("@haptic/core").CollisionPreset[];
+  /** Linked game modules of enabled gameplay Extensions, dependencies first; absent when there are none. */
+  extensionLibraries?: import("@haptic/core").ExtensionGameLibrary[];
   assets: GameAssetIndexEntry[];
   /** Present only when `bundleDebugger` is true. */
   infiniteLoopDetection?: boolean;
@@ -189,6 +191,8 @@ export type ExportGameOptions = {
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   scripts: readonly ScriptBundleEntry[];
+  /** Game libraries of enabled gameplay Extensions, dependencies first. */
+  extensionLibraries?: readonly import("@haptic/core").ExtensionGameLibrary[];
   assets: readonly ExportAssetBytes[];
   playerFiles?: ReadonlyMap<string, Uint8Array>;
   fileCountWarn?: number;

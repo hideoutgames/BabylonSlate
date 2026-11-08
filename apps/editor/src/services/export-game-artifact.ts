@@ -3,6 +3,7 @@ import {
   DEFAULT_RENDER_PROJECT_SETTINGS,
   defaultExportPreset,
   nearestTextureFiltering,
+  type ExtensionGameLibrary,
   type ProjectDocument,
   type Result,
 } from "@haptic/core";
@@ -67,6 +68,12 @@ export async function exportProjectGameArtifact(
         .map((diagnostic) => diagnostic.message)
         .join("\n"),
     };
+  }
+  let extensionLibraries: ExtensionGameLibrary[];
+  try {
+    extensionLibraries = await projectService.extensions.gameLibraries(exportDocument?.settings.extensionOverrides);
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
   }
   const list = await projectService.listExportAssets(
     new Set(pluginGraph.order.map((plugin) => plugin.pluginGuid)),
@@ -150,6 +157,7 @@ export async function exportProjectGameArtifact(
     focusNavigation: exportDocument?.settings.focusNavigation,
     tagRegistry: exportDocument?.settings.tags,
     playerFiles,
+    extensionLibraries,
     previewBuild: options?.previewBuild,
     onPhase: options?.onPhase,
   });

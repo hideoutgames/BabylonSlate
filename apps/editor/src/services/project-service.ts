@@ -7,7 +7,7 @@ import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunc
 import { EditorExtensionService } from "./editor-extension-service";
 import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
 import { guardProjectAssetRegistry } from "./project-authoring-ports";
-import { isExtensionPackagePath, isAssetSourceRevisionChanged, type AssetDocument } from "@haptic/assets";
+import { isExtensionPackagePath, isAssetSourceRevisionChanged, mountExtensionContentRoots, type AssetDocument, type ExtensionDescriptor } from "@haptic/assets";
 import type {
   DocumentKind,
   PluginEnableOverride,
@@ -205,6 +205,8 @@ export class ProjectService {
    */
   private readonly sceneAudioReverb = new Map<string, Map<string, Uint8Array>>();
   private readonly registryListeners = new Set<() => void>();
+  /** Engine Extensions' storage, for the roots of engine gameplay extensions. */
+  private engineExtensionStorage: ProjectStorage | null = null;
   private readonly ownWriteListeners = new Set<(write: OwnAssetWrite) => void>();
   private readonly diagnostics: string[] = [];
   private readonly diagnosticListeners = new Set<(line: string) => void>();
@@ -284,7 +286,15 @@ export class ProjectService {
       materials: { convertGlsl: convertGlslToMaterial },
       // Kept with the session's other diagnostics, under the same cap.
       log: (id, message) => this.pushDiagnostic(`[Extension ${id}] ${message}`),
-    }, { runAuthoringWrite: operation => this.writeAdmission.run(operation) });
+    }, {
+      runAuthoringWrite: operation => this.writeAdmission.run(operation),
+      syncContentRoots: async (extensions) => {
+        const registry = this.assetRegistry;
+        if (!registry) return;
+        await this.mountExtensionContent(registry, extensions);
+        this.emitRegistryChange();
+      },
+    });
     this.blobs = createVfsBlobStore(storage);
     this.projectPlugins = new ProjectPlugins({
       storage,
@@ -533,6 +543,7 @@ export class ProjectService {
   }
 
   setEngineExtensionStorage(storage: ProjectStorage): void {
+    this.engineExtensionStorage = storage;
     this.projectPlugins.setEngineExtensionStorage(storage);
     this.extensions.setEngineStorage(storage);
   }
@@ -972,6 +983,8 @@ export class ProjectService {
       this.pushDiagnostic(`${conflict.path} is hidden: it has the same asset id as ${conflict.indexedPath}. Remove the copy or import it again to give it its own id.`);
     }
     await this.syncPlugins();
+    // A fresh registry starts without the gameplay extension roots the service last mounted.
+    await this.mountExtensionContent(registry, this.extensions.getGameplayExtensions());
     if (session !== this.sourceSession) throw new DOMException("Project changed during catalog scan", "AbortError");
     this.projectSearchIndex = new ProjectSearchIndex(this.storage, {
       blobs: this.blobs,
@@ -985,6 +998,12 @@ export class ProjectService {
       this.textures.reconcileInBackground(guids);
     });
     return registry;
+  }
+
+  private mountExtensionContent(registry: AssetRegistry, extensions: readonly ExtensionDescriptor[]): Promise<void> {
+    return mountExtensionContentRoots(registry, extensions, {
+      storageFor: (extension) => extension.source === "engine" ? this.engineExtensionStorage ?? undefined : undefined,
+    });
   }
 
   async syncPlugins(options: { rediscover?: boolean } = {}): Promise<void> {
@@ -1027,6 +1046,8 @@ export class ProjectService {
     if (indexed && this.assetRegistry) {
       return this.assetRegistry.storageFor(indexed.rootId);
     }
+    const extensionRoot = this.extensionRootForPath(path);
+    if (extensionRoot && this.assetRegistry) return this.assetRegistry.storageFor(extensionRoot.id);
     const plugin = this.projectPlugins.forPath(path);
     if (plugin?.source === "engine" && this.projectPlugins.engineStorage) {
       return this.projectPlugins.engineStorage;
@@ -1034,11 +1055,18 @@ export class ProjectService {
     return this.storage;
   }
 
+  /** The mounted gameplay extension root holding a path that is not indexed yet. */
+  private extensionRootForPath(path: string) {
+    return this.assetRegistry?.listRoots().find((root) => root.kind === "extension" && path.startsWith(`${root.pathPrefix}/`));
+  }
+
   private blobsForPath(path: string): BlobStore {
     const indexed = this.assetRegistry?.getByPath(path);
     if (indexed && this.assetRegistry) {
       return this.assetRegistry.blobsFor(indexed.rootId);
     }
+    const extensionRoot = this.extensionRootForPath(path);
+    if (extensionRoot && this.assetRegistry) return this.assetRegistry.blobsFor(extensionRoot.id);
     const storage = this.storageForPath(path);
     const plugin = this.projectPlugins.forPath(path);
     if (plugin) return createVfsBlobStore(storage, `${plugin.contentPath}/.blobs`);

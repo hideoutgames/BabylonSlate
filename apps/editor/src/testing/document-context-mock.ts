@@ -70,12 +70,14 @@ function inertExtensionService(): DocumentsValue["extensionService"] {
     refresh: resolved,
     close: resolved,
     create: unavailable("extensionService.create"),
-    readSource: unavailable("extensionService.readSource"),
+    readFiles: unavailable("extensionService.readFiles"),
     save: resolved,
     remove: resolved,
     export: unavailable("extensionService.export"),
     import: unavailable("extensionService.import"),
     getOverrides: () => ({}),
+    gameLibraries: async () => [],
+    getGameplayExtensions: () => [],
     run: resolved,
   };
   // The class's private fields are not part of the public contract.

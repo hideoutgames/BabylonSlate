@@ -303,7 +303,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Version differences are nonblocking warnings; missing dependencies and cycles block.
 - `.hplugin` reuses the project codec; archives never appear as assets. Show Plugin Content is off by default. Engine plugin content is read-only; new projects copy bundled plugins into `plugins/` with the same guids.
 - Disabled plugins contribute nothing to an exported game; Export Project is a full backup.
-- Editor Extensions are editor-only TS/JS modules (`extension.json` + `activate(api)`, `.hextension` archives) managed per project; they never become runtime asset roots or game modules, and imports stay disabled until enabled.
+- Extensions are TS/JS packages (`extension.json`, an editor entry exporting `activate(api)`, `.hextension` archives) managed per project; imports stay disabled until enabled. **Editor Only** (default on) keeps a package out of games. With it off, the package's game entry is linked in the editor and loaded before scripts in Play, Preview Build and exports as the `extensions.<libraryName>` library that Execute JavaScript reaches (trusted code like Execute JavaScript, not a new engine API), and its `assets/` mounts as an `extension:<guid>` content root. Extensions are not plugins: no Show Plugin Content, no export-preset overrides.
 
 ## Input
 
