@@ -26,4 +26,4 @@ Makes the camera on an actor the view the player sees.
 - Connect a None reference to return the view to the Scene's [Layer Camera](../../graphics/cameras.md#layer-camera). An actor without a Camera component does the same, with a warning in the **Output Log**.
 - The view also returns to the Layer Camera when the possessed actor is destroyed.
 - Works whatever the Scene's **Default Camera** is. See [Choose the camera in view](../../graphics/cameras.md#choose-the-camera-in-view).
-- To move the view to the camera smoothly instead of cutting, use [**Set View Target With Blend**](set-view-target-with-blend.md).
+- To move the view to the camera smoothly instead of cutting, use [**Possess Camera With Blend**](possess-camera-with-blend.md).

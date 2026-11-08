@@ -99,7 +99,7 @@ Drag from a **Layer Camera** reference for its members:
 For a camera actor:
 
 - [Possess Camera](../scripting/class/possess-camera.md) switches the view for the whole game; None returns it to the Layer Camera.
-- [Set View Target With Blend](../scripting/class/set-view-target-with-blend.md) moves the view to another camera smoothly over a **Blend Time**.
+- [Possess Camera With Blend](../scripting/class/possess-camera-with-blend.md) moves the view to another camera smoothly over a **Blend Time**.
 - [Get Field Of View](../scripting/class/get-field-of-view.md) and [Set Field Of View](../scripting/class/set-field-of-view.md) read and change a perspective camera's zoom.
 - [Get Orthographic Size](../scripting/class/get-orthographic-size.md) and [Set Orthographic Size](../scripting/class/set-orthographic-size.md) do the same for orthographic cameras.
 - Drag from a Camera component reference, such as **Get Camera Component**, for its **Projection Mode**, **Field Of View**, **Orthographic Size**, **Near Clip** and **Far Clip** variables and its **Possess** function.

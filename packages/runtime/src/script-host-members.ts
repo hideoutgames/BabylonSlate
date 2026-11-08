@@ -603,7 +603,7 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     possessCamera: (target) => {
       services.possessCamera?.(target);
     },
-    setViewTargetWithBlend: (target, seconds, curve) => {
+    possessCameraWithBlend: (target, seconds, curve) => {
       services.possessCamera?.(target, { seconds: Number(seconds), curve: typeof curve === "string" ? curve : "linear" });
     },
     getSceneCameraManager: () => services.getSceneCameraManager?.() ?? null,

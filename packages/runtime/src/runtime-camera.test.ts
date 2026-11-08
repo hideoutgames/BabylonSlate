@@ -128,7 +128,7 @@ describe("RuntimeCamera possession", () => {
     expect(f.warnings).toEqual([]);
   });
 
-  it("sends Set View Target With Blend's blend with the possession, and cuts for a blend time of 0", () => {
+  it("sends Possess Camera With Blend's blend with the possession, and cuts for a blend time of 0", () => {
     const f = fixture();
     const first = f.spawn("first");
     const second = f.spawn("second");

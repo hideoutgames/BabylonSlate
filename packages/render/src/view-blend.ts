@@ -4,7 +4,7 @@ import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import { sampleEasingCurve, type EasingCurve } from "@haptic/core";
 
-/** The temporary camera a Set View Target With Blend views through until the blend ends. */
+/** The temporary camera a Possess Camera With Blend views through until the blend ends. */
 export const VIEW_BLEND_CAMERA_NAME = "playViewBlend";
 
 /** A camera's world pose and lens at one moment. */
@@ -33,7 +33,7 @@ export function captureView(camera: Camera): ViewPose {
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 /**
- * Set View Target With Blend: a camera of its own that eases from the view as it was when the blend began to the
+ * Possess Camera With Blend: a camera of its own that eases from the view as it was when the blend began to the
  * target camera's live view, then hands the view back. The owner makes it the active camera, calls `update` each
  * frame with the current game camera, and ends the blend when `update` returns false.
  */

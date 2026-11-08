@@ -31,20 +31,20 @@ export const illuminationNodes: NodeDefinition[] = [
     },
   },
   {
-    id: "camera.setViewTargetWithBlend",
-    title: "Set View Target With Blend",
+    id: "camera.possessWithBlend",
+    title: "Possess Camera With Blend",
     category: "camera",
-    description: "Views the Scene through New View Target's Camera component, easing the view from where it is over Blend Time seconds along Blend Function. Blend Time 0 cuts at once, as Possess Camera does.",
-    searchAliases: ["blend camera", "camera transition", "view target", "possess camera"],
+    description: "Views the Scene through Target's first Camera component, easing the view from where it is over Blend Time seconds along Blend Function. Blend Time 0 cuts at once, as Possess Camera does.",
+    searchAliases: ["blend camera", "camera transition", "view target", "set view target with blend", "possess camera"],
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      { ...pin("target", "New View Target", "in", objectRef("Actor"), "data", true), selfWhenUnwired: true },
+      { ...pin("target", "target", "in", objectRef("Actor"), "data", true), selfWhenUnwired: true },
       pin("blendTime", "Blend Time", "in", FLOAT, "data", true, 1),
       pin("blendFunction", "Blend Function", "in", enumRef(ENGINE_EASING_CURVE_ENUM_ID), "data", true, "linear"),
     ],
     codegen: (ctx) => {
-      ctx.emit(`ctx.setViewTargetWithBlend(${ctx.input("target")}, ${ctx.input("blendTime")}, ${ctx.input("blendFunction")});`);
+      ctx.emit(`ctx.possessCameraWithBlend(${ctx.input("target")}, ${ctx.input("blendTime")}, ${ctx.input("blendFunction")});`);
     },
   },
   {

@@ -1,8 +1,8 @@
 ---
-node: camera.setViewTargetWithBlend
+node: camera.possessWithBlend
 ---
 
-# Set View Target With Blend
+# Possess Camera With Blend
 
 Makes the camera on an actor the view the player sees, moving the view there smoothly.
 
@@ -11,7 +11,7 @@ Makes the camera on an actor the view the player sees, moving the view there smo
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| New View Target | Actor Reference | Left unconnected the pin shows **Self** and uses the actor running the graph. |
+| Target | Actor Reference | Left unconnected the pin shows **Self** and uses the actor running the graph. |
 | Blend Time | Float | Seconds the move takes. Defaults to 1. |
 | Blend Function | EasingCurve | How the move speeds up and slows down. Defaults to Linear. |
 

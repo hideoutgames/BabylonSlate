@@ -835,7 +835,7 @@ export type CommandMessage =
     }
   /** View through this slot's camera; null returns the view to the main Scene's Layer Camera. */
   /**
-   * View through `slotId`'s camera (null: the Layer Camera). With `blend`, Set View Target With Blend: the view eases
+   * View through `slotId`'s camera (null: the Layer Camera). With `blend`, Possess Camera With Blend: the view eases
    * from where it was to the new camera over `seconds`, shaped by an Easing Curve member (`curve`).
    */
   | { type: "possessCamera"; slotId: number | null; blend?: { seconds: number; curve: string } }

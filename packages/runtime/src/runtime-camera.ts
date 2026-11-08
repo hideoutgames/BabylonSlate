@@ -121,7 +121,7 @@ export class RuntimeCamera implements RuntimeSubsystem {
   possess(target: unknown, blend?: { seconds: number; curve: string }): void {
     const actor = actorFromIlluminationTarget(target);
     this.possessedByScript = true;
-    // Set View Target With Blend: only a positive blend time eases; anything else cuts like Possess Camera.
+    // Possess Camera With Blend: only a positive blend time eases; anything else cuts like Possess Camera.
     const eased = blend && Number.isFinite(blend.seconds) && blend.seconds > 0 ? { blend: { seconds: blend.seconds, curve: String(blend.curve) } } : {};
     if (actor && !actor.destroyed && liveCameraComponent(actor)) {
       const slotId = this.host.slot(actor);

@@ -1379,7 +1379,7 @@ function initializeEngine(
     rebuildPostProcessStack();
   };
 
-  /** A running Set View Target With Blend and the time of the last frame it advanced on. */
+  /** A running Possess Camera With Blend and the time of the last frame it advanced on. */
   let viewBlend: { blend: ViewBlend; lastFrame: number | null } | null = null;
   /** Advances the view blend by the time since the last rendered frame; at its end the game camera takes the view. */
   const stepViewBlend = (now: number) => {
@@ -3095,7 +3095,7 @@ function initializeEngine(
       }
       if (command.type === "possessCamera") {
         const previousCamera = scene.activeCamera;
-        // Set View Target With Blend eases from the view as it is now, including from a blend still running.
+        // Possess Camera With Blend eases from the view as it is now, including from a blend still running.
         const blendFrom = command.blend && command.blend.seconds > 0 && previousCamera && previousCamera.name !== PLAY_FREE_CAM_NAME
           ? captureView(previousCamera) : null;
         if (viewBlend) {
