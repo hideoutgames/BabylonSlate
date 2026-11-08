@@ -290,7 +290,6 @@ export default defineConfig(
       "apps/editor/dist",
       // Vendored decoder builds: no rule applies to them, and parsing them costs seconds per run.
       "apps/editor/public/basis/basis_encoder.js",
-      "apps/editor/public/draco/draco_decoder_gltf.js",
       "apps/editor/public/draco/draco_wasm_wrapper_gltf.js",
       "apps/editor/public/ktx2/babylon.ktx2Decoder.js",
       "apps/editor/public/ktx2/msc_basis_transcoder.js",
