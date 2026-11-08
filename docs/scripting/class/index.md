@@ -883,9 +883,19 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Clear And Invalidate Timer By Handle](clear-and-invalidate-timer-by-handle.md) | Stops the timer and empties the Handle variable connected to it, so the handle names no timer. |
+| [Clear Timer By Handle](clear-timer-by-handle.md) | Stops the timer; it will not run its event again. |
 | [Delay](delay.md) | Waits for a number of seconds, then continues. |
 | [Delay One Tick](delay-one-tick.md) | Waits until the next tick, then continues. |
+| [Does Timer Exist By Handle](does-timer-exist-by-handle.md) | True until the timer is cleared, its owner is destroyed or, when not looping, it has run. |
+| [Get Timer Elapsed Time By Handle](get-timer-elapsed-time-by-handle.md) | Seconds since the timer last ran or started, or -1 when there is no timer. |
+| [Get Timer Remaining Time By Handle](get-timer-remaining-time-by-handle.md) | Seconds until the timer runs its event, or -1 when there is no timer. |
+| [Is Timer Active By Handle](is-timer-active-by-handle.md) | True while the timer exists and is not paused. |
+| [Is Timer Paused By Handle](is-timer-paused-by-handle.md) | True while the timer exists and is paused. |
+| [Pause Timer By Handle](pause-timer-by-handle.md) | Holds the timer where it is until Unpause Timer By Handle. |
 | [Retriggerable Delay](retriggerable-delay.md) | Waits for a number of seconds after its latest call, then continues once. |
+| [Set Timer By Event](set-timer-by-event.md) | Runs Event after Time seconds of game time, and again every Time seconds while Looping is on. |
+| [Unpause Timer By Handle](unpause-timer-by-handle.md) | Lets a paused timer count on from where it stopped. |
 
 ## Tween
 

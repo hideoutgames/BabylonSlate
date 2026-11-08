@@ -122,7 +122,9 @@ function tickSceneSystems(rt: RuntimeComposition, simDt: number): void {
   rt.ticks.markPhase("sceneSystems");
   rt.tweens.cancelInvalid();
   const gamePaused = rt.world.gamePaused;
-  rt.delays.advance(simDt, gamePaused ? (owner) => ticksWhilePaused(rt.world, owner) : undefined);
+  const pausedOwner = gamePaused ? (owner: EngineObject | null | undefined) => ticksWhilePaused(rt.world, owner) : undefined;
+  rt.delays.advance(simDt, pausedOwner);
+  rt.timers.advance(simDt, pausedOwner);
   // Animation, tile animation, behaviour trees and the crowd hold while the game is paused.
   if (gamePaused) return;
   if (rt.admission.canTickScene() || rt.admission.hasReadyLayers()) rt.animGraphs.tick(simDt);

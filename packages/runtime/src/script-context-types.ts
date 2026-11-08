@@ -277,6 +277,17 @@ export interface ScriptContext {
   classIsChildOf(classId: unknown, parentClassId: unknown): boolean;
   /** Get Display Name: an actor's or component's name, else its class. */
   getDisplayName(object: unknown): string;
+  /** Set Timer By Event: a timer owned by this context's object; `{ Id: 0 }` when Time is not above 0. */
+  setTimer(delegate: unknown, time: unknown, looping: unknown, firstDelay: unknown): { Id: number };
+  clearTimer(handle: unknown): void;
+  setTimerPaused(handle: unknown, paused: boolean): void;
+  timerExists(handle: unknown): boolean;
+  isTimerActive(handle: unknown): boolean;
+  isTimerPaused(handle: unknown): boolean;
+  /** Seconds until the timer fires, or -1 for no timer. */
+  timerRemaining(handle: unknown): number;
+  /** Seconds since the timer's running interval began, or -1 for no timer. */
+  timerElapsed(handle: unknown): number;
   clampToRange(kind: RangeKind, value: unknown, range: unknown): unknown;
   isInRange(kind: "int" | "float", value: unknown, range: unknown): boolean;
   lerpFloatRange(range: unknown, alpha: unknown): number;
@@ -750,7 +761,8 @@ export type HostContextKey =
   | "normalizeQuat" | "randomInRange" | "randomDraw" | "seededRandomDraw" | "getGlobalRandomSeed" | "setGlobalRandomSeed"
   | "randomSeedStep" | "setActorHidden" | "isActorHidden" | "setComponentVisible" | "isComponentVisible" | "componentTransform"
   | "setComponentTransform" | "actorDistance" | "addActorLocalOffset" | "addActorLocalRotation" | "addActorWorldRotation"
-  | "teleportActor" | "getActorTags" | "setActorTags" | "getObjectClass" | "classIsChildOf" | "getDisplayName" | "clampToRange" | "isInRange" | "lerpFloatRange"
+  | "teleportActor" | "getActorTags" | "setActorTags" | "getObjectClass" | "classIsChildOf" | "getDisplayName"
+  | "clearTimer" | "setTimerPaused" | "timerExists" | "isTimerActive" | "isTimerPaused" | "timerRemaining" | "timerElapsed" | "clampToRange" | "isInRange" | "lerpFloatRange"
   | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getCurveObject"
   | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "timelineClipControl" | "timelineClipState" | "getTimeline" | "getTimelineClip" | "getLoadedTimelineClips" | "createTimelineClip" | "timelineProxy" | "timelineProxyGet" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
   | "detachActor" | "getParent" | "getActorName" | "setOwner" | "getOwner" | "executeConsoleCommand" | "getFirstComponentOfType"
