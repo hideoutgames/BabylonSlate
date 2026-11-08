@@ -11,7 +11,7 @@ vi.mock("../context/document-workspace-context", () => ({ useDocumentWorkspace: 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [{ id: "graph:assets/Test.class.hasset", ref: { kind: "graph", path: "assets/Test.class.hasset", label: "Test" }, content: state.graph, layout: null, dirty: false }],
   projectDocument: { settings: {} },
-  assetRegistry: { list: () => [] },
+  assetRegistry: { list: () => [], getByPath: () => undefined },
 })));
 vi.mock("../context/validation-context", () => ({ useValidation: () => ({ focusDiagnostic: null, setFocusDiagnostic: vi.fn() }) }));
 vi.mock("../context/play-context", () => ({ usePlay: () => ({ focusedNodeId: null }),

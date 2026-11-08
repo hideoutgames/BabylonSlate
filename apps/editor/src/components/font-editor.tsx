@@ -112,7 +112,7 @@ export function FontPreview({ path, payload }: { path: string; payload: Record<s
     globalFallback: projectDocument?.settings.fonts.globalFallback ?? "sans-serif",
     familyForGuid: (guid) => familyFromAssetPayload(assetRegistry?.getByGuid(guid)?.header.payload),
   });
-  const fontGuid = assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ?? path;
+  const fontGuid = assetRegistry?.getByPath(path)?.header.guid ?? path;
   useEffect(() => {
     let cancelled = false;
     setFontsReady(false);
@@ -258,7 +258,7 @@ export function FontInspector({
     files: Array<{ name: string; bytes: Uint8Array }>;
     family: string;
   } | null>(null);
-  const indexedFont = assetRegistry?.list().find((asset) => asset.path === path);
+  const indexedFont = assetRegistry?.getByPath(path);
   const [msdfProgress, setMsdfProgress] = useState<ImportProgress | null>(null);
   const msdfJob = useRef<AbortController | null>(null);
 

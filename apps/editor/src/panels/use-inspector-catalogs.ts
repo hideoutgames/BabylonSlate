@@ -31,7 +31,7 @@ export function useInspectorCatalogs(docPath: string | undefined, docKind?: stri
   const { assetRegistry, registryEpoch } = useRegistryState();
   const indexed = useMemo(() => {
     void registryEpoch;
-    return (assetRegistry?.list() ?? []).find((asset) => asset.path === docPath);
+    return docPath === undefined ? undefined : assetRegistry?.getByPath(docPath);
   }, [assetRegistry, docPath, registryEpoch]);
   // A Scene or Scene Layer script's parent is `Scene` / `SceneLayer`.
   const parentClass = embeddedScriptHost(docKind, indexed)?.parentClass ?? indexed?.header.parentClass ?? null;

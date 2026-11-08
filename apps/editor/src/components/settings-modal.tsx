@@ -617,13 +617,8 @@ export function SettingsModal({
                   {selectedPickerIdentity(
                     assetRowIdentity(
                       (() => {
-                        const asset = assetRegistry
-                          ?.list()
-                          .find(
-                            (entry) =>
-                              entry.header.guid ===
-                              projectDocument.settings.fonts.defaultFontGuid,
-                          );
+                        const guid = projectDocument.settings.fonts.defaultFontGuid;
+                        const asset = guid ? assetRegistry?.getByGuid(guid) : undefined;
                         return asset
                           ? {
                               name: asset.header.name,

@@ -52,9 +52,7 @@ function useAudioDocument() {
   const { assetRegistry } = useRegistryState();
   const doc = useOpenDocument(documentId);
   const payload = asRecord(doc?.content);
-  const indexed = (assetRegistry?.list() ?? []).find(
-    (asset) => asset.path === doc?.ref.path,
-  );
+  const indexed = doc ? assetRegistry?.getByPath(doc.ref.path) : undefined;
   const assetName = indexed?.header.name ?? "";
   const commit = (
     next: AudioPayload | Record<string, unknown>,

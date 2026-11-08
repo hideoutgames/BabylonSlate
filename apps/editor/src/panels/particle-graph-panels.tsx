@@ -847,9 +847,7 @@ function ParticleGraphSettingsDetails({
   const { settings, materialGuid } = document;
   const output = document.nodes.find((node) => node.type === PARTICLE_OUTPUT_NODE_TYPE);
   const anchor = output?.id ?? PARTICLE_OUTPUT_NODE_TYPE;
-  const material = materialGuid
-    ? (assetRegistry?.list() ?? []).find((asset) => asset.header.guid === materialGuid)
-    : undefined;
+  const material = materialGuid ? assetRegistry?.getByGuid(materialGuid) : undefined;
   const defaults = createDefaultParticleGraphSettings();
 
   /** `field` names the undo merge key of a continuous edit; discrete edits omit it. */

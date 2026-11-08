@@ -67,8 +67,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     },
   ],
   applyGraphChange,
-  assetRegistry: {
-    list: () => [
+  assetRegistry: (() => {
+    const assets = () => [
       {
         path: "assets/Hero.class.hasset",
         header: {
@@ -82,8 +82,9 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         path: "assets/Quiet.class.hasset",
         header: { type: "Class", name: "Quiet", parentClass: "Actor", guid: "quiet-1" },
       },
-    ],
-  },
+    ];
+    return { list: assets, getByPath: (path: string) => assets().find((asset) => asset.path === path) };
+  })(),
   projectDocument: {
     settings: {
       twoD: { sortingLayers: ["Default"] },
