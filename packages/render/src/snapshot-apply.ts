@@ -195,6 +195,7 @@ export function retirePlaySlot(
   for (const key of slotKeysOf(binding.componentMaterialGuids, slotId)) {
     binding.componentMaterialGuids.delete(key);
   }
+  binding.illuminatedSlots.delete(slotId);
   binding.lightProps.delete(slotId);
   binding.cameraProps.delete(slotId);
   binding.skyboxProps.delete(slotId);
@@ -326,8 +327,11 @@ export function applySnapshotToScene(
   sampleSceneWaterFrame(scene, snapshot.frameId);
   reconcileSnapshotVisuals(scene, binding, snapshot);
   const count = snapshot.actorCount ?? snapshot.actors.length;
-  // Without any light or camera there is nothing to look up for each actor; likewise fog volumes and slot light groups.
-  const hasLightsOrCameras = binding.lights.size > 0 || binding.cameras.size > 0;
+  // Lights and cameras follow their helpers (after this loop); one that no helper on its slot's root drives is posed from
+  // its actor row here. Play builds each with a helper, so there is usually none and no actor looks one up; likewise
+  // fog volumes and slot light groups.
+  const unheldIllumination = unheldIlluminationSlots(binding);
+  const hasUnheldIllumination = unheldIllumination.size > 0;
   const hasFogVolumes = binding.fogVolumes.size > 0;
   const hasSlotLightGroups = binding.areaLights.size > 0 || binding.lights2D.size > 0 || binding.occluders2D.size > 0;
   for (let i = 0; i < count; i++) {
@@ -348,11 +352,9 @@ export function applySnapshotToScene(
       mesh,
       (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
     );
-    if (!hasLightsOrCameras) continue;
+    if (!hasUnheldIllumination || !unheldIllumination.has(actor.slotId)) continue;
     const light = binding.lights.get(actor.slotId);
     const camera = binding.cameras.get(actor.slotId);
-    // The few slots with a light or camera are the only ones worth the weak lookup.
-    if ((!light && !camera) || hasActorIllumination(mesh)) continue;
     if (light) {
       const composed = composeSlotPartTransform(actor, binding, actor.slotId);
       updateAuthoredLightTransform(
@@ -371,12 +373,35 @@ export function applySnapshotToScene(
     }
   }
   updateHostClockPoses(binding);
-  for (const root of binding.snapshotMeshes) if (root) updateComponentIllumination(root);
+  for (const slotId of binding.illuminatedSlots) {
+    const root = binding.meshes.get(slotId);
+    if (root) updateComponentIllumination(root);
+  }
   refreshPlayActiveCamera(scene, binding);
   updateCameraDependentPasses(scene, binding);
   for (const animationScene of binding.tilemapAnimationScenes ?? []) {
     updateSceneTilemapAnimations(animationScene, binding.tilemapAnimationTimeMs ?? 0);
   }
+}
+
+const scratchUnheldIllumination = new Set<number>();
+
+/**
+ * The slots whose light or camera no helper on the slot's root drives (`hasActorIllumination`), in one reused set. Only
+ * the slots with a light or camera are checked, not every actor.
+ */
+function unheldIlluminationSlots(binding: SnapshotSceneBinding): Set<number> {
+  const unheld = scratchUnheldIllumination;
+  unheld.clear();
+  for (const slotId of binding.lights.keys()) {
+    const root = binding.meshes.get(slotId);
+    if (root && !hasActorIllumination(root)) unheld.add(slotId);
+  }
+  for (const slotId of binding.cameras.keys()) {
+    const root = binding.meshes.get(slotId);
+    if (root && !hasActorIllumination(root)) unheld.add(slotId);
+  }
+  return unheld;
 }
 
 /** Whether the binding holds poses that move on the host's clock between snapshots (`applyHostClockPoses`). */
@@ -488,6 +513,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.slotAnimEpoch?.clear();
   binding.lights.clear();
   binding.cameras.clear();
+  binding.illuminatedSlots.clear();
   binding.lightProps.clear();
   binding.cameraProps.clear();
   binding.meshKinds.clear();

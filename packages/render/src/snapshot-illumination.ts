@@ -138,6 +138,8 @@ export function createPlayHelperMesh(
   if (helper.light || helper.camera) {
     componentIllumination.set(mesh, helper);
     actorIllumination.set(mesh, [helper]);
+    // A light or camera is created only with a binding: the slot's helpers are posed each apply from now on.
+    binding!.illuminatedSlots.add(slotId);
     mesh.onDisposeObservable.addOnce(() => {
       helper.light?.dispose();
       helper.camera?.dispose();

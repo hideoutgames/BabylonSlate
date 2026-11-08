@@ -1501,6 +1501,44 @@ describe("createPlayMesh", () => {
       expect(rebuilt.position.asArray()).toEqual([7, 2, 3]);
     });
 
+    it("poses a light part under an origin root, and again once its slot is retired and reused", () => {
+      const handle = createTestEngine();
+      handles.push(handle);
+      const { scene } = handle;
+      const binding = createSnapshotSceneBinding();
+      const lamp = (): AssignMeshCommand => ({ type: "assignMesh", slotId: 0, meshAssetGuid: null, meshKind: "light:point",
+        light: { color: [1, 1, 1], intensity: 1, enabled: true },
+        parts: [{ componentId: "lamp", meshKind: "light:point", meshAssetGuid: null, parentId: null,
+          position: [0, 1, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }] });
+      const lightPosition = () => (binding.lights.get(0) as PointLight).position.asArray().map((value) => Number(value.toFixed(6)));
+      applyAssignMesh(scene, binding, lamp());
+      applySnapshotToScene(scene, binding, frame(pose(0, 2), pose(1, 0)));
+      expect(lightPosition()).toEqual([2, 1, 0]);
+
+      // Slot 0 leaves the snapshot, which retires it; a new lamp takes the slot.
+      applySnapshotToScene(scene, binding, frame(pose(1, 0)));
+      expect(binding.meshes.has(0)).toBe(false);
+      applyAssignMesh(scene, binding, lamp());
+      applySnapshotToScene(scene, binding, frame(pose(0, 5), pose(1, 0)));
+      expect(lightPosition()).toEqual([5, 1, 0]);
+    });
+
+    it("poses a light or camera that no helper drives from its actor row", () => {
+      const handle = createTestEngine();
+      handles.push(handle);
+      const { scene } = handle;
+      const binding = createSnapshotSceneBinding();
+      applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshAssetGuid: null, meshKind: "box" });
+      applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 1, meshAssetGuid: null, meshKind: "box" });
+      const light = new PointLight("authoredLight:0", Vector3.Zero(), scene);
+      const camera = new UniversalCamera("authoredCamera:1", Vector3.Zero(), scene);
+      binding.lights.set(0, light);
+      binding.cameras.set(1, camera);
+      applySnapshotToScene(scene, binding, frame(pose(0, 4, 5, 6), pose(1, 7, 8, 9), pose(2, 0)));
+      expect(light.position.asArray()).toEqual([4, 5, 6]);
+      expect(camera.position.asArray()).toEqual([7, 8, 9]);
+    });
+
     it("moves a camera whose component pose changes while its actor row stays put", () => {
       const handle = createTestEngine();
       handles.push(handle);

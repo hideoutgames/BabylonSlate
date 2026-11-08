@@ -45,6 +45,11 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   boneAttachments: Map<number, BoneAttachment>;
   lights: Map<number, Light>;
   cameras: Map<number, Camera>;
+  /**
+   * Slots whose visual, built or staged, has had a light or camera helper (`createPlayHelperMesh`); a retired slot
+   * leaves. Each apply poses the helpers of these slots' roots alone (`updateComponentIllumination`), not every actor's.
+   */
+  illuminatedSlots: Set<number>;
   lightProps: Map<number, AuthoredLightProperties>;
   cameraProps: Map<number, AuthoredCameraProperties>;
   skyboxProps: Map<number, { size: number; faces: SkyboxFaces }>;
@@ -232,6 +237,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     boneAttachments: new Map(),
     lights: new Map(),
     cameras: new Map(),
+    illuminatedSlots: new Set(),
     lightProps: new Map(),
     areaLights: new Map(),
     lights2D: new Map(),
