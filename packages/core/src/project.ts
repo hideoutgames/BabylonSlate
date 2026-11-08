@@ -8,6 +8,7 @@ import { normalizeEnvironmentLightingSettings, type EnvironmentLightingSettings 
 import { DEFAULT_RENDER_EFFECTS, normalizeRenderEffectsSettings, type RenderEffectsSettings } from "./render-effects";
 import { normalizeWaterProjectSettings, type WaterProjectSettings } from "./water-settings";
 import type { ProjectAppearance } from "./project-appearance";
+import { normalizeTagContainer, type TagContainer } from "./tags";
 import { normalizeTagRegistry, type TagRegistry } from "./tags";
 import { normalizeAlwaysPackageFolders } from "./asset-folders";
 import { normalizeFocusNavigationSettings, type FocusNavigationSettings } from "./scene-layer-focus";
@@ -455,6 +456,22 @@ export type ActorDefaults = {
   /** Keep ticking while a script has paused the game (Set Game Paused). */
   tickOnPause?: boolean;
 };
+
+/**
+ * The actor property holding an actor's Tags (a Tag Container): a Class sets it in Actor Defaults
+ * (`ActorDefaults.properties`), a placed actor overrides it in its own `properties`, and scripts read and
+ * write it at runtime (Get Actor Tags, Add Actor Tag, Get All Actors With Tag).
+ */
+export const ACTOR_TAGS_PROPERTY = "actorTags";
+
+/** The Tags a Class chain (nearest first) gives its actors: the nearest Class that sets them wins. */
+export function resolveActorTags(chain: Iterable<ActorDefaults | undefined>): TagContainer {
+  for (const defaults of chain) {
+    const tags = defaults?.properties?.[ACTOR_TAGS_PROPERTY];
+    if (tags !== undefined) return normalizeTagContainer(tags);
+  }
+  return { Tags: [] };
+}
 
 export type ResolvedActorDefaults = {
   generateHitEvents: boolean;

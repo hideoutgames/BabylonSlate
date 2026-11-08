@@ -26,6 +26,8 @@ import type {
   DevicePlatform,
   RandomDraw,
   RandomSeed,
+  TagContainer,
+  Transform,
   TimeOfDay,
   WaterSample,
 } from "@haptic/core";
@@ -245,6 +247,36 @@ export interface ScriptContext {
   setGlobalRandomSeed(seed: unknown): void;
   /** Get Step Count: the Seed's Step. */
   randomSeedStep(seed: unknown): number;
+  /** Set Actor Hidden In Game: the actor's `visible`, which hides its components but not attached actors. */
+  setActorHidden(actor: unknown, hidden: unknown): void;
+  isActorHidden(actor: unknown): boolean;
+  /** Set Visibility: the component's `visible` (and its attached components' with `propagate`), re-sent to the renderer. */
+  setComponentVisible(component: unknown, visible: unknown, propagate: unknown): void;
+  isComponentVisible(component: unknown): boolean;
+  /** A component's transform relative to its parent component (or actor), or in the world; null when not live. */
+  componentTransform(component: unknown, space: "relative" | "world"): Transform | null;
+  /** Set a component's location (vec3), rotation (rotator), scale (vec3) or whole transform, relative or in the world. */
+  setComponentTransform(component: unknown, channel: "position" | "rotation" | "scale" | "transform", value: unknown, space: "relative" | "world"): void;
+  /** Get Distance To: between the two actors' world locations; 0 when either is missing. */
+  actorDistance(a: unknown, b: unknown): number;
+  addActorLocalOffset(actor: unknown, offset: Partial<Record<"x" | "y" | "z", unknown>> | null | undefined): void;
+  addActorLocalRotation(actor: unknown, rotation: Partial<Record<"pitch" | "yaw" | "roll", unknown>> | null | undefined): void;
+  addActorWorldRotation(actor: unknown, rotation: Partial<Record<"pitch" | "yaw" | "roll", unknown>> | null | undefined): void;
+  /** Teleport: location and rotation at once, keeping or zeroing a physics body's velocity. */
+  teleportActor(
+    actor: unknown,
+    location: Partial<Record<"x" | "y" | "z", unknown>> | null | undefined,
+    rotation: Partial<Record<"pitch" | "yaw" | "roll", unknown>> | null | undefined,
+    resetVelocity: unknown,
+  ): void;
+  /** The actor's Tags (`ACTOR_TAGS_PROPERTY`): its Class default, its placed override, or what scripts set. */
+  getActorTags(actor: unknown): TagContainer;
+  setActorTags(actor: unknown, tags: unknown): void;
+  /** Get Class: the object's class id, or None. */
+  getObjectClass(object: unknown): string | null;
+  classIsChildOf(classId: unknown, parentClassId: unknown): boolean;
+  /** Get Display Name: an actor's or component's name, else its class. */
+  getDisplayName(object: unknown): string;
   clampToRange(kind: RangeKind, value: unknown, range: unknown): unknown;
   isInRange(kind: "int" | "float", value: unknown, range: unknown): boolean;
   lerpFloatRange(range: unknown, alpha: unknown): number;
@@ -716,7 +748,9 @@ export type HostContextKey =
   | "combineRotators" | "inverseRotator" | "deltaRotator" | "lerpRotator" | "rotatorForward" | "rotatorRight"
   | "rotatorUp" | "lookAtRotator" | "multiplyQuats" | "inverseQuat" | "slerpQuats" | "quatRotateVector"
   | "normalizeQuat" | "randomInRange" | "randomDraw" | "seededRandomDraw" | "getGlobalRandomSeed" | "setGlobalRandomSeed"
-  | "randomSeedStep" | "clampToRange" | "isInRange" | "lerpFloatRange"
+  | "randomSeedStep" | "setActorHidden" | "isActorHidden" | "setComponentVisible" | "isComponentVisible" | "componentTransform"
+  | "setComponentTransform" | "actorDistance" | "addActorLocalOffset" | "addActorLocalRotation" | "addActorWorldRotation"
+  | "teleportActor" | "getActorTags" | "setActorTags" | "getObjectClass" | "classIsChildOf" | "getDisplayName" | "clampToRange" | "isInRange" | "lerpFloatRange"
   | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getCurveObject"
   | "curveObjectValue" | "curveObjectTimeRange" | "curveObjectValueRange" | "curveObjectKeyCount" | "curveObjectCurve" | "timelineClipControl" | "timelineClipState" | "getTimeline" | "getTimelineClip" | "getLoadedTimelineClips" | "createTimelineClip" | "timelineProxy" | "timelineProxyGet" | "getAllActorsOfClass" | "getActorOfClass" | "attachActor"
   | "detachActor" | "getParent" | "getActorName" | "setOwner" | "getOwner" | "executeConsoleCommand" | "getFirstComponentOfType"

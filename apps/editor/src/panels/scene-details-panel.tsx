@@ -3,6 +3,7 @@ import { SimulationInspector } from "./simulation-inspector";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
+import { useInheritedActorTags, withActorTags } from "./actor-defaults-grid";
 
 import { isEnvironmentTexturePayload, normalizeModelPayload } from "@haptic/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY, patchInspectorComponentProperty } from "../lib/mesh-material-properties";
@@ -22,9 +23,11 @@ import {
   type SearchDialogItem,
 } from "@haptic/editor-kit";
 import {
+  ACTOR_TAGS_PROPERTY,
   DEFAULT_COLLISION_LAYERS,
   DEFAULT_SORTING_LAYERS,
   findActor,
+  normalizeTagContainer,
   identitySerializedTransform,
   isFocusTargetClass,
   isSceneLayer3DActor,
@@ -308,6 +311,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   // one, else its Class's ancestor-merged components.
   const actorClassId = actor?.classId;
   const actorPrefabGuid = actor?.prefabGuid;
+  const inheritedActorTags = useInheritedActorTags(actorClassId ?? "Actor");
   const actorTemplate = useMemo(() => {
     if (actorPrefabGuid) {
       void registryEpoch; // Registry headers mutate without replacing the registry.
@@ -499,6 +503,20 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         );
       },
     },
+    ...(multiSelection || isSceneLayerAnchorActor(actor) ? [] : [{
+      kind: "tag-container",
+      id: "actor-tags",
+      label: "Tags",
+      value: actor.properties?.[ACTOR_TAGS_PROPERTY] === undefined
+        ? inheritedActorTags : normalizeTagContainer(actor.properties[ACTOR_TAGS_PROPERTY]),
+      defaultValue: inheritedActorTags,
+      onChange: (tags) => updateActor((entry) => {
+        const properties = withActorTags(entry.properties, tags, inheritedActorTags);
+        const next = { ...entry, ...(properties ? { properties } : {}) };
+        if (!properties) delete next.properties;
+        return next;
+      }),
+    } satisfies PropertyRow]),
   ];
 
   const visibleTransformRows = filterRows(transformRows, "Actor Transform");

@@ -718,6 +718,8 @@ export type CommandMessage =
         landscape?: import("@haptic/core").LandscapeProperties;
         foliage?: import("@haptic/core").FoliageProperties;
         componentId: string;
+        /** Set Visibility turned this component off: it keeps its place (children still follow it) but draws nothing. */
+        hidden?: boolean;
         overlayStyle?: import("@haptic/core").OverlayVisualStyle;
         castShadows?: boolean;
         receiveShadows?: boolean;

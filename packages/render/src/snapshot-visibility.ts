@@ -38,6 +38,41 @@ export function markPlayHelperVisual(mesh: Mesh): void {
 /** Last snapshot visibility applied to each slot root's visual tree. */
 const appliedPlayVisibility = new WeakMap<Mesh, boolean>();
 
+type VisualNode = import("@babylonjs/core/node").Node;
+/** Each component part's mesh in a Play visual, and the ones Set Visibility turned off. */
+const componentPartRoots = new WeakSet<VisualNode>();
+const hiddenComponentParts = new WeakSet<VisualNode>();
+
+/**
+ * Record a visual's component parts and which of them are hidden, then hide what those draw now. A
+ * hidden part keeps its place, so attached components still follow it, and they keep their own visibility.
+ */
+export function rememberComponentPartVisibility(parts: ReadonlyMap<string, Mesh>, hidden: ReadonlySet<string>): void {
+  for (const [componentId, mesh] of parts) {
+    componentPartRoots.add(mesh);
+    if (hidden.has(componentId)) hiddenComponentParts.add(mesh);
+    else hiddenComponentParts.delete(mesh);
+  }
+  for (const componentId of hidden) {
+    const part = parts.get(componentId);
+    if (!part) continue;
+    const pending: VisualNode[] = [part];
+    for (let node = pending.pop(); node; node = pending.pop()) {
+      if (node !== part && componentPartRoots.has(node)) continue;
+      if (node instanceof AbstractMesh) node.isVisible = false;
+      pending.push(...node.getChildren());
+    }
+  }
+}
+
+/** True when `node` draws for a component part Set Visibility turned off: its nearest part is hidden. */
+function inHiddenComponentPart(node: VisualNode): boolean {
+  for (let current: VisualNode | null = node; current; current = current.parent) {
+    if (componentPartRoots.has(current)) return hiddenComponentParts.has(current);
+  }
+  return false;
+}
+
 /** Last snapshot visibility applied to `mesh`, if it is a slot root that has had one. */
 export function appliedPlayVisibilityOf(mesh: Mesh): boolean | undefined {
   return appliedPlayVisibility.get(mesh);
@@ -67,12 +102,12 @@ export function setPlayVisualVisibility(
 ): void {
   if (!force && appliedPlayVisibility.get(mesh) === visible) return;
   appliedPlayVisibility.set(mesh, visible);
-  mesh.isVisible = isPlayHelperVisual(mesh) ? false : visible;
+  mesh.isVisible = isPlayHelperVisual(mesh) || inHiddenComponentPart(mesh) ? false : visible;
   const pending = mesh.getChildren();
   for (let node = pending.pop(); node; node = pending.pop()) {
     if (node.name.startsWith("particleEmitter:") || isOtherSlotRoot(binding, mesh, node)) continue;
     if (node instanceof AbstractMesh) {
-      node.isVisible = isMesh(node) && isPlayHelperVisual(node) ? false : visible;
+      node.isVisible = (isMesh(node) && isPlayHelperVisual(node)) || (visible && inHiddenComponentPart(node)) ? false : visible;
     }
     pending.push(...node.getChildren());
   }
