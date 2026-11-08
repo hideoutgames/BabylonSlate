@@ -15,13 +15,16 @@ on:
 permissions:
   contents: read
 
-# Each comment and review keeps its own run; only an edit of the same text supersedes it.
+# Each comment and review keeps its own run; only an edit of the same text supersedes it. A pull request's title or
+# body edit has a group of its own, so it never cancels the scan of the pull request's commits.
 concurrency:
-  group: security-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.comment.id || github.event.review.id || github.event.pull_request.number || github.ref }}
+  group: security-${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.action == 'edited' && !github.event.changes.base && 'text-' || '' }}${{ github.event.comment.id || github.event.review.id || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # A push or a pull request's commits: the tree, every new commit and the pull request's text.
   public-hygiene:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && (github.event.action != 'edited' || github.event.changes.base))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -83,3 +86,19 @@ jobs:
             RANGE="$BEFORE_SHA..$HEAD_SHA"
           fi
           node scripts/check-public-hygiene.mjs --commits "$RANGE"
+
+  # A comment, a review or a pull request's title or body edit adds only text. Its tree and commits were scanned by
+  # the push or pull request event that brought them.
+  event-text:
+    if: github.event_name != 'push' && (github.event_name != 'pull_request' || (github.event.action == 'edited' && !github.event.changes.base))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/check-public-hygiene.mjs
+          sparse-checkout-cone-mode: false
+
+      # The runner's own Node: the check uses Node built-ins only.
+      - name: Check the issue or pull request text
+        run: node scripts/check-public-hygiene.mjs --event-only "$GITHUB_EVENT_PATH"
