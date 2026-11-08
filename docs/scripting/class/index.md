@@ -802,6 +802,16 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Unbind All Timeline Proxies](unbind-all-timeline-proxies.md) | Clears every proxy of a Timeline Clip asset instance, so none of its tracks apply. |
 | [Unbind Timeline Proxy](unbind-timeline-proxy.md) | Clears one proxy of a Timeline Clip asset instance, so its tracks stop applying. |
 
+## Time
+
+| Node | Description |
+| --- | --- |
+| [Get Current Frame Count](get-current-frame-count.md) | Returns how many frames the game has finished since Play started. |
+| [Get Date Now](get-date-now.md) | Returns today's date in UTC. |
+| [Get Delta Seconds](get-delta-seconds.md) | Returns the length of the current simulation step in seconds, scaled by time dilation. |
+| [Get Time MS](get-time-ms.md) | Returns the current Unix time in milliseconds. |
+| [Get Time Now](get-time-now.md) | Returns the current time of day in UTC. |
+
 ## Timers
 
 | Node | Description |
