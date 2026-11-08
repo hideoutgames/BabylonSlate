@@ -364,16 +364,6 @@ export class SharedOutlineView {
     for (const entry of this.contributions.values()) if (entry.targets.length > 0) return true;
     return false;
   }
-  setContribution(key: string, input: SharedOutlineContribution): void {
-    if (this.isDisposed) throw new Error("Shared outline view is disposed.");
-    const next = normalizedContribution(key, input);
-    const previous = this.contributions.get(key);
-    if (previous && sameContribution(previous, next)) return;
-    this.contributions.set(key, next);
-    try { if (!previous || !sameTargets(previous, next)) this.owner.reconcile(); }
-    catch (error) { if (previous) this.contributions.set(key, previous); else this.contributions.delete(key); throw error; }
-    this.revision++;
-  }
   /** Publish a complete host snapshot or retain the previous accepted snapshot. */
   replaceContributions(entries: ReadonlyMap<string, SharedOutlineContribution>, occluders: readonly AbstractMesh[] | null): void {
     if (this.isDisposed) throw new Error("Shared outline view is disposed.");
@@ -416,11 +406,6 @@ export class SharedOutlineView {
       if (!stored || !matchesStored(stored, entry)) return false;
     }
     return true;
-  }
-  removeContribution(key: string): void {
-    if (!this.contributions.delete(key)) return;
-    this.owner.reconcile(); this.revision++;
-    if (!this.active) this.releaseStyles();
   }
   /** Style data changes are independent of graph/material topology. */
   prepare(): void {

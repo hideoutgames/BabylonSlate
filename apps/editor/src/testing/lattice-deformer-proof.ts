@@ -24,6 +24,7 @@ import {
   setMeshLatticeDeformer, SharedOutlineOwner, SceneDeformerHost,
 } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
+import { removeOutlineContribution, setOutlineContribution } from "@haptic/render/shared-outline-contributions";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { deformerBindings } from "@haptic/core";
@@ -142,9 +143,9 @@ export async function runLatticeDeformerProof(backend: "webgl2" | "webgpu") {
     return context.getImageData(0, 0, WIDTH, HEIGHT).data;
   };
   const pair = async (name: string, actual: AbstractMesh[], reference: AbstractMesh[], compareLighting = true, withOutline = true) => {
-    view.removeContribution("shape"); activate(reference); const expected = await capture();
+    removeOutlineContribution(view, "shape"); activate(reference); const expected = await capture();
     activate(actual); const observed = await capture();
-    if (withOutline) view.setContribution("shape", { kind: "component", targets: [{ key: name, meshes: actual }],
+    if (withOutline) setOutlineContribution(view, "shape", { kind: "component", targets: [{ key: name, meshes: actual }],
       color: [1, 0, 0], width: 2, throughMeshes: false });
     const outlined = withOutline ? await capture() : observed;
     const result = { name, compareLighting, ...compare(observed, expected, outlined) };

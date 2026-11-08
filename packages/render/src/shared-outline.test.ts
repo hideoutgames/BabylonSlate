@@ -11,6 +11,7 @@ import {
   SharedOutlineOwner,
   type SharedOutlineContribution,
 } from "./shared-outline";
+import { removeOutlineContribution, setOutlineContribution } from "./test-support/shared-outline-contributions";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -30,27 +31,27 @@ describe("shared outline admission", () => {
     const { scene, view } = setup();
     const target = { key: "actor", meshes: [MeshBuilder.CreateBox("actor", {}, scene)] };
     const widths = () => (["strict", "through", "selection"] as const).map((group) => view.maximumWidthForGroup(group));
-    view.setContribution("global", { ...style, kind: "global", targets: [target], width: 8,
+    setOutlineContribution(view, "global", { ...style, kind: "global", targets: [target], width: 8,
       distanceFade: { start: 50, end: 100 } });
-    view.setContribution("component-a", { ...style, targets: [target], width: 1 });
-    view.setContribution("selection", { ...style, kind: "selection", targets: [target], width: 0.25 });
+    setOutlineContribution(view, "component-a", { ...style, targets: [target], width: 1 });
+    setOutlineContribution(view, "selection", { ...style, kind: "selection", targets: [target], width: 0.25 });
     // Neither a replaced global width nor a targetless style enlarges any search.
-    view.setContribution("empty", { ...style, targets: [], width: 8 });
+    setOutlineContribution(view, "empty", { ...style, targets: [], width: 8 });
     expect(widths()).toEqual([1, 0, 0.25]);
     expect(view.maximumWidth).toBe(8);
     expect(view.distanceFadeEnabled).toBe(false);
 
-    view.setContribution("component-z", { ...style, targets: [target], width: 4, throughMeshes: true });
+    setOutlineContribution(view, "component-z", { ...style, targets: [target], width: 4, throughMeshes: true });
     expect(widths()).toEqual([0, 4, 0.25]);
     expect(view.groupActive("strict")).toBe(false);
-    view.removeContribution("component-z");
+    removeOutlineContribution(view, "component-z");
     expect(widths()).toEqual([1, 0, 0.25]);
-    view.removeContribution("component-a");
+    removeOutlineContribution(view, "component-a");
     expect(widths()).toEqual([8, 0, 0.25]);
     expect(view.distanceFadeEnabled).toBe(true);
-    view.removeContribution("global");
+    removeOutlineContribution(view, "global");
     expect(widths()).toEqual([0, 0, 0.25]);
-    view.removeContribution("selection");
+    removeOutlineContribution(view, "selection");
     expect(widths()).toEqual([0, 0, 0]);
     expect(view.maximumWidth).toBe(0);
   });
@@ -58,9 +59,9 @@ describe("shared outline admission", () => {
   it("rejects collapsed GPU fade ranges without replacing the accepted global style", () => {
     const { view } = setup();
     const global: SharedOutlineContribution = { ...style, kind: "global", targets: [{ key: "actor", meshes: [] }], distanceFade: { start: 50, end: 100 } };
-    view.setContribution("global", global);
+    setOutlineContribution(view, "global", global);
     const revision = view.revision;
-    expect(() => view.setContribution("global", { ...global, distanceFade: { start: 500_000, end: 500_000.01 } })).toThrow(/distance fade range/);
+    expect(() => setOutlineContribution(view, "global", { ...global, distanceFade: { start: 500_000, end: 500_000.01 } })).toThrow(/distance fade range/);
     expect(view.revision).toBe(revision);
     expect(view.contributions.get("global")?.distanceFade).toEqual({ start: 50, end: 100 });
   });
@@ -95,9 +96,9 @@ describe("shared outline admission", () => {
       ...style,
       targets: Array.from({ length: 65_535 }, (_, index) => ({ key: `actor-${index}`, meshes: [] })),
     };
-    view.setContribution("authored", accepted);
+    setOutlineContribution(view, "authored", accepted);
     const revision = view.revision;
-    expect(() => view.setContribution("authored", {
+    expect(() => setOutlineContribution(view, "authored", {
       ...accepted,
       targets: [...accepted.targets, { key: "overflow", meshes: [] }],
     })).toThrow(/capacity/i);
@@ -110,7 +111,7 @@ describe("shared outline admission", () => {
     const { scene, owner, view } = setup();
     const acceptedSource = MeshBuilder.CreateBox("accepted", {}, scene);
     const accepted = acceptedSource.createInstance("accepted-instance");
-    view.setContribution("authored", { ...style, targets: [{ key: "accepted", meshes: [accepted] }] });
+    setOutlineContribution(view, "authored", { ...style, targets: [{ key: "accepted", meshes: [accepted] }] });
     const acceptedIdentity = owner.identityFor(accepted);
     const newSource = MeshBuilder.CreateBox("new-source", {}, scene);
     const newInstance = newSource.createInstance("new-instance");
@@ -120,7 +121,7 @@ describe("shared outline admission", () => {
     occupiedSource.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE] = 47;
     const revision = view.revision;
 
-    expect(() => view.setContribution("other", { ...style, targets: [
+    expect(() => setOutlineContribution(view, "other", { ...style, targets: [
       { key: "new", meshes: [newInstance] },
       { key: "occupied", meshes: [occupied] },
     ] })).toThrow(/another owner/i);
@@ -140,12 +141,12 @@ describe("shared outline admission", () => {
     const selection: SharedOutlineContribution = {
       ...style, kind: "selection", targets: [{ key: "actor", meshes: [source, instance] }],
     };
-    view.setContribution("selection", selection);
-    view.removeContribution("selection");
+    setOutlineContribution(view, "selection", selection);
+    removeOutlineContribution(view, "selection");
     expect(source.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE]).toBeUndefined();
     expect(instance.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE]).toBeUndefined();
     expect(() => source._processInstancedBuffers([instance], true)).not.toThrow();
-    view.setContribution("selection", selection);
+    setOutlineContribution(view, "selection", selection);
     expect(owner.identityFor(source)).toBeGreaterThan(0);
   });
 
@@ -157,10 +158,10 @@ describe("shared outline admission", () => {
     Matrix.Translation(1, 0, 0).copyToArray(matrices, 16);
     mesh.thinInstanceSetBuffer("matrix", matrices, 16);
     const target = { key: "actor", meshes: [mesh] };
-    view.setContribution("component", { ...style, targets: [target] });
-    view.setContribution("selection", { ...style, kind: "selection", targets: [target] });
+    setOutlineContribution(view, "component", { ...style, targets: [target] });
+    setOutlineContribution(view, "selection", { ...style, kind: "selection", targets: [target] });
     const identity = owner.identityFor(mesh);
-    view.removeContribution("component");
+    removeOutlineContribution(view, "component");
     expect(owner.identityFor(mesh)).toBe(identity);
     expect(mesh.thinInstanceCount).toBe(2);
     expect(mesh.thinInstanceGetWorldMatrices().map((matrix) => matrix.getTranslation().x)).toEqual([-1, 1]);
@@ -174,7 +175,7 @@ describe("shared outline admission", () => {
     const { scene, owner, view } = setup();
     const mesh = MeshBuilder.CreateBox("source", {}, scene);
     const instance = mesh.createInstance("instance");
-    view.setContribution("component", { ...style, targets: [{ key: "actor", meshes: [instance] }] });
+    setOutlineContribution(view, "component", { ...style, targets: [{ key: "actor", meshes: [instance] }] });
     const identity = owner.identityFor(instance);
     const lod = MeshBuilder.CreateBox("late-lod", {}, scene);
     lod.registerInstancedBuffer("foreign", 1);
@@ -195,20 +196,20 @@ describe("shared outline admission", () => {
     const instance = mesh.createInstance("instance");
     const other = MeshBuilder.CreateBox("other", {}, scene);
     const occluder = mesh.createInstance("occluder");
-    view.setContribution("selection", { ...style, kind: "selection", targets: [{ key: "a", meshes: [other] }] });
+    setOutlineContribution(view, "selection", { ...style, kind: "selection", targets: [{ key: "a", meshes: [other] }] });
     // An occluder's source is admitted when its mask draw first needs it.
     owner.prepareRenderSource(mesh);
     const revision = owner.sourceRevision;
     expect(owner.diagnostics().sourceCount).toBe(1);
     // Selecting and deselecting an instance must not release and re-admit the source, which dirties its attributes each time.
-    view.setContribution("selection", { ...style, kind: "selection", targets: [{ key: "b", meshes: [instance] }] });
+    setOutlineContribution(view, "selection", { ...style, kind: "selection", targets: [{ key: "b", meshes: [instance] }] });
     expect(occluder.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE]).toBe(0);
     expect(instance.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE]).toBe(owner.identityForKey("b"));
-    view.setContribution("selection", { ...style, kind: "selection", targets: [{ key: "a", meshes: [other] }] });
+    setOutlineContribution(view, "selection", { ...style, kind: "selection", targets: [{ key: "a", meshes: [other] }] });
     expect(owner.sourceRevision).toBe(revision);
     expect(owner.diagnostics().sourceCount).toBe(1);
     expect(instance.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE]).toBe(0);
-    view.removeContribution("selection");
+    removeOutlineContribution(view, "selection");
     expect(owner.diagnostics().sourceCount).toBe(0);
   });
 });

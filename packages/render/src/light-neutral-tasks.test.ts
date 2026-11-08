@@ -17,6 +17,7 @@ import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { SharedOutlineOwner } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
+import { setOutlineContribution } from "./test-support/shared-outline-contributions";
 
 /**
  * Babylon toggles `light.shadowEnabled` around every object-renderer pass and
@@ -99,7 +100,7 @@ describe("light-neutral passes", () => {
     const f = fixture();
     const owner = SharedOutlineOwner.forScene(f.scene);
     const view = owner.createView("test");
-    view.setContribution("selection", { kind: "selection", color: [1, 0, 0], width: 2, targets: [{ key: "box", meshes: [f.mesh] }] });
+    setOutlineContribution(view, "selection", { kind: "selection", color: [1, 0, 0], width: 2, targets: [{ key: "box", meshes: [f.mesh] }] });
     expect(view.groupActive("selection")).toBe(true);
     const task = new FrameGraphSharedOutlineTask("Outlines", f.graph, view);
     task.camera = f.camera;
