@@ -33,6 +33,7 @@ import { freeCustomEventName, takenCustomEventNames } from "./custom-event-names
 export {
   COLLISION_EVENT_TYPE_IDS,
   GET_GAME_INSTANCE_NODE_ID,
+  classLineageIncludesAny,
   LINEAGE_NATIVE_EVENT_TYPES,
   NATIVE_CLASS_EVENT_TYPES,
   isEditorUtilityChain,

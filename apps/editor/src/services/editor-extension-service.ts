@@ -52,6 +52,8 @@ export interface EditorExtensionWriteOptions {
    * before a package's files are replaced or deleted.
    */
   syncContentRoots?: (extensions: readonly ExtensionDescriptor[]) => Promise<void>;
+  /** Registers exactly these gameplay packages' graph nodes (`contributes.nodes`), replacing earlier ones. */
+  syncNodes?: (extensions: readonly ExtensionDescriptor[]) => void;
 }
 
 /** A project lifetime owns code activation and the content roots of its gameplay packages. */
@@ -76,6 +78,9 @@ export class EditorExtensionService {
   private order: ExtensionDescriptor[] = [];
   private readonly runAuthoringWrite: <T>(operation: () => Promise<T>) => Promise<T>;
   private readonly syncRoots: (extensions: readonly ExtensionDescriptor[]) => Promise<void>;
+  private readonly syncNodeDefinitions: (extensions: readonly ExtensionDescriptor[]) => void;
+  /** The gameplay packages whose nodes were last registered. */
+  private nodesKey = "[]";
   /** The gameplay packages whose roots were last synced. */
   private contentRootsKey = "[]";
 
@@ -83,6 +88,7 @@ export class EditorExtensionService {
     this.storage = storage;
     this.runAuthoringWrite = options.runAuthoringWrite ?? (operation => operation());
     this.syncRoots = options.syncContentRoots ?? (async () => {});
+    this.syncNodeDefinitions = options.syncNodes ?? (() => {});
     this.services = {
       ...services,
       assets: {
@@ -148,6 +154,13 @@ export class EditorExtensionService {
     this.contentRootsKey = key;
     await this.syncRoots(gameplay);
   }
+  private syncNodes(extensions: readonly ExtensionDescriptor[]): void {
+    const gameplay = gameplayExtensions(extensions);
+    const key = JSON.stringify(gameplay.map((entry) => [entry.extensionGuid, entry.settings.libraryName, entry.settings.displayName, entry.settings.contributes.nodes ?? []]));
+    if (key === this.nodesKey) return;
+    this.nodesKey = key;
+    this.syncNodeDefinitions(gameplay);
+  }
   /** Unmounts a package's root before its files are replaced or deleted. */
   private async releaseContentRoot(guid: string): Promise<void> {
     if (!this.order.some((entry) => entry.extensionGuid === guid && !entry.settings.editorOnly)) return;
@@ -175,7 +188,12 @@ export class EditorExtensionService {
         this.engineStorage ? await discoverEngineExtensions(this.engineStorage) : [],
       );
       const graph = resolveExtensionGraph(entries, ENGINE_VERSION, overrides);
-      const diagnostics = [...graph.diagnostics.map((value) => value.message), ...duplicateLibraryDiagnostics(graph.order)];
+      const diagnostics = [
+        ...graph.diagnostics.map((value) => value.message),
+        ...duplicateLibraryDiagnostics(graph.order),
+        ...graph.order.filter((entry) => entry.settings.editorOnly && entry.settings.contributes.nodes?.length)
+          .map((entry) => `${entry.settings.displayName}: its graph nodes appear only while Editor Only is off.`),
+      ];
       const modules: { entry: ExtensionDescriptor; files: ExtensionCodeFile[] }[] = [];
       for (const entry of graph.order) {
         try {
@@ -185,6 +203,7 @@ export class EditorExtensionService {
         }
       }
       this.order = graph.order;
+      this.syncNodes(graph.order);
       await this.syncContentRoots(graph.order);
       const fingerprint = JSON.stringify([entries, modules, overrides]);
       if (fingerprint !== this.fingerprint) {
@@ -209,6 +228,7 @@ export class EditorExtensionService {
       await this.resetHost();
       this.fingerprint = "";
       this.order = [];
+      this.syncNodes([]);
       await this.syncContentRoots([]).catch(() => undefined);
       this.packageDiagnostics = [String(cause)];
       this.publishHostState([]);
@@ -224,6 +244,7 @@ export class EditorExtensionService {
       this.cleanupDiagnostics = [];
       this.packageDiagnostics = [];
       this.order = [];
+      this.syncNodes([]);
       await this.syncContentRoots([]);
       this.publishHostState([]);
     });

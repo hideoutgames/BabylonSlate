@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createEmptyProject, normalizeProjectSettings } from "@haptic/core";
-import { createExtensionSettings, encodeAssetDocument, writeProjectExtension, type ExtensionDescriptor } from "@haptic/assets";
+import { createExtensionSettings, encodeAssetDocument, normalizeExtensionContributions, writeProjectExtension, type ExtensionDescriptor } from "@haptic/assets";
 import { createEmptyProjectFiles } from "../../../../packages/assets/src/test-support/project-files";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { lowerMaterialDocument } from "@haptic/shader-graph";
 import { ProjectService } from "./project-service";
+import { defaultNodeRegistry } from "./graph-hydration";
 import { ensureEngineExtensionStorage } from "../lib/engine-extensions";
 
 async function setup() {
@@ -146,6 +147,24 @@ describe("Editor Extensions in a project", () => {
 
     expect(service.registry?.getRoot("extension:weather")).toBeUndefined();
     expect(service.registry?.getByGuid("rain")).toBeUndefined();
+    await service.closeProject();
+  });
+
+  it("adds an enabled gameplay extension's graph nodes to the editor's node registry and removes them when disabled", async () => {
+    const { service, storage } = await setup();
+    const contributes = normalizeExtensionContributions({ nodes: [{ id: "ping", title: "Ping", call: "ping", outputs: [{ id: "ok", name: "OK", type: "bool" }] }] });
+    const entry = await writeProjectExtension(storage, "pinger", { ...createExtensionSettings("Pinger", "pinger"), contributes }, "export function activate() {}");
+
+    await enable(service, entry);
+    expect(defaultNodeRegistry().get("extension.pinger.ping")).toBeUndefined();
+    expect(service.extensions.getSnapshot().diagnostics).toContain("Pinger: its graph nodes appear only while Editor Only is off.");
+
+    await service.extensions.save("pinger", { ...service.extensions.getSnapshot().entries.find((value) => value.extensionGuid === "pinger")!.settings, editorOnly: false },
+      { write: [{ path: "game.ts", source: "export const ping = () => true;" }], remove: [] });
+    expect(defaultNodeRegistry().get("extension.pinger.ping")?.title).toBe("Ping");
+
+    await service.extensions.refresh({ pinger: { enabled: false } });
+    expect(defaultNodeRegistry().get("extension.pinger.ping")).toBeUndefined();
     await service.closeProject();
   });
 });

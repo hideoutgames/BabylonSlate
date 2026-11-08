@@ -5,10 +5,11 @@
  */
 import { isEditorGraphHost, type SerializedGraph } from "@haptic/core";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
-import { isTouchEventNodeType, type NodeRegistry } from "@haptic/scripting";
+import { EXTENSION_NODE_TYPE_PREFIX, isTouchEventNodeType, type NodeRegistry } from "@haptic/scripting";
 import { sceneAssetClassId } from "@haptic/object-model";
 import type { PaletteNode } from "@haptic/graph-ui";
-import { isScriptCatalogNodeAllowed, nativeEventStubs } from "../lib/class-members";
+import { classLineageIncludesAny, isScriptCatalogNodeAllowed, nativeEventStubs } from "../lib/class-members";
+import { extensionNodesFingerprint } from "./extension-nodes";
 import { DATA_GRAPH_NODES, dataGraphMetadata, dataGraphNodeTitle } from "../lib/data-graph";
 import { customEventRows, knownClassIdSet } from "./graph-class-symbols";
 import { defaultNodeRegistry } from "./graph-hydration";
@@ -286,6 +287,7 @@ export function scriptPaletteInjectorKey(
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([id, graph]) => [id, graphPaletteMemberFingerprint(graph)]);
   return JSON.stringify({
+    extensionNodes: extensionNodesFingerprint(),
     parentClass: options?.parentClass ?? null,
     classId: options?.classId ?? null,
     assetType: options?.assetType ?? null,
@@ -329,6 +331,13 @@ function scriptPaletteCatalogNodes(
       if ((isInputEvent(def.id) || def.id === "input.onAnyKeyPressed" || isTouchEventNodeType(def.id)) &&
         (options?.activeFunctionId || options?.animationGraphHost || !nativeEventStubs(options).some((node) => node.eventType === "flow.event.tick"))) return false;
       if (def.editorOnly && !isEditorGraphHost(options ?? {})) {
+        return false;
+      }
+      // Extension nodes call a game library, which editor graphs and Animation Graphs never load.
+      if (def.id.startsWith(EXTENSION_NODE_TYPE_PREFIX) && (isEditorGraphHost(options ?? {}) || options?.animationGraphHost)) {
+        return false;
+      }
+      if (def.hosts?.length && !classLineageIncludesAny(def.hosts, options)) {
         return false;
       }
       if (options?.animationGraphHost === "rule" && def.pure !== true) {

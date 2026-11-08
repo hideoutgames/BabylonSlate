@@ -89,6 +89,11 @@ export type NodeDefinition = {
   /** Hidden from runtime graph palettes unless the host is an editor graph. */
   editorOnly?: boolean;
   /**
+   * Class ids whose graphs (and their subclasses') offer this node in Add Node;
+   * absent or empty means every Class that allows it otherwise.
+   */
+  hosts?: readonly string[];
+  /**
    * When the Inspector flag is omitted, export compiles strip this node.
    * Print, Print String, and Draw Debug opt in so shipping games stay clean
    * unless the author unchecks Development Only.
@@ -116,6 +121,11 @@ export class NodeRegistry {
 
   registerAll(defs: readonly NodeDefinition[]): void {
     for (const def of defs) this.register(def);
+  }
+
+  /** Removes a definition; graphs holding the node keep it and report it as missing. */
+  unregister(id: string): boolean {
+    return this.defs.delete(id);
   }
 
   get(id: string): NodeDefinition | undefined {

@@ -358,6 +358,12 @@ function isAnimCatalogNodeAllowed(
   return false;
 }
 
+/** True when the graph's Class is, or descends from, one of `classIds`. */
+export function classLineageIncludesAny(classIds: readonly string[], options?: ClassEventOptions): boolean {
+  const chain = ancestryChain(options);
+  return classIds.some((classId) => chain.includes(classId));
+}
+
 export function isScriptCatalogNodeAllowed(
   nodeId: string,
   options?: ClassEventOptions,

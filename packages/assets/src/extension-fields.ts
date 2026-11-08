@@ -38,8 +38,46 @@ export interface ExtensionSettingsContribution {
   sections: ExtensionSettingsSection[];
 }
 
+/** Pin types an extension node may declare; each maps to the graph pin type of the same name. */
+export const EXTENSION_NODE_PIN_TYPES = ["bool", "int", "float", "string", "vec2", "vec3", "vec4", "rotator", "quat", "transform", "color"] as const;
+export type ExtensionNodePinType = (typeof EXTENSION_NODE_PIN_TYPES)[number];
+
+export interface ExtensionNodePin {
+  /** Argument or result key; a JavaScript identifier, unique across the node's pins. */
+  id: string;
+  name: string;
+  type: ExtensionNodePinType;
+  /** Inputs only: the literal used while the pin is not wired. */
+  default?: string | number | boolean;
+}
+
+/**
+ * A Class graph node that calls an export of the extension's game library:
+ * inputs are its arguments in order; one output takes the return value, several
+ * read the returned object's keys.
+ */
+export interface ExtensionNodeContribution {
+  id: string;
+  title: string;
+  /** Add Node category; the extension's display name when omitted. */
+  category?: string;
+  /** One sentence shown as the node title's tooltip. */
+  description?: string;
+  /** The game library export it calls. */
+  call: string;
+  /** No exec pins; evaluated where its outputs are read. */
+  pure: boolean;
+  /** Exec only: awaits the promise the export returns. */
+  latent: boolean;
+  /** Class ids whose graphs (and subclasses') offer the node; empty means every Class. */
+  hosts: string[];
+  inputs: ExtensionNodePin[];
+  outputs: ExtensionNodePin[];
+}
+
 export interface ExtensionContributions {
   settings?: ExtensionSettingsContribution;
+  nodes?: ExtensionNodeContribution[];
 }
 
 const FIELD_ID = /^[A-Za-z][A-Za-z0-9_-]*$/;
@@ -131,10 +169,61 @@ export function normalizeExtensionFields(value: unknown): ExtensionField[] {
   return fields;
 }
 
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+const RESERVED_PIN_IDS = new Set(["execIn", "execOut"]);
+
+function normalizeNodePin(value: unknown, node: string, direction: "input" | "output"): ExtensionNodePin {
+  const raw = record(value, `Node ${node} ${direction}`);
+  const id = text(raw.id, `Node ${node} ${direction} id`);
+  if (!IDENTIFIER.test(id) || RESERVED_PIN_IDS.has(id)) throw new Error(`Node ${node} pin id ${id} must be a JavaScript identifier other than execIn or execOut.`);
+  const type = raw.type as ExtensionNodePinType;
+  if (!EXTENSION_NODE_PIN_TYPES.includes(type)) throw new Error(`Node ${node} pin ${id} has an unknown type: ${String(raw.type)}`);
+  const fallback = raw.default;
+  if (fallback !== undefined) {
+    if (direction === "output") throw new Error(`Node ${node} output ${id} cannot have a default.`);
+    const expected = type === "bool" ? "boolean" : type === "string" ? "string" : type === "int" || type === "float" ? "number" : null;
+    if (!expected || typeof fallback !== expected) throw new Error(`Node ${node} input ${id} has a default that does not match its type.`);
+  }
+  return { id, name: text(raw.name, `Node ${node} pin ${id} name`), type, ...(fallback !== undefined ? { default: fallback as string | number | boolean } : {}) };
+}
+
+function normalizeNode(value: unknown): ExtensionNodeContribution {
+  const raw = record(value, "An extension node");
+  const id = text(raw.id, "Node id");
+  if (!FIELD_ID.test(id)) throw new Error(`Node id ${id} must start with a letter and use letters, digits, _ or -.`);
+  const call = text(raw.call, `Node ${id} call`);
+  if (!IDENTIFIER.test(call)) throw new Error(`Node ${id} call must name a game library export.`);
+  const pure = raw.pure === true;
+  const latent = raw.latent === true;
+  if (pure && latent) throw new Error(`Node ${id} cannot be both pure and latent.`);
+  const inputs = Array.isArray(raw.inputs) ? raw.inputs.map((pin) => normalizeNodePin(pin, id, "input")) : [];
+  const outputs = Array.isArray(raw.outputs) ? raw.outputs.map((pin) => normalizeNodePin(pin, id, "output")) : [];
+  if (pure && outputs.length === 0) throw new Error(`Pure node ${id} needs an output.`);
+  const pinIds = [...inputs, ...outputs].map((pin) => pin.id);
+  if (new Set(pinIds).size !== pinIds.length) throw new Error(`Node ${id} has duplicate pin ids.`);
+  const hosts = Array.isArray(raw.hosts) ? raw.hosts.map((host) => text(host, `Node ${id} host`)) : [];
+  return {
+    id, title: text(raw.title, `Node ${id} title`), call, pure, latent, hosts, inputs, outputs,
+    ...(optionalText(raw.category) ? { category: optionalText(raw.category) } : {}),
+    ...(optionalText(raw.description) ? { description: optionalText(raw.description) } : {}),
+  };
+}
+
+function normalizeNodes(value: unknown): ExtensionNodeContribution[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error("Extension nodes must be a list.");
+  const nodes = value.map(normalizeNode);
+  const ids = nodes.map((node) => node.id);
+  if (new Set(ids).size !== ids.length) throw new Error("Extension node ids must be unique.");
+  return nodes;
+}
+
 export function normalizeExtensionContributions(value: unknown): ExtensionContributions {
   if (value === undefined) return {};
   const raw = record(value, "Extension contributes");
-  if (raw.settings === undefined) return {};
+  const nodes = normalizeNodes(raw.nodes);
+  const withNodes: ExtensionContributions = nodes?.length ? { nodes } : {};
+  if (raw.settings === undefined) return withNodes;
   const settings = record(raw.settings, "Extension settings");
   if (!Array.isArray(settings.sections) || settings.sections.length === 0) {
     throw new Error("Extension settings need at least one section.");
@@ -151,7 +240,7 @@ export function normalizeExtensionContributions(value: unknown): ExtensionContri
   });
   // One value per field id across the whole category.
   normalizeExtensionFields(sections.flatMap((section) => section.fields));
-  return { settings: { title: text(settings.title, "Extension settings title"), sections } };
+  return { ...withNodes, settings: { title: text(settings.title, "Extension settings title"), sections } };
 }
 
 export function extensionSettingsFields(contributions: ExtensionContributions): ExtensionField[] {
