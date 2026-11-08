@@ -8,6 +8,10 @@ export type RuntimeObjectIdentity = {
   componentGuid?: string;
   componentToken?: number;
 };
+/** A string key equal for two identities exactly when every field is equal. */
+export const runtimeIdentityKey = (identity: RuntimeObjectIdentity): string => JSON.stringify([
+  identity.sceneInstanceId, identity.actorGuid, identity.actorToken, identity.componentGuid ?? null, identity.componentToken ?? null,
+]);
 export type RuntimeInspectorValue = null | boolean | number | string | RuntimeInspectorValue[] | { [key: string]: RuntimeInspectorValue };
 export type RuntimePropertyCapability = "live" | "rebuild" | "readOnly" | "restart";
 export type RuntimePropertyDescriptor = {

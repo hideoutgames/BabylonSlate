@@ -4,6 +4,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { isSkyboxMesh } from "./skybox";
+import { isWaterSurfaceMesh } from "./water-mesh-surface";
 
 /**
  * View culling for Play's world Scene. Babylon's Intermediate performance priority (Play's) marks every mesh it
@@ -35,7 +36,7 @@ export function keepsDrawingOutsideView(mesh: AbstractMesh): boolean {
   if (alwaysDrawn.has(mesh) || mesh.infiniteDistance || isSkyboxMesh(mesh)) return true;
   const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
   if (!(source instanceof Mesh) || source.getTotalVertices() === 0) return true;
-  if (source.hasThinInstances || (source.metadata as { slateWater?: unknown } | null)?.slateWater === true) return true;
+  if (source.hasThinInstances || isWaterSurfaceMesh(source)) return true;
   return hasDeformingShadowBounds(source);
 }
 

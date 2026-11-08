@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type FocusEvent } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { RuntimeInspectorValue, RuntimeObjectIdentity, RuntimePropertyDescriptor } from "@haptic/bridge";
+import { runtimeIdentityKey, type RuntimeInspectorValue, type RuntimeObjectIdentity, type RuntimePropertyDescriptor } from "@haptic/bridge";
 import type { MaterialParameterValue, SerializedTransform, ViewportMode } from "@haptic/core";
 import { AssetPicker, EditorReadOnlyContext, PanelFrame, PropertyGrid, SearchInput, type AssetPickerEntry, type PropertyRow } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { useRegistryState } from "../context/document-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { useSimulationInspection } from "../context/simulation-inspection-context";
-import { runtimeIdentityKey, type SimulationInspectionStore } from "../services/simulation-inspection-store";
+import type { SimulationInspectionStore } from "../services/simulation-inspection-store";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
 import { scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 
