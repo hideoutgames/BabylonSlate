@@ -73,10 +73,7 @@ describe("opt-in shadow evidence capture", () => {
     const splitFrustum = vi.spyOn(generator, "splitFrustum");
     const renderMap = vi.spyOn(generator.getShadowMap()!, "render");
 
-    const evidence = captureShadowDiagnostics(scene, {
-      buildSha: "revision",
-      host: "unit-test",
-    });
+    const evidence = captureShadowDiagnostics(scene, { host: "unit-test" });
 
     expect(evidence.backend).toMatchObject({
       requested: "webgpu",
@@ -142,16 +139,16 @@ describe("opt-in shadow evidence capture", () => {
     ]);
     expect(omittedBounds).not.toHaveBeenCalled();
     expect(evidence.lights[0]!.generator).toBeNull();
-    expect(evidence.provenance).toMatchObject({
-      buildSha: null,
+    // Provenance is only what the capture knows; a build, OS or unit system would be the caller's to record.
+    expect(evidence.provenance).toEqual({
       host: null,
-      os: null,
-      sceneUnits: null,
+      renderId: scene.getRenderId(),
+      capturedAfterViewDraw: "caller-responsibility",
     });
     const recorded = JSON.parse(JSON.stringify(evidence));
     expect(recorded).toMatchObject({
       backend: { actual: "null" },
-      provenance: { sceneUnits: null },
+      provenance: { host: null },
       models: [
         {
           name: "captured",

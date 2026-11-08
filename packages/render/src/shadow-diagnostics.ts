@@ -7,7 +7,6 @@ import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { Vector3, type Matrix } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
-import type { GpuBackend } from "@haptic/core";
 import { engineAdapterInfo } from "./render-diagnostics";
 import { sceneRenderingSettings } from "./render-settings";
 import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
@@ -16,14 +15,9 @@ import { findSceneShadowController } from "./shadow-controller";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowTileSize } from "./shadow-atlas";
 import { shadowFilterFetches, shadowViewTexelRatios } from "./shadow-filter";
 
-/** Caller-supplied provenance is deliberately not inferred from an adapter name. */
 export interface ShadowDiagnosticOptions {
-  buildSha?: string;
+  /** The capturing host (`editor`, `play`, `player`), supplied by the caller rather than inferred from an adapter name. */
   host?: string;
-  os?: string;
-  requestedBackend?: GpuBackend;
-  /** Project convention, when known; an unspecified world unit is not a meter. */
-  sceneUnits?: string;
   /** Explicit model selection; the capture never scans the entire scene geometry. */
   meshes?: readonly AbstractMesh[];
   /** May lower, but never raise, the 32-light / 256-mesh capture limits. */
@@ -103,15 +97,12 @@ export function captureShadowDiagnostics(
   return {
     version: 1,
     provenance: {
-      buildSha: text(options.buildSha),
       host: text(options.host),
-      os: text(options.os),
-      sceneUnits: text(options.sceneUnits),
       renderId: scene.getRenderId(),
       capturedAfterViewDraw: "caller-responsibility",
     },
     backend: {
-      requested: options.requestedBackend ?? pipeline.requested.gpuBackend,
+      requested: pipeline.requested.gpuBackend,
       actual:
         engine instanceof NullEngine
           ? "null"
