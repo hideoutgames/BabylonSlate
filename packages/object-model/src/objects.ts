@@ -342,6 +342,13 @@ export class ActorComponent extends EngineObject {
 
   private materialObject: MaterialObject | null = null;
   private creationCalled = false;
+  // `classId` never changes, so its class checks run once. Field initializers
+  // run before the constructor body's first `getVariable`.
+  /** Overlay visuals read a default Opacity and Tint while they hold none. */
+  private readonly overlayStyleDefaults = supportsOverlayVisualStyle(this.classId);
+  /** Mesh classes answer `materialObject` with their material instance. */
+  private readonly materialObjectClass =
+    this.classId === "MeshComponent" || this.classId === "DynamicRuntimeMeshComponent";
 
   override callOnCreation(): void {
     if (this.creationCalled || this.destroyed || !this.owner?.world) return;
@@ -396,11 +403,11 @@ export class ActorComponent extends EngineObject {
   }
 
   override getVariable(name: string): unknown {
-    if (supportsOverlayVisualStyle(this.classId) && !this.variables.has(name)) {
+    if (this.overlayStyleDefaults && !this.variables.has(name)) {
       if (name === "opacity") return 1;
       if (name === "tint") return [1, 1, 1, 1];
     }
-    if ((this.classId !== "MeshComponent" && this.classId !== "DynamicRuntimeMeshComponent") || name !== "materialObject") {
+    if (!this.materialObjectClass || name !== "materialObject") {
       return super.getVariable(name);
     }
     const guid = super.getVariable("materialGuid");
@@ -430,7 +437,7 @@ export class ActorComponent extends EngineObject {
   }
 
   override setVariable(name: string, value: unknown): void {
-    if (this.classId === "MeshComponent" || this.classId === "DynamicRuntimeMeshComponent") {
+    if (this.materialObjectClass) {
       if (name === "materialObject") return;
       if (name === "materialGuid" && value !== super.getVariable(name)) {
         if (this.materialObject) this.materialObject.destroyed = true;
