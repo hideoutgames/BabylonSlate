@@ -26,7 +26,9 @@ import {
 import { contentBrowserFolderOps, type ContentBrowserRoot } from "../lib/plugin-ui";
 import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
-import { createProjectAsset } from "../lib/create-project-asset";
+import { createExtensionAsset, createProjectAsset } from "../lib/create-project-asset";
+import type { ExtensionAssetTypeDescriptor } from "../lib/extension-asset-types";
+import { useExtensionAssetTypes } from "./use-extension-asset-types";
 import type {
   ContentBrowserNewAssetDialogProps,
   ContentBrowserNewAssetMenu,
@@ -107,20 +109,24 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
   // A new 2D or 3D Timeline Clip's Timeline Asset; null makes one named after the clip.
   const [newTimelineAsset, setNewTimelineAsset] = useState<string | null>(null);
   const [newWaterStarter, setNewWaterStarter] = useState(false);
+  // An extension asset type chosen in the menu; it replaces `newAssetType` while set.
+  const [newExtensionType, setNewExtensionType] = useState<ExtensionAssetTypeDescriptor | null>(null);
+  const extensionAssetTypes = useExtensionAssetTypes();
 
   const newDataTypes = useMemo(() => newAssetOpen && (newAssetType === "DataDefinition" || newAssetType === "DataTree")
     ? collectGraphTypeAssets({ assets: allAssets, openDocuments })
     : { structures: [], enums: [], dataDefinitions: [] }, [newAssetOpen, newAssetType, allAssets, openDocuments]);
   const newAssetTakenError = useMemo(() => {
     if (!newAssetOpen) return null;
-    if (isNewAssetNameTaken(existingAssetPaths, newAssetFolder, newAssetType, newAssetName)) {
+    if (isNewAssetNameTaken(existingAssetPaths, newAssetFolder, newExtensionType?.type ?? newAssetType, newAssetName)) {
       return "An asset with this name already exists in the folder.";
     }
+    if (newExtensionType) return null;
     const fileName = newAssetType === "Class" ? newAssetFileName("Class", newAssetName) : "";
     return fileName
       ? classIdConflict(referenceAssets, joinAssetFolderPath(newAssetFolder, fileName))
       : null;
-  }, [existingAssetPaths, newAssetFolder, newAssetName, newAssetOpen, newAssetType, referenceAssets]);
+  }, [existingAssetPaths, newAssetFolder, newAssetName, newAssetOpen, newAssetType, newExtensionType, referenceAssets]);
 
   const openNewAssetMenu = useCallback((anchor: { x: number; y: number } | null = null) => {
     if (busy || !selectedRootWritable) return;
@@ -130,11 +136,19 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
   const openNewAssetDialog = useCallback((type: CreatableAssetType) => {
     if (busy || !selectedRootWritable) return;
     setNewAssetType(type);
+    setNewExtensionType(null);
     setNewAssetName("");
     setNewTimelineAsset(allAssets.find((asset) => asset.header.type === "Timeline")?.header.guid ?? null);
     setNewAssetFolder(selectedFolderPath);
     setNewAssetOpen(true);
   }, [busy, selectedFolderPath, selectedRootWritable, setNewAssetOpen, setNewAssetType]);
+  const openNewExtensionAssetDialog = useCallback((type: ExtensionAssetTypeDescriptor) => {
+    if (busy || !selectedRootWritable) return;
+    setNewExtensionType(type);
+    setNewAssetName("");
+    setNewAssetFolder(selectedFolderPath);
+    setNewAssetOpen(true);
+  }, [busy, selectedFolderPath, selectedRootWritable, setNewAssetOpen]);
 
   const handleCreateAsset = useCallback(async () => {
     const destination = contentBrowserFolderOps(newAssetFolder, browserRoots);
@@ -144,6 +158,24 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
     setBusy(true);
     setOperationError(null);
     try {
+      if (newExtensionType) {
+        const created = await createExtensionAsset({
+          registry: assetRegistry,
+          rootId: destination.rootId,
+          folderRelative: destination.relative,
+          type: newExtensionType,
+          name,
+        });
+        setNewAssetOpen(false);
+        if (newAssetFolder !== selectedFolderPath) {
+          setSelectedFolderPath(newAssetFolder);
+          setSelectedGuids(new Set());
+          setSelectedFolderPaths(new Set());
+        }
+        noteAssetsCreated();
+        await openOrFocusDocument(created);
+        return;
+      }
       const type = newAssetType;
       // A clip needs its Timeline Asset first: the chosen one, or a new one beside it.
       let timelineAsset: string | undefined;
@@ -211,6 +243,7 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
     newTimelineAsset,
     newWaterStarter,
     newAssetType,
+    newExtensionType,
     getOpenDocuments,
     noteAssetsCreated,
     openOrFocusDocument,
@@ -232,6 +265,8 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
     },
     anchor: newAssetMenuAnchor,
     onSelect: openNewAssetDialog,
+    extensionTypes: extensionAssetTypes,
+    onSelectExtension: openNewExtensionAssetDialog,
   };
   const dialogProps: ContentBrowserNewAssetDialogProps = {
     open: newAssetOpen,
@@ -240,6 +275,7 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
       if (open) setNewAssetName("");
     },
     type: newAssetType,
+    extensionType: newExtensionType,
     name: newAssetName,
     onNameChange: setNewAssetName,
     parentClass: newAssetParent,

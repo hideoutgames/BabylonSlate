@@ -22,12 +22,12 @@ async function storage(name = "project") {
   return result;
 }
 
-async function fixture(options?: EditorExtensionWriteOptions) {
+async function fixture(options?: EditorExtensionWriteOptions, listed: { path: string; type: string; name: string; guid: string }[] = []) {
   const project = await storage();
   const messages: string[] = [];
   const service = new EditorExtensionService(project, {
     assets: {
-      list: async () => [],
+      list: async () => listed,
       read: async (path) => decodeAssetDocument(await project.readBinary(path)),
       create: async (path, document) => {
         await project.writeBinary(path, await encodeAssetDocument({ ...document, guid: "created", version: 1 }));
@@ -363,6 +363,60 @@ describe("EditorExtensionService code files and gameplay packages", () => {
 
     service.setSettingValues({ weather: { region: "south" } });
     expect(messages).toEqual(["Region west", "Region south"]);
+  });
+
+  it("publishes enabled asset types and links the project's assets of gameplay types into their library", async () => {
+    const preset = "extension.weather.preset";
+    const listed = [
+      { path: "assets/Rain.hasset", type: preset, name: "Rain", guid: "rain-guid" },
+      { path: "assets/Notes.hasset", type: "extension.weather.notes", name: "Notes", guid: "notes-guid" },
+      { path: "assets/Dry.hasset", type: preset, name: "Dry", guid: "dry-guid" },
+      { path: "assets/Other.hasset", type: "extension.other.preset", name: "Other", guid: "other-guid" },
+    ];
+    const { project, service } = await fixture(undefined, listed);
+    const field = (id: string) => [{ id: "main", title: "Main", fields: [{ id, label: "Value", type: "number", max: 10 }] }];
+    await gameplayPackage(project, "weather", "import { assets } from 'haptic:extension';\nexport const wettest = () => Math.max(...assets.list('preset').map((asset) => asset.values.rain));", {
+      contributes: normalizeExtensionContributions({ assetTypes: [
+        { id: "preset", title: "Weather Preset", editorOnly: false, sections: field("rain") },
+        { id: "notes", title: "Weather Notes", sections: field("lines") },
+      ] }),
+    });
+    for (const [path, type, payload] of [
+      ["assets/Rain.hasset", preset, { rain: 25, stray: true }],
+      ["assets/Dry.hasset", preset, {}],
+      ["assets/Notes.hasset", "extension.weather.notes", { lines: 2 }],
+    ] as const) {
+      await project.mkdir("assets", true);
+      await project.writeBinary(path, await encodeAssetDocument({ type, name: path, guid: path, version: 0, payload }));
+    }
+    await service.refresh();
+
+    expect(service.getSnapshot().assetTypes.map((type) => [type.type, type.title, type.category, type.editorOnly])).toEqual([
+      [preset, "Weather Preset", "weather", false],
+      ["extension.weather.notes", "Weather Notes", "weather", true],
+    ]);
+    const [library] = await service.gameLibraries();
+    // Path order; values resolved against the fields (clamped, unknown keys dropped); Editor Only and other extensions' types left out.
+    expect(library!.assets).toEqual([
+      { guid: "dry-guid", name: "Dry", type: "preset", values: { rain: 0 } },
+      { guid: "rain-guid", name: "Rain", type: "preset", values: { rain: 10 } },
+    ]);
+    expect((loadExtensionGameLibraries([library!]).weather!.wettest as () => number)()).toBe(10);
+    const [playing] = await service.gameLibraries(undefined, undefined, (path) => path === "assets/Rain.hasset" ? { rain: 4 } : undefined);
+    expect(playing!.assets.map((asset) => asset.values.rain)).toEqual([0, 4]);
+  });
+
+  it("flags gameplay asset types of an Editor Only package, which has no game library to carry them", async () => {
+    const { project, service } = await fixture();
+    await writeProjectExtension(project, "tools", enabledSettings("tools", {
+      contributes: normalizeExtensionContributions({ assetTypes: [
+        { id: "preset", title: "Preset", editorOnly: false, sections: [{ id: "s", title: "S", fields: [{ id: "x", label: "X", type: "text" }] }] },
+      ] }),
+    }), originalModule);
+    await service.refresh();
+
+    expect(service.getSnapshot().assetTypes.map((type) => type.type)).toEqual(["extension.tools.preset"]);
+    expect(service.getSnapshot().diagnostics).toContain("tools: its gameplay asset types reach games only while Editor Only is off.");
   });
 
   it("rejects two enabled gameplay packages that claim one Library Name", async () => {

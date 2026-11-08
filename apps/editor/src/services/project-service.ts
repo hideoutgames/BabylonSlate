@@ -7,7 +7,7 @@ import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunc
 import { EditorExtensionService } from "./editor-extension-service";
 import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
 import { guardProjectAssetRegistry } from "./project-authoring-ports";
-import { isExtensionPackagePath, isAssetSourceRevisionChanged, mountExtensionContentRoots, type AssetDocument, type ExtensionDescriptor } from "@haptic/assets";
+import { isExtensionPackagePath, isAssetSourceRevisionChanged, mountExtensionContentRoots, resolveExtensionFieldValues, type AssetDocument, type ExtensionDescriptor } from "@haptic/assets";
 import type {
   DocumentKind,
   PluginEnableOverride,
@@ -33,6 +33,7 @@ import {
   parseDocumentId,
   documentKindForAssetType,
   isAssetDocumentKind,
+  isExtensionAssetType,
   LAYOUT_FILE,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
@@ -242,10 +243,19 @@ export class ProjectService {
     const writeAsset = async (path: string, document: Pick<AssetDocument, "type" | "name" | "payload">) => {
       assetPath(path);
       const kind = documentKindForAssetType(document.type);
-      if (!kind || assetTypeForDocumentKind(kind) !== document.type || kind === "trace") {
+      // An extension asset type is authorable while an enabled extension declares it; its payload is that type's values.
+      const extensionType = kind === "extension-asset"
+        ? this.extensions.getSnapshot().assetTypes.find((entry) => entry.type === document.type)
+        : undefined;
+      const authorable = kind === "extension-asset"
+        ? extensionType !== undefined
+        : kind !== null && kind !== "trace" && assetTypeForDocumentKind(kind) === document.type;
+      if (!kind || !authorable) {
         throw new Error(`Extension cannot author this asset type: ${document.type}`);
       }
-      await this.saveDocument(kind, path, document.payload);
+      await this.saveDocument(kind, path,
+        extensionType ? resolveExtensionFieldValues(extensionType.fields, document.payload) : document.payload,
+        extensionType ? { type: document.type } : undefined);
       this.emitRegistryChange();
     };
     const pendingAssetCreates = new Set<string>();
@@ -1468,7 +1478,7 @@ export class ProjectService {
       | SerializedSceneLayer
       | SerializedGraph
       | Record<string, unknown>,
-    options?: { parentClass?: string | null },
+    options?: { parentClass?: string | null; type?: string },
   ): Promise<void> {
     return this.withDocumentWrite(path, (currentPath) => this.saveDocumentUnlocked(kind, currentPath, content, options));
   }
@@ -1501,7 +1511,7 @@ export class ProjectService {
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
     content: SerializedScene | SerializedSceneLayer | SerializedGraph | Record<string, unknown>,
-    options?: { parentClass?: string | null },
+    options?: { parentClass?: string | null; type?: string },
   ): Promise<void> {
     if (kind === "trace" || isTracePath(path)) {
       throw new Error("Trace documents are read-only");
@@ -1523,9 +1533,11 @@ export class ProjectService {
       await storage.mkdir(dir, true);
     }
     const existing = await readExistingAssetMeta(this.files, path);
-    const type = isAssetDocumentKind(kind)
-      ? assetTypeForDocumentKind(kind)
-      : "Class";
+    const type = kind === "extension-asset"
+      ? extensionAssetTypeForSave(existing?.type ?? options?.type)
+      : isAssetDocumentKind(kind)
+        ? assetTypeForDocumentKind(kind)
+        : "Class";
     const ownerPlugin = this.projectPlugins.forPath(path);
     let pluginContentChanged = false;
     if (ownerPlugin && type !== "PluginSettings") {
@@ -1585,7 +1597,7 @@ export class ProjectService {
             "string" &&
           (content as { displayName: string }).displayName.trim() !== ""
             ? (content as { displayName: string }).displayName.trim()
-            : (isInputAssetType(type) || type === "DataDefinition" || type === "DataTree") && existing?.name
+            : (isInputAssetType(type) || type === "DataDefinition" || type === "DataTree" || isExtensionAssetType(type)) && existing?.name
               ? existing.name
               : assetName(path),
         guid,
@@ -2016,6 +2028,12 @@ export class ProjectService {
 
 const INCOMPLETE_PROJECT_MANIFEST =
   "Invalid project manifest: project.json is missing metadata, settings, scenes or graphs.";
+
+/** An extension asset keeps the header type its extension declared; without one a save has nothing to write. */
+function extensionAssetTypeForSave(type: string | undefined): string {
+  if (!type || !isExtensionAssetType(type)) throw new Error("An extension asset needs its extension's asset type.");
+  return type;
+}
 
 function isCompleteProjectManifest(raw: Partial<ProjectDocument>): raw is ProjectDocument {
   return Boolean(raw.metadata && raw.settings && raw.scenes && raw.graphs);

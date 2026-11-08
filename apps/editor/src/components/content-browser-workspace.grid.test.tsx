@@ -11,7 +11,8 @@ import {
 } from "@testing-library/react";
 import { zipSync } from "fflate";
 import type { IndexedAsset } from "@haptic/assets";
-import { AssetRegistry, createDefaultPluginSettings, projectContentRoot } from "@haptic/assets";
+import { AssetRegistry, createDefaultPluginSettings, createExtensionSettings, normalizeExtensionContributions, projectContentRoot } from "@haptic/assets";
+import { extensionAssetTypes } from "../lib/extension-asset-types";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { TREE_ROW_HEIGHT } from "@haptic/editor-kit";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
@@ -65,6 +66,11 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
       refuseIfTheirs: () => null,
     },
     activeDocumentId: "content-browser",
+    extensionSnapshot: { entries: [], commands: [], assetTypes: [] as unknown[], diagnostics: [] },
+    extensionService: {
+      subscribe: () => () => {},
+      getSnapshot: () => docs.extensionSnapshot,
+    },
   };
   return { docs, loadAssetThumbnail, layout: { phone: false } };
 });
@@ -217,6 +223,7 @@ afterEach(async () => {
   docs.sourceControl.lockStateForPath.mockReset().mockReturnValue(null);
   docs.sourceControl.transferLock.mockReset().mockResolvedValue(undefined);
   docs.openDocuments = [];
+  docs.extensionSnapshot = { ...docs.extensionSnapshot, assetTypes: [] };
   docs.pluginDescriptors = [];
   docs.showPluginContent = false;
   docs.projectDocument.settings.gameInstanceClass = null;
@@ -863,6 +870,31 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(screen.getByTestId("content-browser-name-taken").textContent).toBe(taken);
     fireEvent.keyDown(input, { key: "Enter" });
     expect(renameAsset).not.toHaveBeenCalled();
+  });
+
+  it("creates an enabled extension's asset type from New Asset with its fields' defaults and opens it", async () => {
+    installRegistry([]);
+    docs.extensionSnapshot = { ...docs.extensionSnapshot, assetTypes: extensionAssetTypes([{
+      extensionGuid: "weather", folderName: "weather", folderPath: "extensions/weather", settingsPath: "extensions/weather/extension.json",
+      contentPath: "extensions/weather/assets", source: "project", readOnly: false,
+      settings: { ...createExtensionSettings("Weather", "weather"), contributes: normalizeExtensionContributions({ assetTypes: [{
+        id: "preset", title: "Weather Preset", sections: [{ id: "s", title: "S", fields: [{ id: "rain", label: "Rain", type: "number", default: 3 }] }],
+      }] }) },
+    }]) };
+    const created = { ...texture(0), path: "assets/Drizzle.hasset" };
+    created.header = { ...created.header, type: "extension.weather.preset", name: "Drizzle", guid: "drizzle" };
+    const createAsset = vi.fn(async () => created);
+    docs.assetRegistry = { ...(docs.assetRegistry as object), createAsset };
+    render(<ContentBrowserWorkspace />);
+
+    fireEvent.click(screen.getByTestId("content-browser-new-asset"));
+    fireEvent.click(screen.getByTestId("search-item-extension.weather.preset"));
+    fireEvent.change(screen.getByTestId("new-asset-name"), { target: { value: "Drizzle" } });
+    fireEvent.click(screen.getByTestId("content-browser-new-asset-create"));
+
+    await waitFor(() => expect(docs.openDocument).toHaveBeenCalledWith({ kind: "extension-asset", path: "assets/Drizzle.hasset", label: "Drizzle" }));
+    expect(createAsset).toHaveBeenCalledExactlyOnceWith("project", "Drizzle.hasset",
+      expect.objectContaining({ type: "extension.weather.preset", name: "Drizzle", payload: { rain: 3 } }));
   });
 
   it("retains the new asset draft when the storage write fails", async () => {

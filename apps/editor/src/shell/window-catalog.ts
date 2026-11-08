@@ -50,7 +50,8 @@ export type DockviewDocumentKind =
   | "trace"
   | "texture"
   | "font"
-  | "blackboard";
+  | "blackboard"
+  | "extension-asset";
 export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
@@ -102,6 +103,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "texture",
   "font",
   "blackboard",
+  "extension-asset",
 ]);
 
 export function isDockviewDocumentKind(
@@ -175,6 +177,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   skeleton: "skeleton-preview",
   animation: "animation-preview",
   "skybox-creator": "skybox-creator-preview",
+  "extension-asset": "extension-asset-details",
   trace: "trace-timeline",
   texture: "texture-preview",
   font: "font-preview",
@@ -1254,6 +1257,7 @@ export function listDockWindows(
   if (kind === "water") return withOptionalLocks(kind, WATER_WINDOWS, options);
   if (kind === "render-target") return withOptionalLocks(kind, [{ id: "render-target-details", component: "render-target-details", title: "Inspector" }], options);
   if (kind === "render-target-texture") return withOptionalLocks(kind, [{ id: "render-target-texture-details", component: "render-target-texture-details", title: "Inspector" }], options);
+  if (kind === "extension-asset") return withOptionalLocks(kind, [{ id: "extension-asset-details", component: "extension-asset-details", title: "Inspector" }], options);
   if (kind === "particle-system") {
     return withOptionalLocks(kind, PARTICLE_SYSTEM_WINDOWS, options);
   }

@@ -1,4 +1,4 @@
-// One lazily loaded panel family (`panel-registry.tsx`): Data, Save Game, Input, Plugin Settings, Global Parameter Collection, Curve, Timeline, Audio and Trace windows.
+// One lazily loaded panel family (`panel-registry.tsx`): Data, Save Game, Input, Plugin Settings, Global Parameter Collection, Curve, Timeline, Audio, Trace and Extension Asset windows.
 export { DataDefinitionDetailsPanel, DataDefinitionFieldsPanel } from "../../panels/data-definition-panel";
 export { DataTreeEntriesPanel, DataTreeHierarchyPanel, DataTreeValidationPanel, DataTreeValuesPanel } from "../../panels/data-asset-panels";
 export { SaveGameDefinitionPanel, SaveGameFieldsPanel } from "../../panels/save-game-panels";
@@ -12,3 +12,4 @@ export { TimelineClipPreviewPanel } from "../../panels/timeline-clip-preview-pan
 export { AudioClipsPanel, AudioDetailsPanel, AudioPreviewPanel } from "../../components/audio-editor";
 export { AudioChannelDetailsPanel, AudioMixerDetailsPanel, SoundAttenuationDetailsPanel } from "../../components/audio-asset-editor";
 export { TraceLogPanel, TraceSnapshotPanel, TraceTimelinePanel } from "../../components/trace-editor";
+export { ExtensionAssetDetailsPanel } from "../../components/extension-asset-editor";

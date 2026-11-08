@@ -111,6 +111,7 @@ import { WindowsMenu } from "./windows-menu";
 import { PlayDebugMenuItems, type PlayLaunchMode } from "./play-debug-menu-items";
 import { ExtensionDropdownMenuItems } from "./extension-commands";
 import { useExtensionMenuItems } from "./use-extension-menu-items";
+import { useExtensionAssetTypes } from "./use-extension-asset-types";
 
 /** The Settings and Debug menus describe nothing in particular to extension commands. */
 const noMenuContext = () => ({});
@@ -374,10 +375,11 @@ export function EditorChromeBar({
   const phone = usePhoneLayout();
   const touch = useTouchUi();
   // Keeps its lazy class lookup until the registry changes, not per edit.
+  const extensionAssetTypes = useExtensionAssetTypes();
   const resolveDocumentVisual = useMemo(() => {
     void registryEpoch;
-    return createDocumentTypeVisualResolver(assetRegistry);
-  }, [assetRegistry, registryEpoch]);
+    return createDocumentTypeVisualResolver(assetRegistry, extensionAssetTypes);
+  }, [assetRegistry, extensionAssetTypes, registryEpoch]);
 
   // Sheet row editors retain canonical documents for save/history without
   // opening a visible standalone tab until the user explicitly opens it.

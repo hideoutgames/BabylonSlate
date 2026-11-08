@@ -28,7 +28,7 @@ export interface RuntimeAssetCatalogEntry {
  * kind order. `Find Assets` can only target types listed here.
  */
 export const ASSET_TYPES: readonly string[] = [
-  ...new Set(ASSET_DOCUMENT_KINDS.map(assetTypeForDocumentKind)),
+  ...new Set(ASSET_DOCUMENT_KINDS.filter((kind) => kind !== "extension-asset").map(assetTypeForDocumentKind)),
 ];
 
 /** Class id of a Class asset: its file stem with non-identifier characters replaced by `_`. */

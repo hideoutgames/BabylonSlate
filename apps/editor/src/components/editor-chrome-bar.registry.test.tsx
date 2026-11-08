@@ -271,7 +271,9 @@ describe("chrome graph debugger", () => {
     simulate();
     state.activeId = "asset";
     state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), openDocument("asset", createDocumentRef(kind, "assets/Guard.hasset"))];
-    vi.spyOn(state.registry!, "getByPath").mockReturnValue({ header: { guid: "asset-guid" } } as unknown as ReturnType<AssetRegistry["getByPath"]>);
+    vi.spyOn(state.registry!, "getByPath").mockReturnValue({
+      header: { guid: "asset-guid", type: kind === "anim-graph" ? "AnimationGraph" : "BehaviourTree" },
+    } as unknown as ReturnType<AssetRegistry["getByPath"]>);
     render(<DebugChrome />);
     expect(store!.getSnapshot().target).toEqual(target);
     act(() => store!.receiveRoster({ target, reset: true, added: [{ id: "c1", kind: "component", label: "Guard" }], removed: [] }));

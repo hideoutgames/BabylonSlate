@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   AssetRegistry,
+  createExtensionSettings,
   encodeHasset,
+  normalizeExtensionContributions,
   projectContentRoot,
 } from "@haptic/assets";
 import { MemoryStorageAdapter } from "@haptic/vfs";
-import { createPickerAsset, createProjectAsset } from "./create-project-asset";
+import { createExtensionAsset, createPickerAsset, createProjectAsset } from "./create-project-asset";
+import { extensionAssetTypes } from "./extension-asset-types";
 
 async function registryWith(
   files: Array<{ path: string; type: string; name: string; parentClass?: string }>,
@@ -229,5 +232,28 @@ describe("createProjectAsset", () => {
       }),
     ).rejects.toThrow(/at most 16 levels/);
     expect(createAsset).not.toHaveBeenCalled();
+  });
+});
+
+describe("createExtensionAsset", () => {
+  it("writes a plain .hasset of the extension's type holding every field's default", async () => {
+    const registry = await registryWith([]);
+    const [type] = extensionAssetTypes([{
+      extensionGuid: "weather", folderName: "weather", folderPath: "extensions/weather", settingsPath: "extensions/weather/extension.json",
+      contentPath: "extensions/weather/assets", source: "project", readOnly: false,
+      settings: { ...createExtensionSettings("Weather", "weather"), contributes: normalizeExtensionContributions({ assetTypes: [{
+        id: "preset", title: "Weather Preset", sections: [{ id: "sky", title: "Sky", fields: [
+          { id: "rain", label: "Rain", type: "number", default: 2 },
+          { id: "kind", label: "Kind", type: "choice", options: [{ value: "drizzle", label: "Drizzle" }, { value: "storm", label: "Storm" }] },
+        ] }],
+      }] }) },
+    }]);
+
+    const asset = await createExtensionAsset({ registry, rootId: projectContentRoot().id, folderRelative: "Weather", type: type!, name: " Rain Storm " });
+
+    expect(asset.path).toBe("assets/Weather/Rain_Storm.hasset");
+    expect(asset.header.type).toBe("extension.weather.preset");
+    expect(asset.header.name).toBe("Rain Storm");
+    expect(asset.header.payload).toEqual({ rain: 2, kind: "drizzle" });
   });
 });

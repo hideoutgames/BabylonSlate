@@ -99,7 +99,7 @@ vi.mock("../context/document-context", async () => {
     if (projectTwoD.current) projectDocument.settings.twoD = { ...projectDocument.settings.twoD, ...projectTwoD.current };
     projectDocument.settings.extensionOverrides = extensionState.overrides;
     projectDocument.settings.extensionSettings = extensionState.values;
-    const snapshot = { entries: extensionState.entries, commands: [], diagnostics: [] };
+    const snapshot = { entries: extensionState.entries, commands: [], assetTypes: [], diagnostics: [] };
     return {
     projectDocument,
     extensionService: { subscribe: () => () => {}, getSnapshot: () => snapshot } as never,

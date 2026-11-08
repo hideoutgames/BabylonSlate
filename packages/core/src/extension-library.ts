@@ -17,6 +17,25 @@ export interface ExtensionModuleBundle {
   modules: ExtensionModule[];
 }
 
+/** One asset of a gameplay asset type its extension declares, with values resolved when linked. */
+export interface ExtensionLibraryAsset {
+  guid: string;
+  name: string;
+  /** The asset type's id in the manifest (`weatherPreset`). */
+  type: string;
+  values: Readonly<Record<string, string | number | boolean>>;
+}
+
+/** What game code reads from `haptic:extension`: its own extension's settings and gameplay assets. */
+export interface ExtensionHostModule {
+  readonly settings: Readonly<Record<string, string | number | boolean>>;
+  readonly assets: {
+    /** Every asset, or those of one asset type id. */
+    list(type?: string): readonly ExtensionLibraryAsset[];
+    get(guid: string): ExtensionLibraryAsset | null;
+  };
+}
+
 /** The game module of an enabled gameplay (not Editor Only) extension. */
 export interface ExtensionGameLibrary {
   extensionGuid: string;
@@ -26,7 +45,22 @@ export interface ExtensionGameLibrary {
   label: string;
   /** The extension's Project Settings values, resolved against its fields when linked. */
   settings: Readonly<Record<string, string | number | boolean>>;
+  /** The project's assets of the extension's gameplay asset types, in path order. */
+  assets: readonly ExtensionLibraryAsset[];
   bundle: ExtensionModuleBundle;
+}
+
+/** The frozen `haptic:extension` module one library's game code imports. */
+export function extensionHostModule(library: Pick<ExtensionGameLibrary, "settings" | "assets">): ExtensionHostModule {
+  const assets = library.assets.map((asset) => Object.freeze({ ...asset, values: Object.freeze({ ...asset.values }) }));
+  const byGuid = new Map(assets.map((asset) => [asset.guid, asset]));
+  return Object.freeze({
+    settings: Object.freeze({ ...library.settings }),
+    assets: Object.freeze({
+      list: (type?: string) => Object.freeze(assets.filter((asset) => type === undefined || asset.type === type)),
+      get: (guid: string) => byGuid.get(guid) ?? null,
+    }),
+  });
 }
 
 /** `extensions.<libraryName>` → that library's exports. */
@@ -94,8 +128,8 @@ export function loadExtensionGameLibraries(
       if (Object.hasOwn(extensions, library.libraryName)) {
         throw new Error(`Library Name ${library.libraryName} is already used.`);
       }
-      const host = Object.freeze({ settings: Object.freeze({ ...library.settings }) });
-      extensions[library.libraryName] = evaluateExtensionBundle(library.bundle, library.label, { extensions }, { [EXTENSION_HOST_MODULE]: host });
+      extensions[library.libraryName] = evaluateExtensionBundle(library.bundle, library.label, { extensions },
+        { [EXTENSION_HOST_MODULE]: extensionHostModule(library) });
     } catch (cause) {
       const error = new Error(`Extension ${library.label} failed to load: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
       if (!onError) throw error;

@@ -7,12 +7,13 @@ import { compileClassScript, graphNode, startGraphScenario, wire } from "./testi
 
 const registry = createDefaultNodeRegistry();
 
-function library(libraryName: string, modules: Record<string, string>, entry = Object.keys(modules)[0]!, imports: Record<string, Record<string, string>> = {}, settings: ExtensionGameLibrary["settings"] = {}): ExtensionGameLibrary {
+function library(libraryName: string, modules: Record<string, string>, entry = Object.keys(modules)[0]!, imports: Record<string, Record<string, string>> = {}, settings: ExtensionGameLibrary["settings"] = {}, assets: ExtensionGameLibrary["assets"] = []): ExtensionGameLibrary {
   return {
     extensionGuid: `${libraryName}-guid`,
     libraryName,
     label: libraryName[0]!.toUpperCase() + libraryName.slice(1),
     settings,
+    assets,
     bundle: { entry, modules: Object.entries(modules).map(([path, code]) => ({ path, code, imports: imports[path] ?? {} })) },
   };
 }
@@ -73,6 +74,31 @@ describe("Extension game libraries", () => {
 
     expect(scenario.diagnostics()).toEqual([]);
     expect(scenario.logs("Probe")).toEqual(["north:6"]);
+  });
+
+  it("give each library its own gameplay assets through haptic:extension, frozen", async () => {
+    const weather = library("weather", {
+      "game.js": [
+        "const { assets } = require('haptic:extension');",
+        "exports.describe = (value) => {",
+        "  const presets = assets.list('preset');",
+        "  let mutated = 'no';",
+        "  try { presets[0].values.rain = 99; mutated = String(presets[0].values.rain === 99); } catch { mutated = 'threw'; }",
+        "  return [presets.map((asset) => `${asset.name}=${asset.values.rain * value}`).join(','), assets.list().length,",
+        "    assets.get('zone-guid')?.name, String(assets.get('missing')), mutated].join('|');",
+        "};",
+      ].join('\n'),
+    }, "game.js", { "game.js": { "haptic:extension": "haptic:extension" } }, {}, [
+      { guid: "dry-guid", name: "Dry", type: "preset", values: { rain: 0 } },
+      { guid: "wet-guid", name: "Wet", type: "preset", values: { rain: 2 } },
+      { guid: "zone-guid", name: "Coast", type: "zone", values: { radius: 5 } },
+    ]);
+
+    const scenario = await run("result = extensions.weather.describe(value);", [weather]);
+
+    expect(scenario.diagnostics()).toEqual([]);
+    // Library code runs in strict mode only when it opts in, so a frozen write is ignored rather than thrown.
+    expect(scenario.logs("Probe")).toEqual(["Dry=0,Wet=6|3|Coast|null|false"]);
   });
 
   it("reports a library that fails to load and still loads the others", async () => {

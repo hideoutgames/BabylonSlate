@@ -5,6 +5,7 @@ import {
   classParentLookup,
   visualForIndexedAsset,
 } from "./content-browser-helpers";
+import type { ExtensionAssetTypeDescriptor } from "./extension-asset-types";
 
 /**
  * Caches class ancestry on first use, so a reparented Class needs a new
@@ -12,6 +13,8 @@ import {
  */
 export function createDocumentTypeVisualResolver(
   registry: AssetRegistry | null | undefined,
+  /** The enabled extensions' asset types, for their tabs' icons. */
+  extensionTypes: readonly ExtensionAssetTypeDescriptor[] = [],
 ) {
   let parents: ReturnType<typeof classParentLookup> | undefined;
   const parentOf = (id: string) => {
@@ -21,7 +24,7 @@ export function createDocumentTypeVisualResolver(
   return (ref: DocumentRef) => {
     const indexed = registry?.getByPath(ref.path);
     return indexed
-      ? visualForIndexedAsset(indexed, parentOf)
+      ? visualForIndexedAsset(indexed, parentOf, extensionTypes)
       : resolveTypeVisual({
           assetType:
             ref.kind === "content-browser"

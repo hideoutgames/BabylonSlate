@@ -134,9 +134,10 @@ describe("exportGame", () => {
     expect(parseGameManifest(JSON.stringify(json)).garbageCollectionIntervalTicks).toBe(60);
   });
 
-  it("ships gameplay Extension libraries in game.json for the player to load", async () => {
+  it("ships gameplay Extension libraries and their assets in game.json for the player to load", async () => {
     const library = {
       extensionGuid: "weather-guid", libraryName: "weather", label: "Weather", settings: { region: "north" },
+      assets: [{ guid: "rain-guid", name: "Rain", type: "preset", values: { chance: 0.5, storms: true } }],
       bundle: { entry: "game.ts", modules: [{ path: "game.ts", code: "exports.rain = 1;", imports: {} }] },
     };
     const withLibrary = await exportGame({

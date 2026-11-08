@@ -6,6 +6,7 @@ import {
   renamedAssetPath,
 } from "@haptic/assets";
 import {
+  isExtensionAssetType,
   isSceneWorkspaceKind,
   type SerializedScene,
   type ViewportMode,
@@ -25,6 +26,7 @@ import {
   newAssetFileName,
 } from "./class-asset-lookup";
 import { joinAssetFolderPath } from "./content-browser-tree";
+import { extensionAssetTypeVisual, findExtensionAssetType, type ExtensionAssetTypeDescriptor } from "./extension-asset-types";
 import { isMaterialAssetType } from "./material-asset-filters";
 import { shownCompressionState } from "./texture-encode-state";
 
@@ -546,7 +548,12 @@ export function classIdConflict(
 export function visualForIndexedAsset(
   asset: IndexedAsset,
   parentOf: (id: string) => string | null,
+  /** The enabled extensions' asset types, for their icons. */
+  extensionTypes: readonly ExtensionAssetTypeDescriptor[] = [],
 ): TypeVisual {
+  if (isExtensionAssetType(asset.header.type)) {
+    return extensionAssetTypeVisual(findExtensionAssetType(extensionTypes, asset.header.type));
+  }
   if (asset.header.type === "Class") {
     const start = asset.header.parentClass ?? "Object";
     return resolveTypeVisual({
@@ -574,7 +581,7 @@ export function openSceneViewportMode(
 export function isNewAssetNameTaken(
   existingPaths: Iterable<string>,
   folderPath: string,
-  type: CreatableAssetType,
+  type: CreatableAssetType | (string & {}),
   name: string,
 ): boolean {
   const fileName = newAssetFileName(type, name);
