@@ -59,10 +59,6 @@ vi.mock("../lib/engine-extension-library", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/engine-extension-library")>()),
   ensureEngineExtensionLibrary: (await provider()).emptyEngineLibrary,
 }));
-vi.mock("@haptic/render/ktx2-transcoder", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@haptic/render/ktx2-transcoder")>()),
-  probeKtx2TranscoderAvailable: async () => false,
-}));
 vi.mock("@haptic/render/scene-load-readiness", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@haptic/render/scene-load-readiness")>()),
   waitForSceneLoadingPaint: async () => {},

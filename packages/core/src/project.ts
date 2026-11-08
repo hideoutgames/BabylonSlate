@@ -43,8 +43,6 @@ export interface ProjectMetadata {
 export interface TextureProjectSettings {
   /** Max imported texture dimension (default 2048 for A16 baseline). */
   maxTextureDimension: number;
-  /** When true, missing KTX2 chunks are re-queued once transcoder is available. */
-  autoRequeueUncompressed: boolean;
 }
 
 export interface TwoDProjectSettings {
@@ -513,7 +511,6 @@ export const DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS: PlayPreviewProjectSettings =
 
 const DEFAULT_TEXTURE_PROJECT_SETTINGS: TextureProjectSettings = {
   maxTextureDimension: 2048,
-  autoRequeueUncompressed: true,
 };
 
 export const DEFAULT_SORTING_LAYERS = [
@@ -773,9 +770,6 @@ export function normalizeProjectSettings(
       maxTextureDimension:
         settings?.textures?.maxTextureDimension ??
         DEFAULT_TEXTURE_PROJECT_SETTINGS.maxTextureDimension,
-      autoRequeueUncompressed:
-        settings?.textures?.autoRequeueUncompressed ??
-        DEFAULT_TEXTURE_PROJECT_SETTINGS.autoRequeueUncompressed,
     },
     focusNavigation: normalizeFocusNavigationSettings(settings?.focusNavigation),
     fonts: {

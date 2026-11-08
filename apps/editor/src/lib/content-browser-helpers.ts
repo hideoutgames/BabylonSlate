@@ -114,7 +114,6 @@ type TextureCompressionState = SavedTextureCompressionState | "encoding";
 const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
   "pending",
   "encoding",
-  "fallback_uncompressed",
   "encode_failed",
 ];
 
@@ -396,8 +395,6 @@ export function compressionBadgeLabel(state: TextureCompressionState): string {
       return "Compress pending";
     case "encoding":
       return "Encoding";
-    case "fallback_uncompressed":
-      return "Uncompressed fallback";
     case "encode_failed":
       return "Encode failed";
     default:

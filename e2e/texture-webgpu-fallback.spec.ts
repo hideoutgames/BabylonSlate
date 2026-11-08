@@ -327,9 +327,9 @@ async function addTwoToneTexture(
     height,
     usage: source === "ktx2" ? "albedo" : "pixelArt",
     downsample: 1,
-    compressionState: source === "ktx2" ? "compressed" : "fallback_uncompressed",
   };
   if (source === "ktx2") {
+    texture.compressionState = "compressed";
     const settings = { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, maxDimension: height };
     const chunkId = ktx2ChunkId(await encodeSettingsHash(settings));
     const ktx2 = await encodeKtx2(settings, width, height, (row) => (row < height / 2 ? TOP : BOTTOM));

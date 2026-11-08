@@ -87,7 +87,7 @@ Baseline: 11-inch A16 iPad, 6 GB RAM, WebGL2, WKWebView. Budgets target it; desk
 - Materials lower to NodeMaterial blocks, not shader source, for WebGL + WebGPU portability; the catalog is a curated view over blocks and composes missing builtins from blocks. `CustomBlock` is a GLSL-only escape hatch with an explicit WebGPU diagnostic. Materials pre-warm at load.
 - Particle Graphs are our own IR lowered onto Node Particle blocks; never the NPE UI, snippet server, CDN or Babylon JSON.
 - glTF import keeps the original bytes as a chunk plus extracted metadata; the runtime loads through Babylon's loader (the one non-pure importer, deliberately). FBX, OBJ and STL convert to GLB in the editor first.
-- The KTX2 transcoder is self-hosted via `KhronosTextureContainer2.URLConfig` and must ship in the editor, player and every export.
+- The KTX2 transcoder is self-hosted via `KhronosTextureContainer2.URLConfig` and must ship in the editor, player and every export. The editor does not check for it at project open: a build without it fails compressed Texture loads rather than falling back to source pixels.
 - WebGL context loss is normal on iPad: restore resets hardware scaling to the Engine Settings floor, the resolution valve forgets hitch samples, Babylon rebuilds retained resources (the ResourceCache is not flushed), materials invalidate and the Output Log reports it.
 - iOS blocks audio until a gesture: both hosts unlock on the first touch, never at load.
 - `NullEngine` is the `render` test seam and the production host for worker physics.
@@ -197,7 +197,7 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 - UASTC + Zstd is the default (quality over download size; same VRAM as ETC1S). ETC1S is a per-texture option.
 - Policy by usage: 3D material textures and normal maps → UASTC (normals never ETC1S); pixel-art sprites/tilesets, UI textures and fonts stay uncompressed. Compressed textures encode at a size rounded up to a multiple of 4 (WebGPU rejects unaligned blocks); atlases keep their size and decode to RGBA on WebGPU instead. Every default is a visible per-texture override.
 - Encoding runs in one persistent dedicated import Worker (not a Service Worker or idle callbacks): one job at a time, transferable buffers, decode-then-clamp in the worker with a main-thread decode fallback, recycled after a few jobs (wasm heaps never shrink), paused during Preview and app background.
-- The asset is usable from source bytes immediately. Compression states `pending` / `encoding` / `compressed` / `fallback_uncompressed` / `encode_failed` are badged in the Content Browser; Project Settings offers Retry Encoding; fallback assets re-queue once when the transcoder loads. Silent fallback is not allowed.
+- The asset is usable from source bytes immediately. Compression states `pending` / `encoding` / `compressed` / `encode_failed` are badged in the Content Browser; Project Settings offers Retry Encoding. Silent fallback is not allowed.
 - Both source and KTX2 chunks are stored and committed (derived data does not travel through git); exports ship only the KTX2 variant when present.
 - Project max import dimension (default 2048) and per-texture Downsample are authored; Engine Settings Editor Texture LOD affects only the editor and overlay Play, never packed games.
 

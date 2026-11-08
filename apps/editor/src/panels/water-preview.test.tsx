@@ -211,12 +211,10 @@ describe("WaterPreviewPanel", () => {
     rerender();
     await waitFor(() => expect(builds()).toBe(2));
 
-    // An encode that falls back or fails re-indexes the Texture without changing the bytes the preview loads.
-    for (const progress of [{ compressionState: "fallback_uncompressed" }, { compressionState: "encode_failed", encodeError: "Encoder failed.", encodeWallMs: 12 }]) {
-      harness.assets.set("tex", texture(progress, ["source-1"]));
-      harness.registryEpoch++;
-      rerender();
-    }
+    // An encode that fails re-indexes the Texture without changing the bytes the preview loads.
+    harness.assets.set("tex", texture({ compressionState: "encode_failed", encodeError: "Encoder failed.", encodeWallMs: 12 }, ["source-1"]));
+    harness.registryEpoch++;
+    rerender();
     expect(harness.hosts).toHaveLength(2);
 
     // A committed encode (or a reimport) changes the saved bytes, which the preview loads from the asset.

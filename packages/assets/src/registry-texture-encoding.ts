@@ -43,10 +43,7 @@ export async function retryTextureEncoding(
   const root = host.roots.get(asset.rootId);
   if (asset.placeholder || !root || root.readOnly) return false;
   const state = asset.header.payload.compressionState;
-  const recoverable =
-    state === "encode_failed" ||
-    state === "fallback_uncompressed" ||
-    state === "pending";
+  const recoverable = state === "encode_failed" || state === "pending";
   if (!recoverable && options?.force !== true) {
     return false;
   }
@@ -97,11 +94,7 @@ export async function requeueUncompressedTextures(host: RegistryHost): Promise<n
   for (const { header } of host.list({ type: "Texture" })) {
     const asset = await settledTexture(host, header.guid);
     if (!asset || queue.has(header.guid)) continue;
-    const state = asset.header.payload.compressionState;
-    if (
-      state === "fallback_uncompressed" ||
-      state === "pending"
-    ) {
+    if (asset.header.payload.compressionState === "pending") {
       try {
         if (await host.retryTextureEncoding(header.guid)) count += 1;
       } catch (error) {

@@ -77,11 +77,6 @@ vi.mock("../lib/engine-extension-library", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/engine-extension-library")>()),
   ensureEngineExtensionLibrary: (await provider()).emptyEngineLibrary,
 }));
-const transcoderProbe = vi.hoisted(() => ({ answer: (): Promise<boolean> => Promise.resolve(false) }));
-vi.mock("@haptic/render/ktx2-transcoder", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@haptic/render/ktx2-transcoder")>()),
-  probeKtx2TranscoderAvailable: () => transcoderProbe.answer(),
-}));
 vi.mock("@haptic/render/scene-load-readiness", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@haptic/render/scene-load-readiness")>()),
   waitForSceneLoadingPaint: async () => {},
@@ -202,16 +197,21 @@ afterEach(async () => {
 });
 
 describe("DocumentProvider actions and route", () => {
-  it("finishes opening a project while the KTX2 transcoder check is still out", async () => {
-    let answer!: (available: boolean) => void;
-    transcoderProbe.answer = () => new Promise((resolve) => { answer = resolve; });
+  it("opens and reopens a project without asking for the KTX2 transcoder files", async () => {
+    // Every build ships the transcoder, so a project open spends no request on it.
+    const requests = vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
     try {
-      await openProject();
+      const actions = await openProject();
+      const listed = documents().listedProjects.find((project) => project.label === "Stable")!;
+      await act(() => actions.forceCloseProject());
+      await act(() => actions.openListedProject(listed));
       expect(documents().route).toBe("editor");
-      expect(answer).toBeTypeOf("function");
+      // A macrotask: work an open leaves running has had its turn.
+      await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+      expect(requests.mock.calls.map(([input]) => String(input instanceof Request ? input.url : input))
+        .filter((url) => url.includes("ktx2/"))).toEqual([]);
     } finally {
-      answer?.(false);
-      transcoderProbe.answer = () => Promise.resolve(false);
+      requests.mockRestore();
     }
   });
 
