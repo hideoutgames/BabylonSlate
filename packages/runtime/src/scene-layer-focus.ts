@@ -4,7 +4,7 @@ import {
 } from "@haptic/core";
 import { Actor, ActorComponent, type World } from "@haptic/object-model";
 import { InputResolver, type AxisBinding, type RawInputEvent, type ResolvedInputTick } from "@haptic/input";
-import { actorParentGuid, actorWorldTransform, composeParentChildTransform, actorGuidIndex } from "./actor-world-transform";
+import { actorParentGuid, actorWorldTransform, composeParentChildTransform } from "./actor-world-transform";
 
 /** x/y are the rectangle center in the owning layer's design coordinates. */
 export interface FocusBounds { x: number; y: number; width: number; height: number }
@@ -23,7 +23,6 @@ interface Candidate {
 /** Scene Layer actors with focus-target components, in world order, for one world structure revision. */
 interface FocusTargets {
   revision: number;
-  byGuid: Map<string, Actor>;
   entries: Array<{ actor: Actor; components: ActorComponent[] }>;
 }
 
@@ -80,6 +79,11 @@ export class SceneLayerFocusNavigation {
   private initialLayer: string | null = null;
   private targets: FocusTargets | null = null;
   private readonly parsed = new WeakMap<ActorComponent, ParsedFocusProperties>();
+  /**
+   * Parent lookups through the World's own guid registry, which holds exactly its actor list; nothing spawns or
+   * destroys while candidates are collected.
+   */
+  private readonly actors: Pick<ReadonlyMap<string, Actor>, "get"> = { get: (guid) => this.world.findActor(guid) };
 
   constructor(world: World, settings: Partial<FocusNavigationSettings> | undefined, host: FocusNavigationHost) {
     this.world = world;
@@ -103,7 +107,7 @@ export class SceneLayerFocusNavigation {
       const components = actor.components.filter((component) => isFocusTargetClass(component.classId));
       if (components.length > 0) entries.push({ actor, components });
     }
-    this.targets = { revision, byGuid: actorGuidIndex(actors), entries };
+    this.targets = { revision, entries };
     return this.targets;
   }
 
@@ -128,7 +132,8 @@ export class SceneLayerFocusNavigation {
     // Focus targets live only on Scene Layer actors; a world without a live layer has none to walk.
     const liveLayers = this.world.getSceneLayers().filter((layer) => !layer.destroyed);
     if (liveLayers.length === 0) return [];
-    const { byGuid, entries } = this.focusTargets();
+    const { entries } = this.focusTargets();
+    const byGuid = this.actors;
     const result: Candidate[] = [];
     for (const { actor, components } of entries) {
       if (!available(actor) || !this.host.canRun(actor)) continue;
@@ -285,10 +290,16 @@ export class SceneLayerFocusNavigation {
     if (next) this.transition(next);
   }
 
+  /**
+   * Settings are normalized once and never change, so a disabled navigation never has candidates or a focus, and the
+   * fallback bindings are never read once both inputs are configured; neither then needs this tick's work.
+   */
   tick(events: readonly RawInputEvent[], input: ResolvedInputTick, dt: number): void {
-    const defaults = this.defaults.resolve(events, dt);
-    const candidates = this.refreshed();
     if (!this.settings.enabled) return;
+    const defaults = this.settings.navigationInputGuid && this.settings.activateInputGuid
+      ? null
+      : this.defaults.resolve(events, dt);
+    const candidates = this.refreshed();
     const layer = candidates[0]?.actor.sceneLayerId ?? null;
     if (layer !== this.initialLayer) {
       this.initialLayer = layer;
@@ -297,7 +308,7 @@ export class SceneLayerFocusNavigation {
     }
     const navigate = this.settings.navigationInputGuid
       ? input.inputs[this.settings.navigationInputGuid]
-      : defaults.inputs.focusNavigate;
+      : defaults?.inputs.focusNavigate;
     const direction = directionOf(navigate?.held ? navigate.value : undefined);
     const pulse = !navigate?.held && navigate?.started ? directionOf(navigate.activeValue) : null;
     if (pulse) this.move(pulse);
@@ -314,7 +325,7 @@ export class SceneLayerFocusNavigation {
     }
     const activate = this.settings.activateInputGuid
       ? input.inputs[this.settings.activateInputGuid]
-      : defaults.inputs.focusActivate;
+      : defaults?.inputs.focusActivate;
     // A release and repress between ticks ends the previous press first.
     // Keep a final held press pending; a completed tap still ends this tick.
     const releaseBeforeStart = activate?.started && activate.released && (activate.held || this.pressed !== null);
