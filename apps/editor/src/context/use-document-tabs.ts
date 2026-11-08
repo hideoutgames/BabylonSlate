@@ -10,7 +10,7 @@ import {
 import { listTraceDocuments, newAssetGuid, pruneTraceDocuments } from "@haptic/assets";
 import { journalDiscardLine, type EditSession } from "@haptic/edit";
 import type { TracePayload } from "@haptic/debugger";
-import { waitForSceneLoadingPaint } from "../lib/scene-viewport-load";
+import { waitForSceneLoadingPaint } from "@haptic/render/scene-load-readiness";
 import type { JournalBuffer } from "../lib/journal-buffer";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { documentContentIdentity } from "../lib/document-content-identity";

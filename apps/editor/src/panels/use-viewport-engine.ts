@@ -17,10 +17,8 @@ import {
   editorMeshoptPublicBase,
 } from "../lib/public-engine-assets";
 import { createCanvasResizeGuard, waitForCanvasSize } from "../lib/canvas-resize-guard";
-import {
-  sceneViewportRenderSettings,
-  waitForSceneLoadingPaint,
-} from "../lib/scene-viewport-load";
+import { sceneViewportRenderSettings } from "../lib/scene-viewport-load";
+import { waitForSceneLoadingPaint } from "@haptic/render/scene-load-readiness";
 import type { ViewportDropReady, ViewportSceneLoadState } from "./use-viewport-scene-load";
 
 export interface ViewportEngineDeps {

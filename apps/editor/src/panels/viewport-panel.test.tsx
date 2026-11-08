@@ -226,7 +226,6 @@ vi.mock("../components/viewport-joystick", () => ({
 
 vi.mock("../lib/viewport-render-gate", () => ({
   attachViewportRenderGate: () => () => {},
-  ENGINE_SETTINGS_CHANGED_EVENT: "haptic:engine-settings",
 }));
 
 class IntersectionObserverStub {

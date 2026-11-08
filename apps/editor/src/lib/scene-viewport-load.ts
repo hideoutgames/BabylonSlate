@@ -77,7 +77,6 @@ export function isSceneViewportRemountLoad(
   return engineGeneration !== completedGeneration;
 }
 
-export { waitForSceneLoadingPaint } from "@haptic/render/scene-load-readiness";
 import { waitForSceneLoadingPaint, type SceneLoadCount } from "@haptic/render/scene-load-readiness";
 
 /** Two frame intervals at 60 Hz: a load that ran this long after its dialog painted has given the page paints. */

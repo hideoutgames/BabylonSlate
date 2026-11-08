@@ -1,6 +1,6 @@
 import { CONTENT_BROWSER_ID } from "@haptic/core";
 import { useEffect, useRef, useState } from "react";
-import { attachLifecyclePause } from "../services/lifecycle-pause";
+import { attachLifecyclePause } from "@haptic/render/lifecycle-pause";
 
 /** Inactive chrome tabs stay mounted this long after last being active. */
 export const DOCUMENT_IDLE_UNMOUNT_MS = 120_000;

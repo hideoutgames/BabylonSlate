@@ -1,6 +1,4 @@
-import { pluginFolderSlug, resolvePluginEnabled, uniquePluginFolderName } from "@haptic/assets";
-
-export { pluginFolderSlug, uniquePluginFolderName };
+import { pluginFolderSlug, resolvePluginEnabled } from "@haptic/assets";
 
 export function pluginDownloadFileName(displayName: string): string {
   return `${pluginFolderSlug(displayName)}.hplugin`;

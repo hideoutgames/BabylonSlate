@@ -17,11 +17,11 @@ import {
 import { spawnableLightsFromScripts } from "@haptic/render/spawnable-lights";
 import { encodeInputEvents } from "@haptic/input";
 import {
+  createSessionBoundaryClient,
   snapshotFloatCount,
   type CommandMessage,
 } from "@haptic/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
-import { createSessionBoundaryClient } from "./session-boundary-client";
 import { RuntimeInspectorClient } from "./runtime-inspector-client";
 import { RuntimeMaterialEditHost } from "./runtime-material-edit-host";
 import { SimulationCaptureClient } from "./simulation-capture-client";

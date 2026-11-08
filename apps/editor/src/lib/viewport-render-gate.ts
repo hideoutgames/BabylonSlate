@@ -1,9 +1,6 @@
 import type { QualityOverrides } from "@haptic/core";
-import { ENGINE_SETTINGS_CHANGED_EVENT } from "@haptic/vfs";
 import { subscribeAppSettings } from "../context/app-settings-context";
 import { editorQuiet } from "./editor-quiet";
-
-export { ENGINE_SETTINGS_CHANGED_EVENT };
 
 const BLOCKING_OVERLAY_SELECTOR = [
   '[data-slot="dialog-overlay"]',
