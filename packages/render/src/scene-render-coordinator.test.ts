@@ -1236,7 +1236,7 @@ describe("selection outline changes", () => {
     expect(renderer.taskNames()).toContain("Shared outlines");
     const { graphBuilds } = renderer.diagnostics();
     const strict = renderer.strictReadinessChecks;
-    const outline = renderer.outlineReadinessChecks;
+    const outline = renderer.diagnostics().outlineReadinessChecks;
     // The new selection's mask program is still compiling: no frame may present before it is ready.
     let compiled = false;
     const isReady = Effect.prototype.isReady;
@@ -1250,11 +1250,11 @@ describe("selection outline changes", () => {
     expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
     expect(renderer.strictReadinessChecks).toBe(strict);
     expect(renderer.diagnostics().graphBuilds).toBe(graphBuilds);
-    expect(renderer.outlineReadinessChecks).toBeGreaterThan(outline);
+    expect(renderer.diagnostics().outlineReadinessChecks).toBeGreaterThan(outline);
     // Admitted again: steady frames add no probe of any kind.
-    const settled = renderer.outlineReadinessChecks;
+    const settled = renderer.diagnostics().outlineReadinessChecks;
     expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
-    expect(renderer.outlineReadinessChecks).toBe(settled);
+    expect(renderer.diagnostics().outlineReadinessChecks).toBe(settled);
     expect(renderer.strictReadinessChecks).toBe(strict);
     renderer.dispose();
   });

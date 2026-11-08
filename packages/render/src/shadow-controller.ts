@@ -59,7 +59,6 @@ import {
   type EffectiveShadowBias,
   type LocalShadowLight,
   type ShadowEntry as Entry,
-  type ShadowLightStatus,
 } from "./shadow-entry";
 import {
   applyShadowAdmission,
@@ -494,9 +493,6 @@ export class SceneShadowController {
           generator.shadowCastersBoundingInfo.reConstruct(casterBounds.min, casterBounds.max);
       }
     });
-  }
-  status(light: Light): ShadowLightStatus | undefined {
-    return this.entries.get(light)?.status;
   }
   /** Authored request, independent of admission, visibility and global shadow enablement. */
   requestsShadow(light: Light): boolean {

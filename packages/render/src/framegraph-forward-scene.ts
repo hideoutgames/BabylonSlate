@@ -688,11 +688,6 @@ export class ForwardSceneFrameGraph {
     return this.strictChecks;
   }
 
-  /** Outline-only readiness probes; a selection change adds these, never a strict scene probe. */
-  get outlineReadinessChecks(): number {
-    return this.outlineChecks;
-  }
-
   /**
    * Babylon defers its entity add/remove observables to a later task. Compare
    * the readiness-relevant collection sizes each frame so a membership change
