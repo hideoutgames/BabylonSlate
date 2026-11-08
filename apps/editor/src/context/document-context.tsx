@@ -724,7 +724,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         runForegroundRescan: () => runForegroundRescanRef.current(),
         applyGraphChange,
         applySceneChange,
-        updateProjectSettings,
       });
     });
     return () => {
@@ -742,7 +741,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ensureDerived,
     journalBuffer,
     projectService,
-    updateProjectSettings,
     runForegroundRescanRef,
   ]);
 

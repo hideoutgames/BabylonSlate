@@ -2,9 +2,7 @@ import type { ProjectDocument, ProjectStorage, SerializedGraph, SerializedScene 
 import { getTile, normalizeTilemapPayload, readJournalLines } from "@haptic/assets";
 import { resolveJournalLines } from "@haptic/edit";
 import { editorQuiet } from "../lib/editor-quiet";
-import { advanceTestIdleClock } from "../lib/document-working-set";
 import { lastEnginePluginLoad } from "../lib/engine-plugins";
-import { lastNavBakeSaveResult } from "../lib/nav-bake-save";
 import type { JournalBuffer } from "../lib/journal-buffer";
 import {
   clearDocumentDirtyTrace,
@@ -33,7 +31,6 @@ export interface EditorTestHookDeps {
   runForegroundRescan: () => Promise<void>;
   applyGraphChange: DocumentContextValue["applyGraphChange"];
   applySceneChange: DocumentContextValue["applySceneChange"];
-  updateProjectSettings: DocumentContextValue["updateProjectSettings"];
 }
 
 /**
@@ -55,7 +52,6 @@ export function installEditorTestHooks(deps: EditorTestHookDeps): () => void {
     runForegroundRescan,
     applyGraphChange,
     applySceneChange,
-    updateProjectSettings,
   } = deps;
   const host = globalThis as {
     __hapticTest?: {
@@ -76,34 +72,20 @@ export function installEditorTestHooks(deps: EditorTestHookDeps): () => void {
         axes?: number[];
         buttons?: number[];
       } | null) => void;
-      injectTestTouchAxis: (axes: Record<string, number> | null) => void;
       setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
       setMainGraphComponents: (
         components: SerializedGraph["components"],
       ) => Promise<boolean>;
       setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
       activeSceneContent: () => SerializedScene | null;
-      advanceIdleClock: (ms: number) => void;
       guidForPath: (path: string) => string | null;
       readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
-      lastNavBake: () => {
-        ok: boolean;
-        path: string | null;
-        byteLength: number;
-        error: string | null;
-      } | null;
       projectStartupSceneGuid: () => string;
       pluginGuids: () => string[];
       enginePluginLoad: () => {
         entries: number;
         errors: string[];
       };
-      seedMissingPluginOverride: (guid: string) => Promise<{
-        guid: string;
-        type: string;
-        path: string;
-        placeholder: boolean;
-      } | null>;
       activeTilemapTile: (gx: number, gy: number) => number | null;
       touchAssetOnDisk: (path: string) => Promise<void>;
       runForegroundRescan: () => Promise<void>;
@@ -249,16 +231,6 @@ export function installEditorTestHooks(deps: EditorTestHookDeps): () => void {
         buttons: pad.buttons ?? [0, 0, 0, 0],
       };
     },
-    injectTestTouchAxis: (axes) => {
-      const globalHost = globalThis as {
-        __hapticTestTouchAxes?: Record<string, number>;
-      };
-      if (!axes) {
-        delete globalHost.__hapticTestTouchAxes;
-        return;
-      }
-      globalHost.__hapticTestTouchAxes = { ...axes };
-    },
     /** Replace the main graph so Preview compiles a known script. */
     setMainGraphContent: async (graph: SerializedGraph) => {
       const candidates = [
@@ -311,13 +283,9 @@ export function installEditorTestHooks(deps: EditorTestHookDeps): () => void {
       if (!openScene) return false;
       return applySceneChange(openScene.id, structuredClone(scene));
     },
-    advanceIdleClock: (ms: number) => {
-      advanceTestIdleClock(ms);
-    },
     guidForPath: (path: string) => projectService.guidForPath(path),
     readAssetChunk: (path: string, chunkId: string) =>
       projectService.readAssetChunk(path, chunkId),
-    lastNavBake: () => lastNavBakeSaveResult(),
     textureAlignment: () => projectService.textureAlignmentState,
     pendingTextureEncodes: () =>
       unfinishedTextureEncodePaths(projectService.registry?.list() ?? [], projectService.textureEncodingGuids),
@@ -346,22 +314,6 @@ export function installEditorTestHooks(deps: EditorTestHookDeps): () => void {
     pluginGuids: () =>
       projectService.plugins.map((plugin) => plugin.pluginGuid),
     enginePluginLoad: () => ({ ...lastEnginePluginLoad }),
-    seedMissingPluginOverride: async (guid: string) => {
-      const current =
-        projectDocument()?.settings.pluginOverrides ?? {};
-      const next = { ...current, [guid]: { enabled: true } };
-      updateProjectSettings({ pluginOverrides: next });
-      await projectService.applyPluginOverrides(next);
-      bump();
-      const asset = projectService.registry?.getByGuid(guid);
-      if (!asset) return null;
-      return {
-        guid: asset.header.guid,
-        type: asset.header.type,
-        path: asset.path,
-        placeholder: asset.placeholder === true,
-      };
-    },
     activeTilemapTile: (gx: number, gy: number) => {
       const doc = [...documentService.getState().openDocuments.values()].find(
         (entry) => entry.ref.kind === "tilemap" && entry.content,
@@ -398,7 +350,5 @@ export function installEditorTestHooks(deps: EditorTestHookDeps): () => void {
     delete host.__hapticSourceControl;
     delete (globalThis as { __hapticTestGamepad?: unknown })
       .__hapticTestGamepad;
-    delete (globalThis as { __hapticTestTouchAxes?: unknown })
-      .__hapticTestTouchAxes;
   };
 }
