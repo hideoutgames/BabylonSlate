@@ -3,7 +3,7 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
-import type { RuntimeObjectIdentity } from "@haptic/bridge";
+import { runtimeIdentityKey, type RuntimeObjectIdentity } from "@haptic/bridge";
 import type { SerializedTransform, ViewportMode } from "@haptic/core";
 import { createGizmoHost, type GizmoSnapSettings, type GizmoTool } from "./gizmo-host";
 import { markEditorHelperMesh } from "./helper-mesh";
@@ -58,11 +58,6 @@ type Host = {
   registerOverlay: (draw: (camera: Camera) => void) => () => void;
   forwardPointers: boolean;
 };
-
-const identityKey = (identity: RuntimeObjectIdentity) => JSON.stringify([
-  identity.sceneInstanceId, identity.actorGuid, identity.actorToken,
-  identity.componentGuid ?? null, identity.componentToken ?? null,
-]);
 
 /** Existing gizmos manipulate a session-owned draft proxy. Only a typed,
  * acknowledged runtime mutation changes the real actor/component pose. */
@@ -252,7 +247,7 @@ export function createRuntimeTransformTools(
   return {
     setSelection: (identity, options = {}) => {
       if (disposed) return { accepted: false, reason: "Runtime transform tools were disposed." };
-      const key = identity ? identityKey(identity) : null;
+      const key = identity ? runtimeIdentityKey(identity) : null;
       if (key === selectedKey) {
         writable = options.writable !== false;
         if (options.slotId !== undefined) selectedSlot = options.slotId;

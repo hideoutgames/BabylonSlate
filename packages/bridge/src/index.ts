@@ -69,6 +69,7 @@ export { controlTransferables } from "./control-transfers";
 export { dispatchCommandBatch } from "./command-batch";
 
 export type { RuntimeObjectIdentity, RuntimeInspectorValue, RuntimePropertyCapability, RuntimePropertyDescriptor, RuntimeIdentityRow, RuntimeIdentityCursor, RuntimeInspectorAction, RuntimeInspectorRequest, RuntimeInspectorPayload, RuntimeInspectorResult } from "./runtime-inspector";
+export { runtimeIdentityKey } from "./runtime-inspector";
 
 export type { DiagnosticOperation, DiagnosticOperationRequest, DiagnosticOperationResult, PerformanceScriptEntry, PerformanceTickChunk } from "./diagnostic-operation";
 

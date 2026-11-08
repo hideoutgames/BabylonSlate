@@ -31,8 +31,9 @@ export const WATER_OWNERSHIP_UNIFORMS = [
 const WATER_OWNERSHIP_FLOATS = WATER_OWNERSHIP_UNIFORMS.length * 4;
 
 const footprintCode = (kind: string) => kind === "global" ? 0 : kind === "ocean" ? 1 : kind === "lake" || kind === "puddle" ? 2 : -1;
-const smoothstep = (a: number, b: number, x: number) => {
-  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+/** GLSL's `smoothstep` on the CPU: 0 below `edge0`, 1 above `edge1`, a cubic ease between. */
+export const smoothstep = (edge0: number, edge1: number, x: number) => {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
 };
 

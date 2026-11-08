@@ -4,6 +4,7 @@
  */
 import type { Material } from "@babylonjs/core/Materials/material";
 import type { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { WaterBodyProperties, WaterDefinition } from "@haptic/core";
@@ -13,6 +14,18 @@ import type { WaterField } from "./water-field";
 import type { WaterVertexWaves } from "./water-material";
 import type { BlendRebuild } from "./water-mesh-blend";
 import type { WaterNodeSurface } from "./water-node-blocks";
+
+type WaterMeshMetadata = { slateWater?: unknown } | null;
+
+/** Marks `mesh` as a water surface (`createWaterMesh`), the flag {@link isWaterSurfaceMesh} reads. */
+export function markWaterSurfaceMesh(mesh: AbstractMesh): void {
+  mesh.metadata = { ...(mesh.metadata ?? {}), slateWater: true };
+}
+
+/** Whether `mesh` is a water surface, built or custom: a leaf check that pulls in no water module. */
+export function isWaterSurfaceMesh(mesh: AbstractMesh): boolean {
+  return (mesh.metadata as WaterMeshMetadata)?.slateWater === true;
+}
 
 /**
  * Inputs of a built grid, compared each frame without building strings: the world rotation/scale (0-11), then the

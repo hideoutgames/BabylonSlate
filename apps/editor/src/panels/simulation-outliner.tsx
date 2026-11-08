@@ -3,7 +3,8 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { PanelFrame, SearchInput, TreeView, TypeVisualIcon, resolveTypeVisual, type TreeViewNode } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { useSimulationInspection } from "../context/simulation-inspection-context";
-import { runtimeIdentityKey, type SimulationInspectionStore } from "../services/simulation-inspection-store";
+import { runtimeIdentityKey } from "@haptic/bridge";
+import type { SimulationInspectionStore } from "../services/simulation-inspection-store";
 
 export function SimulationOutliner({ store, panel }: { store: SimulationInspectionStore; panel: IDockviewPanelProps }) {
   const state = useSimulationInspection(store, panel, "identities");

@@ -61,6 +61,7 @@ import { waterMeshReflectsObjects, waterMeshRestVaries } from "./water-mesh";
 import { sceneViewRenderSize } from "./scene-output-scale";
 import { upscaledRenderSize } from "./scene-effects";
 import { enterDrawPass, leaveDrawPass } from "./draw-passes";
+import { isWaterSurfaceMesh } from "./water-mesh-surface";
 
 /** One view's planar reflection, valid for the scene render in which it was returned. */
 export interface WaterPlanarReflection {
@@ -164,10 +165,6 @@ type View = {
 };
 
 const owners = new WeakMap<Scene, WaterPlanarReflections>();
-
-function isWaterMesh(mesh: AbstractMesh): boolean {
-  return (mesh.metadata as { slateWater?: unknown } | null)?.slateWater === true;
-}
 
 function waterResources(texture: RenderTargetTexture): ManagedRenderResource[] {
   // Colour and depth are both the reflection's cost; charge them to one category.
@@ -425,7 +422,7 @@ class WaterPlanarReflections {
     if (this.waterDirty) {
       this.water.length = 0;
       const meshes = this.scene.meshes;
-      for (let i = 0; i < meshes.length; i++) if (isWaterMesh(meshes[i]!)) this.water.push(meshes[i]!);
+      for (let i = 0; i < meshes.length; i++) if (isWaterSurfaceMesh(meshes[i]!)) this.water.push(meshes[i]!);
       this.waterDirty = false;
     }
     const eyeY = camera.globalPosition.y;

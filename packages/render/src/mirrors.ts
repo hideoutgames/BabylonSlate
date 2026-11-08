@@ -69,6 +69,7 @@ import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import { sceneViewRenderSize } from "./scene-output-scale";
 import { upscaledRenderSize } from "./scene-effects";
 import { sceneRenderingSettings } from "./render-settings";
+import { isWaterSurfaceMesh } from "./water-mesh-surface";
 
 const DRAW_POLICY = { restoreAlpha: true, wrapDrawFailure: false, message: "Mirror reflection failed." };
 
@@ -140,7 +141,7 @@ function sampleReach(material: Material | null): { x: number; y: number } | null
 const builtInMaterials = new WeakMap<Scene, NodeMaterial>();
 
 function excludedFromMirrors(mesh: AbstractMesh): boolean {
-  return isMirrorSurfaceMesh(mesh) || (mesh.metadata as { slateWater?: unknown } | null)?.slateWater === true;
+  return isMirrorSurfaceMesh(mesh) || isWaterSurfaceMesh(mesh);
 }
 
 function mirrorResources(texture: RenderTargetTexture): ManagedRenderResource[] {

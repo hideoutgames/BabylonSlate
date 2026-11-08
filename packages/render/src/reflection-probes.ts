@@ -30,6 +30,7 @@ import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { admittedSceneMeshes } from "./scene-stream-admission";
 import { isSkyboxMesh } from "./skybox";
 import { drawingMesh, isInstanceSource } from "./instance-source";
+import { isWaterSurfaceMesh } from "./water-mesh-surface";
 
 /** Edits and mesh changes settle this long before probes recapture, so a drag recaptures once. */
 export const REFLECTION_PROBE_RECAPTURE_DELAY_MS = 750;
@@ -323,7 +324,7 @@ export class ReflectionProbes {
   private eligible(mesh: AbstractMesh): boolean {
     if (mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.getTotalVertices() === 0) return false;
     if (!isRenderTargetCaptureCandidate(mesh)) return false;
-    if ((mesh.metadata as { slateWater?: unknown } | null)?.slateWater === true) return false;
+    if (isWaterSurfaceMesh(mesh)) return false;
     // A Mirror shows a reflection drawn for the current view; a probe would bake it in from the wrong place.
     if (isMirrorSurfaceMesh(mesh)) return false;
     return this.isStatic(mesh);

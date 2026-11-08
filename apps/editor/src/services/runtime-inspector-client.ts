@@ -1,5 +1,6 @@
-import type {
-  RuntimeInspectorAction, RuntimeInspectorRequest, RuntimeInspectorResult, RuntimeObjectIdentity,
+import {
+  runtimeIdentityKey,
+  type RuntimeInspectorAction, type RuntimeInspectorRequest, type RuntimeInspectorResult,
 } from "@haptic/bridge";
 
 type ClientAction<T> = T extends { sequence: number } ? Omit<T, "sequence"> & { sequence?: number } : T;
@@ -179,13 +180,10 @@ function asError(value: unknown): Error { return value instanceof Error ? value 
 function isWrite(action: RuntimeInspectionAction): action is Extract<RuntimeInspectorAction, { sequence: number }> {
   return action.kind === "setProperty" || action.kind === "setTransform" || action.kind === "setMaterialParameter";
 }
-function identityKey(target: RuntimeObjectIdentity): string {
-  return JSON.stringify([target.sceneInstanceId, target.actorGuid, target.actorToken, target.componentGuid ?? null, target.componentToken ?? null]);
-}
 function actionLane(action: RuntimeInspectorAction): string {
   if (action.kind === "identities") return "identities";
   if (action.kind === "resolvePick") return `pick:${action.slotId}:${action.actorGuid}`;
-  const target = identityKey(action.target);
+  const target = runtimeIdentityKey(action.target);
   if (action.kind === "setProperty") return `${target}:property:${action.property}`;
   if (action.kind === "setTransform") return `${target}:transform`;
   if (action.kind === "setMaterialParameter") return `${target}:material:${action.parameter}`;
@@ -221,9 +219,9 @@ function validateResult(request: RuntimeInspectorRequest, result: RuntimeInspect
     return;
   }
   if (isWrite(action)) {
-    if (payload.kind !== "mutation" || payload.sequence !== action.sequence || identityKey(payload.target) !== identityKey(action.target))
+    if (payload.kind !== "mutation" || payload.sequence !== action.sequence || runtimeIdentityKey(payload.target) !== runtimeIdentityKey(action.target))
       throw error("invalid", "The runtime acknowledged a different object or edit sequence.");
-  } else if (payload.kind !== action.kind || (action.kind === "selection" && payload.kind === "selection" && identityKey(action.target) !== identityKey(payload.target)) ||
+  } else if (payload.kind !== action.kind || (action.kind === "selection" && payload.kind === "selection" && runtimeIdentityKey(action.target) !== runtimeIdentityKey(payload.target)) ||
     (action.kind === "value" && payload.kind === "value" && payload.property !== action.property)) {
     throw error("invalid", "The runtime Inspector acknowledgment does not match the requested selection.");
   }
