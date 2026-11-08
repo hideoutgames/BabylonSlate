@@ -1439,7 +1439,6 @@ describe("Play createEngine view", () => {
         editor: kind === "editor",
         playMode: kind === "play",
         hardwareScalingLevel: 1.5,
-        textureBudgetEnabled: false,
         textureBytes: new Map([["failed-view-texture", bytes]]),
       })).toThrow(failure);
     } finally {
@@ -1457,8 +1456,8 @@ describe("Play createEngine view", () => {
     expect(sibling.resourceCache.acquireTexture("sibling-texture", engine, bytes).resource).toBe(retained);
     expect(isDisposedGpuTexture(retained)).toBe(false);
     const retainedBytes = cache.accountedBytes();
-    // Accounting only: no GPU or CPU allocation. A failed view's disabled
-    // budget must not prevent the remaining clients from evicting unused data.
+    // Accounting only: no GPU or CPU allocation. A failed view's budget policy
+    // must not prevent the remaining clients from evicting unused data.
     cache.account("unused-after-failure", 4 * 1024 ** 3);
     cache.releaseAccounting("unused-after-failure");
     cache.evictToCeiling();
