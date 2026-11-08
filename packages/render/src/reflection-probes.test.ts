@@ -11,7 +11,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
 import { REFLECTION_PROBE_CLASS_ID, createActor, createDefaultScene, reflectionProbeBindings } from "@haptic/core";
-import { managedRenderReservations } from "./managed-render-resources";
+import { availableManagedRenderBytes, beginManagedRenderAllocation, managedRenderReservations } from "./managed-render-resources";
 import { environmentPolynomial } from "./environment-irradiance";
 import { createFilteredEnvironmentTarget, filterEnvironment } from "./environment-prefilter";
 import { REFLECTION_PROBE_RECAPTURE_DELAY_MS, sceneReflectionProbes } from "./reflection-probes";
@@ -163,6 +163,25 @@ it("frees a runtime probe's raw capture cube once its filtered cube publishes, a
   await vi.waitFor(() => expect(environment()).toBe(0));
   expect(captureCube(scene)).toBeUndefined();
   expect(probes.diagnostics()[0]?.published).toBe(true);
+});
+
+it("keeps a runtime probe published when the budget refuses its new capture cube, and recaptures once the budget has room", async () => {
+  const { scene, probes, publish, frame } = fixture();
+  const engine = scene.getEngine();
+  await publish([8, 4, 8]);
+  // Its first capture cube is already freed, so the filler leaves no room for a new one.
+  await vi.waitFor(() => expect(managedRenderReservations(engine).categoryBytes.environment).toBe(0));
+  const filler = beginManagedRenderAllocation(engine, availableManagedRenderBytes(engine))!;
+  const draws = vi.mocked(drawOutsideSceneView).mock.calls.length;
+  MeshBuilder.CreateBox("added", {}, scene);
+  frame();
+  expect(vi.mocked(drawOutsideSceneView).mock.calls.length).toBe(draws);
+  expect(probes.diagnostics()[0]?.published).toBe(true);
+  // No forced recapture and no further static change: the refused capture retries on its own.
+  filler.release();
+  frame();
+  expect(vi.mocked(drawOutsideSceneView).mock.calls.length).toBe(draws + 1);
+  expect(captureCube(scene)).toBeDefined();
 });
 
 it("keeps an editor probe's capture cube, which every settled document edit draws again", async () => {

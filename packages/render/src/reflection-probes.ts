@@ -285,13 +285,17 @@ export class ReflectionProbes {
     // One capture per frame: six draws of the static scene are the CPU cost.
     const signature = this.staticSignature();
     let pending = false;
+    let refused = false;
     for (const probes of this.probes.values()) for (const probe of probes) {
       if (probe.busy) { pending = true; continue; }
       if (probe.failed || probe.captured === signature) continue;
-      this.capture(probe, signature);
-      return;
+      if (this.capture(probe, signature)) return;
+      // The ledger refused a published probe's new capture cube: let the next probe take this frame's capture.
+      refused = true;
     }
-    if (!pending) this.dirtyAt = -1;
+    // A refused recapture tries again once the delay passes again, when the ledger may have room.
+    if (refused) this.dirtyAt = performance.now();
+    else if (!pending) this.dirtyAt = -1;
   }
 
   /** The probe's world box from its actor's current pose. */
@@ -436,10 +440,18 @@ export class ReflectionProbes {
     texture.onAfterUnbindObservable.add(() => { scene._forcedViewPosition = null; });
   }
 
-  private capture(probe: Probe, signature: string): void {
-    // Refused: a published probe keeps its last filtered cube.
+  /**
+   * Takes this frame's capture for `probe`: draws it and starts its filtering. Returns false, taking nothing, when the
+   * ledger refuses a published probe's new capture cube: the probe keeps its last filtered cube and stays dirty, to
+   * retry. A refused first capture has nothing to show and fails.
+   */
+  private capture(probe: Probe, signature: string): boolean {
     const target = this.ensureTarget(probe);
-    if (!target) { probe.failed = true; return; }
+    if (!target) {
+      if (probe.published) return false;
+      probe.failed = true;
+      return true;
+    }
     const texture = target.capture!.texture;
     const meshes: AbstractMesh[] = [];
     for (const mesh of admittedSceneMeshes(this.scene) ?? this.scene.meshes) if (this.eligible(mesh)) meshes.push(mesh);
@@ -463,12 +475,12 @@ export class ReflectionProbes {
     } catch (error) {
       probe.failed = true;
       console.warn(`[render] Reflection probe ${probe.id} capture failed: ${String(error)}`);
-      return;
+      return true;
     } finally {
       this.capturing = false;
     }
     // Not ready yet (materials or textures still loading): try again next frame.
-    if (!drawn) return;
+    if (!drawn) return true;
     probe.busy = true;
     const engine = this.scene.getEngine();
     const current = () => !this.disposed && probe.target === target;
@@ -492,6 +504,7 @@ export class ReflectionProbes {
         // The filter has read the raw cube: a runtime scene draws it again only when its static set changes.
         if (current() && this.authored === null) this.releaseCapture(target);
       });
+    return true;
   }
 
   private retire(probe: Probe): void {
