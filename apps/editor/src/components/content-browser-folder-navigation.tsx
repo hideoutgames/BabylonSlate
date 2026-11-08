@@ -6,13 +6,13 @@ import {
   TreeView,
   TypeVisualIcon,
   useContextMenu,
+  useContextMenuGesture,
   type TreeViewProps,
   type TypeVisual,
 } from "@haptic/editor-kit";
 import type { useKeybindings } from "../context/keybind-context";
 import { isFolderTreeRoot, type ContentBrowserTreeRow } from "../lib/content-browser-helpers";
 import { contentBrowserFolderOps, type ContentBrowserRoot } from "../lib/plugin-ui";
-import { useLongPressMenu } from "../lib/use-long-press-menu";
 
 /** True for a press on empty tree space: below the rows or beside them, not on a row. */
 function isEmptyTreeTarget(target: EventTarget | null): boolean {
@@ -110,7 +110,7 @@ export function ContentBrowserFolderNavigation({
     [busy, keybinds, onNewFolder, selectedRootWritable],
   );
   const { menu, closeMenu, openMenuAt } = useContextMenu({ items: emptyMenuItems });
-  const emptyBind = useLongPressMenu({ onMenu: (clientX, clientY) => openMenuAt(clientX, clientY) });
+  const emptyBind = useContextMenuGesture({ exclusive: true, onMenu: (clientX, clientY) => openMenuAt(clientX, clientY) });
 
   return (
     <>

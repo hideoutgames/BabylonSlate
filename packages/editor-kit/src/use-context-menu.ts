@@ -36,6 +36,14 @@ export interface UseContextMenuOptions {
   longPressMs?: number;
 }
 
+export interface ContextMenuGestureBind {
+  onContextMenu: (event: ReactMouseEvent) => void;
+  onPointerDown: (event: React.PointerEvent) => void;
+  onPointerMove: (event: React.PointerEvent) => void;
+  onPointerUp: (event: React.PointerEvent) => void;
+  onPointerCancel: (event: React.PointerEvent) => void;
+}
+
 export interface UseContextMenuResult {
   menu: ContextMenuState | null;
   closeMenu: () => void;
@@ -45,13 +53,27 @@ export interface UseContextMenuResult {
     clientY: number,
     itemsOverride?: ContextMenuItem[],
   ) => void;
-  bind: {
-    onContextMenu: (event: ReactMouseEvent) => void;
-    onPointerDown: (event: React.PointerEvent) => void;
-    onPointerMove: (event: React.PointerEvent) => void;
-    onPointerUp: (event: React.PointerEvent) => void;
-    onPointerCancel: (event: React.PointerEvent) => void;
-  };
+  bind: ContextMenuGestureBind;
+}
+
+export interface UseContextMenuGestureOptions {
+  /** Called with the menu's viewport coordinates when a hold or `contextmenu` asks for a menu. */
+  onMenu: (clientX: number, clientY: number) => void;
+  enabled?: boolean;
+  longPressMs?: number;
+  /** Consume the click that follows a menu request, so a button bound to it does not also run its action. */
+  suppressClickAfterHold?: boolean;
+  /**
+   * Keep presses and `contextmenu` on the bound surface from reaching its
+   * ancestors, so a surface nested in another with its own menu (a Content
+   * Browser tile in the grid) opens only its own.
+   */
+  exclusive?: boolean;
+}
+
+export interface UseContextMenuGestureResult extends ContextMenuGestureBind {
+  /** Consumes the release click after a menu request when `suppressClickAfterHold` is on. */
+  onClickCapture: (event: ReactMouseEvent) => void;
 }
 
 interface PressState {
@@ -99,23 +121,28 @@ function isClaimed(event: { nativeEvent: Event }): boolean {
 }
 
 /**
- * Long-press (~500 ms stationary) and contextmenu (mouse) open the same menu.
- * Cancels when the pointer moves beyond the movement threshold or on scroll.
+ * The context menu gesture without menu state: a stationary touch or pen hold
+ * (~500 ms) or `contextmenu` (mouse) reports where the menu opens. The hold
+ * cancels on movement past the tolerance, scroll, release, a second pointer,
+ * lost capture, focus loss or a hidden document. A right-button press reports
+ * only on a stationary release, so a right-drag never opens a menu.
  */
-export function useContextMenu(
-  options: UseContextMenuOptions,
-): UseContextMenuResult {
+export function useContextMenuGesture(
+  options: UseContextMenuGestureOptions,
+): UseContextMenuGestureResult {
   const {
-    items,
+    onMenu,
     enabled = true,
     longPressMs = CONTEXT_MENU_LONG_PRESS_MS,
+    suppressClickAfterHold = false,
+    exclusive = false,
   } = options;
   const pressRef = useRef<PressState | null>(null);
-  const itemsRef = useRef(items);
+  const onMenuRef = useRef(onMenu);
   useLayoutEffect(() => {
-    itemsRef.current = items;
+    onMenuRef.current = onMenu;
   });
-  const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const suppressClickRef = useRef(false);
   // Right mouse press: a drag (viewport orbit) must not end in a menu, and
   // platforms that fire contextmenu on press defer it to the release.
   const rightPressRef = useRef<{
@@ -126,8 +153,6 @@ export function useContextMenu(
     cleanup: () => void;
   } | null>(null);
 
-  const closeMenu = useCallback(() => setMenu(null), []);
-
   const clearPress = useCallback(() => {
     const press = pressRef.current;
     if (press) {
@@ -137,25 +162,33 @@ export function useContextMenu(
     }
   }, []);
 
-  const openAt = useCallback(
-    (clientX: number, clientY: number, itemsOverride?: ContextMenuItem[]) => {
-      if (!enabled) return;
-      const source = itemsOverride ?? itemsRef.current;
-      const nextItems = typeof source === "function" ? source() : source;
-      if (nextItems.length === 0) return;
-      setMenu({ open: true, x: clientX, y: clientY, items: nextItems });
-    },
-    [enabled],
-  );
+  const requestMenu = useCallback((clientX: number, clientY: number) => {
+    suppressClickRef.current = true;
+    onMenuRef.current(clientX, clientY);
+  }, []);
 
   const clearRightPress = useCallback(() => {
     rightPressRef.current?.cleanup();
     rightPressRef.current = null;
   }, []);
 
+  const onClickCapture = useCallback(
+    (event: ReactMouseEvent) => {
+      if (!suppressClickAfterHold || !suppressClickRef.current) return;
+      suppressClickRef.current = false;
+      // Keyboard activation has no pointer release click to consume.
+      if (event.detail === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [suppressClickAfterHold],
+  );
+
   const onContextMenu = useCallback(
     (event: ReactMouseEvent) => {
-      if (!enabled || !eventTargetIsInside(event) || isClaimed(event)) return;
+      if (!enabled) return;
+      if (exclusive) event.stopPropagation();
+      if (!eventTargetIsInside(event) || isClaimed(event)) return;
       event.preventDefault();
       const right = rightPressRef.current;
       if (right?.moved) return;
@@ -163,9 +196,11 @@ export function useContextMenu(
         right.pending = true;
         return;
       }
-      openAt(event.clientX, event.clientY);
+      // A touch hold can also fire contextmenu; open once.
+      clearPress();
+      requestMenu(event.clientX, event.clientY);
     },
-    [enabled, openAt],
+    [clearPress, enabled, exclusive, requestMenu],
   );
 
   const beginRightPress = useCallback(
@@ -188,7 +223,7 @@ export function useContextMenu(
         const right = rightPressRef.current;
         // Windows fires contextmenu after this release; keep a drag flagged
         // until then so the menu stays closed.
-        if (right?.pending && !right.moved) openAt(right.x, right.y);
+        if (right?.pending && !right.moved) requestMenu(right.x, right.y);
         setTimeout(() => {
           if (rightPressRef.current === right) clearRightPress();
         }, 0);
@@ -208,11 +243,13 @@ export function useContextMenu(
         },
       };
     },
-    [clearRightPress, openAt],
+    [clearRightPress, requestMenu],
   );
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent) => {
+      if (exclusive) event.stopPropagation();
+      suppressClickRef.current = false;
       if (isClaimed(event)) return;
       if (
         enabled &&
@@ -247,17 +284,19 @@ export function useContextMenu(
         if (document.hidden) clearPress();
       };
       // Only the active hold owns document listeners. Capture also catches a
-      // second contact or release outside the bound tile, including portals.
+      // second contact or release outside the bound tile, including portals,
+      // and scroll, which does not bubble, from any nested scroller.
       document.addEventListener("pointerdown", onOtherPointer, true);
       document.addEventListener("pointermove", onDocumentMove, true);
       document.addEventListener("pointerup", onPointerEnd, true);
       document.addEventListener("pointercancel", onPointerEnd, true);
       document.addEventListener("lostpointercapture", onPointerEnd, true);
+      document.addEventListener("scroll", clearPress, { capture: true, passive: true });
       document.addEventListener("visibilitychange", onVisibilityChange);
       window.addEventListener("blur", clearPress);
       const timerId = setTimeout(() => {
         clearPress();
-        openAt(clientX, clientY);
+        requestMenu(clientX, clientY);
       }, longPressMs);
       pressRef.current = {
         pointerId,
@@ -270,16 +309,18 @@ export function useContextMenu(
           document.removeEventListener("pointerup", onPointerEnd, true);
           document.removeEventListener("pointercancel", onPointerEnd, true);
           document.removeEventListener("lostpointercapture", onPointerEnd, true);
+          document.removeEventListener("scroll", clearPress, { capture: true });
           document.removeEventListener("visibilitychange", onVisibilityChange);
           window.removeEventListener("blur", clearPress);
         },
       };
     },
-    [beginRightPress, clearPress, enabled, longPressMs, openAt],
+    [beginRightPress, clearPress, enabled, exclusive, longPressMs, requestMenu],
   );
 
   const onPointerMove = useCallback(
     (event: React.PointerEvent) => {
+      if (exclusive) event.stopPropagation();
       const press = pressRef.current;
       if (!press || press.pointerId !== event.pointerId) return;
       if (
@@ -289,34 +330,78 @@ export function useContextMenu(
         clearPress();
       }
     },
-    [clearPress],
+    [clearPress, exclusive],
   );
 
-  const onPointerUp = useCallback(
+  const onPointerEnd = useCallback(
     (event: React.PointerEvent) => {
+      if (exclusive) event.stopPropagation();
       const press = pressRef.current;
       if (press && press.pointerId === event.pointerId) {
         clearPress();
       }
     },
-    [clearPress],
+    [clearPress, exclusive],
   );
 
-  const onPointerCancel = useCallback(
-    (event: React.PointerEvent) => {
-      const press = pressRef.current;
-      if (press && press.pointerId === event.pointerId) {
-        clearPress();
-      }
+  useEffect(() => {
+    if (!enabled) {
+      clearPress();
+      clearRightPress();
+    }
+    return () => {
+      clearPress();
+      clearRightPress();
+    };
+  }, [enabled, clearPress, clearRightPress]);
+
+  return {
+    onClickCapture,
+    onContextMenu,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp: onPointerEnd,
+    onPointerCancel: onPointerEnd,
+  };
+}
+
+/**
+ * Long-press (~500 ms stationary) and contextmenu (mouse) open the same menu
+ * (`useContextMenuGesture`). A scroll of the surface under an open menu closes it.
+ */
+export function useContextMenu(
+  options: UseContextMenuOptions,
+): UseContextMenuResult {
+  const {
+    items,
+    enabled = true,
+    longPressMs = CONTEXT_MENU_LONG_PRESS_MS,
+  } = options;
+  const itemsRef = useRef(items);
+  useLayoutEffect(() => {
+    itemsRef.current = items;
+  });
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
+
+  const closeMenu = useCallback(() => setMenu(null), []);
+
+  const openAt = useCallback(
+    (clientX: number, clientY: number, itemsOverride?: ContextMenuItem[]) => {
+      if (!enabled) return;
+      const source = itemsOverride ?? itemsRef.current;
+      const nextItems = typeof source === "function" ? source() : source;
+      if (nextItems.length === 0) return;
+      setMenu({ open: true, x: clientX, y: clientY, items: nextItems });
     },
-    [clearPress],
+    [enabled],
   );
+
+  const gesture = useContextMenuGesture({ enabled, longPressMs, onMenu: openAt });
 
   useEffect(() => {
     if (!enabled) return;
 
     const onScroll = (event: Event) => {
-      clearPress();
       // A short viewport can make the menu itself scroll; only movement of the
       // underlying surface invalidates its anchor and dismisses it.
       if (
@@ -335,29 +420,18 @@ export function useContextMenu(
     });
     return () =>
       document.removeEventListener("scroll", onScroll, { capture: true });
-  }, [clearPress, closeMenu, enabled]);
-
-  useEffect(() => {
-    if (!enabled) {
-      clearPress();
-      clearRightPress();
-    }
-    return () => {
-      clearPress();
-      clearRightPress();
-    };
-  }, [enabled, clearPress, clearRightPress]);
+  }, [closeMenu, enabled]);
 
   return {
     menu,
     closeMenu,
     openMenuAt: openAt,
     bind: {
-      onContextMenu,
-      onPointerDown,
-      onPointerMove,
-      onPointerUp,
-      onPointerCancel,
+      onContextMenu: gesture.onContextMenu,
+      onPointerDown: gesture.onPointerDown,
+      onPointerMove: gesture.onPointerMove,
+      onPointerUp: gesture.onPointerUp,
+      onPointerCancel: gesture.onPointerCancel,
     },
   };
 }

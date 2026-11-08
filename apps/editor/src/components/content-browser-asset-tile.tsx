@@ -3,6 +3,7 @@ import {
   SelectableText,
   TYPE_VISUAL_ICON_TILE_SIZE,
   TypeVisualIcon,
+  useContextMenuGesture,
   type TypeVisual,
 } from "@haptic/editor-kit";
 import { Badge } from "@haptic/ui/components/badge";
@@ -18,7 +19,6 @@ import {
   textureCompressionState,
 } from "../lib/content-browser-helpers";
 import { LockIcon } from "lucide-react";
-import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { ContentBrowserTileName } from "./content-browser-tile-name";
 
 export interface ContentBrowserAssetTileProps {
@@ -81,7 +81,9 @@ export function ContentBrowserAssetTile({
     lockState === "mine"
       ? "Locked By You"
       : `Locked By ${lockOwnerName || "Another User"}`;
-  const bind = useLongPressMenu({
+  // Exclusive: the grid around the tile has its own empty-space menu.
+  const bind = useContextMenuGesture({
+    exclusive: true,
     onMenu: (clientX, clientY) => {
       onLongPressMenu(clientX, clientY);
     },

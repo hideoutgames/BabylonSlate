@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, type Dispatch, type SetStateAction } from "react";
 import { FolderPlusIcon, Grid2x2Icon, PlusIcon, UploadIcon } from "lucide-react";
-import { useContextMenu, type ContextMenuItem } from "@haptic/editor-kit";
+import { useContextMenu, useContextMenuGesture, type ContextMenuItem } from "@haptic/editor-kit";
 import {
   canRetargetSelectedAssets,
   classDocumentShowsPrefab,
@@ -10,7 +10,6 @@ import {
   isFolderTreeRoot,
 } from "../lib/content-browser-helpers";
 import { isNewClassParentAllowed } from "../lib/create-project-asset";
-import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { contentBrowserTileMenuItems, type ContentBrowserTileMenuDeps } from "./content-browser-tile-menu";
 
 /** What the asset, folder and empty-grid menus and the selection shortcuts read and act through. */
@@ -202,7 +201,8 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
     closeMenu: closeEmptyGridMenu,
     openMenuAt: openEmptyGridMenuAt,
   } = useContextMenu({ items: emptyGridItems });
-  const emptyGridBind = useLongPressMenu({
+  const emptyGridBind = useContextMenuGesture({
+    exclusive: true,
     onMenu: (clientX, clientY) => {
       closeMenu();
       emptyGridMenuPointRef.current = { x: clientX, y: clientY };

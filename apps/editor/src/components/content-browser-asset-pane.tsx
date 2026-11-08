@@ -1,12 +1,11 @@
 import { PlusIcon, UploadIcon } from "lucide-react";
-import { FolderBreadcrumbs } from "@haptic/editor-kit";
+import { FolderBreadcrumbs, type ContextMenuGestureBind } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyContent } from "@haptic/ui/components/empty";
 import { isContentBrowserEmptyGridDoubleClickTarget } from "../lib/content-browser-helpers";
 import { PROJECT_CONTENT_ROOT_ID, type ContentBrowserRoot } from "../lib/plugin-ui";
 import type { useContentBrowserGridWindow } from "../lib/use-content-browser-grid-window";
 import type { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";
-import type { useLongPressMenu } from "../lib/use-long-press-menu";
 import {
   ContentBrowserGridTiles,
   type ContentBrowserGridActions,
@@ -25,7 +24,7 @@ interface ContentBrowserAssetPaneProps {
   /** The typed search is ahead of the one the grid shows. */
   searchPending: boolean;
   paintBind: ReturnType<typeof useContentBrowserPaintSelect>["gridBind"];
-  emptyGridBind: ReturnType<typeof useLongPressMenu>;
+  emptyGridBind: ContextMenuGestureBind;
   consumeSelectClick: () => boolean;
   onClearSelection: () => void;
   canOpenSelection: boolean;
