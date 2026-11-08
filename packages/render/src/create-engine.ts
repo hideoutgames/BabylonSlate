@@ -50,6 +50,7 @@ import { isLightValueOnlySceneEdit } from "./light-edit";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
+import { releaseInitialSourceOptions } from "./initial-source-options";
 import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
 import { bridgeEngineEffects, holdCompiledEffects, keepPlayEffects, releaseBridgedEffects } from "./effect-bridge";
@@ -1545,12 +1546,7 @@ function initializeEngine(
   const sourceRelease = (owner: number) => () => releaseSceneSources(owner);
   const releaseInitialSources = () => {
     releaseSceneSources(0);
-    // The engine options closure must not keep source data alive after its lease.
-    for (const key of ["textureBytes", "modelBytes", "modelPayloads", "spritePayloads", "spriteAnimations",
-      "tilemapPayloads", "tilesetPayloads", "waterPayloads", "fontFacetypeBytes", "fontMsdfJson", "fontMsdfPng",
-      "fontCssStackByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
-      "renderTargets", "renderTargetTextures", "areaEmissions", "texturePixelSizes", "modelClipAnimationGuids",
-      "retargetAnimationLoads", "navmeshBytes", "audioReverbBytes", "audioBytes", "spawnableLights"] as const) delete options[key];
+    releaseInitialSourceOptions(options);
   };
 
   /** A scene document's cel shading, shadow and Post Processing overrides, without project settings. */

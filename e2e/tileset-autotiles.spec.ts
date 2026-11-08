@@ -33,7 +33,7 @@ async function greyPng(page: Page, size: number): Promise<Uint8Array> {
 async function autotileProject(page: Page, style: TilesetTerrainStyle = "sides"): Promise<Map<string, Uint8Array>> {
   const files = await minimalProjectFiles();
   const pixels = await greyPng(page, 64);
-  const texture = { width: 64, height: 64, usage: "pixelArt", downsample: 1, compressionState: "fallback_uncompressed" };
+  const texture = { width: 64, height: 64, usage: "pixelArt", downsample: 1 };
   files.set("assets/sheet.hasset", await encodeAssetDocument(
     { guid: TEXTURE_GUID, type: "Texture", name: "Sheet", version: 1, payload: texture },
     { headerPayload: texture, extraChunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: pixels }] },

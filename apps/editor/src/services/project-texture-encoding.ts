@@ -70,7 +70,6 @@ export class ProjectTextureEncoding {
   private encodeQueuePauseUnsubscribe: (() => void) | null = null;
   private readonly configuredEncode?: EncodeFn;
   private readonly createWorkerEncode: () => WorkerEncode | null;
-  private transcoderAvailable = true;
   /**
    * The open project's source control **Enable** setting, saved or not. While
    * it is on, nothing re-encodes a Texture in the background: only the user's
@@ -314,11 +313,11 @@ export class ProjectTextureEncoding {
     return write;
   }
 
-  private emitTextureEncodeDiagnostic(guid: string, error: unknown, failure = "encode failed"): void {
+  private emitTextureEncodeDiagnostic(guid: string, error: unknown): void {
     const asset = this.host.registry()?.getByGuid(guid);
     const name = asset?.header.name?.trim() || "Texture";
     const message = error instanceof Error ? error.message : String(error);
-    this.host.pushDiagnostic(`Texture ${failure} for ${name} (${guid}): ${message}`);
+    this.host.pushDiagnostic(`Texture encode failed for ${name} (${guid}): ${message}`);
   }
 
   /** Background alignment pass: a refused or failed pass is reported, never left unhandled. */
@@ -358,39 +357,6 @@ export class ProjectTextureEncoding {
       // A metadata refresh failure must not overwrite a successfully committed encode with encode_failed.
       if (session === host.sourceSession()) this.emitTextureEncodeDiagnostic(guid, error);
       return null;
-    }
-  }
-
-  /** When self-hosted transcoder files are missing, prefer source chunks. */
-  async setTranscoderAvailable(available: boolean): Promise<void> {
-    this.transcoderAvailable = available;
-    if (!available && this.host.registry()) {
-      await this.markCompressedTexturesFallback();
-    }
-  }
-
-  get isTranscoderAvailable(): boolean {
-    return this.transcoderAvailable;
-  }
-
-  async markCompressedTexturesFallback(): Promise<void> {
-    const registry = this.host.registry();
-    if (!registry) return;
-    for (const asset of registry.list({ type: "Texture" })) {
-      const hasKtx2 = asset.header.chunks.some(
-        (chunk) => chunk.kind === "ktx2" || chunk.id.startsWith("ktx2:"),
-      );
-      const state = asset.header.payload.compressionState;
-      if (!hasKtx2 || state !== "compressed") continue;
-      // Read-only roots and plugins keep their saved state; without a
-      // transcoder the resolver uses their pixels either way.
-      if (registry.getRoot(asset.rootId)?.readOnly || isPluginDocumentReadOnly(this.host.plugins(), asset.path)) continue;
-      try {
-        await registry.setCompressionState(asset.header.guid, "fallback_uncompressed");
-      } catch (error) {
-        // One unwritable Texture must not stop the others, or the open waiting on them.
-        this.emitTextureEncodeDiagnostic(asset.header.guid, error, "fallback state could not be saved");
-      }
     }
   }
 
@@ -530,11 +496,7 @@ export class ProjectTextureEncoding {
       const registry = host.registry();
       if (session !== host.sourceSession() || !registry) break;
       const state = asset.header.payload.compressionState;
-      if (
-        state === "encode_failed" ||
-        state === "fallback_uncompressed" ||
-        state === "pending"
-      ) {
+      if (state === "encode_failed" || state === "pending") {
         if (await this.trackTextureStateWrite(registry.retryTextureEncoding(asset.header.guid))) {
           count += 1;
         }

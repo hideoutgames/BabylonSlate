@@ -256,14 +256,20 @@ export function modelSlotFingerprint(
     .join(";");
 }
 
-/** Copy mutable bytes once at asset installation; resource lookups use immutable identities. */
-export function installTextureBytes(bytes: ReadonlyMap<string, Uint8Array | Blob> | undefined): ReadonlyMap<string, Blob> | undefined {
+/**
+ * Copy mutable bytes once at asset installation; resource lookups use immutable identities.
+ * `verifiedSha256` names the hex SHA-256 a host already verified for a guid's exact bytes.
+ */
+export function installTextureBytes(
+  bytes: ReadonlyMap<string, Uint8Array | Blob> | undefined,
+  verifiedSha256?: (guid: string) => string | undefined,
+): ReadonlyMap<string, Blob> | undefined {
   if (!bytes) return undefined;
   return new Map([...bytes].map(([guid, source]) => {
     const kind = source instanceof Uint8Array ? environmentTextureContainer(source) : null;
     const mime = kind === "env" ? "application/vnd.babylon.env" : kind === "dds" ? "image/vnd-ms.dds"
       : source instanceof Uint8Array && isKtx2Bytes(source) ? "image/ktx2" : "application/octet-stream";
-    return [guid, installAssetBytes(source, mime)];
+    return [guid, installAssetBytes(source, mime, verifiedSha256?.(guid))];
   }));
 }
 

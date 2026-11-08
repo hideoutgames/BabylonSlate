@@ -256,7 +256,7 @@ describe("texture encode alignment", () => {
       header: {
         dependencyMetadataVersion: 1, requiredDependencies: [],
         guid: "locked", type: "Texture", name: "locked", engineVersion: "0.0.0", version: 1, mode: "thin",
-        dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "fallback_uncompressed" },
+        dependencies: [], parentClass: null, payload: { usage: "albedo", compressionState: "pending" },
       },
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: png(4, 4) }],
     }));

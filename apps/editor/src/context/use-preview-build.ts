@@ -20,7 +20,6 @@ import {
   createPreviewSaveStorageHost,
   createPreviewAssetServer,
 } from "@haptic/exporter";
-import { shouldPackKtx2ForPreviewBuild } from "@haptic/render";
 import type { SessionReportEntry } from "@haptic/runtime";
 import { createSaveGameStorage } from "@haptic/vfs";
 import type { PreviewPreparePhase } from "../components/preparing-preview-dialog";
@@ -319,7 +318,8 @@ export function usePreviewBuild({
         previewBuild: true,
         playerFiles,
         startupSceneGuid: effectiveStartup,
-        transcoderAvailable: shouldPackKtx2ForPreviewBuild(),
+        // Preview Build packs PNG/pixels, never KTX2, so a cold iframe matches overlay Play.
+        transcoderAvailable: false,
         onPhase: (phase) => {
           if (isCurrentRequest()) setPreviewPhase(phase);
         },

@@ -5,6 +5,8 @@ import {
 } from "@haptic/vfs/device-memory";
 import { audioStats, particleStats } from "@haptic/render";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
+import { createDecoderPrefetch } from "./decoder-prefetch";
+import { preloadPlayerWorkerPhysics, prewarmPlayerWorker, type PlayerWorkerHost } from "./worker-host";
 import { startPlayerWithBackend } from "./player-backend";
 import { previewConsoleCatalog } from "./console-catalog";
 import type { PlayerTestHandle } from "./boot";
@@ -79,8 +81,32 @@ function layoutFromManifest(manifest: GameManifest): void {
   });
 }
 
+/**
+ * Start the game worker and the decoder prefetch before the download, so the worker module, the
+ * physics engine (once the catalog names its world) and the decoder runtimes load meanwhile. The
+ * boot adopts the worker; `stop` terminates it when the launch is aborted or fails before then.
+ */
+function startLaunch() {
+  const worker = prewarmPlayerWorker();
+  const stop = () => worker?.terminate();
+  startupAbort.signal.addEventListener("abort", stop, { once: true });
+  return {
+    worker,
+    loading: {
+      prefetchDecoders: createDecoderPrefetch(document.baseURI),
+      onManifest: (manifest: GameManifest) => preloadPlayerWorkerPhysics(worker, manifest.physicsWorld),
+    },
+    /** The launch ended: on failure the worker goes, on success the boot owns it. */
+    settle: (failed: boolean) => {
+      startupAbort.signal.removeEventListener("abort", stop);
+      if (failed) stop();
+    },
+  };
+}
+
 /** Preview hands off the catalog; every asset file is requested from the host. */
 async function launchFromPreview(files: Map<string, Uint8Array>, traceByteBudget: number): Promise<void> {
+  const launch = startLaunch();
   const source = createPreviewAssetClient({ send: message => window.parent.postMessage(message, previewHostOrigin) });
   const receive = (event: MessageEvent) => {
     if (isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin)) source.receive(event.data);
@@ -89,20 +115,26 @@ async function launchFromPreview(files: Map<string, Uint8Array>, traceByteBudget
   const release = () => { source.dispose(); window.removeEventListener("message", receive); };
   startupAbort.signal.addEventListener("abort", release, { once: true });
   try {
-    const game = await loadGameFromFiles(files, { signal: startupAbort.signal, readFile: source.readFile });
+    const game = await loadGameFromFiles(files, { ...launch.loading, signal: startupAbort.signal, readFile: source.readFile });
     const dispose = game.dispose;
     game.dispose = () => { try { dispose?.(); } finally { startupAbort.signal.removeEventListener("abort", release); release(); } };
-    try { await launchLoaded(game, traceByteBudget); } catch (error) { game.dispose(); throw error; }
-  } catch (error) { startupAbort.signal.removeEventListener("abort", release); release(); throw error; }
+    try { await launchLoaded(game, launch.worker, traceByteBudget); } catch (error) { game.dispose(); throw error; }
+    launch.settle(false);
+  } catch (error) { startupAbort.signal.removeEventListener("abort", release); release(); launch.settle(true); throw error; }
 }
 
 async function launchFromHttp(): Promise<void> {
-  const game = await loadGameFromHttp(document.baseURI, fetch, startupAbort.signal);
-  try { await launchLoaded(game); } catch (error) { game.dispose?.(); throw error; }
+  const launch = startLaunch();
+  try {
+    const game = await loadGameFromHttp(document.baseURI, fetch, startupAbort.signal, launch.loading);
+    try { await launchLoaded(game, launch.worker); } catch (error) { game.dispose?.(); throw error; }
+    launch.settle(false);
+  } catch (error) { launch.settle(true); throw error; }
 }
 
 async function launchLoaded(
   game: Awaited<ReturnType<typeof loadGameFromFiles>>,
+  worker: PlayerWorkerHost | undefined,
   traceByteBudget?: number,
 ): Promise<void> {
   startupAbort.signal.throwIfAborted();
@@ -174,6 +206,7 @@ async function launchLoaded(
     signal: startupAbort.signal,
     canvas,
     game,
+    worker,
     saveStorage: previewSaves?.storage,
     traceByteBudget,
     previewDiagnostics: previewHosted,
