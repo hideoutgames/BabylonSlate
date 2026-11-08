@@ -277,6 +277,8 @@ export interface ScriptContext {
   classIsChildOf(classId: unknown, parentClassId: unknown): boolean;
   /** Get Display Name: an actor's or component's name, else its class. */
   getDisplayName(object: unknown): string;
+  /** Ease: Alpha clamped to 0..1 and shaped by an Easing Curve member (`sampleEasingCurve` in core). */
+  easeAlpha(curve: unknown, alpha: unknown): number;
   /** Get Physics Linear Velocity, or Angular Velocity In Degrees (`angular`): the body's, zero without one. */
   physicsVelocity(actor: unknown, angular: boolean): Vec3;
   /** Set Physics Linear Velocity, or Angular Velocity In Degrees (`angular`), optionally added to the current one. */
@@ -786,7 +788,7 @@ export type HostContextKey =
   | "randomSeedStep" | "setActorHidden" | "isActorHidden" | "setComponentVisible" | "isComponentVisible" | "componentTransform"
   | "setComponentTransform" | "actorDistance" | "addActorLocalOffset" | "addActorLocalRotation" | "addActorWorldRotation"
   | "teleportActor" | "getActorTags" | "setActorTags" | "getObjectClass" | "classIsChildOf" | "getDisplayName"
-  | "physicsVelocity" | "setPhysicsVelocity" | "addForce" | "addTorque" | "setMotionType" | "setActorCollisionEnabled"
+  | "easeAlpha" | "physicsVelocity" | "setPhysicsVelocity" | "addForce" | "addTorque" | "setMotionType" | "setActorCollisionEnabled"
   | "isActorCollisionEnabled"
   | "clearTimer" | "setTimerPaused" | "timerExists" | "isTimerActive" | "isTimerPaused" | "timerRemaining" | "timerElapsed" | "clampToRange" | "isInRange" | "lerpFloatRange"
   | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getCurveObject"

@@ -34,6 +34,8 @@ import {
   slerpQuats,
   DEFAULT_GAME_ENVIRONMENT,
   localCalendarDate,
+  parseEasingCurve,
+  sampleEasingCurve,
   localTimeOfDay,
   newGuid,
   utcCalendarDate,
@@ -651,6 +653,8 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     },
     ...createObjectMembers(services),
     ...createPhysicsMembers(services),
+    // The sampler clamps Alpha to 0..1 and reads a non-finite one as 0.
+    easeAlpha: (curve, alpha) => sampleEasingCurve(parseEasingCurve(curve), Number(alpha)),
     clearTimer: (handle) => services.timers?.clear(timerId(handle)),
     setTimerPaused: (handle, paused) => services.timers?.setPaused(timerId(handle), paused === true),
     timerExists: (handle) => services.timers?.exists(timerId(handle)) ?? false,

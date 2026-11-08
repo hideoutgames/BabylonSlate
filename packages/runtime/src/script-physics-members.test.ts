@@ -47,6 +47,16 @@ function spawnBody(world: World, guid: string, x: number, motionType: string, sh
   return actor;
 }
 
+describe("Ease host member", () => {
+  it("clamps Alpha to 0..1 and shapes it by the named Easing Curve", () => {
+    const ctx = new ScriptHost({ log: () => {}, print: () => {}, destroyActor: () => {}, reportError: () => {}, delay: async () => {},
+      executeConsoleCommand: () => ({ success: true, output: "" }) }).createContext(null, 0, 0);
+    expect([ctx.easeAlpha("linear", 0.25), ctx.easeAlpha("linear", 2), ctx.easeAlpha("linear", -1), ctx.easeAlpha("linear", Number.NaN)])
+      .toEqual([0.25, 1, 0, 0]);
+    expect(ctx.easeAlpha("quadIn", 0.5)).toBeCloseTo(0.25, 9);
+  });
+});
+
 describe("script physics members", () => {
   it.each(["software", "rapier", "havok"] as const)("%s: multi traces, box and capsule queries and switched-off collision", async (kind) => {
     const sync = new PhysicsWorldSync(await backendFor(kind));

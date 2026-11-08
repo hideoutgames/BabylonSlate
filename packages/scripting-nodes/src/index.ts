@@ -4,6 +4,7 @@ import { flowNodes } from "./flow";
 import { mathNodes } from "./math";
 import { vectorNodes } from "./vector";
 import { stringNodes } from "./string";
+import { utilityHelperNodes } from "./utility-helpers";
 import { selectNodes } from "./select";
 import { arrayMapNodes } from "./array-map";
 import { mapNodes } from "./map";
@@ -126,6 +127,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...mathNodes,
     ...vectorNodes,
     ...stringNodes,
+    ...utilityHelperNodes,
     ...selectNodes,
     ...arrayMapNodes,
     ...mapNodes,

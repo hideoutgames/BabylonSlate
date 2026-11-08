@@ -176,43 +176,63 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Atan (Radians)](atan.md) | Returns the arctangent of the input as an angle in radians. |
 | [Atan2 (Degrees)](atan2-degrees.md) | Returns the angle in degrees of the point (X, Y), measured from the positive X axis. |
 | [Atan2 (Radians)](atan2.md) | Returns the angle in radians of the point (X, Y), measured from the positive X axis. |
+| [Bitwise And](bitwise-and.md) | Returns the bits set in both of two integers. |
+| [Bitwise Not](bitwise-not.md) | Flips every bit of an integer. |
+| [Bitwise Or](bitwise-or.md) | Returns the bits set in either of two integers. |
+| [Bitwise Xor](bitwise-xor.md) | Returns the bits set in exactly one of two integers. |
 | [Boolean And](boolean-and.md) | Returns true only when both inputs are true. |
 | [Boolean Not](boolean-not.md) | Returns the opposite of the input: true becomes false and false becomes true. |
 | [Boolean Or](boolean-or.md) | Returns true when at least one input is true. |
+| [Boolean Xor](boolean-xor.md) | Returns true when exactly one of two booleans is true. |
 | [Ceil](ceil.md) | Rounds the input up to the nearest whole number. |
 | [Clamp](clamp.md) | Limits a value so that it stays between a minimum and a maximum. |
+| [Clamp Angle](clamp-angle.md) | Limits an angle in degrees to an arc. |
 | [Cos (Degrees)](cos-degrees.md) | Returns the cosine of an angle in degrees. |
 | [Cos (Radians)](cos.md) | Returns the cosine of an angle in radians. |
 | [Degrees To Radians](degrees-to-radians.md) | Converts the input from degrees to radians. |
 | [Divide](divide.md) | Returns the first number divided by the second. |
 | [Divide Int](divide-int.md) | Returns the first whole number divided by the second, rounded toward zero. |
+| [Ease](ease.md) | Blends between two numbers along an easing curve. |
 | [Equal](equal.md) | Returns true when two numbers are exactly equal. |
+| [Exp](exp.md) | Returns e raised to a power. |
+| [Float Interp To](float-interp-to.md) | Moves a number smoothly toward a target, slowing as it arrives. |
+| [Float Interp To Constant](float-interp-to-constant.md) | Moves a number toward a target at a steady speed. |
 | [Floor](floor.md) | Rounds the input down to the nearest whole number. |
+| [Fraction](fraction.md) | Returns the part of a number after its whole number. |
 | [Greater or Equal](greater-or-equal.md) | Returns true when **A** is greater than or equal to **B**. |
 | [Greater Than](greater-than.md) | Returns true when **A** is greater than **B**. |
 | [Lerp](lerp.md) | Blends from one value to another by an amount between 0 and 1. |
 | [Less or Equal](less-or-equal.md) | Returns true when **A** is less than or equal to **B**. |
 | [Less Than](less-than.md) | Returns true when **A** is less than **B**. |
+| [Logarithm](logarithm.md) | Returns the logarithm of a number to a chosen base. |
 | [Max](max.md) | Returns the larger of two values, component by component. |
 | [Min](min.md) | Returns the smaller of two values, component by component. |
 | [Modulo](modulo.md) | Returns the remainder after dividing one Float by another. |
 | [Modulo Int](modulo-int.md) | Returns the remainder after dividing one whole number by another. |
 | [Multiply](multiply.md) | Returns the product of two numbers. |
 | [Multiply Int](multiply-int.md) | Returns the product of two whole numbers. |
+| [Natural Log](natural-log.md) | Returns the natural logarithm of a number. |
 | [Nearly Equal](nearly-equal.md) | Returns true when two numbers differ by less than a very small amount. |
 | [Negate](negate.md) | Flips the sign of the input. |
+| [Normalize Axis](normalize-axis.md) | Wraps an angle in degrees to between -180 and 180. |
 | [Not Equal](not-equal.md) | Returns true when two numbers are not exactly equal. |
 | [Power](power.md) | Raises a base number to the power of an exponent. |
 | [Radians To Degrees](radians-to-degrees.md) | Converts the input from radians to degrees. |
 | [Round](round.md) | Rounds the input to the nearest whole number. |
+| [Shift Left](shift-left.md) | Moves an integer's bits toward the high end. |
+| [Shift Right](shift-right.md) | Moves an integer's bits toward the low end. |
 | [Sign](sign.md) | Returns -1, 0 or 1 depending on the sign of the input. |
 | [Sin (Degrees)](sin-degrees.md) | Returns the sine of an angle in degrees. |
 | [Sin (Radians)](sin.md) | Returns the sine of an angle in radians. |
+| [Snap To Grid](snap-to-grid.md) | Rounds a number to the nearest multiple of a grid size. |
 | [Sqrt](sqrt.md) | Returns the square root of the input. |
+| [Square](square.md) | Multiplies a number by itself. |
 | [Subtract](subtract.md) | Returns the first number minus the second. |
 | [Subtract Int](subtract-int.md) | Returns the first whole number minus the second. |
 | [Tan (Degrees)](tan-degrees.md) | Returns the tangent of an angle in degrees. |
 | [Tan (Radians)](tan.md) | Returns the tangent of an angle in radians. |
+| [Truncate](truncate.md) | Drops the fraction of a number, rounding toward zero. |
+| [Wrap](wrap.md) | Keeps a number within a range by wrapping it round. |
 
 ## Vector
 
@@ -221,9 +241,11 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Add Vector2](add-vector2.md) | Returns the sum of two vectors, added component by component. |
 | [Add Vector3](add-vector3.md) | Returns the sum of two vectors, added component by component. |
 | [Add Vector4](add-vector4.md) | Returns the sum of two vectors, added component by component. |
+| [Angle Between Vectors](angle-between-vectors.md) | Returns the angle between two vectors in degrees. |
 | [Break Vector2](break-vector2.md) | Splits a Vector 2 into its X and Y numbers. |
 | [Break Vector3](break-vector3.md) | Splits a Vector 3 into its X, Y and Z numbers. |
 | [Break Vector4](break-vector4.md) | Splits a Vector 4 into its X, Y, Z and W numbers. |
+| [Clamp Vector Size](clamp-vector-size.md) | Keeps a vector's length between a minimum and a maximum. |
 | [Cross Vector3](cross-vector3.md) | Returns a vector perpendicular to both input vectors. |
 | [Distance Vector2](distance-vector2.md) | Returns the distance between two points. |
 | [Distance Vector3](distance-vector3.md) | Returns the distance between two points. |
@@ -234,28 +256,36 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Dot Vector2](dot-vector2.md) | Returns the dot product of two vectors. |
 | [Dot Vector3](dot-vector3.md) | Returns the dot product of two vectors. |
 | [Dot Vector4](dot-vector4.md) | Returns the dot product of two vectors. |
+| [Get Unit Direction](get-unit-direction.md) | Returns the one-unit direction from one point to another. |
 | [Lerp Vector2](lerp-vector2.md) | Blends between two vectors using a factor from 0 to 1. |
 | [Lerp Vector3](lerp-vector3.md) | Blends between two vectors using a factor from 0 to 1. |
 | [Lerp Vector4](lerp-vector4.md) | Blends between two vectors using a factor from 0 to 1. |
 | [Make Vector2](make-vector2.md) | Builds a Vector 2 from X and Y numbers. |
 | [Make Vector3](make-vector3.md) | Builds a Vector 3 from X, Y and Z numbers. |
 | [Make Vector4](make-vector4.md) | Builds a Vector 4 from X, Y, Z and W numbers. |
+| [Mirror Vector By Normal](mirror-vector-by-normal.md) | Bounces a vector off a surface. |
 | [Multiply Vector2](multiply-vector2.md) | Multiplies two vectors together, component by component. |
 | [Multiply Vector3](multiply-vector3.md) | Multiplies two vectors together, component by component. |
 | [Multiply Vector4](multiply-vector4.md) | Multiplies two vectors together, component by component. |
+| [Negate Vector3](negate-vector3.md) | Returns a vector pointing the opposite way. |
 | [Normalize Vector2](normalize-vector2.md) | Returns the vector scaled to a length of 1, keeping its direction. |
 | [Normalize Vector3](normalize-vector3.md) | Returns the vector scaled to a length of 1, keeping its direction. |
 | [Normalize Vector4](normalize-vector4.md) | Returns the vector scaled to a length of 1, keeping its direction. |
+| [Project Vector On To Plane](project-vector-on-to-plane.md) | Flattens a vector onto a plane. |
+| [Project Vector On To Vector](project-vector-on-to-vector.md) | Returns the part of a vector that points along another. |
 | [Scale Vector2](scale-vector2.md) | Multiplies every component of a vector by one number. |
 | [Scale Vector3](scale-vector3.md) | Multiplies every component of a vector by one number. |
 | [Scale Vector4](scale-vector4.md) | Multiplies every component of a vector by one number. |
 | [Subtract Vector2](subtract-vector2.md) | Returns the first vector minus the second, component by component. |
 | [Subtract Vector3](subtract-vector3.md) | Returns the first vector minus the second, component by component. |
 | [Subtract Vector4](subtract-vector4.md) | Returns the first vector minus the second, component by component. |
+| [Vector Interp To](vector-interp-to.md) | Moves a vector smoothly toward a target, slowing as it arrives. |
+| [Vector Interp To Constant](vector-interp-to-constant.md) | Moves a vector straight toward a target at a steady speed. |
 | [Vector2 Length](vector2-length.md) | Returns the length of a vector. |
 | [Vector2 Length Squared](vector2-length-squared.md) | Returns the length of a vector multiplied by itself. |
 | [Vector3 Length](vector3-length.md) | Returns the length of a vector. |
 | [Vector3 Length Squared](vector3-length-squared.md) | Returns the length of a vector multiplied by itself. |
+| [Vector3 Nearly Equal](vector3-nearly-equal.md) | Returns true when two vectors are almost the same. |
 | [Vector4 Length](vector4-length.md) | Returns the length of a vector. |
 | [Vector4 Length Squared](vector4-length-squared.md) | Returns the length of a vector multiplied by itself. |
 
@@ -273,6 +303,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Inverse Rotator](inverse-rotator.md) | Returns the rotation that undoes a given rotator. |
 | [Lerp Rotator](lerp-rotator.md) | Blends between two rotators along the shortest turn, using Alpha as the amount. |
 | [Make Rotator](make-rotator.md) | Builds a rotator from pitch, yaw and roll angles in degrees. |
+| [Rotator Interp To](rotator-interp-to.md) | Turns a rotator smoothly toward a target, slowing as it arrives. |
 | [Rotator Nearly Equal](rotator-nearly-equal.md) | Returns true when two rotators are equal within a small tolerance. |
 
 ## Quaternion
@@ -349,14 +380,20 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Contains](contains.md) | Returns true when a string includes the search text anywhere. |
 | [Ends With](ends-with.md) | Returns true when a string finishes with a given suffix. |
 | [Equals](equals.md) | Returns true when two strings are exactly the same. |
+| [Find Substring](find-substring.md) | Returns where a piece of text first appears in a string. |
+| [Format Float](format-float.md) | Turns a number into text with a fixed number of decimals. |
 | [Format String](format-string.md) | Builds text from a template, replacing each placeholder with a wired value. |
 | [Join](join.md) | Combines an array of strings into one string with a separator between items. |
 | [Length](length.md) | Returns the number of characters in a string. |
+| [Pad Left](pad-left.md) | Adds characters before a string until it reaches a length. |
+| [Pad Right](pad-right.md) | Adds characters after a string until it reaches a length. |
 | [Parse Float](parse-float.md) | Converts text such as 3.5 into a Float and reports whether it worked. |
 | [Parse Int](parse-int.md) | Converts text such as 42 into an Integer and reports whether it worked. |
 | [Replace](replace.md) | Replaces every occurrence of the search text in a string with new text. |
+| [Reverse String](reverse-string.md) | Returns a string with its characters in reverse order. |
 | [Split](split.md) | Splits a string into an array of pieces at each separator. |
 | [Starts With](starts-with.md) | Returns true when a string begins with a given prefix. |
+| [String Is Empty](string-is-empty.md) | Returns true when a string has no characters. |
 | [Substring](substring.md) | Returns part of a string, from a start position up to an end position. |
 | [To Lower](to-lower.md) | Converts every letter in a string to lower case. |
 | [To Upper](to-upper.md) | Converts every letter in a string to upper case. |
@@ -366,6 +403,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Add Unique](add-unique.md) | Adds an item to a copy of an array unless it is already there. |
 | [Append Array](append-array.md) | Returns a copy of an array with the items of a second array added to the end. |
 | [Append Item](append-item.md) | Returns a copy of an array with one item added to the end. |
 | [Array Clear](array-clear.md) | Returns an empty array, leaving the input array unchanged. |
@@ -382,9 +420,16 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Is Valid Index](is-valid-index.md) | Returns true when an index points at an item in an array. |
 | [Last Index](last-index.md) | Returns the index of the last item in an array. |
 | [Make Array](make-array.md) | Builds an array from the item inputs you add. |
+| [Max Of Float Array](max-of-float-array.md) | Returns the largest number in an array and its index. |
+| [Max Of Int Array](max-of-int-array.md) | Returns the largest integer in an array and its index. |
+| [Min Of Float Array](min-of-float-array.md) | Returns the smallest number in an array and its index. |
+| [Min Of Int Array](min-of-int-array.md) | Returns the smallest integer in an array and its index. |
 | [Remove At](remove-at.md) | Returns a copy of an array with the item at an index removed. |
 | [Remove Item](remove-item.md) | Returns a copy of an array with the first matching item removed. |
+| [Resize Array](resize-array.md) | Returns a copy of an array cut or extended to a size. |
 | [Set At Index](set-at-index.md) | Returns a copy of an array with the item at an index replaced. |
+| [Sort Array](sort-array.md) | Returns a copy of an array in ascending or descending order. |
+| [Swap Array Items](swap-array-items.md) | Returns a copy of an array with two items swapped. |
 
 ## Map
 
