@@ -9,7 +9,7 @@ const flush = async () => { for (let index = 0; index < 12; index++) await Promi
 async function fixture(mode: "simulate" | "play" = "simulate", deferMaterialEdits = false, demandAssets = false) {
   const commands: CommandMessage[] = [];
   const mesh = createMeshComponent("mesh", "box"); mesh.properties.materialGuid = "mat";
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
     sessionGeneration: 4, sessionMode: mode, playSceneGuid: "root", deferMaterialEdits,
     classAssetGuids: demandAssets ? { Hero: "hero-class" } : undefined,
     playScene: { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero", components: [mesh] })] },

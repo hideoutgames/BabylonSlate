@@ -154,7 +154,7 @@ describe("script compiler service", () => {
       "Child",
     ]);
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts(scripts);
       runtime.start();
@@ -212,7 +212,7 @@ describe("script compiler service", () => {
       ["Save", "GameSubsystem"],
     ]);
     expect(scripts[1]!.variables).toEqual([{ name: "Intensity", type: "float", defaultValue: 0.5 }]);
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true });
     try {
       await runtime.loadScripts(scripts);
       const registry = runtime.getWorld().classRegistry;
@@ -245,7 +245,6 @@ describe("script compiler service", () => {
     ]);
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       gameInstanceClass: "MatchGI",
     });

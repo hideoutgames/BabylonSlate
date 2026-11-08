@@ -18,7 +18,7 @@ const counter: CompiledScript = {
 
 it("runs authored ActorComponent scripts on independent component instances and destroys them with the owner", async () => {
   const runtime = createInProcessRuntime({
-    seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    seed: 1, preferSoftwarePhysics: true,
     playScene: {
       name: "Components", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [],
       actors: [createActor("owner", "Owner", { components: [
@@ -53,7 +53,7 @@ it("runs authored ActorComponent scripts on independent component instances and 
 });
 
 it("starts prefab and dynamically added components once and ends both on Play stop", async () => {
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true });
   try {
     await runtime.loadScripts([counter, {
       assetGuid: "owner", classId: "Owner", parentClassId: "Actor", anchors: [],

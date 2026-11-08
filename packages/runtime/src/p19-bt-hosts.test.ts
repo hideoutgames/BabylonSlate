@@ -61,7 +61,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: hostScene(),
       behaviourTrees: {
         "tree-1": leafTree("face", "bt.task.rotateToFace", {
@@ -99,7 +98,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: scene,
       behaviourTrees: {
         "tree-1": leafTree("face", "bt.task.rotateToFace", {
@@ -124,7 +122,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: hostScene(),
       behaviourTrees: {
         "tree-1": leafTree("face", "bt.task.rotateToFace", {}),
@@ -146,7 +143,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       dt: 0.1,
       playScene: hostScene(),
       behaviourTrees: {
@@ -211,7 +207,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       dt: 0.1,
       playScene: hostScene(),
       behaviourTrees: {
@@ -257,7 +252,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: hostScene(),
       behaviourTrees: {
         "tree-1": leafTree("anim", "bt.task.playAnimation", {
@@ -288,7 +282,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: hostScene(),
       behaviourTrees: { "tree-1": tree },
       audioAssetGuids: ["audio-1"],
@@ -337,7 +330,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       dt: 0.1,
       playScene: hostScene(),
       behaviourTrees: { "tree-1": tree },
@@ -374,7 +366,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       dt: 0.1,
       playScene: hostScene(),
       behaviourTrees: {
@@ -467,7 +458,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       dt: 0.1,
       playScene: hostScene(),
       behaviourTrees: { "tree-1": tree },
@@ -501,7 +491,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: hostScene(),
       behaviourTrees: {
         "tree-1": leafTree("sound", "bt.task.playSound", { audioAssetGuid: "audio-1" }),
@@ -532,7 +521,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       dt: 0.1,
       playScene: hostScene(),
       behaviourTrees: {
@@ -583,7 +571,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: scene,
       behaviourTrees: {
         "tree-1": leafTree("face", "bt.task.rotateToFace", {
@@ -620,7 +607,6 @@ describe("P19 behaviour tree task hosts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       dt: 0.1,
       playScene: scene,
       behaviourTrees: {
@@ -673,7 +659,6 @@ describe("P19 behaviour tree task hosts", () => {
     return createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       dt: 0.1,
       playScene: scene,
       behaviourTrees: {
@@ -795,7 +780,6 @@ describe("trace restore of Play Sound voices", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       dt: 0.1,
       playScene: hostScene(),
       behaviourTrees: { "tree-1": tree },
@@ -939,7 +923,6 @@ describe("P19 Rotate To Face crowd yaw", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: scene,
       behaviourTrees: {
         "tree-1": leafTree("face", "bt.task.rotateToFace", {

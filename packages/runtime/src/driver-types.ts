@@ -90,12 +90,6 @@ export interface RuntimeDriverOptions {
   /** Authored Input Action / Input Axis assets; the starter controls when omitted. */
   inputAssets?: InputAssetDefinition[];
   focusNavigation?: Partial<FocusNavigationSettings>;
-  /**
-   * Demo actors exist so an empty project still shows motion in Preview. Without
-   * a `playScene` they spawn at the first `realizePlayWorld` or `start`, never
-   * during construction.
-   */
-  seedDemoActors?: boolean;
   /** Scene physics world kind (defaults to 3d). */
   physicsWorld?: PhysicsWorldKind;
   gravity?: [number, number, number];
@@ -105,7 +99,7 @@ export interface RuntimeDriverOptions {
   havokWasmUrl?: string;
   /** Skip wasm backends (tests / CI without wasm). */
   preferSoftwarePhysics?: boolean;
-  /** Authored scene to instantiate on `realizePlayWorld` (no demo actors). */
+  /** Authored scene to instantiate on `realizePlayWorld`. */
   playScene?: SerializedScene;
   playSceneGuid?: string;
   /** Class id for the session GameInstance singleton. */
@@ -238,8 +232,7 @@ export interface RuntimeDriver {
     transform?: Transform;
   }): Actor | null;
   /**
-   * Instantiate `playScene` with compiled script hooks (without one, the demo
-   * actors unless `seedDemoActors` is false). Idempotent. Call after
+   * Instantiate `playScene` with compiled script hooks. Idempotent. Call after
    * `loadScripts` so Begin Play binds on spawn.
    */
   realizePlayWorld(): void | Promise<void>;

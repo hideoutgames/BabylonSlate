@@ -17,7 +17,7 @@ const ocean = (): SerializedActor => createActor("sea", "Sea", { classId: "Hero"
 
 async function waterRuntime(dt: number, onCommand?: (command: CommandMessage) => void) {
   const runtime = createInProcessRuntime({
-    seed: 1, dt, seedDemoActors: false, preferSoftwarePhysics: true, physicsWorld: "3d", onCommand,
+    seed: 1, dt, preferSoftwarePhysics: true, physicsWorld: "3d", onCommand,
     playScene: { name: "Water", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [ocean()] },
   });
   await runtime.loadScripts([{
@@ -64,7 +64,7 @@ describe("Water simulation time", () => {
     const run = (actors: SerializedActor[]) => {
       const sent: Array<{ seconds: number; frameId: number }> = [];
       const runtime = createInProcessRuntime({
-        seed: 1, dt: 0.1, seedDemoActors: false, preferSoftwarePhysics: true, physicsWorld: "2d",
+        seed: 1, dt: 0.1, preferSoftwarePhysics: true, physicsWorld: "2d",
         onCommand: (command) => { if (command.type === "waterTime") sent.push(command); },
         playScene: { name: "Level", viewportMode: "2d", settings: createDefaultSceneSettings("2d"), folders: [], actors },
       });

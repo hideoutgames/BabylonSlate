@@ -97,7 +97,7 @@ function scene(actors: SerializedActor[], viewportMode: "2d" | "3d" = "3d"): Ser
 }
 
 async function play(actors: SerializedActor[], bytes: Uint8Array, viewportMode: "2d" | "3d" = "3d", dt?: number) {
-  const runtime = createInProcessRuntime({ seed: 1, dt, seedDemoActors: false, playScene: scene(actors, viewportMode) });
+  const runtime = createInProcessRuntime({ seed: 1, dt, playScene: scene(actors, viewportMode) });
   await runtime.loadNavMesh(bytes);
   runtime.start();
   runtime.realizePlayWorld();
@@ -180,7 +180,7 @@ describe("RuntimeNavigation", () => {
       },
     );
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: scene([
+      seed: 1, preferSoftwarePhysics: true, playScene: scene([
         createActor("floor", "Floor", {
           transform: { position: [0, -0.5, 0], rotation: [0, 0, 0, 1], scale: [20, 1, 20] },
           components: [{ id: "floor-body", classId: "BlockingVolumeComponent", properties: {} }],
@@ -372,9 +372,9 @@ describe("RuntimeNavigation", () => {
   it("imports the Play scene's catalogued mesh when loadNavMesh carries no bytes", async () => {
     const bytes = await generateNavMesh(ground);
     const catalogued = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, playScene: scene([]), playSceneGuid: "level", sceneNavmeshBytes: { level: bytes },
+      seed: 1, playScene: scene([]), playSceneGuid: "level", sceneNavmeshBytes: { level: bytes },
     });
-    const uncatalogued = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene([]), playSceneGuid: "level" });
+    const uncatalogued = createInProcessRuntime({ seed: 1, playScene: scene([]), playSceneGuid: "level" });
     try {
       await catalogued.loadNavMesh();
       await uncatalogued.loadNavMesh();

@@ -192,7 +192,6 @@ describe("runtime AnimationGraph scripts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: animScene(),
       animGraphs: { "graph-1": locoDocument() },
       onCommand: (command) => commands.push(command),
@@ -212,7 +211,6 @@ describe("runtime AnimationGraph scripts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: animScene(),
       animGraphs: { "graph-1": createDefaultAnimGraph() },
       onCommand: (command) => commands.push(command),
@@ -263,7 +261,6 @@ describe("runtime AnimationGraph scripts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: animScene(),
       animGraphs: { "graph-1": doc },
       onCommand: (command) => commands.push(command),
@@ -307,7 +304,6 @@ describe("runtime AnimationGraph scripts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: animScene(),
       animGraphs: { "graph-1": locoDocument() },
       onCommand: (command) => commands.push(command),
@@ -371,7 +367,6 @@ describe("runtime AnimationGraph scripts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: animScene(),
       animGraphs: { "graph-1": jumpDocument() },
       inputAssets: [
@@ -450,7 +445,6 @@ describe("runtime AnimationGraph scripts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: animScene(),
       animGraphs: { "graph-1": doc },
       onCommand: (command) => commands.push(command),
@@ -494,7 +488,6 @@ describe("runtime AnimationGraph scripts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: animScene(),
       playSceneGuid: "anim",
       animGraphs: { "graph-1": doc },
@@ -579,7 +572,6 @@ describe("runtime AnimationGraph scripts", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: {
         name: "Anim",
         viewportMode: "3d",
@@ -639,7 +631,6 @@ describe("runtime AnimationGraph scripts", () => {
       seed: 1,
       dt: 0.1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: animScene(),
       animGraphs: { "graph-1": createDefaultAnimGraph() },
       onCommand: (command) => commands.push(command),

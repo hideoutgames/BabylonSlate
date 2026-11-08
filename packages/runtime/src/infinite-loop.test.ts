@@ -118,7 +118,6 @@ describe("runtime infinite loop guard", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       includeDebugCommands: true,
       infiniteLoopDetection: true,
       loopCount: 5,
@@ -153,7 +152,6 @@ describe("runtime infinite loop guard", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       includeDebugCommands: true,
       infiniteLoopDetection: true,
       loopCount: 5,
@@ -175,7 +173,7 @@ describe("runtime infinite loop guard", () => {
 
   it.each(["flow.event.init", "flow.event.end"] as const)("contains a Game Instance loop in %s", async (event) => {
     const registry = createDefaultNodeRegistry();
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1,
       includeDebugCommands: true, infiniteLoopDetection: true, loopCount: 5 });
     await runtime.loadScripts([{
       ...toScript(jsGraph(registry, "while (true) {}", event), registry, "GameInstance", "game-instance"),
@@ -191,7 +189,7 @@ describe("runtime infinite loop guard", () => {
   it("contains loops in Animation Object updates outside the Actor tick phase", async () => {
     const registry = createDefaultNodeRegistry();
     const actor = createActor("hero", "Hero", { components: [{ id: "anim", classId: "AnimationGraphComponent", properties: { graphGuid: "graph" } }] });
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1,
       includeDebugCommands: true, infiniteLoopDetection: true, loopCount: 5,
       playScene: { name: "Anim", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [actor] },
       animGraphs: { graph: createDefaultAnimGraph() },
@@ -209,7 +207,6 @@ describe("runtime infinite loop guard", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       includeDebugCommands: true,
       infiniteLoopDetection: true,
       loopCount: 5,
@@ -272,7 +269,6 @@ describe("runtime infinite loop guard", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       includeDebugCommands: true,
       infiniteLoopDetection: true,
       loopCount: 5,
@@ -299,7 +295,6 @@ describe("runtime infinite loop guard", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       includeDebugCommands: false,
       infiniteLoopDetection: true,
       loopCount: 3,
@@ -325,7 +320,6 @@ describe("runtime infinite loop guard", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       includeDebugCommands: true,
       infiniteLoopDetection: false,
       loopCount: 3,

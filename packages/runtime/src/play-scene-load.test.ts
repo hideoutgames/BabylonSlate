@@ -121,7 +121,7 @@ function node(
 }
 
 describe("p7-play-scene-load", () => {
-  it("realizes the authored scene instead of demo actors", async () => {
+  it("realizes the authored scene", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createRuntimeFromLoad(
       {
@@ -169,7 +169,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "TwoMeshes",
@@ -226,7 +225,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "BodyOnly",
@@ -264,7 +262,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "HiddenCollider",
@@ -305,7 +302,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "VisibleCollider",
@@ -349,7 +345,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "CubeAndHero",
@@ -390,7 +385,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Parented",
@@ -444,7 +438,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Visibility",
@@ -480,7 +473,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "VisibilityHierarchy",
@@ -1138,7 +1130,6 @@ describe("p7-play-scene-load", () => {
       maxActors: 8,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
-      seedDemoActors: false,
       playScene: fallingBoxScene(),
       playSceneGuid: "fall-scene",
     });
@@ -1158,7 +1149,6 @@ describe("p7-play-scene-load", () => {
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
       gravity: [0, 0, 0],
-      seedDemoActors: false,
       playScene: {
         name: "ParentedPhysics",
         viewportMode: "3d",
@@ -1286,7 +1276,6 @@ describe("p7-play-scene-load", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       dt: 0.1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Scripted",
@@ -1353,7 +1342,6 @@ describe("p7-play-scene-load", () => {
     };
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Level1",
@@ -1376,7 +1364,6 @@ describe("p7-play-scene-load", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Level1",
@@ -1445,7 +1432,6 @@ describe("p7-play-scene-load", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command),
     });
@@ -1524,7 +1510,6 @@ describe("p7-play-scene-load", () => {
       .join("\n");
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Arena",

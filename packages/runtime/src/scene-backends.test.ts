@@ -11,7 +11,7 @@ function scene(name: string, kind: "2d" | "3d" = "3d") {
 
 describe("scene backend ownership", () => {
   it("cancels a pending native replacement promptly and disposes its late result", async () => {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene("Spatial"),
+    const runtime = createInProcessRuntime({ seed: 1, playScene: scene("Spatial"),
       sceneLibrary: { planar: scene("Planar", "2d") } });
     const createBackend = physics.createPhysicsBackend;
     let release!: (backend: physics.PhysicsBackend) => void;
@@ -66,7 +66,7 @@ describe("scene backend ownership", () => {
       { id: "shape", classId: "ColliderComponent", properties: { shape: document.viewportMode === "2d"
         ? { kind: "box2d", halfExtents: { x: 1, y: 1 } } : { kind: "box", halfExtents: { x: 1, y: 1, z: 1 } } } },
     ] })];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: software,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: software,
       playScene: a, playSceneGuid: "a", sceneLibrary: { a, b },
       sceneLayerLibrary: { overlay: { ...createDefaultSceneLayer(), settings: { ...createDefaultSceneLayer().settings, physicsEnabled: true } } } });
     try {

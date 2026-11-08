@@ -19,7 +19,7 @@ function fixture(preferSoftwarePhysics = false) {
     { id: "collider", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.3 } } },
     { id: "ragdoll", classId: "RagdollComponent", properties: { enabled: false } },
   ] })];
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, playScene: scene, preferSoftwarePhysics,
+  const runtime = createInProcessRuntime({ seed: 1, playScene: scene, preferSoftwarePhysics,
     onCommand: (command) => commands.push(command),
   });
   return { runtime, commands };

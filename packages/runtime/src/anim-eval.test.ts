@@ -101,7 +101,6 @@ describe("runtime AnimationGraph evaluation", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: animScene(),
       animGraphs: { "graph-1": graph },
       onCommand: (command) => commands.push(command),
@@ -129,7 +128,6 @@ describe("runtime AnimationGraph evaluation", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: animScene(),
       onCommand: (command) => commands.push(command),
     });
@@ -148,7 +146,6 @@ describe("runtime AnimationGraph evaluation", () => {
       const runtime = createInProcessRuntime({
         seed: 1,
         maxActors: 4,
-        seedDemoActors: false,
         dt: 0.1,
         playScene: animScene(),
         animGraphs: { "graph-1": graph },
@@ -273,7 +270,6 @@ describe("runtime AnimationGraph evaluation", () => {
       const runtime = createInProcessRuntime({
         seed: 1,
         maxActors: 4,
-        seedDemoActors: false,
         preferSoftwarePhysics: true,
         physicsWorld: "2d",
         playScene: owner === "world" ? scene : { ...scene, actors: [] },

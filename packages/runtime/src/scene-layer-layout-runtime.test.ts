@@ -10,7 +10,7 @@ describe("SceneLayer layout runtime", () => {
       { id: "list", classId: "2DVirtualizedListComponent", properties: { width: 4, height: 1, itemClassId: "Row", itemCount: 10, overscan: 0 } },
     ] })];
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
     try {
       await runtime.loadScripts([
         { assetGuid: "row-class", classId: "Row", parentClassId: "SceneLayerActor", source: "", anchors: [], entryPoints: [], components: [
@@ -133,7 +133,7 @@ describe("SceneLayer layout runtime", () => {
       return document;
     };
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: createDefaultScene(), sceneLayerLibrary: { small: layer("small", 10), large: layer("large", 20) },
       onCommand: (command) => commands.push(command) });
     try {

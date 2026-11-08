@@ -134,7 +134,6 @@ describe("Game Instance native events and scene APIs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneNamed("Level1", [
         createActor("hero", "Hero", { classId: "Mover" }),
@@ -191,7 +190,6 @@ describe("Game Instance native events and scene APIs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneNamed("Level1", [createActor("hero", "Hero")]),
       playSceneGuid: "scene-1",
@@ -233,7 +231,6 @@ describe("Game Instance native events and scene APIs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneNamed("Level1"),
       playSceneGuid: "scene-1",
@@ -269,7 +266,6 @@ describe("Game Instance native events and scene APIs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneNamed("Level1", [createActor("hero", "Hero")]),
       playSceneGuid: "scene-1",
@@ -312,7 +308,6 @@ describe("Game Instance native events and scene APIs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneNamed("Level1", [createActor("hero", "Hero")]),
       playSceneGuid: "scene-1",
@@ -376,7 +371,6 @@ describe("Game Instance native events and scene APIs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneNamed("Level1", [
         createActor("hero", "Hero", {
@@ -424,7 +418,6 @@ describe("Game Instance native events and scene APIs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       deferSceneModelsReady: true,
       playScene: sceneNamed("Level1", [createActor("hero", "Hero")]),
@@ -457,7 +450,6 @@ describe("Game Instance native events and scene APIs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       deferSceneModelsReady: true,
       playScene: sceneNamed("Level1", [createActor("hero", "Hero")]),
@@ -484,7 +476,6 @@ describe("Game Instance native events and scene APIs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       deferSceneModelsReady: true,
       playScene: sceneNamed("Level1", [createActor("hero", "Hero")]),
@@ -530,7 +521,6 @@ describe("Game Instance native events and scene APIs", () => {
     };
     const runtime: RuntimeDriver = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       deferSceneModelsReady: true,
       playScene: scene,
@@ -571,7 +561,6 @@ describe("Game Instance native events and scene APIs", () => {
     settings.gravity = [0, -4, 0];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       gravity: [0, -4, 0],
       playScene: {
@@ -648,7 +637,6 @@ describe("Game Instance native events and scene APIs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       deferSceneModelsReady: true,
       playScene: sceneNamed("Level1", [createActor("hero", "Hero")]),
@@ -673,7 +661,6 @@ describe("Game Instance native events and scene APIs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       deferSceneModelsReady: true,
       playScene: sceneNamed("Level1", [createActor("hero", "Hero")]),
@@ -722,7 +709,6 @@ describe("Game Instance native events and scene APIs", () => {
     level2.settings.gravity = [0, 8, 0];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       gravity: [0, -4, 0],
       playScene: level1,
@@ -762,7 +748,6 @@ describe("Game Instance native events and scene APIs", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       gameInstanceClass: "SessionGI",
       playScene: sceneNamed("Level1"),

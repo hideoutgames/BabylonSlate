@@ -32,7 +32,7 @@ function scene(): SerializedScene {
 }
 
 async function runtimeWith(source: string[], commands: CommandMessage[]) {
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: scene(),
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: scene(),
     particleParameterCatalog: catalog, onCommand: (command) => commands.push(command) });
   await runtime.loadScripts([{
     assetGuid: "hero-script",
@@ -148,7 +148,7 @@ describe("Parameter Overrides and live edits", () => {
 
   it("list a Particle component's parameters in the Simulation Inspector and set them live", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, sessionGeneration: 2,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, sessionGeneration: 2,
       sessionMode: "simulate", playSceneGuid: "root", playScene: scene(), particleParameterCatalog: catalog,
       onCommand: (command) => commands.push(command) });
     await runtime.loadScripts([{ classId: "Hero", assetGuid: "hero-script", parentClassId: "Actor", source: "", anchors: [], entryPoints: [] }]);

@@ -83,7 +83,7 @@ async function launch(playScene: SerializedScene, navMesh?: Uint8Array) {
   const slots = new Map<string, number>();
   const despawnTicks: number[] = [];
   const runtime: RuntimeDriver = createInProcessRuntime({
-    seed: 7, maxActors: 32, seedDemoActors: false, preferSoftwarePhysics: true,
+    seed: 7, maxActors: 32, preferSoftwarePhysics: true,
     playScene, sceneLibrary: { child: scene([createActor("streamed", "Streamed", { classId: "Mover" })]) },
     sceneLayerLibrary: { list: overlayList() },
     onCommand: (command) => {

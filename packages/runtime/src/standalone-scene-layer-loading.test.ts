@@ -37,7 +37,7 @@ function chunkGate() {
 async function fixture(onCommand?: (command: CommandMessage) => void) {
   const commands: CommandMessage[] = [];
   const chunks = chunkGate();
-  const runtime: RuntimeDriver = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+  const runtime: RuntimeDriver = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
     playScene: { ...createDefaultScene(), actors: [] }, playSceneGuid: "world",
     sceneLayerLibrary: { small: layerDocument(1), large: layerDocument(80) }, cooperativeSceneLoading: chunks,
     deferSceneLoadingPaint: true, deferSceneModelsReady: true,

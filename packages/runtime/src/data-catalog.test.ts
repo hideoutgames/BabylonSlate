@@ -357,7 +357,7 @@ describe("runtime data catalog", () => {
     const logs: string[] = [];
     const runtime = createInProcessRuntime({
       ...runtimeOptionsFromLoadControl({ type: "load", sceneAssetGuid: "scene", dataAssets: assets() }),
-      seedDemoActors: false, preferSoftwarePhysics: true,
+      preferSoftwarePhysics: true,
       onCommand: (command) => { if (command.type === "log" && command.category === "Data") logs.push(command.message); },
     });
     try {

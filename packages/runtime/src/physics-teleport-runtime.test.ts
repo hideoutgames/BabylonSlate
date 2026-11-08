@@ -32,7 +32,6 @@ const script: CompiledScript = {
 it("publishes gameplay pose writes to real Havok before a same-event query and preserves or resets velocity", async () => {
   const runtime = createInProcessRuntime({
     seed: 1,
-    seedDemoActors: false,
     gravity: [0, 0, 0],
   });
   try {
@@ -120,7 +119,6 @@ it("routes a SceneLayer gameplay pose write to its layer's physics world", async
   };
   const runtime = createInProcessRuntime({
     seed: 1,
-    seedDemoActors: false,
     preferSoftwarePhysics: true,
     sceneLayerLibrary: { overlay: layer },
   });
@@ -192,7 +190,6 @@ it("places a parented body and converts Move Character against its parent's pose
   };
   const runtime = createInProcessRuntime({
     seed: 1,
-    seedDemoActors: false,
     preferSoftwarePhysics: true,
     physicsWorld: "3d",
     gravity: [0, 0, 0],

@@ -18,7 +18,7 @@ describe("scripted actor realization", () => {
   it("removes an actor whose Begin Play loops and returns null instead of the half-spawned actor", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, includeDebugCommands: true, infiniteLoopDetection: true, loopCount: 5,
+      seed: 1, includeDebugCommands: true, infiniteLoopDetection: true, loopCount: 5,
       onCommand: (command) => commands.push(command),
     });
     try {
@@ -47,7 +47,7 @@ describe("scripted actor realization", () => {
   it("ticks scene, spawned and component scripts without a guard closure per call, and a looping Tick still aborts the tick", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, infiniteLoopDetection: true, loopCount: 5,
+      seed: 1, preferSoftwarePhysics: true, infiniteLoopDetection: true, loopCount: 5,
       playScene: { ...createDefaultScene(), actors: [
         createActor("looper", "Looper", { classId: "Looper" }),
         createActor("ticker", "Ticker", { classId: "Ticker", components: [{ id: "counter", classId: "Counter", properties: {} }] }),

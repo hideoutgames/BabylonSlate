@@ -122,7 +122,7 @@ describe("render bone attachment", () => {
     const hand = new TransformNode("Hand", scene);
     hand.parent = target;
     hand.position.y = 2;
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (command) => {
+    const runtime = createInProcessRuntime({ seed: 1, onCommand: (command) => {
       if (isPlayEngineCommandType(command.type) && command.type === "attachToBone") snapshot.applyAttachToBone(binding, command);
     } });
     try {

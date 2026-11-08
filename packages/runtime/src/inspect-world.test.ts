@@ -5,7 +5,6 @@ describe("RuntimeDriver.inspectWorld", () => {
   it("returns a debug inspect snapshot of the live world", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
     });
     runtime.start();

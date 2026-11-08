@@ -11,7 +11,6 @@ describe("AudioComponent play-on-start", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Audio",
@@ -63,7 +62,6 @@ describe("AudioComponent play-on-start", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Audio",
@@ -102,7 +100,6 @@ describe("AudioComponent play-on-start", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Audio",
@@ -150,7 +147,6 @@ describe("AudioComponent script Stop", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Audio",

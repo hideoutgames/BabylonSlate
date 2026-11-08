@@ -10,7 +10,7 @@ const catalog: RuntimeAssetCatalogEntry[] = [
 
 /** A Hero whose Begin Play runs `body` (the effects it spawns are logged by guid). */
 async function session(body: string[], commands: CommandMessage[]) {
-  const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, assetCatalog: catalog,
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, assetCatalog: catalog,
     playScene: { name: "Test", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [
       createActor("hero", "Hero", { classId: "Hero", transform: { position: [10, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } }),
     ] },

@@ -42,7 +42,6 @@ export function runtimeOptionsFromLoadControl(
   | "playSceneGuid"
   | "classAssetGuids"
   | "consoleCommands"
-  | "seedDemoActors"
   | "gameInstanceClass"
   | "sceneLibrary"
   | "sceneNavmeshBytes"
@@ -126,7 +125,6 @@ export function runtimeOptionsFromLoadControl(
     playSceneGuid: msg.sceneAssetGuid,
     classAssetGuids: msg.classAssetGuids,
     consoleCommands: msg.consoleCommands,
-    seedDemoActors: msg.scene ? false : true,
     gameInstanceClass: msg.gameInstanceClass,
     sceneLibrary: record(sceneLibrary),
     ...(msg.sceneNavmeshBytes ? { sceneNavmeshBytes: msg.sceneNavmeshBytes } : {}),

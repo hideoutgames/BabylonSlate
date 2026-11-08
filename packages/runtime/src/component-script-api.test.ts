@@ -39,7 +39,7 @@ function script(source: string, extra?: Partial<CompiledScript>): CompiledScript
 describe("component script API", () => {
   it("sends attached fog volumes to both Play hosts and updates density without rebuilding actor meshes", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: sceneOf([createActor("mist", "Mist", { classId: "Hero", components: [
         { id: "offset", classId: "ActorComponent", properties: {}, transform: { position: [3, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
         { id: "fog", classId: "FogVolumeComponent", parentId: "offset", properties: { shape: "sphere", size: [4, 6, 8] } },
@@ -63,7 +63,7 @@ describe("component script API", () => {
   });
   it.each(["WaterLakeComponent", "WaterOceanComponent"])("updates %s dimensions through normal component variables and queries the changed footprint", async (classId) => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } },
       playScene: sceneOf([createActor("lake", "Lake", { classId: "Hero", components: [
         { id: "surface", classId, properties: { assetGuid: "water", width: 20 } },
@@ -84,7 +84,7 @@ describe("component script API", () => {
   });
   it("realizes Global Water Volume in Play and queries distant water through the script API", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } },
       playScene: sceneOf([createActor("global", "Global Water", { classId: "Hero", components: [
         { id: "surface", classId: "GlobalWaterVolumeComponent", properties: { assetGuid: "water", depth: 42 } },
@@ -104,7 +104,7 @@ describe("component script API", () => {
   });
   it("sends Water Removal Volumes to Play rendering and removes their water from queries", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } },
       playScene: sceneOf([
         createActor("global", "Global Water", { classId: "Hero", components: [{ id: "surface", classId: "GlobalWaterVolumeComponent", properties: { assetGuid: "water" } }] }),
@@ -128,7 +128,7 @@ describe("component script API", () => {
   });
   it("changes an actor's authored outline without rebuilding its mesh or changing a sibling", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: sceneOf(["a", "b"].map((id) => createActor(id, id, { classId: "Hero", components: [
         createMeshComponent(`${id}-mesh`),
         { id: `${id}-ink`, classId: "OutlineComponent", properties: { width: 1, color: [0.03, 0.03, 0.03] } },
@@ -149,7 +149,7 @@ describe("component script API", () => {
   });
   it("emits a spring arm with its attached camera beside a mesh and re-emits script lag writes", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: sceneOf([createActor("hero", "Hero", { classId: "Hero", components: [
         createMeshComponent("body"),
         { id: "arm", classId: "SpringArmComponent", properties: { armLength: 3, enableRotationLag: true } },
@@ -176,7 +176,7 @@ describe("component script API", () => {
   });
   it("updates a rectangular emitter alongside a render mesh through native component variables", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1,
       playScene: sceneOf([createActor("panel", "Panel", { classId: "Hero", components: [
         createMeshComponent("mesh"),
         { id: "area", classId: "AreaRectLightComponent", properties: { width: 2, textureGuid: "pattern" } },
@@ -191,7 +191,7 @@ describe("component script API", () => {
   });
   it("sends an actor's 2D lights and a sprite's Shading Mode, and resends the lights when a script writes one", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+    const runtime = createInProcessRuntime({ seed: 1,
       playScene: sceneOf([createActor("lamp", "Lamp", { classId: "Hero", components: [
         { id: "sprite", classId: "SpriteComponent", properties: { assetGuid: null, shadingMode: "3d" } },
         { id: "glow", classId: "Light2DComponent", properties: { radius: 4, outerAngle: 90 } },
@@ -225,7 +225,7 @@ describe("component script API", () => {
       ] }),
     ]);
     scene.settings.physicsWorld = "2d";
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, physicsWorld: "2d",
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, physicsWorld: "2d",
       playScene: scene, onCommand: (command) => commands.push(command) });
     try {
       runtime.realizePlayWorld();
@@ -240,7 +240,6 @@ describe("component script API", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       playScene: {
         name: "Label",
         viewportMode: "3d",
@@ -352,7 +351,6 @@ describe("component script API", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneOf([createActor("target", "Target", { classId: "Hero", components: [component] })]),
       onCommand: (command) => commands.push(command),
@@ -375,7 +373,6 @@ describe("component script API", () => {
   it("Set RigidBody mass updates the physics backend, not only the Map", async () => {
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
       dt: 1 / 60,
@@ -433,7 +430,6 @@ describe("component script API", () => {
   it("drops a non-finite impulse instead of driving the body to an infinite position", async () => {
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
       dt: 1 / 60,
@@ -470,7 +466,6 @@ describe("component script API", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
       dt: 1 / 60,
@@ -622,7 +617,6 @@ describe("component script API", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneOf([
         createActor("fx", "Sparks", {
@@ -668,7 +662,6 @@ describe("component script API", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneOf([
         createActor("speaker", "Speaker", {
@@ -713,7 +706,6 @@ describe("component script API", () => {
     settings.defaultCameraActorId = "rig";
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Cam",
@@ -755,7 +747,6 @@ describe("component script API", () => {
   it("Add Impulse on a RigidBodyComponent moves the actor", async () => {
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       physicsWorld: "3d",
       dt: 1 / 60,
@@ -816,7 +807,6 @@ describe("component script API", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: sceneOf([
         // A streamed copy of a duplicated scene keeps the original component id as its source.

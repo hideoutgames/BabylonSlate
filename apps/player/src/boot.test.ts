@@ -680,7 +680,7 @@ describe("player startup and Stop ownership", () => {
     TestWorker.failPost = fallbackMode;
     const registered = vi.fn();
     if (fallbackMode) vi.spyOn(runtimes, "createRuntimeFromLoad").mockImplementation((load, onCommand) => {
-      const runtime = runtimes.createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: load.scene, onCommand });
+      const runtime = runtimes.createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: load.scene, onCommand });
       vi.spyOn(runtime, "registerWaterContent").mockImplementation(registered);
       return runtime;
     });
@@ -785,7 +785,7 @@ describe("player startup and Stop ownership", () => {
     let fallback: runtimes.RuntimeDriver | undefined;
     vi.spyOn(runtimes, "createRuntimeFromLoad").mockImplementation((load, onCommand) => {
       expect(TestWorker.instances[0]!.terminated).toBe(true);
-      fallback = runtimes.createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      fallback = runtimes.createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
         playScene: load.scene, playSceneGuid: load.sceneAssetGuid, deferSceneModelsReady: true,
         deferSceneLoadingPaint: true, cooperativeSceneLoading: true, onCommand });
       return fallback;

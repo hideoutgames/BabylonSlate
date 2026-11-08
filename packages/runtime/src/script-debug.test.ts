@@ -50,7 +50,7 @@ function sceneWith(actors: SerializedScene["actors"]): SerializedScene {
 async function startSimulation(actors: SerializedScene["actors"], scripts: CompiledScript[]) {
   const commands: CommandMessage[] = [];
   const runtime = createInProcessRuntime({
-    seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    seed: 1, preferSoftwarePhysics: true,
     playScene: sceneWith(actors), playSceneGuid: "scene-1",
     onCommand: (command) => commands.push(command),
   });

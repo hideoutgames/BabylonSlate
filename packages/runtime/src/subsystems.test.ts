@@ -153,7 +153,7 @@ describe("Game Subsystems", () => {
   it("wrap the Game Instance lifecycle through Play, Change Scene and Stop", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: sceneNamed("Level1"), playSceneGuid: "scene-1",
       sceneLibrary: { "scene-2": sceneNamed("Level2") },
       sceneGuidByKey: { "scene-2": "scene-2", Level2: "scene-2" },
@@ -209,16 +209,16 @@ describe("Game Subsystems", () => {
     } finally { runtime.stop(); }
   });
 
-  it("instantiate only leaf classes, including a user class the runtime pre-registered", async () => {
+  it("instantiate only leaf classes", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: sceneNamed("Level1"), playSceneGuid: "scene-1",
       onCommand: (command) => commands.push(command),
     });
     const take = scriptLog(commands);
-    // The runtime always registers a demo `Enemy : Actor`; this project's Enemy
-    // is a GameSubsystem leaf that inherits its base's On Init and function.
+    // This project's Enemy is a GameSubsystem leaf that inherits its base's On
+    // Init and function.
     await runtime.loadScripts([
       classScript("Enemy", "InventoryBase", {}),
       classScript("InventoryBase", "GameSubsystem", { "flow.event.init": 'log("init:" + ctx.self.classId);' }, {
@@ -241,7 +241,7 @@ describe("Game Subsystems", () => {
 
   it("reports GameSubsystems whose scripts load after the World started instead of starting them late", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       onCommand: (command) => commands.push(command) });
     try {
       runtime.start();
@@ -257,7 +257,7 @@ describe("Game Subsystems", () => {
   it("answer Call Interface through Get references, a Scene Subsystem already while its Scene prepares", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, deferSceneModelsReady: true,
+      seed: 1, preferSoftwarePhysics: true, deferSceneModelsReady: true,
       playScene: sceneNamed("Level1"), playSceneGuid: "scene-1",
       onCommand: (command) => commands.push(command),
     });
@@ -297,7 +297,7 @@ describe("Game Subsystems", () => {
   it("let Get Game Instance reach the session Game Instance with its inherited class defaults", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, gameInstanceClass: "MatchGI",
+      seed: 1, preferSoftwarePhysics: true, gameInstanceClass: "MatchGI",
       playScene: sceneNamed("Level1", [createActor("a1", "A1", { classId: "Reader" })]), playSceneGuid: "scene-1",
       onCommand: (command) => commands.push(command),
     });
@@ -325,7 +325,7 @@ describe("Scene Subsystems", () => {
   it("live with each main Scene: callable while it prepares, Init before Begin Play, End before Scene Exit", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, deferSceneModelsReady: true,
+      seed: 1, preferSoftwarePhysics: true, deferSceneModelsReady: true,
       playScene: sceneNamed("Level1", [createActor("a1", "A1", { classId: "Mover" }), createActor("a2", "A2", { classId: "Mover" })]),
       playSceneGuid: "scene-1",
       sceneLibrary: { "scene-2": sceneNamed("Level2", [createActor("b1", "B1", { classId: "Mover" })]) },
@@ -388,7 +388,7 @@ describe("Scene Subsystems", () => {
   it("hear every world actor right before its Begin Play and after every On Init, however early it spawned", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: sceneNamed("Level1", [createActor("a1", "A1", { classId: "Authored" })]), playSceneGuid: "scene-1",
       onCommand: (command) => commands.push(command),
     });
@@ -430,7 +430,7 @@ describe("Scene Subsystems", () => {
   it("stay callable from a sibling's On End on Change Scene and on Stop", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: sceneNamed("Level1"), playSceneGuid: "scene-1",
       onCommand: (command) => commands.push(command),
     });
@@ -457,7 +457,7 @@ describe("Scene Subsystems", () => {
     const marker = createActor("left", "Left", { classId: "SceneStreamingActor",
       components: [{ id: "stream", classId: "SceneStreamingComponent", properties: { sceneGuid: "child", sceneName: "Child" } }] });
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, deferSceneModelsReady: true,
+      seed: 1, preferSoftwarePhysics: true, deferSceneModelsReady: true,
       playScene: { ...createDefaultScene(), name: "Parent", actors: [marker] }, playSceneGuid: "parent",
       sceneLibrary: { child: { ...createDefaultScene(), name: "Child", actors: [createActor("kid", "Kid", { classId: "Kid" })] } },
       onCommand: (command) => commands.push(command),
@@ -531,7 +531,7 @@ describe("Scene Subsystems", () => {
     const layerDocument = createDefaultSceneLayer();
     layerDocument.actors = [createActor("hud", "Hud", { classId: "SceneLayerActor" })];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: sceneNamed("Level1"), playSceneGuid: "scene-1", sceneLayerLibrary: { hud: layerDocument },
       onCommand: (command) => commands.push(command),
     });
@@ -551,7 +551,7 @@ describe("Scene Subsystems", () => {
   it("resolve an ambiguous Get to the first leaf in class-id order and warn once per session", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       playScene: sceneNamed("Level1"), playSceneGuid: "scene-1",
       onCommand: (command) => commands.push(command),
     });

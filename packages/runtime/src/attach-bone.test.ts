@@ -54,7 +54,7 @@ describe("Attach to Bone scripting", () => {
       ],
     }, { assetGuid: "held-item", registry });
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (c) => commands.push(c) });
+    const runtime = createInProcessRuntime({ seed: 1, onCommand: (c) => commands.push(c) });
     try {
       await runtime.loadScripts([...characterScripts, { assetGuid: "held-item", classId: "HeldItem", source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints }]);
       const parent = runtime.spawnScriptedActor({ classId: "Character" });
@@ -68,7 +68,7 @@ describe("Attach to Bone scripting", () => {
 
   it("rejects an empty actor and missing, destroyed, and cyclic targets, and clears attachments on ordinary reparent or detach", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (c) => commands.push(c) });
+    const runtime = createInProcessRuntime({ seed: 1, onCommand: (c) => commands.push(c) });
     try {
       await runtime.loadScripts([...characterScripts, {
         assetGuid: "held-item", classId: "HeldItem", anchors: [],
@@ -110,7 +110,7 @@ describe("Attach to Bone scripting", () => {
 
   it("keeps the child's parent and pose when the target actor has no render slot", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (c) => commands.push(c) });
+    const runtime = createInProcessRuntime({ seed: 1, onCommand: (c) => commands.push(c) });
     try {
       await runtime.loadScripts([...characterScripts, linkScript]);
       const world = runtime.getWorld();
@@ -141,7 +141,7 @@ describe("Parent link cycles", () => {
 
   it("refuses Attach Actor under the child's own descendant, keeping its parent and bone attachment", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (c) => commands.push(c) });
+    const runtime = createInProcessRuntime({ seed: 1, onCommand: (c) => commands.push(c) });
     try {
       await runtime.loadScripts([linkScript]);
       const [holder, a, b, c] = ["Holder", "A", "B", "C"].map((name) =>
@@ -172,7 +172,7 @@ describe("Parent link cycles", () => {
 
   it("refuses scripted parentId variable writes that would close a cycle, including the actor's own guid", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (c) => commands.push(c) });
+    const runtime = createInProcessRuntime({ seed: 1, onCommand: (c) => commands.push(c) });
     try {
       await runtime.loadScripts([linkScript]);
       const [holder, a, b] = ["Holder", "A", "B"].map((name) =>
@@ -201,7 +201,7 @@ describe("Parent link cycles", () => {
 
   it("refuses a link into a parent chain that already loops", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (c) => commands.push(c) });
+    const runtime = createInProcessRuntime({ seed: 1, onCommand: (c) => commands.push(c) });
     try {
       await runtime.loadScripts([linkScript]);
       const [a, b, c] = ["A", "B", "C"].map((name) =>
@@ -221,7 +221,7 @@ describe("Parent link cycles", () => {
 
   it("keeps a physics world ticking after refusing a cyclic attach", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (c) => commands.push(c) });
+    const runtime = createInProcessRuntime({ seed: 1, onCommand: (c) => commands.push(c) });
     try {
       await runtime.loadScripts([linkScript]);
       const world = runtime.getWorld();

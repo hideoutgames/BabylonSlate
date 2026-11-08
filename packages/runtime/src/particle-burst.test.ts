@@ -21,7 +21,7 @@ describe("Emit Particle Burst commands", () => {
 
   it("reaches the render host from the Particle component's Emit Burst", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: { name: "Test", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [
         createActor("emitter", "Emitter", { classId: "Hero", components: [
           { id: "sparks", classId: "ParticleComponent", properties: { particleSystemGuid: "system", playOnStart: true } },

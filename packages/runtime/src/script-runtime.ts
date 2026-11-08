@@ -349,9 +349,9 @@ export class ScriptRuntime {
     const kind: ClassKind =
       classes.get(parentClassId)?.kind ?? "actor";
     const existingParent = classes.get(script.classId)?.parentClassId;
-    // `ensure` keeps an existing class's parent. Repair a user class registered
-    // before its script (the built-in demo `Enemy : Actor`) to the registered
-    // parent the script names; `reparent` refuses cycles, keeping the old one.
+    // `ensure` keeps an existing class's parent. Repair a class registered
+    // before this script (an earlier load naming another parent) to the
+    // registered parent the script names; `reparent` refuses cycles, keeping the old one.
     if (existingParent !== undefined && parentClassId === requestedParent &&
       existingParent !== requestedParent && !isLockedEngineClassId(script.classId)) {
       classes.reparent(script.classId, requestedParent);

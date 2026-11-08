@@ -37,7 +37,7 @@ describe("output commands are detached from script state at emit", () => {
     };
     const compiled = compileGraph(graph, { assetGuid: "painter-asset", registry });
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (command) => commands.push(command) });
+    const runtime = createInProcessRuntime({ seed: 1, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts([{ assetGuid: "painter-asset", classId: "Painter", source: compiled.source,
         anchors: compiled.anchors, entryPoints: compiled.entryPoints }]);
@@ -69,7 +69,7 @@ describe("output commands are detached from script state at emit", () => {
     };
     const compiled = compileGraph(graph, { assetGuid: "painter-asset", registry, className: "Painter" });
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (command) => commands.push(command) });
+    const runtime = createInProcessRuntime({ seed: 1, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts([{ assetGuid: "painter-asset", classId: "Painter", source: compiled.source,
         anchors: compiled.anchors, entryPoints: compiled.entryPoints }]);

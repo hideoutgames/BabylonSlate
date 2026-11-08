@@ -106,7 +106,6 @@ async function settle(): Promise<void> {
 export async function startGraphScenario(options: GraphScenarioOptions): Promise<GraphScenario> {
   const commands: CommandMessage[] = [];
   const runtime = createInProcessRuntime({
-    seedDemoActors: false,
     preferSoftwarePhysics: true,
     playSceneGuid: "scenario-scene",
     ...options.runtime,

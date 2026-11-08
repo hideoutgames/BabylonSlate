@@ -68,7 +68,7 @@ async function scriptedRuntime(
   waters?: Parameters<typeof createInProcessRuntime>[0]["waters"],
 ) {
   const runtime = createInProcessRuntime({
-    seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, physicsWorld: "3d", gravity: [0, 0, 0], waters,
+    seed: 1, preferSoftwarePhysics: true, physicsWorld: "3d", gravity: [0, 0, 0], waters,
     playScene: { name: "Composition", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors },
   });
   const script: CompiledScript = {

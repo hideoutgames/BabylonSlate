@@ -11,7 +11,7 @@ import type {
 } from "@haptic/core";
 import type { InfiniteLoopGuard, UserCommandDef } from "@haptic/debugger";
 import type { InputResolver, InputRingBuffer, ResolvedInputTick } from "@haptic/input";
-import { ClassRegistry, type Actor, type EngineObject, type World } from "@haptic/object-model";
+import type { Actor, EngineObject, World } from "@haptic/object-model";
 import type { ActorRealization, ScriptedActorSpawn } from "./actor-realization";
 import type { AnimGraphRuntime } from "./anim-graph-runtime";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
@@ -198,19 +198,6 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   prepareScriptedActor(options: ScriptedActorSpawn): Actor | null;
   finishScriptedActor(actor: Actor): Actor | null;
   createScriptedObject(classId: string): EngineObject | null;
-}
-
-/** The session class registry; `Enemy` is the class of the empty-Preview demo actor. */
-export function createClassRegistry(): ClassRegistry {
-  const registry = new ClassRegistry();
-  registry.register({
-    id: "Enemy",
-    parentClassId: "Actor",
-    kind: "actor",
-    variables: [{ name: "speed", type: "float", defaultValue: 1 }],
-    implementedInterfaces: [],
-  });
-  return registry;
 }
 
 export function setWorldGravity(rt: RuntimeComposition, gravity: { x: number; y: number; z: number }): void {

@@ -7,7 +7,7 @@ describe("captureConsoleLogs", () => {
   it("includes captured native warnings in dumplog with one live log event", () => {
     const messages: unknown[] = [];
     const session = runtime.createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       onCommand: (command) => { if (command.type === "log") messages.push(command); },
     });
     const target: Pick<Console, "log" | "info" | "debug" | "warn" | "error"> = {
@@ -40,7 +40,7 @@ describe("captureConsoleLogs", () => {
       edges: [{ id: "e", sourceNodeId: "entry", sourcePinId: "execOut", targetNodeId: "print", targetPinId: "execIn" }],
     };
     const compiled = compileGraph(graph, { assetGuid: "printer", registry });
-    const session = runtime.createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+    const session = runtime.createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true });
     await session.loadScripts([{ assetGuid: "printer", classId: "Printer", source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints }]);
     session.spawnScriptedActor({ classId: "Printer" });
     expect(session.executeConsoleCommand("dumplog").output).toContain("hello from print");

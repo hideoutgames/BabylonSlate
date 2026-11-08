@@ -17,7 +17,7 @@ let runtime: RuntimeDriver | undefined;
 afterEach(() => runtime?.stop());
 
 function start(commands: CommandMessage[]) {
-  runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
+  runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, onCommand: (command) => commands.push(command) });
   return runtime;
 }
 

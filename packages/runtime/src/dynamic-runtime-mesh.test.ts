@@ -10,7 +10,7 @@ import { PhysicsWorldSync } from "./physics-sync";
 describe("dynamic runtime mesh component", () => {
   it("creates meshes through component references, sends only dirty ranges, and never redirects calls to actors or siblings", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: { name: "Runtime Mesh", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [
         createActor("owner", "Owner", { classId: "Rig", components: [{ id: "sibling", classId: "DynamicRuntimeMeshComponent", properties: {} }] }),
       ] }, onCommand: (command) => commands.push(command) });

@@ -2057,7 +2057,7 @@ describe("AudioService with runtime Audio component commands", () => {
   /** A Play session whose speaker plays a looping Audio component voice (`audio-1`) on start. */
   function speakerRuntime(onCommand: (command: CommandMessage) => void) {
     const runtime = createInProcessRuntime({
-      seed: 7, dt: 0.1, seedDemoActors: false, preferSoftwarePhysics: true, onCommand,
+      seed: 7, dt: 0.1, preferSoftwarePhysics: true, onCommand,
       playScene: {
         name: "Audio", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [],
         actors: [createActor("speaker", "Speaker", {
@@ -2155,7 +2155,6 @@ describe("AudioService with runtime Audio component commands", () => {
     service.setSourceBytes("jump", new Uint8Array([1, 2, 3]));
     const runtime = createInProcessRuntime({
       seed: 1,
-      seedDemoActors: false,
       preferSoftwarePhysics: true,
       playScene: {
         name: "Audio",

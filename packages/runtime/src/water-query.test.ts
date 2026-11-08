@@ -120,7 +120,7 @@ describe("Project Water Blend Distance in Play", () => {
     "applies Water Blend Distance $blendDistance to the physics world's water, before and after the native backend loads",
     async ({ blendDistance, blends }) => {
       const runtime = createInProcessRuntime({
-        seed: 1, dt: 1 / 60, seedDemoActors: false, physicsWorld: "3d",
+        seed: 1, dt: 1 / 60, physicsWorld: "3d",
         renderSettings: blendDistance === undefined ? {} : { water: { blendDistance } },
         waters: { water: { ...createDefaultWaterDefinition(), waveHeight: 0, swellHeight: 0 } },
         playScene: { name: "Water", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: actors() },

@@ -11,7 +11,7 @@ describe("Tilemap animation clock", () => {
       tilesets: { atlas: normalizeTilesetPayload({ atlasWidth: 32, tiles: [{ id: 1, animation: [1, 2] }] }) },
     };
     const runtime = createInProcessRuntime({
-      seed: 1, dt: 0.1, seedDemoActors: false, preferSoftwarePhysics: true, ...content,
+      seed: 1, dt: 0.1, preferSoftwarePhysics: true, ...content,
       onCommand: (command) => {
         if (command.type === "tilemapAnimationTime" && isPlayEngineCommandType(command.type)) times.push(command.elapsedMs);
       },
@@ -39,7 +39,7 @@ describe("Tilemap animation clock", () => {
   it("does not send animation commands for static tile content", () => {
     const times: number[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, preferSoftwarePhysics: true,
       tilemaps: { map: createDefaultTilemapPayload() },
       tilesets: { atlas: normalizeTilesetPayload({}) },
       onCommand: (command) => { if (command.type === "tilemapAnimationTime") times.push(command.elapsedMs); },

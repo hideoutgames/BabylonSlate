@@ -37,6 +37,7 @@ import type { ScriptDebugObserver } from "./script-debug";
 import { ScriptBreakpoints } from "./script-breakpoints";
 import {
   type World,
+  ClassRegistry,
   createDebugInspectSnapshot,
   type Actor,
   type EngineObject,
@@ -130,7 +131,7 @@ import type { RuntimePropertyWrites } from "./runtime-property-writes";
 import { SimulationBlocks } from "./simulation-blocks";
 import type { SimulationWaits } from "./simulation-waits";
 import { DEFAULT_GARBAGE_COLLECTION_INTERVAL_TICKS, RuntimeObjectLifetime } from "./object-lifetime";
-import { createClassRegistry, registerRuntimeSubsystems, type RuntimeComposition } from "./runtime-composition";
+import { registerRuntimeSubsystems, type RuntimeComposition } from "./runtime-composition";
 import {
   createActorRealization,
   createAdmission,
@@ -218,8 +219,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   running = false;
   stopped = false;
   bootLoading = false;
-  /** An empty Preview's demo actors wait for `realizePlayWorld` or `start`. */
-  private demoActorsPending = false;
   paused = false;
   readonly pauseReasons = new Set<SessionPauseReason>();
   readonly pendingPauseChanges = new Map<SessionPauseReason, boolean>();
@@ -425,9 +424,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
    * 6. The World input provider.
    * 7. ScriptHost last: its services take most subsystems directly.
    * 8. `RuntimeSubsystems` registration, in Stop order.
-   * 9. Startup: Scene asset Classes and the Game Instance. An empty Preview's
-   *    demo actors wait for `realizePlayWorld` or `start`, so construction
-   *    emits no command.
+   * 9. Startup: Scene asset Classes and the Game Instance.
    */
   constructor(options: RuntimeDriverOptions) {
     // 1. Core subsystems.
@@ -504,7 +501,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.hasAnimatedTiles = hasAnimatedTiles(tilemaps, tilesets);
     this.behaviourTrees.replaceAudioAssets((options.audioAssetGuids ?? []).filter((guid) => guid));
     this.behaviourTrees.replaceAnimClipCatalog((options.animClipCatalog ?? []).filter((entry) => entry.guid));
-    const registry = createClassRegistry();
+    const registry = new ClassRegistry();
     const mappings = normalizeInputMappings(
       options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : createDefaultInputMappings(),
     );
@@ -573,18 +570,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     // 9. Startup objects.
     registerSceneAssetClasses(this.world.classRegistry, this.playSceneGuid, this.sceneGuidByKey.values());
     this.scriptRuntime.bindGameInstance();
-    this.demoActorsPending = options.seedDemoActors !== false && !options.playScene;
-  }
-
-  /**
-   * An empty Preview's demo actors spawn where a Play Scene's actors would:
-   * at `realizePlayWorld`, or `start` for a host that starts without it. Their
-   * `spawn` commands then never reach `onCommand` during construction.
-   */
-  private realizeDemoActors(): void {
-    if (!this.demoActorsPending || this.stopped) return;
-    this.demoActorsPending = false;
-    this.actors.seedDemoActors();
   }
 
   notifyAssetPreloadResult(result: { preloadId: string; success: boolean; error?: string; progress?: number }): void {
@@ -858,7 +843,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   }
 
   realizePlayWorld(): void | Promise<void> {
-    this.realizeDemoActors();
     return this.sceneRealizer.realizePlayWorld();
   }
 
@@ -1115,7 +1099,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
 
   start(): void {
     if (this.stopped) return;
-    this.realizeDemoActors();
     this.running = true;
     this.publishTimeDilation();
     this.breakpointReported = false;

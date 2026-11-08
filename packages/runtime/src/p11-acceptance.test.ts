@@ -371,7 +371,6 @@ describe("P11 §18 acceptance", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       playScene: agentScene("3d"),
       behaviourTrees: { "tree-1": patrolTree() },
     });
@@ -392,7 +391,6 @@ describe("P11 §18 acceptance", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       playScene: agentScene("2d"),
       behaviourTrees: { "tree-1": tree },
     });
@@ -409,7 +407,6 @@ describe("P11 §18 acceptance", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       playScene: agentScene("3d"),
       behaviourTrees: { "tree-1": patrolTree() },
       onCommand: (command) => commands.push(command),
@@ -459,7 +456,6 @@ describe("P11 §18 acceptance", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       dt: 1 / 30,
       playScene: agentScene("3d"),
       behaviourTrees: { "tree-1": patrolTree() },
@@ -495,7 +491,6 @@ describe("P11 §18 acceptance", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false,
       dt: 1 / 30,
       playScene: agentScene("3d"),
       behaviourTrees: { "tree-1": patrolTree() },
@@ -551,7 +546,6 @@ describe("P11 §18 acceptance", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: classScene("tree-1"),
       behaviourTrees: { "tree-1": tree },
       onCommand: (command) => commands.push(command),
@@ -572,7 +566,7 @@ describe("P11 §18 acceptance", () => {
   it("finishes a delayed custom task and writes to the current blackboard after intervening ticks", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, dt: 0.02, seedDemoActors: false, preferSoftwarePhysics: true,
+      seed: 1, dt: 0.02, preferSoftwarePhysics: true,
       playScene: classScene("tree-1"),
       behaviourTrees: { "tree-1": { name: "Delayed", rootId: "wait", blackboardGuid: null,
         nodes: [{ id: "wait", kind: "task", classId: "BTTask_Delayed", children: [], decorators: [], services: [], properties: {} }] } },
@@ -597,7 +591,6 @@ describe("P11 §18 acceptance", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: {
         name: "Throw",
         viewportMode: "3d",
@@ -640,7 +633,6 @@ describe("P11 §18 acceptance", () => {
     const options = {
       seed: 1,
       maxActors: 8,
-      seedDemoActors: false as const,
       dt: 1 / 30,
       playScene: agentScene("3d"),
       behaviourTrees: { "tree-1": patrolTree() },
@@ -712,7 +704,6 @@ describe("P11 §18 acceptance", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: classScene("tree-1"),
       behaviourTrees: { "tree-1": tree },
       onCommand: (command) => commands.push(command),
@@ -765,7 +756,6 @@ describe("P11 §18 acceptance", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       dt: 0.05,
       playScene: classScene("tree-1", "bb-1"),
       behaviourTrees: { "tree-1": tree },
@@ -838,7 +828,6 @@ describe("P11 §18 acceptance", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: classScene("tree-1"),
       behaviourTrees: { "tree-1": tree },
       onCommand: (command) => commands.push(command),

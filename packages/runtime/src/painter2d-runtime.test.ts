@@ -163,7 +163,7 @@ describe("2D Painter retained drawing", () => {
     const commands: CommandMessage[] = [];
     const layer = createDefaultSceneLayer();
     layer.actors = [createActor("canvas", "Canvas", { classId: "CanvasActor", components: [{ id: "ink", classId: "2DPainterComponent", properties: {} }] })];
-    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, seedDemoActors: false, playScene: createDefaultScene(), sceneLayerLibrary: { canvas: layer }, onCommand: (command) => commands.push(command) });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { canvas: layer }, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts([{ assetGuid: "canvas-script", classId: "CanvasActor", parentClassId: "SceneLayerActor", anchors: [],
         entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }],

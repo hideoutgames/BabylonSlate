@@ -24,7 +24,7 @@ it("reports an invalid circle at the 20% realization phase and releases the stop
     },
   });
   const runtime = createInProcessRuntime({
-    seed: 1, playScene: scene, playSceneGuid: "invalid-circle-scene", seedDemoActors: false,
+    seed: 1, playScene: scene, playSceneGuid: "invalid-circle-scene",
     physicsWorld: "2d", preferSoftwarePhysics: true, cooperativeSceneLoading: true,
     deferSceneLoadingPaint: true, onCommand: (command) => readiness.receive(command),
   });

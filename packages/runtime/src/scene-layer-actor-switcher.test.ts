@@ -14,7 +14,7 @@ describe("SceneLayer actor switcher", () => {
       initialIndex: 0, sceneLayerActors: [{ classId: "Panel", defaults: { title: "First", data: { count: 1 }, labels: [{ key: "locale", value: "en" }] } }, { classId: "Panel", defaults: { title: "Second" } }, "Actor"],
     } })];
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
     try {
       await runtime.loadScripts([
         { assetGuid: "base", classId: "BasePanel", parentClassId: "SceneLayerActor", anchors: [],
@@ -121,7 +121,7 @@ describe("SceneLayer actor switcher", () => {
     scene.actors = [createActor("world-switcher", "Invalid", { classId: "RecursiveMenu" })];
     const layer = createDefaultSceneLayer();
     layer.actors = [createActor("root", "Root", { classId: "RecursiveMenu" })];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: scene, sceneLayerLibrary: { menu: layer } });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: scene, sceneLayerLibrary: { menu: layer } });
     try {
       await runtime.loadScripts([{ assetGuid: "recursive", classId: "RecursiveMenu", parentClassId: "SceneLayerActorSwitcher", anchors: [], entryPoints: [], source: "", actorDefaults: { properties: { sceneLayerActors: ["RecursiveMenu"] } } }]);
       runtime.realizePlayWorld();

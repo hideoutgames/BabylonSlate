@@ -24,7 +24,7 @@ function launch(playScene: SerializedScene, libraries: Pick<Parameters<typeof cr
   const commands: CommandMessage[] = [];
   const slots = new Map<string, number>();
   const runtime = createInProcessRuntime({
-    seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene, playSceneGuid: "cycle", ...libraries,
+    seed: 1, preferSoftwarePhysics: true, playScene, playSceneGuid: "cycle", ...libraries,
     onCommand: (command) => {
       commands.push(command);
       if (command.type === "spawn") slots.set(command.actorGuid, command.slotId);

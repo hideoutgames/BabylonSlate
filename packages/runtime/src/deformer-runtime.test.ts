@@ -6,7 +6,7 @@ import { createInProcessRuntime } from "./driver";
 describe("runtime deformers", () => {
   it("batches tick control edits without geometry reassignment and sends nothing for unchanged frames", async () => {
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: { name: "Cages", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [
         createActor("owner", "Owner", { classId: "Rig", components: [createMeshComponent("mesh"),
           { id: "cage", classId: "DeformerComponent", properties: { enabled: true, targetMeshComponentId: "mesh" } }] }),

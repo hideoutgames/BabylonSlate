@@ -11,7 +11,7 @@ it("realizes a joystick with its component transform, independent materials, and
     properties: { backgroundMaterialGuid: "base", joystickMaterialGuid: "thumb", horizontalControl: "dpad-x", radius: 3 },
   }] })];
   const commands: CommandMessage[] = [];
-  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, seedDemoActors: false,
+  const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
     playScene: createDefaultScene(), sceneLayerLibrary: { hud }, onCommand: command => commands.push(command) });
   try {
     runtime.realizePlayWorld();

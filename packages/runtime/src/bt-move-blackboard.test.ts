@@ -35,7 +35,7 @@ describe("Move To Blackboard Key", () => {
       }],
     };
     const runtime = createInProcessRuntime({
-      seed: 1, dt: 1 / 30, maxActors: 8, seedDemoActors: false,
+      seed: 1, dt: 1 / 30, maxActors: 8,
       onCommand: (command) => commands.push(command),
       playScene: {
         name: "Blackboard Navigation", viewportMode: "3d",

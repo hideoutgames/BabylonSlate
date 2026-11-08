@@ -16,7 +16,7 @@ describe("render slots", () => {
       { id: "panel", classId: "AreaRectLightComponent", properties: { width: 2 } },
       { id: "lens", classId: "RenderTargetCaptureComponent", properties: {} },
     ] })];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: scene, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts([{ assetGuid: "plain-script", classId: "Plain", parentClassId: "Actor",
@@ -43,7 +43,7 @@ describe("render slots", () => {
       { id: "col", classId: "ColliderComponent", properties: { renderInGame: true,
         shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } },
     ] })];
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: scene, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts([{ assetGuid: "hider-script", classId: "Hider", parentClassId: "Actor",

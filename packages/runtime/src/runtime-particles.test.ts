@@ -118,7 +118,7 @@ function particleScene(): SerializedScene {
 
 describe("particle playback reports in the runtime", () => {
   async function runtimeWithHandler(commands: CommandMessage[]) {
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: particleScene(), onCommand: (command) => commands.push(command) });
     await runtime.loadScripts([{
       assetGuid: "hero-script",
@@ -204,7 +204,7 @@ describe("Retrigger and Restart Particles", () => {
     const commands: CommandMessage[] = [];
     const scene = particleScene();
     scene.actors[0]!.components![0]!.properties.retrigger = "restart";
-    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: scene, onCommand: (command) => commands.push(command) });
     await runtime.loadScripts([{ assetGuid: "hero-script", classId: "Hero", parentClassId: "Actor", anchors: [],
       source: [

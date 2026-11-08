@@ -54,7 +54,6 @@ async function load(graph: LogicGraph) {
   const commands: CommandMessage[] = [];
   const runtime = createInProcessRuntime({
     seed: 1,
-    seedDemoActors: false,
     dt: 0.1,
     onCommand: (command) => commands.push(command),
   });

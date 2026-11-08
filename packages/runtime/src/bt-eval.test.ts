@@ -35,7 +35,7 @@ describe("runtime behaviour tree evaluation", () => {
     const tree = createDefaultBehaviourTree("Tags");
     tree.blackboardGuid = "board";
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false,
+      seed: 1,
       playScene: aiScene({ treeGuid: "tree" }),
       behaviourTrees: { tree },
       blackboards: {
@@ -76,7 +76,7 @@ describe("runtime behaviour tree evaluation", () => {
     const tree = createDefaultBehaviourTree("Custom Logic");
     tree.nodes.find((node) => node.kind === "task")!.classId = "CustomTask";
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false,
+      seed: 1,
       playScene: aiScene({ treeGuid: "tree-1" }),
       behaviourTrees: { "tree-1": tree },
       onCommand: (command) => commands.push(command),
@@ -109,7 +109,7 @@ describe("runtime behaviour tree evaluation", () => {
   it("does not give a newly spawned tree the completed state of a despawned actor", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false,
+      seed: 1,
       playScene: aiScene({ treeGuid: "tree-1" }),
       behaviourTrees: { "tree-1": createDefaultBehaviourTree("Guard Logic") },
       onCommand: (command) => commands.push(command),
@@ -140,7 +140,7 @@ describe("runtime behaviour tree evaluation", () => {
   it("opens with the current paused tree, names its actor and nodes, and clears removals", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false,
+      seed: 1,
       playScene: aiScene({ treeGuid: "tree-1" }),
       behaviourTrees: { "tree-1": createDefaultBehaviourTree("Guard Logic") },
       onCommand: (command) => commands.push(command),
@@ -171,7 +171,6 @@ describe("runtime behaviour tree evaluation", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: aiScene({ treeGuid: "tree-1" }),
       behaviourTrees: { "tree-1": createDefaultBehaviourTree("Guard") },
       onCommand: (command) => commands.push(command),
@@ -203,7 +202,7 @@ describe("runtime behaviour tree evaluation", () => {
       components: [{ id: "bt-2", classId: "BehaviourTreeComponent", properties: { treeGuid: "tree-1" } }],
     }));
     const runtime = createInProcessRuntime({
-      seed: 1, maxActors: 4, seedDemoActors: false, playScene,
+      seed: 1, maxActors: 4, playScene,
       behaviourTrees: { "tree-1": createDefaultBehaviourTree("Guard") },
       onCommand: (command) => commands.push(command),
     });
@@ -232,7 +231,7 @@ describe("runtime behaviour tree evaluation", () => {
   it("stops publishing btState when the follow ends and sends the current state when it resumes", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
-      seed: 1, maxActors: 4, seedDemoActors: false, dt: 0.1,
+      seed: 1, maxActors: 4, dt: 0.1,
       playScene: aiScene({ treeGuid: "tree-1" }),
       behaviourTrees: { "tree-1": { name: "Wait", rootId: "wait", blackboardGuid: null, nodes: [{
         id: "wait", kind: "task", classId: "bt.task.wait", children: [], decorators: [], services: [],
@@ -263,7 +262,7 @@ describe("runtime behaviour tree evaluation", () => {
     const playScene = aiScene({ treeGuid: "tree-1" });
     playScene.actors.push(createActor("late", "Late"));
     const runtime = createInProcessRuntime({
-      seed: 1, seedDemoActors: false, playScene,
+      seed: 1, playScene,
       behaviourTrees: { "tree-1": createDefaultBehaviourTree("Guard") },
       onCommand: (command) => commands.push(command),
     });
@@ -293,7 +292,6 @@ describe("runtime behaviour tree evaluation", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: aiScene({}),
       onCommand: (command) => commands.push(command),
     });
@@ -332,7 +330,6 @@ describe("runtime behaviour tree evaluation", () => {
     const options = {
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false as const,
       playScene: aiScene({ treeGuid: "tree-1" }),
       behaviourTrees: { "tree-1": waitTree },
       dt: 0.1,
@@ -387,7 +384,6 @@ describe("runtime behaviour tree evaluation", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
-      seedDemoActors: false,
       playScene: aiScene({ treeGuid: "tree-1" }),
       behaviourTrees: { "tree-1": tree },
       audioAssetGuids: ["audio-1"],
