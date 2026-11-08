@@ -1,4 +1,4 @@
-import type { PluginEnableOverride, ProjectStorage } from "@haptic/core";
+import { newGuid, type PluginEnableOverride, type ProjectStorage } from "@haptic/core";
 import {
   AssetRegistry,
   applyPluginImport,
@@ -15,6 +15,7 @@ import {
   resolvePluginEnabled,
   resolvePluginGraph,
   shadowEnginePlugins,
+  uniquePluginFolderName,
   writeProjectPlugin,
   type BlobStore,
   type IndexedAsset,
@@ -23,8 +24,7 @@ import {
   type PluginDiagnostic,
   type PluginImportPlan,
 } from "@haptic/assets";
-import { pluginRootId, uniquePluginFolderName } from "../lib/plugin-ui";
-import { newGuid } from "./project-document-meta";
+import { pluginRootId } from "../lib/plugin-ui";
 
 export type PluginImportResult =
   | { status: "imported"; descriptor: PluginDescriptor }

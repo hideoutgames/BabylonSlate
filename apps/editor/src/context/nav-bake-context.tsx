@@ -29,7 +29,6 @@ import type { SerializedScene } from "@haptic/core";
 import type { ProjectSceneWriter } from "../services/project-write-admission";
 import {
   navMeshAutoBakeProperties,
-  recordNavBakeSaveResult,
   registerNavBakeSaveFlush,
 } from "../lib/nav-bake-save";
 
@@ -93,14 +92,7 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
         } = latestRef.current;
         const doc = getOpenDocuments().find((entry) => entry.id === documentId);
         if (!doc || doc.ref.kind !== "scene" || !doc.content) {
-          const message = "Open a scene before baking a navmesh.";
-          recordNavBakeSaveResult({
-            ok: false,
-            path: doc?.ref.path ?? null,
-            byteLength: 0,
-            error: message,
-          });
-          throw new Error(message);
+          throw new Error("Open a scene before baking a navmesh.");
         }
         const parsed = parseNavMeshActorSettings(properties);
         const settings: NavMeshGenerateSettings = {
@@ -163,22 +155,10 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
             signal: controller.signal,
           });
           setLastBytes(bytes);
-          recordNavBakeSaveResult({
-            ok: true,
-            path: doc.ref.path,
-            byteLength: bytes.byteLength,
-            error: null,
-          });
         } catch (caught) {
           failed = true;
           const message =
             caught instanceof Error ? caught.message : String(caught);
-          recordNavBakeSaveResult({
-            ok: false,
-            path: doc.ref.path,
-            byteLength: 0,
-            error: message,
-          });
           if (!controller.signal.aborted && !/abort/i.test(message)) {
             setError(message);
             console.error("[nav-bake]", message);

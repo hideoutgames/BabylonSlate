@@ -2,6 +2,7 @@ import { FolderIcon, type LucideIcon } from "lucide-react";
 import {
   TYPE_VISUAL_ICON_TILE_SIZE,
   TYPE_VISUAL_ICON_TILE_STROKE_WIDTH,
+  useContextMenuGesture,
 } from "@haptic/editor-kit";
 import {
   Card,
@@ -9,7 +10,6 @@ import {
   CardHeader,
 } from "@haptic/ui/components/card";
 import { cn } from "@haptic/ui/lib/utils";
-import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { ContentBrowserTileName } from "./content-browser-tile-name";
 
 /** Folder glyph color in grid tiles, also used by the New Asset menu's Folder. */
@@ -49,7 +49,9 @@ export function ContentBrowserFolderTile({
   const editing = renaming && Boolean(onRenameDone);
   // A text field cannot sit inside a button, so a renaming tile is a plain box.
   const Root = editing ? "div" : "button";
-  const bind = useLongPressMenu({
+  // Exclusive: the grid around the tile has its own empty-space menu.
+  const bind = useContextMenuGesture({
+    exclusive: true,
     onMenu: (clientX, clientY) => {
       onLongPressMenu(clientX, clientY);
     },

@@ -185,6 +185,11 @@ export function flattenContentBrowserForest(
   );
 }
 
+/** Every folder path in a tree, its root first. */
+export function folderTreePaths(node: FolderTreeLike): string[] {
+  return [node.path, ...node.children.flatMap(folderTreePaths)];
+}
+
 /** Nested folder paths (depth > 0). Forest roots stay expanded. */
 export function nestedFolderPaths(
   trees: readonly FolderTreeLike[],

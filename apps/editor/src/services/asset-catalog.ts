@@ -1,8 +1,9 @@
-import type { AssetRegistry, FolderNode } from "@haptic/assets";
+import type { AssetRegistry } from "@haptic/assets";
 import type { ProjectSettings, RuntimeAssetCatalogEntry } from "@haptic/core";
 import { collectHeaderReachability, runtimeAssetCatalogFromIndexed } from "@haptic/exporter";
 import { RuntimeAssetCatalog } from "@haptic/runtime";
 import { classParentLookup } from "../lib/content-browser-helpers";
+import { folderTreePaths } from "../lib/content-browser-tree";
 import { assetsFromIndexed, exportRootSettings } from "./export-game";
 
 type CatalogRegistry = Pick<AssetRegistry, "list" | "listRoots">;
@@ -47,10 +48,6 @@ export function playAssetCatalog(options: {
   return packaged.ok ? runtimeAssetCatalogFromIndexed(indexed, new Set(packaged.value.guids)) : [];
 }
 
-function folderPaths(node: FolderNode): string[] {
-  return [node.path, ...node.children.flatMap(folderPaths)];
-}
-
 /**
  * The catalog editor graph hosts query: every asset of every mounted root,
  * including editor-only assets, and the registry's empty folders. It is rebuilt
@@ -66,7 +63,7 @@ export function createRegistryCatalogSource(
     if (cached?.registry === registry && cached.generation === registry.generation) return cached.catalog;
     const catalog = new RuntimeAssetCatalog(
       runtimeAssetCatalogFromIndexed(assetsFromIndexed(authoredAssets(registry))),
-      { folders: registry.listRoots().flatMap((root) => folderPaths(registry.folderTree(root.id))) },
+      { folders: registry.listRoots().flatMap((root) => folderTreePaths(registry.folderTree(root.id))) },
     );
     cached = { registry, generation: registry.generation, catalog };
     return catalog;

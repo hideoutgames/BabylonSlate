@@ -12,6 +12,7 @@ function session(mode: DiagnosticSessionPorts["mode"] = "play") {
     startProfile: vi.fn(async () => {}),
     stopProfile: vi.fn(async () => null),
     captureFrame: vi.fn(async () => ({ version: 1, frame: { renderFrameId: 1 } }) as unknown as RenderFrameReport),
+    stopSession: vi.fn(),
   };
   store.bindSession(ports);
   return { store, ports, run: (line: string) => runProfilerConsoleCommand(line, store, () => options) };

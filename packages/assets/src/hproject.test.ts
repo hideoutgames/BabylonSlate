@@ -29,7 +29,6 @@ describe("hproject codec", () => {
     const files = createEmptyProjectFiles({
       guid: "proj-1",
       name: "Demo",
-      engineVersion,
     });
     files.push({
       path: "assets/readme.txt",
@@ -136,18 +135,19 @@ describe("hproject codec", () => {
       new TextDecoder().decode(
         tree.find((f) => f.path === "project.json")!.data,
       ),
-    ) as { guid: string; name: string };
+    ) as { guid: string; name?: string; metadata: { name: string } };
     expect(manifest.guid).toBe("new-guid");
-    expect(manifest.name).toBe("FromTemplate.hproject");
+    expect(manifest.metadata.name).toBe("FromTemplate.hproject");
+    expect(manifest.name).toBeUndefined();
   });
 
-  it("rewriteProjectIdentity leaves non-manifest files intact", () => {
+  it("rewriteProjectIdentity renames a plugin manifest at its top level and leaves non-manifest files intact", () => {
     const files = [
       {
         path: "assets/x.txt",
         data: new TextEncoder().encode("keep"),
       },
-      ...createEmptyProjectFiles({ guid: "old", name: "Old" }),
+      ...createEmptyProjectFiles({ kind: "plugin", guid: "old", name: "Old" }),
     ];
     const rewritten = rewriteProjectIdentity(files, {
       guid: "new",
@@ -158,5 +158,7 @@ describe("hproject codec", () => {
         rewritten.find((f) => f.path === "assets/x.txt")!.data,
       ),
     ).toBe("keep");
+    expect(JSON.parse(new TextDecoder().decode(rewritten.find((f) => f.path === "plugin.json")!.data)))
+      .toMatchObject({ guid: "new", name: "New" });
   });
 });

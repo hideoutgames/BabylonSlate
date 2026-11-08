@@ -462,18 +462,13 @@ function pushMeshTriangles(
   }
 }
 
-function isDynamicRigidBody(actor: SerializedActor): boolean {
-  return actor.components.some(
+/** Whether an actor's meshes are static audio geometry: it has a MeshComponent and no dynamic RigidBody. */
+export function isStaticAudioGeometryActor(actor: SerializedActor): boolean {
+  return !actor.components.some(
     (component) =>
       component.classId === "RigidBodyComponent" &&
       component.properties.motionType === "dynamic",
-  );
-}
-
-function hasMeshComponent(actor: SerializedActor): boolean {
-  return actor.components.some(
-    (component) => component.classId === "MeshComponent",
-  );
+  ) && actor.components.some((component) => component.classId === "MeshComponent");
 }
 
 /**
@@ -491,8 +486,7 @@ export async function collectStaticAudioGeometry(options: {
   const meshes = new Map<string, CollisionTriangleMesh>();
   let processed = 0;
   for (const actor of options.actors) {
-    if (isDynamicRigidBody(actor)) continue;
-    if (!hasMeshComponent(actor)) continue;
+    if (!isStaticAudioGeometryActor(actor)) continue;
     const world = actorWorld(actor);
     for (const component of world ? actor.components : []) {
       if (component.classId !== "MeshComponent") continue;

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createEmptyProject } from "@haptic/core";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
 
@@ -14,7 +15,7 @@ describe("ProjectService web import", () => {
     const service = new ProjectService(storage);
     const encode = (text: string) => new TextEncoder().encode(text);
     picker.files = [
-      { name: "Imported/project.json", bytes: encode(JSON.stringify({ metadata: { name: "Imported" } })) },
+      { name: "Imported/project.json", bytes: encode(JSON.stringify(createEmptyProject("Imported"))) },
       { name: "Imported/assets/notes.txt", bytes: encode("notes") },
     ];
     const write = storage.writeBinary.bind(storage);

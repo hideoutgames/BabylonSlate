@@ -19,7 +19,7 @@ vi.mock("@haptic/vfs", async (importOriginal) => ({
   createAppSettingsStore: () => ({ load: () => new Promise(() => {}) }),
   getHostMemoryStats: () => Promise.resolve(null),
 }));
-vi.mock("../services/lifecycle-pause", () => ({ attachLifecyclePause: () => () => {} }));
+vi.mock("@haptic/render/lifecycle-pause", () => ({ attachLifecyclePause: () => () => {} }));
 
 const polls: Array<() => void> = [];
 

@@ -70,7 +70,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   collectPlayTexturePixelSizes: () => new Map(),
 })));
 vi.mock("../components/viewport-toolbar", () => ({ ViewportToolbar: () => null }));
-vi.mock("../lib/viewport-render-gate", () => ({ attachViewportRenderGate: () => () => {}, ENGINE_SETTINGS_CHANGED_EVENT: "haptic:engine-settings" }));
+vi.mock("../lib/viewport-render-gate", () => ({ attachViewportRenderGate: () => () => {} }));
 
 const key = (id: string, Time: number, Value: unknown) => ({ id, Time, Value, Interpolation: "linear" as const, ArriveTangent: 0, LeaveTangent: 0 });
 const panel = {} as IDockviewPanelProps;

@@ -32,7 +32,8 @@ export async function minimalProjectFiles(
     createActor("actor-1", "Actor", {
       // Class identity follows the case-sensitive file stem, not its display name.
       classId: "main",
-      components: [createMeshComponent("mesh-1", "box")],
+      // An instance of Main: its mesh is the Class's prefab row, as placing one writes it.
+      components: [{ ...createMeshComponent("mesh-1", "box"), sourceId: "prefab-mesh" }],
     }),
     ...scene.actors.filter(
       (actor) => actor.id === scene.settings.defaultCameraActorId,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SessionBoundaryResult } from "@haptic/bridge";
+import type { SessionBoundaryResult } from "./channels";
 import { createSessionBoundaryClient } from "./session-boundary-client";
 
 function response(requestId: number, sessionGeneration = 4): SessionBoundaryResult {

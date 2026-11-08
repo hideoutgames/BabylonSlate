@@ -7,10 +7,7 @@ import {
 import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, ViewportMode } from "@haptic/core";
 import { validateDataDefinition, validateDataTree, type TypeSchemas } from "@haptic/scripting";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
-import {
-  isLockedEngineClassId,
-  MAX_CLASS_INHERITANCE_DEPTH,
-} from "@haptic/object-model";
+import { MAX_CLASS_INHERITANCE_DEPTH } from "@haptic/object-model";
 import type { MaterialDomain } from "@haptic/shader-graph";
 import {
   ASSETS_ROOT,
@@ -26,6 +23,7 @@ import {
   newAssetFileSuffix,
   type CreatableAssetType,
 } from "./content-browser-helpers";
+import { isEngineClassId } from "./class-asset-lookup";
 import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "./logic-graph-document";
 import { PROJECT_CONTENT_ROOT_ID } from "./plugin-ui";
 import { classIdForGraphPath } from "../services/script-compiler";
@@ -182,10 +180,6 @@ export function uniqueNewAssetName(options: {
     candidate = nextCopyName(stem, blocked);
   }
   return candidate;
-}
-
-function isEngineClassId(classId: string): boolean {
-  return isLockedEngineClassId(classId) || engineParentOf(classId) !== undefined;
 }
 
 /**

@@ -309,7 +309,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 
 - One normalised stream from touch/pointer, gamepad, keyboard and mouse. Gamepads are polled once per frame on the main thread into the same tick-stamped ring buffer; the worker sees only actions and axes.
 - Mappings live in InputAction / InputAxis assets with stable binding ids so player overrides survive renames. Only the Basic 3D template ships starter Input assets.
-- Touch axes come from SceneLayer `2DJoystickComponent` controls (test hook: `injectTestTouchAxis`). There is no Set Input Mode.
+- Touch axes come from SceneLayer `2DJoystickComponent` controls. There is no Set Input Mode.
 - Every finger, pen tip and left mouse button is a touch with a stable finger slot, read by the touch nodes; the first one is still Mouse Left and the cursor. Pointers that SceneLayer joysticks, 2D controls or scroll drags own never reach game input.
 - Gestures (tap, double tap, long press, swipes, pinch, two-finger rotate and drag) are `touch` binding codes recognized in the resolver with fixed thresholds; there are no gesture nodes or settings.
 - Device motion (Tilt X/Y, Shake, Get Device Motion, Calibrate Tilt) starts only when a game uses it; iOS permission is asked on the next tap, never at load.

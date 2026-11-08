@@ -42,9 +42,9 @@ import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
   sceneViewportRenderSettings,
-  waitForSceneLoadingPaint,
   type SceneViewportLoadPhase,
 } from "../lib/scene-viewport-load";
+import { waitForSceneLoadingPaint } from "@haptic/render/scene-load-readiness";
 import { useLiveTilemapEdits } from "./use-live-tilemap-edits";
 
 /** The Scene viewport's loading dialog and failure state. */

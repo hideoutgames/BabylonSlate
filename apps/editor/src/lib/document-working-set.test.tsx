@@ -3,15 +3,10 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { CONTENT_BROWSER_ID } from "@haptic/core";
 import {
   DOCUMENT_IDLE_UNMOUNT_MS,
-  advanceTestIdleClock,
   createIdleClock,
   selectMountedDocumentIds,
   useDocumentWorkingSet,
 } from "./document-working-set";
-
-vi.mock("@haptic/vfs", () => ({
-  isTestModeEnabled: () => true,
-}));
 
 const CB = CONTENT_BROWSER_ID;
 
@@ -189,14 +184,6 @@ describe("createIdleClock", () => {
     vi.setSystemTime(1_000_000 + DOCUMENT_IDLE_UNMOUNT_MS * 2 + 50);
     expect(clock.now()).toBe(1_000_000 + 50);
   });
-
-  it("advances idle time without waiting on the wall clock", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(1_000_000);
-    const clock = createIdleClock();
-    clock.advance(DOCUMENT_IDLE_UNMOUNT_MS);
-    expect(clock.now()).toBe(1_000_000 + DOCUMENT_IDLE_UNMOUNT_MS);
-  });
 });
 
 function MountedProbe({
@@ -289,21 +276,6 @@ describe("useDocumentWorkingSet", () => {
     expect(screen.getByTestId("mounted").textContent).toContain("graph:A");
     act(() => {
       vi.advanceTimersByTime(DOCUMENT_IDLE_UNMOUNT_MS);
-    });
-    expect(screen.getByTestId("mounted").textContent).not.toContain("graph:A");
-  });
-
-  it("advances idle time from the Playwright hatch without waiting on the wall clock", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(0);
-    const tabIds = [CB, "graph:A"];
-    const { rerender } = render(
-      <MountedProbe tabIds={tabIds} activeId="graph:A" />,
-    );
-    rerender(<MountedProbe tabIds={tabIds} activeId={CB} />);
-    expect(screen.getByTestId("mounted").textContent).toContain("graph:A");
-    act(() => {
-      advanceTestIdleClock(DOCUMENT_IDLE_UNMOUNT_MS);
     });
     expect(screen.getByTestId("mounted").textContent).not.toContain("graph:A");
   });

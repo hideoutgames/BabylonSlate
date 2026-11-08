@@ -8,6 +8,7 @@ import {
   wouldCreateFolderCycle,
   type SerializedScene,
 } from "@haptic/core";
+import { moveIdsRelativeTo } from "./move-ids-relative-to";
 
 const FOLDER_ROW_PREFIX = "folder:";
 const ACTOR_ROW_PREFIX = "actor:";
@@ -92,21 +93,6 @@ export type OutlinerDropMove =
       beforeId?: string;
       afterId?: string;
     };
-
-function moveIdsRelativeTo<T extends { id: string }>(
-  items: readonly T[],
-  ids: readonly string[],
-  anchorId: string,
-  placement: "before" | "after",
-): T[] {
-  const movingSet = new Set(ids);
-  const moving = items.filter((item) => movingSet.has(item.id));
-  const rest = items.filter((item) => !movingSet.has(item.id));
-  const index = rest.findIndex((item) => item.id === anchorId);
-  if (index < 0) return [...rest, ...moving];
-  const insertAt = placement === "before" ? index : index + 1;
-  return [...rest.slice(0, insertAt), ...moving, ...rest.slice(insertAt)];
-}
 
 function ancestorFolderSelected(
   scene: SerializedScene,

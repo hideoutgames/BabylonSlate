@@ -3,7 +3,7 @@ import {
   serializeJournalLine,
   type JournalLine,
 } from "@haptic/edit";
-import { attachLifecyclePause } from "../services/lifecycle-pause";
+import { attachLifecyclePause } from "@haptic/render/lifecycle-pause";
 
 /**
  * Longest time an applied edit waits in memory before its journal record is

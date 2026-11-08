@@ -38,7 +38,7 @@ describe("Create Project from a template", () => {
 
     expect(document.metadata.name).toBe("MyPlatformer");
     const manifest = JSON.parse(await destination.readText("project.json"));
-    expect(manifest.name).toBe("MyPlatformer");
+    expect(manifest.metadata.name).toBe("MyPlatformer");
     expect(manifest.guid).not.toBe("tpl");
     expect(destination.getCurrentFolder()?.name).toBe("MyPlatformer");
 
