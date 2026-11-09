@@ -37,22 +37,20 @@ const run = (command, args, cwd = sandbox) => new Promise((resolvePromise, rejec
   child.once("close", code => code === 0 ? resolvePromise() : reject(new Error(`Command failed: ${command}`)));
 });
 const delay = milliseconds => new Promise(resolveDelay => setTimeout(resolveDelay, milliseconds));
-// Diagnostic: the installed app's Windows processes (its helpers run BabylonSlate.exe too), with parent and command line.
-function windowsAppProcesses() {
-  const script = "Get-CimInstance Win32_Process -Filter \"Name='BabylonSlate.exe'\" | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId) $($_.CommandLine)\" }";
-  return execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8" })
-    .split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => line.slice(0, 240));
-}
-// Diagnostic: the stacks of the main process's busiest threads, read by attaching the Windows debugger without stopping it.
+// Two early inspection runs saw the second Windows launch stall before its main process answered either debugger, and none
+// of the next nine. Should it stall again, this prints the app's processes and, by attaching cdb without stopping it, the
+// main process's main thread stack and busiest threads.
 function printWindowsMainStacks() {
+  const script = "Get-CimInstance Win32_Process -Filter \"Name='BabylonSlate.exe'\" | ForEach-Object { \"$($_.ProcessId) $($_.CommandLine)\" }";
+  const processes = execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8" })
+    .split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  console.log(`The relaunch is still starting after 45 s. App processes:\n${processes.map(line => line.slice(0, 240)).join("\n")}`);
   const cdb = "C:\\Program Files (x86)\\Windows Kits\\10\\Debuggers\\x64\\cdb.exe";
-  const main = windowsAppProcesses().filter(line => !line.includes("--type=")).map(line => line.split(" ")[0]);
-  console.log(`Relaunch still starting after 45 s; main processes: ${main.join(", ") || "none"}; all:\n${windowsAppProcesses().join("\n")}`);
-  for (const pid of main) {
+  for (const pid of processes.filter(line => !line.includes("--type=")).map(line => line.split(" ")[0])) {
     try {
       console.log(execFileSync(cdb, ["-pv", "-p", pid, "-c", ".symfix c:\\symbols; .reload; ~0k 40; !runaway 1; q"], { encoding: "utf8", timeout: 120000 }));
     } catch (error) {
-      console.log(`cdb failed for ${pid}: ${error instanceof Error ? error.message.slice(0, 500) : error}`);
+      console.log(`cdb could not read process ${pid}: ${error instanceof Error ? error.message.slice(0, 500) : error}`);
     }
   }
 }
@@ -138,7 +136,7 @@ try {
     launched.on("window", watch);
     return launched;
   };
-  const launch = async (extraArgs = [], timeout = 60000) => observe(await _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs, ...extraArgs], env: cleanEnv, timeout }));
+  const launch = async (timeout = 60000) => observe(await _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs], env: cleanEnv, timeout }));
   app = await launch();
   // macOS reports the /private/var target of the /var temporary directory symlink.
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath("userData"))), await realpath(userData));
@@ -193,17 +191,11 @@ try {
   await page.getByTestId("preview-build-close").click();
   await page.evaluate(async () => { await window.haptic.project.writeBinary("distribution-smoke.bin", new Uint8Array([17, 42, 99]).buffer); });
   await app.close();
-  if (platform === "windows") console.log(`After close, ${windowsAppProcesses().length} app processes`);
-  // Diagnostic: a Windows relaunch that is still starting after 45 s has its main process's thread stacks printed.
-  let relaunching = true;
-  const watchdog = platform === "windows" ? delay(45000).then(() => { if (relaunching) printWindowsMainStacks(); }) : Promise.resolve();
+  const relaunchWatch = platform === "windows" ? setTimeout(printWindowsMainStacks, 45000) : undefined;
   try {
-    app = await launch([], platform === "windows" ? 150000 : 60000);
-  } catch (error) {
-    await watchdog;
-    throw error;
+    app = await launch(platform === "windows" ? 150000 : 60000);
   } finally {
-    relaunching = false;
+    clearTimeout(relaunchWatch);
   }
   page = await app.firstWindow();
   page.setDefaultTimeout(60000);
