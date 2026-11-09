@@ -3,13 +3,10 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
-  type SerializedActor,
   type SerializedComponent,
-  type SerializedScene,
 } from "@haptic/core";
 import {
   ENGINE_PLACE_ACTORS,
-  addNewSceneActors,
   featuredPlaceActors,
   duplicateSceneActor,
   duplicateSceneActors,
@@ -24,49 +21,6 @@ import {
 } from "./place-actors";
 
 const ORIGIN: [number, number, number] = [0, 0, 0];
-
-describe("addNewSceneActors", () => {
-  const at = (id: string, position: [number, number, number], extra: Partial<SerializedActor> = {}) => ({
-    ...createActor(id, id),
-    ...extra,
-    transform: { position, rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number] },
-  });
-  const camera = () => at("cam", [1, 1, -10], {
-    components: [{ id: "cam-camera", classId: "CameraComponent", properties: {} }],
-  });
-  const zOf = (scene: SerializedScene) => scene.actors.map((actor) => [actor.id, actor.transform.position[2]]);
-
-  it("adds actors unchanged in 3D and in Scene Layers", () => {
-    const actors = [at("a", [1, 2, 3])];
-    expect(zOf(addNewSceneActors({ ...createDefaultScene(), actors: [] }, actors))).toEqual([["a", 3]]);
-    const layer = { ...createDefaultScene("2d"), actors: [], overlayEditor: true };
-    expect(zOf(addNewSceneActors(layer, actors))).toEqual([["a", 3]]);
-  });
-
-  it("puts new 2D actors at Z-Order 0, keeping X/Y, children of new parents and Cameras", () => {
-    const scene = { ...createDefaultScene("2d"), actors: [] };
-    const next = addNewSceneActors(scene, [
-      at("a", [1, 2, -4]),
-      at("b", [3, 4, 5], { parentId: "existing" }),
-      at("child", [0, 0, -2], { parentId: "a" }),
-      camera(),
-    ]);
-    expect(next.actors.map((actor) => actor.transform.position)).toEqual([
-      [1, 2, 0], [3, 4, 0], [0, 0, -2], [1, 1, -10],
-    ]);
-    expect(next.settings.nextZOrder2D).toBe(0);
-  });
-
-  it("stacks new 2D actors from Next Z-Order and advances it once per actor", () => {
-    const scene = { ...createDefaultScene("2d"), actors: [] };
-    scene.settings = { ...scene.settings, stackZOrder2D: true, nextZOrder2D: 3 };
-    const next = addNewSceneActors(scene, [at("a", [0, 0, 0]), at("child", [0, 0, -1], { parentId: "a" }), at("b", [0, 0, 9])]);
-    // Z-Order 3 then 4: a higher order sits nearer the camera on -Z.
-    expect(zOf(next)).toEqual([["a", -3], ["child", -1], ["b", -4]]);
-    expect(next.settings.nextZOrder2D).toBe(5);
-    expect(addNewSceneActors(next, [at("c", [0, 0, 0])]).actors.at(-1)?.transform.position[2]).toBe(-5);
-  });
-});
 
 it("places a Sprite directly or from a project Sprite asset", () => {
   const scene = createDefaultScene();

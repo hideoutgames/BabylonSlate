@@ -47,8 +47,9 @@ To give a whole project the pixel-art look, turn on **Pixel-Perfect Mode** and t
 ## Draw order
 
 - **Z-Order** sets depth. An actor with a higher Z-Order is nearer the camera and draws in front.
-- Every actor you place, drag onto the viewport, paste or duplicate gets Z-Order 0. Its X and Y are kept, and actors inside a pasted or duplicated group keep their offsets from their parent. Camera actors keep their depth, since it is their distance from the scene.
-- To stack new actors instead, turn on **Stack New Actors** in **Scene Settings**. Each new actor then gets **Next Z-Order**, which goes up by one after it, so it draws above the one before. Set **Next Z-Order** to start the count again.
+- In a 2D scene or a [Scene Layer](../scenes/scene-layers.md), an actor you place from **Place Actors** or the **Assets** window gets Z-Order 0. A copy you paste, duplicate or drag from the **Outliner** onto the viewport keeps the Z-Order of its original.
+- To stack new actors instead, set **Stack New 2D Actors** in **Engine Settings > Viewport** to **Scenes Only**, **Scene Layers Only** or **Both** (default **Disabled**). There, every actor you place, drag in, paste or duplicate goes one Z-Order above the highest actor that draws (Sprites, Tilemaps, meshes, text, particles and 2D elements), so it appears on top; several at once stack in order. Cameras and lights do not count.
+- In both cases X and Y are kept, actors inside a pasted or duplicated group keep their offsets from their parent, and Camera actors keep their depth, since it is their distance from the scene.
 - At the same depth, **Sorting Layer** and **Order In Layer** decide. Layers later in the project list draw on top, and within a layer a higher order draws on top.
 
 Sprite, Tilemap layers and Particle components each have a **Sorting Layer** and an **Order In Layer**.

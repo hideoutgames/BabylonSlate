@@ -964,9 +964,6 @@ function buildScene(
     cameraBounds2D: { width: MAP_W * TILE, height: MAP_H * TILE },
     cameraLocation2D: [0, 0],
     grid: { ...scene.settings.grid, tileSize: TILE },
-    // Every authored actor draws at Z-Order 0; actors added in the editor stack above them.
-    stackZOrder2D: true,
-    nextZOrder2D: 1,
   };
   scene.actors = scene.actors.filter((entry) => !entry.components.some((component) => component.classId === "CameraComponent"));
   scene.folders.push(...Object.values(FOLDERS).map((folder) => ({ ...folder, parentFolderId: null })));

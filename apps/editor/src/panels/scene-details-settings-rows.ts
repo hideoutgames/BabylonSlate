@@ -273,7 +273,6 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
           settings: { ...scene.settings, editorJoystickEnabled },
         }),
     },
-    ...(scene.viewportMode === "2d" ? stackZOrderRows(scene, mutate) : []),
     {
       kind: "vector3",
       id: "scene-gravity",
@@ -413,42 +412,6 @@ function defaultCameraRow(
         settings: { ...scene.settings, defaultCameraActorId: null },
       }),
   };
-}
-
-/** 2D only: Stack New Actors, and the Z-Order the next new actor takes while it is on. */
-function stackZOrderRows(
-  scene: SerializedScene,
-  mutate: (next: SerializedScene) => void,
-): PropertyRow[] {
-  const defaults = createDefaultSceneSettings();
-  return [
-    {
-      kind: "boolean",
-      id: "scene-stack-z-order-2d",
-      label: "Stack New Actors",
-      description: "Each actor you place, drag in, paste or duplicate takes Next Z-Order, which then goes up by one. Off: new actors take Z-Order 0.",
-      value: scene.settings.stackZOrder2D,
-      defaultValue: defaults.stackZOrder2D,
-      onChange: (stackZOrder2D) =>
-        mutate({ ...scene, settings: { ...scene.settings, stackZOrder2D } }),
-    },
-    ...(scene.settings.stackZOrder2D
-      ? [
-          {
-            kind: "number" as const,
-            id: "scene-next-z-order-2d",
-            label: "Next Z-Order",
-            value: scene.settings.nextZOrder2D,
-            defaultValue: defaults.nextZOrder2D,
-            onChange: (order: number) =>
-              mutate({
-                ...scene,
-                settings: { ...scene.settings, nextZOrder2D: Number.isFinite(order) ? Math.round(order) : 0 },
-              }),
-          },
-        ]
-      : []),
-  ];
 }
 
 /** The Layer Camera's start: where it looks (the orange outline's centre) and the view it frames at zoom 1. */

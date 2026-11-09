@@ -8,8 +8,9 @@ import {
 import type { IndexedAsset } from "@haptic/assets";
 import { useDocumentActions, useRegistryState } from "../context/document-context";
 import { FALLBACK_PLACE_POSITION, useSceneEditing } from "../context/scene-editing-context";
+import { getAppSettingsSnapshot } from "../context/app-settings-context";
+import { addNewSceneActors } from "./new-actor-z-order";
 import {
-  addNewSceneActors,
   nextActorId,
   placementMergeKey,
   prefabComponentsForGuid,
@@ -100,7 +101,8 @@ export function usePlaceActorItems(options: {
           ids.push(id);
         });
         const mergeKey = placementMergeKey(ids[0]!);
-        void applySceneChange(documentId, addNewSceneActors(base, spawned), { mergeKey });
+        const stack = getAppSettingsSnapshot().settings.viewportStackNewActors2D;
+        void applySceneChange(documentId, addNewSceneActors(base, spawned, { copies: false, stack }), { mergeKey });
         if (surfaceNormal) {
           const normal: [number, number, number] = [surfaceNormal[0], surfaceNormal[1], surfaceNormal[2]];
           viewportDropApi.restOnSurface(

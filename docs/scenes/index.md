@@ -38,7 +38,7 @@ See [Touch Gestures](../start/gestures.md) for the full list.
 
 As you zoom out, the grid fades its finest lines and adds coarser ones every 10, 100 and 1,000 cells, so it stays readable from up close to far above the scene. The red line is the X axis and the blue line the Z axis (green Y in 2D).
 
-**Camera Speed** (default 8 units per second), **Drop Distance** (default 10,000 units), **Place On Surfaces** (default on) and **Placement Trace Distance** (default 25 units) are in **Engine Settings > Viewport**. See [Place an actor](actors.md#place-an-actor).
+**Camera Speed** (default 8 units per second), **Drop Distance** (default 10,000 units), **Place On Surfaces** (default on), **Placement Trace Distance** (default 25 units) and **Stack New 2D Actors** (default **Disabled**) are in **Engine Settings > Viewport**. See [Place an actor](actors.md#place-an-actor) and [Draw order](../2d/index.md#draw-order).
 
 ## Scene Settings
 
@@ -54,7 +54,6 @@ Tap empty space in the viewport, or clear the selection, to show **Scene Setting
 | Fog | Distance fog, with **Fog Mode**, **Fog Color** and its distance or density settings. See [Sky and Fog](../graphics/sky-and-fog.md). |
 | Default Camera | The placed actor Play looks through when the scene starts; **None** starts on the Layer Camera. See [Cameras](../graphics/cameras.md#choose-the-camera-in-view). |
 | Joystick | Shows the on-screen joystick for the editor camera. |
-| Stack New Actors, Next Z-Order | 2D only. Off (the default): every actor you place, drag onto the viewport, paste or duplicate gets **Z-Order** 0. On: each one gets **Next Z-Order**, which then goes up by one, so it draws above the last. See [Draw order](../2d/index.md#draw-order). |
 | Gravity | Default 0, −9.81, 0. |
 | Snap Step, Tile Size, Tile Subdivisions | Grid Snap, Grid Size, and how many subdivisions each grid cell has. |
 | Layer Camera Location, Layer Camera Width, Layer Camera Height | Where the scene's [Layer Camera](../graphics/cameras.md#layer-camera) starts and the area it frames, shown as the orange outline in 2D. Default 0, 0 and 16 × 9. |

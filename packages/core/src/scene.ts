@@ -193,14 +193,6 @@ export interface SceneSettings {
   cameraLocation2D: [number, number];
   /** Editor viewport on-screen stick for flying/panning the camera. */
   editorJoystickEnabled: boolean;
-  /**
-   * Editor, 2D viewport: an actor placed, dropped, pasted or duplicated takes
-   * `nextZOrder2D` as its Z-Order, which then goes up by one, so each new
-   * actor draws above the last. Off: new actors take Z-Order 0.
-   */
-  stackZOrder2D: boolean;
-  /** The Z-Order the next new actor takes while `stackZOrder2D` is on; a whole number. */
-  nextZOrder2D: number;
   /** Editor viewport navmesh debug overlay. Missing keys normalize to false. */
   showNavmesh: boolean;
   /**
@@ -325,8 +317,6 @@ export function createDefaultSceneSettings(
     cameraBounds2D: { width: 16, height: 9 },
     cameraLocation2D: [0, 0],
     editorJoystickEnabled: true,
-    stackZOrder2D: false,
-    nextZOrder2D: 0,
     showNavmesh: false,
     postProcessStack: [],
     sceneLayers: [],
@@ -752,11 +742,6 @@ export function normalizeSceneSettings(
     },
     cameraLocation2D: normalizeCameraLocation2D(source.cameraLocation2D),
     editorJoystickEnabled: source.editorJoystickEnabled !== false,
-    stackZOrder2D: source.stackZOrder2D === true,
-    nextZOrder2D:
-      typeof source.nextZOrder2D === "number" && Number.isFinite(source.nextZOrder2D)
-        ? Math.round(source.nextZOrder2D)
-        : defaults.nextZOrder2D,
     showNavmesh: source.showNavmesh === true,
     postProcessStack: normalizeScenePostProcessStack(source.postProcessStack),
     sceneLayers: normalizeSceneLayerSpawnList(source.sceneLayers),

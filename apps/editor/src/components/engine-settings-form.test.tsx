@@ -159,6 +159,17 @@ describe("EngineSettingsForm viewport", () => {
     );
     expect((view.getByLabelText("Placement Trace Distance") as HTMLInputElement).disabled).toBe(true);
   });
+  it("stacks new 2D actors nowhere by default and writes the chosen hosts", async () => {
+    const onChange = vi.fn();
+    const view = render(<EngineSettingsForm settings={defaultEngineSettings()} onChange={onChange} categoryId="viewport" />);
+    const trigger = view.getByTestId("setting-stack-new-actors-2d");
+    expect(trigger.textContent).toContain("Disabled");
+    fireEvent.click(trigger);
+    const option = await view.findByRole("option", { name: "Scene Layers Only" });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith({ viewportStackNewActors2D: "sceneLayers" }));
+  });
   it("reports a post-processing toggle when local overrides are enabled", () => {
     const onChange = vi.fn();
     const { getByTestId } = render(

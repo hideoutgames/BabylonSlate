@@ -55,9 +55,11 @@ World Scene documents in the Haptic editor: schema, selection, command path, vie
 
 ## 2D Z-Order of new actors
 
-- Every path that adds actors to a Scene (Place Actors and the Assets panel through `usePlaceActorItems`, an Outliner row dropped on the viewport, Paste, Duplicate) adds them through `addNewSceneActors` in [`place-actors.ts`](../../../apps/editor/src/lib/place-actors.ts). A new path adds actors the same way.
-- In a Scene whose `viewportMode` is 2D (not a Scene Layer tab, `overlayEditor`), each new actor whose parent is not new too gets Z-Order 0 (`position.z = 0`); with `settings.stackZOrder2D` it gets `settings.nextZOrder2D` (`depthFromZOrder`), which advances once per actor in the same scene change, so Undo restores it. Children of new parents keep their offsets; actors with a CameraComponent keep their Z, which is their distance from the 2D plane. 3D and Scene Layers add actors unchanged.
-- The counter is a plain per-scene number, not the highest Z-Order present: a 2D Scene's default Camera sits at a large Z-Order, and stacking above it would put new actors behind the camera.
+- Every path that adds actors to a Scene or Scene Layer (Place Actors and the Assets panel through `usePlaceActorItems`, an Outliner row dropped on the viewport, Paste, Duplicate) adds them through `addNewSceneActors` in [`new-actor-z-order.ts`](../../../apps/editor/src/lib/new-actor-z-order.ts), with `copies` set for the last three. A new path adds actors the same way.
+- Flat hosts (`isFlatScene`): a Scene Layer tab (`overlayEditor`) or a Scene whose `viewportMode` is 2D. 3D Scenes add actors unchanged.
+- Without stacking, placed actors get Z-Order 0 (`position.z = 0`) and copies keep theirs; an Outliner row dropped on a flat viewport takes X/Y from the drop and the source's world Z (`droppedCopyPosition`), since the copy becomes a root.
+- App setting `viewportStackNewActors2D` (`"disabled"` default, `"scenes"`, `"sceneLayers"`, `"both"`; Engine Settings > Viewport, read at the action through `getAppSettingsSnapshot`) turns on stacking per host: each new actor goes one world Z-Order above the highest actor with a drawing component (`DRAWN_2D_COMPONENT_CLASS_IDS`: meshes, Sprites, Tilemaps, text, particles, cables, 2D elements), 0 when none draws, and each further new actor one above that. Cameras, lights, audio and volumes do not count: a 2D Scene's default Camera sits far back at a high Z-Order.
+- Only new actors whose parent is not new are set; a child of an existing parent gets the local Z that gives the target world Z, assuming 2D turns only about Z. Children of new parents keep their offsets, actors with a CameraComponent keep their Z (their distance from the 2D plane), and Scene Layer anchors stay put.
 
 ## Prefab instance sync
 

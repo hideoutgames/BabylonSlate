@@ -107,8 +107,6 @@ export const SCENE_RENDER_SETTING_OWNERS = {
   physicsWorld: "non-rendering",
   grid: "non-rendering",
   editorJoystickEnabled: "non-rendering",
-  stackZOrder2D: "non-rendering",
-  nextZOrder2D: "non-rendering",
   showNavmesh: "non-rendering",
   foliageGroups: "non-rendering",
   layerPhysicsEnabled: "non-rendering",

@@ -282,6 +282,7 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
       ["Drop Distance", "setting-drop-distance"],
       ["Place On Surfaces", "setting-place-on-surfaces"],
       ["Placement Trace Distance", "setting-placement-distance"],
+      ["Stack New 2D Actors", "setting-stack-new-actors-2d"],
     ]],
   ]),
   ...category("graph", [
