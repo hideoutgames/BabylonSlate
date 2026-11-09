@@ -68,6 +68,8 @@ Feature Test is a developer starter that places every engine feature in a few sc
 
 A scene fails when it does not load, a console command fails, Play reports an error, the game view stays black, or the graphics context is lost. The report also shows how many frames each scene drew, held and skipped while it was measured, and why it held them (for example, the scene was not ready to draw).
 
+If the graphics context is lost while Play loads a scene, the check starts Play once more when the context is back and measures that load; the scene still fails. While Play starts, the status shows where its load stands, for example **paused before the first tick**, and a check you cancel then reports it.
+
 If the app crashes or reloads during a check, choose **Run Feature Test Check…** again: it shows the report up to where the app stopped, with what the editor held at the end, so you can still copy it.
 
 Benchmark plays every scene at each quality level and takes about ten minutes; keep the device awake and plugged in.

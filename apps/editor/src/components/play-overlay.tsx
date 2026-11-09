@@ -1321,11 +1321,12 @@ function PlayOverlayView({
     });
   };
 
-  const probeStateRef = useRef({ sceneLoading });
-  probeStateRef.current = { sceneLoading };
+  const probeStateRef = useRef({ sceneLoading, paused });
+  probeStateRef.current = { sceneLoading, paused };
   useEffect(() => playProbes.register(PLAY_PROBE_KEY, {
     loadingPhase: () => probeStateRef.current.sceneLoading,
     tickIndex: () => sessionRef.current?.lastTickIndex() ?? 0,
+    paused: () => probeStateRef.current.paused,
     runtimeFps: () => runtimeFpsRef.current,
     snapshot: () => {
       const session = sessionRef.current;

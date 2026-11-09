@@ -1,4 +1,5 @@
 import "./babylon-registrations";
+import { RenderingContextLostError } from "./context-lost-error";
 import { setSceneInstancing } from "./instance-pool";
 import { ejectPooledLeaf } from "./pooled-visuals";
 import { allowSceneOcclusionCulling, sceneOcclusionBuffer, setSceneOcclusionFrozen } from "./view-occlusion";
@@ -585,7 +586,7 @@ function initializeEngine(
   /** Names the GPU memory the Engine held: a mobile browser loses the context under memory pressure. */
   const contextLostError = () => {
     const { bytes, textures } = estimateTextureMemory(engine);
-    return new Error(`Rendering context was lost during scene loading (textures held: ${textures}, about ${Math.round(bytes / 1048576)} MB).`);
+    return new RenderingContextLostError(`Rendering context was lost during scene loading (textures held: ${textures}, about ${Math.round(bytes / 1048576)} MB).`);
   };
   const assertCurrent = (generation: number) => {
     if (disposed || scene.isDisposed || generation !== loadGeneration) {
@@ -1942,7 +1943,7 @@ function initializeEngine(
       if (disposed || !target || target.isDisposed || layerLoads.get(owner.layerId) !== layer || layer?.loadId !== owner.layerLoadId) {
         throw new Error("SceneLayer loading was superseded or disposed.");
       }
-      if (contextLost) throw new Error("Rendering context was lost during SceneLayer loading.");
+      if (contextLost) throw new RenderingContextLostError("Rendering context was lost during SceneLayer loading.");
     };
     assert();
     return { target: target!, assert };

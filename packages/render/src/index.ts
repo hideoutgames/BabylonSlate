@@ -1,6 +1,7 @@
 export { authoredActorWorldTransform } from "./authored-transform-matrices";
 export * from "./editor-clear-color";
 export * from "./create-engine";
+export * from "./context-lost-error";
 export {
   currentGlobalParameterCatalog,
   globalParameterDefaults,

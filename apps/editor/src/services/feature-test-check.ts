@@ -762,8 +762,10 @@ export interface FeatureTestCheckSceneResult {
     gpu: ReturnType<ViewportProbe["gpu"]>;
   };
   play: {
-    status: "loaded" | "timeout" | "closed" | "not-started" | "skipped";
+    /** `starting` while the check waits for Play to load: what a run cancelled there reports, with `phase`. */
+    status: "loaded" | "timeout" | "closed" | "starting" | "not-started" | "skipped";
     ms: number;
+    /** Where Play's load stood when it timed out or the run was cancelled (`playStartState`). */
     phase: string | null;
     frames: FrameStats | null;
     runtimeFps: number | null;
@@ -865,6 +867,8 @@ export interface FeatureTestCheckDeps {
   play: () => PlayProbe | null;
   /** True when no game session is preparing, running or stopping. */
   sessionIdle: () => boolean;
+  /** True while an Engine's graphics context is lost and not yet restored; absent where unknown. */
+  renderingContextLost?: () => boolean;
   onSessionClosed: (listener: (result: PlaySessionResult) => void) => () => void;
   sampleFrames: (durationMs: number, signal: AbortSignal) => Promise<FrameStats | null>;
   /** Shader programs still compiling across every Engine; absent where unknown. */
@@ -1051,7 +1055,7 @@ async function checkScene(
   const scene = result;
   const documentId = `scene:${scene.path}`;
   deps.onProgress?.(`${scene.name}: opening in the editor`);
-  let started = deps.now();
+  const started = deps.now();
   await deps.openScene(scene.path);
   const opened = await waitFor(deps, signal, limits.sceneOpenMs, () => {
     if (deps.activeDocumentId() !== documentId) return null;
@@ -1082,21 +1086,28 @@ async function checkScene(
   deps.onProgress?.(`${scene.name}: measuring the editor viewport`);
   result.editor.frames = await deps.sampleFrames(limits.editorSampleMs, signal);
 
-  deps.onProgress?.(`${scene.name}: starting Play`);
-  const closed = new Promise<PlaySessionResult>((resolve) => {
-    const stop = deps.onSessionClosed((session) => { stop(); resolve(session); });
-    signal.addEventListener("abort", stop, { once: true });
-  });
-  started = deps.now();
-  await deps.startPlay();
-  let closedEarly: PlaySessionResult | null = null;
-  void closed.then((session) => { closedEarly = session; });
-  const loaded = await waitFor(deps, signal, limits.playLoadMs, () => {
-    if (closedEarly) return "closed" as const;
-    const play = deps.play();
-    return play && play.loadingPhase() === null && play.tickIndex() > 0 ? "loaded" as const : null;
-  });
-  result.play.ms = deps.now() - started;
+  let attempt = await startPlay(result, deps, signal, limits);
+  const lost = attempt.closedEarly ? lostContextLoading(attempt.closedEarly) : null;
+  if (attempt.loaded === "closed" && attempt.closedEarly && lost) {
+    // A device that dropped the context under memory pressure may load once the context is back: start Play again, once.
+    deps.onProgress?.(`${scene.name}: Play lost the rendering context while loading; waiting to start it again`);
+    const failedAfter = result.play.ms;
+    await timeout(attempt.closedEarly.released, limits.releaseMs, deps, signal);
+    await waitFor(deps, signal, limits.playCloseMs, () => deps.sessionIdle() || null);
+    const restored = await waitFor(deps, signal, limits.sceneOpenMs, () => {
+      if (deps.renderingContextLost?.()) return null;
+      const editor = deps.viewport(documentId);
+      return !editor || editor.ready() || editor.failed() ? true : null;
+    });
+    if (restored === null) {
+      result.problems.push(`The rendering context was not restored in ${seconds(limits.sceneOpenMs)}, so Play was not started again.`);
+    } else {
+      result.problems.push(`Play's first load failed after ${seconds(failedAfter)}, so Play was started again: ${sentence(lost)}`);
+      attempt = await startPlay(result, deps, signal, limits);
+    }
+  }
+  const { loaded, closed } = attempt;
+  const closedEarly = () => attempt.closedEarly;
   const play = deps.play();
   if (loaded === "loaded" && play) {
     result.play.status = "loaded";
@@ -1130,14 +1141,12 @@ async function checkScene(
     result.problems.push("Play closed before the scene finished loading.");
   } else if (loaded === null) {
     result.play.status = "timeout";
-    const phase = play?.loadingPhase();
-    result.play.phase = phase ? `${phase.phase} ${Math.round(phase.progress)}%` : null;
-    result.problems.push(`Play did not finish loading in ${seconds(limits.playLoadMs)}${result.play.phase ? ` (stuck at ${result.play.phase})` : ""}.`);
+    result.problems.push(`Play did not finish loading in ${seconds(limits.playLoadMs)} (stuck at ${result.play.phase}).`);
   }
   if (play) result.play.logs = play.problemLogs();
 
   deps.onProgress?.(`${scene.name}: stopping Play`);
-  if (!closedEarly) deps.play()?.stop();
+  if (!closedEarly()) deps.play()?.stop();
   const session = await timeout(closed, limits.playCloseMs, deps, signal);
   if (session === "timeout") {
     result.problems.push(`Play did not close in ${seconds(limits.playCloseMs)}.`);
@@ -1160,6 +1169,71 @@ async function checkScene(
   }
   await waitFor(deps, signal, limits.playCloseMs, () => deps.sessionIdle() || null);
   result.passed = result.problems.length === 0;
+}
+
+/** Where a starting Play stands: its load phase, or why it has not ticked since its first frame. */
+export function playStartState(play: PlayProbe | null): string {
+  if (!play) return "no Play view yet";
+  const phase = play.loadingPhase();
+  if (phase) return `${phase.phase} ${Math.round(phase.progress)}%`;
+  if (play.tickIndex() > 0) return "running";
+  return play.paused() ? "first frame shown, paused before the first tick" : "first frame shown, no tick yet";
+}
+
+/** The message of the load failure a lost graphics context caused, when that is how `session` ended. */
+function lostContextLoading(session: PlaySessionResult): string | null {
+  return session.diagnostics.find((entry) => entry.code === "scene.loading.contextLost")?.message ?? null;
+}
+
+interface PlayAttempt {
+  loaded: "loaded" | "closed" | null;
+  /** The session's close, whenever it comes. */
+  closed: Promise<PlaySessionResult>;
+  /** Set once the session closed. */
+  closedEarly: PlaySessionResult | null;
+}
+
+/**
+ * Starts Play and waits for its load: the first presented frame and a game tick. While it waits, the status and
+ * `result.play` say where the load stands (`playStartState`), so a run cancelled or timed out here reports it.
+ */
+async function startPlay(
+  result: FeatureTestCheckSceneResult,
+  deps: FeatureTestCheckDeps,
+  signal: AbortSignal,
+  limits: FeatureTestCheckTimeouts,
+): Promise<PlayAttempt> {
+  const attempt: PlayAttempt = {
+    loaded: null,
+    closed: new Promise<PlaySessionResult>((resolve) => {
+      const stop = deps.onSessionClosed((session) => { stop(); resolve(session); });
+      signal.addEventListener("abort", stop, { once: true });
+    }),
+    closedEarly: null,
+  };
+  void attempt.closed.then((session) => { attempt.closedEarly = session; });
+  const started = deps.now();
+  let shown: string | null = null;
+  const track = (state: string) => {
+    result.play.ms = deps.now() - started;
+    result.play.phase = state;
+    if (state === shown) return;
+    shown = state;
+    deps.onProgress?.(`${result.name}: starting Play (${state})`);
+  };
+  result.play.status = "starting";
+  track("requested");
+  await deps.startPlay();
+  attempt.loaded = await waitFor(deps, signal, limits.playLoadMs, () => {
+    if (attempt.closedEarly) return "closed" as const;
+    const play = deps.play();
+    if (play && play.loadingPhase() === null && play.tickIndex() > 0) return "loaded" as const;
+    track(playStartState(play));
+    return null;
+  });
+  result.play.ms = deps.now() - started;
+  if (attempt.loaded !== null) result.play.phase = null;
+  return attempt;
 }
 
 async function runCommand(
