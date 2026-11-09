@@ -7,10 +7,12 @@ import { saveFile, type SaveFileResult } from "@haptic/vfs";
  * `SharedArrayBuffer` view would make `Blob` throw.
  */
 export function saveZipArchive(bytes: Uint8Array, fileName: string): Promise<SaveFileResult> {
-  return saveFile(
-    fileName,
-    new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/zip" }),
-  );
+  return saveExportFile(bytes, fileName, "application/zip");
+}
+
+/** Saves an exported file's bytes as `fileName` with its media type, without copying a large package. */
+export function saveExportFile(bytes: Uint8Array, fileName: string, type: string): Promise<SaveFileResult> {
+  return saveFile(fileName, new Blob([bytes as Uint8Array<ArrayBuffer>], { type }));
 }
 
 /**

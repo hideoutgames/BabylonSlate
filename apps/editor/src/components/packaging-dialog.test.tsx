@@ -205,3 +205,31 @@ it("reports a damaged player instead of saving a package", async () => {
   expect(screen.getByTestId("packaging-error").textContent).toBe("The Linux player in this copy of Haptic is damaged. Reload or reinstall Haptic.");
   expect(downloads).toEqual([]);
 });
+
+it("packages a Linux game as a Debian package by default, or as a ZIP when chosen", async () => {
+  shells.manifest = SHELLS;
+  shells.loadDesktopShell.mockResolvedValue({ runtime: zipSync({ electron: strToU8("binary"), "chrome-sandbox": strToU8("sandbox") }), host: strToU8("host();") });
+  exportGameArtifact.mockResolvedValue(ok({ files: new Map([["index.html", strToU8("<html>")]]) }));
+  const saved: { name: string; type: string }[] = [];
+  let blob: Blob | null = null;
+  vi.spyOn(URL, "createObjectURL").mockImplementation((value) => { blob = value as Blob; return "blob:game"; });
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { saved.push({ name: this.download, type: blob!.type }); });
+  await renderDialog();
+  fireEvent.click(screen.getByTestId("packaging-target-linux"));
+  expect(screen.getByTestId("packaging-output").textContent).toBe("Harbour_Run-Linux.deb");
+  await act(async () => { fireEvent.click(screen.getByTestId("packaging-package")); });
+  // The Debian packager loads on first use.
+  expect(await screen.findByText("Linux package downloaded. Check your downloads.")).toBeTruthy();
+
+  fireEvent.click(screen.getByTestId("packaging-linux-zip"));
+  expect(screen.getByTestId("packaging-output").textContent).toBe("Harbour_Run-Linux.zip");
+  await act(async () => { fireEvent.click(screen.getByTestId("packaging-package")); });
+  expect(await screen.findByText("Linux game downloaded. Check your downloads.")).toBeTruthy();
+
+  expect(saved).toEqual([
+    { name: "Harbour_Run-Linux.deb", type: "application/vnd.debian.binary-package" },
+    { name: "Harbour_Run-Linux.zip", type: "application/zip" },
+  ]);
+  expect(await screen.findByText("Linux game downloaded. Check your downloads.")).toBeTruthy();
+});

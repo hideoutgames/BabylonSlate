@@ -22,7 +22,7 @@ import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group
 import { cn } from "@haptic/ui/lib/utils";
 import { useProjectState, useRegistryState } from "../context/document-context";
 import { packagingTargets, type PackagingTarget } from "../lib/packaging-targets";
-import { gameArchiveName, useGameExport, useGameShells } from "./use-game-export";
+import { gameArchiveName, useGameExport, useGameShells, type LinuxPackageFormat } from "./use-game-export";
 
 type MarkProps = { className?: string; title?: string; "aria-hidden"?: boolean };
 
@@ -88,6 +88,7 @@ export function PackagingDialog({
   const groups = useMemo(() => targetGroups(targets), [targets]);
   const { busy, stage, error, notice, packageTarget } = useGameExport(projectDocument, { manifest: shells.manifest, projectGuid });
   const [targetId, setTargetId] = useState<PackagingTarget["id"]>("web");
+  const [linuxFormat, setLinuxFormat] = useState<LinuxPackageFormat>("deb");
   const target = targets.find((entry) => entry.id === targetId) ?? targets[0]!;
   const settings = projectDocument?.settings;
   const projectName = projectDocument?.metadata.name ?? "";
@@ -152,9 +153,29 @@ export function PackagingDialog({
                   <div className="flex items-center justify-between gap-3 px-3 py-1.5">
                     <dt className="text-muted-foreground">Output</dt>
                     <dd className="truncate font-mono text-xs" data-testid="packaging-output">
-                      {!projectName ? "" : target.desktopTarget ? desktopGameNames(projectName, target.desktopTarget).archive : gameArchiveName(projectName)}
+                      {!projectName ? "" : target.desktopTarget
+                        ? desktopGameNames(projectName, target.desktopTarget).archive.replace(/\.zip$/, target.id === "linux" && linuxFormat === "deb" ? ".deb" : ".zip")
+                        : gameArchiveName(projectName)}
                     </dd>
                   </div>
+                  {target.id === "linux" ? (
+                    <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+                      <dt id="packaging-linux-format" className="text-muted-foreground">Format</dt>
+                      <dd>
+                        <ToggleGroup
+                          aria-labelledby="packaging-linux-format"
+                          value={[linuxFormat]}
+                          disabled={busy}
+                          onValueChange={(value) => {
+                            if (value[0] === "deb" || value[0] === "zip") setLinuxFormat(value[0]);
+                          }}
+                        >
+                          <ToggleGroupItem value="deb" data-testid="packaging-linux-deb">Debian Package</ToggleGroupItem>
+                          <ToggleGroupItem value="zip" data-testid="packaging-linux-zip">ZIP</ToggleGroupItem>
+                        </ToggleGroup>
+                      </dd>
+                    </div>
+                  ) : null}
                   <div className="flex items-center justify-between gap-3 px-3 py-1.5">
                     <dt className="text-muted-foreground">Startup Scene</dt>
                     <dd className={cn("truncate font-medium", !startupScene && "text-(--warning)")}>
@@ -209,7 +230,7 @@ export function PackagingDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {notice && !busy ? "Close" : "Cancel"}
           </Button>
-          <Button data-testid="packaging-package" disabled={!canPackage} onClick={() => void packageTarget(target)}>
+          <Button data-testid="packaging-package" disabled={!canPackage} onClick={() => void packageTarget(target, { linuxFormat })}>
             {busy ? null : <DownloadIcon data-icon="inline-start" />}
             {busy ? "Packaging…" : "Package"}
           </Button>

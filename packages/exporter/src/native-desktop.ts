@@ -50,6 +50,46 @@ export function desktopGameNames(projectName: string, target: DesktopGameTarget)
   };
 }
 
+/** The release's executable name, checked to be in the runtime. */
+export function runtimeExecutable(target: DesktopGameTarget, entries: readonly { name: string }[]): string {
+  const executable = RUNTIME_EXECUTABLE[target];
+  if (!entries.some((entry) => entry.name === executable)) {
+    throw new Error(`The ${TARGET_LABEL[target]} player is damaged: ${executable} is missing.`);
+  }
+  return executable;
+}
+
+/** Whether a runtime entry is left out of a game: Electron's sample app, which the game host replaces. */
+export function isSampleApp(name: string): boolean {
+  return name === DEFAULT_APP;
+}
+
+/**
+ * The files a game adds beside the runtime, relative to its folder, in order:
+ * the game host and its `package.json` in `resources/app`, and the web game in
+ * `resources/game`.
+ */
+export function gameAppFiles(input: DesktopGamePackageInput, names: DesktopGameNames): [string, Uint8Array][] {
+  const encoder = new TextEncoder();
+  const files: [string, Uint8Array][] = [
+    ["resources/app/package.json", encoder.encode(`${JSON.stringify({
+      name: names.executable.replace(/\.exe$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "game",
+      productName: input.name.trim() || "Game",
+      version: input.version,
+      main: "main.cjs",
+      hapticGameId: input.gameId,
+    }, null, 2)}\n`)],
+    ["resources/app/main.cjs", input.host],
+  ];
+  for (const [path, data] of [...input.game].sort(([a], [b]) => a.localeCompare(b))) {
+    if (path.startsWith("/") || path.split("/").some((part) => part === ".." || part === "")) {
+      throw new Error(`Invalid game file path: ${path}`);
+    }
+    files.push([`resources/game/${path}`, data]);
+  }
+  return files;
+}
+
 /**
  * A ZIP that runs the web game in Electron: the runtime's files unchanged
  * (renamed executable, Electron's sample app left out), the game host in
@@ -57,31 +97,13 @@ export function desktopGameNames(projectName: string, target: DesktopGameTarget)
  */
 export function packageDesktopGame(input: DesktopGamePackageInput): { fileName: string; bytes: Uint8Array } {
   const names = desktopGameNames(input.name, input.target);
-  const executable = RUNTIME_EXECUTABLE[input.target];
   const runtime = readZipEntries(input.runtime);
-  if (!runtime.some((entry) => entry.name === executable)) {
-    throw new Error(`The ${TARGET_LABEL[input.target]} player is damaged: ${executable} is missing.`);
-  }
-  const encoder = new TextEncoder();
-  const added: Record<string, Uint8Array> = {
-    [`${names.folder}/resources/app/package.json`]: encoder.encode(`${JSON.stringify({
-      name: names.executable.replace(/\.exe$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "game",
-      productName: input.name.trim() || "Game",
-      version: input.version,
-      main: "main.cjs",
-      hapticGameId: input.gameId,
-    }, null, 2)}\n`),
-    [`${names.folder}/resources/app/main.cjs`]: input.host,
-  };
-  for (const [path, data] of [...input.game].sort(([a], [b]) => a.localeCompare(b))) {
-    if (path.startsWith("/") || path.split("/").some((part) => part === ".." || part === "")) {
-      throw new Error(`Invalid game file path: ${path}`);
-    }
-    added[`${names.folder}/resources/game/${path}`] = data;
-  }
+  const executable = runtimeExecutable(input.target, runtime);
+  const added: Record<string, Uint8Array> = {};
+  for (const [path, data] of gameAppFiles(input, names)) added[`${names.folder}/${path}`] = data;
   const extra = zipSync(added, { level: 6, mtime: SAFE_ZIP_MTIME });
   const copies: ZipCopy[] = [
-    ...runtime.filter((entry) => entry.name !== DEFAULT_APP).map((entry) => ({
+    ...runtime.filter((entry) => !isSampleApp(entry.name)).map((entry) => ({
       name: `${names.folder}/${entry.name === executable ? names.executable : entry.name}`,
       source: input.runtime,
       entry,

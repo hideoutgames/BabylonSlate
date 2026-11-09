@@ -14,7 +14,7 @@ export interface PackagingTarget {
 const TARGETS: readonly Omit<PackagingTarget, "available">[] = [
   { id: "web", label: "Web", description: "ZIP for itch.io or any static web host." },
   { id: "windows", label: "Windows", description: "Desktop game for 64-bit Windows, as a ZIP.", desktopTarget: "windows-x64" },
-  { id: "linux", label: "Linux", description: "Desktop game for 64-bit Linux, as a ZIP.", desktopTarget: "linux-x64" },
+  { id: "linux", label: "Linux", description: "Desktop game for 64-bit Linux, as a Debian package or a ZIP.", desktopTarget: "linux-x64" },
   { id: "macos", label: "macOS", description: "Desktop game for macOS." },
   { id: "android", label: "Android", description: "App for Android phones and tablets." },
   { id: "ios", label: "iOS", description: "App for iPhone and iPad." },
