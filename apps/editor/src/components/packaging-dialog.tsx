@@ -8,6 +8,8 @@ import Windows from "react-bootstrap-icons/dist/icons/windows";
 import { defaultExportPreset } from "@haptic/core";
 import { resolvedAppIdentity } from "@haptic/core";
 import { desktopGameNames, macGameNames } from "@haptic/exporter/native-desktop";
+import { androidGameFileName, type AndroidPackageFormat } from "@haptic/exporter/native-android";
+import { getElectronGameShellBridge } from "@haptic/vfs";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -23,6 +25,7 @@ import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group
 import { cn } from "@haptic/ui/lib/utils";
 import { useAppSettings } from "../context/app-settings-context";
 import { useProjectState, useRegistryState } from "../context/document-context";
+import { useAndroidPackaging } from "../lib/android-packaging";
 import { packagingTargets, type PackagingTarget } from "../lib/packaging-targets";
 import { gameArchiveName, useGameExport, useGameShells, type LinuxPackageFormat } from "./use-game-export";
 
@@ -86,12 +89,17 @@ export function PackagingDialog({
   const { projectDocument } = useProjectState();
   const { assetRegistry, projectGuid } = useRegistryState();
   const shells = useGameShells(open);
-  const targets = useMemo(() => packagingTargets(shells.desktop), [shells.desktop]);
+  const androidAvailable = Boolean(getElectronGameShellBridge()?.packageAndroid);
+  const targets = useMemo(() => packagingTargets(shells.desktop, { android: androidAvailable }), [shells.desktop, androidAvailable]);
   const groups = useMemo(() => targetGroups(targets), [targets]);
   const { busy, stage, error, notice, packageTarget } = useGameExport(projectDocument, { manifest: shells.manifest, projectGuid });
   const [targetId, setTargetId] = useState<PackagingTarget["id"]>("web");
   const [linuxFormat, setLinuxFormat] = useState<LinuxPackageFormat>("deb");
+  const [androidFormat, setAndroidFormat] = useState<AndroidPackageFormat>("apk");
   const target = targets.find((entry) => entry.id === targetId) ?? targets[0]!;
+  const android = useAndroidPackaging(open && target.id === "android" && target.available);
+  const androidProblems = [...(android.status?.toolchain.problems ?? []), ...(android.error ? [android.error] : [])];
+  const androidReady = android.status !== null && androidProblems.length === 0;
   const settings = projectDocument?.settings;
   const projectName = projectDocument?.metadata.name ?? "";
   const macSigning = useAppSettings().settings.macSigning;
@@ -100,7 +108,7 @@ export function PackagingDialog({
   const startupGuid = settings?.startupSceneGuid ?? null;
   const startupScene = startupGuid ? assetRegistry?.getByGuid(startupGuid) : undefined;
   const bundleDebugger = (settings?.exportPresets[0] ?? defaultExportPreset()).bundleDebugger;
-  const canPackage = target.available && Boolean(projectDocument) && Boolean(startupScene) && !busy;
+  const canPackage = target.available && Boolean(projectDocument) && Boolean(startupScene) && !busy && (target.id !== "android" || androidReady);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -158,7 +166,9 @@ export function PackagingDialog({
                   <div className="flex items-center justify-between gap-3 px-3 py-1.5">
                     <dt className="text-muted-foreground">Output</dt>
                     <dd className="truncate font-mono text-xs" data-testid="packaging-output">
-                      {!projectName ? "" : target.desktopTarget === "macos-arm64"
+                      {!projectName ? "" : target.id === "android"
+                        ? androidGameFileName(appIdentity?.displayName ?? projectName, androidFormat)
+                        : target.desktopTarget === "macos-arm64"
                         ? macGameNames(appIdentity?.displayName ?? projectName).archive
                         : target.desktopTarget
                           ? desktopGameNames(projectName, target.desktopTarget).archive.replace(/\.zip$/, target.id === "linux" && linuxFormat === "deb" ? ".deb" : ".zip")
@@ -182,6 +192,42 @@ export function PackagingDialog({
                         </ToggleGroup>
                       </dd>
                     </div>
+                  ) : null}
+                  {target.id === "android" ? (
+                    <>
+                      <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+                        <dt id="packaging-android-format" className="text-muted-foreground">Format</dt>
+                        <dd>
+                          <ToggleGroup
+                            aria-labelledby="packaging-android-format"
+                            value={[androidFormat]}
+                            disabled={busy}
+                            onValueChange={(value) => {
+                              if (value[0] === "apk" || value[0] === "aab") setAndroidFormat(value[0]);
+                            }}
+                          >
+                            <ToggleGroupItem value="apk" data-testid="packaging-android-apk">APK</ToggleGroupItem>
+                            <ToggleGroupItem value="aab" data-testid="packaging-android-aab">App Bundle</ToggleGroupItem>
+                          </ToggleGroup>
+                        </dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+                        <dt className="text-muted-foreground">App ID</dt>
+                        <dd className={cn("truncate font-mono text-xs", placeholderAppId && "text-(--warning)")} data-testid="packaging-app-id">{appIdentity?.appId}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+                        <dt className="text-muted-foreground">Signing</dt>
+                        <dd className="truncate font-medium" data-testid="packaging-android-signing">
+                          {android.status?.keystore ? android.status.alias || "No Key Alias" : "Debug Key (Testing Only)"}
+                        </dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+                        <dt className="text-muted-foreground">Build Tools</dt>
+                        <dd className={cn("truncate font-medium", androidProblems.length > 0 && "text-(--warning)")} data-testid="packaging-android-toolchain">
+                          {android.status === null && !android.error ? "Checking…" : androidReady ? `Java ${android.status!.toolchain.javaVersion}, Android SDK` : "Not Found"}
+                        </dd>
+                      </div>
+                    </>
                   ) : null}
                   {target.id === "macos" ? (
                     <>
@@ -218,7 +264,13 @@ export function PackagingDialog({
                     <dd className="font-medium">{folderCount(settings?.alwaysPackageFolders.length ?? 0)}</dd>
                   </div>
                 </dl>
-                {target.id === "macos" && placeholderAppId ? (
+                {target.id === "android" && androidProblems.length > 0 ? (
+                  <Alert data-testid="packaging-android-problems">
+                    <AlertTitle>Set Up Android Build Tools</AlertTitle>
+                    <AlertDescription>{androidProblems.join(" ")}</AlertDescription>
+                  </Alert>
+                ) : null}
+                {(target.id === "macos" || target.id === "android") && placeholderAppId ? (
                   <Alert data-testid="packaging-app-id-placeholder">
                     <AlertTitle>Set an App ID</AlertTitle>
                     <AlertDescription>The app uses a placeholder ID until you set one.</AlertDescription>
@@ -268,7 +320,7 @@ export function PackagingDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {notice && !busy ? "Close" : "Cancel"}
           </Button>
-          <Button data-testid="packaging-package" disabled={!canPackage} onClick={() => void packageTarget(target, { linuxFormat, macSigning })}>
+          <Button data-testid="packaging-package" disabled={!canPackage} onClick={() => void packageTarget(target, { linuxFormat, macSigning, androidFormat })}>
             {busy ? null : <DownloadIcon data-icon="inline-start" />}
             {busy ? "Packaging…" : "Package"}
           </Button>

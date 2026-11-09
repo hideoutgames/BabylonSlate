@@ -52,3 +52,11 @@ apps/editor/public/build-manifest.json
 
 # TypeScript incremental build state
 *.tsbuildinfo
+# The Android game template, when built in place for development.
+apps/desktop/android-game/.gradle
+apps/desktop/android-game/build
+apps/desktop/android-game/app/build
+apps/desktop/android-game/local.properties
+apps/desktop/android-game/app/haptic-game.properties
+apps/desktop/android-game/app/src/main/assets
+apps/desktop/android-game/app/src/main/res/values/haptic_game.xml

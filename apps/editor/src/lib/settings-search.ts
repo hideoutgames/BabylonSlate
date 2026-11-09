@@ -246,6 +246,14 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
       ["Signing Identity", "setting-mac-signing-identity"],
       ["Notarization Profile", "setting-mac-notary-profile"],
     ]],
+    ["android", "Android", [
+      ["JDK", "setting-android-java"],
+      ["Android SDK", "setting-android-sdk"],
+      ["Keystore", "setting-android-keystore"],
+      ["Key Alias", "setting-android-alias"],
+      ["Keystore Password", "setting-android-store-password"],
+      ["Key Password", "setting-android-key-password"],
+    ]],
   ]),
   ...category("interface", [
     ["density", "Density", [["Compact Mode", "setting-compact-mode"]]],

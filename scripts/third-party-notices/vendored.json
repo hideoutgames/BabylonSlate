@@ -67,5 +67,14 @@
     "source": "https://github.com/TakWolf/ark-pixel-font",
     "scopes": ["editor", "game"],
     "files": ["../../engine-content/fonts/ArkPixel/OFL.txt"]
+  },
+  {
+    "name": "Gradle Wrapper",
+    "version": "8.14.3",
+    "license": "Apache-2.0",
+    "source": "https://github.com/gradle/gradle",
+    "scopes": ["editor"],
+    "copyright": "Copyright Gradle, Inc.",
+    "files": ["apache-2.0.txt"]
   }
 ]
