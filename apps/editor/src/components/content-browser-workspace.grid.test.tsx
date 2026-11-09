@@ -399,6 +399,21 @@ describe("ContentBrowserWorkspace referenced Class deletion", () => {
     expect(screen.queryByTestId("content-browser-delete-references-confirmation")).toBeNull();
     await waitFor(() => expect(deleteAsset).toHaveBeenCalledWith(scene.header.guid));
   });
+
+  it("lists Project Settings when deleting the App Icon Texture", () => {
+    const icon = texture(0);
+    const settings = docs.projectDocument.settings as Record<string, unknown>;
+    settings.appIdentity = { iconTextureGuid: icon.header.guid };
+    try {
+      installRegistry([icon]);
+      render(<ContentBrowserWorkspace />);
+      fireEvent.click(screen.getByTestId(`content-item-${icon.path}`));
+      fireEvent.click(screen.getByTestId("content-browser-delete-selected"));
+      expect(screen.getByTestId("content-browser-delete-dialog").textContent).toContain("Project Settings");
+    } finally {
+      delete settings.appIdentity;
+    }
+  });
 });
 
 describe("ContentBrowserWorkspace moves into plugins", () => {

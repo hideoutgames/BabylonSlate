@@ -34,7 +34,7 @@ Use a square image of at least 1024 × 1024 pixels; Haptic scales it down to eac
 | Linux | The app menu and the dock (Debian package); the game window |
 | macOS | The app in Finder, the Dock and the app switcher |
 
-Adding the icon to the Windows `.exe` makes packaging for Windows take a few seconds longer.
+With an App Icon, packaging for Windows takes noticeably longer, because Haptic rewrites and recompresses the game's `.exe`.
 
 ## Desktop games
 

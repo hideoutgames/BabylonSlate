@@ -25,6 +25,7 @@ Export Game and Preview Build: the headless `@haptic/exporter` closure and packe
 | Editor export, plugin layer 3, document loading | [`apps/editor/src/services/export-game.ts`](../../../apps/editor/src/services/export-game.ts), [`export-game-inputs.ts`](../../../apps/editor/src/services/export-game-inputs.ts) |
 | Project Settings → Export fields and Export Project runs | [`apps/editor/src/components/project-export-settings.tsx`](../../../apps/editor/src/components/project-export-settings.tsx), [`use-project-export.ts`](../../../apps/editor/src/components/use-project-export.ts) |
 | Settings → Packaging (Export Game for the Web target) | [`apps/editor/src/components/packaging-dialog.tsx`](../../../apps/editor/src/components/packaging-dialog.tsx), [`use-game-export.ts`](../../../apps/editor/src/components/use-game-export.ts) |
+| App Icon: source read and canvas render; ICO, ICNS, page branding; Windows executable | [`apps/editor/src/lib/app-icon.ts`](../../../apps/editor/src/lib/app-icon.ts); [`app-icon.ts`](../../../packages/exporter/src/app-icon.ts); [`native-windows.ts`](../../../packages/exporter/src/native-windows.ts) |
 | Player host URLs | [`apps/editor/src/lib/player-host-url.ts`](../../../apps/editor/src/lib/player-host-url.ts) |
 | Editor Preview Build flow: prepare, iframe handoff, close, diagnostics report | `usePreviewBuild` ([`apps/editor/src/context/use-preview-build.ts`](../../../apps/editor/src/context/use-preview-build.ts)), called by `PlayProvider` |
 | Player boot, backend, worker host | [`apps/player/src/`](../../../apps/player/src/) `boot.ts`, `player-backend.ts`, `worker-host.ts` |
@@ -42,7 +43,8 @@ Export Game and Preview Build: the headless `@haptic/exporter` closure and packe
 ## Files and catalog
 
 ```
-index.html          # player CSS inlined; itch requires it at the zip root
+index.html          # player CSS inlined; <title> is the project name; itch requires it at the zip root
+icon.png            # the App Icon at 256 px, linked as the page's favicon; only with an App Icon
 player.js           # every module a WebGL2 game runs; workers and the page's on-demand code stay separate files
 game.json           # catalog: required dependencies, paths, byte lengths, SHA-256
 assets/data-<n>.bin # one per asset or sidecar
@@ -81,6 +83,16 @@ player-webgpu.js, player-rapier.js, player-HavokPhysics_es.js, player-recast-nav
 - Which build carries what (`distribute.yml`, `inspect-desktop-packaging.yml`, `preview.yml`): Pages, iPadOS, Android and macOS carry Windows and Linux, and macOS also `macos-arm64`; the Windows and Linux desktop apps carry the other OS and reuse their own Electron for their own (`game-shell:runtime` IPC: `ownRuntimeZip` reads the release's file names from the install folder, the running executable under the release's name, refused unless the manifest's Electron version is the app's).
 - `loadDesktopShell` ([`game-shells.ts`](../../../apps/editor/src/lib/game-shells.ts)) joins a bundled runtime's parts and accepts it only with the published SHA-256, and checks the host's; a mismatch says the player is damaged. The manifest is fetched from `${BASE_URL}game-shells/`, the same origin as the editor on every host (browsers cannot fetch GitHub release assets: no CORS headers).
 - The game host ([`game-host.ts`](../../../apps/desktop/src/game-host.ts)) serves `resources/game` at `app://game/` through `gameFile` (the editor's `app://` path rules) with the editor's COOP/COEP headers, one sandboxed, context-isolated window with no preload or Node, single instance, no navigation or windows off `app://game` (HTTP(S) links go to the system browser), one service endpoint (`POST /.haptic/discord-presence`, Discord Rich Presence, [editor-extensions.md](editor-extensions.md#discord-rich-presence)), permissions limited to full screen and pointer lock, autoplay allowed, spellcheck off (Electron would otherwise download dictionaries from Google), and `userData` under `appData/Haptic Games/<hapticGameId>`.
+
+## App Icon
+
+- Project Settings `appIdentity.iconTextureGuid` (a Texture; null keeps every platform's default) is a packaging input, not a closure root: the Texture ships only if the game reaches it.
+- `exportProjectGameArtifact` reads the Texture's `pixels` chunk (the imported file, never its KTX2) and `renderAppIconImages` draws it on an `OffscreenCanvas` at every `APP_ICON_SIZES` edge (16 to 1024), halving from the source so small sizes average every pixel. The source must be square and at least `APP_ICON_MIN_SIZE` (1024; `appIconSizeProblem`, which Project Settings shows on the row); anything else fails the export by name. Preview Build skips it.
+- `exportGame({ appIcon })` writes `icon.png` and returns the PNGs on `ExportArtifact.appIcon`; the native packagers take them from there. `@haptic/exporter` stays canvas-free: it only packs PNG bytes (`encodeIco`: PNG entries 16 to 256; `encodeIcns`: PNG elements `icp4` to `ic10`).
+- Windows: `packageWindowsGame` (subpath `@haptic/exporter/native-windows`, the only importer of `resedit`) rewrites `electron.exe` when there is an App Icon: its one icon group gets the ICO, its version details the game's name, file name and version (Electron's company and copyright removed). That executable, the runtime's largest file, is inflated, rewritten and deflated again on the main thread; without an icon it is copied byte for byte. Electron's release executable is unsigned.
+- Linux `.deb`: PNGs 16 to 512 under `/usr/share/icons/hicolor/<n>x<n>/apps/<package>.png` and `Icon=<package>`. Every `.deb` also writes `StartupWMClass=<product name>` (Electron's X11 window class) and `desktopName: <package>.desktop` in the game's `package.json` (Electron's Wayland application ID), so the window matches its menu entry.
+- macOS: the renderer encodes the ICNS and sends it as `ElectronMacGameRequest.icon` (IPC accepts only `icns` magic, at most 32 MiB); `packageMacGame` writes it over `Contents/Resources/electron.icns` (`CFBundleIconFile`) before signing.
+- The game host gives its window `resources/game/icon.png` on Windows and Linux when present; macOS shows the bundle's.
 
 ## Preview Build
 

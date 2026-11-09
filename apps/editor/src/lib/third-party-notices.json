@@ -681,12 +681,20 @@
    "text": 49
   },
   {
+   "name": "pe-library",
+   "version": "0.4.1",
+   "license": "MIT",
+   "source": "https://github.com/jet2jet/pe-library-js",
+   "inGames": false,
+   "text": 50
+  },
+  {
    "name": "prop-types",
    "version": "15.8.1",
    "license": "MIT",
    "source": "https://github.com/facebook/prop-types",
    "inGames": false,
-   "text": 50
+   "text": 51
   },
   {
    "name": "react",
@@ -694,7 +702,7 @@
    "license": "MIT",
    "source": "https://github.com/react/react",
    "inGames": false,
-   "text": 51
+   "text": 52
   },
   {
    "name": "react-bootstrap-icons",
@@ -702,7 +710,7 @@
    "license": "MIT",
    "source": "https://github.com/ismamz/react-bootstrap-icons",
    "inGames": false,
-   "text": 52
+   "text": 53
   },
   {
    "name": "react-dom",
@@ -710,7 +718,7 @@
    "license": "MIT",
    "source": "https://github.com/react/react",
    "inGames": false,
-   "text": 51
+   "text": 52
   },
   {
    "name": "react-is",
@@ -718,7 +726,7 @@
    "license": "MIT",
    "source": "https://github.com/facebook/react",
    "inGames": false,
-   "text": 53
+   "text": 54
   },
   {
    "name": "react-resizable-panels",
@@ -726,7 +734,15 @@
    "license": "MIT",
    "source": "https://github.com/bvaughn/react-resizable-panels",
    "inGames": false,
-   "text": 54
+   "text": 55
+  },
+  {
+   "name": "resedit",
+   "version": "1.7.2",
+   "license": "MIT",
+   "source": "https://github.com/jet2jet/resedit-js",
+   "inGames": false,
+   "text": 50
   },
   {
    "name": "reselect",
@@ -734,7 +750,7 @@
    "license": "MIT",
    "source": "https://github.com/reduxjs/reselect",
    "inGames": false,
-   "text": 55
+   "text": 56
   },
   {
    "name": "scheduler",
@@ -742,7 +758,7 @@
    "license": "MIT",
    "source": "https://github.com/facebook/react",
    "inGames": false,
-   "text": 51
+   "text": 52
   },
   {
    "name": "shadcn/ui stylesheet",
@@ -750,7 +766,7 @@
    "license": "MIT",
    "source": "https://github.com/shadcn-ui/ui",
    "inGames": false,
-   "text": 56
+   "text": 57
   },
   {
    "name": "style-mod",
@@ -758,7 +774,7 @@
    "license": "MIT",
    "source": "https://github.com/marijnh/style-mod",
    "inGames": false,
-   "text": 57
+   "text": 58
   },
   {
    "name": "tailwind-merge",
@@ -766,7 +782,7 @@
    "license": "MIT",
    "source": "https://github.com/dcastil/tailwind-merge",
    "inGames": false,
-   "text": 58
+   "text": 59
   },
   {
    "name": "tslib",
@@ -774,7 +790,7 @@
    "license": "0BSD",
    "source": "https://github.com/Microsoft/tslib",
    "inGames": false,
-   "text": 59
+   "text": 60
   },
   {
    "name": "tw-animate-css",
@@ -782,7 +798,7 @@
    "license": "MIT",
    "source": "https://github.com/Wombosvideo/tw-animate-css",
    "inGames": false,
-   "text": 60
+   "text": 61
   },
   {
    "name": "use-sync-external-store",
@@ -790,7 +806,7 @@
    "license": "MIT",
    "source": "https://github.com/facebook/react",
    "inGames": false,
-   "text": 51
+   "text": 52
   },
   {
    "name": "w3c-keyname",
@@ -798,7 +814,7 @@
    "license": "MIT",
    "source": "https://github.com/marijnh/w3c-keyname",
    "inGames": false,
-   "text": 61
+   "text": 62
   },
   {
    "name": "zod",
@@ -806,7 +822,7 @@
    "license": "MIT",
    "source": "https://github.com/colinhacks/zod",
    "inGames": true,
-   "text": 62
+   "text": 63
   },
   {
    "name": "zustand",
@@ -814,7 +830,7 @@
    "license": "MIT",
    "source": "https://github.com/pmndrs/zustand",
    "inGames": false,
-   "text": 63
+   "text": 64
   }
  ],
  "texts": [
@@ -868,6 +884,7 @@
   "MIT License\n\nCopyright (c) 2016-2026 Arseny Kapoulkine\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
   "MIT License\n\nCopyright (c) 2016-2023 Arseny Kapoulkine\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
   "The MIT License (MIT)\n\nCopyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE.",
+  "MIT License\n\nCopyright (c) 2018 jet\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
   "MIT License\n\nCopyright (c) 2013-present, Facebook, Inc.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
   "MIT License\n\nCopyright (c) Meta Platforms, Inc. and affiliates.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
   "MIT License\n\nCopyright (c) 2022 Ismael Martínez\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
