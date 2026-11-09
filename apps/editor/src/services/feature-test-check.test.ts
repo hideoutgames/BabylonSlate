@@ -416,7 +416,7 @@ describe("runFeatureTestCheck", () => {
     const measured = report.scenes[0]!.play.benchmark.filter((sample) => !sample.warmup && !sample.baseline).map((sample) => sample.label);
     expect(measured).toEqual([
       "water off", "water pre-pass off", "water lighting off", "water shadows off", "water waves off", "water foam off",
-      "water reflections sky", "water refraction off", "water detail low", "water fft 64", "water fft 1 cascade", "water mesh 0.5",
+      "water reflections sky", "water refraction off", "water detail low", "water fft 1 cascade", "water fft 128", "water mesh 0.75",
     ]);
     // A part switched off is switched back on after the tier returns, before the next baseline: `quality reset` keeps it.
     const commands = editor.commands, at = (line: string) => commands.indexOf(line);
@@ -526,7 +526,7 @@ describe("runFeatureTestCheck", () => {
     const skipped = measured.filter((sample) => sample.skipped);
     expect(skipped.map((sample) => [sample.label, sample.skipped])).toEqual([
       ["shadows medium", "already shadows medium 2048, shadows.filter high"],
-      ["water detail medium", "already water.shadingDetail medium, water.fft 128x3"],
+      ["water detail medium", "already water.shadingDetail medium, water.fft 64x3"],
       ["volumetrics off", "already post.volumetricLighting false"],
       ["MSAA 2x", "already post.antiAliasing msaa2, post.samples 2"],
     ]);

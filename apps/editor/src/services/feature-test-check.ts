@@ -205,7 +205,8 @@ const waterPartOff = (part: string, label: string): FeatureTestBreakdownStep => 
 /**
  * Water (`FEATURE_TEST_BREAKDOWN_BASES.water`, the Medium tier at half resolution): every water surface off, then one part of water off, or
  * one water setting lowered, at a time. Every step but `water off` is a share of what that one saves (`overlaps`). At
- * Medium, Contact Resolution 256 already holds.
+ * Medium, Contact Resolution 256 already holds. Medium's FFT Size and Water Mesh Density are already the lowest, so
+ * those two steps raise them to the previous Medium's (128, 0.75): their change is what that would cost.
  */
 export const FEATURE_TEST_BREAKDOWN_WATER_STEPS: readonly FeatureTestBreakdownStep[] = [
   { label: "water off", commands: ["waterdebug water off"], restore: ["waterdebug water on"], fields: ["water.debug"] },
@@ -217,9 +218,9 @@ export const FEATURE_TEST_BREAKDOWN_WATER_STEPS: readonly FeatureTestBreakdownSt
   { label: "water reflections sky", commands: ["quality water reflections sky"], fields: ["water.reflections"], overlaps: true },
   { label: "water refraction off", commands: ["quality water refraction off"], fields: ["water.refraction"], overlaps: true },
   { label: "water detail low", commands: ["quality water shadingDetail low"], fields: WATER_DETAIL_FIELDS, overlaps: true },
-  { label: "water fft 64", commands: ["quality water fftSize 64"], fields: ["water.fft"], overlaps: true },
   { label: "water fft 1 cascade", commands: ["quality water fftCascades 1"], fields: ["water.fft"], overlaps: true },
-  { label: "water mesh 0.5", commands: ["quality water meshDensity 0.5"], fields: ["water.meshDensity"], overlaps: true },
+  { label: "water fft 128", commands: ["quality water fftSize 128"], fields: ["water.fft"], overlaps: true },
+  { label: "water mesh 0.75", commands: ["quality water meshDensity 0.75"], fields: ["water.meshDensity"], overlaps: true },
 ];
 
 /** The scenes a Breakdown by `method` measures: every Feature Test scene with `allScenes`. */
