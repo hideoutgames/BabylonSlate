@@ -7,7 +7,7 @@ import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { SNAPSHOT_FLAG_VISIBLE, snapshotFloatCount, writeActorSlot, writeSnapshotHeader } from "@haptic/bridge";
 import {
-  applyProjectQualityPatch, createDefaultScene, DEFAULT_RENDER_EFFECTS, normalizeRenderProjectSettings,
+  applyProjectQualityPatch, createDefaultScene, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeRenderProjectSettings,
   qualityPresetPatch, QUALITY_GROUPS, ScalabilitySession, type QualityGroup, type RenderProjectSettings,
 } from "@haptic/core";
 import { createEngine } from "./create-engine";
@@ -36,11 +36,15 @@ class FakeCanvas {
 /**
  * The project's High level with every screen effect on, as the Feature Test main scene plays: multisampled scene
  * colour and depth, the geometry pass with ambient occlusion, reflections, volumetrics and Screen-Space Shadows, bloom.
+ * Dynamic resolution is off: it reads wall-clock frame intervals, which on a loaded runner exceed the 60 fps budget
+ * and would raise the level and resize the view mid-step, whatever the quality change under test.
  */
 const HIGH: RenderProjectSettings = (() => {
   const high = applyProjectQualityPatch(normalizeRenderProjectSettings({}), qualityPresetPatch("high"));
   const on = <T extends { enabled: boolean }>(effect: T) => ({ ...effect, enabled: true });
-  return { ...high, effects: { ...DEFAULT_RENDER_EFFECTS, bloom: on(DEFAULT_RENDER_EFFECTS.bloom),
+  const quality = normalizeRenderingQuality(high.quality);
+  return { ...high, quality: { ...quality, resolution: { ...quality.resolution, dynamic: false } },
+    effects: { ...DEFAULT_RENDER_EFFECTS, bloom: on(DEFAULT_RENDER_EFFECTS.bloom),
     ambientOcclusion: on(DEFAULT_RENDER_EFFECTS.ambientOcclusion), reflections: on(DEFAULT_RENDER_EFFECTS.reflections),
     volumetricLighting: on(DEFAULT_RENDER_EFFECTS.volumetricLighting) } };
 })();
