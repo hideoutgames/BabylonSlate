@@ -63,6 +63,7 @@ export * from "./extension-settings";
 export * from "./extension-host";
 export * from "./extension-package";
 export * from "./starter-content";
+export * from "./editor-primitives";
 export * from "./registry";
 export * from "./catalog-class-dependencies";
 export * from "./mtime-diff";
