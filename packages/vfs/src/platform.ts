@@ -147,6 +147,21 @@ export interface ElectronGameShellBridge {
   arch: string;
   /** This app's Electron files named as the release lists them, zipped in that layout; refused unless `electronVersion` is the app's. */
   runtime(files: string[], electronVersion: string): Promise<Uint8Array>;
+  /** macOS only: Developer ID Application identities in this Mac's keychain. */
+  macIdentities(): Promise<string[]>;
+  /** macOS only: packages, signs and (with a profile) notarizes a macOS game; see `apps/desktop/src/mac-game-package.ts`. */
+  packageMac(request: ElectronMacGameRequest): Promise<{ fileName: string; bytes: Uint8Array; notarized: boolean }>;
+}
+
+export interface ElectronMacGameRequest {
+  game: [string, Uint8Array][];
+  name: string;
+  appId: string;
+  version: string;
+  buildNumber: number;
+  gameId: string;
+  identity: string | null;
+  notaryProfile: string;
 }
 
 export function getElectronGameShellBridge(): ElectronGameShellBridge | null {

@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { isErr, type ProjectDocument } from "@haptic/core";
-import type { DesktopGameTarget } from "@haptic/exporter/native-desktop";
+import { isErr, resolvedAppIdentity, type ProjectDocument } from "@haptic/core";
+import { getElectronGameShellBridge, type EngineSettings } from "@haptic/vfs";
 import { useDocumentActions } from "../context/document-context";
 import { saveExportFile, saveZipArchive, savedFileNotice } from "../lib/file-export";
 import { exportGameFailureMessage } from "../lib/export-game-failure";
-import { loadDesktopShell, loadGameShellManifest, packageableDesktopTargets, type GameShellManifest } from "../lib/game-shells";
+import { loadDesktopShell, loadGameShellManifest, packageableDesktopTargets, type GameShellManifest, type GameShellTarget } from "../lib/game-shells";
 import type { PackagingTarget } from "../lib/packaging-targets";
 
 /** How a Linux game is delivered: a Debian package that installs it, or a folder in a ZIP. */
@@ -17,7 +17,13 @@ export interface GameExport {
   stage: string | null;
   error: string | null;
   notice: string | null;
-  packageTarget: (target: PackagingTarget, options?: { linuxFormat?: LinuxPackageFormat }) => Promise<void>;
+  packageTarget: (target: PackagingTarget, options?: PackageOptions) => Promise<void>;
+}
+
+export interface PackageOptions {
+  linuxFormat?: LinuxPackageFormat;
+  /** macOS: this computer's signing settings (Engine Settings > Packaging). */
+  macSigning?: EngineSettings["macSigning"];
 }
 
 /** The saved web package's file name. */
@@ -26,8 +32,8 @@ export function gameArchiveName(projectName: string): string {
 }
 
 /** The players this copy of Haptic carries, read once `active` turns on. */
-export function useGameShells(active: boolean): { manifest: GameShellManifest | null; desktop: ReadonlySet<DesktopGameTarget> } {
-  const [state, setState] = useState<{ manifest: GameShellManifest | null; desktop: ReadonlySet<DesktopGameTarget> } | null>(null);
+export function useGameShells(active: boolean): { manifest: GameShellManifest | null; desktop: ReadonlySet<GameShellTarget> } {
+  const [state, setState] = useState<{ manifest: GameShellManifest | null; desktop: ReadonlySet<GameShellTarget> } | null>(null);
   useEffect(() => {
     if (!active || state) return;
     let current = true;
@@ -52,7 +58,7 @@ export function useGameExport(
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const packageTarget = async (target: PackagingTarget, packageOptions: { linuxFormat?: LinuxPackageFormat } = {}) => {
+  const packageTarget = async (target: PackagingTarget, packageOptions: PackageOptions = {}) => {
     if (!projectDocument || busy || !target.available) return;
     setBusy(true);
     setStage(COLLECTING);
@@ -70,6 +76,26 @@ export function useGameExport(
         return;
       }
       if (!options.manifest) throw new Error(`This copy of Haptic cannot package ${target.label} games.`);
+      if (target.desktopTarget === "macos-arm64") {
+        const bridge = getElectronGameShellBridge();
+        if (!bridge) throw new Error("macOS games are packaged in the Haptic desktop app on a Mac.");
+        const identity = resolvedAppIdentity(projectDocument.settings.appIdentity, projectDocument.metadata.name);
+        const signing = packageOptions.macSigning ?? { identity: null, notaryProfile: "" };
+        const notarize = Boolean(signing.identity && signing.notaryProfile);
+        setStage(notarize ? "Signing and notarizing with Apple. This can take several minutes." : "Signing the app.");
+        const packaged = await bridge.packageMac({
+          game: [...result.value.files],
+          name: identity.displayName,
+          appId: identity.appId,
+          version: projectDocument.metadata.version,
+          buildNumber: identity.buildNumber,
+          gameId: options.projectGuid ?? "game",
+          identity: signing.identity,
+          notaryProfile: signing.identity ? signing.notaryProfile : "",
+        });
+        setNotice(savedFileNotice(packaged.notarized ? "Notarized macOS game" : "macOS game", await saveZipArchive(packaged.bytes, packaged.fileName)));
+        return;
+      }
       setStage(`Adding the ${target.label} player.`);
       const shell = await loadDesktopShell(options.manifest, target.desktopTarget);
       const input = {
