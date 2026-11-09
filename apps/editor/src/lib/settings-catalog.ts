@@ -91,7 +91,7 @@ export const ENGINE_CATEGORIES: Array<
   {
     id: "accessibility",
     label: "Accessibility",
-    keywords: "accessibility tap to connect pins large pins pin size scale graph touch motor",
+    keywords: "accessibility text size font scale zoom reduce motion animation touch target size hold time long press double tap number snap strength scrub tap to connect pins large pins wire thickness pin type letters colour color blind node connection assistant distance shake disconnect motor vision",
   },
   {
     id: "undo",
@@ -117,7 +117,7 @@ export const ENGINE_CATEGORIES: Array<
   {
     id: "graph",
     label: "Graph",
-    keywords: "graph default zoom node canvas fit view assistant connection distance shake disconnect read-only read only lock pin defaults inline input values",
+    keywords: "graph default zoom node canvas fit view add node history read-only read only lock pin defaults inline input values",
   },
   {
     id: "thumbnails",

@@ -46,6 +46,18 @@ describe("scrubValue", () => {
     expect(previous).toBeGreaterThan(2);
   });
 
+  it.each([
+    // From 0.95 at 0.01 per pixel, 1 is reached after 5px; its hold is 4px at Normal.
+    ["Off never holds", 0, 6, 1.01],
+    ["Light holds half as long", 1, 7, 1],
+    ["Light moves on sooner", 1, 8, 1.01],
+    ["Normal holds the default time", 2, 9, 1],
+    ["Strong holds twice as long", 3, 13, 1],
+    ["Strong moves on after its hold", 3, 14, 1.01],
+  ])("Number Snap Strength: %s", (_name, strength, deltaPx, expected) => {
+    expect(scrubValue(0.95, deltaPx, 0.01, strength)).toBeCloseTo(expected, 10);
+  });
+
   it("scrubs linearly for huge magnitudes and invalid sensitivity", () => {
     expect(scrubValue(1e13, 10, 0.01)).toBe(1e13 + 0.1);
     expect(scrubValue(1, 10, 0)).toBe(1);

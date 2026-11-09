@@ -17,7 +17,7 @@ import {
 } from "./tree-view";
 import { treeGuideSegments } from "./tree-guides";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
-import { CONTEXT_MENU_LONG_PRESS_MS, DRAG_ARM_MS } from "./use-context-menu";
+import { CONTEXT_MENU_LONG_PRESS_MS, DRAG_ARM_MS } from "./gesture-timing";
 
 const nodes: TreeViewNode[] = [
   { id: "root", label: "Root", depth: 0, hasChildren: true, expanded: true },

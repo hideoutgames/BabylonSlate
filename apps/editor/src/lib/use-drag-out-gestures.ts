@@ -6,9 +6,9 @@ import {
   type RefObject,
 } from "react";
 import {
-  CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
-  DRAG_ARM_MS,
+  dragArmDelayMs,
+  holdDelayMs,
   isSidewaysDragOut,
 } from "@haptic/editor-kit";
 
@@ -108,14 +108,14 @@ export function useDragOutGestures(
         if (handlersRef.current.dragEnabled) {
           session.timers.push(setTimeout(() => {
             if (!session.moved) session.canDrag = true;
-          }, DRAG_ARM_MS));
+          }, dragArmDelayMs()));
         }
         session.timers.push(setTimeout(() => {
           if (session.moved || session.armed) return;
           // The menu overlay swallows the click the lifting finger delivers.
           finish(session);
           handlersRef.current.onLongPress(id, session.startX, session.startY);
-        }, CONTEXT_MENU_LONG_PRESS_MS));
+        }, holdDelayMs()));
       }
       const onMove = (move: PointerEvent) => {
         if (move.pointerId !== session.pointerId) return;

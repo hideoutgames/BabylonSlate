@@ -208,10 +208,11 @@ export function AppSettingsProvider({
     graphAddNodeHistoryEnabled: addNodeHistoryEnabled,
     graphTapToConnect: tapToConnectEnabled,
     graphPinScale: pinScale,
+    graphPinTypeLetters: pinTypeLetters,
   } = snapshot.settings;
   const graphInteractions = useMemo(
-    () => ({ assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled, tapToConnectEnabled, pinScale }),
-    [assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled, tapToConnectEnabled, pinScale],
+    () => ({ assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled, tapToConnectEnabled, pinScale, pinTypeLetters }),
+    [assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled, tapToConnectEnabled, pinScale, pinTypeLetters],
   );
   return (
     <AppSettingsContext.Provider value={value}>

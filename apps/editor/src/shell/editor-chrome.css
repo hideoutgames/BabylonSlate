@@ -179,10 +179,9 @@
   opacity: 1;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .chrome-action-feedback {
-    transition: none;
-  }
+/* Reduce Motion (the device setting, or the editor's override). */
+:where(:root[data-reduced-motion]) .chrome-action-feedback {
+  transition: none;
 }
 
 .editor-chrome-tabs {
@@ -611,8 +610,7 @@
     transform: translateY(12px) scale(0.98);
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .recovery-notice {
-    animation: none;
-  }
+/* Reduce Motion (the device setting, or the editor's override). */
+:where(:root[data-reduced-motion]) .recovery-notice {
+  animation: none;
 }

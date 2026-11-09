@@ -5,10 +5,10 @@ import {
   useEffect,
   useMemo,
   useState,
-  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { useReducedMotion } from "@haptic/editor-kit";
 import { getBuildLabel } from "../lib/build-identity";
 import { bootIntroStart, useBootIntro } from "./boot-intro";
 import loadingStyles from "./launcher-transition.css?inline";
@@ -46,16 +46,6 @@ export const useLauncherTransition = () => useContext(TransitionContext);
 const MINIMUM_MS = { boot: 2600, open: 2000 };
 const OPEN_FADE_FALLBACK_MS = 650;
 
-const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
-function subscribeReducedMotion(update: () => void) {
-  const query = window.matchMedia(REDUCED_MOTION_QUERY);
-  query.addEventListener("change", update);
-  return () => query.removeEventListener("change", update);
-}
-function prefersReducedMotion() {
-  return window.matchMedia(REDUCED_MOTION_QUERY).matches;
-}
-
 export function LauncherTransitionProvider({
   route,
   children,
@@ -63,11 +53,7 @@ export function LauncherTransitionProvider({
   route: string;
   children: ReactNode;
 }) {
-  const reducedMotion = useSyncExternalStore(
-    subscribeReducedMotion,
-    prefersReducedMotion,
-    () => false,
-  );
+  const reducedMotion = useReducedMotion();
   const [transition, setTransition] = useState<Transition | null>(() => ({
     target: route === "home" ? "home" : "editor",
     label: "Haptic",

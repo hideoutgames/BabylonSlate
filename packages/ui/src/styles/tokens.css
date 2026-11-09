@@ -12,6 +12,13 @@
  * pointer in script.
  */
 @custom-variant pointer-coarse (&:where(.touch-ui, .touch-ui *));
+/*
+ * `motion-reduce:` and `motion-safe:` follow `html[data-reduced-motion]`, which
+ * the boot script sets from the device and the editor from Reduce Motion
+ * (Engine Settings > Accessibility), instead of the media query alone.
+ */
+@custom-variant motion-reduce (&:where([data-reduced-motion], [data-reduced-motion] *));
+@custom-variant motion-safe (&:where(:root:not([data-reduced-motion]) *));
 
 @theme inline {
     --color-trace-selected: var(--trace-selected);

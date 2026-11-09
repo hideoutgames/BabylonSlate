@@ -150,14 +150,55 @@ export function nodeRoleClass(role: NodeVisualRole): string {
   return ROLE_CLASS[role];
 }
 
-/** Exec wires and the Particle Graph spine use the heavy exec width. */
-function edgeStrokeWidth(kind: string): number {
-  return kind === "exec" || kind === "particle" ? 5 : 4;
+/**
+ * Exec wires and the Particle Graph spine use the heavy exec width. Both
+ * widths scale with Large Pins (`--graph-wire-*` in graph-editor.css).
+ */
+function edgeStrokeWidth(kind: string): string {
+  return kind === "exec" || kind === "particle"
+    ? "var(--graph-wire-exec, 5px)"
+    : "var(--graph-wire-data, 4px)";
+}
+
+const PIN_TYPE_LETTER: Record<string, string> = {
+  bool: "B",
+  int: "I",
+  float: "F",
+  string: "S",
+  tag: "Tg",
+  vec2: "V2",
+  vec3: "V3",
+  vec4: "V4",
+  rotator: "R",
+  quat: "Q",
+  transform: "T",
+  color: "C",
+  objectRef: "O",
+  classRef: "Cl",
+  assetRef: "A",
+  texture: "Tx",
+  structRef: "St",
+  enumRef: "E",
+  resolvingWildcard: "?",
+  boxedWildcard: "?",
+  delegate: "D",
+  particle: "P",
+};
+
+/**
+ * Pin Type Letters: the short type name drawn inside a data pin (B for
+ * Boolean), so types do not rely on colour alone. Arrays and maps show their
+ * element type; exec pins have none.
+ */
+export function pinTypeLetter(type: PinTypeRef): string | undefined {
+  if (type.kind === "array" && isPinTypeRef(type.element)) return pinTypeLetter(type.element);
+  if (type.kind === "map" && isPinTypeRef(type.value)) return pinTypeLetter(type.value);
+  return PIN_TYPE_LETTER[type.kind];
 }
 
 export function edgeStyleForPin(type: PinTypeRef | undefined): {
   stroke: string;
-  strokeWidth: number;
+  strokeWidth: string;
 } {
   const resolved = type ?? { kind: "wildcard" };
   return {

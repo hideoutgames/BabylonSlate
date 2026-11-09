@@ -14,11 +14,8 @@ import { ChevronRightIcon } from "lucide-react";
 import { treeGuideSegments } from "./tree-guides";
 import { InlineRenameInput } from "./inline-rename";
 import { cn } from "@haptic/ui/lib/utils";
-import {
-  CONTEXT_MENU_LONG_PRESS_MS,
-  CONTEXT_MENU_MOVE_TOLERANCE_PX,
-  DRAG_ARM_MS,
-} from "./use-context-menu";
+import { CONTEXT_MENU_MOVE_TOLERANCE_PX } from "./use-context-menu";
+import { dragArmDelayMs, holdDelayMs } from "./gesture-timing";
 import {
   WINDOWED_SLICE_OVERSCAN,
   windowedScrollTop,
@@ -559,7 +556,7 @@ export function TreeView({
               }
               clearDrag();
               onContextMenu(nodeId, event.clientX, event.clientY);
-            }, CONTEXT_MENU_LONG_PRESS_MS)
+            }, holdDelayMs())
           : null;
       const dragEnabled =
         Boolean(onReparent || onExternalDrop) &&
@@ -576,7 +573,7 @@ export function TreeView({
             } catch {
               /* jsdom and detached nodes */
             }
-          }, DRAG_ARM_MS)
+          }, dragArmDelayMs())
         : null;
       dragRef.current = {
         pointerId: event.pointerId,

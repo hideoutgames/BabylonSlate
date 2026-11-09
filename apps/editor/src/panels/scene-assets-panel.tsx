@@ -35,6 +35,7 @@ import {
   SearchInput,
   TreeView,
   TypeVisualIcon,
+  doubleTapWindowMs,
   useContextMenu,
   type NestedMenuItem,
   type TreeSelectOptions,
@@ -102,7 +103,6 @@ import { usePhoneTouchSizing } from "../shell/use-platform-layout";
 
 const NO_PLACE_ACTOR_ITEMS: PlaceActorItem[] = [];
 const NO_SELECTION: SceneAssetSelection = { ids: [], anchor: null };
-const DOUBLE_TAP_MS = 350;
 
 const SORT_OPTIONS: ReadonlyArray<{ id: SceneAssetSort; label: string }> = [
   { id: "name", label: "Name" },
@@ -435,7 +435,7 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
       if ("key" in event || event.shiftKey || modifier) return;
       const now = Date.now();
       const last = lastTapRef.current;
-      if (last && last.id === id && now - last.at <= DOUBLE_TAP_MS) {
+      if (last && last.id === id && now - last.at <= doubleTapWindowMs()) {
         lastTapRef.current = null;
         placeAtViewCenter([id]);
       } else {

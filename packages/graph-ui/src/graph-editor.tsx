@@ -51,6 +51,7 @@ import { IslandIconButton } from "./island-icon-button";
 import {
   AssetOpenProvider,
   ContextMenuOverlay,
+  doubleTapWindowMs,
   normalizeChord,
   useContextMenu,
   useEditorReadOnly,
@@ -328,7 +329,6 @@ export interface GraphEditorProps {
 export type GraphPasteElements = { nodes: CanvasNode[]; edges: Edge[] };
 export type GraphPasteResult = { nodes: CanvasNode[]; notice?: string };
 
-const DOUBLE_TAP_MS = 350;
 const PASTE_OFFSET = 40;
 /** Long enough to read; the hint never blocks editing meanwhile. */
 const NOTICE_MS = 4000;
@@ -2588,7 +2588,7 @@ function GraphEditorCanvas({
       clearSelection();
       onEmptyCanvasClickRef.current?.();
       const now = Date.now();
-      if (now - lastPaneTapRef.current < DOUBLE_TAP_MS && !readOnly) {
+      if (now - lastPaneTapRef.current < doubleTapWindowMs() && !readOnly) {
         const point = event ? { x: event.clientX, y: event.clientY } : null;
         setPendingConnect(point ? { position: screenToFlowPosition(point) } : null);
         setPaletteAnchor(point);

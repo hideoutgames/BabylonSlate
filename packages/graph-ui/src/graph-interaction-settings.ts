@@ -9,8 +9,10 @@ export interface GraphInteractionSettings {
   addNodeHistoryEnabled?: boolean;
   /** Tap one pin, then a pin on the other side, to connect them; unset is off. */
   tapToConnectEnabled?: boolean;
-  /** Multiplies pin glyphs and their hit areas (Large Pins); unset is 1. */
+  /** Multiplies pin glyphs, their hit areas and wires (Large Pins); unset is 1. */
   pinScale?: number;
+  /** Draws a type letter inside data pins (B for Boolean); unset is off. */
+  pinTypeLetters?: boolean;
 }
 
 export const GraphInteractionSettingsContext = createContext<GraphInteractionSettings>({

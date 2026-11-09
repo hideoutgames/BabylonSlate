@@ -2,7 +2,7 @@ import { act, fireEvent, render, cleanup, screen, waitFor } from "@testing-libra
 import { useReactFlow, useStore } from "@xyflow/react";
 import { StrictMode, useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DRAG_ARM_MS, EditorReadOnlyContext, TagProvider } from "@haptic/editor-kit";
+import { DRAG_ARM_MS, EditorReadOnlyContext, TagProvider, setGestureTiming } from "@haptic/editor-kit";
 import {
   GRAPH_DEFAULT_ZOOM,
   GRAPH_MIN_ZOOM,
@@ -3596,6 +3596,51 @@ describe("GraphEditor", () => {
     expect(getByTestId("node-palette-body")).toBeTruthy();
   });
 
+  it("opens the palette only for taps within the Double-Tap Time", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const paletteNodes = [{ id: "debug.log", title: "Log", category: "Debug" }];
+    const tapTwice = (container: HTMLElement, gapMs: number) => {
+      const pane = container.querySelector(".react-flow__pane")!;
+      fireEvent.click(pane);
+      vi.advanceTimersByTime(gapMs);
+      fireEvent.click(pane);
+    };
+    try {
+      const first = render(<GraphEditor initialGraph={{ nodes: [], edges: [] }} paletteNodes={paletteNodes} />);
+      tapTwice(first.container, 600);
+      expect(first.queryByTestId("node-palette-body")).toBeNull();
+      first.unmount();
+
+      setGestureTiming({ holdMs: 500, doubleTapMs: 800 });
+      vi.advanceTimersByTime(1000);
+      const second = render(<GraphEditor initialGraph={{ nodes: [], edges: [] }} paletteNodes={paletteNodes} />);
+      tapTwice(second.container, 600);
+      expect(second.getByTestId("node-palette-body")).toBeTruthy();
+    } finally {
+      setGestureTiming({ holdMs: 500, doubleTapMs: 350 });
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    [true, ["S"]],
+    [false, []],
+  ])("draws data pin type letters only when Pin Type Letters is %s", (pinTypeLetters, letters) => {
+    const { container } = render(
+      <GraphInteractionSettingsContext.Provider
+        value={{ assistantEnabled: true, assistantDistance: 48, shakeEnabled: true, pinTypeLetters }}
+      >
+        <GraphEditor initialGraph={singleLogGraph()} />
+      </GraphInteractionSettingsContext.Provider>,
+    );
+    // Exec pins keep their arrow shape; the String message pin reads S.
+    const shown = [...container.querySelectorAll("[data-pin-letter]")].map((element) => element.textContent);
+    expect(shown).toEqual(letters);
+    if (pinTypeLetters) {
+      expect(container.querySelector('[data-handleid="message"] [data-pin-letter]')?.textContent).toBe("S");
+    }
+  });
+
   it("keeps Break Links disabled for an unwired selection", () => {
     const { container, getByTestId } = render(
       <GraphEditor initialGraph={graphWithPins()} />,
@@ -5587,9 +5632,9 @@ describe("Particle Graph canvas", () => {
         expect(wire("tint-wire")).not.toBeNull();
       });
       expect(wire("spine")!.style.stroke).toBe("var(--pin-particle)");
-      expect(wire("spine")!.style.strokeWidth).toBe("5");
+      expect(wire("spine")!.style.strokeWidth).toBe("var(--graph-wire-exec, 5px)");
       expect(wire("tint-wire")!.style.stroke).toBe("var(--pin-color)");
-      expect(wire("tint-wire")!.style.strokeWidth).toBe("4");
+      expect(wire("tint-wire")!.style.strokeWidth).toBe("var(--graph-wire-data, 4px)");
 
       const update = container.querySelector('.react-flow__node[data-id="update"]')!;
       const spinePin = update.querySelector('[data-pin-type="particle"] [data-pin-shape]') as HTMLElement;

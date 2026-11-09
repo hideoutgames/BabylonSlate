@@ -43,7 +43,7 @@ A scene opens with these windows:
 
 Other asset editors have their own windows, such as **Preview** and **Inspector** for a Texture. See [Scenes](../scenes/index.md) and [Actors](../scenes/actors.md).
 
-Number fields show their unit after the value, such as **45°**, **120 ms** or **50%**. You can type the unit or leave it out. Drag a field's handle to change the value, or type a sum such as `90+45`. While you drag, round values such as 0.1, 0.25, 1, 10 and 100 hold for a moment, so they are easy to land on; keep dragging to move past them.
+Number fields show their unit after the value, such as **45°**, **120 ms** or **50%**. You can type the unit or leave it out. Drag a field's handle to change the value, or type a sum such as `90+45`. While you drag, round values such as 0.1, 0.25, 1, 10 and 100 hold for a moment, so they are easy to land on; keep dragging to move past them. **Number Snap Strength** in **Engine Settings > Accessibility** sets how long they hold, or turns this off.
 
 Right-click or hold a property, or its name, in any **Inspector** for **Copy** and **Paste**. **Copy** keeps the value for the rest of the session and also puts it on the clipboard as text. **Paste** is available only where the copied value fits:
 
