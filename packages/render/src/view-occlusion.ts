@@ -9,6 +9,7 @@ import type { ModelOccluder } from "@haptic/assets";
 import { effectDrawnOn } from "./first-draw-stats";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { drawingMesh } from "./instance-source";
+import { writeRenderListEntry } from "./observed-render-list";
 import { OcclusionBuffer } from "./occlusion-raster";
 import { keepsDrawingOutsideView } from "./play-view-culling";
 import { sceneRenderingSettings } from "./render-settings";
@@ -365,8 +366,9 @@ export class ViewOcclusion {
   }
 
   private cull(meshes: readonly AbstractMesh[], engine: AbstractEngine, renderPassId: number): readonly AbstractMesh[] {
+    // The object passes observe `kept` once they have drawn it, so it is written in place (`writeRenderListEntry`).
     const kept = this.kept;
-    kept.length = 0;
+    let count = 0;
     const diagnostics = this.diagnostics;
     for (let index = 0; index < meshes.length; index++) {
       const mesh = meshes[index]!;
@@ -376,14 +378,15 @@ export class ViewOcclusion {
         const min = box.minimumWorld, max = box.maximumWorld;
         if (this.buffer.occluded(min.x, min.y, min.z, max.x, max.y, max.z)) {
           // The first hidden mesh starts the own list with every mesh before it.
-          if (diagnostics.culled === 0) for (let before = 0; before < index; before++) kept.push(meshes[before]!);
+          if (diagnostics.culled === 0) for (let before = 0; before < index; before++) writeRenderListEntry(kept, count++, meshes[before]!);
           diagnostics.culled += 1;
           this.culled.add(mesh);
           continue;
         }
       }
-      if (diagnostics.culled > 0) kept.push(mesh);
+      if (diagnostics.culled > 0) writeRenderListEntry(kept, count++, mesh);
     }
+    kept.length = count;
     return diagnostics.culled > 0 ? kept : meshes;
   }
 

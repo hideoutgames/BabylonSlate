@@ -1061,6 +1061,32 @@ it("clears the spatial geometry attachments on their own target, never the backb
   }
 });
 
+it("draws steady frames of a spatial geometry pass without a pass over every mesh's lights", async () => {
+  const { engine, scene, camera } = host();
+  // The spatial chain needs four float targets and depth sampling.
+  Object.assign(engine.getCaps(), {
+    maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
+    textureHalfFloatRender: true, textureFloatRender: true, texelFetch: true,
+  });
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: { ...DEFAULT_RENDER_EFFECTS, reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } },
+  });
+  const box = MeshBuilder.CreateBox("box", {}, scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    // The geometry pass draws the view's world list, which Babylon observes from then on.
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    const lightDirty = vi.spyOn(box, "_markSubMeshesAsLightDirty");
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(lightDirty).not.toHaveBeenCalled();
+  } finally {
+    graph.dispose();
+  }
+});
+
 /**
  * A spatial-effects host with one Fog Volume 10 units in front of the camera, a light the volumetric march lights it
  * with, and one beyond the march's reach (Max Distance plus the light's range) that tests can bring near.

@@ -1,5 +1,6 @@
 import type { Camera } from "@babylonjs/core/Cameras/camera";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { rewriteRenderList } from "./observed-render-list";
 import { isRevealPending } from "./reveal-pending";
 
 /** Screen rectangle (NDC) and view-depth span of one mesh's world bounds. */
@@ -30,16 +31,13 @@ function measure(mesh: AbstractMesh, viewProjection: ArrayLike<number>, view: Ar
 const bounds: ScreenBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0, near: 0, far: 0, front: 0, behind: 0 };
 
 /**
- * Babylon observes the object renderer's list and, on the first push into an empty list, marks every Scene mesh's
- * lights dirty. Leave `out` alone when the occluders are unchanged so that happens only when they change.
+ * Babylon observes the object renderer's list (`rewriteRenderList`). `out` is left alone when the occluders are
+ * unchanged, and rewritten in place when they change, so only an empty list that fills reaches Babylon.
  */
 function commit(fresh: readonly AbstractMesh[], out: AbstractMesh[]): AbstractMesh[] {
   let same = fresh.length === out.length;
   for (let index = 0; same && index < fresh.length; index++) same = fresh[index] === out[index];
-  if (same) return out;
-  out.length = 0;
-  for (const mesh of fresh) out.push(mesh);
-  return out;
+  return same ? out : rewriteRenderList(out, fresh);
 }
 
 /**
