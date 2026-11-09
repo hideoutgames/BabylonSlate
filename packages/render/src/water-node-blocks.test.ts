@@ -479,8 +479,8 @@ describe("Water Cut", () => {
     // Water Foam reads the per-pixel height; the cut reads the vertex stage's, as built-in water's waterline does.
     const heights = [...fragment.matchAll(/#ifdef SLATE_WATER_GPU_WAVES\s+swnHeight = ([\w.]+);/g)].map((match) => match[1]!.replace(/^fragmentInputs\./, ""));
     expect(heights.some((name) => new RegExp(`\\b${name} = `).test(vertex))).toBe(true);
-    // The depth pre-pass samples none of the waves' per-pixel spectrum.
-    expect(fragment).toMatch(/#ifndef DEPTHPREPASS\s+#ifdef SLATE_WATER_GPU_WAVES/);
+    // The depth pre-pass samples none of the waves' per-pixel spectrum (nor does `waterdebug waves off`).
+    expect(fragment).toMatch(/#ifndef DEPTHPREPASS\s+#ifndef SLATE_WATER_DEBUG_NO_WAVES\s+#ifdef SLATE_WATER_GPU_WAVES/);
   });
 
   it("compiles the depth pre-pass as its own variant, for water only", async () => {
