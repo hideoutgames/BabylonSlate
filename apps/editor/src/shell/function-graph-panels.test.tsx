@@ -97,6 +97,9 @@ describe("function graph tabs", () => {
     const dock = renderClassDock();
     act(() => openFunctionGraphPanel(dock, "fn-jump", "Jump"));
     expect(tabIcons()).toMatchObject({ "Event Graph": null, Jump: "function", Inspector: null });
+    // Close actions keep Dockview's own names, which say which tab they close.
+    expect(document.querySelector('[role="button"][aria-label="Close Jump"]')).not.toBeNull();
+    expect(document.querySelector('[role="button"][aria-label="Close Event Graph"]')).not.toBeNull();
 
     const saved = dock.toJSON() as unknown as Record<string, unknown>;
     cleanup();
