@@ -76,7 +76,8 @@ try {
     archive = join(sandbox, "squashfs-root/resources/app.asar");
   }
   await mkdir(userData);
-  await writeFile(join(userData, "engine-settings.json"), JSON.stringify({ automaticUpdatesEnabled: false }));
+  // An earlier seen version makes this launch an update, which shows What's New; a first install records its version silently.
+  await writeFile(join(userData, "engine-settings.json"), JSON.stringify({ automaticUpdatesEnabled: false, seenReleaseVersions: ["0.0.0"] }));
   const names = listPackage(archive).map(name => name.replaceAll("\\", "/").replace(/^\//, ""));
   for (const name of names) {
     assert.ok(/^(?:package.json|host(?:\/|$)|renderer(?:\/|$))/.test(name), "Unexpected packaged root");
