@@ -1,7 +1,7 @@
 import type { SerializedGraph } from "@haptic/core";
 import { formatEventMemberName, formatEventTitle } from "@haptic/editor-kit";
 import type { GraphPasteElements, GraphPasteResult } from "@haptic/graph-ui";
-import { singletonEventKey } from "@haptic/scripting";
+import { isEventEntryNodeType, singletonEventKey } from "@haptic/scripting";
 import { canRenameCustomEvent } from "./class-members";
 import { eventNameKeys, freeCustomEventName } from "./custom-event-names";
 
@@ -19,12 +19,24 @@ function bindingWiredNodes(edges: readonly PasteEdge[]): Set<string> {
   return new Set(edges.filter((edge) => edge.targetHandle === "binding").map((edge) => edge.target));
 }
 
+function titleList(titles: readonly string[]): string {
+  return titles.length > 1
+    ? `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1]}`
+    : titles[0]!;
+}
+
 function leftOutNotice(titles: readonly string[]): string {
-  const list =
-    titles.length > 1
-      ? `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1]}`
-      : titles[0];
-  return `${list} ${titles.length > 1 ? "are" : "is"} already in this graph.`;
+  return `${titleList(titles)} ${titles.length > 1 ? "are" : "is"} already in this graph.`;
+}
+
+function eventsLeftOutNotice(titles: readonly string[]): string {
+  return `${titleList(titles)} ${titles.length > 1 ? "are events" : "is an event"}, which only the Event Graph holds.`;
+}
+
+function pastedTitle(node: PasteNode, typeId: string): string {
+  return typeof node.data.title === "string" && node.data.title
+    ? node.data.title
+    : formatEventTitle(typeId.replace(/^.*\./, ""));
 }
 
 /**
@@ -32,7 +44,9 @@ function leftOutNotice(titles: readonly string[]): string {
  * identity with a node already there. A custom event gets a free name
  * (`Open Door_1`); an event that cannot be renamed (an engine or
  * component event, an input event, an override of a parent's event) is left
- * out when this graph already has it, with the wires to and from it.
+ * out when this graph already has it, with the wires to and from it. A
+ * function graph takes no event nodes at all, custom ones included: only the
+ * Event Graph holds events.
  *
  * `classGraph` is the stored Class, so custom event names are unique across its
  * event graph and function graphs; `current` stands in for the open one.
@@ -58,9 +72,6 @@ export function prepareClassGraphPaste(
     );
     if (key !== undefined) present.add(key);
   }
-  if (activeFunctionId) {
-    for (const node of classGraph?.nodes ?? []) claim(node.type, node.data);
-  }
   for (const [functionId, slice] of Object.entries(classGraph?.functionGraphs ?? {})) {
     if (functionId === activeFunctionId) continue;
     for (const node of slice.nodes) claim(node.type, node.data);
@@ -83,8 +94,13 @@ export function prepareClassGraphPaste(
   };
   const nodes: PasteNode[] = [];
   const leftOut: string[] = [];
+  const eventsLeftOut: string[] = [];
   for (const node of pasted.nodes) {
     const typeId = canvasTypeId(node);
+    if (activeFunctionId && isEventEntryNodeType(typeId)) {
+      eventsLeftOut.push(pastedTitle(node, typeId));
+      continue;
+    }
     const name = formatEventMemberName(String(node.data.name ?? node.data.title ?? ""));
     if (typeId === CUSTOM_EVENT && name && canRenameCustomEvent(pastedGraph, node.id)) {
       const unique = freeCustomEventName(name, takenNames);
@@ -101,16 +117,16 @@ export function prepareClassGraphPaste(
     );
     if (key !== undefined) {
       if (present.has(key)) {
-        leftOut.push(
-          typeof node.data.title === "string" && node.data.title
-            ? node.data.title
-            : formatEventTitle(typeId.replace(/^.*\./, "")),
-        );
+        leftOut.push(pastedTitle(node, typeId));
         continue;
       }
       present.add(key);
     }
     nodes.push(node);
   }
-  return { nodes, ...(leftOut.length > 0 ? { notice: leftOutNotice(leftOut) } : {}) };
+  const notices = [
+    ...(eventsLeftOut.length > 0 ? [eventsLeftOutNotice(eventsLeftOut)] : []),
+    ...(leftOut.length > 0 ? [leftOutNotice(leftOut)] : []),
+  ];
+  return { nodes, ...(notices.length > 0 ? { notice: notices.join(" ") } : {}) };
 }

@@ -85,6 +85,14 @@ export function isTouchEventNodeType(typeId: string): boolean {
   return Object.hasOwn(TOUCH_EVENT_PHASES, typeId);
 }
 
+/**
+ * A node an event runs from: a custom event or a catalog event. Only an Event
+ * Graph holds these; a function runs from its own entry node.
+ */
+export function isEventEntryNodeType(typeId: string): boolean {
+  return typeId === "flow.event.custom" || Object.hasOwn(EVENT_BY_TYPE_ID, typeId);
+}
+
 /** Custom events use the member name; catalog events use EVENT_BY_TYPE_ID. */
 export function eventNameForEntry(
   entry: Pick<GraphNode, "typeId" | "properties">,

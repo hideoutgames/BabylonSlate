@@ -87,21 +87,6 @@ describe("prepareClassGraphPaste custom events", () => {
     expect(names(result.nodes)).toEqual(["Open Door_3"]);
   });
 
-  it("looks in the event graph when pasting into a function graph, not its stale stored slice", () => {
-    const stored: SerializedGraph = {
-      nodes: [storedNode(customEvent("e", "Open Door_1"))],
-      edges: [],
-      functionGraphs: { fn: { nodes: [], edges: [] } },
-    };
-    const result = prepareClassGraphPaste(
-      graphOf([customEvent("open-1", "Open Door")]),
-      graphOf([customEvent("open", "Open Door")]),
-      stored,
-      "fn",
-    );
-    expect(names(result.nodes)).toEqual(["Open Door_2"]);
-  });
-
   it("keeps a name nothing else uses, and gives two copies of one name different names", () => {
     const kept = prepareClassGraphPaste(graphOf([customEvent("a", "Ping")]), graphOf([]), null, null);
     expect(names(kept.nodes)).toEqual(["Ping"]);
@@ -219,6 +204,24 @@ describe("prepareClassGraphPaste singleton events", () => {
     expect(result.nodes).toEqual([]);
     expect(result.notice).toBe("Event Interact is already in this graph.");
     expect(prepareClassGraphPaste(graphOf([override("a")]), graphOf([]), null, null).nodes).toHaveLength(1);
+  });
+
+  it("leaves every event out of a paste into a function graph, with its wires, and says so", () => {
+    const pasted: GraphPasteElements = {
+      nodes: [
+        customEvent("open", "Open Door"),
+        canvasNode("begin", "flow.event.beginPlay", { title: "Event Begin Play" }),
+        canvasNode("log", "debug.log"),
+        canvasNode("call", "flow.event.call", { name: "Open Door" }),
+      ],
+      edges: [wire("open", "log"), wire("log", "call")],
+    };
+    const inFunction = prepareClassGraphPaste(pasted, graphOf([]), null, "fn");
+    expect(inFunction.nodes.map((node) => node.id)).toEqual(["log", "call"]);
+    expect(inFunction.notice).toBe("Event Open Door and Event Begin Play are events, which only the Event Graph holds.");
+    const inEventGraph = prepareClassGraphPaste(pasted, graphOf([]), null, null);
+    expect(inEventGraph.nodes.map((node) => node.id)).toEqual(["open", "begin", "log", "call"]);
+    expect(inEventGraph.notice).toBeUndefined();
   });
 
   it("does nothing for nodes that are not events", () => {

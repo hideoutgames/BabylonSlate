@@ -19,7 +19,7 @@ import {
   pinTypeForVariable,
   type VariableTypeSpec,
 } from "./member-pin-type";
-import { jsIdent } from "./compile-events";
+import { isEventEntryNodeType, jsIdent } from "./compile-events";
 import {
   pinAcceptsLiteralDefault,
   pinRejectsStoredDefault,
@@ -1416,6 +1416,26 @@ function validateDuplicateEvents(
   return out;
 }
 
+/** Only the Event Graph holds events; a function graph runs from its own entry node. */
+function validateEventsInFunctions(
+  graph: LogicGraph,
+  ctx: TypeContext,
+  registry: ValidateOptions["registry"],
+): Diagnostic[] {
+  if (graph.kind !== "function") return [];
+  return graph.nodes
+    .filter((node) => isEventEntryNodeType(node.typeId))
+    .map((node) =>
+      diagnostic({
+        code: "event.in_function",
+        message: `${eventTitle(node, registry)} is an event, which only the Event Graph holds. Move it to the Event Graph; a function can still call a custom event.`,
+        assetGuid: ctx.assetGuid,
+        graphId: graph.id,
+        nodeId: node.id,
+      }),
+    );
+}
+
 /**
  * An impure node (one with exec pins) that no event reaches never runs, so
  * its outputs keep their type defaults: the compiler declares each impure
@@ -1495,6 +1515,7 @@ export function validateGraphs(
     diagnostics.push(...keep(validateBreakContext(graph, ctx, compiled, options)));
     diagnostics.push(...keep(validatePinTyping(graph, ctx, options.registry, incoming)));
     diagnostics.push(...keep(validateDuplicateEvents(graph, ctx, options.registry, incoming)));
+    diagnostics.push(...validateEventsInFunctions(graph, ctx, options.registry));
     diagnostics.push(
       ...keep(validateUnexecutedSources(graph, ctx, compiled, options.registry, incoming)),
     );
