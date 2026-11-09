@@ -8,6 +8,7 @@ import {
 } from "./numeric-expression";
 import { useSelectAllOnActivate } from "./select-all-on-activate";
 import { stripNumberUnit, withNumberUnit } from "./number-units";
+import { scrubValue } from "./numeric-scrub";
 
 export interface NumericDragFieldProps {
   /** Visual scrub-handle text (axis letter). Omit for a compact unlabeled handle. */
@@ -115,8 +116,9 @@ export function NumericDragField({
     (event: PointerEvent<HTMLSpanElement>) => {
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
-      const delta = (event.clientX - drag.startX) * sensitivity;
-      const next = clamp(drag.startValue + delta, min, max);
+      // Round values hold for a few pixels so they are easy to land on.
+      const scrubbed = scrubValue(drag.startValue, event.clientX - drag.startX, sensitivity);
+      const next = clamp(scrubbed, min, max);
       // A move that leaves the value where it is (vertical drift, a clamped
       // end) sends nothing. A mixed field still sends its first move, which
       // gives every selected item the baseline value.

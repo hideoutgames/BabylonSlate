@@ -88,11 +88,12 @@ describe("WaterDetailsPanel", () => {
     history.stack.endGesture();
 
     const handle = screen.getByTestId("property-water-waveHeight-scrub");
+    // Many small moves from 0.35, short of the 0.4 detent, so each one changes the value.
     fireEvent.pointerDown(handle, { clientX: 0 });
-    for (let x = 1; x <= 60; x += 1) fireEvent.pointerMove(handle, { clientX: x });
-    fireEvent.pointerUp(handle, { clientX: 60 });
+    for (let x = 0.1; x <= 4; x += 0.1) fireEvent.pointerMove(handle, { clientX: x });
+    fireEvent.pointerUp(handle, { clientX: 4 });
 
-    expect(history.read().waveHeight).toBeCloseTo(before.waveHeight + 0.6);
+    expect(history.read().waveHeight).toBeCloseTo(before.waveHeight + 0.04);
     expect(history.stack.undoDepth).toBe(2);
     history.undo();
     expect(history.read().waveHeight).toBe(before.waveHeight);

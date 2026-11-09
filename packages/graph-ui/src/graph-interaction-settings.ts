@@ -7,6 +7,10 @@ export interface GraphInteractionSettings {
   readOnlyPinDefaults?: boolean;
   /** Learn Add Node picks from dragged pins; unset (previews, tests) is off. */
   addNodeHistoryEnabled?: boolean;
+  /** Tap one pin, then a pin on the other side, to connect them; unset is off. */
+  tapToConnectEnabled?: boolean;
+  /** Multiplies pin glyphs and their hit areas (Large Pins); unset is 1. */
+  pinScale?: number;
 }
 
 export const GraphInteractionSettingsContext = createContext<GraphInteractionSettings>({

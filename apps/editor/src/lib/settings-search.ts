@@ -300,6 +300,12 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
       ["Read-Only Pin Defaults", "setting-read-only-pin-defaults"],
     ]],
   ]),
+  ...category("accessibility", [
+    ["graphPins", "Graph Pins", [
+      ["Tap To Connect Pins", "setting-tap-to-connect"],
+      ["Large Pins", "setting-large-pins"],
+    ]],
+  ]),
   ...category("assets", [
     ["import", "Import", [
       ["Model Import Default Scale", "setting-model-import-scale"],

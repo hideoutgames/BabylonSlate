@@ -37,6 +37,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import { pinDefaultPropertyKey } from "@haptic/scripting";
@@ -764,6 +765,8 @@ function GraphEditorCanvas({
   );
   const nodesDraggable = !readOnly && (nodesDraggableProp ?? true);
   const interactions = useContext(GraphInteractionSettingsContext);
+  const tapToConnect = interactions.tapToConnectEnabled === true;
+  const pinScale = interactions.pinScale ?? 1;
   const keybinds = useContext(GraphKeybindsContext);
   const renderPinDefaultEditor = useContext(PinDefaultEditorContext);
   const pinDefaultsDisabled = readOnly || (interactions.readOnlyPinDefaults ?? false);
@@ -800,6 +803,7 @@ function GraphEditorCanvas({
   const [pendingPin, setPendingPin] = useState<{
     nodeId: string;
     pinId: string;
+    direction: "in" | "out";
   } | null>(null);
   const pendingPinRef = useRef(pendingPin);
   useLayoutEffect(() => {
@@ -1641,39 +1645,55 @@ function GraphEditorCanvas({
         onPinSelect?.(nodeId, pinId);
         return;
       }
+      if (!tapToConnect) return;
       const tapped = graphStateRef.current.nodes.find((node) => node.id === nodeId);
       if (tapped && isDisabledNode(tapped)) return;
-      if (direction === "out") {
-        const next = { nodeId, pinId };
+      const choose = (next: typeof pendingPinRef.current) => {
         pendingPinRef.current = next;
         setPendingPin(next);
+      };
+      const activePin = pendingPinRef.current;
+      // Either side starts a connection. Tapping the chosen pin again cancels
+      // it; another pin on the same side replaces it.
+      if (!activePin || activePin.direction === direction) {
+        choose(
+          activePin?.nodeId === nodeId && activePin.pinId === pinId
+            ? null
+            : { nodeId, pinId, direction },
+        );
         return;
       }
 
-      const activePin = pendingPinRef.current;
-      if (!activePin) return;
-      const sourcePin = pinOnNode(graphStateRef.current.nodes, activePin.nodeId, activePin.pinId);
-      const targetPin = pinOnNode(graphStateRef.current.nodes, nodeId, pinId);
-      if (activePin.nodeId === nodeId && (sourcePin?.kind !== "exec" || targetPin?.kind !== "exec")) {
-        pendingPinRef.current = null;
-        setPendingPin(null);
+      const tappedPin = { nodeId, pinId };
+      const from = direction === "out" ? tappedPin : activePin;
+      const to = direction === "out" ? activePin : tappedPin;
+      const sourcePin = pinOnNode(graphStateRef.current.nodes, from.nodeId, from.pinId);
+      const targetPin = pinOnNode(graphStateRef.current.nodes, to.nodeId, to.pinId);
+      if (from.nodeId === to.nodeId && (sourcePin?.kind !== "exec" || targetPin?.kind !== "exec")) {
+        choose(null);
         return;
       }
 
       const incoming = {
-        source: activePin.nodeId,
-        target: nodeId,
-        sourceHandle: activePin.pinId,
-        targetHandle: pinId,
+        source: from.nodeId,
+        target: to.nodeId,
+        sourceHandle: from.pinId,
+        targetHandle: to.pinId,
       };
       if (!isValidConnection(incoming)) return;
 
-      addEdge(activePin.nodeId, activePin.pinId, nodeId, pinId);
-      pendingPinRef.current = null;
-      setPendingPin(null);
+      addEdge(from.nodeId, from.pinId, to.nodeId, to.pinId);
+      choose(null);
     },
-    [addEdge, isValidConnection, onPinSelect, readOnly],
+    [addEdge, isValidConnection, onPinSelect, readOnly, tapToConnect],
   );
+
+  // Turning the setting off drops a pin chosen while it was on.
+  useEffect(() => {
+    if (tapToConnect || !pendingPinRef.current) return;
+    pendingPinRef.current = null;
+    setPendingPin(null);
+  }, [tapToConnect]);
 
   const handleConnect = useCallback(
     (connection: Connection) => {
@@ -3001,6 +3021,7 @@ function GraphEditorCanvas({
       <div
         ref={wrapperRef}
         className="relative h-full w-full touch-manipulation"
+        style={{ "--graph-pin-scale": pinScale } as CSSProperties}
         data-testid="graph-editor"
         data-connect-end-mode={connectEndMode}
         data-focused-node-id={focusedNodeId || undefined}
@@ -3104,6 +3125,9 @@ function GraphEditorCanvas({
           edgeTypes={edgeTypes}
           nodesDraggable={nodesDraggable}
           nodesConnectable={!readOnly}
+          // Pin handles route taps through onPinTap; this covers handles
+          // without one (Animation Graph state sides).
+          connectOnClick={tapToConnect && !readOnly}
           elementsSelectable
           edgesReconnectable={false}
           onlyRenderVisibleElements={false}

@@ -30,7 +30,7 @@ Every page groups its settings into sub-categories, such as **Shadows** and **Po
 
 | Group | Pages |
 | --- | --- |
-| Editor | Undo, Debugger, Viewport, Graph, Assets, Thumbnails, Focus, Keybinds, Interface, About |
+| Editor | Undo, Debugger, Viewport, Graph, Assets, Thumbnails, Focus, Keybinds, Interface, Accessibility, About |
 | Projects | Templates, Engine Plugins, Engine Extensions |
 
 - **Undo**: history limits. See [Undo and Saving](undo-and-saving.md).
@@ -42,6 +42,7 @@ Every page groups its settings into sub-categories, such as **Shadows** and **Po
 - **Focus**: which windows stay visible in Focus. See [Windows and Layout](index.md).
 - **Keybinds**: change shortcuts. See [Keyboard Shortcuts](../start/shortcuts.md).
 - **Interface**: **Compact Mode**. See [Compact Mode](#compact-mode).
+- **Accessibility**: **Tap To Connect Pins** and **Large Pins** for node graphs. See [Accessibility](#accessibility).
 - **About**: version and build. The desktop app also has **Automatic Updates** here.
 - **Templates**, **Engine Plugins** and **Engine Extensions**: what new projects start with. See [Plugins](../projects/plugins.md) and [Extensions](../projects/extensions.md).
 
@@ -66,6 +67,13 @@ Choose the editor's colors in **Manage Account > Application** on the Homepage, 
 It is on by default everywhere except on iPhone, iPad and Android. Change it under **Engine Settings > Interface**, or in **Manage Account > Application** on the Homepage. The editor updates as soon as you switch it.
 
 Compact Mode changes only sizes. Touch gestures, such as holding to open a menu or to drag, work in both modes.
+
+## Accessibility
+
+**Engine Settings > Accessibility** has options that make node graphs easier to use. They apply to every graph editor: Class, Material, Animation Graph, Behaviour Tree and Particle Graph.
+
+- **Tap To Connect Pins** (default off): tap a pin, then a pin on the other side, to connect them. Either side can go first. Tap the first pin again to cancel, or tap another pin on the same side to choose it instead. Dragging from one pin to another works either way.
+- **Large Pins** (default 1×): a slider from 1× to 4× that enlarges every pin and the area you can tap or click around it. Nodes grow to fit.
 
 ## Third-party notices
 

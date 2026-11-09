@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { GraphEditor, type GraphPasteElements, type GraphPasteResult } from "./graph-editor";
 import { useGraphEditorContext, type GraphEditorContextValue } from "./graph-editor-context";
 import { DEFAULT_GRAPH_KEYBINDS, GraphKeybindsContext } from "./graph-keybinds";
+import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import type { GraphDocument, SerializedPin } from "./graph-types";
 
 afterEach(() => {
@@ -489,6 +490,14 @@ describe("wire feedback", () => {
   });
 
   describe("replacing an exec wire", () => {
+    /** Tap-to-connect is an opt-in Accessibility setting. */
+    const TapToConnect = ({ children }: { children: ReactNode }) => (
+      <GraphInteractionSettingsContext.Provider
+        value={{ assistantEnabled: true, assistantDistance: 48, shakeEnabled: true, tapToConnectEnabled: true }}
+      >
+        {children}
+      </GraphInteractionSettingsContext.Provider>
+    );
     const tap = (container: HTMLElement, from: string, to: string) => {
       fireEvent.click(container.querySelector(`[data-id="${from}"] [data-handleid="execOut"]`)!);
       fireEvent.click(container.querySelector(`[data-id="${to}"] [data-handleid="execIn"]`)!);
@@ -501,7 +510,7 @@ describe("wire feedback", () => {
     it("tells the person once the single-wire rule dropped the old wire, for a few seconds", () => {
       vi.useFakeTimers();
       const onChange = vi.fn();
-      const { container } = render(<GraphEditor initialGraph={graph()} singleExecOutputOnConnect onChange={onChange} />);
+      const { container } = render(<GraphEditor initialGraph={graph()} singleExecOutputOnConnect onChange={onChange} />, { wrapper: TapToConnect });
       expect(screen.queryByTestId("graph-notice")).toBeNull();
       tap(container, "log-a", "log-c");
       expect(lastGraph(onChange).edges.map((edge) => edge.target)).toEqual(["log-c"]);
@@ -515,12 +524,14 @@ describe("wire feedback", () => {
     });
 
     it("stays quiet when nothing was replaced or the graph fans out", () => {
-      const first = render(<GraphEditor initialGraph={graph()} singleExecOutputOnConnect />);
+      const onChange = vi.fn();
+      const first = render(<GraphEditor initialGraph={graph()} singleExecOutputOnConnect />, { wrapper: TapToConnect });
       tap(first.container, "log-b", "log-c");
       expect(screen.queryByTestId("graph-notice")).toBeNull();
       first.unmount();
-      const second = render(<GraphEditor initialGraph={graph()} />);
+      const second = render(<GraphEditor initialGraph={graph()} onChange={onChange} />, { wrapper: TapToConnect });
       tap(second.container, "log-a", "log-c");
+      expect(lastGraph(onChange).edges.map((edge) => edge.target).sort()).toEqual(["log-b", "log-c"]);
       expect(screen.queryByTestId("graph-notice")).toBeNull();
     });
   });

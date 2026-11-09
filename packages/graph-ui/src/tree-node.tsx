@@ -90,8 +90,7 @@ function TreePinHandle({
       aria-label={label}
       data-pin-type="exec"
       className={cn(
-        "bt-pin !flex !size-6 !min-h-6 !min-w-6 items-center justify-center rounded-full",
-        "pointer-coarse:!size-11 pointer-coarse:!min-h-11 pointer-coarse:!min-w-11",
+        "bt-pin !flex !size-[var(--bt-pin-hit,1.5rem)] !min-h-[var(--bt-pin-hit,1.5rem)] !min-w-[var(--bt-pin-hit,1.5rem)] items-center justify-center rounded-full",
         "!border-0 !bg-transparent touch-manipulation",
         pending && "ring-2 ring-primary",
       )}
@@ -101,7 +100,7 @@ function TreePinHandle({
       }}
     >
       <span
-        className="graph-pin-visual bt-pin-visual block size-2.5 rotate-45 rounded-[2px] border-[1.5px]"
+        className="graph-pin-visual bt-pin-visual block size-[calc(0.625rem*var(--graph-pin-scale,1))] rotate-45 rounded-[2px] border-[1.5px]"
         data-pin-shape="diamond"
         data-pin-connected={connected ? "true" : "false"}
         aria-hidden="true"

@@ -18,6 +18,21 @@ export async function enableTouchLayout(page: Page): Promise<void> {
   }, "haptic:engine-settings");
 }
 
+/**
+ * Tap To Connect Pins is off by default. Specs that wire graphs by tapping
+ * one pin and then another turn it on for every load.
+ */
+export async function enableTapToConnect(page: Page): Promise<void> {
+  await page.addInitScript((key) => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(key) ?? "{}") as Record<string, unknown>;
+      localStorage.setItem(key, JSON.stringify({ ...stored, graphTapToConnect: true }));
+    } catch {
+      // Frames without storage (about:blank) keep their defaults.
+    }
+  }, "haptic:engine-settings");
+}
+
 /** The editor mounts beneath the splash before it accepts input. */
 export async function waitForEditorInteractive(page: Page): Promise<void> {
   await acceptUnsavedPlayPrompts(page);

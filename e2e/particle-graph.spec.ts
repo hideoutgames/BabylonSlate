@@ -5,6 +5,7 @@ import {
   createContentBrowserAsset,
   openAssetFromBrowser,
   openMainScene,
+  enableTapToConnect,
   openTestProject,
   openWindowsMenu,
   pickAsset,
@@ -44,7 +45,7 @@ async function addParticleGraphNode(page: Page, search: string, type: string): P
   return node;
 }
 
-/** Taps one node's output handle, then another node's input handle (`data-id` selector values). */
+/** Taps one node's output handle, then another node's input handle (`data-id` selector values); needs `enableTapToConnect`. */
 async function connectHandles(page: Page, source: string, sourcePin: string, target: string, targetPin: string): Promise<void> {
   const graph = particleGraphEditor(page);
   await graph.locator(`.react-flow__node[data-id${source}] [data-handleid="${sourcePin}"][data-handlepos="right"]`).click({ force: true });
@@ -210,6 +211,7 @@ test.describe("Particle Graph", () => {
     page.on("request", (request) => {
       if (/\/Shaders\/material:.*\.fx(?:\?|$)/.test(request.url())) shaderFallbacks.push(request.url());
     });
+    await enableTapToConnect(page);
     await openTestProject(page);
     const materialGuid = await createParticleMaterial(page, "EmberMat");
     await saveAllIfEnabled(page);

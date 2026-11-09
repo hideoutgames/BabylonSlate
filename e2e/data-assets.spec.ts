@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
+  enableTapToConnect,
   openAssetFromBrowser,
   openContentBrowser,
   openTestProject,
@@ -87,6 +88,8 @@ async function placeNodeTitle(page: Page, title: Locator, x: number, y: number):
 
 test("Data Trees own hierarchical values and infer mixed Definition graph types", async ({ page }, testInfo) => {
   test.setTimeout(180_000);
+  // The Break node is wired by tapping its pins.
+  await enableTapToConnect(page);
   await openTestProject(page);
   await createDataAsset(page, "DataDefinition", "ItemStats");
   const definitionPath = "assets/ItemStats.datadefinition.hasset";
