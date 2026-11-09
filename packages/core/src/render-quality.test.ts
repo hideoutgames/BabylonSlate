@@ -200,7 +200,7 @@ describe("rendering quality sessions", () => {
       ["reflections", "mirror"], ["fft", "yes"], ["contactResolution", "128"], ["octaves", "3"], ["meshDensity", ""]])
       expect(session.execute("water", field, value).success).toBe(false);
     expect(session.execute("geometry", "meshDensity", "1").success).toBe(false);
-    expect(session.effective().water).toMatchObject({ fftSize: 256, meshDensity: 1.25, contactResolution: 512 });
+    expect(session.effective().water).toMatchObject({ fftSize: 256, meshDensity: 1.25, contactResolution: 256 });
     session.execute("water", "reset");
     expect(session.effective().water).toMatchObject({ ...RENDER_QUALITY_PROFILES.medium.water, preset: "medium" });
   });
@@ -226,7 +226,7 @@ describe("rendering quality sessions", () => {
     // Saved before the setting existed: the saved tier fills it (Low runs FXAA), Medium without one.
     expect(normalizeRenderingQuality({ postprocessing: { profile: "low", preset: "low", resolutionScale: 0.75 } }).postprocessing)
       .toMatchObject({ antiAliasing: "fxaa", preset: "low" });
-    expect(normalizeRenderingQuality({ postprocessing: { antiAliasing: "supersample" } }).postprocessing.antiAliasing).toBe("msaa4");
+    expect(normalizeRenderingQuality({ postprocessing: { antiAliasing: "supersample" } }).postprocessing.antiAliasing).toBe("msaa2");
     expect(resolveRenderingQuality({ quality: normalizeRenderingQuality({}) }, {}, qualityPresetPatch("low")).postprocessing.antiAliasing)
       .toBe("fxaa");
   });

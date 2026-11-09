@@ -435,6 +435,7 @@ describe("runFeatureTestCheck", () => {
       ["shadows medium", "already shadows medium 2048, shadows.filter high"],
       ["water detail medium", "already water.shadingDetail medium, water.fft 128x3"],
       ["volumetrics off", "already post.volumetricLighting false"],
+      ["MSAA 2x", "already post.antiAliasing msaa2, post.samples 2"],
     ]);
     expect(skipped.every((sample) => sample.frames === null)).toBe(true);
     // The filter step changes the fingerprint now, so it is measured.
@@ -813,7 +814,7 @@ describe("frame pacing", () => {
 
   it("changes, with every Breakdown step, only that step's fingerprint fields, or skips it where the base already holds its value", () => {
     // At Medium, Medium's shadows, water detail and volumetrics already hold; the add-one base turns every feature off.
-    const expectedSkips = { "remove-one": ["shadows medium", "water detail medium", "volumetrics off"], "add-one": [] as string[] };
+    const expectedSkips = { "remove-one": ["shadows medium", "water detail medium", "volumetrics off", "MSAA 2x"], "add-one": [] as string[] };
     for (const method of FEATURE_TEST_BREAKDOWN_METHODS) {
       const base = FEATURE_TEST_BREAKDOWN_BASES[method].commands;
       const reference = fingerprintAfter(base);

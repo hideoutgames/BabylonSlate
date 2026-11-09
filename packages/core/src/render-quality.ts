@@ -224,13 +224,14 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     textures: { lodBias: 0, anisotropy: 8, byteBudget: 768 * MIB },
     geometry: { autoLod: true, lodDistanceScale: 1.25, occlusionCulling: true },
     // The A16 keeps refraction and screen-space object reflections, with no planar re-render of the scene for flat
-    // water, a half-resolution scene copy, a coarser mesh and a quarter of High's FFT texels.
+    // water, a half-resolution scene copy, a coarser mesh, a quarter of High's FFT texels and Low's contact cells.
     water: {
-      shadingDetail: "medium", meshDensity: 0.75, contactResolution: 512,
+      shadingDetail: "medium", meshDensity: 0.75, contactResolution: 256,
       refraction: true, refractionScale: 0.5, reflections: "screenSpace", reflectionSteps: 8,
       planarScale: 0.5, fftSize: 128, fftCascades: 3,
     },
-    postprocessing: { resolutionScale: 1, antiAliasing: "msaa4", ambientOcclusion: true, reflections: true, volumetricLighting: false },
+    // Two samples: a tile-based GPU stores and reloads every sample of the multisampled scene targets.
+    postprocessing: { resolutionScale: 1, antiAliasing: "msaa2", ambientOcclusion: true, reflections: true, volumetricLighting: false },
   },
   high: {
     lighting: { localLightMode: "auto", maxLocalLights: 64 },

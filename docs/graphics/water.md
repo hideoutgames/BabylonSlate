@@ -65,7 +65,7 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 | --- | --- | --- | --- | --- |
 | **Water Shading Detail** | Low | Medium | High | Ultra |
 | **Water Mesh Density** | 0.5 | 0.75 | 1 | 1.5 |
-| **Contact Resolution** | 256 | 512 | 1024 | 1024 |
+| **Contact Resolution** | 256 | 256 | 1024 | 1024 |
 | **Water Refraction** | Off | On | On | On |
 | **Refraction Resolution** | 0.5 | 0.5 | 0.75 | 1 |
 | **Water Reflections** | Sky Only | Screen Space | Planar | Planar |
