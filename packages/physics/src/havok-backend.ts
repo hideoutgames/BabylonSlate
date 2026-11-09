@@ -43,7 +43,7 @@ import {
   sameColliderGeometry,
   sameColliderPose,
 } from "./collider-validation";
-import { attachHavokShape, teleportHavokBody } from "./havok-native-adapter";
+import { attachHavokShape, installHavokBodyBufferSync, teleportHavokBody } from "./havok-native-adapter";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { loadHavokModule } from "./havok-loader";
 import { rotateQuatVec } from "./collider-bake";
@@ -174,6 +174,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       engine.dispose();
       throw new Error("scene.enablePhysics failed to initialize HavokPlugin");
     }
+    installHavokBodyBufferSync(plugin);
     return new HavokPhysicsBackend(engine, scene, plugin);
   }
 
