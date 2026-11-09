@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
+import { dispatchPointerEvent, stubPointerCapture } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { defaultEngineSettings } from "@haptic/vfs";
 import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
 import { getAddNodeHistory, GraphEditor, type GraphDocument } from "@haptic/graph-ui";
@@ -140,7 +141,7 @@ describe("EngineSettingsForm accessibility", () => {
     ]);
   });
 
-  it("scales the pins of an open graph with Large Pins, in whole steps from 1× to 4×", async () => {
+  it("scales the pins of an open graph with Large Pins, in tenths from 1× to 2×", async () => {
     const store = new MemoryAppSettingsStore();
     const view = renderLive(store);
     const root = view.getByTestId("graph-editor");
@@ -148,11 +149,38 @@ describe("EngineSettingsForm accessibility", () => {
     const slider = within(view.getByRole("group", { name: "Large Pins" })).getByRole("slider", { hidden: true });
     expect(root.style.getPropertyValue("--graph-pin-scale")).toBe("1");
     fireEvent.keyDown(slider, { key: "ArrowRight" });
-    await waitFor(() => expect(root.style.getPropertyValue("--graph-pin-scale")).toBe("2"));
-    expect(view.getByTestId("setting-large-pins-value").textContent).toBe("2×");
-    expect((await store.load()).graphPinScale).toBe(2);
+    await waitFor(() => expect(root.style.getPropertyValue("--graph-pin-scale")).toBe("1.1"));
+    expect(view.getByTestId("setting-large-pins-value").textContent).toBe("1.1×");
+    expect((await store.load()).graphPinScale).toBe(1.1);
     fireEvent.keyDown(slider, { key: "End" });
-    await waitFor(() => expect(root.style.getPropertyValue("--graph-pin-scale")).toBe("4"));
+    await waitFor(() => expect(root.style.getPropertyValue("--graph-pin-scale")).toBe("2"));
+  });
+
+  it("applies a Text Size drag only when it is released, so the slider never resizes under the pointer", async () => {
+    const restorePointerCapture = stubPointerCapture();
+    // A 100px track: 50% sits at 8px and 150% at 92px, 100% in the middle.
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.dataset.slot === "slider-thumb" ? new DOMRect(42, 2, 16, 16) : new DOMRect(0, 0, 100, 20);
+    });
+    try {
+      const store = new MemoryAppSettingsStore();
+      const view = renderLive(store);
+      const thumb = view.getByTestId("setting-text-size").querySelector('[data-slot="slider-thumb"]')!;
+      act(() => {
+        dispatchPointerEvent(thumb, "pointerdown", { pointerType: "mouse", clientX: 50, clientY: 10, buttons: 1 });
+        dispatchPointerEvent(thumb, "pointermove", { pointerType: "mouse", clientX: 8, clientY: 10, buttons: 1 });
+      });
+      expect(view.getByTestId("setting-text-size-value").textContent).toBe("50%");
+      expect((await store.load()).textSizePercent).toBe(100);
+      act(() => {
+        dispatchPointerEvent(thumb, "pointerup", { pointerType: "mouse", clientX: 8, clientY: 10 });
+      });
+      await waitFor(async () => expect((await store.load()).textSizePercent).toBe(50));
+      expect(view.getByTestId("setting-text-size-value").textContent).toBe("50%");
+    } finally {
+      restorePointerCapture();
+      vi.restoreAllMocks();
+    }
   });
 
   it("turns Snapped Nodes on with its grid size, which stays unavailable while it is off", async () => {
@@ -160,10 +188,10 @@ describe("EngineSettingsForm accessibility", () => {
     const view = renderLive(store);
     const gridSize = view.getByTestId("setting-snap-grid-size");
     expect(gridSize).toHaveProperty("disabled", true);
-    expect(gridSize).toHaveProperty("value", "2");
+    expect(gridSize).toHaveProperty("value", "32");
     fireEvent.click(view.getByRole("switch", { name: "Snapped Nodes" }));
     await waitFor(() => expect(gridSize).toHaveProperty("disabled", false));
-    expect(await store.load()).toMatchObject({ graphSnapNodes: true, graphSnapGridSize: 2 });
+    expect(await store.load()).toMatchObject({ graphSnapNodes: true, graphSnapGridSize: 32 });
   });
 });
 

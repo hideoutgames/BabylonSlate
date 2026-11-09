@@ -40,6 +40,7 @@ describe("isPlayEngineCommandType", () => {
 
   it("delivers cable frames and live voice gain changes to the Play engine", () => {
     expect(isPlayEngineCommandType("cableFrame")).toBe(true);
+    expect(isPlayEngineCommandType("springArmProbe")).toBe(true);
     expect(isPlayEngineCommandType("setVoiceGain")).toBe(true);
   });
 });

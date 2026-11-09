@@ -35,7 +35,7 @@ For components without any logic, a [Prefab](../assets/prefab.md) is lighter tha
 
 | Window | Contents |
 | --- | --- |
-| **Event Graph** | The class's events. Each function opens in its own tab beside it. |
+| **Event Graph** | The class's events. Each function opens in its own tab beside it, marked with the function icon. |
 | **Class** | The class's **Functions**, **Variables**, **Events**, **Event Dispatchers** and **Interfaces**. Use **+** on a section to add one. Each entry shows its kind: a type colour for variables (a square for a Delegate), and an icon for functions, events, [Event Dispatchers](event-dispatchers.md) and interfaces. |
 | **Inspector** | Settings of the selected node or class member. |
 | **Compiler Results** | Errors and warnings for this class. |

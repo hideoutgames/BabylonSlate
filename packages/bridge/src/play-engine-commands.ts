@@ -72,6 +72,7 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "tilemapAnimationTime",
   "waterTime",
   "cableFrame",
+  "springArmProbe",
   "sceneLoading",
   "activeScene",
   "sceneLoadFailed",

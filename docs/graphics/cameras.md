@@ -72,6 +72,7 @@ A Spring Arm holds its child components at **Arm Length** behind its origin, alo
 | **Max Location Lag Distance** | 0 | Furthest the arm may trail. 0 means unlimited. |
 | **Enable Rotation Lag**, **Rotation Lag Speed** | Off, 10 | During Play, the arm eases toward its target rotation. |
 | **Draw Debug Lag** | Off | During Play, draws the target arm (yellow), the lagged arm (green) and the lag offset (red). |
+| **Camera Probe**, **Probe Size**, **Probe Channel**, **Probe Return Speed** | Off, 0.15, Static, 10 | During Play, shortens the arm in front of walls and other blockers so the camera never clips into them, then eases back out. See [Spring Arm](../components/spring-arm.md). |
 
 Lag is frame-rate independent. Only child components follow the arm; child actors do not. The Spring Arm does not collide with walls.
 

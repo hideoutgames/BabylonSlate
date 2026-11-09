@@ -2,13 +2,13 @@ import {
   createDefaultRenderTargetCaptureProperties,
   normalizeRenderTargetCaptureProperties,
   RENDER_TARGET_CAPTURE_QUALITIES,
-  springArmChildOffset,
   type RenderTargetCaptureProperties,
   type RenderTargetCaptureProperty,
   type Transform,
 } from "@haptic/core";
 import { Actor, ActorComponent } from "@haptic/object-model";
 import { composeParentChildTransform } from "./actor-world-transform";
+import { springArmSocketOffset } from "./spring-arm-socket";
 
 const keys = Object.keys(createDefaultRenderTargetCaptureProperties()) as RenderTargetCaptureProperty[];
 
@@ -67,7 +67,7 @@ export function captureLocalTransform(component: ActorComponent): Transform {
     visited.add(parentId);
     const parent = component.owner?.components.find((candidate) => candidate.guid === parentId && !candidate.destroyed);
     if (!parent) break;
-    const offset = springArmChildOffset({ classId: parent.classId, properties: { armLength: parent.getVariable("armLength") } });
+    const offset = springArmSocketOffset(parent);
     if (offset) result = { ...result, position: { x: result.position.x + offset[0], y: result.position.y + offset[1], z: result.position.z + offset[2] } };
     result = composeParentChildTransform(parent.transform, result);
     parentId = parent.parentId;

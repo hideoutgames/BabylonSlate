@@ -1,12 +1,13 @@
 import {
   cloneTweenValue, identityTransform, isSceneLayerAnchorActor, normalizeQuat, rotatorToQuat,
-  springArmChildOffset, type Transform, type TweenTransformSpace,
+  type Transform, type TweenTransformSpace,
 } from "@haptic/core";
 import { Actor, ActorComponent } from "@haptic/object-model";
 import {
   actorChainWorldTransform, actorParentGuid, composeParentChildTransform, copyTransform,
   inverseQuaternion, multiplyQuaternion, relativeTransform, rotateVector,
 } from "./actor-world-transform";
+import { springArmSocketOffset } from "./spring-arm-socket";
 
 export type TweenTransformTarget = Actor | ActorComponent;
 export type TweenTransformChannel = "position" | "rotation" | "scale" | "transform";
@@ -82,7 +83,7 @@ function parentFrame(target: TweenTransformTarget, findActor: ActorLookup): Tran
   for (let index = chain.length - 1; index >= 0; index--) {
     const parent = chain[index]!;
     frame = composeParentChildTransform(frame, parent.transform);
-    const socket = springArmChildOffset({ classId: parent.classId, properties: { armLength: parent.getVariable("armLength") } });
+    const socket = springArmSocketOffset(parent);
     if (socket) frame = composeParentChildTransform(frame, {
       ...identityTransform(), position: { x: socket[0], y: socket[1], z: socket[2] },
     });

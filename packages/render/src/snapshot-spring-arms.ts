@@ -21,7 +21,13 @@ import {
 } from "./snapshot-binding";
 import { hasActorIllumination } from "./snapshot-illumination";
 
-type SpringArmPlayState = { store: SpringArmLagStore; slots: Set<number>; lastMs: number | null };
+type SpringArmPlayState = {
+  store: SpringArmLagStore;
+  /** Camera Probe lengths by `slotId|componentId`; an arm without one uses its Arm Length. */
+  probes: SlotKeyedMap<number>;
+  slots: Set<number>;
+  lastMs: number | null;
+};
 
 const springArmStates = new WeakMap<SnapshotSceneBinding, SpringArmPlayState>();
 const NO_SPRING_ARM_SLOTS: ReadonlySet<number> = new Set();
@@ -34,7 +40,7 @@ export function playSpringArmSlots(binding: SnapshotSceneBinding): ReadonlySet<n
 function springArmStateOf(binding: SnapshotSceneBinding): SpringArmPlayState {
   let state = springArmStates.get(binding);
   if (!state) {
-    state = { store: new SlotKeyedMap(), slots: new Set(), lastMs: null };
+    state = { store: new SlotKeyedMap(), probes: new SlotKeyedMap(), slots: new Set(), lastMs: null };
     springArmStates.set(binding, state);
   }
   return state;
@@ -102,7 +108,7 @@ export function updatePlaySpringArms(binding: SnapshotSceneBinding, nowMs: numbe
     const root = binding.meshes.get(slotId);
     if (!root) continue;
     const rigs = springArmRigsOf(root);
-    for (const rig of rigs) updateSpringArmRig(rig, state.store, dtSeconds);
+    for (const rig of rigs) updateSpringArmRig(rig, state.store, dtSeconds, state.probes.get(rig.key));
     const camera = binding.cameras.get(slotId);
     const anchor = springArmCameraAnchorOf(root);
     if (!camera || !anchor || hasActorIllumination(root)) continue;
@@ -116,6 +122,23 @@ export function retireSpringArmLag(binding: SnapshotSceneBinding, slotId: number
   if (!state) return;
   state.slots.delete(slotId);
   for (const key of slotKeysOf(state.store, slotId)) state.store.delete(key);
+  for (const key of slotKeysOf(state.probes, slotId)) state.probes.delete(key);
+}
+
+/**
+ * The worker's Camera Probe lengths (`springArmProbe`): each arm's children
+ * attach at its probed length from the next frame; null returns it to Arm Length.
+ */
+export function applySpringArmProbes(
+  binding: SnapshotSceneBinding,
+  arms: readonly { slotId: number; componentId: string; length: number | null }[],
+): void {
+  const { probes } = springArmStateOf(binding);
+  for (const arm of arms) {
+    const key = `${arm.slotId}|${arm.componentId}`;
+    if (arm.length === null) probes.delete(key);
+    else probes.set(key, arm.length);
+  }
 }
 
 export function disposeSpringArmState(binding: SnapshotSceneBinding): void {

@@ -304,8 +304,13 @@ describe("componentPropertyRows", () => {
       "Enable Rotation Lag",
       "Rotation Lag Speed",
       "Draw Debug Lag",
+      "Camera Probe",
+      "Probe Size",
+      "Probe Channel",
+      "Probe Return Speed",
     ]);
     const row = (label: string) => rows.find((entry) => entry.label === label)!;
+    for (const label of ["Probe Size", "Probe Channel", "Probe Return Speed"]) expect(row(label).disabled, label).toBe(true);
     expect(row("Location Lag Speed").disabled).toBe(true);
     expect(row("Max Location Lag Distance").disabled).toBe(true);
     expect(row("Rotation Lag Speed").disabled).toBe(false);
@@ -316,6 +321,18 @@ describe("componentPropertyRows", () => {
     length.onChange(7.5);
     debug.onChange(true);
     expect(update.mock.calls).toEqual([["armLength", 7.5], ["drawDebugLag", true]]);
+  });
+  it("offers the Spring Arm Camera Probe's settings once it is on", () => {
+    const properties = { ...defaultPropertiesFor("SpringArmComponent"), cameraProbe: true };
+    const { rows, update } = rowsFor({ id: "arm", classId: "SpringArmComponent", properties });
+    const row = (label: string) => rows.find((entry) => entry.label === label)!;
+    const channel = row("Probe Channel");
+    if (channel.kind !== "enum") throw new Error("Missing Probe Channel");
+    expect(channel.value).toBe("Static");
+    expect(channel.options.map((option) => option.value)).toEqual(["Static", "Dynamic", "Character", "Solid"]);
+    for (const label of ["Probe Size", "Probe Channel", "Probe Return Speed"]) expect(row(label).disabled, label).toBe(false);
+    channel.onChange("Solid");
+    expect(update).toHaveBeenLastCalledWith("probeChannel", "Solid");
   });
   it("authors rectangular emission from one component and explains its unshadowed behavior", () => {
     const { rows, update, onPickAsset } = rowsFor({ id: "area", classId: "AreaRectLightComponent", properties: defaultPropertiesFor("AreaRectLightComponent") });

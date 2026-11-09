@@ -5,6 +5,7 @@ import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { AudioParticleEmitter } from "./audio-particle-emitter";
 import { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
 import { CableWorldSync } from "./cable-sync";
+import { SpringArmProbeSync } from "./spring-arm-probe";
 import type { RuntimeDriverOptions } from "./driver-types";
 import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import { MovementWorldSync } from "./movement";
@@ -43,6 +44,7 @@ export function createRenderEmitter(rt: RuntimeComposition): RenderCommandEmitte
     playScene: () => rt.playScene,
     slot: (actor) => rt.actorSlot(actor),
     cables: () => rt.cables,
+    springArmProbes: () => rt.springArmProbes,
     dynamicMeshes: () => rt.dynamicMeshes,
     uiControls: () => rt.uiControls,
     painters: () => rt.painters,
@@ -289,7 +291,7 @@ export function createConsole(rt: RuntimeComposition, options: RuntimeDriverOpti
   });
 }
 
-/** World physics phase order: dynamic meshes, ragdolls, main and Scene Layer steps, cables, contacts. */
+/** World physics phase order: dynamic meshes, ragdolls, main and Scene Layer steps, cables, spring arm probes, contacts. */
 export function createWorld(rt: RuntimeComposition, options: RuntimeDriverOptions, registry: ClassRegistry): World {
   let guidSeq = 0;
   return new World({
@@ -312,6 +314,7 @@ export function createWorld(rt: RuntimeComposition, options: RuntimeDriverOption
       if (rt.admission.hasReadyLayers()) rt.physics.stepLayers(ctx.dt, (sync) => rt.movement.step(ctx.dt, sync));
       rt.ragdolls.afterStep();
       if (rt.admission.canTickScene()) rt.cables.step(ctx.dt, rt.physics.gravity, rt.frameId + 1);
+      if (rt.admission.canTickScene()) rt.springArmProbes.step(ctx.dt, rt.frameId + 1);
       rt.physics.dispatchCollisionEvents();
     },
   });
@@ -394,6 +397,16 @@ export function createCables(rt: RuntimeComposition): CableWorldSync {
   return new CableWorldSync({
     world: rt.world,
     physics: () => rt.physics.main.getBackend(),
+    eligible: (actor) => rt.admission.canTickActor(actor),
+    slot: (actor) => rt.actorSlot(actor),
+    emit: (command) => rt.emit(command),
+  });
+}
+
+export function createSpringArmProbes(rt: RuntimeComposition): SpringArmProbeSync {
+  return new SpringArmProbeSync({
+    world: rt.world,
+    physics: () => rt.physics.main,
     eligible: (actor) => rt.admission.canTickActor(actor),
     slot: (actor) => rt.actorSlot(actor),
     emit: (command) => rt.emit(command),

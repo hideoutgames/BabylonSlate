@@ -38,6 +38,7 @@ import {
 import { MaterialObject, type Actor, type ActorComponent, type World } from "@haptic/object-model";
 import { actorParentGuid } from "./actor-world-transform";
 import type { CableWorldSync } from "./cable-sync";
+import type { SpringArmProbeSync } from "./spring-arm-probe";
 import type { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import type { Painter2DRuntime } from "./painter2d-runtime";
 import { RenderCommandState } from "./render-command-state";
@@ -57,6 +58,7 @@ interface RenderCommandEmitterHost {
   /** The render slot this actor's own commands target. */
   slot(actor: Actor): number | undefined;
   cables(): Pick<CableWorldSync, "assign">;
+  springArmProbes(): Pick<SpringArmProbeSync, "assign">;
   dynamicMeshes(): Pick<DynamicRuntimeMeshSync, "assign">;
   uiControls(): Pick<UIControls2DRuntime, "payload">;
   painters(): Pick<Painter2DRuntime, "payload">;
@@ -295,6 +297,8 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
         ? renderables.map((component) => {
             // A Joystick reads its variables for both its visual style and its own properties.
             const variables = component.classId === "2DJoystickComponent" ? Object.fromEntries(component.variables) : undefined;
+            // An arm's Camera Probe runs while its visual is in the scene.
+            if (component.classId === SPRING_ARM_COMPONENT_CLASS_ID) this.host.springArmProbes().assign(component);
             return {
               ...playMeshPartOf(
                 component,

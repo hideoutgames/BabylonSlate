@@ -617,6 +617,11 @@ export type CommandMessage =
   | { type: "dynamicMeshUpdate"; meshId: number; update: import("@haptic/core").DynamicMeshUpdate }
   /** Cable records: ID, count, start/end actor slots, two actor-local anchors, world xyz particles. */
   | { type: "cableFrame"; frameId: number; data: Float32Array }
+  /**
+   * Spring Arm Camera Probe lengths that changed this tick: where each arm's
+   * children attach, or null when its probe is off (back to Arm Length).
+   */
+  | { type: "springArmProbe"; frameId: number; arms: Array<{ slotId: number; componentId: string; length: number | null }> }
   | { type: "captureRenderTarget"; actorGuid: string }
   | {
       type: "configureRenderTargetCapture";

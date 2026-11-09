@@ -5,7 +5,7 @@ A function is a named graph with inputs and outputs that you can call from event
 ## Add a function
 
 1. In the **Class** window, tap **+** next to **Functions** and choose **New Function**.
-2. Type a name and press <kbd>Enter</kbd>. The function opens in its own tab beside **Event Graph**, with an [Input](class/input.md) node wired to an [Output](class/output.md) node.
+2. Type a name and press <kbd>Enter</kbd>. The function opens in its own tab beside **Event Graph**, marked with the function icon, with an [Input](class/input.md) node wired to an [Output](class/output.md) node.
 3. Build the logic between **Input** and **Output**.
 
 Select a function in the **Class** window to reopen its tab. Renaming a function updates its tab and this class's Call nodes; deleting it closes the tab and removes them.

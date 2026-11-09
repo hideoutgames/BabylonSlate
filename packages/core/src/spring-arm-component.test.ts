@@ -4,6 +4,7 @@ import {
   parseSpringArmProperties,
   springArmChildOffset,
   stepSpringArmLag,
+  stepSpringArmProbeLength,
   type SpringArmPose,
 } from "./spring-arm-component";
 import { normalizeScene } from "./scene";
@@ -23,6 +24,25 @@ describe("spring arm component", () => {
       { id: "arm", classId: "SpringArmComponent", properties: { armLength: 6, enableRotationLag: true, armLengthTypo: 1 } },
     ] }] });
     expect(scene.actors[0]!.components[0]!.properties).toEqual({ ...DEFAULT_SPRING_ARM_PROPERTIES, armLength: 6, enableRotationLag: true });
+  });
+
+  it("keeps the Camera Probe off by default and bounds its settings", () => {
+    expect(parseSpringArmProperties({})).toMatchObject({
+      cameraProbe: false, probeSize: 0.15, probeChannel: "Static", probeReturnSpeed: 10,
+    });
+    expect(parseSpringArmProperties({ cameraProbe: true, probeSize: 99, probeChannel: "Solid", probeReturnSpeed: -4 }))
+      .toMatchObject({ cameraProbe: true, probeSize: 5, probeChannel: "Solid", probeReturnSpeed: 0 });
+    // Triggers is a trace channel, but the probe never hits triggers.
+    expect(parseSpringArmProperties({ probeChannel: "Triggers", probeSize: 0 })).toMatchObject({ probeChannel: "Static", probeSize: 0.01 });
+  });
+
+  it("pulls the probed arm in at once and eases it back out", () => {
+    expect(stepSpringArmProbeLength(null, 1.5, 10, 1 / 60)).toBe(1.5);
+    expect(stepSpringArmProbeLength(4, 1.5, 10, 1 / 60)).toBe(1.5);
+    // Back out from 1.5 toward 4 at speed 2 for 0.05 s: 2.5 * (1 - e^-0.1).
+    expect(stepSpringArmProbeLength(1.5, 4, 2, 0.05)).toBeCloseTo(1.5 + 2.5 * (1 - Math.exp(-0.1)), 10);
+    expect(stepSpringArmProbeLength(1.5, 4, 0, 0.05)).toBe(4);
+    expect(stepSpringArmProbeLength(3.99995, 4, 2, 0.05)).toBe(4);
   });
 
   it("offsets children to the socket behind a spring arm parent only", () => {

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { LabelHint, NumberField, SCRUB_SNAP_STRENGTH_LABELS } from "@haptic/editor-kit";
 import {
   DOUBLE_TAP_TIME_MS_STEP,
@@ -10,6 +10,7 @@ import {
   MAX_NUMBER_SNAP_STRENGTH,
   MAX_TEXT_SIZE_PERCENT,
   MAX_TOUCH_TARGET_SCALE,
+  GRAPH_PIN_SCALE_STEP,
   MIN_DOUBLE_TAP_TIME_MS,
   MIN_GRAPH_PIN_SCALE,
   MIN_GRAPH_SNAP_GRID_SIZE,
@@ -39,7 +40,17 @@ const REDUCE_MOTION_ITEMS: Array<{ value: EngineSettings["reduceMotion"]; label:
   { value: "off", label: "Off" },
 ];
 
-/** A label, a stepped slider and the current value as text. */
+function sliderScalar(next: number | readonly number[]): number | undefined {
+  const scalar = Array.isArray(next) ? next[0] : next;
+  return typeof scalar === "number" ? scalar : undefined;
+}
+
+/**
+ * A label, a stepped slider and the current value as text. `applyOnRelease`
+ * shows a drag's value but applies it only when the drag ends (keys apply at
+ * once): for settings that resize the slider itself, such as Text Size, which
+ * would otherwise move the track under the pointer mid-drag.
+ */
 function SteppedSliderField({
   id,
   label,
@@ -49,6 +60,7 @@ function SteppedSliderField({
   step,
   value,
   format,
+  applyOnRelease = false,
   onChange,
 }: {
   id: string;
@@ -59,8 +71,11 @@ function SteppedSliderField({
   step: number;
   value: number;
   format: (value: number) => string;
+  applyOnRelease?: boolean;
   onChange: (value: number) => void;
 }) {
+  const [draft, setDraft] = useState<number | null>(null);
+  const shown = draft ?? value;
   const fieldLabel = <FieldLabel id={`${id}-label`} htmlFor={id}>{label}</FieldLabel>;
   return (
     <Field className="settings-field">
@@ -74,14 +89,21 @@ function SteppedSliderField({
           min={min}
           max={max}
           step={step}
-          value={[value]}
+          value={[shown]}
           onValueChange={(next) => {
-            const scalar = Array.isArray(next) ? next[0] : next;
-            if (typeof scalar === "number") onChange(scalar);
+            const scalar = sliderScalar(next);
+            if (scalar === undefined) return;
+            if (applyOnRelease) setDraft(scalar);
+            else onChange(scalar);
           }}
+          onValueCommitted={applyOnRelease ? (next) => {
+            const scalar = sliderScalar(next);
+            setDraft(null);
+            if (scalar !== undefined && scalar !== value) onChange(scalar);
+          } : undefined}
         />
         <span className="w-14 shrink-0 text-right text-xs tabular-nums" data-testid={`${id}-value`}>
-          {format(value)}
+          {format(shown)}
         </span>
       </div>
     </Field>
@@ -112,7 +134,7 @@ function SwitchField({
   );
 }
 
-const times = (value: number) => `${value}×`;
+const times = (value: number) => `${Number(value.toFixed(2))}×`;
 const milliseconds = (value: number) => `${value} ms`;
 
 /** Engine Settings → Accessibility. */
@@ -134,6 +156,7 @@ export function AccessibilitySettingsFields({
           step={TEXT_SIZE_PERCENT_STEP}
           value={settings.textSizePercent}
           format={(value) => `${value}%`}
+          applyOnRelease
           onChange={(textSizePercent) => void onChange({ textSizePercent })}
         />
         <Field className="settings-field">
@@ -225,7 +248,7 @@ export function AccessibilitySettingsFields({
           hint="Enlarges pins, the area around them you can tap, and wires."
           min={MIN_GRAPH_PIN_SCALE}
           max={MAX_GRAPH_PIN_SCALE}
-          step={1}
+          step={GRAPH_PIN_SCALE_STEP}
           value={settings.graphPinScale}
           format={times}
           onChange={(graphPinScale) => void onChange({ graphPinScale })}

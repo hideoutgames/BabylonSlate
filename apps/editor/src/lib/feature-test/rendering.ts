@@ -278,7 +278,11 @@ function getArrayVar(id: string, member: ReturnType<typeof varMember>, x: number
   return node;
 }
 
-/** Orbiting rig: Tick yaws the actor, so the off-axis arm shows location and rotation lag. */
+/**
+ * Orbiting rig: Tick yaws the actor, so the off-axis arm shows location and
+ * rotation lag. Its Camera Probe pulls the arm in each time it sweeps through
+ * the Camera Probe Wall beside the rig, then eases it back out.
+ */
 async function saveSpringArmRig(ctx: FeatureTestContext): Promise<PlacedClass> {
   const turnRate = varMember("ft-render-var-turn-rate", "TurnRate", "float", 40, { category: "Spring Arm" });
   const components: SerializedComponent[] = [
@@ -292,6 +296,8 @@ async function saveSpringArmRig(ctx: FeatureTestContext): Promise<PlacedClass> {
         enableRotationLag: true,
         rotationLagSpeed: 2.5,
         drawDebugLag: true,
+        cameraProbe: true,
+        probeReturnSpeed: 4,
       }),
     }, tf([2, 1, 0], { rotationDeg: [25, 0, 0] })),
     comp("prefab-camera", "CameraComponent", { fieldOfView: 70, farClip: 300 }, undefined, { parentId: "prefab-arm" }),
@@ -865,6 +871,10 @@ function placeEffects(ctx: FeatureTestContext, refs: RenderingRefs): void {
   add(actor("ft-render-spring-arm", "Spring Arm Rig", tf(zone.at(-6, 0, 6)),
     instanceComponents("ft-render-spring-arm", refs.springArm.components),
     { classId: refs.springArm.ref.classId }));
+  // Static wall the rig's arm crosses once per turn (the arm points along +Z at half a turn): its Camera Probe pulls in.
+  add(actor("ft-render-probe-wall", "Camera Probe Wall", tf(zone.at(-8, 1.5, 8.6), { scale: [2.4 / 1.5, 3 / 1.5, 0.2 / 1.5] }), [
+    meshComp("ft-render-probe-wall-mesh", "box", { collision: "simple" }),
+  ]));
 
   const facetype = requireRef(ctx.assets.fonts.facetype, "the facetype Font");
   add(text3d("ft-render-text-facetype", "Facetype Font Text", zone.at(3, 3.4, 9), "Text3D Facetype Font", {

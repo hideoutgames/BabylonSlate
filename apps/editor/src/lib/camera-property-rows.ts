@@ -7,6 +7,9 @@ import {
   RENDER_TARGET_CAPTURE_QUALITY_LABELS,
   SPRING_ARM_LAG_SPEED_LIMITS,
   SPRING_ARM_LENGTH_LIMITS,
+  SPRING_ARM_PROBE_CHANNELS,
+  SPRING_ARM_PROBE_RETURN_SPEED_LIMITS,
+  SPRING_ARM_PROBE_SIZE_LIMITS,
   type SerializedComponent,
 } from "@haptic/core";
 import { humanizePropertyLabel, type PropertyRow } from "@haptic/editor-kit";
@@ -140,6 +143,17 @@ export function springArmPropertyRows(
     lagSpeedRow("rotationLagSpeed", "Rotation Lag Speed", properties.enableRotationLag),
     { kind: "boolean", id: rowId(actorId, component.id, "drawDebugLag"), label: "Draw Debug Lag", value: properties.drawDebugLag,
       description: "During Play, draw the target arm (yellow), the lagged arm (green), the lag offset (red), and recent socket trails.", onChange: (next) => update("drawDebugLag", next) },
+    { kind: "boolean", id: rowId(actorId, component.id, "cameraProbe"), label: "Camera Probe", value: properties.cameraProbe,
+      description: "During Play, pulls the arm in front of anything that blocks it, so a child camera never ends up inside a wall.", onChange: (next) => update("cameraProbe", next) },
+    { kind: "number", id: rowId(actorId, component.id, "probeSize"), label: "Probe Size", value: properties.probeSize,
+      min: SPRING_ARM_PROBE_SIZE_LIMITS[0], max: SPRING_ARM_PROBE_SIZE_LIMITS[1], sensitivity: 0.01, disabled: !properties.cameraProbe,
+      description: "Radius of the probe sphere: how far the camera stays from what blocks it.", onChange: (next) => update("probeSize", next) },
+    { kind: "enum", id: rowId(actorId, component.id, "probeChannel"), label: "Probe Channel", value: properties.probeChannel,
+      options: SPRING_ARM_PROBE_CHANNELS.map((channel) => ({ value: channel, label: channel })), disabled: !properties.cameraProbe,
+      description: "What blocks the probe. Static is level geometry. It never hits triggers or the arm's own actor.", onChange: (next) => update("probeChannel", next) },
+    { kind: "number", id: rowId(actorId, component.id, "probeReturnSpeed"), label: "Probe Return Speed", value: properties.probeReturnSpeed,
+      min: SPRING_ARM_PROBE_RETURN_SPEED_LIMITS[0], max: SPRING_ARM_PROBE_RETURN_SPEED_LIMITS[1], sensitivity: 0.1, disabled: !properties.cameraProbe,
+      description: "How fast the arm grows back once the way clears. 0 returns at once; pulling in is always instant.", onChange: (next) => update("probeReturnSpeed", next) },
   ];
 }
 

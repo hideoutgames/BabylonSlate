@@ -1242,7 +1242,7 @@ describe("GraphEditor", () => {
 
   it.each([
     [undefined, "1"],
-    [3, "3"],
+    [1.5, "1.5"],
   ])("scales pins by the Large Pins setting (%s)", (pinScale, expected) => {
     const { getByTestId } = render(
       <GraphInteractionSettingsContext.Provider
