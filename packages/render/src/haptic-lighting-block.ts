@@ -152,6 +152,11 @@ export function setHapticLightLoopProof(scene: Scene): void {
 export class HapticLightingBlock extends NodeMaterialBlock {
   /** Draws Base Color as it is, with no light (the editor's Unlit viewport mode, `HAPTIC_UNLIT`); set before a re-prepare. */
   unlit = false;
+  /**
+   * The Material's Environment Influence is a constant 0 (built-in water's): the environment's light is compiled out
+   * (no `HAPTIC_ENVIRONMENT`), not computed and multiplied by zero. Set by the compiler before the first prepare.
+   */
+  noEnvironment = false;
 
   constructor(name: string) {
     super(name, NodeMaterialBlockTargets.Fragment);
@@ -193,7 +198,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     const scene = mesh.getScene();
     const cel = celMode(scene);
     // CEL lights with the cube's irradiance polynomial alone (`bindCelSettings`), so its programs ignore the cube.
-    const environment = cel ? null : environmentCube(scene);
+    const environment = cel || this.noEnvironment ? null : environmentCube(scene);
     defines.setValue("HAPTIC_CEL", cel, true);
     // `waterdebug lighting off` draws water unlit, to measure what its lighting costs.
     defines.setValue("HAPTIC_UNLIT", this.unlit || (isWaterSurfaceMesh(mesh) && waterDebugOff(scene, "lighting")), true);
@@ -213,8 +218,8 @@ export class HapticLightingBlock extends NodeMaterialBlock {
 
   override isReady(mesh: AbstractMesh): boolean {
     const scene = mesh.getScene(), brdf = GetEnvironmentBRDFTexture(scene);
-    // Every program binds the split-sum table; CEL ignores the cube.
-    return (!brdf || brdf.isReady()) && (celMode(scene) || (scene.environmentTexture?.isReadyOrNotBlocking() ?? true));
+    // Every program binds the split-sum table; CEL and a Material without environment light ignore the cube.
+    return (!brdf || brdf.isReady()) && (celMode(scene) || this.noEnvironment || (scene.environmentTexture?.isReadyOrNotBlocking() ?? true));
   }
 
   override updateUniformsAndSamples(state: NodeMaterialBuildState, material: NodeMaterial, defines: NodeMaterialDefines, uniformBuffers: string[]): void {
@@ -259,7 +264,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
       bindCelSettings(effect, scene);
       return;
     }
-    const environment = environmentCube(scene);
+    const environment = this.noEnvironment ? null : environmentCube(scene);
     if (!environment) return;
     effect.setTexture("hapticEnvironmentSampler", environment);
     effect.setMatrix("hapticEnvironmentMatrix", environment.getReflectionTextureMatrix());

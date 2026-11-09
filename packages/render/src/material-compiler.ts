@@ -1410,6 +1410,19 @@ function nodeMaterialBuildInProgress(material: NodeMaterial): boolean {
   return (material as unknown as { _buildIsInProgress?: boolean })._buildIsInProgress === true;
 }
 
+/**
+ * The value `operand` always holds when it is one: a literal, or a Float Constant node's value with no conversion on
+ * the way (not a Parameter, which a Material Instance can change). Null otherwise.
+ */
+function constantScalar(plan: MaterialBuildPlan, operand: MaterialOperand | null | undefined): number | null {
+  if (!operand) return null;
+  if (operand.kind === "constant") return operand.value.length === 1 ? operand.value[0]! : null;
+  if (operand.conversions?.length) return null;
+  const operation = plan.operations.find((entry) => entry.id === operand.operationId);
+  const value = operation?.nodeType === "const.float" ? operation.properties.value : null;
+  return Array.isArray(value) && value.length === 1 && typeof value[0] === "number" ? value[0] : null;
+}
+
 /** Map authored blend / two-sided onto Babylon after `material.build()`. */
 function applyAuthoredSurfaceBlend(
   material: NodeMaterial,
@@ -1758,6 +1771,8 @@ function attachSurfaceShading(
 
   // The surface's direct and environment light (scaled by Environment Influence), from the light block.
   const lighting = new HapticLightingBlock(`${options.name}_lighting`);
+  // A constant Environment Influence of 0 (built-in water's) compiles the environment's light out.
+  lighting.noEnvironment = constantScalar(plan, environmentOperand) === 0;
   created.push(lighting);
   plumbing.worldPosition?.connectTo(lighting.worldPosition);
   plumbing.worldNormal4?.connectTo(lighting.worldNormal);

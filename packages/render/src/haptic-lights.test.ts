@@ -11,6 +11,8 @@ import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { RectAreaLight } from "@babylonjs/core/Lights/rectAreaLight";
 import { Scene } from "@babylonjs/core/scene";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Effect } from "@babylonjs/core/Materials/effect";
@@ -18,7 +20,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { AreaEmissionPixels } from "@haptic/assets";
 import { normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { areaEmissionTexture, setRectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { HapticLightingBlock } from "./haptic-lighting-block";
@@ -58,8 +60,8 @@ function host() {
   return { engine, scene };
 }
 
-async function litBox(scene: Scene): Promise<{ mesh: Mesh; material: NodeMaterial }> {
-  const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
+async function litBox(scene: Scene, document = createDefaultMaterialDocument()): Promise<{ mesh: Mesh; material: NodeMaterial }> {
+  const lowered = lowerMaterialDocument(document);
   if (!lowered.ok) throw new Error("Invalid fixture");
   const compiled = compileMaterialPlan(lowered.plan, { scene, name: "lit" });
   if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
@@ -144,6 +146,30 @@ describe("HapticLightingBlock and the HapticLights block", () => {
       expect(bound, mode).toEqual(expect.arrayContaining(["hapticEnvironmentBrdfSampler", "hapticAreaLtcSampler", "hapticAreaEmissionSampler"]));
       expect(bound, mode).not.toContain("hapticEnvironmentSampler");
     }
+  });
+
+  it("compiles the environment's light out of a Material whose Environment Influence is a constant 0, as built-in water's is", async () => {
+    const { engine, scene } = host();
+    const internal = engine.createTexture("sky", false, false, null);
+    internal.isCube = true;
+    internal._sphericalPolynomial = new SphericalPolynomial();
+    const sky = new CubeTexture("", scene);
+    sky._texture = internal;
+    scene.environmentTexture = sky;
+    const environment = /^#define HAPTIC_ENVIRONMENT$/;
+    const lit = await litBox(scene);
+    expect((await drawnDefines(scene, lit.mesh, lit.material)).some((line) => environment.test(line))).toBe(true);
+    const document = createDefaultMaterialDocument("Dry");
+    document.nodes.find((node) => node.id === "output")!.properties[materialPinDefaultPropertyKey("environmentInfluence")] = [0];
+    const dry = await litBox(scene, document);
+    expect((await drawnDefines(scene, dry.mesh, dry.material)).some((line) => environment.test(line))).toBe(false);
+    const effect = dry.mesh.subMeshes[0]!.effect!, bound: string[] = [];
+    vi.spyOn(effect, "setTexture").mockImplementation((name) => { bound.push(name); });
+    dry.material.bindForSubMesh(dry.mesh.computeWorldMatrix(true), dry.mesh, dry.mesh.subMeshes[0]!);
+    expect(bound).not.toContain("hapticEnvironmentSampler");
+    // The water starter's constant node does the same.
+    const water = await litBox(scene, createWaterMaterialDocument("Sea"));
+    expect((await drawnDefines(scene, water.mesh, water.material)).some((line) => environment.test(line))).toBe(false);
   });
 
   it("binds the shadow atlas to every draw, compared and read plainly, and whether the drawn mesh receives shadows", async () => {
