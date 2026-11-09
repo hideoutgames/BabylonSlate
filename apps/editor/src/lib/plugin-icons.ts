@@ -95,11 +95,10 @@ export const PLUGIN_ICON_OPTIONS: ReadonlyArray<{
  * Discord's mark from Simple Icons, filled with its `--platform-discord` token (Discord's blurple) wherever it shows.
  * Lucide props that do not apply to a filled mark are dropped.
  */
-const DiscordIcon = forwardRef<SVGSVGElement, LucideProps>(function DiscordIcon(
-  { color: _color, strokeWidth: _strokeWidth, absoluteStrokeWidth: _absoluteStrokeWidth, size, style, ...props },
-  ref,
-) {
-  return createElement(SiDiscord, { ...props, ref, size: size ?? 24, color: "currentColor", style: { ...style, color: "var(--platform-discord)" } });
+const LUCIDE_ONLY_PROPS = new Set(["color", "strokeWidth", "absoluteStrokeWidth"]);
+const DiscordIcon = forwardRef<SVGSVGElement, LucideProps>(function DiscordIcon({ size, style, ...props }, ref) {
+  const svgProps = Object.fromEntries(Object.entries(props).filter(([key]) => !LUCIDE_ONLY_PROPS.has(key)));
+  return createElement(SiDiscord, { ...svgProps, ref, size: size ?? 24, color: "currentColor", style: { ...style, color: "var(--platform-discord)" } });
 }) as LucideIcon;
 
 /** Brand marks for bundled extensions. Extensions can name them, but the icon picker does not offer them. */
