@@ -113,7 +113,7 @@ export interface HostMembersHost extends ComponentFunctionHost {
 /**
  * The members every context inherits: the ones whose behavior depends only on the host (see
  * `HostContextKey`). Built once per host. Their closures must not capture a per-call value, which
- * `createScriptContext` owns; they live in their own module so that a reference to one is a compile error.
+ * `createScriptContextClass` owns; they live in their own module so that a reference to one is a compile error.
  */
 /** A handle structure's Id when it names one (a whole number from 1), else 0. */
 function handleId(handle: unknown): number {

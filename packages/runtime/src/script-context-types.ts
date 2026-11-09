@@ -797,8 +797,8 @@ export type LoadedScript = {
 /**
  * The `ScriptContext` members that capture only host-lifetime state: `this`, the host services, the
  * seeded RNG and module-level helpers, never the calling object, tick, arguments or extras. The host
- * builds them once and every context inherits them, so none may read the context's `this` (compiled and
- * user code detaches them: `const { log } = ctx`). Every other member is built per call by `createContext`.
+ * builds them once and every context inherits them; none reads the context's `this`. Every other member
+ * is a value set per call or a method reading the call from its context (`createScriptContextClass`).
  */
 export type HostContextKey =
   | "getSaveData" | "getSaveField" | "setSaveField" | "newGame" | "saveGame" | "loadGame" | "listSaves"
