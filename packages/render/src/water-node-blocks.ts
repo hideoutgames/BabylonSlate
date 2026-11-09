@@ -208,8 +208,10 @@ vec4 swnFieldAt(vec2 xz) {
 }
 float swnContactAt(vec2 xz, float height) {
   vec2 uv = (xz - U.slateWaterContactBounds.xy) * U.slateWaterContactBounds.zw;
-  vec4 tap = swnContactTap(uv);
   float on = U.slateWaterContactInfo.x * step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+  // Off the field (most of an open sea) the tap goes unused: skip it.
+  vec4 tap = vec4(0.5);
+  if (on > 0.0) { tap = swnContactTap(uv); }
   float layer = (clamp(height / max(0.001, U.slateWaterContactInfo.z), -1.0, 1.0) * 0.5 + 0.5) * 3.0;
   vec4 weights = max(vec4(0.0), vec4(1.0) - abs(vec4(0.0, 1.0, 2.0, 3.0) - vec4(layer)));
   return mix(1.0, dot(tap, weights) * 2.0 - 1.0, on) * U.slateWaterContactInfo.y;

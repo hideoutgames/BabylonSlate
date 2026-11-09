@@ -3,7 +3,7 @@
  * `toWgsl` translates the GLSL-shaped chunks.
  */
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
-import { WATER_FFT_CASCADES_MAX, WATER_FOAM_WEIGHTS } from "@haptic/core";
+import { WATER_FFT_CASCADES_MAX, WATER_FOAM_WEIGHTS, WATER_SPECTRUM_LOW_BIN } from "@haptic/core";
 import {
   fftHelpers, fftTurnIn, fftTurnOut, fftTurnTensor, FOAM_FAR_PATCHES, ifFft, SHADING_SLOPE_CAP, spectrumHelpers, spectrumNormalSource,
   spectrumVertexSource, subsurfaceSource,
@@ -143,18 +143,30 @@ ${out} = vec2(swvGain * swvDs, swvHs);
  */
 function nodeFragmentSource(rest: string, base: string, varying: string): string {
   const cascades = Array.from({ length: WATER_FFT_CASCADES_MAX }, (_, c) => {
+    // The first cascade always draws. A finer one fades out (`swnSr`) where one pixel spans its longest wave (its patch
+    // over `WATER_SPECTRUM_LOW_BIN`), from half of it: the mip it samples there has averaged it to almost nothing, so
+    // its two spectrum taps are skipped once it is gone. Its foam tap stays, as the turbulence does not average to zero.
+    const spectrum = (weight: string, tap: (layer: number) => string) => `
+vec4 swnSa${c} = ${tap(2 * c)};
+vec4 swnSb${c} = ${tap(2 * c + 1)};
+swnGrad += ${fftTurnOut(c, `swnSb${c}.xy`)} * ${weight};
+swnJ += ${fftTurnTensor(c, `vec3(swnSb${c}.z, swnSa${c}.w, swnSb${c}.w)`)} * ${weight};
+swnH += swnSa${c}.y * ${weight};${c === 0 ? `
+swnLarge = swnSa0.y;` : `
+swnSmall += swnSa${c}.y * ${weight};`}`;
     const code = `
 vec4 swnSc${c} = U.${FFT_CASCADE_UNIFORMS[c]};
 vec2 swnSu${c} = ${fftTurnIn(c, "swnRest")} * swnSc${c}.x + swnSc${c}.yz;
-vec4 swnSa${c} = swSpecTap(swnSu${c}, ${f(2 * c)});
-vec4 swnSb${c} = swSpecTap(swnSu${c}, ${f(2 * c + 1)});
 float swnSt${c} = swFoamTap(swnSu${c}, ${f(c)}).r;
-float swnSw${c} = ${c === 0 ? "1.0" : `clamp(swnSp.w / max(swnSc${c}.x * swnDist, 0.000001), 0.0, 1.0)`};
-swnGrad += ${fftTurnOut(c, `swnSb${c}.xy`)} * swnSw${c};
-swnJ += ${fftTurnTensor(c, `vec3(swnSb${c}.z, swnSa${c}.w, swnSb${c}.w)`)} * swnSw${c};
-swnH += swnSa${c}.y * swnSw${c};${c === 0 ? `
-swnLarge = swnSa0.y;` : `
-swnSmall += swnSa${c}.y * swnSw${c};`}
+float swnSw${c} = ${c === 0 ? "1.0" : `clamp(swnSp.w / max(swnSc${c}.x * swnDist, 0.000001), 0.0, 1.0)`};${c === 0
+      ? spectrum("swnSw0", (layer) => `swSpecTap(swnSu0, ${f(layer)})`)
+      : `
+float swnLongest${c} = 1.0 / (${f(WATER_SPECTRUM_LOW_BIN)} * swnSc${c}.x);
+float swnSr${c} = swnSw${c} * (1.0 - smoothstep(0.5 * swnLongest${c}, swnLongest${c}, swnPixel));
+if (swnSr${c} > 0.0) {
+vec2 swnDx${c} = ${fftTurnIn(c, "swnRestDx")} * swnSc${c}.x;
+vec2 swnDy${c} = ${fftTurnIn(c, "swnRestDy")} * swnSc${c}.x;${spectrum(`swnSr${c}`, (layer) => `swSpecTapGrad(swnSu${c}, ${f(layer)}, swnDx${c}, swnDy${c})`)}
+}`}
 swnFoamSum += ${f(WATER_FOAM_WEIGHTS[c]!)} * (1.0 - swnSt${c}) * swnSw${c} * swnTurbScale;`;
     return c === 0 ? code : ifFft(code, c + 1);
   }).join("");
@@ -163,6 +175,10 @@ swnFoamSum += ${f(WATER_FOAM_WEIGHTS[c]!)} * (1.0 - swnSt${c}) * swnSw${c} * swn
 {
 vec3 swnRestW = ${rest}.xyz + U.slateWaterGridOffset.xyz;
 vec2 swnRest = swnRestW.xz;
+vec2 swnRestDx = dFdx(swnRest);
+vec2 swnRestDy = dFdy(swnRest);
+// Metres of water one pixel spans, along its longer screen axis (the extent the hardware's mip choice follows).
+float swnPixel = max(length(swnRestDx), length(swnRestDy));
 float swnDist = max(length(swnRestW - U.${WATER_EYE_UNIFORM}.xyz), 0.001);
 vec4 swnSp = U.slateWaterFft;
 vec2 swnShares = ${varying};

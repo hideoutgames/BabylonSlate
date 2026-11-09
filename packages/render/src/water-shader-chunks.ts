@@ -404,11 +404,14 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
  * declares the samplers.
  */
 export function spectrumHelpers(wgsl: boolean): string {
+  // `swSpecTapGrad` reads with the uv's own screen gradients, the same filtering as `swSpecTap`, inside a branch.
   return wgsl ? `
 fn swSpecTap(uv: vec2f, layer: f32) -> vec4f { return textureSample(${WATER_FFT_SAMPLER}, ${WATER_FFT_SAMPLER}Sampler, uv, i32(layer)); }
+fn swSpecTapGrad(uv: vec2f, layer: f32, dx: vec2f, dy: vec2f) -> vec4f { return textureSampleGrad(${WATER_FFT_SAMPLER}, ${WATER_FFT_SAMPLER}Sampler, uv, i32(layer), dx, dy); }
 fn swFoamTap(uv: vec2f, layer: f32) -> vec4f { return textureSample(${WATER_FOAM_SAMPLER}, ${WATER_FOAM_SAMPLER}Sampler, uv, i32(layer)); }
 ` : `
 vec4 swSpecTap(vec2 uv, float layer) { return texture(${WATER_FFT_SAMPLER}, vec3(uv, layer)); }
+vec4 swSpecTapGrad(vec2 uv, float layer, vec2 dx, vec2 dy) { return textureGrad(${WATER_FFT_SAMPLER}, vec3(uv, layer), dx, dy); }
 vec4 swFoamTap(vec2 uv, float layer) { return texture(${WATER_FOAM_SAMPLER}, vec3(uv, layer)); }
 `;
 }
