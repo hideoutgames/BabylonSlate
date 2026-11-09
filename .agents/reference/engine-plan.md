@@ -29,7 +29,7 @@ Shipped systems beyond the core (do not rebuild): Save Games (typed definitions,
 
 ## Non-goals
 
-- No multiplayer or networking of any kind.
+- No multiplayer or networking yet. A listen-server design is planned and deferred: [Multiplayer (planned)](#multiplayer-planned).
 - Games export as a web zip or a native package that wraps the same web build (Electron for desktop, Capacitor for mobile) for parity. Each editor build carries, as files loaded only when packaging, the prebuilt shells for the targets its platform can build; there is no download or release step ([exporter.md](architecture/exporter.md#native-packages)). Windows and Linux ship from every editor and macOS (Apple Silicon) from the macOS desktop editor, which signs with the user's own Developer ID and notarytool keychain profile; iOS is planned for the macOS desktop editor only, Android for every editor.
 - No native code plugins; plugins are content and classes.
 - One parent world Scene and one physics world at a time. Streaming adds owned instances beneath it; SceneLayers are a separate overlay stack.
@@ -370,6 +370,32 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Vendored, never fetched from a CDN: `coi-serviceworker.js` (locally modified), the Basis encoder and KTX2 transcoder set, Havok wasm.
 - Heavy optional runtimes (Rapier, Recast, CodeMirror) load only when a scene or editor surface needs them.
 
+## Multiplayer (planned)
+
+Designed and deferred; none of it is built. Implementation starts with the first step of the order below, which writes the reference (`architecture/multiplayer.md`) and the wire format.
+
+- **Model:** listen server only. The host's game is the authority (physics, spawning, rules); clients send input and messages and receive state. No dedicated servers, paid hosting or host migration: the host leaving ends the session for everyone (**Host Left**).
+- **Free services only:** every transport and provider is free to use; nothing needs a Haptic-run server.
+- **Session:** Net Mode is Standalone, Host or Client (**Get Net Mode**, **Is Host**, **Is Client**). Player ids: host 0, clients 1 and up (**Get Local Player Id**, **Get Players**). Joining checks project id and build id, then the host sends a full snapshot, so late joins work. Every client plays the host's scene, and a host scene change moves every client. Game Instance and subsystems stay per client, not replicated. Game Instance events **On Player Joined**, **On Player Left**, **On Session Ended**; a client silent for 10 s is removed.
+- **Transports**, one interface, a reliable ordered channel and an unreliable one:
+  - Local: in the editor, with simulated latency, jitter and packet loss.
+  - WebRTC: every platform. **Project Settings > Multiplayer** lists STUN servers (default Google's and Cloudflare's free public ones), optional TURN servers (their credentials ship in the game) and signaling.
+  - Epic Online Services: free; desktop first, through its native SDK. No browser SDK, so no web cross-play.
+  - Steam: desktop, through Steam's flat C API over an FFI library and the developer's own Steamworks SDK; Haptic never redistributes Valve's files. This supersedes a separate Steamworks extension.
+  - Native SDKs run in the desktop game host and the desktop editor's main process behind a checked channel, as Discord Rich Presence does.
+- **Online Subsystem:** an engine-provided Game Subsystem (**Get Online Subsystem**), one node set whatever the backend. A provider per platform (web, desktop, mobile) in **Project Settings > Multiplayer**; Multiplayer Play mode always uses Local. First version: identity (**Log In**, **Get Local Player**), sessions (create, find with filters, join, leave, players, attributes; Steam and Epic lobbies map onto them), invites and presence. Provider-neutral structs: Online Player, Online Session, Session Filter, Session Settings. Achievements, stats, leaderboards, friends, cloud saves and provider-only features (Workshop, Steam Input) come later; Discord presence may move under presence.
+- **Replication Component** on Actors:
+  - Host-spawned replicated Actors appear on every client with the same network id; placed Actors match by scene id; a client's spawn stays local, with a warning.
+  - Properties: Replicate Movement (on), Smooth Movement (on: every replicated Actor interpolates between snapshots unless it is turned off), Interpolation Delay (100 ms), Update Rate (20 per second), Owner (host by default; **Is Locally Controlled**).
+  - Physics simulates on the host only; clients' replicated bodies follow snapshots.
+  - Class variables get a **Replicated** option and an **On Replicated** event. **Has Authority** gates game rules.
+  - Character movement prediction for owned characters: numbered input, host confirmation, rewind and replay; corrections blend over 100 ms, large ones snap. Rigid bodies are never predicted on clients.
+  - Snapshots are quantized and sent as deltas against the client's last acknowledged one.
+- **Messaging:** **Network Message** assets hold a signature, a name and an ordered list of typed pins, so identity survives renames. **Send Message to Other Clients** takes the signature's pins plus **Target** (All Others, Host, a player id) and **Reliable**; **Event On Message Received** outputs **Sender** plus the same pins. Pins are edited from either node's Inspector. Pin types: primitives, vectors, rotators, transforms, colours, enums, structs, arrays, maps, replicated Actor references (as network ids) and Object (a copy by value). The wire carries a message number and the values in pin order. Limits: 16 KiB reliable, 1 KiB unreliable. Clients connect only to the host, which relays and can check messages. A missing or mismatched signature is a compiler error.
+- **Multiplayer Play mode** (Debug menu): desktop runs 2 to 4 clients, the host in the Play overlay or popped out and every client in its own window; web and tablet run 2 side by side. Each client is a full game (worker, world, physics, Game Instance). Input and audio follow the focused client. The Output Log tags Host / Client n, the debugger works per client, and a stats overlay shows round-trip time, bandwidth and loss. On iPad, heavy scenes warn about memory.
+- **Order:** design and wire format → Local transport and Multiplayer Play mode → messaging → Replication Component → character prediction → gate: four clients play together over Local → Online Subsystem and WebRTC → Epic Online Services on desktop → Steam on desktop → Epic on iOS and Android (native plugins).
+- **Open:** WebRTC signaling (recommended: a small open-source signaling server developers host, its URL a setting); the first online backend (recommended: WebRTC); online max players (recommended: 8); Steam binding (recommended: flat API with the developer's SDK); when Epic reaches mobile.
+
 ## Open work
 
 - Hardware-only device checks: the Working Copy / `NSFileCoordinator` Swift plugin, cold-launch reopen on iPad for both storage tiers, Capacitor write timings, WKWebView `Error.stack` parsing, and Play holding 60 fps on the A16.
@@ -431,5 +457,5 @@ Deliberate product decisions that can look like bugs. Do not "fix" them without 
 - Editor camera joystick defaults on.
 - Console arguments containing spaces need quotes; `actorboundingbox` takes a Boolean.
 - Space activates a focused toolbar button (native button semantics) until focus returns to the canvas.
-- No networking, replication, game HUD or AI controller exists; their absence is scope, not a defect.
+- No networking or replication exists yet ([Multiplayer (planned)](#multiplayer-planned)), and no game HUD or AI controller exists; their absence is scope, not a defect.
 - Timeline Clips are authored per Scene and Scene Layer (`timelineClips`, Timeline mode) and play in Play per Scene or Scene Layer copy; keyframe editing, Play playback, Timeline Assets and Timeline Clip assets build on that field.
