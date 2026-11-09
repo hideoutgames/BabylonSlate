@@ -125,7 +125,7 @@ try {
     launched.on("window", watch);
     return launched;
   };
-  const launch = async (extraEnv = {}) => observe(await _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs], env: { ...cleanEnv, ...extraEnv }, timeout: 60000 }));
+  const launch = async (extraArgs = []) => observe(await _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs, ...extraArgs], env: cleanEnv, timeout: 60000 }));
   app = await launch();
   // macOS reports the /private/var target of the /var temporary directory symlink.
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath("userData"))), await realpath(userData));
@@ -190,7 +190,7 @@ try {
     }
     console.log(`Before relaunch, ${running.length} app processes:\n${running.join("\n")}`);
   }
-  app = await launch(platform === "windows" ? { ELECTRON_ENABLE_LOGGING: "1" } : {});
+  app = await launch(platform === "windows" ? ["--enable-logging=stderr", "--v=1"] : []);
   page = await app.firstWindow();
   page.setDefaultTimeout(60000);
   await expect(page.getByTestId("homepage")).toBeVisible();
