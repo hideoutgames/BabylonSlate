@@ -189,8 +189,28 @@ try {
       running = windowsAppProcesses();
     }
     console.log(`Before relaunch, ${running.length} app processes:\n${running.join("\n")}`);
+    // Diagnostic: Chromium's single-instance lock file, deleted when the first launch closes it.
+    const lockfile = join(userData, "lockfile");
+    const lockState = () => access(lockfile).then(() => "present", error => error?.code === "ENOENT" ? "absent" : `unreadable (${error?.code})`);
+    const closedAt = Date.now();
+    let lock = await lockState();
+    console.log(`After close, lockfile ${lock}`);
+    while (lock !== "absent" && Date.now() - closedAt < 30000) {
+      await delay(250);
+      lock = await lockState();
+    }
+    console.log(`Before relaunch, lockfile ${lock} after ${Date.now() - closedAt} ms`);
   }
-  app = await launch(platform === "windows" ? ["--enable-logging=stderr", "--v=1"] : []);
+  try {
+    app = await launch(platform === "windows" ? ["--enable-logging=stderr", "--v=1"] : []);
+  } catch (error) {
+    if (platform === "windows") {
+      const running = windowsAppProcesses();
+      console.log(`Relaunch failed with ${running.length} app processes:\n${running.join("\n")}`);
+      console.log(`Lockfile after the failed relaunch: ${await access(join(userData, "lockfile")).then(() => "present", cause => cause?.code)}`);
+    }
+    throw error;
+  }
   page = await app.firstWindow();
   page.setDefaultTimeout(60000);
   await expect(page.getByTestId("homepage")).toBeVisible();
