@@ -41,6 +41,7 @@
  */
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Constants } from "@babylonjs/core/Engines/constants";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
@@ -105,6 +106,15 @@ const RETRY_RUNS = 120;
 const SPECTRUM_CACHE_BYTES = 12 * 1024 ** 2;
 
 const VERTEX = "slateWaterFft", EVOLVE = "slateWaterFftEvolve", BUTTERFLY = "slateWaterFftButterfly", FOAM = "slateWaterFftFoam";
+const OVERWRITTEN = new Color4(0, 0, 0, 0);
+/**
+ * Every pass draws over its whole bound target (a work atlas, or one layer of an output), so nothing it held is read: a
+ * clear as the pass starts lets a tile-based GPU begin from a clear tile instead of loading the target from memory
+ * (WebGPU and ANGLE's Metal backend turn it into the pass's load action).
+ */
+function overwrite(engine: AbstractEngine): void {
+  engine.clear(OVERWRITTEN, true, false, false);
+}
 /** Grid texels a spectrum-water build step draws (whole rows; each mode evaluates the directional spectrum). */
 for (const wgsl of [false, true]) {
   const store = ShaderStore.GetShadersStore(wgsl ? 1 : 0);
@@ -546,6 +556,7 @@ class WaterFftSimulation {
       engine.setColorWrite(true);
       const work = this.work.targets;
       engine.bindFramebuffer(work[0], 0, undefined, undefined, true);
+      overwrite(engine);
       renderer.applyEffectWrapper(this.evolve);
       const evolve = this.evolve.effect;
       evolve.setTexture("h0Texture", this.h0Texture);
@@ -580,6 +591,7 @@ class WaterFftSimulation {
     const next = this.foamCurrent ^ 1, lambda = this.foamLambda;
     for (let layer = 0; layer < this.layout.cascades; layer++) {
       engine.bindFramebuffer(targets[next], 0, undefined, undefined, true, 0, layer);
+      overwrite(engine);
       this.renderer.applyEffectWrapper(effect);
       effect.effect.setTexture("fftOutput", this.texture);
       effect.effect.setTexture("foamPrevious", textures[this.foamCurrent]!);
@@ -603,6 +615,7 @@ class WaterFftSimulation {
   ): void {
     const engine = this.engine;
     engine.bindFramebuffer(target, 0, undefined, undefined, true, 0, layer);
+    overwrite(engine);
     this.renderer.applyEffectWrapper(this.butterfly);
     const effect = this.butterfly.effect;
     effect.setTexture("fftInput", this.work.textures[source]!);
