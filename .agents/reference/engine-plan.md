@@ -29,7 +29,7 @@ Shipped systems beyond the core (do not rebuild): Save Games (typed definitions,
 
 ## Non-goals
 
-- No multiplayer or networking of any kind.
+- No multiplayer or networking yet. A listen-server design is planned and deferred: [Multiplayer (planned)](#multiplayer-planned).
 - Games export as a web zip or a native package that wraps the same web build (Electron for desktop, Capacitor for mobile) for parity. Each editor build carries, as files loaded only when packaging, the prebuilt shells for the targets its platform can build; there is no download or release step ([exporter.md](architecture/exporter.md#native-packages)). Windows and Linux ship from every editor and macOS (Apple Silicon) from the macOS desktop editor, which signs with the user's own Developer ID and notarytool keychain profile; iOS is planned for the macOS desktop editor only, Android for every editor.
 - No native code plugins; plugins are content and classes.
 - One parent world Scene and one physics world at a time. Streaming adds owned instances beneath it; SceneLayers are a separate overlay stack.
@@ -370,6 +370,10 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Vendored, never fetched from a CDN: `coi-serviceworker.js` (locally modified), the Basis encoder and KTX2 transcoder set, Havok wasm.
 - Heavy optional runtimes (Rapier, Recast, CodeMirror) load only when a scene or editor surface needs them.
 
+## Multiplayer (planned)
+
+Listen-server multiplayer is designed and deferred; nothing is built. Its decisions, scope and order live in [multiplayer-plan.md](multiplayer-plan.md).
+
 ## Open work
 
 - Hardware-only device checks: the Working Copy / `NSFileCoordinator` Swift plugin, cold-launch reopen on iPad for both storage tiers, Capacitor write timings, WKWebView `Error.stack` parsing, and Play holding 60 fps on the A16.
@@ -431,5 +435,5 @@ Deliberate product decisions that can look like bugs. Do not "fix" them without 
 - Editor camera joystick defaults on.
 - Console arguments containing spaces need quotes; `actorboundingbox` takes a Boolean.
 - Space activates a focused toolbar button (native button semantics) until focus returns to the canvas.
-- No networking, replication, game HUD or AI controller exists; their absence is scope, not a defect.
+- No networking or replication exists yet ([Multiplayer (planned)](#multiplayer-planned)), and no game HUD or AI controller exists; their absence is scope, not a defect.
 - Timeline Clips are authored per Scene and Scene Layer (`timelineClips`, Timeline mode) and play in Play per Scene or Scene Layer copy; keyframe editing, Play playback, Timeline Assets and Timeline Clip assets build on that field.
