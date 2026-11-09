@@ -117,7 +117,7 @@ index 24b6329cb60c28f279e16018f9a3f5566d8c30b5..82cfaba9ce0c12d963c3b5074fe51494
       * Unbind all textures from the webGL context
       */
 diff --git a/Engines/thinEngine.pure.js b/Engines/thinEngine.pure.js
-index 1b0259a1a514fadb726788114650232754c0287f..1571a975c6b821d3e228e2ec5ca1c1d58d3b1242 100644
+index 1b0259a1a514fadb726788114650232754c0287f..cab2bd4229f50b188966c51806254d28348fdab4 100644
 --- a/Engines/thinEngine.pure.js
 +++ b/Engines/thinEngine.pure.js
 @@ -728,6 +728,8 @@ export class ThinEngine extends AbstractEngine {
@@ -224,6 +224,15 @@ index 1b0259a1a514fadb726788114650232754c0287f..1571a975c6b821d3e228e2ec5ca1c1d5
          // Not ready?
          if (!texture) {
              if (this._boundTexturesCache[channel] != null) {
+@@ -3873,7 +3919,7 @@ ThinEngine.ExceptionList = [
+     { key: "Chrome/74.+?Mobile", capture: null, captureConstraint: null, targets: ["vao"] },
+     { key: "Mac OS.+Chrome/71", capture: null, captureConstraint: null, targets: ["vao"] },
+     { key: "Mac OS.+Chrome/72", capture: null, captureConstraint: null, targets: ["vao"] },
+-    { key: "Mac OS.+Chrome", capture: null, captureConstraint: null, targets: ["uniformBuffer"] },
++    // Haptic: no uniform buffer exception for Chrome on macOS (every Chrome there, and Electron); Haptic's lights need them.
+     { key: "Chrome/12\\d\\..+?Mobile", capture: null, captureConstraint: null, targets: ["uniformBuffer"] },
+     // desktop osx safari 15.4
+     { key: ".*AppleWebKit.*(15.4).*Safari", capture: null, captureConstraint: null, targets: ["antialias", "maxMSAASamples"] },
 diff --git a/Lights/Shadows/cascadedShadowGenerator.pure.js b/Lights/Shadows/cascadedShadowGenerator.pure.js
 index 07e060fe39fa225fb5a2a6c06080d09492431f6d..2c9b02901404b690586b06c7135b54369963bf52 100644
 --- a/Lights/Shadows/cascadedShadowGenerator.pure.js
