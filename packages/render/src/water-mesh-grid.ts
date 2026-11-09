@@ -15,10 +15,17 @@ import { L_BUDGET, L_CX, L_CZ, L_EXTENT, L_STEP, L_VERSION, type Surface } from 
 /** Dense cells of an axis with `count` cells: the middle half. */
 const denseCells = (count: number) => count - 2 * Math.floor(count / 4);
 
+/** Cells of an `axis` from `min` to `max` at `spacing` within `budget`. */
+const axisCells = (min: number, max: number, spacing: number, budget: number) =>
+  Math.min(budget, Math.max(8, Math.ceil((max - min) / spacing / 2) * 2));
+/** Whether that `axis` is uniform: its budget covers the whole span at `spacing`, so the camera never shapes it. */
+const uniformFits = (min: number, max: number, spacing: number, budget: number) =>
+  (max - min) <= axisCells(min, max, spacing, budget) * spacing;
+
 /** Fixed endpoints, dense world-sized cells near the camera, smoothly graded outer cells. */
 function axis(min: number, max: number, spacing: number, camera: number, budget: number): number[] {
-  const count = Math.min(budget, Math.max(8, Math.ceil((max - min) / spacing / 2) * 2));
-  if ((max - min) <= count * spacing) return Array.from({ length: count + 1 }, (_, i) => min + (max - min) * i / count);
+  const count = axisCells(min, max, spacing, budget);
+  if (uniformFits(min, max, spacing, budget)) return Array.from({ length: count + 1 }, (_, i) => min + (max - min) * i / count);
   const outer = Math.floor(count / 4), inner = denseCells(count);
   const half = inner * spacing / 2;
   const center = Math.max(min + half, Math.min(max - half, Math.round(camera / spacing) * spacing));
@@ -158,7 +165,11 @@ export function updateLayout(s: Surface, world: Matrix, inverse: Matrix): Layout
     const point = camera ? cameraWorld(camera, camera instanceof ArcRotateCamera ? camera.target : camera.position, eye) : eye.setAll(0);
     const local = Vector3.TransformCoordinatesToRef(point, inverse, eye);
     const snap = denseCells(budget) * step * OCEAN_RECENTRE_SHARE;
-    cx = Math.round(local.x * sx / snap) * snap / sx; cz = Math.round(local.z * sz / snap) * snap / sz;
+    // An axis the budget covers uniformly is the same wherever the camera is: following it would only rebuild it.
+    const extension = s.blend?.reach ?? 0;
+    const halfX = body.width / 2 + extension / sx, halfZ = body.length / 2 + extension / sz;
+    cx = uniformFits(-halfX, halfX, step / sx, budget) ? 0 : Math.round(local.x * sx / snap) * snap / sx;
+    cz = uniformFits(-halfZ, halfZ, step / sz, budget) ? 0 : Math.round(local.z * sz / snap) * snap / sz;
   } else if (body.kind === "global") {
     const camera = mesh.getScene().activeCamera;
     const local = Vector3.TransformCoordinatesToRef(camera ? cameraWorld(camera, camera.position, eye) : eye.setAll(0), inverse, eye);

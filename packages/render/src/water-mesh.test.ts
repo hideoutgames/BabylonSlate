@@ -710,6 +710,25 @@ describe("Water rendering", () => {
       expect(sizes.map((size) => size.spectrumSea)).toEqual(levels.map((level) => Math.min(WATER_OCEAN_CELL_BUDGET, Math.round(2 * 96 * RENDER_QUALITY_PROFILES[level].water.meshDensity))));
     } finally { scene.dispose(); engine.dispose(); }
   });
+  it("keeps a spectrum Ocean whose cells all fit its budget as the camera moves, grading only one too large for it", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 4, 0), scene);
+    try {
+      // FT_World's Ocean: 40 × 80 m at Medium's 0.75 density fits whole cells within the budget on both axes.
+      setQuality(scene, "medium");
+      const small = createWaterMesh(scene, "small", normalizeWaterBody({ width: 40, length: 80 }, "ocean"), undefined, builtInWaterMaterial(scene));
+      const large = createWaterMesh(scene, "large", normalizeWaterBody({ width: 2000, length: 2000, resolution: 96 }, "ocean"), undefined, builtInWaterMaterial(scene));
+      updateSceneWater(scene);
+      const buffers = [small, large].map((mesh) => mesh.getVertexBuffer(VertexBuffer.PositionKind)!.getBuffer());
+      const xs = rowXs(small);
+      camera.position.set(15, 4, 30); updateSceneWater(scene);
+      // The uniform grid is where it was, with its buffers; the graded one moved its dense cells under the camera.
+      expect(small.getVertexBuffer(VertexBuffer.PositionKind)!.getBuffer()).toBe(buffers[0]);
+      expect(rowXs(small)).toEqual(xs);
+      expect(large.getVertexBuffer(VertexBuffer.PositionKind)!.getBuffer()).not.toBe(buffers[1]);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
   it("recentres Global Water as the camera moves by moving a grid offset in the shader and uploading no vertex data", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const camera = new FreeCamera("camera", new Vector3(0, 4, 0), scene);
