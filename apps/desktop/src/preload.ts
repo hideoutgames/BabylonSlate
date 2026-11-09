@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld("haptic", {
     platform: process.platform,
     arch: process.arch,
     runtime: (files: string[], electronVersion: string) => ipcRenderer.invoke("game-shell:runtime", files, electronVersion),
+    macIdentities: () => ipcRenderer.invoke("game-shell:mac-identities"),
+    packageMac: (request: unknown) => ipcRenderer.invoke("game-shell:package-mac", request),
   },
   // Exports: the main process asks where to save and writes the file.
   files: {

@@ -31,7 +31,7 @@ Every page groups its settings into sub-categories, such as **Shadows** and **Po
 | Group | Pages |
 | --- | --- |
 | Editor | Undo, Debugger, Viewport, Graph, Assets, Thumbnails, Focus, Keybinds, Interface, Accessibility, About |
-| Projects | Templates, Engine Plugins, Engine Extensions |
+| Projects | Templates, Engine Plugins, Engine Extensions, Packaging |
 
 - **Undo**: history limits. See [Undo and Saving](undo-and-saving.md).
 - **Debugger**: Play debugging defaults and **Debug Mode**. See [Debugging](../debugging/index.md).
@@ -45,6 +45,7 @@ Every page groups its settings into sub-categories, such as **Shadows** and **Po
 - **Accessibility**: text size, motion, touch and timing, number dragging, and graph pin and connection options. See [Accessibility](#accessibility).
 - **About**: version and build. The desktop app also has **Automatic Updates** here.
 - **Templates**, **Engine Plugins** and **Engine Extensions**: what new projects start with. See [Plugins](../projects/plugins.md) and [Extensions](../projects/extensions.md).
+- **Packaging**: how the desktop app on a Mac signs and notarizes macOS games. See [macOS games](../publishing/index.md#macos-games).
 
 ## Theme
 
@@ -115,7 +116,7 @@ Haptic is built with open-source software. To read the licences, open **Manage A
 | --- | --- | --- |
 | Project | General | Project version, Auto-Save Interval, Compile On Save, infinite loop detection, Garbage Collection Interval, Editor Utility Objects |
 | Project | Source Control | Git LFS file locking. Desktop and mobile apps only. |
-| Project | Export | What a game package includes, and Export Project |
+| Project | Export | What a game package includes, the App Identity of native apps, and Export Project |
 | Gameplay | Game | Startup Scene, Game Instance, 2D pixels per unit and sorting layers |
 | Gameplay | Save Games | Default save definition, slot and profile; preview saves |
 | Gameplay | Physics | Collision layers and presets |

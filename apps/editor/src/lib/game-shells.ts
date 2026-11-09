@@ -8,8 +8,11 @@ import { getElectronGameShellBridge, type ElectronGameShellBridge } from "@hapti
  * Electron's official release zips in parts; the desktop app supplies its own
  * runtime for its own OS.
  */
+/** Players a build can carry: the desktop targets Haptic packages itself, and macOS, which the Mac app packages and signs. */
+export type GameShellTarget = DesktopGameTarget | "macos-arm64";
+
 export interface GameShellEntry {
-  target: DesktopGameTarget;
+  target: GameShellTarget;
   /** SHA-256 of the release zip, as the pinned `electron` package records it. */
   sha256: string;
   size: number;
@@ -26,14 +29,15 @@ export interface GameShellManifest {
   shells: GameShellEntry[];
 }
 
-const TARGETS: Record<DesktopGameTarget, { platform: string; arch: string; label: string }> = {
+const TARGETS: Record<GameShellTarget, { platform: string; arch: string; label: string }> = {
   "windows-x64": { platform: "win32", arch: "x64", label: "Windows" },
   "linux-x64": { platform: "linux", arch: "x64", label: "Linux" },
+  "macos-arm64": { platform: "darwin", arch: "arm64", label: "macOS" },
 };
 const FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 
-const isTarget = (value: unknown): value is DesktopGameTarget => typeof value === "string" && Object.hasOwn(TARGETS, value);
+const isTarget = (value: unknown): value is GameShellTarget => typeof value === "string" && Object.hasOwn(TARGETS, value);
 const isStrings = (value: unknown, valid: (entry: string) => boolean): value is string[] =>
   Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === "string" && valid(entry));
 
@@ -78,12 +82,20 @@ export async function loadGameShellManifest(source: GameShellSource = defaultSou
   }
 }
 
-/** Desktop targets this editor can package: bundled ones, and the desktop app's own OS when it runs there. */
-export function packageableDesktopTargets(manifest: GameShellManifest | null, bridge = getElectronGameShellBridge()): Set<DesktopGameTarget> {
-  const targets = new Set<DesktopGameTarget>();
+/**
+ * Targets this editor can package: bundled Windows and Linux players, the
+ * desktop app's own OS when it runs there, and macOS in the desktop app on a
+ * Mac, which signs with Apple's tools.
+ */
+export function packageableDesktopTargets(manifest: GameShellManifest | null, bridge = getElectronGameShellBridge()): Set<GameShellTarget> {
+  const targets = new Set<GameShellTarget>();
   for (const shell of manifest?.shells ?? []) {
     const { platform, arch } = TARGETS[shell.target];
-    if (shell.source === "bundled" || (bridge?.platform === platform && bridge.arch === arch)) targets.add(shell.target);
+    if (shell.target === "macos-arm64") {
+      if (shell.source === "bundled" && bridge?.platform === "darwin" && typeof bridge.packageMac === "function") targets.add(shell.target);
+    } else if (shell.source === "bundled" || (bridge?.platform === platform && bridge.arch === arch)) {
+      targets.add(shell.target);
+    }
   }
   return targets;
 }

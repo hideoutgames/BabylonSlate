@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { isLibraryFolder } from "@haptic/vfs/library-folders";
+import { isValidAppId } from "@haptic/core/app-identity";
 import { isRuntimeFileName, MAX_RUNTIME_FILES } from "./game-runtime";
 
 /** Largest payload one project IPC call may move through the main process. */
@@ -242,7 +243,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     "lfs:fetch": 1, "auth:open-browser": 2, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
     "project:list": 0, "project:delete": 1, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,
     "project:writeBinary": 2, "project:exists": 1, "project:readdir": 1, "project:mkdir": 2,
-    "project:remove": 1, "project:stat": 1, "file:save": 2, "game-shell:runtime": 2,
+    "project:remove": 1, "project:stat": 1, "file:save": 2, "game-shell:runtime": 2, "game-shell:mac-identities": 0, "game-shell:package-mac": 1,
   };
   requireValue(Object.hasOwn(counts, channel) && args.length === counts[channel]);
   if (channel.startsWith("save-games:")) {
@@ -254,6 +255,31 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
         path.split("/").every(part => part.length > 0 && part !== "." && part !== ".."));
     }
     if (channel === "save-games:write") text(args[1], 32 * 1024 * 1024);
+  } else if (channel === "game-shell:package-mac") {
+    requireValue(args[0] && typeof args[0] === "object" && !Array.isArray(args[0]));
+    const request = args[0] as Record<string, unknown>;
+    requireValue(Array.isArray(request.game) && request.game.length <= 20000);
+    let bytes = 0;
+    for (const file of request.game as unknown[]) {
+      requireValue(Array.isArray(file) && file.length === 2 && file[1] instanceof Uint8Array);
+      text(file[0], 1024);
+      requireValue(!/^\//.test(file[0]) && !file[0].includes("\\") && file[0].split("/").every((part: string) => part.length > 0 && part !== "." && part !== ".."));
+      bytes += (file[1] as Uint8Array).byteLength;
+    }
+    requireValue(bytes <= MAX_IPC_BYTES);
+    text(request.name, 200);
+    text(request.appId, 155);
+    requireValue(isValidAppId(request.appId));
+    text(request.version, 64);
+    requireValue(typeof request.buildNumber === "number" && Number.isSafeInteger(request.buildNumber) && request.buildNumber >= 1);
+    text(request.gameId, 100);
+    requireValue(/^[A-Za-z0-9_-]{1,100}$/.test(request.gameId));
+    if (request.identity !== null) {
+      text(request.identity, 256);
+      requireValue(request.identity.startsWith("Developer ID Application: "));
+    }
+    text(request.notaryProfile, 128);
+    requireValue(/^[A-Za-z0-9._-]*$/.test(request.notaryProfile));
   } else if (channel === "game-shell:runtime") {
     requireValue(Array.isArray(args[0]) && args[0].length <= MAX_RUNTIME_FILES && args[0].every(isRuntimeFileName));
     text(args[1], 32);

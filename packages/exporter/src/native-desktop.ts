@@ -50,6 +50,13 @@ export function desktopGameNames(projectName: string, target: DesktopGameTarget)
   };
 }
 
+/** A macOS app's name (as Finder and the menu bar show it) and its saved ZIP, from the app's display name. */
+export function macGameNames(displayName: string): { app: string; archive: string } {
+  const app = [...displayName].filter((character) => character.charCodeAt(0) >= 32 && character !== "/" && character !== ":").join("")
+    .replace(/^\.+/, "").trim().slice(0, 100) || "Game";
+  return { app, archive: `${app.replace(/\s+/g, "_")}-macOS.zip` };
+}
+
 /** The release's executable name, checked to be in the runtime. */
 export function runtimeExecutable(target: DesktopGameTarget, entries: readonly { name: string }[]): string {
   const executable = RUNTIME_EXECUTABLE[target];
@@ -69,7 +76,10 @@ export function isSampleApp(name: string): boolean {
  * the game host and its `package.json` in `resources/app`, and the web game in
  * `resources/game`.
  */
-export function gameAppFiles(input: DesktopGamePackageInput, names: DesktopGameNames): [string, Uint8Array][] {
+export function gameAppFiles(
+  input: Pick<DesktopGamePackageInput, "host" | "game" | "name" | "version" | "gameId">,
+  names: Pick<DesktopGameNames, "executable">,
+): [string, Uint8Array][] {
   const encoder = new TextEncoder();
   const files: [string, Uint8Array][] = [
     ["resources/app/package.json", encoder.encode(`${JSON.stringify({

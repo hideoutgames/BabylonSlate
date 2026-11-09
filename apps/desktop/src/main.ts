@@ -24,7 +24,8 @@ import { fetchDesktopHttp, type DesktopHttpRequest } from "./desktop-http";
 import { desktopMemoryStats } from "./desktop-memory";
 import { createAuthBrowserSessions } from "./desktop-auth-browser";
 import { createDiscordPresence, DISCORD_PRESENCE_PATH, handleDiscordPresenceRequest, type DiscordPresence } from "./discord-presence";
-import { ownRuntimeZip } from "./game-runtime";
+import { ownRuntimeZip, readBundledShell } from "./game-runtime";
+import { macSigningIdentities, packageMacGame, type MacGamePackageRequest } from "./mac-game-package";
 import {
   allowsEditorPermission,
   authProviderUrl,
@@ -201,6 +202,12 @@ async function registerIpc(): Promise<void> {
   handle("game-shell:runtime", async (_event, files, electronVersion) => {
     if (electronVersion !== process.versions.electron) throw new Error("This desktop app's Electron version does not match the game player's.");
     return ownRuntimeZip({ installDir: dirname(process.execPath), executablePath: process.execPath, files: files as string[], platform: process.platform });
+  });
+  // macOS games: signed with Apple's tools, so only the app on a Mac packages them.
+  handle("game-shell:mac-identities", async () => process.platform === "darwin" ? macSigningIdentities() : []);
+  handle("game-shell:package-mac", async (_event, request) => {
+    if (process.platform !== "darwin") throw new Error("macOS games are packaged in the Haptic desktop app on a Mac.");
+    return packageMacGame({ request: request as MacGamePackageRequest, ...await readBundledShell(rendererRoot, "macos-arm64") });
   });
   handle("settings:read", async () => {
     try {
