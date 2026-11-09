@@ -202,6 +202,9 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     defines.setValue("HAPTIC_CEL", cel, true);
     // `waterdebug lighting off` draws water unlit, to measure what its lighting costs.
     defines.setValue("HAPTIC_UNLIT", this.unlit || (isWaterSurfaceMesh(mesh) && waterDebugOff(scene, "lighting")), true);
+    // Water receives every shadow through low quality's four taps, without Contact Hardening: on its moving surface a
+    // wider penumbra barely shows, and it would cost up to sixteen taps (more with Contact Hardening) per water pixel.
+    defines.setValue("HAPTIC_SHADOW_NARROW", isWaterSurfaceMesh(mesh), true);
     // A different cube format or projection is a settings change, which may compile; lights never are.
     defines.setValue("HAPTIC_ENVIRONMENT", !!environment, true);
     defines.setValue("HAPTIC_ENVIRONMENT_RGBD", !!environment?.isRGBD, true);
