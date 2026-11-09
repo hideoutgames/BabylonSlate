@@ -117,7 +117,7 @@ Extensions run as trusted code, not in a sandbox. Disabling an extension, editin
 
 ## Project Settings
 
-An extension can add its own category to **Project Settings**. Write it under **Contributions** in **Edit Extension**, or as `contributes` in `extension.json`. The category appears while the extension is enabled, under the title you choose, and **Search settings** finds its fields.
+An extension can add its own category to **Project Settings**. Write it under **Contributions** in **Edit Extension**, or as `contributes` in `extension.json`. The category appears in the **Miscellaneous** group while the extension is enabled, under the title you choose, and **Search settings** finds its fields.
 
 ```json
 {

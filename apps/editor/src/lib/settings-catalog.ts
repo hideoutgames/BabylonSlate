@@ -68,10 +68,14 @@ export const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> =
   },
 ];
 
+/** Project Settings group that holds every extension's settings category; hidden while it has none. */
+export const PROJECT_MISCELLANEOUS_GROUP = "Miscellaneous";
+
 export const PROJECT_GROUPS: CatalogCategoryGroup[] = [
   { label: "Project", ids: ["general", "sourceControl", "export"] },
   { label: "Gameplay", ids: ["game", "saveGames", "physics", "focusNavigation"] },
   { label: "Graphics & Audio", ids: ["rendering", "textures", "fonts", "audio"] },
+  { label: PROJECT_MISCELLANEOUS_GROUP, ids: [] },
   { label: "Plugins & Extensions", ids: ["plugins", "extensions"] },
 ];
 

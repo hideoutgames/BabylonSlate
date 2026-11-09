@@ -86,6 +86,7 @@ import {
   ENGINE_GROUPS,
   PROJECT_CATEGORIES,
   PROJECT_GROUPS,
+  PROJECT_MISCELLANEOUS_GROUP,
   matchesSearch,
 } from "../lib/settings-catalog";
 import {
@@ -245,7 +246,7 @@ export function SettingsModal({
       ...group,
       ids: [
         ...group.ids.filter((id) => showSourceControl || id !== "sourceControl"),
-        ...(group.ids.includes("extensions") ? extensionCategories.map((category) => category.id) : []),
+        ...(group.label === PROJECT_MISCELLANEOUS_GROUP ? extensionCategories.map((category) => category.id) : []),
       ],
     }));
   }, [extensionCategories, scope, showSourceControl]);
