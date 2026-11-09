@@ -7,6 +7,7 @@ import type {
 } from "@haptic/core";
 import type { LibraryFolder } from "./library-folders";
 import type { NativeHttpImageUpload } from "./native-http-port";
+import type { EngineSettings } from "./app-settings";
 
 export type HostPlatform = "ios" | "android" | "electron" | "web";
 
@@ -151,6 +152,33 @@ export interface ElectronGameShellBridge {
   macIdentities(): Promise<string[]>;
   /** macOS only: packages, signs and (with a profile) notarizes a macOS game; see `apps/desktop/src/mac-game-package.ts`. */
   packageMac(request: ElectronMacGameRequest): Promise<{ fileName: string; bytes: Uint8Array; notarized: boolean }>;
+  /** The JDK and Android SDK Android packaging would use with these settings, or why it cannot. */
+  androidToolchain(settings: EngineSettings["androidPackaging"]["toolchain"]): Promise<AndroidToolchainStatus>;
+  /** Asks for a keystore file; null when the user cancels. */
+  pickAndroidKeystore(): Promise<string | null>;
+  /** Builds and signs an Android game; see `apps/desktop/src/android-game-package.ts`. */
+  packageAndroid(request: ElectronAndroidGameRequest): Promise<{ fileName: string; bytes: Uint8Array; debugSigned: boolean }>;
+}
+
+export interface AndroidToolchainStatus {
+  javaHome: string | null;
+  javaVersion: number | null;
+  sdk: string | null;
+  /** Empty when both were found. */
+  problems: string[];
+}
+
+export interface ElectronAndroidGameRequest {
+  game: [string, Uint8Array][];
+  name: string;
+  appId: string;
+  version: string;
+  buildNumber: number;
+  format: "apk" | "aab";
+  /** App Icon PNGs at the Android launcher sizes, or null for the system's default icon. */
+  icon: [number, Uint8Array][] | null;
+  toolchain: EngineSettings["androidPackaging"]["toolchain"];
+  signing: EngineSettings["androidPackaging"]["signing"];
 }
 
 export interface ElectronMacGameRequest {

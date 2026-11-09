@@ -38,6 +38,9 @@ contextBridge.exposeInMainWorld("haptic", {
     runtime: (files: string[], electronVersion: string) => ipcRenderer.invoke("game-shell:runtime", files, electronVersion),
     macIdentities: () => ipcRenderer.invoke("game-shell:mac-identities"),
     packageMac: (request: unknown) => ipcRenderer.invoke("game-shell:package-mac", request),
+    androidToolchain: (settings: unknown) => ipcRenderer.invoke("game-shell:android-toolchain", settings),
+    pickAndroidKeystore: () => ipcRenderer.invoke("game-shell:pick-android-keystore"),
+    packageAndroid: (request: unknown) => ipcRenderer.invoke("game-shell:package-android", request),
   },
   // Exports: the main process asks where to save and writes the file.
   files: {

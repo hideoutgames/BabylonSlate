@@ -1,16 +1,20 @@
 /**
  * The App Icon in each package's own format, from PNGs the editor renders
  * once per export (`APP_ICON_SIZES`): an ICO in the Windows executable,
- * hicolor PNGs for a Linux desktop entry, an ICNS in a macOS app, and a PNG
- * favicon for the web page. Pure byte work: rendering the PNGs needs a canvas
+ * hicolor PNGs for a Linux desktop entry, an ICNS in a macOS app, launcher
+ * mipmaps in an Android app, and a PNG favicon for the web page. Pure byte work: rendering the PNGs needs a canvas
  * and stays with the caller.
  */
 
 /** PNG bytes of the App Icon by edge length in pixels. */
 export type AppIconImages = ReadonlyMap<number, Uint8Array>;
 
-/** Every edge length a package uses: Windows 16–256, Linux 16–512, macOS 16–1024, the web 256. */
-export const APP_ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024] as const;
+/**
+ * Every edge length a package uses: Windows 16–256, Linux 16–512, macOS
+ * 16–1024, the web 256, and Android's launcher icons at each screen density
+ * (`ANDROID_ICON_SIZES`).
+ */
+export const APP_ICON_SIZES = [16, 24, 32, 48, 64, 72, 96, 108, 128, 144, 192, 216, 256, 288, 512, 1024] as const;
 
 /** The web page's favicon (`<link rel="icon">`) and the desktop game window's icon. */
 export const APP_ICON_FILE = "icon.png";

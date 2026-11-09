@@ -3,6 +3,7 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { isLibraryFolder } from "@haptic/vfs/library-folders";
 import { isValidAppId } from "@haptic/core/app-identity";
 import { isRuntimeFileName, MAX_RUNTIME_FILES } from "./game-runtime";
+import { ANDROID_ICON_SIZES, MAX_ANDROID_VERSION_CODE } from "../../../packages/exporter/src/native-android";
 
 /** Largest payload one project IPC call may move through the main process. */
 export const MAX_IPC_BYTES = 512 * 1024 * 1024;
@@ -193,6 +194,35 @@ function text(value: unknown, max = 1024 * 1024): asserts value is string {
   requireValue(typeof value === "string" && value.length <= max && !value.includes("\0"));
 }
 
+/** A packaging request's exported game: relative paths inside the game, within the IPC size limit. */
+function gameFiles(value: unknown): void {
+  requireValue(Array.isArray(value) && value.length <= 20000);
+  let bytes = 0;
+  for (const file of value as unknown[]) {
+    requireValue(Array.isArray(file) && file.length === 2 && file[1] instanceof Uint8Array);
+    text(file[0], 1024);
+    requireValue(!/^\//.test(file[0]) && !file[0].includes("\\") && file[0].split("/").every((part: string) => part.length > 0 && part !== "." && part !== ".."));
+    bytes += (file[1] as Uint8Array).byteLength;
+  }
+  requireValue(bytes <= MAX_IPC_BYTES);
+}
+
+/** A local tool or keystore path from Engine Settings: absolute, or empty to find the tool. */
+function localPath(value: unknown, allowEmpty: boolean): void {
+  text(value, 4096);
+  requireValue(value === "" ? allowEmpty : isAbsolute(value));
+}
+
+function plainObject(value: unknown): asserts value is Record<string, unknown> {
+  requireValue(value !== null && typeof value === "object" && !Array.isArray(value));
+}
+
+function androidToolchainSettings(value: unknown): void {
+  plainObject(value);
+  localPath(value.sdk, true);
+  localPath(value.java, true);
+}
+
 function projectPath(value: unknown, allowRoot = true): void {
   text(value, 4096);
   requireValue(!/[\\:]/.test(value) && !value.startsWith("/") && !value.split("/").includes(".."));
@@ -246,6 +276,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     "project:list": 0, "project:delete": 1, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,
     "project:writeBinary": 2, "project:exists": 1, "project:readdir": 1, "project:mkdir": 2,
     "project:remove": 1, "project:stat": 1, "file:save": 2, "game-shell:runtime": 2, "game-shell:mac-identities": 0, "game-shell:package-mac": 1,
+    "game-shell:android-toolchain": 1, "game-shell:pick-android-keystore": 0, "game-shell:package-android": 1,
   };
   requireValue(Object.hasOwn(counts, channel) && args.length === counts[channel]);
   if (channel.startsWith("save-games:")) {
@@ -257,18 +288,39 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
         path.split("/").every(part => part.length > 0 && part !== "." && part !== ".."));
     }
     if (channel === "save-games:write") text(args[1], 32 * 1024 * 1024);
-  } else if (channel === "game-shell:package-mac") {
-    requireValue(args[0] && typeof args[0] === "object" && !Array.isArray(args[0]));
-    const request = args[0] as Record<string, unknown>;
-    requireValue(Array.isArray(request.game) && request.game.length <= 20000);
-    let bytes = 0;
-    for (const file of request.game as unknown[]) {
-      requireValue(Array.isArray(file) && file.length === 2 && file[1] instanceof Uint8Array);
-      text(file[0], 1024);
-      requireValue(!/^\//.test(file[0]) && !file[0].includes("\\") && file[0].split("/").every((part: string) => part.length > 0 && part !== "." && part !== ".."));
-      bytes += (file[1] as Uint8Array).byteLength;
+  } else if (channel === "game-shell:android-toolchain") {
+    androidToolchainSettings(args[0]);
+  } else if (channel === "game-shell:package-android") {
+    plainObject(args[0]);
+    const request = args[0];
+    gameFiles(request.game);
+    text(request.name, 200);
+    text(request.appId, 155);
+    requireValue(isValidAppId(request.appId));
+    text(request.version, 64);
+    requireValue(typeof request.buildNumber === "number" && Number.isSafeInteger(request.buildNumber) && request.buildNumber >= 1 && request.buildNumber <= MAX_ANDROID_VERSION_CODE);
+    requireValue(request.format === "apk" || request.format === "aab");
+    if (request.icon !== null) {
+      // PNGs at the Android launcher sizes, each at most once.
+      requireValue(Array.isArray(request.icon) && request.icon.length <= ANDROID_ICON_SIZES.length);
+      const sizes = new Set<number>();
+      let iconBytes = 0;
+      for (const image of request.icon as unknown[]) {
+        requireValue(Array.isArray(image) && image.length === 2 && ANDROID_ICON_SIZES.includes(image[0]) && !sizes.has(image[0]) && image[1] instanceof Uint8Array);
+        sizes.add(image[0]);
+        iconBytes += (image[1] as Uint8Array).byteLength;
+        requireValue((image[1] as Uint8Array)[0] === 0x89 && String.fromCharCode(...(image[1] as Uint8Array).subarray(1, 4)) === "PNG");
+      }
+      requireValue(iconBytes <= MAX_APP_ICON_BYTES);
     }
-    requireValue(bytes <= MAX_IPC_BYTES);
+    androidToolchainSettings(request.toolchain);
+    plainObject(request.signing);
+    if (request.signing.keystore !== null) localPath(request.signing.keystore, false);
+    text(request.signing.alias, 256);
+  } else if (channel === "game-shell:package-mac") {
+    plainObject(args[0]);
+    const request = args[0];
+    gameFiles(request.game);
     text(request.name, 200);
     text(request.appId, 155);
     requireValue(isValidAppId(request.appId));

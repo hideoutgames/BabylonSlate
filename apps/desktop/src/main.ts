@@ -26,6 +26,8 @@ import { createAuthBrowserSessions } from "./desktop-auth-browser";
 import { createDiscordPresence, DISCORD_PRESENCE_PATH, handleDiscordPresenceRequest, type DiscordPresence } from "./discord-presence";
 import { ownRuntimeZip, readBundledShell } from "./game-runtime";
 import { macSigningIdentities, packageMacGame, type MacGamePackageRequest } from "./mac-game-package";
+import { findAndroidToolchain, packageAndroidGame, type AndroidGamePackageRequest, type AndroidToolchainSettings } from "./android-game-package";
+import { ANDROID_SIGNING_SECRETS } from "../../../packages/exporter/src/native-android";
 import {
   allowsEditorPermission,
   authProviderUrl,
@@ -240,6 +242,26 @@ async function registerIpc(): Promise<void> {
   handle("secrets:delete", async (_event, key) => {
     await secrets.delete(String(key));
   });
+
+  // Android games: built with Gradle from the user's JDK and Android SDK, signed with their keystore.
+  handle("game-shell:android-toolchain", async (_event, settings) => {
+    const { toolchain, problems } = await findAndroidToolchain(settings as AndroidToolchainSettings);
+    return { javaHome: toolchain?.javaHome ?? null, javaVersion: toolchain?.javaVersion ?? null, sdk: toolchain?.sdk ?? null, problems };
+  });
+  handle("game-shell:pick-android-keystore", async event => {
+    const options = { properties: ["openFile" as const], filters: [{ name: "Keystores", extensions: ["jks", "keystore", "p12", "pfx"] }, { name: "All Files", extensions: ["*"] }] };
+    const window = BrowserWindow.fromWebContents(event.sender);
+    const picked = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+    return picked.canceled ? null : picked.filePaths[0] ?? null;
+  });
+  handle("game-shell:package-android", async (_event, request) => packageAndroidGame({
+    request: request as AndroidGamePackageRequest,
+    templateRoot: join(rootDir, "android-game"),
+    passwords: async () => ({
+      store: await secrets.get(ANDROID_SIGNING_SECRETS.store) ?? "",
+      key: await secrets.get(ANDROID_SIGNING_SECRETS.key) ?? "",
+    }),
+  }));
 
   const accountSecretsPath = userDataFile("account-secrets.json");
   const accountSecrets = new DesktopAccountSecretStore({

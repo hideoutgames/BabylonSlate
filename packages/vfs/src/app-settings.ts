@@ -408,6 +408,31 @@ export const engineSettingsSchema = z.object({
     })
     .catch({ identity: null, notaryProfile: "" })
     .default({ identity: null, notaryProfile: "" }),
+  /**
+   * How the desktop app builds Android games: the JDK and Android SDK folders
+   * (empty finds them), and the keystore and key alias that sign them (a null
+   * keystore signs with Android's debug key). Per computer; the keystore's
+   * passwords are in the secret store (`ANDROID_SIGNING_SECRETS`), never here.
+   */
+  androidPackaging: z
+    .object({
+      toolchain: z
+        .object({
+          sdk: z.string().max(4096).catch("").default(""),
+          java: z.string().max(4096).catch("").default(""),
+        })
+        .catch({ sdk: "", java: "" })
+        .default({ sdk: "", java: "" }),
+      signing: z
+        .object({
+          keystore: z.string().min(1).max(4096).nullable().catch(null).default(null),
+          alias: z.string().max(256).catch("").default(""),
+        })
+        .catch({ keystore: null, alias: "" })
+        .default({ keystore: null, alias: "" }),
+    })
+    .catch({ toolchain: { sdk: "", java: "" }, signing: { keystore: null, alias: "" } })
+    .default({ toolchain: { sdk: "", java: "" }, signing: { keystore: null, alias: "" } }),
 });
 
 export type EngineSettings = z.infer<typeof engineSettingsSchema>;

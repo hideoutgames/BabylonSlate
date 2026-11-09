@@ -14,10 +14,15 @@ import { gameAppFiles, macGameNames } from "../../../packages/exporter/src/nativ
  * created. Haptic never handles Apple credentials.
  */
 
-export type RunCommand = (command: string, args: readonly string[]) => Promise<{ stdout: string; stderr: string }>;
+/** Runs a program without a shell; `cwd` and `env` default to this process's. */
+export type RunCommand = (
+  command: string,
+  args: readonly string[],
+  options?: { cwd?: string; env?: NodeJS.ProcessEnv },
+) => Promise<{ stdout: string; stderr: string }>;
 
-export const runCommand: RunCommand = (command, args) => new Promise((resolve, reject) => {
-  execFile(command, [...args], { maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
+export const runCommand: RunCommand = (command, args, options = {}) => new Promise((resolve, reject) => {
+  execFile(command, [...args], { maxBuffer: 16 * 1024 * 1024, ...options }, (error, stdout, stderr) => {
     if (error) reject(new Error((stderr || stdout).trim() || error.message, { cause: error }));
     else resolve({ stdout, stderr });
   });
@@ -112,8 +117,8 @@ export function helperBundleId(appId: string, helperName: string): string {
   return kind ? `${appId}.helper.${kind}` : `${appId}.helper`;
 }
 
-/** A path under `root` for a game file, refusing anything that leaves it. */
-function within(root: string, path: string): string {
+/** A path under `root` for a package file, refusing anything that leaves it. */
+export function within(root: string, path: string): string {
   if (path.startsWith("/") || path.includes("\\") || path.includes("\0") || path.split("/").some((part) => !part || part === "." || part === "..")) {
     throw new Error(`Invalid game file path: ${path}`);
   }
