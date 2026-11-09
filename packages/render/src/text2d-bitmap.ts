@@ -142,6 +142,68 @@ export function planBitmapGlyphAtlas(
 
 const DEFAULT_TEXT2D_FONT_STACK = "sans-serif";
 
+/**
+ * Glyphs measured and rasterized before, by everything their drawing reads. A text is rebuilt or redrawn whenever a
+ * script rewrites it, mostly from glyphs it drew the time before, and measuring and reading one back from the canvas
+ * is most of that work. What a glyph draws as depends on the fonts the document holds, so the cache empties whenever
+ * one loads or leaves (`forgetRasterizedGlyphs`), and belongs to one document's canvas. Cached cells are shared:
+ * nothing may write their pixels.
+ */
+const GLYPH_CACHE_BYTES = 8 * 1024 * 1024;
+const GLYPH_CACHE_ENTRIES = 4096;
+const cachedGlyphs = new Map<string, { value: unknown; bytes: number }>();
+let cachedGlyphBytes = 0;
+let cachedGlyphHost: unknown;
+const watchedFontSets = new WeakSet<object>();
+
+/** Drops every cached glyph: a font face loaded or left the document, so glyphs may now draw differently. */
+export function forgetRasterizedGlyphs(): void {
+  cachedGlyphs.clear();
+  cachedGlyphBytes = 0;
+}
+
+/** The cached value for `key`, or `make()`'s, kept unless null and while the cache has room, the oldest going first. */
+function rememberedGlyph<T>(key: string, make: () => T, bytesOf?: (value: NonNullable<T>) => number): T {
+  const host = typeof document === "undefined" ? undefined : document;
+  if (host !== cachedGlyphHost) {
+    forgetRasterizedGlyphs();
+    cachedGlyphHost = host;
+    // Faces a stylesheet or a canvas draw loads report here; the font registry reports its own.
+    const fonts = (host as { fonts?: { addEventListener?: (type: string, listener: () => void) => void } } | undefined)?.fonts;
+    if (fonts && typeof fonts.addEventListener === "function" && !watchedFontSets.has(fonts)) {
+      watchedFontSets.add(fonts);
+      fonts.addEventListener("loadingdone", forgetRasterizedGlyphs);
+    }
+  }
+  const hit = cachedGlyphs.get(key);
+  if (hit) {
+    // Most recently used last.
+    cachedGlyphs.delete(key);
+    cachedGlyphs.set(key, hit);
+    return hit.value as T;
+  }
+  const value = make();
+  if (value === null || value === undefined) return value;
+  const bytes = bytesOf ? bytesOf(value) : 0;
+  if (bytes > GLYPH_CACHE_BYTES) return value;
+  cachedGlyphs.set(key, { value, bytes });
+  cachedGlyphBytes += bytes;
+  for (const [oldest, entry] of cachedGlyphs) {
+    if (cachedGlyphBytes <= GLYPH_CACHE_BYTES && cachedGlyphs.size <= GLYPH_CACHE_ENTRIES) break;
+    cachedGlyphs.delete(oldest);
+    cachedGlyphBytes -= entry.bytes;
+  }
+  return value;
+}
+
+/**
+ * Everything a bitmap glyph's measurement and pixels depend on: its atlas key, and the exact size and outline that
+ * key rounds.
+ */
+function glyphDrawingKey(ch: string, style: RichTextStyle, stack: string): string {
+  return `${bitmapGlyphKey(ch, style, stack)}|${style.size}|${style.outline}`;
+}
+
 function cssFontForText2D(style: RichTextStyle, stack: string): string {
   const italic = style.italic ? "italic" : "normal";
   const weight = style.bold ? "700" : "400";
@@ -270,22 +332,24 @@ export function measureBitmapGlyph(
   stack = DEFAULT_TEXT2D_FONT_STACK,
   scratch?: BitmapCanvasScratch,
 ): BitmapGlyphMeasurement {
-  const software = softwareGlyphSize(style);
-  let layout: { width: number; height: number } = software;
-  const ctx = glyphCanvas(scratch)?.ctx;
-  if (ctx) {
-    ctx.font = cssFontForText2D(style, stack);
-    ctx.textBaseline = "top";
-    ctx.textAlign = "left";
-    layout = canvasGlyphSize(ctx, ch, style);
-  }
-  return {
-    key: bitmapGlyphKey(ch, style, stack),
-    width: Math.max(layout.width, software.width),
-    height: Math.max(layout.height, software.height),
-    layoutWidth: layout.width,
-    layoutHeight: layout.height,
-  };
+  return rememberedGlyph(`measure|${glyphDrawingKey(ch, style, stack)}`, () => {
+    const software = softwareGlyphSize(style);
+    let layout: { width: number; height: number } = software;
+    const ctx = glyphCanvas(scratch)?.ctx;
+    if (ctx) {
+      ctx.font = cssFontForText2D(style, stack);
+      ctx.textBaseline = "top";
+      ctx.textAlign = "left";
+      layout = canvasGlyphSize(ctx, ch, style);
+    }
+    return {
+      key: bitmapGlyphKey(ch, style, stack),
+      width: Math.max(layout.width, software.width),
+      height: Math.max(layout.height, software.height),
+      layoutWidth: layout.width,
+      layoutHeight: layout.height,
+    };
+  });
 }
 
 /** Square (Chebyshev) dilation of a 0/1 mask by `radius` pixels, one running window per axis. */
@@ -410,12 +474,18 @@ export function rasterizeBitmapGlyph(
   scratch?: BitmapCanvasScratch,
 ): BitmapGlyphCell {
   const measured = measurement ?? measureBitmapGlyph(ch, style, stack, scratch);
+  // The limits are the caller's, so a cached glyph passes them again.
   planBitmapGlyphAtlas([measured], limits);
   const key = bitmapGlyphKey(ch, style, stack);
-  return (
-    tryCanvasRasterize(ch, style, stack, key, limits, measured, scratch) ??
-    rasterizeSoftwareBitmapGlyph(ch, style, key)
+  const cell = rememberedGlyph(
+    `cell|${glyphDrawingKey(ch, style, stack)}`,
+    () => tryCanvasRasterize(ch, style, stack, key, limits, measured, scratch) ?? rasterizeSoftwareBitmapGlyph(ch, style, key),
+    (drawn) => drawn.pixels.byteLength,
   );
+  if (cell.width > measured.width || cell.height > measured.height) {
+    throw new BitmapAllocationLimitError("font metrics changed after allocation preflight.");
+  }
+  return cell;
 }
 
 /** Shelf-pack unique glyph cells onto a power-of-two RGBA atlas. */
@@ -516,10 +586,13 @@ export function measurePixelGlyph(
   pixelSize: number,
   scratch?: BitmapCanvasScratch,
 ): (BitmapGlyphMeasurement & { originX: number; advance: number }) | null {
-  const target = pixelCanvas(ch, style, stack, pixelSize, scratch);
-  if (!target) return null;
-  const { width, height, originX, advance } = target.layout;
-  return { key: pixelGlyphKey(ch, style, stack, pixelSize), width, height, layoutWidth: width, layoutHeight: height, originX, advance };
+  const key = pixelGlyphKey(ch, style, stack, pixelSize);
+  return rememberedGlyph(`measure|${key}`, () => {
+    const target = pixelCanvas(ch, style, stack, pixelSize, scratch);
+    if (!target) return null;
+    const { width, height, originX, advance } = target.layout;
+    return { key, width, height, layoutWidth: width, layoutHeight: height, originX, advance };
+  });
 }
 
 /**
@@ -533,6 +606,24 @@ export function rasterizePixelGlyph(
   stack: string,
   pixelSize: number,
   limits: BitmapAllocationLimits = defaultLimits,
+  scratch?: BitmapCanvasScratch,
+): PixelGlyphCell | null {
+  const cell = rememberedGlyph(
+    `cell|${pixelGlyphKey(ch, style, stack, pixelSize)}`,
+    () => drawPixelGlyph(ch, style, stack, pixelSize, limits, scratch),
+    (drawn) => drawn.pixels.byteLength,
+  );
+  // The limits are the caller's, so a cached glyph passes them again.
+  if (cell) checkedCellBytes(cell.width, cell.height, limits);
+  return cell;
+}
+
+function drawPixelGlyph(
+  ch: string,
+  style: RichTextStyle,
+  stack: string,
+  pixelSize: number,
+  limits: BitmapAllocationLimits,
   scratch?: BitmapCanvasScratch,
 ): PixelGlyphCell | null {
   const target = pixelCanvas(ch, style, stack, pixelSize, scratch);
