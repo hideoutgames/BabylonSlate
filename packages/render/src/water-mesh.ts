@@ -16,6 +16,7 @@ import { inActiveView } from "./active-view";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 import { acquireWaterVariant, waterVariantBase, type AuthoredMaterialVariant } from "./material-compiler";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
+import { WATER_ALPHA_INDEX } from "./sorting";
 import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
 import { contactRange, setMeshVertexWaves, setWaterGridOffsetSource, waterGridOffset, WaterVertexWaves } from "./water-material";
 import { WaterContactField } from "./water-contact-field";
@@ -585,6 +586,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   const mesh = new Mesh(name, scene);
   mesh.setEnabled(body.enabled);
   markWaterSurfaceMesh(mesh);
+  mesh.alphaIndex = WATER_ALPHA_INDEX;
   const gridOffset = new Float64Array(2);
   // A GPU Global grid is uploaded relative to its snapped centre, which the Water Waves node's vertex shader adds back: picks undo it, and it is zero for every surface that uploads absolute positions.
   setWaterGridOffsetSource(mesh, gridOffset);

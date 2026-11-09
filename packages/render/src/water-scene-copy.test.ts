@@ -24,7 +24,8 @@ import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { allowSceneScreenShadows, updateSceneRenderingSettings } from "./render-settings";
 import { prewarmSceneMaterials } from "./scene-perf";
-import { configureEditorRenderingGroups } from "./sorting";
+import { applyComponentSorting, applyWorldVisualGroup, configureEditorRenderingGroups } from "./sorting";
+import { createEditorGrid, GRID_MESH_NAME } from "./editor-grid";
 import { createWaterMesh, isBuiltInWaterMesh, updateSceneWater } from "./water-mesh";
 import { isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
 import { completeRawUploads } from "./test-support/null-engine-uploads";
@@ -278,6 +279,46 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   expect(work).toEqual({ frames: 1, visibleFrames: 1, copies: 1 });
   expect(clears).toHaveBeenCalledTimes(7);
   graph.dispose();
+});
+
+it("draws water before the editor grid and every other blended surface, with or without the copy, so they composite over it", async () => {
+  const { scene, camera } = host();
+  // The lake lies below the grid plane and nearer the eye than the glass: by distance alone the glass would draw first.
+  const water = lake(scene);
+  water.position.set(0, -1, -2);
+  const grid = createEditorGrid(scene, { mode: "3d" });
+  const sprite = box(scene, "sprite", 0.5);
+  applyComponentSorting(sprite, ["Background", "Default", "Foreground", "UI"]);
+  const glass = box(scene, "glass", 0.5);
+  glass.position.z = 4;
+  // Actor visuals, water included, draw in the world group with the grid (`applyWorldVisualGroup`).
+  for (const mesh of [water, glass]) applyWorldVisualGroup(mesh, { components: [] });
+  const order: string[] = [];
+  for (const mesh of [water, grid.mesh, sprite, glass]) {
+    mesh.onBeforeRenderObservable.add(() => {
+      // Colour draws only: water's depth pre-pass draws under its own pass id just before its colour.
+      if (!currentPass(scene).includes("depth pre-pass") && !order.includes(mesh.name)) order.push(mesh.name);
+    });
+  }
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  await settle(graph, camera);
+  const render = () => {
+    order.length = 0;
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  };
+  // The split's transparent pass, after the copy.
+  expect(frames(graph, render)).toEqual({ frames: 1, visibleFrames: 1, copies: 1 });
+  expect(order).toEqual(["lake", GRID_MESH_NAME, "sprite", "glass"]);
+  // Without the copy, water blends in the objects pass's transparent queue, in the same order.
+  updateSceneRenderingSettings(scene, { quality: noCopyQuality() });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.waterSceneCopyDiagnostics()).toBeNull();
+  await settle(graph, camera);
+  render();
+  expect(order).toEqual(["lake", GRID_MESH_NAME, "sprite", "glass"]);
+  graph.dispose();
+  grid.dispose();
 });
 
 it("shares an effect chain's scene targets, deferring transparents only while water is visible", async () => {

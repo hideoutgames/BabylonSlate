@@ -18,7 +18,7 @@ export { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME };
 /** Screen-space border width (px) for the orange 2D camera / 2DAnchor frame. */
 export const CAMERA_BOUNDS_LINE_WIDTH = 2;
 const CAMERA_BOUNDS_COLOR = new Color3(0.9, 0.7, 0.2);
-/** Transparent sort: grid draws first among world-group alpha so helpers can sit on top. */
+/** Transparent sort: the grid draws after water (`WATER_ALPHA_INDEX`) and before every other world-group blended draw, so helpers sit on top. */
 const GRID_ALPHA_INDEX = 0;
 
 const GRID_SHADER_NAME = "editorGrid";

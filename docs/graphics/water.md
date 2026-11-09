@@ -37,6 +37,8 @@ Select a water actor to edit its shape in the viewport. Ocean, Lake and Puddle s
 
 Waves, foam and currents are measured in world metres, so scaling a water body does not stretch its pattern.
 
+Water draws before other translucent surfaces. The viewport grid (**Show Grid**), sprites and **Translucent** Materials draw over the water where they are above its surface, and are hidden where they are below it.
+
 ## Water Blend Distance
 
 Water bodies closer than **Project Settings > Rendering > Water > Water Blend Distance** merge into one surface, for example where a river meets a lake. This affects rendering and water queries. Set it to 0 to turn blending off.
