@@ -21,3 +21,12 @@ export function normalizeWaterProjectSettings(value: unknown): WaterProjectSetti
   const v = value && typeof value === "object" && !Array.isArray(value) ? value as Partial<WaterProjectSettings> : undefined;
   return { blendDistance: normalizeWaterBlendDistance(v?.blendDistance) };
 }
+
+/**
+ * Parts of water the `waterdebug` console command switches off for a Play session, to measure what each costs (the
+ * Feature Test Check's Water Breakdown): every water surface (`water`), its depth pre-pass (`prepass`), its lighting
+ * (`lighting`: drawn unlit), the shadows it receives (`shadows`), its per-pixel waves (`waves`: normals, crest foam and
+ * subsurface light; the vertex displacement stays) and its shore, contact and edge foam (`foam`).
+ */
+export const WATER_DEBUG_PARTS = ["water", "prepass", "lighting", "shadows", "waves", "foam"] as const;
+export type WaterDebugPart = (typeof WATER_DEBUG_PARTS)[number];

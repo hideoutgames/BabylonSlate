@@ -1,4 +1,4 @@
-import { POST_PROCESSING_EFFECT_FIELDS, QUALITY_GROUPS, QUALITY_LEVELS, WATER_QUALITY_FIELDS, type QualityGroup } from "@haptic/core";
+import { POST_PROCESSING_EFFECT_FIELDS, QUALITY_GROUPS, QUALITY_LEVELS, WATER_DEBUG_PARTS, WATER_QUALITY_FIELDS, type QualityGroup, type WaterDebugPart } from "@haptic/core";
 import { fail, ok } from "./parser";
 import type {
   CommandParameter,
@@ -42,6 +42,7 @@ export const DEBUG_COMMAND_NAMES = [
   "wireframe",
   "postprocessing",
   "rendertargets",
+  "waterdebug",
   "gpubusy",
   "framesinflight",
   "preservebuffer",
@@ -215,6 +216,19 @@ export function builtinCommands(): RegisteredCommand[] {
       "Turn the Play view's post-processing on or off as a whole, to measure its cost"),
     flagCommand("rendertargets", (host, enabled) => host.setRenderTargetCaptures?.(enabled),
       "Suspend or resume every-frame Render Target Captures, to measure their cost; manual captures still draw"),
+    {
+      name: "waterdebug",
+      tier: "debug",
+      category: "engine",
+      description: "Switch one part of water off or back on, to measure what it costs: every surface (water), its depth pre-pass, lighting, received shadows, per-pixel waves or foam",
+      parameters: [{ name: "part", type: "enum", enumValues: [...WATER_DEBUG_PARTS] }, FLAG],
+      run(args, host) {
+        const part = args.part as WaterDebugPart, enabled = Boolean(args.enabled);
+        if (!host.setWaterDebug) return fail("waterdebug is unavailable here");
+        host.setWaterDebug(part, enabled);
+        return ok(`waterdebug ${part} ${enabled ? "on" : "off"}`);
+      },
+    },
     flagCommand("gpubusy", (host, enabled) => host.setGpuBusyProbe?.(enabled),
       "Start (on, restarting) or stop measuring GPU-busy time per frame with fences, independently of display pacing"),
     {

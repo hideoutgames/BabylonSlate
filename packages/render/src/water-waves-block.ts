@@ -16,6 +16,7 @@ import {
   WATER_NODE_FOAM_UNIFORM, WATER_NODE_SUN_UNIFORM, WATER_NODE_VARYING, WATER_VERTEX_WAVE_UNIFORMS, waterWaveBlockSource, waterWaveNodeSources,
 } from "./water-material";
 import { declareWaterAttributes, isBlendingWaterSurface, isWaterSurfaceMesh, WATER_DEPTH_PRE_PASS_DEFINE, WATER_SURFACE_DEFINE } from "./water-surface-block";
+import { WATER_DEBUG_NO_WAVES_DEFINE, waterDebugOff } from "./water-debug";
 
 /** Varyings of the rest point and world normal the fragment stage samples the spectrum at. */
 const WATER_NODE_REST_VARYING = "vSlateWaterRest";
@@ -87,6 +88,8 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     defines.setValue(WATER_GPU_WAVES_DEFINE, waves !== null, true);
     defines.setValue(WATER_BLEND_DEFINE, isBlendingWaterSurface(mesh), true);
     defines.setValue(WATER_FFT_DEFINE, waves ? waves.cascades(mesh!.getScene()) : 1, true);
+    // `waterdebug waves off`: the fragment samples no spectrum (the vertex displacement stays).
+    defines.setValue(WATER_DEBUG_NO_WAVES_DEFINE, surface && waterDebugOff(mesh!.getScene(), "waves"), true);
   }
   /** Binds the waves, the spectrum and the clock of the mesh being drawn, every draw: surfaces sharing a material have their own. */
   override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
@@ -175,7 +178,7 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     state.compilationString += local("swnNormal", v3, worldNormal)
       + local("swnHeight", wgsl ? "f32" : "float", "0.0") + local("swnFoam", wgsl ? "f32" : "float", "0.0") + local("swnSubsurface", wgsl ? "f32" : "float", "0.0")
       + local("swnEdgeTurbulence", wgsl ? "f32" : "float", "0.0")
-      + `#ifndef ${WATER_DEPTH_PRE_PASS_DEFINE}\n${sources.fragment(rest, base, `${from}${WATER_NODE_VARYING}`)}\n#endif\n`
+      + `#ifndef ${WATER_DEPTH_PRE_PASS_DEFINE}\n#ifndef ${WATER_DEBUG_NO_WAVES_DEFINE}\n${sources.fragment(rest, base, `${from}${WATER_NODE_VARYING}`)}\n#endif\n#endif\n`
       + declare(this.height, "swnHeight") + declare(this.normal, "swnNormal") + declare(this.crestFoam, "swnFoam") + declare(this.subsurface, "swnSubsurface") + declare(this.edgeTurbulence, "swnEdgeTurbulence")
       + declare(this.time, `${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.x`);
   }

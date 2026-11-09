@@ -31,7 +31,8 @@ import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
-import { isBuiltInWaterMesh, setSceneWaterTime, settleSceneWater } from "./water-mesh";
+import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
+import { waterDebugFingerprint } from "./water-debug";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
@@ -1157,6 +1158,7 @@ function initializeEngine(
       "post.samples": String(sceneMultisampleCount(scene)),
       "post.enabled": String(postProcessingEnabled),
       captures: renderTargetCaptures.isEveryFrameSuspended() ? "suspended" : "on",
+      "water.debug": waterDebugFingerprint(scene),
       // Engine-wide and kept across Play sessions, so a change that is not undone shows.
       "presentation.framesInFlight": String(frameBackpressure.mode),
       // The live context's attribute, not the stored setting: the setting applies to the next Engine.
@@ -3153,6 +3155,7 @@ function initializeEngine(
         renderTargetCaptures.setEveryFrameSuspended(!command.enabled);
         scheduler.invalidate("asset");
       }
+      if (command.type === "setWaterDebug" && setSceneWaterDebug(scene, command.part, command.enabled)) scheduler.invalidate("asset");
       if (command.type === "tilemapAnimationTime") {
         binding.tilemapAnimationTimeMs = command.elapsedMs;
         scheduler.invalidate("snapshot");

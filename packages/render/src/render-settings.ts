@@ -388,6 +388,17 @@ function syncWaterQuality(scene: Scene, state: SceneRendering, next: Readonly<Wa
   for (const follower of state.followers) markSceneReadinessDirty(follower);
 }
 
+/**
+ * A new Water quality revision for `scene`'s owner without a quality change: water re-prepares its defines (a frozen
+ * Material is marked dirty), as after a quality change. The water debug switches (`setSceneWaterDebug`) use it.
+ */
+export function bumpSceneWaterRevision(scene: Scene): void {
+  const owner = renderSettingsOwner(scene), state = sceneRenderingSettings(owner);
+  state.waterRevision = ++waterRevisions;
+  markSceneReadinessDirty(owner);
+  for (const follower of state.followers) markSceneReadinessDirty(follower);
+}
+
 /** The Scene whose project quality `scene` renders with: itself unless it follows another. */
 export function renderSettingsOwner(scene: Scene): Scene {
   return settingsOwners.get(scene) ?? scene;
