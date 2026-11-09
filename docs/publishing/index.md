@@ -1,6 +1,6 @@
 # Publishing
 
-**Packaging** builds your project as a game in a ZIP file: a web game ready for itch.io or any static web host, or a desktop game for Windows or Linux.
+**Packaging** builds your project as a game: a web game in a ZIP, ready for itch.io or any static web host, or a desktop game for Windows (ZIP) or Linux (Debian package or ZIP).
 
 ## Before you package
 
@@ -15,7 +15,7 @@
 2. In the platform list, select a platform under **Available**. Platforms under **Unavailable** can't be packaged with this copy of Haptic.
 3. Check the summary: the output file, **Startup Scene**, **Bundle Debugger** and **Always Package Folders**. If no Startup Scene is set, choose **Game Settings** to set one; **Package** stays unavailable until you do.
 4. Choose **Package**.
-5. Save the ZIP when Haptic asks (see [Saving exported files](../projects/index.md#saving-exported-files)); in a browser, a message such as **Game package downloaded. Check your downloads.** appears. The ZIP is named after the project, with underscores for spaces, and desktop ZIPs end in `-Windows` or `-Linux`.
+5. Save the file when Haptic asks (see [Saving exported files](../projects/index.md#saving-exported-files)); in a browser, a message such as **Game package downloaded. Check your downloads.** appears. The file is named after the project, with underscores for spaces, and desktop packages end in `-Windows` or `-Linux`.
 
 The web ZIP has `index.html` at its root. Upload it to itch.io as an HTML game, or unzip it and serve the folder from any static web host. For desktop ZIPs, see [Desktop games](#desktop-games).
 
@@ -23,18 +23,27 @@ If packaging fails, the reason appears in the **Packaging** window.
 
 ## Desktop games
 
-Windows and Linux games are the same web game in a desktop player built on Electron, so they look and play as they do in Play. Each ZIP holds one folder named after the project:
+Windows and Linux games are the same web game in a desktop player built on Electron, so they look and play as they do in Play. A ZIP holds one folder named after the project:
 
 | Platform | Start the game with | Notes |
 | --- | --- | --- |
 | Windows (64-bit) | `<Project Name>.exe` | Unsigned, so Windows SmartScreen may warn on first launch: choose **More info**, then **Run anyway**. |
-| Linux (64-bit) | the lowercase command, such as `space-game` | Unzip with a tool that keeps file permissions, such as `unzip`. |
+| Linux (64-bit) | the lowercase command, such as `space-game` | Unzip with a tool that keeps file permissions, such as `unzip`. Prefer the Debian package for Ubuntu. |
 
 - Keep the whole folder together; the game reads its files from the `resources` folder beside the program.
 - The game's saves are stored per project in your user data folder under `Haptic Games`, so renaming the project keeps them.
 - The game window cannot open other pages. Links it opens go to the system browser.
 - The folder includes the licences of Electron and Chromium (`LICENSE`, `LICENSES.chromium.html`) beside `legal/THIRD-PARTY-NOTICES.txt` in `resources/game`. Keep them when you share the game.
-- On Linux distributions that restrict unprivileged user namespaces, such as Ubuntu 24.04, the game can stop at start with a sandbox message. Run `sudo chown root chrome-sandbox && sudo chmod 4755 chrome-sandbox` in the game's folder once.
+### Linux formats
+
+For Linux, choose the **Format** in the Packaging summary:
+
+| Format | Use it for | How players install it |
+| --- | --- | --- |
+| Debian Package (default) | Debian, Ubuntu and their derivatives | `sudo apt install ./Space_Game-Linux.deb`, or open it in the software installer. The game appears in the app menu and as the `space-game` command. |
+| ZIP | Other distributions | Unzip and run the command in the folder. |
+
+Ubuntu 23.10 and later block the way the game's browser engine sandboxes itself unless its sandbox helper is installed by an administrator. The Debian package installs it that way, so the game starts with its sandbox on. From the ZIP on those systems, the game stops at start with a sandbox message until someone runs `sudo chown root chrome-sandbox && sudo chmod 4755 chrome-sandbox` in its folder.
 
 Which platforms you can package depends on where you run Haptic:
 

@@ -6,6 +6,8 @@
  * and games stay well under its 4 GiB and 65,535-entry limits.
  */
 
+import { inflateSync } from "fflate";
+
 const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_SIGNATURE = 0x02014b50;
 const LOCAL_SIGNATURE = 0x04034b50;
@@ -90,6 +92,14 @@ export function readZipEntries(zip: Uint8Array): ZipEntry[] {
     offset += 46 + nameLength + extraLength + commentLength;
   }
   return entries;
+}
+
+/** The entry's file content: stored bytes as they are, deflated ones inflated. */
+export function readZipEntryData(zip: Uint8Array, entry: ZipEntry): Uint8Array {
+  const data = storedData(zip, entry);
+  if (entry.method === 0) return data;
+  if (entry.method === 8) return inflateSync(data, { out: new Uint8Array(entry.size) });
+  throw invalid(`entry ${entry.name} uses an unsupported compression method.`);
 }
 
 /** The entry's stored (compressed) bytes. */
