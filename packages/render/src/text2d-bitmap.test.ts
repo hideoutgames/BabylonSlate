@@ -241,6 +241,48 @@ describe("packBitmapGlyphAtlas", () => {
     }
   });
 
+  describe("for a text that keeps the atlas it owns", () => {
+    const limits = { maxTextureSize: 256, maxWorkingBytes: 1024 * 1024 };
+    const cell = (key: string) => ({ key, width: 8, height: 8 });
+    const cells = [cell("a"), cell("b")];
+    // Alone, two 8 x 8 cells stack in the smallest atlas: 16 wide holds one cell a row.
+    const smallest = { width: 16, height: 32, placed: [{ ...cell("a"), x: 1, y: 1 }, { ...cell("b"), x: 1, y: 10 }] };
+
+    it("plans the smallest atlas without one to keep", () => {
+      expect(planBitmapGlyphAtlas(cells, limits)).toMatchObject(smallest);
+    });
+
+    it("packs the cells into the kept size, a pixel apart, when they fit it", () => {
+      const plan = planBitmapGlyphAtlas(cells, limits, { width: 64, height: 64 });
+      expect(plan).toMatchObject({ width: 64, height: 64, placed: [{ ...cell("a"), x: 1, y: 1 }, { ...cell("b"), x: 10, y: 1 }] });
+      const packed = packBitmapGlyphAtlas(cells.map((entry, index) => ({ ...entry, pixels: new Uint8ClampedArray(8 * 8 * 4).fill(index + 1) })), limits, plan)!;
+      expect([packed.width, packed.height]).toEqual([64, 64]);
+      expect(packed.uvs.get("b")).toEqual({ u0: 10 / 64, v0: 1 - 9 / 64, u1: 18 / 64, v1: 1 - 1 / 64 });
+      // The second cell starts at column 10 of row 1, after one transparent pixel.
+      expect(Array.from(packed.pixels.slice((64 + 9) * 4, (64 + 11) * 4))).toEqual([0, 0, 0, 0, 2, 2, 2, 2]);
+    });
+
+    it.each([
+      { title: "too short for the rows", keep: { width: 16, height: 16 }, cells },
+      { title: "too narrow for a cell", keep: { width: 8, height: 64 }, cells },
+      { title: "larger than the texture limit", keep: { width: 512, height: 16 }, cells },
+    ])("plans the smallest atlas when the kept size is $title", ({ keep }) => {
+      expect(planBitmapGlyphAtlas(cells, limits, keep)).toMatchObject(smallest);
+    });
+
+    it("plans the smallest atlas when the kept size is over the working-set budget", () => {
+      // 16 x 32 needs 5120 working bytes; 64 x 64 would need 33792.
+      const budget = { ...limits, maxWorkingBytes: 8000 };
+      expect(planBitmapGlyphAtlas(cells, budget, { width: 64, height: 64 })).toMatchObject({ ...smallest, workingBytes: 5120 });
+      expect(planBitmapGlyphAtlas(cells, { ...limits, maxWorkingBytes: 40000 }, { width: 64, height: 64 })).toMatchObject({ width: 64, height: 64, workingBytes: 33792 });
+    });
+
+    it("refuses what the limits refuse, whatever size is kept", () => {
+      const refused = { maxTextureSize: 64, maxWorkingBytes: 1024, retainedBytes: 900 };
+      expect(() => planBitmapGlyphAtlas([{ key: "A", width: 2, height: 2 }], refused, { width: 64, height: 64 })).toThrow(/allocation limit/i);
+    });
+  });
+
   it("assigns distinct UVs and copies both cells onto one atlas", () => {
     const a = rasterizeBitmapGlyph("A", STYLE);
     const i = rasterizeBitmapGlyph("I", STYLE);

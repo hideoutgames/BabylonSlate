@@ -64,10 +64,33 @@ function checkedCellBytes(width: number, height: number, limits: BitmapAllocatio
   return bytes;
 }
 
-/** Compute bounds and budget before any glyph or atlas pixel allocation. */
+/** Rows of cells left to right in an atlas `width` wide, a pixel apart and a pixel from its edges, and their extent. */
+function placeGlyphRows(cells: readonly GlyphSize[], width: number): { placed: BitmapAtlasPlan["placed"]; extent: number } {
+  let x = 1, y = 1, rowHeight = 0;
+  const placed: BitmapAtlasPlan["placed"] = [];
+  for (const cell of cells) {
+    if (x + cell.width + 1 > width) {
+      x = 1;
+      y += rowHeight + 1;
+      rowHeight = 0;
+    }
+    placed.push({ ...cell, x, y });
+    x += cell.width + 1;
+    rowHeight = Math.max(rowHeight, cell.height);
+  }
+  return { placed, extent: y + rowHeight + 1 };
+}
+
+/**
+ * Compute bounds and budget before any glyph or atlas pixel allocation. `keep` is the size of the atlas a text
+ * already owns: the plan keeps that size when the cells fit it within the budget, so the text can redraw into its
+ * texture. A glyph samples the same texels wherever its cell sits, since every cell has a transparent pixel around
+ * it. A text the limits refuse is refused with or without `keep`.
+ */
 export function planBitmapGlyphAtlas(
   cells: readonly GlyphSize[],
   limits: BitmapAllocationLimits = defaultLimits,
+  keep?: { width: number; height: number },
 ): BitmapAtlasPlan | null {
   if (!cells.length) return null;
   const retained = limits.retainedBytes ?? 0;
@@ -88,33 +111,32 @@ export function planBitmapGlyphAtlas(
       throw new BitmapAllocationLimitError("unique glyph cells exceed the working-set budget.");
     }
   }
+  /** Unique cells + canvas/readback staging + CPU/GPU atlas + still-live old text; null when over the budget. */
+  const workingBytesFor = (width: number, height: number): number | null => {
+    const atlasBytes = width * height * 4;
+    if (!Number.isSafeInteger(atlasBytes) || atlasBytes > limits.maxWorkingBytes) return null;
+    const workingBytes = cellBytes + 2 * largestCell + 2 * atlasBytes + retained;
+    return Number.isSafeInteger(workingBytes) && workingBytes <= limits.maxWorkingBytes ? workingBytes : null;
+  };
   let best: BitmapAtlasPlan | null = null;
   for (let width = nextPowerOfTwo(minWidth); width <= limits.maxTextureSize; width *= 2) {
-    let x = 1, y = 1, rowHeight = 0;
-    const placed: BitmapAtlasPlan["placed"] = [];
-    for (const cell of cells) {
-      if (x + cell.width + 1 > width) {
-        x = 1;
-        y += rowHeight + 1;
-        rowHeight = 0;
-      }
-      placed.push({ ...cell, x, y });
-      x += cell.width + 1;
-      rowHeight = Math.max(rowHeight, cell.height);
-    }
-    const height = nextPowerOfTwo(y + rowHeight + 1);
+    const { placed, extent } = placeGlyphRows(cells, width);
+    const height = nextPowerOfTwo(extent);
     if (height > limits.maxTextureSize) continue;
-    const atlasBytes = width * height * 4;
-    if (!Number.isSafeInteger(atlasBytes) || atlasBytes > limits.maxWorkingBytes) continue;
-    // Unique cells + canvas/readback staging + CPU/GPU atlas + still-live old text.
-    const workingBytes = cellBytes + 2 * largestCell + 2 * atlasBytes + retained;
-    if (!Number.isSafeInteger(workingBytes) || workingBytes > limits.maxWorkingBytes) continue;
+    const workingBytes = workingBytesFor(width, height);
+    if (workingBytes === null) continue;
     if (!best || width * height < best.width * best.height ||
       (width * height === best.width * best.height && Math.abs(width - height) < Math.abs(best.width - best.height))) {
       best = { width, height, placed, workingBytes };
     }
   }
   if (!best) throw new BitmapAllocationLimitError("single atlas cannot fit the texture dimensions and working-set budget.");
+  if (keep && (keep.width !== best.width || keep.height !== best.height) && keep.width >= minWidth &&
+    keep.width <= limits.maxTextureSize && keep.height <= limits.maxTextureSize) {
+    const { placed, extent } = placeGlyphRows(cells, keep.width);
+    const workingBytes = extent <= keep.height ? workingBytesFor(keep.width, keep.height) : null;
+    if (workingBytes !== null) return { width: keep.width, height: keep.height, placed, workingBytes };
+  }
   return best;
 }
 

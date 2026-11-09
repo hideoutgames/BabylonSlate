@@ -1875,14 +1875,14 @@ describe("createPlayMesh", () => {
     const binding = createSnapshotSceneBinding();
     binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
     binding.modelSources = installModelSources(binding);
-    const text = (value: string) => ({
+    const text = (value: string, size: number) => ({
       type: "assignMesh" as const,
       slotId: 1,
       meshKind: "2dtext",
       meshAssetGuid: null,
-      text2d: parseText2DProperties({ text: value }),
+      text2d: parseText2DProperties({ text: value, size }),
     });
-    applyAssignMesh(scene, binding, text("HI"));
+    applyAssignMesh(scene, binding, text("HI", 32));
     applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: null });
     const snapshot = (flags: number) => ({
       frameId: 1, tickIndex: 1, actorCount: 2,
@@ -1892,8 +1892,8 @@ describe("createPlayMesh", () => {
     });
     applySnapshotToScene(scene, binding, snapshot(0));
     const [textRoot, boxRoot] = [binding.meshes.get(1), binding.meshes.get(2)];
-    // A script text write rebuilds the glyphs; a model assignment stages a new root.
-    applyAssignMesh(scene, binding, text("HO"));
+    // A text's new size rebuilds its glyphs; a model assignment stages a new root.
+    applyAssignMesh(scene, binding, text("HO", 48));
     applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: "model-1" });
     await binding.slotAnimLoads?.get(2);
     expect(binding.meshes.get(1)).not.toBe(textRoot);

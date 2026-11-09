@@ -88,6 +88,11 @@ export function rememberPlayVisualAncestors(root: Mesh, chains: Map<string, Tran
   playVisualAncestors.set(root, chains);
 }
 
+/** The mesh each component of the visual `root` draws with, by component id. */
+export function playVisualComponentsOf(root: Mesh): ReadonlyMap<string, Mesh> | undefined {
+  return playVisualComponents.get(root);
+}
+
 export function rememberPlayVisualComponents(root: Mesh, components: ReadonlyMap<string, Mesh>): void {
   playVisualComponents.set(root, components);
   root.onDisposeObservable.addOnce(() => {

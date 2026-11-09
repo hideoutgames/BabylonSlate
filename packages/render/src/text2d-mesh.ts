@@ -2,7 +2,9 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { CreatePlaneVertexData } from "@babylonjs/core/Meshes/Builders/planeBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Observer } from "@babylonjs/core/Misc/observable";
 import { Scene } from "@babylonjs/core/scene";
@@ -13,7 +15,9 @@ import {
   resolveText2DRenderer,
   text2DCharacterReveal,
   type RichTextStyle,
+  type SceneLayerHitTest,
   type Text2DProperties,
+  type Text2DRenderer,
 } from "@haptic/core";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import {
@@ -62,6 +66,33 @@ export type Text2DAssetContext = MeshAssetContext & {
 const textMaterialVisuals = new WeakMap<Mesh, { guid: string | null; glyphs: Array<{ mesh: Mesh; restore: () => void }> }>();
 const appearVisuals = new WeakMap<Mesh, (progress: number) => void>();
 const textLayouts = new WeakMap<Mesh, Text2DLayout>();
+
+/** One batch mesh of a text: the glyphs that share `key` (`glyphBatchKey`), as the quads it last drew. */
+type GlyphBatch = { key: string; mesh: Mesh; quads: GlyphBatchQuad[] };
+
+/**
+ * What a built text owns and was built for, by its root: what `updateText2DMesh` must find unchanged to redraw the
+ * text with the meshes, materials and atlas texture it has.
+ */
+type Text2DBuild = {
+  name: string;
+  rich: boolean;
+  materialGuid: string | null;
+  renderer: Text2DRenderer;
+  fontGuid: string | null;
+  fontStack: string;
+  /** The font's Pixel Size while it draws as a pixel font, else 0. */
+  pixelSize: number;
+  hitTest: SceneLayerHitTest;
+  bitmapAtlas: RawTexture | null;
+  /** In creation order, which is the order of each batch's first glyph. */
+  batches: GlyphBatch[];
+  /** Glyphs, images and underlines drawn as a plane each. */
+  planes: number;
+  wrapW: number;
+  wrapH: number;
+};
+const text2DBuilds = new WeakMap<Mesh, Text2DBuild>();
 
 /** Measured glyph layout retained for native SceneLayer text editing feedback. */
 export function text2DMeshLayout(mesh: Mesh): Text2DLayout | undefined { return textLayouts.get(mesh); }
@@ -453,18 +484,61 @@ function attachEffects(
   };
 }
 
+/** What a text is drawn with and how its glyphs lie: known once it is measured, before any glyph is rasterized. */
+type Text2DSetup = {
+  parsed: Text2DProperties;
+  rich: boolean;
+  fade: boolean;
+  hitTest: SceneLayerHitTest;
+  ppu: number;
+  fontGuid: string | null;
+  png: Uint8Array | Blob | undefined;
+  fontStack: string;
+  /** Whether the font draws its own bitmap glyphs at `pixelSize`. */
+  pixel: boolean;
+  pixelSize: number;
+  renderer: Text2DRenderer;
+  /** A glyph's atlas key: a pixel font's native cell, else the canvas cell at its size. */
+  glyphKey: (ch: string, style: RichTextStyle) => string;
+  layout: Text2DLayout;
+  /** The size of the atlas its bitmap glyphs pack into, or null without any. */
+  bitmapSize: { width: number; height: number } | null;
+};
+
+/** A measured text. `finish` rasterizes its bitmap glyphs, the costly part, which a caller that turns the draft down skips. */
+type Text2DDraft = Text2DSetup & { finish(): Text2DPlan };
+
+/** What a text build measures and rasterizes before it creates or changes anything in the Scene. */
+type Text2DPlan = Text2DSetup & {
+  packedBitmap: ReturnType<typeof packBitmapGlyphAtlas>;
+  wrapW: number;
+  wrapH: number;
+};
+
+const parsedMsdfAtlases = new WeakMap<Uint8Array, MsdfAtlas | null>();
+
+/** An installed font's parsed atlas: a text reads it at every build, and a script may rewrite a text every tick. */
+function msdfAtlasOf(json: Uint8Array): MsdfAtlas | null {
+  let atlas = parsedMsdfAtlases.get(json);
+  if (atlas === undefined) {
+    atlas = parseMsdfAtlas(json);
+    parsedMsdfAtlases.set(json, atlas);
+  }
+  return atlas;
+}
+
 /**
- * Overlay 2D text: an AABB pick plane plus the glyph quads. Static glyphs that
- * share a material are one batch mesh per material; letter-effect, revealed,
- * Text Material, image, underline and fallback glyphs are one plane each.
+ * Measures the text, lays it out and plans the atlas of its bitmap glyphs within the allocation limits; `finish`
+ * then rasterizes them into that atlas. `keepAtlas` is the size of the atlas texture the text already owns, kept
+ * while its glyphs fit (`planBitmapGlyphAtlas`).
  */
-export function createText2DMesh(
+function draftText2D(
   scene: Scene,
-  name: string,
   properties: unknown,
-  assets?: Text2DAssetContext,
-  options: Text2DMeshOptions = {},
-): Mesh {
+  assets: Text2DAssetContext | undefined,
+  options: Text2DMeshOptions,
+  keepAtlas?: { width: number; height: number },
+): Text2DDraft {
   const rich = options.rich === true;
   const parsed = parseText2DProperties(properties, { rich });
   const fade = rich && parsed.appearModes.includes("fade");
@@ -479,13 +553,12 @@ export function createText2DMesh(
   // A pixel font draws its own bitmap glyphs: a distance field would round them.
   const pixel = pixelSize > 0 && !options.metrics;
   const renderer = pixel ? "bitmap" : resolveText2DRenderer(parsed.renderer, hasPair);
-  /** A glyph's atlas key: a pixel font's native cell, else the canvas cell at its size. */
   const glyphKey = (ch: string, style: RichTextStyle) =>
     pixel ? pixelGlyphKey(ch, style, fontStack, pixelSize) : bitmapGlyphKey(ch, style, fontStack);
   const bitmapCells = new Map<string, ReturnType<typeof rasterizeBitmapGlyph>>();
   const measured = new Map<string, ReturnType<typeof measureBitmapGlyph>>();
   const requests = new Map<string, { ch: string; style: RichTextStyle }>();
-  // One canvas serves every unique glyph of this build (Play rebuilds on text edits).
+  // One canvas serves every unique glyph of this build (Play redraws on text edits).
   const canvasScratch: BitmapCanvasScratch = {};
   const pixelMeasured = new Map<string, NonNullable<ReturnType<typeof measurePixelGlyph>>>();
   const measure = (ch: string, style: RichTextStyle) => {
@@ -504,7 +577,7 @@ export function createText2DMesh(
     measure(ch, style);
     return pixelMeasured.get(glyphKey(ch, style)) ?? null;
   }, measure) : bitmapMetrics(ppu, measure));
-  const atlas = renderer === "msdf" && json ? parseMsdfAtlas(json) : null;
+  const atlas = renderer === "msdf" && json ? msdfAtlasOf(json) : null;
   const metrics = options.metrics ?? (atlas ? msdfMetrics(atlas, ppu, bitmap) : bitmap);
   const layoutOptions = { rich, pixelsPerUnit: ppu, metrics };
   // A pixel font's base size is its Pixel Size times the text's whole-number Scale.
@@ -525,18 +598,129 @@ export function createText2DMesh(
     maxWorkingBytes: options.bitmapLimits?.maxWorkingBytes ?? DEFAULT_BITMAP_WORKING_BYTES,
     retainedBytes: options.bitmapLimits?.retainedBytes ?? 0,
   };
-  const bitmapPlan = planBitmapGlyphAtlas([...measured.values()], limits);
-  for (const [key, request] of requests) {
-    const native = pixelMeasured.has(key) ? rasterizePixelGlyph(request.ch, request.style, fontStack, pixelSize, limits, canvasScratch) : null;
-    bitmapCells.set(key, native ?? rasterizeBitmapGlyph(request.ch, request.style, fontStack, limits, measured.get(key), canvasScratch));
+  const bitmapPlan = planBitmapGlyphAtlas([...measured.values()], limits, keepAtlas);
+  const setup: Text2DSetup = {
+    parsed, rich, fade, hitTest, ppu, fontGuid, png, fontStack, pixel, pixelSize, renderer, glyphKey, layout,
+    bitmapSize: bitmapPlan && { width: bitmapPlan.width, height: bitmapPlan.height },
+  };
+  const finish = (): Text2DPlan => {
+    for (const [key, request] of requests) {
+      const native = pixelMeasured.has(key) ? rasterizePixelGlyph(request.ch, request.style, fontStack, pixelSize, limits, canvasScratch) : null;
+      bitmapCells.set(key, native ?? rasterizeBitmapGlyph(request.ch, request.style, fontStack, limits, measured.get(key), canvasScratch));
+    }
+    // Preserve the actual canvas/fallback cell metrics after the bounded raster pass.
+    if (!options.metrics) layout = layOut();
+    const packedBitmap = packBitmapGlyphAtlas([...bitmapCells.values()], limits, bitmapPlan);
+    const wrapW =
+      parsed.wrapWidth > 0 ? parsed.wrapWidth / ppu : Math.max(layout.width, 0.01);
+    const wrapH =
+      parsed.wrapHeight > 0 ? parsed.wrapHeight / ppu : Math.max(layout.height, 0.01);
+    return { ...setup, layout, packedBitmap, wrapW, wrapH };
+  };
+  return { ...setup, finish };
+}
+
+/** The metadata a text's root carries about its laid-out size and atlas. */
+function text2DSizeMetadata(plan: Text2DPlan) {
+  const { parsed, layout, packedBitmap, ppu, wrapW, wrapH } = plan;
+  return {
+    /** Laid-out width in pixels from the glyph cells actually drawn. */
+    text2dLayoutWidth: layout.width * ppu,
+    text2dBitmapBytes: packedBitmap ? packedBitmap.width * packedBitmap.height * 8 : 0,
+    text2dWrapWidth: parsed.wrapWidth > 0 ? parsed.wrapWidth : wrapW * ppu,
+    text2dWrapHeight: parsed.wrapHeight > 0 ? parsed.wrapHeight : wrapH * ppu,
+  };
+}
+
+/** Whitespace advances the pen and draws nothing. */
+const drawsLayoutItem = (item: Text2DLayoutItem): boolean => item.kind !== "glyph" || Boolean((item.ch ?? "").trim());
+
+const drawsMsdf = (text: Text2DSetup, item: Text2DLayoutItem): boolean => item.source === "msdf" && text.renderer === "msdf";
+
+/**
+ * An MSDF glyph's binding depends only on these style fields; bold and italic are mesh transforms, so glyphs of one
+ * style share a binding (and a batch).
+ */
+const msdfStyleKey = (item: Text2DLayoutItem): string =>
+  `${item.style.color.join()}|${item.style.outline}|${item.style.outlineColor.join()}`;
+
+/**
+ * The batch `item` draws in, by the material its glyphs share (its MSDF style, or the text's bitmap atlas), or null
+ * when it draws as a plane of its own. Static glyphs that share a material draw as one mesh per material. A Text
+ * Material binds each glyph's own state and a reveal mode animates glyphs individually, so those texts keep one plane
+ * per glyph, as do letter effects, images, underlines and glyphs with a private fallback material.
+ */
+function glyphBatchKey(text: Text2DSetup, item: Text2DLayoutItem): string | null {
+  const { parsed, rich } = text;
+  if (parsed.materialGuid || (rich && parsed.appearModes.length > 0)) return null;
+  if (item.kind !== "glyph" || hasLetterEffects(item)) return null;
+  if (drawsMsdf(text, item)) return `msdf:${msdfStyleKey(item)}`;
+  return item.ch && text.bitmapSize ? "bitmap" : null;
+}
+
+/**
+ * The batches a text's glyphs draw in, keyed as `glyphBatchKey` and in the order of each batch's first glyph (at
+ * `index` in the layout), which is the order `createText2DMesh` creates them in; null when anything draws as a
+ * plane of its own. `quad` fills each batch's quads.
+ */
+function glyphBatches(
+  text: Text2DSetup,
+  quad?: (item: Text2DLayoutItem) => GlyphBatchQuad,
+): Array<{ key: string; index: number; quads: GlyphBatchQuad[] }> | null {
+  const batches = new Map<string, { key: string; index: number; quads: GlyphBatchQuad[] }>();
+  for (let index = 0; index < text.layout.items.length; index++) {
+    const item = text.layout.items[index]!;
+    if (!drawsLayoutItem(item)) continue;
+    const key = glyphBatchKey(text, item);
+    if (!key) return null;
+    let batch = batches.get(key);
+    if (!batch) batches.set(key, batch = { key, index, quads: [] });
+    if (quad) batch.quads.push(quad(item));
   }
-  // Preserve the actual canvas/fallback cell metrics after the bounded raster pass.
-  if (!options.metrics) layout = layOut();
-  const packedBitmap = packBitmapGlyphAtlas([...bitmapCells.values()], limits, bitmapPlan);
-  const wrapW =
-    parsed.wrapWidth > 0 ? parsed.wrapWidth / ppu : Math.max(layout.width, 0.01);
-  const wrapH =
-    parsed.wrapHeight > 0 ? parsed.wrapHeight / ppu : Math.max(layout.height, 0.01);
+  return [...batches.values()];
+}
+
+function glyphBatchQuad(plan: Text2DPlan, item: Text2DLayoutItem): GlyphBatchQuad {
+  const msdf = drawsMsdf(plan, item);
+  const scale = item.style.bold && msdf ? 1.08 : 1;
+  return {
+    x: item.x,
+    y: item.y,
+    width: Math.max(item.width, 0.001),
+    height: Math.max(item.height, 0.001),
+    rotation: item.style.italic && msdf ? MSDF_ITALIC_SHEAR : 0,
+    scaleX: scale,
+    scaleY: scale,
+    uvs: msdf ? item.uvs : plan.packedBitmap?.uvs.get(plan.glyphKey(item.ch ?? "", item.style)),
+  };
+}
+
+/** A batch is named for its first glyph, at `index` in the layout. */
+const glyphBatchName = (name: string, index: number): string => `${name}:glyphs:${index}`;
+
+/**
+ * Replaces the vertices of a mesh that already draws. Babylon does not recompute a frozen world matrix, which is
+ * what moves new bounds to the mesh's place in the world, so those are refreshed here.
+ */
+function replaceVertexData(mesh: Mesh, data: VertexData): void {
+  data.applyToMesh(mesh);
+  if (mesh.isWorldMatrixFrozen) mesh.refreshBoundingInfo();
+}
+
+/**
+ * Overlay 2D text: an AABB pick plane plus the glyph quads. Static glyphs that
+ * share a material are one batch mesh per material; letter-effect, revealed,
+ * Text Material, image, underline and fallback glyphs are one plane each.
+ */
+export function createText2DMesh(
+  scene: Scene,
+  name: string,
+  properties: unknown,
+  assets?: Text2DAssetContext,
+  options: Text2DMeshOptions = {},
+): Mesh {
+  const plan = draftText2D(scene, properties, assets, options).finish();
+  const { parsed, rich, fade, hitTest, ppu, fontGuid, png, fontStack, pixel, pixelSize, renderer, glyphKey, layout, packedBitmap, wrapW, wrapH } = plan;
   const bundle = new VisualBundle();
   try {
     const parent = bundle.ownRenderUser(MeshBuilder.CreatePlane(name, { width: wrapW, height: wrapH }, scene));
@@ -552,12 +736,8 @@ export function createText2DMesh(
       text2dRich: rich,
       text2dFontStack: fontStack,
       text2dPixelSize: pixel ? pixelSize : 0,
-      /** Laid-out width in pixels from the glyph cells actually drawn. */
-      text2dLayoutWidth: layout.width * ppu,
-      text2dBitmapBytes: packedBitmap ? packedBitmap.width * packedBitmap.height * 8 : 0,
+      ...text2DSizeMetadata(plan),
       visualBundle: bundle,
-      text2dWrapWidth: parsed.wrapWidth > 0 ? parsed.wrapWidth : wrapW * ppu,
-      text2dWrapHeight: parsed.wrapHeight > 0 ? parsed.wrapHeight : wrapH * ppu,
     };
 
     const atlasLease =
@@ -586,12 +766,10 @@ export function createText2DMesh(
 
     const glyphMeshes: Array<{ mesh: Mesh; item: Text2DLayoutItem; restRotation: number }> =
       [];
-    // An MSDF glyph's binding depends only on these style fields; bold and italic
-    // are mesh transforms, so glyphs of one style share a binding (and a batch).
-    // Without its atlas a glyph draws its solid colour.
+    // Glyphs of one MSDF style share a binding. Without its atlas a glyph draws its solid colour.
     const msdfBindings = new Map<string, { key: UnlitMaterialKey; binding: UnlitBinding }>();
     const msdfBindingFor = (item: Text2DLayoutItem): { key: UnlitMaterialKey; binding: UnlitBinding } => {
-      const styleKey = `${item.style.color.join()}|${item.style.outline}|${item.style.outlineColor.join()}`;
+      const styleKey = msdfStyleKey(item);
       let style = msdfBindings.get(styleKey);
       if (!style) {
         style = atlasTexture
@@ -602,47 +780,28 @@ export function createText2DMesh(
       return style;
     };
     const materialGlyphs: Array<{ mesh: Mesh; restore: () => void }> = [];
-    // Static glyphs that share a material draw as one mesh per material. A Text
-    // Material binds each glyph's own state and a reveal mode animates glyphs
-    // individually, so those texts keep one plane per glyph, as do letter
-    // effects, images, underlines and glyphs with a private fallback material.
-    const batchGlyphs = !parsed.materialGuid && (!rich || parsed.appearModes.length === 0);
-    /** Keyed by the MSDF style's binding, or the bitmap atlas its glyphs sample. */
-    const batches = new Map<UnlitBinding | Texture, { mesh: Mesh; quads: GlyphBatchQuad[] }>();
+    const batches = new Map<string, GlyphBatch>();
     layout.items.forEach((item, index) => {
-      if (item.kind === "glyph" && !(item.ch ?? "").trim()) return;
-      const msdf = item.source === "msdf" && renderer === "msdf";
+      if (!drawsLayoutItem(item)) return;
+      const msdf = drawsMsdf(plan, item);
       const restRotation = item.style.italic && msdf ? MSDF_ITALIC_SHEAR : 0;
-      if (batchGlyphs && item.kind === "glyph" && !hasLetterEffects(item)) {
-        const bitmapKey = !msdf && item.ch ? glyphKey(item.ch, item.style) : null;
-        const style = msdf ? msdfBindingFor(item) : null;
-        const batchKey = style?.binding ?? (bitmapKey && bitmapBinding && packedBitmap ? bitmapAtlas : null);
-        if (batchKey) {
-          let batch = batches.get(batchKey);
-          if (!batch) {
-            // Created at its first glyph so draw and child order follow glyph order.
-            const mesh = new Mesh(`${name}:glyphs:${index}`, scene);
-            mesh.parent = parent;
-            mesh.isPickable = false;
-            if (style) setUnlitMaterial(mesh, style.key, style.binding);
-            else setUnlitMaterial(mesh, TEXT_GLYPH, bitmapBinding!);
-            mesh.metadata = { text2dGlyph: true, text2dSource: item.source, text2dBatch: true };
-            batch = { mesh, quads: [] };
-            batches.set(batchKey, batch);
-          }
-          const scale = item.style.bold && msdf ? 1.08 : 1;
-          batch.quads.push({
-            x: item.x,
-            y: item.y,
-            width: Math.max(item.width, 0.001),
-            height: Math.max(item.height, 0.001),
-            rotation: restRotation,
-            scaleX: scale,
-            scaleY: scale,
-            uvs: bitmapKey ? packedBitmap?.uvs.get(bitmapKey) : item.uvs,
-          });
-          return;
+      const batchKey = glyphBatchKey(plan, item);
+      if (batchKey) {
+        let batch = batches.get(batchKey);
+        if (!batch) {
+          // Created at its first glyph so draw and child order follow glyph order.
+          const mesh = new Mesh(glyphBatchName(name, index), scene);
+          mesh.parent = parent;
+          mesh.isPickable = false;
+          const style = msdf ? msdfBindingFor(item) : null;
+          if (style) setUnlitMaterial(mesh, style.key, style.binding);
+          else setUnlitMaterial(mesh, TEXT_GLYPH, bitmapBinding!);
+          mesh.metadata = { text2dGlyph: true, text2dSource: item.source, text2dBatch: true };
+          batch = { key: batchKey, mesh, quads: [] };
+          batches.set(batchKey, batch);
         }
+        batch.quads.push(glyphBatchQuad(plan, item));
+        return;
       }
       const child = MeshBuilder.CreatePlane(
         `${name}:${item.kind}:${index}`,
@@ -702,15 +861,16 @@ export function createText2DMesh(
       glyphMeshes.push({ mesh: child, item, restRotation });
     });
 
-    for (const { mesh, quads } of batches.values()) {
-      glyphBatchVertexData(quads).applyToMesh(mesh);
+    for (const batch of batches.values()) {
+      const { mesh } = batch;
+      glyphBatchVertexData(batch.quads).applyToMesh(mesh);
       // An overlay-box resize counter-scales plane glyphs so letters keep their
-      // size while the box scales; a batch re-poses its baked quads to match.
+      // size while the box scales; a batch re-poses the quads it draws to match.
       mesh.metadata = {
         ...mesh.metadata,
         text2dCounterScale: (counterX: number, counterY: number) => {
-          const positions = new Float32Array(quads.length * 12);
-          writeGlyphBatchPositions(quads, positions, counterX, counterY);
+          const positions = new Float32Array(batch.quads.length * 12);
+          writeGlyphBatchPositions(batch.quads, positions, counterX, counterY);
           if (mesh.isVertexBufferUpdatable(VertexBuffer.PositionKind)) mesh.updateVerticesData(VertexBuffer.PositionKind, positions, true);
           else mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
         },
@@ -736,10 +896,74 @@ export function createText2DMesh(
     }
     applyOverlayVisualStyle(parent, properties);
     textLayouts.set(parent, layout);
-    parent.onDisposeObservable.addOnce(() => textLayouts.delete(parent));
+    text2DBuilds.set(parent, {
+      name, rich, materialGuid: parsed.materialGuid, renderer, fontGuid, fontStack, pixelSize: pixel ? pixelSize : 0, hitTest,
+      bitmapAtlas, batches: [...batches.values()], planes: glyphMeshes.length, wrapW, wrapH,
+    });
+    parent.onDisposeObservable.addOnce(() => {
+      textLayouts.delete(parent);
+      text2DBuilds.delete(parent);
+    });
     return parent;
   } catch (error) {
     bundle.dispose();
     throw error;
   }
+}
+
+/**
+ * Plans redrawing a text `createText2DMesh` built, for new properties, with the meshes, materials and atlas texture
+ * it already owns, and returns the redraw to run, or null when the text cannot draw them that way. It can when the
+ * new text needs only what the text has: plain text (not rich) without a Text Material, in the same font and
+ * renderer, whose glyphs all draw in the batches the text has (no underline, no new glyph style) and fit the bitmap
+ * atlas it has. Running the redraw makes the text draw the pixels `createText2DMesh` would: the same quads, each
+ * sampling the same texels, with the same layout and size metadata; only where a glyph sits in the atlas may
+ * differ, since the atlas keeps its size. Nothing joins or leaves the Scene: a text a script rewrites (a score, a
+ * timer) costs no Scene readiness probe and keeps drawing every frame. Nothing changes until the redraw runs, so a
+ * caller that gets null, or drops the redraw, rebuilds the text instead. A text that cannot redraw is turned down
+ * once it is measured, before its glyphs are rasterized.
+ *
+ * `options` are those of a build; `bitmapLimits.retainedBytes` counts what stays alive while the text redraws. A text
+ * the limits refuse throws here as it does in a build. The overlay style the text draws with is kept.
+ */
+export function text2DRedraw(
+  root: Mesh,
+  properties: unknown,
+  assets?: Text2DAssetContext,
+  options: Text2DMeshOptions = {},
+): (() => void) | null {
+  const built = text2DBuilds.get(root);
+  if (!built || root.isDisposed() || built.rich || options.rich === true || built.materialGuid || built.planes > 0) return null;
+  const atlas = built.bitmapAtlas;
+  const kept = atlas?.getSize();
+  /** Whether a measured text draws with exactly the font, batches and atlas the text has. */
+  const redraws = (text: Text2DSetup, batches: ReturnType<typeof glyphBatches>): batches is NonNullable<typeof batches> =>
+    !text.parsed.materialGuid && text.renderer === built.renderer && text.fontGuid === built.fontGuid &&
+    text.fontStack === built.fontStack && (text.pixel ? text.pixelSize : 0) === built.pixelSize && text.hitTest === built.hitTest &&
+    text.bitmapSize?.width === kept?.width && text.bitmapSize?.height === kept?.height &&
+    batches !== null && batches.length === built.batches.length && batches.every((batch, order) => built.batches[order]!.key === batch.key);
+  // A text that cannot redraw is known before its glyphs are rasterized, so the rebuild that follows rasterizes them once.
+  const draft = draftText2D(root.getScene(), properties, assets, options, kept);
+  if (!redraws(draft, glyphBatches(draft))) return null;
+  const plan = draft.finish();
+  const next = glyphBatches(plan, (item) => glyphBatchQuad(plan, item));
+  if (!redraws(plan, next)) return null;
+  const { layout, packedBitmap, wrapW, wrapH } = plan;
+
+  return () => {
+    if (atlas && packedBitmap) atlas.update(packedBitmap.pixels);
+    next.forEach(({ index, quads }, order) => {
+      const batch = built.batches[order]!;
+      batch.quads = quads;
+      batch.mesh.name = batch.mesh.id = glyphBatchName(built.name, index);
+      replaceVertexData(batch.mesh, glyphBatchVertexData(quads));
+    });
+    if (wrapW !== built.wrapW || wrapH !== built.wrapH) {
+      replaceVertexData(root, CreatePlaneVertexData({ width: wrapW, height: wrapH }));
+      built.wrapW = wrapW;
+      built.wrapH = wrapH;
+    }
+    root.metadata = { ...(root.metadata ?? {}), ...text2DSizeMetadata(plan) };
+    textLayouts.set(root, layout);
+  };
 }
