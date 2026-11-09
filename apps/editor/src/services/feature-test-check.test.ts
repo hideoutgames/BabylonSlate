@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { SessionReportEntry } from "@haptic/runtime";
 import {
-  antiAliasingSamples, QUALITY_GROUPS, qualitySettingsFingerprint, RENDER_QUALITY_PROFILES, RenderingQualitySession, SHADOW_PROFILES,
+  antiAliasingSamples, QUALITY_GROUPS, qualitySettingsFingerprint, RENDER_QUALITY_PROFILES, RenderingQualitySession, SHADOW_PROFILES, WATER_DEBUG_PARTS,
   type QualityGroup, type QualityLevel,
 } from "@haptic/core";
 import {
   ADD_ONE_CAP_MS, breakdownAdditivity, breakdownDelta, breakdownOverCap, breakdownSaturation, breakdownSequence, breakdownSkip,
-  breakdownWarmupDrift, counterStats, FEATURE_TEST_BENCHMARK_PROFILES, FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS,
+  breakdownWarmupDrift, counterStats, FEATURE_TEST_BENCHMARK_PROFILES,
   FEATURE_TEST_BREAKDOWN_BASES, FEATURE_TEST_BREAKDOWN_METHODS, FEATURE_TEST_BREAKDOWN_STEPS, featureTestBreakdownPlan, frameBound,
   frameStats, isBreakdownBaseline, runFeatureTestCheck, SATURATED_SHARE, settingsChanges, vsyncShares, warmDeviceMinutes,
-  FEATURE_TEST_PROFILE_SCENES, featureTestProfilePlan, featureTestProfileSteps, profileState,
+  FEATURE_TEST_PROFILE_SCENES, featureTestBreakdownScenes, featureTestProfilePlan, featureTestProfileSteps, profileState,
   type FeatureTestBenchmarkSample, type FeatureTestBreakdownInfo, type FeatureTestCheckDeps, type FeatureTestProfileState,
 } from "./feature-test-check";
 import type { PlaySessionResult } from "./play-session";
@@ -166,6 +166,7 @@ function fingerprintAfter(
   let post = true;
   let captures = true;
   let framesInFlight = options.framesInFlight ?? "2";
+  const waterOff = new Set<string>();
   for (const line of commands) {
     const [name, first, second, third] = line.split(" ");
     if (name === "quality") {
@@ -174,6 +175,7 @@ function fingerprintAfter(
     } else if (name === "postprocessing") post = first === "on";
     else if (name === "rendertargets") captures = first === "on";
     else if (name === "framesinflight") framesInFlight = first!;
+    else if (name === "waterdebug") { if (second === "off") waterOff.add(first!); else waterOff.delete(first!); }
   }
   const quality = session.effective();
   return {
@@ -181,6 +183,7 @@ function fingerprintAfter(
     "post.samples": String(antiAliasingSamples(quality.postprocessing.antiAliasing)),
     "post.enabled": String(post),
     captures: captures ? "on" : "suspended",
+    "water.debug": WATER_DEBUG_PARTS.filter((part) => waterOff.has(part)).join(",") || "none",
     "presentation.framesInFlight": framesInFlight,
   };
 }
@@ -400,6 +403,27 @@ describe("runFeatureTestCheck", () => {
     // warm-up, so the warm-up runs at the baselines' settings; the session's own quality returns at the end.
     expect(commands.slice(0, 5)).toEqual(["framecap", "framecap 60", "quality medium", "quality resolution reset", "gpubusy on"]);
     expect(commands.slice(-3)).toEqual(["gpubusy off", "quality reset", "framecap 30"]);
+  });
+
+  it("measures each part of water off on its own from the Medium tier, in FT_World unless every scene is asked for", async () => {
+    expect(featureTestBreakdownScenes("water", false).map((entry) => entry.name)).toEqual(["FT_World"]);
+    expect(featureTestBreakdownScenes("remove-one", false).map((entry) => entry.name)).toEqual(["FT_World", "FT_Occlusion"]);
+    const editor = fakeEditor({});
+    const report = await runFeatureTestCheck({
+      mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: new AbortController().signal,
+      breakdown: { ...REMOVE_ONE, method: "water" },
+    });
+    const measured = report.scenes[0]!.play.benchmark.filter((sample) => !sample.warmup && !sample.baseline).map((sample) => sample.label);
+    expect(measured).toEqual([
+      "water off", "water pre-pass off", "water lighting off", "water shadows off", "water waves off", "water foam off",
+      "water reflections sky", "water refraction off", "water detail low", "water fft 64", "water fft 1 cascade", "water mesh 0.5",
+    ]);
+    // A part switched off is switched back on after the tier returns, before the next baseline: `quality reset` keeps it.
+    const commands = editor.commands, at = (line: string) => commands.indexOf(line);
+    const tier = ["quality reset", "quality medium", "quality resolution reset"];
+    expect(commands.slice(at("waterdebug water off") + 1, at("waterdebug prepass off")))
+      .toEqual(["gpubusy on", ...tier, "waterdebug water on", "gpubusy on", ...tier]);
+    expect(commands.filter((line) => line.startsWith("waterdebug")).length).toBe(12);
   });
 
   it("reports a base command the session refused on the first sample, which it would skew", async () => {
@@ -883,12 +907,12 @@ describe("frame pacing", () => {
 
   it("changes, with every Breakdown step, only that step's fingerprint fields, or skips it where the base already holds its value", () => {
     // At Medium, Medium's shadows, water detail and volumetrics already hold; the add-one base turns every feature off.
-    const expectedSkips = { "remove-one": ["shadows medium", "water detail medium", "volumetrics off", "MSAA 2x"], "add-one": [] as string[] };
+    const expectedSkips = { "remove-one": ["shadows medium", "water detail medium", "volumetrics off", "MSAA 2x"], "add-one": [] as string[], water: [] as string[] };
     for (const method of FEATURE_TEST_BREAKDOWN_METHODS) {
       const base = FEATURE_TEST_BREAKDOWN_BASES[method].commands;
       const reference = fingerprintAfter(base);
       const skipped: string[] = [];
-      for (const step of method === "add-one" ? FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS : FEATURE_TEST_BREAKDOWN_STEPS) {
+      for (const step of featureTestBreakdownPlan("FT_World", method).views[0]!.steps) {
         const after = fingerprintAfter([...base, ...step.commands]);
         const changed = settingsChanges(reference, after).map((change) => change.slice(0, change.indexOf("=")));
         expect(changed.filter((field) => !step.fields!.includes(field)), `${method} ${step.label}`).toEqual([]);

@@ -47,4 +47,16 @@ describe("FeatureTestCheckDialog", () => {
     const text = await screen.findByTestId("feature-test-check-report");
     expect((text as HTMLTextAreaElement).value).toMatch(/^Haptic Feature Test Check \(Profile\)/);
   });
+
+  it("offers a Water Breakdown, which measures FT_World's water from the Medium tier", async () => {
+    harness.run.mockResolvedValue({ mode: "breakdown", startedAt: 1_000, durationMs: 1_000, cancelled: false, scenes: [], pageErrors: [] });
+    render(<FeatureTestCheckDialog open onOpenChange={vi.fn()} />);
+    fireEvent.click(screen.getByTestId("feature-test-check-breakdown"));
+    fireEvent.click(screen.getByTestId("feature-test-check-breakdown-water"));
+    fireEvent.click(screen.getByTestId("feature-test-check-start"));
+    await waitFor(() => expect(harness.run).toHaveBeenCalledTimes(1));
+    const options = harness.run.mock.calls[0]![0];
+    expect(options.scenes.map((scene) => scene.name)).toEqual(["FT_World"]);
+    expect(options.breakdown).toMatchObject({ method: "water", tier: "medium" });
+  });
 });
