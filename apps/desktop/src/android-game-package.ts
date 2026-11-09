@@ -13,18 +13,32 @@ import { runCommand, within, type RunCommand } from "./mac-game-package";
  * signed with the SDK's apksigner, the unsigned App Bundle with the JDK's
  * jarsigner (apksigner cannot sign bundles). Keystore passwords reach the
  * signers only through their environment, never their arguments.
+ *
+ * Which JDK, SDK and keystore are used is this computer's main-process
+ * setting (`AndroidPackagingSettings`), changed only through native pickers:
+ * the editor page never names a program the main process runs.
  */
 
-/** Engine Settings: an empty path finds the tool. */
-export interface AndroidToolchainSettings {
-  sdk: string;
-  java: string;
-}
-
-/** Engine Settings: a null keystore signs with Android's debug key. */
-export interface AndroidSigningSettings {
+/** The main process's Android packaging settings; a null folder is found, a null keystore signs with Android's debug key. */
+export interface AndroidPackagingSettings {
+  java: string | null;
+  sdk: string | null;
   keystore: string | null;
   alias: string;
+}
+
+export const DEFAULT_ANDROID_PACKAGING: AndroidPackagingSettings = { java: null, sdk: null, keystore: null, alias: "" };
+
+/** Stored settings as written, with anything malformed back at its default. */
+export function normalizeAndroidPackaging(value: unknown): AndroidPackagingSettings {
+  const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const path = (field: unknown) => typeof field === "string" && field.length > 0 && field.length <= 4096 && !field.includes("\0") ? field : null;
+  return {
+    java: path(raw.java),
+    sdk: path(raw.sdk),
+    keystore: path(raw.keystore),
+    alias: typeof raw.alias === "string" ? raw.alias.trim().slice(0, 256) : "",
+  };
 }
 
 export interface AndroidGamePackageRequest {
@@ -36,8 +50,6 @@ export interface AndroidGamePackageRequest {
   format: AndroidPackageFormat;
   /** App Icon PNGs at `ANDROID_ICON_SIZES`, or null for the system's default icon. */
   icon: [number, Uint8Array][] | null;
-  toolchain: AndroidToolchainSettings;
-  signing: AndroidSigningSettings;
 }
 
 export interface AndroidToolchain {
@@ -78,9 +90,9 @@ function program(platform: NodeJS.Platform, name: string): string {
   return platform === "win32" ? `${name}.exe` : name;
 }
 
-/** JDKs to try: the configured one alone, else JAVA_HOME and Android Studio's bundled runtime. */
-export function javaHomeCandidates(settings: AndroidToolchainSettings, host: ToolchainHost): string[] {
-  if (settings.java.trim()) return [settings.java.trim()];
+/** JDKs to try: the chosen one alone, else JAVA_HOME and Android Studio's bundled runtime. */
+export function javaHomeCandidates(settings: Pick<AndroidPackagingSettings, "java">, host: ToolchainHost): string[] {
+  if (settings.java) return [settings.java];
   const studio: Partial<Record<NodeJS.Platform, string[]>> = {
     darwin: ["/Applications/Android Studio.app/Contents/jbr/Contents/Home", join(host.home, "Applications/Android Studio.app/Contents/jbr/Contents/Home")],
     win32: [join(host.env.ProgramFiles ?? "C:\\Program Files", "Android", "Android Studio", "jbr")],
@@ -89,9 +101,9 @@ export function javaHomeCandidates(settings: AndroidToolchainSettings, host: Too
   return [...(host.env.JAVA_HOME ? [host.env.JAVA_HOME] : []), ...(studio[host.platform] ?? [])];
 }
 
-/** SDKs to try: the configured one alone, else ANDROID_HOME, ANDROID_SDK_ROOT and Android Studio's default folder. */
-export function sdkCandidates(settings: AndroidToolchainSettings, host: ToolchainHost): string[] {
-  if (settings.sdk.trim()) return [settings.sdk.trim()];
+/** SDKs to try: the chosen one alone, else ANDROID_HOME, ANDROID_SDK_ROOT and Android Studio's default folder. */
+export function sdkCandidates(settings: Pick<AndroidPackagingSettings, "sdk">, host: ToolchainHost): string[] {
+  if (settings.sdk) return [settings.sdk];
   const defaults: Partial<Record<NodeJS.Platform, string>> = {
     darwin: join(host.home, "Library", "Android", "sdk"),
     win32: join(host.env.LOCALAPPDATA ?? join(host.home, "AppData", "Local"), "Android", "Sdk"),
@@ -120,7 +132,7 @@ function compareVersions(a: string, b: string): number {
 
 /** The JDK and Android SDK packaging uses, or why it cannot. */
 export async function findAndroidToolchain(
-  settings: AndroidToolchainSettings,
+  settings: Pick<AndroidPackagingSettings, "java" | "sdk">,
   host: ToolchainHost = localToolchainHost,
 ): Promise<{ toolchain: AndroidToolchain | null; problems: string[] }> {
   const problems: string[] = [];
@@ -142,9 +154,9 @@ export async function findAndroidToolchain(
     problems.push(`The JDK at ${home} is ${version === null ? "not working" : `Java ${version}`}; Android builds need Java ${MIN_JAVA} or later.`);
   }
   if (!java && problems.length === 0) {
-    problems.push(settings.java.trim()
-      ? `No JDK at ${settings.java.trim()}.`
-      : "No JDK found. Install Android Studio, or set the JDK in Engine Settings > Packaging.");
+    problems.push(settings.java
+      ? `No JDK at ${settings.java}.`
+      : "No JDK found. Install Android Studio, or choose the JDK in Engine Settings > Packaging.");
   }
 
   let sdk: { home: string; buildTools: string } | null = null;
@@ -160,9 +172,9 @@ export async function findAndroidToolchain(
     if (sdk) break;
   }
   if (!sdk) {
-    problems.push(settings.sdk.trim()
-      ? `No Android SDK build tools at ${settings.sdk.trim()}. Install them with Android Studio's SDK Manager.`
-      : "No Android SDK found. Install Android Studio, or set the Android SDK in Engine Settings > Packaging.");
+    problems.push(settings.sdk
+      ? `No Android SDK build tools at ${settings.sdk}. Install them with Android Studio's SDK Manager.`
+      : "No Android SDK found. Install Android Studio, or choose the Android SDK in Engine Settings > Packaging.");
   }
   return {
     toolchain: java && sdk ? { javaHome: java.home, javaVersion: java.version, sdk: sdk.home, buildTools: sdk.buildTools } : null,
@@ -200,6 +212,7 @@ async function debugKeystore(toolchain: AndroidToolchain, host: ToolchainHost, r
 
 export async function packageAndroidGame(options: {
   request: AndroidGamePackageRequest;
+  settings: AndroidPackagingSettings;
   /** The Android project template (`apps/desktop/android-game`). */
   templateRoot: string;
   /** The keystore's passwords from this computer's secret store; asked for only with a keystore. */
@@ -207,7 +220,7 @@ export async function packageAndroidGame(options: {
   host?: ToolchainHost;
   run?: RunCommand;
 }): Promise<{ fileName: string; bytes: Uint8Array; debugSigned: boolean }> {
-  const { request } = options;
+  const { request, settings } = options;
   const host = options.host ?? localToolchainHost;
   const run = options.run ?? host.run;
   // Identity and paths are checked before any tool runs.
@@ -215,9 +228,9 @@ export async function packageAndroidGame(options: {
     game: request.game, name: request.name, appId: request.appId, version: request.version,
     buildNumber: request.buildNumber, icon: request.icon ? new Map(request.icon) : null,
   });
-  const debugSigned = request.signing.keystore === null;
-  if (!debugSigned && !request.signing.alias.trim()) throw new Error("Enter the Key Alias in Engine Settings > Packaging.");
-  const { toolchain, problems } = await findAndroidToolchain(request.toolchain, host);
+  const debugSigned = settings.keystore === null;
+  if (!debugSigned && !settings.alias) throw new Error("Enter the Key Alias in Engine Settings > Packaging.");
+  const { toolchain, problems } = await findAndroidToolchain(settings, host);
   if (!toolchain) throw new Error(problems.join(" "));
 
   const work = await mkdtemp(join(tmpdir(), "haptic-android-"));
@@ -243,8 +256,8 @@ export async function packageAndroidGame(options: {
       throw new Error(`The Android build failed: ${gradleFailure(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
 
-    const keystore = debugSigned ? await debugKeystore(toolchain, host, run) : request.signing.keystore!;
-    const alias = debugSigned ? DEBUG_KEY.alias : request.signing.alias.trim();
+    const keystore = debugSigned ? await debugKeystore(toolchain, host, run) : settings.keystore!;
+    const alias = debugSigned ? DEBUG_KEY.alias : settings.alias;
     const passwords = debugSigned ? { store: DEBUG_KEY.password, key: DEBUG_KEY.password } : await options.passwords();
     if (!passwords.store) throw new Error("Enter the Keystore Password in Engine Settings > Packaging.");
     // An empty key password means the key shares the keystore's, as PKCS #12 keystores require.

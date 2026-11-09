@@ -207,20 +207,20 @@ function gameFiles(value: unknown): void {
   requireValue(bytes <= MAX_IPC_BYTES);
 }
 
-/** A local tool or keystore path from Engine Settings: absolute, or empty to find the tool. */
-function localPath(value: unknown, allowEmpty: boolean): void {
-  text(value, 4096);
-  requireValue(value === "" ? allowEmpty : isAbsolute(value));
-}
-
 function plainObject(value: unknown): asserts value is Record<string, unknown> {
   requireValue(value !== null && typeof value === "object" && !Array.isArray(value));
 }
 
-function androidToolchainSettings(value: unknown): void {
+const ANDROID_PICKS = new Set(["java", "sdk", "keystore"]);
+
+/** One change to the main process's Android packaging settings: a native picker, a reset, or the key alias. */
+function androidSettingsChange(value: unknown): void {
+  if (value === null) return;
   plainObject(value);
-  localPath(value.sdk, true);
-  localPath(value.java, true);
+  const keys = Object.keys(value);
+  requireValue(keys.length === 1);
+  if (keys[0] === "alias") text(value.alias, 256);
+  else requireValue((keys[0] === "pick" || keys[0] === "clear") && ANDROID_PICKS.has(value[keys[0]] as string));
 }
 
 function projectPath(value: unknown, allowRoot = true): void {
@@ -276,7 +276,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     "project:list": 0, "project:delete": 1, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,
     "project:writeBinary": 2, "project:exists": 1, "project:readdir": 1, "project:mkdir": 2,
     "project:remove": 1, "project:stat": 1, "file:save": 2, "game-shell:runtime": 2, "game-shell:mac-identities": 0, "game-shell:package-mac": 1,
-    "game-shell:android-toolchain": 1, "game-shell:pick-android-keystore": 0, "game-shell:package-android": 1,
+    "game-shell:android-settings": 1, "game-shell:package-android": 1,
   };
   requireValue(Object.hasOwn(counts, channel) && args.length === counts[channel]);
   if (channel.startsWith("save-games:")) {
@@ -288,8 +288,8 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
         path.split("/").every(part => part.length > 0 && part !== "." && part !== ".."));
     }
     if (channel === "save-games:write") text(args[1], 32 * 1024 * 1024);
-  } else if (channel === "game-shell:android-toolchain") {
-    androidToolchainSettings(args[0]);
+  } else if (channel === "game-shell:android-settings") {
+    androidSettingsChange(args[0]);
   } else if (channel === "game-shell:package-android") {
     plainObject(args[0]);
     const request = args[0];
@@ -313,10 +313,6 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
       }
       requireValue(iconBytes <= MAX_APP_ICON_BYTES);
     }
-    androidToolchainSettings(request.toolchain);
-    plainObject(request.signing);
-    if (request.signing.keystore !== null) localPath(request.signing.keystore, false);
-    text(request.signing.alias, 256);
   } else if (channel === "game-shell:package-mac") {
     plainObject(args[0]);
     const request = args[0];

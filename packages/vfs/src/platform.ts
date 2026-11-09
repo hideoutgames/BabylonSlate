@@ -7,7 +7,6 @@ import type {
 } from "@haptic/core";
 import type { LibraryFolder } from "./library-folders";
 import type { NativeHttpImageUpload } from "./native-http-port";
-import type { EngineSettings } from "./app-settings";
 
 export type HostPlatform = "ios" | "android" | "electron" | "web";
 
@@ -152,20 +151,30 @@ export interface ElectronGameShellBridge {
   macIdentities(): Promise<string[]>;
   /** macOS only: packages, signs and (with a profile) notarizes a macOS game; see `apps/desktop/src/mac-game-package.ts`. */
   packageMac(request: ElectronMacGameRequest): Promise<{ fileName: string; bytes: Uint8Array; notarized: boolean }>;
-  /** The JDK and Android SDK Android packaging would use with these settings, or why it cannot. */
-  androidToolchain(settings: EngineSettings["androidPackaging"]["toolchain"]): Promise<AndroidToolchainStatus>;
-  /** Asks for a keystore file; null when the user cancels. */
-  pickAndroidKeystore(): Promise<string | null>;
-  /** Builds and signs an Android game; see `apps/desktop/src/android-game-package.ts`. */
+  /**
+   * This computer's Android packaging settings and the JDK and Android SDK
+   * they find, after one change: a native picker for a folder or keystore
+   * (the main process keeps the path), a reset to finding it, or the key alias.
+   */
+  androidSettings(change: AndroidPackagingChange | null): Promise<AndroidPackagingStatus>;
+  /** Builds and signs an Android game with those settings; see `apps/desktop/src/android-game-package.ts`. */
   packageAndroid(request: ElectronAndroidGameRequest): Promise<{ fileName: string; bytes: Uint8Array; debugSigned: boolean }>;
 }
 
-export interface AndroidToolchainStatus {
-  javaHome: string | null;
-  javaVersion: number | null;
+export type AndroidPackagingChange =
+  | { pick: "java" | "sdk" | "keystore" }
+  | { clear: "java" | "sdk" | "keystore" }
+  | { alias: string };
+
+export interface AndroidPackagingStatus {
+  /** Chosen folders; null finds them. */
+  java: string | null;
   sdk: string | null;
-  /** Empty when both were found. */
-  problems: string[];
+  /** Null signs with Android's debug key. */
+  keystore: string | null;
+  alias: string;
+  /** What packaging would use: both found, or why not. */
+  toolchain: { javaHome: string | null; javaVersion: number | null; sdk: string | null; problems: string[] };
 }
 
 export interface ElectronAndroidGameRequest {
@@ -177,8 +186,6 @@ export interface ElectronAndroidGameRequest {
   format: "apk" | "aab";
   /** App Icon PNGs at the Android launcher sizes, or null for the system's default icon. */
   icon: [number, Uint8Array][] | null;
-  toolchain: EngineSettings["androidPackaging"]["toolchain"];
-  signing: EngineSettings["androidPackaging"]["signing"];
 }
 
 export interface ElectronMacGameRequest {

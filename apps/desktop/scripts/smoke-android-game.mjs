@@ -32,7 +32,7 @@ await build({
 });
 const { packageAndroidGame, findAndroidToolchain, ANDROID_ICON_SIZES } = createRequire(import.meta.url)(bundle);
 
-const { toolchain, problems } = await findAndroidToolchain({ sdk: "", java: "" });
+const { toolchain, problems } = await findAndroidToolchain({ sdk: null, java: null });
 if (!toolchain) throw new Error(`No Android toolchain: ${problems.join(" ")}`);
 console.log(`Java ${toolchain.javaVersion} at ${toolchain.javaHome}; build tools ${toolchain.buildTools}`);
 
@@ -65,7 +65,6 @@ const page = "<!doctype html><title>Smoke Game</title><p>Smoke Game</p>";
 const base = {
   game: [["index.html", new TextEncoder().encode(page)], ["assets/data-1.bin", new Uint8Array([1, 2, 3])]],
   name: "Smoke Game", appId: "com.example.smokegame", version: "1.2.0", buildNumber: 7,
-  toolchain: { sdk: "", java: "" },
 };
 const templateRoot = join(desktop, "android-game");
 const run = (command, args) => execFileSync(command, args, { encoding: "utf8" });
@@ -73,7 +72,8 @@ const expectIn = (text, needle, what) => { if (!text.includes(needle)) throw new
 
 let started = Date.now();
 const apk = await packageAndroidGame({
-  request: { ...base, format: "apk", icon: ANDROID_ICON_SIZES.map((size) => [size, png(size)]), signing: { keystore, alias: "smoke" } },
+  request: { ...base, format: "apk", icon: ANDROID_ICON_SIZES.map((size) => [size, png(size)]) },
+  settings: { java: null, sdk: null, keystore, alias: "smoke" },
   templateRoot,
   passwords: async () => ({ store: "smoke-store-pass", key: "" }),
 });
@@ -85,17 +85,23 @@ expectIn(run(tool("java"), ["-jar", join(toolchain.buildTools, "lib", "apksigner
 const aapt2 = join(toolchain.buildTools, process.platform === "win32" ? "aapt2.exe" : "aapt2");
 const badging = run(aapt2, ["dump", "badging", apkPath]);
 for (const needle of ["package: name='com.example.smokegame' versionCode='7' versionName='1.2.0'", "application-label:'Smoke Game'",
-  "launchable-activity: name='com.haptic.game.GameActivity'", "mipmap-anydpi-v26/ic_launcher.xml", "targetSdkVersion:'36'"]) {
+  "launchable-activity: name='com.haptic.game.GameActivity'", "targetSdkVersion:'36'", "uses-gl-es: '0x30000'", "application-icon-640:'res/"]) {
   expectIn(badging, needle, "aapt2 dump badging");
 }
-const apkFiles = run("unzip", ["-l", apkPath]);
-for (const entry of ["assets/game/index.html", "assets/game/assets/data-1.bin", "classes.dex", "res/mipmap-xxxhdpi-v4/ic_launcher_image.png"]) {
-  expectIn(apkFiles, entry, "APK listing");
+// Release builds shorten resource file names, so the icons are checked by resource name.
+const resources = run(aapt2, ["dump", "resources", apkPath]);
+for (const name of [/mipmap\/ic_launcher(?!_)/, /mipmap\/ic_launcher_image/, /xxxhdpi/]) {
+  if (!name.test(resources)) throw new Error(`aapt2 dump resources lacks ${name}:\n${resources}`);
 }
+// Two launcher images at five densities.
+if ((resources.match(/type=PNG/g) ?? []).length < 10) throw new Error(`The APK lacks its launcher icons:\n${resources}`);
+const apkFiles = run("unzip", ["-l", apkPath]);
+for (const entry of ["assets/game/index.html", "assets/game/assets/data-1.bin", "classes.dex"]) expectIn(apkFiles, entry, "APK listing");
 
 started = Date.now();
 const aab = await packageAndroidGame({
-  request: { ...base, format: "aab", icon: null, signing: { keystore: null, alias: "" } },
+  request: { ...base, format: "aab", icon: null },
+  settings: { java: null, sdk: null, keystore: null, alias: "" },
   templateRoot,
   passwords: async () => { throw new Error("The debug key needs no passwords."); },
 });

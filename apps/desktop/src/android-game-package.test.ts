@@ -5,8 +5,8 @@ import { dirname, join } from "node:path";
 import { ANDROID_ICON_SIZES } from "../../../packages/exporter/src/native-android";
 import { pngHeader } from "../../../packages/exporter/src/test-support/app-icon-images";
 import {
-  findAndroidToolchain, gradleFailure, javaVersion, packageAndroidGame,
-  type AndroidGamePackageRequest, type ToolchainHost,
+  DEFAULT_ANDROID_PACKAGING, findAndroidToolchain, gradleFailure, javaVersion, normalizeAndroidPackaging, packageAndroidGame,
+  type AndroidGamePackageRequest, type AndroidPackagingSettings, type ToolchainHost,
 } from "./android-game-package";
 import type { RunCommand } from "./mac-game-package";
 
@@ -36,11 +36,11 @@ function request(overrides: Partial<AndroidGamePackageRequest> = {}): AndroidGam
     game: [["index.html", new TextEncoder().encode("<html>")]],
     name: "Space Game", appId: "com.studio.space", version: "1.2.0", buildNumber: 7, format: "apk",
     icon: ANDROID_ICON_SIZES.map((size) => [size, pngHeader(size)]),
-    toolchain: { sdk: "", java: "" },
-    signing: { keystore: "/keys/release.jks", alias: "upload" },
     ...overrides,
   };
 }
+
+const RELEASE_KEY: AndroidPackagingSettings = { java: null, sdk: null, keystore: "/keys/release.jks", alias: "upload" };
 
 interface Call { command: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv }
 
@@ -91,11 +91,18 @@ async function computer(options: { gradle?: () => never; javaOutput?: Record<str
   return { host, run, calls, files, home };
 }
 
+/** Packages on `host` with the release keystore unless `settings` says otherwise. */
+async function pack(host: ToolchainHost, options: {
+  request?: Partial<AndroidGamePackageRequest>; settings?: AndroidPackagingSettings; passwords?: () => Promise<{ store: string; key: string }>;
+} = {}) {
+  return packageAndroidGame({ request: request(options.request), settings: options.settings ?? RELEASE_KEY, templateRoot: await template(), host,
+    passwords: options.passwords ?? (async () => ({ store: "store-secret", key: "key-secret" })) });
+}
+
 describe("Android game packages", () => {
   it("build the APK with Gradle through the wrapper, then align it and sign it with the keystore", async () => {
     const pc = await computer();
-    const result = await packageAndroidGame({ request: request(), templateRoot: await template(), host: pc.host,
-      passwords: async () => ({ store: "store-secret", key: "key-secret" }) });
+    const result = await pack(pc.host);
 
     expect(result).toEqual({ fileName: "Space_Game-Android.apk", bytes: new TextEncoder().encode("signed aligned unsigned"), debugSigned: false });
     const gradle = pc.calls.find((call) => call.args.includes("org.gradle.wrapper.GradleWrapperMain"))!;
@@ -127,8 +134,8 @@ describe("Android game packages", () => {
   it("bundle with Gradle and sign the App Bundle with jarsigner, making Android's debug key when no keystore is set", async () => {
     const pc = await computer();
     let asked = false;
-    const result = await packageAndroidGame({ request: request({ format: "aab", signing: { keystore: null, alias: "" } }), templateRoot: await template(),
-      host: pc.host, passwords: async () => { asked = true; return { store: "", key: "" }; } });
+    const result = await pack(pc.host, { request: { format: "aab" }, settings: DEFAULT_ANDROID_PACKAGING,
+      passwords: async () => { asked = true; return { store: "", key: "" }; } });
 
     expect(result).toEqual({ fileName: "Space_Game-Android.aab", bytes: new TextEncoder().encode("jar-signed unsigned"), debugSigned: true });
     expect(asked).toBe(false);
@@ -148,37 +155,33 @@ describe("Android game packages", () => {
     const again = await computer();
     await mkdir(join(again.home, ".android"));
     await writeFile(join(again.home, ".android", "debug.keystore"), "kept");
-    await packageAndroidGame({ request: request({ signing: { keystore: null, alias: "" } }), templateRoot: await template(), host: again.host, passwords: async () => ({ store: "", key: "" }) });
+    await pack(again.host, { settings: DEFAULT_ANDROID_PACKAGING });
     expect(again.calls.some((call) => call.command.endsWith("keytool"))).toBe(false);
   });
 
   it("sign with the keystore password when the key has none, and ask for a missing keystore password or alias", async () => {
     const pc = await computer();
-    await packageAndroidGame({ request: request(), templateRoot: await template(), host: pc.host, passwords: async () => ({ store: "only-store", key: "" }) });
+    await pack(pc.host, { passwords: async () => ({ store: "only-store", key: "" }) });
     expect(pc.calls.find((call) => call.args[2] === "sign")!.env).toMatchObject({ HAPTIC_ANDROID_STORE_PASSWORD: "only-store", HAPTIC_ANDROID_KEY_PASSWORD: "only-store" });
 
-    await expect(packageAndroidGame({ request: request(), templateRoot: await template(), host: (await computer()).host, passwords: async () => ({ store: "", key: "" }) }))
+    await expect(pack((await computer()).host, { passwords: async () => ({ store: "", key: "" }) }))
       .rejects.toThrow("Enter the Keystore Password in Engine Settings > Packaging.");
     const unaliased = await computer();
-    await expect(packageAndroidGame({ request: request({ signing: { keystore: "/keys/release.jks", alias: " " } }), templateRoot: await template(), host: unaliased.host,
-      passwords: async () => ({ store: "s", key: "" }) })).rejects.toThrow("Enter the Key Alias in Engine Settings > Packaging.");
+    await expect(pack(unaliased.host, { settings: { ...RELEASE_KEY, alias: "" } })).rejects.toThrow("Enter the Key Alias in Engine Settings > Packaging.");
     expect(unaliased.calls).toEqual([]);
   });
 
   it("report what went wrong in a failed build, and refuse before building without a JDK or with an invalid identity", async () => {
     const failing = await computer({ gradle: () => { throw new Error("FAILURE: Build failed with an exception.\n\n* What went wrong:\nCould not resolve all files for configuration ':app:releaseRuntimeClasspath'.\n\n* Try:\n> Run with --stacktrace."); } });
-    await expect(packageAndroidGame({ request: request(), templateRoot: await template(), host: failing.host, passwords: async () => ({ store: "s", key: "" }) }))
-      .rejects.toThrow("The Android build failed: Could not resolve all files for configuration ':app:releaseRuntimeClasspath'.");
+    await expect(pack(failing.host)).rejects.toThrow("The Android build failed: Could not resolve all files for configuration ':app:releaseRuntimeClasspath'.");
 
     const noJava = await computer();
     noJava.host.env = { ANDROID_HOME: SDK };
-    await expect(packageAndroidGame({ request: request(), templateRoot: await template(), host: noJava.host, passwords: async () => ({ store: "s", key: "" }) }))
-      .rejects.toThrow("No JDK found. Install Android Studio, or set the JDK in Engine Settings > Packaging.");
+    await expect(pack(noJava.host)).rejects.toThrow("No JDK found. Install Android Studio, or choose the JDK in Engine Settings > Packaging.");
     expect(noJava.calls.some((call) => call.args.includes("org.gradle.wrapper.GradleWrapperMain"))).toBe(false);
 
     const invalid = await computer();
-    await expect(packageAndroidGame({ request: request({ appId: "com.my-studio.game" }), templateRoot: await template(), host: invalid.host, passwords: async () => ({ store: "s", key: "" }) }))
-      .rejects.toThrow("App ID com.my-studio.game is not valid.");
+    await expect(pack(invalid.host, { request: { appId: "com.my-studio.game" } })).rejects.toThrow("App ID com.my-studio.game is not valid.");
     expect(invalid.calls).toEqual([]);
   });
 });
@@ -190,13 +193,13 @@ describe("Android toolchain", () => {
     pc.host.exists = async (path) => [`/jdk/bin/java`, `${studio}/bin/java`, `${SDK}/build-tools/35.0.1/lib/apksigner.jar`, `${SDK}/build-tools/35.0.1/zipalign`,
       `${SDK}/build-tools/36.0.0/zipalign`].includes(path);
     pc.host.list = async () => ["34.0.0", "36.0.0", "35.0.1"];
-    expect(await findAndroidToolchain({ sdk: "", java: "" }, pc.host)).toEqual({
+    expect(await findAndroidToolchain({ sdk: null, java: null }, pc.host)).toEqual({
       toolchain: { javaHome: studio, javaVersion: 21, sdk: SDK, buildTools: `${SDK}/build-tools/35.0.1` },
       problems: [],
     });
   });
 
-  it("use only a configured folder, and say what is missing", async () => {
+  it("use only a chosen folder, and say what is missing", async () => {
     const pc = await computer();
     const found = await findAndroidToolchain({ sdk: "/elsewhere/sdk", java: "/elsewhere/jdk" }, pc.host);
     expect(found).toEqual({ toolchain: null, problems: [
@@ -204,8 +207,13 @@ describe("Android toolchain", () => {
       "No Android SDK build tools at /elsewhere/sdk. Install them with Android Studio's SDK Manager.",
     ] });
     const old = await computer({ javaOutput: { "/jdk/bin/java": 'java version "1.8.0_402"' } });
-    expect((await findAndroidToolchain({ sdk: "", java: "/jdk" }, old.host)).problems)
+    expect((await findAndroidToolchain({ sdk: null, java: "/jdk" }, old.host)).problems)
       .toEqual(["The JDK at /jdk is Java 8; Android builds need Java 17 or later."]);
+  });
+
+  it("keep stored settings only when well formed", () => {
+    expect(normalizeAndroidPackaging({ java: "/jdk", sdk: "", keystore: 7, alias: " upload " })).toEqual({ java: "/jdk", sdk: null, keystore: null, alias: "upload" });
+    expect(normalizeAndroidPackaging("broken")).toEqual(DEFAULT_ANDROID_PACKAGING);
   });
 
   it("read Java's version and Gradle's reason for failing", () => {
