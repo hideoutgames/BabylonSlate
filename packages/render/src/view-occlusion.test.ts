@@ -1,6 +1,7 @@
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
 import { Scene } from "@babylonjs/core/scene";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
@@ -97,6 +98,26 @@ describe("ViewOcclusion", () => {
     expect(meshes).toEqual(input);
     // The far crate is too small on screen to draw as an occluder.
     expect(occlusion.diagnostics).toMatchObject({ tested: 3, culled: 1, occluders: 2, triangles: 24 });
+  });
+
+  it("rewrites its own list in place for the passes drawing it, so Babylon runs no pass over the Scene's meshes", () => {
+    const { scene, beside, filter } = view();
+    const kept = filter();
+    expect(names(kept)).toEqual(["wall", "beside"]);
+    // An object pass draws the list, and Babylon observes it from then on.
+    const pass = new ObjectRenderer("objects", scene);
+    pass.renderList = kept as AbstractMesh[];
+    const lightDirty = vi.spyOn(beside, "_markSubMeshesAsLightDirty");
+    expect(filter()).toBe(kept);
+    expect(names(kept)).toEqual(["wall", "beside"]);
+    // The box beside the wall moves behind it: the list shrinks.
+    beside.position.set(1.5, 0, 12);
+    expect(filter()).toBe(kept);
+    expect(names(kept)).toEqual(["wall"]);
+    beside.position.set(9, 0, 12);
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    expect(lightDirty).not.toHaveBeenCalled();
+    pass.dispose();
   });
 
   it("culls only in a Scene allowed to and while the Occlusion Culling setting is on, and reports the last frame", () => {

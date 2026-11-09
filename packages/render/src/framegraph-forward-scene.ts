@@ -1,4 +1,5 @@
 import { isEditorHelperMesh } from "./helper-mesh";
+import { rewriteRenderList } from "./observed-render-list";
 import { activeRenderFrameCapture } from "./render-frame-report";
 import { pausedSceneRedrawIssue, renderSceneWithGameTime } from "./scene-game-time";
 import { PostProcessRetirement } from "./post-process-retirement";
@@ -138,6 +139,11 @@ const membershipCounts: readonly ((scene: Scene) => number)[] = [
     ._isReadyChecks?.length ?? 0,
 ];
 
+const NO_CULLED_MESHES: readonly AbstractMesh[] = [];
+/** What a spatial geometry pass draws of a view's culled meshes: everything but editor and Play helper visuals. */
+const isWorldMesh = (mesh: AbstractMesh): boolean => !isEditorHelperMesh(mesh);
+const isShown = (mesh: AbstractMesh): boolean => !isRevealPending(mesh);
+
 /** Native camera frustum calculation reads the currently bound target's aspect. */
 class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   /** The output list without hidden meshes when culling is off (its output is then the input list itself). */
@@ -189,13 +195,14 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
 
   private publishWorld(): void {
     const world = this.world;
-    world.length = 0;
     // Only a spatial geometry pass reads the list: without one it stays empty and keeps no culled mesh alive.
     if (!this.publishesWorld) {
+      world.length = 0;
       this.worldObjectList.particleSystems = null;
       return;
     }
-    for (const mesh of this.outputObjectList.meshes ?? []) if (!isEditorHelperMesh(mesh)) world.push(mesh);
+    // The geometry pass's renderer observes this list, so a frame's cull must not empty and refill it.
+    rewriteRenderList(world, this.outputObjectList.meshes ?? NO_CULLED_MESHES, isWorldMesh);
     this.worldObjectList.particleSystems = this.outputObjectList.particleSystems;
   }
 
@@ -208,10 +215,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
     const output = this.outputObjectList.meshes;
     if (!output?.some(isRevealPending)) return;
     if (output === this.objectList.meshes) {
-      const shown = this.shown;
-      shown.length = 0;
-      for (const mesh of output) if (!isRevealPending(mesh)) shown.push(mesh);
-      this.outputObjectList.meshes = shown;
+      // The object passes observe the list they drew last frame, which this one is while a reveal lasts.
+      this.outputObjectList.meshes = rewriteRenderList(this.shown, output, isShown);
       return;
     }
     let kept = 0;

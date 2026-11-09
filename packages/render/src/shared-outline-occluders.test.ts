@@ -52,29 +52,33 @@ describe("strict occluder cull and the render list Babylon observes", () => {
   });
 
   it("replaces an occluder with another when the count stays the same", () => {
-    const { front, near, list, cull, observe } = setup();
+    const { front, near, list, lightDirty, cull, observe } = setup();
     cull(); observe();
     front.isVisible = false; near.isVisible = true;
     expect(names(cull())).toEqual(["member", "near"]);
     expect(names(list)).toEqual(["member", "near"]);
+    // The list never emptied, so Babylon ran no pass over the Scene for it.
+    expect(lightDirty).not.toHaveBeenCalled();
   });
 
   it("follows occluders entering and leaving", () => {
-    const { front, near, list, cull, observe } = setup();
+    const { front, near, list, lightDirty, cull, observe } = setup();
     cull(); observe();
     near.isVisible = true;
     expect(names(cull())).toEqual(["member", "front", "near"]);
     front.isVisible = false; near.isVisible = false;
     expect(names(cull())).toEqual(["member"]);
     expect(names(list)).toEqual(["member"]);
+    expect(lightDirty).not.toHaveBeenCalled();
   });
 
   it("follows a new order of the same occluders", () => {
-    const { member, front, near, beside, list, cull, observe } = setup();
+    const { member, front, near, beside, list, lightDirty, cull, observe } = setup();
     near.isVisible = true;
     cull(); observe();
     expect(names(cull([member, near, front, beside]))).toEqual(["member", "near", "front"]);
     expect(names(list)).toEqual(["member", "near", "front"]);
+    expect(lightDirty).not.toHaveBeenCalled();
   });
 
   it("still tells Babylon when the list goes from empty to populated", () => {
