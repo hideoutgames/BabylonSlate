@@ -405,7 +405,7 @@ describe("runFeatureTestCheck", () => {
     expect(commands.slice(-3)).toEqual(["gpubusy off", "quality reset", "framecap 30"]);
   });
 
-  it("measures each part of water off on its own from the Medium tier, in FT_World unless every scene is asked for", async () => {
+  it("measures each part of water off on its own from the Medium tier at half resolution, in FT_World unless every scene is asked for", async () => {
     expect(featureTestBreakdownScenes("water", false).map((entry) => entry.name)).toEqual(["FT_World"]);
     expect(featureTestBreakdownScenes("remove-one", false).map((entry) => entry.name)).toEqual(["FT_World", "FT_Occlusion"]);
     const editor = fakeEditor({});
@@ -420,7 +420,7 @@ describe("runFeatureTestCheck", () => {
     ]);
     // A part switched off is switched back on after the tier returns, before the next baseline: `quality reset` keeps it.
     const commands = editor.commands, at = (line: string) => commands.indexOf(line);
-    const tier = ["quality reset", "quality medium", "quality resolution reset"];
+    const tier = ["quality reset", "quality medium", "quality resolution scale 0.5"];
     expect(commands.slice(at("waterdebug water off") + 1, at("waterdebug prepass off")))
       .toEqual(["gpubusy on", ...tier, "waterdebug water on", "gpubusy on", ...tier]);
     expect(commands.filter((line) => line.startsWith("waterdebug")).length).toBe(12);

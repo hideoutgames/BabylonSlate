@@ -35,7 +35,7 @@ export const FEATURE_TEST_BENCHMARK_PROFILES: readonly { label: string; commands
  * - `remove-one`: from the Medium tier, each step turns one feature off or lowers one cost: what it saves at a shipping
  *   tier, meaningful only while that tier is below the cap.
  */
-/** `water`: what each part of water costs, removed one at a time from the Medium tier (`FEATURE_TEST_BREAKDOWN_WATER_STEPS`). */
+/** `water`: what each part of water costs, removed one at a time from the Medium tier at half resolution (`FEATURE_TEST_BREAKDOWN_WATER_STEPS`). */
 export type FeatureTestBreakdownMethod = "add-one" | "remove-one" | "water";
 export const FEATURE_TEST_BREAKDOWN_METHODS: readonly FeatureTestBreakdownMethod[] = ["add-one", "remove-one", "water"];
 export const FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD: FeatureTestBreakdownMethod = "add-one";
@@ -78,7 +78,9 @@ export const FEATURE_TEST_BREAKDOWN_BASES: Readonly<Record<FeatureTestBreakdownM
     commands: ["quality medium", "quality resolution reset"],
     cleanup: [],
   },
-  water: { label: "medium", commands: ["quality medium", "quality resolution reset"], cleanup: [] },
+  // Half resolution keeps a tablet's GPU below the point where it drops to its slower speed (SATURATED at full
+  // resolution), so each water step's change is that part's own cost.
+  water: { label: "medium at resolution 0.5", commands: ["quality medium", "quality resolution scale 0.5"], cleanup: [] },
 };
 
 /**
@@ -201,7 +203,7 @@ const waterPartOff = (part: string, label: string): FeatureTestBreakdownStep => 
 });
 
 /**
- * Water (`FEATURE_TEST_BREAKDOWN_BASES.water`, the Medium tier): every water surface off, then one part of water off, or
+ * Water (`FEATURE_TEST_BREAKDOWN_BASES.water`, the Medium tier at half resolution): every water surface off, then one part of water off, or
  * one water setting lowered, at a time. Every step but `water off` is a share of what that one saves (`overlaps`). At
  * Medium, Contact Resolution 256 already holds.
  */
