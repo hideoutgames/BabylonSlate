@@ -69,7 +69,9 @@ export {
 export {
   ensureCallParentForEvent,
   ensureEventNodeOnGraph,
+  EVENT_COLUMN_X,
   inheritedCustomEventSeeds,
+  nextEventRowY,
 } from "./class-event-nodes";
 export {
   canDropClassMember,

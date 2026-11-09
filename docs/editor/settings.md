@@ -92,6 +92,10 @@ These apply to every graph editor: Class, Material, Animation Graph, Behaviour T
 - **Large Pins** (default 1×): a slider from 1× to 4× that enlarges every pin, the area you can tap or click around it, and the wires between pins. Nodes grow to fit.
 - **Pin Type Letters** (default off): shows a short type name inside every data pin, so types do not rely on colour: **B** Boolean, **I** Integer, **F** Float, **S** String, **V2**, **V3** and **V4** vectors, **R** Rotator, **Q** Quaternion, **T** Transform, **C** Color, **O** Object, **Cl** Class, **A** Asset, **Tx** Texture, **St** Structure, **E** Enum, **Tg** Tag, **D** Delegate, **P** Particle and **?** Wildcard. Array and Map pins show their item type.
 
+**Graph Nodes**
+
+- **Snapped Nodes** (default off): a node moves freely while you drag it and snaps to a grid when you let go, so nodes line up. **Snap Grid Size (Pixels)** (default 2, up to 200) sets the grid, measured at 100% zoom.
+
 **Graph Connections**
 
 - **Node Connection Assistant** (default on): when you move a node near another, previews wires to their free matching pins and connects them when you let go. **Connection Distance (Pixels)** (default 48) sets how near.

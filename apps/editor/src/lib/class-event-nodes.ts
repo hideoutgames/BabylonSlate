@@ -4,9 +4,39 @@ import {
   formatEventMemberName,
   formatEventTitle,
 } from "@haptic/editor-kit";
+import { estimateGraphNodeSize } from "@haptic/graph-ui";
 import { flowNodes } from "@haptic/scripting-nodes";
 import { NATIVE_EVENT_TITLES, type ClassEventOptions } from "./class-event-catalog";
 import { nextId } from "./class-member-nodes";
+
+/** Left edge of the event column a Class graph seeds its events into. */
+export const EVENT_COLUMN_X = 80;
+/** Clear space between an event and its Parent call, and between event rows. */
+const EVENT_ROW_GAP_X = 80;
+const EVENT_ROW_GAP_Y = 40;
+
+/**
+ * A node's estimated height: its stored pins, or for an unhydrated event or
+ * Parent call one exec row plus a row per data pin.
+ */
+function estimatedNodeHeight(node: SerializedGraph["nodes"][number]): number {
+  const stored = node.data.__pins;
+  if (Array.isArray(stored)) return estimateGraphNodeSize(stored as Array<{ direction?: string }>).height;
+  const dataPins = Array.isArray(node.data.pins) ? node.data.pins.length : 0;
+  return estimateGraphNodeSize(Array.from({ length: 1 + dataPins }, () => ({ direction: "out" }))).height;
+}
+
+/** Top of a new event row: below every node already on the graph, so nothing overlaps. */
+export function nextEventRowY(graph: SerializedGraph): number {
+  if (graph.nodes.length === 0) return EVENT_COLUMN_X;
+  const bottom = Math.max(...graph.nodes.map((node) => node.position.y + estimatedNodeHeight(node)));
+  return bottom + EVENT_ROW_GAP_Y;
+}
+
+/** A Parent call sits one node width plus a gap to the right of its event. */
+function callParentPosition(eventPosition: { x: number; y: number }): { x: number; y: number } {
+  return { x: eventPosition.x + estimateGraphNodeSize().width + EVENT_ROW_GAP_X, y: eventPosition.y };
+}
 
 /** The component a graph node is bound to, or "" for the Class itself. */
 export function nodeComponentId(
@@ -56,10 +86,7 @@ export function ensureEventNodeOnGraph(
         {
           id,
           type: eventType,
-          position: {
-            x: 80,
-            y: 80 + next.nodes.length * 80,
-          },
+          position: { x: EVENT_COLUMN_X, y: nextEventRowY(next) },
           data: {
             title,
             ...(extras?.name ? { name: extras.name } : {}),
@@ -177,10 +204,7 @@ export function ensureCallParentForEvent(
         {
           id: callId,
           type: "flow.event.callParent",
-          position: {
-            x: eventNode.position.x + 280,
-            y: eventNode.position.y,
-          },
+          position: callParentPosition(eventNode.position),
           data: {
             title: callParentDisplayTitle(options.eventType, options.eventName),
             eventType: options.eventType,

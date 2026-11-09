@@ -154,6 +154,17 @@ describe("EngineSettingsForm accessibility", () => {
     fireEvent.keyDown(slider, { key: "End" });
     await waitFor(() => expect(root.style.getPropertyValue("--graph-pin-scale")).toBe("4"));
   });
+
+  it("turns Snapped Nodes on with its grid size, which stays unavailable while it is off", async () => {
+    const store = new MemoryAppSettingsStore();
+    const view = renderLive(store);
+    const gridSize = view.getByTestId("setting-snap-grid-size");
+    expect(gridSize).toHaveProperty("disabled", true);
+    expect(gridSize).toHaveProperty("value", "2");
+    fireEvent.click(view.getByRole("switch", { name: "Snapped Nodes" }));
+    await waitFor(() => expect(gridSize).toHaveProperty("disabled", false));
+    expect(await store.load()).toMatchObject({ graphSnapNodes: true, graphSnapGridSize: 2 });
+  });
 });
 
 describe("EngineSettingsForm Add Node History", () => {

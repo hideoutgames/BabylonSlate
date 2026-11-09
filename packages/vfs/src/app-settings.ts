@@ -48,6 +48,10 @@ export const MIN_DOUBLE_TAP_TIME_MS = 200;
 export const MAX_DOUBLE_TAP_TIME_MS = 1000;
 export const DOUBLE_TAP_TIME_MS_STEP = 50;
 export const DEFAULT_DOUBLE_TAP_TIME_MS = 350;
+/** Snapped Nodes: the grid a released graph node lands on, in graph units (pixels at 100% zoom). */
+export const MIN_GRAPH_SNAP_GRID_SIZE = 1;
+export const MAX_GRAPH_SNAP_GRID_SIZE = 200;
+export const DEFAULT_GRAPH_SNAP_GRID_SIZE = 2;
 /** Number Snap Strength: 0 Off, 1 Light, 2 Normal, 3 Strong. */
 export const MAX_NUMBER_SNAP_STRENGTH = 3;
 export const DEFAULT_NUMBER_SNAP_STRENGTH = 2;
@@ -320,6 +324,9 @@ export const engineSettingsSchema = z.object({
   graphPinScale: steppedNumber(MIN_GRAPH_PIN_SCALE, MAX_GRAPH_PIN_SCALE, 1, MIN_GRAPH_PIN_SCALE),
   /** Accessibility: a type letter (B for Boolean) inside every graph data pin. */
   graphPinTypeLetters: z.boolean().default(false),
+  /** Accessibility (Snapped Nodes): a released graph node drag lands on the `graphSnapGridSize` grid. */
+  graphSnapNodes: z.boolean().default(false),
+  graphSnapGridSize: steppedNumber(MIN_GRAPH_SNAP_GRID_SIZE, MAX_GRAPH_SNAP_GRID_SIZE, 1, DEFAULT_GRAPH_SNAP_GRID_SIZE),
   /** Accessibility: multiplies the touch target (44px) of controls, rows and pins. */
   touchTargetScale: steppedNumber(MIN_TOUCH_TARGET_SCALE, MAX_TOUCH_TARGET_SCALE, TOUCH_TARGET_SCALE_STEP, MIN_TOUCH_TARGET_SCALE),
   /** Accessibility: the editor's root font size, as a percentage. */

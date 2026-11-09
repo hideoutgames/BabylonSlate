@@ -42,7 +42,7 @@ For components without any logic, a [Prefab](../assets/prefab.md) is lighter tha
 | **Prefab** | Actor classes only: a preview of the components with gizmos. |
 | **Components** | Actor classes only: the component tree and **Add Component**. |
 
-A new class starts with the events its parent uses most, such as [Event Begin Play](class/event-begin-play.md) and [Event Tick](class/event-tick.md) for actors.
+A new class starts with the events its parent uses most, such as [Event Begin Play](class/event-begin-play.md) and [Event Tick](class/event-tick.md) for actors. Each event gets its own row, with its [Call Parent Event](class/call-parent-event.md) node to its right; an event you add later starts a new row below the graph.
 
 ## Select, copy and paste members
 

@@ -209,10 +209,13 @@ export function AppSettingsProvider({
     graphTapToConnect: tapToConnectEnabled,
     graphPinScale: pinScale,
     graphPinTypeLetters: pinTypeLetters,
+    graphSnapNodes,
+    graphSnapGridSize,
   } = snapshot.settings;
+  const nodeSnapGrid = graphSnapNodes ? graphSnapGridSize : 0;
   const graphInteractions = useMemo(
-    () => ({ assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled, tapToConnectEnabled, pinScale, pinTypeLetters }),
-    [assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled, tapToConnectEnabled, pinScale, pinTypeLetters],
+    () => ({ assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled, tapToConnectEnabled, pinScale, pinTypeLetters, nodeSnapGrid }),
+    [assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled, tapToConnectEnabled, pinScale, pinTypeLetters, nodeSnapGrid],
   );
   return (
     <AppSettingsContext.Provider value={value}>

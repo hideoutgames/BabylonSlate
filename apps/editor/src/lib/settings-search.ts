@@ -311,6 +311,10 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
       ["Large Pins", "setting-large-pins"],
       ["Pin Type Letters", "setting-pin-type-letters"],
     ]],
+    ["graphNodes", "Graph Nodes", [
+      ["Snapped Nodes", "setting-snapped-nodes"],
+      ["Snap Grid Size (Pixels)", "setting-snap-grid-size"],
+    ]],
     ["graphConnections", "Graph Connections", [
       ["Node Connection Assistant", "setting-graph-assistant"],
       ["Connection Distance (Pixels)", "setting-graph-distance"],

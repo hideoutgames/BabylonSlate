@@ -5,12 +5,14 @@ import {
   HOLD_TIME_MS_STEP,
   MAX_DOUBLE_TAP_TIME_MS,
   MAX_GRAPH_PIN_SCALE,
+  MAX_GRAPH_SNAP_GRID_SIZE,
   MAX_HOLD_TIME_MS,
   MAX_NUMBER_SNAP_STRENGTH,
   MAX_TEXT_SIZE_PERCENT,
   MAX_TOUCH_TARGET_SCALE,
   MIN_DOUBLE_TAP_TIME_MS,
   MIN_GRAPH_PIN_SCALE,
+  MIN_GRAPH_SNAP_GRID_SIZE,
   MIN_HOLD_TIME_MS,
   MIN_TEXT_SIZE_PERCENT,
   MIN_TOUCH_TARGET_SCALE,
@@ -235,6 +237,30 @@ export function AccessibilitySettingsFields({
           checked={settings.graphPinTypeLetters}
           onChange={(graphPinTypeLetters) => void onChange({ graphPinTypeLetters })}
         />
+      </SettingsSection>
+
+      <SettingsSection id="graphNodes" title="Graph Nodes">
+        <SwitchField
+          id="setting-snapped-nodes"
+          label="Snapped Nodes"
+          hint="A node moves freely while you drag it and snaps to the grid when you let go."
+          checked={settings.graphSnapNodes}
+          onChange={(graphSnapNodes) => void onChange({ graphSnapNodes })}
+        />
+        <Field className="settings-field settings-field-dependent">
+          <FieldLabel htmlFor="setting-snap-grid-size">Snap Grid Size (Pixels)</FieldLabel>
+          <NumberField
+            id="setting-snap-grid-size"
+            data-testid="setting-snap-grid-size"
+            min={MIN_GRAPH_SNAP_GRID_SIZE}
+            max={MAX_GRAPH_SNAP_GRID_SIZE}
+            step={1}
+            integer
+            disabled={!settings.graphSnapNodes}
+            value={settings.graphSnapGridSize}
+            onChange={(graphSnapGridSize) => void onChange({ graphSnapGridSize })}
+          />
+        </Field>
       </SettingsSection>
 
       <SettingsSection id="graphConnections" title="Graph Connections">

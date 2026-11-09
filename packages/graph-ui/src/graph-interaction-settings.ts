@@ -13,6 +13,17 @@ export interface GraphInteractionSettings {
   pinScale?: number;
   /** Draws a type letter inside data pins (B for Boolean); unset is off. */
   pinTypeLetters?: boolean;
+  /** Snapped Nodes: a released node drag rounds positions to this grid (flow units); unset or 0 is off. */
+  nodeSnapGrid?: number;
+}
+
+/** A position rounded to `grid` flow units; a grid of 0 or less leaves it as it is. */
+export function snapPositionToGrid(
+  position: { x: number; y: number },
+  grid: number | undefined,
+): { x: number; y: number } {
+  if (!grid || grid <= 0) return position;
+  return { x: Math.round(position.x / grid) * grid, y: Math.round(position.y / grid) * grid };
 }
 
 export const GraphInteractionSettingsContext = createContext<GraphInteractionSettings>({
