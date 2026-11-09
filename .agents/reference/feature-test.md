@@ -20,7 +20,7 @@ Only existing repository files, runtime primitives and numeric data are used (no
 | Holiday Pack subset | `engine-content/kenney-assets/Holiday Pack` (CC0, `License.txt`, `Source.txt`) | Models, foliage, buoyancy, Automatic LOD (menorah), rigid node animation (door) |
 | Holiday colormap | `Holiday Pack/Textures/colormap.png` | Albedo Texture (KTX2 encode path) and a Pixel Art copy for HUD panels |
 | Kenney platformer art | `engine-content/kenney-assets/Platformer` (CC0, Platformer Pack Redux tilesheet and toon robot frames; `License.txt`, `Source.txt`) | `FT_2D` Tilesets, robot Sprites and Sprite Animations |
-| Skybox faces and net | `engine-content/skybox` | Skybox Texture faces, Skybox Creator source |
+| Skybox faces and net | `engine-content/skybox` (faces: Kenney Skyboxes day sky, CC0; `License.txt`, `Source.txt`) | Skybox Texture faces, Skybox Creator source |
 | Billboards | `engine-content/billboards` | UI Textures |
 | Onest | `engine-content/fonts/Onest` (SIL OFL 1.1, `OFL.txt` + `Source.txt` alongside; keep `OFL.txt` with any export that ships the font) | Source Font for overlay text |
 | Ark Pixel | `engine-content/fonts/ArkPixel` (SIL OFL 1.1, `OFL.txt` + `Source.txt` alongside; listed in the game notices) | 12px Proportional as `FT_ArkPixel`, a pixel Font (Pixel Size 12), for the FT_HUD pixel text; Pixel Art Optimized projects import all four variants |

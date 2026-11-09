@@ -92,7 +92,7 @@ export const DEFAULT_SCENE_SUN_ACTOR_ID = "actor-sun";
 export const DEFAULT_SCENE_SUN_COMPONENT_ID = "component-sun";
 const DEFAULT_SCENE_SKYBOX_COMPONENT_ID = "component-skybox";
 
-/** Warm daylight for the painterly default sky. */
+/** Warm daylight for the default day sky. */
 const DEFAULT_SCENE_SUN_COLOR: [number, number, number] = [
   1, 0.96, 0.88,
 ];
@@ -103,7 +103,8 @@ const DEFAULT_SCENE_SUN_INTENSITY = 1.5;
  * facing that camera take the sun at cos 0.6. A grazing sun stretches a shadow
  * map's texels by 1/cos along every face the camera sees, which smears shadow
  * edges into streaks and lengthens an overhang's shadow by the same factor.
- * Rotation aims Babylon local +Z toward the origin.
+ * Rotation aims Babylon local +Z toward the origin. The engine default sky's
+ * sun disc is baked toward this azimuth (`engine-content/skybox/Source.txt`).
  */
 export const DEFAULT_SCENE_SUN_POSITION: [number, number, number] = [
   -2, 3.5, -2.9,

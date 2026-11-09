@@ -1046,7 +1046,7 @@ const DEFAULT_3D_ENVIRONMENT_COLOR: [number, number, number] = [
   0.45, 0.62, 0.85,
 ];
 /** The default sky's horizon (`engine-content/skybox`): far objects fade into the sky, not into grey. */
-const DEFAULT_3D_FOG_COLOR: [number, number, number] = [0.44, 0.61, 0.76];
+const DEFAULT_3D_FOG_COLOR: [number, number, number] = [0.68, 0.77, 0.95];
 
 export function createDefaultScene(
   viewportMode: ViewportMode = "3d",

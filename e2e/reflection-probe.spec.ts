@@ -16,8 +16,8 @@ import { clickPlayAndWaitForOverlay } from "./play";
 const EYE: [number, number, number] = [0, 1.5, -2.5];
 const BALL: [number, number, number] = [0, 1.2, 1];
 
-/** Mean blue-minus-red of the canvas centre, where the ball sits: the default sky is blue, the room grey. */
-function centreBlueness(canvas: Locator): Promise<number> {
+/** Mean brightness of the canvas centre, where the ball sits. */
+function centreBrightness(canvas: Locator): Promise<number> {
   return canvas.evaluate((node: HTMLCanvasElement) => {
     if (!node.width || !node.height) return 0;
     const copy = document.createElement("canvas");
@@ -27,15 +27,16 @@ function centreBlueness(canvas: Locator): Promise<number> {
     context.drawImage(node, (node.width - side) / 2, (node.height - side) / 2, side, side, 0, 0, 8, 8);
     const pixels = context.getImageData(0, 0, 8, 8).data;
     let sum = 0;
-    for (let i = 0; i < pixels.length; i += 4) sum += pixels[i + 2]! - pixels[i]!;
+    for (let i = 0; i < pixels.length; i += 4) sum += (pixels[i]! + pixels[i + 1]! + pixels[i + 2]!) / 3;
     return sum / (pixels.length / 4);
   });
 }
 
 /**
- * A closed, lightless room around a grey ball, under the default blue sky: only image-based lighting
- * reaches the ball. Without the probe it takes the sky's blue; with it, the captured grey room's,
- * which keeps some blue from the sky lighting its walls.
+ * A closed, lightless room around a grey ball, under the default sky: only image-based lighting
+ * reaches the ball. Without the probe it takes the sky's light; with it, the captured room's. The grey
+ * walls reflect only part of the sky light that reaches them, so the room lights the ball more dimly
+ * than the sky does, whatever the sky's colours.
  */
 function room(probe: boolean): SerializedScene {
   const scene = createDefaultScene();
@@ -67,6 +68,14 @@ function room(probe: boolean): SerializedScene {
   return scene;
 }
 
+/** Wait until the ball shows the room: darker than under the sky, but still lit (not a black capture). */
+async function expectRoomLit(canvas: Locator, skyLit: number) {
+  await expect.poll(async () => {
+    const share = (await centreBrightness(canvas)) / skyLit;
+    return share > 0.4 && share < 0.85 ? "room-lit" : `${share.toFixed(2)} of sky-lit brightness`;
+  }, { timeout: 30_000 }).toBe("room-lit");
+}
+
 async function aimEditor(page: Page) {
   await page.evaluate(([eye, target]) => (window as unknown as {
     __hapticViewportTest: { setShadowCaptureView(position: number[], target: number[], fov: number): void };
@@ -88,16 +97,16 @@ test("a Reflection Probe lights surfaces in its box from the captured room in th
   await ready();
   await aimEditor(page);
   await page.waitForTimeout(1_500);
-  const skyLit = await centreBlueness(viewport);
+  const skyLit = await centreBrightness(viewport);
   await viewport.screenshot({ path: testInfo.outputPath("probe-off.png") });
-  expect(skyLit).toBeGreaterThan(10);
+  expect(skyLit).toBeGreaterThan(40);
 
   await setPreviewScene(page, room(true));
   await ready();
   await aimEditor(page);
   // Probes recapture once editing settles, then filter on the GPU.
   try {
-    await expect.poll(() => centreBlueness(viewport), { timeout: 30_000 }).toBeLessThan(skyLit * 0.75);
+    await expectRoomLit(viewport, skyLit);
   } finally {
     await viewport.screenshot({ path: testInfo.outputPath("probe-on.png") });
   }
@@ -106,7 +115,7 @@ test("a Reflection Probe lights surfaces in its box from the captured room in th
   // The loading dialog covers the ball until the first frame presents.
   await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 60_000 });
   const play = page.getByTestId("play-canvas");
-  await expect.poll(() => centreBlueness(play), { timeout: 30_000 }).toBeLessThan(skyLit * 0.75);
+  await expectRoomLit(play, skyLit);
   await play.screenshot({ path: testInfo.outputPath("play-probe.png") });
   expect(errors).toEqual([]);
 });

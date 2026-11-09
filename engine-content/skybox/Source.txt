@@ -1,0 +1,12 @@
+Kenney Skyboxes "skybox-day" (CC0, see License.txt), the engine default sky.
+
+px.png ... nz.png = the 4096 x 2048 equirectangular panorama reprojected into
+six 1024 x 1024 cube faces in Babylon CubeTexture order, bilinear sampled at
+2 x 2 per pixel. The panorama is turned about +Y so its sun disc lies toward
+DEFAULT_SCENE_SUN_POSITION (packages/core/src/skybox.ts); move both together.
+
+cubemap_layout.png is not part of the pack: it is the Skybox Creator mapping
+diagram.
+
+Original author: Kenney (https://kenney.nl), Skyboxes 1.0. License.txt is the
+pack's own (line endings normalised to LF).

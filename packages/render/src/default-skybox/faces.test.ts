@@ -13,13 +13,13 @@ function pngSize(bytes: Uint8Array): { width: number; height: number } {
 }
 
 describe("engine-content default skybox faces", () => {
-  it("ships six 512×512 PNG faces in Babylon CubeTexture order", () => {
+  it("ships six 1024×1024 PNG faces in Babylon CubeTexture order", () => {
     for (const key of SKYBOX_FACE_KEYS) {
       const bytes = new Uint8Array(
         readFileSync(join(REPO_ROOT, "engine-content/skybox", `${key}.png`)),
       );
       expect([...bytes.slice(0, 8)], key).toEqual(PNG_MAGIC);
-      expect(pngSize(bytes), key).toEqual({ width: 512, height: 512 });
+      expect(pngSize(bytes), key).toEqual({ width: 1024, height: 1024 });
     }
   });
 });
