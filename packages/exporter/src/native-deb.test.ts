@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { gunzipSync, strFromU8, strToU8, zipSync, type ZipOptions } from "fflate";
 import { debianPackageName, debianVersion, packageLinuxDeb } from "./native-deb";
 import type { DesktopGamePackageInput } from "./native-desktop";
+import { appIconImages } from "./test-support/app-icon-images";
 
 const unix = (data: string, mode: number): [Uint8Array, ZipOptions] => [strToU8(data), { os: 3, attrs: mode << 16 }];
 
@@ -81,11 +82,28 @@ describe("Linux Debian packages", () => {
     expect(strFromU8(data.get("./opt/space-game/resources/game/index.html")!.data)).toBe("<html>");
     // A path over tar's 100 characters arrives whole through a GNU long name record.
     expect(data.has(`./opt/space-game/resources/game/assets/${"deep/".repeat(30)}level.json`)).toBe(true);
-    expect(JSON.parse(strFromU8(data.get("./opt/space-game/resources/app/package.json")!.data)).hapticGameId).toBe("project-guid");
+    // Electron names the window's application ID after desktopName, which ties the window to the menu entry.
+    expect(JSON.parse(strFromU8(data.get("./opt/space-game/resources/app/package.json")!.data))).toMatchObject({
+      hapticGameId: "project-guid", desktopName: "space-game.desktop",
+    });
     expect(data.get("./usr/bin/space-game")).toMatchObject({ type: "2", link: "/opt/space-game/space-game" });
-    expect(strFromU8(data.get("./usr/share/applications/space-game.desktop")!.data)).toContain("Name=Space Game\nExec=/opt/space-game/space-game %U\n");
+    expect(strFromU8(data.get("./usr/share/applications/space-game.desktop")!.data))
+      .toContain("Name=Space Game\nExec=/opt/space-game/space-game %U\nStartupWMClass=Space Game\nTerminal=false\n");
+    // No App Icon: the entry names none and no icon is installed.
+    expect([...data.keys()].filter((path) => path.startsWith("./usr/share/icons/hicolor/") && path.endsWith(".png"))).toEqual([]);
     // Each parent folder is its own record, so dpkg owns and removes it.
     expect(data.get("./opt/space-game/resources/game/")).toMatchObject({ type: "5", mode: 0o755 });
+  });
+
+  it("install the App Icon in the hicolor theme at every size and name it in the menu entry", () => {
+    const icon = appIconImages();
+    const data = tarRecords(gunzipSync(arMembers(packageLinuxDeb(input({ name: "X", icon })).bytes).get("data.tar.gz")!));
+    const icons = [...data.keys()].filter((path) => path.startsWith("./usr/share/icons/hicolor/") && path.endsWith(".png"));
+    expect(icons).toEqual([16, 24, 32, 48, 64, 128, 256, 512].map((size) => `./usr/share/icons/hicolor/${size}x${size}/apps/x-game.png`));
+    expect(data.get("./usr/share/icons/hicolor/512x512/apps/x-game.png")).toMatchObject({ mode: 0o644, data: icon.get(512) });
+    expect(strFromU8(data.get("./usr/share/applications/x-game.desktop")!.data)).toContain("Exec=/opt/x-game/x %U\nIcon=x-game\n");
+    // A one-letter command still matches the entry Debian installs as `x-game.desktop`.
+    expect(JSON.parse(strFromU8(data.get("./opt/x-game/resources/app/package.json")!.data)).desktopName).toBe("x-game.desktop");
   });
 
   it("use the project version when Debian accepts it and keep package names at least two characters", () => {

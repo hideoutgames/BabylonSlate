@@ -39,6 +39,8 @@ export interface MacGamePackageRequest {
   buildNumber: number;
   /** Stable per project; names the game's storage folder. */
   gameId: string;
+  /** The App Icon as an `.icns`, written over Electron's (`CFBundleIconFile` names `electron.icns`); null keeps Electron's. */
+  icon: Uint8Array | null;
   /** A Developer ID Application identity, or null for ad-hoc signing. */
   identity: string | null;
   /** notarytool keychain profile; empty skips notarization. */
@@ -160,6 +162,8 @@ export async function packageMacGame(options: {
 
     const resources = join(app, "Contents", "Resources");
     await rm(join(resources, "default_app.asar"), { force: true });
+    // Before signing: the icon is part of the sealed bundle.
+    if (request.icon) await writeFile(join(resources, "electron.icns"), request.icon);
     const command = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "game";
     const files = gameAppFiles(
       { host: options.host, game: new Map(request.game), name: request.name, version: request.version, gameId: request.gameId },

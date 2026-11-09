@@ -80,4 +80,5 @@ export { packedContentFromGame, packedPlayControls, packedBootControls, packedSo
 export { gameSourceSubset, requiredGameAssets, type GameSourceContent } from "./source-content";
 export { DESKTOP_GAME_TARGETS, desktopGameNames, packageDesktopGame, type DesktopGameNames, type DesktopGamePackageInput, type DesktopGameTarget } from "./native-desktop";
 export { readZipEntries, writeZip, type ZipCopy, type ZipEntry } from "./zip-merge";
+export { APP_ICON_FILE, APP_ICON_SIZES, appIconPng, brandPlayerIndexHtml, encodeIcns, encodeIco, type AppIconImages } from "./app-icon";
 export { debianPackageName, debianVersion, packageLinuxDeb } from "./native-deb";

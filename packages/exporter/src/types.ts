@@ -205,6 +205,8 @@ export type ExportGameOptions = {
   playerFiles?: ReadonlyMap<string, Uint8Array>;
   fileCountWarn?: number;
   fileCountFail?: number;
+  /** Project Settings App Icon rendered at `APP_ICON_SIZES`: the page's favicon, and returned for native packages. */
+  appIcon?: import("./app-icon").AppIconImages;
 };
 
 export type ExportArtifact = {
@@ -212,4 +214,6 @@ export type ExportArtifact = {
   fileCount: number;
   warnings: string[];
   manifest: GameManifest;
+  /** The App Icon the export was given, for the native package that wraps it. */
+  appIcon?: import("./app-icon").AppIconImages;
 };

@@ -70,6 +70,18 @@ describe("Desktop game packages", () => {
     expect(Object.keys(files)).not.toContain("Space Game/electron.exe");
   });
 
+  it("write the rewritten executable once, from the runtime's original bytes, keeping its mode", () => {
+    const seen: string[] = [];
+    const { bytes } = packageDesktopGame(input(), (executable) => {
+      seen.push(strFromU8(executable));
+      return strToU8("branded");
+    });
+    expect(seen).toEqual(["binary"]);
+    expect(strFromU8(unzipSync(bytes)["Space Game/space-game"]!)).toBe("branded");
+    const executables = readZipEntries(bytes).filter((entry) => entry.name === "Space Game/space-game");
+    expect(executables.map((entry) => entry.externalAttributes >>> 16)).toEqual([EXECUTABLE_MODE]);
+  });
+
   it("refuse a runtime without its executable and a game path that leaves the game folder", () => {
     expect(() => packageDesktopGame(input({ target: "windows-x64" }))).toThrow("The Windows player is damaged: electron.exe is missing.");
     expect(() => packageDesktopGame(input({ game: new Map([["../escape.js", strToU8("x")]]) }))).toThrow("Invalid game file path: ../escape.js");

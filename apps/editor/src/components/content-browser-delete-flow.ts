@@ -202,6 +202,7 @@ export function useContentBrowserDeleteFlow(deps: ContentBrowserDeleteFlowDeps) 
       projectDocument?.settings.startupSceneGuid,
       projectDocument?.settings.audio?.audioMixerGuid,
       projectDocument?.settings.fonts?.defaultFontGuid,
+      projectDocument?.settings.appIdentity?.iconTextureGuid,
     ]);
     const projectTargets = referenceAssets.filter((asset) =>
       deletingGuids.has(asset.header.guid) && (projectAssetGuids.has(asset.header.guid) ||
