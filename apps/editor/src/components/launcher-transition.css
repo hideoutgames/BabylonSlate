@@ -168,10 +168,9 @@
     display: none;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .slate-loading,
-  .slate-loading * {
-    animation: none;
-    transition: none;
-  }
+/* Reduce Motion (the device setting, or the editor's override). */
+:where(:root[data-reduced-motion]) .slate-loading,
+:where(:root[data-reduced-motion]) .slate-loading * {
+  animation: none;
+  transition: none;
 }

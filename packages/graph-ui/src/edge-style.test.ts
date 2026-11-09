@@ -27,7 +27,7 @@ describe("styleFlowEdges", () => {
       styled.every(
         (edge) =>
           edge.style?.stroke === "var(--pin-exec)" &&
-          edge.style.strokeWidth === 5,
+          edge.style.strokeWidth === "var(--graph-wire-exec, 5px)",
       ),
     ).toBe(true);
     expect(nodeReads).toBeLessThanOrEqual(3 * nodes.length);
@@ -81,11 +81,11 @@ describe("styleFlowEdges", () => {
     );
 
     expect(styled.map((edge) => edge.style)).toEqual([
-      { stroke: "var(--pin-float)", strokeWidth: 4 },
-      { stroke: "var(--pin-bool)", strokeWidth: 4 },
-      { stroke: "var(--pin-wildcard)", strokeWidth: 4 },
-      { stroke: "var(--pin-wildcard)", strokeWidth: 4 },
-      { stroke: "var(--pin-wildcard)", strokeWidth: 4 },
+      { stroke: "var(--pin-float)", strokeWidth: "var(--graph-wire-data, 4px)" },
+      { stroke: "var(--pin-bool)", strokeWidth: "var(--graph-wire-data, 4px)" },
+      { stroke: "var(--pin-wildcard)", strokeWidth: "var(--graph-wire-data, 4px)" },
+      { stroke: "var(--pin-wildcard)", strokeWidth: "var(--graph-wire-data, 4px)" },
+      { stroke: "var(--pin-wildcard)", strokeWidth: "var(--graph-wire-data, 4px)" },
     ]);
     styled.forEach((edge, index) => expect(edge).toMatchObject(edges[index]));
     expect(edges.every((edge) => edge.style === undefined)).toBe(true);

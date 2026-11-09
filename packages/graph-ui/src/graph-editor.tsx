@@ -28,7 +28,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import "./graph-editor.css";
 import { GraphViewportControls } from "./graph-viewport-controls";
-import { GraphInteractionSettingsContext, NodeShakeTracker } from "./graph-interaction-settings";
+import { GraphInteractionSettingsContext, NodeShakeTracker, snapPositionToGrid } from "./graph-interaction-settings";
 import {
   useCallback,
   useContext,
@@ -51,6 +51,7 @@ import { IslandIconButton } from "./island-icon-button";
 import {
   AssetOpenProvider,
   ContextMenuOverlay,
+  doubleTapWindowMs,
   normalizeChord,
   useContextMenu,
   useEditorReadOnly,
@@ -328,7 +329,6 @@ export interface GraphEditorProps {
 export type GraphPasteElements = { nodes: CanvasNode[]; edges: Edge[] };
 export type GraphPasteResult = { nodes: CanvasNode[]; notice?: string };
 
-const DOUBLE_TAP_MS = 350;
 const PASTE_OFFSET = 40;
 /** Long enough to read; the hint never blocks editing meanwhile. */
 const NOTICE_MS = 4000;
@@ -767,6 +767,7 @@ function GraphEditorCanvas({
   const interactions = useContext(GraphInteractionSettingsContext);
   const tapToConnect = interactions.tapToConnectEnabled === true;
   const pinScale = interactions.pinScale ?? 1;
+  const nodeSnapGrid = readOnly ? 0 : (interactions.nodeSnapGrid ?? 0);
   const keybinds = useContext(GraphKeybindsContext);
   const renderPinDefaultEditor = useContext(PinDefaultEditorContext);
   const pinDefaultsDisabled = readOnly || (interactions.readOnlyPinDefaults ?? false);
@@ -1048,8 +1049,15 @@ function GraphEditorCanvas({
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
+      // Snapped Nodes: a drag moves freely; its release lands on the grid.
+      const released = nodeSnapGrid > 0
+        ? changes.map((change) =>
+            change.type === "position" && change.dragging === false && change.position
+              ? { ...change, position: snapPositionToGrid(change.position, nodeSnapGrid) }
+              : change)
+        : changes;
       setNodes((current) => {
-        const constrained = replaceChangesAsSelection(changes);
+        const constrained = replaceChangesAsSelection(released);
         const applied = readOnly
           ? constrained.filter(
               (change) => change.type === "select" || change.type === "dimensions",
@@ -1077,7 +1085,7 @@ function GraphEditorCanvas({
         return next;
       });
     },
-    [commitPositionsOnDragEnd, emitChange, readOnly],
+    [commitPositionsOnDragEnd, emitChange, nodeSnapGrid, readOnly],
   );
 
   const handleEdgesChange = useCallback(
@@ -1533,7 +1541,10 @@ function GraphEditorCanvas({
 
   const handleNodeDragStop: OnNodeDrag<CanvasNode> = useCallback(
     (_event, node, dragged) => {
-      const moving = dragged.length ? dragged : [node];
+      // XYFlow reports where the drag left the nodes; with Snapped Nodes they land on the grid.
+      const moving = (dragged.length ? dragged : [node]).map((entry) =>
+        nodeSnapGrid > 0 ? { ...entry, position: snapPositionToGrid(entry.position, nodeSnapGrid) } : entry,
+      );
       if (shakenRef.current && interactions.shakeEnabled && !readOnly && nodesDraggable) {
         const nextEdges = graphStateRef.current.edges;
         const positions = new Map(moving.map((entry) => [entry.id, entry.position]));
@@ -1631,6 +1642,7 @@ function GraphEditorCanvas({
       commitGraph,
       defaultEdgeOptions.type,
       interactions.shakeEnabled,
+      nodeSnapGrid,
       nodesDraggable,
       readOnly,
       isValidConnection,
@@ -2588,7 +2600,7 @@ function GraphEditorCanvas({
       clearSelection();
       onEmptyCanvasClickRef.current?.();
       const now = Date.now();
-      if (now - lastPaneTapRef.current < DOUBLE_TAP_MS && !readOnly) {
+      if (now - lastPaneTapRef.current < doubleTapWindowMs() && !readOnly) {
         const point = event ? { x: event.clientX, y: event.clientY } : null;
         setPendingConnect(point ? { position: screenToFlowPosition(point) } : null);
         setPaletteAnchor(point);

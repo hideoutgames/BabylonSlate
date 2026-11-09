@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setReducedMotion } from "@haptic/editor-kit";
 import { RUN_FLASH_MS, createRunFlasher } from "./run-flash";
 import type { RunGraph } from "./run-trace";
 
@@ -12,12 +13,11 @@ type AnimateCall = { element: Element; keyframes: Keyframe[]; options: KeyframeA
 
 let calls: AnimateCall[] = [];
 let frames: Array<() => void> = [];
-let reducedMotion = false;
 
 beforeEach(() => {
   calls = [];
   frames = [];
-  reducedMotion = false;
+  setReducedMotion(false);
   Element.prototype.animate = function (this: Element, keyframes, options) {
     const animation = { cancel: vi.fn(), play: vi.fn(), pause: vi.fn(), currentTime: null };
     calls.push({ element: this, keyframes: keyframes as Keyframe[], options: options as KeyframeAnimationOptions, animation });
@@ -25,9 +25,9 @@ beforeEach(() => {
   };
   vi.stubGlobal("requestAnimationFrame", (callback: () => void) => frames.push(callback));
   vi.stubGlobal("cancelAnimationFrame", () => {});
-  window.matchMedia = ((query: string) => ({ matches: reducedMotion && query.includes("reduce") })) as typeof window.matchMedia;
 });
 afterEach(() => {
+  setReducedMotion(false);
   delete (Element.prototype as { animate?: unknown }).animate;
   vi.unstubAllGlobals();
 });
@@ -166,7 +166,7 @@ describe("createRunFlasher", () => {
   });
 
   it("under reduced motion holds the highlight for the same time instead of fading it", () => {
-    reducedMotion = true;
+    setReducedMotion(true);
     const { root, flasher } = canvas();
     flasher.flash({ nodes: ["log"], edges: ["e-exec"] });
     runFrame();

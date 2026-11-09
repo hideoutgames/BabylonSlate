@@ -138,8 +138,7 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .context-menu-panel {
-    animation: none;
-  }
+/* Reduce Motion (the device setting, or the editor's override). */
+:where(:root[data-reduced-motion]) .context-menu-panel {
+  animation: none;
 }

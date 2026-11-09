@@ -36,13 +36,13 @@ Every page groups its settings into sub-categories, such as **Shadows** and **Po
 - **Undo**: history limits. See [Undo and Saving](undo-and-saving.md).
 - **Debugger**: Play debugging defaults and **Debug Mode**. See [Debugging](../debugging/index.md).
 - **Viewport**: **Viewport Frame Cap (FPS)** (default 60), **Camera Preview Frame Rate (FPS)** for the preview of a selected Camera or Render Target Capture (default 30), **Camera Speed**, **Drop Distance**, **Place On Surfaces** with its **Placement Trace Distance** (new actors land on the surface in front of the camera within that many units, default 25), **Stack New 2D Actors** (**Disabled**, **Scenes Only**, **Scene Layers Only** or **Both**: new actors there go one Z-Order above the highest actor that draws; see [Draw order](../2d/index.md#draw-order)), **Occlusion Culling**, which skips objects hidden behind solid shapes in Scene viewports (default on; Play and exported games follow the project's Scalability setting), and **Override Project Rendering**, which lets the editor preview use its own resolution and post-processing.
-- **Graph**: default zoom, connection helpers and **Add Node History** for node graphs. See [Scripting](../scripting/index.md#add-a-node).
+- **Graph**: default zoom, **Read-Only Pin Defaults** and **Add Node History** for node graphs. See [Scripting](../scripting/index.md#add-a-node).
 - **Assets**: model import scale, editor texture quality, and texture and audio memory budgets.
 - **Thumbnails**: turn Content Browser thumbnails on or off.
 - **Focus**: which windows stay visible in Focus. See [Windows and Layout](index.md).
 - **Keybinds**: change shortcuts. See [Keyboard Shortcuts](../start/shortcuts.md).
 - **Interface**: **Compact Mode**. See [Compact Mode](#compact-mode).
-- **Accessibility**: **Tap To Connect Pins** and **Large Pins** for node graphs. See [Accessibility](#accessibility).
+- **Accessibility**: text size, motion, touch and timing, number dragging, and graph pin and connection options. See [Accessibility](#accessibility).
 - **About**: version and build. The desktop app also has **Automatic Updates** here.
 - **Templates**, **Engine Plugins** and **Engine Extensions**: what new projects start with. See [Plugins](../projects/plugins.md) and [Extensions](../projects/extensions.md).
 
@@ -70,10 +70,36 @@ Compact Mode changes only sizes. Touch gestures, such as holding to open a menu 
 
 ## Accessibility
 
-**Engine Settings > Accessibility** has options that make node graphs easier to use. They apply to every graph editor: Class, Material, Animation Graph, Behaviour Tree and Particle Graph.
+**Engine Settings > Accessibility** makes the editor easier to read and operate. Like other Engine Settings, these apply on this device only.
+
+**Display**
+
+- **Text Size** (default 100%): scales text, and the spacing around it, from 50% to 150%. A few small fixed-size labels keep their size, and the viewport is unchanged.
+- **Reduce Motion** (default **System**): **On** turns off non-essential animation, such as menus, dialogs and tab transitions sliding or fading, and graph run highlights fading. **Off** keeps animation even when the device asks for less. **System** follows the device's reduced motion setting.
+
+**Touch And Input**
+
+- **Touch Target Size** (default 1×): enlarges the buttons, rows and pins you tap in the touch layout (see [Compact Mode](#compact-mode)), from 1× to 2×. Graph pins use it with a mouse too.
+- **Hold Time** (default 500 ms): how long to hold before a menu opens, from 300 to 1500 ms. Holding to drag, such as reordering a tree row or drawing a selection rectangle in a graph, starts at half of it. Tab headers keep the device's own hold to drag.
+- **Double-Tap Time** (default 350 ms): the longest gap between two taps that still counts as a double-tap, from 200 to 1000 ms. Double-clicking with a mouse follows the device's own setting.
+- **Number Snap Strength** (default **Normal**): how long dragging a number field pauses on round values, such as 0.1, 0.25, 1, 10 and 100. **Off**, **Light**, **Normal** or **Strong**.
+
+**Graph Pins**
+
+These apply to every graph editor: Class, Material, Animation Graph, Behaviour Tree and Particle Graph.
 
 - **Tap To Connect Pins** (default off): tap a pin, then a pin on the other side, to connect them. Either side can go first. Tap the first pin again to cancel, or tap another pin on the same side to choose it instead. Dragging from one pin to another works either way.
-- **Large Pins** (default 1×): a slider from 1× to 4× that enlarges every pin and the area you can tap or click around it. Nodes grow to fit.
+- **Large Pins** (default 1×): a slider from 1× to 4× that enlarges every pin, the area you can tap or click around it, and the wires between pins. Nodes grow to fit.
+- **Pin Type Letters** (default off): shows a short type name inside every data pin, so types do not rely on colour: **B** Boolean, **I** Integer, **F** Float, **S** String, **V2**, **V3** and **V4** vectors, **R** Rotator, **Q** Quaternion, **T** Transform, **C** Color, **O** Object, **Cl** Class, **A** Asset, **Tx** Texture, **St** Structure, **E** Enum, **Tg** Tag, **D** Delegate, **P** Particle and **?** Wildcard. Array and Map pins show their item type.
+
+**Graph Nodes**
+
+- **Snapped Nodes** (default off): a node moves freely while you drag it and snaps to a grid when you let go, so nodes line up. **Snap Grid Size (Pixels)** (default 2, up to 200) sets the grid, measured at 100% zoom.
+
+**Graph Connections**
+
+- **Node Connection Assistant** (default on): when you move a node near another, previews wires to their free matching pins and connects them when you let go. **Connection Distance (Pixels)** (default 48) sets how near.
+- **Shake Nodes To Disconnect** (default on): shaking a node back and forth while dragging it breaks all its wires. Turn it off if a tremor or an unsteady hand disconnects nodes by accident.
 
 ## Third-party notices
 

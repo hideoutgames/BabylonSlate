@@ -338,15 +338,14 @@
   outline-color: transparent;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .dockview-theme-haptic .dv-tab,
-  .dockview-theme-haptic .dv-tab .dv-default-tab-action,
-  .dockview-theme-haptic .dv-tabs-overflow-dropdown-default {
-    transition: none;
-  }
+/* Reduce Motion (the device setting, or the editor's override). */
+:where(:root[data-reduced-motion]) .dockview-theme-haptic .dv-tab,
+:where(:root[data-reduced-motion]) .dockview-theme-haptic .dv-tab .dv-default-tab-action,
+:where(:root[data-reduced-motion]) .dockview-theme-haptic .dv-tabs-overflow-dropdown-default {
+  transition: none;
+}
 
-  .dv-popover-anchor .dv-tabs-overflow-container {
-    animation: none;
-  }
+:where(:root[data-reduced-motion]) .dv-popover-anchor .dv-tabs-overflow-container {
+  animation: none;
 }
 

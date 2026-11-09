@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { Position, useStoreApi, type Node } from "@xyflow/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GraphEditor, type GraphEditorProps } from "./graph-editor";
-import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
+import { GraphInteractionSettingsContext, type GraphInteractionSettings } from "./graph-interaction-settings";
 import type { GraphDocument, SerializedPin } from "./graph-types";
 import * as wildcardDisplay from "./wildcard-display";
 
@@ -52,7 +52,7 @@ type MeasuredPin = Pick<SerializedPin, "id" | "direction"> & {
 function renderDragGraph(
   graph = graphWithFreePins(),
   props: Partial<GraphEditorProps> = {},
-  interactions = { assistantEnabled: true, assistantDistance: 48, shakeEnabled: true },
+  interactions: GraphInteractionSettings = { assistantEnabled: true, assistantDistance: 48, shakeEnabled: true },
 ) {
   let store!: ReturnType<typeof useStoreApi>;
   let currentProps = props;
@@ -165,6 +165,16 @@ function renderDragGraph(
         store.getState().onNodeDrag!(new MouseEvent("mousemove"), node, [node]);
       });
     },
+    /** XYFlow's release: a last position change with `dragging: false`, then the drag stop. */
+    release(position: Node["position"]) {
+      act(() => {
+        store.getState().onNodesChange!([
+          { id: "source", type: "position", position, dragging: false },
+        ]);
+      });
+      this.stop(position);
+    },
+    nodePosition: () => store.getState().nodes.find((node) => node.id === "source")?.position,
     stop(position?: Node["position"]) {
       measureHandles();
       const node = sourceAt(position);
@@ -176,6 +186,42 @@ function renderDragGraph(
     },
   };
 }
+
+describe("GraphEditor Snapped Nodes", () => {
+  const snapping = { assistantEnabled: false, assistantDistance: 48, shakeEnabled: true, nodeSnapGrid: 10 };
+
+  it("moves freely during a drag and lands on the grid when released", () => {
+    const graph = renderDragGraph(graphWithFreePins(), {}, snapping);
+    graph.start();
+    graph.move({ x: 133, y: 7 });
+    expect(graph.nodePosition()).toEqual({ x: 133, y: 7 });
+    graph.release({ x: 133, y: 7 });
+    expect(graph.nodePosition()).toEqual({ x: 130, y: 10 });
+    expect(graph.emitted.at(-1)?.nodes.find((node) => node.id === "source")?.position)
+      .toEqual({ x: 130, y: 10 });
+  });
+
+  it("keeps a released drag where it was without Snapped Nodes", () => {
+    const graph = renderDragGraph(graphWithFreePins(), {}, { ...snapping, nodeSnapGrid: 0 });
+    graph.start();
+    graph.move({ x: 133, y: 7 });
+    graph.release({ x: 133, y: 7 });
+    expect(graph.emitted.at(-1)?.nodes.find((node) => node.id === "source")?.position)
+      .toEqual({ x: 133, y: 7 });
+  });
+
+  it("snaps a node whose shake broke its links", () => {
+    const document = graphWithFreePins();
+    document.edges = [{ id: "link", source: "source", sourceHandle: "value", target: "target", targetHandle: "input" }];
+    const graph = renderDragGraph(document, {}, snapping);
+    graph.start();
+    for (const x of [30, -30, 30, -30]) graph.move({ x, y: 0 });
+    graph.release({ x: 141, y: 6 });
+    const last = graph.emitted.at(-1);
+    expect(last?.edges).toEqual([]);
+    expect(last?.nodes.find((node) => node.id === "source")?.position).toEqual({ x: 140, y: 10 });
+  });
+});
 
 describe("GraphEditor proximity dragging", () => {
   it("honors disabled assistance and shake settings", () => {

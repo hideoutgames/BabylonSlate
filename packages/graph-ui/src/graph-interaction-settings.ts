@@ -9,8 +9,21 @@ export interface GraphInteractionSettings {
   addNodeHistoryEnabled?: boolean;
   /** Tap one pin, then a pin on the other side, to connect them; unset is off. */
   tapToConnectEnabled?: boolean;
-  /** Multiplies pin glyphs and their hit areas (Large Pins); unset is 1. */
+  /** Multiplies pin glyphs, their hit areas and wires (Large Pins); unset is 1. */
   pinScale?: number;
+  /** Draws a type letter inside data pins (B for Boolean); unset is off. */
+  pinTypeLetters?: boolean;
+  /** Snapped Nodes: a released node drag rounds positions to this grid (flow units); unset or 0 is off. */
+  nodeSnapGrid?: number;
+}
+
+/** A position rounded to `grid` flow units; a grid of 0 or less leaves it as it is. */
+export function snapPositionToGrid(
+  position: { x: number; y: number },
+  grid: number | undefined,
+): { x: number; y: number } {
+  if (!grid || grid <= 0) return position;
+  return { x: Math.round(position.x / grid) * grid, y: Math.round(position.y / grid) * grid };
 }
 
 export const GraphInteractionSettingsContext = createContext<GraphInteractionSettings>({

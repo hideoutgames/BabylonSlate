@@ -56,7 +56,8 @@ The Documents tier crosses the Capacitor bridge once per asset write as base64 d
 - `AppSettingsStore.update` is a queued read-mutate-validate-write transaction across store instances; emit change events only after persistence.
 - A refused save keeps settings in memory for the session; an unreadable file keeps `automaticUpdatesEnabled` off (it may hold an opt-out). A failed native Preferences read never overwrites stored settings.
 - `compactMode` stays unset until chosen, so it follows the platform default (`resolveCompactMode`: on except on iOS and Android); Account → Application and Engine Settings → Interface edit it.
-- `appearance.theme` and `appearance.coarsePointerTargetScale` stay in the schema for stored files, but nothing reads them and Engine Settings does not show them (the editor is dark only).
+- `appearance.theme` stays in the schema for stored files, but nothing reads it and Engine Settings does not show it (the editor is dark only).
+- Accessibility settings (`touchTargetScale`, `textSizePercent`, `reduceMotion`, `holdTimeMs`, `doubleTapTimeMs`, `numberSnapStrength`, `graphTapToConnect`, `graphPinScale`, `graphPinTypeLetters`) are stepped values: the schema rounds each number to its step and clamps it to its range on load.
 - Number settings clamp on load (for example `undoHistoryLength` 1–1000, `traceByteBudget` 1–256 MiB, default 128 MiB).
 
 ## Secrets and native HTTP

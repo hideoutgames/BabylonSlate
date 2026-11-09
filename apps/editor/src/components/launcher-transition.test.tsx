@@ -6,13 +6,11 @@ import {
   screen,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setReducedMotion } from "@haptic/editor-kit";
 import {
   LauncherTransitionProvider,
   useLauncherTransition,
 } from "./launcher-transition";
-
-let reducedMotion = false;
-let motionQuery: MediaQueryList;
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
@@ -22,33 +20,12 @@ beforeEach(() => {
     "afterbegin",
     '<div id="haptic-intro" class="slate-loading" role="status"><span class="haptic-intro-status"></span></div>',
   );
-  reducedMotion = false;
-  motionQuery = Object.assign(new EventTarget(), {
-    get matches() {
-      return reducedMotion;
-    },
-    media: "(prefers-reduced-motion: reduce)",
-    onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-  }) as MediaQueryList;
-  Object.defineProperty(motionQuery, "matches", {
-    get: () => reducedMotion,
-  });
-  vi.stubGlobal("matchMedia", (query: string) =>
-    query === motionQuery.media
-      ? motionQuery
-      : {
-          matches: false,
-          media: query,
-          addEventListener: vi.fn(),
-          removeEventListener: vi.fn(),
-        },
-  );
+  setReducedMotion(false);
 });
 
 afterEach(() => {
   cleanup();
+  setReducedMotion(false);
   document.getElementById("haptic-intro")?.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -79,8 +56,8 @@ function advance(milliseconds: number) {
 
 function changeReducedMotion(value: boolean) {
   act(() => {
-    reducedMotion = value;
-    motionQuery.dispatchEvent(new Event("change"));
+    // What the editor does when Reduce Motion or the device setting changes.
+    setReducedMotion(value);
   });
 }
 
@@ -108,7 +85,7 @@ function finishTransition(element: Element, propertyName = "opacity") {
 
 describe("Launcher Transition", () => {
   it("keeps the minimum loading time but immediately enables a ready route with reduced motion", () => {
-    reducedMotion = true;
+    setReducedMotion(true);
     const launcher = renderTransition();
     act(() => launcher.controls().ready("home"));
 
@@ -122,7 +99,7 @@ describe("Launcher Transition", () => {
   });
 
   it("does not reveal a reduced-motion route until its content is ready", () => {
-    reducedMotion = true;
+    setReducedMotion(true);
     const launcher = renderTransition();
     advance(3000);
     expect(launcher.surface().hasAttribute("inert")).toBe(true);
@@ -182,7 +159,7 @@ describe("Launcher Transition", () => {
   });
 
   it("keeps the editor readiness hold after a slow project settles with reduced motion", () => {
-    reducedMotion = true;
+    setReducedMotion(true);
     const launcher = renderTransition("editor");
     act(() => launcher.controls().begin("Test Project"));
     advance(2200);

@@ -1,3 +1,4 @@
+import { prefersReducedMotion } from "@haptic/editor-kit";
 import { dataWiresRead, wireEnds, type GraphRunEvent, type RunGraph } from "./run-trace";
 
 /** How long an executed node, pin or wire keeps its highlight. */
@@ -49,10 +50,6 @@ export interface RunFlasher {
   dispose(): void;
 }
 
-function prefersReducedMotion(): boolean {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
 function attributeValue(value: string): string {
   return value.replace(/["\\]/g, "\\$&");
 }
@@ -63,7 +60,7 @@ function attributeValue(value: string): string {
  * `RUN_FLASH_MS`. Each new run of the same element restarts the fade from full strength.
  * Elements the canvas does not render (virtualized away) are skipped.
  *
- * Under `prefers-reduced-motion` the highlight does not fade: it holds at full strength for
+ * Under Reduce Motion (`prefersReducedMotion`) the highlight does not fade: it holds at full strength for
  * the same time and clears.
  *
  * While held (the owner is paused) the last run's highlights stay at full strength, including a

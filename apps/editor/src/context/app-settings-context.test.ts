@@ -41,18 +41,14 @@ describe("AppSettingsOwner", () => {
     const store: AppSettingsStore = { load: vi.fn(), save: vi.fn(), update: vi.fn() };
     const owner = new AppSettingsOwner(store);
     const saved = defaultEngineSettings();
-    saved.appearance = { theme: "dark", coarsePointerTargetScale: 1.5 };
+    saved.appearance = { theme: "dark" };
+    saved.textSizePercent = 120;
     // Shape of the store's change event: every setting plus a top-level theme.
     owner.receiveUpdate({ ...saved, theme: saved.appearance.theme });
-    expect(owner.getSnapshot().settings.appearance).toEqual({
-      theme: "dark",
-      coarsePointerTargetScale: 1.5,
-    });
+    expect(owner.getSnapshot().settings.appearance).toEqual({ theme: "dark" });
 
     owner.receiveUpdate({ theme: "light" });
-    expect(owner.getSnapshot().settings.appearance).toEqual({
-      theme: "light",
-      coarsePointerTargetScale: 1.5,
-    });
+    expect(owner.getSnapshot().settings.appearance).toEqual({ theme: "light" });
+    expect(owner.getSnapshot().settings.textSizePercent).toBe(120);
   });
 });

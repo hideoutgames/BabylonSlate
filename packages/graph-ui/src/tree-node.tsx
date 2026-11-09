@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import {
   ContextMenuOverlay,
+  doubleTapWindowMs,
   humanizePropertyLabel,
   useContextMenu,
   type NestedMenuItem,
@@ -20,7 +21,6 @@ import { nodeRoleClass, type NodeVisualRole } from "./node-theme";
 import { isPinWired } from "./pin-connections";
 import { useRunNodeStatus } from "./use-run-node-status";
 
-const DOUBLE_TAP_MS = 350;
 
 type AttachedRow = { id: string; classId: string; title?: string };
 
@@ -139,7 +139,7 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const handleHeaderClick = useCallback(
     (event: MouseEvent) => {
       const now = Date.now();
-      if (now - lastTap.current < DOUBLE_TAP_MS) {
+      if (now - lastTap.current < doubleTapWindowMs()) {
         event.stopPropagation();
         onNavigateRequest?.({ nodeId: id });
       }
@@ -153,7 +153,7 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
       event.stopPropagation();
       const now = Date.now();
       const prev = lastAttachmentTap.current;
-      if (prev.id === attachmentId && now - prev.at < DOUBLE_TAP_MS) {
+      if (prev.id === attachmentId && now - prev.at < doubleTapWindowMs()) {
         onAttachmentDoubleClick?.(id, attachmentId);
       }
       lastAttachmentTap.current = { id: attachmentId, at: now };

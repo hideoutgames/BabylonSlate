@@ -883,6 +883,19 @@ describe("createDefaultLogicGraphSerialized", () => {
     });
   });
 
+  it("lays each event row out clear of its Call Parent and of the next row", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "Actor",
+    });
+    const at = (id: string) => graph.nodes.find((node) => node.id === id)?.position;
+    // Event nodes are at least 320 wide, so Call Parent sits 320 + an 80 gap to the right.
+    // Begin Play is one row (the 120 minimum height); Tick starts 40 below it.
+    expect(at("event-begin-play")).toEqual({ x: 80, y: 80 });
+    expect(at("call-parent-flow-event-beginPlay")).toEqual({ x: 480, y: 80 });
+    expect(at("event-tick")).toEqual({ x: 80, y: 240 });
+    expect(at("call-parent-flow-event-tick")).toEqual({ x: 480, y: 240 });
+  });
+
   it("seeds inherited custom events with Call Parent", () => {
     const graph = createDefaultLogicGraphSerialized(registry, {
       parentClass: "HeroBase",

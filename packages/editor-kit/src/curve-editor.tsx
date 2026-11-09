@@ -58,6 +58,7 @@ import { gradientBackground, type Rgba } from "./gradient-colors";
 import { NumericDragField } from "./numeric-drag-field";
 import { ShortcutKeys } from "./shortcut-keys";
 import { useTouchUi } from "./touch-ui";
+import { holdDelayMs } from "./gesture-timing";
 
 /** Imperative controls a host binds to its own shortcuts (the Curve asset window's Frame Selection). */
 export interface CurveEditorHandle {
@@ -94,7 +95,6 @@ export interface CurveEditorProps {
   "data-testid"?: string;
 }
 
-const LONG_PRESS_MS = 500;
 /** Finger movement that starts a drag (and cancels a hold). */
 const MOVE_TOLERANCE_PX = 6;
 /** Mouse movement that turns a press into a drag or a selection box. */
@@ -731,7 +731,7 @@ export function CurveEditor({
       longPressRef.current = setTimeout(() => {
         longPressRef.current = null;
         if (gestureRef.current === pan && !pan.moved) pan.held = true;
-      }, LONG_PRESS_MS);
+      }, holdDelayMs());
     }
   };
 

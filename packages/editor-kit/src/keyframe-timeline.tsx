@@ -14,6 +14,7 @@ import {
 import { ChevronDownIcon, ChevronRightIcon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
 import { Button } from "@haptic/ui/components/button";
 import { cn } from "@haptic/ui/lib/utils";
+import { holdDelayMs } from "./gesture-timing";
 import {
   fitKeyframeView,
   keyAt,
@@ -162,7 +163,6 @@ function observeTheme(onChange: () => void): () => void {
 const RULER_PX = 24;
 const TRACK_LIST_WIDTH_PX = 264;
 const DRAG_PX = 4;
-const LONG_PRESS_MS = 500;
 const LONG_PRESS_SLOP_PX = 8;
 /** Each Zoom In or Zoom Out press. */
 const ZOOM_STEP = 1.5;
@@ -491,7 +491,7 @@ export function KeyframeTimeline({
           if (press.current !== keyPress || keyPress.moving) return;
           press.current = null;
           onKeyContextMenu(ref, keyPress.x, keyPress.y);
-        }, LONG_PRESS_MS);
+        }, holdDelayMs());
       }
       press.current = keyPress;
       return;
@@ -506,7 +506,7 @@ export function KeyframeTimeline({
     pan.holdTimer = window.setTimeout(() => {
       if (press.current !== pan || pan.moved) return;
       press.current = { kind: "marquee", pointerId: event.pointerId, x: point.x, y: point.y, mode: "replace", active: false };
-    }, LONG_PRESS_MS);
+    }, holdDelayMs());
     press.current = pan;
   };
 
@@ -910,7 +910,7 @@ function TrackListRow({
       hold.current = null;
       onSelect?.(row.id);
       onContextMenu(row.id, x, y);
-    }, LONG_PRESS_MS) };
+    }, holdDelayMs()) };
   };
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const held = hold.current;
