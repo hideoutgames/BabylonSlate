@@ -34,9 +34,9 @@ describe("resolveTypeVisual", () => {
     for (const assetType of ["SpriteAnimation", "Animation"]) expect(resolveTypeVisual({ assetType }).icon).not.toBe(timeline.icon);
   });
 
-  it("colours Textures with Class's blue, apart from render targets and the 2D assets made from them", () => {
+  it("colours Textures with Class's blue, apart from render targets, Camera Shakes and the 2D assets made from Textures", () => {
     expect(resolveTypeVisual({ assetType: "Texture" }).colorVar).toBe(resolveTypeVisual({ assetType: "Class" }).colorVar);
-    for (const assetType of ["RenderTarget", "RenderTargetTexture"]) expect(resolveTypeVisual({ assetType }).colorVar).toBe("var(--asset-render-target)");
+    for (const assetType of ["RenderTarget", "RenderTargetTexture", "CameraShake"]) expect(resolveTypeVisual({ assetType }).colorVar).toBe("var(--asset-render-target)");
     for (const assetType of ["Sprite", "Tileset", "Tilemap"]) expect(resolveTypeVisual({ assetType }).colorVar).toBe("var(--asset-sprite)");
   });
 
