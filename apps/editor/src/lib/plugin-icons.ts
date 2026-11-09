@@ -37,7 +37,10 @@ import {
   WrenchIcon,
   ZapIcon,
   type LucideIcon,
+  type LucideProps,
 } from "lucide-react";
+import SiDiscord from "@icons-pack/react-simple-icons/icons/SiDiscord";
+import { createElement, forwardRef } from "react";
 
 /** Static Lucide imports keep plugin metadata from loading the whole icon library. */
 export const PLUGIN_ICON_OPTIONS: ReadonlyArray<{
@@ -88,9 +91,24 @@ export const PLUGIN_ICON_OPTIONS: ReadonlyArray<{
   { key: "Zap", label: "Zap", icon: ZapIcon },
 ];
 
+/**
+ * Discord's mark from Simple Icons, filled with its `--platform-discord` token (Discord's blurple) wherever it shows.
+ * Lucide props that do not apply to a filled mark are dropped.
+ */
+const DiscordIcon = forwardRef<SVGSVGElement, LucideProps>(function DiscordIcon(
+  { color: _color, strokeWidth: _strokeWidth, absoluteStrokeWidth: _absoluteStrokeWidth, size, style, ...props },
+  ref,
+) {
+  return createElement(SiDiscord, { ...props, ref, size: size ?? 24, color: "currentColor", style: { ...style, color: "var(--platform-discord)" } });
+}) as LucideIcon;
+
+/** Brand marks for bundled extensions. Extensions can name them, but the icon picker does not offer them. */
+const BRAND_ICONS: ReadonlyMap<string, LucideIcon> = new Map([["Discord", DiscordIcon]]);
+
 export function resolvePluginIcon(
   iconKey: string | null | undefined,
 ): LucideIcon | undefined {
   const key = iconKey?.trim().replace(/Icon$/, "");
-  return PLUGIN_ICON_OPTIONS.find((option) => option.key === key)?.icon;
+  if (!key) return undefined;
+  return PLUGIN_ICON_OPTIONS.find((option) => option.key === key)?.icon ?? BRAND_ICONS.get(key);
 }

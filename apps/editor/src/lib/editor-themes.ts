@@ -97,6 +97,7 @@ const DEFAULT_COLORS = {
   "platform-web": "#e34f26",
   "platform-windows": "#3a96dd",
   "platform-android": "#3ddc84",
+  "platform-discord": "#5865f2",
 } as const;
 
 export type ThemeColorKey = keyof typeof DEFAULT_COLORS;
@@ -244,6 +245,7 @@ export const THEME_COLOR_GROUPS: ThemeColorGroup[] = [
       color("platform-web", "Web (HTML5)"),
       color("platform-windows", "Windows"),
       color("platform-android", "Android"),
+      color("platform-discord", "Discord"),
     ],
   },
 ];
