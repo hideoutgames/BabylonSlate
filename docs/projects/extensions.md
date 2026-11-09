@@ -11,6 +11,16 @@ For editor tools built with visual scripting instead of code, see [Editor Script
 | Project extensions | **Project Settings > Project Extensions** | Live in the project. You can edit, enable and export them. |
 | Engine extensions | **Engine Settings > Engine Extensions** | Copied into every new project. Existing projects keep their own copies. |
 
+With a project open, turning **Enable *Extension Name* By Default** on or off in **Engine Settings > Engine Extensions** asks where the change applies:
+
+| Choice | Changes |
+| --- | --- |
+| Engine Only | The default for new projects. |
+| Project Only | The open project. An extension the project has no copy of is copied in. |
+| Project & Engine | Both. |
+
+Haptic asks only when the open project would change too. Without a project open, or when the project is already in that state, the switch changes only the default.
+
 ## Use an extension
 
 1. Open **Project Settings > Project Extensions**.

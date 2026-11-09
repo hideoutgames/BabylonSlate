@@ -51,17 +51,34 @@ interface EngineLibrary<Entry> {
   remove(guid: string): Promise<void>;
 }
 
+/** The open project. With one, a default switch that would change it asks where the change applies. */
+export interface EngineLibraryProject<Entry> {
+  /** The project's name, or a phrase naming it, for the prompt. */
+  name: string;
+  /** Whether the project has its copy enabled; false when it has none. */
+  isEnabled(guid: string): boolean;
+  /** Sentences the prompt adds about the project side, such as a copy to make or references a disable breaks. */
+  notes(entry: Entry, enabled: boolean): string[];
+  /** Enables or disables it in the project; `archive` gives the package to copy in when the project has none. */
+  setEnabled(guid: string, enabled: boolean, archive: () => Promise<Uint8Array>): Promise<void>;
+}
+
+type EnableScope = "engine" | "project" | "both";
+
 /** Engine Settings page for an app-owned library (Engine Plugins, Engine Extensions) of new-project defaults. */
 export function EngineLibrarySettings<Entry extends EngineLibrarySettingsEntry>({
   kind,
   ensureLibrary,
   guidOf,
   save,
+  project,
 }: {
   kind: "Plugin" | "Extension";
   ensureLibrary: () => Promise<EngineLibrary<Entry>>;
   guidOf: (entry: Entry) => string;
   save: (bytes: Uint8Array, displayName: string) => Promise<SaveFileResult>;
+  /** Absent while no project is open: the switch then changes only the default. */
+  project?: EngineLibraryProject<Entry>;
 }) {
   const id = kind.toLowerCase();
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -70,6 +87,9 @@ export function EngineLibrarySettings<Entry extends EngineLibrarySettingsEntry>(
   const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Entry | null>(null);
+  // The prompt keeps its last change while it animates closed, so its text never blanks.
+  const [scopePrompt, setScopePrompt] = useState<{ entry: Entry; enabled: boolean } | null>(null);
+  const [scopeOpen, setScopeOpen] = useState(false);
   const [loadVersion, setLoadVersion] = useState(0);
   useEffect(() => {
     let active = true;
@@ -108,6 +128,31 @@ export function EngineLibrarySettings<Entry extends EngineLibrarySettingsEntry>(
       setBusy(false);
     }
   };
+
+  const setDefault = (entry: Entry, enabled: boolean) => {
+    const guid = guidOf(entry);
+    // Ask only when the open project would change too; otherwise the switch keeps meaning the default.
+    if (project && project.isEnabled(guid) !== enabled) {
+      setScopePrompt({ entry, enabled });
+      setScopeOpen(true);
+      return;
+    }
+    void run((library) => library.setEnabledByDefault(guid, enabled));
+  };
+
+  const applyScope = (scope: EnableScope) => {
+    if (!scopePrompt || !project) return;
+    const { entry, enabled } = scopePrompt;
+    const guid = guidOf(entry);
+    setScopeOpen(false);
+    void run(async (library) => {
+      if (scope !== "engine") await project.setEnabled(guid, enabled, () => library.export(guid));
+      if (scope !== "project") await library.setEnabledByDefault(guid, enabled);
+    });
+  };
+
+  const promptNotes = scopePrompt && project ? scopeNotes(scopePrompt.entry, scopePrompt.enabled, project) : [];
+  const promptVerb = scopePrompt?.enabled ? "Enable" : "Disable";
 
   return (
     <>
@@ -208,9 +253,7 @@ export function EngineLibrarySettings<Entry extends EngineLibrarySettingsEntry>(
                 aria-label={`Enable ${entry.settings.displayName} By Default`}
                 checked={!entry.invalid && entry.enabledByDefault}
                 disabled={busy || loading || Boolean(entry.invalid)}
-                onCheckedChange={(enabled) =>
-                  void run((library) => library.setEnabledByDefault(guid, enabled === true))
-                }
+                onCheckedChange={(enabled) => setDefault(entry, enabled === true)}
               />
             </Field>
           </Field>
@@ -224,6 +267,35 @@ export function EngineLibrarySettings<Entry extends EngineLibrarySettingsEntry>(
       ) : null}
     </div>
     </SettingsSection>
+      <AlertDialog
+        open={scopeOpen}
+        onOpenChange={setScopeOpen}
+      >
+        <AlertDialogContent data-testid={`engine-${id}-scope-dialog`}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {promptVerb} {scopePrompt?.entry.settings.displayName}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Engine Only changes the default for new projects. Project Only
+              changes {project?.name}. Project &amp; Engine changes both.
+              {promptNotes.map((note) => ` ${note}`).join("")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="outline" onClick={() => applyScope("engine")}>
+              Engine Only
+            </AlertDialogAction>
+            <AlertDialogAction variant="outline" onClick={() => applyScope("project")}>
+              Project Only
+            </AlertDialogAction>
+            <AlertDialogAction onClick={() => applyScope("both")}>
+              Project &amp; Engine
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={Boolean(confirmDelete)}
         onOpenChange={(open) => {
@@ -260,4 +332,16 @@ export function EngineLibrarySettings<Entry extends EngineLibrarySettingsEntry>(
       </AlertDialog>
     </>
   );
+}
+
+function scopeNotes<Entry extends EngineLibrarySettingsEntry>(
+  entry: Entry,
+  enabled: boolean,
+  project: EngineLibraryProject<Entry>,
+): string[] {
+  const maturity = [entry.settings.experimental ? "Experimental" : "", entry.settings.beta ? "Beta" : ""].filter(Boolean);
+  return [
+    ...(enabled && maturity.length > 0 ? [`${entry.settings.displayName} is marked ${maturity.join(" and ")}.`] : []),
+    ...project.notes(entry, enabled),
+  ];
 }
