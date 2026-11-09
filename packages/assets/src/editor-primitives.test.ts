@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { decodeAssetDocument } from "./asset-document";
 import { buildEditorPrimitivesFiles, EDITOR_PRIMITIVES_PLUGIN_GUID } from "./editor-primitives";
+import type { ProjectTreeFile } from "./hproject";
 import { extractGltfCollisionMesh } from "./glb-geometry";
 import { decodeHassetChunk, readHassetHeader } from "./hasset";
 import { normalizeModelPayload } from "./model-payload";
@@ -63,14 +64,20 @@ function signedVolume(mesh: { positions: ArrayLike<number>; indices: ArrayLike<n
   return triangles(mesh).reduce((sum, { a, normal }) => sum + (a[0]! * normal[0]! + a[1]! * normal[1]! + a[2]! * normal[2]!) / 6, 0);
 }
 
+/** One build for the whole file: a build hashes, hulls and bakes every Model. */
+let built: Promise<ProjectTreeFile[]> | undefined;
+function editorPrimitivesFiles(): Promise<ProjectTreeFile[]> {
+  built ??= buildEditorPrimitivesFiles();
+  return built;
+}
+
 async function modelFiles() {
-  const files = await buildEditorPrimitivesFiles();
-  return files.filter((file) => file.path.startsWith("assets/"));
+  return (await editorPrimitivesFiles()).filter((file) => file.path.startsWith("assets/"));
 }
 
 describe("buildEditorPrimitivesFiles", () => {
   it("authors disabled-by-default EditorPrimitives settings and one Model per shape", async () => {
-    const files = await buildEditorPrimitivesFiles();
+    const files = await editorPrimitivesFiles();
     expect(files.map((file) => file.path).sort()).toEqual([
       "assets/Capsule.hasset",
       "assets/Cone.hasset",
@@ -167,7 +174,7 @@ describe("buildEditorPrimitivesFiles", () => {
     const storage = new MemoryStorageAdapter("opfs");
     await storage.openDocumentsProject("engine-plugins");
     await storage.mkdir("editor-primitives/assets", true);
-    for (const file of await buildEditorPrimitivesFiles()) {
+    for (const file of await editorPrimitivesFiles()) {
       await storage.writeBinary(`editor-primitives/${file.path}`, file.data);
     }
     const discovered = await discoverEnginePlugins(storage);
@@ -181,7 +188,7 @@ describe("buildEditorPrimitivesFiles", () => {
   });
 
   it("matches the committed engine-plugins/editor-primitives directory", async () => {
-    const files = await buildEditorPrimitivesFiles();
+    const files = await editorPrimitivesFiles();
     if (UPDATE) {
       rmSync(PLUGIN_DIR, { recursive: true, force: true });
       for (const file of files) {
