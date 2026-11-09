@@ -131,6 +131,9 @@ export function updateLandscapeMesh(root: Mesh, properties: unknown, assets?: Me
       chunk.mesh.updateVerticesData(VertexBuffer.NormalKind, vertex.normals!);
       chunk.mesh.updateVerticesData(VertexBuffer.UVKind, vertex.uvs!);
       chunk.mesh.updateVerticesData(VertexBuffer.ColorKind, vertex.colors!);
+      // The position update rebuilt the chunk's bounds at the origin, and Babylon moves them only with the next world
+      // matrix it computes, which an unmoved landscape never has: move them here, before the Material pads them.
+      chunk.mesh.refreshBoundingInfo();
     }
     const material = data.materialGuid ? assets?.resolveMaterial?.(data.materialGuid, { scene: root.getScene() }) : null;
     chunk.mesh.material = material ?? root.getScene().defaultMaterial;
