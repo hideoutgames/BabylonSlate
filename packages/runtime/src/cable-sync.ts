@@ -1,8 +1,9 @@
-import { CableSimulation, cablePropertiesEqual, parseCableProperties, DEFAULT_SPRING_ARM_PROPERTIES, SPRING_ARM_LENGTH_LIMITS, type CableProperties, type Transform } from "@haptic/core";
+import { CableSimulation, cablePropertiesEqual, parseCableProperties, type CableProperties, type Transform } from "@haptic/core";
 import type { CommandMessage } from "@haptic/bridge";
 import type { Actor, ActorComponent, World } from "@haptic/object-model";
 import type { PhysicsBackend, SphereSweepQuery, PhysicsTransform } from "@haptic/physics";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
+import { springArmSocketOffset } from "./spring-arm-socket";
 
 interface CableHost {
   world: World;
@@ -174,12 +175,8 @@ function worldPoint(world: World, actor: Actor, component: ActorComponent | null
     transformPoint(current.transform, out);
     const parentId = current.parentId;
     current = parentId ? findComponent(actor, parentId) : null;
-    if (current?.classId === "SpringArmComponent") {
-      const length = current.getVariable("armLength");
-      out[2] -= typeof length === "number" && Number.isFinite(length)
-        ? Math.min(SPRING_ARM_LENGTH_LIMITS[1], Math.max(SPRING_ARM_LENGTH_LIMITS[0], length))
-        : DEFAULT_SPRING_ARM_PROPERTIES.armLength;
-    }
+    const socket = current ? springArmSocketOffset(current) : null;
+    if (socket) out[2] += socket[2];
   }
   local[0] = out[0]; local[1] = out[1]; local[2] = out[2];
   let owner: Actor | undefined = actor;

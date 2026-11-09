@@ -29,6 +29,7 @@ import {
   type AssignMeshPart,
 } from "./snapshot-apply";
 import { SPRING_ARM_DEBUG_PREFIX } from "./spring-arm";
+import { applySpringArmProbes } from "./snapshot-spring-arms";
 
 const YAW_90: [number, number, number, number] = [0, Math.SQRT1_2, 0, Math.SQRT1_2];
 
@@ -161,6 +162,21 @@ describe("spring arm", () => {
       const yaw = Quaternion.FromArray(YAW_90);
       expect(Math.abs(Quaternion.Dot(camera.rotationQuaternion!, yaw))).toBeCloseTo(1, 5);
       expect(scene.activeCamera).toBe(camera);
+    });
+
+    it("holds the camera at the Camera Probe's length until the probe clears", () => {
+      const { scene } = createHandle();
+      const binding = createSnapshotSceneBinding();
+      assign(scene, binding, { springArm: parseSpringArmProperties({ armLength: 4, cameraProbe: true }) });
+      const camera = snapshot(scene, binding, 1000, {});
+      expectVector(camera.position, [0, 1, -4]);
+      applySpringArmProbes(binding, [{ slotId: 0, componentId: "arm", length: 1.5 }]);
+      expectVector(snapshot(scene, binding, 1016, {}).position, [0, 1, -1.5]);
+      // A probe for another slot's arm leaves this one alone.
+      applySpringArmProbes(binding, [{ slotId: 1, componentId: "arm", length: 0.5 }]);
+      expectVector(snapshot(scene, binding, 1033, {}).position, [0, 1, -1.5]);
+      applySpringArmProbes(binding, [{ slotId: 0, componentId: "arm", length: null }]);
+      expectVector(snapshot(scene, binding, 1050, {}).position, [0, 1, -4]);
     });
 
     it("rotates children with the arm component's own rotation", () => {

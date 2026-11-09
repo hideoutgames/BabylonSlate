@@ -18,6 +18,7 @@ import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import type { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
 import type { CableWorldSync } from "./cable-sync";
+import type { SpringArmProbeSync } from "./spring-arm-probe";
 import type { RuntimeDataCatalog } from "./data-catalog";
 import type { SessionDiagnosticAggregator } from "./diagnostics";
 import type { RuntimeDriver } from "./driver-types";
@@ -189,6 +190,7 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   readonly dynamicMeshes: DynamicRuntimeMeshSync;
   readonly movement: MovementWorldSync;
   readonly cables: CableWorldSync;
+  readonly springArmProbes: SpringArmProbeSync;
   readonly ragdolls: RagdollWorldSync;
   readonly uiControls: UIControls2DRuntime;
   readonly overlay: SceneLayerOverlay;
@@ -230,8 +232,8 @@ export function setWorldGravity(rt: RuntimeComposition, gravity: { x: number; y:
  * Stop order: Delays resume in phase 1, then every scene stream retires;
  * physics-owning syncs release before the physics worlds, then the crowd
  * and the remaining debug overlays. Actor removal first retires a stream
- * the actor owns, then ragdolls, cables, dynamic meshes and animation
- * graphs; a released slot then drops its ragdoll/cable/mesh and BT state,
+ * the actor owns, then ragdolls, cables, spring arm probes, dynamic meshes and
+ * animation graphs; a released slot then drops its ragdoll/cable/probe/mesh and BT state,
  * its owner's text reveal, its sent component-command state and, last,
  * a `RuntimeCamera` possession that targeted it. Scene Layers register next to
  * last: phase 1 cancels independent layer creation and removes its layers,
@@ -245,6 +247,7 @@ export function registerRuntimeSubsystems(rt: RuntimeComposition): void {
   rt.subsystems.register(rt.streams);
   rt.subsystems.register(rt.ragdolls);
   rt.subsystems.register(rt.cables);
+  rt.subsystems.register(rt.springArmProbes);
   rt.subsystems.register(rt.dynamicMeshes);
   rt.subsystems.register(rt.movement);
   rt.subsystems.register(rt.physics);

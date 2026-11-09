@@ -769,6 +769,10 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Enable Rotation Lag", typeId: "bool", propertyKey: "enableRotationLag" },
       { name: "Rotation Lag Speed", typeId: "float", propertyKey: "rotationLagSpeed" },
       { name: "Draw Debug Lag", typeId: "bool", propertyKey: "drawDebugLag" },
+      { name: "Camera Probe", typeId: "bool", propertyKey: "cameraProbe" },
+      { name: "Probe Size", typeId: "float", propertyKey: "probeSize" },
+      { name: "Probe Channel", typeId: "string", propertyKey: "probeChannel" },
+      { name: "Probe Return Speed", typeId: "float", propertyKey: "probeReturnSpeed" },
     ],
   },
   {

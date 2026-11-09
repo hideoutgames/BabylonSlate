@@ -157,10 +157,18 @@ function restoreAuthored(rig: SpringArmRig): void {
 /**
  * Move the arm pivot toward its authored world pose and write the lagged pose
  * back as a local transform, so the socket and every child follow it.
+ * `socketLength` is the Camera Probe's length while one is on (the arm
+ * shortened in front of what blocks it), else Arm Length.
  */
-export function updateSpringArmRig(rig: SpringArmRig, store: SpringArmLagStore, dtSeconds: number): void {
+export function updateSpringArmRig(
+  rig: SpringArmRig,
+  store: SpringArmLagStore,
+  dtSeconds: number,
+  socketLength: number = rig.properties.armLength,
+): void {
   const parent = rig.arm.parent as TransformNode | null;
   if (!parent || rig.arm.isDisposed()) return;
+  rig.socket.position.z = springArmSocketPosition(socketLength)[2];
   const parentWorld = parent.computeWorldMatrix(true);
   const { properties } = rig;
   if (Math.abs(parentWorld.determinant()) < 1e-12) {
@@ -181,7 +189,7 @@ export function updateSpringArmRig(rig: SpringArmRig, store: SpringArmLagStore, 
   store.set(rig.key, lagged);
   if (!properties.enableLocationLag && !properties.enableRotationLag) {
     restoreAuthored(rig);
-    rig.debug?.update(scratchTarget, scratchTarget, properties.armLength);
+    rig.debug?.update(scratchTarget, scratchTarget, socketLength);
     return;
   }
   scratchLaggedPosition.fromArray(lagged.position);
@@ -190,7 +198,7 @@ export function updateSpringArmRig(rig: SpringArmRig, store: SpringArmLagStore, 
   parentWorld.invertToRef(scratchInverse);
   scratchLagged.multiplyToRef(scratchInverse, scratchLocal);
   scratchLocal.decompose(rig.arm.scaling, rig.arm.rotationQuaternion!, rig.arm.position);
-  rig.debug?.update(scratchTarget, scratchLagged, properties.armLength);
+  rig.debug?.update(scratchTarget, scratchLagged, socketLength);
 }
 
 /**

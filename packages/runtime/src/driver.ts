@@ -9,6 +9,7 @@ import { RuntimeAssetPreloads } from "./asset-preloads";
 import type { ParticlesFinishedReason, RuntimeAssetLoadState } from "@haptic/core";
 import type { SceneLayerOverlay } from "./scene-layer-overlay";
 import type { CableWorldSync } from "./cable-sync";
+import type { SpringArmProbeSync } from "./spring-arm-probe";
 import type { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import type { MovementWorldSync } from "./movement";
 import type { RenderTargetPayload, RenderTargetTexturePayload } from "@haptic/core";
@@ -152,6 +153,7 @@ import {
   createParticleEffects,
   createBehaviourTrees,
   createCables,
+  createSpringArmProbes,
   createCamera,
   createConsole,
   createDynamicMeshes,
@@ -382,6 +384,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly dynamicMeshes: DynamicRuntimeMeshSync;
   readonly movement: MovementWorldSync;
   readonly cables: CableWorldSync;
+  readonly springArmProbes: SpringArmProbeSync;
   readonly ragdolls: RagdollWorldSync;
   readonly uiControls: UIControls2DRuntime;
   readonly overlay: SceneLayerOverlay;
@@ -543,6 +546,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.dynamicMeshes = createDynamicMeshes(this);
     this.movement = createMovement(this);
     this.cables = createCables(this);
+    this.springArmProbes = createSpringArmProbes(this);
     this.ragdolls = createRagdolls(this);
     this.uiControls = createUIControls(this);
     this.overlay = createOverlay(this, options);

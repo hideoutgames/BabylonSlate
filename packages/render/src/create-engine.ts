@@ -105,6 +105,7 @@ import type {
 } from "@haptic/shader-graph";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { applyCableFrame, stepEditorCables } from "./cable-mesh";
+import { applySpringArmProbes } from "./snapshot-spring-arms";
 import { createPreviewLighting } from "./preview-lighting";
 import {
   ViewportShadingOverlay,
@@ -3161,6 +3162,10 @@ function initializeEngine(
       }
       if (command.type === "cableFrame") {
         applyCableFrame(scene, command.data, command.frameId);
+        scheduler.invalidate("snapshot");
+      }
+      if (command.type === "springArmProbe") {
+        applySpringArmProbes(binding, command.arms);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "dynamicMeshUpdate") {
