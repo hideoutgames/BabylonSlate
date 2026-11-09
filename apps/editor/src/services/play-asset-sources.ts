@@ -11,6 +11,7 @@ import {
   type IndexedAsset, type ModelPayload, type RegistryLoadedAsset,
 } from "@haptic/assets";
 import { packedContentFromGame, packedPlayControls, packedSourceControls, type GameSourceContent, type PackedGameContent } from "@haptic/exporter";
+import { editorBuildPlatform } from "@haptic/vfs";
 import type { SceneSourceAssets } from "@haptic/render";
 import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import type { ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
@@ -303,7 +304,8 @@ async function acquirePlayAssetSourcesAttempt(
       bundleDebugger: true, render: project.settings.render, playFrameCap: project.settings.playFrameCap,
       garbageCollectionIntervalTicks: project.settings.garbageCollectionIntervalTicks,
       pixelsPerUnit: project.settings.twoD.pixelsPerUnit, sortingLayers: project.settings.twoD.sortingLayers,
-      pixelPerfect: project.settings.twoD.pixelPerfect, nearestTextures: nearestTextureFiltering(project.settings.twoD), physicsWorld: "3d", collisionPresets: project.settings.physics.collisionPresets,
+      pixelPerfect: project.settings.twoD.pixelPerfect, nearestTextures: nearestTextureFiltering(project.settings.twoD), physicsWorld: "3d",
+      platform: editorBuildPlatform(), collisionPresets: project.settings.physics.collisionPresets,
       audioMixerGuid: project.settings.audio.audioMixerGuid ?? undefined,
       globalFallback: project.settings.fonts.globalFallback,
       assets: [],

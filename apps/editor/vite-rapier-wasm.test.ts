@@ -89,9 +89,9 @@ describe("rapierHostedWasmVitePlugin", () => {
 
   it("names the hosted wasm so an export keeps it with Rapier and drops it without", () => {
     const files = new Map([[RAPIER_WASM_FILE, new Uint8Array([0, 97, 115, 109])]]);
-    expect([...selectPlayerRuntimeFiles(files, { physicsWorld: "2d" }).keys()]).toEqual([RAPIER_WASM_FILE]);
-    expect([...selectPlayerRuntimeFiles(files, { physicsWorld: "3d" }).keys()]).toEqual([]);
-    expect([...selectPlayerRuntimeFiles(files, { physicsWorld: "3d", hasPhysicsSceneLayers: true }).keys()]).toEqual([RAPIER_WASM_FILE]);
+    expect([...selectPlayerRuntimeFiles(files, { physicsWorld: "2d", platform: "web" }).keys()]).toEqual([RAPIER_WASM_FILE]);
+    expect([...selectPlayerRuntimeFiles(files, { physicsWorld: "3d", platform: "web" }).keys()]).toEqual([]);
+    expect([...selectPlayerRuntimeFiles(files, { physicsWorld: "3d", platform: "web", hasPhysicsSceneLayers: true }).keys()]).toEqual([RAPIER_WASM_FILE]);
   });
 
   it("fails the build when the Rapier glue no longer embeds one base64 wasm", () => {

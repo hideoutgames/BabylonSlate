@@ -59,7 +59,7 @@ export function useGameExport(
     setError(null);
     setNotice(null);
     try {
-      const result = await exportGameArtifact({ projectSnapshot: projectDocument });
+      const result = await exportGameArtifact({ platform: target.id, projectSnapshot: projectDocument });
       if (isErr(result)) {
         setError(exportGameFailureMessage(result.error));
         return;

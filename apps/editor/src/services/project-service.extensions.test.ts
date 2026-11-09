@@ -8,6 +8,9 @@ import { ProjectService } from "./project-service";
 import { defaultNodeRegistry } from "./graph-hydration";
 import { ensureEngineExtensionStorage } from "../lib/engine-extensions";
 
+/** Play in the web editor. */
+const WEB_PLAY = { platform: "web", editor: true } as const;
+
 async function setup() {
   const storage = new MemoryStorageAdapter("documents");
   await storage.openDocumentsProject("Extensions");
@@ -174,7 +177,7 @@ describe("Editor Extensions in a project", () => {
     await service.saveDocument("extension-asset", "assets/Rain.hasset", { rain: 4 });
     const saved = service.registry?.getByPath("assets/Rain.hasset");
     expect([saved?.header.type, saved?.header.name]).toEqual(["extension.weather.preset", "Rain"]);
-    const [library] = await service.extensions.gameLibraries();
+    const [library] = await service.extensions.gameLibraries(WEB_PLAY);
     expect(library!.assets).toEqual([{ guid: rain!.header.guid, name: "Rain", type: "preset", values: { rain: 4 } }]);
     await service.closeProject();
   });

@@ -27,7 +27,7 @@ describe("exportGame", () => {
   it("excludes Preview diagnostics from ordinary exports even when debugging is enabled", async () => {
     const playerFiles = stubPlayer();
     playerFiles.set("player-preview-diagnostics.js", new TextEncoder().encode("export const previewOnly = true"));
-    const options = { bundleDebugger: true, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles,
+    const options = { platform: "web" as const, bundleDebugger: true, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles,
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS };
     const ordinary = await exportGame(options);
     if (!ordinary.ok) throw new Error(ordinary.error);
@@ -38,7 +38,7 @@ describe("exportGame", () => {
     expect(preview.value.manifest).not.toHaveProperty("includePreviewDiagnostics");
   });
   it("marks enabled project render dependencies as startup systems while deferred assets remain catalog-only", async () => {
-    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", scripts: [],
+    const result = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", scripts: [],
       renderSettings: { ...DEFAULT_RENDER_PROJECT_SETTINGS, effects: { ...DEFAULT_RENDER_EFFECTS, colorGrading: { enabled: true, lutTextureGuid: "lut" } } },
       assets: [
         { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: new TextEncoder().encode("{}"), requiredDependencies: [], dependencies: ["later"] },
@@ -52,7 +52,7 @@ describe("exportGame", () => {
     expect(result.value.manifest.assets.find(asset => asset.guid === "scene")).toMatchObject({ dependencies: ["later"], requiredDependencies: [] });
   });
   it("records the authored storage path of exported assets but not of generated entries", async () => {
-    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+    const result = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [{ assetGuid: "hero", classId: "Hero", source: "export function onTick() {}", anchors: [], entryPoints: [] }],
       assets: [
         { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: new TextEncoder().encode("{}"), assetPath: "assets/Levels/Main.scene.hasset" },
@@ -71,7 +71,7 @@ describe("exportGame", () => {
     expect(generated.find(asset => asset.guid === "script:hero:Hero")?.ownerGuid).toBe("hero");
   });
   it("preserves focus input selections and normalizes unsafe repeat values through player manifests", async () => {
-    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles: stubPlayer(),
+    const result = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles: stubPlayer(),
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       focusNavigation: normalizeFocusNavigationSettings({ navigationInputGuid: "menu-axis", activateInputGuid: "accept", wrap: true }),
     });
@@ -94,6 +94,7 @@ describe("exportGame", () => {
       localQualityOverrides: { resolution: { scale: 0.25 } },
     };
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene-1",
       renderSettings: authored, playFrameCap: Infinity, scripts: [], assets: [], playerFiles: stubPlayer(),
     });
@@ -123,6 +124,7 @@ describe("exportGame", () => {
   });
   it("writes the Garbage Collection Interval as a whole number of ticks", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       garbageCollectionIntervalTicks: 30, scripts: [], assets: [], playerFiles: stubPlayer(),
     });
@@ -141,12 +143,14 @@ describe("exportGame", () => {
       bundle: { entry: "game.ts", modules: [{ path: "game.ts", code: "exports.rain = 1;", imports: {} }] },
     };
     const withLibrary = await exportGame({
+      platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       extensionLibraries: [library], scripts: [], assets: [], playerFiles: stubPlayer(),
     });
     if (!withLibrary.ok) throw new Error(withLibrary.error);
     expect(parseGameManifest(new TextDecoder().decode(withLibrary.value.files.get(GAME_MANIFEST_FILE))).extensionLibraries).toEqual([library]);
     const without = await exportGame({
+      platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [], assets: [], playerFiles: stubPlayer(),
     });
@@ -156,6 +160,7 @@ describe("exportGame", () => {
 
   it("retains project identity in release builds", async () => {
     const result = await exportGame({
+      platform: "web",
       project: { name: "Orbit Workshop", version: "2.4.0-beta.3" },
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
@@ -174,6 +179,7 @@ describe("exportGame", () => {
       textures: { anisotropy: 8 },
     });
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: {
@@ -260,6 +266,7 @@ describe("exportGame", () => {
 
   it("defaults to packed delivery with independently addressable runtime assets", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: true,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -283,6 +290,7 @@ describe("exportGame", () => {
 
   it("omits infinite loop fields from a release manifest", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -312,6 +320,7 @@ describe("exportGame", () => {
 
   it("records infinite loop settings when the debugger is bundled", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: true,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -336,6 +345,7 @@ describe("exportGame", () => {
 
   it("keeps reached scenes independently addressable in packed delivery", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -375,6 +385,7 @@ describe("exportGame", () => {
 
   it("writes one file per asset", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -412,6 +423,7 @@ describe("exportGame", () => {
       return { guid: `asset-${index}`, type: "Texture", sceneGuid: "scene-1", bytes };
     });
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [], playerFiles: stubPlayer(), assets,
     });
@@ -429,6 +441,7 @@ describe("exportGame", () => {
   it("resolves a Class reference to the first exported Class naming it by guid or class id", async () => {
     const json = new TextEncoder().encode("{}");
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [], playerFiles: stubPlayer(),
       assets: [
@@ -447,6 +460,7 @@ describe("exportGame", () => {
   it("exports namespaced sidecars to portable loose files without merging distinct asset IDs", async () => {
     const guids = ["area-emission:tex", "area-emission/tex", "area-emission_tex", "Area-emission:tex", "audioReverb:scene", "CON"];
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [], playerFiles: stubPlayer(),
@@ -471,6 +485,7 @@ describe("exportGame", () => {
 
   it("records authored Texture pixel size on the manifest index", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -502,6 +517,7 @@ describe("exportGame", () => {
 
   it("fails when the file count exceeds the hard limit", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -524,6 +540,7 @@ describe("exportGame", () => {
 
   it("warns when the file count crosses the warn threshold", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -549,6 +566,7 @@ describe("exportGame", () => {
 
   it("writes compiled script sources as independently addressed sidecars of their Class", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -591,7 +609,7 @@ describe("exportGame", () => {
   });
 
   it("fails instead of inventing a Class for a compiled script whose asset is not exported", async () => {
-    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+    const result = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [{ assetGuid: "ghost", classId: "Ghost", source: "", anchors: [], entryPoints: [] }],
       assets: [{ guid: "scene-1", type: "Scene", sceneGuid: "scene-1", bytes: new Uint8Array([1]) }],
     });
@@ -599,7 +617,7 @@ describe("exportGame", () => {
   });
 
   it("never treats a display name as an asset or Game Instance identity, nor a guid as its class id", async () => {
-    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+    const result = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       gameInstanceClass: "MyGame",
       scripts: [{ assetGuid: "game", classId: "MyGame", source: "", anchors: [], entryPoints: [] }],
       assets: [
@@ -628,6 +646,7 @@ describe("exportGame", () => {
       ["coi-serviceworker.js", new TextEncoder().encode("/* coi */")],
     ]);
     const three = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -650,6 +669,7 @@ describe("exportGame", () => {
     expect(three.value.files.has("assets/rapier.es.js")).toBe(false);
 
     const two = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -688,6 +708,7 @@ describe("exportGame", () => {
     "retains Rapier for a physics-enabled SceneLayer alongside a 3d world",
     async () => {
       const result = await exportGame({
+        platform: "web",
         bundleDebugger: false,
         startupSceneGuid: "scene-1",
         renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -716,6 +737,7 @@ describe("exportGame", () => {
 
   it("omits Rapier from a 3d export whose SceneLayers all leave physics off", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -740,6 +762,7 @@ describe("exportGame", () => {
   it("inlines every link to a stylesheet verbatim and keeps an unlinked stylesheet", async () => {
     const theme = "a::after{content:\"$& </style>\"}";
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [],
       playerFiles: new Map([
         ["index.html", new TextEncoder().encode(
@@ -759,6 +782,7 @@ describe("exportGame", () => {
 
   it("inlines CSS into index.html and keeps wasm as a real file", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -796,6 +820,7 @@ describe("exportGame", () => {
 
   it("records pixelsPerUnit and Font names on the manifest", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -835,7 +860,7 @@ describe("exportGame", () => {
   });
 
   it.each([false, true])("rejects a game.json missing any field the exporter writes (debugger=%s)", async (bundleDebugger) => {
-    const result = await exportGame({ bundleDebugger, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [] });
+    const result = await exportGame({ platform: "web", bundleDebugger, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [] });
     if (!result.ok) throw new Error(result.error);
     const current = JSON.parse(new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE))) as Record<string, unknown>;
     expect(parseGameManifest(JSON.stringify(current)).bundleDebugger).toBe(bundleDebugger);
@@ -848,6 +873,7 @@ describe("exportGame", () => {
 
   it("writes Audio occlusion into game.json", async () => {
     const on = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -866,6 +892,7 @@ describe("exportGame", () => {
     if (!on.ok) return;
     expect(on.value.manifest.occlusionEnabled).toBe(true);
     const off = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       occlusionEnabled: false,
@@ -893,6 +920,7 @@ describe("exportGame", () => {
 
   it("writes the Font Global Fallback into game.json, sans-serif when unset", async () => {
     const exportWith = (globalFallback?: string) => exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       ...(globalFallback === undefined ? {} : { globalFallback }),
@@ -912,6 +940,7 @@ describe("exportGame", () => {
 
   it("writes Audio reverb scales into game.json", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       reverbWetScale: 1.5,
@@ -951,6 +980,7 @@ describe("exportGame", () => {
       durationMs: 1800,
     };
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -988,6 +1018,7 @@ describe("exportGame", () => {
 
   it("records Font names on index entries", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -1014,7 +1045,7 @@ describe("exportGame", () => {
 
 it("retains stable input asset controls in an exported player manifest", async () => {
   const inputAssets = [{ guid: "jump", name: "Jump", type: "InputAction" as const, valueType: "button" as const, bindings: [{ id: "keyboard", device: "key" as const, code: "KeyJ" }] }];
-  const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [], playerFiles: stubPlayer(), inputAssets });
+  const result = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [], playerFiles: stubPlayer(), inputAssets });
   if (!result.ok) throw new Error("Export failed");
   expect(parseGameManifest(new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE))).inputAssets).toEqual(inputAssets);
 });

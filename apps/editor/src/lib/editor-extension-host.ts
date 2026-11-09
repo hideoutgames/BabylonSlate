@@ -2,8 +2,9 @@ import {
   normalizeExtensionFields, resolveExtensionFieldValues,
   type AssetDocument, type ExtensionCodeFile, type ExtensionField, type ExtensionFieldValues,
 } from "@haptic/assets";
-import { evaluateExtensionBundle } from "@haptic/core";
+import { evaluateExtensionBundle, platformSymbols } from "@haptic/core";
 import type { GlslToMaterialOptions, GlslToMaterialResult } from "@haptic/shader-graph";
+import { editorBuildPlatform } from "@haptic/vfs";
 import { linkExtensionModules } from "./extension-modules";
 
 export interface EditorExtensionEntry {
@@ -95,7 +96,8 @@ interface ExtensionState {
 }
 
 async function evaluateExtension(entry: EditorExtensionEntry): Promise<(api: EditorExtensionApi) => unknown> {
-  const bundle = await linkExtensionModules(entry.files, entry.entry);
+  // Editor code runs in this editor, so its directives see this editor's platform.
+  const bundle = await linkExtensionModules(entry.files, entry.entry, platformSymbols(editorBuildPlatform(), { editor: true }));
   // Extensions are trusted editor code, not a security sandbox. Every module is
   // CommonJS after linking, so ESM-transpiled and CommonJS entries both work.
   const exports = evaluateExtensionBundle(bundle, entry.label ?? entry.id);

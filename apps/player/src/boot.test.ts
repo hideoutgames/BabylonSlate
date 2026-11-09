@@ -76,7 +76,7 @@ function publishedState(worker: TestWorker, guid: string) {
 /** `withAudio` adds a "jump" Audio asset outside the startup closure. */
 async function fixture(withWater = false, saveGame?: SaveGameConfiguration, withAudio = false) {
   const scene = { ...createDefaultScene(), actors: [] };
-  const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [], renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+  const packed = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "world", scripts: [], renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
     ...(saveGame ? { saveGame, physicsWorld: "2d" as const } : {}),
     assets: [{ guid: "world", type: "Scene", sceneGuid: "world", name: "World", assetPath: "assets/Levels/World.scene.hasset", requiredDependencies: withWater ? ["water"] : [], bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition())) }] : []),
       ...(withAudio ? [{ guid: "jump", type: "Audio", sceneGuid: "world", bytes: encodePackedAudioAsset({ volume: 1 }, new Uint8Array([1, 2, 3, 4])) }] : [])] });

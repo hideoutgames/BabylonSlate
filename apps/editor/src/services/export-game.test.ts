@@ -85,6 +85,7 @@ describe("collectAndExportGame", () => {
         ? new Uint8Array([0x67, 0x6c, 0x54, 0x46]) : null,
     });
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene", assets: assetsFromIndexed(indexed),
       plugins: [], projectPluginOverrides: {}, parentOf: () => null,
       ...loaded,
@@ -124,6 +125,7 @@ describe("collectAndExportGame", () => {
         readAssetChunk: async () => null,
       });
       return collectAndExportGame({
+        platform: "web",
         startupSceneGuid: "scene", assets: assetsFromIndexed(indexed),
         plugins: [], projectPluginOverrides: {}, parentOf: () => null, ...loaded,
         renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles,
@@ -153,6 +155,7 @@ describe("collectAndExportGame", () => {
         audioReverbBakeFailures: new Map([[path, failure]]),
       });
       return collectAndExportGame({
+        platform: "web",
         startupSceneGuid: "main", assets: assetsFromIndexed(indexed),
         plugins: [], projectPluginOverrides: {}, parentOf: () => null, ...loaded,
         renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles,
@@ -175,6 +178,7 @@ describe("collectAndExportGame", () => {
   it.each([true, false])("retains project focus navigation in editor exports with preview=%s", async (previewBuild) => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene", assets: [asset({ guid: "scene", type: "Scene", name: "Main" })],
       plugins: [], projectPluginOverrides: {}, parentOf: () => null,
       sceneByGuid: () => scene, graphByGuid: () => null,
@@ -230,6 +234,7 @@ describe("collectAndExportGame", () => {
       actors: [createActor("spawner", "Spawner", { classId: "main" })],
     };
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-main",
       assets: [
         asset({ guid: "scene-main", type: "Scene", name: "Main" }),
@@ -275,6 +280,7 @@ describe("collectAndExportGame", () => {
       asset({ guid: `class-${name}`, type: "Class", name, parentClass: parents[name] ?? null });
     const scene = createDefaultScene();
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-main",
       assets: [
         asset({ guid: "scene-main", type: "Scene", name: "Main" }),
@@ -307,6 +313,7 @@ describe("collectAndExportGame", () => {
     const scene = createDefaultScene();
     const run = (alwaysPackageFolders: string[]) =>
       collectAndExportGame({
+        platform: "web",
         startupSceneGuid: "scene-main",
         alwaysPackageFolders,
         assets: [
@@ -368,6 +375,7 @@ describe("collectAndExportGame", () => {
     ];
     const run = (registry: ExportIndexedAsset[]) =>
       collectAndExportGame({
+        platform: "web",
         startupSceneGuid: "scene-start",
         assets: registry,
         plugins: [],
@@ -404,6 +412,7 @@ describe("collectAndExportGame", () => {
 
   it("fails with the startup scene copy when the guid is missing", async () => {
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: null,
       assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
       plugins: [],
@@ -433,6 +442,7 @@ describe("collectAndExportGame", () => {
       actors: [createActor("hero", "Hero", { classId: "Hero" })],
     };
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -489,6 +499,7 @@ describe("collectAndExportGame", () => {
     };
     const material = createImportedMaterialDocument({ textureGuid: "tex-missing" });
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -524,6 +535,7 @@ describe("collectAndExportGame", () => {
     mesh.properties.materialGuid = "mat-rock";
     const scene = { ...createDefaultScene(), actors: [createActor("hero", "Hero", { components: [mesh] })] };
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -553,6 +565,7 @@ describe("collectAndExportGame", () => {
     const material = createImportedMaterialDocument({ textureGuid: "live-texture" });
     const payloads: Record<string, unknown> = { scene, material, "live-texture": { renderTargetGuid: "target" }, target: { mode: "DepthPass", width: 128, height: 128 } };
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene",
       assets: [asset({ guid: "scene", type: "Scene", name: "Main" }), asset({ guid: "material", type: "Material", name: "Screen" }), asset({ guid: "live-texture", type: "RenderTargetTexture", name: "Depth" }), asset({ guid: "target", type: "RenderTarget", name: "Capture" })],
       plugins: [], projectPluginOverrides: {}, parentOf: () => null, sceneByGuid: (guid) => guid === "scene" ? scene : null, graphByGuid: () => null,
@@ -569,6 +582,7 @@ describe("collectAndExportGame", () => {
   it("packs a project Game Instance when the startup scene omits one", async () => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       gameInstanceClass: "MyGame",
       assets: [
@@ -606,6 +620,7 @@ describe("collectAndExportGame", () => {
   it("compiles a Class under its file-path class id and requires the Game Instance by that id", async () => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       gameInstanceClass: "PlayerGame",
       alwaysPackageFolders: ["assets/Game"],
@@ -648,6 +663,7 @@ describe("collectAndExportGame", () => {
       edges: [{ id: "exec", source: "begin", target: "broken", sourceHandle: "execOut", targetHandle: "execIn" }],
     };
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       alwaysPackageFolders: ["assets/Game"],
       assets: [
@@ -684,6 +700,7 @@ describe("collectAndExportGame", () => {
       ],
     };
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -718,6 +735,7 @@ describe("collectAndExportGame", () => {
     const scene = createDefaultScene();
     const phases: string[] = [];
     await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
       plugins: [],
@@ -743,6 +761,7 @@ describe("collectAndExportGame", () => {
         actors: [createActor("a", "Starter", { classId: "StarterActor" })],
       };
       const result = await collectAndExportGame({
+        platform: "web",
         startupSceneGuid: "scene-1",
         assets: [
           asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -811,6 +830,7 @@ describe("collectAndExportGame", () => {
     ];
     const scene = createDefaultScene();
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
       plugins: [
@@ -897,6 +917,7 @@ describe("collectAndExportGame", () => {
       },
     });
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -972,6 +993,7 @@ describe("collectAndExportGame", () => {
     const scene = createDefaultScene();
     const nav = new Uint8Array([9, 8, 7]);
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
       plugins: [],
@@ -1014,6 +1036,7 @@ describe("collectAndExportGame", () => {
       0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
     ]);
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -1052,6 +1075,7 @@ describe("collectAndExportGame", () => {
       })],
     };
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -1073,6 +1097,7 @@ describe("collectAndExportGame", () => {
     const scene = createDefaultScene();
     const field = new Uint8Array([3, 2, 1]);
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
       plugins: [],
@@ -1117,6 +1142,7 @@ describe("collectAndExportGame", () => {
     const source = new Uint8Array([1, 2, 3]);
     const facetype = new Uint8Array([9, 8, 7]);
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -1161,6 +1187,7 @@ describe("collectAndExportGame", () => {
     const scene = { ...createDefaultScene(), actors: [createActor("label", "3D Text", { components: [text] })] };
     const facetype = new Uint8Array([9, 8, 7]);
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -1203,6 +1230,7 @@ describe("collectAndExportGame", () => {
       ],
     };
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
@@ -1248,6 +1276,7 @@ describe("collectAndExportGame", () => {
   it("Preview Build always bundles the debugger", async () => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
       plugins: [],
@@ -1275,6 +1304,7 @@ describe("collectAndExportGame", () => {
   it("records authored Texture pixel size on packed Texture assets", async () => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [
         asset({
@@ -1311,6 +1341,7 @@ describe("collectAndExportGame", () => {
   it("records a pixel Font's Pixel Size on its packed entry", async () => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main", dependencies: ["ark", "body"] }),
@@ -1355,6 +1386,7 @@ describe("collectAndExportGame", () => {
       ],
     };
     const result = await collectAndExportGame({
+      platform: "web",
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),

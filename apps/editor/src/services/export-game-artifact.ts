@@ -3,6 +3,7 @@ import {
   DEFAULT_RENDER_PROJECT_SETTINGS,
   defaultExportPreset,
   nearestTextureFiltering,
+  type BuildPlatform,
   type ExtensionGameLibrary,
   type ProjectDocument,
   type Result,
@@ -22,6 +23,8 @@ import { loadPlayerDistFiles } from "./load-player-files";
 import type { ProjectService } from "./project-service";
 
 export interface ExportGameArtifactOptions {
+  /** The platform the game is packaged for; Preview Build packs the web game. */
+  platform: BuildPlatform;
   projectSnapshot?: ProjectDocument;
   previewBuild?: boolean;
   playerFiles?: Map<string, Uint8Array>;
@@ -38,10 +41,10 @@ export interface ExportGameArtifactOptions {
 export async function exportProjectGameArtifact(
   projectService: ProjectService,
   current: ProjectDocument | null,
-  options?: ExportGameArtifactOptions,
+  options: ExportGameArtifactOptions,
 ): Promise<Result<ExportArtifact, string>> {
   const exportDocument =
-    options?.projectSnapshot ?? current;
+    options.projectSnapshot ?? current;
   // Export consumes persisted sources even when a tab contains unsaved edits.
   // A Scene the bake cannot read, or whose changed result it cannot save
   // (writes locked or failing), fails the export only if the game reaches it.
@@ -72,6 +75,7 @@ export async function exportProjectGameArtifact(
   let extensionLibraries: ExtensionGameLibrary[];
   try {
     extensionLibraries = await projectService.extensions.gameLibraries(
+      { platform: options.platform, editor: false },
       exportDocument?.settings.extensionOverrides, exportDocument?.settings.extensionSettings);
   } catch (error) {
     return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
@@ -158,6 +162,7 @@ export async function exportProjectGameArtifact(
     focusNavigation: exportDocument?.settings.focusNavigation,
     tagRegistry: exportDocument?.settings.tags,
     playerFiles,
+    platform: options.platform,
     extensionLibraries,
     previewBuild: options?.previewBuild,
     onPhase: options?.onPhase,

@@ -10,6 +10,7 @@ test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
 async function playerFiles(baseURL: string, backend: "webgpu") {
   const packed = await exportGame({
+    platform: "web",
     bundleDebugger: false,
     startupSceneGuid: "backend-scene",
     renderSettings: {

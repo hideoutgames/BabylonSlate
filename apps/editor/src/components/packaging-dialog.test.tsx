@@ -91,6 +91,8 @@ it("packages the project for the web and downloads the archive named after it", 
 
   expect(exportGameArtifact).toHaveBeenCalledTimes(1);
   expect(exportGameArtifact.mock.calls[0]![0].projectSnapshot.metadata.name).toBe("Harbour Run");
+  // The web package gets the web game's platform directives and modules.
+  expect(exportGameArtifact.mock.calls[0]![0].platform).toBe("web");
   expect(zipExportedGame).toHaveBeenCalledWith(artifact);
   expect(downloads).toEqual(["Harbour_Run.zip"]);
   expect(screen.getByText("Game package downloaded. Check your downloads.")).toBeTruthy();
@@ -173,6 +175,8 @@ it("packages a Windows game from the build's player and saves it named after the
   await act(async () => { fireEvent.click(screen.getByTestId("packaging-package")); });
 
   expect(shells.loadDesktopShell).toHaveBeenCalledExactlyOnceWith(SHELLS, "windows-x64");
+  // A Windows package is exported with the Windows game's platform directives and modules.
+  expect(exportGameArtifact.mock.calls.at(-1)![0].platform).toBe("windows");
   expect(downloads).toEqual(["Harbour_Run-Windows.zip"]);
   // jsdom's Blob has no arrayBuffer(); FileReader reads it.
   const bytes = await new Promise<ArrayBuffer>((resolve) => {

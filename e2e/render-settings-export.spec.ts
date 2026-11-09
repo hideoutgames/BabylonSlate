@@ -56,6 +56,7 @@ for (const variant of [{ backend: "webgl2" }] as const) {
     });
     const scripts = scalabilityGraphScripts();
     const exported = await exportGame({
+      platform: "web",
       bundleDebugger: true, startupSceneGuid: "first",
       renderSettings, playFrameCap: 30, scripts,
       assets: [...scripts.map((script) => ({ guid: script.assetGuid, type: "Class", sceneGuid: "first", name: script.classId,

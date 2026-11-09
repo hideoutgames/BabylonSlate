@@ -7,6 +7,7 @@ import { havokHostedWasmVitePlugin } from "../editor/vite-havok-wasm";
 import { rapierHostedWasmVitePlugin } from "../editor/vite-rapier-wasm";
 import { recastHostedWasmVitePlugin } from "../editor/vite-recast-wasm";
 import { bundledPackagesReport } from "./vite-bundled-packages";
+import { createPlatformModules, platformModuleGroup, platformModules } from "./vite-platform-modules";
 import { previewDiagnosticsEntry } from "./vite-preview-diagnostics";
 import { isWebGpuOnlyModule, webGpuChunkGuard } from "./vite-webgpu-chunk";
 
@@ -16,6 +17,8 @@ const editorPublic = path.join(repoRoot, "apps/editor/public");
 const bundledPackages = bundledPackagesReport({
   gamePackagesFile: path.join(repoRoot, "scripts/third-party-notices/game-packages.json"),
 });
+/** Platform modules of this build's page and worker, each in its own file that packaging can leave out. */
+const platformModuleState = createPlatformModules();
 
 /** The player cannot run without these tracked editor assets, so a missing one fails the build. */
 function copyRequired(name: string, dest: string): void {
@@ -84,6 +87,7 @@ export default defineConfig({
     bundledPackages.main,
     writePlayerFileList(),
     webGpuChunkGuard(),
+    platformModules(platformModuleState, { writeList: true }),
   ],
   build: {
     target: "es2022",
@@ -99,10 +103,15 @@ export default defineConfig({
         // The wasm runtimes the page itself loads on demand (Rapier 2D, Havok and Recast for the
         // in-process fallback and navigation debug) stay separate files, so a game that never needs
         // them never downloads them. Their names keep `rapier` / `havok`, which
-        // `selectPlayerRuntimeFiles` uses to leave an unused engine out of an export.
+        // `selectPlayerRuntimeFiles` uses to leave an unused engine out of an export. Each platform module's
+        // condition gets a file of its own (`platform-modules.json`), which packaging leaves out for other platforms.
         codeSplitting: {
           groups: [
-            { name: "main", test: (id: string) => !PAGE_ON_DEMAND_RUNTIME.test(id) && !isWebGpuOnlyModule(id) },
+            platformModuleGroup(platformModuleState),
+            {
+              name: "main",
+              test: (id: string) => !PAGE_ON_DEMAND_RUNTIME.test(id) && !isWebGpuOnlyModule(id) && !platformModuleState.conditions.has(id),
+            },
             { name: "webgpu", test: isWebGpuOnlyModule },
           ],
         },
@@ -114,10 +123,14 @@ export default defineConfig({
   },
   worker: {
     format: "es",
-    plugins: () => [havokHostedWasmVitePlugin(), rapierHostedWasmVitePlugin(), recastHostedWasmVitePlugin(), bundledPackages.worker()],
+    plugins: () => [
+      havokHostedWasmVitePlugin(), rapierHostedWasmVitePlugin(), recastHostedWasmVitePlugin(), bundledPackages.worker(),
+      platformModules(platformModuleState, { writeList: false }),
+    ],
     rolldownOptions: {
       output: {
         entryFileNames: "worker-[name].js",
+        codeSplitting: { groups: [platformModuleGroup(platformModuleState)] },
       },
     },
   },

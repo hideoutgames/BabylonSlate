@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { SimulationInspectionProvider } from "./simulation-inspection-context";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
 import { projectTypeSchemas, requireSaveGameDefinition } from "../lib/save-game-catalog";
-import { createSaveGameStorage, isTestModeEnabled } from "@haptic/vfs";
+import { createSaveGameStorage, editorBuildPlatform, isTestModeEnabled } from "@haptic/vfs";
 import { acquirePlayAssetSources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
 import {
   useCallback,
@@ -913,12 +913,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setSessionPlayScene(resolvedScene);
         const nextScripts = game.scripts;
         const nextDiagnostics: Diagnostic[] = [...prepared.diagnostics];
-        // Linked from the files as they are now, so edits made in another editor play too;
-        // extension assets open in tabs play with their unsaved values.
+        // Linked from the files as they are now, so edits made in another editor play too, for this
+        // editor's platform; extension assets open in tabs play with their unsaved values.
         const openExtensionAssets = new Map(getOpenDocuments().flatMap((doc) =>
           doc.ref.kind === "extension-asset" && doc.content && typeof doc.content === "object"
             ? [[doc.ref.path, doc.content as Record<string, unknown>] as const] : []));
         setExtensionLibraries(await current(extensionService.gameLibraries(
+          { platform: editorBuildPlatform(), editor: true },
           projectDocument.settings.extensionOverrides, projectDocument.settings.extensionSettings,
           (path) => openExtensionAssets.get(path))));
         setScripts(nextScripts);

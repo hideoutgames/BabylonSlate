@@ -103,8 +103,8 @@ describe("recastHostedWasmVitePlugin", () => {
 
   it("names the hosted wasm so every export keeps it, 2D or 3D", () => {
     const files = new Map([[RECAST_WASM_FILE, new Uint8Array([0, 97, 115, 109])]]);
-    expect([...selectPlayerRuntimeFiles(files, { physicsWorld: "2d" }).keys()]).toEqual([RECAST_WASM_FILE]);
-    expect([...selectPlayerRuntimeFiles(files, { physicsWorld: "3d" }).keys()]).toEqual([RECAST_WASM_FILE]);
+    expect([...selectPlayerRuntimeFiles(files, { physicsWorld: "2d", platform: "web" }).keys()]).toEqual([RECAST_WASM_FILE]);
+    expect([...selectPlayerRuntimeFiles(files, { physicsWorld: "3d", platform: "web" }).keys()]).toEqual([RECAST_WASM_FILE]);
   });
 
   it("fails the build when the Recast glue no longer fetches one wasm from beside itself", () => {

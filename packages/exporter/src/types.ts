@@ -150,6 +150,8 @@ export type GameManifest = {
   /** Nearest Texture Filtering as the game draws it (`nearestTextureFiltering`: only with Pixel-Perfect Mode). */
   nearestTextures: boolean;
   physicsWorld: "2d" | "3d";
+  /** The platform the game was packaged for; the player's platform modules for other platforms were left out. */
+  platform: import("@haptic/core").BuildPlatform;
   /** Project Collision Presets. */
   collisionPresets: import("@haptic/core").CollisionPreset[];
   /** Linked game modules of enabled gameplay Extensions, dependencies first; absent when there are none. */
@@ -190,6 +192,8 @@ export type ExportGameOptions = {
   /** Nearest Texture Filtering as the game draws it (`nearestTextureFiltering`). */
   nearestTextures?: boolean;
   physicsWorld?: "2d" | "3d";
+  /** The platform this export is packaged for: its platform modules ship, other platforms' are left out. */
+  platform: import("@haptic/core").BuildPlatform;
   /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`). */
   collisionPresets?: readonly import("@haptic/core").CollisionPreset[];
   infiniteLoopDetection?: boolean;

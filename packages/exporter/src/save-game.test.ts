@@ -40,6 +40,7 @@ describe("Save Game export contract", () => {
 
   it("retains stable identity, schema and save defaults in the player", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene", scripts: [], assets: [],
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       saveGame: { projectId: "stable-project-guid", definition, defaultProfile: "player-one", defaultSlot: "checkpoint", preview: false },

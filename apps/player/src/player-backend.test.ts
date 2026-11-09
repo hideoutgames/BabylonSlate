@@ -23,6 +23,7 @@ async function game(custom = false) {
   }
   const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
   const files = await exportGame({
+    platform: "web",
     bundleDebugger: false,
     startupSceneGuid: "scene",
     renderSettings: { ...DEFAULT_RENDER_PROJECT_SETTINGS, gpuBackend: "webgpu" },

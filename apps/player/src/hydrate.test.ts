@@ -68,6 +68,7 @@ describe("packedContentFromGame", () => {
       ] } },
     ];
     const exported = await exportGame({
+      platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
       assets: payloads.map(({ guid, type, payload }) => ({ guid, type, sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(payload)) })),
     });
@@ -94,6 +95,7 @@ describe("packedContentFromGame", () => {
       { Time: 0, Value: 100, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 },
     ], Before: "constant", After: "constant" } };
     const exported = await exportGame({
+      platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
       assets: [{ guid: "falloff", type: "FloatCurve", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(payload)) }],
     });
@@ -109,7 +111,7 @@ describe("packedContentFromGame", () => {
 
   it("does not decode binary asset payloads as JSON during hydration", async () => {
     const binaryTypes = ["Texture", "Model", "Font", "Audio", "Navmesh", "AudioReverb"];
-    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [] });
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [] });
     if (!exported.ok) throw new Error(exported.error);
     const game = await loadGameFromFiles(exported.value.files);
     for (const type of binaryTypes) {
@@ -127,6 +129,7 @@ describe("packedContentFromGame", () => {
   });
   it("hydrates live render target assets without treating them as uploaded images", async () => {
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
       assets: [
         { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
@@ -182,6 +185,7 @@ describe("packedContentFromGame", () => {
       tiles: [],
     };
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -327,6 +331,7 @@ describe("packedContentFromGame", () => {
     // A Class spawned only at runtime; its prefab Mesh uses Complex Collision.
     const rockComponents = [{ id: "mesh", classId: "MeshComponent", properties: { assetGuid: "rock-model", collisionMode: "complex" } }];
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -368,6 +373,7 @@ describe("packedContentFromGame", () => {
       durationMs: 1000,
     };
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -429,6 +435,7 @@ describe("packedContentFromGame", () => {
     const animation = createDefaultSpriteAnimationPayload();
     animation.frames[0]!.durationMs = 200;
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -505,6 +512,7 @@ describe("packedContentFromGame", () => {
       ],
     };
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -554,6 +562,7 @@ describe("packedContentFromGame", () => {
     emitter.render.materialGuid = "mat-1";
     const graph = { ...createDefaultParticleGraphDocument("Embers"), materialGuid: "mat-2" };
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -624,6 +633,7 @@ describe("packedContentFromGame", () => {
 
   it("hydrates authored Texture pixel sizes from the packed manifest", async () => {
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -665,6 +675,7 @@ describe("packedContentFromGame", () => {
       new Uint8Array([1, 2, 3, 4]),
     );
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       audioMixerGuid: "mixer-1",
@@ -751,6 +762,7 @@ describe("packedContentFromGame", () => {
       [new Uint8Array([1, 2, 3]), new Uint8Array([9, 8])],
     );
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -798,6 +810,7 @@ describe("packedContentFromGame", () => {
   it("hydrates a packed audioReverb sidecar for the startup scene", async () => {
     const { audioReverbExportGuid } = await import("@haptic/exporter");
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -834,6 +847,7 @@ describe("packedContentFromGame", () => {
 
   it("loads lifecycle classes without spawning unplaced actors", async () => {
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,

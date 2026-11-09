@@ -1,8 +1,10 @@
+import type { BuildPlatform } from "@haptic/core";
 import type { DesktopGameTarget } from "@haptic/exporter/native-desktop";
 
 /** A platform listed in the Packaging dialog. */
 export interface PackagingTarget {
-  id: "web" | "windows" | "linux" | "macos" | "android" | "ios";
+  /** The platform the package runs on: its platform directives and modules apply. */
+  id: BuildPlatform;
   label: string;
   description: string;
   /** False lists the platform under Unavailable; only available targets can be packaged. */

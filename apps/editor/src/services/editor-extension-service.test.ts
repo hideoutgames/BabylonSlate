@@ -14,6 +14,9 @@ import { MemoryStorageAdapter } from "@haptic/vfs";
 import { EditorExtensionService, type EditorExtensionWriteOptions } from "./editor-extension-service";
 import { ProjectWriteAdmission } from "./project-write-admission";
 
+/** Play in the web editor. */
+const WEB_PLAY = { platform: "web", editor: true } as const;
+
 const activeServices: EditorExtensionService[] = [];
 
 async function storage(name = "project") {
@@ -335,13 +338,49 @@ describe("EditorExtensionService code files and gameplay packages", () => {
     await project.writeText("extensions/tools/game.ts", "export const editorOnly = true;");
     await service.refresh();
 
-    const libraries = await service.gameLibraries();
+    const libraries = await service.gameLibraries(WEB_PLAY);
 
     expect(libraries.map((library) => library.libraryName)).toEqual(["base", "weather"]);
     expect(service.getGameplayExtensions().map((entry) => entry.extensionGuid)).toEqual(["base", "weather"]);
     const extensions = loadExtensionGameLibraries(libraries);
     expect((extensions.weather!.forecast as (value: number) => string)(3)).toBe("6 mm");
-    expect((await service.gameLibraries({ off: { enabled: true } })).map((library) => library.libraryName)).toEqual(["base", "off", "weather"]);
+    expect((await service.gameLibraries(WEB_PLAY, { off: { enabled: true } })).map((library) => library.libraryName)).toEqual(["base", "off", "weather"]);
+  });
+
+  it("links game code with the platform directives of the platform it is played or packaged for", async () => {
+    const { project, service } = await fixture();
+    await gameplayPackage(project, "presence", [
+      "// #if WITH_DESKTOP",
+      "import { connect } from './code/desktop';",
+      "// #endif",
+      "export function where(): string {",
+      "  // #if WITH_DESKTOP && WITH_EDITOR",
+      "  return connect('desktop play');",
+      "  // #elif WITH_DESKTOP",
+      "  return connect('desktop game');",
+      "  // #else",
+      "  return 'elsewhere';",
+      "  // #endif",
+      "}",
+    ].join("\n"), {}, { "code/desktop.ts": "export const connect = (where: string): string => `connected in ${where}`;" });
+    await service.refresh();
+
+    const where = async (target: { platform: "web" | "windows" | "android"; editor: boolean }) => {
+      const [library] = await service.gameLibraries(target);
+      return { result: (loadExtensionGameLibraries([library!]).presence!.where as () => string)(), modules: library!.bundle.modules.map((module) => module.path) };
+    };
+    expect(await where({ platform: "windows", editor: true })).toEqual({ result: "connected in desktop play", modules: ["game.ts", "code/desktop.ts"] });
+    expect(await where({ platform: "windows", editor: false })).toEqual({ result: "connected in desktop game", modules: ["game.ts", "code/desktop.ts"] });
+    // The desktop file is never linked, so it never ships in a web or mobile game.
+    expect(await where({ platform: "web", editor: false })).toEqual({ result: "elsewhere", modules: ["game.ts"] });
+    expect(await where({ platform: "android", editor: true })).toEqual({ result: "elsewhere", modules: ["game.ts"] });
+  });
+
+  it("names the file and line of a malformed platform directive in game code", async () => {
+    const { project, service } = await fixture();
+    await gameplayPackage(project, "presence", "// #if WITH_DESKTOP\nexport const a = 1;\n");
+    await service.refresh();
+    await expect(service.gameLibraries(WEB_PLAY)).rejects.toThrow("Extension presence: game.ts:1: #if without #endif.");
   });
 
   it("links game libraries with their Project Settings values and tells running editor code when they change", async () => {
@@ -355,10 +394,10 @@ describe("EditorExtensionService code files and gameplay packages", () => {
     service.setSettingValues({ weather: { region: "west" } });
     await service.refresh();
 
-    const [library] = await service.gameLibraries();
+    const [library] = await service.gameLibraries(WEB_PLAY);
     expect(library!.settings).toEqual({ region: "west", scale: 1 });
     expect((loadExtensionGameLibraries([library!]).weather!.describe as () => string)()).toBe("west:1");
-    const [exported] = await service.gameLibraries({}, { weather: { scale: 3 } });
+    const [exported] = await service.gameLibraries(WEB_PLAY, {}, { weather: { scale: 3 } });
     expect(exported!.settings).toEqual({ region: "north", scale: 3 });
 
     service.setSettingValues({ weather: { region: "south" } });
@@ -395,14 +434,14 @@ describe("EditorExtensionService code files and gameplay packages", () => {
       [preset, "Weather Preset", "weather", false],
       ["extension.weather.notes", "Weather Notes", "weather", true],
     ]);
-    const [library] = await service.gameLibraries();
+    const [library] = await service.gameLibraries(WEB_PLAY);
     // Path order; values resolved against the fields (clamped, unknown keys dropped); Editor Only and other extensions' types left out.
     expect(library!.assets).toEqual([
       { guid: "dry-guid", name: "Dry", type: "preset", values: { rain: 0 } },
       { guid: "rain-guid", name: "Rain", type: "preset", values: { rain: 10 } },
     ]);
     expect((loadExtensionGameLibraries([library!]).weather!.wettest as () => number)()).toBe(10);
-    const [playing] = await service.gameLibraries(undefined, undefined, (path) => path === "assets/Rain.hasset" ? { rain: 4 } : undefined);
+    const [playing] = await service.gameLibraries(WEB_PLAY, undefined, undefined, (path) => path === "assets/Rain.hasset" ? { rain: 4 } : undefined);
     expect(playing!.assets.map((asset) => asset.values.rain)).toEqual([0, 4]);
   });
 
@@ -426,7 +465,7 @@ describe("EditorExtensionService code files and gameplay packages", () => {
     await service.refresh();
 
     expect(service.getSnapshot().diagnostics).toContain("Library Name shared is used by first, second.");
-    await expect(service.gameLibraries()).rejects.toThrow("Library Name shared is used by first, second.");
+    await expect(service.gameLibraries(WEB_PLAY)).rejects.toThrow("Library Name shared is used by first, second.");
   });
 
   it("mounts a package's content once it turns gameplay and releases it before deleting its files", async () => {
