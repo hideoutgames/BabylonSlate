@@ -67,9 +67,9 @@ export const WATER_REFLECTION_MODES: readonly WaterReflectionMode[] = ["sky", "s
  */
 export interface WaterQuality extends QualitySelection {
   /**
-   * The water nodes' costly per-pixel terms (SLATE_WATER_DETAIL 0..3): Medium drops the refraction's silhouette
-   * fallback, Low also the shoreline under the waves, contact foam and edge foam's finer noise. Never changes
-   * Reflections, Refraction, Reflection Steps or FFT Cascades.
+   * The water nodes' costly per-pixel terms (SLATE_WATER_DETAIL 0..3): Medium drops the shoreline under the waves and
+   * edge foam's finer noise, Low also contact foam. Never changes Reflections, Refraction, Reflection Steps or FFT
+   * Cascades.
    */
   shadingDetail: WaterShadingDetail;
   /** Multiplies each body's Surface Resolution; hard vertex caps still apply. */
