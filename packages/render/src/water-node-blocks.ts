@@ -37,7 +37,7 @@ import { waterPlanarReflectionForCamera } from "./water-planar-reflection";
 import { waterRemovalShapeVector } from "./water-removal-mesh";
 import {
   PLANAR_REACH, REFRACTION_DEPTH_CAP, REFRACTION_FAR, REFRACTION_SHIFT as BUILT_IN_REFRACTION_SHIFT, REFRACTION_SHIFT_PX as BUILT_IN_REFRACTION_SHIFT_PX,
-  WATER_DETAIL_DEFINE, WATER_DETAIL_LEVELS, WATER_EFFECTS_GEOMETRY_DEFINE, WATER_REFRACTION_SCALE,
+  SSR_FRESNEL_FADE, WATER_DETAIL_DEFINE, WATER_DETAIL_LEVELS, WATER_EFFECTS_GEOMETRY_DEFINE, WATER_REFRACTION_SCALE,
 } from "./water-shader-defines";
 import { geometryOutputWrite } from "./geometry-surface-output-block";
 import { SCENE_FOG_COLOR_UNIFORM, bindSceneFog, bindSceneFogColor, emitSceneFogFactor } from "./scene-fog-block";
@@ -885,18 +885,23 @@ swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y)
     const wgsl = wgslOf(state), march = `defined(${WATER_NODE_COPY_DEFINE}) && ${WATER_NODE_SSR_DEFINE} > 0`;
     const lookup = planarLookupSource(`${position}.xyz`, eye, "swnObjR", "swnObject", "U.slateWaterContactInfo.y", `U.${PLANAR_UNIFORM}`, `U.${PLANAR_MATRIX}`, "swnObj");
     // Seen from below the ray is not lifted: objects are looked up above the horizon, as built-in water looks them up.
-    return `#if defined(${WATER_NODE_PLANAR_DEFINE}) || (${march})\n${bind("vec4 swnObj = vec4(0.0);\nvec3 swnObjR = normalize(vec3(swnR.x, max(swnR.y, 0.02), swnR.z));\n", wgsl)}`
+    // The fades that do not need the hit come first: where they leave nothing, the march does not run. Below High Water
+    // Shading Detail they include the Fresnel, which weighs the reflection where the Material mixes it by its Fresnel
+    // (the starter does): seen from above, water reflects too little to show the march's objects.
+    return `#if defined(${WATER_NODE_PLANAR_DEFINE}) || (${march})\n${bind(`vec4 swnObj = vec4(0.0);
+vec3 swnObjR = normalize(vec3(swnR.x, max(swnR.y, 0.02), swnR.z));
+float swnObjFade = (1.0 - smoothstep(0.2, 0.45, swnShade)) * smoothstep(-0.01, 0.03, swnRawY);
+`, wgsl)}#if ${WATER_DETAIL_DEFINE} < 2\n${bind(`swnObjFade = swnObjFade * smoothstep(${f(SSR_FRESNEL_FADE[0])}, ${f(SSR_FRESNEL_FADE[1])}, swnFres);\n`, wgsl)}#endif\n`
       + `#ifdef ${WATER_NODE_PLANAR_DEFINE}\n{\n${surfaceLocals(state, position)}${bind("float swnHeight = swnData.x;\n", wgsl)}`
       + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${this.value(this.waveHeight, "0.0")};\n#endif\n`
       + bind(`float swnObject = abs(swnContactAt(swnPos.xz, swnHeight));\nif (U.${PLANAR_UNIFORM}.x > 0.5) {${lookup}\n}\n`, wgsl)
         .replace(/\bSW_TO_LINEAR\(/g, wgsl ? "toLinearSpaceVec3(" : "toLinearSpace(")
       + `}\n#endif\n#if ${march}\n`
-      + bind(`if (U.${PLANAR_UNIFORM}.x < 0.5) {
+      + bind(`if (U.${PLANAR_UNIFORM}.x < 0.5 && swnObjFade > 0.0) {
   swnObj = swMarch(${position}.xyz, swnObjR, ${this.viewProjection.associatedVariableName}, ${this.view.associatedVariableName}, ${eye});
 }
 `, wgsl) + "#endif\n"
-      + bind(`swnObj.a = swnObj.a * (1.0 - smoothstep(0.2, 0.45, swnShade)) * smoothstep(-0.01, 0.03, swnRawY)
-  * (1.0 - smoothstep(12.0, 48.0, length(fwidth(swnObjR)) / max(length(fwidth(swnV)), 0.00001)));
+      + bind(`swnObj.a = swnObj.a * swnObjFade * (1.0 - smoothstep(12.0, 48.0, length(fwidth(swnObjR)) / max(length(fwidth(swnV)), 0.00001)));
 swnSky = mix(swnSky, swnObj.rgb, swnObj.a);
 `, wgsl) + "#endif\n";
   }

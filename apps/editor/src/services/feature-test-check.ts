@@ -119,7 +119,7 @@ const WATER_DETAIL_FIELDS = ["water.shadingDetail", "water.fft"] as const;
 /**
  * Remove-one (`FEATURE_TEST_BREAKDOWN_BASES["remove-one"]`, the Medium tier): one feature off (or one cost lowered) at
  * a time, so its change against the baselines around it is what that feature saves. At Medium, `shadows medium`,
- * `water detail medium` and `volumetrics off` already hold and are skipped.
+ * `water detail medium`, `volumetrics off` and `MSAA 2x` already hold and are skipped.
  */
 export const FEATURE_TEST_BREAKDOWN_STEPS: readonly FeatureTestBreakdownStep[] = [
   { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows", "shadows.filter"] },

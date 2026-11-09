@@ -49,7 +49,7 @@ Post-processing cost follows the **Post Processing** group in **Project Settings
 | Level | Post Processing Resolution Scale | Anti-Aliasing | Allow Ambient Occlusion | Allow Reflections | Allow Volumetric Lighting |
 | --- | --- | --- | --- | --- | --- |
 | Low | 0.75 | FXAA | Off | Off | Off |
-| Medium | 1 | MSAA 4x | On | On | Off |
+| Medium | 1 | MSAA 2x | On | On | Off |
 | High | 1 | MSAA 4x | On | On | On |
 | Ultra | 1 | MSAA 4x | On | On | On |
 

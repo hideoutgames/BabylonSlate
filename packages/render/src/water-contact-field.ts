@@ -184,6 +184,37 @@ const sameMatrix = (a: Float64Array, b: ArrayLike<number>) => {
 };
 
 /**
+ * Cells some point of a placement must move from where it was last sliced before it is sliced again: a floating object
+ * bobs a little every frame, and re-slicing it each time cost a window rebuild per object every `MOVE_MS`. Its contacts
+ * trail it by less than this.
+ */
+const MOVE_TOLERANCE_CELLS = 0.25;
+/** The rotation and scale entries of a 4 × 4 world matrix. */
+const FRAME_ENTRIES = [0, 1, 2, 4, 5, 6, 8, 9, 10] as const;
+
+/**
+ * Whether world matrix `next` puts some point within `reach` of the placement's local origin more than `tolerance` from
+ * where `last` put it (bounded by the translation's change plus the frame's change times `reach`). Any change counts
+ * while `tolerance` is 0.
+ */
+export function movedBeyond(last: ArrayLike<number>, next: ArrayLike<number>, reach: number, tolerance: number): boolean {
+  if (tolerance <= 0) {
+    for (let i = 0; i < 16; i++) if (last[i] !== next[i]) return true;
+    return false;
+  }
+  const dx = next[12]! - last[12]!, dy = next[13]! - last[13]!, dz = next[14]! - last[14]!;
+  let frame = 0;
+  for (const i of FRAME_ENTRIES) { const d = next[i]! - last[i]!; frame += d * d; }
+  return Math.sqrt(dx * dx + dy * dy + dz * dz) + Math.sqrt(frame) * reach > tolerance;
+}
+
+/** A placement's farthest local point from its origin, from its bounding sphere. */
+function localReach(mesh: AbstractMesh): number {
+  const sphere = mesh.getBoundingInfo().boundingSphere;
+  return sphere.center.length() + sphere.radius;
+}
+
+/**
  * Contact-eligible meshes of a scene (`isWaterContactMesh`), gathered once and shared by every surface's scan, so many
  * water bodies do not each test every scene mesh. A list serves later scans for `CANDIDATE_MS` while the scene's mesh
  * count is unchanged; a surface's full rescan gathers afresh.
@@ -368,10 +399,14 @@ export class WaterContactField {
    * corners): contacts there are never seen, so the window waits until that changes.
    */
   private undrawn(window: Window): boolean {
+    const r = this.rect!, cell = this.cell;
+    return this.undrawnArea(r.minX + window.x0 * cell, r.minZ + window.z0 * cell, r.minX + window.x1 * cell, r.minZ + window.z1 * cell);
+  }
+
+  /** Whether this surface draws nowhere in the area, sampled at its centre and corners (false without `draws`). */
+  private undrawnArea(x0: number, z0: number, x1: number, z1: number): boolean {
     const draws = this.surface.draws;
     if (!draws) return false;
-    const r = this.rect!, cell = this.cell;
-    const x0 = r.minX + window.x0 * cell, x1 = r.minX + window.x1 * cell, z0 = r.minZ + window.z0 * cell, z1 = r.minZ + window.z1 * cell;
     return !(draws((x0 + x1) / 2, (z0 + z1) / 2) || draws(x0, z0) || draws(x1, z0) || draws(x0, z1) || draws(x1, z1));
   }
 
@@ -509,7 +544,7 @@ export class WaterContactField {
         const geometry = sourceGeometry(mesh);
         if (geometry) watchGeometry(geometry);
         this.pieces.set(key, { mesh, instance, matrix: new Float64Array(matrix), geometry, revision: NaN, stale: true, bounds: null, contours: [], closed: [], triangles: new Float64Array() });
-      } else if (piece.mesh !== mesh || !sameMatrix(piece.matrix, matrix)) {
+      } else if (piece.mesh !== mesh || (instance >= 0 ? !sameMatrix(piece.matrix, matrix) : movedBeyond(piece.matrix, matrix, localReach(mesh), this.moveTolerance()))) {
         piece.mesh = mesh; piece.matrix.set(matrix); piece.stale = true;
       } else if (this.geometryChanged(piece)) piece.stale = true;
     };
@@ -578,16 +613,39 @@ export class WaterContactField {
     }
   }
 
-  /** Every frame, tracked placements are checked for rewritten vertices and (except thin instances) movement. */
+  /**
+   * Every frame, tracked placements are checked for rewritten vertices and (except thin instances) movement beyond
+   * `MOVE_TOLERANCE_CELLS` since their last slice.
+   */
   private track(): void {
+    const tolerance = this.moveTolerance();
     for (const piece of this.pieces.values()) {
       if (piece.stale) continue;
       if (piece.mesh.isDisposed()) { piece.stale = true; continue; }
       if (this.geometryChanged(piece)) { piece.stale = true; continue; }
       if (piece.instance >= 0) continue;
       const world = piece.mesh.computeWorldMatrix();
-      if (!sameMatrix(piece.matrix, world.m)) { piece.matrix.set(world.m); piece.stale = true; }
+      if (movedBeyond(piece.matrix, world.m, localReach(piece.mesh), tolerance)) { piece.matrix.set(world.m); piece.stale = true; }
     }
+  }
+
+  /** How far a placement may move before it is sliced again: none until cells are allocated. */
+  private moveTolerance(): number {
+    return this.rect ? this.cell * MOVE_TOLERANCE_CELLS : 0;
+  }
+
+  /**
+   * Whether a stale placement can wait unsliced: this surface draws neither where its contacts were nor anywhere within
+   * range of where it is (a blending neighbour owns the water there, `WaterFieldSurface.draws`), so no cell it would
+   * change is seen. It stays stale and is asked again at each rebuild, which follows any change of `draws`.
+   */
+  private parked(piece: Piece): boolean {
+    if (!this.rect || !this.surface.draws || piece.instance >= 0 || piece.mesh.isDisposed()) return false;
+    const grow = this.range + this.cell, box = piece.mesh.getBoundingInfo().boundingBox;
+    const { minimumWorld: min, maximumWorld: max } = box;
+    if (!this.undrawnArea(min.x - grow, min.z - grow, max.x + grow, max.z + grow)) return false;
+    const before = piece.bounds;
+    return !before || this.undrawnArea(before.minX - grow, before.minZ - grow, before.maxX + grow, before.maxZ + grow);
   }
 
   /**
@@ -732,6 +790,7 @@ export class WaterContactField {
   private rebuild(rebuildAll: boolean, recut: boolean, now: number): boolean {
     for (const piece of this.pieces.values()) {
       if (!piece.stale) continue;
+      if (!rebuildAll && !recut && this.parked(piece)) continue;
       const before = piece.bounds;
       this.slice(piece);
       if (before) this.dirty.push(before);

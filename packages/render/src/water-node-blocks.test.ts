@@ -117,6 +117,8 @@ describe("Water material nodes", () => {
       expect(fragment).toContain("gl_FragCoord.xy");
       expect(fragment).toContain("vec4 swMarch(vec3 swOrigin, vec3 swRay, mat4 swVP, mat4 swV, vec3 swEyeP) {");
       expect(march(fragment)).not.toMatch(/\bvEyePosition\b|\(view \*/);
+      // The march runs only where the fades that need no hit leave something of it.
+      expect(fragment).toMatch(/< 0\.5 && swnObjFade > 0\.0\) \{\s*swnObj = swMarch\(/);
     }
   });
 
@@ -350,8 +352,13 @@ function atDetail(source: string, level: number): string {
   const out: string[] = [], stack: { mine: boolean; parent: boolean; pass: boolean }[] = [];
   let keep = true;
   for (const line of source.split("\n")) {
-    const directive = line.trim(), mine = /^#if SLATE_WATER_DETAIL >= (\d)$/.exec(directive);
-    if (mine) { stack.push({ mine: true, parent: keep, pass: level >= Number(mine[1]) }); keep = keep && level >= Number(mine[1]); continue; }
+    const directive = line.trim(), mine = /^#if SLATE_WATER_DETAIL (>=|<) (\d)$/.exec(directive);
+    if (mine) {
+      const pass = mine[1] === ">=" ? level >= Number(mine[2]) : level < Number(mine[2]);
+      stack.push({ mine: true, parent: keep, pass });
+      keep = keep && pass;
+      continue;
+    }
     if (/^#if/.test(directive)) stack.push({ mine: false, parent: keep, pass: true });
     const top = stack[stack.length - 1];
     if (directive === "#else" && top?.mine) { keep = top.parent && !top.pass; continue; }
@@ -374,11 +381,12 @@ describe("Water Shading Detail", () => {
     updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { shadingDetail, reflections } }) });
 
   it.each([
-    // Shoreline taps, contact foam, edge foam's finer octaves.
-    ["low", 0, [false, false, false]],
-    ["medium", 1, [true, true, true]],
-    ["high", 2, [true, true, true]],
-    ["ultra", 3, [true, true, true]],
+    // Shoreline taps, contact foam, edge foam's finer octaves; and whether object reflections fade out (and skip the
+    // march) at a low Fresnel.
+    ["low", 0, [false, false, false, true]],
+    ["medium", 1, [false, true, false, true]],
+    ["high", 2, [true, true, true, false]],
+    ["ultra", 3, [true, true, true, false]],
   ] as const)("at %s draws the water nodes' terms of level %i", async (level, value, terms) => {
     const scene = host();
     overlook(scene);
@@ -392,6 +400,7 @@ describe("Water Shading Detail", () => {
       fragment.includes("swTerrainSlope"),
       /swnContactAmount = swnContactFoamAmount\(/.test(fragment),
       fragment.includes("p * 6.1"),
+      /swnObjFade = swnObjFade \* smoothstep\(0\.030000, 0\.060000, swnFres\)/.test(fragment),
     ]).toEqual(terms);
     // Cheap terms stay at every level: the haze and aerial perspective, the slope-variance roughness, the transmittance,
     // edge foam's broadest noise and the refraction's fallback beside silhouettes (no texture loads of its own).

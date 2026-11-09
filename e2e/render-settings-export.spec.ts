@@ -188,7 +188,7 @@ for (const variant of [{ backend: "webgl2" }] as const) {
         const applied = (await read(page)).scalability!;
         expect(applied.effective?.render.mode).toBe("cel");
         // Anti-Aliasing is a quality setting: each tier sets its own.
-        expect(applied.effective?.render.quality?.postprocessing.antiAliasing).toBe(preset === "low" ? "fxaa" : "msaa4");
+        expect(applied.effective?.render.quality?.postprocessing.antiAliasing).toBe(preset === "low" ? "fxaa" : preset === "medium" ? "msaa2" : "msaa4");
         expect(applied.effective?.render.cel?.shadowBands).toBe(7);
         expect(applied.effective?.frameCap).toBe(30);
       }

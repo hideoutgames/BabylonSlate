@@ -543,14 +543,14 @@ it("multisamples a scaled view's own targets at its scale and resolves them thro
   options.renderHeight = 64;
   const { engine, scene, camera } = host(new NullEngine(options));
   engine.getCaps().maxMSAASamples = 4;
-  // A world view at the default Medium tier: MSAA 4x.
+  // A world view at the default Medium tier: MSAA 2x.
   allowSceneScreenShadows(scene, () => false);
   setSceneOutputScale(scene, 0.5);
   const graph = new ForwardSceneFrameGraph(scene);
   const owned = graph as unknown as { graph?: FrameGraph; ownScene?: { color: FrameGraphTextureHandle } };
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   const description = owned.graph!.textureManager.getTextureDescription(owned.ownScene!.color);
-  expect([description.size.width, description.size.height, description.options.samples]).toEqual([40, 32, 4]);
+  expect([description.size.width, description.size.height, description.options.samples]).toEqual([40, 32, 2]);
   expect(owned.graph!.tasks.filter((task) => task.getClassName() === "FrameGraphCopyToBackbufferColorTask").map((task) => task.name))
     .toEqual(["Multisample output"]);
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });

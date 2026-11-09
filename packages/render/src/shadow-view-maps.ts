@@ -19,7 +19,7 @@ import {
 
 /**
  * A view's own sun map (a High or Full Quality Render Target Capture's, or a planar reflection's): the scene
- * map's size, cascades and settings, keyed to the view's camera and fitted to
+ * map's size, cascades (at most the view's `cascades`) and settings, keyed to the view's camera and fitted to
  * it as a scene view there would fit it. `mirrors` is the scene map it was
  * built from; a replaced scene map replaces it. It is cascade tiles of the same
  * shadow atlas, which holds their memory, so it charges nothing.
@@ -34,6 +34,8 @@ type View = {
   camera: Camera;
   /** Live claims; the maps go with the last. */
   claims: number;
+  /** The most cascades its sun maps take (`attach`): the scene map's count when that is fewer. */
+  cascades: number;
   maps: Map<Light, ViewMap>;
   /**
    * Scene maps whose mirror found no room in the atlas at any size (warned once per scene map). Retried after
@@ -74,12 +76,15 @@ export class ShadowViewMaps {
     this.maps = maps;
     this.scene = maps.scene;
   }
-  /** Claims `camera`'s own sun maps, built at once for a new view. */
-  attach(camera: Camera, casterBounds: () => CasterBounds | undefined): ViewShadows {
+  /**
+   * Claims `camera`'s own sun maps, built at once for a new view, with at most `cascades` cascades each (a small
+   * capture's image has no room for the detail the scene view's near cascades add). The first claim sets it.
+   */
+  attach(camera: Camera, casterBounds: () => CasterBounds | undefined, cascades = Infinity): ViewShadows {
     let view = this.views.get(camera);
     if (view) view.claims++;
     else {
-      view = { camera, claims: 1, maps: new Map(), refused: new Map(), pending: new Set() };
+      view = { camera, claims: 1, cascades: Math.max(1, cascades), maps: new Map(), refused: new Map(), pending: new Set() };
       this.views.set(camera, view);
       this.syncView(view, casterBounds);
     }
@@ -192,11 +197,13 @@ export class ShadowViewMaps {
     casterBounds: CasterBounds | undefined,
   ): boolean {
     if (!isAtlasShadow(source)) return false;
-    const layers = source instanceof CascadedShadowGenerator ? source.numCascades : 1;
+    const cascades = Math.min(source instanceof CascadedShadowGenerator ? source.numCascades : 1, view.cascades);
+    const layers = cascades;
+    const viewSettings = cascades < settings.cascades ? { ...settings, cascades } : settings;
     for (let mapSize = entry.mapSize; mapSize >= 256; mapSize /= 2) {
       const cleanup = shadowAllocationCheckpoint(this.scene);
       try {
-        const generator = createShadowGenerator(this.maps, entry, mapSize, settings, view.camera, casterBounds, this.atlasEdge);
+        const generator = createShadowGenerator(this.maps, entry, mapSize, viewSettings, view.camera, casterBounds, this.atlasEdge);
         // Its tiles hold what their last map drew until it draws.
         neutralUntilRendered(generator);
         view.maps.set(entry.light, { generator, mirrors: source, passes: layers });

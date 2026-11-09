@@ -20,8 +20,8 @@ import {
  * body's turbulence lies past its Crest Foam threshold (the whitecaps are where it is positive), and `amount` (0 none,
  * 1 all) lowers that threshold, most only at the waterline, so edge foam grows out of the whitecaps' soft streaky
  * shapes and follows the waves. Smooth noise at three scales in flowed world metres (`p`) breaks it into wisps where the
- * waves are calm, each faded where `foot` (metres per pixel) would alias it, and thin foam is partly clear (at Low Water
- * Shading Detail, `SLATE_WATER_DETAIL` 0, only the broadest scale). No cells, so no holes or rows.
+ * waves are calm, each faded where `foot` (metres per pixel) would alias it, and thin foam is partly clear (below High
+ * Water Shading Detail, `SLATE_WATER_DETAIL` under 2, only the broadest scale). No cells, so no holes or rows.
  *
  * `<prefix>ShoreFoamAmount(p, t, depth, width)` is the shore's amount: thick at the waterline, thinning to nothing where the
  * water is about 1.6 `width` deep (between 1 and 2.4 along the shore), with bands that wash in toward the shore, out of
@@ -37,7 +37,7 @@ float ${prefix}EdgeFoamCover(vec2 p, float amount, float crest, float foot) {
   float detail = 1.0 - smoothstep(0.15, 0.6, foot * 3.0);
   float wisp = 1.0 - smoothstep(0.15, 0.6, foot * 8.0);
   float soft = (${prefix}Noise(p * 0.7) - 0.5) * 0.8 * detail;
-#if ${WATER_DETAIL_DEFINE} >= 1
+#if ${WATER_DETAIL_DEFINE} >= 2
   soft = soft + (${prefix}Noise(p * 2.3 + vec2(3.7, 8.1)) - 0.5) * 0.45 * detail + (${prefix}Noise(p * 6.1 + vec2(9.4, 2.6)) - 0.5) * 0.3 * wisp;
 #endif
   float cover = clamp((crest + soft + mix(-0.35, 0.85, a * sqrt(a))) * ${f(SPECTRUM_FOAM_SCALE)}, 0.0, 1.0);
@@ -110,14 +110,14 @@ if (${sceneZ} < ${waterZ}) {
  * highest crest) the waves cannot move the shoreline, so the stored rest distance stands: steep coasts keep their
  * shoreline, and the full-range depth's 16 cm steps never read as slopes (over a gentle deep floor they drew contour
  * rings of shore foam). Only real terrain takes this path: cells extended past an underwater landscape edge (alpha ramp)
- * have no floor slope to measure. At Low Water Shading Detail (`SLATE_WATER_DETAIL` 0) the stored rest distance stands
- * everywhere, without the four taps, and the shore counts as steep. GLSL-shaped; reads `U.slateWaterFieldStep` and
+ * have no floor slope to measure. Below High Water Shading Detail (`SLATE_WATER_DETAIL` under 2) the stored rest distance
+ * stands everywhere, without the four taps, and the shore counts as steep. GLSL-shaped; reads `U.slateWaterFieldStep` and
  * `U.slateWaterFieldBounds`. The water nodes share it.
  */
 export function shorelineSource(o: { tap: string; uv: string; cond: string; depth: string; shore: string }): string {
   return `
 float swShoreSlope = 1.0;
-#if ${WATER_DETAIL_DEFINE} >= 1
+#if ${WATER_DETAIL_DEFINE} >= 2
 if (${o.cond}) {
   vec2 swFieldStep = U.slateWaterFieldStep.xy;
   vec4 swTapE = ${o.tap}(${o.uv} + vec2(swFieldStep.x, 0.0));

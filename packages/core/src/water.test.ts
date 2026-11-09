@@ -265,6 +265,21 @@ describe("Water surfaces", () => {
 });
 
 describe("Spectrum water", () => {
+  it("shares one spectrum between definitions with the same waves, and rebuilds it when a wave field is edited in place", () => {
+    const water = { ...createDefaultWaterDefinition(), waveSeed: 11 };
+    const spectrum = waterSpectrum(water);
+    // Another body's copy of the asset, and a look-only change, keep the spectrum.
+    expect(waterSpectrum({ ...water })).toBe(spectrum);
+    water.objectReflections = !water.objectReflections;
+    expect(waterSpectrum(water)).toBe(spectrum);
+    // Every wave field, edited on the same definition, is a new spectrum.
+    for (const field of ["waveHeight", "waveLength", "waveDirection", "waveSpread", "peakSharpness", "swellHeight",
+      "swellLength", "swellDirection", "detailWaves", "steepness", "waveSeed", "waveSpeed"] as const) {
+      const before = waterSpectrum(water);
+      water[field] = water[field] + 0.25;
+      expect(waterSpectrum(water), field).not.toBe(before);
+    }
+  });
   it("keeps an impossibly steep sea's height but stops it folding into solid foam, leaving ordinary seas as they were", () => {
     const folded = (spectrum: ReturnType<typeof waterSpectrum>, length: number) => {
       const out = new Float64Array(14);

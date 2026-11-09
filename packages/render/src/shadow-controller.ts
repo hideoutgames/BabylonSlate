@@ -363,16 +363,16 @@ export class SceneShadowController {
 
   /**
    * Gives `camera` (a High or Full Quality capture's, or a planar reflection's) its own sun maps: each admitted
-   * sun map is mirrored with the same kind, size, cascades and settings, keyed
+   * sun map is mirrored with the same kind, size, cascades (at most `cascades`) and settings, keyed
    * to the camera, so materials drawn for it bind a map fitted to it as a scene
    * view there would fit one. Point and spot maps do not depend on the view and
    * stay shared. The maps follow every sync until the claim is released; each
    * takes cascade tiles of the atlas and redraws in every pass the view draws (a reflection's: `drawViewMaps`, only
    * when it changed).
    */
-  attachView(camera: Camera): ViewShadows {
+  attachView(camera: Camera, cascades?: number): ViewShadows {
     if (this.scene.isDisposed) return { release: () => Promise.resolve() };
-    return this.views.attach(camera, () => this.spatial.bounds());
+    return this.views.attach(camera, () => this.spatial.bounds(), cascades);
   }
   /**
    * The map a pass drawn for `camera` binds for `light`: the view's own sun

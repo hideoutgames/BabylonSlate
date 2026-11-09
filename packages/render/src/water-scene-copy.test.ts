@@ -200,7 +200,7 @@ it("admits the copy only without per-group depth clears, and re-plans when that 
 it("copies a multisampled world view's resolved scene, depth included, and draws the transparent pass into its samples", async () => {
   const { engine, scene, camera } = host();
   engine.getCaps().maxMSAASamples = 4;
-  // A world view at the default Medium tier: MSAA 4x.
+  // A world view at the default Medium tier: MSAA 2x.
   allowSceneScreenShadows(scene, () => false);
   lake(scene);
   const renderers = new Map<string, { resolveDepth: boolean; samples: number | undefined }>();
@@ -218,8 +218,8 @@ it("copies a multisampled world view's resolved scene, depth included, and draws
     "Forward transparent", "Multisample output",
   ]);
   expect(Object.fromEntries(renderers)).toEqual({
-    "Forward objects": { resolveDepth: true, samples: 4 },
-    "Forward transparent": { resolveDepth: false, samples: 4 },
+    "Forward objects": { resolveDepth: true, samples: 2 },
+    "Forward transparent": { resolveDepth: false, samples: 2 },
   });
   graph.dispose();
 });

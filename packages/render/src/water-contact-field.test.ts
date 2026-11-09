@@ -281,9 +281,10 @@ describe("Water contact field", () => {
     for (let i = 0; i < 4; i++) step();
     expect(Math.abs(contactAt(oceanContacts, 2.05, 0, 0))).toBeLessThan(0.3);
     expect(Math.abs(contactAt(seaContacts, 62.05, 0, 0))).toBeLessThan(0.3);
-    // The Global water, discarded under the Ocean, never shows contacts there, so the move waits unbuilt.
+    // The Global water, discarded under the Ocean, never shows contacts there, so the move waits unbuilt: the post is
+    // not even sliced again, so no window waits for it.
     expect(contactAt(seaContacts, 2.05, 0, 0)).toBeGreaterThan(1);
-    expect(seaContacts.queued).toBeGreaterThan(0);
+    expect(seaContacts.queued).toBe(0);
     expect(oceanContacts.queued).toBe(0);
     // Without the Ocean the Global water shows that spot, and the waiting window is built.
     ocean.setEnabled(false);
@@ -562,6 +563,34 @@ describe("Water contact field", () => {
     for (const mesh of [post, neighbour]) mesh.position.y = 20;
     frame(); clock += 250; updateSceneWater(scene);
     expect(contacts.texture).toBeNull();
+  });
+
+  it("slices a moving object again only once some point of it moved a quarter cell, so its bobbing costs no rebuild", () => {
+    setup();
+    // High keeps 1024 cells, so a cell is 15 cm and a placement waits for 3.75 cm of movement.
+    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch("high")) });
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    const post = MeshBuilder.CreateBox("post", { width: 1, height: 6, depth: 1 }, scene);
+    frame();
+    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30 }), createDefaultWaterDefinition(), builtInWaterMaterial(scene));
+    const contacts = contactsOf(lake);
+    const step = () => { frame(); clock += 50; updateSceneWater(scene); };
+    step();
+    const uploads = vi.spyOn(engine, "updateRawTexture");
+    // Two, then three centimetres from where it was cut: short of the tolerance, so nothing rebuilds and the waterline
+    // stays where it was cut.
+    post.position.x = 0.02;
+    step();
+    post.position.x = 0.03;
+    step();
+    expect(uploads).not.toHaveBeenCalled();
+    expect(Math.abs(contactAt(contacts, 0.5, 0, 0))).toBeLessThan(0.1);
+    // Five centimetres passes it: the post is cut where it is now.
+    post.position.x = 0.05;
+    step();
+    expect(uploads).toHaveBeenCalled();
+    expect(Math.abs(contactAt(contacts, 0.55, 0, 0))).toBeLessThan(0.1);
   });
 
   it("caps the contact texture at the project's Contact Resolution and rebuilds it when that changes", () => {

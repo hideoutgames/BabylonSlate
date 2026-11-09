@@ -28,6 +28,7 @@ Returns what the water mirrors at this point, and how strongly it reflects.
 - Also reflects scene objects when the asset's **Object Reflections** is on:
   - At **Planar** [Water Reflections](../../graphics/water.md) quality, a flat body (not a River or a tilted volume) mirrors them as built-in water does. Each view mirrors one body, the one that covers most of it.
   - Otherwise, at Screen Space or Planar quality, it reflects the objects it can see on screen. This needs a Translucent Material.
+  - Below High [Water Shading Detail](../../graphics/water.md#water-quality), object reflections fade out where Fresnel is below about 0.06, such as water seen from high above: blended by Fresnel, they would barely show there, and skipping them saves the search for objects on screen.
 - Blend it over the water's colour with [**Mix**](mix.md), using Fresnel as the blend.
 - Reflected rays stay just above the horizon, so the water never mirrors more water.
 - Toward the horizon, distant water becomes a level mirror of the horizon sky. Fresnel rises to 1 there, so the water melts into the sky as built-in water does.

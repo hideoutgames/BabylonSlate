@@ -67,7 +67,7 @@ const FEATURE_TEST_WORLD_WATER = {
   ocean: "FT_WorldOcean",
   /** Lake: the default sea. */
   lake: "FT_WorldLake",
-  /** River: a short choppy sea, drawn with `FEATURE_TEST_WORLD_RIVER_MATERIAL`. */
+  /** River: the default sea, drawn with `FEATURE_TEST_WORLD_RIVER_MATERIAL`. */
   river: "FT_WorldRiver",
 } as const;
 /** The River's Custom Material: the Realistic starter water Material. */
@@ -95,7 +95,9 @@ const WATER_LOOKS: Record<WaterKey, Partial<WaterDefinition>> = {
   sea: { objectReflections: false },
   ocean: { waveSeed: 7, waveHeight: 0.6, waveLength: 18, swellHeight: 0 },
   lake: {},
-  river: { waveLength: 3, waveHeight: 0.08, swellHeight: 0 },
+  // The Lake's waves at the River's own Wave Scale: equal spectra share one FFT simulation, a third would cost as much
+  // as the Ocean's for centimetre ripples.
+  river: {},
 };
 
 /** Global Water Volume elevation: the island shore and the Ocean surface. */
@@ -171,7 +173,7 @@ const STRESS_FOLIAGE_GRID = 72;
 const STRESS_FOLIAGE_SPACING = 0.42;
 
 /**
- * Water assets: long and short seas, a lake and a short river with the Realistic starter water Material as its Custom
+ * Water assets: long and short seas, a lake and a river with the Realistic starter water Material as its Custom
  * Material; and the Lake captures' Render Targets, textures and monitor Materials.
  */
 export async function buildFeatureTestWorld(ctx: FeatureTestContext): Promise<void> {

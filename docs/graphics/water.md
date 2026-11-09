@@ -65,7 +65,7 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 | --- | --- | --- | --- | --- |
 | **Water Shading Detail** | Low | Medium | High | Ultra |
 | **Water Mesh Density** | 0.5 | 0.75 | 1 | 1.5 |
-| **Contact Resolution** | 256 | 512 | 1024 | 1024 |
+| **Contact Resolution** | 256 | 256 | 1024 | 1024 |
 | **Water Refraction** | Off | On | On | On |
 | **Refraction Resolution** | 0.5 | 0.5 | 0.75 | 1 |
 | **Water Reflections** | Sky Only | Screen Space | Planar | Planar |
@@ -76,7 +76,7 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 
 Water is one of the most expensive things a scene draws. Low draws it as a blended surface that reflects the sky, without the scene copy refraction needs or a second view for planar reflections. Medium keeps refraction and reflects objects on screen, but draws no planar reflections, which render the scene a second time for flat water.
 
-- **Water Shading Detail** sets how much fine detail the water's shading draws, for built-in water and any Material with water nodes. **Medium**, **High** and **Ultra** draw everything. **Low** draws the shoreline at its rest position as waves move, leaves out the foam around objects crossing the water, and draws coarser shore foam. It never changes the other water settings: a Low project with **Planar** reflections still mirrors objects.
+- **Water Shading Detail** sets how much fine detail the water's shading draws, for built-in water and any Material with water nodes. **High** and **Ultra** draw everything. **Medium** draws the shoreline at its rest position as waves move, draws coarser shore foam, and leaves out reflected objects where the water barely reflects, such as seen from high above. **Low** also leaves out the foam around objects crossing the water. It never changes the other water settings: a Low project with **Planar** reflections still mirrors objects.
 - **Contact Resolution** sets the detail of the foam and rings where objects meet the water. The work of keeping them current is capped per frame and goes to the water nearest the camera first, so around many moving objects foam can trail them by a fraction of a second. Higher values cost more per update and trail longer.
 - **Refraction Resolution** sets the scene copy's scale, shared with Screen Space reflections.
 - **Water Reflections**: **Sky Only** reflects the environment, **Screen Space** also reflects visible objects, and **Planar** mirrors flat water and uses Screen Space elsewhere. **Reflection Steps** and **Planar Resolution** (a fraction of the resolution the view renders at, which [FSR Upscaling](post-processing.md#project-effects) lowers) tune them. Planar reflections show the directional light's shadow only with the Shadows setting [Reflection Shadows](shadows.md#shadows-in-reflections) on (Ultra), at the cost of one more directional shadow render while they draw; point and spot light shadows always show.
