@@ -87,6 +87,17 @@ export type RenderTargetCaptureDiagnostics = {
 const controllers = new WeakMap<Scene, RenderTargetCaptures>();
 /** Above 512 × 512 a High or Full Quality capture warns once: it costs about a second camera at its size. */
 const VIEW_GUIDANCE_PIXELS = 512 * 512;
+/** A High or Full Quality capture no wider or taller than this draws one sun cascade of its own. */
+export const SMALL_CAPTURE_EDGE = 512;
+/**
+ * The most sun cascades a High or Full Quality capture's own maps take: one for a small target, whose texels each
+ * cover more of the view than the near cascades add detail for (every cascade is another shadow pass each frame); the
+ * scene view's count otherwise.
+ */
+export function captureSunCascades(definition: RenderTargetPayload): number | undefined {
+  const { width, height } = normalizeRenderTargetPayload(definition);
+  return Math.max(width, height) <= SMALL_CAPTURE_EDGE ? 1 : undefined;
+}
 const drawing = renderTargetCaptureDrawing;
 
 class CaptureTexture extends Texture {
@@ -388,7 +399,7 @@ export class RenderTargetCaptures {
       if (target.view) {
         // Here, before the scene view's graph runs: a new map dirties lighting
         // state the graph's own frame must not see change.
-        target.view.shadows ??= findSceneShadowController(this.scene)?.attachView(capture.camera) ?? null;
+        target.view.shadows ??= findSceneShadowController(this.scene)?.attachView(capture.camera, captureSunCascades(target.definition)) ?? null;
         // A capture of chosen actors outlines only them; actor roots can change with any mesh.
         if (settings.captureOnlyActors && this.refreshRoots()) this.refreshOutlineFilters();
         this.pendingViews.push({ actorId, guid, capture, target });
@@ -711,7 +722,7 @@ export class RenderTargetCaptures {
       // Drawn inside the scene view's frame; it defers only while that frame
       // does, which then holds, so a partly drawn capture is never presented.
       renderer = new SceneRenderCoordinator(this.scene, { waterPlanarReflections: false, auxiliary: { camera, objects, screenEffects: quality === "fullQuality" }, deferPipelines: true });
-      shadows = findSceneShadowController(this.scene)?.attachView(camera) ?? null;
+      shadows = findSceneShadowController(this.scene)?.attachView(camera, captureSunCascades(definition)) ?? null;
       const target: Target = {
         key, definition, quality, texture, lease, owner,
         view: { renderer, camera, postProcess: null, postProcessRevision: -1, outlines: null, outlineRevision: -1, shadows },

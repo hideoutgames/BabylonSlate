@@ -318,9 +318,10 @@ it("retries a failed Full Quality preparation at most once a second and warns on
  * camera, with a different lens and clip range. The shadow atlas's edge is the
  * device's texture limit: 1024 texels by default, with room for every map and
  * the capture's own sun cascades; NullEngine's own 512 leaves one 256-texel
- * tile beside the scene view's three.
+ * tile beside the scene view's three. The target is wider than a small capture
+ * (`SMALL_CAPTURE_EDGE`), so its maps take the scene map's cascades.
  */
-function shadowedHost(maxTextureSize = 1024) {
+function shadowedHost(maxTextureSize = 1024, target = { width: 640, height: 16 }, cascades = 2) {
   const options = new NullEngineOptions();
   options.renderWidth = 96;
   options.renderHeight = 64;
@@ -341,7 +342,7 @@ function shadowedHost(maxTextureSize = 1024) {
   camera.setTarget(Vector3.Zero());
   scene.activeCamera = camera;
   updateSceneRenderingSettings(scene, {
-    shadows: normalizeShadowSettings({ cascades: 2, distance: 40, mapSize: 256, localMapSize: 256, maxLocalLights: 1 }),
+    shadows: normalizeShadowSettings({ cascades, distance: 40, mapSize: 256, localMapSize: 256, maxLocalLights: 1 }),
   });
   const material = new StandardMaterial("opaque", scene);
   const box = MeshBuilder.CreateBox("caster", {}, scene);
@@ -358,7 +359,7 @@ function shadowedHost(maxTextureSize = 1024) {
   controller.sync();
   const view = new SceneRenderCoordinator(scene);
   const captures = new RenderTargetCaptures(scene);
-  captures.setAssets(new Map([["target", { mode: "SceneColor", width: 32, height: 16 }]]),
+  captures.setAssets(new Map([["target", { mode: "SceneColor", ...target }]]),
     new Map([["texture", { renderTargetGuid: "target" }]]));
   const lens = new Mesh("Lens", scene);
   lens.position.set(30, 4, 30);
@@ -424,10 +425,25 @@ it("draws a Full Quality capture's own sun maps, fitted to its camera, and leave
   view.dispose();
 });
 
+it("draws one sun cascade of its own for a capture no larger than 512 × 512, beside the scene view's cascades", async () => {
+  const { scene, sun, controller, view, captures, captureCamera } = shadowedHost(1024, { width: 512, height: 256 });
+  const main = controller.generator(sun) as AtlasCascadedShadowGenerator;
+  await untilPublished(scene, view, captures);
+  const own = sun.getShadowGenerator(captureCamera()!) as AtlasCascadedShadowGenerator;
+  expect(own).toBeInstanceOf(AtlasCascadedShadowGenerator);
+  expect([main.numCascades, own.numCascades]).toEqual([2, 1]);
+  expect(own.tiles).toHaveLength(1);
+  for (let frame = 0; frame < 5; frame++) view.render();
+  const ownPasses = passes(own);
+  for (let frame = 0; frame < 3; frame++) expect(view.render()).toMatchObject({ rendered: true });
+  expect(ownPasses()).toBe(3);
+  view.dispose();
+});
+
 it("lets a Full Quality capture whose own sun map does not fit sample the scene view's, without rebuilding materials each frame", async () => {
-  // The scene view's two sun cascades and spot tile leave one 256-texel tile of the 512-texel atlas, short of the
-  // mirror's two at the smallest map size.
-  const { scene, sun, controller, view, captures, captureCamera } = shadowedHost(512);
+  // The scene view's three sun cascades (the last in a 128-texel tile) and spot tile leave no 256-texel tile of the
+  // 512-texel atlas for the small capture's one cascade at the smallest map size.
+  const { scene, sun, controller, view, captures, captureCamera } = shadowedHost(512, { width: 32, height: 16 }, 3);
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   await untilPublished(scene, view, captures);
   const capture = captureCamera()!;
