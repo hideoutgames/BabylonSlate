@@ -65,6 +65,8 @@ See [Plugin Settings](../assets/plugin-settings.md) for the asset itself.
 | Export | Save the plugin as a `.hplugin` file. |
 | Delete | Plugins you added only. Bundled plugins cannot be removed. |
 
+With a project open, turning **Enable *Plugin Name* By Default** on or off asks where the change applies when the open project would change too: **Engine Only** (the default for new projects), **Project Only** (the open project) or **Project & Engine** (both). A plugin the project has no copy of is copied in when you enable it there. Turning a plugin off lists the project's assets that still use its content.
+
 ### Starter Content
 
 **Starter Content** is a bundled plugin with a starter Actor Class, **StarterActor**, and no artwork. It is off by default. Turn it on in **Project Settings > Plugins** to use it.
