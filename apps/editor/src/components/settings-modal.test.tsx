@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
 import { createDefaultPluginSettings, createExtensionSettings, normalizeExtensionContributions, type ExtensionDescriptor, type PluginDescriptor } from "@haptic/assets";
 import { createEmptyProject, defaultExportPreset } from "@haptic/core";
@@ -234,11 +234,16 @@ function discordExtension(enabledByDefault: boolean): ExtensionDescriptor {
 }
 
 describe("extension settings categories", () => {
-  it("adds an enabled extension's category under the title it writes and saves its fields in the project", async () => {
+  it("adds an enabled extension's category under the title it writes, in Miscellaneous, and saves its fields in the project", async () => {
     extensionState.entries = [discordExtension(false)];
     extensionState.overrides = { discord: { enabled: true } };
     extensionState.values = { discord: { applicationId: "123" } };
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+
+    const sidebar = screen.getByTestId("settings-modal-categories");
+    expect([...sidebar.querySelectorAll("p")].map((label) => label.textContent))
+      .toEqual(["Project", "Gameplay", "Graphics & Audio", "Miscellaneous", "Plugins & Extensions"]);
+    expect(within(within(sidebar).getByText("Miscellaneous").parentElement!).getByTestId("settings-modal-category-extension:discord")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("settings-modal-category-extension:discord"));
 
@@ -267,6 +272,8 @@ describe("extension settings categories", () => {
     extensionState.overrides = { discord: { enabled: false } };
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     expect(screen.queryByTestId("settings-modal-category-extension:discord")).toBeNull();
+    // An empty Miscellaneous group is hidden.
+    expect(within(screen.getByTestId("settings-modal-categories")).queryByText("Miscellaneous")).toBeNull();
     cleanup();
 
     extensionState.overrides = {};

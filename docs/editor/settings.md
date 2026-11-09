@@ -125,9 +125,9 @@ Haptic is built with open-source software. To read the licences, open **Manage A
 | Graphics & Audio | Textures | Retry failed texture compression |
 | Graphics & Audio | Fonts | Default font and fallbacks |
 | Graphics & Audio | Audio | Audio Mixer, occlusion and reverb |
+| Miscellaneous | Extension categories | Settings an enabled extension adds, under the name it chooses. See [Extensions](../projects/extensions.md#project-settings). The group shows only when an enabled extension adds one. |
 | Plugins & Extensions | Plugins | Enable, create and import plugins |
 | Plugins & Extensions | Project Extensions | Editor tools and game libraries in this project |
-| Plugins & Extensions | Extension categories | Settings an enabled extension adds, under the name it chooses. See [Extensions](../projects/extensions.md#project-settings). |
 
 Each topic's guide covers its settings: for example [Graphics](../graphics/index.md), [Collision](../physics/collision.md), [Save Games](../scripting/save-games.md), [Publishing](../publishing/index.md) and [Source Control](../projects/source-control.md).
 
