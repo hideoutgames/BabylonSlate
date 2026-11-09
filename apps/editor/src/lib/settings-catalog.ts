@@ -89,6 +89,11 @@ export const ENGINE_CATEGORIES: Array<
     keywords: "interface compact mode density touch targets rows size",
   },
   {
+    id: "accessibility",
+    label: "Accessibility",
+    keywords: "accessibility tap to connect pins large pins pin size scale graph touch motor",
+  },
+  {
     id: "undo",
     label: "Undo",
     keywords: "undo history length stack memory limit budget",
@@ -159,6 +164,7 @@ export const ENGINE_GROUPS: CatalogCategoryGroup[] = [
       "focus",
       "keybinds",
       "interface",
+      "accessibility",
       "about",
     ],
   },

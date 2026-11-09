@@ -3,6 +3,7 @@ import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
+import { GraphInteractionSettingsContext } from "@haptic/graph-ui";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   createDefaultParticleGraphDocument,
@@ -457,7 +458,11 @@ describe("ParticleGraphPreview", () => {
 describe("Particle Graph document panels", () => {
   function renderPanels(doc: ParticleGraphDocument, panels: "canvas" | "details") {
     store.reset(doc as unknown as Record<string, unknown>);
+    // Tap-to-connect is an opt-in Accessibility setting; the canvas tests tap pins.
     return render(
+      <GraphInteractionSettingsContext.Provider
+        value={{ assistantEnabled: true, assistantDistance: 48, shakeEnabled: true, tapToConnectEnabled: true }}
+      >
       <ParticleGraphEditingProvider documentId={DOC_ID}>
         {panels === "canvas" ? (
           <ParticleGraphCanvasPanel {...panelProps} />
@@ -467,7 +472,8 @@ describe("Particle Graph document panels", () => {
             <ParticleGraphCompilerResultsPanel {...panelProps} />
           </>
         )}
-      </ParticleGraphEditingProvider>,
+      </ParticleGraphEditingProvider>
+      </GraphInteractionSettingsContext.Provider>,
     );
   }
 

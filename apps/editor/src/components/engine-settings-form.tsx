@@ -11,11 +11,13 @@ import { getBuildIdentity } from "../lib/build-identity";
 import {
   getHostPlatform,
   MAX_CAMERA_PREVIEW_FRAME_RATE,
+  MAX_GRAPH_PIN_SCALE,
   MAX_UNDO_BYTE_BUDGET,
   MAX_HARDWARE_SCALING_LEVEL,
   MAX_UNDO_HISTORY_LENGTH,
   MAX_VIEWPORT_FRAME_CAP,
   MIN_CAMERA_PREVIEW_FRAME_RATE,
+  MIN_GRAPH_PIN_SCALE,
   MIN_HARDWARE_SCALING_LEVEL,
   MIN_UNDO_BYTE_BUDGET,
   MIN_VIEWPORT_FRAME_CAP,
@@ -215,6 +217,7 @@ function focusKeepSections() {
 
 export type EngineSettingsCategoryId =
   | "about"
+  | "accessibility"
   | "interface"
   | "undo"
   | "debugger"
@@ -292,6 +295,47 @@ export function EngineSettingsForm({
             checked={resolveCompactMode(settings)}
             onCheckedChange={compactMode => void onChange({ compactMode })}
           />
+        </SettingsSection>
+      ) : null}
+
+      {categoryId === "accessibility" ? (
+        <SettingsSection id="graphPins" title="Graph Pins">
+          <Field orientation="horizontal" className="settings-field">
+            <LabelHint hint="Tap a pin, then a pin on the other side, to connect them. Dragging between pins always works.">
+              <FieldLabel htmlFor="setting-tap-to-connect">Tap To Connect Pins</FieldLabel>
+            </LabelHint>
+            <Switch
+              id="setting-tap-to-connect"
+              data-testid="setting-tap-to-connect"
+              checked={settings.graphTapToConnect}
+              onCheckedChange={(checked) => void onChange({ graphTapToConnect: checked === true })}
+            />
+          </Field>
+          <Field className="settings-field">
+            <FieldLabel id="setting-large-pins-label" htmlFor="setting-large-pins">
+              Large Pins
+            </FieldLabel>
+            <div className="flex min-w-0 items-center gap-3">
+              <Slider
+                id="setting-large-pins"
+                aria-labelledby="setting-large-pins-label"
+                className="min-w-0 flex-1"
+                data-testid="setting-large-pins"
+                min={MIN_GRAPH_PIN_SCALE}
+                max={MAX_GRAPH_PIN_SCALE}
+                step={1}
+                value={[settings.graphPinScale]}
+                onValueChange={(value) => {
+                  const scale = Array.isArray(value) ? value[0] : value;
+                  if (typeof scale !== "number") return;
+                  void onChange({ graphPinScale: scale });
+                }}
+              />
+              <span className="w-6 shrink-0 text-right text-xs tabular-nums" data-testid="setting-large-pins-value">
+                {settings.graphPinScale}×
+              </span>
+            </div>
+          </Field>
         </SettingsSection>
       ) : null}
 

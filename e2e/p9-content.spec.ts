@@ -6,6 +6,7 @@ import {
   createContentBrowserAsset,
   openAssetFromBrowser,
   openMainScene,
+  enableTapToConnect,
   openTestProject,
   openWindowsMenu,
 } from "./open-test-project";
@@ -524,6 +525,7 @@ test.describe("P9 content systems", () => {
     page,
   }) => {
     test.setTimeout(90_000);
+    await enableTapToConnect(page);
     await openMinimalTestProject(page);
     const albedoGuid = await importAlbedoTexture(page);
     await createContentBrowserAsset(page, "Material", "ParamSample");

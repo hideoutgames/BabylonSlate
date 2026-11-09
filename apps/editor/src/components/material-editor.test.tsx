@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
+import type { ReactNode } from "react";
+import { GraphInteractionSettingsContext } from "@haptic/graph-ui";
 import { AssetRegistry, projectContentRoot } from "@haptic/assets";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import {
@@ -626,6 +628,15 @@ describe("Material graph panel", () => {
     ).not.toBeNull();
   });
 
+  /** Tap-to-connect is an opt-in Accessibility setting. */
+  const TapToConnect = ({ children }: { children: ReactNode }) => (
+    <GraphInteractionSettingsContext.Provider
+      value={{ assistantEnabled: true, assistantDistance: 48, shakeEnabled: true, tapToConnectEnabled: true }}
+    >
+      {children}
+    </GraphInteractionSettingsContext.Provider>
+  );
+
   it.each([
     ["material", "const.float", "output", "baseColor"],
     ["material", "const.vec4", "output", "roughness"],
@@ -635,7 +646,9 @@ describe("Material graph panel", () => {
     doc.nodes.push({ id: "numeric", type: type!, position: { x: 0, y: 0 }, properties: { value: [1, 2, 3, 0] } });
     harness.kind = kind!;
     harness.content = doc as unknown as Record<string, unknown>;
-    const { container } = render(kind === "material" ? <MaterialGraphPanel {...panelProps} /> : <MaterialFunctionGraphPanel {...panelProps} />);
+    const { container } = render(kind === "material" ? <MaterialGraphPanel {...panelProps} /> : <MaterialFunctionGraphPanel {...panelProps} />, {
+      wrapper: TapToConnect,
+    });
     const sourceSelector = '[data-id="numeric"] [data-handleid="out"][data-handlepos="right"]';
     await waitFor(() => expect(container.querySelector(sourceSelector)).not.toBeNull());
     fireEvent.click(container.querySelector(sourceSelector)!);

@@ -14,6 +14,7 @@ import {
   openAssetFromBrowser,
   openContentBrowser,
   openMainScene,
+  enableTapToConnect,
   openTestProject,
   openWindowsMenu,
   pickAsset,
@@ -86,6 +87,7 @@ test.describe("P17 particles", () => {
     page.on("request", (request) => {
       if (/\/Shaders\/material:.*\.fx(?:\?|$)/.test(request.url())) shaderFallbacks.push(request.url());
     });
+    await enableTapToConnect(page);
     await openTestProject(page);
     const albedoGuid = await importAlbedoTexture(page);
 

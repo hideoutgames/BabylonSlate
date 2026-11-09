@@ -11,6 +11,25 @@
   --xy-node-background-color: var(--graph-node);
 }
 
+/*
+ * Large Pins: the editor root sets --graph-pin-scale. Hit areas keep an 11px
+ * margin around the glyph and never shrink below a touch target.
+ */
+.graph-editor-canvas {
+  --graph-pin-glyph: calc(var(--graph-pin-size, 22px) * var(--graph-pin-scale, 1));
+  --graph-pin-hit: max(var(--touch-target, 44px), calc(var(--graph-pin-glyph) + 22px));
+}
+
+.graph-editor-canvas .bt-pin {
+  --bt-pin-hit: calc(1.5rem * var(--graph-pin-scale, 1));
+}
+
+@media (pointer: coarse) {
+  .graph-editor-canvas .bt-pin {
+    --bt-pin-hit: max(var(--touch-target, 44px), calc(1.5rem * var(--graph-pin-scale, 1)));
+  }
+}
+
 .graph-editor-canvas .react-flow__node {
   /* Prefer chrome intrinsic width over a stale XYFlow measured px width. */
   width: max-content !important;

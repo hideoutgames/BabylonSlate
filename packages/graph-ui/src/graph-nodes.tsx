@@ -152,7 +152,7 @@ function PinVisual({
       shape={pinVisualShape(type, pin)}
       connected={connected}
       color={pinCssVar(type)}
-      size="var(--graph-pin-size, 22px)"
+      size="var(--graph-pin-glyph, var(--graph-pin-size, 22px))"
       className="graph-pin-visual"
     />
   );
@@ -189,7 +189,7 @@ function PinHandle({
       data-error={hasError ? "true" : undefined}
       className={cn(
         "!relative !top-auto !right-auto !left-auto !translate-x-0 !translate-y-0",
-        "!pointer-events-auto flex !size-11 !min-h-11 !min-w-11 items-center justify-center",
+        "!pointer-events-auto flex !size-[var(--graph-pin-hit,44px)] !min-h-[var(--graph-pin-hit,44px)] !min-w-[var(--graph-pin-hit,44px)] items-center justify-center",
         "!border-0 !bg-transparent touch-manipulation",
         pending && "ring-2 ring-primary ring-offset-1 ring-offset-card",
       )}
@@ -199,8 +199,8 @@ function PinHandle({
         left: "auto",
         right: "auto",
         transform: "none",
-        width: "var(--touch-target, 44px)",
-        height: "var(--touch-target, 44px)",
+        width: "var(--graph-pin-hit, 44px)",
+        height: "var(--graph-pin-hit, 44px)",
         background: "transparent",
         border: "none",
       }}
@@ -332,7 +332,7 @@ function PinRow({
             </PinHint>
           </>
         ) : (
-          <span className="size-11 shrink-0" />
+          <span className="size-[var(--graph-pin-hit,44px)] shrink-0" />
         )}
       </div>
       <div
@@ -362,7 +362,7 @@ function PinRow({
             />
           </>
         ) : (
-          <span className="size-11 shrink-0" />
+          <span className="size-[var(--graph-pin-hit,44px)] shrink-0" />
         )}
       </div>
     </div>

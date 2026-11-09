@@ -27,6 +27,9 @@ export const DEFAULT_CAMERA_PREVIEW_FRAME_RATE = 30;
 /** Hardware scaling 1 is native resolution; 4 is the quarter-scale floor rendering quality accepts. */
 export const MIN_HARDWARE_SCALING_LEVEL = 1;
 export const MAX_HARDWARE_SCALING_LEVEL = 4;
+/** Large Pins: graph pin glyph and hit-area scale, in whole steps. */
+export const MIN_GRAPH_PIN_SCALE = 1;
+export const MAX_GRAPH_PIN_SCALE = 4;
 /** Linked Inspector Scale fields remembered on this device; linking another forgets the oldest. */
 const MAX_LINKED_SCALE_KEYS = 1000;
 
@@ -272,6 +275,13 @@ export const engineSettingsSchema = z.object({
   /** Rank Add Node picks from a dragged pin by past choices; off keeps the saved history. */
   graphAddNodeHistoryEnabled: z.boolean().default(true),
   readOnlyPinDefaults: z.boolean().default(false),
+  /** Accessibility: tap one graph pin, then one on the other side, to connect them. */
+  graphTapToConnect: z.boolean().default(false),
+  /** Accessibility (Large Pins): multiplies graph pin glyphs and their hit areas. */
+  graphPinScale: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.min(MAX_GRAPH_PIN_SCALE, Math.max(MIN_GRAPH_PIN_SCALE, Math.round(value)));
+  }, z.number().int().min(MIN_GRAPH_PIN_SCALE).max(MAX_GRAPH_PIN_SCALE).default(MIN_GRAPH_PIN_SCALE)),
   graphAssistantDistance: z.number().min(8).max(200).default(48),
   graphDefaultZoom: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
