@@ -18,6 +18,7 @@ import {
   filterAssets,
   flattenFolderForest,
   listChildFoldersFromTrees,
+  listDescendantFoldersFromTrees,
   sortAssets,
   sortChildFolders,
   uniqueAssetTypes,
@@ -203,17 +204,20 @@ export function useContentBrowserModel(deps: ContentBrowserModelDeps) {
     };
   }, [classParentOf, extensionAssetTypes]);
 
-  const folderGuids = useMemo(() => {
-    if (folderTrees.length === 0) return null;
-    return collectFolderGuidsFromTrees(selectedFolderPath, folderTrees);
-  }, [folderTrees, selectedFolderPath]);
-
   // Typing updates the field at once; the grid follows at low priority.
   // Clearing the search (Clear Filters, revealing an asset) applies in the same
   // render as the folder and type filters that change with it.
   const deferredSearch = useDeferredValue(search);
   const gridSearch = search.trim() ? deferredSearch : search;
   const searchPending = search !== gridSearch;
+  // A search from the project's top folder reaches every folder below it; any
+  // other folder, and the top folder while not searching, shows only its own contents.
+  const searchesSubfolders = selectedFolderPath === ASSETS_ROOT && gridSearch.trim() !== "";
+
+  const folderGuids = useMemo(() => {
+    if (folderTrees.length === 0) return null;
+    return collectFolderGuidsFromTrees(selectedFolderPath, folderTrees, { recursive: searchesSubfolders });
+  }, [folderTrees, searchesSubfolders, selectedFolderPath]);
 
   // Sort once per list and mode. Filtering keeps that order, and the sort is a
   // total order, so each keystroke only filters.
@@ -241,10 +245,12 @@ export function useContentBrowserModel(deps: ContentBrowserModelDeps) {
   const sortedChildFolders = useMemo(() => {
     if (folderTrees.length === 0) return [];
     return sortChildFolders(
-      listChildFoldersFromTrees(folderTrees, selectedFolderPath),
+      searchesSubfolders
+        ? listDescendantFoldersFromTrees(folderTrees, selectedFolderPath)
+        : listChildFoldersFromTrees(folderTrees, selectedFolderPath),
       sortMode,
     );
-  }, [folderTrees, selectedFolderPath, sortMode]);
+  }, [folderTrees, searchesSubfolders, selectedFolderPath, sortMode]);
 
   const childFolders = useMemo(() => {
     const needle = gridSearch.trim().toLowerCase();

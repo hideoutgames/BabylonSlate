@@ -52,8 +52,9 @@ To let other objects run their events when something happens here, without this 
 
 **Paste** and **Duplicate** (<kbd>Mod</kbd>+<kbd>D</kbd>) copy a selection of nodes as new nodes with the same values and the wires between them. For events, each one stays on the graph once:
 
-- A custom event gets a new name: **Open Door** becomes **Open Door_1**, then **Open Door_2**. It never repeats the name of another custom event in the class, in this graph or a function graph. Calls to the original keep calling the original. A copy keeps its name only when no other custom event uses it, such as after you delete the original.
+- A custom event gets a new name: **Open Door** becomes **Open Door_1**, then **Open Door_2**. It never repeats the name of another custom event in the class. Calls to the original keep calling the original. A copy keeps its name only when no other custom event uses it, such as after you delete the original.
 - An event that cannot be renamed, such as **Event Tick**, **Event Begin Play**, a component event or an input event, is left out when the graph already has it. The wires to and from it are dropped, the rest of the selection is still pasted, and a notice such as **Event Tick is already in this graph.** appears for a few seconds. Pasting it into a graph without that event adds it.
+- A function graph takes no events, custom ones included: pasting into a function leaves every event out with its wires, and a notice such as **Event Open Door is an event, which only the Event Graph holds.** appears.
 
 ## Copy events between classes
 

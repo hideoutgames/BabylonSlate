@@ -8,6 +8,8 @@ A function is a named graph with inputs and outputs that you can call from event
 2. Type a name and press <kbd>Enter</kbd>. The function opens in its own tab beside **Event Graph**, marked with the function icon, with an [Input](class/input.md) node wired to an [Output](class/output.md) node.
 3. Build the logic between **Input** and **Output**.
 
+A function runs from its **Input** node, so it holds no events: **Add Node** offers no events in a function graph, custom ones included, and pasting events into one leaves them out. Events belong in the **Event Graph**; a function can still run a custom event with [Call Custom Event](class/call-custom-event.md). An event left in a function graph is reported in **Compiler Results**.
+
 Select a function in the **Class** window to reopen its tab. Renaming a function updates its tab and this class's Call nodes; deleting it closes the tab and removes them.
 
 ## Settings

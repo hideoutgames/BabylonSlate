@@ -18,6 +18,7 @@ export type {
 } from "./compile-types";
 export {
   EVENT_BY_TYPE_ID,
+  isEventEntryNodeType,
   isTouchEventNodeType,
   eventNameForEntry,
   localVariableIdent,

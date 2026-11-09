@@ -155,6 +155,28 @@ export function listChildFoldersFromTrees(
   return [];
 }
 
+/** Every folder below `folderPath` at any depth, parents before their children; empty when no tree holds it. */
+export function listDescendantFoldersFromTrees(
+  trees: readonly FolderTreeLike[],
+  folderPath: string,
+): Array<{ name: string; path: string }> {
+  const out: Array<{ name: string; path: string }> = [];
+  const walk = (node: FolderTreeLike) => {
+    for (const child of node.children) {
+      out.push({ name: folderLabel(child), path: child.path });
+      walk(child);
+    }
+  };
+  for (const tree of trees) {
+    const node = findFolderNode(tree, folderPath);
+    if (node) {
+      walk(node);
+      break;
+    }
+  }
+  return out;
+}
+
 export function collectFolderGuidsFromTrees(
   folderPath: string,
   trees: readonly FolderTreeLike[],

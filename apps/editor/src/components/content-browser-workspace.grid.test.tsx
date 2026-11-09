@@ -1199,6 +1199,60 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect((screen.getAllByTestId("context-menu-item-new-folder").at(-1) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("searches every sub-folder from the top folder, and only the open folder anywhere else", async () => {
+    docs.thumbnailsEnabled = false;
+    const named = (guid: string, name: string, path: string): IndexedAsset => {
+      const asset = { ...texture(0), path };
+      asset.header = { ...asset.header, guid, name };
+      return asset;
+    };
+    const top = named("top-rock", "Rock", "assets/Rock.hasset");
+    const shallow = named("char-rock", "RockGolem", "assets/Characters/RockGolem.hasset");
+    const deep = named("deep-rock", "HeroRock", "assets/Characters/Heroes/HeroRock.hasset");
+    const knight = named("knight", "Knight", "assets/Characters/Heroes/Knight.hasset");
+    const root = projectContentRoot();
+    const assets = [top, shallow, deep, knight];
+    docs.assetRegistry = {
+      getRoot: (id: string) => (id === "project" ? root : undefined),
+      list: () => assets,
+      folderTree: () => ({
+        name: "assets", path: "assets", assets: ["top-rock"],
+        children: [{
+          name: "Characters", path: "assets/Characters", assets: ["char-rock"],
+          children: [
+            { name: "Heroes", path: "assets/Characters/Heroes", assets: ["deep-rock", "knight"], children: [] },
+            { name: "Rocks", path: "assets/Characters/Rocks", assets: [], children: [] },
+          ],
+        }],
+      }),
+      getByGuid: (guid: string) => assets.find((asset) => asset.header.guid === guid),
+    };
+    render(<ContentBrowserWorkspace />);
+    const shown = () => ({
+      assets: Array.from(document.querySelectorAll("[data-asset-guid]"), (tile) => tile.getAttribute("data-asset-guid")),
+      folders: Array.from(document.querySelectorAll('[data-testid^="content-folder-"]'), (tile) => tile.getAttribute("data-testid")),
+    });
+    const search = (value: string) => fireEvent.change(screen.getByTestId("content-browser-search"), { target: { value } });
+
+    expect(shown()).toEqual({ assets: ["top-rock"], folders: ["content-folder-assets/Characters"] });
+
+    search("rock");
+    await waitFor(() => expect(shown()).toEqual({
+      assets: ["deep-rock", "top-rock", "char-rock"],
+      folders: ["content-folder-assets/Characters/Rocks"],
+    }));
+
+    search("");
+    await waitFor(() => expect(shown().assets).toEqual(["top-rock"]));
+    fireEvent.doubleClick(screen.getByTestId("content-folder-assets/Characters"));
+    await waitFor(() => expect(shown().assets).toEqual(["char-rock"]));
+    search("rock");
+    await waitFor(() => expect(shown()).toEqual({
+      assets: ["char-rock"],
+      folders: ["content-folder-assets/Characters/Rocks"],
+    }));
+  });
+
   it("clears an unsuccessful search without leaving the current folder", async () => {
     installRegistry([texture(1)]);
     render(<ContentBrowserWorkspace />);

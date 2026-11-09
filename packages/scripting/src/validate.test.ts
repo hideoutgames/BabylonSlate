@@ -1281,6 +1281,44 @@ describe("validateGraphs", () => {
     });
   });
 
+  describe("event.in_function", () => {
+    const node = (id: string, typeId: string, pins: GraphNode["pins"], properties: Record<string, unknown> = {}): GraphNode => ({
+      id,
+      typeId,
+      position: { x: 0, y: 0 },
+      pins,
+      properties,
+    });
+    const execOut = [pin("execOut", "then", "out", EXEC)];
+    const graphOf = (kind: "event" | "function", nodes: GraphNode[]) =>
+      validateGraphs([{ id: "g", kind, nodes, edges: [] }], { assetGuid: "a" }).filter((d) => d.code === "event.in_function");
+
+    it("errors on every event node in a function graph, custom events included", () => {
+      expect(
+        graphOf("function", [
+          node("entry", "flow.function.input", execOut),
+          node("custom", "flow.event.custom", execOut, { name: "Open Door" }),
+          node("begin", "flow.event.beginPlay", execOut),
+          node("input", "input.actionEvent", [pin("started", "Started", "out", EXEC)], { title: "Event Jump" }),
+          node("call", "flow.event.call", [pin("execIn", "exec", "in", EXEC), pin("execOut", "then", "out", EXEC)], { name: "Open Door" }),
+        ]).map((d) => [d.severity, d.nodeId, d.message]),
+      ).toEqual([
+        ["error", "custom", "Event Open Door is an event, which only the Event Graph holds. Move it to the Event Graph; a function can still call a custom event."],
+        ["error", "begin", "Event Begin Play is an event, which only the Event Graph holds. Move it to the Event Graph; a function can still call a custom event."],
+        ["error", "input", "Event Jump is an event, which only the Event Graph holds. Move it to the Event Graph; a function can still call a custom event."],
+      ]);
+    });
+
+    it("accepts the same event nodes in an Event Graph", () => {
+      expect(
+        graphOf("event", [
+          node("custom", "flow.event.custom", execOut, { name: "Open Door" }),
+          node("begin", "flow.event.beginPlay", execOut),
+        ]),
+      ).toEqual([]);
+    });
+  });
+
   it("errors when an interface implementation pin is a Map where the method takes an Array", () => {
     const signature = (container: "array" | "map") => [
       { name: "targets", typeId: "object", typeClassId: "Actor", direction: "in" as const, container },

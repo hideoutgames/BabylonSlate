@@ -1408,6 +1408,23 @@ describe("scriptPaletteNodes", () => {
     });
   });
 
+  it("offers events, custom ones included, only in the Event Graph, and still offers calling a custom event from a function", () => {
+    const graph = {
+      nodes: [{ id: "open", type: "flow.event.custom", position: { x: 0, y: 0 }, data: { name: "Open Door", title: "Event Open Door" } }],
+      edges: [],
+      members: [{ id: "fn", kind: "function" as const, name: "Fn", pins: [] }],
+    };
+    const ids = (activeFunctionId: string | null) =>
+      scriptPaletteNodes(registry, { parentClass: "Actor", classId: "Hero", graph, activeFunctionId }).map((node) => node.nodeType ?? node.id);
+    const eventGraph = ids(null);
+    for (const event of ["flow.event.custom", "flow.event.beginPlay", "flow.event.tick", "flow.event.hit"]) {
+      expect(eventGraph, event).toContain(event);
+    }
+    const functionGraph = ids("fn");
+    expect(functionGraph.filter((id) => id.startsWith("flow.event.") && id !== "flow.event.call")).toEqual([]);
+    expect(functionGraph).toContain("flow.event.call");
+  });
+
   it("hides behaviour-tree events on Actor class graphs", () => {
     const nodes = scriptPaletteNodes(registry, { parentClass: "Actor" });
     expect(nodes.some((node) => node.id === "bt.event.evaluate")).toBe(false);

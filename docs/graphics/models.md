@@ -19,6 +19,7 @@ When a file refers to texture files outside it, pick them together with the mode
 
 - Drag a Model from **Place Actors > Models**, or add a [Mesh](../components/mesh.md) component and pick the Model in **Asset**.
 - Without an **Asset**, a Mesh component draws a primitive chosen in **Mesh Kind**.
+- For more basic shapes as Models, such as a cone, capsule, wedge or subdivided plane, turn on the bundled [EditorPrimitives](../projects/plugins.md#editorprimitives) plugin.
 
 ## Materials
 

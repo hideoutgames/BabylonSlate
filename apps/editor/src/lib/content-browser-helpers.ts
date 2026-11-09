@@ -51,6 +51,7 @@ export {
   filterFolderTreeRows,
   type ContentBrowserTreeRow,
   listChildFoldersFromTrees,
+  listDescendantFoldersFromTrees,
   collectFolderGuidsFromTrees,
   flattenFolderForest,
   flattenContentBrowserForest,

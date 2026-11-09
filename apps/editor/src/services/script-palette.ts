@@ -5,7 +5,7 @@
  */
 import { isEditorGraphHost, type SerializedGraph } from "@haptic/core";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
-import { EXTENSION_NODE_TYPE_PREFIX, isTouchEventNodeType, type NodeRegistry } from "@haptic/scripting";
+import { EXTENSION_NODE_TYPE_PREFIX, isEventEntryNodeType, isTouchEventNodeType, type NodeRegistry } from "@haptic/scripting";
 import { sceneAssetClassId } from "@haptic/object-model";
 import type { PaletteNode } from "@haptic/graph-ui";
 import { classLineageIncludesAny, isScriptCatalogNodeAllowed, nativeEventStubs } from "../lib/class-members";
@@ -326,10 +326,10 @@ function scriptPaletteCatalogNodes(
     .list()
     .filter((def) => {
       if ((def.id.startsWith("saveGame.") || def.id === "flow.event.gameLoaded" || def.id === "flow.event.saveMigration") && isEditorGraphHost(options ?? {})) return false;
-      if ((def.id === "flow.event.gameLoaded" || def.id === "flow.event.saveMigration") && options?.activeFunctionId) return false;
-      if (def.id === "flow.event.scalabilityChanged" && options?.activeFunctionId) return false;
+      // Events, custom ones included, belong in the Event Graph; a function runs from its own entry node.
+      if (options?.activeFunctionId && isEventEntryNodeType(def.id)) return false;
       if ((isInputEvent(def.id) || def.id === "input.onAnyKeyPressed" || isTouchEventNodeType(def.id)) &&
-        (options?.activeFunctionId || options?.animationGraphHost || !nativeEventStubs(options).some((node) => node.eventType === "flow.event.tick"))) return false;
+        (options?.animationGraphHost || !nativeEventStubs(options).some((node) => node.eventType === "flow.event.tick"))) return false;
       if (def.editorOnly && !isEditorGraphHost(options ?? {})) {
         return false;
       }
