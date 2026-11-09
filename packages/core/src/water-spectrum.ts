@@ -160,23 +160,36 @@ function component(height: number, wavelength: number, gamma: number, heading: n
   return { variance, peakOmega, gamma, heading, spreadScale, swell, alphaG2 };
 }
 
-const spectra = new WeakMap<WaterDefinition, { fields: string; spectrum: WaterSpectrum }>();
+/** The wave fields a spectrum is built from, in key order. */
+const WAVE_FIELDS = [
+  "waveHeight", "waveLength", "waveDirection", "waveSpread", "peakSharpness", "swellHeight",
+  "swellLength", "swellDirection", "detailWaves", "steepness", "waveSeed", "waveSpeed",
+] as const satisfies readonly (keyof WaterDefinition)[];
+/** Per definition, its wave fields' values when its spectrum was last taken. */
+const spectra = new WeakMap<WaterDefinition, { values: number[]; spectrum: WaterSpectrum }>();
 /** Recent spectra by their wave fields, newest last: every body of one asset (each holding its own copy) shares one. */
 const interned = new Map<string, WaterSpectrum>();
 const INTERNED_SPECTRA = 32;
-const fieldsOf = (w: WaterDefinition) => [w.waveHeight, w.waveLength, w.waveDirection, w.waveSpread, w.peakSharpness, w.swellHeight,
-  w.swellLength, w.swellDirection, w.detailWaves, w.steepness, w.waveSeed, w.waveSpeed].join(":");
+const fieldsOf = (w: WaterDefinition) => WAVE_FIELDS.map((field) => w[field]).join(":");
+function sameWaveFields(w: WaterDefinition, values: readonly number[]): boolean {
+  for (let index = 0; index < WAVE_FIELDS.length; index++) if (w[WAVE_FIELDS[index]!] !== values[index]) return false;
+  return true;
+}
 
-/** The definition's spectrum, rebuilt only when one of its wave fields changes. Never keyed on Wave Scale. */
+/**
+ * The definition's spectrum, rebuilt only when one of its wave fields changes. Never keyed on Wave Scale. Renderers
+ * ask several times per draw, so an unchanged definition is recognised by its values, without building the key.
+ */
 export function waterSpectrum(water: WaterDefinition): WaterSpectrum {
-  const fields = fieldsOf(water), cached = spectra.get(water);
-  if (cached && cached.fields === fields) return cached.spectrum;
+  const cached = spectra.get(water);
+  if (cached && sameWaveFields(water, cached.values)) return cached.spectrum;
+  const fields = fieldsOf(water);
   let spectrum = interned.get(fields);
   if (spectrum) interned.delete(fields);
   else spectrum = buildSpectrum(water);
   interned.set(fields, spectrum);
   if (interned.size > INTERNED_SPECTRA) interned.delete(interned.keys().next().value!);
-  spectra.set(water, { fields, spectrum });
+  spectra.set(water, { values: WAVE_FIELDS.map((field) => water[field]), spectrum });
   return spectrum;
 }
 
