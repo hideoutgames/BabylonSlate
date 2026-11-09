@@ -31,6 +31,7 @@ import {
 import { joystick2DMesh } from "./joystick2d-mesh";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
+import { text2DBitmapBytes, text2DRedraw } from "./text2d-mesh";
 import { SPRING_ARM_MESH_KIND } from "./spring-arm";
 import {
   partsNeedOrigin,
@@ -65,6 +66,7 @@ import {
   hasPendingVisualReplacement,
   pendingVisualReplacement,
   pendingVisualReplacementsOf,
+  playVisualComponentsOf,
   recordVisualAssignment,
   visualAssignmentOf,
 } from "./snapshot-component-commands";
@@ -122,7 +124,8 @@ interface AssignMeshContext {
  * with every component property write, unchanged when the value was (a script writing a Text3D's text every tick), so
  * a command asking for the visual the slot already shows, or is preparing, in `scene` keeps it (`showsAssignment`): a
  * rebuild would replace a drawn mesh with one that has not drawn, which a world view hides until its variants, and on
- * WebGPU its pipelines, are known ready, and would restart a staged visual's preparation before it ever adopts.
+ * WebGPU its pipelines, are known ready, and would restart a staged visual's preparation before it ever adopts. A
+ * command that changes only what a 2D Text says redraws the text with that visual (`redrawTextInPlace`).
  */
 export function applyAssignMesh(
   scene: Scene,
@@ -130,6 +133,7 @@ export function applyAssignMesh(
   command: AssignMeshCommand,
 ): void {
   if (showsAssignment(scene, binding, command)) return;
+  if (redrawTextInPlace(scene, binding, command)) return;
   assignVisual(scene, binding, command);
 }
 
@@ -155,6 +159,11 @@ function assignVisual(scene: Scene, binding: SnapshotSceneBinding, command: Assi
   // A material command's restart builds the same assignment again.
   failedConstructions.delete(command);
   assignMeshVisual(scene, binding, command);
+  recordBuiltVisual(binding, command);
+}
+
+/** Records the visual the slot shows or is preparing as the one `command` built. */
+function recordBuiltVisual(binding: SnapshotSceneBinding, command: AssignMeshCommand): void {
   const visual = pendingVisualReplacement(binding, command.slotId) ?? binding.meshes.get(command.slotId);
   const built: BuiltVisual = {
     revision: meshAssetInstallRevision(binding), failed: failedConstructions.has(command), visual: visual && new WeakRef(visual),
@@ -162,6 +171,82 @@ function assignVisual(scene: Scene, binding: SnapshotSceneBinding, command: Assi
   builtVisuals.set(command, built);
   // Observed without turning the slot's load into a success: a readiness wait on it must still reject.
   void binding.slotAnimLoads?.get(command.slotId)?.catch(() => { built.failed = true; });
+}
+
+const textCarriers: ReadonlySet<string> = new Set(["text2d", "parts"]);
+const partTextCarrier: ReadonlySet<string> = new Set(["text2d"]);
+const textContent: ReadonlySet<string> = new Set(["text"]);
+
+type Text2DPayload = AssignMeshCommand["text2d"];
+
+function sameButTextContent(previous: Text2DPayload, next: Text2DPayload): boolean {
+  if (!previous || !next) return !previous && !next;
+  return sameJsonObject(previous, next, textContent);
+}
+
+/** Whether two assignments ask for the same visual but for what their 2D Text says. */
+function sameButText(previous: AssignMeshCommand, next: AssignMeshCommand): boolean {
+  if (!sameJsonObject(previous, next, textCarriers) || !sameButTextContent(previous.text2d, next.text2d)) return false;
+  const before = previous.parts, after = next.parts;
+  if (!before || !after) return !before && !after;
+  return before.length === after.length && before.every((part, index) =>
+    sameJsonObject(part, after[index]!, partTextCarrier) && sameButTextContent(part.text2d, after[index]!.text2d));
+}
+
+/**
+ * A command that changes only what a 2D Text says (a script writing a score or a timer) redraws that text with the
+ * visual the slot shows: `text2DRedraw` replaces its glyph geometry and atlas pixels, and no mesh, material or
+ * texture joins or leaves the Scene, which would cost a Scene readiness probe and hide the text until its new meshes
+ * are known ready. False, with nothing changed, when the command differs from the slot's assignment in anything
+ * else, the slot does not show the visual that assignment built, or a text cannot redraw with what it owns (Rich
+ * Text, a Text Material, an underline, another atlas size); the caller then rebuilds as for any other change.
+ */
+function redrawTextInPlace(scene: Scene, binding: SnapshotSceneBinding, command: AssignMeshCommand): boolean {
+  const { slotId } = command;
+  const current = visualAssignmentOf(binding, slotId);
+  const built = current && builtVisuals.get(current);
+  const visual = built?.visual?.deref();
+  if (!current || !built || !visual || built.failed || built.revision !== meshAssetInstallRevision(binding)) return false;
+  if (hasPendingVisualReplacement(binding, slotId) || binding.meshes.get(slotId) !== visual || visual.isDisposed() || visual.getScene() !== scene) return false;
+  // A refused assignment is the slot's recorded one while the slot still shows its predecessor's visual, and a
+  // preparation in flight restarts for the assignment it began with.
+  if (rejectedTextAssignments.get(binding)?.has(slotId) || rejectedPreparedAssignments.get(binding)?.has(slotId) ||
+    materialPreparationRestarts(binding).has(slotId)) return false;
+  if (!sameButText(current, command)) return false;
+
+  const redraws: Array<() => void> = [];
+  // What stays alive while a text redraws: the bitmap texts the visual holds. A rebuild holds a new copy of each as well.
+  const limits = { bitmapLimits: { retainedBytes: text2DBitmapBytes(visual) } };
+  /** Plans one text's redraw from the properties a rebuild would build it from; false when the text must be rebuilt. */
+  const plan = (mesh: Mesh | undefined, meshKind: string | null | undefined, properties: unknown): boolean => {
+    if (!mesh || meshKind !== "2dtext") return false;
+    const redraw = text2DRedraw(mesh, properties, binding, limits);
+    if (redraw) redraws.push(redraw);
+    return redraw !== null;
+  };
+  try {
+    if (!partsNeedOrigin(command.parts)) {
+      // The slot's single visual draws the command's own text.
+      if (current.text2d?.text === command.text2d?.text) return false;
+      if (!plan(visual, command.meshKind, parseText2DProperties(command.text2d ?? {}, { rich: false }))) return false;
+    } else {
+      const components = playVisualComponentsOf(visual);
+      for (let index = 0; index < command.parts!.length; index++) {
+        const part = command.parts![index]!;
+        if (part.text2d && current.parts![index]!.text2d?.text !== part.text2d.text &&
+          !plan(components?.get(part.componentId), part.meshKind, part.text2d)) return false;
+      }
+    }
+  } catch {
+    // An allocation refusal is the rebuild's to meet and report.
+    return false;
+  }
+  if (redraws.length === 0) return false;
+  beginAssignMesh(scene, binding, command);
+  for (const redraw of redraws) redraw();
+  recordBuiltVisual(binding, command);
+  binding.onVisualChanged?.(slotId);
+  return true;
 }
 
 function assignMeshVisual(
@@ -504,7 +589,7 @@ function stagePreparedVisual(
   return false;
 }
 
-/** Every other visual, text included, is rebuilt in place. */
+/** Every other visual is rebuilt in place, as is a text that `redrawTextInPlace` could not redraw. */
 function rebuildVisual(assign: AssignMeshContext, existing: Mesh | undefined): void {
   const { scene, binding, command, meshKind, retireRemovedMaterials } = assign;
   const stagesText = meshKind === "2dtext" || meshKind === "2drichtext" ||
