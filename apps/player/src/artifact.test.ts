@@ -14,7 +14,7 @@ const body = (bytes: Uint8Array | undefined) => bytes as Uint8Array<ArrayBuffer>
 
 describe("loadGameFromFiles", () => {
   it("uses a valid native fetch receiver for default HTTP source loading", async () => {
-    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
       { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
     ] });
     if (!exported.ok) throw new Error(exported.error);
@@ -34,7 +34,7 @@ describe("loadGameFromFiles", () => {
   });
   it("keeps deferred compiled Class code unread and releases it after its final source owner", async () => {
     const script = { assetGuid: "prefab", classId: "Prefab", source: "export function onBeginPlay() {}", anchors: [], entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] };
-    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [script], assets: [
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [script], assets: [
       { guid: "scene", type: "Scene", sceneGuid: "scene", dependencies: ["prefab"], requiredDependencies: [], bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
       { guid: "prefab", type: "Class", sceneGuid: "scene", requiredDependencies: [], bytes: encoder.encode("{}") },
     ] });
@@ -63,7 +63,7 @@ describe("loadGameFromFiles", () => {
   });
   it("reads only selected Font representations and resolves a later default-font consumer offline", async () => {
     const scene = { ...createDefaultScene(), actors: [{ classId: "Actor", components: [{ classId: "2DTextComponent", properties: { fontAssetGuid: "font", renderer: "msdf" } }] }] };
-    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", defaultFontGuid: "font", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", defaultFontGuid: "font", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
       { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(scene)) },
       { guid: "font", type: "Font", name: "Body", sceneGuid: "scene", bytes: new Uint8Array([1]) },
       { guid: fontFacetypeExportGuid("font"), type: FONT_FACETYPE_EXPORT_TYPE, sceneGuid: "scene", bytes: encoder.encode("{}") },
@@ -98,7 +98,7 @@ describe("loadGameFromFiles", () => {
       { classId: "Text3DComponent", properties: { fontAssetGuid: "font" } },
       { classId: "2DTextComponent", properties: { fontAssetGuid: "font", renderer: "msdf" } },
     ] }] };
-    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
       { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(scene)) },
       { guid: "font", type: "Font", name: "Body", sceneGuid: "scene", bytes: new Uint8Array([1]) },
     ] });
@@ -113,7 +113,7 @@ describe("loadGameFromFiles", () => {
   });
   it("does not read the default Font's facetype for 3D Text without a Font", async () => {
     const scene = { ...createDefaultScene(), actors: [{ classId: "Actor", components: [{ classId: "Text3DComponent", properties: { text: "Hi" } }] }] };
-    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", defaultFontGuid: "font", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", defaultFontGuid: "font", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
       { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(scene)) },
       { guid: "font", type: "Font", name: "Body", sceneGuid: "scene", bytes: new Uint8Array([1]) },
       { guid: fontFacetypeExportGuid("font"), type: FONT_FACETYPE_EXPORT_TYPE, sceneGuid: "scene", bytes: encoder.encode("{}") },
@@ -127,7 +127,7 @@ describe("loadGameFromFiles", () => {
     game.dispose!();
   });
   it("overlaps asset HTTP requests with a bounded pool", async () => {
-    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
+    const result = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
       assets: Array.from({ length: 15 }, (_, index) => ({ guid: `texture-${index}`, type: "Texture", startupRequired: true, sceneGuid: "scene", bytes: new Uint8Array([index]) })) });
     if (!result.ok) throw new Error(result.error);
     let active = 0;
@@ -150,7 +150,7 @@ describe("loadGameFromFiles", () => {
     expect(peak).toBeLessThanOrEqual(6);
   });
   it("stops oversized HTTP asset bodies at the catalog boundary and counts received bytes on failure", async () => {
-    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
       { guid: "scene", type: "Scene", sceneGuid: "scene", requiredDependencies: [], bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
       { guid: "texture", type: "Texture", sceneGuid: "scene", bytes: new Uint8Array([1]) },
     ] });
@@ -174,7 +174,7 @@ describe("loadGameFromFiles", () => {
   });
   it("loads prepared emission independently of visual texture bytes", async () => {
     const emission = await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(200), "a".repeat(64));
-    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
       { guid: "texture", type: "Texture", bytes: new Uint8Array([1, 2, 3]), startupRequired: true, sceneGuid: "scene" },
       { guid: areaEmissionExportGuid("texture"), type: AREA_EMISSION_EXPORT_TYPE, bytes: emission, startupRequired: true, sceneGuid: "scene" },
     ] });
@@ -183,7 +183,7 @@ describe("loadGameFromFiles", () => {
     expect(game.textureBytes.get("texture")).toEqual(new Uint8Array([1, 2, 3]));
     expect(game.areaEmissions.get("texture")?.rgba.every((value) => value === 200)).toBe(true);
     emission[emission.length - 1] = 0;
-    const corrupted = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [{ guid: areaEmissionExportGuid("texture"), type: AREA_EMISSION_EXPORT_TYPE, bytes: emission, startupRequired: true, sceneGuid: "scene" }] });
+    const corrupted = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [{ guid: areaEmissionExportGuid("texture"), type: AREA_EMISSION_EXPORT_TYPE, bytes: emission, startupRequired: true, sceneGuid: "scene" }] });
     if (!corrupted.ok) throw new Error(corrupted.error);
     await expect(loadGameFromFiles(corrupted.value.files)).rejects.toThrow(/corrupt/i);
   });
@@ -193,6 +193,7 @@ describe("loadGameFromFiles", () => {
       name: "Arena",
     };
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-guid-1",
       renderSettings: {
@@ -228,6 +229,7 @@ describe("loadGameFromFiles", () => {
   it("maps FontFacetype sidecar bytes onto fontFacetypeBytes by Font guid", async () => {
     const scene = { ...createDefaultScene(), name: "Arena" };
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -269,6 +271,7 @@ describe("loadGameFromFiles", () => {
   it("maps FontMsdf sidecar bytes onto fontMsdfJson and fontMsdfPng by Font guid", async () => {
     const scene = { ...createDefaultScene(), name: "Arena" };
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -327,6 +330,7 @@ describe("loadGameFromFiles", () => {
       glb,
     );
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -360,6 +364,7 @@ describe("loadGameFromFiles", () => {
 
   it.each(["Model", "Audio"] as const)("rejects a %s whose bytes are not a packed envelope", async (type) => {
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -387,6 +392,7 @@ describe("loadGameFromFiles", () => {
   it("loads packed SceneLayer documents onto the compositor library", async () => {
     const layer = { ...createDefaultSceneLayer(), name: "HUD" };
     const packed = await exportGame({
+      platform: "web",
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -424,7 +430,7 @@ describe("loadGameFromFiles", () => {
 describe("demand-driven exported sources", () => {
   it("keeps deferred assets unread, shares source reads, and releases the last consumer", async () => {
     const scene = encoder.encode(JSON.stringify(createDefaultScene()));
-    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "a", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "a", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
       { guid: "a", type: "Scene", sceneGuid: "a", bytes: scene, dependencies: ["b"], requiredDependencies: [] },
       { guid: "b", type: "Scene", sceneGuid: "b", bytes: scene, requiredDependencies: ["texture"] },
       { guid: "texture", type: "Texture", sceneGuid: "b", bytes: new Uint8Array([1, 2, 3]), requiredDependencies: [] },
@@ -457,7 +463,7 @@ describe("demand-driven exported sources", () => {
 
   it("does not publish a failed scene dependency and permits a later retry", async () => {
     const scene = encoder.encode(JSON.stringify(createDefaultScene()));
-    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "a", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "a", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
       { guid: "a", type: "Scene", sceneGuid: "a", bytes: scene, requiredDependencies: [] },
       { guid: "b", type: "Scene", sceneGuid: "b", bytes: scene, requiredDependencies: ["texture"] },
       { guid: "texture", type: "Texture", sceneGuid: "b", bytes: new Uint8Array([1]), requiredDependencies: [] },
@@ -483,7 +489,7 @@ describe("demand-driven exported sources", () => {
 
 it("cancels a cold offline scene before publication and ignores its late storage completion", async () => {
   const scene = encoder.encode(JSON.stringify(createDefaultScene()));
-  const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "a", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+  const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "a", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
     { guid: "a", type: "Scene", sceneGuid: "a", bytes: scene, requiredDependencies: [] },
     { guid: "b", type: "Scene", sceneGuid: "b", bytes: scene, requiredDependencies: ["texture"] },
     { guid: "texture", type: "Texture", sceneGuid: "b", bytes: new Uint8Array([7]), requiredDependencies: [] },
@@ -521,7 +527,7 @@ it("cancels a cold offline scene before publication and ignores its late storage
 
 it("rejects a corrupt deferred deployed file without reading it during startup and retries after repair", async () => {
   const scene = encoder.encode(JSON.stringify(createDefaultScene()));
-  const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "a", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+  const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "a", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
     { guid: "a", type: "Scene", sceneGuid: "a", bytes: scene, requiredDependencies: [] },
     { guid: "b", type: "Scene", sceneGuid: "b", bytes: scene, requiredDependencies: [] },
   ] });

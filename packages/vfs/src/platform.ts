@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import { browserDeviceFacts, type GameEnvironment } from "@haptic/core";
+import { browserDeviceFacts, type BuildPlatform, type GameEnvironment } from "@haptic/core";
 import type {
   DirEntry,
   FileStat,
@@ -179,6 +179,22 @@ export function getHostPlatform(): HostPlatform {
   const platform = Capacitor.getPlatform();
   if (platform === "ios" || platform === "android") return platform;
   if (isElectronHost()) return "electron";
+  return "web";
+}
+
+/**
+ * The platform this editor plays games as, for platform directives: the iOS or Android app, the desktop app's
+ * operating system, or the web.
+ */
+export function editorBuildPlatform(): BuildPlatform {
+  const host = getHostPlatform();
+  if (host === "ios" || host === "android") return host;
+  if (host === "electron") {
+    const platform = getElectronGameShellBridge()?.platform;
+    if (platform === "win32") return "windows";
+    if (platform === "darwin") return "macos";
+    if (platform === "linux") return "linux";
+  }
   return "web";
 }
 

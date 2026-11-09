@@ -141,6 +141,8 @@ export type CollectExportGameParams = {
   /** Nearest Texture Filtering as the game draws it (`nearestTextureFiltering`). */
   nearestTextures?: boolean;
   physicsWorld: "2d" | "3d";
+  /** The platform the game is packaged for: its platform directives and modules apply. */
+  platform: import("@haptic/core").BuildPlatform;
   /** Project Collision Presets (`PhysicsProjectSettings.collisionPresets`). */
   collisionPresets?: readonly import("@haptic/core").CollisionPreset[];
   infiniteLoopDetection?: boolean;
@@ -629,6 +631,7 @@ export async function collectAndExportGame(
     pixelPerfect: params.pixelPerfect,
     nearestTextures: params.nearestTextures,
     physicsWorld: params.physicsWorld,
+    platform: params.platform,
     collisionPresets: params.collisionPresets,
     infiniteLoopDetection: params.infiniteLoopDetection,
     loopCount: params.loopCount,

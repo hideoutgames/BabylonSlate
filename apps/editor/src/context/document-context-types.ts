@@ -1,6 +1,7 @@
 import type { DockviewApi } from "dockview-react";
 import type {
   AssetDocumentKind,
+  BuildPlatform,
   DocumentRef,
   InputAssetDefinition,
   PluginEnableOverride,
@@ -231,7 +232,9 @@ export interface DocumentContextValue {
   /** Close without saving once sessions stop and queued writes finish; false when a session refused. */
   forceCloseProject: () => Promise<boolean>;
   exportProject: (snapshot?: ProjectDocument) => Promise<Uint8Array>;
-  exportGameArtifact: (options?: {
+  exportGameArtifact: (options: {
+    /** The platform the game is packaged for; Preview Build packs the web game. */
+    platform: BuildPlatform;
     projectSnapshot?: ProjectDocument;
     previewBuild?: boolean;
     playerFiles?: Map<string, Uint8Array>;

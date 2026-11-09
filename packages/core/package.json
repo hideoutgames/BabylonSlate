@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./app-identity": "./src/app-identity.ts"
+    "./app-identity": "./src/app-identity.ts",
+    "./platform-directives": "./src/platform-directives.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

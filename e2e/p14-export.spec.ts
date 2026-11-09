@@ -24,6 +24,7 @@ async function packTinyGame(playerBaseURL: string) {
   expect(playerFiles.has("index.html")).toBe(true);
   expect(playerFiles.has("player.js")).toBe(true);
   const packed = await exportGame({
+    platform: "web",
     bundleDebugger: false,
     startupSceneGuid: "scene-guid-export",
     renderSettings: {

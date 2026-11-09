@@ -1,4 +1,4 @@
-import { ENGINE_VERSION, type ExtensionGameLibrary, type ExtensionLibraryAsset, type ProjectStorage } from "@haptic/core";
+import { ENGINE_VERSION, platformSymbols, type BuildPlatform, type ExtensionGameLibrary, type ExtensionLibraryAsset, type ProjectStorage } from "@haptic/core";
 import {
   applyExtensionImport, createExtensionSettings, discoverEngineExtensions,
   discoverProjectExtensions, encodeExtensionSettings, exportExtensionZip,
@@ -347,11 +347,14 @@ export class EditorExtensionService {
 
   /**
    * Links the game module of every enabled gameplay package, dependencies first,
-   * reading current files so edits made in another editor are picked up. Each
-   * library carries the project's assets of its gameplay asset types;
-   * `openContent` supplies an open tab's unsaved payload for a path.
+   * reading current files so edits made in another editor are picked up, with
+   * the platform directives of the platform the game is played or packaged for
+   * (`editor` for Play). Each library carries the project's assets of its
+   * gameplay asset types; `openContent` supplies an open tab's unsaved payload
+   * for a path.
    */
   gameLibraries(
+    target: { platform: BuildPlatform; editor: boolean },
     overrides: ExtensionOverrides = this.overrides,
     settingValues: ExtensionSettingValues = this.settingValues,
     openContent: (path: string) => Record<string, unknown> | undefined = () => undefined,
@@ -365,6 +368,7 @@ export class EditorExtensionService {
       const duplicates = duplicateLibraryDiagnostics(order);
       if (duplicates.length > 0) throw new Error(duplicates.join("\n"));
       const libraries: ExtensionGameLibrary[] = [];
+      const symbols = platformSymbols(target.platform, { editor: target.editor });
       const gameplay = gameplayExtensions(order);
       const listed = gameplay.some((entry) => entry.settings.contributes.assetTypes?.some((type) => !type.editorOnly))
         ? [...await this.services.assets.list()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
@@ -378,7 +382,7 @@ export class EditorExtensionService {
             label: entry.settings.displayName,
             settings: resolvedExtensionSettings(entry, settingValues),
             assets: await this.libraryAssets(entry, listed, openContent),
-            bundle: await linkExtensionModules(files, entry.settings.gameEntryPoint),
+            bundle: await linkExtensionModules(files, entry.settings.gameEntryPoint, symbols),
           });
         } catch (cause) {
           throw new Error(`Extension ${entry.settings.displayName}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });

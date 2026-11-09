@@ -147,6 +147,7 @@ test("exported game restores OPFS progress after a cold page reload", async ({ p
   test.setTimeout(240_000);
   const scene = createDefaultScene("2d");
   const artifact = await exportGame({
+    platform: "web",
     bundleDebugger: true, startupSceneGuid: "start", gameInstanceClass: "SaveFlow",
     renderSettings: { customResolution: false, width: 640, height: 360, blackBars: false, upscaling: "smooth" },
     physicsWorld: "2d",

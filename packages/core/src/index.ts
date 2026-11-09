@@ -130,3 +130,4 @@ export * from "./actor-property-references";
 export { remapScenePropertyReferences } from "./scene-property-references";
 export * from "./console-command";
 export * from "./extension-library";
+export * from "./platform-directives";

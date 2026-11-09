@@ -1,5 +1,5 @@
 import { SAFE_ZIP_MTIME } from "./zip-time";
-import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, type Result } from "@haptic/core";
+import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, isBuildPlatform, type Result } from "@haptic/core";
 import { collectAssetDependencyMetadata, decodePackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@haptic/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
@@ -270,6 +270,7 @@ export async function exportGame(
     const physicsWorld = options.physicsWorld ?? "3d";
     for (const [path, bytes] of selectPlayerRuntimeFiles(options.playerFiles, {
       physicsWorld,
+      platform: options.platform,
       includePreviewDiagnostics: options.includePreviewDiagnostics === true && options.bundleDebugger,
       hasPhysicsSceneLayers: options.assets.some(enablesSceneLayerPhysics),
     })) {
@@ -340,6 +341,7 @@ export async function exportGame(
     nearestTextures: options.nearestTextures === true,
     sortingLayers: normalizeSortingLayers(options.sortingLayers),
     physicsWorld: options.physicsWorld ?? "3d",
+    platform: options.platform,
     collisionPresets: normalizeCollisionPresets(options.collisionPresets),
     ...(options.extensionLibraries?.length ? { extensionLibraries: structuredClone([...options.extensionLibraries]) } : {}),
     assets: index,
@@ -397,7 +399,7 @@ function normalizeGlobalFallback(value: unknown): string {
 const REQUIRED_MANIFEST_FIELDS = [
   "project", "focusNavigation", "startupSceneGuid", "globalFallback", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
   "reverbDampingScale", "bundleDebugger", "render", "playFrameCap", "garbageCollectionIntervalTicks", "touchMinTargetPx", "pixelsPerUnit",
-  "pixelPerfect", "nearestTextures", "sortingLayers", "physicsWorld", "collisionPresets", "assets",
+  "pixelPerfect", "nearestTextures", "sortingLayers", "physicsWorld", "platform", "collisionPresets", "assets",
 ] as const satisfies readonly (keyof GameManifest)[];
 const DEBUGGER_MANIFEST_FIELDS = ["infiniteLoopDetection", "loopCount"] as const satisfies readonly (keyof GameManifest)[];
 
@@ -412,6 +414,7 @@ export function parseGameManifest(source: string): GameManifest {
     typeof (project as { version?: unknown }).version !== "string") {
     throw new Error(`game.json has no project name and version; ${OUTDATED_MANIFEST}`);
   }
+  if (!isBuildPlatform(parsed.platform)) throw new Error(`game.json names no known platform; ${OUTDATED_MANIFEST}`);
   const sortingLayers: unknown = parsed.sortingLayers;
   if (!Array.isArray(sortingLayers) || sortingLayers.length === 0 || !sortingLayers.every(layer => typeof layer === "string")) {
     throw new Error(`game.json has no sorting layers; ${OUTDATED_MANIFEST}`);

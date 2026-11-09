@@ -306,6 +306,49 @@ chance = extensions.weather.rainChance(humidity);
 - The game entry runs in the game, not the editor, so it has no `api`.
 - **Appear In Content Browser** shows the extension's content folder in the Content Browser tree, whatever **Show Plugin Content** says. Turn it on to browse, create and import assets there.
 
+### Platform directives
+
+Mark code that only some platforms should run, and only those platforms' packages carry it, with directive comments:
+
+```ts
+// #if WITH_DESKTOP
+import { connect } from "./code/desktop";
+// #endif
+
+export function startPresence() {
+  // #if WITH_DESKTOP && !WITH_LINUX
+  connect();
+  // #elif WITH_MOBILE
+  console.log("Phones and tablets have no presence");
+  // #else
+  // Web and Linux do nothing.
+  // #endif
+}
+```
+
+- A region starts with `// #if`, may have `// #elif` and `// #else` branches, and ends with `// #endif`. Regions can be nested.
+- Conditions combine symbols with `&&`, `||`, `!` and brackets.
+- Lines in a branch that does not apply are left out before the code runs, imports included, so a file only one platform imports never reaches the others. The file keeps its line numbers.
+- Directives are comments, so the file is still valid TypeScript.
+
+| Symbol | True for |
+| --- | --- |
+| `WITH_EDITOR` | Play in the editor, and editor code. Never in Preview Build or a package. |
+| `WITH_WEB` | Web packages, Preview Build, and Play in a browser. |
+| `WITH_DESKTOP` | Windows, macOS and Linux. |
+| `WITH_WINDOWS`, `WITH_MACOS`, `WITH_LINUX` | That operating system. |
+| `WITH_MOBILE` | Android and iOS. |
+| `WITH_ANDROID`, `WITH_IOS` | That operating system. |
+
+Each place your code runs has its own platform:
+
+- **Play** uses the platform of the editor you play in, with `WITH_EDITOR`: the desktop app on Windows, for example, has `WITH_DESKTOP`, `WITH_WINDOWS` and `WITH_EDITOR`.
+- **Preview Build** plays the web game.
+- **Packaging** uses the platform you package for.
+- **Editor code** uses the editor's platform, with `WITH_EDITOR`.
+
+A directive that is malformed or names an unknown symbol stops Play and packaging, naming the file and line.
+
 ## Share extensions
 
 - **Export** offers **Export To File** (a `.hextension` file, saved as in [Saving exported files](index.md#saving-exported-files)) and **Export To Engine Extensions**. Both include every code file and the content folder.

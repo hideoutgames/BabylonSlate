@@ -36,6 +36,7 @@ describe("runtimeAssetCatalogFromIndexed", () => {
 describe("runtimeAssetCatalogFromManifest", () => {
   it("lists exactly the authored assets of an exported game, not its generated entries", async () => {
     const result = await exportGame({
+      platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       scripts: [{ assetGuid: "hero", classId: "Hero", parentClassId: "Actor", source: "export function onTick() {}", anchors: [], entryPoints: [] }],
       assets: [

@@ -161,7 +161,7 @@ export function useProjectAssetActions({
 
   // The export pipeline (closure, compile, pack) loads on first export.
   const exportGameArtifact = useCallback(
-    async (options?: ExportGameArtifactOptions) => {
+    async (options: ExportGameArtifactOptions) => {
       const current = projectDocumentRef.current;
       const { exportProjectGameArtifact } = await import("../services/export-game-artifact");
       return exportProjectGameArtifact(projectService, current, options);

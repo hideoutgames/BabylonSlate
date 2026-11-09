@@ -1,5 +1,5 @@
 import type { ExtensionCodeFile } from "@haptic/assets";
-import { EXTENSION_HOST_MODULE, type ExtensionModule, type ExtensionModuleBundle } from "@haptic/core";
+import { applyPlatformDirectives, EXTENSION_HOST_MODULE, type ExtensionModule, type ExtensionModuleBundle, type PlatformSymbol } from "@haptic/core";
 
 type TypeScript = typeof import("typescript");
 
@@ -98,10 +98,16 @@ function transpile(ts: TypeScript, path: string, source: string): string {
 }
 
 /**
- * Links an extension entry with every file it imports. TypeScript is transpiled
- * without type checking; only relative imports inside the package resolve.
+ * Links an extension entry with every file it imports, for the platform whose
+ * `symbols` its platform directives see: inactive lines are blanked first, so
+ * their imports are never followed. TypeScript is transpiled without type
+ * checking; only relative imports inside the package resolve.
  */
-export async function linkExtensionModules(files: readonly ExtensionCodeFile[], entry: string): Promise<ExtensionModuleBundle> {
+export async function linkExtensionModules(
+  files: readonly ExtensionCodeFile[],
+  entry: string,
+  symbols: ReadonlySet<PlatformSymbol>,
+): Promise<ExtensionModuleBundle> {
   // Loaded only when extension code is linked, never with the editor route.
   const ts = await import("typescript");
   const sources = new Map(files.map((file) => [file.path, file.source]));
@@ -114,7 +120,7 @@ export async function linkExtensionModules(files: readonly ExtensionCodeFile[], 
     const path = queue.shift()!;
     if (linked.has(path)) continue;
     linked.add(path);
-    const source = sources.get(path)!;
+    const source = applyPlatformDirectives(sources.get(path)!, symbols, path);
     const imports: Record<string, string> = {};
     for (const specifier of valueImports(ts, path, source)) {
       const target = resolveImport(path, specifier, sources);

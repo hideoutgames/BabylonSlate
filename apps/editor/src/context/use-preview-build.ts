@@ -315,6 +315,8 @@ export function usePreviewBuild({
       const playerFiles = await loadPlayerDistFiles();
       if (!isCurrentRequest()) return;
       const packed = await exportGameArtifact({
+        // Preview Build plays the web game in the editor's own page.
+        platform: "web",
         previewBuild: true,
         playerFiles,
         startupSceneGuid: effectiveStartup,
