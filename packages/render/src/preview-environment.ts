@@ -7,8 +7,8 @@ import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 export const PREVIEW_SKYBOX_MESH_NAME = "previewSkybox";
 
 /**
- * Interactive previews (Model, Animation, Skeleton, Material, opt-in
- * Particle) share the engine default skybox — the same cube the default
+ * Interactive previews (Model, Animation, Skeleton, Material, Camera Shake,
+ * opt-in Particle) share the engine default skybox — the same cube the default
  * Scene's SkyboxComponent resolves through `resolveSkyboxCubeTexture`, so
  * the per-engine texture is shared rather than re-uploaded per preview.
  *

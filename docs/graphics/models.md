@@ -27,7 +27,7 @@ A Model has one material slot per material in the file.
 - In the Model's editor, each slot shows its Material. An empty slot shows **None** and draws the grey checker.
 - A Model's and an Animation's previews and thumbnails draw each slot with its Material.
 - On a Mesh component, **Material** replaces every slot for that one actor. Choose **Model Materials** to go back to the Model's slots, or **None** for the engine's grey checker.
-- Meshes with no Material draw a grey checker, so missing materials are easy to spot. The checker is lit like any other surface, so a 3D scene needs a [light](lighting.md) for it to show. A **Blank** project's scene has none: add a light, or the meshes draw black.
+- Meshes with no Material draw a grey checker, so missing materials are easy to spot. Its squares are a quarter of a unit wide and line up with the world, not the mesh: scaling a mesh never stretches them, and neighbouring meshes' squares line up. A moving mesh slides under its squares. The checker is lit like any other surface, so a 3D scene needs a [light](lighting.md) for it to show. A **Blank** project's scene has none: add a light, or the meshes draw black.
 
 Haptic never draws the material stored in the file, in scenes, Play, previews or thumbnails: the import turns each one into a Material asset, and the slot draws that. Each imported Material is a graph you can edit: base colour, metallic, roughness, normal, emission and occlusion (which darkens only light from the environment), with the file's opacity and sidedness. Features the file uses that Haptic does not draw, such as clear coat or sheen, are left out. Images the file samples with nearest filtering, as pixel-art models do, import with the **Pixel Art** usage and keep their hard-edged texels.
 

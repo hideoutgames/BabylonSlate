@@ -10,7 +10,7 @@ In the **Content Browser**, choose **New Asset > Animation > Camera Shake**. A n
 
 Double-tap the asset to open it.
 
-- **Preview** shows the shake on a small built-in set seen through a camera. Select **Play** to watch it, and **Stop** to blend it out; select **Stop** again to end it at once. Changes to the settings apply while it plays.
+- **Preview** shows the shake on a small built-in set under the default sky, seen through a camera. Select **Play** to watch it, and **Stop** to blend it out; select **Stop** again to end it at once. Changes to the settings apply while it plays.
 - **Inspector** holds the settings below.
 
 ## Settings
