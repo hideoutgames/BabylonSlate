@@ -225,8 +225,9 @@ export function fftTurnTensor(c: number, j: string): string {
 /**
  * The screen-space march (`SLATE_WATER_SSR`), per language (loops do not pass `toWgsl`). The reflected ray runs from
  * the eye-relative surface point until the march distance (`slateWaterScreen.w`), the screen edge or just short of
- * the eye; `SLATE_WATER_SSR_STEPS` samples are evenly spaced on screen along it, with depth interpolated
- * perspective-correctly (also exact for orthographic views).
+ * the eye; samples are evenly spaced on screen along it, with depth interpolated perspective-correctly (also exact for
+ * orthographic views): one per copy texel the ray crosses, at most `SLATE_WATER_SSR_STEPS` (a far ray converging on the
+ * horizon crosses a few).
  * - A sample is a hit when the ray lies behind the copy's depth there and crossed that depth during the step, not
  *   when it passes behind something in front of the whole step.
  * - When the ray only passes the depth the previous sample saw while this sample sees something farther (the far
@@ -271,8 +272,10 @@ fn swMarch(swOrigin: vec3f, swRay: vec3f) -> vec4f {
   var swB: f32 = -1.0;
   var swDA: f32 = -1.0;
   var swDB: f32 = 0.0;
+  let swSteps = clamp(ceil(length((swN1 - swN0) * swEnd * 0.5 / swSceneTexelUv())), 1.0, f32(${steps}));
   for (var swI: i32 = 1; swI <= ${steps}; swI++) {
-    let swU = swEnd * f32(swI) / f32(${steps});
+    if (f32(swI) > swSteps) { break; }
+    let swU = swEnd * f32(swI) / swSteps;
     let swRayZ = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swU));
     let swSceneZ = swSceneDepth(mix(swN0, swN1, swU) * 0.5 + 0.5);
     let swThick = ${base} + ${slope} * swRayZ;
@@ -342,8 +345,12 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
   // Depth gaps (ray minus scene) at A, in front of the surface, and B, behind it.
   float swDA = -1.0;
   float swDB = 0.0;
+  // As many samples as the ray crosses copy texels on screen, at most the steps: samples closer than a texel read the
+  // same depth, and the hit is solved from the bracketing gaps, so more would find nothing more.
+  float swSteps = clamp(ceil(length((swN1 - swN0) * swEnd * 0.5 / swSceneTexelUv())), 1.0, float(${steps}));
   for (int swI = 1; swI <= ${steps}; swI++) {
-    float swU = swEnd * float(swI) / float(${steps});
+    if (float(swI) > swSteps) { break; }
+    float swU = swEnd * float(swI) / swSteps;
     float swRayZ = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swU));
     float swSceneZ = swSceneDepth(mix(swN0, swN1, swU) * 0.5 + 0.5);
     float swThick = ${base} + ${slope} * swRayZ;

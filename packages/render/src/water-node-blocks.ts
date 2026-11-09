@@ -895,7 +895,10 @@ swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y)
     // (the starter does): seen from above, water reflects too little to show the march's objects.
     return `#if defined(${WATER_NODE_PLANAR_DEFINE}) || (${march})\n${bind(`vec4 swnObj = vec4(0.0);
 vec3 swnObjR = normalize(vec3(swnR.x, max(swnR.y, 0.02), swnR.z));
-float swnObjFade = (1.0 - smoothstep(0.2, 0.45, swnShade)) * smoothstep(-0.01, 0.03, swnRawY);
+// Where the reflected ray turns faster across the screen than the view (grazing ripples), and where the fog leaves
+// almost nothing of the water: known before the march, which then does not run.
+float swnObjFade = (1.0 - smoothstep(0.2, 0.45, swnShade)) * smoothstep(-0.01, 0.03, swnRawY)
+  * (1.0 - smoothstep(12.0, 48.0, length(fwidth(swnObjR)) / max(length(fwidth(swnV)), 0.00001))) * step(0.001, swnAirKeep);
 `, wgsl)}#if ${WATER_DETAIL_DEFINE} < 2\n${bind(`swnObjFade = swnObjFade * smoothstep(${f(SSR_FRESNEL_FADE[0])}, ${f(SSR_FRESNEL_FADE[1])}, swnFres);\n`, wgsl)}#endif\n`
       + `#ifdef ${WATER_NODE_PLANAR_DEFINE}\n{\n${surfaceLocals(state, position)}${bind("float swnHeight = swnData.x;\n", wgsl)}`
       + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${this.value(this.waveHeight, "0.0")};\n#endif\n`
@@ -906,7 +909,7 @@ float swnObjFade = (1.0 - smoothstep(0.2, 0.45, swnShade)) * smoothstep(-0.01, 0
   swnObj = swMarch(${position}.xyz, swnObjR, ${this.viewProjection.associatedVariableName}, ${this.view.associatedVariableName}, ${eye});
 }
 `, wgsl) + "#endif\n"
-      + bind(`swnObj.a = swnObj.a * swnObjFade * (1.0 - smoothstep(12.0, 48.0, length(fwidth(swnObjR)) / max(length(fwidth(swnV)), 0.00001)));
+      + bind(`swnObj.a = swnObj.a * swnObjFade;
 swnSky = mix(swnSky, swnObj.rgb, swnObj.a);
 `, wgsl) + "#endif\n";
   }
