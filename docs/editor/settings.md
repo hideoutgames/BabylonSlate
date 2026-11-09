@@ -75,7 +75,7 @@ Compact Mode changes only sizes. Touch gestures, such as holding to open a menu 
 
 **Display**
 
-- **Text Size** (default 100%): scales text, and the spacing around it, from 50% to 150%. A few small fixed-size labels keep their size, and the viewport is unchanged.
+- **Text Size** (default 100%): scales text, and the spacing around it, from 50% to 150%. Dragging the slider shows the new size and applies it when you let go. A few small fixed-size labels keep their size, and the viewport is unchanged.
 - **Reduce Motion** (default **System**): **On** turns off non-essential animation, such as menus, dialogs and tab transitions sliding or fading, and graph run highlights fading. **Off** keeps animation even when the device asks for less. **System** follows the device's reduced motion setting.
 
 **Touch And Input**
@@ -90,12 +90,12 @@ Compact Mode changes only sizes. Touch gestures, such as holding to open a menu 
 These apply to every graph editor: Class, Material, Animation Graph, Behaviour Tree and Particle Graph.
 
 - **Tap To Connect Pins** (default off): tap a pin, then a pin on the other side, to connect them. Either side can go first. Tap the first pin again to cancel, or tap another pin on the same side to choose it instead. Dragging from one pin to another works either way.
-- **Large Pins** (default 1×): a slider from 1× to 4× that enlarges every pin, the area you can tap or click around it, and the wires between pins. Nodes grow to fit.
+- **Large Pins** (default 1×): a slider from 1× to 2×, in steps of 0.1×, that enlarges every pin, the area you can tap or click around it, and the wires between pins. Nodes grow to fit.
 - **Pin Type Letters** (default off): shows a short type name inside every data pin, so types do not rely on colour: **B** Boolean, **I** Integer, **F** Float, **S** String, **V2**, **V3** and **V4** vectors, **R** Rotator, **Q** Quaternion, **T** Transform, **C** Color, **O** Object, **Cl** Class, **A** Asset, **Tx** Texture, **St** Structure, **E** Enum, **Tg** Tag, **D** Delegate, **P** Particle and **?** Wildcard. Array and Map pins show their item type.
 
 **Graph Nodes**
 
-- **Snapped Nodes** (default off): a node moves freely while you drag it and snaps to a grid when you let go, so nodes line up. **Snap Grid Size (Pixels)** (default 2, up to 200) sets the grid, measured at 100% zoom.
+- **Snapped Nodes** (default off): a node moves freely while you drag it and snaps to a grid when you let go, so nodes line up. **Snap Grid Size (Pixels)** (default 32, up to 200) sets the grid, measured at 100% zoom.
 
 **Graph Connections**
 

@@ -27,21 +27,21 @@ describe("app settings", () => {
     expect(defaults).toMatchObject({
       touchTargetScale: 1, textSizePercent: 100, reduceMotion: "system", holdTimeMs: 500,
       doubleTapTimeMs: 350, numberSnapStrength: 2, graphPinScale: 1, graphPinTypeLetters: false,
-      graphSnapNodes: false, graphSnapGridSize: 2,
+      graphSnapNodes: false, graphSnapGridSize: 32,
     });
     expect(engineSettingsSchema.parse({
       touchTargetScale: 1.4, textSizePercent: 133, holdTimeMs: 820, doubleTapTimeMs: 370,
-      numberSnapStrength: 2.6, graphPinScale: 2.4, graphSnapGridSize: 7.6,
+      numberSnapStrength: 2.6, graphPinScale: 1.46, graphSnapGridSize: 7.6,
     })).toMatchObject({
       touchTargetScale: 1.5, textSizePercent: 130, holdTimeMs: 800, doubleTapTimeMs: 350,
-      numberSnapStrength: 3, graphPinScale: 2, graphSnapGridSize: 8,
+      numberSnapStrength: 3, graphPinScale: 1.5, graphSnapGridSize: 8,
     });
     expect(engineSettingsSchema.parse({
       touchTargetScale: 9, textSizePercent: 10, holdTimeMs: 50, doubleTapTimeMs: 5000,
       numberSnapStrength: -1, graphPinScale: 7, reduceMotion: "sometimes", graphSnapGridSize: 0,
     })).toMatchObject({
       touchTargetScale: 2, textSizePercent: 50, holdTimeMs: 300, doubleTapTimeMs: 1000,
-      numberSnapStrength: 0, graphPinScale: 4, reduceMotion: "system", graphSnapGridSize: 1,
+      numberSnapStrength: 0, graphPinScale: 2, reduceMotion: "system", graphSnapGridSize: 1,
     });
   });
   it("keeps inline pin editing enabled for existing devices and persists the local lock", async () => {
