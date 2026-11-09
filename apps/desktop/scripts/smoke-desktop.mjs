@@ -43,6 +43,19 @@ function windowsAppProcesses() {
   return execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8" })
     .split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => line.slice(0, 240));
 }
+// Diagnostic: the stacks of the main process's busiest threads, read by attaching the Windows debugger without stopping it.
+function printWindowsMainStacks() {
+  const cdb = "C:\\Program Files (x86)\\Windows Kits\\10\\Debuggers\\x64\\cdb.exe";
+  const main = windowsAppProcesses().filter(line => !line.includes("--type=")).map(line => line.split(" ")[0]);
+  console.log(`Relaunch still starting after 45 s; main processes: ${main.join(", ") || "none"}; all:\n${windowsAppProcesses().join("\n")}`);
+  for (const pid of main) {
+    try {
+      console.log(execFileSync(cdb, ["-pv", "-p", pid, "-c", ".symfix c:\\symbols; .reload; ~0k 40; !runaway 1; q"], { encoding: "utf8", timeout: 120000 }));
+    } catch (error) {
+      console.log(`cdb failed for ${pid}: ${error instanceof Error ? error.message.slice(0, 500) : error}`);
+    }
+  }
+}
 async function cleanupStep(label, operation) {
   try {
     await operation();
@@ -125,7 +138,7 @@ try {
     launched.on("window", watch);
     return launched;
   };
-  const launch = async (extraArgs = []) => observe(await _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs, ...extraArgs], env: cleanEnv, timeout: 60000 }));
+  const launch = async (extraArgs = [], timeout = 60000) => observe(await _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs, ...extraArgs], env: cleanEnv, timeout }));
   app = await launch();
   // macOS reports the /private/var target of the /var temporary directory symlink.
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath("userData"))), await realpath(userData));
@@ -180,36 +193,17 @@ try {
   await page.getByTestId("preview-build-close").click();
   await page.evaluate(async () => { await window.haptic.project.writeBinary("distribution-smoke.bin", new Uint8Array([17, 42, 99]).buffer); });
   await app.close();
-  if (platform === "windows") {
-    // Diagnostic: what of the first launch still runs when the second starts.
-    let running = windowsAppProcesses();
-    console.log(`After close, ${running.length} app processes:\n${running.join("\n")}`);
-    for (let attempt = 0; running.length && attempt < 60; attempt++) {
-      await delay(500);
-      running = windowsAppProcesses();
-    }
-    console.log(`Before relaunch, ${running.length} app processes:\n${running.join("\n")}`);
-    // Diagnostic: Chromium's single-instance lock file, deleted when the first launch closes it.
-    const lockfile = join(userData, "lockfile");
-    const lockState = () => access(lockfile).then(() => "present", error => error?.code === "ENOENT" ? "absent" : `unreadable (${error?.code})`);
-    const closedAt = Date.now();
-    let lock = await lockState();
-    console.log(`After close, lockfile ${lock}`);
-    while (lock !== "absent" && Date.now() - closedAt < 30000) {
-      await delay(250);
-      lock = await lockState();
-    }
-    console.log(`Before relaunch, lockfile ${lock} after ${Date.now() - closedAt} ms`);
-  }
+  if (platform === "windows") console.log(`After close, ${windowsAppProcesses().length} app processes`);
+  // Diagnostic: a Windows relaunch that is still starting after 45 s has its main process's thread stacks printed.
+  let relaunching = true;
+  const watchdog = platform === "windows" ? delay(45000).then(() => { if (relaunching) printWindowsMainStacks(); }) : Promise.resolve();
   try {
-    app = await launch(platform === "windows" ? ["--enable-logging=stderr", "--v=1"] : []);
+    app = await launch([], platform === "windows" ? 150000 : 60000);
   } catch (error) {
-    if (platform === "windows") {
-      const running = windowsAppProcesses();
-      console.log(`Relaunch failed with ${running.length} app processes:\n${running.join("\n")}`);
-      console.log(`Lockfile after the failed relaunch: ${await access(join(userData, "lockfile")).then(() => "present", cause => cause?.code)}`);
-    }
+    await watchdog;
     throw error;
+  } finally {
+    relaunching = false;
   }
   page = await app.firstWindow();
   page.setDefaultTimeout(60000);
