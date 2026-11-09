@@ -2,9 +2,12 @@
  * The App Icon in each package's own format, from PNGs the editor renders
  * once per export (`APP_ICON_SIZES`): an ICO in the Windows executable,
  * hicolor PNGs for a Linux desktop entry, an ICNS in a macOS app, launcher
- * mipmaps in an Android app, and a PNG favicon for the web page. Pure byte work: rendering the PNGs needs a canvas
- * and stays with the caller.
+ * mipmaps in an Android app, an opaque PNG for an iOS app, and a PNG favicon
+ * for the web page. Pure byte work: rendering the PNGs needs a canvas and
+ * stays with the caller.
  */
+
+import { zlibSync } from "fflate";
 
 /** PNG bytes of the App Icon by edge length in pixels. */
 export type AppIconImages = ReadonlyMap<number, Uint8Array>;
@@ -112,4 +115,53 @@ export function brandPlayerIndexHtml(html: string, options: { title: string; ico
   return options.icon
     ? branded.replace(/<\/head>/i, () => `  <link rel="icon" type="image/png" href="./${APP_ICON_FILE}" />\n</head>`)
     : branded;
+}
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    table[index] = value >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type: string, data: Uint8Array): Uint8Array {
+  const chunk = new Uint8Array(12 + data.byteLength);
+  const view = new DataView(chunk.buffer);
+  view.setUint32(0, data.byteLength);
+  chunk.set(new TextEncoder().encode(type), 4);
+  chunk.set(data, 8);
+  view.setUint32(8 + data.byteLength, crc32(chunk.subarray(4, 8 + data.byteLength)));
+  return chunk;
+}
+
+/**
+ * An RGB PNG (no alpha channel) of unpremultiplied RGBA pixels laid over
+ * black: what the App Store accepts as an app icon, which it refuses with any
+ * alpha channel, even a fully opaque one.
+ */
+export function encodeOpaquePng(width: number, height: number, rgba: Uint8Array): Uint8Array {
+  if (rgba.byteLength !== width * height * 4) throw new Error(`Expected ${width} × ${height} RGBA pixels.`);
+  const rows = new Uint8Array(height * (1 + width * 3));
+  for (let y = 0; y < height; y += 1) {
+    const row = y * (1 + width * 3);
+    for (let x = 0; x < width; x += 1) {
+      const from = (y * width + x) * 4;
+      const alpha = rgba[from + 3]! / 255;
+      for (let channel = 0; channel < 3; channel += 1) rows[row + 1 + x * 3 + channel] = Math.round(rgba[from + channel]! * alpha);
+    }
+  }
+  const header = new Uint8Array(13);
+  new DataView(header.buffer).setUint32(0, width);
+  new DataView(header.buffer).setUint32(4, height);
+  header.set([8, 2, 0, 0, 0], 8);
+  return concat([new Uint8Array(PNG_SIGNATURE), pngChunk("IHDR", header), pngChunk("IDAT", zlibSync(rows, { level: 9 })), pngChunk("IEND", new Uint8Array())]);
 }

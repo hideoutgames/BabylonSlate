@@ -4,6 +4,9 @@ import { ok } from "@haptic/core";
 import { encodeIcns } from "@haptic/exporter/app-icon";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { appIconImages } from "../../../../packages/exporter/src/test-support/app-icon-images";
+import { defaultEngineSettings } from "@haptic/vfs";
+import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
+import { AppSettingsProvider } from "../context/app-settings-context";
 import type { GameShellManifest } from "../lib/game-shells";
 import { PackagingDialog } from "./packaging-dialog";
 
@@ -332,3 +335,71 @@ it("keeps Android packaging off until the build tools are found, and names the s
     delete (globalThis as { haptic?: unknown }).haptic;
   }
 });
+
+/** The desktop app on a Mac with Xcode ready (or not) and iOS packaging recorded. */
+function iosApp(problems: string[] = []) {
+  const packageIos = vi.fn(async () => ({ fileName: "Harbour_Run-iOS-Development.ipa", bytes: new Uint8Array([6]) }));
+  (globalThis as { haptic?: unknown }).haptic = { gameShell: { platform: "darwin", arch: "arm64", runtime: vi.fn(), macIdentities: vi.fn(async () => []),
+    packageMac: vi.fn(), androidSettings: vi.fn(async () => ({ java: null, sdk: null, keystore: null, alias: "", toolchain: { javaHome: null, javaVersion: null, sdk: null, problems: [] } })),
+    packageAndroid: vi.fn(), iosToolchain: vi.fn(async () => ({ version: problems.length ? null : "26.6", problems })), packageIos } };
+  return { packageIos };
+}
+
+it("packages an iOS game on a Mac with this Mac's team, and asks for an App Icon before an App Store package", async () => {
+  const { packageIos } = iosApp();
+  exportGameArtifact.mockResolvedValue(ok({ files: new Map([["index.html", strToU8("<html>")]]) }));
+  const store = new MemoryAppSettingsStore();
+  await store.save({ ...defaultEngineSettings(), iosSigning: { teamId: "ABCDE12345" } });
+  const downloads = captureDownloads();
+  try {
+    await act(async () => {
+      render(<AppSettingsProvider store={store}><PackagingDialog open onOpenChange={() => {}} onOpenProjectSettings={vi.fn()} /></AppSettingsProvider>);
+    });
+    await act(async () => { fireEvent.click(screen.getByTestId("packaging-target-ios")); });
+    expect(screen.getByTestId("packaging-output").textContent).toBe("Harbour_Run-iOS.ipa");
+    expect(screen.getByTestId("packaging-ios-team").textContent).toBe("ABCDE12345");
+    expect(screen.getByTestId("packaging-ios-xcode").textContent).toBe("26.6");
+    // The project has no App Icon, which the App Store requires.
+    expect(screen.getByTestId("packaging-ios-icon-missing")).toBeTruthy();
+    expect((screen.getByTestId("packaging-package") as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByTestId("packaging-ios-development"));
+    expect(screen.getByTestId("packaging-output").textContent).toBe("Harbour_Run-iOS-Development.ipa");
+    expect(screen.queryByTestId("packaging-ios-icon-missing")).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByTestId("packaging-package")); });
+
+    expect(exportGameArtifact.mock.calls.at(-1)![0].platform).toBe("ios");
+    expect(packageIos).toHaveBeenCalledExactlyOnceWith({
+      game: [["index.html", strToU8("<html>")]],
+      name: "Harbour Run", appId: "com.example.harbourrun", version: "1.0.0", buildNumber: 1,
+      format: "development", icon: null, teamId: "ABCDE12345",
+    });
+    expect(downloads).toEqual(["Harbour_Run-iOS-Development.ipa"]);
+    expect(screen.getByText("Development iOS game downloaded. Check your downloads.")).toBeTruthy();
+  } finally {
+    delete (globalThis as { haptic?: unknown }).haptic;
+  }
+});
+
+it("keeps iOS packaging off without a team or a ready Xcode, and offers iOS only on a Mac", async () => {
+  iosApp(["Install Xcode from the App Store and open it once to finish setting it up."]);
+  try {
+    await renderDialog();
+    await act(async () => { fireEvent.click(screen.getByTestId("packaging-target-ios")); });
+    expect(screen.getByTestId("packaging-ios-team").textContent).toBe("Not Set");
+    expect(screen.getByTestId("packaging-ios-team-missing")).toBeTruthy();
+    expect(screen.getByTestId("packaging-ios-problems").textContent).toContain("Install Xcode");
+    expect((screen.getByTestId("packaging-package") as HTMLButtonElement).disabled).toBe(true);
+  } finally {
+    delete (globalThis as { haptic?: unknown }).haptic;
+  }
+  cleanup();
+  androidApp({ keystore: null, alias: "", problems: [] });
+  try {
+    await renderDialog();
+    expect(within(screen.getByRole("group", { name: "Unavailable" })).getByText("iOS")).toBeTruthy();
+  } finally {
+    delete (globalThis as { haptic?: unknown }).haptic;
+  }
+});
+

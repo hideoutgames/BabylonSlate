@@ -246,6 +246,9 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
       ["Signing Identity", "setting-mac-signing-identity"],
       ["Notarization Profile", "setting-mac-notary-profile"],
     ]],
+    ["iosSigning", "iOS", [
+      ["Team ID", "setting-ios-team"],
+    ]],
     ["android", "Android", [
       ["JDK", "setting-android-java"],
       ["Android SDK", "setting-android-sdk"],

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ComponentType } from "react";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { DownloadIcon } from "lucide-react";
 import SiHtml5 from "@icons-pack/react-simple-icons/icons/SiHtml5";
 import Android from "react-bootstrap-icons/dist/icons/android";
@@ -9,6 +9,7 @@ import { defaultExportPreset } from "@haptic/core";
 import { resolvedAppIdentity } from "@haptic/core";
 import { desktopGameNames, macGameNames } from "@haptic/exporter/native-desktop";
 import { androidGameFileName, type AndroidPackageFormat } from "@haptic/exporter/native-android";
+import { iosGameFileName, type IosPackageFormat } from "@haptic/exporter/native-ios";
 import { getElectronGameShellBridge } from "@haptic/vfs";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
@@ -66,6 +67,22 @@ function PlatformMark({ target, className }: { target: PackagingTarget; classNam
   return <Mark aria-hidden title="" className={cn("shrink-0", target.available ? color : "text-muted-foreground", className)} />;
 }
 
+/** This Mac's Xcode version, or why iOS games cannot be built here; read when `active` turns on. */
+function useXcode(active: boolean): { version: string | null; problems: string[] } | null {
+  const [xcode, setXcode] = useState<{ version: string | null; problems: string[] } | null>(null);
+  useEffect(() => {
+    const bridge = getElectronGameShellBridge();
+    if (!active || !bridge?.iosToolchain) return;
+    let current = true;
+    void bridge.iosToolchain().then(
+      (found) => { if (current) setXcode(found); },
+      (error: unknown) => { if (current) setXcode({ version: null, problems: [error instanceof Error ? error.message : String(error)] }); },
+    );
+    return () => { current = false; };
+  }, [active]);
+  return xcode;
+}
+
 function folderCount(count: number): string {
   if (count === 0) return "None";
   return count === 1 ? "1 Folder" : `${count} Folders`;
@@ -89,13 +106,17 @@ export function PackagingDialog({
   const { projectDocument } = useProjectState();
   const { assetRegistry, projectGuid } = useRegistryState();
   const shells = useGameShells(open);
-  const androidAvailable = Boolean(getElectronGameShellBridge()?.packageAndroid);
-  const targets = useMemo(() => packagingTargets(shells.desktop, { android: androidAvailable }), [shells.desktop, androidAvailable]);
+  const bridge = getElectronGameShellBridge();
+  const androidAvailable = Boolean(bridge?.packageAndroid);
+  const iosAvailable = bridge?.platform === "darwin" && Boolean(bridge.packageIos);
+  const targets = useMemo(() => packagingTargets(shells.desktop, { android: androidAvailable, ios: iosAvailable }),
+    [shells.desktop, androidAvailable, iosAvailable]);
   const groups = useMemo(() => targetGroups(targets), [targets]);
   const { busy, stage, error, notice, packageTarget } = useGameExport(projectDocument, { manifest: shells.manifest, projectGuid });
   const [targetId, setTargetId] = useState<PackagingTarget["id"]>("web");
   const [linuxFormat, setLinuxFormat] = useState<LinuxPackageFormat>("deb");
   const [androidFormat, setAndroidFormat] = useState<AndroidPackageFormat>("apk");
+  const [iosFormat, setIosFormat] = useState<IosPackageFormat>("app-store");
   const target = targets.find((entry) => entry.id === targetId) ?? targets[0]!;
   const android = useAndroidPackaging(open && target.id === "android" && target.available);
   const androidProblems = [...(android.status?.toolchain.problems ?? []), ...(android.error ? [android.error] : [])];
@@ -108,7 +129,12 @@ export function PackagingDialog({
   const startupGuid = settings?.startupSceneGuid ?? null;
   const startupScene = startupGuid ? assetRegistry?.getByGuid(startupGuid) : undefined;
   const bundleDebugger = (settings?.exportPresets[0] ?? defaultExportPreset()).bundleDebugger;
-  const canPackage = target.available && Boolean(projectDocument) && Boolean(startupScene) && !busy && (target.id !== "android" || androidReady);
+  const xcode = useXcode(open && target.id === "ios" && target.available);
+  const iosSigning = useAppSettings().settings.iosSigning;
+  const missingIosIcon = iosFormat === "app-store" && !settings?.appIdentity.iconTextureGuid;
+  const iosReady = xcode !== null && xcode.problems.length === 0 && Boolean(iosSigning.teamId) && !missingIosIcon;
+  const canPackage = target.available && Boolean(projectDocument) && Boolean(startupScene) && !busy
+    && (target.id !== "android" || androidReady) && (target.id !== "ios" || iosReady);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -168,6 +194,8 @@ export function PackagingDialog({
                     <dd className="truncate font-mono text-xs" data-testid="packaging-output">
                       {!projectName ? "" : target.id === "android"
                         ? androidGameFileName(appIdentity?.displayName ?? projectName, androidFormat)
+                        : target.id === "ios"
+                        ? iosGameFileName(appIdentity?.displayName ?? projectName, iosFormat)
                         : target.desktopTarget === "macos-arm64"
                         ? macGameNames(appIdentity?.displayName ?? projectName).archive
                         : target.desktopTarget
@@ -229,6 +257,42 @@ export function PackagingDialog({
                       </div>
                     </>
                   ) : null}
+                  {target.id === "ios" ? (
+                    <>
+                      <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+                        <dt id="packaging-ios-format" className="text-muted-foreground">Format</dt>
+                        <dd>
+                          <ToggleGroup
+                            aria-labelledby="packaging-ios-format"
+                            value={[iosFormat]}
+                            disabled={busy}
+                            onValueChange={(value) => {
+                              if (value[0] === "app-store" || value[0] === "development") setIosFormat(value[0]);
+                            }}
+                          >
+                            <ToggleGroupItem value="app-store" data-testid="packaging-ios-app-store">App Store</ToggleGroupItem>
+                            <ToggleGroupItem value="development" data-testid="packaging-ios-development">Development</ToggleGroupItem>
+                          </ToggleGroup>
+                        </dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+                        <dt className="text-muted-foreground">App ID</dt>
+                        <dd className={cn("truncate font-mono text-xs", placeholderAppId && "text-(--warning)")} data-testid="packaging-app-id">{appIdentity?.appId}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+                        <dt className="text-muted-foreground">Team</dt>
+                        <dd className={cn("truncate font-mono text-xs", !iosSigning.teamId && "text-(--warning)")} data-testid="packaging-ios-team">
+                          {iosSigning.teamId || "Not Set"}
+                        </dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+                        <dt className="text-muted-foreground">Xcode</dt>
+                        <dd className={cn("truncate font-medium", (xcode?.problems.length ?? 0) > 0 && "text-(--warning)")} data-testid="packaging-ios-xcode">
+                          {xcode === null ? "Checking…" : xcode.version && xcode.problems.length === 0 ? xcode.version : "Not Ready"}
+                        </dd>
+                      </div>
+                    </>
+                  ) : null}
                   {target.id === "macos" ? (
                     <>
                       <div className="flex items-center justify-between gap-3 px-3 py-1.5">
@@ -270,7 +334,30 @@ export function PackagingDialog({
                     <AlertDescription>{androidProblems.join(" ")}</AlertDescription>
                   </Alert>
                 ) : null}
-                {(target.id === "macos" || target.id === "android") && placeholderAppId ? (
+                {target.id === "ios" && xcode && xcode.problems.length > 0 ? (
+                  <Alert data-testid="packaging-ios-problems">
+                    <AlertTitle>Set Up Xcode</AlertTitle>
+                    <AlertDescription>{xcode.problems.join(" ")}</AlertDescription>
+                  </Alert>
+                ) : null}
+                {target.id === "ios" && !iosSigning.teamId ? (
+                  <Alert data-testid="packaging-ios-team-missing">
+                    <AlertTitle>Set Your Apple Team</AlertTitle>
+                    <AlertDescription>Enter your Team ID in Engine Settings &gt; Packaging, and sign in to Xcode with your Apple account.</AlertDescription>
+                  </Alert>
+                ) : null}
+                {target.id === "ios" && missingIosIcon ? (
+                  <Alert data-testid="packaging-ios-icon-missing">
+                    <AlertTitle>Set an App Icon</AlertTitle>
+                    <AlertDescription>The App Store needs one.</AlertDescription>
+                    <AlertAction>
+                      <Button variant="outline" size="sm" onClick={() => onOpenProjectSettings("export")}>
+                        Export Settings
+                      </Button>
+                    </AlertAction>
+                  </Alert>
+                ) : null}
+                {(target.id === "macos" || target.id === "android" || target.id === "ios") && placeholderAppId ? (
                   <Alert data-testid="packaging-app-id-placeholder">
                     <AlertTitle>Set an App ID</AlertTitle>
                     <AlertDescription>The app uses a placeholder ID until you set one.</AlertDescription>
@@ -320,7 +407,7 @@ export function PackagingDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {notice && !busy ? "Close" : "Cancel"}
           </Button>
-          <Button data-testid="packaging-package" disabled={!canPackage} onClick={() => void packageTarget(target, { linuxFormat, macSigning, androidFormat })}>
+          <Button data-testid="packaging-package" disabled={!canPackage} onClick={() => void packageTarget(target, { linuxFormat, macSigning, androidFormat, iosFormat, iosSigning })}>
             {busy ? null : <DownloadIcon data-icon="inline-start" />}
             {busy ? "Packaging…" : "Package"}
           </Button>

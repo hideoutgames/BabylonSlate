@@ -8,6 +8,7 @@ files:
   - package.json
   - host/*.cjs
   - host/android-game/**/*
+  - host/ios-game/**/*
   - renderer/**/*
 asar: true
 # Third-party sign-in returns through haptic://sso-callback (macOS Info.plist, Linux desktop entry).

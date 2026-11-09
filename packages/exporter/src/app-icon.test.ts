@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { appIconPng, brandPlayerIndexHtml, encodeIcns, encodeIco } from "./app-icon";
+import { unzlibSync } from "fflate";
+import { appIconPng, brandPlayerIndexHtml, encodeIcns, encodeIco, encodeOpaquePng } from "./app-icon";
 import { appIconImages, pngHeader } from "./test-support/app-icon-images";
 
 const images = appIconImages();
@@ -41,6 +42,24 @@ describe("App Icon files", () => {
     expect(() => appIconPng(new Map([[48, pngHeader(64)]]), 48)).toThrow("The App Icon's 48 × 48 image is not a PNG of that size.");
     expect(() => appIconPng(new Map([[48, pngHeader(48, 47)]]), 48)).toThrow("not a PNG of that size");
     expect(() => appIconPng(new Map([[48, new Uint8Array(40)]]), 48)).toThrow("not a PNG of that size");
+  });
+});
+
+describe("Opaque App Icon PNG", () => {
+  it("write RGB without an alpha channel, laying each pixel over black", () => {
+    // Opaque red, half-transparent green, transparent blue, half-transparent white.
+    const rgba = new Uint8Array([255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 0, 255, 255, 255, 51]);
+    const png = encodeOpaquePng(2, 2, rgba);
+    const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+    expect([...png.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    expect(String.fromCharCode(...png.subarray(12, 16))).toBe("IHDR");
+    expect([view.getUint32(16), view.getUint32(20), png[24], png[25]]).toEqual([2, 2, 8, 2]);
+    const idatLength = view.getUint32(33);
+    expect(String.fromCharCode(...png.subarray(37, 41))).toBe("IDAT");
+    // Filter byte 0 starts each row of three-byte pixels.
+    expect([...unzlibSync(png.subarray(41, 41 + idatLength))]).toEqual([0, 255, 0, 0, 0, 128, 0, 0, 0, 0, 0, 51, 51, 51]);
+    expect(String.fromCharCode(...png.subarray(-8, -4))).toBe("IEND");
+    expect(() => encodeOpaquePng(2, 2, new Uint8Array(12))).toThrow("Expected 2 × 2 RGBA pixels.");
   });
 });
 

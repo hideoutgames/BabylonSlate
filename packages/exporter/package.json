@@ -9,7 +9,8 @@
     "./native-deb": "./src/native-deb.ts",
     "./native-windows": "./src/native-windows.ts",
     "./app-icon": "./src/app-icon.ts",
-    "./native-android": "./src/native-android.ts"
+    "./native-android": "./src/native-android.ts",
+    "./native-ios": "./src/native-ios.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

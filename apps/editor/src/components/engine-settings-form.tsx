@@ -9,6 +9,7 @@ import { AccessibilitySettingsFields } from "./accessibility-settings-fields";
 import { SettingsSection } from "./settings-section";
 import { MacSigningSettings } from "./mac-signing-settings";
 import { AndroidPackagingSettings } from "./android-packaging-settings";
+import { IosSigningSettings } from "./ios-signing-settings";
 import { LabelHint, NumberField, SelectableText } from "@haptic/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import {
@@ -301,6 +302,7 @@ export function EngineSettingsForm({
       {categoryId === "packaging" ? (
         <>
           <MacSigningSettings settings={settings.macSigning} onChange={(macSigning) => void onChange({ macSigning })} />
+          <IosSigningSettings settings={settings.iosSigning} onChange={(iosSigning) => void onChange({ iosSigning })} />
           <AndroidPackagingSettings />
         </>
       ) : null}

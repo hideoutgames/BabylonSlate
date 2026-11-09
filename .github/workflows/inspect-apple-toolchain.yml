@@ -59,3 +59,22 @@ jobs:
         run: bundle exec pnpm --filter editor ios:build
       - name: Confirm CocoaPods lockfile was preserved
         run: git diff --exit-code -- apps/editor/ios/App/Podfile.lock
+
+  # iOS game packaging as the macOS desktop app runs it, up to signing: the
+  # Xcode project template with a small game, built unsigned for devices.
+  ios-game:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - run: pnpm install --frozen-lockfile
+      - name: Build an iOS game from the template without signing and check the app
+        run: node apps/desktop/scripts/smoke-ios-game.mjs

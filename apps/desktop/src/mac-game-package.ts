@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { isValidAppId } from "@haptic/core/app-identity";
 import { gameAppFiles, macGameNames } from "../../../packages/exporter/src/native-desktop";
+import { within } from "./package-files";
 
 /**
  * Packages a macOS game on a Mac from Electron's official Apple Silicon
@@ -115,14 +116,6 @@ export async function nestedCode(app: string): Promise<string[]> {
 export function helperBundleId(appId: string, helperName: string): string {
   const kind = /\(([^)]+)\)\.app$/.exec(helperName)?.[1]?.replace(/[^A-Za-z0-9]/g, "");
   return kind ? `${appId}.helper.${kind}` : `${appId}.helper`;
-}
-
-/** A path under `root` for a package file, refusing anything that leaves it. */
-export function within(root: string, path: string): string {
-  if (path.startsWith("/") || path.includes("\\") || path.includes("\0") || path.split("/").some((part) => !part || part === "." || part === "..")) {
-    throw new Error(`Invalid game file path: ${path}`);
-  }
-  return join(root, ...path.split("/"));
 }
 
 export async function packageMacGame(options: {

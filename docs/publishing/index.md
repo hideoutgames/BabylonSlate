@@ -1,6 +1,6 @@
 # Publishing
 
-**Packaging** builds your project as a game: a web game in a ZIP, ready for itch.io or any static web host, a desktop game for Windows (ZIP), Linux (Debian package or ZIP) or macOS (a signed app in a ZIP), or an Android game (APK or App Bundle).
+**Packaging** builds your project as a game: a web game in a ZIP, ready for itch.io or any static web host, a desktop game for Windows (ZIP), Linux (Debian package or ZIP) or macOS (a signed app in a ZIP), an Android game (APK or App Bundle), or an iOS game (an IPA for the App Store or your own devices).
 
 ## Before you package
 
@@ -15,7 +15,7 @@
 2. In the platform list, select a platform under **Available**. Platforms under **Unavailable** can't be packaged with this copy of Haptic.
 3. Check the summary: the output file, **Startup Scene**, **Bundle Debugger** and **Always Package Folders**. If no Startup Scene is set, choose **Game Settings** to set one; **Package** stays unavailable until you do.
 4. Choose **Package**.
-5. Save the file when Haptic asks (see [Saving exported files](../projects/index.md#saving-exported-files)); in a browser, a message such as **Game package downloaded. Check your downloads.** appears. The file is named after the project, with underscores for spaces, and native packages end in `-Windows`, `-Linux`, `-macOS` or `-Android`.
+5. Save the file when Haptic asks (see [Saving exported files](../projects/index.md#saving-exported-files)); in a browser, a message such as **Game package downloaded. Check your downloads.** appears. The file is named after the project, with underscores for spaces, and native packages end in `-Windows`, `-Linux`, `-macOS`, `-Android` or `-iOS`.
 
 The web ZIP has `index.html` at its root. Upload it to itch.io as an HTML game, or unzip it and serve the folder from any static web host. The page's title is the project name. For desktop ZIPs, see [Desktop games](#desktop-games).
 
@@ -34,6 +34,7 @@ Use a square image of at least 1024 × 1024 pixels; Haptic scales it down to eac
 | Linux | The app menu and the dock (Debian package); the game window |
 | macOS | The app in Finder, the Dock and the app switcher |
 | Android | The launcher and the app list, in the shape the device uses for every app |
+| iOS | The Home Screen, the App Library and Settings. iOS shows icons without transparency, so transparent areas turn black. |
 
 With an App Icon, packaging for Windows takes noticeably longer, because Haptic rewrites and recompresses the game's `.exe`.
 
@@ -67,9 +68,7 @@ Which platforms you can package depends on where you run Haptic:
 | --- | --- |
 | Browser, iPad and Android | Web, Windows, Linux |
 | Windows and Linux desktop apps | Web, Windows, Linux, Android |
-| macOS desktop app | Web, Windows, Linux, macOS, Android |
-
-iOS games are not available yet.
+| macOS desktop app | Web, Windows, Linux, macOS, Android, iOS |
 
 ## macOS games
 
@@ -117,6 +116,25 @@ The passwords stay in this computer's secret store. For Google Play, this key is
 The app's ID, name and build number come from **Project Settings > Export > App Identity**; its version is the project's. Android calls the build number the version code: raise it for every upload, and keep it at most 2,100,000,000.
 
 In the game, the device's Back button acts as <kbd>Esc</kbd>.
+
+## iOS games
+
+The Haptic desktop app on a Mac packages iOS games for iPhone and iPad running iOS 17 or later. The game runs in the system's web view, full screen, and plays as it does on the web. Haptic writes an Xcode project and builds it with Xcode on your Mac, so iOS games cannot be packaged anywhere else.
+
+You need:
+
+- Xcode 16 or later, opened once to finish installing, with the iOS platform (**Xcode > Settings > Components**).
+- An Apple Developer Program membership, with your Apple account signed in to Xcode under **Xcode > Settings > Accounts**.
+- Your team's **Team ID**, from the Membership page on the Apple Developer website, entered in **Engine Settings > Packaging** under **iOS**.
+
+Xcode signs the game for your team and makes or renews its provisioning profile itself; Haptic never sees your Apple account. Choose the **Format** in the Packaging summary:
+
+| Format | Use it for |
+| --- | --- |
+| App Store (default) | Uploading to TestFlight and the App Store with Apple's **Transporter** app. Needs an [app icon](#app-icon). |
+| Development | Installing on the devices registered to your team, for example from Xcode's **Window > Devices and Simulators** |
+
+The app's ID, name and build number come from **Project Settings > Export > App Identity**; its version is the project's, which iOS needs as up to three numbers, such as `1.2.3`. Raise the build number for every upload. Packaging can take several minutes.
 
 ## Packaging settings
 
