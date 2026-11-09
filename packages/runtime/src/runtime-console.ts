@@ -170,6 +170,7 @@ export class RuntimeConsole {
       setFreezeOcclusion: (enabled) => host.emit({ type: "setOcclusionDebug", freeze: Boolean(enabled) }),
       setPostProcessing: (enabled) => host.emit({ type: "setPostProcessingDebug", enabled: Boolean(enabled) }),
       setRenderTargetCaptures: (enabled) => host.emit({ type: "setRenderTargetCapturesDebug", enabled: Boolean(enabled) }),
+      setWaterDebug: (part, enabled) => host.emit({ type: "setWaterDebug", part, enabled: Boolean(enabled) }),
       setGpuBusyProbe: (enabled) => host.emit({ type: "setGpuBusyProbeDebug", enabled: Boolean(enabled) }),
       setFramesInFlight: (mode) => host.emit({ type: "setFramesInFlightDebug", mode }),
       setPreserveDrawingBuffer: (enabled) => host.emit({ type: "setPreserveDrawingBufferDebug", enabled: Boolean(enabled) }),

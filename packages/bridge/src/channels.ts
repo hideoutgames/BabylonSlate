@@ -1,4 +1,4 @@
-import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, LayerCameraState } from "@haptic/core";
+import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, LayerCameraState, WaterDebugPart } from "@haptic/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
 import type { ActorDefaults, CollisionTriangleMesh, GameInstanceDefaults, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@haptic/core";
@@ -1201,6 +1201,8 @@ export type CommandMessage =
   | { type: "setPostProcessingDebug"; enabled: boolean }
   /** Debug: whether every-frame Render Target Captures draw (the `rendertargets` console command). */
   | { type: "setRenderTargetCapturesDebug"; enabled: boolean }
+  /** Debug: switch one part of water off or back on (the `waterdebug` console command). */
+  | { type: "setWaterDebug"; part: WaterDebugPart; enabled: boolean }
   /** Debug: start (restart) or stop measuring GPU-busy time per Engine frame (the `gpubusy` console command). */
   | { type: "setGpuBusyProbeDebug"; enabled: boolean }
   /** Debug: how many rendered frames the Engine may queue on the GPU (the `framesinflight` console command; default 2). */

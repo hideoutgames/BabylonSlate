@@ -8,6 +8,7 @@ import { AddNodeHistoryFields } from "./add-node-history-fields";
 import { AccessibilitySettingsFields } from "./accessibility-settings-fields";
 import { SettingsSection } from "./settings-section";
 import { MacSigningSettings } from "./mac-signing-settings";
+import { AndroidPackagingSettings } from "./android-packaging-settings";
 import { LabelHint, NumberField, SelectableText } from "@haptic/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import {
@@ -298,7 +299,10 @@ export function EngineSettingsForm({
       ) : null}
 
       {categoryId === "packaging" ? (
-        <MacSigningSettings settings={settings.macSigning} onChange={(macSigning) => void onChange({ macSigning })} />
+        <>
+          <MacSigningSettings settings={settings.macSigning} onChange={(macSigning) => void onChange({ macSigning })} />
+          <AndroidPackagingSettings />
+        </>
       ) : null}
 
       {categoryId === "interface" ? (

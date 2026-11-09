@@ -1,6 +1,6 @@
 # Publishing
 
-**Packaging** builds your project as a game: a web game in a ZIP, ready for itch.io or any static web host, or a desktop game for Windows (ZIP), Linux (Debian package or ZIP) or macOS (a signed app in a ZIP).
+**Packaging** builds your project as a game: a web game in a ZIP, ready for itch.io or any static web host, a desktop game for Windows (ZIP), Linux (Debian package or ZIP) or macOS (a signed app in a ZIP), or an Android game (APK or App Bundle).
 
 ## Before you package
 
@@ -15,7 +15,7 @@
 2. In the platform list, select a platform under **Available**. Platforms under **Unavailable** can't be packaged with this copy of Haptic.
 3. Check the summary: the output file, **Startup Scene**, **Bundle Debugger** and **Always Package Folders**. If no Startup Scene is set, choose **Game Settings** to set one; **Package** stays unavailable until you do.
 4. Choose **Package**.
-5. Save the file when Haptic asks (see [Saving exported files](../projects/index.md#saving-exported-files)); in a browser, a message such as **Game package downloaded. Check your downloads.** appears. The file is named after the project, with underscores for spaces, and desktop packages end in `-Windows`, `-Linux` or `-macOS`.
+5. Save the file when Haptic asks (see [Saving exported files](../projects/index.md#saving-exported-files)); in a browser, a message such as **Game package downloaded. Check your downloads.** appears. The file is named after the project, with underscores for spaces, and native packages end in `-Windows`, `-Linux`, `-macOS` or `-Android`.
 
 The web ZIP has `index.html` at its root. Upload it to itch.io as an HTML game, or unzip it and serve the folder from any static web host. The page's title is the project name. For desktop ZIPs, see [Desktop games](#desktop-games).
 
@@ -33,6 +33,7 @@ Use a square image of at least 1024 × 1024 pixels; Haptic scales it down to eac
 | Windows | The `.exe` in File Explorer and on shortcuts, the game window and the taskbar. The `.exe` also shows the game's name and version in its file details and in Task Manager. |
 | Linux | The app menu and the dock (Debian package); the game window |
 | macOS | The app in Finder, the Dock and the app switcher |
+| Android | The launcher and the app list, in the shape the device uses for every app |
 
 With an App Icon, packaging for Windows takes noticeably longer, because Haptic rewrites and recompresses the game's `.exe`.
 
@@ -65,10 +66,10 @@ Which platforms you can package depends on where you run Haptic:
 | Haptic | Can package |
 | --- | --- |
 | Browser, iPad and Android | Web, Windows, Linux |
-| Windows and Linux desktop apps | Web, Windows, Linux |
-| macOS desktop app | Web, Windows, Linux, macOS |
+| Windows and Linux desktop apps | Web, Windows, Linux, Android |
+| macOS desktop app | Web, Windows, Linux, macOS, Android |
 
-Android and iOS games are not available yet.
+iOS games are not available yet.
 
 ## macOS games
 
@@ -88,6 +89,34 @@ To sign and notarize with your Developer ID:
 Packaging then signs the app, sends it to Apple and attaches the notarization ticket, which can take several minutes. Without a profile, the app is signed but not notarized, and other Macs block it until a player allows it.
 
 The app's ID, name and build number come from **Project Settings > Export > App Identity**; its version is the project's. Until you set an App ID, the app uses a placeholder such as `com.example.spacegame` and Packaging reminds you.
+
+## Android games
+
+The Haptic desktop apps package Android games for phones and tablets running Android 7 or later. The game runs in the device's own web view, full screen, and plays as it does on the web. Haptic builds it with Android's build tools on your computer, so Android games cannot be packaged in the browser or on mobile.
+
+You need a JDK (Java 17 or later) and the Android SDK. Installing [Android Studio](https://developer.android.com/studio) gives you both, and Haptic finds them there, or through `JAVA_HOME` and `ANDROID_HOME`. To use others, choose them in **Engine Settings > Packaging** under **Android**. The Packaging window's **Build Tools** row shows what it found.
+
+Choose the **Format** in the Packaging summary:
+
+| Format | Use it for |
+| --- | --- |
+| APK (default) | Installing on a device yourself, and stores that take APKs, such as itch.io |
+| App Bundle | Uploading to Google Play |
+
+The first package downloads Gradle and the Android libraries it needs, which can take several minutes; later packages are faster.
+
+### Signing
+
+Android installs only signed apps. Without a keystore, Haptic signs with Android's debug key: the game installs on your devices, but Google Play refuses it, and a game signed with another key cannot replace it. To publish, sign with your own key:
+
+1. Make a keystore once, in Android Studio (**Build > Generate Signed App Bundle or APK**) or in a terminal: `keytool -genkeypair -keystore my-game.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000`. Keep it and its passwords safe; you sign every update with the same key.
+2. In **Engine Settings > Packaging > Android**, choose the **Keystore**, enter the **Key Alias** and the **Keystore Password**, and the **Key Password** if the key has its own.
+
+The passwords stay in this computer's secret store. For Google Play, this key is your upload key: Play signs the app players download.
+
+The app's ID, name and build number come from **Project Settings > Export > App Identity**; its version is the project's. Android calls the build number the version code: raise it for every upload, and keep it at most 2,100,000,000.
+
+In the game, the device's Back button acts as <kbd>Esc</kbd>.
 
 ## Packaging settings
 

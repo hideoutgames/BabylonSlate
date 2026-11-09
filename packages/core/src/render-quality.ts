@@ -813,6 +813,7 @@ export function qualitySettingsFingerprint(quality: EffectiveRenderingQuality): 
     "water.planarScale": String(water.planarScale),
     "water.shadingDetail": water.shadingDetail,
     "water.fft": `${water.fftSize}x${water.fftCascades}`,
+    "water.meshDensity": String(water.meshDensity),
     "post.scale": String(post.resolutionScale),
     "post.ambientOcclusion": String(post.ambientOcclusion),
     "post.reflections": String(post.reflections),

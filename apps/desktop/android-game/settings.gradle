@@ -1,0 +1,18 @@
+// The Android game Haptic packages: the exported web game in a WebView.
+// Haptic copies this project, adds the game, its icon and haptic-game.properties,
+// and runs Gradle through the wrapper with the user's JDK and Android SDK.
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = 'haptic-game'
+include ':app'

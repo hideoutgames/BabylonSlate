@@ -26,7 +26,7 @@ import { allowSceneScreenShadows, updateSceneRenderingSettings } from "./render-
 import { prewarmSceneMaterials } from "./scene-perf";
 import { applyComponentSorting, applyWorldVisualGroup, configureEditorRenderingGroups } from "./sorting";
 import { createEditorGrid, GRID_MESH_NAME } from "./editor-grid";
-import { createWaterMesh, isBuiltInWaterMesh, updateSceneWater } from "./water-mesh";
+import { createWaterMesh, isBuiltInWaterMesh, setSceneWaterDebug, updateSceneWater } from "./water-mesh";
 import { isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
 import { completeRawUploads } from "./test-support/null-engine-uploads";
 import { builtInWaterMaterial } from "./water-template";
@@ -319,6 +319,30 @@ it("draws water before the editor grid and every other blended surface, with or 
   expect(order).toEqual(["lake", GRID_MESH_NAME, "sprite", "glass"]);
   graph.dispose();
   grid.dispose();
+});
+
+it("draws water without its depth pre-pass only while `waterdebug prepass` is off", async () => {
+  const { scene, camera } = host();
+  const water = lake(scene);
+  const passes = drawnBy(scene, water);
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  await settle(graph, camera);
+  const frame = () => {
+    passes.length = 0;
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    return [...passes];
+  };
+  expect(frame()).toEqual(["Forward transparent depth pre-pass → texture", "Forward transparent → texture"]);
+  setSceneWaterDebug(scene, "prepass", false);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  await settle(graph, camera);
+  expect(frame()).toEqual(["Forward transparent → texture"]);
+  setSceneWaterDebug(scene, "prepass", true);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  await settle(graph, camera);
+  expect(frame()).toEqual(["Forward transparent depth pre-pass → texture", "Forward transparent → texture"]);
+  graph.dispose();
 });
 
 it("shares an effect chain's scene targets, deferring transparents only while water is visible", async () => {

@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Written by Haptic for each package: the game's identity, as UTF-8 properties.
+def game = new Properties()
+file('haptic-game.properties').withReader('UTF-8') { game.load(it) }
+
+android {
+    // The Java package of GameActivity; the installed app's ID is applicationId.
+    namespace 'com.haptic.game'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId game.getProperty('applicationId')
+        minSdk 24
+        targetSdk 36
+        versionCode Integer.parseInt(game.getProperty('versionCode'))
+        versionName game.getProperty('versionName')
+        // With an App Icon Haptic writes the ic_launcher mipmaps; without one the system default shows.
+        manifestPlaceholders = [appIcon: game.getProperty('hasIcon') == 'true' ? '@mipmap/ic_launcher' : '@android:drawable/sym_def_app_icon']
+    }
+
+    buildTypes {
+        release {
+            // Unsigned: Haptic signs the APK with apksigner and the bundle with jarsigner.
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    androidResources {
+        // Packed game data and wasm are read straight from the APK.
+        noCompress += ['bin', 'wasm']
+    }
+
+    lint {
+        checkReleaseBuilds false
+    }
+}

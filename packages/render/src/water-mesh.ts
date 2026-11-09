@@ -10,12 +10,13 @@ import type { Scene } from "@babylonjs/core/scene";
 import {
   createDefaultWaterDefinition, createWaterBlendSample, createWaterWaveOutput, evaluateWaterBlend, evaluateWaterVertex,
   normalizeWaterBody, normalizeWaterDefinition, waterBankFadeLength, waterEulerianGradient, waterFootprint,
-  waterHorizontalEnvelope, waterSpectrum, waterWaveEnvelope, type WaterBodyProperties, type WaterDefinition,
+  waterHorizontalEnvelope, waterSpectrum, waterWaveEnvelope, type WaterBodyProperties, type WaterDefinition, type WaterDebugPart,
 } from "@haptic/core";
 import { inActiveView } from "./active-view";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 import { acquireWaterVariant, waterVariantBase, type AuthoredMaterialVariant } from "./material-compiler";
-import { sceneWaterQualityDeviceClamp } from "./render-settings";
+import { bumpSceneWaterRevision, sceneWaterQualityDeviceClamp } from "./render-settings";
+import { waterDebugOff, writeSceneWaterDebug } from "./water-debug";
 import { WATER_ALPHA_INDEX } from "./sorting";
 import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
 import { contactRange, setMeshVertexWaves, setWaterGridOffsetSource, waterGridOffset, WaterVertexWaves } from "./water-material";
@@ -388,6 +389,26 @@ export function waterMeshSamplesSceneCopy(mesh: AbstractMesh, refraction: boolea
   return (refraction && (use & COPY_REFRACTS) !== 0) || (screenSpace && (use & COPY_REFLECTS) !== 0);
 }
 
+/** Babylon's default `layerMask`, which water keeps unless `waterdebug water off` hides it from every camera. */
+const WATER_LAYER_MASK = 0x0fffffff;
+
+function applyWaterDebugVisibility(mesh: AbstractMesh): void {
+  mesh.layerMask = waterDebugOff(mesh.getScene(), "water") ? 0 : WATER_LAYER_MASK;
+}
+
+/**
+ * Switches a part of water on or off for `scene` (the `waterdebug` console command); true when that changed it. `water`
+ * hides every surface from every camera (no draw, so no spectrum dispatch or scene copy either); the other parts are
+ * shader defines and draw switches the water nodes, the light block and the depth pre-pass read, so a new Water quality
+ * revision re-prepares the surfaces' Materials.
+ */
+export function setSceneWaterDebug(scene: Scene, part: WaterDebugPart, enabled: boolean): boolean {
+  if (!writeSceneWaterDebug(scene, part, enabled)) return false;
+  for (const surface of surfaces.get(scene) ?? []) applyWaterDebugVisibility(surface.mesh);
+  bumpSceneWaterRevision(scene);
+  return true;
+}
+
 /** The live body of a built water mesh, or null for other meshes. */
 export function waterMeshBody(mesh: Mesh): Readonly<WaterBodyProperties> | null {
   return surfaceByMesh.get(mesh)?.body ?? null;
@@ -587,6 +608,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   mesh.setEnabled(body.enabled);
   markWaterSurfaceMesh(mesh);
   mesh.alphaIndex = WATER_ALPHA_INDEX;
+  applyWaterDebugVisibility(mesh);
   const gridOffset = new Float64Array(2);
   // A GPU Global grid is uploaded relative to its snapped centre, which the Water Waves node's vertex shader adds back: picks undo it, and it is zero for every surface that uploads absolute positions.
   setWaterGridOffsetSource(mesh, gridOffset);

@@ -1,4 +1,4 @@
-import type { QualityGroup } from "@haptic/core";
+import type { QualityGroup, WaterDebugPart } from "@haptic/core";
 export type CommandTier = "core" | "debug";
 
 export type CommandParamType = "string" | "float" | "int" | "bool" | "enum";
@@ -54,6 +54,8 @@ export type ConsoleCommandHost = {
   setFreezeOcclusion?(enabled: boolean): void;
   setPostProcessing?(enabled: boolean): void;
   setRenderTargetCaptures?(enabled: boolean): void;
+  /** `waterdebug`: switch one part of water off or back on for the session, to measure what it costs. */
+  setWaterDebug?(part: WaterDebugPart, enabled: boolean): void;
   /** Start (restart) or stop measuring GPU-busy time per frame; the Play view's diagnostics report it. */
   setGpuBusyProbe?(enabled: boolean): void;
   /** How many rendered frames the Engine may queue on the GPU; "off" lifts the limit (`framesinflight`). */

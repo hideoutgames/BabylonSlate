@@ -151,6 +151,41 @@ export interface ElectronGameShellBridge {
   macIdentities(): Promise<string[]>;
   /** macOS only: packages, signs and (with a profile) notarizes a macOS game; see `apps/desktop/src/mac-game-package.ts`. */
   packageMac(request: ElectronMacGameRequest): Promise<{ fileName: string; bytes: Uint8Array; notarized: boolean }>;
+  /**
+   * This computer's Android packaging settings and the JDK and Android SDK
+   * they find, after one change: a native picker for a folder or keystore
+   * (the main process keeps the path), a reset to finding it, or the key alias.
+   */
+  androidSettings(change: AndroidPackagingChange | null): Promise<AndroidPackagingStatus>;
+  /** Builds and signs an Android game with those settings; see `apps/desktop/src/android-game-package.ts`. */
+  packageAndroid(request: ElectronAndroidGameRequest): Promise<{ fileName: string; bytes: Uint8Array; debugSigned: boolean }>;
+}
+
+export type AndroidPackagingChange =
+  | { pick: "java" | "sdk" | "keystore" }
+  | { clear: "java" | "sdk" | "keystore" }
+  | { alias: string };
+
+export interface AndroidPackagingStatus {
+  /** Chosen folders; null finds them. */
+  java: string | null;
+  sdk: string | null;
+  /** Null signs with Android's debug key. */
+  keystore: string | null;
+  alias: string;
+  /** What packaging would use: both found, or why not. */
+  toolchain: { javaHome: string | null; javaVersion: number | null; sdk: string | null; problems: string[] };
+}
+
+export interface ElectronAndroidGameRequest {
+  game: [string, Uint8Array][];
+  name: string;
+  appId: string;
+  version: string;
+  buildNumber: number;
+  format: "apk" | "aab";
+  /** App Icon PNGs at the Android launcher sizes, or null for the system's default icon. */
+  icon: [number, Uint8Array][] | null;
 }
 
 export interface ElectronMacGameRequest {

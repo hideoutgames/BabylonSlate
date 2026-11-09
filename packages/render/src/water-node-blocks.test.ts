@@ -14,7 +14,7 @@ import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMateri
 import { acquireAuthoredMaterialVariant, acquireWaterVariant, compileMaterialPlan, waterVariantBase, type CompiledMaterial } from "./material-compiler";
 import { MaterialLibrary } from "./material-library";
 import { updateSceneRenderingSettings } from "./render-settings";
-import { createWaterMesh, sceneWaterSamplesSceneCopy, updateSceneWater, waterMeshReflectsObjects, waterMeshSamplesSceneCopy } from "./water-mesh";
+import { createWaterMesh, sceneWaterSamplesSceneCopy, setSceneWaterDebug, updateSceneWater, waterMeshReflectsObjects, waterMeshSamplesSceneCopy } from "./water-mesh";
 import { materialSceneCopyUse, meshWaterNodeSurface, WaterCoverageBlock, WaterCutBlock } from "./water-node-blocks";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 import type { WaterField } from "./water-field";
@@ -479,8 +479,8 @@ describe("Water Cut", () => {
     // Water Foam reads the per-pixel height; the cut reads the vertex stage's, as built-in water's waterline does.
     const heights = [...fragment.matchAll(/#ifdef SLATE_WATER_GPU_WAVES\s+swnHeight = ([\w.]+);/g)].map((match) => match[1]!.replace(/^fragmentInputs\./, ""));
     expect(heights.some((name) => new RegExp(`\\b${name} = `).test(vertex))).toBe(true);
-    // The depth pre-pass samples none of the waves' per-pixel spectrum.
-    expect(fragment).toMatch(/#ifndef DEPTHPREPASS\s+#ifdef SLATE_WATER_GPU_WAVES/);
+    // The depth pre-pass samples none of the waves' per-pixel spectrum (nor does `waterdebug waves off`).
+    expect(fragment).toMatch(/#ifndef DEPTHPREPASS\s+#ifndef SLATE_WATER_DEBUG_NO_WAVES\s+#ifdef SLATE_WATER_GPU_WAVES/);
   });
 
   it("compiles the depth pre-pass as its own variant, for water only", async () => {
@@ -752,6 +752,83 @@ describe("Water ownership", () => {
     expect(centres.size).toBeGreaterThan(3);
     expect(Object.keys(compiled).length).toBe(programs);
     expect([global.subMeshes[0]!.effect, ocean.subMeshes[0]!.effect]).toEqual(before);
+  });
+});
+
+describe("Water debug switches", () => {
+  const starter = (scene: Scene) => {
+    const result = compile(scene, createWaterMaterialDocument("Sea"));
+    return { result, lake: createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(), result.material) };
+  };
+
+  it.each([
+    ["lighting", /^#define HAPTIC_UNLIT$/m],
+    ["waves", /^#define SLATE_WATER_DEBUG_NO_WAVES$/m],
+    ["foam", /^#define SLATE_WATER_DEBUG_NO_FOAM$/m],
+  ] as const)("draws water without its %s while switched off, and the same program as before once back on", async (part, define) => {
+    const scene = host();
+    overlook(scene);
+    const { result, lake } = starter(scene);
+    expect(await result.ready).toEqual([]);
+    const before = await programFor(result.material, lake);
+    expect(before.defines).not.toMatch(define);
+    expect(setSceneWaterDebug(scene, part, false)).toBe(true);
+    // Switching it off again changes nothing.
+    expect(setSceneWaterDebug(scene, part, false)).toBe(false);
+    scene.incrementRenderId();
+    updateSceneWater(scene);
+    const off = await programFor(result.material, lake);
+    expect(off.defines).toMatch(define);
+    setSceneWaterDebug(scene, part, true);
+    scene.incrementRenderId();
+    updateSceneWater(scene);
+    expect(await programFor(result.material, lake)).toBe(before);
+  });
+
+  it("switches only water: a lit surface on the same Scene keeps its lighting", async () => {
+    const scene = host();
+    overlook(scene);
+    const surface = compile(scene, createDefaultMaterialDocument("Rock"));
+    const rock = MeshBuilder.CreateBox("rock", {}, scene);
+    rock.material = surface.material;
+    expect(await surface.ready).toEqual([]);
+    setSceneWaterDebug(scene, "lighting", false);
+    scene.incrementRenderId();
+    expect(await definesFor(surface.material, rock)).not.toMatch(/^#define HAPTIC_UNLIT$/m);
+  });
+
+  it("binds water as a shadow receiver only while its shadows are on", async () => {
+    const scene = host();
+    overlook(scene);
+    const { result, lake } = starter(scene);
+    expect(await result.ready).toEqual([]);
+    lake.receiveShadows = true;
+    const effect = await programFor(result.material, lake);
+    const receiver = () => {
+      const set = vi.spyOn(effect, "setFloat");
+      result.material.bindForSubMesh(lake.getWorldMatrix(), lake, lake.subMeshes[0]!);
+      const value = set.mock.calls.find(([name]) => name === "hapticShadowReceiver")?.[1];
+      set.mockRestore();
+      return value;
+    };
+    expect(receiver()).toBe(1);
+    setSceneWaterDebug(scene, "shadows", false);
+    expect(receiver()).toBe(0);
+    setSceneWaterDebug(scene, "shadows", true);
+    expect(receiver()).toBe(1);
+  });
+
+  it("hides every water surface from every camera while water is off, the ones built meanwhile included", () => {
+    const scene = host();
+    const { lake } = starter(scene);
+    const visible = lake.layerMask;
+    expect(visible).not.toBe(0);
+    setSceneWaterDebug(scene, "water", false);
+    expect(lake.layerMask).toBe(0);
+    const later = createWaterMesh(scene, "later", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(), builtInWaterMaterial(scene));
+    expect(later.layerMask).toBe(0);
+    setSceneWaterDebug(scene, "water", true);
+    expect([lake.layerMask, later.layerMask]).toEqual([visible, visible]);
   });
 });
 

@@ -43,12 +43,12 @@ import { FeatureTestCheckStatus } from "./feature-test-check-status";
 import { formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
 import { collectDiagnosticEnvironment, copyText } from "../lib/diagnostic-info";
 import {
-  FEATURE_TEST_BREAKDOWN_SCENES,
   FEATURE_TEST_BREAKDOWN_BASES,
   FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD,
   FEATURE_TEST_BREAKDOWN_METHODS,
   type FeatureTestBreakdownMethod,
   FEATURE_TEST_PROFILE_SCENES,
+  featureTestBreakdownScenes,
   frameStats,
   runFeatureTestCheck,
   warmDeviceMinutes,
@@ -101,12 +101,12 @@ const MODE_DESCRIPTIONS: Record<FeatureTestCheckMode, string> = {
   full: "Checks every Feature Test scene in the editor and in Play and runs the ft_ console commands. A few minutes.",
   benchmark: "Plays every Feature Test scene and measures each quality tier with the frame cap lifted, to find the settings this device holds at 60 and 30 fps. About ten minutes; keep the device awake and plugged in.",
   profile: "Plays the main scene at this device's quality settings and turns one feature off at a time between unchanged baselines (captures, shadows, screen-space shadows, ambient occlusion, reflections, volumetrics, post-processing, anti-aliasing, occlusion culling, frames in flight, resolution), then ranks what each saves in frame time and CPU cost and shows where the draw calls go. About 5 minutes; keep the device awake and plugged in.",
-  breakdown: "Plays FT_World and FT_Occlusion and measures each feature at 60 fps between baselines (anti-aliasing, shadow filter, post-processing effects, water, captures, resolution; occlusion culling from two cameras). Add One starts from a light Low base and turns one feature on at a time, so each change is that feature's own cost; Remove One turns one feature off at a time from the Medium tier. With Compare Preserve Drawing Buffer, the editor then reloads once and repeats it with preserveDrawingBuffer switched, and writes one report of both. About 10 minutes (20 with the comparison); keep the device awake and plugged in.",
+  breakdown: "Plays FT_World and FT_Occlusion and measures each feature at 60 fps between baselines (anti-aliasing, shadow filter, post-processing effects, water, captures, resolution; occlusion culling from two cameras). Add One starts from a light Low base and turns one feature on at a time, so each change is that feature's own cost; Remove One turns one feature off at a time from the Medium tier. Water plays FT_World at the Medium tier and turns off all water, then one part of water at a time (its depth pre-pass, lighting, shadows, waves and foam) and lowers each water setting, so each change is what that part costs. With Compare Preserve Drawing Buffer, the editor then reloads once and repeats it with preserveDrawingBuffer switched, and writes one report of both. About 10 minutes (20 with the comparison); keep the device awake and plugged in.",
 };
 
 const MODES = ["quick", "full", "benchmark", "breakdown", "profile"] as const satisfies readonly FeatureTestCheckMode[];
 
-const METHOD_LABELS: Record<FeatureTestBreakdownMethod, string> = { "add-one": "Add One", "remove-one": "Remove One" };
+const METHOD_LABELS: Record<FeatureTestBreakdownMethod, string> = { "add-one": "Add One", "remove-one": "Remove One", water: "Water" };
 
 const AB_DEPS = FEATURE_TEST_AB_DEPS;
 /** How long the status shows before the A/B's reload, so it can still be cancelled. */
@@ -325,7 +325,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     const current = FEATURE_TEST_CHECK_SCENES.find((scene) => `scene:${scene.path}` === active);
     const scenes = mode === "quick" ? [current ?? FEATURE_TEST_CHECK_SCENES[0]]
       : mode === "profile" ? FEATURE_TEST_PROFILE_SCENES
-        : mode === "breakdown" && !breakdownAllScenes ? FEATURE_TEST_BREAKDOWN_SCENES
+        : mode === "breakdown" ? featureTestBreakdownScenes(breakdownMethod, breakdownAllScenes)
           : FEATURE_TEST_CHECK_SCENES;
     if (mode !== "breakdown") {
       const { report, error } = await runCheck({ mode, scenes });

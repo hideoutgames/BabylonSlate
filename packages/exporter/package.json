@@ -8,7 +8,8 @@
     "./native-desktop": "./src/native-desktop.ts",
     "./native-deb": "./src/native-deb.ts",
     "./native-windows": "./src/native-windows.ts",
-    "./app-icon": "./src/app-icon.ts"
+    "./app-icon": "./src/app-icon.ts",
+    "./native-android": "./src/native-android.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

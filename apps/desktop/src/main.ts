@@ -27,6 +27,11 @@ import { createDiscordPresence, DISCORD_PRESENCE_PATH, handleDiscordPresenceRequ
 import { ownRuntimeZip, readBundledShell } from "./game-runtime";
 import { macSigningIdentities, packageMacGame, type MacGamePackageRequest } from "./mac-game-package";
 import {
+  findAndroidToolchain, normalizeAndroidPackaging, packageAndroidGame,
+  type AndroidGamePackageRequest, type AndroidPackagingSettings,
+} from "./android-game-package";
+import { ANDROID_SIGNING_SECRETS } from "../../../packages/exporter/src/native-android";
+import {
   allowsEditorPermission,
   authProviderUrl,
   externalOpenUrl,
@@ -240,6 +245,51 @@ async function registerIpc(): Promise<void> {
   handle("secrets:delete", async (_event, key) => {
     await secrets.delete(String(key));
   });
+
+  // Android games: built with Gradle from the user's JDK and Android SDK, signed with their keystore.
+  // The JDK, SDK and keystore are chosen here in native pickers, so the page never names a program to run.
+  const androidPackagingPath = userDataFile("android-packaging.json");
+  const androidPackagingWrites = serialized();
+  const readAndroidPackaging = async (): Promise<AndroidPackagingSettings> => {
+    try { return normalizeAndroidPackaging(JSON.parse(await readFile(androidPackagingPath, "utf8"))); }
+    catch { return normalizeAndroidPackaging(null); }
+  };
+  const pickers = {
+    java: { title: "Choose the JDK Folder", properties: ["openDirectory", "treatPackageAsDirectory"] as const },
+    sdk: { title: "Choose the Android SDK Folder", properties: ["openDirectory"] as const },
+    keystore: { title: "Choose the Keystore", properties: ["openFile"] as const,
+      filters: [{ name: "Keystores", extensions: ["jks", "keystore", "p12", "pfx"] }, { name: "All Files", extensions: ["*"] }] },
+  };
+  handle("game-shell:android-settings", async (event, change) => {
+    const update = change as { pick?: keyof typeof pickers; clear?: keyof typeof pickers; alias?: string } | null;
+    const settings = await androidPackagingWrites(async () => {
+      const current = await readAndroidPackaging();
+      let next = current;
+      if (update?.pick) {
+        const options = { ...pickers[update.pick], properties: [...pickers[update.pick].properties] };
+        const window = BrowserWindow.fromWebContents(event.sender);
+        const picked = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+        if (!picked.canceled && picked.filePaths[0]) next = { ...current, [update.pick]: picked.filePaths[0] };
+      } else if (update?.clear) {
+        next = { ...current, [update.clear]: null };
+      } else if (update?.alias !== undefined) {
+        next = normalizeAndroidPackaging({ ...current, alias: update.alias });
+      }
+      if (next !== current) await replaceFile(androidPackagingPath, JSON.stringify(next));
+      return next;
+    });
+    const { toolchain, problems } = await findAndroidToolchain(settings);
+    return { ...settings, toolchain: { javaHome: toolchain?.javaHome ?? null, javaVersion: toolchain?.javaVersion ?? null, sdk: toolchain?.sdk ?? null, problems } };
+  });
+  handle("game-shell:package-android", async (_event, request) => packageAndroidGame({
+    request: request as AndroidGamePackageRequest,
+    settings: await readAndroidPackaging(),
+    templateRoot: join(rootDir, "android-game"),
+    passwords: async () => ({
+      store: await secrets.get(ANDROID_SIGNING_SECRETS.store) ?? "",
+      key: await secrets.get(ANDROID_SIGNING_SECRETS.key) ?? "",
+    }),
+  }));
 
   const accountSecretsPath = userDataFile("account-secrets.json");
   const accountSecrets = new DesktopAccountSecretStore({
