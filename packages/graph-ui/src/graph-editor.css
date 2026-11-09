@@ -12,12 +12,13 @@
 }
 
 /*
- * Large Pins: the editor root sets --graph-pin-scale. Hit areas keep an 11px
- * margin around the glyph and never shrink below a touch target.
+ * Large Pins: the editor root sets --graph-pin-scale. A hit area 1.5x its
+ * glyph plus 11px holds the diagonal of a rotated (diamond) glyph at every
+ * scale, and never shrinks below a touch target.
  */
 .graph-editor-canvas {
   --graph-pin-glyph: calc(var(--graph-pin-size, 22px) * var(--graph-pin-scale, 1));
-  --graph-pin-hit: max(var(--touch-target, 44px), calc(var(--graph-pin-glyph) + 22px));
+  --graph-pin-hit: max(var(--touch-target, 44px), calc(var(--graph-pin-glyph) * 1.5 + 11px));
 }
 
 .graph-editor-canvas .bt-pin {
