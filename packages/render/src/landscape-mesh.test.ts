@@ -5,6 +5,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { createActor, createDefaultScene, parseLandscapeProperties, sculptLandscape } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
+import { createLandscapeMesh, updateLandscapeMesh } from "./landscape-mesh";
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); });
 
@@ -50,4 +51,37 @@ it("updates chunked geometry and shared-edge normals in place through scene edit
   expect(chunks.every((chunk) => !chunk.isVisible)).toBe(true);
   sync.apply({ ...before, actors: [{ ...before.actors[0]!, components: [{ id: "land", classId: "LandscapeComponent", properties: { ...landscape, materialGuid: null } }] }] });
   expect(chunks.every((chunk) => chunk.getBoundingInfo().boundingBox.maximum.y === 0)).toBe(true);
+});
+
+it.each([
+  { title: "the default Material", pad: 0 },
+  { title: "a Material that pads its bounds by 2", pad: 2 },
+])("keeps a sculpted chunk's bounds where its landscape stands, with $title", ({ pad }) => {
+  const { engine, scene } = createTestEngine();
+  disposers.push(() => { scene.dispose(); engine.dispose(); });
+  const material = new StandardMaterial("displaced", scene);
+  material.metadata = { boundsPadding: 2 };
+  const assets = { resolveMaterial: () => material };
+  const landscape = parseLandscapeProperties({ width: 64, depth: 64, subdivisions: 64, materialGuid: pad ? "terrain-material" : null });
+  const root = createLandscapeMesh(scene, "terrain", landscape, assets);
+  root.position.set(100, 10, 50);
+  const chunks = root.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh);
+  // A frame computes each chunk's world matrix and culls it by its bounds: the quarter of the landscape it covers.
+  const frame = () => chunks.map((chunk) => {
+    chunk.computeWorldMatrix();
+    const box = chunk.getBoundingInfo().boundingBox;
+    return [box.minimumWorld.asArray(), box.maximumWorld.asArray()];
+  });
+  const quarters = (top: number) => [
+    [[68 - pad, 10 - pad, 18 - pad], [100 + pad, top + pad, 50 + pad]],
+    [[100 - pad, 10 - pad, 18 - pad], [132 + pad, top + pad, 50 + pad]],
+    [[68 - pad, 10 - pad, 50 - pad], [100 + pad, top + pad, 82 + pad]],
+    [[100 - pad, 10 - pad, 50 - pad], [132 + pad, top + pad, 82 + pad]],
+  ];
+  expect(frame()).toEqual(quarters(10));
+
+  // Raise the middle of the landscape, where its four chunks meet, by 3. The landscape itself does not move.
+  updateLandscapeMesh(root, sculptLandscape(landscape, 0, 0, { tool: "raise", radius: 5, strength: 3, falloff: 0.5, height: 0, layer: 0 }), assets);
+
+  expect(frame()).toEqual(quarters(13));
 });

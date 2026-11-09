@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DynamicTexture } from "@babylonjs/core";
+import { parsePainter2DProperties } from "@haptic/core";
 import { unlitBinding } from "./unlit-material-blocks";
 import { createTestEngine } from "./test-support/test-engine";
 import { createPainter2DMesh, updatePainter2DMesh } from "./painter2d-mesh";
+import { applyAssignMesh, applyPainter2DCommand, applySnapshotToScene, createSnapshotSceneBinding } from "./snapshot-apply";
 
 /** NullEngine runs in Node: DynamicTexture needs a canvas whose 2D calls are no-ops. */
 function stubCanvasDocument(calls: string[]): () => void {
@@ -48,6 +50,37 @@ describe("Painter2D mesh", () => {
     updatePainter2DMesh(mesh, { width: 4, height: 1.5, pixelsPerUnit: 50 });
     expect(extent()).toEqual({ width: 4, height: 1.5 });
     expect(texture.getSize()).toMatchObject({ width: 200, height: 75 });
+  });
+
+  it("keeps a resized painter's bounds where its actor stands in Play", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const painter = (width: number, height: number) => parsePainter2DProperties({ width, height, pixelsPerUnit: 100 });
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh", slotId: 3, meshAssetGuid: null, meshKind: "2dpainter", actorGuid: "bar",
+      parts: [{
+        componentId: "painter", meshKind: "2dpainter", meshAssetGuid: null, parentId: null,
+        position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1], painter: painter(2, 1),
+      }],
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1, tickIndex: 1, actorCount: 1,
+      actors: [{ slotId: 3, flags: 1, position: { x: 5, y: 3, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } }],
+    });
+    const root = binding.meshes.get(3)!;
+    // What a frame culls and a pointer picks the painter by.
+    const bounds = () => {
+      const box = root.getBoundingInfo().boundingBox;
+      return [box.minimumWorld.asArray(), box.maximumWorld.asArray()];
+    };
+    expect(bounds()).toEqual([[4, 2.5, 0], [6, 3.5, 0]]);
+
+    applyPainter2DCommand(binding, { type: "setPainter2D", slotId: 3, componentId: "painter", painter: painter(4, 1.5) });
+
+    expect(binding.meshes.get(3)).toBe(root);
+    expect(bounds()).toEqual([[3, 2.25, 0], [7, 3.75, 0]]);
   });
 
   it("replays the drawing only when the stream or the sizes it is drawn at change", () => {

@@ -123,6 +123,9 @@ export function updatePainter2DMesh(mesh: Mesh, value: unknown): boolean {
     : parsePainter2DProperties(value);
   if (properties.width !== visual.properties.width || properties.height !== visual.properties.height) {
     CreatePlaneVertexData({ width: properties.width, height: properties.height }).applyToMesh(mesh);
+    // Babylon builds the new bounds at the origin and moves them with the next world matrix it computes, which a
+    // frozen one (a Play slot's root between snapshots that move it) never is: move them here.
+    mesh.refreshBoundingInfo();
   }
   const wanted = textureSizeFor(mesh.getScene(), properties);
   const current = visual.texture.getSize();
