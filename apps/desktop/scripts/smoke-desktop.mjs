@@ -57,7 +57,7 @@ try {
     const zip = join(desktop, `dist/public/BabylonSlate-${manifest.packageVersion}-${arch}.zip`);
     await mkdir(installDir);
     await run("ditto", ["-x", "-k", zip, installDir]);
-    executable = join(installDir, "BabylonSlate.app/Contents/MacOS/Haptic");
+    executable = join(installDir, "BabylonSlate.app/Contents/MacOS/BabylonSlate");
     archive = join(installDir, "BabylonSlate.app/Contents/Resources/app.asar");
     const mount = join(sandbox, "dmg");
     await mkdir(mount);
