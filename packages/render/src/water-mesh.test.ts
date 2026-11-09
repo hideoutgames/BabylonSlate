@@ -1008,6 +1008,8 @@ describe("Water rendering", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const camera = new FreeCamera("camera", new Vector3(0, 10, -30), scene);
     try {
+      // A grid fine enough that several of its vertices fall inside the lake.
+      updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { meshDensity: 0.75 } }) });
       const sea = createWaterMesh(scene, "sea", normalizeWaterBody({ resolution: 48 }, "global"), undefined, builtInWaterMaterial(scene));
       const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 20, length: 20, resolution: 16 }), undefined, builtInWaterMaterial(scene));
       lake.position.y = 0.2;

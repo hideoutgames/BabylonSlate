@@ -175,7 +175,8 @@ it("edits Water quality within its tier and disables rows whose feature is off",
   expect(screen.getByLabelText("Reflection Steps")).toHaveProperty("disabled", false);
   expect(screen.getByLabelText("Reflection Steps")).toHaveProperty("value", "8");
   expect(screen.getByLabelText("Planar Resolution")).toHaveProperty("disabled", true);
-  expect(screen.getByLabelText("Water Mesh Density")).toHaveProperty("value", "0.75");
+  expect(screen.getByLabelText("Water Mesh Density")).toHaveProperty("value", "0.5");
+  expect(screen.getByLabelText("FFT Cascades")).toHaveProperty("value", "3");
   // Low draws water with no scene copy and Sky Only reflections, so their rows are disabled.
   await select("Water Quality", "Low");
   expect(selected("Water Shading Detail")).toBe("Low");
@@ -184,6 +185,7 @@ it("edits Water quality within its tier and disables rows whose feature is off",
   expect(selected("Water Reflections")).toBe("Sky Only");
   expect(screen.getByLabelText("Reflection Steps")).toHaveProperty("disabled", true);
   expect(screen.getByLabelText("Water Mesh Density")).toHaveProperty("value", "0.5");
+  expect(screen.getByLabelText("FFT Cascades")).toHaveProperty("value", "2");
   expect(selected("Geometry Quality")).toBe("High");
 });
 

@@ -66,14 +66,14 @@ Rendering cost follows the **Water** group in **Project Settings > Rendering > S
 | Setting | Low | Medium | High | Ultra |
 | --- | --- | --- | --- | --- |
 | **Water Shading Detail** | Low | Medium | High | Ultra |
-| **Water Mesh Density** | 0.5 | 0.75 | 1 | 1.5 |
+| **Water Mesh Density** | 0.5 | 0.5 | 1 | 1.5 |
 | **Contact Resolution** | 256 | 256 | 1024 | 1024 |
 | **Water Refraction** | Off | On | On | On |
 | **Refraction Resolution** | 0.5 | 0.5 | 0.75 | 1 |
 | **Water Reflections** | Sky Only | Screen Space | Planar | Planar |
 | **Reflection Steps** | 6 | 8 | 16 | 24 |
 | **Planar Resolution** | 0.25 | 0.5 | 0.75 | 0.75 |
-| **FFT Size** | 64 | 128 | 256 | 256 |
+| **FFT Size** | 64 | 64 | 256 | 256 |
 | **FFT Cascades** | 2 | 3 | 3 | 3 |
 
 Water is one of the most expensive things a scene draws. Low draws it as a blended surface that reflects the sky, without the scene copy refraction needs or a second view for planar reflections. Medium keeps refraction and reflects objects on screen, but draws no planar reflections, which render the scene a second time for flat water.
