@@ -37,6 +37,12 @@ const run = (command, args, cwd = sandbox) => new Promise((resolvePromise, rejec
   child.once("close", code => code === 0 ? resolvePromise() : reject(new Error(`Command failed: ${command}`)));
 });
 const delay = milliseconds => new Promise(resolveDelay => setTimeout(resolveDelay, milliseconds));
+// Diagnostic: the installed app's Windows processes (its helpers run BabylonSlate.exe too), with parent and command line.
+function windowsAppProcesses() {
+  const script = "Get-CimInstance Win32_Process -Filter \"Name='BabylonSlate.exe'\" | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId) $($_.CommandLine)\" }";
+  return execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8" })
+    .split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => line.slice(0, 240));
+}
 async function cleanupStep(label, operation) {
   try {
     await operation();
@@ -119,7 +125,7 @@ try {
     launched.on("window", watch);
     return launched;
   };
-  const launch = async () => observe(await _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs], env: cleanEnv, timeout: 60000 }));
+  const launch = async (extraEnv = {}) => observe(await _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs], env: { ...cleanEnv, ...extraEnv }, timeout: 60000 }));
   app = await launch();
   // macOS reports the /private/var target of the /var temporary directory symlink.
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath("userData"))), await realpath(userData));
@@ -174,7 +180,17 @@ try {
   await page.getByTestId("preview-build-close").click();
   await page.evaluate(async () => { await window.haptic.project.writeBinary("distribution-smoke.bin", new Uint8Array([17, 42, 99]).buffer); });
   await app.close();
-  app = await launch();
+  if (platform === "windows") {
+    // Diagnostic: what of the first launch still runs when the second starts.
+    let running = windowsAppProcesses();
+    console.log(`After close, ${running.length} app processes:\n${running.join("\n")}`);
+    for (let attempt = 0; running.length && attempt < 60; attempt++) {
+      await delay(500);
+      running = windowsAppProcesses();
+    }
+    console.log(`Before relaunch, ${running.length} app processes:\n${running.join("\n")}`);
+  }
+  app = await launch(platform === "windows" ? { ELECTRON_ENABLE_LOGGING: "1" } : {});
   page = await app.firstWindow();
   page.setDefaultTimeout(60000);
   await expect(page.getByTestId("homepage")).toBeVisible();
