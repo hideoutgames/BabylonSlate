@@ -82,6 +82,56 @@ describe("unchanged layer detection", () => {
     expect(reads[0]!.mock.calls).toHaveLength(0);
   });
 
+  it("re-reads only the owner written to while a variable the layout does not read changes every tick", () => {
+    const f = settled();
+    const others = readsVariables(f.actor, f.box);
+    for (let tick = 1; tick <= 3; tick++) {
+      // An opacity a Timeline animates: the layout arranges by size and text, not by it.
+      f.child.setVariable("opacity", tick / 4);
+      expect(f.update()).toBeNull();
+    }
+    expect(others.flatMap((read) => read.mock.calls)).toHaveLength(0);
+    others.forEach((read) => read.mockClear());
+    const components = readsVariables(f.child);
+    for (let tick = 1; tick <= 3; tick++) {
+      f.actor.setVariable("score", tick);
+      expect(f.update()).toBeNull();
+    }
+    expect([...components, others[1]!].flatMap((read) => read.mock.calls)).toHaveLength(0);
+  });
+
+  it("arranges again when a layout variable changes on an owner that other writes also touched", () => {
+    const f = settled();
+    f.box.setVariable("opacity", 0.5);
+    expect(f.update()).toBeNull();
+    f.box.setVariable("opacity", 0.25);
+    f.box.setVariable("width", 8);
+    expect(f.update()).not.toBeNull();
+    expect(f.child.transform.position.x).toBe(-3.5);
+    // A value the layout no longer reads as set counts as a change too.
+    f.box.setVariable("width", Number.NaN);
+    expect(f.update()).not.toBeNull();
+  });
+
+  it.each([
+    ["its name", (f: ReturnType<typeof settled>) => { f.actor.setVariable("name", "Row"); }],
+    ["its parent", (f: ReturnType<typeof settled>) => { f.actor.setVariable("parentId", "other"); }],
+    ["its visibility", (f: ReturnType<typeof settled>) => { f.actor.setVariable("visible", false); }],
+    ["its enabled state", (f: ReturnType<typeof settled>) => { f.actor.setVariable("enabled", false); }],
+    ["the virtualized item it stands for", (f: ReturnType<typeof settled>) => {
+      f.actor.setVariable("virtualizedContainerId", "list"); f.actor.setVariable("itemIndex", 2);
+    }],
+  ])("arranges again after a write to an actor changed %s, then settles", (_, change) => {
+    const f = settled();
+    f.actor.setVariable("score", 1);
+    expect(f.update()).toBeNull();
+    change(f);
+    expect(f.update()).not.toBeNull();
+    const reads = readsVariables(f.actor, f.box, f.child);
+    expect(f.update()).toBeNull();
+    expect(reads.flatMap((read) => read.mock.calls)).toHaveLength(0);
+  });
+
   it.each([
     ["an actor position", (f: ReturnType<typeof settled>) => { f.actor.transform.position.y = 3; }],
     ["an actor scale", (f: ReturnType<typeof settled>) => { f.actor.transform.scale.x = 2; }],

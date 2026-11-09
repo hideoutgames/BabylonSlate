@@ -1,5 +1,6 @@
-import type { OverlaySafeAreaInsets, Transform } from "@haptic/core";
+import type { OverlaySafeAreaInsets, SerializedActor, Transform, VirtualizedItem } from "@haptic/core";
 import { ActorComponent, type Actor } from "@haptic/object-model";
+import { actorLayoutName, actorLayoutParentId, actorLayoutVisible, sameActorVirtualItem, sameLayoutProperties } from "./scene-layer-layout-inputs";
 
 type Owner = Actor | ActorComponent;
 type TextureSizes = Readonly<Record<string, { width: number; height: number }>>;
@@ -29,11 +30,17 @@ interface Recorded {
   actors: Actor[];
   roles: number[];
   actorRevisions: number[];
+  /** Per listed actor of the layer: what the layout read from its variables (name, parent and visibility of an owner). */
+  actorNames: string[];
+  actorParentIds: Array<string | null>;
+  actorVisible: boolean[];
+  actorItems: Array<VirtualizedItem | undefined>;
   /** The owners derived from that list (an owner actor, then its live components). */
   owners: readonly Owner[];
-  /** Per owner: variables revision and, for a component, its parent id. */
+  /** Per owner: variables revision and, for a component, its parent id and the variables the layout read. */
   revisions: number[];
   parentIds: Array<string | null>;
+  properties: Array<Readonly<Record<string, unknown>> | undefined>;
   /** Per owner: position, rotation and scale as the layout left them. */
   poses: Float64Array;
   pixelsPerUnit: number;
@@ -51,9 +58,12 @@ interface Recorded {
  * behind, pixels per unit, safe area and the texture sizes it measured.
  * `unchanged` re-reads exactly those and allocates nothing. Variables change only
  * through writes that advance their revision; transforms are plain objects that
- * scripts, physics and anchors mutate in place, hence the compared numbers. A
- * layer that cannot be recorded exactly (a non-number in a transform) is never
- * reported unchanged.
+ * scripts, physics and anchors mutate in place, hence the compared numbers. An
+ * owner whose revision advanced is compared by the variables the layout reads
+ * from it, so a write to any other variable (an opacity a Timeline animates, a
+ * script's own counter) costs that one owner's reads and leaves the layer
+ * unchanged. A layer that cannot be recorded exactly (a non-number in a
+ * transform) is never reported unchanged.
  */
 export class SceneLayerLayoutGate {
   private readonly layers = new Map<string, Recorded>();
@@ -69,7 +79,7 @@ export class SceneLayerLayoutGate {
       const size = texturePixelSizes[recorded.textureGuids[index]!];
       if (!same(size?.width, recorded.textureWidths[index]) || !same(size?.height, recorded.textureHeights[index])) return false;
     }
-    const { poses, revisions, parentIds } = recorded;
+    const { poses, revisions, parentIds, properties } = recorded;
     let cursor = 0;
     for (let index = 0; index < actors.length; index++) {
       const actor = actors[index]!;
@@ -77,36 +87,64 @@ export class SceneLayerLayoutGate {
       const role = actor.sceneLayerId !== layerId ? 0 : actor.destroyed ? 1 : 2;
       if (role !== recorded.roles[index]) return false;
       if (role === 0) continue;
-      // Every listed actor of the layer feeds the virtual item map, not only the live ones.
-      if (actor.variablesRevision !== recorded.actorRevisions[index]) return false;
+      if (actor.variablesRevision !== recorded.actorRevisions[index]) {
+        // Every listed actor of the layer feeds the virtual item map, not only the live ones.
+        if (!sameActorVirtualItem(actor, recorded.actorItems[index])) return false;
+        if (role === 2 && (actorLayoutName(actor) !== recorded.actorNames[index] || actorLayoutParentId(actor) !== recorded.actorParentIds[index] ||
+          actorLayoutVisible(actor) !== recorded.actorVisible[index])) return false;
+        recorded.actorRevisions[index] = actor.variablesRevision;
+      }
       if (role === 1) continue;
       if (owners[cursor] !== actor || !samePose(actor.transform, poses, cursor * POSE_LENGTH)) return false;
       cursor++;
       for (const component of actor.components) {
         if (component.destroyed) continue;
-        if (owners[cursor] !== component || component.variablesRevision !== revisions[cursor] || component.parentId !== parentIds[cursor] ||
+        if (owners[cursor] !== component || component.parentId !== parentIds[cursor] ||
           !samePose(component.transform, poses, cursor * POSE_LENGTH)) return false;
+        if (component.variablesRevision !== revisions[cursor]) {
+          const read = properties[cursor];
+          if (!read || !sameLayoutProperties(component, read)) return false;
+          revisions[cursor] = component.variablesRevision;
+        }
         cursor++;
       }
     }
     return cursor === owners.length;
   }
 
-  /** Remember what the layout just read; call once its poses are applied. */
+  /**
+   * Remember what the layout just read; call once its poses are applied. `source` and `virtualItems` are the inputs
+   * built from `actors`: one entry per owner actor, in `owners` order, with its live components.
+   */
   record(layerId: string, actors: readonly Actor[], owners: readonly Owner[], pixelsPerUnit: number,
-    texturePixelSizes: TextureSizes, safeAreaInsets: Partial<OverlaySafeAreaInsets>): void {
+    texturePixelSizes: TextureSizes, safeAreaInsets: Partial<OverlaySafeAreaInsets>,
+    source: readonly SerializedActor[], virtualItems: Readonly<Record<string, VirtualizedItem>>): void {
     const previous = this.layers.get(layerId);
     const poses = previous?.poses.length === owners.length * POSE_LENGTH ? previous.poses : new Float64Array(owners.length * POSE_LENGTH);
     const recorded: Recorded = previous ?? {
-      actors: [], roles: [], actorRevisions: [], owners, revisions: [], parentIds: [], poses,
+      actors: [], roles: [], actorRevisions: [], actorNames: [], actorParentIds: [], actorVisible: [], actorItems: [],
+      owners, revisions: [], parentIds: [], properties: [], poses,
       pixelsPerUnit, safeArea: [], textureGuids: [], textureWidths: [], textureHeights: [],
     };
     recorded.actors.length = recorded.roles.length = recorded.actorRevisions.length = actors.length;
+    recorded.actorNames.length = recorded.actorParentIds.length = recorded.actorVisible.length = recorded.actorItems.length = actors.length;
+    recorded.properties.length = owners.length;
+    let entries = 0, slot = 0;
     for (let index = 0; index < actors.length; index++) {
       const actor = actors[index]!;
+      const role = actor.sceneLayerId !== layerId ? 0 : actor.destroyed ? 1 : 2;
       recorded.actors[index] = actor;
-      recorded.roles[index] = actor.sceneLayerId !== layerId ? 0 : actor.destroyed ? 1 : 2;
+      recorded.roles[index] = role;
       recorded.actorRevisions[index] = actor.variablesRevision;
+      recorded.actorItems[index] = role === 0 ? undefined : virtualItems[actor.guid];
+      if (role !== 2) continue;
+      const entry = source[entries++]!;
+      recorded.actorNames[index] = entry.name;
+      recorded.actorParentIds[index] = entry.parentId;
+      recorded.actorVisible[index] = entry.visible;
+      // The actor's own owner slot holds no component variables.
+      recorded.properties[slot++] = undefined;
+      for (const component of entry.components) recorded.properties[slot++] = component.properties;
     }
     recorded.owners = owners;
     recorded.poses = poses;

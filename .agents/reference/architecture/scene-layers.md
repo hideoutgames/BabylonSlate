@@ -53,7 +53,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 - Layer Scenes batch their unlit draws where the image cannot change ([render.md](render.md#draw-batching)): the compositor turns it on at `create`; Play's world Scene and the editor tab never batch.
 - Overlay identity is `sceneLayerId` / `SNAPSHOT_FLAG_OVERLAY` / overlay-only mesh kind. Overlay visuals never instantiate on the world Scene; leftover `actor-*` world copies are disposed. A snapshot apply sweeps for them only when one can exist (`sweepWorldOverlayLeftovers`): its overlay slots changed, the world Scene's mesh count or newest mesh changed or it notified an addition, or the pass migrated or hid a visual.
 - `2DTexture` / `2DMaterial` share the Engine `ResourceCache`; overlay sampling must not steal a world texture wrapper. Overlay materials compile scene-local unlit (separate cache key).
-- `SceneLayerOverlay` re-indexes only when `World.structuralRevision` changes; `SceneLayerLayoutGate` skips layout unless a recorded input changed.
+- `SceneLayerOverlay` re-indexes only when `World.structuralRevision` changes; `SceneLayerLayoutGate` skips layout unless a recorded input changed. A variable write advances its owner's revision whatever it wrote, so the gate compares a written owner by the variables the layout reads ([`scene-layer-layout-inputs.ts`](../../../packages/runtime/src/scene-layer-layout-inputs.ts), which builds the layout's inputs too): a write to any other variable (an animated opacity, a script's counter) re-reads that one owner and leaves the layer unchanged. A variable the layout starts to read must be read there.
 
 ## Physics and input
 
