@@ -14,7 +14,7 @@ import type { AnimTransitionDecision } from "@haptic/anim-graph";
 import { isInfiniteLoopError } from "@haptic/debugger";
 import { loadCompiledModule } from "./module-loader";
 import type { ScriptBreakpoints } from "./script-breakpoints";
-import { createScriptContext, type ScriptContextHost } from "./script-context-factory";
+import { createScriptContextClass, type ScriptContextConstructor, type ScriptContextHost } from "./script-context-factory";
 import type {
   BtScriptExtras,
   CallerFrame,
@@ -123,8 +123,10 @@ export class ScriptHost {
   private readonly materials: ScriptMaterialOwnership;
   /** Event Dispatcher bindings of this session. */
   private readonly dispatchers = new DispatcherBindings();
-  /** What `createScriptContext` reads from this host; built once in the constructor. */
+  /** What `createScriptContextClass` reads from this host; built once in the constructor. */
   private readonly contextHost: ScriptContextHost;
+  /** The class of this host's contexts; built once in the constructor. */
+  private readonly Context: ScriptContextConstructor;
   /** Locals of latent frames that are waiting: roots for object lifetime. */
   readonly latentFrames = new LatentFrameRoots();
 
@@ -159,6 +161,7 @@ export class ScriptHost {
         this.invokeEntry(owner, script, exportName, invoke),
       reportLatentError: (error, owner) => this.reportLatentError(error, owner),
     };
+    this.Context = createScriptContextClass(this.contextHost);
   }
 
   /** Routes `ctx.debugTrace` to `sink` for scripts that run on `object` (both null stops). */
@@ -778,12 +781,11 @@ export class ScriptHost {
   }
 
   /**
-   * A context for one script call. It owns what depends on the call (self, tick, arguments, extras, the
-   * calling object's defaults) and inherits the rest from the host's shared members, so it allocates
-   * only the closures that need the call's values. Inherited members never use `this`, so detaching one
-   * (`const { log } = ctx`) works. Own properties are therefore only the per-call members.
-   * Adding a `ScriptContext` member that is not a `HostContextKey` means assigning it in `createScriptContext`,
-   * and listing it in `script-host-context.test.ts`, whose type check fails until you do.
+   * A context for one script call: one object holding what depends on the call (self, tick, arguments,
+   * extras), whose members are methods every context of this host shares, so building it creates no
+   * function. A member that reads the call must be called on its context (`ctx.getVariable(name)`).
+   * Adding a `ScriptContext` member that is not a `HostContextKey` means adding it to
+   * `createScriptContextClass`, which fails to compile until you do.
    */
   createContext(
     self: EngineObject | null,
@@ -794,7 +796,7 @@ export class ScriptHost {
     extras?: ScriptExtras,
     flowNamespace = "",
   ): ScriptContext {
-    return createScriptContext(this.contextHost, self, deltaSeconds, tickIndex, commandArgs, tick, extras, flowNamespace);
+    return new this.Context(self, deltaSeconds, tickIndex, commandArgs, tick, extras, flowNamespace);
   }
 
   private applyComponentVariable(

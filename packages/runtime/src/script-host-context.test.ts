@@ -1,11 +1,9 @@
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { RandomStream } from "@haptic/core";
 import { Actor, type TickContext } from "@haptic/object-model";
 import {
   ScriptHost,
   type CompiledScript,
-  type HostContextKey,
-  type ScriptContext,
   type ScriptHostServices,
 } from "./script-host";
 
@@ -31,7 +29,7 @@ function tickWith(dt: number, tickIndex: number, held: boolean): TickContext {
 
 const flush = async () => { for (let index = 0; index < 12; index++) await Promise.resolve(); };
 
-describe("ScriptContext members used apart from their context", () => {
+describe("ScriptContext members", () => {
   it("keeps host members working when destructured and called without a receiver", () => {
     const logged: unknown[][] = [];
     const hero = new Actor({ classId: "Hero", guid: "hero" });
@@ -94,33 +92,18 @@ describe("ScriptContext members used apart from their context", () => {
     expect(ctx.curveObjectValue("float", object, 1)).toBe(20);
   });
 
-  it("lets a script patch ctx.random or a ctx member without changing any other context", () => {
-    const logged: string[] = [];
-    const host = new ScriptHost(services({ seed: 7, log: (_severity, _category, message) => { logged.push(message); } }));
-    const patched = host.createContext(null, 0, 0);
-    patched.random.float = () => 0.99;
-    patched.log = () => {};
-
-    expect(patched.random.float()).toBe(0.99);
-    patched.log("log", "Cat", "swallowed");
-    const other = host.createContext(null, 0, 0);
-    other.log("log", "Cat", "kept");
-
-    expect(other.random.float()).toBe(new RandomStream("7").nextFloat());
-    expect(logged).toEqual(["kept"]);
-  });
-
-  it("keeps per-call members bound to the context they came from", () => {
+  it("acts on the object of the context a per-call member is called on", () => {
     const host = new ScriptHost(services());
     const a = new Actor({ classId: "Hero", guid: "a" });
     const b = new Actor({ classId: "Hero", guid: "b" });
-    const { setVariable, getVariable } = host.createContext(a, 0.1, 1);
+    const fromA = host.createContext(a, 0.1, 1);
     const fromB = host.createContext(b, 0.2, 2);
 
-    setVariable("hp", 3);
+    fromA.setVariable("hp", 3);
     fromB.setVariable("hp", 9);
 
-    expect(getVariable("hp")).toBe(3);
+    expect(fromA.getVariable("hp")).toBe(3);
+    expect(fromB.getVariable("hp")).toBe(9);
     expect(a.getVariable("hp")).toBe(3);
     expect(b.getVariable("hp")).toBe(9);
   });
@@ -147,58 +130,43 @@ describe("ScriptContext members used apart from their context", () => {
 });
 
 describe("ScriptContext shape", () => {
-  // Scripts can enumerate a context (`Object.keys`, spread, `for in`), so the per-call members and their
-  // order are part of what they observe. `createContext` assigns them one by one, so the compiler no longer
-  // checks that it covers every member that is not inherited; the type check below does.
-  const PER_CALL_KEYS = [
-    "registerSaveMigration", "getSaveMigrationField", "setSaveMigrationField", "data", "readDataEntryAsync",
-    "editorData", "self", "deltaSeconds", "tickIndex", "debugTrace", "commandArgs", "args", "animFacts", "animExitTimeReached",
-    "flowState", "reportCommand", "random", "getVariable", "variableReference", "tweenValue", "tweenProperty",
-    "setVariable", "getVariableFrom", "setVariableOn", "setMeshMaterialAsync", "setMaterialTextureParameterAsync",
-    "destroyActor", "setActorLocation", "addActorWorldOffset", "setActorRotation", "setActorScale",
-    "setActorTransform", "attachToBone", "executeConsoleCommandAsync", "delay", "delayOneTick", "retriggerableDelay", "setTimer", "callInterface", "getComponent",
-    "getComponentById", "getOwnedActor", "getOwnedTimelineClip", "getOwnedComponent", "callComponentFunction", "addComponent", "spawnActor", "spawnActorAsync",
-    "beginDeferredSpawnActorAsync", "finishDeferredSpawnActor",
-    "requestAssetLoad", "requestClassLoad", "waitForAssetLoad", "unloadAsset", "prepareAssets",
-    "loadSceneBlocking", "unloadSceneBlocking", "getSceneReference", "invokeCustomEvent", "callDispatcher", "invokeEvent",
-    "invokeFunction", "isActionHeld", "inputBindings", "getInputState", "wasActionPressed", "wasActionReleased",
-    "getPressedKeys", "getAxis", "getAxis2D", "getCursorPosition", "getTouches", "getTouchEvents", "getDeviceMotion", "calibrateTilt", "setCursorVisible",
-    "setGamepadRumble", "vibrateDevice", "gamepadConnections", "sampleWater", "lineTrace", "projectCursorToScene", "projectTouchToScene",
-    "sphereOverlap", "shapeSweep", "multiTrace", "shapeOverlap",
-    "addImpulse", "moveCharacter", "playSound", "playSoundAtLocation", "spawnParticlesAtLocation", "spawnParticlesAttached", "createSceneLayerAsync",
-    "moveTo", "stopMovement", "btFinish", "btEvaluate", "getBlackboard", "setBlackboard",
-  ] as const satisfies readonly (keyof ScriptContext)[];
-  const perCallKeys: readonly string[] = PER_CALL_KEYS;
-
-  it("owns the per-call members in a fixed order and inherits the host's shared members", () => {
-    // Every ScriptContext member is either inherited from the host or listed above.
-    expectTypeOf<Exclude<keyof ScriptContext, HostContextKey | (typeof PER_CALL_KEYS)[number]>>().toBeNever();
+  it("builds a context without creating a function for it", () => {
     const host = new ScriptHost(services());
-    const first = host.createContext(null, 0, 0);
-    const second = host.createContext(new Actor({ classId: "Hero", guid: "a" }), 0.1, 1, { x: 1 });
+    const first = host.createContext(null, 0, 0) as unknown as Record<string, unknown>;
+    const second = host.createContext(new Actor({ classId: "Hero", guid: "a" }), 0.1, 1, { x: 1 }, tickWith(0.1, 1, true)) as unknown as Record<string, unknown>;
 
-    expect(Object.keys(first)).toEqual(perCallKeys);
-    expect(Object.keys(second)).toEqual(perCallKeys);
-
-    const shared = Object.getPrototypeOf(first) as Record<string, unknown>;
-    expect(Object.getPrototypeOf(second)).toBe(shared);
-    expect(Object.getPrototypeOf(shared)).toBe(Object.prototype);
-    const hostKeys = Object.keys(shared);
-    expect(hostKeys).toEqual(expect.arrayContaining(["log", "print", "formatValue", "randomInRange", "isA"]));
-    expect(hostKeys.filter((key) => perCallKeys.includes(key))).toEqual([]);
-    for (const key of hostKeys) expect(first[key as keyof typeof first]).toBe(shared[key]);
-
-    const otherHost = new ScriptHost(services()).createContext(null, 0, 0);
-    expect(Object.getPrototypeOf(otherHost)).not.toBe(shared);
+    // Every script call builds a context, so a member made per context is made per call: each function a
+    // context offers, its own or inherited, must be the one every other context of the host offers.
+    const functions: string[] = [];
+    for (const key in first) {
+      if (typeof first[key] !== "function") continue;
+      functions.push(key);
+      expect(second[key], key).toBe(first[key]);
+    }
+    expect(functions).toEqual(expect.arrayContaining(["getVariable", "setVariable", "spawnActor", "invokeFunction", "isActionHeld", "log", "print"]));
+    expect(second.random).toBe(first.random);
   });
 
-  it("keeps a detached member that calls back through its context working after createContext returns", () => {
-    const hero = new Actor({ classId: "Hero", guid: "hero" });
-    const { variableReference } = new ScriptHost(services()).createContext(hero, 0, 0);
+  it("shares one set of members between a host's contexts, and none with another host", () => {
+    const host = new ScriptHost(services());
+    const first = host.createContext(null, 0, 0);
+    const second = host.createContext(new Actor({ classId: "Hero", guid: "a" }), 0.1, 1);
+    expect(Object.getPrototypeOf(second)).toBe(Object.getPrototypeOf(first));
 
-    variableReference(null, "hp", true)?.set(7);
+    const other = new ScriptHost(services()).createContext(null, 0, 0);
+    expect(Object.getPrototypeOf(other)).not.toBe(Object.getPrototypeOf(first));
+    expect(other.getVariable).not.toBe(first.getVariable);
+    expect(other.log).not.toBe(first.log);
+  });
+
+  it("keeps a variable reference writing through its context after the call that made it", () => {
+    const hero = new Actor({ classId: "Hero", guid: "hero" });
+    const reference = new ScriptHost(services()).createContext(hero, 0, 0).variableReference(null, "hp", true);
+
+    reference?.set(7);
 
     expect(hero.getVariable("hp")).toBe(7);
+    expect(reference?.get?.()).toBe(7);
   });
 });
 
