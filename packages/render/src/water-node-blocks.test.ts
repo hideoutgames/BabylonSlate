@@ -85,7 +85,7 @@ function overlook(scene: Scene): void {
   scene.setTransformMatrix(camera.getViewMatrix(), camera.getProjectionMatrix());
 }
 /** The reflection march's function text. */
-const march = (source: string) => /swMarch\(swOrigin[\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+const march = (source: string) => /swMarch\((vec3 )?swOrigin[\s\S]*?\n\}/.exec(source)?.[0] ?? "";
 
 describe("Water material nodes", () => {
   it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("compile together with Water Waves in language %s, every prefix bound", async (language) => {
@@ -103,6 +103,12 @@ describe("Water material nodes", () => {
     // Every preprocessor directive stands on its own line.
     expect(source).not.toMatch(/\bsw\w*[^\n]*\S#(ifdef|endif|if|else)\b/);
     for (const helper of ["swnFieldAt", "swnContactAt", "swSceneDepth", "swMarch", "swnEnvTap", "swnNoise", "swPlanarTexel"]) expect(fragment, helper).toContain(helper);
+    // The march takes one sample per copy texel the ray crosses on screen, at most its steps, and the fades known before
+    // it (grazing ripples, fog that leaves nothing of the water) gate it.
+    expect(march(fragment)).toMatch(/swSteps = clamp\(ceil\(length\(\(swN1 - swN0\) \* swEnd \* 0\.5 \/ swSceneTexelUv\(\)\)\), 1\.0, f(32|loat)\(SLATE_WATER_SSR_STEPS\)\);/);
+    expect(march(fragment)).toMatch(/if \(f(32|loat)\(swI\) > swSteps\) \{ break; \}\s+(let|float) swU = swEnd \* f(32|loat)\(swI\) \/ swSteps;/);
+    expect(fragment).toMatch(/swnObjFade(: f32)? = [^;]*fwidth\(swnObjR\)[^;]*\* step\(0\.001, swnAirKeep\);/);
+    expect(fragment).toMatch(/swnObj\.a = swnObj\.a \* swnObjFade;/);
     // The terrain and contact fields read the water mesh's data, the copy only with the pass's copy, the cube only with a cube.
     const sampler = (name: string) => wgsl ? `var ${name}: texture_` : ` ${name};`;
     for (const [name, define] of [["slateWaterFieldSampler", "SLATE_WATER_SURFACE"], ["slateWaterSceneSampler", "SLATE_WATER_NODE_COPY"], ["slateWaterNodeEnvSampler", "SLATE_WATER_NODE_ENV"], ["slateWaterNodePlanarSampler", "SLATE_WATER_NODE_PLANAR"]] as const) {
