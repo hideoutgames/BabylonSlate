@@ -31,6 +31,7 @@ import {
   type AndroidGamePackageRequest, type AndroidPackagingSettings,
 } from "./android-game-package";
 import { ANDROID_SIGNING_SECRETS } from "../../../packages/exporter/src/native-android";
+import { findXcode, packageIosGame, type IosGamePackageRequest } from "./ios-game-package";
 import {
   allowsEditorPermission,
   authProviderUrl,
@@ -213,6 +214,14 @@ async function registerIpc(): Promise<void> {
   handle("game-shell:package-mac", async (_event, request) => {
     if (process.platform !== "darwin") throw new Error("macOS games are packaged in the Haptic desktop app on a Mac.");
     return packageMacGame({ request: request as MacGamePackageRequest, ...await readBundledShell(rendererRoot, "macos-arm64") });
+  });
+  // iOS games: built and signed with Xcode on a Mac, by the Apple account signed into it.
+  handle("game-shell:ios-toolchain", async () => process.platform === "darwin"
+    ? findXcode()
+    : { version: null, problems: ["iOS games are packaged in the Haptic desktop app on a Mac."] });
+  handle("game-shell:package-ios", async (_event, request) => {
+    if (process.platform !== "darwin") throw new Error("iOS games are packaged in the Haptic desktop app on a Mac.");
+    return packageIosGame({ request: request as IosGamePackageRequest, templateRoot: join(rootDir, "ios-game") });
   });
   handle("settings:read", async () => {
     try {

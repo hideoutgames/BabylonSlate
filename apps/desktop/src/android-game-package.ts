@@ -1,10 +1,11 @@
-import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   androidGameFileName, androidProjectFiles, type AndroidPackageFormat,
 } from "../../../packages/exporter/src/native-android";
-import { runCommand, within, type RunCommand } from "./mac-game-package";
+import { runCommand, type RunCommand } from "./mac-game-package";
+import { copyTree, writeFiles } from "./package-files";
 
 /**
  * Packages an Android game in the desktop app: copies the Android project
@@ -189,15 +190,6 @@ export function gradleFailure(output: string): string {
   return text.length > 1500 ? `${text.slice(0, 1500)}…` : text;
 }
 
-/** Every file under `from` copied to `to`; reads through Electron's archive support when the template is packed. */
-async function copyTree(from: string, to: string): Promise<void> {
-  await mkdir(to, { recursive: true });
-  for (const entry of await readdir(from, { withFileTypes: true })) {
-    if (entry.isDirectory()) await copyTree(join(from, entry.name), join(to, entry.name));
-    else if (entry.isFile()) await writeFile(join(to, entry.name), await readFile(join(from, entry.name)));
-  }
-}
-
 /** Android's debug keystore in the user's home, created as the SDK would when it is missing. */
 async function debugKeystore(toolchain: AndroidToolchain, host: ToolchainHost, run: RunCommand): Promise<string> {
   const path = join(host.home, ".android", "debug.keystore");
@@ -237,11 +229,7 @@ export async function packageAndroidGame(options: {
   try {
     const project = join(work, "project");
     await copyTree(options.templateRoot, project);
-    for (const [path, data] of files) {
-      const target = within(project, path);
-      await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, data);
-    }
+    await writeFiles(project, files);
 
     const java = join(toolchain.javaHome, "bin", program(host.platform, "java"));
     const env = { ...host.env, JAVA_HOME: toolchain.javaHome, ANDROID_HOME: toolchain.sdk, ANDROID_SDK_ROOT: toolchain.sdk };

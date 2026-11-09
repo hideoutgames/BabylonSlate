@@ -4,6 +4,7 @@ import { isLibraryFolder } from "@haptic/vfs/library-folders";
 import { isValidAppId } from "@haptic/core/app-identity";
 import { isRuntimeFileName, MAX_RUNTIME_FILES } from "./game-runtime";
 import { ANDROID_ICON_SIZES, MAX_ANDROID_VERSION_CODE } from "../../../packages/exporter/src/native-android";
+import { isValidTeamId } from "../../../packages/exporter/src/native-ios";
 
 /** Largest payload one project IPC call may move through the main process. */
 export const MAX_IPC_BYTES = 512 * 1024 * 1024;
@@ -276,7 +277,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     "project:list": 0, "project:delete": 1, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,
     "project:writeBinary": 2, "project:exists": 1, "project:readdir": 1, "project:mkdir": 2,
     "project:remove": 1, "project:stat": 1, "file:save": 2, "game-shell:runtime": 2, "game-shell:mac-identities": 0, "game-shell:package-mac": 1,
-    "game-shell:android-settings": 1, "game-shell:package-android": 1,
+    "game-shell:android-settings": 1, "game-shell:package-android": 1, "game-shell:ios-toolchain": 0, "game-shell:package-ios": 1,
   };
   requireValue(Object.hasOwn(counts, channel) && args.length === counts[channel]);
   if (channel.startsWith("save-games:")) {
@@ -288,6 +289,23 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
         path.split("/").every(part => part.length > 0 && part !== "." && part !== ".."));
     }
     if (channel === "save-games:write") text(args[1], 32 * 1024 * 1024);
+  } else if (channel === "game-shell:package-ios") {
+    plainObject(args[0]);
+    const request = args[0];
+    gameFiles(request.game);
+    text(request.name, 200);
+    text(request.appId, 155);
+    requireValue(isValidAppId(request.appId));
+    text(request.version, 64);
+    requireValue(typeof request.buildNumber === "number" && Number.isSafeInteger(request.buildNumber) && request.buildNumber >= 1);
+    requireValue(request.format === "app-store" || request.format === "development");
+    // The App Icon as one PNG.
+    if (request.icon !== null) {
+      requireValue(request.icon instanceof Uint8Array && request.icon.byteLength <= MAX_APP_ICON_BYTES && request.icon[0] === 0x89
+        && String.fromCharCode(...request.icon.subarray(1, 4)) === "PNG");
+    }
+    text(request.teamId, 10);
+    requireValue(isValidTeamId(request.teamId));
   } else if (channel === "game-shell:android-settings") {
     androidSettingsChange(args[0]);
   } else if (channel === "game-shell:package-android") {

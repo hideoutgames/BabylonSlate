@@ -159,6 +159,24 @@ export interface ElectronGameShellBridge {
   androidSettings(change: AndroidPackagingChange | null): Promise<AndroidPackagingStatus>;
   /** Builds and signs an Android game with those settings; see `apps/desktop/src/android-game-package.ts`. */
   packageAndroid(request: ElectronAndroidGameRequest): Promise<{ fileName: string; bytes: Uint8Array; debugSigned: boolean }>;
+  /** macOS only: this Mac's Xcode version, or why iOS games cannot be built here. */
+  iosToolchain(): Promise<{ version: string | null; problems: string[] }>;
+  /** macOS only: builds, signs and exports an iOS game with Xcode; see `apps/desktop/src/ios-game-package.ts`. */
+  packageIos(request: ElectronIosGameRequest): Promise<{ fileName: string; bytes: Uint8Array }>;
+}
+
+export interface ElectronIosGameRequest {
+  game: [string, Uint8Array][];
+  name: string;
+  appId: string;
+  version: string;
+  buildNumber: number;
+  /** App Store: for TestFlight and the App Store. Development: for the team's registered devices. */
+  format: "app-store" | "development";
+  /** The App Icon as an opaque 1024 px PNG, or null. */
+  icon: Uint8Array | null;
+  /** The Apple Developer team Xcode signs for (Engine Settings `iosSigning`). */
+  teamId: string;
 }
 
 export type AndroidPackagingChange =

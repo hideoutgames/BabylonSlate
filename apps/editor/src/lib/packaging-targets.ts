@@ -19,18 +19,18 @@ const TARGETS: readonly Omit<PackagingTarget, "available">[] = [
   { id: "linux", label: "Linux", description: "Desktop game for 64-bit Linux, as a Debian package or a ZIP.", desktopTarget: "linux-x64" },
   { id: "macos", label: "macOS", description: "Desktop game for Apple Silicon Macs, as a signed app in a ZIP.", desktopTarget: "macos-arm64" },
   { id: "android", label: "Android", description: "App for Android phones and tablets, as an APK or an App Bundle." },
-  { id: "ios", label: "iOS", description: "App for iPhone and iPad." },
+  { id: "ios", label: "iOS", description: "App for iPhone and iPad, built and signed with Xcode." },
 ];
 
 /**
  * Packaging targets in dialog order: Web always, a desktop platform when this
- * copy of Haptic carries its player, Android in the desktop app (`android`:
- * its main process builds Android games).
+ * copy of Haptic carries its player, Android in the desktop app and iOS in the
+ * desktop app on a Mac (`android`, `ios`: its main process builds them).
  */
-export function packagingTargets(desktop: ReadonlySet<GameShellTarget>, options: { android: boolean }): PackagingTarget[] {
+export function packagingTargets(desktop: ReadonlySet<GameShellTarget>, options: { android: boolean; ios: boolean }): PackagingTarget[] {
   return TARGETS.map((target) => ({
     ...target,
-    available: target.id === "web" || (target.id === "android" && options.android)
+    available: target.id === "web" || (target.id === "android" && options.android) || (target.id === "ios" && options.ios)
       || (target.desktopTarget !== undefined && desktop.has(target.desktopTarget)),
   }));
 }

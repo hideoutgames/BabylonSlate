@@ -408,6 +408,17 @@ export const engineSettingsSchema = z.object({
     })
     .catch({ identity: null, notaryProfile: "" })
     .default({ identity: null, notaryProfile: "" }),
+  /**
+   * How the desktop app on a Mac signs packaged iOS games: the Apple
+   * Developer team Xcode's automatic signing uses, with the Apple account
+   * signed into Xcode. Per computer; empty until set.
+   */
+  iosSigning: z
+    .object({
+      teamId: z.string().regex(/^(?:[A-Z0-9]{10})?$/).catch("").default(""),
+    })
+    .catch({ teamId: "" })
+    .default({ teamId: "" }),
 });
 
 export type EngineSettings = z.infer<typeof engineSettingsSchema>;

@@ -1,6 +1,6 @@
 import { appIconSizeProblem } from "@haptic/core";
 import type { IndexedAsset } from "@haptic/assets";
-import { APP_ICON_SIZES, type AppIconImages } from "@haptic/exporter/app-icon";
+import { APP_ICON_SIZES, encodeOpaquePng, type AppIconImages } from "@haptic/exporter/app-icon";
 
 /** What reading the App Icon's source image needs from the project. */
 export interface AppIconSourceHost {
@@ -64,6 +64,20 @@ export async function renderAppIconImages(source: Blob): Promise<AppIconImages> 
       images.set(size, new Uint8Array(await blob.arrayBuffer()));
     }
     return images;
+  } finally {
+    bitmap.close();
+  }
+}
+
+/** An App Icon PNG laid over black as an RGB PNG without an alpha channel, which the App Store requires. */
+export async function opaqueAppIconPng(png: Uint8Array): Promise<Uint8Array> {
+  const bitmap = await createImageBitmap(new Blob([new Uint8Array(png)], { type: "image/png" }));
+  try {
+    const context = new OffscreenCanvas(bitmap.width, bitmap.height).getContext("2d");
+    if (!context) throw new Error("The App Icon could not be drawn: this browser has no 2D canvas.");
+    context.drawImage(bitmap, 0, 0);
+    const { data } = context.getImageData(0, 0, bitmap.width, bitmap.height);
+    return encodeOpaquePng(bitmap.width, bitmap.height, new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
   } finally {
     bitmap.close();
   }

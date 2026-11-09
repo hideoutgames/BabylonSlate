@@ -45,7 +45,7 @@ Every page groups its settings into sub-categories, such as **Shadows** and **Po
 - **Accessibility**: text size, motion, touch and timing, number dragging, and graph pin and connection options. See [Accessibility](#accessibility).
 - **About**: version and build. The desktop app also has **Automatic Updates** here.
 - **Templates**, **Engine Plugins** and **Engine Extensions**: what new projects start with. See [Plugins](../projects/plugins.md) and [Extensions](../projects/extensions.md).
-- **Packaging**: how the desktop app on a Mac signs and notarizes macOS games, and the build tools and keystore the desktop apps use for Android games. See [macOS games](../publishing/index.md#macos-games) and [Android games](../publishing/index.md#android-games).
+- **Packaging**: how the desktop app on a Mac signs and notarizes macOS games and which Apple team signs iOS games, and the build tools and keystore the desktop apps use for Android games. See [macOS games](../publishing/index.md#macos-games), [iOS games](../publishing/index.md#ios-games) and [Android games](../publishing/index.md#android-games).
 
 ## Theme
 

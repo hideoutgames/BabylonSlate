@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { isErr, resolvedAppIdentity, type ProjectDocument } from "@haptic/core";
 import { getElectronGameShellBridge, type EngineSettings } from "@haptic/vfs";
 import { ANDROID_ICON_SIZES, type AndroidPackageFormat } from "@haptic/exporter/native-android";
+import type { IosPackageFormat } from "@haptic/exporter/native-ios";
+import { opaqueAppIconPng } from "../lib/app-icon";
 import { useDocumentActions } from "../context/document-context";
 import { saveExportFile, saveZipArchive, savedFileNotice } from "../lib/file-export";
 import { exportGameFailureMessage } from "../lib/export-game-failure";
@@ -26,6 +28,9 @@ export interface PackageOptions {
   /** macOS: this computer's signing settings (Engine Settings > Packaging). */
   macSigning?: EngineSettings["macSigning"];
   androidFormat?: AndroidPackageFormat;
+  iosFormat?: IosPackageFormat;
+  /** iOS: this Mac's Apple Developer team (Engine Settings > Packaging). */
+  iosSigning?: EngineSettings["iosSigning"];
 }
 
 const ANDROID_TYPES: Record<AndroidPackageFormat, string> = { apk: "application/vnd.android.package-archive", aab: "application/octet-stream" };
@@ -72,6 +77,26 @@ export function useGameExport(
       const result = await exportGameArtifact({ platform: target.id, projectSnapshot: projectDocument });
       if (isErr(result)) {
         setError(exportGameFailureMessage(result.error));
+        return;
+      }
+      if (target.id === "ios") {
+        const bridge = getElectronGameShellBridge();
+        if (!bridge?.packageIos) throw new Error("iOS games are packaged in the Haptic desktop app on a Mac.");
+        const identity = resolvedAppIdentity(projectDocument.settings.appIdentity, projectDocument.metadata.name);
+        const iconPng = result.value.appIcon?.get(1024);
+        const format = packageOptions.iosFormat ?? "app-store";
+        setStage("Building and signing with Xcode. This can take several minutes.");
+        const packaged = await bridge.packageIos({
+          game: [...result.value.files],
+          name: identity.displayName,
+          appId: identity.appId,
+          version: projectDocument.metadata.version,
+          buildNumber: identity.buildNumber,
+          format,
+          icon: iconPng ? await opaqueAppIconPng(iconPng) : null,
+          teamId: packageOptions.iosSigning?.teamId ?? "",
+        });
+        setNotice(savedFileNotice(format === "development" ? "Development iOS game" : "iOS game", await saveExportFile(packaged.bytes, packaged.fileName, "application/octet-stream")));
         return;
       }
       if (target.id === "android") {

@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld("haptic", {
     packageMac: (request: unknown) => ipcRenderer.invoke("game-shell:package-mac", request),
     androidSettings: (change: unknown) => ipcRenderer.invoke("game-shell:android-settings", change),
     packageAndroid: (request: unknown) => ipcRenderer.invoke("game-shell:package-android", request),
+    iosToolchain: () => ipcRenderer.invoke("game-shell:ios-toolchain"),
+    packageIos: (request: unknown) => ipcRenderer.invoke("game-shell:package-ios", request),
   },
   // Exports: the main process asks where to save and writes the file.
   files: {

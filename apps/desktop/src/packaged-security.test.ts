@@ -180,6 +180,19 @@ describe("packaged renderer boundary", () => {
       request({ game: [["../escape.js", new Uint8Array([1])]] }), null,
     ]) expect(() => validateIpcArguments("game-shell:package-android", [invalid])).toThrow();
   });
+  it("accepts an iOS game request with a team, either format and one PNG icon", () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0]);
+    const request = (overrides: Record<string, unknown> = {}) => ({
+      game: [["index.html", new Uint8Array([1])]], name: "Space Game", appId: "com.studio.space", version: "1.2.0", buildNumber: 3,
+      format: "app-store", icon: png, teamId: "ABCDE12345", ...overrides,
+    });
+    for (const valid of [request(), request({ format: "development", icon: null })]) expect(() => validateIpcArguments("game-shell:package-ios", [valid])).not.toThrow();
+    for (const invalid of [
+      request({ format: "ad-hoc" }), request({ teamId: "abcde12345" }), request({ teamId: "" }), request({ icon: new Uint8Array([1, 2, 3, 4]) }),
+      request({ appId: "game" }), request({ buildNumber: 0 }), request({ game: [["/etc/passwd", new Uint8Array([1])]] }),
+    ]) expect(() => validateIpcArguments("game-shell:package-ios", [invalid])).toThrow();
+    expect(() => validateIpcArguments("game-shell:ios-toolchain", [])).not.toThrow();
+  });
   it("accepts a macOS game request's App Icon only as an ICNS", () => {
     const request = (icon: unknown) => ({
       game: [["index.html", new Uint8Array([1])]], name: "Space Game", appId: "com.studio.space", version: "1.0.0", buildNumber: 1,
