@@ -71,7 +71,10 @@ void app.whenReady().then(async () => {
       return new Response(response.body, { status: response.status, headers });
     } catch { return new Response(null, { status: 404 }); }
   });
-  if (process.platform !== "darwin") Menu.setApplicationMenu(null);
+  // macOS keeps an app menu (About, Hide, Quit) and Edit for text fields; no reload or developer tools.
+  Menu.setApplicationMenu(process.platform === "darwin"
+    ? Menu.buildFromTemplate([{ role: "appMenu" }, { role: "editMenu" }, { role: "windowMenu" }])
+    : null);
   window = new BrowserWindow({
     width: 1280,
     height: 720,

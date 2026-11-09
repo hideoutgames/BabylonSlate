@@ -20,7 +20,7 @@ export const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> =
     id: "export",
     label: "Export",
     keywords:
-      "export project backup zip download packaging debugger file count always package folders folder include unreferenced",
+      "export project backup zip download packaging debugger file count always package folders folder include unreferenced app identity app id bundle identifier package name display name build number",
   },
   {
     id: "game",
@@ -144,6 +144,11 @@ export const ENGINE_CATEGORIES: Array<
     label: "Keybinds",
     keywords: "keyboard shortcuts hotkeys keybinds keys bindings",
   },
+  {
+    id: "packaging",
+    label: "Packaging",
+    keywords: "macos mac signing developer id codesign certificate keychain notarization notarytool profile gatekeeper",
+  },
 ];
 
 export const ENGINE_GROUPS: CatalogCategoryGroup[] = [
@@ -162,7 +167,7 @@ export const ENGINE_GROUPS: CatalogCategoryGroup[] = [
       "about",
     ],
   },
-  { label: "Projects", ids: ["templates", "plugins", "extensions"] },
+  { label: "Projects", ids: ["templates", "plugins", "extensions", "packaging"] },
 ];
 
 export function matchesSearch(

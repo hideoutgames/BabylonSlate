@@ -327,6 +327,19 @@ export const engineSettingsSchema = z.object({
   focusKeepPanels: z
     .object(focusKeepPanelsShape)
     .default(mutableFocusKeepPanels),
+  /**
+   * How the desktop app on a Mac signs packaged macOS games: a Developer ID
+   * identity from this Mac's keychain (null signs ad-hoc, for local testing)
+   * and the name of a notarytool keychain profile (empty skips notarization).
+   * Per computer, as the keychain is; never credentials themselves.
+   */
+  macSigning: z
+    .object({
+      identity: z.string().min(1).max(256).nullable().catch(null).default(null),
+      notaryProfile: z.string().max(128).regex(/^[A-Za-z0-9._-]*$/).catch("").default(""),
+    })
+    .catch({ identity: null, notaryProfile: "" })
+    .default({ identity: null, notaryProfile: "" }),
 });
 
 export type EngineSettings = z.infer<typeof engineSettingsSchema>;

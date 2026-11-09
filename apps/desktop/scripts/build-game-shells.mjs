@@ -18,7 +18,12 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const desktop = fileURLToPath(new URL("..", import.meta.url));
 /** Desktop targets as `<platform>-<arch>`, with Electron's names for them. */
-export const SHELL_TARGETS = { "windows-x64": { platform: "win32", arch: "x64" }, "linux-x64": { platform: "linux", arch: "x64" } };
+export const SHELL_TARGETS = {
+  "windows-x64": { platform: "win32", arch: "x64" },
+  "linux-x64": { platform: "linux", arch: "x64" },
+  // Packaged only by the desktop app on a Mac, which signs it.
+  "macos-arm64": { platform: "darwin", arch: "arm64" },
+};
 /** Each part stays well under the 100 MB a GitHub Pages file may have. */
 export const PART_BYTES = 48 * 1024 * 1024;
 

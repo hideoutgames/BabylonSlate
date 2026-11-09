@@ -59,6 +59,11 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
       ["File Count Warn", "setting-export-file-warn"],
       ["File Count Fail", "setting-export-file-fail"],
     ]],
+    ["appIdentity", "App Identity", [
+      ["App ID", "setting-app-id"],
+      ["Display Name", "setting-app-display-name"],
+      ["Build Number", "setting-app-build-number"],
+    ]],
     ["alwaysPackageFolders", "Always Package Folders", [["Always Package Folders"]]],
     ["projectBackup", "Project Backup", [["Export Project Backup", "export-project"]]],
   ]),
@@ -234,6 +239,12 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
   ...category("about", [
     ["build", "Build", [["Version And Build"]]],
     ["updates", "Updates", [["Automatic Updates", "setting-automatic-updates"]]],
+  ]),
+  ...category("packaging", [
+    ["macSigning", "macOS Signing", [
+      ["Signing Identity", "setting-mac-signing-identity"],
+      ["Notarization Profile", "setting-mac-notary-profile"],
+    ]],
   ]),
   ...category("interface", [
     ["density", "Density", [["Compact Mode", "setting-compact-mode"]]],

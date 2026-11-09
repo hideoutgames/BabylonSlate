@@ -80,7 +80,9 @@ jobs:
         run: node scripts/distribution/inspect-identity.mjs macos ${{ inputs.channel }}
       - run: pnpm --filter editor build
         env:
-          HAPTIC_GAME_SHELLS: windows-x64,linux-x64
+          HAPTIC_GAME_SHELLS: windows-x64,linux-x64,macos-arm64
+      - name: Package, sign ad-hoc and launch a macOS game
+        run: node apps/desktop/scripts/smoke-mac-game.mjs apps/editor/dist
       - run: pnpm --filter desktop build:host
       - run: pnpm --filter desktop package:macos
       - name: Exercise installed desktop package

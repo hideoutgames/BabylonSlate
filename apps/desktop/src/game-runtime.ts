@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { isAbsolute, join, normalize } from "node:path";
 import { promisify } from "node:util";
@@ -116,4 +117,38 @@ function writeDeflatedZip(files: readonly RuntimeFile[], unix: boolean): Uint8Ar
   view.setUint32(offset + 12, offset - directory, true);
   view.setUint32(offset + 16, directory, true);
   return out;
+}
+
+/**
+ * A runtime this app's build bundles under `<renderer>/game-shells`, and the
+ * game host, both checked against the manifest the build wrote. The main
+ * process reads them itself, so the renderer never names a file.
+ */
+export async function readBundledShell(rendererRoot: string, target: string): Promise<{ runtime: Uint8Array; host: Uint8Array }> {
+  const root = join(rendererRoot, "game-shells");
+  const damaged = new Error("The game player in this copy of Haptic is damaged. Reinstall Haptic.");
+  const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+  let manifest: { host?: { file?: unknown; sha256?: unknown }; shells?: { target?: unknown; source?: unknown; sha256?: unknown; size?: unknown; parts?: unknown }[] };
+  try {
+    manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
+  } catch {
+    throw new Error("This copy of Haptic does not include the player for this platform.");
+  }
+  const shell = manifest.shells?.find((entry) => entry.target === target && entry.source === "bundled");
+  if (!shell) throw new Error("This copy of Haptic does not include the player for this platform.");
+  const name = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+  if (!Array.isArray(shell.parts) || !shell.parts.every((part) => typeof part === "string" && name.test(part)) || typeof shell.size !== "number") throw damaged;
+  const runtime = new Uint8Array(shell.size);
+  let offset = 0;
+  for (const part of shell.parts as string[]) {
+    const bytes = new Uint8Array(await readFile(join(root, part)));
+    if (offset + bytes.length > runtime.length) throw damaged;
+    runtime.set(bytes, offset);
+    offset += bytes.length;
+  }
+  if (offset !== runtime.length || sha256(runtime) !== shell.sha256) throw damaged;
+  if (typeof manifest.host?.file !== "string" || !name.test(manifest.host.file)) throw damaged;
+  const host = new Uint8Array(await readFile(join(root, manifest.host.file)));
+  if (sha256(host) !== manifest.host.sha256) throw damaged;
+  return { runtime, host };
 }

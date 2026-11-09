@@ -6,6 +6,7 @@ import { DebuggerSettingsFields } from "./debugger-settings-fields";
 import { CompactModeField } from "./compact-mode-field";
 import { AddNodeHistoryFields } from "./add-node-history-fields";
 import { SettingsSection } from "./settings-section";
+import { MacSigningSettings } from "./mac-signing-settings";
 import { LabelHint, NumberField, SelectableText } from "@haptic/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
 import {
@@ -226,7 +227,8 @@ export type EngineSettingsCategoryId =
   | "extensions"
   | "focus"
   | "keybinds"
-  | "graph";
+  | "graph"
+  | "packaging";
 
 export function EngineSettingsForm({
   settings,
@@ -283,6 +285,10 @@ export function EngineSettingsForm({
             </SettingsSection>
           )}
         </>
+      ) : null}
+
+      {categoryId === "packaging" ? (
+        <MacSigningSettings settings={settings.macSigning} onChange={(macSigning) => void onChange({ macSigning })} />
       ) : null}
 
       {categoryId === "interface" ? (
