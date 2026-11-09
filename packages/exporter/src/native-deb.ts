@@ -1,4 +1,5 @@
 import { Gzip, gzipSync } from "fflate";
+import { appIconPng, LINUX_ICON_SIZES } from "./app-icon";
 import {
   desktopGameNames, gameAppFiles, isSampleApp, runtimeExecutable,
   type DesktopGamePackageInput,
@@ -149,12 +150,23 @@ export function packageLinuxDeb(input: DesktopGamePackageInput): { fileName: str
     const mode = name === "chrome-sandbox" ? SETUID_SANDBOX_MODE : unixMode || 0o644;
     files.push({ path: `${root}/${name}`, type: "file", mode, source: entry });
   }
-  for (const [path, data] of gameAppFiles(input, names)) files.push({ path: `${root}/${path}`, type: "file", mode: 0o644, data });
+  for (const [path, data] of gameAppFiles(input, { ...names, desktopName: `${packageName}.desktop` })) {
+    files.push({ path: `${root}/${path}`, type: "file", mode: 0o644, data });
+  }
+  const icon = input.icon;
+  if (icon) {
+    for (const size of LINUX_ICON_SIZES) {
+      files.push({ path: `./usr/share/icons/hicolor/${size}x${size}/apps/${packageName}.png`, type: "file", mode: 0o644, data: appIconPng(icon, size) });
+    }
+  }
   const desktopEntry = [
     "[Desktop Entry]",
     "Type=Application",
     `Name=${desktopValue(title)}`,
     `Exec=/opt/${packageName}/${command} %U`,
+    ...(icon ? [`Icon=${packageName}`] : []),
+    // Electron's X11 window class is the product name; this ties the window to the entry.
+    `StartupWMClass=${desktopValue(title)}`,
     "Terminal=false",
     "Categories=Game;",
     "",

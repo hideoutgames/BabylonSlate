@@ -160,6 +160,8 @@ export interface ElectronMacGameRequest {
   version: string;
   buildNumber: number;
   gameId: string;
+  /** The App Icon as an `.icns`, or null for Electron's. */
+  icon: Uint8Array | null;
   identity: string | null;
   notaryProfile: string;
 }

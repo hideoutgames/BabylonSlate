@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdir, readdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { macGameNames } from "../../../packages/exporter/src/native-desktop";
 import { helperBundleId, macSigningIdentities, packageMacGame, type MacGamePackageRequest, type RunCommand } from "./mac-game-package";
@@ -29,7 +29,7 @@ async function electronApp(root: string): Promise<void> {
 function request(overrides: Partial<MacGamePackageRequest> = {}): MacGamePackageRequest {
   return {
     game: [["index.html", new TextEncoder().encode("<html>")], ["assets/data.bin", new Uint8Array([1])]],
-    name: "Space Game", appId: "com.studio.spacegame", version: "1.2.0", buildNumber: 7, gameId: "project-guid",
+    name: "Space Game", appId: "com.studio.spacegame", version: "1.2.0", buildNumber: 7, gameId: "project-guid", icon: null,
     identity: "Developer ID Application: Studio (TEAM123456)", notaryProfile: "haptic-notary",
     ...overrides,
   };
@@ -40,8 +40,13 @@ function tools(status = "Accepted") {
   const calls: string[][] = [];
   let resources: string[] = [];
   let workRoot = "";
+  /** The app's icon file when codesign first runs: what the signature seals. */
+  let iconAtSigning: string | null = null;
   const run: RunCommand = async (command, args) => {
     calls.push([command, ...args]);
+    if (command.endsWith("codesign") && iconAtSigning === null) {
+      iconAtSigning = await readFile(join(workRoot, "out", "Space Game.app", "Contents", "Resources", "electron.icns"), "utf8");
+    }
     if (command.endsWith("ditto") && args[0] === "-x") {
       workRoot = join(args[3]!, "..");
       await electronApp(args[3]!);
@@ -57,7 +62,7 @@ function tools(status = "Accepted") {
     if (command.endsWith("xcrun") && args[0] === "notarytool") return { stdout: JSON.stringify({ id: "sub-1", status }), stderr: "" };
     return { stdout: "", stderr: "" };
   };
-  return { run, calls, resources: () => resources };
+  return { run, calls, resources: () => resources, iconAtSigning: () => iconAtSigning };
 }
 
 const shorten = (call: string[]) => call.map((part) => part.replace(/^.*haptic-macos-[^/]+\//, "<work>/"));
@@ -109,9 +114,18 @@ describe("macOS game packages", () => {
     const apple = tools();
     const result = await packageMacGame({ request: request({ identity: null }), runtime: new Uint8Array([1]), host: new Uint8Array(), run: apple.run });
     expect(result.notarized).toBe(false);
+    // No App Icon keeps Electron's.
+    expect(apple.iconAtSigning()).toBe("icon");
     const codesign = apple.calls.filter((call) => call[0] === "/usr/bin/codesign").map((call) => call.slice(1, 5).join(" "));
     expect(codesign).toEqual(["--force --deep --sign -", "--verify --deep --strict " + apple.calls.find((call) => call[1] === "--verify")![4]]);
     expect(apple.calls.some((call) => call[0] === "/usr/bin/xcrun")).toBe(false);
+  });
+
+  it("seal the App Icon into the app in place of Electron's icon", async () => {
+    const apple = tools();
+    const icon = new TextEncoder().encode("icns of the game");
+    await packageMacGame({ request: request({ identity: null, icon }), runtime: new Uint8Array([1]), host: new Uint8Array(), run: apple.run });
+    expect(apple.iconAtSigning()).toBe("icns of the game");
   });
 
   it("refuse an identity this Mac lacks, an invalid App ID and an app Apple rejects", async () => {

@@ -1,6 +1,7 @@
-import { zipSync } from "fflate";
+import { zipSync, type Zippable } from "fflate";
+import type { AppIconImages } from "./app-icon";
 import { SAFE_ZIP_MTIME } from "./zip-time";
-import { readZipEntries, writeZip, type ZipCopy } from "./zip-merge";
+import { readZipEntries, readZipEntryData, writeZip, type ZipCopy } from "./zip-merge";
 
 /** Desktop platforms a web game can be packaged for, as `<platform>-<arch>`. */
 export const DESKTOP_GAME_TARGETS = ["windows-x64", "linux-x64"] as const;
@@ -19,6 +20,12 @@ export interface DesktopGamePackageInput {
   version: string;
   /** Stable per project; names the game's own storage folder, so saves survive renames. */
   gameId: string;
+  /**
+   * Project Settings App Icon: the Debian package's menu icon and, through
+   * `packageWindowsGame`, the Windows executable's. The game window shows the
+   * export's `icon.png` on every platform.
+   */
+  icon?: AppIconImages;
 }
 
 export interface DesktopGameNames {
@@ -78,7 +85,10 @@ export function isSampleApp(name: string): boolean {
  */
 export function gameAppFiles(
   input: Pick<DesktopGamePackageInput, "host" | "game" | "name" | "version" | "gameId">,
-  names: Pick<DesktopGameNames, "executable">,
+  names: Pick<DesktopGameNames, "executable"> & {
+    /** Linux: the installed `.desktop` file, which Electron names as the window's application ID. */
+    desktopName?: string;
+  },
 ): [string, Uint8Array][] {
   const encoder = new TextEncoder();
   const files: [string, Uint8Array][] = [
@@ -88,6 +98,7 @@ export function gameAppFiles(
       version: input.version,
       main: "main.cjs",
       hapticGameId: input.gameId,
+      ...(names.desktopName ? { desktopName: names.desktopName } : {}),
     }, null, 2)}\n`)],
     ["resources/app/main.cjs", input.host],
   ];
@@ -104,16 +115,27 @@ export function gameAppFiles(
  * A ZIP that runs the web game in Electron: the runtime's files unchanged
  * (renamed executable, Electron's sample app left out), the game host in
  * `resources/app/` and the game in `resources/game/`, all under one folder.
+ * `rewriteExecutable` replaces the executable's bytes (`packageWindowsGame`
+ * brands it); every other runtime file is copied without recompressing.
  */
-export function packageDesktopGame(input: DesktopGamePackageInput): { fileName: string; bytes: Uint8Array } {
+export function packageDesktopGame(
+  input: DesktopGamePackageInput,
+  rewriteExecutable?: (executable: Uint8Array) => Uint8Array,
+): { fileName: string; bytes: Uint8Array } {
   const names = desktopGameNames(input.name, input.target);
   const runtime = readZipEntries(input.runtime);
   const executable = runtimeExecutable(input.target, runtime);
-  const added: Record<string, Uint8Array> = {};
+  const added: Zippable = {};
+  if (rewriteExecutable) {
+    const original = runtime.find((entry) => entry.name === executable)!;
+    // The release's host system and attributes (a Unix mode included) stay with the new bytes.
+    added[`${names.folder}/${names.executable}`] = [rewriteExecutable(readZipEntryData(input.runtime, original)),
+      { os: original.madeBy >> 8, attrs: original.externalAttributes }];
+  }
   for (const [path, data] of gameAppFiles(input, names)) added[`${names.folder}/${path}`] = data;
   const extra = zipSync(added, { level: 6, mtime: SAFE_ZIP_MTIME });
   const copies: ZipCopy[] = [
-    ...runtime.filter((entry) => !isSampleApp(entry.name)).map((entry) => ({
+    ...runtime.filter((entry) => !isSampleApp(entry.name) && !(rewriteExecutable && entry.name === executable)).map((entry) => ({
       name: `${names.folder}/${entry.name === executable ? names.executable : entry.name}`,
       source: input.runtime,
       entry,

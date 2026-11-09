@@ -6,6 +6,8 @@ import { isRuntimeFileName, MAX_RUNTIME_FILES } from "./game-runtime";
 
 /** Largest payload one project IPC call may move through the main process. */
 export const MAX_IPC_BYTES = 512 * 1024 * 1024;
+/** The largest App Icon `.icns` a macOS game request carries. */
+const MAX_APP_ICON_BYTES = 32 * 1024 * 1024;
 
 function requireValue(condition: unknown): asserts condition {
   if (!condition) throw new Error("Invalid desktop request");
@@ -274,6 +276,11 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     requireValue(typeof request.buildNumber === "number" && Number.isSafeInteger(request.buildNumber) && request.buildNumber >= 1);
     text(request.gameId, 100);
     requireValue(/^[A-Za-z0-9_-]{1,100}$/.test(request.gameId));
+    if (request.icon !== null) {
+      // An ICNS: its magic, and no larger than every icon size at 1024 px.
+      requireValue(request.icon instanceof Uint8Array && request.icon.byteLength >= 8 && request.icon.byteLength <= MAX_APP_ICON_BYTES);
+      requireValue(String.fromCharCode(...(request.icon as Uint8Array).subarray(0, 4)) === "icns");
+    }
     if (request.identity !== null) {
       text(request.identity, 256);
       requireValue(request.identity.startsWith("Developer ID Application: "));

@@ -11,6 +11,7 @@ import {
 } from "@haptic/core";
 import { exportGame, zipExport, unzipExport, parseGameManifest, SAFE_ZIP_MTIME } from "./export-game";
 import { GAME_MANIFEST_FILE } from "./constants";
+import { appIconImages } from "./test-support/app-icon-images";
 
 function stubPlayer(): Map<string, Uint8Array> {
   const html = `<!doctype html><html><body>
@@ -24,6 +25,25 @@ function stubPlayer(): Map<string, Uint8Array> {
 }
 
 describe("exportGame", () => {
+  it("titles the page with the project and ships the App Icon as its favicon only when one is set", async () => {
+    const playerFiles = new Map([["index.html", new TextEncoder().encode("<html><head><title>Game</title></head><body></body></html>")]]);
+    const options = { platform: "web" as const, bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, project: { name: "Orbit Workshop", version: "1.0.0" } };
+    const plain = await exportGame(options);
+    if (!plain.ok) throw new Error(plain.error);
+    expect(new TextDecoder().decode(plain.value.files.get("index.html"))).toBe("<html><head><title>Orbit Workshop</title></head><body></body></html>");
+    expect(plain.value.files.has("icon.png")).toBe(false);
+    expect(plain.value.appIcon).toBeUndefined();
+
+    const appIcon = appIconImages();
+    const iconic = await exportGame({ ...options, appIcon });
+    if (!iconic.ok) throw new Error(iconic.error);
+    expect(new TextDecoder().decode(iconic.value.files.get("index.html")))
+      .toBe("<html><head><title>Orbit Workshop</title>  <link rel=\"icon\" type=\"image/png\" href=\"./icon.png\" />\n</head><body></body></html>");
+    expect(iconic.value.files.get("icon.png")).toBe(appIcon.get(256));
+    // Native packages read every size from the artifact.
+    expect(iconic.value.appIcon).toBe(appIcon);
+  });
   it("excludes Preview diagnostics from ordinary exports even when debugging is enabled", async () => {
     const playerFiles = stubPlayer();
     playerFiles.set("player-preview-diagnostics.js", new TextEncoder().encode("export const previewOnly = true"));

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, Menu, net, protocol, session, shell } from "electron";
@@ -25,6 +25,8 @@ const gameId = typeof gamePackage.hapticGameId === "string" && /^[A-Za-z0-9_-]{1
 // Saves follow the project, not the game's name, so a renamed game keeps them.
 if (gameId) app.setPath("userData", join(app.getPath("appData"), "Haptic Games", gameId));
 const gameRoot = join(process.resourcesPath, "game");
+/** The export's App Icon (`APP_ICON_FILE`): the window's icon on Windows and Linux; macOS shows the app bundle's. */
+const windowIcon = join(gameRoot, "icon.png");
 /** Connected to Discord the first time the game sets its presence; closing it on quit makes Discord drop the presence. */
 let presence: DiscordPresence | null = null;
 app.on("will-quit", () => presence?.dispose());
@@ -89,6 +91,7 @@ void app.whenReady().then(async () => {
     width: 1280,
     height: 720,
     title,
+    ...(process.platform !== "darwin" && existsSync(windowIcon) ? { icon: windowIcon } : {}),
     backgroundColor: "#000000",
     autoHideMenuBar: true,
     webPreferences: {

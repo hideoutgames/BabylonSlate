@@ -1,7 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ok } from "@haptic/core";
+import { encodeIcns } from "@haptic/exporter/app-icon";
 import { strToU8, unzipSync, zipSync } from "fflate";
+import { appIconImages } from "../../../../packages/exporter/src/test-support/app-icon-images";
 import type { GameShellManifest } from "../lib/game-shells";
 import { PackagingDialog } from "./packaging-dialog";
 
@@ -173,6 +175,8 @@ it("packages a Windows game from the build's player and saves it named after the
   fireEvent.click(screen.getByTestId("packaging-target-windows"));
   expect(screen.getByTestId("packaging-output").textContent).toBe("Harbour_Run-Windows.zip");
   await act(async () => { fireEvent.click(screen.getByTestId("packaging-package")); });
+  // The Windows packager loads on first use.
+  expect(await screen.findByText("Windows game downloaded. Check your downloads.")).toBeTruthy();
 
   expect(shells.loadDesktopShell).toHaveBeenCalledExactlyOnceWith(SHELLS, "windows-x64");
   // A Windows package is exported with the Windows game's platform directives and modules.
@@ -259,10 +263,16 @@ it("packages a macOS game through the Mac desktop app with the project's identit
     expect(packageMac).toHaveBeenCalledExactlyOnceWith({
       game: [["index.html", strToU8("<html>")]],
       name: "Harbour Run", appId: "com.example.harbourrun", version: "1.0.0", buildNumber: 1,
-      gameId: "harbour-guid", identity: null, notaryProfile: "",
+      gameId: "harbour-guid", icon: null, identity: null, notaryProfile: "",
     });
     expect(downloads).toEqual(["Harbour_Run-macOS.zip"]);
     expect(screen.getByText("macOS game downloaded. Check your downloads.")).toBeTruthy();
+
+    // With an App Icon, the app receives it as an ICNS.
+    const appIcon = appIconImages();
+    exportGameArtifact.mockResolvedValue(ok({ files: new Map([["index.html", strToU8("<html>")]]), appIcon }));
+    await act(async () => { fireEvent.click(screen.getByTestId("packaging-package")); });
+    expect(packageMac).toHaveBeenLastCalledWith(expect.objectContaining({ icon: encodeIcns(appIcon) }));
   } finally {
     delete (globalThis as { haptic?: unknown }).haptic;
   }

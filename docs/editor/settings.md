@@ -116,7 +116,7 @@ Haptic is built with open-source software. To read the licences, open **Manage A
 | --- | --- | --- |
 | Project | General | Project version, Auto-Save Interval, Compile On Save, infinite loop detection, Garbage Collection Interval, Editor Utility Objects |
 | Project | Source Control | Git LFS file locking. Desktop and mobile apps only. |
-| Project | Export | What a game package includes, the App Identity of native apps, and Export Project |
+| Project | Export | What a game package includes, its App Identity and App Icon, and Export Project |
 | Gameplay | Game | Startup Scene, Game Instance, 2D pixels per unit and sorting layers |
 | Gameplay | Save Games | Default save definition, slot and profile; preview saves |
 | Gameplay | Physics | Collision layers and presets |

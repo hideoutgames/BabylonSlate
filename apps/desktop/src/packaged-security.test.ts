@@ -158,6 +158,17 @@ describe("packaged renderer boundary", () => {
       ["asset.hasset", 0, 1, {}],
     ]) expect(() => validateIpcArguments("project:readBinaryRange", args)).toThrow();
   });
+  it("accepts a macOS game request's App Icon only as an ICNS", () => {
+    const request = (icon: unknown) => ({
+      game: [["index.html", new Uint8Array([1])]], name: "Space Game", appId: "com.studio.space", version: "1.0.0", buildNumber: 1,
+      gameId: "project-guid", icon, identity: null, notaryProfile: "",
+    });
+    const icns = new Uint8Array([0x69, 0x63, 0x6e, 0x73, 0, 0, 0, 8]);
+    for (const icon of [null, icns]) expect(() => validateIpcArguments("game-shell:package-mac", [request(icon)])).not.toThrow();
+    for (const icon of [undefined, new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 8]), icns.subarray(0, 4), Array.from(icns), new Uint8Array(33 * 1024 * 1024).fill(0x69)]) {
+      expect(() => validateIpcArguments("game-shell:package-mac", [request(icon)])).toThrow();
+    }
+  });
 });
 
 describe("known project folders", () => {

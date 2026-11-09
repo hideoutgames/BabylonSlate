@@ -62,6 +62,7 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
     ["appIdentity", "App Identity", [
       ["App ID", "setting-app-id"],
       ["Display Name", "setting-app-display-name"],
+      ["App Icon", "setting-app-icon"],
       ["Build Number", "setting-app-build-number"],
     ]],
     ["alwaysPackageFolders", "Always Package Folders", [["Always Package Folders"]]],

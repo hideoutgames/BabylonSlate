@@ -155,6 +155,8 @@ export type CollectExportGameParams = {
   /** Preview Build keeps Development Only nodes. */
   previewBuild?: boolean;
   onPhase?: (phase: "Compiling" | "Writing Pack") => void;
+  /** Project Settings App Icon, rendered at every package size. */
+  appIcon?: import("@haptic/exporter").AppIconImages;
 };
 
 export function resolveExportPluginGraph(
@@ -643,6 +645,7 @@ export async function collectAndExportGame(
     playerFiles: params.playerFiles,
     fileCountWarn: preset.fileCountWarn,
     fileCountFail: preset.fileCountFail,
+    ...(params.appIcon ? { appIcon: params.appIcon } : {}),
   });
   if (isOk(packed)) {
     const unpacked = unpackedRequiredDependency(packed.value.manifest, params.assets, new Set(closure.value.guids), pluginEnabledGuids);

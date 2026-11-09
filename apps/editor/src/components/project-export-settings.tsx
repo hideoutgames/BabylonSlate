@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { defaultAppId, defaultExportPreset, isValidAppId, type AppIdentity, type ExportPreset, type ProjectDocument } from "@haptic/core";
-import { LabelHint, NumberField } from "@haptic/editor-kit";
+import { AssetPickerControl, LabelHint, NumberField, assetRowIdentity, selectedPickerIdentity } from "@haptic/editor-kit";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -11,7 +11,8 @@ import {
 } from "@haptic/ui/components/field";
 import { Input } from "@haptic/ui/components/input";
 import { Switch } from "@haptic/ui/components/switch";
-import type { DocumentActions } from "../context/document-context-types";
+import type { DocumentActions, RegistryState } from "../context/document-context-types";
+import { appIconTextureProblem } from "../lib/app-icon";
 import { AlwaysPackageFoldersField } from "./always-package-folders-field";
 import { SettingsSection } from "./settings-section";
 import type { ProjectExport } from "./use-project-export";
@@ -19,15 +20,21 @@ import type { ProjectExport } from "./use-project-export";
 type ProjectExportSettingsProps = ProjectExport & {
   projectDocument: ProjectDocument;
   updateProjectSettings: DocumentActions["updateProjectSettings"];
+  assetRegistry: RegistryState["assetRegistry"];
+  /** Opens the host's Texture picker for the App Icon. */
+  setAppIconPickerOpen: (open: boolean) => void;
 };
 
 /**
- * App Identity: what native app packages (macOS now, Android and iOS later)
- * are called and identified by. A typed App ID is kept as a draft until it is
- * valid, so an unfinished one never replaces the saved one.
+ * App Identity: what packages (desktop and web now, Android and iOS later)
+ * are called, identified by and shown with. A typed App ID is kept as a
+ * draft until it is valid, so an unfinished one never replaces the saved one.
  */
-function AppIdentitySection({ projectDocument, updateProjectSettings }: Pick<ProjectExportSettingsProps, "projectDocument" | "updateProjectSettings">) {
+function AppIdentitySection({ projectDocument, updateProjectSettings, assetRegistry, setAppIconPickerOpen }: Pick<ProjectExportSettingsProps,
+  "projectDocument" | "updateProjectSettings" | "assetRegistry" | "setAppIconPickerOpen">) {
   const identity = projectDocument.settings.appIdentity;
+  const iconAsset = identity.iconTextureGuid ? assetRegistry?.getByGuid(identity.iconTextureGuid) : undefined;
+  const iconError = identity.iconTextureGuid ? appIconTextureProblem(iconAsset) : null;
   const [appIdDraft, setAppIdDraft] = useState<string | null>(null);
   const appIdText = appIdDraft ?? identity.appId;
   const appIdError = appIdText.trim() && !isValidAppId(appIdText.trim())
@@ -69,6 +76,28 @@ function AppIdentitySection({ projectDocument, updateProjectSettings }: Pick<Pro
           onChange={(event) => update({ displayName: event.target.value })}
         />
       </Field>
+      <Field className="settings-field" data-invalid={iconError ? true : undefined}>
+        <LabelHint hint="Use a square Texture of at least 1024 × 1024 pixels.">
+          <FieldLabel htmlFor="setting-app-icon">App Icon</FieldLabel>
+        </LabelHint>
+        <div className="flex min-w-0 flex-col gap-1">
+          <AssetPickerControl value={identity.iconTextureGuid}>
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
+              onClick={() => setAppIconPickerOpen(true)}
+              aria-invalid={iconError ? true : undefined}
+              aria-describedby={iconError ? "setting-app-icon-error" : undefined}
+              data-testid="setting-app-icon"
+              id="setting-app-icon"
+            >
+              {selectedPickerIdentity(assetRowIdentity(iconAsset ? { name: iconAsset.header.name, type: iconAsset.header.type } : undefined))}
+            </Button>
+          </AssetPickerControl>
+          {iconError ? <FieldError id="setting-app-icon-error">{iconError}</FieldError> : null}
+        </div>
+      </Field>
       <Field className="settings-field">
         <LabelHint hint="Raise it for every upload to an app store. The version is the project's, in General.">
           <FieldLabel htmlFor="setting-app-build-number">Build Number</FieldLabel>
@@ -94,6 +123,8 @@ function AppIdentitySection({ projectDocument, updateProjectSettings }: Pick<Pro
 export function ProjectExportSettings({
   projectDocument,
   updateProjectSettings,
+  assetRegistry,
+  setAppIconPickerOpen,
   exportProjectBusy,
   exportProjectError,
   exportNotice,
@@ -152,7 +183,8 @@ export function ProjectExportSettings({
           />
         </Field>
       </SettingsSection>
-      <AppIdentitySection projectDocument={projectDocument} updateProjectSettings={updateProjectSettings} />
+      <AppIdentitySection projectDocument={projectDocument} updateProjectSettings={updateProjectSettings}
+        assetRegistry={assetRegistry} setAppIconPickerOpen={setAppIconPickerOpen} />
       <SettingsSection id="alwaysPackageFolders" title="Always Package Folders">
         <Field className="settings-row">
           <FieldLabel className="sr-only">Always Package Folders</FieldLabel>

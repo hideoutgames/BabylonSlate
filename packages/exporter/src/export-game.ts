@@ -7,6 +7,7 @@ import {
   DEFAULT_FILE_COUNT_WARN,
   GAME_MANIFEST_FILE,
 } from "./constants";
+import { APP_ICON_FILE, APP_ICON_FILE_SIZE, appIconPng, brandPlayerIndexHtml } from "./app-icon";
 import { selectPlayerRuntimeFiles } from "./player-files";
 import type {
   ExportArtifact,
@@ -277,9 +278,11 @@ export async function exportGame(
       files.set(path, bytes);
     }
   }
-  if (!files.has("index.html")) {
-    files.set("index.html", encoder.encode(defaultPlayerIndexHtml()));
-  }
+  const page = files.get("index.html");
+  files.set("index.html", encoder.encode(brandPlayerIndexHtml(page ? decoder.decode(page) : defaultPlayerIndexHtml(), {
+    title: options.project?.name ?? "", icon: options.appIcon !== undefined,
+  })));
+  if (options.appIcon) files.set(APP_ICON_FILE, appIconPng(options.appIcon, APP_ICON_FILE_SIZE));
 
   // Compiled Class code ships as required sidecars of its owning asset, each
   // independently addressed like any other source.
@@ -368,7 +371,7 @@ export async function exportGame(
     warnings.push(countWarning(fileCount, warnAt));
   }
 
-  return ok({ files, fileCount, warnings, manifest });
+  return ok({ files, fileCount, warnings, manifest, ...(options.appIcon ? { appIcon: options.appIcon } : {}) });
 }
 
 export { SAFE_ZIP_MTIME };

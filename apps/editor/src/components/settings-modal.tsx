@@ -191,6 +191,7 @@ export function SettingsModal({
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [mixerPickerOpen, setMixerPickerOpen] = useState(false);
+  const [appIconPickerOpen, setAppIconPickerOpen] = useState(false);
   const [lutPickerOpen, setLutPickerOpen] = useState(false);
   const [scenePickerOpen, setScenePickerOpen] = useState(false);
   const [gameInstancePickerOpen, setGameInstancePickerOpen] = useState(false);
@@ -752,6 +753,8 @@ export function SettingsModal({
         <ProjectExportSettings
           projectDocument={projectDocument}
           updateProjectSettings={updateProjectSettings}
+          assetRegistry={assetRegistry}
+          setAppIconPickerOpen={setAppIconPickerOpen}
           {...projectExport}
         />
       ) : null}
@@ -819,6 +822,22 @@ export function SettingsModal({
             setLutPickerOpen(false);
           }}
           data-testid="project-effects-lut-picker"
+        />
+      ) : null}
+      {scope === "project" ? (
+        <AssetPicker
+          open={appIconPickerOpen}
+          onOpenChange={setAppIconPickerOpen}
+          assets={pickerLists.textures}
+          allowedTypes={["Texture"]}
+          title="Pick App Icon"
+          allowNone
+          onPick={(iconTextureGuid) => {
+            if (!projectDocument) return;
+            updateProjectSettings({ appIdentity: { ...projectDocument.settings.appIdentity, iconTextureGuid } });
+            setAppIconPickerOpen(false);
+          }}
+          data-testid="setting-app-icon-picker"
         />
       ) : null}
       {scope === "project" ? (

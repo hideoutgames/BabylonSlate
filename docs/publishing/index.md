@@ -17,9 +17,24 @@
 4. Choose **Package**.
 5. Save the file when Haptic asks (see [Saving exported files](../projects/index.md#saving-exported-files)); in a browser, a message such as **Game package downloaded. Check your downloads.** appears. The file is named after the project, with underscores for spaces, and desktop packages end in `-Windows`, `-Linux` or `-macOS`.
 
-The web ZIP has `index.html` at its root. Upload it to itch.io as an HTML game, or unzip it and serve the folder from any static web host. For desktop ZIPs, see [Desktop games](#desktop-games).
+The web ZIP has `index.html` at its root. Upload it to itch.io as an HTML game, or unzip it and serve the folder from any static web host. The page's title is the project name. For desktop ZIPs, see [Desktop games](#desktop-games).
 
 If packaging fails, the reason appears in the **Packaging** window.
+
+## App icon
+
+Set **Project Settings > Export > App Identity > App Icon** to a Texture, and every package uses it as its icon. Without one, each platform keeps its default icon.
+
+Use a square image of at least 1024 × 1024 pixels; Haptic scales it down to each size a platform needs. Packaging uses the image the Texture was imported from, not its compressed copy, so the Texture's settings don't affect the icon. The App Icon row shows a message when the Texture is missing, not square or too small, and packaging fails with the same reason.
+
+| Package | Where the icon appears |
+| --- | --- |
+| Web | The browser tab (`icon.png` beside `index.html`) |
+| Windows | The `.exe` in File Explorer and on shortcuts, the game window and the taskbar. The `.exe` also shows the game's name and version in its file details and in Task Manager. |
+| Linux | The app menu and the dock (Debian package); the game window |
+| macOS | The app in Finder, the Dock and the app switcher |
+
+Adding the icon to the Windows `.exe` makes packaging for Windows take a few seconds longer.
 
 ## Desktop games
 
@@ -85,6 +100,7 @@ These settings are in **Project Settings > Export**, under **Game Packaging**, *
 | File Count Fail | File count above which the export fails. Default 1000. |
 | App ID | Identifies a native app to the operating system and app stores, such as `com.studio.game`: two or more parts of letters and digits, each starting with a letter. Keep it once you publish. |
 | Display Name | The name under the app's icon. The project name when empty. |
+| App Icon | The Texture every package uses as its icon. See [App icon](#app-icon). |
 | Build Number | Raise it for every upload to an app store. |
 | Always Package Folders | Folders whose assets always ship, even when nothing references them. Subfolders are included. |
 

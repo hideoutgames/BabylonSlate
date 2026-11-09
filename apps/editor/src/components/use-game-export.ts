@@ -83,6 +83,8 @@ export function useGameExport(
         const signing = packageOptions.macSigning ?? { identity: null, notaryProfile: "" };
         const notarize = Boolean(signing.identity && signing.notaryProfile);
         setStage(notarize ? "Signing and notarizing with Apple. This can take several minutes." : "Signing the app.");
+        const appIcon = result.value.appIcon;
+        const icon = appIcon ? (await import("@haptic/exporter/app-icon")).encodeIcns(appIcon) : null;
         const packaged = await bridge.packageMac({
           game: [...result.value.files],
           name: identity.displayName,
@@ -90,6 +92,7 @@ export function useGameExport(
           version: projectDocument.metadata.version,
           buildNumber: identity.buildNumber,
           gameId: options.projectGuid ?? "game",
+          icon,
           identity: signing.identity,
           notaryProfile: signing.identity ? signing.notaryProfile : "",
         });
@@ -105,6 +108,7 @@ export function useGameExport(
         name: projectDocument.metadata.name,
         version: projectDocument.metadata.version,
         gameId: options.projectGuid ?? "game",
+        ...(result.value.appIcon ? { icon: result.value.appIcon } : {}),
       };
       if (target.desktopTarget === "linux-x64" && (packageOptions.linuxFormat ?? "deb") === "deb") {
         const { packageLinuxDeb } = await import("@haptic/exporter/native-deb");
@@ -112,8 +116,11 @@ export function useGameExport(
         setNotice(savedFileNotice("Linux package", await saveExportFile(packaged.bytes, packaged.fileName, "application/vnd.debian.binary-package")));
         return;
       }
-      const { packageDesktopGame } = await import("@haptic/exporter/native-desktop");
-      const packaged = packageDesktopGame(input);
+      if (target.desktopTarget === "windows-x64" && input.icon) setStage("Adding the App Icon to the Windows executable.");
+      // Windows writes the App Icon into the executable; elsewhere the window shows the export's icon.png.
+      const packaged = target.desktopTarget === "windows-x64"
+        ? (await import("@haptic/exporter/native-windows")).packageWindowsGame(input)
+        : (await import("@haptic/exporter/native-desktop")).packageDesktopGame(input);
       setNotice(savedFileNotice(`${target.label} game`, await saveZipArchive(packaged.bytes, packaged.fileName)));
     } catch (cause) {
       console.error("[editor] Packaging failed", cause);

@@ -9,7 +9,8 @@ import {
   type Result,
 } from "@haptic/core";
 import { playerFilesHaveKtx2Transcoder } from "@haptic/assets";
-import type { ExportArtifact } from "@haptic/exporter";
+import type { AppIconImages, ExportArtifact } from "@haptic/exporter";
+import { readAppIconSource, renderAppIconImages } from "../lib/app-icon";
 import { collectAudioReverbFlushScenes, flushAudioReverbForSave } from "../lib/audio-reverb-bake";
 import { classParentLookup } from "../lib/class-asset-lookup";
 import { playSceneLibraryPaths } from "../lib/plugin-ui";
@@ -71,6 +72,19 @@ export async function exportProjectGameArtifact(
         .map((diagnostic) => diagnostic.message)
         .join("\n"),
     };
+  }
+  // Packages carry the App Icon; Preview Build runs in the editor's own page and has no use for one.
+  const iconGuid = options.previewBuild ? null : exportDocument?.settings.appIdentity.iconTextureGuid ?? null;
+  let appIcon: AppIconImages | undefined;
+  if (iconGuid) {
+    try {
+      appIcon = await renderAppIconImages(await readAppIconSource({
+        getByGuid: (guid) => projectService.registry?.getByGuid(guid),
+        readAssetChunk: (path, chunkId) => projectService.readAssetChunk(path, chunkId),
+      }, iconGuid));
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
   }
   let extensionLibraries: ExtensionGameLibrary[];
   try {
@@ -166,5 +180,6 @@ export async function exportProjectGameArtifact(
     extensionLibraries,
     previewBuild: options?.previewBuild,
     onPhase: options?.onPhase,
+    ...(appIcon ? { appIcon } : {}),
   });
 }

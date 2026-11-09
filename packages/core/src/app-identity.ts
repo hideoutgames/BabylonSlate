@@ -1,6 +1,6 @@
 /**
- * How a native app package identifies the game: macOS now, Android and iOS
- * later. The version is the project's (`ProjectMetadata.version`).
+ * How a packaged game identifies itself: its desktop and web packages now,
+ * Android and iOS later. The version is the project's (`ProjectMetadata.version`).
  */
 export interface AppIdentity {
   /** Reverse-DNS app ID (`com.studio.game`); empty uses `defaultAppId`. */
@@ -9,9 +9,27 @@ export interface AppIdentity {
   displayName: string;
   /** Increases with every store upload; a positive integer. */
   buildNumber: number;
+  /**
+   * Texture asset whose source image becomes the app icon of every package;
+   * null keeps each platform's default. Packaging requires a square image of
+   * at least `APP_ICON_MIN_SIZE` pixels.
+   */
+  iconTextureGuid: string | null;
 }
 
-export const DEFAULT_APP_IDENTITY: AppIdentity = { appId: "", displayName: "", buildNumber: 1 };
+export const DEFAULT_APP_IDENTITY: AppIdentity = { appId: "", displayName: "", buildNumber: 1, iconTextureGuid: null };
+
+/** The smallest App Icon source edge: the largest icon a package holds (macOS 512 pt at 2x, the iOS App Store icon). */
+export const APP_ICON_MIN_SIZE = 1024;
+
+/** Why an App Icon source of this size cannot be packaged, or null when it can. */
+export function appIconSizeProblem(size: { width: number; height: number }): string | null {
+  if (size.width !== size.height) return `The App Icon must be square; this image is ${size.width} × ${size.height}.`;
+  if (size.width < APP_ICON_MIN_SIZE) {
+    return `The App Icon must be at least ${APP_ICON_MIN_SIZE} × ${APP_ICON_MIN_SIZE}; this image is ${size.width} × ${size.height}.`;
+  }
+  return null;
+}
 
 /**
  * Segments of letters and digits starting with a letter, at least two: the
@@ -39,6 +57,7 @@ export function normalizeAppIdentity(value: unknown): AppIdentity {
     buildNumber: typeof raw.buildNumber === "number" && Number.isSafeInteger(raw.buildNumber) && raw.buildNumber >= 1
       ? raw.buildNumber
       : DEFAULT_APP_IDENTITY.buildNumber,
+    iconTextureGuid: typeof raw.iconTextureGuid === "string" && raw.iconTextureGuid.trim() ? raw.iconTextureGuid.trim() : null,
   };
 }
 
@@ -48,5 +67,6 @@ export function resolvedAppIdentity(identity: AppIdentity, projectName: string):
     appId: identity.appId || defaultAppId(projectName),
     displayName: identity.displayName || projectName.trim() || "Game",
     buildNumber: identity.buildNumber,
+    iconTextureGuid: identity.iconTextureGuid,
   };
 }
