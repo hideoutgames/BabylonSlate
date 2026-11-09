@@ -70,6 +70,7 @@ export async function pickMaterialNodeTexture(
   );
 }
 
+/** Taps the source pin, then the target pin; the spec turns on `enableTapToConnect` before loading. */
 export async function connectMaterialPins(
   page: Page,
   sourcePrefix: string,

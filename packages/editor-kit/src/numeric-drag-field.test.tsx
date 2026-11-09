@@ -87,7 +87,7 @@ describe("NumericDragField", () => {
       <NumericDragField
         label="X"
         value={1}
-        sensitivity={0.1}
+        sensitivity={1}
         onChange={onChange}
         data-testid="field"
       />,
@@ -95,9 +95,31 @@ describe("NumericDragField", () => {
 
     const scrub = screen.getByTestId("field-scrub");
     dispatchPointerEvent(scrub, "pointerdown", { clientX: 100 });
-    dispatchPointerEvent(scrub, "pointermove", { clientX: 150 });
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 105 });
 
     expect(onChange).toHaveBeenCalledWith(6);
+  });
+
+  it("holds a scrub briefly on a round value, then moves on", () => {
+    const onChange = vi.fn();
+    render(
+      <NumericDragField
+        label="X"
+        value={0.95}
+        onChange={onChange}
+        data-testid="field"
+      />,
+    );
+
+    const scrub = screen.getByTestId("field-scrub");
+    dispatchPointerEvent(scrub, "pointerdown", { clientX: 0 });
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 5 });
+    expect(onChange).toHaveBeenLastCalledWith(1);
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 9 });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    dispatchPointerEvent(scrub, "pointermove", { clientX: 10 });
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange.mock.lastCall?.[0]).toBeCloseTo(1.01, 10);
   });
 
   it("reports drag end once per gesture", () => {

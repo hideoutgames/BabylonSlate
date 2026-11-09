@@ -8,6 +8,7 @@ import {
 } from "@xyflow/react";
 import {
   useCallback,
+  useContext,
   useEffect,
   useRef,
   type MouseEvent,
@@ -34,10 +35,12 @@ import {
   nodeRoleClass,
   nodeVisualRole,
   pinCssVar,
+  pinTypeLetter,
   pinVisualShape,
   type NodeVisualRole,
   type PinTypeRef,
 } from "./node-theme";
+import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import { pinDefaultPreview, readPinDefaultValue } from "./pin-default-preview";
 import { PinDefaultEditor } from "./pin-default-editor";
 import { isPinWired } from "./pin-connections";
@@ -147,14 +150,35 @@ function PinVisual({
   pin?: SerializedPin;
   connected: boolean;
 }) {
-  return (
+  const { pinTypeLetters } = useContext(GraphInteractionSettingsContext);
+  const shape = pinVisualShape(type, pin);
+  const color = pinCssVar(type);
+  const glyph = (
     <PinShapeGlyph
-      shape={pinVisualShape(type, pin)}
+      shape={shape}
       connected={connected}
-      color={pinCssVar(type)}
-      size="var(--graph-pin-size, 22px)"
+      color={color}
+      size="var(--graph-pin-glyph, var(--graph-pin-size, 22px))"
       className="graph-pin-visual"
     />
+  );
+  const letter = pinTypeLetters ? pinTypeLetter(type) : undefined;
+  if (!letter) return glyph;
+  // Filled pins (not list or map bars) show the letter in the card colour.
+  const onFill = connected && shape !== "list" && shape !== "map";
+  return (
+    <span className="relative grid place-items-center">
+      {glyph}
+      <span
+        className="graph-pin-letter"
+        data-pin-letter={letter}
+        data-on-fill={onFill ? "true" : undefined}
+        style={{ color }}
+        aria-hidden="true"
+      >
+        {letter}
+      </span>
+    </span>
   );
 }
 
@@ -189,7 +213,7 @@ function PinHandle({
       data-error={hasError ? "true" : undefined}
       className={cn(
         "!relative !top-auto !right-auto !left-auto !translate-x-0 !translate-y-0",
-        "!pointer-events-auto flex !size-11 !min-h-11 !min-w-11 items-center justify-center",
+        "!pointer-events-auto flex !size-[var(--graph-pin-hit,44px)] !min-h-[var(--graph-pin-hit,44px)] !min-w-[var(--graph-pin-hit,44px)] items-center justify-center",
         "!border-0 !bg-transparent touch-manipulation",
         pending && "ring-2 ring-primary ring-offset-1 ring-offset-card",
       )}
@@ -199,8 +223,8 @@ function PinHandle({
         left: "auto",
         right: "auto",
         transform: "none",
-        width: "var(--touch-target, 44px)",
-        height: "var(--touch-target, 44px)",
+        width: "var(--graph-pin-hit, 44px)",
+        height: "var(--graph-pin-hit, 44px)",
         background: "transparent",
         border: "none",
       }}
@@ -332,7 +356,7 @@ function PinRow({
             </PinHint>
           </>
         ) : (
-          <span className="size-11 shrink-0" />
+          <span className="size-[var(--graph-pin-hit,44px)] shrink-0" />
         )}
       </div>
       <div
@@ -362,7 +386,7 @@ function PinRow({
             />
           </>
         ) : (
-          <span className="size-11 shrink-0" />
+          <span className="size-[var(--graph-pin-hit,44px)] shrink-0" />
         )}
       </div>
     </div>

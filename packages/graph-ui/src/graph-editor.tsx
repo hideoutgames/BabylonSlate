@@ -28,7 +28,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import "./graph-editor.css";
 import { GraphViewportControls } from "./graph-viewport-controls";
-import { GraphInteractionSettingsContext, NodeShakeTracker } from "./graph-interaction-settings";
+import { GraphInteractionSettingsContext, NodeShakeTracker, snapPositionToGrid } from "./graph-interaction-settings";
 import {
   useCallback,
   useContext,
@@ -37,6 +37,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import { pinDefaultPropertyKey } from "@haptic/scripting";
@@ -50,6 +51,7 @@ import { IslandIconButton } from "./island-icon-button";
 import {
   AssetOpenProvider,
   ContextMenuOverlay,
+  doubleTapWindowMs,
   normalizeChord,
   useContextMenu,
   useEditorReadOnly,
@@ -327,7 +329,6 @@ export interface GraphEditorProps {
 export type GraphPasteElements = { nodes: CanvasNode[]; edges: Edge[] };
 export type GraphPasteResult = { nodes: CanvasNode[]; notice?: string };
 
-const DOUBLE_TAP_MS = 350;
 const PASTE_OFFSET = 40;
 /** Long enough to read; the hint never blocks editing meanwhile. */
 const NOTICE_MS = 4000;
@@ -764,6 +765,9 @@ function GraphEditorCanvas({
   );
   const nodesDraggable = !readOnly && (nodesDraggableProp ?? true);
   const interactions = useContext(GraphInteractionSettingsContext);
+  const tapToConnect = interactions.tapToConnectEnabled === true;
+  const pinScale = interactions.pinScale ?? 1;
+  const nodeSnapGrid = readOnly ? 0 : (interactions.nodeSnapGrid ?? 0);
   const keybinds = useContext(GraphKeybindsContext);
   const renderPinDefaultEditor = useContext(PinDefaultEditorContext);
   const pinDefaultsDisabled = readOnly || (interactions.readOnlyPinDefaults ?? false);
@@ -800,6 +804,7 @@ function GraphEditorCanvas({
   const [pendingPin, setPendingPin] = useState<{
     nodeId: string;
     pinId: string;
+    direction: "in" | "out";
   } | null>(null);
   const pendingPinRef = useRef(pendingPin);
   useLayoutEffect(() => {
@@ -1044,8 +1049,15 @@ function GraphEditorCanvas({
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
+      // Snapped Nodes: a drag moves freely; its release lands on the grid.
+      const released = nodeSnapGrid > 0
+        ? changes.map((change) =>
+            change.type === "position" && change.dragging === false && change.position
+              ? { ...change, position: snapPositionToGrid(change.position, nodeSnapGrid) }
+              : change)
+        : changes;
       setNodes((current) => {
-        const constrained = replaceChangesAsSelection(changes);
+        const constrained = replaceChangesAsSelection(released);
         const applied = readOnly
           ? constrained.filter(
               (change) => change.type === "select" || change.type === "dimensions",
@@ -1073,7 +1085,7 @@ function GraphEditorCanvas({
         return next;
       });
     },
-    [commitPositionsOnDragEnd, emitChange, readOnly],
+    [commitPositionsOnDragEnd, emitChange, nodeSnapGrid, readOnly],
   );
 
   const handleEdgesChange = useCallback(
@@ -1529,7 +1541,10 @@ function GraphEditorCanvas({
 
   const handleNodeDragStop: OnNodeDrag<CanvasNode> = useCallback(
     (_event, node, dragged) => {
-      const moving = dragged.length ? dragged : [node];
+      // XYFlow reports where the drag left the nodes; with Snapped Nodes they land on the grid.
+      const moving = (dragged.length ? dragged : [node]).map((entry) =>
+        nodeSnapGrid > 0 ? { ...entry, position: snapPositionToGrid(entry.position, nodeSnapGrid) } : entry,
+      );
       if (shakenRef.current && interactions.shakeEnabled && !readOnly && nodesDraggable) {
         const nextEdges = graphStateRef.current.edges;
         const positions = new Map(moving.map((entry) => [entry.id, entry.position]));
@@ -1627,6 +1642,7 @@ function GraphEditorCanvas({
       commitGraph,
       defaultEdgeOptions.type,
       interactions.shakeEnabled,
+      nodeSnapGrid,
       nodesDraggable,
       readOnly,
       isValidConnection,
@@ -1641,39 +1657,55 @@ function GraphEditorCanvas({
         onPinSelect?.(nodeId, pinId);
         return;
       }
+      if (!tapToConnect) return;
       const tapped = graphStateRef.current.nodes.find((node) => node.id === nodeId);
       if (tapped && isDisabledNode(tapped)) return;
-      if (direction === "out") {
-        const next = { nodeId, pinId };
+      const choose = (next: typeof pendingPinRef.current) => {
         pendingPinRef.current = next;
         setPendingPin(next);
+      };
+      const activePin = pendingPinRef.current;
+      // Either side starts a connection. Tapping the chosen pin again cancels
+      // it; another pin on the same side replaces it.
+      if (!activePin || activePin.direction === direction) {
+        choose(
+          activePin?.nodeId === nodeId && activePin.pinId === pinId
+            ? null
+            : { nodeId, pinId, direction },
+        );
         return;
       }
 
-      const activePin = pendingPinRef.current;
-      if (!activePin) return;
-      const sourcePin = pinOnNode(graphStateRef.current.nodes, activePin.nodeId, activePin.pinId);
-      const targetPin = pinOnNode(graphStateRef.current.nodes, nodeId, pinId);
-      if (activePin.nodeId === nodeId && (sourcePin?.kind !== "exec" || targetPin?.kind !== "exec")) {
-        pendingPinRef.current = null;
-        setPendingPin(null);
+      const tappedPin = { nodeId, pinId };
+      const from = direction === "out" ? tappedPin : activePin;
+      const to = direction === "out" ? activePin : tappedPin;
+      const sourcePin = pinOnNode(graphStateRef.current.nodes, from.nodeId, from.pinId);
+      const targetPin = pinOnNode(graphStateRef.current.nodes, to.nodeId, to.pinId);
+      if (from.nodeId === to.nodeId && (sourcePin?.kind !== "exec" || targetPin?.kind !== "exec")) {
+        choose(null);
         return;
       }
 
       const incoming = {
-        source: activePin.nodeId,
-        target: nodeId,
-        sourceHandle: activePin.pinId,
-        targetHandle: pinId,
+        source: from.nodeId,
+        target: to.nodeId,
+        sourceHandle: from.pinId,
+        targetHandle: to.pinId,
       };
       if (!isValidConnection(incoming)) return;
 
-      addEdge(activePin.nodeId, activePin.pinId, nodeId, pinId);
-      pendingPinRef.current = null;
-      setPendingPin(null);
+      addEdge(from.nodeId, from.pinId, to.nodeId, to.pinId);
+      choose(null);
     },
-    [addEdge, isValidConnection, onPinSelect, readOnly],
+    [addEdge, isValidConnection, onPinSelect, readOnly, tapToConnect],
   );
+
+  // Turning the setting off drops a pin chosen while it was on.
+  useEffect(() => {
+    if (tapToConnect || !pendingPinRef.current) return;
+    pendingPinRef.current = null;
+    setPendingPin(null);
+  }, [tapToConnect]);
 
   const handleConnect = useCallback(
     (connection: Connection) => {
@@ -2568,7 +2600,7 @@ function GraphEditorCanvas({
       clearSelection();
       onEmptyCanvasClickRef.current?.();
       const now = Date.now();
-      if (now - lastPaneTapRef.current < DOUBLE_TAP_MS && !readOnly) {
+      if (now - lastPaneTapRef.current < doubleTapWindowMs() && !readOnly) {
         const point = event ? { x: event.clientX, y: event.clientY } : null;
         setPendingConnect(point ? { position: screenToFlowPosition(point) } : null);
         setPaletteAnchor(point);
@@ -3001,6 +3033,7 @@ function GraphEditorCanvas({
       <div
         ref={wrapperRef}
         className="relative h-full w-full touch-manipulation"
+        style={{ "--graph-pin-scale": pinScale } as CSSProperties}
         data-testid="graph-editor"
         data-connect-end-mode={connectEndMode}
         data-focused-node-id={focusedNodeId || undefined}
@@ -3104,6 +3137,9 @@ function GraphEditorCanvas({
           edgeTypes={edgeTypes}
           nodesDraggable={nodesDraggable}
           nodesConnectable={!readOnly}
+          // Pin handles route taps through onPinTap; this covers handles
+          // without one (Animation Graph state sides).
+          connectOnClick={tapToConnect && !readOnly}
           elementsSelectable
           edgesReconnectable={false}
           onlyRenderVisibleElements={false}

@@ -12,10 +12,12 @@ import {
 } from "@haptic/scripting";
 import {
   ensureCallParentForEvent,
+  EVENT_COLUMN_X,
   inheritedCustomEventSeeds,
   LINEAGE_NATIVE_EVENT_TYPES,
   nativeEventStubs,
   NATIVE_CLASS_EVENT_TYPES,
+  nextEventRowY,
   seededNativeEventTypes,
   COLLISION_EVENT_TYPE_IDS,
   type ClassEventOptions,
@@ -71,7 +73,7 @@ export function createDefaultLogicGraphSerialized(
   };
   let graph = logicToSerializedGraph(logic);
 
-  stubs.forEach((stub, index) => {
+  stubs.forEach((stub) => {
     const def = nodeRegistry.get(stub.eventType);
     if (!def) {
       throw new Error(
@@ -94,7 +96,7 @@ export function createDefaultLogicGraphSerialized(
         {
           id: eventId,
           type: stub.eventType,
-          position: { x: 80, y: 80 + index * 160 },
+          position: { x: EVENT_COLUMN_X, y: nextEventRowY(graph) },
           data: {
             title: stub.name,
             ...(dataPins.length > 0 ? { pins: dataPins } : {}),
@@ -114,7 +116,7 @@ export function createDefaultLogicGraphSerialized(
   });
 
   const inherited = inheritedCustomEventSeeds(options);
-  inherited.forEach((event, index) => {
+  inherited.forEach((event) => {
     if (graph.nodes.some((node) => node.type === "flow.event.custom" && node.data.name === event.name)) return;
     // Names that differ only in punctuation ("Foo Bar", "Foo-Bar") share a slug; each gets its own node.
     const slug = event.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -122,7 +124,7 @@ export function createDefaultLogicGraphSerialized(
     for (let suffix = 2; graph.nodes.some((node) => node.id === eventId); suffix++) {
       eventId = `event-custom-${slug}-${suffix}`;
     }
-    const y = 80 + (stubs.length + index) * 160;
+    const y = nextEventRowY(graph);
     graph = {
       ...graph,
       nodes: [
@@ -130,7 +132,7 @@ export function createDefaultLogicGraphSerialized(
         {
           id: eventId,
           type: "flow.event.custom",
-          position: { x: 80, y },
+          position: { x: EVENT_COLUMN_X, y },
           data: {
             title: formatEventTitle(event.name),
             name: event.name,

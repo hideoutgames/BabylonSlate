@@ -1,8 +1,8 @@
 import { render, fireEvent, cleanup, act } from "@testing-library/react";
 import { createPortal } from "react-dom";
 import { describe, expect, it, vi, afterEach } from "vitest";
+import { CONTEXT_MENU_LONG_PRESS_MS, setGestureTiming } from "./gesture-timing";
 import {
-  CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   useContextMenu,
   useContextMenuGesture,
@@ -144,6 +144,21 @@ describe("useContextMenu", () => {
     dispatchPointerEvent(target, "pointerdown", ORIGIN);
     await advancePastLongPress();
     expect(state()).toBe("open");
+  });
+
+  it("waits for the Hold Time setting before opening", async () => {
+    vi.useFakeTimers();
+    setGestureTiming({ holdMs: 900, doubleTapMs: 350 });
+    try {
+      const { target, state } = renderHost();
+      dispatchPointerEvent(target, "pointerdown", ORIGIN);
+      await advancePastLongPress(899);
+      expect(state()).toBe("closed");
+      await advancePastLongPress(1);
+      expect(state()).toBe("open");
+    } finally {
+      setGestureTiming({ holdMs: CONTEXT_MENU_LONG_PRESS_MS, doubleTapMs: 350 });
+    }
   });
 
   it("keeps a held menu open through its retargeted release click and closes on the next backdrop tap", async () => {

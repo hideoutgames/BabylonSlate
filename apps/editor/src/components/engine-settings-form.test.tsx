@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { defaultEngineSettings } from "@haptic/vfs";
 import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
 import { getAddNodeHistory, GraphEditor, type GraphDocument } from "@haptic/graph-ui";
@@ -95,6 +95,78 @@ describe("EngineSettingsForm graph", () => {
   });
 });
 
+function LiveAccessibilitySettings() {
+  const { settings, updateSettings } = useAppSettings();
+  return <EngineSettingsForm settings={settings} categoryId="accessibility"
+    onChange={(patch) => updateSettings((next) => { Object.assign(next, patch); })} />;
+}
+
+describe("EngineSettingsForm accessibility", () => {
+  const execPins = [
+    { id: "execIn", name: "execIn", kind: "exec", direction: "in", type: { kind: "exec" } },
+    { id: "execOut", name: "execOut", kind: "exec", direction: "out", type: { kind: "exec" } },
+  ] as const;
+  const graph: GraphDocument = {
+    nodes: ["a", "b"].map((id, index) => ({
+      id, type: "debug.log", position: { x: index * 300, y: 0 },
+      data: { title: "Log", __pins: [...execPins] },
+    })),
+    edges: [],
+  };
+  const renderLive = (store: MemoryAppSettingsStore, onChange = vi.fn()) => render(<AppSettingsProvider store={store}>
+    <LiveAccessibilitySettings />
+    <GraphEditor initialGraph={graph} onChange={onChange} />
+  </AppSettingsProvider>);
+  const tapPin = (view: ReturnType<typeof render>, nodeId: string, pinId: string) =>
+    fireEvent.click(view.container.querySelector(`[data-id="${nodeId}"] [data-handleid="${pinId}"]`)!);
+
+  it("connects tapped pins in an open graph only once Tap To Connect Pins is on", async () => {
+    const store = new MemoryAppSettingsStore();
+    const onChange = vi.fn();
+    const view = renderLive(store, onChange);
+    const toggle = view.getByRole("switch", { name: "Tap To Connect Pins" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    tapPin(view, "b", "execIn");
+    tapPin(view, "a", "execOut");
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
+    expect((await store.load()).graphTapToConnect).toBe(true);
+    tapPin(view, "b", "execIn");
+    tapPin(view, "a", "execOut");
+    expect((onChange.mock.lastCall?.[0] as GraphDocument).edges).toEqual([
+      expect.objectContaining({ source: "a", sourceHandle: "execOut", target: "b", targetHandle: "execIn" }),
+    ]);
+  });
+
+  it("scales the pins of an open graph with Large Pins, in whole steps from 1× to 4×", async () => {
+    const store = new MemoryAppSettingsStore();
+    const view = renderLive(store);
+    const root = view.getByTestId("graph-editor");
+    // jsdom never measures the track, so Base UI keeps the thumb (and its name) hidden.
+    const slider = within(view.getByRole("group", { name: "Large Pins" })).getByRole("slider", { hidden: true });
+    expect(root.style.getPropertyValue("--graph-pin-scale")).toBe("1");
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    await waitFor(() => expect(root.style.getPropertyValue("--graph-pin-scale")).toBe("2"));
+    expect(view.getByTestId("setting-large-pins-value").textContent).toBe("2×");
+    expect((await store.load()).graphPinScale).toBe(2);
+    fireEvent.keyDown(slider, { key: "End" });
+    await waitFor(() => expect(root.style.getPropertyValue("--graph-pin-scale")).toBe("4"));
+  });
+
+  it("turns Snapped Nodes on with its grid size, which stays unavailable while it is off", async () => {
+    const store = new MemoryAppSettingsStore();
+    const view = renderLive(store);
+    const gridSize = view.getByTestId("setting-snap-grid-size");
+    expect(gridSize).toHaveProperty("disabled", true);
+    expect(gridSize).toHaveProperty("value", "2");
+    fireEvent.click(view.getByRole("switch", { name: "Snapped Nodes" }));
+    await waitFor(() => expect(gridSize).toHaveProperty("disabled", false));
+    expect(await store.load()).toMatchObject({ graphSnapNodes: true, graphSnapGridSize: 2 });
+  });
+});
+
 describe("EngineSettingsForm Add Node History", () => {
   afterEach(() => getAddNodeHistory().clear());
 
@@ -158,6 +230,17 @@ describe("EngineSettingsForm viewport", () => {
       />,
     );
     expect((view.getByLabelText("Placement Trace Distance") as HTMLInputElement).disabled).toBe(true);
+  });
+  it("stacks new 2D actors nowhere by default and writes the chosen hosts", async () => {
+    const onChange = vi.fn();
+    const view = render(<EngineSettingsForm settings={defaultEngineSettings()} onChange={onChange} categoryId="viewport" />);
+    const trigger = view.getByTestId("setting-stack-new-actors-2d");
+    expect(trigger.textContent).toContain("Disabled");
+    fireEvent.click(trigger);
+    const option = await view.findByRole("option", { name: "Scene Layers Only" });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith({ viewportStackNewActors2D: "sceneLayers" }));
   });
   it("reports a post-processing toggle when local overrides are enabled", () => {
     const onChange = vi.fn();

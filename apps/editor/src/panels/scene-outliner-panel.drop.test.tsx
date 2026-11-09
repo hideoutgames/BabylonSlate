@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene } from "@haptic/core";
-import { createDefaultScene, createTimelineClip } from "@haptic/core";
+import { createActor, createDefaultScene, createTimelineClip } from "@haptic/core";
 import { actorRowId } from "../lib/outliner-drop";
+import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
 import { SceneOutlinerPanel } from "./scene-outliner-panel";
 
 /** jsdom has no PointerEvent; a MouseEvent with pointer fields drives TreeView. */
@@ -134,6 +135,29 @@ describe("SceneOutlinerPanel viewport drop", () => {
     dragRowOutside(screen.getByTestId(`tree-row-${actorRowId("actor-1")}`));
     const next = applySceneChange.mock.calls[0]?.[1] as SerializedScene;
     expect(next.actors.find((actor) => actor.id === "actor-2")?.transform.position).toEqual([0, 0, -25]);
+    expect(viewportDropApi.restOnSurface).not.toHaveBeenCalled();
+  });
+
+  it("drops a copy into a 2D Scene at the pointer, keeping the source's Z-Order unless stacking", () => {
+    const scene = createDefaultScene("2d");
+    scene.actors = [{
+      ...createActor("actor-1", "Crate"),
+      transform: { position: [1, 1, -2], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+      components: [{ id: "crate-sprite", classId: "SpriteComponent", properties: {} }],
+    }];
+    renderOutliner(scene);
+    const row = () => screen.getByTestId(`tree-row-${actorRowId("actor-1")}`);
+    viewportDropApi.placementAtClient.mockReturnValueOnce({ position: [4, 5, 0], normal: null });
+    dragRowOutside(row());
+    const kept = applySceneChange.mock.calls[0]?.[1] as SerializedScene;
+    expect(kept.actors.find((actor) => actor.name === "Crate Copy")?.transform.position).toEqual([4, 5, -2]);
+
+    receiveActiveAppSettingsUpdate({ viewportStackNewActors2D: "both" });
+    onTestFinished(() => receiveActiveAppSettingsUpdate({ viewportStackNewActors2D: "disabled" }));
+    viewportDropApi.placementAtClient.mockReturnValueOnce({ position: [4, 5, 0], normal: null });
+    dragRowOutside(row());
+    const stacked = applySceneChange.mock.calls[1]?.[1] as SerializedScene;
+    expect(stacked.actors.find((actor) => actor.name === "Crate Copy")?.transform.position).toEqual([4, 5, -3]);
     expect(viewportDropApi.restOnSurface).not.toHaveBeenCalled();
   });
 

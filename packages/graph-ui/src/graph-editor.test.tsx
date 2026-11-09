@@ -1,8 +1,8 @@
 import { act, fireEvent, render, cleanup, screen, waitFor } from "@testing-library/react";
 import { useReactFlow, useStore } from "@xyflow/react";
-import { StrictMode, useEffect, useState, type ReactNode } from "react";
+import { StrictMode, useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DRAG_ARM_MS, EditorReadOnlyContext, TagProvider } from "@haptic/editor-kit";
+import { DRAG_ARM_MS, EditorReadOnlyContext, TagProvider, setGestureTiming } from "@haptic/editor-kit";
 import {
   GRAPH_DEFAULT_ZOOM,
   GRAPH_MIN_ZOOM,
@@ -23,6 +23,17 @@ import { getAddNodeHistory } from "./add-node-history";
 import { useGraphEditorContext } from "./graph-editor-context";
 
 /** The read-only pin defaults preference, provided as the editor's app settings provide it. */
+/** Tap-to-connect is an opt-in Accessibility setting; tests that tap pins turn it on. */
+function renderTapToConnect(ui: ReactElement) {
+  return render(
+    <GraphInteractionSettingsContext.Provider
+      value={{ assistantEnabled: true, assistantDistance: 48, shakeEnabled: true, tapToConnectEnabled: true }}
+    >
+      {ui}
+    </GraphInteractionSettingsContext.Provider>,
+  );
+}
+
 function PinDefaultsPreference({ readOnly = true, children }: { readOnly?: boolean; children: ReactNode }) {
   return (
     <GraphInteractionSettingsContext.Provider value={{ assistantEnabled: true, assistantDistance: 48, shakeEnabled: true, readOnlyPinDefaults: readOnly }}>
@@ -1055,7 +1066,7 @@ describe("GraphEditor", () => {
 
   it.each(["log-a", "log-b"])("tap-connects execution to %s, including a self-cycle", (targetId) => {
     const onChange = vi.fn();
-    const { container } = render(
+    const { container } = renderTapToConnect(
       <GraphEditor initialGraph={graphWithPins()} onChange={onChange} />,
     );
 
@@ -1107,7 +1118,7 @@ describe("GraphEditor", () => {
         },
       ],
     };
-    const { container } = render(
+    const { container } = renderTapToConnect(
       <GraphEditor initialGraph={graph} onChange={onChange} />,
     );
 
@@ -1144,6 +1155,105 @@ describe("GraphEditor", () => {
     expect(lastGraph.edges).toHaveLength(2);
   });
 
+  describe("tap to connect", () => {
+    const threeLogs = (): GraphDocument => ({
+      nodes: [
+        ...graphWithPins().nodes,
+        {
+          id: "log-c",
+          type: "debug.log",
+          position: { x: 560, y: 0 },
+          data: { message: "C", __pins: debugLogPins },
+        },
+      ],
+      edges: [],
+    });
+    const pin = (container: HTMLElement, nodeId: string, pinId: string) => {
+      const handle = container.querySelector(`[data-id="${nodeId}"] [data-handleid="${pinId}"]`);
+      expect(handle).not.toBeNull();
+      return handle!;
+    };
+
+    it("starts a connection from an input pin", () => {
+      const onChange = vi.fn();
+      const { container } = renderTapToConnect(
+        <GraphEditor initialGraph={graphWithPins()} onChange={onChange} />,
+      );
+
+      fireEvent.click(pin(container, "log-b", "execIn"));
+      fireEvent.click(pin(container, "log-a", "execOut"));
+
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toEqual([
+        expect.objectContaining({
+          source: "log-a",
+          target: "log-b",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        }),
+      ]);
+    });
+
+    it("replaces the chosen pin with another on the same side", () => {
+      const onChange = vi.fn();
+      const { container } = renderTapToConnect(
+        <GraphEditor initialGraph={threeLogs()} onChange={onChange} />,
+      );
+
+      fireEvent.click(pin(container, "log-b", "execIn"));
+      fireEvent.click(pin(container, "log-c", "execIn"));
+      expect(onChange).not.toHaveBeenCalled();
+      fireEvent.click(pin(container, "log-a", "execOut"));
+
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toEqual([
+        expect.objectContaining({ source: "log-a", target: "log-c" }),
+      ]);
+    });
+
+    it("cancels the chosen pin when it is tapped again", () => {
+      const onChange = vi.fn();
+      const { container } = renderTapToConnect(
+        <GraphEditor initialGraph={graphWithPins()} onChange={onChange} />,
+      );
+
+      fireEvent.click(pin(container, "log-b", "execIn"));
+      fireEvent.click(pin(container, "log-b", "execIn"));
+      fireEvent.click(pin(container, "log-a", "execOut"));
+
+      expect(onChange).not.toHaveBeenCalled();
+      // The output tap started a new connection instead.
+      fireEvent.click(pin(container, "log-b", "execIn"));
+      expect((onChange.mock.calls.at(-1)?.[0] as GraphDocument).edges).toHaveLength(1);
+    });
+
+    it("ignores pin taps while Tap To Connect Pins is off", () => {
+      const onChange = vi.fn();
+      const { container } = render(
+        <GraphEditor initialGraph={graphWithPins()} onChange={onChange} />,
+      );
+
+      fireEvent.click(pin(container, "log-a", "execOut"));
+      fireEvent.click(pin(container, "log-b", "execIn"));
+
+      expect(onChange).not.toHaveBeenCalled();
+    });
+  });
+
+  it.each([
+    [undefined, "1"],
+    [3, "3"],
+  ])("scales pins by the Large Pins setting (%s)", (pinScale, expected) => {
+    const { getByTestId } = render(
+      <GraphInteractionSettingsContext.Provider
+        value={{ assistantEnabled: true, assistantDistance: 48, shakeEnabled: true, pinScale }}
+      >
+        <GraphEditor initialGraph={graphWithPins()} />
+      </GraphInteractionSettingsContext.Provider>,
+    );
+    expect(getByTestId("graph-editor").style.getPropertyValue("--graph-pin-scale")).toBe(expected);
+  });
+
   it("keeps a second exec wire into the same exec input", () => {
     const onChange = vi.fn();
     const graph: GraphDocument = {
@@ -1166,7 +1276,7 @@ describe("GraphEditor", () => {
         },
       ],
     };
-    const { container } = render(
+    const { container } = renderTapToConnect(
       <GraphEditor initialGraph={graph} onChange={onChange} />,
     );
 
@@ -1244,7 +1354,7 @@ describe("GraphEditor", () => {
         },
       ],
     };
-    const { container } = render(
+    const { container } = renderTapToConnect(
       <GraphEditor initialGraph={graph} onChange={onChange} />,
     );
 
@@ -2116,7 +2226,7 @@ describe("GraphEditor", () => {
   });
 
   it("does not open Add Node from a pin tap plus empty pane in zone-add-node mode", async () => {
-    const { container, queryByTestId } = render(
+    const { container, queryByTestId } = renderTapToConnect(
       <GraphEditor
         initialGraph={graphWithPins()}
         connectEndMode="zone-add-node"
@@ -2351,7 +2461,7 @@ describe("GraphEditor", () => {
       ],
     };
 
-    const { container } = render(<GraphEditor initialGraph={graph} />);
+    const { container } = renderTapToConnect(<GraphEditor initialGraph={graph} />);
     const eventNode = container.querySelector('[data-node-role="event"]');
     expect(eventNode).not.toBeNull();
     expect(eventNode?.className).toMatch(/min-w-80/);
@@ -2372,7 +2482,8 @@ describe("GraphEditor", () => {
       '[data-handleid="execOut"][data-pin-type="exec"]',
     );
     expect(execHandle).not.toBeNull();
-    expect(execHandle?.className).toMatch(/min-h-11|size-11/);
+    // The Large Pins hit area, never below a 44px touch target.
+    expect(execHandle?.className).toMatch(/size-\[var\(--graph-pin-hit,44px\)\]/);
 
     const messageHandle = container.querySelector(
       '[data-handleid="message"][data-pin-type="string"]',
@@ -3485,6 +3596,51 @@ describe("GraphEditor", () => {
     expect(getByTestId("node-palette-body")).toBeTruthy();
   });
 
+  it("opens the palette only for taps within the Double-Tap Time", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const paletteNodes = [{ id: "debug.log", title: "Log", category: "Debug" }];
+    const tapTwice = (container: HTMLElement, gapMs: number) => {
+      const pane = container.querySelector(".react-flow__pane")!;
+      fireEvent.click(pane);
+      vi.advanceTimersByTime(gapMs);
+      fireEvent.click(pane);
+    };
+    try {
+      const first = render(<GraphEditor initialGraph={{ nodes: [], edges: [] }} paletteNodes={paletteNodes} />);
+      tapTwice(first.container, 600);
+      expect(first.queryByTestId("node-palette-body")).toBeNull();
+      first.unmount();
+
+      setGestureTiming({ holdMs: 500, doubleTapMs: 800 });
+      vi.advanceTimersByTime(1000);
+      const second = render(<GraphEditor initialGraph={{ nodes: [], edges: [] }} paletteNodes={paletteNodes} />);
+      tapTwice(second.container, 600);
+      expect(second.getByTestId("node-palette-body")).toBeTruthy();
+    } finally {
+      setGestureTiming({ holdMs: 500, doubleTapMs: 350 });
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    [true, ["S"]],
+    [false, []],
+  ])("draws data pin type letters only when Pin Type Letters is %s", (pinTypeLetters, letters) => {
+    const { container } = render(
+      <GraphInteractionSettingsContext.Provider
+        value={{ assistantEnabled: true, assistantDistance: 48, shakeEnabled: true, pinTypeLetters }}
+      >
+        <GraphEditor initialGraph={singleLogGraph()} />
+      </GraphInteractionSettingsContext.Provider>,
+    );
+    // Exec pins keep their arrow shape; the String message pin reads S.
+    const shown = [...container.querySelectorAll("[data-pin-letter]")].map((element) => element.textContent);
+    expect(shown).toEqual(letters);
+    if (pinTypeLetters) {
+      expect(container.querySelector('[data-handleid="message"] [data-pin-letter]')?.textContent).toBe("S");
+    }
+  });
+
   it("keeps Break Links disabled for an unwired selection", () => {
     const { container, getByTestId } = render(
       <GraphEditor initialGraph={graphWithPins()} />,
@@ -3698,7 +3854,7 @@ describe("GraphEditor", () => {
       edges: [],
     };
 
-    const { container } = render(
+    const { container } = renderTapToConnect(
       <GraphEditor initialGraph={graph} onChange={onChange} />,
     );
     const source = container.querySelector(
@@ -3728,7 +3884,7 @@ describe("GraphEditor", () => {
     const onChange = vi.fn();
     const scriptPins: PinCompatibilityRule = (outgoing, incoming) =>
       isAssignable(outgoing.type as PinType, incoming.type as PinType);
-    const { container } = render(
+    const { container } = renderTapToConnect(
       <GraphEditor
         initialGraph={forEachFloatGraph()}
         onChange={onChange}
@@ -3786,7 +3942,7 @@ describe("GraphEditor", () => {
     const onChange = vi.fn();
     const scriptPins: PinCompatibilityRule = (outgoing, incoming) =>
       isAssignable(outgoing.type as PinType, incoming.type as PinType);
-    const { container } = render(
+    const { container } = renderTapToConnect(
       <GraphEditor
         initialGraph={forEachFloatGraph()}
         onChange={onChange}
@@ -4671,7 +4827,7 @@ describe("GraphEditor", () => {
 
   it("tap-connects behaviour tree parent and children handles", async () => {
     const onChange = vi.fn();
-    const { container } = render(
+    const { container } = renderTapToConnect(
       <GraphEditor
         initialGraph={{
           nodes: [
@@ -4750,7 +4906,7 @@ describe("GraphEditor", () => {
   });
 
   it("cancels a pin tap plus empty pane in add-node mode", async () => {
-    const { container, queryByTestId } = render(
+    const { container, queryByTestId } = renderTapToConnect(
       <GraphEditor
         initialGraph={{
           nodes: [
@@ -4801,7 +4957,7 @@ describe("GraphEditor", () => {
   });
 
   it("does not open Add Node from a pin tap plus empty pane in default mode", async () => {
-    const { container, queryByTestId } = render(
+    const { container, queryByTestId } = renderTapToConnect(
       <GraphEditor
         initialGraph={graphWithPins()}
         paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
@@ -5476,9 +5632,9 @@ describe("Particle Graph canvas", () => {
         expect(wire("tint-wire")).not.toBeNull();
       });
       expect(wire("spine")!.style.stroke).toBe("var(--pin-particle)");
-      expect(wire("spine")!.style.strokeWidth).toBe("5");
+      expect(wire("spine")!.style.strokeWidth).toBe("var(--graph-wire-exec, 5px)");
       expect(wire("tint-wire")!.style.stroke).toBe("var(--pin-color)");
-      expect(wire("tint-wire")!.style.strokeWidth).toBe("4");
+      expect(wire("tint-wire")!.style.strokeWidth).toBe("var(--graph-wire-data, 4px)");
 
       const update = container.querySelector('.react-flow__node[data-id="update"]')!;
       const spinePin = update.querySelector('[data-pin-type="particle"] [data-pin-shape]') as HTMLElement;

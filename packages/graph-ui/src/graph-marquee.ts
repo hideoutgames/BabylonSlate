@@ -1,6 +1,6 @@
 import {
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
-  DRAG_ARM_MS,
+  dragArmDelayMs,
 } from "@haptic/editor-kit";
 import { graphNodeSize } from "./graph-virtualize";
 
@@ -29,7 +29,7 @@ export function resolvePaneMarqueePhase(options: {
   armed?: boolean;
   dragArmMs?: number;
 }): PaneMarqueePhase {
-  const dragArmMs = options.dragArmMs ?? DRAG_ARM_MS;
+  const dragArmMs = options.dragArmMs ?? dragArmDelayMs();
   if (options.armed) {
     return options.moved ? "marquee" : "armed";
   }
@@ -223,7 +223,7 @@ export function attachGraphPaneMarquee(
       if (!gesture || gesture.moved) return;
       gesture.armed = true;
       options.onArmedChange?.(true);
-    }, DRAG_ARM_MS);
+    }, dragArmDelayMs());
     gesture = next;
   };
 

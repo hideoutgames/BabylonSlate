@@ -1,14 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Input } from "@haptic/ui/components/input";
 import { cn } from "@haptic/ui/lib/utils";
+import { doubleTapWindowMs } from "./gesture-timing";
 
 export type InlineRenameEnd = "enter" | "escape" | "blur";
 
 /** Closing menus and dialogs restore focus to their trigger just after the input mounts; such a blur without a user gesture is undone. */
 const FOCUS_SETTLE_MS = 400;
 
-/** Taps closer together than this count as a double-tap rename gesture. */
-const INLINE_RENAME_DOUBLE_TAP_MS = 350;
 
 export interface InlineRenameInputProps {
   value: string;
@@ -85,7 +84,8 @@ export function useDoubleTap(onDoubleTap: () => void) {
   return (event: PointerEvent) => {
     if (event.pointerType === "mouse") return;
     const now = Date.now();
-    if (now - last.current <= INLINE_RENAME_DOUBLE_TAP_MS) {
+    // Taps within the Double-Tap Time count as a double-tap rename gesture.
+    if (now - last.current <= doubleTapWindowMs()) {
       last.current = 0;
       onDoubleTap();
     } else last.current = now;

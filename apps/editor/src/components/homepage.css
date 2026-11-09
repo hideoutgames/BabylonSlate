@@ -1798,12 +1798,11 @@ svg.homepage-profile-menu-avatar {
     transform: translateX(290%);
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .homepage-account-progress-track > span {
-    animation: none;
-    width: 100%;
-    opacity: 0.6;
-  }
+/* Reduce Motion (the device setting, or the editor's override). */
+:where(:root[data-reduced-motion]) .homepage-account-progress-track > span {
+  animation: none;
+  width: 100%;
+  opacity: 0.6;
 }
 .homepage-mobile-auth-content {
   max-width: 420px;
@@ -2288,14 +2287,13 @@ body:has(.homepage-theme) [data-slot="alert-dialog-overlay"] {
     transform: none;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .homepage-theme *,
-  .homepage-theme *::before,
-  .homepage-theme *::after {
-    animation: none !important;
-    transition: none !important;
-    scroll-behavior: auto !important;
-  }
+/* Reduce Motion (the device setting, or the editor's override). */
+:where(:root[data-reduced-motion]) .homepage-theme *,
+:where(:root[data-reduced-motion]) .homepage-theme *::before,
+:where(:root[data-reduced-motion]) .homepage-theme *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
 }
 
 .homepage-profile-menu [role="menuitem"] svg:not(.homepage-profile-menu-avatar) {

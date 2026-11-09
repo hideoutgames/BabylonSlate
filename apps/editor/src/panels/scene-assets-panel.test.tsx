@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createDefaultScene, type SerializedScene } from "@haptic/core";
+import { createActor, createDefaultScene, type SerializedScene } from "@haptic/core";
 import { EditorSessionStateProvider } from "../context/editor-session-state-context";
+import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
 import { SceneAssetsPanel } from "./scene-assets-panel";
 
 /**
@@ -188,6 +189,30 @@ describe("SceneAssetsPanel", () => {
     expect(screen.queryByTestId("scene-assets-panel")).toBeNull();
     rerender(session(true));
     expect(cardIds()).toEqual(["asset-cone", "asset-crate", "asset-door", "asset-level", "asset-stack"]);
+  });
+
+  it("places into a 2D Scene above the highest drawn actor while Stack New 2D Actors covers Scenes", () => {
+    receiveActiveAppSettingsUpdate({ viewportStackNewActors2D: "scenes" });
+    onTestFinished(() => receiveActiveAppSettingsUpdate({ viewportStackNewActors2D: "disabled" }));
+    viewportDropApi.placementAtViewCenter.mockReturnValueOnce({ position: [1, 2, 0], normal: null });
+    const scene = createDefaultScene("2d");
+    scene.actors = [...scene.actors, {
+      ...createActor("backdrop", "Backdrop"),
+      transform: { position: [0, 0, -1], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+      components: [{ id: "backdrop-sprite", classId: "SpriteComponent", properties: {} }],
+    }];
+    harness.scene = scene;
+    render(<SceneAssetsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(card("crate"));
+    fireEvent.click(card("stack"), { ctrlKey: true });
+    fireEvent.click(screen.getByTestId("scene-assets-place"));
+    const next = applySceneChange.mock.calls[0]![1];
+    // Two entries spread across X/Y around the view centre, at Z-Order 2 and 3 above the Backdrop's 1;
+    // the Scene's Camera, far back at a high Z-Order, does not count.
+    expect(next.actors.slice(scene.actors.length).map((actor) => [actor.name, actor.transform.position])).toEqual([
+      ["Crate", [0, 2, -2]],
+      ["Stack", [2, 2, -3]],
+    ]);
   });
 
   it("lists a Scene Layer's built-in 2D elements before its Layer Actor Classes and Models", () => {

@@ -293,14 +293,10 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
       ["Drop Distance", "setting-drop-distance"],
       ["Place On Surfaces", "setting-place-on-surfaces"],
       ["Placement Trace Distance", "setting-placement-distance"],
+      ["Stack New 2D Actors", "setting-stack-new-actors-2d"],
     ]],
   ]),
   ...category("graph", [
-    ["connections", "Connections", [
-      ["Node Connection Assistant", "setting-graph-assistant"],
-      ["Connection Distance (Pixels)", "setting-graph-distance"],
-      ["Shake Nodes To Disconnect", "setting-graph-shake"],
-    ]],
     ["addNode", "Add Node", [
       ["Add Node History", "setting-graph-add-node-history"],
       ["Clear Add Node History", "setting-graph-add-node-history-clear"],
@@ -308,6 +304,32 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
     ["canvas", "Canvas", [
       ["Graph Default Zoom", "setting-graph-default-zoom"],
       ["Read-Only Pin Defaults", "setting-read-only-pin-defaults"],
+    ]],
+  ]),
+  ...category("accessibility", [
+    ["display", "Display", [
+      ["Text Size", "setting-text-size"],
+      ["Reduce Motion", "setting-reduce-motion"],
+    ]],
+    ["touchInput", "Touch And Input", [
+      ["Touch Target Size", "setting-touch-target-size"],
+      ["Hold Time", "setting-hold-time"],
+      ["Double-Tap Time", "setting-double-tap-time"],
+      ["Number Snap Strength", "setting-number-snap-strength"],
+    ]],
+    ["graphPins", "Graph Pins", [
+      ["Tap To Connect Pins", "setting-tap-to-connect"],
+      ["Large Pins", "setting-large-pins"],
+      ["Pin Type Letters", "setting-pin-type-letters"],
+    ]],
+    ["graphNodes", "Graph Nodes", [
+      ["Snapped Nodes", "setting-snapped-nodes"],
+      ["Snap Grid Size (Pixels)", "setting-snap-grid-size"],
+    ]],
+    ["graphConnections", "Graph Connections", [
+      ["Node Connection Assistant", "setting-graph-assistant"],
+      ["Connection Distance (Pixels)", "setting-graph-distance"],
+      ["Shake Nodes To Disconnect", "setting-graph-shake"],
     ]],
   ]),
   ...category("assets", [

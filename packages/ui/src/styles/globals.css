@@ -431,12 +431,11 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .editor-menu,
-  [data-slot="button"] {
-    animation: none;
-    transition: none;
-  }
+/* Reduce Motion (the device setting, or the editor's override). */
+:where(:root[data-reduced-motion]) .editor-menu,
+:where(:root[data-reduced-motion]) [data-slot="button"] {
+  animation: none;
+  transition: none;
 }
 
 :where(.touch-ui) .input-asset-editor button, :where(.touch-ui) .input-asset-editor input, :where(.touch-ui) .input-asset-editor [role="combobox"] {

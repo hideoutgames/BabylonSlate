@@ -197,7 +197,7 @@ describe("GraphEditor display caching", () => {
       graph.state().edges.find((edge) => edge.id === "result"),
     ).toMatchObject({
       selected: true,
-      style: { stroke: "var(--pin-float)", strokeWidth: 4 },
+      style: { stroke: "var(--pin-float)", strokeWidth: "var(--graph-wire-data, 4px)" },
     });
     expect(graph.onChange).not.toHaveBeenCalled();
   });

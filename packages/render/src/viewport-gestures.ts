@@ -61,7 +61,7 @@ const TAP_TOLERANCE_PX = 8;
 const PAN_SCALE = 0.01;
 /** Radians of look per pixel of one-finger / left-button drag. */
 const ORBIT_SCALE = 0.005;
-/** Hold before a 2D one-finger drag becomes a marquee (matches editor-kit DRAG_ARM_MS). */
+/** Hold before a 2D one-finger drag becomes a marquee (the editor-kit DRAG_ARM_MS default; Hold Time does not change it). */
 const MARQUEE_ARM_MS = 250;
 
 function midpoint(points: PointerSample[]): PointerSample {

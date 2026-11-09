@@ -8,6 +8,7 @@ import { SceneOutlinerPanel } from "./scene-outliner-panel";
 import { SceneEditingProvider } from "../context/scene-editing-context";
 import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { KeybindProvider } from "../context/keybind-context";
+import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
 
 if (
   typeof window !== "undefined" &&
@@ -145,6 +146,39 @@ describe("SceneOutlinerPanel menus", () => {
     const [documentId, pasted] = applySceneChange.mock.calls[0]!;
     expect(documentId).toBe("scene:assets/Empty.scene.hasset");
     expect(pasted.actors).toEqual([expect.objectContaining({ name: "Copied Cube Copy" })]);
+  });
+
+  it("pastes into a 2D Scene at the source's Z-Order, and duplicates above the highest drawn actor while stacking", async () => {
+    const scene = createDefaultScene("2d");
+    scene.actors = [{
+      ...createActor("actor-1", "Crate"),
+      transform: { position: [2, 3, -5], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+      components: [{ id: "crate-sprite", classId: "SpriteComponent", properties: {} }],
+    }];
+    harness.scene = scene;
+    render(<KeybindProvider><EditorSessionStateProvider><SceneEditingProvider>
+      <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />
+    </SceneEditingProvider></EditorSessionStateProvider></KeybindProvider>);
+    fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy" }));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    const tree = screen.getByRole("tree");
+    tree.focus();
+    fireEvent.keyDown(tree, { key: "v", code: "KeyV", ctrlKey: true });
+    await waitFor(() => expect(applySceneChange).toHaveBeenCalledOnce());
+    const pasted = applySceneChange.mock.calls[0]![1];
+    expect(pasted.actors.at(-1)?.transform.position).toEqual([2, 3, -5]);
+
+    receiveActiveAppSettingsUpdate({ viewportStackNewActors2D: "scenes" });
+    onTestFinished(() => receiveActiveAppSettingsUpdate({ viewportStackNewActors2D: "disabled" }));
+    fireEvent.click(screen.getByTestId("outliner-menu-actor-1"));
+    fireEvent.click(screen.getByTestId("outliner-duplicate-actor-1"));
+    const duplicated = applySceneChange.mock.calls.at(-1)?.[1] as SerializedScene;
+    // The Crate draws at Z-Order 5; its duplicate goes to 6, nearer the camera on -Z.
+    expect(duplicated.actors.map((actor) => [actor.name, actor.transform.position])).toEqual([
+      ["Crate", [2, 3, -5]],
+      ["Crate Copy", [2, 3, -6]],
+    ]);
   });
 
   it("bounds actor and asset reads when selection rebuilds many row menus", async () => {

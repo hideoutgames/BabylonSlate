@@ -627,10 +627,9 @@
   --shimmer-angle: calc(--value(integer) * 1deg);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .shimmer {
-    animation: none;
-    background-image: none;
-    -webkit-text-fill-color: currentColor;
-  }
+/* Reduce Motion (the device setting, or the editor's override). */
+:where(:root[data-reduced-motion]) .shimmer {
+  animation: none;
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
 }

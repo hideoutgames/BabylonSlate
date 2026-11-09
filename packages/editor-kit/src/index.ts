@@ -94,11 +94,31 @@ export {
 } from "./keyframe-timeline-model";
 export { TOUCH_ROW_HEIGHT, isTouchUi, setTouchUi, useTouchUi } from "./touch-ui";
 export {
+  CONTEXT_MENU_LONG_PRESS_MS,
+  DOUBLE_TAP_MS,
+  DRAG_ARM_MS,
+  doubleTapWindowMs,
+  dragArmDelayMs,
+  holdDelayMs,
+  setGestureTiming,
+} from "./gesture-timing";
+export {
+  DEFAULT_SCRUB_SNAP_STRENGTH,
+  SCRUB_SNAP_STRENGTH_LABELS,
+  scrubSnapStrength,
+  setScrubSnapStrength,
+} from "./numeric-scrub";
+export {
+  prefersReducedMotion,
+  setReducedMotion,
+  subscribeSystemReducedMotion,
+  systemPrefersReducedMotion,
+  useReducedMotion,
+} from "./reduced-motion";
+export {
   useContextMenu,
   useContextMenuGesture,
-  CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
-  DRAG_ARM_MS,
   type ContextMenuGestureBind,
   type ContextMenuItem,
   type ContextMenuState,

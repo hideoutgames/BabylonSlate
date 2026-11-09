@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import {
   ContextMenuOverlay,
+  doubleTapWindowMs,
   humanizePropertyLabel,
   useContextMenu,
   type NestedMenuItem,
@@ -20,7 +21,6 @@ import { nodeRoleClass, type NodeVisualRole } from "./node-theme";
 import { isPinWired } from "./pin-connections";
 import { useRunNodeStatus } from "./use-run-node-status";
 
-const DOUBLE_TAP_MS = 350;
 
 type AttachedRow = { id: string; classId: string; title?: string };
 
@@ -90,8 +90,7 @@ function TreePinHandle({
       aria-label={label}
       data-pin-type="exec"
       className={cn(
-        "bt-pin !flex !size-6 !min-h-6 !min-w-6 items-center justify-center rounded-full",
-        "pointer-coarse:!size-11 pointer-coarse:!min-h-11 pointer-coarse:!min-w-11",
+        "bt-pin !flex !size-[var(--bt-pin-hit,1.5rem)] !min-h-[var(--bt-pin-hit,1.5rem)] !min-w-[var(--bt-pin-hit,1.5rem)] items-center justify-center rounded-full",
         "!border-0 !bg-transparent touch-manipulation",
         pending && "ring-2 ring-primary",
       )}
@@ -101,7 +100,7 @@ function TreePinHandle({
       }}
     >
       <span
-        className="graph-pin-visual bt-pin-visual block size-2.5 rotate-45 rounded-[2px] border-[1.5px]"
+        className="graph-pin-visual bt-pin-visual block size-[calc(0.625rem*var(--graph-pin-scale,1))] rotate-45 rounded-[2px] border-[1.5px]"
         data-pin-shape="diamond"
         data-pin-connected={connected ? "true" : "false"}
         aria-hidden="true"
@@ -140,7 +139,7 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const handleHeaderClick = useCallback(
     (event: MouseEvent) => {
       const now = Date.now();
-      if (now - lastTap.current < DOUBLE_TAP_MS) {
+      if (now - lastTap.current < doubleTapWindowMs()) {
         event.stopPropagation();
         onNavigateRequest?.({ nodeId: id });
       }
@@ -154,7 +153,7 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
       event.stopPropagation();
       const now = Date.now();
       const prev = lastAttachmentTap.current;
-      if (prev.id === attachmentId && now - prev.at < DOUBLE_TAP_MS) {
+      if (prev.id === attachmentId && now - prev.at < doubleTapWindowMs()) {
         onAttachmentDoubleClick?.(id, attachmentId);
       }
       lastAttachmentTap.current = { id: attachmentId, at: now };

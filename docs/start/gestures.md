@@ -1,13 +1,13 @@
 # Touch Gestures
 
-Haptic is built for touch first: buttons, taps and gestures cover the editor, and a mouse and keyboard add right-click and shortcuts.
+Haptic is built for touch first: buttons, taps and gestures cover the editor, and a mouse and keyboard add right-click and shortcuts. If holds, double-taps or targets are hard to hit, adjust them in [Accessibility](../editor/settings.md#accessibility).
 
 ## Everywhere
 
 | Gesture | Result |
 | --- | --- |
 | Tap | Select or activate. |
-| Hold still about half a second | Open the context menu (same as right-click). Moving your finger first cancels it. |
+| Hold still about half a second | Open the context menu (same as right-click). Moving your finger first cancels it. Change the hold with **Hold Time** in **Engine Settings > Accessibility**. |
 | Hold a window's tab, then drag | Move the window to another dock position. |
 | Hold a document tab, then drag sideways | Reorder document tabs. |
 | Swipe the tab strip | Scroll through open documents. |
@@ -39,12 +39,12 @@ Class, Material, Animation Graph, Behaviour Tree and Particle Graph editors shar
 | Pinch, including over wires | Zoom between 10% and 150%. |
 | Double-tap empty space | Open **Add Node** at that spot. |
 | Hold empty space, then drag | Draw a selection rectangle. |
-| Tap an output pin, then an input pin | Connect them. |
+| Tap a pin, then a pin on the other side | Connect them, when **Tap To Connect Pins** is on in **Engine Settings > Accessibility**. Either side can go first; tap the first pin again to cancel. |
 | Drag from a pin | Draw a wire. Release over empty space to open Add Node and connect the new node. |
 | Tap empty space | Clear the selection. |
 | Hold a node, or right-click it | Open the node menu. Nodes in Class, Material and Particle graphs list **Copy**, **Paste**, **Duplicate**, **Delete** and **Break Links**; holding an unselected node selects only that node. |
 
-Double-tapping does not zoom. Shaking a node back and forth while dragging breaks its links; turn this off with **Shake Nodes To Disconnect** in **Engine Settings > Graph**.
+Double-tapping does not zoom. Shaking a node back and forth while dragging breaks its links; turn this off with **Shake Nodes To Disconnect** in **Engine Settings > Accessibility**. To make pins easier to hit, raise **Large Pins** there.
 
 ## Content Browser
 

@@ -37,6 +37,23 @@ const run = (command, args, cwd = sandbox) => new Promise((resolvePromise, rejec
   child.once("close", code => code === 0 ? resolvePromise() : reject(new Error(`Command failed: ${command}`)));
 });
 const delay = milliseconds => new Promise(resolveDelay => setTimeout(resolveDelay, milliseconds));
+// Two early inspection runs saw the second Windows launch stall before its main process answered either debugger, and none
+// of the next nine. Should it stall again, this prints the app's processes and, by attaching cdb without stopping it, the
+// main process's main thread stack and busiest threads.
+function printWindowsMainStacks() {
+  const script = "Get-CimInstance Win32_Process -Filter \"Name='BabylonSlate.exe'\" | ForEach-Object { \"$($_.ProcessId) $($_.CommandLine)\" }";
+  const processes = execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8" })
+    .split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  console.log(`The relaunch is still starting after 40 s. App processes:\n${processes.map(line => line.slice(0, 240)).join("\n")}`);
+  const cdb = "C:\\Program Files (x86)\\Windows Kits\\10\\Debuggers\\x64\\cdb.exe";
+  for (const pid of processes.filter(line => !line.includes("--type=")).map(line => line.split(" ")[0])) {
+    try {
+      console.log(execFileSync(cdb, ["-pv", "-p", pid, "-c", ".symfix c:\\symbols; .reload; ~0k 40; !runaway 1; q"], { encoding: "utf8", timeout: 120000 }));
+    } catch (error) {
+      console.log(`cdb could not read process ${pid}: ${error instanceof Error ? error.message.slice(0, 500) : error}`);
+    }
+  }
+}
 async function cleanupStep(label, operation) {
   try {
     await operation();
@@ -174,7 +191,13 @@ try {
   await page.getByTestId("preview-build-close").click();
   await page.evaluate(async () => { await window.haptic.project.writeBinary("distribution-smoke.bin", new Uint8Array([17, 42, 99]).buffer); });
   await app.close();
-  app = await launch();
+  // cdb runs synchronously, so the launch timeout cannot end the relaunch while the stacks are read.
+  const relaunchWatch = platform === "windows" ? setTimeout(printWindowsMainStacks, 40000) : undefined;
+  try {
+    app = await launch();
+  } finally {
+    clearTimeout(relaunchWatch);
+  }
   page = await app.firstWindow();
   page.setDefaultTimeout(60000);
   await expect(page.getByTestId("homepage")).toBeVisible();

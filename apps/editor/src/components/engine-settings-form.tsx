@@ -5,6 +5,7 @@ import { KeybindSettings } from "./keybind-settings";
 import { DebuggerSettingsFields } from "./debugger-settings-fields";
 import { CompactModeField } from "./compact-mode-field";
 import { AddNodeHistoryFields } from "./add-node-history-fields";
+import { AccessibilitySettingsFields } from "./accessibility-settings-fields";
 import { SettingsSection } from "./settings-section";
 import { MacSigningSettings } from "./mac-signing-settings";
 import { LabelHint, NumberField, SelectableText } from "@haptic/editor-kit";
@@ -22,6 +23,7 @@ import {
   MIN_VIEWPORT_FRAME_CAP,
   resolveCompactMode,
   type EngineSettings,
+  type StackNewActors2D,
 } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
 import { Slider } from "@haptic/ui/components/slider";
@@ -48,6 +50,13 @@ import {
   DropdownMenuTrigger,
 } from "@haptic/ui/components/dropdown-menu";
 import { PlusIcon, XIcon } from "lucide-react";
+
+const STACK_NEW_ACTORS_2D_ITEMS: ReadonlyArray<{ value: StackNewActors2D; label: string }> = [
+  { value: "disabled", label: "Disabled" },
+  { value: "scenes", label: "Scenes Only" },
+  { value: "sceneLayers", label: "Scene Layers Only" },
+  { value: "both", label: "Both" },
+];
 
 const HDR_FACE_SIZE_ITEMS = ([128, 256, 512] as const).map((size) => ({
   size,
@@ -216,6 +225,7 @@ function focusKeepSections() {
 
 export type EngineSettingsCategoryId =
   | "about"
+  | "accessibility"
   | "interface"
   | "undo"
   | "debugger"
@@ -299,6 +309,10 @@ export function EngineSettingsForm({
             onCheckedChange={compactMode => void onChange({ compactMode })}
           />
         </SettingsSection>
+      ) : null}
+
+      {categoryId === "accessibility" ? (
+        <AccessibilitySettingsFields settings={settings} onChange={onChange} />
       ) : null}
 
       {categoryId === "undo" ? (
@@ -503,6 +517,37 @@ export function EngineSettingsForm({
               value={settings.viewportPlacementDistance}
               onChange={(viewportPlacementDistance) => void onChange({ viewportPlacementDistance })}
             />
+          </Field>
+          <Field className="settings-field">
+            <LabelHint hint="Where each actor you place, drag in, paste or duplicate in 2D goes one Z-Order above the highest actor that draws.">
+              <FieldLabel htmlFor="setting-stack-new-actors-2d">Stack New 2D Actors</FieldLabel>
+            </LabelHint>
+            <Select
+              items={STACK_NEW_ACTORS_2D_ITEMS}
+              value={settings.viewportStackNewActors2D}
+              onValueChange={(value) => {
+                const item = STACK_NEW_ACTORS_2D_ITEMS.find((entry) => entry.value === value);
+                if (item) void onChange({ viewportStackNewActors2D: item.value });
+              }}
+            >
+              <SelectTrigger
+                id="setting-stack-new-actors-2d"
+                size="sm"
+                className="w-full"
+                data-testid="setting-stack-new-actors-2d"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {STACK_NEW_ACTORS_2D_ITEMS.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </Field>
         </SettingsSection>
         </>
@@ -727,20 +772,6 @@ export function EngineSettingsForm({
 
       {categoryId === "graph" ? (
         <>
-        <SettingsSection id="connections" title="Connections">
-          <Field orientation="horizontal" className="settings-field">
-            <FieldLabel htmlFor="setting-graph-assistant">Node Connection Assistant</FieldLabel>
-            <Switch id="setting-graph-assistant" checked={settings.graphAssistantEnabled} onCheckedChange={(checked) => void onChange({ graphAssistantEnabled: checked === true })} />
-          </Field>
-          <Field className="settings-field settings-field-dependent">
-            <FieldLabel htmlFor="setting-graph-distance">Connection Distance (Pixels)</FieldLabel>
-            <NumberField id="setting-graph-distance" min={8} max={200} step={1} value={settings.graphAssistantDistance} onChange={(graphAssistantDistance) => void onChange({ graphAssistantDistance })} />
-          </Field>
-          <Field orientation="horizontal" className="settings-field">
-            <FieldLabel htmlFor="setting-graph-shake">Shake Nodes To Disconnect</FieldLabel>
-            <Switch id="setting-graph-shake" checked={settings.graphShakeEnabled} onCheckedChange={(checked) => void onChange({ graphShakeEnabled: checked === true })} />
-          </Field>
-        </SettingsSection>
         <SettingsSection id="addNode" title="Add Node">
           <AddNodeHistoryFields
             enabled={settings.graphAddNodeHistoryEnabled}

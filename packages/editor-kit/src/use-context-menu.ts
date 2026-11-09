@@ -8,12 +8,7 @@ import {
 } from "react";
 import type { NestedMenuItem } from "./nested-menu";
 import { keepsNativeMenu } from "./use-suppress-native-context-menu";
-
-/** Matches dockview's own long-press drag timing so the two never disagree. */
-export const CONTEXT_MENU_LONG_PRESS_MS = 500;
-
-/** Hold this long before a pointer-down can become a reorder drag. */
-export const DRAG_ARM_MS = 250;
+import { holdDelayMs } from "./gesture-timing";
 
 /** Matches dockview's press tolerance, so arming a panel drag cancels the menu. */
 export const CONTEXT_MENU_MOVE_TOLERANCE_PX = 8;
@@ -34,6 +29,7 @@ export interface UseContextMenuOptions {
    */
   items: ContextMenuItem[] | (() => ContextMenuItem[]);
   enabled?: boolean;
+  /** Fixed hold; unset follows the Hold Time setting (`holdDelayMs`). */
   longPressMs?: number;
 }
 
@@ -61,6 +57,7 @@ export interface UseContextMenuGestureOptions {
   /** Called with the menu's viewport coordinates when a hold or `contextmenu` asks for a menu. */
   onMenu: (clientX: number, clientY: number) => void;
   enabled?: boolean;
+  /** Fixed hold; unset follows the Hold Time setting (`holdDelayMs`). */
   longPressMs?: number;
   /** Consume the click that follows a menu request, so a button bound to it does not also run its action. */
   suppressClickAfterHold?: boolean;
@@ -134,7 +131,7 @@ export function useContextMenuGesture(
   const {
     onMenu,
     enabled = true,
-    longPressMs = CONTEXT_MENU_LONG_PRESS_MS,
+    longPressMs,
     suppressClickAfterHold = false,
     exclusive = false,
   } = options;
@@ -303,7 +300,7 @@ export function useContextMenuGesture(
       const timerId = setTimeout(() => {
         clearPress();
         requestMenu(clientX, clientY);
-      }, longPressMs);
+      }, longPressMs ?? holdDelayMs());
       pressRef.current = {
         pointerId,
         startX: clientX,
@@ -381,7 +378,7 @@ export function useContextMenu(
   const {
     items,
     enabled = true,
-    longPressMs = CONTEXT_MENU_LONG_PRESS_MS,
+    longPressMs,
   } = options;
   const itemsRef = useRef(items);
   useLayoutEffect(() => {

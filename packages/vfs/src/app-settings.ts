@@ -27,6 +27,43 @@ export const DEFAULT_CAMERA_PREVIEW_FRAME_RATE = 30;
 /** Hardware scaling 1 is native resolution; 4 is the quarter-scale floor rendering quality accepts. */
 export const MIN_HARDWARE_SCALING_LEVEL = 1;
 export const MAX_HARDWARE_SCALING_LEVEL = 4;
+/** Large Pins: graph pin glyph, hit-area and wire scale, in whole steps. */
+export const MIN_GRAPH_PIN_SCALE = 1;
+export const MAX_GRAPH_PIN_SCALE = 4;
+/** Touch Target Size: multiplies the 44px touch target, in quarter steps. */
+export const MIN_TOUCH_TARGET_SCALE = 1;
+export const MAX_TOUCH_TARGET_SCALE = 2;
+export const TOUCH_TARGET_SCALE_STEP = 0.25;
+/** Text Size: the root font size as a percentage, in steps of 10. */
+export const MIN_TEXT_SIZE_PERCENT = 50;
+export const MAX_TEXT_SIZE_PERCENT = 150;
+export const TEXT_SIZE_PERCENT_STEP = 10;
+/** Hold Time: how long a stationary press takes to open a menu; drags arm at half of it. */
+export const MIN_HOLD_TIME_MS = 300;
+export const MAX_HOLD_TIME_MS = 1500;
+export const HOLD_TIME_MS_STEP = 100;
+export const DEFAULT_HOLD_TIME_MS = 500;
+/** Double-Tap Time: the longest gap between the taps of a double-tap. */
+export const MIN_DOUBLE_TAP_TIME_MS = 200;
+export const MAX_DOUBLE_TAP_TIME_MS = 1000;
+export const DOUBLE_TAP_TIME_MS_STEP = 50;
+export const DEFAULT_DOUBLE_TAP_TIME_MS = 350;
+/** Snapped Nodes: the grid a released graph node lands on, in graph units (pixels at 100% zoom). */
+export const MIN_GRAPH_SNAP_GRID_SIZE = 1;
+export const MAX_GRAPH_SNAP_GRID_SIZE = 200;
+export const DEFAULT_GRAPH_SNAP_GRID_SIZE = 2;
+/** Number Snap Strength: 0 Off, 1 Light, 2 Normal, 3 Strong. */
+export const MAX_NUMBER_SNAP_STRENGTH = 3;
+export const DEFAULT_NUMBER_SNAP_STRENGTH = 2;
+
+/** A stepped number setting: rounds to its step and clamps to its range. */
+function steppedNumber(min: number, max: number, step: number, fallback: number) {
+  return z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    const stepped = Math.round((value - min) / step) * step + min;
+    return Math.min(max, Math.max(min, Number(stepped.toFixed(6))));
+  }, z.number().min(min).max(max).default(fallback));
+}
 /** Linked Inspector Scale fields remembered on this device; linking another forgets the oldest. */
 const MAX_LINKED_SCALE_KEYS = 1000;
 
@@ -131,6 +168,10 @@ const customEditorThemeSchema = z.object({
 
 export type CustomEditorTheme = z.infer<typeof customEditorThemeSchema>;
 
+/** Where Stack New 2D Actors applies: no host, 2D Scenes, Scene Layers, or both. */
+export const STACK_NEW_ACTORS_2D_MODES = ["disabled", "scenes", "sceneLayers", "both"] as const;
+export type StackNewActors2D = (typeof STACK_NEW_ACTORS_2D_MODES)[number];
+
 export const engineSettingsSchema = z.object({
   automaticUpdatesEnabled: z.boolean().default(true),
   seenReleaseVersions: z.array(z.string()).catch([]).default([]),
@@ -152,9 +193,8 @@ export const engineSettingsSchema = z.object({
   appearance: z
     .object({
       theme: z.enum(["system", "light", "dark"]).default("system"),
-      coarsePointerTargetScale: z.number().default(1),
     })
-    .default({ theme: "system", coarsePointerTargetScale: 1 }),
+    .default({ theme: "system" }),
   /**
    * Compact desktop density instead of the touch layout. Unset follows the
    * platform: on except on iOS and Android (`resolveCompactMode`).
@@ -204,6 +244,12 @@ export const engineSettingsSchema = z.object({
   viewportPlaceOnSurfaces: z.boolean().default(true),
   /** How far that trace reaches, in world units; a miss places the actor at its end. */
   viewportPlacementDistance: z.number().finite().positive().default(DEFAULT_EDITOR_PLACEMENT_DISTANCE),
+  /**
+   * Which 2D hosts stack new actors: an actor placed, dragged in, pasted or
+   * duplicated there goes one Z-Order above the highest actor that draws.
+   * Elsewhere placed actors take Z-Order 0 and copies keep theirs.
+   */
+  viewportStackNewActors2D: z.enum(STACK_NEW_ACTORS_2D_MODES).catch("disabled").default("disabled"),
   renderingOverridesEnabled: z.boolean().default(false),
   /** Shows developer diagnostics: the Feature Test starter, its device check, and Copy Error on load failures. */
   debugMode: z.boolean().default(false),
@@ -272,6 +318,27 @@ export const engineSettingsSchema = z.object({
   /** Rank Add Node picks from a dragged pin by past choices; off keeps the saved history. */
   graphAddNodeHistoryEnabled: z.boolean().default(true),
   readOnlyPinDefaults: z.boolean().default(false),
+  /** Accessibility: tap one graph pin, then one on the other side, to connect them. */
+  graphTapToConnect: z.boolean().default(false),
+  /** Accessibility (Large Pins): multiplies graph pin glyphs, their hit areas and wires. */
+  graphPinScale: steppedNumber(MIN_GRAPH_PIN_SCALE, MAX_GRAPH_PIN_SCALE, 1, MIN_GRAPH_PIN_SCALE),
+  /** Accessibility: a type letter (B for Boolean) inside every graph data pin. */
+  graphPinTypeLetters: z.boolean().default(false),
+  /** Accessibility (Snapped Nodes): a released graph node drag lands on the `graphSnapGridSize` grid. */
+  graphSnapNodes: z.boolean().default(false),
+  graphSnapGridSize: steppedNumber(MIN_GRAPH_SNAP_GRID_SIZE, MAX_GRAPH_SNAP_GRID_SIZE, 1, DEFAULT_GRAPH_SNAP_GRID_SIZE),
+  /** Accessibility: multiplies the touch target (44px) of controls, rows and pins. */
+  touchTargetScale: steppedNumber(MIN_TOUCH_TARGET_SCALE, MAX_TOUCH_TARGET_SCALE, TOUCH_TARGET_SCALE_STEP, MIN_TOUCH_TARGET_SCALE),
+  /** Accessibility: the editor's root font size, as a percentage. */
+  textSizePercent: steppedNumber(MIN_TEXT_SIZE_PERCENT, MAX_TEXT_SIZE_PERCENT, TEXT_SIZE_PERCENT_STEP, 100),
+  /** Accessibility: `system` follows the device's reduced-motion setting. */
+  reduceMotion: z.enum(["system", "on", "off"]).catch("system").default("system"),
+  /** Accessibility: hold before a press opens a menu; hold-to-drag arms at half of it. */
+  holdTimeMs: steppedNumber(MIN_HOLD_TIME_MS, MAX_HOLD_TIME_MS, HOLD_TIME_MS_STEP, DEFAULT_HOLD_TIME_MS),
+  /** Accessibility: the longest gap between the two taps of a double-tap. */
+  doubleTapTimeMs: steppedNumber(MIN_DOUBLE_TAP_TIME_MS, MAX_DOUBLE_TAP_TIME_MS, DOUBLE_TAP_TIME_MS_STEP, DEFAULT_DOUBLE_TAP_TIME_MS),
+  /** Accessibility: how long number field scrubs hold on round values. */
+  numberSnapStrength: steppedNumber(0, MAX_NUMBER_SNAP_STRENGTH, 1, DEFAULT_NUMBER_SNAP_STRENGTH),
   graphAssistantDistance: z.number().min(8).max(200).default(48),
   graphDefaultZoom: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;

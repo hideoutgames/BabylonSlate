@@ -28,6 +28,19 @@
       // its layers (see .haptic-intro below).
       if (navigator.webdriver)
         document.documentElement.setAttribute("data-automation", "");
+      // Reduce Motion before the editor loads: the device setting, or the
+      // saved override where settings live in localStorage (web). The editor
+      // keeps the attribute current from then on.
+      (function () {
+        var mode = "system";
+        try {
+          var saved = JSON.parse(localStorage.getItem("haptic:engine-settings") || "{}");
+          if (saved.reduceMotion === "on" || saved.reduceMotion === "off") mode = saved.reduceMotion;
+        } catch (error) {}
+        var device = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (mode === "on" || (mode === "system" && device))
+          document.documentElement.setAttribute("data-reduced-motion", "");
+      })();
     </script>
     <style>
       /* The haptic.no title face, for the text wordmark of the boot intro and
@@ -160,10 +173,8 @@
         }
       }
       /* Without animations every layer shows its resting state. */
-      @media (prefers-reduced-motion: reduce) {
-        .haptic-intro * {
-          animation: none !important;
-        }
+      :where(:root[data-reduced-motion]) .haptic-intro * {
+        animation: none !important;
       }
       @media (forced-colors: active) {
         .haptic-intro-ca {

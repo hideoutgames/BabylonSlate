@@ -89,6 +89,11 @@ export const ENGINE_CATEGORIES: Array<
     keywords: "interface compact mode density touch targets rows size",
   },
   {
+    id: "accessibility",
+    label: "Accessibility",
+    keywords: "accessibility text size font scale zoom reduce motion animation touch target size hold time long press double tap number snap strength scrub tap to connect pins large pins wire thickness pin type letters colour color blind snapped nodes snap grid size align node connection assistant distance shake disconnect motor vision",
+  },
+  {
     id: "undo",
     label: "Undo",
     keywords: "undo history length stack memory limit budget",
@@ -112,7 +117,7 @@ export const ENGINE_CATEGORIES: Array<
   {
     id: "graph",
     label: "Graph",
-    keywords: "graph default zoom node canvas fit view assistant connection distance shake disconnect read-only read only lock pin defaults inline input values",
+    keywords: "graph default zoom node canvas fit view add node history read-only read only lock pin defaults inline input values",
   },
   {
     id: "thumbnails",
@@ -164,6 +169,7 @@ export const ENGINE_GROUPS: CatalogCategoryGroup[] = [
       "focus",
       "keybinds",
       "interface",
+      "accessibility",
       "about",
     ],
   },

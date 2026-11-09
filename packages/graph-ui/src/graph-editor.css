@@ -4,11 +4,53 @@
   --xy-background-color: var(--graph-canvas);
   --xy-background-pattern-color: var(--border);
   --xy-background-pattern-dots-color: var(--border);
-  --xy-edge-stroke-width: var(--graph-edge-data);
+  --xy-edge-stroke-width: var(--graph-wire-data);
   --xy-edge-stroke-selected: var(--primary);
-  --xy-connectionline-stroke-width: var(--graph-edge-exec);
+  --xy-connectionline-stroke-width: var(--graph-wire-exec);
   --xy-node-border: var(--border);
   --xy-node-background-color: var(--graph-node);
+}
+
+/*
+ * Large Pins: the editor root sets --graph-pin-scale. A hit area 1.5x its
+ * glyph plus 11px holds the diagonal of a rotated (diamond) glyph at every
+ * scale, and never shrinks below a touch target.
+ */
+.graph-editor-canvas {
+  --graph-pin-glyph: calc(var(--graph-pin-size, 22px) * var(--graph-pin-scale, 1));
+  --graph-pin-hit: max(var(--touch-target, 44px), calc(var(--graph-pin-glyph) * 1.5 + 11px));
+  /* Wires grow with their pins. */
+  --graph-wire-exec: calc(var(--graph-edge-exec, 5px) * var(--graph-pin-scale, 1));
+  --graph-wire-data: calc(var(--graph-edge-data, 4px) * var(--graph-pin-scale, 1));
+}
+
+/* Pin Type Letters: the type's short name inside a data pin, in its colour; a filled pin shows it on the card colour. */
+.graph-pin-letter {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: calc(var(--graph-pin-glyph, 22px) * 0.45);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  pointer-events: none;
+  text-shadow: 0 0 2px var(--card), 0 0 2px var(--card);
+}
+
+.graph-pin-letter[data-on-fill="true"] {
+  color: var(--card) !important;
+  text-shadow: none;
+}
+
+.graph-editor-canvas .bt-pin {
+  --bt-pin-hit: calc(1.5rem * var(--graph-pin-scale, 1));
+}
+
+@media (pointer: coarse) {
+  .graph-editor-canvas .bt-pin {
+    --bt-pin-hit: max(var(--touch-target, 44px), calc(1.5rem * var(--graph-pin-scale, 1)));
+  }
 }
 
 .graph-editor-canvas .react-flow__node {
@@ -366,7 +408,7 @@
 /* Inline pin-colored strokes beat XYFlow's .selected rule, so a selected wire needs its own. */
 .graph-editor-canvas .react-flow__edge.selected .react-flow__edge-path {
   stroke: var(--graph-state-selected) !important;
-  stroke-width: calc(var(--graph-edge-exec) + 1px) !important;
+  stroke-width: calc(var(--graph-wire-exec) + 1px) !important;
 }
 
 /* GraphEditor paints exec-width inline strokes; tree and state wires stay thin and neutral. */
@@ -386,13 +428,13 @@
 
 :is(.bt-graph-canvas, .anim-graph-canvas) .react-flow__edge-path {
   stroke: color-mix(in oklch, var(--selection) var(--run-flash), var(--graph-link)) !important;
-  stroke-width: 2.5px !important;
+  stroke-width: calc(2.5px * var(--graph-pin-scale, 1)) !important;
 }
 
 :is(.bt-graph-canvas, .anim-graph-canvas) .react-flow__edge.selected .react-flow__edge-path {
   stroke: var(--graph-state-selected) !important;
   stroke-opacity: 1;
-  stroke-width: 3px !important;
+  stroke-width: calc(3px * var(--graph-pin-scale, 1)) !important;
 }
 
 .asset-reference-node[data-selected="true"] {
