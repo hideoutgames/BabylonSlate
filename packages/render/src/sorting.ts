@@ -21,6 +21,14 @@ export const RENDERING_GROUP = {
   ui: 3,
 } as const;
 
+/**
+ * Water draws first among its rendering group's blended draws, below every sort key (they start at 0) and the editor
+ * grid's 0. Drawn with the scene copy it covers whatever drew before it, so the grid, sorted visuals and other
+ * translucent surfaces draw after it, composite over it where they are nearer and are hidden by its depth pre-pass
+ * where it is.
+ */
+export const WATER_ALPHA_INDEX = -1;
+
 export interface SortingLayerResolution {
   /** Index of the layer in the project's ordered list; -1 when unknown. */
   layerIndex: number;
