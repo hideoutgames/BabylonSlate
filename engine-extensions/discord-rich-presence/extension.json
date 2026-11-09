@@ -1,0 +1,98 @@
+{
+  "kind": "extension",
+  "formatVersion": 1,
+  "extensionGuid": "a1e00000-0000-4000-8000-000000000002",
+  "displayName": "Discord Rich Presence",
+  "version": "0.1.0",
+  "description": "Experimental Discord Rich Presence for desktop games: Game Instance nodes show what the player is doing on their Discord profile.",
+  "author": "Haptic",
+  "category": "Platforms",
+  "iconKey": "Discord",
+  "experimental": true,
+  "beta": false,
+  "enabledByDefault": false,
+  "engineVersion": "0.0.1",
+  "extensionDependencies": [],
+  "entryPoint": "index.ts",
+  "editorOnly": false,
+  "gameEntryPoint": "game.ts",
+  "libraryName": "discordRichPresence",
+  "appearInContentBrowser": false,
+  "contributes": {
+    "settings": {
+      "title": "Discord",
+      "sections": [
+        {
+          "id": "application",
+          "title": "Application",
+          "fields": [
+            {
+              "id": "applicationId",
+              "label": "Application ID",
+              "type": "text",
+              "default": "",
+              "hint": "The Application ID of your app in the Discord Developer Portal, under General Information. It is public, so it ships in your game; Rich Presence needs no secret."
+            }
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "start",
+        "title": "Start Discord Rich Presence",
+        "category": "Discord",
+        "description": "Connects to the Discord app on the player's computer with the Application ID in Project Settings, and clears any presence. Elapsed time counts from here.",
+        "call": "start",
+        "pure": false,
+        "latent": true,
+        "hosts": ["GameInstance"],
+        "inputs": [],
+        "outputs": [
+          { "id": "connected", "name": "Connected", "type": "bool" },
+          { "id": "error", "name": "Error", "type": "string" }
+        ]
+      },
+      {
+        "id": "update",
+        "title": "Update Discord Rich Presence",
+        "category": "Discord",
+        "description": "Shows what the player is doing on their Discord profile. Empty text and a zero party are left out.",
+        "call": "update",
+        "pure": false,
+        "latent": true,
+        "hosts": ["GameInstance"],
+        "inputs": [
+          { "id": "details", "name": "Details", "type": "string", "default": "" },
+          { "id": "state", "name": "State", "type": "string", "default": "" },
+          { "id": "largeImage", "name": "Large Image", "type": "string", "default": "" },
+          { "id": "largeImageText", "name": "Large Image Text", "type": "string", "default": "" },
+          { "id": "smallImage", "name": "Small Image", "type": "string", "default": "" },
+          { "id": "smallImageText", "name": "Small Image Text", "type": "string", "default": "" },
+          { "id": "showElapsedTime", "name": "Show Elapsed Time", "type": "bool", "default": true },
+          { "id": "partySize", "name": "Party Size", "type": "int", "default": 0 },
+          { "id": "partyMax", "name": "Party Max", "type": "int", "default": 0 }
+        ],
+        "outputs": [
+          { "id": "updated", "name": "Updated", "type": "bool" },
+          { "id": "error", "name": "Error", "type": "string" }
+        ]
+      },
+      {
+        "id": "clear",
+        "title": "Clear Discord Rich Presence",
+        "category": "Discord",
+        "description": "Removes the presence from the player's Discord profile.",
+        "call": "clear",
+        "pure": false,
+        "latent": true,
+        "hosts": ["GameInstance"],
+        "inputs": [],
+        "outputs": [
+          { "id": "cleared", "name": "Cleared", "type": "bool" },
+          { "id": "error", "name": "Error", "type": "string" }
+        ]
+      }
+    ]
+  }
+}

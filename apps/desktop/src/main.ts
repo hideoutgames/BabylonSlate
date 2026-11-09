@@ -23,6 +23,7 @@ import { DesktopAccountSecretStore } from "./desktop-account-secrets";
 import { fetchDesktopHttp, type DesktopHttpRequest } from "./desktop-http";
 import { desktopMemoryStats } from "./desktop-memory";
 import { createAuthBrowserSessions } from "./desktop-auth-browser";
+import { createDiscordPresence, DISCORD_PRESENCE_PATH, handleDiscordPresenceRequest, type DiscordPresence } from "./discord-presence";
 import { ownRuntimeZip, readBundledShell } from "./game-runtime";
 import { macSigningIdentities, packageMacGame, type MacGamePackageRequest } from "./mac-game-package";
 import {
@@ -51,6 +52,8 @@ let saveGames: DesktopSaveGames | undefined;
 let libraries: DesktopLibraries | undefined;
 /** Set once the primary instance has registered IPC and may open editor windows. */
 let windowsAllowed = false;
+/** Discord Rich Presence for Play, connected the first time a game sets it. */
+let presence: DiscordPresence | null = null;
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
 /** Third-party sign-in returns through the `haptic://sso-callback` deep link. */
@@ -315,6 +318,11 @@ void app.whenReady().then(async () => {
     contents !== null && editorWindows.has(contents.id) && allowsEditorPermission(permission, details.requestingUrl ?? "", details.isMainFrame));
   protocol.handle("app", async request => {
     try {
+      // Play in the desktop editor sets Discord Rich Presence as a packaged desktop game does.
+      const url = new URL(request.url);
+      if (url.host === "babylonslate" && url.pathname === DISCORD_PRESENCE_PATH) {
+        return handleDiscordPresenceRequest(request, "app://babylonslate", presence ??= createDiscordPresence());
+      }
       if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405 });
       const file = rendererFile(request.url, rendererRoot);
       const response = await net.fetch(pathToFileURL(file).href, { method: request.method });
@@ -343,6 +351,8 @@ void app.whenReady().then(async () => {
   windowsAllowed = true;
   await createWindow();
 });
+
+app.on("will-quit", () => presence?.dispose());
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

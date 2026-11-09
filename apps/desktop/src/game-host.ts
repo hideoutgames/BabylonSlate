@@ -2,13 +2,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, Menu, net, protocol, session, shell } from "electron";
+import { createDiscordPresence, DISCORD_PRESENCE_PATH, handleDiscordPresenceRequest, type DiscordPresence } from "./discord-presence";
 import { allowsGamePermission, gameExternalUrl, gameFile, GAME_HOST, isGameUrl } from "./packaged-security";
 
 /**
  * The main process of an exported desktop game: one sandboxed window that
  * plays the web game from `resources/game` at `app://game/`. The game page
  * has no Node access and no preload; it cannot navigate away or open other
- * windows, and links it opens go to the system browser.
+ * windows, and links it opens go to the system browser. The one service it
+ * reaches is Discord Rich Presence, by posting checked requests to
+ * `DISCORD_PRESENCE_PATH` on its own origin.
  */
 
 interface GamePackage {
@@ -22,6 +25,9 @@ const gameId = typeof gamePackage.hapticGameId === "string" && /^[A-Za-z0-9_-]{1
 // Saves follow the project, not the game's name, so a renamed game keeps them.
 if (gameId) app.setPath("userData", join(app.getPath("appData"), "Haptic Games", gameId));
 const gameRoot = join(process.resourcesPath, "game");
+/** Connected to Discord the first time the game sets its presence; closing it on quit makes Discord drop the presence. */
+let presence: DiscordPresence | null = null;
+app.on("will-quit", () => presence?.dispose());
 
 protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } }]);
 
@@ -60,6 +66,10 @@ void app.whenReady().then(async () => {
     allowsGamePermission(permission, details.requestingUrl ?? ""));
   protocol.handle("app", async request => {
     try {
+      const url = new URL(request.url);
+      if (url.host === GAME_HOST && url.pathname === DISCORD_PRESENCE_PATH) {
+        return handleDiscordPresenceRequest(request, `app://${GAME_HOST}`, presence ??= createDiscordPresence());
+      }
       if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405 });
       const file = gameFile(request.url, gameRoot);
       const response = await net.fetch(pathToFileURL(file).href, { method: request.method });

@@ -83,6 +83,7 @@
     --color-platform-web: var(--platform-web);
     --color-platform-windows: var(--platform-windows);
     --color-platform-android: var(--platform-android);
+    --color-platform-discord: var(--platform-discord);
     --color-graph-node: var(--graph-node);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
@@ -144,6 +145,8 @@
     --platform-web: oklch(0.625 0.191 35.71);
     --platform-windows: oklch(0.568 0.167 251.31);
     --platform-android: oklch(0.6170 0.1475 153.846);
+    /* Discord's blurple, #5865F2. */
+    --platform-discord: oklch(0.5774 0.2091 273.850);
     --graph-canvas: oklch(0.16 0.004 75);
     --graph-node: oklch(0.972 0.003 85);
     --graph-state-selected: oklch(0.64 0.14 80);
@@ -271,6 +274,7 @@
     --platform-web: oklch(0.625 0.191 35.71);
     --platform-windows: oklch(0.6512 0.1366 245.633);
     --platform-android: oklch(0.793 0.180 154.00);
+    --platform-discord: oklch(0.5774 0.2091 273.850);
     --graph-canvas: oklch(0.145 0.004 75);
     --graph-node: oklch(0.22 0.004 75);
     --graph-state-selected: oklch(0.83 0.14 80);
