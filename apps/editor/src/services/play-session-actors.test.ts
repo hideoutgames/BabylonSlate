@@ -12,7 +12,7 @@ import {
   runtimeOptionsFromLoadControl,
   type RuntimeDriver,
 } from "@haptic/runtime";
-import { createEngine } from "@haptic/render";
+import { createEngine, RenderingContextLostError } from "@haptic/render";
 import { createGameWorkerHost } from "./game-worker-host";
 import { startPlaySession, type PlaySceneSourceLoader, type PlaySession } from "./play-session";
 
@@ -627,7 +627,10 @@ describe.each(["worker", "in-process"] as const)(
       await vi.waitFor(() => expect(runtime.getWorld().gameInstance?.getVariable("finished")).toBe(true));
     });
 
-    it("tells the host a scene load failed and retains its diagnostics after the Play overlay closes", async () => {
+    for (const [cause, failure, code] of [
+      ["a failed load", new Error("First frame shader pipeline unavailable"), "scene.loading.failed"],
+      ["a lost graphics context", new RenderingContextLostError("Rendering context was lost during scene loading."), "scene.loading.contextLost"],
+    ] as const) it(`tells the host a scene load failed and retains its diagnostics after the Play overlay closes, for ${cause}`, async () => {
       let rejectPresentation!: (error: Error) => void;
       const presentFirstFrame = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectPresentation = reject; }));
       let stopped: ReturnType<PlaySession["stop"]> | undefined;
@@ -640,13 +643,11 @@ describe.each(["worker", "in-process"] as const)(
       await play({ presentFirstFrame, onFatalDiagnostic, onSceneLoadFailed });
       await vi.waitFor(() => expect(presentFirstFrame).toHaveBeenCalledOnce());
       expect(onSceneLoadFailed).not.toHaveBeenCalled();
-      const failure = new Error("First frame shader pipeline unavailable");
       rejectPresentation(failure);
       await vi.waitFor(() => expect(onFatalDiagnostic).toHaveBeenCalledOnce());
       expect(onSceneLoadFailed).toHaveBeenCalledOnce();
       expect(stopped?.diagnostics).toEqual([expect.objectContaining({
-        code: "scene.loading.failed", assetGuid: "scene", severity: "error",
-        message: "Scene loading failed: First frame shader pipeline unavailable", stack: failure.stack,
+        code, assetGuid: "scene", severity: "error", message: `Scene loading failed: ${failure.message}`, stack: failure.stack,
       })]);
     });
 

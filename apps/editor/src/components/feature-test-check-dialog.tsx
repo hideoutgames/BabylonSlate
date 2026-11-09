@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore";
 import type { Effect } from "@babylonjs/core/Materials/effect";
-import { estimateTextureMemory } from "@haptic/render";
+import { estimateTextureMemory, isEngineContextLost } from "@haptic/render";
 import { getHostMemoryStats, type HostMemoryStats } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -259,6 +259,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       startPlay: () => playRef.current.requestPlay({ saveChoice: "skip" }),
       play: () => playProbes.get(PLAY_PROBE_KEY),
       sessionIdle: () => playRef.current.sessionOwner.canStart(),
+      renderingContextLost: () => EngineStore.Instances.some((engine) => !engine.isDisposed && isEngineContextLost(engine)),
       onSessionClosed: onPlaySessionClosed,
       sampleFrames,
       compiling: compilingEffects,

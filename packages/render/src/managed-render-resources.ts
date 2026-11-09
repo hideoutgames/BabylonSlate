@@ -1,4 +1,5 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { isEngineContextLost } from "./context-lost-error";
 
 /** Conservative managed rendering ceiling, not measured/free GPU memory. */
 export const MANAGED_RENDER_BYTE_LIMIT = 1024 * 1024 ** 2;
@@ -260,16 +261,10 @@ export function beginManagedRenderAllocation(
   return lease;
 }
 
-/** Pinned Babylon 9.29: set while a context is lost. A lost WebGPU Engine
- * (`doNotHandleContextLost`) draws no further frame and is never restored. */
-function contextLost(engine: AbstractEngine): boolean {
-  return (engine as unknown as { _contextWasLost?: boolean })._contextWasLost === true;
-}
-
 /** Whether releaseManagedRenderLeaseAfterDisposal holds a lease until a later
  * end frame (a live WebGPU Engine's destruction drain) rather than releasing it at once. */
 function managedRenderReleaseIsDeferred(engine: AbstractEngine): boolean {
-  return engine.isWebGPU && !disposedEngines.has(engine) && !contextLost(engine);
+  return engine.isWebGPU && !disposedEngines.has(engine) && !isEngineContextLost(engine);
 }
 
 /** Call only after disposing all owned resources. Native WebGPU queues physical
@@ -312,7 +307,7 @@ export function releaseManagedRenderLeaseAfterDisposal(
     // registering synchronously could run our observer in the current iteration.
     queueMicrotask(() => {
       if (finished) return;
-      if (disposedEngines.has(engine) || contextLost(engine)) {
+      if (disposedEngines.has(engine) || isEngineContextLost(engine)) {
         finish();
         return;
       }

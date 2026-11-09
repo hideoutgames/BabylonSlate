@@ -6,6 +6,8 @@ export interface PlayProbe {
   /** Loading phase while the scene loads; null once the first frame is presented. */
   loadingPhase(): { phase: string; progress: number } | null;
   tickIndex(): number;
+  /** Whether Play is paused (Pause, Pause On Play, a breakpoint or a hidden page); a paused session does not tick. */
+  paused(): boolean;
   /** Runtime-reported frames per second; null before the first stats sample. */
   runtimeFps(): number | null;
   snapshot(): {

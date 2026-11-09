@@ -18,7 +18,11 @@ import type { RenderDiagnostics } from "@haptic/render";
 
 type SceneBehavior = {
   open?: "ready" | "failed" | "blocked";
-  play?: "loads" | "stuck";
+  /**
+   * `paused` shows its first frame and never ticks; `contextLost` loses the rendering context 1 s into its first load
+   * (the Engine's context returns 5 s later) and loads the second time, `contextLostTwice` loses it on both loads.
+   */
+  play?: "loads" | "stuck" | "paused" | "contextLost" | "contextLostTwice";
   commands?: Record<string, { success: boolean; output: string }>;
   diagnostics?: SessionReportEntry[];
   /** Each Play image sample's near-black share, in order; null answers with no sample. Unlisted samples are not black. */
@@ -43,7 +47,19 @@ function fakeEditor(
   let active: string | null = null;
   let play: PlayProbe | null = null;
   let playScene: string | null = null;
+  /** When the current load loses the rendering context, and until when the Engine's context stays lost. */
+  let losesContextAt: number | null = null;
+  let contextBackAt = 0;
   const listeners = new Set<(result: PlaySessionResult) => void>();
+  const close = (diagnostics: SessionReportEntry[]) => {
+    play = null;
+    const result: PlaySessionResult = {
+      diagnostics, droppedDiagnostics: 0, textureCountBefore: 5,
+      released: Promise.resolve({ textureCountAfter: 5, textureLeak: false, quarantined: false }),
+      runtimeMode: "worker", lastTrace: null,
+    };
+    for (const listener of [...listeners]) listener(result);
+  };
   const started: string[] = [];
   const stopped: string[] = [];
   const commands: string[] = [];
@@ -61,12 +77,15 @@ function fakeEditor(
     } : null,
     startPlay: async () => {
       playScene = active;
-      started.push(playScene!);
       const scene = behavior(playScene);
+      const loss = scene.play === "contextLostTwice" || (scene.play === "contextLost" && !started.includes(playScene!));
+      started.push(playScene!);
+      losesContextAt = loss ? now + 1000 : null;
       let images = 0;
       play = {
-        loadingPhase: () => scene.play === "stuck" ? { phase: "Loading Models", progress: 45 } : null,
-        tickIndex: () => 12,
+        loadingPhase: () => scene.play === "stuck" || losesContextAt !== null ? { phase: "Loading Models", progress: 45 } : null,
+        tickIndex: () => scene.play === "paused" ? 0 : 12,
+        paused: () => scene.play === "paused",
         runtimeFps: () => 60,
         snapshot: () => ({
           drawCalls: 10, meshes: 20, textures: 5, accountedBytes: 0,
@@ -97,18 +116,13 @@ function fakeEditor(
         stop: () => {
           if (!play) return;
           stopped.push(playScene!);
-          play = null;
-          const result: PlaySessionResult = {
-            diagnostics: scene.diagnostics ?? [], droppedDiagnostics: 0, textureCountBefore: 5,
-            released: Promise.resolve({ textureCountAfter: 5, textureLeak: false, quarantined: false }),
-            runtimeMode: "worker", lastTrace: null,
-          };
-          for (const listener of [...listeners]) listener(result);
+          close(scene.diagnostics ?? []);
         },
       };
     },
     play: () => play,
     sessionIdle: () => play === null,
+    renderingContextLost: () => now < contextBackAt,
     onSessionClosed: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     sampleFrames: async () => {
       // The command a sample follows, past the Breakdown's per-sample `gpubusy on`.
@@ -119,11 +133,19 @@ function fakeEditor(
     sleep: async (ms, signal) => {
       signal.throwIfAborted();
       now += ms;
+      if (losesContextAt !== null && now >= losesContextAt && play) {
+        losesContextAt = null;
+        contextBackAt = now + 5000;
+        close([{
+          ...diagnostic("error", "Scene loading failed: Rendering context was lost during scene loading (textures held: 31, about 355 MB)."),
+          code: "scene.loading.contextLost",
+        }]);
+      }
       onSleep?.(now);
       signal.throwIfAborted();
     },
   };
-  return { deps, started, stopped, commands, sampled };
+  return { deps, started, stopped, commands, sampled, now: () => now };
 }
 
 const scene = (name: string) => ({ name, path: `assets/${name}.scene.hasset` });
@@ -170,16 +192,22 @@ function projectAt(tier: QualityLevel): ConstructorParameters<typeof RenderingQu
 
 describe("runFeatureTestCheck", () => {
   it("stops a Play that never finishes loading, records where it stuck, and checks the next scene", async () => {
-    const editor = fakeEditor({ "assets/stuck.scene.hasset": { play: "stuck" } });
+    const editor = fakeEditor({ "assets/stuck.scene.hasset": { play: "stuck" }, "assets/paused.scene.hasset": { play: "paused" } });
+    const progress: string[] = [];
     const report = await runFeatureTestCheck({
-      mode: "full", scenes: [scene("stuck"), scene("fine")], deps: editor.deps, signal: new AbortController().signal,
+      mode: "full", scenes: [scene("stuck"), scene("paused"), scene("fine")], deps: editor.deps, signal: new AbortController().signal,
+      onStep: (step) => progress.push(step),
     });
-    const [stuck, fine] = report.scenes;
+    const [stuck, paused, fine] = report.scenes;
     expect(stuck.passed).toBe(false);
     expect(stuck.play).toMatchObject({ status: "timeout", phase: "Loading Models 45%" });
-    expect(stuck.problems.join(" ")).toContain("did not finish loading");
-    expect(editor.stopped).toEqual(["scene:assets/stuck.scene.hasset", "scene:assets/fine.scene.hasset"]);
+    expect(stuck.problems).toEqual(["Play did not finish loading in 120 s (stuck at Loading Models 45%)."]);
+    // A Play that shows its scene but never ticks says why, in the status while it waits and in the report.
+    expect(progress).toContain("paused: starting Play (first frame shown, paused before the first tick)");
+    expect(paused.problems).toEqual(["Play did not finish loading in 120 s (stuck at first frame shown, paused before the first tick)."]);
+    expect(editor.stopped).toEqual(["stuck", "paused", "fine"].map((name) => `scene:assets/${name}.scene.hasset`));
     expect(fine.passed).toBe(true);
+    expect(fine.play.phase).toBeNull();
     expect(fine.play.commands).toMatchObject([{ line: "ft_stats", success: true, output: "ft_stats ok" }]);
     expect(report.cancelled).toBe(false);
   });
@@ -245,6 +273,45 @@ describe("runFeatureTestCheck", () => {
     });
   });
 
+  it("starts Play once more after a load that lost the rendering context, once the context is back, and measures that load", async () => {
+    let restartedAt: number | null = null;
+    const editor = fakeEditor({ "assets/lost.scene.hasset": { play: "contextLost" } });
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      startPlay: async () => {
+        if (editor.started.length === 1) restartedAt = editor.now();
+        await editor.deps.startPlay();
+      },
+    };
+    const report = await runFeatureTestCheck({ mode: "quick", scenes: [scene("lost"), scene("next")], deps, signal: new AbortController().signal });
+    const [lost, next] = report.scenes;
+    expect(editor.started).toEqual(["lost", "lost", "next"].map((name) => `scene:assets/${name}.scene.hasset`));
+    // The context returned 5 s after the loss, 1 s into the first load.
+    expect(restartedAt).toBeGreaterThanOrEqual(6000);
+    expect(lost.play).toMatchObject({ status: "loaded", phase: null });
+    expect(lost.play.commands.map((command) => command.success)).toEqual([true]);
+    // Measured on the second load, and still failed: the device lost its context once.
+    expect(lost.passed).toBe(false);
+    expect(lost.problems).toEqual([
+      "Play's first load failed after 1 s, so Play was started again: Scene loading failed: Rendering context was lost during scene loading (textures held: 31, about 355 MB).",
+    ]);
+    expect(lost.session?.diagnostics).toEqual([]);
+    expect(next.passed).toBe(true);
+  });
+
+  it("starts Play again only once: a second load that loses the rendering context fails the scene", async () => {
+    const editor = fakeEditor({ "assets/lost.scene.hasset": { play: "contextLostTwice" } });
+    const report = await runFeatureTestCheck({ mode: "quick", scenes: [scene("lost")], deps: editor.deps, signal: new AbortController().signal });
+    const [lost] = report.scenes;
+    expect(editor.started).toEqual(["scene:assets/lost.scene.hasset", "scene:assets/lost.scene.hasset"]);
+    expect(lost.play.status).toBe("closed");
+    expect(lost.problems).toEqual([
+      "Play's first load failed after 1 s, so Play was started again: Scene loading failed: Rendering context was lost during scene loading (textures held: 31, about 355 MB).",
+      "Play closed before the scene finished loading.",
+      "Session report has 1 error.",
+    ]);
+  });
+
   it("reports a scene the editor never opened without starting Play", async () => {
     const editor = fakeEditor({ "assets/blocked.scene.hasset": { open: "blocked" }, "assets/broken.scene.hasset": { open: "failed" } });
     const report = await runFeatureTestCheck({
@@ -284,6 +351,8 @@ describe("runFeatureTestCheck", () => {
     expect(report.scenes.map((entry) => [entry.name, entry.passed, entry.problems])).toEqual([
       ["stuck", false, ["Cancelled while checking this scene."]],
     ]);
+    // Cancelled while Play loaded: the report says how far its load got.
+    expect(report.scenes[0].play).toMatchObject({ status: "starting", phase: "Loading Models 45%" });
     expect(editor.stopped).toEqual(["scene:assets/stuck.scene.hasset"]);
     expect(editor.started).toEqual(["scene:assets/stuck.scene.hasset"]);
   });

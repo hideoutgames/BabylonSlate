@@ -3,6 +3,7 @@ import type { RuntimeDriver, SessionDiagnosticAggregator } from "@haptic/runtime
 import {
   createSceneLoadReadiness,
   createSceneStreamingReadiness,
+  isRenderingContextLostError,
   waitForSceneLoadingPaint,
   type EngineHandle,
 } from "@haptic/render";
@@ -118,7 +119,9 @@ export function createPlaySceneReadiness(ctx: PlaySceneReadinessContext): {
     onFailed: (scene, error) => {
       if (scene.sceneAssetGuid) sources.publishAssetStates([scene.sceneAssetGuid], "failed");
       const message = `Scene loading failed: ${error instanceof Error ? error.message : String(error)}`;
-      hostDiagnostics.push({ code: "scene.loading.failed", severity: "error", message,
+      // A lost graphics context gets its own code: the device dropped it (memory pressure), and a retry may load.
+      const code = isRenderingContextLostError(error) ? "scene.loading.contextLost" : "scene.loading.failed";
+      hostDiagnostics.push({ code, severity: "error", message,
         assetGuid: scene.sceneAssetGuid, frameId: 0,
         stack: error instanceof Error ? error.stack : undefined });
       try {
