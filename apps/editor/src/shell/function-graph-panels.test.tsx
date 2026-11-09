@@ -1,4 +1,4 @@
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DockviewApi, IDockviewPanelProps } from "dockview-react";
 import { DockviewShell } from "./dockview-shell";
@@ -84,6 +84,24 @@ describe("function graph tabs", () => {
     expect(jump.params).toEqual({ functionId: "fn-jump" });
     expect(jump.title).toBe("Jump");
     expect(jump.group.id).toBe(restored.getPanel("inspector")!.group.id);
+  });
+
+  it("show the Function icon on function tabs only, including restored ones", () => {
+    const tabIcons = () =>
+      Object.fromEntries(
+        [...document.querySelectorAll(".dv-tab")].map((tab) => [
+          tab.querySelector(".dv-default-tab-content")?.textContent,
+          tab.querySelector("[data-tab-icon]")?.getAttribute("data-tab-icon") ?? null,
+        ]),
+      );
+    const dock = renderClassDock();
+    act(() => openFunctionGraphPanel(dock, "fn-jump", "Jump"));
+    expect(tabIcons()).toMatchObject({ "Event Graph": null, Jump: "function", Inspector: null });
+
+    const saved = dock.toJSON() as unknown as Record<string, unknown>;
+    cleanup();
+    renderClassDock(saved);
+    expect(tabIcons()).toMatchObject({ "Event Graph": null, Jump: "function" });
   });
 
   it("open beside another function when the Event Graph is closed", () => {

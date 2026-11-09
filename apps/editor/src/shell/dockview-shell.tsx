@@ -37,6 +37,7 @@ import {
   isFunctionGraphPanelId,
 } from "./function-graph-panels";
 import { profileComponents } from "../lib/render-profile";
+import { HapticDockTab } from "./dock-tab";
 
 type DockviewLayout = ReturnType<DockviewApi["toJSON"]>;
 
@@ -308,6 +309,7 @@ export function DockviewShell({
           disableFloatingGroups={platformOptions.disableFloatingGroups}
           onReady={handleReady}
           components={profiledDockPanelComponents()}
+          defaultTabComponent={HapticDockTab}
         />
       </div>
       {platformOptions.singleWindow && (
