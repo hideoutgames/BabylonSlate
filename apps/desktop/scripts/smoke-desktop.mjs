@@ -44,7 +44,7 @@ function printWindowsMainStacks() {
   const script = "Get-CimInstance Win32_Process -Filter \"Name='BabylonSlate.exe'\" | ForEach-Object { \"$($_.ProcessId) $($_.CommandLine)\" }";
   const processes = execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8" })
     .split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  console.log(`The relaunch is still starting after 45 s. App processes:\n${processes.map(line => line.slice(0, 240)).join("\n")}`);
+  console.log(`The relaunch is still starting after 40 s. App processes:\n${processes.map(line => line.slice(0, 240)).join("\n")}`);
   const cdb = "C:\\Program Files (x86)\\Windows Kits\\10\\Debuggers\\x64\\cdb.exe";
   for (const pid of processes.filter(line => !line.includes("--type=")).map(line => line.split(" ")[0])) {
     try {
@@ -136,7 +136,7 @@ try {
     launched.on("window", watch);
     return launched;
   };
-  const launch = async (timeout = 60000) => observe(await _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs], env: cleanEnv, timeout }));
+  const launch = async () => observe(await _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs], env: cleanEnv, timeout: 60000 }));
   app = await launch();
   // macOS reports the /private/var target of the /var temporary directory symlink.
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath("userData"))), await realpath(userData));
@@ -191,9 +191,10 @@ try {
   await page.getByTestId("preview-build-close").click();
   await page.evaluate(async () => { await window.haptic.project.writeBinary("distribution-smoke.bin", new Uint8Array([17, 42, 99]).buffer); });
   await app.close();
-  const relaunchWatch = platform === "windows" ? setTimeout(printWindowsMainStacks, 45000) : undefined;
+  // cdb runs synchronously, so the launch timeout cannot end the relaunch while the stacks are read.
+  const relaunchWatch = platform === "windows" ? setTimeout(printWindowsMainStacks, 40000) : undefined;
   try {
-    app = await launch(platform === "windows" ? 150000 : 60000);
+    app = await launch();
   } finally {
     clearTimeout(relaunchWatch);
   }
