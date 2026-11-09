@@ -1,12 +1,15 @@
-import { defaultExportPreset, type ExportPreset, type ProjectDocument } from "@haptic/core";
+import { useState } from "react";
+import { defaultAppId, defaultExportPreset, isValidAppId, type AppIdentity, type ExportPreset, type ProjectDocument } from "@haptic/core";
 import { LabelHint, NumberField } from "@haptic/editor-kit";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import {
   Field,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@haptic/ui/components/field";
+import { Input } from "@haptic/ui/components/input";
 import { Switch } from "@haptic/ui/components/switch";
 import type { DocumentActions } from "../context/document-context-types";
 import { AlwaysPackageFoldersField } from "./always-package-folders-field";
@@ -17,6 +20,71 @@ type ProjectExportSettingsProps = ProjectExport & {
   projectDocument: ProjectDocument;
   updateProjectSettings: DocumentActions["updateProjectSettings"];
 };
+
+/**
+ * App Identity: what native app packages (macOS now, Android and iOS later)
+ * are called and identified by. A typed App ID is kept as a draft until it is
+ * valid, so an unfinished one never replaces the saved one.
+ */
+function AppIdentitySection({ projectDocument, updateProjectSettings }: Pick<ProjectExportSettingsProps, "projectDocument" | "updateProjectSettings">) {
+  const identity = projectDocument.settings.appIdentity;
+  const [appIdDraft, setAppIdDraft] = useState<string | null>(null);
+  const appIdText = appIdDraft ?? identity.appId;
+  const appIdError = appIdText.trim() && !isValidAppId(appIdText.trim())
+    ? "Use two or more parts of letters and digits, each starting with a letter, such as com.studio.game."
+    : null;
+  const update = (patch: Partial<AppIdentity>) => updateProjectSettings({ appIdentity: { ...identity, ...patch } });
+  return (
+    <SettingsSection id="appIdentity" title="App Identity">
+      <Field className="settings-field" data-invalid={appIdError ? true : undefined}>
+        <LabelHint hint="Identifies the app to the operating system and app stores. Keep it once you publish.">
+          <FieldLabel htmlFor="setting-app-id">App ID</FieldLabel>
+        </LabelHint>
+        <div className="flex min-w-0 flex-col gap-1">
+          <Input
+            id="setting-app-id"
+            data-testid="setting-app-id"
+            value={appIdText}
+            placeholder={defaultAppId(projectDocument.metadata.name)}
+            aria-invalid={appIdError ? true : undefined}
+            aria-describedby={appIdError ? "setting-app-id-error" : undefined}
+            onChange={(event) => {
+              const next = event.target.value;
+              setAppIdDraft(next);
+              if (!next.trim() || isValidAppId(next.trim())) update({ appId: next.trim() });
+            }}
+            onBlur={() => setAppIdDraft(null)}
+          />
+          {appIdError ? <FieldError id="setting-app-id-error">{appIdError}</FieldError> : null}
+        </div>
+      </Field>
+      <Field className="settings-field">
+        <FieldLabel htmlFor="setting-app-display-name">Display Name</FieldLabel>
+        <Input
+          id="setting-app-display-name"
+          data-testid="setting-app-display-name"
+          value={identity.displayName}
+          placeholder={projectDocument.metadata.name}
+          maxLength={100}
+          onChange={(event) => update({ displayName: event.target.value })}
+        />
+      </Field>
+      <Field className="settings-field">
+        <LabelHint hint="Raise it for every upload to an app store. The version is the project's, in General.">
+          <FieldLabel htmlFor="setting-app-build-number">Build Number</FieldLabel>
+        </LabelHint>
+        <NumberField
+          id="setting-app-build-number"
+          data-testid="setting-app-build-number"
+          min={1}
+          integer
+          value={identity.buildNumber}
+          onChange={(value) => update({ buildNumber: Math.max(1, Math.round(value)) })}
+        />
+      </Field>
+    </SettingsSection>
+  );
+}
 
 /**
  * Project Settings → Export: what packaging includes, and Export Project.
@@ -84,6 +152,7 @@ export function ProjectExportSettings({
           />
         </Field>
       </SettingsSection>
+      <AppIdentitySection projectDocument={projectDocument} updateProjectSettings={updateProjectSettings} />
       <SettingsSection id="alwaysPackageFolders" title="Always Package Folders">
         <Field className="settings-row">
           <FieldLabel className="sr-only">Always Package Folders</FieldLabel>

@@ -160,7 +160,7 @@ jobs:
       VITE_TEST_MODE: 'false'
       VITE_BASE_PATH: /
       # Players this build carries for packaging native games; a desktop app reuses its own Electron for its own OS.
-      HAPTIC_GAME_SHELLS: windows-x64,linux-x64
+      HAPTIC_GAME_SHELLS: windows-x64,linux-x64,macos-arm64
       VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
       # Public RevenueCat Web Billing key. Unset builds show subscriptions as not set up.
       VITE_REVENUECAT_WEB_API_KEY: ${{ vars.VITE_REVENUECAT_WEB_API_KEY }}

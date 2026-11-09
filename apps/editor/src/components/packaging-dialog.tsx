@@ -6,7 +6,8 @@ import Apple from "react-bootstrap-icons/dist/icons/apple";
 import Tux from "react-bootstrap-icons/dist/icons/tux";
 import Windows from "react-bootstrap-icons/dist/icons/windows";
 import { defaultExportPreset } from "@haptic/core";
-import { desktopGameNames } from "@haptic/exporter/native-desktop";
+import { resolvedAppIdentity } from "@haptic/core";
+import { desktopGameNames, macGameNames } from "@haptic/exporter/native-desktop";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -20,6 +21,7 @@ import {
 import { Progress } from "@haptic/ui/components/progress";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { cn } from "@haptic/ui/lib/utils";
+import { useAppSettings } from "../context/app-settings-context";
 import { useProjectState, useRegistryState } from "../context/document-context";
 import { packagingTargets, type PackagingTarget } from "../lib/packaging-targets";
 import { gameArchiveName, useGameExport, useGameShells, type LinuxPackageFormat } from "./use-game-export";
@@ -92,6 +94,9 @@ export function PackagingDialog({
   const target = targets.find((entry) => entry.id === targetId) ?? targets[0]!;
   const settings = projectDocument?.settings;
   const projectName = projectDocument?.metadata.name ?? "";
+  const macSigning = useAppSettings().settings.macSigning;
+  const appIdentity = settings ? resolvedAppIdentity(settings.appIdentity, projectName) : null;
+  const placeholderAppId = !settings?.appIdentity.appId;
   const startupGuid = settings?.startupSceneGuid ?? null;
   const startupScene = startupGuid ? assetRegistry?.getByGuid(startupGuid) : undefined;
   const bundleDebugger = (settings?.exportPresets[0] ?? defaultExportPreset()).bundleDebugger;
@@ -153,9 +158,11 @@ export function PackagingDialog({
                   <div className="flex items-center justify-between gap-3 px-3 py-1.5">
                     <dt className="text-muted-foreground">Output</dt>
                     <dd className="truncate font-mono text-xs" data-testid="packaging-output">
-                      {!projectName ? "" : target.desktopTarget
-                        ? desktopGameNames(projectName, target.desktopTarget).archive.replace(/\.zip$/, target.id === "linux" && linuxFormat === "deb" ? ".deb" : ".zip")
-                        : gameArchiveName(projectName)}
+                      {!projectName ? "" : target.desktopTarget === "macos-arm64"
+                        ? macGameNames(appIdentity?.displayName ?? projectName).archive
+                        : target.desktopTarget
+                          ? desktopGameNames(projectName, target.desktopTarget).archive.replace(/\.zip$/, target.id === "linux" && linuxFormat === "deb" ? ".deb" : ".zip")
+                          : gameArchiveName(projectName)}
                     </dd>
                   </div>
                   {target.id === "linux" ? (
@@ -176,6 +183,26 @@ export function PackagingDialog({
                       </dd>
                     </div>
                   ) : null}
+                  {target.id === "macos" ? (
+                    <>
+                      <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+                        <dt className="text-muted-foreground">App ID</dt>
+                        <dd className={cn("truncate font-mono text-xs", placeholderAppId && "text-(--warning)")} data-testid="packaging-app-id">{appIdentity?.appId}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+                        <dt className="text-muted-foreground">Signing</dt>
+                        <dd className="truncate font-medium" data-testid="packaging-mac-signing">
+                          {macSigning.identity ? macSigning.identity.replace(/^Developer ID Application: /, "") : "Ad-Hoc (This Mac Only)"}
+                        </dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+                        <dt className="text-muted-foreground">Notarization</dt>
+                        <dd className="truncate font-medium" data-testid="packaging-mac-notarization">
+                          {macSigning.identity && macSigning.notaryProfile ? macSigning.notaryProfile : "Off"}
+                        </dd>
+                      </div>
+                    </>
+                  ) : null}
                   <div className="flex items-center justify-between gap-3 px-3 py-1.5">
                     <dt className="text-muted-foreground">Startup Scene</dt>
                     <dd className={cn("truncate font-medium", !startupScene && "text-(--warning)")}>
@@ -191,6 +218,17 @@ export function PackagingDialog({
                     <dd className="font-medium">{folderCount(settings?.alwaysPackageFolders.length ?? 0)}</dd>
                   </div>
                 </dl>
+                {target.id === "macos" && placeholderAppId ? (
+                  <Alert data-testid="packaging-app-id-placeholder">
+                    <AlertTitle>Set an App ID</AlertTitle>
+                    <AlertDescription>The app uses a placeholder ID until you set one.</AlertDescription>
+                    <AlertAction>
+                      <Button variant="outline" size="sm" onClick={() => onOpenProjectSettings("export")}>
+                        Export Settings
+                      </Button>
+                    </AlertAction>
+                  </Alert>
+                ) : null}
                 {!startupScene ? (
                   <Alert data-testid="packaging-startup-scene">
                     <AlertTitle>Set a Startup Scene</AlertTitle>
@@ -230,7 +268,7 @@ export function PackagingDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {notice && !busy ? "Close" : "Cancel"}
           </Button>
-          <Button data-testid="packaging-package" disabled={!canPackage} onClick={() => void packageTarget(target, { linuxFormat })}>
+          <Button data-testid="packaging-package" disabled={!canPackage} onClick={() => void packageTarget(target, { linuxFormat, macSigning })}>
             {busy ? null : <DownloadIcon data-icon="inline-start" />}
             {busy ? "Packaging…" : "Package"}
           </Button>

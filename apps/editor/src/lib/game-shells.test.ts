@@ -45,10 +45,20 @@ describe("Game shells", () => {
 
   it("offer bundled targets everywhere and the desktop app's own OS only where it runs", () => {
     expect([...packageableDesktopTargets(manifest(), null)]).toEqual(["linux-x64"]);
-    const windowsApp = { platform: "win32", arch: "x64", runtime: vi.fn() };
+    const windowsApp = { platform: "win32", arch: "x64", runtime: vi.fn(), macIdentities: vi.fn(), packageMac: vi.fn() };
     expect([...packageableDesktopTargets(manifest(), windowsApp)].sort()).toEqual(["linux-x64", "windows-x64"]);
     expect([...packageableDesktopTargets(manifest(), { ...windowsApp, arch: "arm64" })]).toEqual(["linux-x64"]);
     expect([...packageableDesktopTargets(null, windowsApp)]).toEqual([]);
+  });
+
+  it("offer macOS only in the desktop app on a Mac, which signs it", () => {
+    const withMac = manifest({ shells: [...manifest().shells, { target: "macos-arm64", sha256: "b".repeat(64), size: 10, source: "bundled", parts: ["electron-macos-arm64.zip.000"] }] });
+    const mac = { platform: "darwin", arch: "x64", runtime: vi.fn(), macIdentities: vi.fn(), packageMac: vi.fn() };
+    // An Intel Mac packages the Apple Silicon game too.
+    expect([...packageableDesktopTargets(withMac, mac)].sort()).toEqual(["linux-x64", "macos-arm64"]);
+    expect([...packageableDesktopTargets(withMac, null)]).toEqual(["linux-x64"]);
+    // The Windows app on x64 offers its own runtime, never macOS.
+    expect([...packageableDesktopTargets(withMac, { ...mac, platform: "win32" })].sort()).toEqual(["linux-x64", "windows-x64"]);
   });
 
   it("join a bundled runtime's parts and accept it only with the published SHA-256", async () => {
@@ -65,7 +75,7 @@ describe("Game shells", () => {
 
   it("ask the desktop app for its own runtime with the release's file names and Electron version", async () => {
     const own = new Uint8Array([4, 4]);
-    const bridge = { platform: "win32", arch: "x64", runtime: vi.fn(async () => own) };
+    const bridge = { platform: "win32", arch: "x64", runtime: vi.fn(async () => own), macIdentities: vi.fn(), packageMac: vi.fn() };
     const shell = await loadDesktopShell(manifest(), "windows-x64", source({ "game-host.cjs": host }, bridge));
     expect(shell.runtime).toBe(own);
     expect(bridge.runtime).toHaveBeenCalledExactlyOnceWith(["electron.exe", "locales/en-US.pak"], "44.9.3");

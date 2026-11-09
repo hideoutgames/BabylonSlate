@@ -1,6 +1,6 @@
 # Publishing
 
-**Packaging** builds your project as a game: a web game in a ZIP, ready for itch.io or any static web host, or a desktop game for Windows (ZIP) or Linux (Debian package or ZIP).
+**Packaging** builds your project as a game: a web game in a ZIP, ready for itch.io or any static web host, or a desktop game for Windows (ZIP), Linux (Debian package or ZIP) or macOS (a signed app in a ZIP).
 
 ## Before you package
 
@@ -15,7 +15,7 @@
 2. In the platform list, select a platform under **Available**. Platforms under **Unavailable** can't be packaged with this copy of Haptic.
 3. Check the summary: the output file, **Startup Scene**, **Bundle Debugger** and **Always Package Folders**. If no Startup Scene is set, choose **Game Settings** to set one; **Package** stays unavailable until you do.
 4. Choose **Package**.
-5. Save the file when Haptic asks (see [Saving exported files](../projects/index.md#saving-exported-files)); in a browser, a message such as **Game package downloaded. Check your downloads.** appears. The file is named after the project, with underscores for spaces, and desktop packages end in `-Windows` or `-Linux`.
+5. Save the file when Haptic asks (see [Saving exported files](../projects/index.md#saving-exported-files)); in a browser, a message such as **Game package downloaded. Check your downloads.** appears. The file is named after the project, with underscores for spaces, and desktop packages end in `-Windows`, `-Linux` or `-macOS`.
 
 The web ZIP has `index.html` at its root. Upload it to itch.io as an HTML game, or unzip it and serve the folder from any static web host. For desktop ZIPs, see [Desktop games](#desktop-games).
 
@@ -51,19 +51,41 @@ Which platforms you can package depends on where you run Haptic:
 | --- | --- |
 | Browser, iPad and Android | Web, Windows, Linux |
 | Windows and Linux desktop apps | Web, Windows, Linux |
-| macOS desktop app | Web, Windows, Linux |
+| macOS desktop app | Web, Windows, Linux, macOS |
 
-macOS, Android and iOS games are not available yet.
+Android and iOS games are not available yet.
+
+## macOS games
+
+The Haptic desktop app on a Mac packages macOS games for Apple Silicon Macs, as the app in a ZIP. It signs them with Apple's tools on your Mac, so macOS games cannot be packaged in the browser, on iPad or on other computers.
+
+| Signing | Who can open the game | What you need |
+| --- | --- | --- |
+| Ad-hoc (default) | Your Macs, and others after **System Settings > Privacy & Security > Open Anyway** | Nothing |
+| Developer ID | Every Mac, after it is notarized | An Apple Developer Program membership |
+
+To sign and notarize with your Developer ID:
+
+1. Install your **Developer ID Application** certificate on the Mac, for example in Xcode under **Settings > Accounts > Manage Certificates**.
+2. Store your notarization credentials in the keychain once, in Terminal: `xcrun notarytool store-credentials haptic-notary --apple-id you@example.com --team-id TEAMID` (it asks for an app-specific password, which you make at appleid.apple.com). Haptic never sees them.
+3. In **Engine Settings > Packaging**, choose the **Signing Identity** and enter the **Notarization Profile** name, here `haptic-notary`.
+
+Packaging then signs the app, sends it to Apple and attaches the notarization ticket, which can take several minutes. Without a profile, the app is signed but not notarized, and other Macs block it until a player allows it.
+
+The app's ID, name and build number come from **Project Settings > Export > App Identity**; its version is the project's. Until you set an App ID, the app uses a placeholder such as `com.example.spacegame` and Packaging reminds you.
 
 ## Packaging settings
 
-These settings are in **Project Settings > Export**, under **Game Packaging** and **Always Package Folders**. **Export Settings** in the **Packaging** window opens them.
+These settings are in **Project Settings > Export**, under **Game Packaging**, **App Identity** and **Always Package Folders**. **Export Settings** in the **Packaging** window opens them.
 
 | Setting | Description |
 | --- | --- |
 | Bundle Debugger | Includes debugging tools and Development Only nodes. Off by default. |
 | File Count Warn | Warning threshold for the number of files in the export. Default 800. Preview Build logs a warning above it. |
 | File Count Fail | File count above which the export fails. Default 1000. |
+| App ID | Identifies a native app to the operating system and app stores, such as `com.studio.game`: two or more parts of letters and digits, each starting with a letter. Keep it once you publish. |
+| Display Name | The name under the app's icon. The project name when empty. |
+| Build Number | Raise it for every upload to an app store. |
 | Always Package Folders | Folders whose assets always ship, even when nothing references them. Subfolders are included. |
 
 **Export Project**, under **Project Backup** on the same page, makes an editable backup of the project instead. See [Projects](../projects/index.md).

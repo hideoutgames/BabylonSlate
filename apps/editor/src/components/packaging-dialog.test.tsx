@@ -233,3 +233,33 @@ it("packages a Linux game as a Debian package by default, or as a ZIP when chose
   ]);
   expect(await screen.findByText("Linux game downloaded. Check your downloads.")).toBeTruthy();
 });
+
+it("packages a macOS game through the Mac desktop app with the project's identity and this Mac's signing", async () => {
+  shells.manifest = { ...SHELLS, shells: [...SHELLS.shells, { target: "macos-arm64", sha256: "3".repeat(64), size: 10, source: "bundled", parts: ["electron-macos-arm64.zip.000"] }] };
+  const packageMac = vi.fn(async () => ({ fileName: "Harbour_Run-macOS.zip", bytes: new Uint8Array([1, 2]), notarized: false }));
+  (globalThis as { haptic?: unknown }).haptic = { gameShell: { platform: "darwin", arch: "arm64", runtime: vi.fn(), macIdentities: vi.fn(async () => []), packageMac } };
+  exportGameArtifact.mockResolvedValue(ok({ files: new Map([["index.html", strToU8("<html>")]]) }));
+  const downloads = captureDownloads();
+  try {
+    await renderDialog();
+    fireEvent.click(screen.getByTestId("packaging-target-macos"));
+    expect(screen.getByTestId("packaging-output").textContent).toBe("Harbour_Run-macOS.zip");
+    // No App ID set: the placeholder is used and flagged.
+    expect(screen.getByTestId("packaging-app-id").textContent).toBe("com.example.harbourrun");
+    expect(screen.getByTestId("packaging-app-id-placeholder")).toBeTruthy();
+    expect(screen.getByTestId("packaging-mac-signing").textContent).toBe("Ad-Hoc (This Mac Only)");
+    expect(screen.getByTestId("packaging-mac-notarization").textContent).toBe("Off");
+
+    await act(async () => { fireEvent.click(screen.getByTestId("packaging-package")); });
+
+    expect(packageMac).toHaveBeenCalledExactlyOnceWith({
+      game: [["index.html", strToU8("<html>")]],
+      name: "Harbour Run", appId: "com.example.harbourrun", version: "1.0.0", buildNumber: 1,
+      gameId: "harbour-guid", identity: null, notaryProfile: "",
+    });
+    expect(downloads).toEqual(["Harbour_Run-macOS.zip"]);
+    expect(screen.getByText("macOS game downloaded. Check your downloads.")).toBeTruthy();
+  } finally {
+    delete (globalThis as { haptic?: unknown }).haptic;
+  }
+});

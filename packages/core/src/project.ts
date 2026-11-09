@@ -1,3 +1,4 @@
+import { normalizeAppIdentity, type AppIdentity } from "./app-identity";
 import { normalizeCollisionPresets, type CollisionPreset } from "./collision-presets";
 import { applyProjectQualityPatch, normalizeRenderingQuality, qualityPresetPatch, type RenderingQuality } from "./render-quality";
 import { normalizeRenderingPipeline, type GpuBackend } from "./rendering-pipeline";
@@ -243,6 +244,8 @@ export interface ProjectSettings {
    * disabled plugin content stay excluded.
    */
   alwaysPackageFolders: string[];
+  /** Native app identity (Project Settings > Export > App Identity). */
+  appIdentity: AppIdentity;
   /**
    * Git LFS locking opt-in. Token is never stored here — it lives in the
    * platform secret store (engineplan §12).
@@ -873,6 +876,7 @@ export function normalizeProjectSettings(
     extensionSettings: normalizeExtensionSettingValues(settings?.extensionSettings),
     exportPresets: normalizeExportPresets(settings?.exportPresets),
     alwaysPackageFolders: normalizeAlwaysPackageFolders(settings?.alwaysPackageFolders),
+    appIdentity: normalizeAppIdentity(settings?.appIdentity),
     sourceControl: normalizeSourceControl(settings?.sourceControl),
   };
 }
