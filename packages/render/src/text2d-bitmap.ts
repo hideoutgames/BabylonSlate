@@ -14,14 +14,6 @@ export type BitmapGlyphCell = {
   inkBounds?: { top: number; bottom: number };
 };
 
-export type PackedBitmapGlyphAtlas = {
-  width: number;
-  height: number;
-  pixels: Uint8Array;
-  uvs: Map<string, { u0: number; v0: number; u1: number; v1: number }>;
-  workingBytes: number;
-};
-
 export type BitmapAllocationLimits = {
   maxTextureSize: number;
   maxWorkingBytes: number;
@@ -82,15 +74,13 @@ function placeGlyphRows(cells: readonly GlyphSize[], width: number): { placed: B
 }
 
 /**
- * Compute bounds and budget before any glyph or atlas pixel allocation. `keep` is the size of the atlas a text
- * already owns: the plan keeps that size when the cells fit it within the budget, so the text can redraw into its
- * texture. A glyph samples the same texels wherever its cell sits, since every cell has a transparent pixel around
- * it. A text the limits refuse is refused with or without `keep`.
+ * The bounds and budget of a text's glyph cells, as the atlas that would hold them alone, before any glyph pixel is
+ * allocated: null for no cells, a throw for a text the limits refuse. The cells themselves go to the Scene's shared
+ * atlas (`text2d-glyph-atlas.ts`); this keeps what a text may ask for the same as when it packed its own.
  */
 export function planBitmapGlyphAtlas(
   cells: readonly GlyphSize[],
   limits: BitmapAllocationLimits = defaultLimits,
-  keep?: { width: number; height: number },
 ): BitmapAtlasPlan | null {
   if (!cells.length) return null;
   const retained = limits.retainedBytes ?? 0;
@@ -131,12 +121,6 @@ export function planBitmapGlyphAtlas(
     }
   }
   if (!best) throw new BitmapAllocationLimitError("single atlas cannot fit the texture dimensions and working-set budget.");
-  if (keep && (keep.width !== best.width || keep.height !== best.height) && keep.width >= minWidth &&
-    keep.width <= limits.maxTextureSize && keep.height <= limits.maxTextureSize) {
-    const { placed, extent } = placeGlyphRows(cells, keep.width);
-    const workingBytes = extent <= keep.height ? workingBytesFor(keep.width, keep.height) : null;
-    if (workingBytes !== null) return { width: keep.width, height: keep.height, placed, workingBytes };
-  }
   return best;
 }
 
@@ -156,10 +140,29 @@ let cachedGlyphBytes = 0;
 let cachedGlyphHost: unknown;
 const watchedFontSets = new WeakSet<object>();
 
+/** Counts the times the cache emptied: a glyph rasterized since may differ from one of the same key before. */
+let glyphGeneration = 0;
+const cellIdentities = new WeakMap<BitmapGlyphCell, string>();
+let unidentifiedCells = 0;
+
 /** Drops every cached glyph: a font face loaded or left the document, so glyphs may now draw differently. */
 export function forgetRasterizedGlyphs(): void {
   cachedGlyphs.clear();
   cachedGlyphBytes = 0;
+  glyphGeneration += 1;
+}
+
+/**
+ * What a rasterized cell is, as a key: two cells share it only when they are the same glyph drawn the same way with
+ * the same fonts loaded, so their pixels are the same. A cell made any other way is only ever itself.
+ */
+export function glyphCellIdentity(cell: BitmapGlyphCell): string {
+  let identity = cellIdentities.get(cell);
+  if (identity === undefined) {
+    identity = `cell ${++unidentifiedCells}`;
+    cellIdentities.set(cell, identity);
+  }
+  return identity;
 }
 
 /** The cached value for `key`, or `make()`'s, kept unless null and while the cache has room, the oldest going first. */
@@ -485,44 +488,8 @@ export function rasterizeBitmapGlyph(
   if (cell.width > measured.width || cell.height > measured.height) {
     throw new BitmapAllocationLimitError("font metrics changed after allocation preflight.");
   }
+  if (!cellIdentities.has(cell)) cellIdentities.set(cell, `${glyphGeneration}|${glyphDrawingKey(ch, style, stack)}`);
   return cell;
-}
-
-/** Shelf-pack unique glyph cells onto a power-of-two RGBA atlas. */
-export function packBitmapGlyphAtlas(
-  cells: readonly BitmapGlyphCell[],
-  limits: BitmapAllocationLimits = defaultLimits,
-  preparedPlan?: BitmapAtlasPlan | null,
-): PackedBitmapGlyphAtlas | null {
-  if (cells.length === 0) return null;
-  const plan = preparedPlan ?? planBitmapGlyphAtlas(cells, limits)!;
-  const atlasW = plan.width;
-  const atlasH = plan.height;
-  const byKey = new Map(cells.map((cell) => [cell.key, cell]));
-  for (const place of plan.placed) {
-    const cell = byKey.get(place.key);
-    if (!cell || cell.width > place.width || cell.height > place.height ||
-      cell.pixels.length !== checkedCellBytes(cell.width, cell.height, limits)) {
-      throw new BitmapAllocationLimitError("glyph changed after allocation preflight.");
-    }
-  }
-  const pixels = new Uint8Array(atlasW * atlasH * 4);
-  const uvs = new Map<string, { u0: number; v0: number; u1: number; v1: number }>();
-  for (const { key, x: px, y: py } of plan.placed) {
-    const cell = byKey.get(key)!;
-    for (let row = 0; row < cell.height; row++) {
-      const src = row * cell.width * 4;
-      const dst = ((py + row) * atlasW + px) * 4;
-      pixels.set(cell.pixels.subarray(src, src + cell.width * 4), dst);
-    }
-    uvs.set(cell.key, {
-      u0: px / atlasW,
-      v0: 1 - (py + cell.height) / atlasH,
-      u1: (px + cell.width) / atlasW,
-      v1: 1 - py / atlasH,
-    });
-  }
-  return { width: atlasW, height: atlasH, pixels, uvs, workingBytes: plan.workingBytes };
 }
 
 /**
@@ -615,6 +582,7 @@ export function rasterizePixelGlyph(
   );
   // The limits are the caller's, so a cached glyph passes them again.
   if (cell) checkedCellBytes(cell.width, cell.height, limits);
+  if (cell && !cellIdentities.has(cell)) cellIdentities.set(cell, `${glyphGeneration}|${cell.key}`);
   return cell;
 }
 

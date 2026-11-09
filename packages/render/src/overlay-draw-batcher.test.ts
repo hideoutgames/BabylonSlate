@@ -300,7 +300,7 @@ describe("Scene Layer draw batching", () => {
     const batched = layerDraws(engine, compositor);
     setSceneDrawBatching(scene, false);
     const unbatched = layerDraws(engine, compositor);
-    expect({ batched, unbatched }).toEqual({ batched: 109, unbatched: 181 });
+    expect({ batched, unbatched }).toEqual({ batched: 60, unbatched: 181 });
     // Batch meshes join no Scene list: nothing culls, picks, probes or counts them.
     expect(scene.meshes).toHaveLength(meshes);
     await compositor.dispose();

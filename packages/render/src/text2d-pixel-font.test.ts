@@ -185,7 +185,7 @@ describe("pixel font 2D Text", () => {
     const metadata = mesh.metadata as { text2dRenderer?: string; text2dPixelSize?: number };
     expect(metadata.text2dRenderer).toBe("bitmap");
     expect(metadata.text2dPixelSize).toBe(PIXEL_SIZE);
-    const atlas = scene.textures.find((texture) => texture.name.endsWith(":bitmap-atlas"));
+    const atlas = scene.textures.find((texture) => texture.name.startsWith("text2d-glyph-atlas:"));
     expect(atlas?.samplingMode).toBe(Texture.NEAREST_SAMPLINGMODE);
     const glyphs = text2DMeshLayout(mesh)!.items.filter((item) => item.kind === "glyph");
     expect(glyphs).toHaveLength(2);
