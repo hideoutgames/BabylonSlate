@@ -156,6 +156,12 @@ describe("app settings", () => {
     expect(engineSettingsSchema.parse({ hdrImportFaceSize: "128" }).hdrImportFaceSize).toBe(256);
   });
 
+  it("stacks new 2D actors nowhere by default and reads an unknown host choice as disabled", () => {
+    expect(defaultEngineSettings().viewportStackNewActors2D).toBe("disabled");
+    expect(engineSettingsSchema.parse({ viewportStackNewActors2D: "both" }).viewportStackNewActors2D).toBe("both");
+    expect(engineSettingsSchema.parse({ viewportStackNewActors2D: "layers" }).viewportStackNewActors2D).toBe("disabled");
+  });
+
   it("clamps audio PCM ceiling and max voices", () => {
     expect(engineSettingsSchema.parse({ audioByteCeiling: 1 }).audioByteCeiling).toBe(
       32 * 1024 * 1024,

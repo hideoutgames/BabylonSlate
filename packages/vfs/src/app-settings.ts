@@ -131,6 +131,10 @@ const customEditorThemeSchema = z.object({
 
 export type CustomEditorTheme = z.infer<typeof customEditorThemeSchema>;
 
+/** Where Stack New 2D Actors applies: no host, 2D Scenes, Scene Layers, or both. */
+export const STACK_NEW_ACTORS_2D_MODES = ["disabled", "scenes", "sceneLayers", "both"] as const;
+export type StackNewActors2D = (typeof STACK_NEW_ACTORS_2D_MODES)[number];
+
 export const engineSettingsSchema = z.object({
   automaticUpdatesEnabled: z.boolean().default(true),
   seenReleaseVersions: z.array(z.string()).catch([]).default([]),
@@ -204,6 +208,12 @@ export const engineSettingsSchema = z.object({
   viewportPlaceOnSurfaces: z.boolean().default(true),
   /** How far that trace reaches, in world units; a miss places the actor at its end. */
   viewportPlacementDistance: z.number().finite().positive().default(DEFAULT_EDITOR_PLACEMENT_DISTANCE),
+  /**
+   * Which 2D hosts stack new actors: an actor placed, dragged in, pasted or
+   * duplicated there goes one Z-Order above the highest actor that draws.
+   * Elsewhere placed actors take Z-Order 0 and copies keep theirs.
+   */
+  viewportStackNewActors2D: z.enum(STACK_NEW_ACTORS_2D_MODES).catch("disabled").default("disabled"),
   renderingOverridesEnabled: z.boolean().default(false),
   /** Shows developer diagnostics: the Feature Test starter, its device check, and Copy Error on load failures. */
   debugMode: z.boolean().default(false),

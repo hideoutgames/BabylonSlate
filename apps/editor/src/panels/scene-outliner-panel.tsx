@@ -90,6 +90,8 @@ import { usePhoneTouchSizing } from "../shell/use-platform-layout";
 import { QUIET_ROW_ACTION } from "../lib/row-action-classes";
 import { PlaceActorsDialog } from "../components/place-actors-dialog";
 import { anchorBelow } from "../lib/menu-anchor";
+import { getAppSettingsSnapshot } from "../context/app-settings-context";
+import { addNewSceneActors, droppedCopyPosition } from "../lib/new-actor-z-order";
 import {
   duplicateSceneActor,
   duplicateSceneActors,
@@ -433,7 +435,8 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     if (!scene) return;
     const copies = pasteSceneActors(scene, sessionState.readCopiedActors(overlay));
     if (copies.length === 0) return;
-    const applied = await applySceneChange(documentId, { ...scene, actors: [...scene.actors, ...copies] });
+    const stack = getAppSettingsSnapshot().settings.viewportStackNewActors2D;
+    const applied = await applySceneChange(documentId, addNewSceneActors(scene, copies, { copies: true, stack }));
     if (applied) setSelectedActorIds(copies.map((copy) => copy.id));
   }, [scene, sessionState, overlay, applySceneChange, documentId, setSelectedActorIds]);
   const canPaste = sessionState.hasCopiedActors(overlay);
@@ -442,7 +445,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     if (!scene || ids.length === 0) return;
     const copies = duplicateSceneActors(scene, ids);
     if (copies.length === 0) return;
-    mutate({ ...scene, actors: [...scene.actors, ...copies] });
+    mutate(addNewSceneActors(scene, copies, { copies: true, stack: getAppSettingsSnapshot().settings.viewportStackNewActors2D }));
     setSelectedActorIds(copies.map((copy) => copy.id));
   }, [scene, mutate, setSelectedActorIds]);
 
@@ -690,14 +693,12 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       const placement = viewportDropApi.placementAtClient(clientX, clientY);
       if (!placement) return;
       const copy = duplicateSceneActor(scene, source, {
-        position: placement.position,
+        position: droppedCopyPosition(scene, source, placement.position),
         parentId: null,
       });
       const mergeKey = placementMergeKey(copy.id);
-      void applySceneChange(documentId, {
-        ...scene,
-        actors: [...scene.actors, copy],
-      }, { mergeKey });
+      const stack = getAppSettingsSnapshot().settings.viewportStackNewActors2D;
+      void applySceneChange(documentId, addNewSceneActors(scene, [copy], { copies: true, stack }), { mergeKey });
       if (placement.normal) {
         viewportDropApi.restOnSurface([{ actorId: copy.id, point: placement.position, normal: placement.normal }], mergeKey);
       }

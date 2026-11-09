@@ -38,7 +38,7 @@ See [Touch Gestures](../start/gestures.md) for the full list.
 
 As you zoom out, the grid fades its finest lines and adds coarser ones every 10, 100 and 1,000 cells, so it stays readable from up close to far above the scene. The red line is the X axis and the blue line the Z axis (green Y in 2D).
 
-**Camera Speed** (default 8 units per second), **Drop Distance** (default 10,000 units), **Place On Surfaces** (default on) and **Placement Trace Distance** (default 25 units) are in **Engine Settings > Viewport**. See [Place an actor](actors.md#place-an-actor).
+**Camera Speed** (default 8 units per second), **Drop Distance** (default 10,000 units), **Place On Surfaces** (default on), **Placement Trace Distance** (default 25 units) and **Stack New 2D Actors** (default **Disabled**) are in **Engine Settings > Viewport**. See [Place an actor](actors.md#place-an-actor) and [Draw order](../2d/index.md#draw-order).
 
 ## Scene Settings
 

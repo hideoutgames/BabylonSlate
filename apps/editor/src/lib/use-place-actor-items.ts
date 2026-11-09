@@ -1,12 +1,15 @@
 import { useCallback, useRef } from "react";
 import {
   isSceneWorkspaceKind,
+  type SerializedActor,
   type SerializedGraph,
   type SerializedScene,
 } from "@haptic/core";
 import type { IndexedAsset } from "@haptic/assets";
 import { useDocumentActions, useRegistryState } from "../context/document-context";
 import { FALLBACK_PLACE_POSITION, useSceneEditing } from "../context/scene-editing-context";
+import { getAppSettingsSnapshot } from "../context/app-settings-context";
+import { addNewSceneActors } from "./new-actor-z-order";
 import {
   nextActorId,
   placementMergeKey,
@@ -64,7 +67,9 @@ export function usePlaceActorItems(options: {
       const assets = assetRegistry?.list() ?? [];
       // `loaded` is null when no Class waited for its graph.
       const commit = (base: SerializedScene, loaded: ReadonlyMap<string, SerializedGraph> | null) => {
+        // Names and ids are unique against the actors placed before each one.
         let next = base;
+        const spawned: SerializedActor[] = [];
         const ids: string[] = [];
         const placed: Array<[number, number, number]> = [];
         items.forEach((item, index) => {
@@ -90,17 +95,14 @@ export function usePlaceActorItems(options: {
           const id = nextActorId(next);
           const position = positions[index] ?? positions[0] ?? FALLBACK_PLACE_POSITION;
           placed.push([position[0], position[1], position[2]]);
-          next = {
-            ...next,
-            actors: [
-              ...next.actors,
-              spawnPlacedActor(next, resolved, id, [position[0], position[1], position[2]], { overlay }),
-            ],
-          };
+          const actor = spawnPlacedActor(next, resolved, id, [position[0], position[1], position[2]], { overlay });
+          next = { ...next, actors: [...next.actors, actor] };
+          spawned.push(actor);
           ids.push(id);
         });
         const mergeKey = placementMergeKey(ids[0]!);
-        void applySceneChange(documentId, next, { mergeKey });
+        const stack = getAppSettingsSnapshot().settings.viewportStackNewActors2D;
+        void applySceneChange(documentId, addNewSceneActors(base, spawned, { copies: false, stack }), { mergeKey });
         if (surfaceNormal) {
           const normal: [number, number, number] = [surfaceNormal[0], surfaceNormal[1], surfaceNormal[2]];
           viewportDropApi.restOnSurface(
