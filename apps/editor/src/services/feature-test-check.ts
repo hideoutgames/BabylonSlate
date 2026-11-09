@@ -35,8 +35,9 @@ export const FEATURE_TEST_BENCHMARK_PROFILES: readonly { label: string; commands
  * - `remove-one`: from the Medium tier, each step turns one feature off or lowers one cost: what it saves at a shipping
  *   tier, meaningful only while that tier is below the cap.
  */
-export type FeatureTestBreakdownMethod = "add-one" | "remove-one";
-export const FEATURE_TEST_BREAKDOWN_METHODS: readonly FeatureTestBreakdownMethod[] = ["add-one", "remove-one"];
+/** `water`: what each part of water costs, removed one at a time from the Medium tier (`FEATURE_TEST_BREAKDOWN_WATER_STEPS`). */
+export type FeatureTestBreakdownMethod = "add-one" | "remove-one" | "water";
+export const FEATURE_TEST_BREAKDOWN_METHODS: readonly FeatureTestBreakdownMethod[] = ["add-one", "remove-one", "water"];
 export const FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD: FeatureTestBreakdownMethod = "add-one";
 
 /** What a Breakdown's baselines run: applied after `quality reset` before the warm-up and after every step. */
@@ -77,6 +78,7 @@ export const FEATURE_TEST_BREAKDOWN_BASES: Readonly<Record<FeatureTestBreakdownM
     commands: ["quality medium", "quality resolution reset"],
     cleanup: [],
   },
+  water: { label: "medium", commands: ["quality medium", "quality resolution reset"], cleanup: [] },
 };
 
 /**
@@ -87,6 +89,8 @@ export const ADD_ONE_CAP_MS = 30;
 
 /** Scenes a Breakdown measures unless every scene is asked for: the GPU-heaviest, and the occlusion culling yardstick. */
 export const FEATURE_TEST_BREAKDOWN_SCENES = FEATURE_TEST_CHECK_SCENES.filter((scene) => scene.name === "FT_World" || scene.name === "FT_Occlusion");
+/** A Water Breakdown's scenes unless every scene is asked for: FT_World, which holds every water body kind. */
+export const FEATURE_TEST_BREAKDOWN_WATER_SCENES = FEATURE_TEST_CHECK_SCENES.filter((scene) => scene.name === "FT_World");
 
 /** A Breakdown step: its commands, what undoes them besides `quality reset` and the base, and the render settings it may change. */
 export interface FeatureTestBreakdownStep {
@@ -191,6 +195,37 @@ export const FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS: readonly FeatureTestBreakdown
   { label: "resolution 1.0", commands: [`quality resolution scale ${MEDIUM.resolution.scale}`], fields: ["resolution.scale"] },
 ];
 
+/** A `waterdebug` part off, undone by switching it back on (`quality reset` leaves debug switches as they are). */
+const waterPartOff = (part: string, label: string): FeatureTestBreakdownStep => ({
+  label, commands: [`waterdebug ${part} off`], restore: [`waterdebug ${part} on`], fields: ["water.debug"], overlaps: true,
+});
+
+/**
+ * Water (`FEATURE_TEST_BREAKDOWN_BASES.water`, the Medium tier): every water surface off, then one part of water off, or
+ * one water setting lowered, at a time. Every step but `water off` is a share of what that one saves (`overlaps`). At
+ * Medium, Contact Resolution 256 already holds.
+ */
+export const FEATURE_TEST_BREAKDOWN_WATER_STEPS: readonly FeatureTestBreakdownStep[] = [
+  { label: "water off", commands: ["waterdebug water off"], restore: ["waterdebug water on"], fields: ["water.debug"] },
+  waterPartOff("prepass", "water pre-pass off"),
+  waterPartOff("lighting", "water lighting off"),
+  waterPartOff("shadows", "water shadows off"),
+  waterPartOff("waves", "water waves off"),
+  waterPartOff("foam", "water foam off"),
+  { label: "water reflections sky", commands: ["quality water reflections sky"], fields: ["water.reflections"], overlaps: true },
+  { label: "water refraction off", commands: ["quality water refraction off"], fields: ["water.refraction"], overlaps: true },
+  { label: "water detail low", commands: ["quality water shadingDetail low"], fields: WATER_DETAIL_FIELDS, overlaps: true },
+  { label: "water fft 64", commands: ["quality water fftSize 64"], fields: ["water.fft"], overlaps: true },
+  { label: "water fft 1 cascade", commands: ["quality water fftCascades 1"], fields: ["water.fft"], overlaps: true },
+  { label: "water mesh 0.5", commands: ["quality water meshDensity 0.5"], fields: ["water.meshDensity"], overlaps: true },
+];
+
+/** The scenes a Breakdown by `method` measures: every Feature Test scene with `allScenes`. */
+export function featureTestBreakdownScenes(method: FeatureTestBreakdownMethod, allScenes: boolean): readonly { name: string; path: string }[] {
+  if (allScenes) return FEATURE_TEST_CHECK_SCENES;
+  return method === "water" ? FEATURE_TEST_BREAKDOWN_WATER_SCENES : FEATURE_TEST_BREAKDOWN_SCENES;
+}
+
 /** The only scene a Profile plays: the main scene, whose frame the session's own quality tier draws. */
 export const FEATURE_TEST_PROFILE_SCENES = FEATURE_TEST_CHECK_SCENES.filter((scene) => scene.name === "main");
 
@@ -289,7 +324,7 @@ export interface FeatureTestBreakdownPlan {
   exit?: readonly string[];
 }
 
-const OCCLUSION_STEPS: Readonly<Record<FeatureTestBreakdownMethod, FeatureTestBreakdownStep>> = {
+const OCCLUSION_STEPS: Readonly<Record<Exclude<FeatureTestBreakdownMethod, "water">, FeatureTestBreakdownStep>> = {
   "add-one": { label: "occlusion on", commands: ["quality geometry occlusion on"], fields: ["geometry.occlusion"] },
   "remove-one": { label: "occlusion off", commands: ["quality geometry occlusion off"], fields: ["geometry.occlusion"] },
 };
@@ -299,7 +334,7 @@ const OCCLUSION_STEPS: Readonly<Record<FeatureTestBreakdownMethod, FeatureTestBr
  * the add-one base, on at Medium), from the street (the scene's main camera, `Camera`) and from a doorway of the rooms
  * (`Rooms Camera`), each possessed by name.
  */
-function occlusionPlan(method: FeatureTestBreakdownMethod): FeatureTestBreakdownPlan {
+function occlusionPlan(method: Exclude<FeatureTestBreakdownMethod, "water">): FeatureTestBreakdownPlan {
   const step = OCCLUSION_STEPS[method];
   return {
     views: [{ steps: [step] }, { name: "rooms", enter: ['possess "Rooms Camera"'], steps: [step] }],
@@ -308,12 +343,13 @@ function occlusionPlan(method: FeatureTestBreakdownMethod): FeatureTestBreakdown
 }
 
 /**
- * A scene's Breakdown plan: FT_Occlusion measures occlusion culling from two cameras (on either method's base), every
- * other scene the method's feature steps.
+ * A scene's Breakdown plan: a Water Breakdown measures its water steps in any scene; otherwise FT_Occlusion measures
+ * occlusion culling from two cameras (on either method's base), every other scene the method's feature steps.
  */
 export function featureTestBreakdownPlan(
   sceneName: string, method: FeatureTestBreakdownMethod = FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD,
 ): FeatureTestBreakdownPlan {
+  if (method === "water") return { views: [{ steps: FEATURE_TEST_BREAKDOWN_WATER_STEPS }] };
   if (sceneName === "FT_Occlusion") return occlusionPlan(method);
   return { views: [{ steps: method === "add-one" ? FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS : FEATURE_TEST_BREAKDOWN_STEPS }] };
 }

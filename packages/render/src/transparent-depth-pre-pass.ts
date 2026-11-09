@@ -8,6 +8,8 @@ import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
 import { RenderingGroup } from "@babylonjs/core/Rendering/renderingGroup";
 import { sceneDrawBatcher } from "./draw-batching";
 import { isMeshFrameReady } from "./scene-perf";
+import { waterDebugOff } from "./water-debug";
+import { isWaterSurfaceMesh } from "./water-mesh-surface";
 
 type SortCompare = (a: SubMesh, b: SubMesh) => number;
 /** The Babylon 9.29 members `RenderingGroup._RenderSorted` reads; the sort is the group's (authored or default). */
@@ -49,6 +51,8 @@ export class TransparentDepthPrePass {
   private disposed = false;
   /** Whether the group drawing now draws pre-passes (its `disableDepthPrePass` is off). */
   private prePass = true;
+  /** Whether water draws its pre-pass now (`waterdebug prepass off` measures it without). */
+  private waterPrePass = true;
 
   constructor(scene: Scene, name: string) {
     this.scene = scene;
@@ -94,7 +98,7 @@ export class TransparentDepthPrePass {
 
   /** Draws one blended submesh: its depth pre-pass first when its Material has one, then its colour. */
   private readonly drawOne = (subMesh: SubMesh): void => {
-    if (this.prePass && subMesh.getMaterial()?.needDepthPrePass) {
+    if (this.prePass && subMesh.getMaterial()?.needDepthPrePass && (this.waterPrePass || !isWaterSurfaceMesh(subMesh.getMesh()))) {
       const engine = this.scene.getEngine(), pass = engine.currentRenderPassId;
       engine.setColorWrite(false);
       engine.setAlphaMode(Constants.ALPHA_DISABLE);
@@ -125,6 +129,7 @@ export class TransparentDepthPrePass {
     const sortedGroup = group as SortedGroup | undefined;
     (sorted as SubMesh[]).sort(sortedGroup?._transparentSortCompareFn ?? RenderingGroup.defaultTransparentSortCompare);
     this.prePass = !sortedGroup?.disableDepthPrePass;
+    this.waterPrePass = !waterDebugOff(scene, "prepass");
     try {
       const batcher = scene._activeMeshesFrozenButKeepClipping ? undefined : sceneDrawBatcher(scene);
       if (batcher) {

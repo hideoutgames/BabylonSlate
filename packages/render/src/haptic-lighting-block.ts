@@ -37,6 +37,7 @@ import { sceneRenderingSettings } from "./render-settings";
 import { screenShadowsForPass, screenShadowsPlaceholder } from "./screen-shadows";
 import { spatialEffectsUnsupported } from "./spatial-effects";
 import { isWaterSurfaceMesh } from "./water-surface-block";
+import { waterDebugOff } from "./water-debug";
 import { shadowAtlasTexture } from "./shadow-atlas";
 
 const VECTOR4_UNIFORMS = ["hapticEnvironment", "hapticEnvironmentBoxPosition", "hapticEnvironmentBoxSize", ...HAPTIC_IRRADIANCE_UNIFORMS];
@@ -194,7 +195,8 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     // CEL lights with the cube's irradiance polynomial alone (`bindCelSettings`), so its programs ignore the cube.
     const environment = cel ? null : environmentCube(scene);
     defines.setValue("HAPTIC_CEL", cel, true);
-    defines.setValue("HAPTIC_UNLIT", this.unlit, true);
+    // `waterdebug lighting off` draws water unlit, to measure what its lighting costs.
+    defines.setValue("HAPTIC_UNLIT", this.unlit || (isWaterSurfaceMesh(mesh) && waterDebugOff(scene, "lighting")), true);
     // A different cube format or projection is a settings change, which may compile; lights never are.
     defines.setValue("HAPTIC_ENVIRONMENT", !!environment, true);
     defines.setValue("HAPTIC_ENVIRONMENT_RGBD", !!environment?.isRGBD, true);
@@ -227,12 +229,14 @@ export class HapticLightingBlock extends NodeMaterialBlock {
    */
   bindReceiver(effect: Effect, mesh: AbstractMesh): void {
     const scene = mesh.getScene();
-    effect.setFloat("hapticShadowReceiver", mesh.receiveShadows ? 1 : 0);
+    // `waterdebug shadows off`: water receives none, to measure what they cost on it.
+    const receives = mesh.receiveShadows && !(isWaterSurfaceMesh(mesh) && waterDebugOff(scene, "shadows"));
+    effect.setFloat("hapticShadowReceiver", receives ? 1 : 0);
     if (screenShadowEffect(effect)) {
       // This pass's screen shadows (a planned view's objects pass), else the placeholder and the read off.
       const screen = screenShadowsForPass(scene, scene.getEngine().currentRenderPassId);
       effect.setTexture("hapticScreenShadowSampler", screen ?? screenShadowsPlaceholder(scene));
-      effect.setFloat4("hapticScreenShadowTerms", screen && mesh.receiveShadows ? 1 : 0, 0, 0, 0);
+      effect.setFloat4("hapticScreenShadowTerms", screen && receives ? 1 : 0, 0, 0, 0);
     }
   }
 

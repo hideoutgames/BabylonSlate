@@ -46,6 +46,7 @@ import { isSkyboxMesh } from "./skybox";
 import { WATER_SCENE_COPY_SKY_DEPTH, isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
 import { ownershipSource, WATER_OWNERSHIP_DEFINE, WATER_OWNERSHIP_UNIFORMS } from "./water-blend-ownership";
 import { declareWaterAttributes, isBlendingWaterSurface, isWaterSurfaceMesh, WATER_DEPTH_PRE_PASS_DEFINE, WATER_SURFACE_DEFINE } from "./water-surface-block";
+import { WATER_DEBUG_NO_FOAM_DEFINE, waterDebugOff } from "./water-debug";
 
 /**
  * The water nodes' fragment blocks: Water Foam, Water Depth Fade, Water Scene Color and Water Reflection. Each reads
@@ -489,6 +490,8 @@ export class WaterFoamBlock extends WaterNodeBlock {
   override getClassName(): string { return "WaterFoamBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, material: NodeMaterial, mesh?: AbstractMesh): void {
     prepareSurfaceDefines(defines, material, mesh, false);
+    // `waterdebug foam off`: none of this block's foam, to measure what it costs.
+    defines.setValue(WATER_DEBUG_NO_FOAM_DEFINE, isWaterSurfaceMesh(mesh) && waterDebugOff(material.getScene(), "foam"), true);
   }
   override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
     bindSurface(effect, material.getScene(), mesh);
@@ -521,7 +524,7 @@ ${edgeFoamHelpers("swn")}`, wgsl), "");
     if (!this.foam.hasEndpoints && !this.shore.hasEndpoints && !this.contact.hasEndpoints) return this;
     const gpuHeight = this.value(this.waveHeight, "0.0");
     const assign = (output: NodeMaterialConnectionPoint, name: string | undefined, value: string) => output.hasEndpoints ? `${name} = ${value};\n` : "";
-    state.compilationString += `{\n${surfaceLocals(state, this.worldPosition.associatedVariableName)}#ifdef ${WATER_SURFACE_DEFINE}\n`
+    state.compilationString += `{\n${surfaceLocals(state, this.worldPosition.associatedVariableName)}#ifdef ${WATER_SURFACE_DEFINE}\n#ifndef ${WATER_DEBUG_NO_FOAM_DEFINE}\n`
       + bind(`float swnHeight = swnData.x;\nfloat swnTime = swnData.w;\nvec2 swnDrift = vec2(0.0);\n`, wgsl)
       + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${gpuHeight};\nswnTime = ${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.x;\nswnDrift = ${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.yz;\n#endif\n`
       + bind(`${edgeSource("swnHeight")}
@@ -537,7 +540,7 @@ swnContactAmount = swnContactFoamAmount(swnFlowed, swnTime, abs(swnContactAt(swn
       + assign(this.foam, foam, `clamp(max(${crestValue}, swnEdgeFoamCover(swnFlowed, max(swnShoreAmount, swnContactAmount), ${turbulence}, swnFoot)), 0.0, 1.0)`)
       + assign(this.shore, shore, `swnEdgeFoamCover(swnFlowed, swnShoreAmount, ${turbulence}, swnFoot)`)
       + assign(this.contact, contact, `swnEdgeFoamCover(swnFlowed, swnContactAmount, ${turbulence}, swnFoot)`)
-      + "#endif\n}\n";
+      + "#endif\n#endif\n}\n";
     return this;
   }
 }

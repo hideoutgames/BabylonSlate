@@ -123,6 +123,21 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual(["post:false", "post:true", "captures:false", "captures:true"]);
   });
 
+  it("switches each part of water off and on again, in debug registries only", () => {
+    const host = recordingHost();
+    host.setWaterDebug = (part, enabled) => host.calls.push(`${part}:${enabled}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    for (const part of ["water", "prepass", "lighting", "shadows", "waves", "foam"]) {
+      expect(debug.execute(`waterdebug ${part} off`, host)).toEqual({ success: true, output: `waterdebug ${part} off` });
+      expect(debug.execute(`waterdebug ${part} on`, host)).toEqual({ success: true, output: `waterdebug ${part} on` });
+    }
+    expect(debug.execute("waterdebug sky off", host).success).toBe(false);
+    expect(debug.execute("waterdebug foam maybe", host).success).toBe(false);
+    expect(release.execute("waterdebug water off", host).success).toBe(false);
+    expect(host.calls).toEqual(["water", "prepass", "lighting", "shadows", "waves", "foam"].flatMap((part) => [`${part}:false`, `${part}:true`]));
+  });
+
   it("starts and stops GPU-busy timing and stores the drawing-buffer setting, in debug registries only", () => {
     const host = recordingHost();
     host.setGpuBusyProbe = (enabled) => host.calls.push(`gpubusy:${enabled}`);
