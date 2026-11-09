@@ -410,7 +410,7 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   AnimationGraph: "animation",
   SpriteAnimation: "animation",
   Timeline: "animation",
-  CameraShake: "animation",
+  CameraShake: "renderTarget",
   TimelineClip2D: "animation",
   TimelineClip3D: "animation",
   BehaviourTree: "class",
