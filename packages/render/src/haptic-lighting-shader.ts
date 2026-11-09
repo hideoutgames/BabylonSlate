@@ -183,17 +183,23 @@ float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float d
   vec2 texels = uv * size;
 ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dPdx, dPdy, size) : vec2(0.0);
 #ifndef HAPTIC_CEL
+#ifndef HAPTIC_SHADOW_NARROW
   if (shading.y > 2.5) return mix(shading.x, 1.0, hapticContactLit(tile, shading, hapticShadowViews[base + 6], clip, depth, texels, size, gradient, maximum));
 #endif
-  // CEL draws Contact Hardening as PCF.
-  float quality = shading.y > 2.5 ? shading.y - 3.0 : shading.y;
+#endif
+  // CEL draws Contact Hardening as PCF; water (\`HAPTIC_SHADOW_NARROW\`) draws every filter as low quality's four taps.
   float lit;
   // Castaño's exact kernels: 3 × 3 texels (four bilinear compare taps), 5 × 5 (nine) or 7 × 7 (sixteen), their positions
   // and weights from the position within its texel. High quality aims at 7 × 7 texels of the reference view (the first
   // cascade, a local light's requested size), medium at 5 × 5, and a view with coarser texels (its record's eighth vector:
   // the reference texel over its own, \`shadowKernelRatio\`) takes the kernel nearest that width in the world. Low
   // quality always takes 3 × 3: one bilinear tap steps with the texels wherever a texel spans several pixels.
+#ifdef HAPTIC_SHADOW_NARROW
+  float texelsWide = 3.0;
+#else
+  float quality = shading.y > 2.5 ? shading.y - 3.0 : shading.y;
   float texelsWide = quality < 0.5 ? 3.0 : (quality < 1.5 ? 5.0 : 7.0) * hapticShadowViews[base + 7].x;
+#endif
   vec2 st = fract(texels + 0.5);
   vec2 corner = floor(texels + 0.5) - 0.5;
   if (texelsWide < 4.0) {
@@ -205,7 +211,9 @@ ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dP
       + w1.x * w0.y * hapticPlaneTap(tile, vec2(b.x, a.y), texels, depth, gradient, maximum)
       + w0.x * w1.y * hapticPlaneTap(tile, vec2(a.x, b.y), texels, depth, gradient, maximum)
       + w1.x * w1.y * hapticPlaneTap(tile, vec2(b.x, b.y), texels, depth, gradient, maximum)) / 16.0;
-  } else if (texelsWide < 6.0) {
+  }
+#ifndef HAPTIC_SHADOW_NARROW
+  else if (texelsWide < 6.0) {
     vec2 w0 = 4.0 - 3.0 * st;
     vec2 w2 = 1.0 + 3.0 * st;
     vec2 a = corner + (3.0 - 2.0 * st) / w0 - 2.0;
@@ -229,6 +237,7 @@ ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dP
         lit += w[i].x * w[j].y * hapticPlaneTap(tile, corner + vec2(o[i].x, o[j].y), texels, depth, gradient, maximum);
     lit /= 2704.0;
   }
+#endif
   return mix(shading.x, 1.0, lit);
 ` : "  return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth));\n"}}
 
@@ -371,15 +380,21 @@ fn hapticContactLit(tile: vec4f, shading: vec4f, contact: vec4f, clip: vec4f, de
 ${surface ? `  var gradient = vec2f(0.0);
   if (shading.w > 0.5) { gradient = hapticReceiverGradient(view, dPdx, dPdy, size); }
 #ifndef HAPTIC_CEL
+#ifndef HAPTIC_SHADOW_NARROW
   if (shading.y > 2.5) {
     return mix(shading.x, 1.0, hapticContactLit(tile, shading, HapticLights.hapticShadowViews[base + 6], clip, depth, texels, size,
       gradient, maximum));
   }
 #endif
-  // CEL draws Contact Hardening as PCF.
-  let quality = select(shading.y, shading.y - 3.0, shading.y > 2.5);
+#endif
+  // CEL draws Contact Hardening as PCF; water (\`HAPTIC_SHADOW_NARROW\`) draws every filter as low quality's four taps.
   var lit: f32;
+#ifdef HAPTIC_SHADOW_NARROW
+  let texelsWide = 3.0;
+#else
+  let quality = select(shading.y, shading.y - 3.0, shading.y > 2.5);
   let texelsWide = select(select(7.0, 5.0, quality < 1.5) * HapticLights.hapticShadowViews[base + 7].x, 3.0, quality < 0.5);
+#endif
   let st = fract(texels + 0.5);
   let corner = floor(texels + 0.5) - 0.5;
   if (texelsWide < 4.0) {
@@ -391,7 +406,9 @@ ${surface ? `  var gradient = vec2f(0.0);
       + w1.x * w0.y * hapticPlaneTap(tile, vec2f(b.x, a.y), texels, depth, gradient, maximum)
       + w0.x * w1.y * hapticPlaneTap(tile, vec2f(a.x, b.y), texels, depth, gradient, maximum)
       + w1.x * w1.y * hapticPlaneTap(tile, vec2f(b.x, b.y), texels, depth, gradient, maximum)) / 16.0;
-  } else if (texelsWide < 6.0) {
+  }
+#ifndef HAPTIC_SHADOW_NARROW
+  else if (texelsWide < 6.0) {
     let w0 = 4.0 - 3.0 * st;
     let w2 = 1.0 + 3.0 * st;
     let a = corner + (3.0 - 2.0 * st) / w0 - 2.0;
@@ -418,6 +435,7 @@ ${surface ? `  var gradient = vec2f(0.0);
     }
     lit /= 2704.0;
   }
+#endif
   return mix(shading.x, 1.0, lit);
 ` : "  return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth));\n"}}
 

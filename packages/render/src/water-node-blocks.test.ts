@@ -6,6 +6,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
@@ -83,6 +84,29 @@ function overlook(scene: Scene): void {
   camera.setTarget(Vector3.Zero());
   scene.activeCamera = camera;
   scene.setTransformMatrix(camera.getViewMatrix(), camera.getProjectionMatrix());
+}
+/**
+ * `source` without the `#ifdef`/`#ifndef` blocks that `defines` (an Effect's `#define` lines) leave out; other
+ * conditions count as met. Their directive lines are dropped.
+ */
+function definedOnly(source: string, defines: string): string {
+  const defined = new Set([...defines.matchAll(/^#define (\w+)/gm)].map((match) => match[1]!));
+  const out: string[] = [], stack: { parent: boolean; pass: boolean }[] = [];
+  let keep = true;
+  for (const line of source.split("\n")) {
+    const directive = line.trim(), test = /^#(ifn?def) (\w+)$/.exec(directive);
+    if (test || /^#if\b/.test(directive)) {
+      const pass = test ? (test[1] === "ifdef") === defined.has(test[2]!) : true;
+      stack.push({ parent: keep, pass });
+      keep = keep && pass;
+    } else if (directive === "#else" && stack.length) {
+      const top = stack[stack.length - 1]!;
+      keep = top.parent && !top.pass;
+    } else if (directive === "#endif" && stack.length) {
+      keep = stack.pop()!.parent;
+    } else if (keep) out.push(line);
+  }
+  return out.join("\n");
 }
 /** The reflection march's function text. */
 const march = (source: string) => /swMarch\((vec3 )?swOrigin[\s\S]*?\n\}/.exec(source)?.[0] ?? "";
@@ -801,6 +825,27 @@ describe("Water debug switches", () => {
     setSceneWaterDebug(scene, "lighting", false);
     scene.incrementRenderId();
     expect(await definesFor(surface.material, rock)).not.toMatch(/^#define HAPTIC_UNLIT$/m);
+  });
+
+  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("filters water's shadows with four taps and no Contact Hardening in language %s, other surfaces at their view's quality", async (language) => {
+    const scene = host(language === ShaderLanguage.WGSL);
+    overlook(scene);
+    const { result, lake } = starter(scene);
+    const surface = compile(scene, createDefaultMaterialDocument("Rock"));
+    const rock = MeshBuilder.CreateBox("rock", {}, scene);
+    rock.material = surface.material;
+    expect(await result.ready).toEqual([]);
+    expect(await surface.ready).toEqual([]);
+    const water = await programFor(result.material, lake), lit = await programFor(surface.material, rock);
+    expect(water.defines).toMatch(/^#define HAPTIC_SHADOW_NARROW$/m);
+    expect(lit.defines).not.toMatch(/^#define HAPTIC_SHADOW_NARROW$/m);
+    // The 5 × 5 and 7 × 7 kernels (their weights' sums 144 and 2704) and Contact Hardening's call stay in the rock's
+    // shadow filter and are compiled out of water's.
+    const filter = (effect: Effect) => /(fn |float )hapticShadow\([\s\S]*?\n\}/.exec(definedOnly(effect.fragmentSourceCode, effect.defines))?.[0] ?? "";
+    const kernels = (effect: Effect) => ["/ 144.0", "lit /= 2704.0", "hapticContactLit("].map((term) => filter(effect).includes(term));
+    expect(kernels(lit)).toEqual([true, true, true]);
+    expect(kernels(water)).toEqual([false, false, false]);
+    expect(filter(water)).toMatch(/\/ 16\.0;/);
   });
 
   it("binds water as a shadow receiver only while its shadows are on", async () => {
