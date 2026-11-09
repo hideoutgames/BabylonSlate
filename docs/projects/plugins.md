@@ -70,3 +70,27 @@ With a project open, turning **Enable *Plugin Name* By Default** on or off asks 
 ### Starter Content
 
 **Starter Content** is a bundled plugin with a starter Actor Class, **StarterActor**, and no artwork. It is off by default. Turn it on in **Project Settings > Plugins** to use it.
+
+### EditorPrimitives
+
+**EditorPrimitives** is a bundled plugin of basic shape [Models](../assets/model.md) for blocking out levels. It is off by default. Turn it on in **Project Settings > Plugins**, then drag a shape from **Place Actors > Models** or set it as the **Asset** of a [Mesh](../components/mesh.md) component.
+
+| Model | Shape |
+| --- | --- |
+| Cube | 1 × 1 × 1. |
+| Sphere | Diameter 1. |
+| Hemisphere | Diameter 1, the flat side down. |
+| Cylinder | Diameter 1, height 1. |
+| Cone | Base diameter 1, height 1, point up. |
+| Capsule | Diameter 1, height 2. |
+| Torus | A ring lying flat, outer diameter 1. |
+| Tube | An open pipe: outer diameter 1, inner diameter 0.5, height 1. |
+| Pyramid | Square base 1 × 1, height 1. |
+| Wedge | A 1 × 1 × 1 ramp that rises towards the actor's forward direction. |
+| Plane | 1 × 1, facing up. |
+| SubdividedPlane | 1 × 1, facing up, split into 64 × 64 squares, for surfaces whose Material moves vertices, such as water. **Auto LOD** is off, so distant views keep every vertex. |
+| Disc | Diameter 1, facing up. |
+
+- Sizes are in units. Every shape is centred on its pivot, except the Hemisphere, Plane, SubdividedPlane and Disc, which have their flat side at the pivot. Scale the actor to resize a shape.
+- Each Model has one empty material slot, so it draws the grey checker. Set **Material** on the Mesh component to give one actor a Material.
+- Each Model has a simple collision shape that fits it. The Torus's and the Tube's fill their hole: set the Mesh to **Use Complex Collision** to pass through it.
