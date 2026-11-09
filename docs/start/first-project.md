@@ -78,7 +78,7 @@ Breakdown shows what each feature costs your device's GPU. It plays two scenes, 
 
 - **Add One** (the default) starts from a light setup well below what the GPU can handle: the Low quality level at half resolution, without post-processing, anti-aliasing, water reflections, water refraction, occlusion culling or captures. It turns one feature on at a time at its Medium value, so each change is that feature's own cost. The report flags **OVER CAP** when even the light setup took over 30 ms of GPU time per frame, because the costs are then unreliable.
 - **Remove One** starts from the Medium quality level and turns one feature off at a time, showing what each saves there. A GPU that is already at its limit shows only whether removing a feature brought it back under, not what the feature costs.
-- **Water** plays only FT_World at the Medium quality level. It turns all water off, then one part of water at a time (its depth pre-pass, lighting, shadows, waves and foam, as the `waterdebug` console command does), and lowers each water quality setting, showing what each part of water costs there.
+- **Water** plays only FT_World at the Medium quality level at half resolution, so the GPU does not saturate. It turns all water off, then one part of water at a time (its depth pre-pass, lighting, shadows, waves and foam, as the `waterdebug` console command does), and lowers each water quality setting, showing what each part of water costs there.
 
 Either way, a step whose setting already has that value is skipped, and the report says so. The report also shows how much the GPU time changed while the device warmed up.
 
