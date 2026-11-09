@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { isErr, resolvedAppIdentity, type ProjectDocument } from "@haptic/core";
 import { getElectronGameShellBridge, type EngineSettings } from "@haptic/vfs";
+import { ANDROID_ICON_SIZES, type AndroidPackageFormat } from "@haptic/exporter/native-android";
 import { useDocumentActions } from "../context/document-context";
 import { saveExportFile, saveZipArchive, savedFileNotice } from "../lib/file-export";
 import { exportGameFailureMessage } from "../lib/export-game-failure";
@@ -24,7 +25,10 @@ export interface PackageOptions {
   linuxFormat?: LinuxPackageFormat;
   /** macOS: this computer's signing settings (Engine Settings > Packaging). */
   macSigning?: EngineSettings["macSigning"];
+  androidFormat?: AndroidPackageFormat;
 }
+
+const ANDROID_TYPES: Record<AndroidPackageFormat, string> = { apk: "application/vnd.android.package-archive", aab: "application/octet-stream" };
 
 /** The saved web package's file name. */
 export function gameArchiveName(projectName: string): string {
@@ -68,6 +72,25 @@ export function useGameExport(
       const result = await exportGameArtifact({ platform: target.id, projectSnapshot: projectDocument });
       if (isErr(result)) {
         setError(exportGameFailureMessage(result.error));
+        return;
+      }
+      if (target.id === "android") {
+        const bridge = getElectronGameShellBridge();
+        if (!bridge?.packageAndroid) throw new Error("Android games are packaged in the Haptic desktop app.");
+        const identity = resolvedAppIdentity(projectDocument.settings.appIdentity, projectDocument.metadata.name);
+        const appIcon = result.value.appIcon;
+        setStage("Building with Gradle. The first build downloads Gradle and Android libraries and can take several minutes.");
+        const packaged = await bridge.packageAndroid({
+          game: [...result.value.files],
+          name: identity.displayName,
+          appId: identity.appId,
+          version: projectDocument.metadata.version,
+          buildNumber: identity.buildNumber,
+          format: packageOptions.androidFormat ?? "apk",
+          icon: appIcon ? ANDROID_ICON_SIZES.map((size) => [size, appIcon.get(size)!]) : null,
+        });
+        const subject = packaged.debugSigned ? "Debug-signed Android game" : "Android game";
+        setNotice(savedFileNotice(subject, await saveExportFile(packaged.bytes, packaged.fileName, ANDROID_TYPES[packageOptions.androidFormat ?? "apk"])));
         return;
       }
       if (!target.desktopTarget) {

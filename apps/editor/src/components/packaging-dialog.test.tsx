@@ -277,3 +277,58 @@ it("packages a macOS game through the Mac desktop app with the project's identit
     delete (globalThis as { haptic?: unknown }).haptic;
   }
 });
+
+/** The desktop app's Android packaging, with this computer's settings and what they find. */
+function androidApp(status: { keystore: string | null; alias: string; problems: string[] }) {
+  const packageAndroid = vi.fn(async () => ({ fileName: "Harbour_Run-Android.aab", bytes: new Uint8Array([5]), debugSigned: status.keystore === null }));
+  const androidSettings = vi.fn(async () => ({
+    java: null, sdk: null, keystore: status.keystore, alias: status.alias,
+    toolchain: status.problems.length ? { javaHome: null, javaVersion: null, sdk: null, problems: status.problems } : { javaHome: "/jdk", javaVersion: 21, sdk: "/sdk", problems: [] },
+  }));
+  (globalThis as { haptic?: unknown }).haptic = { gameShell: { platform: "linux", arch: "x64", runtime: vi.fn(), macIdentities: vi.fn(), packageMac: vi.fn(), androidSettings, packageAndroid } };
+  return { packageAndroid, androidSettings };
+}
+
+it("packages an Android game in the desktop app in the chosen format, with the App Icon at the launcher sizes", async () => {
+  const { packageAndroid } = androidApp({ keystore: null, alias: "", problems: [] });
+  const appIcon = appIconImages();
+  exportGameArtifact.mockResolvedValue(ok({ files: new Map([["index.html", strToU8("<html>")]]), appIcon }));
+  const downloads = captureDownloads();
+  try {
+    await renderDialog();
+    expect(within(screen.getByRole("group", { name: "Available" })).getByText("Android")).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByTestId("packaging-target-android")); });
+    expect(screen.getByTestId("packaging-output").textContent).toBe("Harbour_Run-Android.apk");
+    expect(screen.getByTestId("packaging-android-signing").textContent).toBe("Debug Key (Testing Only)");
+    expect(screen.getByTestId("packaging-android-toolchain").textContent).toBe("Java 21, Android SDK");
+    fireEvent.click(screen.getByTestId("packaging-android-aab"));
+    expect(screen.getByTestId("packaging-output").textContent).toBe("Harbour_Run-Android.aab");
+
+    await act(async () => { fireEvent.click(screen.getByTestId("packaging-package")); });
+
+    expect(exportGameArtifact.mock.calls.at(-1)![0].platform).toBe("android");
+    expect(packageAndroid).toHaveBeenCalledExactlyOnceWith({
+      game: [["index.html", strToU8("<html>")]],
+      name: "Harbour Run", appId: "com.example.harbourrun", version: "1.0.0", buildNumber: 1, format: "aab",
+      icon: [48, 72, 96, 108, 144, 192, 216, 288].map((size) => [size, appIcon.get(size)]),
+    });
+    expect(downloads).toEqual(["Harbour_Run-Android.aab"]);
+    expect(screen.getByText("Debug-signed Android game downloaded. Check your downloads.")).toBeTruthy();
+  } finally {
+    delete (globalThis as { haptic?: unknown }).haptic;
+  }
+});
+
+it("keeps Android packaging off until the build tools are found, and names the signing key", async () => {
+  androidApp({ keystore: "/keys/release.jks", alias: "upload", problems: ["No JDK found. Install Android Studio, or choose the JDK in Engine Settings > Packaging."] });
+  try {
+    await renderDialog();
+    await act(async () => { fireEvent.click(screen.getByTestId("packaging-target-android")); });
+    expect(screen.getByTestId("packaging-android-signing").textContent).toBe("upload");
+    expect(screen.getByTestId("packaging-android-toolchain").textContent).toBe("Not Found");
+    expect(screen.getByTestId("packaging-android-problems").textContent).toContain("No JDK found.");
+    expect((screen.getByTestId("packaging-package") as HTMLButtonElement).disabled).toBe(true);
+  } finally {
+    delete (globalThis as { haptic?: unknown }).haptic;
+  }
+});

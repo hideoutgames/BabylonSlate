@@ -158,6 +158,28 @@ describe("packaged renderer boundary", () => {
       ["asset.hasset", 0, 1, {}],
     ]) expect(() => validateIpcArguments("project:readBinaryRange", args)).toThrow();
   });
+  it("accepts only Android settings changes the main process carries out itself", () => {
+    for (const change of [null, { pick: "java" }, { pick: "keystore" }, { clear: "sdk" }, { alias: "upload" }]) {
+      expect(() => validateIpcArguments("game-shell:android-settings", [change])).not.toThrow();
+    }
+    // A path or program never comes from the page.
+    for (const change of [{ java: "/tmp/evil" }, { pick: "bin" }, { clear: "alias" }, { alias: 7 }, { pick: "java", alias: "x" }, "java", [], undefined]) {
+      expect(() => validateIpcArguments("game-shell:android-settings", [change])).toThrow();
+    }
+  });
+  it("accepts an Android game request with launcher-size PNGs in either format", () => {
+    const png = (size: number) => { const bytes = new Uint8Array(24); bytes.set([0x89, 0x50, 0x4e, 0x47]); bytes[23] = size % 256; return bytes; };
+    const request = (overrides: Record<string, unknown> = {}) => ({
+      game: [["index.html", new Uint8Array([1])]], name: "Space Game", appId: "com.studio.space", version: "1.0.0", buildNumber: 2_100_000_000,
+      format: "aab", icon: [[48, png(48)], [288, png(288)]], ...overrides,
+    });
+    for (const valid of [request(), request({ format: "apk", icon: null })]) expect(() => validateIpcArguments("game-shell:package-android", [valid])).not.toThrow();
+    for (const invalid of [
+      request({ format: "ipa" }), request({ buildNumber: 2_100_000_001 }), request({ appId: "com.my-studio.game" }),
+      request({ icon: [[100, png(100)]] }), request({ icon: [[48, png(48)], [48, png(48)]] }), request({ icon: [[48, new Uint8Array(24)]] }),
+      request({ game: [["../escape.js", new Uint8Array([1])]] }), null,
+    ]) expect(() => validateIpcArguments("game-shell:package-android", [invalid])).toThrow();
+  });
   it("accepts a macOS game request's App Icon only as an ICNS", () => {
     const request = (icon: unknown) => ({
       game: [["index.html", new Uint8Array([1])]], name: "Space Game", appId: "com.studio.space", version: "1.0.0", buildNumber: 1,
