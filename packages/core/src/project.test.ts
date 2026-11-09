@@ -164,7 +164,7 @@ describe("project schema", () => {
   });
 
   it("fades distance fog in new 3D scenes into the default sky's horizon", () => {
-    expect(createDefaultScene("3d").settings.fogColor).toEqual([0.44, 0.61, 0.76]);
+    expect(createDefaultScene("3d").settings.fogColor).toEqual([0.68, 0.77, 0.95]);
     expect(createDefaultScene("2d").settings.fogColor).toEqual([0.5, 0.5, 0.5]);
   });
 
