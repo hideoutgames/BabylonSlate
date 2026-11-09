@@ -29,6 +29,25 @@ Rows also show **Experimental**, **Beta** and **Gameplay** badges, the version, 
 
 Unsupported code is reported before anything is created. See [Materials](../graphics/materials.md).
 
+## Discord Rich Presence
+
+**Discord Rich Presence** is a bundled, Experimental extension, off by default. It shows what the player is doing on their Discord profile, such as "Harbour Run, Lap 2", with your images and an elapsed timer.
+
+It works in Windows, macOS and Linux games, and in Play in the Haptic desktop app, while Discord runs on the same computer. In every other editor you can still enable it and add its nodes; there, and in web and mobile games, the nodes do nothing and their **Error** says so. Web and mobile games do not carry its Discord code.
+
+1. Create an application in the [Discord Developer Portal](https://discord.com/developers/applications), and upload the images you want to show under **Rich Presence > Art Assets**.
+2. Enable **Discord Rich Presence** in **Project Settings > Project Extensions**.
+3. In **Project Settings > Discord**, enter the **Application ID** from your application's **General Information** page. It is public, and Rich Presence needs no secret.
+4. In your Game Instance graph, add **Start Discord Rich Presence**, then **Update Discord Rich Presence** whenever what the player does changes.
+
+| Node | Does |
+| --- | --- |
+| **Start Discord Rich Presence** | Connects to Discord and clears any presence. **Connected** is false, with the reason in **Error**, when Discord is not running or the Application ID is wrong. The elapsed timer counts from here. |
+| **Update Discord Rich Presence** | Shows **Details** and **State**, a **Large Image** and **Small Image** (the names of your Art Assets) with their hover text, the elapsed time, and a party of **Party Size** out of **Party Max**. Empty text and a party of 0 are left out. |
+| **Clear Discord Rich Presence** | Removes the presence. Closing the game removes it too. |
+
+Each node waits for Discord's answer, then sets its first output (**Connected**, **Updated** or **Cleared**) and **Error**. Text can be up to 128 characters, and image names up to 256.
+
 ## Create an extension
 
 1. In **Project Settings > Project Extensions**, choose **New Extension**.
