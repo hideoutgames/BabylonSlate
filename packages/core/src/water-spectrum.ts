@@ -27,7 +27,7 @@ const WATER_SPECTRUM_RATIO = 4 + 2 * Math.SQRT2;
 /** First cascade's patch in multiples of the dominant (longest) peak wavelength. */
 const WATER_SPECTRUM_PATCH = 9;
 /** Cascade c > 0 starts this many bins from its own centre, where cascade c − 1 hands over. */
-const WATER_SPECTRUM_LOW_BIN = 6;
+export const WATER_SPECTRUM_LOW_BIN = 6;
 /**
  * Each cascade's frame is turned this far (radians) from the world's, so the cascades' periodic patches tile along
  * different axes and never line up into one rectangular repeat.

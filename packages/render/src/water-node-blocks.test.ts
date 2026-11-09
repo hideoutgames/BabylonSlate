@@ -831,3 +831,26 @@ describe("Water debug switches", () => {
     expect([lake.layerMask, later.layerMask]).toEqual([visible, visible]);
   });
 });
+
+describe("Water distance detail", () => {
+  it.each([false, true])("skips a finer wave layer's spectrum taps once a pixel spans its longest wave, and the contact tap off its field (WebGPU %s)", async (webgpu) => {
+    const scene = host(webgpu);
+    overlook(scene);
+    const result = compile(scene, createWaterMaterialDocument("Sea"));
+    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(), result.material);
+    expect(await result.ready).toEqual([]);
+    const fragment = (await programFor(result.material, lake)).fragmentSourceCode;
+    // The first layer always samples; every finer one only inside its fade, with the gradients of its own uv.
+    expect(fragment).toMatch(/swnSa0 *(: *vec4f)? *= *swSpecTap\(swnSu0/);
+    for (const c of [1, 2]) {
+      const branch = new RegExp(`if \\(swnSr${c} > 0\\.0\\) \\{([\\s\\S]*?)\\n\\}`).exec(fragment)?.[1] ?? "";
+      for (const layer of [2 * c, 2 * c + 1]) {
+        expect(branch, `layer ${c}`).toMatch(new RegExp(`swSpecTapGrad\\(swnSu${c}, ${layer}\\.0+, swnDx${c}, swnDy${c}\\)`));
+      }
+      expect(fragment.replace(branch, ""), `layer ${c}`).not.toContain(`swSpecTap(swnSu${c}`);
+      // Its foam tap stays outside the fade: the turbulence it adds does not average to zero.
+      expect(fragment.replace(branch, ""), `layer ${c}`).toMatch(new RegExp(`swnSt${c} *(: *f32)? *= *swFoamTap\\(swnSu${c}`));
+    }
+    expect(fragment).toMatch(/if \(on > 0\.0\) \{ *tap = swnContactTap\(uv\); *\}/);
+  });
+});
