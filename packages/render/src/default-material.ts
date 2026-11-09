@@ -13,8 +13,11 @@ import {
 import { compileMaterialPlan, type CompiledMaterial } from "./material-compiler";
 
 const ENGINE_DEFAULT_MATERIAL_NAME = "engineDefaultMaterial";
-/** Checker cells along each UV axis across 0–1. */
-const ENGINE_DEFAULT_CHECKER_CELLS = 16;
+/**
+ * Checker cells per world unit. Quarter-unit cells fit the default primitives' sizes (1.5 box and plane, 10 ground)
+ * at whole-unit positions, and the 2D grid's minor lines.
+ */
+export const ENGINE_DEFAULT_CHECKER_CELLS_PER_UNIT = 4;
 /** The checker's greys in sRGB: a new surface Material's Base Color (0.8) and a slightly darker one. */
 export const ENGINE_DEFAULT_CHECKER_GREYS = [204 / 255, 166 / 255] as const;
 /** 0 in 3D; 1 in 2D, where the Material emits its checker. */
@@ -23,6 +26,10 @@ const ENGINE_DEFAULT_EMISSION_PARAMETER = "Emission";
 /**
  * The Material that surfaces with no Material of their own draw with: a lit grey checker built from the same graph
  * nodes as an authored Material, so it lights, shades in CEL and Unlit viewport mode, and casts shadows as one does.
+ *
+ * The checker is world-aligned, not UV-mapped: square cells of a fixed world size, projected along each surface's
+ * dominant world axis, so scaling a mesh never stretches them and neighbouring meshes' cells line up. A moving mesh
+ * slides under its cells.
  */
 export function engineDefaultMaterialDocument(): MaterialDocument {
   const doc = createDefaultMaterialDocument(ENGINE_DEFAULT_MATERIAL_NAME);
@@ -35,16 +42,46 @@ export function engineDefaultMaterialDocument(): MaterialDocument {
   const wire = (source: string, sourcePin: string, target: string, targetPin: string) =>
     edges.push({ id: `e-${source}-${target}-${targetPin}`, sourceNodeId: source, sourcePinId: sourcePin, targetNodeId: target, targetPinId: targetPin });
   const [light, dark] = ENGINE_DEFAULT_CHECKER_GREYS;
-  node("uv", "input.uv");
-  node("cells", "math.multiply", { [materialPinDefaultPropertyKey("b")]: pin(ENGINE_DEFAULT_CHECKER_CELLS) });
-  wire("uv", "uv", "cells", "a");
+  node("position", "input.worldPosition");
+  node("cells", "math.multiply", { [materialPinDefaultPropertyKey("b")]: pin(ENGINE_DEFAULT_CHECKER_CELLS_PER_UNIT) });
+  wire("position", "position", "cells", "a");
   node("cell", "math.floor");
   wire("cells", "out", "cell", "value");
-  node("split", "vector.split");
-  wire("cell", "out", "split", "value");
-  node("sum", "math.add");
-  wire("split", "x", "sum", "a");
-  wire("split", "y", "sum", "b");
+  // One-hot dominant axis of the world normal (ties go to X, then Y). Dropping it leaves the two in-plane cell
+  // indices, so a face lying on a cell boundary never flickers between cells.
+  node("normal", "input.worldNormal");
+  node("facing", "math.abs");
+  wire("normal", "normal", "facing", "value");
+  node("axes", "vector.split");
+  wire("facing", "out", "axes", "value");
+  node("acrossX", "math.max");
+  wire("axes", "y", "acrossX", "a");
+  wire("axes", "z", "acrossX", "b");
+  node("alongX", "math.step");
+  wire("acrossX", "out", "alongX", "edge");
+  wire("axes", "x", "alongX", "value");
+  node("yOverZ", "math.step");
+  wire("axes", "z", "yOverZ", "edge");
+  wire("axes", "y", "yOverZ", "value");
+  node("notX", "math.subtract", { [materialPinDefaultPropertyKey("a")]: pin(1) });
+  wire("alongX", "out", "notX", "b");
+  node("alongY", "math.multiply");
+  wire("yOverZ", "out", "alongY", "a");
+  wire("notX", "out", "alongY", "b");
+  node("alongZ", "math.subtract");
+  wire("notX", "out", "alongZ", "a");
+  wire("alongY", "out", "alongZ", "b");
+  node("dominant", "vector.combine");
+  wire("alongX", "out", "dominant", "x");
+  wire("alongY", "out", "dominant", "y");
+  wire("alongZ", "out", "dominant", "z");
+  node("all", "const.vec3", { value: [1, 1, 1] });
+  node("inPlane", "math.subtract");
+  wire("all", "out", "inPlane", "a");
+  wire("dominant", "xyz", "inPlane", "b");
+  node("sum", "vector.dot");
+  wire("cell", "out", "sum", "a");
+  wire("inPlane", "out", "sum", "b");
   // fract(sum / 2) is 0 on even cells and 0.5 on odd ones, below zero too, in GLSL and WGSL alike.
   node("half", "math.multiply", { [materialPinDefaultPropertyKey("b")]: pin(0.5) });
   wire("sum", "out", "half", "a");

@@ -1,12 +1,12 @@
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
-import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { CameraShakeView, type CameraShakeViewOffset } from "./camera-shake-view";
 import { installEngineDefaultMaterial } from "./default-material";
+import { installPreviewEnvironment } from "./preview-environment";
 import { createPreviewLighting } from "./preview-lighting";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 
@@ -35,11 +35,11 @@ const CRATES: ReadonlyArray<readonly [x: number, z: number, size: number]> = [
 /**
  * Builds the preview set from runtime primitives in code: a ground quad, seven pillars and three crates, merged
  * into one mesh (about 130 triangles, one draw, nothing stored on disk), lit by the preview lights on the engine
- * default Material. The camera stands where a player would, looking down the corridor.
+ * default Material, under the engine default sky as other asset previews are. The camera stands where a player
+ * would, looking down the corridor.
  */
 export function createCameraShakePreviewScene(engine: AbstractEngine): CameraShakePreviewScene {
   const scene = new Scene(engine);
-  scene.clearColor = new Color4(0.05, 0.05, 0.07, 1);
   scene.skipPointerMovePicking = true;
   // The camera renders into `outputRenderTarget`, so this clears the preview RTT, not the shared framebuffer.
   scene.autoClear = true;
@@ -53,6 +53,7 @@ export function createCameraShakePreviewScene(engine: AbstractEngine): CameraSha
 
   createPreviewLighting(scene);
   const renderer = new SceneRenderCoordinator(scene, { waterPlanarReflections: false });
+  installPreviewEnvironment(scene);
 
   const parts: Mesh[] = [MeshBuilder.CreateGround("cameraShakePreviewGround", { width: 14, height: 26 }, scene)];
   parts[0]!.position.z = 7;

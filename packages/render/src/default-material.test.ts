@@ -6,7 +6,13 @@ import { Scene } from "@babylonjs/core/scene";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import {
+  componentCount,
+  createDefaultMaterialDocument,
+  lowerMaterialDocument,
+  type MaterialDocument,
+  type MaterialOperand,
+} from "@haptic/shader-graph";
 import {
   ENGINE_DEFAULT_CHECKER_GREYS,
   createEngineDefaultMaterial,
@@ -30,6 +36,63 @@ afterEach(() => {
     handle?.engine.dispose();
   }
 });
+
+/**
+ * Evaluates a lowered surface graph's Base Color on the CPU at one world-space point, with GLSL semantics for each
+ * node the engine default uses. A conversion splats a Float or keeps a vector's leading channels.
+ */
+function evaluateBaseColor(document: MaterialDocument, position: number[], normal: number[]): number[] {
+  const lowered = lowerMaterialDocument(document);
+  if (!lowered.ok) throw new Error(lowered.diagnostics.map((row) => row.message).join("; "));
+  const results = new Map<string, Record<string, number[]>>();
+  const read = (operand: MaterialOperand): number[] => {
+    if (operand.kind === "constant") return operand.value;
+    let value = results.get(operand.operationId)![operand.pinId]!;
+    for (const { from, to } of operand.conversions ?? []) {
+      const source = value;
+      value = Array.from({ length: componentCount(to) }, (_, index) =>
+        from === "float" ? source[0]! : (source[index] ?? 1));
+    }
+    return value;
+  };
+  const zip = (values: number[][], combine: (...components: number[]) => number) =>
+    Array.from({ length: Math.max(...values.map((value) => value.length)) }, (_, index) =>
+      combine(...values.map((value) => value[value.length === 1 ? 0 : index]!)));
+  for (const operation of lowered.plan.operations) {
+    const pin = (id: string) => read(operation.inputs[id]!);
+    const out = (value: number[]) => ({ out: value });
+    const outputs = ((): Record<string, number[]> => {
+      switch (operation.nodeType) {
+        case "input.worldPosition": return { position };
+        case "input.worldNormal": return { normal };
+        case "const.vec3":
+        case "const.color":
+        case "param.float": return out(operation.properties.value as number[]);
+        case "math.add": return out(zip([pin("a"), pin("b")], (a, b) => a + b));
+        case "math.subtract": return out(zip([pin("a"), pin("b")], (a, b) => a - b));
+        case "math.multiply": return out(zip([pin("a"), pin("b")], (a, b) => a * b));
+        case "math.max": return out(zip([pin("a"), pin("b")], Math.max));
+        case "math.step": return out(zip([pin("edge"), pin("value")], (edge, value) => (value < edge ? 0 : 1)));
+        case "math.mix": return out(zip([pin("a"), pin("b"), pin("alpha")], (a, b, t) => a + (b - a) * t));
+        case "math.abs": return out(pin("value").map(Math.abs));
+        case "math.floor": return out(pin("value").map(Math.floor));
+        case "math.fract": return out(pin("value").map((value) => value - Math.floor(value)));
+        case "vector.split": {
+          const [x, y, z, w] = pin("value");
+          return { x: [x!], y: [y!], z: [z!], w: [w!] };
+        }
+        case "vector.combine": {
+          const [x, y, z, w] = ["x", "y", "z", "w"].map((id) => pin(id)[0]!);
+          return { xy: [x!, y!], xyz: [x!, y!, z!], xyzw: [x!, y!, z!, w!] };
+        }
+        case "vector.dot": return out([zip([pin("a"), pin("b")], (a, b) => a * b).reduce((sum, term) => sum + term, 0)]);
+        default: throw new Error(`No CPU evaluation for ${operation.nodeType}`);
+      }
+    })();
+    results.set(operation.id, outputs);
+  }
+  return read(lowered.plan.outputs.baseColor!);
+}
 
 function rawScene(): Scene {
   const engine = new NullEngine();
@@ -57,6 +120,24 @@ describe("engine default material", () => {
     expect(material.attachedBlocks.some((block) => block instanceof HapticLightingBlock)).toBe(true);
     expect(box.subMeshes[0]!.effect?.defines).not.toMatch(/#define LIGHT\d/);
     expect(material.compiledShaders).toContain("uniform HapticLights");
+  });
+
+  it("draws square world-aligned quarter-unit cells, so scaling a mesh never stretches them", () => {
+    const [light, dark] = ENGINE_DEFAULT_CHECKER_GREYS;
+    const document = engineDefaultMaterialDocument();
+    const greys = (normal: number[], points: number[][]) =>
+      points.map((point) => evaluateBaseColor(document, point, normal)[0]);
+    const up = [0, 1, 0];
+    // A ground plane: the cells run along X and Z, and its height (on a cell boundary, or just under it) never matters.
+    expect(greys(up, [[0.1, 0, 0.1], [0.3, 0, 0.1], [0.3, 0, 0.3], [-0.1, 0, 0.1]])).toEqual([light, dark, light, dark]);
+    expect(greys(up, [[0.1, 0, 0.1], [0.1, -0.0001, 0.1], [0.1, 0.3, 0.1]])).toEqual([light, light, light]);
+    // The same cell width at the far end of a box stretched four times along X.
+    expect(greys(up, [[2.6, 0.75, 0.1], [2.8, 0.75, 0.1]])).toEqual([light, dark]);
+    // Side and front faces lying on a cell boundary use their own plane.
+    expect(greys([-1, 0, 0], [[-0.75, 0.1, 0.1], [-0.75, 0.1, 0.35], [-0.75, 0.6, 0.1]])).toEqual([light, dark, light]);
+    expect(greys([0, 0, -1], [[0.1, 0.1, -0.75], [0.35, 0.1, -0.75]])).toEqual([light, dark]);
+    // A 45° slope still takes exactly one plane: Y wins the tie, so the cells run along X and Z.
+    expect(greys([0, Math.SQRT1_2, Math.SQRT1_2], [[0.1, 0.9, 0.1], [0.1, 0.6, 0.35]])).toEqual([light, dark]);
   });
 
   it("gives a mesh whose scaling turns non-uniform after its first readiness check the program of one that starts so", async () => {
