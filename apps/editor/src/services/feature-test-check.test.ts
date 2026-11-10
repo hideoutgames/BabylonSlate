@@ -107,6 +107,7 @@ function fakeEditor(
           images += 1;
           return share === null ? null : { blackShare: share ?? 0, meanLevel: 120, width: 64, height: 36 };
         },
+        stubWebGlDraws: () => false,
         problemLogs: () => [],
         executeConsoleCommand: async (line) => {
           commands.push(line);
@@ -765,6 +766,58 @@ describe("draw sampling", () => {
     expect(counters.draws!.samples).toBeGreaterThanOrEqual(2);
     // This fake reports no rendering diagnostics in Quick mode, so there is no frame cost to sample.
     expect(counters.cpuMs).toBeNull();
+  });
+
+  /** A game view whose frames cost 40 ms on the CPU, 12 of them while its draws are stubbed; `supported`: whether they can be. */
+  const stubbable = (deps: FeatureTestCheckDeps, supported: boolean, onStub?: (on: boolean) => void) => {
+    const calls: boolean[] = [];
+    // The frame in progress when the draws are stubbed still drew: only a later one costs less.
+    let stubbedAt: number | null = null;
+    const wrapped: FeatureTestCheckDeps = {
+      ...alternating(deps),
+      play: () => {
+        const play = deps.play();
+        return play && {
+          ...play,
+          snapshot: () => ({
+            ...play.snapshot(),
+            rendering: { cpuMs: stubbedAt !== null && deps.now() > stubbedAt ? 12 : 40, gpuMs: null } as RenderDiagnostics,
+          }),
+          stubWebGlDraws: (on: boolean) => {
+            calls.push(on);
+            onStub?.(on);
+            if (supported) stubbedAt = on ? deps.now() : null;
+            return supported;
+          },
+        };
+      },
+    };
+    return { deps: wrapped, calls };
+  };
+
+  it("measures a frame's CPU time without its draws right after the normal sample, and lets the view draw again", async () => {
+    const editor = stubbable(fakeEditor({}).deps, true);
+    const report = await runFeatureTestCheck({ mode: "quick", scenes: [scene("FT_World")], deps: editor.deps, signal: new AbortController().signal });
+    const counters = report.scenes[0].play.counters!;
+    expect(counters.cpuMs).toMatchObject({ median: 40, min: 40, max: 40 });
+    // Four reads half a second apart, every one of a stubbed frame.
+    expect(counters.cpuMsWithoutDraws).toEqual({ median: 12, min: 12, max: 12, samples: 4 });
+    expect(editor.calls).toEqual([true, false]);
+  });
+
+  it("has no CPU time without draws where the view cannot stub them", async () => {
+    const editor = stubbable(fakeEditor({}).deps, false);
+    const report = await runFeatureTestCheck({ mode: "quick", scenes: [scene("FT_World")], deps: editor.deps, signal: new AbortController().signal });
+    expect(report.scenes[0].play.counters!.cpuMsWithoutDraws).toBeNull();
+    // Asked once; nothing to undo.
+    expect(editor.calls).toEqual([true]);
+  });
+
+  it("lets the view draw again when the Check is cancelled while its draws are stubbed", async () => {
+    const cancel = new AbortController();
+    const editor = stubbable(fakeEditor({}).deps, true, (on) => { if (on) cancel.abort(); });
+    await runFeatureTestCheck({ mode: "quick", scenes: [scene("FT_World")], deps: editor.deps, signal: cancel.signal }).catch(() => null);
+    expect(editor.calls).toEqual([true, false]);
   });
 
   it("gives each benchmark step its median counters and their range", async () => {
