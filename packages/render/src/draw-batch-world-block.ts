@@ -1,6 +1,7 @@
 import type { InstancesBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/instancesBlock";
 import { NodeMaterialBlockConnectionPointTypes as Types } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
 import { NodeMaterialBlockTargets as Targets } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockTargets";
+import type { Material } from "@babylonjs/core/Materials/material";
 import type { NodeMaterial, NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
@@ -31,6 +32,36 @@ export function markDrawBatchMesh(mesh: AbstractMesh): void {
 
 export function isDrawBatchMesh(mesh: AbstractMesh): boolean {
   return batchMeshes.has(mesh);
+}
+
+const boundedMaterials = new WeakSet<Material>();
+
+/**
+ * Marks an authored `material` whose vertex stage keeps every vertex on its mesh's own geometry (no World Position
+ * Offset, no custom or wave stage): a mesh drawing it stays inside its bounds, whatever the Material binds per mesh. A
+ * batcher orders its batches around such a draw by where it is, even when it cannot join one.
+ */
+export function markBoundedMaterial(material: Material): void {
+  boundedMaterials.add(material);
+}
+
+export function isBoundedMaterial(material: Material): boolean {
+  return boundedMaterials.has(material);
+}
+
+const batchMaterials = new WeakSet<Material>();
+
+/**
+ * Marks an authored `material` whose draws may batch: but for the world matrix and the overlay style, which a batch
+ * carries per vertex, and Receive Shadows, which its members share, it draws every mesh the same (the compiler marks a
+ * Scene Layer surface with the stock vertex stage and no per-mesh text or water values).
+ */
+export function markDrawBatchMaterial(material: Material): void {
+  batchMaterials.add(material);
+}
+
+export function isDrawBatchMaterial(material: Material): boolean {
+  return batchMaterials.has(material);
 }
 
 /**

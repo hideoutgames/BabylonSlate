@@ -8,6 +8,7 @@ import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
+import { DRAW_BATCH_TINT_KIND, drawBatchValue } from "./draw-batch-world-block";
 import { overlayVisualStyle } from "./overlay-visual-style";
 
 /** Per-component values on an otherwise shared, immutable authored material. */
@@ -32,7 +33,8 @@ export class OverlayStyleBlock extends NodeMaterialBlock {
     this.uniform = state._getFreeVariableName("overlayVisualTint");
     state._emitUniformFromString(this.uniform, Types.Vector4);
     state.sharedData.forcedBindableBlocks.push(this);
-    const value = `${state.shaderLanguage === 1 ? "uniforms." : ""}${this.uniform}`;
+    // The component's tint: bound, or a draw batch's own per vertex.
+    const value = drawBatchValue(state, DRAW_BATCH_TINT_KIND, this.uniform);
     state.compilationString += `${state._declareOutput(this.rgba)} = ${value};\n`;
     state.compilationString += `${state._declareOutput(this.rgb)} = ${value}.rgb;\n`;
     state.compilationString += `${state._declareOutput(this.alpha)} = ${value}.a;\n`;

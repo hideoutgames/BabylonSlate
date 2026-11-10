@@ -11,6 +11,7 @@ import {
 import { NodeMaterialSystemValues } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialSystemValues";
 import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { MaterialPlumbing } from "./material-block-registry";
+import { drawBatchWorld } from "./draw-batch-world-block";
 function matrixInput(
   name: string,
   systemValue: NodeMaterialSystemValues,
@@ -55,7 +56,8 @@ export function createSurfacePlumbing(
   const instances = new InstancesBlock(`${name}_instances`);
   world.output.connectTo(instances.world);
   const bones = new BonesBlock(`${name}_bones`);
-  instances.output.connectTo(bones.world);
+  // A draw batch's mesh carries its members' world matrices per vertex.
+  drawBatchWorld(name, instances, created).connectTo(bones.world);
   const indicesExtra = new InputBlock(`${name}_indicesExtra`);
   indicesExtra.setAsAttribute("matricesIndicesExtra");
   indicesExtra.output.connectTo(bones.matricesIndicesExtra);
