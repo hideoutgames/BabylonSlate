@@ -41,6 +41,12 @@ export type LongFrame = {
 /** First draws by the pass that made them (`draw-passes.ts`); `other` also holds those outside a view's frame. */
 export type FirstDrawPasses = Partial<Record<DrawPass, number>>;
 
+/**
+ * The programs an Engine holds now: how many, how many of them it has never drawn (compiled for nothing so far: each
+ * cost a compile), and the drawn ones by the pass that first drew each.
+ */
+export type ProgramInventory = { programs: number; neverDrawn: number; passes: FirstDrawPasses };
+
 export type FirstDrawStats = {
   /** Effects first drawn while counting. */
   draws: number;
@@ -93,7 +99,8 @@ type Session = {
   engineEnd: number | null;
 };
 
-type Tracker = { drawn: WeakSet<Effect>; created: WeakSet<Effect>; sessions: Set<Session> };
+/** `drawn`: each Effect the Engine has drawn, with the pass that first drew it. */
+type Tracker = { drawn: WeakMap<Effect, DrawPass>; created: WeakSet<Effect>; sessions: Set<Session> };
 
 const trackers = new WeakMap<AbstractEngine, Tracker>();
 
@@ -101,17 +108,17 @@ const trackers = new WeakMap<AbstractEngine, Tracker>();
 export function trackFirstDraws(engine: AbstractEngine): void {
   if (engine.isWebGPU || trackers.has(engine)) return;
   const target = engine as unknown as DrawEngine;
-  const tracker: Tracker = { drawn: new WeakSet(), created: new WeakSet(Object.values(target._compiledEffects ?? {})), sessions: new Set() };
+  const tracker: Tracker = { drawn: new WeakMap(), created: new WeakSet(Object.values(target._compiledEffects ?? {})), sessions: new Set() };
   trackers.set(engine, tracker);
   const note = (current: Effect | null) => {
     if (!current || tracker.drawn.has(current)) return;
-    tracker.drawn.add(current);
+    const pass = currentDrawPass() ?? "other";
+    tracker.drawn.set(current, pass);
     for (const session of tracker.sessions) {
       if (!session.held) continue;
       session.stats.draws += 1;
       if (session.held.has(current)) session.stats.loadCompiled += 1;
       session.inFrame += 1;
-      const pass = currentDrawPass() ?? "other";
       session.stats.passes[pass] = (session.stats.passes[pass] ?? 0) + 1;
       session.passesInFrame[pass] = (session.passesInFrame[pass] ?? 0) + 1;
     }
@@ -143,6 +150,21 @@ export function trackFirstDraws(engine: AbstractEngine): void {
  * Whether some draw on `engine` has drawn with `effect` since its first view; undefined where the Engine is not
  * tracked (WebGPU, or an Engine no view was created on).
  */
+/** The Engine's programs as it holds them now (`ProgramInventory`); null where its draws are not tracked (WebGPU). */
+export function programInventory(engine: AbstractEngine): ProgramInventory | null {
+  const tracker = trackers.get(engine);
+  const compiled = (engine as unknown as DrawEngine)._compiledEffects;
+  if (!tracker || !compiled) return null;
+  const inventory: ProgramInventory = { programs: 0, neverDrawn: 0, passes: {} };
+  for (const key in compiled) {
+    inventory.programs += 1;
+    const pass = tracker.drawn.get(compiled[key]!);
+    if (pass === undefined) inventory.neverDrawn += 1;
+    else inventory.passes[pass] = (inventory.passes[pass] ?? 0) + 1;
+  }
+  return inventory;
+}
+
 export function effectDrawnOn(engine: AbstractEngine, effect: Effect): boolean | undefined {
   return trackers.get(engine)?.drawn.has(effect);
 }

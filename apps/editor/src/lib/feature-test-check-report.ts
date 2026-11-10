@@ -51,10 +51,34 @@ function s(ms: number): string {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
-/** First draws by the pass that made them, most first: `shadows 12, objects 5`; empty without any. */
-function firstDrawPasses(passes: FirstDraws["passes"] | undefined): string {
-  return Object.entries(passes ?? {}).filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1])
-    .map(([pass, count]) => `${pass} ${count}`).join(", ");
+/** Counts by pass, most first: `shadows 12, objects 5`; empty without any. */
+function firstDrawPasses(passes: FirstDraws["passes"] | null | undefined): string {
+  return Object.entries(passes ?? {}).map(([pass, count]) => [pass, Math.round(count)] as const).filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1]).map(([pass, count]) => `${pass} ${count}`).join(", ");
+}
+
+type Programs = NonNullable<FeatureTestBenchmarkSample["programs"]>;
+
+/**
+ * The Engine's programs: each one cost a compile, and one never drawn cost it for nothing so far. `by first pass` says
+ * which of a view's passes the drawn ones belong to.
+ */
+function programsText(programs: Programs): string {
+  const passes = firstDrawPasses(programs.passes);
+  return `${programs.programs} on the Engine · ${programs.neverDrawn} never drawn${passes ? ` · by first pass: ${passes}` : ""}`;
+}
+
+/** The draws-per-pass table of a sweep's samples, in the frame's pass order; `Draws per pass: unreported` without any. */
+function drawPassTable(samples: readonly FeatureTestBenchmarkSample[], column: string, width: number): string[] {
+  // Only the passes some row drew in.
+  const passes = DRAW_PASSES.filter((pass) => samples.some((sample) => (sample.drawPasses?.[pass] ?? 0) > 0));
+  if (!passes.length) return ["  Draws per pass: unreported"];
+  const lines = ["  Draws per pass (median per frame):", `    ${pad(column, width)}${passes.map((pass) => pad(pass, Math.max(pass.length + 1, 7))).join("")}`.trimEnd()];
+  for (const sample of samples) {
+    if (!sample.drawPasses) continue;
+    lines.push(`    ${pad(sample.label, width)}${passes.map((pass) => pad(String(Math.round(sample.drawPasses![pass] ?? 0)), Math.max(pass.length + 1, 7))).join("")}`.trimEnd());
+  }
+  return lines;
 }
 
 /** A long frame and what it held; time outside the Engine's frame is scripts, layout, garbage collection or waiting. */
@@ -157,6 +181,9 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       const gpu = counters?.gpuMs ? `${rangeText(counters.gpuMs, 1)} ms` : r ? r.gpuMs === null ? r.gpuStatus : `${r.gpuMs.toFixed(1)} ms` : null;
       lines.push(`  Render: draws ${counters?.draws ? rangeText(counters.draws, 0) : snap.drawCalls} · meshes ${snap.meshes} · textures ${snap.textures} · memory ${Math.round(snap.accountedBytes / 1048576)} MB${r ? ` · cpu ${cpu} · gpu ${gpu} · ${r.width}x${r.height} @${r.scalingLevel.toFixed(2)}` : ""}`);
       if (r?.qualityLimits.length) lines.push(`  Quality limits: ${clip(r.qualityLimits.join("; "))}`);
+      const passes = firstDrawPasses(counters?.drawPasses ?? r?.drawPasses);
+      if (passes) lines.push(`  Draws per pass: ${passes}`);
+      if (r?.programs) lines.push(`  Programs: ${programsText(r.programs)}`);
     }
     if (play.presentation) lines.push(`  Presentation: ${presentationText(play.presentation)}`);
     if (play.work) lines.push(`  Readiness probes: ${readinessText(play.work)}`);
@@ -213,6 +240,10 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       lines.push(`    ${pad(sample.label, 18)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 6)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 8)}${pad(msText(sample.cpu), 20)}${pad(msText(sample.gpu), 20)}${pad(sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${sample.resolution ?? "-"}`);
     }
     lines.push(`  Highest tier at 60 fps: ${bestProfile([play.benchmark], SMOOTH) ?? "none"} · at 30 fps: ${bestProfile([play.benchmark], PLAYABLE) ?? "none"}`);
+    // What each tier draws, and what it compiled: a tier that draws as much as another scales pixels only.
+    lines.push(...drawPassTable(play.benchmark, "Profile", 18));
+    const programs = play.benchmark.filter((sample) => sample.programs);
+    if (programs.length) lines.push(`  Programs after each profile: ${programs.map((sample) => `${sample.label} ${sample.programs!.programs} (${sample.programs!.neverDrawn} never drawn)`).join(" · ")}`);
   }
   const session = scene.session;
   if (session) {
@@ -429,17 +460,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
     const change = profileDelta(samples, sample);
     lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(ms(sample.cpuMs), 8)}${pad(busy, 14)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(heldShareText(sample), 6)}${pad(deltaText(change.frame), 16)}${pad(deltaText(change.cpu), 16)}${profileNotes(sample, first)}`.trimEnd());
   }
-  // Only the passes some row drew in, in the frame's order.
-  const passes = DRAW_PASSES.filter((pass) => samples.some((sample) => (sample.drawPasses?.[pass] ?? 0) > 0));
-  if (passes.length) {
-    lines.push("  Draws per pass (median per frame):", `    ${pad("Step", 22)}${passes.map((pass) => pad(pass, Math.max(pass.length + 1, 7))).join("")}`.trimEnd());
-    for (const sample of samples) {
-      if (!sample.drawPasses) continue;
-      lines.push(`    ${pad(sample.label, 22)}${passes.map((pass) => pad(String(Math.round(sample.drawPasses![pass] ?? 0)), Math.max(pass.length + 1, 7))).join("")}`.trimEnd());
-    }
-  } else {
-    lines.push("  Draws per pass: unreported");
-  }
+  lines.push(...drawPassTable(samples, "Step", 22));
   const ranking = profileRanking(samples);
   lines.push("  Ranked by frame-time saving:");
   ranking.forEach((entry, index) => lines.push(
