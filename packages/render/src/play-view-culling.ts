@@ -2,9 +2,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
-import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { isSkyboxMesh } from "./skybox";
-import { isWaterSurfaceMesh } from "./water-mesh-surface";
 
 /**
  * View culling for Play's world Scene. Babylon's Intermediate performance priority (Play's) marks every mesh it
@@ -15,17 +13,30 @@ import { isWaterSurfaceMesh } from "./water-mesh-surface";
  *
  * Kept always drawn: those the engine marks (particle emitters, whose particles draw while the emitter is off screen;
  * debug overlays), meshes without geometry (they draw nothing), skyboxes and infinite-distance meshes, meshes whose
- * vertices can leave their bind-pose bounds (skinning, morph targets, lattice deformers, baked vertex animation,
- * padded material bounds), thin instances (Babylon's bounds cover the source mesh only unless refreshed) and water
- * (displaced in its vertex shader); a regular instance as its source.
+ * vertices a pose moves and no bounds follow (skinning, morph targets, baked vertex animation) and thin instances
+ * whose bounds hold the source mesh alone (Babylon's, unless refreshed); a regular instance as its source.
+ *
+ * Culled like any mesh, as the editor's view culls them: those whose bounds are made to hold what their vertex stage
+ * does. A Material's padded bounds (`applyMaterialBounds`), a lattice's cage (`setMaterialBoundsExpansion`), water's
+ * wave reach (`updateDynamicMaterialBounds`) and foliage cells, whose bounds hold every instance
+ * (`markBoundsHoldInstances`).
  */
 
 const alwaysDrawn = new WeakSet<AbstractMesh>();
+const instanceBounds = new WeakSet<AbstractMesh>();
 
 /** Marks `mesh` drawn whatever the camera's view, in every Scene (the culling below never clears it). */
 export function drawWhateverTheView(mesh: AbstractMesh): void {
   alwaysDrawn.add(mesh);
   mesh.alwaysSelectAsActiveMesh = true;
+}
+
+/**
+ * Marks a mesh whose bounds were refreshed to hold every one of its thin instances
+ * (`thinInstanceRefreshBoundingInfo`), which change no more: the cull can trust them.
+ */
+export function markBoundsHoldInstances(mesh: AbstractMesh): void {
+  instanceBounds.add(mesh);
 }
 
 /**
@@ -36,8 +47,9 @@ export function keepsDrawingOutsideView(mesh: AbstractMesh): boolean {
   if (alwaysDrawn.has(mesh) || mesh.infiniteDistance || isSkyboxMesh(mesh)) return true;
   const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
   if (!(source instanceof Mesh) || source.getTotalVertices() === 0) return true;
-  if (source.hasThinInstances || isWaterSurfaceMesh(source)) return true;
-  return hasDeformingShadowBounds(source);
+  if (source.hasThinInstances && !instanceBounds.has(source)) return true;
+  // A pose moves these vertices on the GPU, and nothing moves their bounds with it.
+  return !!source.skeleton || !!source.morphTargetManager || !!source.bakedVertexAnimationManager;
 }
 
 /** Per culled Scene, the meshes already settled (each is settled once). */
