@@ -42,9 +42,28 @@ export function knownGuidsFromSchemas(schemas: TypeSchemas): Set<string> {
   return new Set([...Object.keys(schemas.enums), ...Object.keys(schemas.structs)]);
 }
 
-function firstEnumMemberName(schema: EnumSchema | undefined): string {
-  const name = schema?.members.find((member) => member.name.trim())?.name;
-  return name ?? "";
+/**
+ * The first member of an enum, project or engine. An enum value is never
+ * empty: an unset or empty value stands for this member. "" only when the
+ * enum is unknown or has no members.
+ */
+export function firstEnumMember(
+  guid: string | undefined,
+  enums?: TypeSchemas["enums"],
+): string {
+  if (!guid) return "";
+  const schema = enums?.[guid] ?? ENGINE_ENUMS.find((entry) => entry.id === guid);
+  return schema?.members.find((member) => member.name.trim())?.name ?? "";
+}
+
+/** An enum value, or the enum's first member when it is unset or empty. */
+export function enumValueOrFirstMember(
+  value: unknown,
+  guid: string | undefined,
+  enums?: TypeSchemas["enums"],
+): unknown {
+  if (value !== undefined && value !== null && value !== "") return value;
+  return firstEnumMember(guid, enums) || value;
 }
 
 export function defaultValueForPinType(
@@ -52,9 +71,7 @@ export function defaultValueForPinType(
   schemas?: TypeSchemas,
 ): unknown {
   if (type.kind === "enumRef") {
-    const schema = type.guid ? schemas?.enums[type.guid] : undefined;
-    const first = firstEnumMemberName(schema);
-    return first || defaultJsValue(type);
+    return firstEnumMember(type.guid, schemas?.enums) || defaultJsValue(type);
   }
   if (type.kind === "structRef") {
     if (type.guid === "engine:TagContainer") return { Tags: [] };

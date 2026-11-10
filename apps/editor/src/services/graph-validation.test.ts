@@ -560,6 +560,25 @@ describe("hydrateSerializedGraphForEditor", () => {
     });
   });
 
+  it("compiles an enum input that nothing set as its first member, and keeps set and catalog values", () => {
+    const enums = { "enum-team": { name: "Team", members: [{ name: "Red", value: 0 }, { name: "Blue", value: 1 }] } };
+    const graph: SerializedGraph = {
+      nodes: [
+        { id: "unset", type: "enum.equals", position: { x: 0, y: 0 }, data: { enumGuid: "enum-team", "default:b": "Blue" } },
+        { id: "empty", type: "enum.equals", position: { x: 0, y: 80 }, data: { enumGuid: "enum-team", "default:a": "" } },
+        { id: "load", type: "assets.requestLoad", position: { x: 0, y: 160 }, data: {} },
+      ],
+      edges: [],
+    };
+    const logic = materializeLogicGraph(graph, "enum-graph", "event", { enums });
+    const properties = (id: string) => logic.nodes.find((node) => node.id === id)!.properties;
+    expect(properties("unset")["default:a"]).toBe("Red");
+    expect(properties("unset")["default:b"]).toBe("Blue");
+    expect(properties("empty")["default:a"]).toBe("Red");
+    // Request Async Load's Priority keeps its own default (Normal).
+    expect(properties("load")["default:priority"]).toBeUndefined();
+  });
+
   describe("Get Assets By Class", () => {
     const classes = (hydrated: SerializedGraph, nodeId: string) =>
       (hydrated.nodes.find((node) => node.id === nodeId)?.data.__pins as Array<{ id: string; type: unknown }>)

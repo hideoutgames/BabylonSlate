@@ -431,10 +431,12 @@ function pushPinDefaultRows(
         });
         break;
       case "enumRef": {
-        const current = pinDefaultAsString(entry.value);
         const listed = entry.type.guid === "engine:Key"
           ? INPUT_KEYS.map((key) => key.key)
           : mappingNames?.enumMembers?.[entry.type.guid] ?? [];
+        // An enum value is never empty: unset reads as the first member, as it compiles.
+        const first = listed.find((name) => name.trim()) ?? "";
+        const current = pinDefaultAsString(entry.value) || first;
         const options = listed.includes(current)
           ? listed
           : current
@@ -445,7 +447,7 @@ function pushPinDefaultRows(
           id: entry.pinId,
           label: entry.name,
           value: current,
-          defaultValue: pinDefaultAsString(typeDefault),
+          defaultValue: pinDefaultAsString(typeDefault) || first,
           options: options.map((name) => ({
             value: name,
             label: entry.type.kind === "enumRef" && entry.type.guid === "engine:Key"

@@ -472,6 +472,18 @@ describe("pinDefaultPropertyRows", () => {
     expect(onPatch).toHaveBeenCalledWith({ "default:state": "Run" });
   });
 
+  it.each([undefined, ""])("shows an enumRef pin with value %o as the first member, which Reset restores", (value) => {
+    const rows = pinDefaultPropertyRows(
+      [{ pinId: "state", name: "state", type: enumRef("enum-1"), value }],
+      vi.fn(),
+      { enumMembers: { "enum-1": ["Idle", "Run"] } },
+    );
+    expect(rows[0]).toMatchObject({ kind: "enum", value: "Idle", defaultValue: "Idle" });
+    if (rows[0]?.kind === "enum") {
+      expect(rows[0].options.map((option) => option.value)).toEqual(["Idle", "Run"]);
+    }
+  });
+
   it("keeps an authored enumRef value that is missing from the member list", () => {
     const rows = pinDefaultPropertyRows(
       [
