@@ -18,11 +18,13 @@ const PLAY_LOAD_MS = 8 * 60_000;
 /** Gameplay after the load, so an error on the next ticks reaches the session report. */
 const PLAY_MS = 3_000;
 
+type LayerBatches = { visuals: number; draws: number; batches: number; batched: number; alone: Record<string, number> };
 type PlayHost = {
   __hapticPlayTest?: {
     rendering(): {
       frameAdmission?: { worldLoading: boolean; pendingPresentations: number };
       programs?: { splitBy: { define: string; with: string[] }[] } | null;
+      layerBatches?: LayerBatches;
     } | null;
   };
 };
@@ -61,12 +63,14 @@ test("the Feature Test main scene loads in the editor and in Play without sessio
     return outcome === "closed" || (started && outcome === "loaded");
   }, { message: "Play finishes the load", timeout: PLAY_LOAD_MS }).toBe(true);
   let splitting: string[] | null = null;
+  let layers: LayerBatches | null = null;
   if (outcome === "loaded") {
     await page.waitForTimeout(PLAY_MS);
     // The starter draws every kind of light, a sky, reflection probes and Materials of every kind: what splits its
     // shaders into several programs is what would split a game's.
     splitting = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.programs?.splitBy
       .flatMap((split) => [split.define, ...split.with]) ?? null);
+    layers = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.layerBatches ?? null);
     // Software GL draws this scene at a frame or two a second, too slow for a click's stability check.
     const close = page.getByTestId("play-overlay-close");
     if (await close.count()) await close.dispatchEvent("click");
@@ -78,6 +82,11 @@ test("the Feature Test main scene loads in the editor and in Play without sessio
   expect(outcome, "Play finishes the load before it closes").toBe("loaded");
   expect(splitting, "Play reports what splits its shaders into several programs").not.toBeNull();
   expect(splitting!.filter((define) => BOUND_NOT_COMPILED.test(define)), "a bound value compiles no program of its own").toEqual([]);
+  // The starter's HUD is a Scene Layer: its last frame's visuals are counted, each in a batch or in a draw of its own.
+  expect(layers, "Play reports how its Scene Layers drew").not.toBeNull();
+  const alone = Object.values(layers!.alone).reduce((sum, count) => sum + count, 0);
+  expect(layers!.batches, "the HUD's visuals batch").toBeGreaterThan(0);
+  expect({ visuals: layers!.visuals, draws: layers!.draws }).toEqual({ visuals: layers!.batched + alone, draws: layers!.batches + alone });
 });
 
 /** The open session report's error rows, each group with errors expanded to show them. */

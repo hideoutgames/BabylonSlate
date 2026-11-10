@@ -99,6 +99,8 @@ import { uiControl2DMesh } from "./ui-controls2d-mesh";
 import * as waterMesh from "./water-mesh";
 import { builtInWaterMaterial } from "./water-template";
 import { countEffectCompiles } from "./effect-requests";
+import { sceneDrawBatcher } from "./draw-batching";
+import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { emptyDrawPasses, withDrawPass } from "./draw-passes";
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
@@ -2505,6 +2507,42 @@ describe("Play createEngine view", () => {
     expect(handle.drawCalls()).toBe(1);
     // Each frame's own draws, by the pass that drew them.
     expect(handle.renderDiagnostics().drawPasses).toEqual({ ...emptyDrawPasses(), mirrors: 1 });
+  });
+
+  it("reports how the Scene Layers of its last drawn frame drew", async () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    const callback = runRenderLoop.mock.calls[0]![0]!;
+    const none = { single: 0, material: 0, transform: 0, vertexColor: 0, other: 0, unmatched: 0 };
+    expect(handle.renderDiagnostics().layerBatches).toEqual({ visuals: 0, draws: 0, batches: 0, batched: 0, alone: none });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    const layer = handle.sceneLayerScenes().find((entry) => entry.layerId === "hud")!.scene;
+    const visual = MeshBuilder.CreatePlane("visual", { size: 1 }, layer).subMeshes[0]!;
+    // The layer's passes, as its batcher draws them: `passes` of one visual each.
+    let passes = 1;
+    const pass = () => sceneDrawBatcher(layer)!.draw([visual], 1, true, () => {});
+    const layers = vi.spyOn(SceneLayerCompositor.prototype, "render").mockImplementation(() => {
+      for (let index = 0; index < passes; index += 1) pass();
+    });
+    try {
+      // A batched pass drawn outside the view's layers is none of its Scene Layers'.
+      vi.spyOn(handle.scene, "render").mockImplementation(() => { pass(); });
+      callback();
+      const first = handle.renderDiagnostics().layerBatches!;
+      expect(first).toEqual({ visuals: 1, draws: 1, batches: 0, batched: 0, alone: { ...none, single: 1 } });
+      // Each drawn frame's own counts; what a reader holds stays as read.
+      passes = 2;
+      callback();
+      expect(handle.renderDiagnostics().layerBatches).toEqual({ visuals: 2, draws: 2, batches: 0, batched: 0, alone: { ...none, single: 2 } });
+      expect(first.visuals).toBe(1);
+      passes = 0;
+      callback();
+      expect(handle.renderDiagnostics().layerBatches).toEqual({ visuals: 0, draws: 0, batches: 0, batched: 0, alone: none });
+    } finally {
+      layers.mockRestore();
+    }
   });
 
   it("reports the programs its Engine holds, every view's among them", async () => {

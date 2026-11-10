@@ -35,7 +35,7 @@ import {
   type PlayCounters,
   type PlayPresentation,
 } from "../services/feature-test-check";
-import { DRAW_PASSES } from "@haptic/render";
+import { DRAW_PASSES, type OverlayAloneReason, type RenderDiagnostics } from "@haptic/render";
 import { clipText, formatDiagnosticEnvironment, type DiagnosticEnvironment } from "./diagnostic-info";
 
 export type FeatureTestCheckEnvironment = DiagnosticEnvironment;
@@ -82,6 +82,28 @@ function cpuWithoutDrawsText(counters: PlayCounters | null | undefined): string 
     ? ` · per draw call ${Math.round(without / draws * 1000)} µs without and ${Math.round(Math.max(0, cpu - without) / draws * 1000)} µs for the draw`
     : "";
   return `${without.toFixed(1)} ms of ${cpu.toFixed(1)} ms a frame (${Math.round(without / cpu * 100)}%); draws, clears and uniform uploads take the rest${perDraw}`;
+}
+
+type LayerBatches = NonNullable<RenderDiagnostics["layerBatches"]>;
+/** Why a Scene Layer visual drew on its own, as a report names each reason. */
+const ALONE_LABELS: Record<OverlayAloneReason, string> = {
+  unmatched: "nothing else drew the same",
+  transform: "rotated or mirrored",
+  material: "another Material",
+  vertexColor: "vertex colours",
+  single: "only draw of its pass",
+  other: "other",
+};
+
+/**
+ * A frame's Scene Layers: the draws their visuals took, how many of them drew in batches, and why the rest each took a
+ * draw of their own, most first.
+ */
+function layerBatchesText(stats: LayerBatches): string {
+  const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : noun.endsWith("h") ? "es" : "s"}`;
+  const alone = (Object.keys(ALONE_LABELS) as OverlayAloneReason[]).map((reason) => [stats.alone[reason], ALONE_LABELS[reason]] as const)
+    .filter(([n]) => n > 0).sort((a, b) => b[0] - a[0]).map(([n, label]) => `${n} ${label}`).join(", ");
+  return `${count(stats.visuals, "visual")} in ${count(stats.draws, "draw")} · ${stats.batched} in ${count(stats.batches, "batch")}${alone ? ` · alone: ${alone}` : ""}`;
 }
 
 /** How many causes a report names; the rest are counted. */
@@ -213,6 +235,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       if (r?.qualityLimits.length) lines.push(`  Quality limits: ${clip(r.qualityLimits.join("; "))}`);
       const passes = firstDrawPasses(counters?.drawPasses ?? r?.drawPasses);
       if (passes) lines.push(`  Draws per pass: ${passes}`);
+      if (r?.layerBatches?.visuals) lines.push(`  Scene Layers: ${layerBatchesText(r.layerBatches)}`);
       const withoutDraws = cpuWithoutDrawsText(counters);
       if (withoutDraws) lines.push(`  CPU without draws: ${withoutDraws}`);
       if (r?.programs) {

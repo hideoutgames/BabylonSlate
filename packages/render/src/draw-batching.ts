@@ -48,8 +48,9 @@ const renderOpaque = (subMesh: SubMesh): void => { subMesh.render(false); };
 let installed = false;
 
 /**
- * Routes the opaque and alpha-tested lists of a batching Scene through its batcher: the same sort as Babylon's
- * (`_RenderSorted`, in place when the list fills its array), then the batcher draws them. Blended lists draw through
+ * Routes the opaque and alpha-tested lists of a batching Scene through its batcher (a list of one too, which the
+ * batcher counts): the same sort as Babylon's (`_RenderSorted`, in place when the list fills its array), then the
+ * batcher draws them. Blended lists draw through
  * the objects pass's own sorted loop (`TransparentDepthPrePass`), which asks the batcher itself; every other Scene, a
  * blended list and a Scene whose active meshes are frozen keep Babylon's loop.
  */
@@ -60,14 +61,15 @@ function installSortedRender(): void {
   const renderSorted = groups._RenderSorted;
   groups._RenderSorted = (subMeshes, sortCompareFn, camera, transparent, disableDepthPrePass) => {
     const count = subMeshes.length;
-    const scene = !transparent && count > 1 ? subMeshes.data[0]!.getMesh().getScene() : undefined;
+    const scene = !transparent && count > 0 ? subMeshes.data[0]!.getMesh().getScene() : undefined;
     const batcher = scene && !scene._activeMeshesFrozenButKeepClipping ? batchers.get(scene) : undefined;
     if (!batcher) {
       renderSorted(subMeshes, sortCompareFn, camera, transparent, disableDepthPrePass);
       return;
     }
-    const sorted = count === subMeshes.data.length ? subMeshes.data : subMeshes.data.slice(0, count);
-    if (sortCompareFn) sorted.sort(sortCompareFn);
+    // A list of one needs no sort, so no copy either: the batcher reads `count` entries.
+    const sorted = count === 1 || count === subMeshes.data.length ? subMeshes.data : subMeshes.data.slice(0, count);
+    if (sortCompareFn && count > 1) sorted.sort(sortCompareFn);
     batcher.draw(sorted, count, false, renderOpaque);
   };
 }
