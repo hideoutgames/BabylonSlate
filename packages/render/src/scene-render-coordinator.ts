@@ -574,7 +574,8 @@ export class SceneRenderCoordinator {
     // A temporary check on current resources must recover on the next ready
     // frame without starting an unnecessary asynchronous preparation wait.
     // Dynamic geometry uploads remain behind successful scene admission.
-    const status = this.graph.readiness(camera);
+    // The scene probe that brought the frame here failed: the next frame's probes again, this one's would repeat it.
+    const status = this.graph.readiness(camera, false);
     if (status.preparationRequired) this.requestPreparation();
     return status;
   }

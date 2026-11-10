@@ -1104,6 +1104,54 @@ it("draws unvalidated frames without acknowledging them and re-probes a scene ch
   renderer.dispose();
 });
 
+it("probes once in the frame a mesh joins a Scene that casts shadows", async () => {
+  const { scene, engine, renderer } = host();
+  Object.assign(engine.getCaps(), { maxTextureSize: 4096, textureHalfFloatRender: true, textureHalfFloatLinearFiltering: true });
+  engine._features.supportCSM = true;
+  const sun = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
+  const controller = sceneShadowController(scene);
+  controller.register(sun, true);
+  setSceneRenderSettings(scene, { shadows: normalizeShadowSettings({ profile: "medium", cascades: 1 }) });
+  MeshBuilder.CreateBox("box", {}, scene);
+  await renderer.prepare();
+  await vi.waitFor(() => { expect(renderer.render(false)).toMatchObject({ rendered: true }); });
+  expect(renderer.render(false)).toMatchObject({ rendered: true });
+  const checks = renderer.strictReadinessChecks;
+  // The shadow controller learns of the mesh at the frame's admission, which stales readiness for its casters.
+  const added = MeshBuilder.CreateBox("added", {}, scene);
+  expect(renderer.render(false)).toMatchObject({ rendered: true });
+  expect(controller.generator(sun)?.getShadowMap()?.renderList).toContain(added);
+  expect(renderer.strictReadinessChecks).toBe(checks + 1);
+  expect(renderer.render(false)).toMatchObject({ rendered: true });
+  expect(renderer.strictReadinessChecks).toBe(checks + 1);
+  renderer.dispose();
+});
+
+it.each(["isReady", "render"] as const)("probes a Scene that is not ready once for each %s", async (probe) => {
+  const { scene, renderer } = host();
+  MeshBuilder.CreateBox("box", {}, scene);
+  await renderer.prepare();
+  expect(renderer.render(false)).toMatchObject({ rendered: true });
+  let ready = false;
+  const asked = vi.fn(() => ready);
+  scene.addIsReadyCheck({ isReady: asked });
+  const ask = () => probe === "isReady" ? renderer.isReady() : renderer.render(false).rendered;
+  for (let frame = 1; frame <= 3; frame += 1) {
+    const checks = renderer.strictReadinessChecks;
+    asked.mockClear();
+    expect(ask()).toBe(false);
+    expect(renderer.strictReadinessChecks).toBe(checks + 1);
+    expect(asked).toHaveBeenCalledOnce();
+  }
+  ready = true;
+  const checks = renderer.strictReadinessChecks;
+  expect(ask()).toBe(true);
+  expect(renderer.strictReadinessChecks).toBe(checks + 1);
+  expect(ask()).toBe(true);
+  expect(renderer.strictReadinessChecks).toBe(checks + 1);
+  renderer.dispose();
+});
+
 it.each(["isReady", "render"] as const)("applies a new shadow profile while %s is waiting for shaders", async (probe) => {
   const { scene, engine, renderer } = host();
   Object.assign(engine.getCaps(), { maxTextureSize: 4096, textureHalfFloatRender: true, textureHalfFloatLinearFiltering: true });
