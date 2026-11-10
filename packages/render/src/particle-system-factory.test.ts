@@ -1,4 +1,5 @@
 import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { Effect } from "@babylonjs/core/Materials/effect";
 import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
@@ -326,6 +327,69 @@ describe("particle-system-factory", () => {
     expect(remove).toHaveBeenCalledWith(add.mock.calls[0]![0]);
     system.dispose();
     expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  describe("a CPU system's wait for Babylon's default particle sources", () => {
+    const waits = (system: unknown) => (system as { _shadersLoaded: boolean })._shadersLoaded === false;
+    /** A particle Material whose effect creation is a no-op, and a system Babylon's own import never releases. */
+    function fixture() {
+      const { scene } = host();
+      vi.spyOn(ParticleSystem.prototype as unknown as { _initShaderSourceAsync: () => Promise<void> }, "_initShaderSourceAsync")
+        .mockResolvedValue();
+      const material = new NodeMaterial("sparks", scene);
+      material.mode = NodeMaterialModes.Particle;
+      const created = vi.fn();
+      material.createEffectForParticles = created;
+      return { scene, material, created };
+    }
+
+    it("starts with every system Babylon makes, until a later task", () => {
+      const { scene } = host();
+      const system = new ParticleSystem("fresh", 16, scene);
+      // The 9.29 layout `adoptLoadedParticleShaders` reads.
+      expect(waits(system)).toBe(true);
+      system.dispose();
+    });
+
+    it("ends as the system's Material binds, once the sources are loaded", async () => {
+      await Promise.all([import("@babylonjs/core/Shaders/particles.vertex"), import("@babylonjs/core/Shaders/particles.fragment")]);
+      const { scene, material, created } = fixture();
+      const system = createBabylonParticleSystem("spawned", scene, 16, false);
+      // Before the Material's effect exists a ready system would compile Babylon's default particle program.
+      created.mockImplementation(() => { expect(waits(system)).toBe(true); });
+      expect(waits(system)).toBe(true);
+      await bindParticleMaterial(system, material);
+      expect(created).toHaveBeenCalledOnce();
+      expect(waits(system)).toBe(false);
+      system.dispose();
+    });
+
+    it("lasts while a source is not loaded", async () => {
+      await Promise.all([import("@babylonjs/core/Shaders/particles.vertex"), import("@babylonjs/core/Shaders/particles.fragment")]);
+      const { scene, material } = fixture();
+      const store = ShaderStore.ShadersStore;
+      for (const name of ["particlesVertexShader", "particlesPixelShader"] as const) {
+        const source = store[name]!;
+        delete store[name];
+        try {
+          const system = createBabylonParticleSystem("early", scene, 16, false);
+          await bindParticleMaterial(system, material);
+          expect(waits(system)).toBe(true);
+          system.dispose();
+        } finally {
+          store[name] = source;
+        }
+      }
+    });
+
+    it("leaves a GPU system as Babylon made it", async () => {
+      const { scene, material } = fixture();
+      const system = createBabylonParticleSystem("gpu", scene, 16, true);
+      const before = (system as unknown as { _shadersLoaded?: boolean })._shadersLoaded;
+      await bindParticleMaterial(system, material);
+      expect((system as unknown as { _shadersLoaded?: boolean })._shadersLoaded).toBe(before);
+      system.dispose();
+    });
   });
 
   // The Material's build (a Custom GLSL particle Material links a probe effect before it is built) can outlast the

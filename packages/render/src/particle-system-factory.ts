@@ -1,8 +1,10 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Constants } from "@babylonjs/core/Engines/constants";
+import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { FactorGradient } from "@babylonjs/core/Misc/gradients";
@@ -390,6 +392,20 @@ export function boundParticlePreparation(
   };
 }
 
+/**
+ * Babylon 9.29 holds a CPU system unready (`_shadersLoaded`) until the dynamic import of the default particle sources
+ * its constructor starts has settled: a later task, even when those modules were evaluated long ago. A view's readiness
+ * probe asks every particle system, so each emitter made while the app runs (a Spawn Emitter's) held the image for the
+ * frames until then. With the sources in the shader store, that import has nothing left to provide.
+ */
+function adoptLoadedParticleShaders(system: IParticleSystem): void {
+  if (!(system instanceof ParticleSystem)) return;
+  const internals = system as unknown as { _shadersLoaded?: boolean };
+  if (internals._shadersLoaded !== false) return;
+  const store = ShaderStore.GetShadersStore(system.shaderLanguage === ShaderLanguage.WGSL ? ShaderLanguage.WGSL : ShaderLanguage.GLSL);
+  if (store.particlesVertexShader && store.particlesPixelShader) internals._shadersLoaded = true;
+}
+
 /** Settles a pending bind: with its successor's bind when one replaces it, or at once (a disposed system). */
 const pendingParticleMaterials = new WeakMap<IParticleSystem, (successor?: Promise<void>) => void>();
 
@@ -456,6 +472,8 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
     if (isDisposedNodeMaterial(material, scene)) throw new Error("Particle material was disposed before its build completed.");
     prepareNodeMaterialParticleBindings(material);
     material.createEffectForParticles(system);
+    // Only now: before its Material's effect exists, a ready system would compile Babylon's default particle program.
+    adoptLoadedParticleShaders(system);
     cancel();
   }).catch(fail);
   return ready;
