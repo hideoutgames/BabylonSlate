@@ -4,6 +4,7 @@ import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTa
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Material } from "@babylonjs/core/Materials/material";
 import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
@@ -27,6 +28,7 @@ import { drawOutsideSceneView } from "./render-target-capture";
 import { withDrawPass } from "./draw-passes";
 import { isRenderTargetCaptureCandidate } from "./render-target-capture-state";
 import { isMirrorSurfaceMesh } from "./mirror-surface-state";
+import { drawsInsidePlanes } from "./planar-mirror";
 import { isWaterSurfaceMesh } from "./water-mesh-surface";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { admittedSceneMeshes } from "./scene-stream-admission";
@@ -136,6 +138,9 @@ export class ReflectionProbes {
   private readonly position = new Vector3();
   private readonly lookAt = new Vector3();
   private readonly viewMatrix = Matrix.Identity();
+  private projection = Matrix.Identity();
+  private readonly viewProjection = Matrix.Identity();
+  private readonly planes = Frustum.GetPlanes(Matrix.Identity());
   private readonly beforeRender = () => this.update();
   private readonly meshesChanged = () => this.markDirty();
 
@@ -457,19 +462,37 @@ export class ReflectionProbes {
         scene.setSceneUniformBuffer(target.sceneUbos[face]!);
         scene.getSceneUniformBuffer().unbindEffect();
       }
-      const center = this.position.copyFrom(probe.min).addInPlace(probe.max).scaleInPlace(0.5);
-      center.addToRef(faceTargets[face]!, this.lookAt);
-      Matrix.LookAtLHToRef(center, this.lookAt, Vector3.Up(), this.viewMatrix);
-      const camera = scene.activeCamera;
-      const far = Math.max(camera?.maxZ ?? 1000, 1000);
-      const engine = scene.getEngine();
-      const projection = Matrix.PerspectiveFovLH(Math.PI / 2, 1, engine.useReverseDepthBuffer ? far : NEAR,
-        engine.useReverseDepthBuffer ? NEAR : far, engine.isNDCHalfZRange);
-      scene.setTransformMatrix(this.viewMatrix, projection);
+      const center = this.aimFace(probe, face);
+      scene.setTransformMatrix(this.viewMatrix, this.projection);
       if (target.sceneUbos.length) scene.finalizeSceneUbo();
       scene._forcedViewPosition = center;
     });
     texture.onAfterUnbindObservable.add(() => { scene._forcedViewPosition = null; });
+  }
+
+  /** Sets the view and projection a capture's face `face` draws with; returns the probe's centre, its eye. */
+  private aimFace(probe: Probe, face: number): Vector3 {
+    const center = this.position.copyFrom(probe.min).addInPlace(probe.max).scaleInPlace(0.5);
+    center.addToRef(faceTargets[face]!, this.lookAt);
+    Matrix.LookAtLHToRef(center, this.lookAt, Vector3.Up(), this.viewMatrix);
+    const far = Math.max(this.scene.activeCamera?.maxZ ?? 1000, 1000);
+    const engine = this.scene.getEngine();
+    this.projection = Matrix.PerspectiveFovLH(Math.PI / 2, 1, engine.useReverseDepthBuffer ? far : NEAR,
+      engine.useReverseDepthBuffer ? NEAR : far, engine.isNDCHalfZRange);
+    return center;
+  }
+
+  /**
+   * Leaves in `list` the capture's `meshes` its face `face` sees. Babylon culls no explicit list, so without this
+   * every face would draw every static mesh, the five it cannot see included.
+   */
+  private listFace(probe: Probe, face: number, meshes: readonly AbstractMesh[], list: AbstractMesh[]): void {
+    this.aimFace(probe, face);
+    this.viewMatrix.multiplyToRef(this.projection, this.viewProjection);
+    Frustum.GetPlanesToRef(this.viewProjection, this.planes);
+    let count = 0;
+    for (const mesh of meshes) if (drawsInsidePlanes(mesh, this.planes)) list[count++] = mesh;
+    list.length = count;
   }
 
   /**
@@ -487,7 +510,10 @@ export class ReflectionProbes {
     const { texture, face } = target.capture!;
     const meshes: AbstractMesh[] = [];
     for (const mesh of admittedSceneMeshes(this.scene) ?? this.scene.meshes) if (this.eligible(mesh)) meshes.push(mesh);
-    face.renderList = meshes;
+    // Every mesh while the target answers whether it is ready, then each face's own in turn (`listFace`), written by
+    // index: Babylon answers a list's own methods by dirtying every mesh's lights.
+    const seen = meshes.slice();
+    face.renderList = seen;
     // Each face draws with the view's own programs, then one pass stores it display-referred: a capture that drew
     // with image processing in its Materials compiled every one of them a second time.
     const linear = this.scene.imageProcessingConfiguration.applyByPostProcess;
@@ -511,6 +537,7 @@ export class ReflectionProbes {
             engine.setDepthBuffer(true);
             engine.setDepthWrite(true);
             engine.setColorWrite(true);
+            this.listFace(probe, this.face, meshes, seen);
             face.render(false);
             engine.bindFramebuffer(cube, this.face, undefined, undefined, true);
             conversion.draw(face);

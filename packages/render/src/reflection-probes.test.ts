@@ -178,9 +178,14 @@ function recordedCapture(scene: Scene, conversionReady: boolean) {
   const engine = scene.getEngine();
   const order: string[] = [];
   const views: string[] = [];
+  /** The meshes each check asked and each draw drew, by name. */
+  const asked: string[] = [];
+  const lists: string[] = [];
+  const names = (texture: RenderTargetTexture) => (texture.renderList ?? []).map((mesh) => mesh.name).join(",");
   vi.mocked(drawOutsideSceneView).mockImplementation((_scene, run) => run());
   // As Babylon's own check: it announces a draw of the target, with nothing drawn, to ask its meshes.
   vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockImplementation(function (this: RenderTargetTexture) {
+    asked.push(names(this));
     this.onBeforeRenderObservable.notifyObservers(0);
     this.onAfterUnbindObservable.notifyObservers(this);
     return true;
@@ -188,6 +193,7 @@ function recordedCapture(scene: Scene, conversionReady: boolean) {
   vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
     this.onBeforeRenderObservable.notifyObservers(0);
     views.push(scene.getViewMatrix().asArray().map((value) => Math.round(value)).join(","));
+    lists.push(names(this));
     order.push(`draw ${this.name}`);
   });
   vi.spyOn(engine, "bindFramebuffer").mockImplementation((target, face) => { order.push(`bind ${target.label ?? "cube"} face ${face}`); });
@@ -196,7 +202,7 @@ function recordedCapture(scene: Scene, conversionReady: boolean) {
   vi.spyOn(engine, "generateMipMapsForCubemap").mockImplementation((texture) => { order.push(`mips ${texture.isCube ? "cube" : "other"}`); });
   vi.spyOn(DisplayConversion.prototype, "ready").mockImplementation((linear) => { order.push(`conversion from linear: ${linear}`); return conversionReady; });
   vi.spyOn(DisplayConversion.prototype, "draw").mockImplementation((source) => { order.push(`convert ${source.name}`); });
-  return { order, views };
+  return { order, views, asked, lists };
 }
 
 it("draws each face with the view's programs, then stores it display-referred in the cube's face", async () => {
@@ -220,6 +226,19 @@ it("draws each face with the view's programs, then stores it display-referred in
   const released = vi.spyOn(DisplayConversion.prototype, "dispose");
   scene.dispose();
   expect(released).toHaveBeenCalledTimes(1);
+});
+
+it("draws in each face only the meshes it sees, after asking all of them whether they are ready", async () => {
+  const { scene, publish } = fixture();
+  MeshBuilder.CreateBox("east", {}, scene).position.x = 3;
+  MeshBuilder.CreateBox("above", {}, scene).position.y = 3;
+  // A frame boundary: a mesh compares its transform once under a render id.
+  scene.incrementRenderId();
+  const { asked, lists } = recordedCapture(scene, true);
+  await publish([8, 4, 8]);
+  expect(asked).toEqual(["inside,east,above"]);
+  // Faces look along +X, -X, -Y, +Y, +Z and -Z from the probe's centre, which the first box surrounds.
+  expect(lists).toEqual(["inside,east", "inside", "inside", "inside,above", "inside", "inside"]);
 });
 
 it("captures again after a capture: the readiness check before the six draws announces a draw too", async () => {
