@@ -499,6 +499,9 @@ export class ReflectionProbes {
         let ready = false;
         drawBorrowedTarget(this.scene, face, () => {
           const engine = this.scene.getEngine();
+          // Babylon's check announces a draw of the target to ask its meshes, so it needs a face to look along: the
+          // loop below leaves none.
+          this.face = 0;
           ready = conversion.ready(linear) && face.isReadyForRendering();
           if (!ready) return;
           const cube = texture.renderTarget!;
