@@ -16,6 +16,7 @@ import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/node
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { ALPHA_COVERAGE_UNIFORM, coverageClip, drawsAlphaCoverage } from "./alpha-to-coverage";
 import { geometryOutputWrite } from "./geometry-surface-output-block";
+import { DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TINT_KIND, drawBatchValue } from "./draw-batch-world-block";
 import { overlayVisualStyle } from "./overlay-visual-style";
 
 /**
@@ -209,6 +210,8 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
     if (this.textured) state._emit2DSampler(U.sampler);
     state._emitUniformFromString(U.color, Types.Vector4);
     state._emitUniformFromString(U.alpha, Types.Vector4);
+    // The mesh's colour and alpha: bound, or a draw batch's own per vertex.
+    const meshColor = drawBatchValue(state, DRAW_BATCH_COLOR_KIND, U.color);
     if (!wgsl) state._emitExtension("derivatives", "#extension GL_OES_standard_derivatives : enable");
     const sample = state._getFreeVariableName("unlitSample");
     const position = this.worldPosition.associatedVariableName;
@@ -233,11 +236,11 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
       state.compilationString += `${declare(fill)} = clamp((${distance} - 0.5) / ${pixel} + 0.5, 0.0, 1.0);\n`;
       state.compilationString += `${declare(outline)} = ${fill};\n`;
       state.compilationString += `if (${u}${U.msdf}.w > 0.0) { ${outline} = clamp((${distance} - 0.5 + ${u}${U.msdf}.w) / ${pixel} + 0.5, 0.0, 1.0); }\n`;
-      state.compilationString += `${state._declareOutput(this.rgb)} = mix(${u}${U.msdf}.rgb, ${u}${U.color}.rgb, ${fill});\n`;
-      state.compilationString += `${state._declareOutput(this.a)} = ${u}${U.color}.a * max(${fill}, ${outline});\n`;
+      state.compilationString += `${state._declareOutput(this.rgb)} = mix(${u}${U.msdf}.rgb, ${meshColor}.rgb, ${fill});\n`;
+      state.compilationString += `${state._declareOutput(this.a)} = ${meshColor}.a * max(${fill}, ${outline});\n`;
     } else {
-      state.compilationString += `${state._declareOutput(this.rgb)} = ${u}${U.color}.rgb * ${sample}.rgb;\n`;
-      state.compilationString += `${state._declareOutput(this.a)} = ${u}${U.color}.a * mix(1.0, ${sample}.a, ${u}${U.alpha}.z);\n`;
+      state.compilationString += `${state._declareOutput(this.rgb)} = ${meshColor}.rgb * ${sample}.rgb;\n`;
+      state.compilationString += `${state._declareOutput(this.a)} = ${meshColor}.a * mix(1.0, ${sample}.a, ${u}${U.alpha}.z);\n`;
     }
     if (this.vertexColor.isConnected) {
       const color = this.vertexColor.associatedVariableName;
@@ -273,9 +276,11 @@ export class UnlitFinishBlock extends NodeMaterialBlock {
     state._emitUniformFromString(U.finish, Types.Vector4);
     state._emitUniformFromString(U.tint, Types.Vector4);
     const u = state.shaderLanguage === 1 ? "uniforms." : "";
+    // The overlay style's tint: bound, or a draw batch's own per vertex.
+    const tint = drawBatchValue(state, DRAW_BATCH_TINT_KIND, U.tint);
     const output = this.output.associatedVariableName;
     state.compilationString += `${state._declareOutput(this.output)} = ${this.input.associatedVariableName};\n`;
-    state.compilationString += `${output}.a *= ${u}${U.finish}.x;\n${output} *= ${u}${U.tint};\n`;
+    state.compilationString += `${output}.a *= ${u}${U.finish}.x;\n${output} *= ${tint};\n`;
     return this;
   }
 }

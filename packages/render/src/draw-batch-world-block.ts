@@ -15,6 +15,13 @@ import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
  */
 export const DRAW_BATCH_WORLD_KINDS = ["batchWorld0", "batchWorld1", "batchWorld2"] as const;
 
+/**
+ * The vertex attributes a draw batch's mesh carries its members' own colour and tint in (`drawBatchValue`): values a
+ * member's draw binds, which differ between members that otherwise draw the same.
+ */
+export const DRAW_BATCH_COLOR_KIND = "batchColor";
+export const DRAW_BATCH_TINT_KIND = "batchTint";
+
 const batchMeshes = new WeakSet<AbstractMesh>();
 
 /** Marks `mesh` as a draw batch's: its Material draws it with each vertex's own world matrix (`DrawBatchWorldBlock`). */
@@ -73,4 +80,32 @@ export function drawBatchWorld(name: string, instances: InstancesBlock, blocks: 
   instances.output.connectTo(world.world);
   blocks.push(world);
   return world.output;
+}
+
+/**
+ * Fragment: a per-mesh vec4 that a draw batch's mesh carries with each vertex instead of binding it. Under `HAPTIC_BATCH`
+ * the value is the vertex attribute `kind`, handed on flat: every vertex of a member holds the same value, and a flat
+ * varying gives the fragment stage exactly it, where an interpolated one could round. Every other draw reads `uniform`.
+ * Returns a local that holds the value, for the block's code to use in place of the uniform.
+ */
+export function drawBatchValue(state: NodeMaterialBuildState, kind: string, uniform: string): string {
+  const wgsl = state.shaderLanguage === ShaderLanguage.WGSL;
+  const vertex = state._vertexState;
+  const varying = `v_${kind}`;
+  if (!vertex.attributes.includes(kind)) {
+    vertex.attributes.push(kind);
+    vertex._attributeDeclaration += `#ifdef HAPTIC_BATCH\nattribute ${wgsl ? `${kind}: vec4f` : `vec4 ${kind}`};\n#endif\n`;
+    state._emitVaryingFromString(varying, Types.Vector4, "HAPTIC_BATCH");
+    // GLSL `varying vec4 v;` and WGSL `varying v: vec4f;`, which Babylon's processors turn into `flat in/out` and
+    // `@interpolate(flat)`.
+    const declaration = new RegExp(`(^|\\n)varying (\\w+ ${varying};|${varying}:)`, "g");
+    const shared = state.sharedData;
+    shared.varyingDeclaration = shared.varyingDeclaration.replace(declaration, "$1flat varying $2");
+    shared.varyingDeclarationFragment = shared.varyingDeclarationFragment.replace(declaration, "$1flat varying $2");
+    vertex.compilationString += `#ifdef HAPTIC_BATCH\n${wgsl ? "vertexOutputs." : ""}${varying} = ${wgsl ? "vertexInputs." : ""}${kind};\n#endif\n`;
+  }
+  const local = state._getFreeVariableName(`${kind}Value`);
+  const declared = state._declareLocalVar(local, Types.Vector4);
+  state.compilationString += `#ifdef HAPTIC_BATCH\n${declared} = ${varying};\n#else\n${declared} = ${wgsl ? "uniforms." : ""}${uniform};\n#endif\n`;
+  return local;
 }

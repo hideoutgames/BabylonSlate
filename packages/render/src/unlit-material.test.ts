@@ -121,6 +121,18 @@ describe("unlit Material", () => {
     // The position is transformed by it.
     expect(vertex).toContain(`= ${world![1]} * vec4(position, 1.0)`);
     expect(batch.subMeshes[0]!.effect!.getAttributesNames()).toEqual(expect.arrayContaining(rows));
+    // The mesh's colour and tint come with each vertex too, handed to the fragment stage flat, in place of the bound
+    // values; every other draw reads the uniforms.
+    const fragment = material.compiledShaders.split("// Fragment shader")[1]!.replace(/\s+/g, " ");
+    for (const [kind, uniform] of [["batchColor", "unlitColor"], ["batchTint", "unlitTint"]] as const) {
+      expect(vertex).toContain(`#ifdef HAPTIC_BATCH attribute vec4 ${kind}; #endif`);
+      expect(vertex).toContain(`#ifdef HAPTIC_BATCH v_${kind} = ${kind}; #endif`);
+      for (const stage of [vertex, fragment]) expect(stage).toContain(`#ifdef HAPTIC_BATCH flat varying vec4 v_${kind}; #endif`);
+      const value = fragment.match(new RegExp(`#ifdef HAPTIC_BATCH vec4 (\\w+) = v_${kind}; #else vec4 \\1 = ${uniform}; #endif`));
+      expect(value, kind).not.toBeNull();
+      // Nothing else reads the uniform.
+      expect(fragment.split(uniform).length - 1, kind).toBe(2);
+    }
     const own = member.subMeshes[0]!.effect!.defines, batched = batch.subMeshes[0]!.effect!.defines;
     expect(own).not.toContain("#define HAPTIC_BATCH");
     expect(batched).toContain("#define HAPTIC_BATCH\n");

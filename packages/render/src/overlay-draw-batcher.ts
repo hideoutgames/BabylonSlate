@@ -9,7 +9,7 @@ import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import type { FloatArray, IndicesArray } from "@babylonjs/core/types";
 import type { OverlayLayoutRect } from "@haptic/core";
-import { DRAW_BATCH_WORLD_KINDS, markDrawBatchMesh } from "./draw-batch-world-block";
+import { DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TINT_KIND, DRAW_BATCH_WORLD_KINDS, markDrawBatchMesh } from "./draw-batch-world-block";
 import { sceneDrawBatcher, setSceneDrawBatcher, type SceneDrawBatcher } from "./draw-batching";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { disableOverlayClipScissor, enableOverlayClipScissor, overlayDrawClip } from "./overlay-layout-render";
@@ -27,8 +27,10 @@ import { setUnlitBinding, unlitBinding, type UnlitBinding } from "./unlit-materi
  *   no common pixel blend and depth-test the same in either order, so only non-overlapping draws move. A draw whose
  *   bounds cannot be trusted (skinning, morphs, a lattice, instances, a vertex stage that moves vertices) overlaps
  *   everything.
- * - **Values.** A batch's members draw the same Material and Effect and bind the same values: the unlit binding,
- *   visibility, overlay style, side orientation and clip (one scissor). The batch mesh binds them as its first member.
+ * - **Values.** A batch's members draw the same Material and Effect and bind the same values: the unlit binding's
+ *   texture and alpha rules, visibility, side orientation and clip (one scissor), which the batch mesh binds as its
+ *   first member. Each member's own colour, alpha and overlay tint go with its vertices (`drawBatchValue`), so members
+ *   that differ in those alone still share a draw.
  * - **Vertices.** A batch holds its members' own vertices and, for each vertex, the rows of its member's world
  *   matrix as the member's draw uploads them (the floating origin's translation minus the eye, then 32-bit). The
  *   Material's vertex stage builds the world matrix from those for a batch's mesh (`DrawBatchWorldBlock`), so every
@@ -116,6 +118,9 @@ interface Slot {
   /** Each vertex's world matrix, three rows of four floats, in `worldBuffer` (the `DRAW_BATCH_WORLD_KINDS` attributes). */
   worlds: Float32Array;
   worldBuffer: Buffer | null;
+  /** Each vertex's colour with alpha, then its tint: eight floats, in `styleBuffer` (the two style attributes). */
+  styles: Float32Array;
+  styleBuffer: Buffer | null;
   indices: Uint16Array | Uint32Array;
   vertexCount: number;
   indexCount: number;
@@ -234,6 +239,8 @@ function boundPositions(bake: Bake): void {
 
 /** Floats of a world matrix a batch carries per vertex: three rows. */
 const WORLD_FLOATS = 12;
+/** Floats of a member's own values a batch carries per vertex: its colour with alpha, then its tint. */
+const STYLE_FLOATS = 8;
 
 /**
  * The first three rows of `world` as a draw uploads it (`OffsetWorldToRef`, then 32 bits), into `rows`; null for a
@@ -258,11 +265,14 @@ function sameColor(a: readonly number[], b: readonly number[]): boolean {
   return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 }
 
-/** Whether two unlit bindings bind the same values (`bindUnlitUniforms`). */
+/**
+ * Whether two unlit bindings bind the same values (`bindUnlitUniforms`) but for the colour and alpha, which a batch
+ * carries per vertex.
+ */
 function sameBinding(a: UnlitBinding, b: UnlitBinding): boolean {
   if (a === b) return true;
-  if (a.texture !== b.texture || !sameColor(a.color, b.color) || a.alpha !== b.alpha || a.cutoff !== b.cutoff || a.blend !== b.blend ||
-    a.textureAlpha !== b.textureAlpha || a.twoSided !== b.twoSided) return false;
+  if (a.texture !== b.texture || a.cutoff !== b.cutoff || a.blend !== b.blend || a.textureAlpha !== b.textureAlpha || a.twoSided !== b.twoSided)
+    return false;
   if (!a.msdf || !b.msdf) return !a.msdf && !b.msdf;
   return sameColor(a.msdf.strokeColor, b.msdf.strokeColor) && a.msdf.strokeWidth === b.msdf.strokeWidth;
 }
@@ -278,10 +288,7 @@ function sameDraw(a: Entry, b: Entry): boolean {
   if (a.material !== b.material || !sameClip(a.clip, b.clip) || (a.uvs === null) !== (b.uvs === null)) return false;
   const meshA = a.mesh!, meshB = b.mesh!;
   if (meshA.visibility !== meshB.visibility || meshA.sideOrientation !== meshB.sideOrientation) return false;
-  if (!sameBinding(a.binding!, b.binding!)) return false;
-  const styleA = overlayVisualStyle(meshA), styleB = overlayVisualStyle(meshB);
-  return styleA === styleB || (styleA.opacity === styleB.opacity && styleA.tint[0] === styleB.tint[0] && styleA.tint[1] === styleB.tint[1] &&
-    styleA.tint[2] === styleB.tint[2] && styleA.tint[3] === styleB.tint[3]);
+  return sameBinding(a.binding!, b.binding!);
 }
 
 /** Whether `mesh`'s bounding box contains what it draws: no skinning, morphs, lattice, instances or moving vertex stage. */
@@ -324,6 +331,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   private cursorFrame = -1;
   private disposed = false;
   private readonly scratchCorner = { x: 0, y: 0, z: 0 };
+  private readonly scratchStyle = new Float32Array(STYLE_FLOATS);
   private readonly scratchViewport = new Viewport(0, 0, 1, 1);
 
   constructor(scene: Scene) {
@@ -381,6 +389,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     for (const slot of this.slots) {
       slot.mesh.dispose(false, false);
       slot.worldBuffer?.dispose();
+      slot.styleBuffer?.dispose();
     }
     this.slots.length = 0;
     this.entries.length = 0;
@@ -611,7 +620,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       markDrawBatchMesh(mesh);
       slot = {
         mesh, textured, vertexCapacity: 0, indexCapacity: 0, positions: new Float32Array(0), uvs: null, worlds: new Float32Array(0),
-        worldBuffer: null, indices: new Uint16Array(0), vertexCount: 0, indexCount: 0, memberEffect: null, batchEffect: null,
+        worldBuffer: null, styles: new Float32Array(0), styleBuffer: null, indices: new Uint16Array(0), vertexCount: 0, indexCount: 0, memberEffect: null, batchEffect: null,
       };
       this.slots.push(slot);
     }
@@ -624,7 +633,10 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     return slot;
   }
 
-  /** Writes the members' vertices, world matrices, UVs and indices into the slot's buffers, uploading only what changed. */
+  /**
+   * Writes the members' vertices, world matrices, colours and tints, UVs and indices into the slot's buffers, uploading
+   * only the buffers whose contents changed: a member that moves uploads the world matrices alone, a tint the styles.
+   */
   private fill(slot: Slot, members: readonly Entry[]): void {
     let vertexCount = 0, indexCount = 0;
     for (const entry of members) {
@@ -639,40 +651,51 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       slot.positions = new Float32Array(slot.vertexCapacity * 3);
       slot.uvs = slot.textured ? new Float32Array(slot.vertexCapacity * 2) : null;
       slot.worlds = new Float32Array(slot.vertexCapacity * WORLD_FLOATS);
+      slot.styles = new Float32Array(slot.vertexCapacity * STYLE_FLOATS);
       slot.indices = slot.vertexCapacity > 65536 ? new Uint32Array(slot.indexCapacity) : new Uint16Array(slot.indexCapacity);
     }
-    const { positions, uvs, worlds, indices } = slot;
-    let changed = grow || vertexCount !== slot.vertexCount || indexCount !== slot.indexCount;
+    const { positions, uvs, worlds, styles, indices } = slot;
+    // Another count of vertices or indices is drawn from every buffer anew.
+    const resized = grow || vertexCount !== slot.vertexCount || indexCount !== slot.indexCount;
+    let positionsChanged = resized, worldsChanged = resized, stylesChanged = resized, uvsChanged = resized, indicesChanged = resized;
+    const style = this.scratchStyle;
     let vertex = 0, index = 0;
     for (const entry of members) {
       const own = entry.bake!.copy, world = entry.bake!.world!;
       const memberVertices = own.length / 3;
       for (let offset = 0, at = vertex * 3; offset < own.length; offset += 1, at += 1) {
         const value = own[offset]!;
-        if (positions[at] !== value) { positions[at] = value; changed = true; }
+        if (positions[at] !== value) { positions[at] = value; positionsChanged = true; }
       }
       for (let offset = 0, at = vertex * WORLD_FLOATS; offset < memberVertices * WORLD_FLOATS; offset += 1, at += 1) {
         const value = world[offset % WORLD_FLOATS]!;
-        if (worlds[at] !== value) { worlds[at] = value; changed = true; }
+        if (worlds[at] !== value) { worlds[at] = value; worldsChanged = true; }
+      }
+      // What the member's own draw binds (`bindUnlitUniforms`), rounded to 32 bits as an upload rounds it.
+      const binding = entry.binding!, { opacity, tint } = overlayVisualStyle(entry.mesh!);
+      style[0] = binding.color[0]; style[1] = binding.color[1]; style[2] = binding.color[2]; style[3] = binding.alpha;
+      style[4] = tint[0]; style[5] = tint[1]; style[6] = tint[2]; style[7] = tint[3] * opacity;
+      for (let offset = 0, at = vertex * STYLE_FLOATS; offset < memberVertices * STYLE_FLOATS; offset += 1, at += 1) {
+        const value = style[offset % STYLE_FLOATS]!;
+        if (styles[at] !== value) { styles[at] = value; stylesChanged = true; }
       }
       if (uvs) {
         const source = entry.uvs!;
         for (let offset = 0, at = vertex * 2; offset < memberVertices * 2; offset += 1, at += 1) {
           const value = Math.fround(source[offset]!);
-          if (uvs[at] !== value) { uvs[at] = value; changed = true; }
+          if (uvs[at] !== value) { uvs[at] = value; uvsChanged = true; }
         }
       }
       const source = entry.indices!;
       for (let offset = 0, at = index; offset < source.length; offset += 1, at += 1) {
         const value = source[offset]! + vertex;
-        if (indices[at] !== value) { indices[at] = value; changed = true; }
+        if (indices[at] !== value) { indices[at] = value; indicesChanged = true; }
       }
       vertex += memberVertices;
       index += source.length;
     }
     slot.vertexCount = vertex;
     slot.indexCount = index;
-    if (!changed) return;
     if (grow) {
       const blocked = mesh.getScene()._blockEntityCollection;
       mesh.getScene()._blockEntityCollection = true;
@@ -680,21 +703,24 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
         mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
         if (uvs) mesh.setVerticesData(VertexBuffer.UVKind, uvs, true);
         else if (mesh.isVerticesDataPresent(VertexBuffer.UVKind)) mesh.removeVerticesData(VertexBuffer.UVKind);
-        // One buffer for the three rows; its views do not own it.
-        const previous = slot.worldBuffer;
-        const buffer = slot.worldBuffer = new Buffer(mesh.getEngine(), worlds, true, WORLD_FLOATS);
-        DRAW_BATCH_WORLD_KINDS.forEach((kind, row) => mesh.setVerticesBuffer(buffer.createVertexBuffer(kind, row * 4, 4)));
-        previous?.dispose();
+        // One buffer for the world rows and one for the colour and tint; their views do not own them.
+        const previous = [slot.worldBuffer, slot.styleBuffer];
+        const world = slot.worldBuffer = new Buffer(mesh.getEngine(), worlds, true, WORLD_FLOATS);
+        DRAW_BATCH_WORLD_KINDS.forEach((kind, row) => mesh.setVerticesBuffer(world.createVertexBuffer(kind, row * 4, 4)));
+        const styled = slot.styleBuffer = new Buffer(mesh.getEngine(), styles, true, STYLE_FLOATS);
+        [DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TINT_KIND].forEach((kind, part) => mesh.setVerticesBuffer(styled.createVertexBuffer(kind, part * 4, 4)));
+        for (const buffer of previous) buffer?.dispose();
         mesh.setIndices(indices, slot.vertexCapacity, true);
       } finally {
         mesh.getScene()._blockEntityCollection = blocked;
       }
     } else {
       // In place: the buffers (and their vertex array objects) stay. Whole arrays, which the buffers keep for a rebuild.
-      mesh.getVertexBuffer(VertexBuffer.PositionKind)!.updateDirectly(positions, 0);
-      if (uvs) mesh.getVertexBuffer(VertexBuffer.UVKind)!.updateDirectly(uvs, 0);
-      slot.worldBuffer!.updateDirectly(worlds, 0);
-      mesh.updateIndices(indices, 0, true);
+      if (positionsChanged) mesh.getVertexBuffer(VertexBuffer.PositionKind)!.updateDirectly(positions, 0);
+      if (uvs && uvsChanged) mesh.getVertexBuffer(VertexBuffer.UVKind)!.updateDirectly(uvs, 0);
+      if (worldsChanged) slot.worldBuffer!.updateDirectly(worlds, 0);
+      if (stylesChanged) slot.styleBuffer!.updateDirectly(styles, 0);
+      if (indicesChanged) mesh.updateIndices(indices, 0, true);
     }
     const subMesh = mesh.subMeshes[0]!;
     subMesh.verticesStart = 0;
