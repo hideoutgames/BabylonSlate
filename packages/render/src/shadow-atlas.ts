@@ -12,6 +12,7 @@ import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTa
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Matrix, Vector2, Vector3, Vector4 } from "@babylonjs/core/Maths/math.vector";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { SHADOW_CAPACITY_PROFILES, type ShadowProfile } from "@haptic/core";
 import { deviceProfile } from "./device-profile";
@@ -490,6 +491,21 @@ export class AtlasShadowGenerator extends ShadowGenerator implements AtlasShadow
   /** The first tile, in texels of the atlas. */
   get tile(): ShadowAtlasTile {
     return this.placement.tiles[0]!;
+  }
+
+  /**
+   * One depth program draws a caster for every local light. Babylon names the light's class in a define no shader
+   * reads, and has a point light's casters write their distance to the light as colour, which the atlas has no
+   * attachment for (it is depth only): without the first and with the second off, a spot light's tile and a point
+   * light's faces ask a caster for the same defines, so the same program.
+   */
+  protected override _isReadyCustomDefines(defines: string[], subMesh: SubMesh, useInstances: boolean): void {
+    super._isReadyCustomDefines(defines, subMesh, useInstances);
+    for (let index = defines.length - 1; index >= 0; index -= 1) {
+      const define = defines[index]!;
+      if (define.startsWith("#define SM_LIGHTTYPE_")) defines.splice(index, 1);
+      else if (define.startsWith("#define SM_USEDISTANCE ")) defines[index] = "#define SM_USEDISTANCE 0";
+    }
   }
 
   get drawnViews(): readonly Matrix[] {

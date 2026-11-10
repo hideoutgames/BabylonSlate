@@ -265,6 +265,24 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(read("hapticFillDirection", 4)[3]).toBe(0);
   });
 
+  it("asks a caster for the same depth defines for a spot light's tile and a point light's faces", () => {
+    const { engine, scene } = host();
+    engine._features.supportShadowSamplers = true;
+    const caster = MeshBuilder.CreateBox("caster", {}, scene);
+    const spot = createAtlasShadowGenerator(new SpotLight("spot", new Vector3(0, 4, 0), new Vector3(0, -1, 0), Math.PI / 2, 2, scene), EDGE / 4, EDGE)!;
+    const point = createAtlasShadowGenerator(new PointLight("point", new Vector3(0, 4, 0), scene), EDGE / 4, EDGE)!;
+    const defines = (generator: ShadowGenerator) => {
+      generator.usePercentageCloserFiltering = true;
+      return (generator as unknown as { _prepareShadowDefines(subMesh: unknown, instances: boolean, defines: string[], transparent: boolean): string[] })
+        ._prepareShadowDefines(caster.subMeshes[0]!, false, [], false);
+    };
+    // One program then draws the caster into both: Babylon's light-class define, which no shader reads, is gone, and
+    // the point light's casters write no distance, a colour the depth-only atlas has no attachment for.
+    expect(defines(point)).toEqual(defines(spot));
+    expect(defines(point).filter((define) => define.includes("SM_LIGHTTYPE_"))).toEqual([]);
+    expect(defines(point).filter((define) => define.includes("SM_USEDISTANCE"))).toEqual(["#define SM_USEDISTANCE 0"]);
+  });
+
   it("names each spot light's shadow view of the atlas in its record, after the sun's: its transform, tile, darkness, filter and Contact Hardening's terms", () => {
     const { engine, scene } = host();
     // WebGL2's compare samplers, which Babylon needs for PCF and Contact Hardening (NullEngine has none).
