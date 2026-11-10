@@ -809,6 +809,16 @@ export interface FeatureTestCheckSceneResult {
     presentation: PlayPresentation | null;
     /** Shaders first drawn after the scene presented, read when its commands finished (WebGL2 only). */
     firstDraws: NonNullable<RenderDiagnostics["firstDraws"]> | null;
+    /**
+     * The same, read before a Benchmark's, Breakdown's or Profile's sweep began: what ordinary Play first drew after
+     * its load. `firstDraws` then also counts what each of the sweep's quality changes first drew. Absent otherwise.
+     */
+    firstDrawsBeforeSweep?: NonNullable<RenderDiagnostics["firstDraws"]> | null;
+    /**
+     * The world renderer's work while Play was sampled, and the frames the view drew then; absent where the view
+     * reports neither.
+     */
+    work?: { drawn: number; work: SampledRendererWork } | null;
     commands: FeatureTestCheckCommandResult[];
     benchmark: FeatureTestBenchmarkSample[];
     /** A Profile's instance pool and end-of-run restore check; absent for other modes. */
@@ -1159,15 +1169,20 @@ async function checkScene(
     result.play.status = "loaded";
     deps.onProgress?.(`${scene.name}: measuring Play`);
     const before = presentationCounts(play);
+    const workBefore = play.snapshot().rendering?.rendererWork;
     const sampled = await sampleWithCounters(play, deps.sampleFrames(limits.playSampleMs, signal), deps, signal);
     result.play.frames = sampled.frames;
     result.play.counters = { draws: sampled.draws, cpuMs: sampled.cpu, gpuMs: sampled.gpu };
     result.play.runtimeFps = play.runtimeFps();
     result.play.snapshot = play.snapshot();
+    const sampledWork = rendererWorkSince(workBefore, result.play.snapshot.rendering?.rendererWork);
+    const drawnAfter = presentationCounts(play);
+    result.play.work = sampledWork && before && drawnAfter ? { drawn: drawnAfter.drawn - before.drawn, work: sampledWork } : null;
     result.play.presentation = await samplePresentation(play, before, deps, signal);
     result.problems.push(...presentationProblems(result.play.presentation));
     const run = (line: string) => runCommand(play, line, deps, signal, limits);
     if (mode === "benchmark" || mode === "breakdown" || mode === "profile") {
+      result.play.firstDrawsBeforeSweep = play.snapshot().rendering?.firstDraws ?? null;
       if (mode === "profile") result.play.profile = { instancePool: null, endChanges: null, holdRate: null };
       await benchmarkProfiles(scene.name, mode, method, play, run, deps, signal, limits, result.play.benchmark, result.play.profile);
       for (const sample of result.play.benchmark) {
@@ -1336,6 +1351,7 @@ function rendererWorkSince(
     shadowAdmissions: after.shadowAdmissions - before.shadowAdmissions,
     shadowAdmissionMs: after.shadowAdmissionMs - before.shadowAdmissionMs,
     strictReadinessChecks: after.strictReadinessChecks - before.strictReadinessChecks,
+    readinessProbeMs: after.readinessProbeMs - before.readinessProbeMs,
     outlineReadinessChecks: after.outlineReadinessChecks - before.outlineReadinessChecks,
   };
 }

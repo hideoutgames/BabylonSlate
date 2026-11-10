@@ -1,6 +1,7 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Observer } from "@babylonjs/core/Misc/observable";
+import { currentDrawPass, type DrawPass } from "./draw-passes";
 
 /**
  * Late first draws: Effects drawn for the first time on an Engine once a Play world view presents, and how long the
@@ -33,7 +34,12 @@ export type LongFrame = {
   firstDraws: number;
   /** Effects the Engine created (compiled or started compiling) in it. */
   compiles: number;
+  /** Its first draws by the pass that made them (`FirstDrawStats.passes`); absent when it held none. */
+  passes?: FirstDrawPasses;
 };
+
+/** First draws by the pass that made them (`draw-passes.ts`); `other` also holds those outside a view's frame. */
+export type FirstDrawPasses = Partial<Record<DrawPass, number>>;
 
 export type FirstDrawStats = {
   /** Effects first drawn while counting. */
@@ -46,6 +52,8 @@ export type FirstDrawStats = {
   stalls: number;
   /** Most first draws in one frame. */
   mostInFrame: number;
+  /** The first draws by the pass that made them: which of a view's passes the late programs belong to. */
+  passes: FirstDrawPasses;
   /** Longest frame that held a first draw, from its start to the next frame's start (0 before one finished). */
   worstFrameMs: number;
   /** Frames counted, with or without a first draw, longer than `FIRST_DRAW_STALL_MS`. */
@@ -79,6 +87,7 @@ type Session = {
   held: WeakSet<Effect> | null;
   /** First draws and Effects created in the current frame, when it began and when its Engine frame ended. */
   inFrame: number;
+  passesInFrame: FirstDrawPasses;
   compilesInFrame: number;
   frameStart: number;
   engineEnd: number | null;
@@ -102,6 +111,9 @@ export function trackFirstDraws(engine: AbstractEngine): void {
       session.stats.draws += 1;
       if (session.held.has(current)) session.stats.loadCompiled += 1;
       session.inFrame += 1;
+      const pass = currentDrawPass() ?? "other";
+      session.stats.passes[pass] = (session.stats.passes[pass] ?? 0) + 1;
+      session.passesInFrame[pass] = (session.passesInFrame[pass] ?? 0) + 1;
     }
   };
   const drawElements = target.drawElementsType;
@@ -140,8 +152,8 @@ export function openFirstDrawStats(engine: AbstractEngine): FirstDrawSession | n
   const tracker = trackers.get(engine);
   if (!tracker) return null;
   const session: Session = {
-    stats: { draws: 0, loadCompiled: 0, frames: 0, stalls: 0, mostInFrame: 0, worstFrameMs: 0, longFrames: 0, longest: [] },
-    held: null, inFrame: 0, compilesInFrame: 0, frameStart: 0, engineEnd: null,
+    stats: { draws: 0, loadCompiled: 0, frames: 0, stalls: 0, mostInFrame: 0, passes: {}, worstFrameMs: 0, longFrames: 0, longest: [] },
+    held: null, inFrame: 0, passesInFrame: {}, compilesInFrame: 0, frameStart: 0, engineEnd: null,
   };
   /** `whole` is false for the frame a pause cuts short: its first draws count, its length does not make it long. */
   const finishFrame = (now: number, whole: boolean) => {
@@ -157,10 +169,12 @@ export function openFirstDrawStats(engine: AbstractEngine): FirstDrawSession | n
       stats.longFrames += 1;
       const frame: LongFrame = {
         ms, engineMs: (session.engineEnd ?? now) - session.frameStart, firstDraws: session.inFrame, compiles: session.compilesInFrame,
+        ...(session.inFrame > 0 ? { passes: session.passesInFrame } : {}),
       };
       stats.longest = [...stats.longest, frame].sort((a, b) => b.ms - a.ms).slice(0, LONG_FRAMES_KEPT);
     }
     session.inFrame = 0;
+    session.passesInFrame = {};
     session.compilesInFrame = 0;
     session.frameStart = now;
     session.engineEnd = null;
@@ -183,6 +197,7 @@ export function openFirstDrawStats(engine: AbstractEngine): FirstDrawSession | n
       const compiled = (engine as unknown as DrawEngine)._compiledEffects ?? {};
       session.held = new WeakSet(Object.values(compiled));
       session.inFrame = 0;
+      session.passesInFrame = {};
       session.compilesInFrame = 0;
       session.frameStart = performance.now();
       session.engineEnd = null;
@@ -192,7 +207,7 @@ export function openFirstDrawStats(engine: AbstractEngine): FirstDrawSession | n
       ];
     },
     pause,
-    stats: () => ({ ...session.stats, longest: session.stats.longest.map((frame) => ({ ...frame })) }),
+    stats: () => ({ ...session.stats, passes: { ...session.stats.passes }, longest: session.stats.longest.map((frame) => ({ ...frame })) }),
     close() {
       pause();
       tracker.sessions.delete(session);

@@ -7,6 +7,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import { createTestEngine } from "./test-support/test-engine";
+import { beginDrawPassFrame, DrawPassFrame, endDrawPassFrame, withDrawPass } from "./draw-passes";
 import { FIRST_DRAW_STALL_MS, LONG_FRAMES_KEPT, openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
 
 /** A Standard Material whose defines differ from a plain lit one's, so it compiles an Effect of its own. */
@@ -65,6 +66,34 @@ describe("first draw stats", () => {
     await spawned.material.forceCompilationAsync(spawned);
     frame();
     expect(session.stats()).toMatchObject({ draws: 2, loadCompiled: 1 });
+    session.close();
+  });
+
+  it("counts each first draw to the pass that made it, in the session and in its long frame", async () => {
+    const { engine, scene, frame } = setup();
+    frame();
+    const session = openFirstDrawStats(engine)!;
+    session.resume();
+    const spawned = MeshBuilder.CreateBox("spawned", {}, scene);
+    spawned.material = variant(scene, "unlit", "unlit");
+    await spawned.material.forceCompilationAsync(spawned);
+    const passes = new DrawPassFrame(engine as unknown as ConstructorParameters<typeof DrawPassFrame>[0]);
+    // The view attributes its frame, and draws the Scene inside its shadow pass: a long frame.
+    frame(FIRST_DRAW_STALL_MS + 20, 0, () => {
+      beginDrawPassFrame(passes);
+      withDrawPass(engine, "shadows", () => scene.render());
+      endDrawPassFrame(passes);
+      spawned.setEnabled(false);
+    });
+    // Outside any view's attributed frame a first draw counts to `other`.
+    const late = MeshBuilder.CreateBox("late", {}, scene);
+    late.material = variant(scene, "fresnel", "fresnel");
+    await late.material.forceCompilationAsync(late);
+    frame();
+    frame();
+    const stats = session.stats();
+    expect(stats.passes).toEqual({ shadows: 1, other: 1 });
+    expect(stats.longest.map((entry) => entry.passes)).toEqual([{ shadows: 1 }]);
     session.close();
   });
 

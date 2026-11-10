@@ -77,6 +77,11 @@ export class DrawPassFrame {
     this.depth -= 1;
   }
 
+  /** The pass running now: the one a draw made at this moment counts to. */
+  get pass(): DrawPass {
+    return this.passes[Math.min(this.depth, MAX_DEPTH - 1)]!;
+  }
+
   /** Counts the draws since the last read to the pass running now. */
   flush(): void {
     const now = readEngineDrawCalls(this.engine);
@@ -92,6 +97,11 @@ let active: DrawPassFrame | undefined;
 export function beginDrawPassFrame(frame: DrawPassFrame): void {
   frame.begin();
   active = frame;
+}
+
+/** The pass a draw made now counts to; undefined while no view's frame is being attributed. */
+export function currentDrawPass(): DrawPass | undefined {
+  return active?.pass;
 }
 
 /** Stops attributing; what drew since the last pass boundary counts to the pass running then. */
