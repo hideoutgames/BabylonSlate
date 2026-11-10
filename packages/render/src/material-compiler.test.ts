@@ -30,6 +30,7 @@ import {
   newCustomGlslProperties,
   type MaterialDocument,
 } from "@haptic/shader-graph";
+import { isDrawBatchMaterial } from "./draw-batch-world-block";
 import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
 // The WGSL fog cases fake a WebGPU Engine, whose code registers the WGSL includes Haptic's blocks emit as it loads.
 import "./webgpu-registrations";
@@ -360,6 +361,40 @@ describe("material compiler", () => {
     disposers.push(() => result.dispose());
     expect(await result.ready).toEqual([]);
     expect(result.material.compiledShaders).not.toContain("CalcFogFactor(");
+  });
+
+  it("marks a Scene Layer surface whose draws may batch: the stock vertex stage and nothing bound that depends on the mesh", async () => {
+    const scene = host();
+    const compiled = async (name: string, edit: (doc: MaterialDocument) => void, overlay: boolean) => {
+      const doc = createDefaultMaterialDocument();
+      doc.shadingModel = "unlit";
+      edit(doc);
+      const result = compileMaterialPlan(planFor(doc), { scene, name, overlay });
+      if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+      disposers.push(() => result.dispose());
+      expect(await result.ready).toEqual([]);
+      return result.material;
+    };
+    const overlay = await compiled("overlay", () => {}, true);
+    expect(isDrawBatchMaterial(overlay)).toBe(true);
+    // A batch's mesh takes each vertex's world matrix and tint from the vertex; every other draw binds them.
+    const [vertex, fragment] = overlay.compiledShaders.split("// Fragment shader").map((stage) => stage.replace(/\s+/g, " "));
+    expect(vertex).toMatch(/#ifdef HAPTIC_BATCH mat4 \w+ = mat4\(vec4\(batchWorld0\.x, batchWorld1\.x, batchWorld2\.x, 0\.0\)/);
+    expect(fragment).toMatch(/#ifdef HAPTIC_BATCH vec4 (\w+) = v_batchTint; #else vec4 \1 = overlayVisualTint\w*; #endif/);
+    expect(vertex).toContain("#ifdef HAPTIC_BATCH flat varying vec4 v_batchTint; #endif");
+    // A world surface binds its own fog and takes no overlay style: it is not a batch's to draw.
+    expect(isDrawBatchMaterial(await compiled("world", () => {}, false))).toBe(false);
+    // A World Position Offset moves vertices off the mesh's own bounds, which order a batch's draws.
+    const lifted = await compiled("lifted", (doc) => {
+      doc.nodes.find((node) => node.type === "output.surface")!.properties = { "default:worldPositionOffset": [0, 1, 0] };
+    }, true);
+    expect(isDrawBatchMaterial(lifted)).toBe(false);
+    // A Mirror's reflection is its own mesh's: a value bound per mesh that no batch carries.
+    const mirrored = await compiled("mirrored", (doc) => {
+      doc.nodes.push({ id: "reflection", type: "input.mirrorReflection", position: { x: 0, y: 0 }, properties: {} });
+      doc.edges = [{ id: "reflection-output", sourceNodeId: "reflection", sourcePinId: "color", targetNodeId: "output", targetPinId: "baseColor" }];
+    }, true);
+    expect(isDrawBatchMaterial(mirrored)).toBe(false);
   });
 
   it("reports deferred Babylon build failures through readiness", async () => {

@@ -1,5 +1,6 @@
 /**
- * Test-build-only oracle for Scene Layer draw batching: a HUD made like the Feature Test's (`buildSceneLayerHud`) drawn
+ * Test-build-only oracle for Scene Layer draw batching: a HUD made like the Feature Test's (`buildSceneLayerHud`, every
+ * second tinted background with an authored Material) drawn
  * by a Play compositor over a cleared backbuffer, with batching on and off, under the default layer camera, a panned
  * and zoomed one and a turned one. Each pair of images must match exactly; the batched draws are fewer.
  */
@@ -9,7 +10,9 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type { LayerCameraState } from "@haptic/core";
 import { createAppWebGpuEngine } from "@haptic/render";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { readEngineDrawCalls } from "../../../../packages/render/src/draw-calls";
+import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
 import { setSceneDrawBatching } from "../../../../packages/render/src/overlay-draw-batcher";
 import { SceneLayerCompositor } from "../../../../packages/render/src/scene-layer-compositor";
 import { buildSceneLayerHud } from "../../../../packages/render/src/scene-layer-hud-fixture";
@@ -54,7 +57,17 @@ export async function runSceneLayerBatchingProof(backend: "webgl2" | "webgpu") {
   try {
     const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
     const textures = new Map<string, RawTexture>();
+    // An authored Scene Layer Material for every second tinted background: its draws batch too.
+    const document = createDefaultMaterialDocument();
+    document.shadingModel = "unlit";
+    document.blendMode = "translucent";
+    const lowered = lowerMaterialDocument(document);
+    if (!lowered.ok) throw new Error("The proof's authored Material did not lower");
+    const authored = compileMaterialPlan(lowered.plan, { scene: layer.scene, name: "authoredPanel", overlay: true });
+    if (!authored.ok) throw new Error("The proof's authored Material did not compile");
+    await authored.ready;
     buildSceneLayerHud(layer.scene, {
+      authoredPanelMaterial: authored.material,
       texture: (guid) => {
         let texture = textures.get(guid);
         if (!texture) textures.set(guid, (texture = RawTexture.CreateRGBATexture(iconPixels(textures.size), 64, 64, layer.scene)));

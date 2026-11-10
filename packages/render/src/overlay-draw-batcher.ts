@@ -9,7 +9,7 @@ import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import type { FloatArray, IndicesArray } from "@babylonjs/core/types";
 import type { OverlayLayoutRect } from "@haptic/core";
-import { DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TINT_KIND, DRAW_BATCH_WORLD_KINDS, markDrawBatchMesh } from "./draw-batch-world-block";
+import { DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TINT_KIND, DRAW_BATCH_WORLD_KINDS, isDrawBatchMaterial, markDrawBatchMesh } from "./draw-batch-world-block";
 import { sceneDrawBatcher, setSceneDrawBatcher, type SceneDrawBatcher } from "./draw-batching";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { disableOverlayClipScissor, enableOverlayClipScissor, overlayDrawClip } from "./overlay-layout-render";
@@ -19,8 +19,9 @@ import { isUnlitMaterial } from "./unlit-material";
 import { setUnlitBinding, unlitBinding, type UnlitBinding } from "./unlit-material-blocks";
 
 /**
- * Draw batching for a Scene's sorted passes (Scene Layers): consecutive-in-effect draws of the unlit Material that bind
- * the same values draw as one, with output identical to drawing them one by one.
+ * Draw batching for a Scene's sorted passes (Scene Layers): consecutive-in-effect draws of the unlit Material, or of an
+ * authored Scene Layer Material the compiler marked (`markDrawBatchMaterial`), that bind the same values draw as one,
+ * with output identical to drawing them one by one.
  *
  * - **Order.** A pass's list is drawn in Babylon's sorted order, except that a draw may join an earlier batch when it
  *   overlaps no draw between that batch and itself (projected bounds, with a margin of two pixels). Draws that cover
@@ -30,7 +31,8 @@ import { setUnlitBinding, unlitBinding, type UnlitBinding } from "./unlit-materi
  * - **Values.** A batch's members draw the same Material and Effect and bind the same values: the unlit binding's
  *   texture and alpha rules, visibility, side orientation and clip (one scissor), which the batch mesh binds as its
  *   first member. Each member's own colour, alpha and overlay tint go with its vertices (`drawBatchValue`), so members
- *   that differ in those alone still share a draw.
+ *   that differ in those alone still share a draw. An authored Material's members share Receive Shadows, the one
+ *   other value its lighting binds per mesh, and the batch carries their normals, tangents and second UVs too.
  * - **Vertices.** A batch holds its members' own vertices and, for each vertex, the rows of its member's world
  *   matrix as the member's draw uploads them (the floating origin's translation minus the eye, then 32-bit). The
  *   Material's vertex stage builds the world matrix from those for a batch's mesh (`DrawBatchWorldBlock`), so every
@@ -54,6 +56,7 @@ type MeshInternals = {
   _occlusionDataStorage?: { occlusionType: number } | null;
   renderOutline?: boolean;
   renderOverlay?: boolean;
+  _updateNonUniformScalingState(value: boolean): boolean;
 };
 
 /** A member's own vertices and its world matrix as its draw uploads it, kept while neither changes. */
@@ -86,7 +89,9 @@ interface Entry {
   binding: UnlitBinding | null;
   clip: OverlayLayoutRect | null;
   bake: Bake | null;
-  uvs: FloatArray | null;
+  /** The member's vertex data of each of `EXTRA_KINDS` the batch carries, and which those are, as bits. */
+  extras: Array<FloatArray | null>;
+  layout: number;
   indices: IndicesArray | null;
   minX: number;
   minY: number;
@@ -109,12 +114,13 @@ interface Batch {
 /** A batch mesh kept between frames, with what its buffers hold. */
 interface Slot {
   mesh: Mesh;
-  textured: boolean;
+  /** Which of `EXTRA_KINDS` its buffers hold, as bits. */
+  layout: number;
   vertexCapacity: number;
   indexCapacity: number;
   /** What the buffers hold (`vertexCount` and `indexCount` of them in use). */
   positions: Float32Array;
-  uvs: Float32Array | null;
+  extras: Array<Float32Array | null>;
   /** Each vertex's world matrix, three rows of four floats, in `worldBuffer` (the `DRAW_BATCH_WORLD_KINDS` attributes). */
   worlds: Float32Array;
   worldBuffer: Buffer | null;
@@ -138,8 +144,8 @@ const bakes = new WeakMap<Mesh, Bake>();
 export type OverlayAloneReason = "single" | "material" | "transform" | "vertexColor" | "other" | "unmatched";
 /**
  * Batched passes counted (`countOverlayBatches`): the draws asked for (`visuals`), the draws made, the batches among
- * them with the visuals they drew, and the visuals drawn on their own by reason: a pass's only draw, a Material other
- * than the unlit one (an authored 2D Material, a 3D-lit sprite), a mirrored pose (or one that is not affine), vertex
+ * them with the visuals they drew, and the visuals drawn on their own by reason: a pass's only draw, a Material no
+ * batch draws (a 3D-lit sprite, an authored one the compiler did not mark), a mirrored pose (or one that is not affine), vertex
  * colours, anything else a batch cannot reproduce, and batchable visuals no other draw matched (or whose batch could
  * not draw as one then). `visuals` is `batched` plus every `alone` count.
  */
@@ -241,6 +247,24 @@ function boundPositions(bake: Bake): void {
 const WORLD_FLOATS = 12;
 /** Floats of a member's own values a batch carries per vertex: its colour with alpha, then its tint. */
 const STYLE_FLOATS = 8;
+/**
+ * The vertex data a batch carries besides positions, where its members have it: UVs for any Material, and for an
+ * authored one, whose graph may read them, normals, tangents and second UVs.
+ */
+const EXTRA_KINDS = [VertexBuffer.UVKind, VertexBuffer.NormalKind, VertexBuffer.TangentKind, VertexBuffer.UV2Kind] as const;
+const EXTRA_SIZES = [2, 3, 4, 2] as const;
+/** The vertex buffers WebGPU guarantees a draw. */
+const WEBGPU_VERTEX_BUFFERS = 8;
+
+/**
+ * The vertex buffers a batch of `layout` binds: positions, each extra kind, the three world rows, and the tint (with
+ * the colour for the unlit Material).
+ */
+function vertexBuffers(layout: number, unlit: boolean): number {
+  let extras = 0;
+  for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1) if (layout & (1 << kind)) extras += 1;
+  return 1 + extras + DRAW_BATCH_WORLD_KINDS.length + (unlit ? 2 : 1);
+}
 
 /**
  * The first three rows of `world` as a draw uploads it (`OffsetWorldToRef`, then 32 bits), into `rows`; null for a
@@ -285,17 +309,20 @@ function sameClip(a: OverlayLayoutRect | null, b: OverlayLayoutRect | null): boo
 
 /** Whether `a` and `b` (both batchable) bind and draw the same: one draw can draw both. */
 function sameDraw(a: Entry, b: Entry): boolean {
-  if (a.material !== b.material || !sameClip(a.clip, b.clip) || (a.uvs === null) !== (b.uvs === null)) return false;
+  if (a.material !== b.material || !sameClip(a.clip, b.clip) || a.layout !== b.layout) return false;
   const meshA = a.mesh!, meshB = b.mesh!;
   if (meshA.visibility !== meshB.visibility || meshA.sideOrientation !== meshB.sideOrientation) return false;
-  return sameBinding(a.binding!, b.binding!);
+  // What else a draw binds per mesh: the unlit binding, or an authored Material's lighting term, Receive Shadows. A
+  // stretched mesh also draws an authored Material with a program of its own (normals by the inverse transpose).
+  if (a.binding && b.binding) return sameBinding(a.binding, b.binding);
+  return meshA.receiveShadows === meshB.receiveShadows && meshA.nonUniformScaling === meshB.nonUniformScaling;
 }
 
 /** Whether `mesh`'s bounding box contains what it draws: no skinning, morphs, lattice, instances or moving vertex stage. */
 function boundsHold(mesh: AbstractMesh, material: Material | null): boolean {
   if (!(mesh instanceof Mesh) || mesh.hasInstances || mesh.hasThinInstances || mesh.skeleton || mesh.morphTargetManager) return false;
   if (mesh.doNotSyncBoundingInfo || hasMeshLatticeDeformer(mesh)) return false;
-  return !material || hasStockOrPlannedVertexStage(material);
+  return !material || isDrawBatchMaterial(material) || hasStockOrPlannedVertexStage(material);
 }
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
@@ -311,7 +338,7 @@ function overlapsAny(bounds: Bounds, others: readonly Bounds[]): boolean {
 
 /** What batches of one draw share, to find them quickly: the texture they sample or, untextured, their Material. */
 function drawKey(entry: Entry): object {
-  return entry.binding!.texture ?? entry.material!;
+  return entry.binding?.texture ?? entry.material!;
 }
 
 /**
@@ -357,7 +384,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     let candidates = 0;
     for (let index = 0; index < count; index += 1) {
       const entry = (entries[index] ??= {
-        subMesh: sorted[index]!, mesh: null, material: null, binding: null, clip: null, bake: null, uvs: null, indices: null,
+        subMesh: sorted[index]!, mesh: null, material: null, binding: null, clip: null, bake: null, extras: EXTRA_KINDS.map(() => null), layout: 0, indices: null,
         minX: 0, minY: 0, maxX: 0, maxY: 0, batch: -1,
       });
       entry.subMesh = sorted[index]!;
@@ -397,7 +424,9 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   }
 
   private release(entry: Entry): void {
-    entry.mesh = null; entry.material = null; entry.binding = null; entry.clip = null; entry.bake = null; entry.uvs = null; entry.indices = null;
+    entry.mesh = null; entry.material = null; entry.binding = null; entry.clip = null; entry.bake = null; entry.indices = null;
+    entry.extras.fill(null);
+    entry.layout = 0;
     entry.batch = -1;
   }
 
@@ -408,7 +437,9 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     const material = subMesh.getMaterial();
     entry.mesh = null;
     if (!(mesh instanceof Mesh) || subMesh.getRenderingMesh() !== mesh) return "other";
-    if (!material || !isUnlitMaterial(material)) return "material";
+    // The unlit Material, or an authored one a batch draws as each of its members would (`markDrawBatchMaterial`).
+    const unlit = isUnlitMaterial(material);
+    if (!material || !(unlit || isDrawBatchMaterial(material))) return "material";
     if (material.needDepthPrePass || material.separateCullingPass) return "other";
     if (mesh.subMeshes.length !== 1 || !boundsHold(mesh, material)) return "other";
     const internals = mesh as unknown as MeshInternals;
@@ -425,19 +456,27 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     const vertices = mesh.getTotalVertices();
     if (!indices || subMesh.indexStart !== 0 || subMesh.indexCount !== indices.length || subMesh.verticesStart !== 0 || subMesh.verticesCount !== vertices)
       return "other";
-    const uvs = mesh.isVerticesDataPresent(VertexBuffer.UVKind) ? packedFloats(mesh, VertexBuffer.UVKind, 2) : null;
-    if (mesh.isVerticesDataPresent(VertexBuffer.UVKind) && !uvs) return "other";
+    let layout = 0;
+    for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1) {
+      // The unlit graph reads UVs alone.
+      if ((unlit && kind > 0) || !mesh.isVerticesDataPresent(EXTRA_KINDS[kind]!)) continue;
+      const data = packedFloats(mesh, EXTRA_KINDS[kind]!, EXTRA_SIZES[kind]!);
+      if (!data || data.length < vertices * EXTRA_SIZES[kind]!) return "other";
+      entry.extras[kind] = data;
+      layout |= 1 << kind;
+    }
+    if (vertexBuffers(layout, unlit) > WEBGPU_VERTEX_BUFFERS && mesh.getEngine().isWebGPU) return "other";
     const bake = bakeOf(mesh, eye);
     if (!bake) return "other";
     // A pose that mirrors, or is not affine.
     if (!bake.world) return "transform";
-    if (bake.copy.length !== vertices * 3 || (uvs && uvs.length < vertices * 2)) return "other";
+    if (bake.copy.length !== vertices * 3) return "other";
     entry.mesh = mesh;
     entry.material = material;
-    entry.binding = unlitBinding(mesh);
+    entry.binding = unlit ? unlitBinding(mesh) : null;
     entry.clip = clip ?? null;
     entry.bake = bake;
-    entry.uvs = uvs;
+    entry.layout = layout;
     entry.indices = indices;
     return null;
   }
@@ -565,10 +604,19 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     const scene = this.scene;
     const first = members[0]!;
     const member = first.mesh!;
-    const slot = this.slotFor(first.uvs !== null);
+    const slot = this.slotFor(first.layout);
     const mesh = slot.mesh;
     if (mesh.material !== first.material) mesh.material = first.material;
-    setUnlitBinding(mesh, first.binding!);
+    if (first.binding) setUnlitBinding(mesh, first.binding);
+    else {
+      mesh.receiveShadows = member.receiveShadows;
+      if (mesh.nonUniformScaling !== member.nonUniformScaling) {
+        // The batch's mesh compiles the program its members do. Its own world matrix is frozen at the identity, so
+        // nothing sets the state back; the define, once set for a submesh, stays set, so its defines start anew.
+        (mesh as unknown as MeshInternals)._updateNonUniformScalingState(member.nonUniformScaling);
+        mesh.subMeshes?.[0]?.resetDrawCache();
+      }
+    }
     shareOverlayVisualStyle(mesh, member);
     mesh.visibility = member.visibility;
     mesh.sideOrientation = member.sideOrientation;
@@ -597,7 +645,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
    * The next batch mesh of this Engine frame, created (out of the Scene's lists) when the pool runs out. A batch mesh
    * draws once per Engine frame: WebGPU writes buffers ahead of the frame's draws, so a second write would show in both.
    */
-  private slotFor(textured: boolean): Slot {
+  private slotFor(layout: number): Slot {
     const frame = this.scene.getEngine().frameId;
     if (frame !== this.cursorFrame) {
       this.cursorFrame = frame;
@@ -617,17 +665,19 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       mesh.isPickable = false;
       mesh.isVisible = false;
       mesh.doNotSyncBoundingInfo = true;
+      // At the identity for good: every vertex carries its member's world matrix.
+      mesh.freezeWorldMatrix();
       markDrawBatchMesh(mesh);
       slot = {
-        mesh, textured, vertexCapacity: 0, indexCapacity: 0, positions: new Float32Array(0), uvs: null, worlds: new Float32Array(0),
+        mesh, layout, vertexCapacity: 0, indexCapacity: 0, positions: new Float32Array(0), extras: EXTRA_KINDS.map(() => null), worlds: new Float32Array(0),
         worldBuffer: null, styles: new Float32Array(0), styleBuffer: null, indices: new Uint16Array(0), vertexCount: 0, indexCount: 0, memberEffect: null, batchEffect: null,
       };
       this.slots.push(slot);
     }
     this.slotCursor += 1;
-    if (slot.textured !== textured) {
-      // Rebuilt with or without UVs at the next fill.
-      slot.textured = textured;
+    if (slot.layout !== layout) {
+      // Rebuilt with this layout's vertex data at the next fill.
+      slot.layout = layout;
       slot.vertexCapacity = 0;
     }
     return slot;
@@ -649,15 +699,18 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       slot.vertexCapacity = Math.max(64, 2 ** Math.ceil(Math.log2(vertexCount)));
       slot.indexCapacity = Math.max(96, 2 ** Math.ceil(Math.log2(indexCount)));
       slot.positions = new Float32Array(slot.vertexCapacity * 3);
-      slot.uvs = slot.textured ? new Float32Array(slot.vertexCapacity * 2) : null;
+      for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1)
+        slot.extras[kind] = slot.layout & (1 << kind) ? new Float32Array(slot.vertexCapacity * EXTRA_SIZES[kind]!) : null;
       slot.worlds = new Float32Array(slot.vertexCapacity * WORLD_FLOATS);
       slot.styles = new Float32Array(slot.vertexCapacity * STYLE_FLOATS);
       slot.indices = slot.vertexCapacity > 65536 ? new Uint32Array(slot.indexCapacity) : new Uint16Array(slot.indexCapacity);
     }
-    const { positions, uvs, worlds, styles, indices } = slot;
+    const { positions, extras, worlds, styles, indices } = slot;
     // Another count of vertices or indices is drawn from every buffer anew.
     const resized = grow || vertexCount !== slot.vertexCount || indexCount !== slot.indexCount;
-    let positionsChanged = resized, worldsChanged = resized, stylesChanged = resized, uvsChanged = resized, indicesChanged = resized;
+    let positionsChanged = resized, worldsChanged = resized, stylesChanged = resized, indicesChanged = resized;
+    /** The extra kinds whose buffers changed, as bits. */
+    let extrasChanged = resized ? -1 : 0;
     const style = this.scratchStyle;
     let vertex = 0, index = 0;
     for (const entry of members) {
@@ -672,18 +725,21 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
         if (worlds[at] !== value) { worlds[at] = value; worldsChanged = true; }
       }
       // What the member's own draw binds (`bindUnlitUniforms`), rounded to 32 bits as an upload rounds it.
-      const binding = entry.binding!, { opacity, tint } = overlayVisualStyle(entry.mesh!);
-      style[0] = binding.color[0]; style[1] = binding.color[1]; style[2] = binding.color[2]; style[3] = binding.alpha;
+      // An authored Material reads the tint alone.
+      const binding = entry.binding, { opacity, tint } = overlayVisualStyle(entry.mesh!);
+      style[0] = binding?.color[0] ?? 1; style[1] = binding?.color[1] ?? 1; style[2] = binding?.color[2] ?? 1; style[3] = binding?.alpha ?? 1;
       style[4] = tint[0]; style[5] = tint[1]; style[6] = tint[2]; style[7] = tint[3] * opacity;
       for (let offset = 0, at = vertex * STYLE_FLOATS; offset < memberVertices * STYLE_FLOATS; offset += 1, at += 1) {
         const value = style[offset % STYLE_FLOATS]!;
         if (styles[at] !== value) { styles[at] = value; stylesChanged = true; }
       }
-      if (uvs) {
-        const source = entry.uvs!;
-        for (let offset = 0, at = vertex * 2; offset < memberVertices * 2; offset += 1, at += 1) {
-          const value = Math.fround(source[offset]!);
-          if (uvs[at] !== value) { uvs[at] = value; uvsChanged = true; }
+      for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1) {
+        const target = extras[kind];
+        if (!target) continue;
+        const data = entry.extras[kind]!, size = EXTRA_SIZES[kind]!;
+        for (let offset = 0, at = vertex * size; offset < memberVertices * size; offset += 1, at += 1) {
+          const value = Math.fround(data[offset]!);
+          if (target[at] !== value) { target[at] = value; extrasChanged |= 1 << kind; }
         }
       }
       const source = entry.indices!;
@@ -701,8 +757,11 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       mesh.getScene()._blockEntityCollection = true;
       try {
         mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
-        if (uvs) mesh.setVerticesData(VertexBuffer.UVKind, uvs, true);
-        else if (mesh.isVerticesDataPresent(VertexBuffer.UVKind)) mesh.removeVerticesData(VertexBuffer.UVKind);
+        for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1) {
+          const data = extras[kind];
+          if (data) mesh.setVerticesData(EXTRA_KINDS[kind]!, data, true);
+          else if (mesh.isVerticesDataPresent(EXTRA_KINDS[kind]!)) mesh.removeVerticesData(EXTRA_KINDS[kind]!);
+        }
         // One buffer for the world rows and one for the colour and tint; their views do not own them.
         const previous = [slot.worldBuffer, slot.styleBuffer];
         const world = slot.worldBuffer = new Buffer(mesh.getEngine(), worlds, true, WORLD_FLOATS);
@@ -717,7 +776,10 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     } else {
       // In place: the buffers (and their vertex array objects) stay. Whole arrays, which the buffers keep for a rebuild.
       if (positionsChanged) mesh.getVertexBuffer(VertexBuffer.PositionKind)!.updateDirectly(positions, 0);
-      if (uvs && uvsChanged) mesh.getVertexBuffer(VertexBuffer.UVKind)!.updateDirectly(uvs, 0);
+      for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1) {
+        const data = extras[kind];
+        if (data && extrasChanged & (1 << kind)) mesh.getVertexBuffer(EXTRA_KINDS[kind]!)!.updateDirectly(data, 0);
+      }
       if (worldsChanged) slot.worldBuffer!.updateDirectly(worlds, 0);
       if (stylesChanged) slot.styleBuffer!.updateDirectly(styles, 0);
       if (indicesChanged) mesh.updateIndices(indices, 0, true);

@@ -24,6 +24,8 @@ export interface SceneLayerHudOptions {
    * when absent.
    */
   panelMaterial?: Material;
+  /** An authored Scene Layer Material that every second tinted background draws instead, beside the others' look. */
+  authoredPanelMaterial?: Material;
 }
 
 /**
@@ -42,6 +44,7 @@ export function buildSceneLayerHud(scene: Scene, options: SceneLayerHudOptions):
     resolveMaterial: () => options.panelMaterial ?? null,
   };
   let next = 1;
+  let panels = 0;
   const clipped: Array<{ slotId: number; clip: OverlayLayoutRect }> = [];
   const actor = (x: number, y: number, z = 0, clip?: OverlayLayoutRect) => {
     const root = new Mesh(`actor-${next}`, scene);
@@ -62,6 +65,7 @@ export function buildSceneLayerHud(scene: Scene, options: SceneLayerHudOptions):
     const mesh = MeshBuilder.CreatePlane(`${root.name}|background`, { width: 1, height: 1 }, scene);
     applyOverlayUnlitMaterial(mesh);
     if (options.panelMaterial) mesh.material = options.panelMaterial;
+    if (options.authoredPanelMaterial && panels++ % 2 === 1) mesh.material = options.authoredPanelMaterial;
     applyOverlayVisualStyle(mesh, { tint });
     return part(root, mesh, 0, 0, z, width, height);
   };

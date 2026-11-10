@@ -5,6 +5,8 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Scene } from "@babylonjs/core/scene";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sceneDrawBatcher } from "./draw-batching";
 import { beginEngineDrawCallFrame } from "./draw-calls";
@@ -17,6 +19,7 @@ import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { buildSceneLayerHud } from "./scene-layer-hud-fixture";
 import { createSpriteQuad, setSpriteQuadSize, setSpriteQuadUvs } from "./sprite-quad";
+import { compileMaterialPlan } from "./material-compiler";
 import { setUnlitMaterial } from "./unlit-material";
 
 const engines: NullEngine[] = [];
@@ -96,6 +99,19 @@ function sprite(scene: Scene, name: string, x: number, texture: RawTexture): Mes
     { texture, color: [1, 1, 1], alpha: 1, cutoff: 0.4, blend: false, textureAlpha: true, twoSided: false });
   mesh.position.x = x;
   return mesh;
+}
+
+/** An authored unlit, translucent Material compiled for a Scene Layer, as a Feature Test panel's is. */
+async function authoredOverlay(scene: Scene): Promise<NodeMaterial> {
+  const document = createDefaultMaterialDocument();
+  document.shadingModel = "unlit";
+  document.blendMode = "translucent";
+  const lowered = lowerMaterialDocument(document);
+  if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+  const result = compileMaterialPlan(lowered.plan, { scene, name: "authored", overlay: true });
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  expect(await result.ready).toEqual([]);
+  return result.material;
 }
 
 /** The layer's draws batched, then one by one. */
@@ -457,6 +473,76 @@ describe("Scene Layer draw batching", () => {
     expect(await draws()).toBe(4);
     for (const mesh of sprites) mesh.applyFog = true;
     expect(await draws()).toBe(1);
+  });
+
+  it("batches an authored Scene Layer Material's draws, each with its own pose, tint and vertex data", async () => {
+    const context = host();
+    const { engine, compositor, scene } = context;
+    const material = await authoredOverlay(scene);
+    const panel = (name: string, x: number, tint: [number, number, number, number]) => {
+      const mesh = MeshBuilder.CreatePlane(name, { size: 1 }, scene);
+      mesh.material = material;
+      mesh.position.x = x;
+      applyOverlayVisualStyle(mesh, { tint });
+      return mesh;
+    };
+    const panels = [panel("red", -6, [1, 0, 0, 0.5]), panel("green", -3, [0, 1, 0, 0.5]), panel("blue", 0, [0, 0, 1, 0.5]), panel("grey", 3, [0.5, 0.5, 0.5, 0.25])];
+    panels[1]!.rotation.z = 0.3;
+    // Stretched, as a panel sized to its content is: its normals then transform by the inverse transpose, in a program
+    // of its own, which the batch's mesh must compile too.
+    for (const mesh of panels) mesh.scaling.set(2, 0.5, 1);
+    expect(await drawsBothWays(context)).toEqual({ batched: 1, unbatched: 4 });
+    setSceneDrawBatching(scene, true);
+    const stats = emptyOverlayBatchStats();
+    const batch = countOverlayBatches(stats, () => drawnMeshes(() => layerDraws(engine, compositor, 1)))[0]!;
+    expect(stats).toMatchObject({ visuals: 4, draws: 1, batches: 1, batched: 4 });
+    expect(batch.material).toBe(material);
+    // A graph may read what the unlit Material does not: the batch carries each member's normals and UVs with its
+    // positions, as its own buffers hold them. A plane's normals face -z.
+    const count = 16;
+    expect(Array.from(batch.getVerticesData("normal")!.slice(0, count * 3))).toEqual(Array.from({ length: count }, () => [0, 0, -1]).flat());
+    expect(Array.from(batch.getVerticesData("uv")!.slice(0, 8))).toEqual(Array.from(panels[0]!.getVerticesData("uv")!));
+    // Each vertex's tint is its member's, by where the member stands.
+    const at = (kind: string, vertex: number) => Array.from(batch.getVerticesData(kind)!.slice(vertex * 4, vertex * 4 + 4));
+    const tints = new Map<number, number[]>();
+    for (let vertex = 0; vertex < count; vertex += 1) tints.set(at("batchWorld0", vertex)[3]!, at("batchTint", vertex));
+    expect(Object.fromEntries(tints)).toEqual({ "-6": [1, 0, 0, 0.5], "-3": [0, 1, 0, 0.5], "0": [0, 0, 1, 0.5], "3": [0.5, 0.5, 0.5, 0.25] });
+    // Receive Shadows is bound once for a draw: members that differ in it draw apart, and a batch binds its members'.
+    panels[3]!.receiveShadows = true;
+    expect(await drawsBothWays(context)).toEqual({ batched: 2, unbatched: 4 });
+    for (const mesh of panels) mesh.receiveShadows = true;
+    setSceneDrawBatching(scene, true);
+    await compositor.prepare("hud", () => {});
+    const receiving = drawnMeshes(() => layerDraws(engine, compositor, 1));
+    expect(receiving.map((mesh) => mesh.receiveShadows)).toEqual([true]);
+    for (const mesh of panels) mesh.receiveShadows = false;
+    // One scaled evenly draws with another program than the stretched rest: apart.
+    panels[3]!.scaling.setAll(2);
+    expect(await drawsBothWays(context)).toEqual({ batched: 2, unbatched: 4 });
+    panels[3]!.scaling.set(2, 0.5, 1);
+    // The batch's mesh follows its members: the same batch mesh that drew the stretched panels draws unstretched
+    // ones, which never compiled the stretched program, in one draw too.
+    setSceneDrawBatching(scene, true);
+    await compositor.prepare("hud", () => {});
+    const stretched = drawnMeshes(() => layerDraws(engine, compositor, 1));
+    expect(stretched).toHaveLength(1);
+    for (const mesh of panels) mesh.setEnabled(false);
+    const plain = [panel("plain0", -2, [1, 1, 1, 0.5]), panel("plain1", 2, [1, 1, 1, 0.5])];
+    await compositor.prepare("hud", () => {});
+    layerDraws(engine, compositor);
+    expect(drawnMeshes(() => layerDraws(engine, compositor, 1))).toEqual(stretched);
+    for (const mesh of plain) mesh.dispose();
+    for (const mesh of panels) mesh.setEnabled(true);
+    // A Material that is not a Scene Layer's authored one draws each mesh on its own, as before.
+    const standard = new StandardMaterial("standard", scene);
+    standard.alpha = 0.5;
+    panels[0]!.material = standard;
+    panels[2]!.material = standard;
+    setSceneDrawBatching(scene, true);
+    await compositor.prepare("hud", () => {});
+    const mixed = emptyOverlayBatchStats();
+    countOverlayBatches(mixed, () => layerDraws(engine, compositor, 1));
+    expect(mixed).toMatchObject({ visuals: 4, draws: 3, batches: 1, batched: 2, alone: { material: 2 } });
   });
 
   it("draws the Feature Test HUD in far fewer draws", async () => {

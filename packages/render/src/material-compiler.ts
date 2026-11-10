@@ -21,7 +21,7 @@ import {
 } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
 import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
 import { NodeMaterial, type NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
-import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
+import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { Effect } from "@babylonjs/core/Materials/effect";
@@ -82,6 +82,7 @@ import { WaterCoverageBlock, WaterCutBlock } from "./water-node-blocks";
 import { WaterSurfaceBlock } from "./water-surface-block";
 import { WaterWavesBlock } from "./water-waves-block";
 import { markCageShadowWrapper, registerLatticeShadowAdapter } from "./lattice-deformer-binding";
+import { markDrawBatchMaterial } from "./draw-batch-world-block";
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { SceneFogBlock } from "./scene-fog-block";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
@@ -336,6 +337,22 @@ function colorPins(nodeType: string): Set<string> {
 function operationBlockName(id: string): string {
   const name = id.replace(/[^A-Za-z0-9_]/g, "_").replace(/[0-9]/g, "").replace(/_+/g, "_").replace(/^_|_$/g, "");
   return !name || name.startsWith("gl_") ? `slate_${name || "node"}` : name;
+}
+
+/**
+ * Blocks whose bound values a draw batch reproduces (`overlay-draw-batcher.ts`): the Scene's or the Material's own
+ * (textures, image processing, fog, the environment), per-mesh ones a batch carries with its vertices (the overlay
+ * style) or requires its members to share (the lighting's Receive Shadows), and per-mesh ones of meshes that never
+ * batch (bones, morphs, a lattice) or of a pass that draws no batch (the geometry output). A block that binds and is
+ * not listed keeps its Material out of batches.
+ */
+const BATCH_BINDINGS: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> = [
+  BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, GeometrySurfaceOutputBlock, HapticLightingBlock,
+  ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock,
+];
+
+function bindsAsABatchDoes(block: NodeMaterialBlock): boolean {
+  return block.bind === NodeMaterialBlock.prototype.bind || BATCH_BINDINGS.some((known) => block instanceof known);
 }
 
 /**
@@ -1035,6 +1052,11 @@ export function compileMaterialPlan(
     (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock | LatticeDeformerBlock | OverlayStyleBlock | WaterWavesBlock | GeometrySurfaceOutputBlock =>
       block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock || block instanceof LatticeDeformerBlock || block instanceof OverlayStyleBlock || block instanceof WaterWavesBlock || block instanceof GeometrySurfaceOutputBlock,
   );
+  // A Scene Layer surface with the stock vertex stage draws every mesh the same but for its world matrix, its overlay
+  // style and Receive Shadows, so its draws may batch, provided nothing else it binds can depend on the mesh.
+  if (options.overlay && !auxiliary && plan.domain === "surface" && plan.cost.customBlocks === 0 &&
+    isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null) && created.every(bindsAsABatchDoes))
+    markDrawBatchMaterial(material);
   // The light block rebinds only its receiver terms.
   const lightingBlocks = created.filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock);
   if (perMeshBlocks.length > 0 || lightingBlocks.length > 0) {
