@@ -18,6 +18,7 @@ import type { GpuBusyStats } from "./gpu-busy-probe";
 import type { FrameBackpressureStats } from "./frame-backpressure";
 import type { DrawPassCounts } from "./draw-passes";
 import type { OverlayBatchStats } from "./overlay-draw-batcher";
+import type { RetainedShadowDiagnostics } from "./shadow-retained-casters";
 import { existingSceneInstancePool, type InstancePoolDiagnostics } from "./instance-pool";
 
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
@@ -129,6 +130,12 @@ export type RenderDiagnostics = {
   shadowMapBytes: number;
   shadowDrawCalls: number;
   shadowTriangles: number;
+  /**
+   * Shadow casters drawn from one shared buffer instead of one Babylon draw each: how many are retained, and since the
+   * Scene's first map the draw calls made (`calls`) for the caster draws they stood for (`drawn`). Null where no
+   * caster can be retained (WebGPU).
+   */
+  shadowRetained: RetainedShadowDiagnostics | null;
   readbackMs: number | null;
   shadowLights: ReturnType<typeof shadowLightDiagnostics>;
   qualityLimits: string[];
@@ -193,6 +200,7 @@ export function createRenderDiagnostics(
       readbackMs: readbackMs(),
       shadowDrawCalls: shadows?.shadowDrawCalls() ?? 0,
       shadowTriangles: shadows?.shadowTriangles() ?? 0,
+      shadowRetained: shadows?.retainedCasters() ?? null,
       gpuMs,
       gpuStatus: available
         ? "available"

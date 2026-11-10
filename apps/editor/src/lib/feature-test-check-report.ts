@@ -106,6 +106,16 @@ function layerBatchesText(stats: LayerBatches): string {
   return `${count(stats.visuals, "visual")} in ${count(stats.draws, "draw")} · ${stats.batched} in ${count(stats.batches, "batch")}${alone ? ` · alone: ${alone}` : ""}`;
 }
 
+type RetainedShadows = NonNullable<RenderDiagnostics["shadowRetained"]>;
+/**
+ * The shadow casters the maps draw from one shared buffer, how a map layer draws them, and how many caster draws a
+ * call has stood for since the Scene's first map.
+ */
+function retainedShadowsText(stats: RetainedShadows): string {
+  const each = stats.calls ? ` · ${(stats.drawn / stats.calls).toFixed(1)} caster draws a call` : "";
+  return `${stats.casters} drawn from the shared buffer, ${stats.multiDraw ? "a map layer in one call" : "one call each (no WEBGL_multi_draw)"}${each}`;
+}
+
 /** How many causes a report names; the rest are counted. */
 const PROGRAM_SPLITS_SHOWN = 8;
 /**
@@ -236,6 +246,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       const passes = firstDrawPasses(counters?.drawPasses ?? r?.drawPasses);
       if (passes) lines.push(`  Draws per pass: ${passes}`);
       if (r?.layerBatches?.visuals) lines.push(`  Scene Layers: ${layerBatchesText(r.layerBatches)}`);
+      if (r?.shadowRetained?.casters) lines.push(`  Shadow casters: ${retainedShadowsText(r.shadowRetained)}`);
       const withoutDraws = cpuWithoutDrawsText(counters);
       if (withoutDraws) lines.push(`  CPU without draws: ${withoutDraws}`);
       if (r?.programs) {

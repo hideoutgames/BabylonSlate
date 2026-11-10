@@ -42,6 +42,7 @@ import {
 import { ShadowSpatialIndex } from "./shadow-spatial-index";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
+import { RetainedShadowCasters, type RetainedShadowDiagnostics } from "./shadow-retained-casters";
 import { awaitsFirstDraw, setAwaitingFirstDraw } from "./shadow-first-draw";
 import { onMeshRevealed } from "./reveal-pending";
 import { forgetCasterRequests, setShadowCasterReach } from "./shadow-caster-warm";
@@ -191,6 +192,10 @@ export class SceneShadowController {
   shadowTriangles(): number {
     return this.counters.triangles;
   }
+  /** The casters the maps draw from the shared buffer (`RetainedShadowCasters`); null where none can be. */
+  retainedCasters(): RetainedShadowDiagnostics | null {
+    return this.maps.retained?.diagnostics() ?? null;
+  }
   private readonly scene: Scene;
   /** What every map this controller builds reads and reports to: its scene, casters, slots and draw counters. */
   private readonly maps: ShadowMapContext;
@@ -200,7 +205,10 @@ export class SceneShadowController {
   private readonly casterVariants: ShadowCasterVariants;
   constructor(scene: Scene) {
     this.scene = scene;
-    this.maps = { scene, spatial: this.spatial, casters: this.meshes, slots: this.slots, counters: this.counters };
+    this.maps = {
+      scene, spatial: this.spatial, casters: this.meshes, slots: this.slots, counters: this.counters,
+      retained: RetainedShadowCasters.create(scene, (mesh) => this.refresh.casterState(mesh)),
+    };
     this.views = new ShadowViewMaps(this.entries, this.maps);
     this.casterVariants = new ShadowCasterVariants(this.maps);
     const engine = scene.getEngine();
@@ -240,6 +248,7 @@ export class SceneShadowController {
       // Only casters own a spatial leaf or generator render-list membership.
       if (!this.meshes.delete(mesh)) return;
       this.spatial.remove(mesh);
+      this.maps.retained?.release(mesh);
       this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
     });
     scene.onBeforeRenderObservable.add(() => {
@@ -279,6 +288,7 @@ export class SceneShadowController {
       this.pending.clear();
       this.refresh.dispose();
       this.spatial.dispose();
+      this.maps.retained?.dispose();
       reserveSceneShadows(scene, { bytes: 0, passes: 0 });
       controllers.delete(scene);
     });
@@ -553,6 +563,7 @@ export class SceneShadowController {
       if (mesh.isBlocked) {
         if (this.meshes.delete(mesh)) {
           this.spatial.remove(mesh);
+          this.maps.retained?.release(mesh);
           this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
         }
         continue;
@@ -561,6 +572,7 @@ export class SceneShadowController {
         setMeshShadowFlags(mesh, false, false);
         if (this.meshes.delete(mesh)) {
           this.spatial.remove(mesh);
+          this.maps.retained?.release(mesh);
           this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
         }
         continue;
@@ -572,6 +584,7 @@ export class SceneShadowController {
       if (!casts) {
         if (this.meshes.delete(mesh)) {
           this.spatial.remove(mesh);
+          this.maps.retained?.release(mesh);
           this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
         }
         continue;

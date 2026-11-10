@@ -517,6 +517,33 @@ describe("formatFeatureTestCheckReport", () => {
     expect(layers({ visuals: 0, draws: 0, batches: 0, batched: 0, alone })).toEqual([]);
   });
 
+  it("says how many shadow casters the maps draw from the shared buffer, and how, only where some are", () => {
+    const casters = (shadowRetained: RenderDiagnostics["shadowRetained"]) => {
+      const rendering = {
+        adapter: { api: "webgl2", vendor: null, renderer: null, version: null }, cpuMs: 1, gpuMs: null, gpuStatus: "unsupported",
+        width: 100, height: 100, scalingLevel: 1, qualityLimits: [], pipeline: { effective: { gpuBackend: "webgl2" } }, shadowRetained,
+      } as unknown as RenderDiagnostics;
+      const report: FeatureTestCheckReport = {
+        mode: "quick", startedAt: 0, durationMs: 1000, cancelled: false, pageErrors: [],
+        scenes: [{
+          name: "main", path: "assets/main.scene.hasset", passed: true, problems: [],
+          editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
+          play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null,
+            snapshot: { drawCalls: 5, meshes: 5, textures: 1, accountedBytes: 0, rendering }, presentation: null, firstDraws: null, commands: [], benchmark: [], logs: [] },
+          session: null,
+        }],
+      };
+      return formatFeatureTestCheckReport(report, environment).split("\n").filter((line) => line.startsWith("  Shadow casters:"));
+    };
+    const stats = { casters: 209, draws: 240, vertices: 90_000, indices: 300_000, multiDraw: true, calls: 40, drawn: 500 };
+    expect(casters(stats)).toEqual(["  Shadow casters: 209 drawn from the shared buffer, a map layer in one call · 12.5 caster draws a call"]);
+    // Without the extension each caster is a call, and before any map drew there is no ratio.
+    expect(casters({ ...stats, multiDraw: false, calls: 0, drawn: 0 })).toEqual(["  Shadow casters: 209 drawn from the shared buffer, one call each (no WEBGL_multi_draw)"]);
+    // WebGPU retains none, and a Scene without such casters has no line.
+    expect(casters(null)).toEqual([]);
+    expect(casters({ ...stats, casters: 0 })).toEqual([]);
+  });
+
   it("shows an editor load failure's error and the viewport's GPU when Play never ran", () => {
     const report: FeatureTestCheckReport = {
       mode: "quick", startedAt: 0, durationMs: 15_400, cancelled: false, pageErrors: [],

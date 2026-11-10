@@ -52,7 +52,9 @@ type Caster = {
   transformRevision: number;
   /** Bumped whenever this caster's shadow-relevant state changes. */
   revision: number;
-  /** Visible content whose shadow can change without a tracked state change. */
+  /** Its mesh and Material draw what its static geometry holds, so a tracked state change is the only way its shadow changes. */
+  safe: boolean;
+  /** Visible content whose shadow can change without a tracked state change: shown, and not `safe`. */
   unsafe: boolean;
   /** Its geometry draws within its bounds (twice its radius when it deforms): `safeMesh`, its thin instances aside. */
   bounded: boolean;
@@ -154,6 +156,14 @@ export class ShadowMapRefresh {
   }
 
   /**
+   * What the last walk found of a caster: a revision that moves with anything its shadow depends on, and whether its
+   * mesh and Material draw what its static geometry holds (`safe`), shown or hidden. Undefined before its first walk.
+   */
+  casterState(mesh: AbstractMesh): { readonly revision: number; readonly safe: boolean } | undefined {
+    return this.casters.get(mesh);
+  }
+
+  /**
    * The part of a walk that cannot wait for a map: it releases removed casters
    * so they are not retained. Snapshots of the others stay, so a later walk
    * reports only what changed in between.
@@ -181,6 +191,7 @@ export class ShadowMapRefresh {
           worldValue: Matrix.Identity(),
           transformRevision: 0,
           revision: 0,
+          safe: false,
           unsafe: false,
           bounded: false,
         };
@@ -293,7 +304,8 @@ export class ShadowMapRefresh {
         this.casterChanged(mesh);
       }
       const visible = enabled && mesh.isVisible && mesh.visibility > 0;
-      record.unsafe = visible && (!safeMesh || !safeMaterial);
+      record.safe = safeMesh && safeMaterial;
+      record.unsafe = visible && !record.safe;
       // Babylon's bounds leave thin instances out unless refreshed for them.
       record.bounded = safeMesh && !(source instanceof Mesh && source.hasThinInstances);
       if (visible && autoLod) this.lodLevels.set(mesh, peekAutoLodLevel(mesh, scene.activeCamera) ?? 0);
