@@ -18,8 +18,8 @@ afterEach(() => {
   while (disposers.length) disposers.pop()!();
 });
 
-/** A 16 × 8 graph holding only a shared outline task, outlining one box. */
-async function outlineGraph() {
+/** A 16 × 8 graph holding only a shared outline task, outlining one box; `sceneDepth`: a scene depth texture of that size for it to read. */
+async function outlineGraph(sceneDepth?: { width: number; height: number }) {
   const engine = adaptNullEngineFrameGraph(new NullEngine());
   Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, textureFloatRender: true, textureHalfFloatRender: true, blendFloat: true });
   const scene = new Scene(engine);
@@ -37,9 +37,13 @@ async function outlineGraph() {
     size: { width: 16, height: 8 }, sizeIsPercentage: false,
     options: { createMipMaps: false, samples: 1, types: [Constants.TEXTURETYPE_UNSIGNED_BYTE], formats: [Constants.TEXTUREFORMAT_RGBA], useSRGBBuffers: [false] },
   });
+  if (sceneDepth) task.sceneDepthTexture = graph.textureManager.createRenderTargetTexture("scene depth", {
+    size: sceneDepth, sizeIsPercentage: false,
+    options: { createMipMaps: false, samples: 1, types: [Constants.TEXTURETYPE_FLOAT], formats: [Constants.TEXTUREFORMAT_DEPTH32_FLOAT], useSRGBBuffers: [false] },
+  });
   graph.addTask(task);
   await graph.buildAsync(false);
-  return { engine, scene, view, task };
+  return { engine, scene, camera, view, task };
 }
 
 it("gives the through and selection masks one depth target, since the compose samples only the strict group's", async () => {
@@ -60,3 +64,47 @@ it("draws every strict occluder in a frame without view culling, and only those 
   task.onBeforeTaskExecute.notifyObservers(task);
   expect(narrowed).toHaveBeenCalledTimes(1);
 });
+
+it("seeds the strict mask from a scene depth of its own size: one depth copy, and only the meshes that depth lacks", async () => {
+  const own = await outlineGraph();
+  // The compose and the strict mask; a clear and a draw per mask.
+  expect([own.task.drawingPassCount, own.task.renderRecordCount]).toEqual([2, 3]);
+  const { scene, camera, view, task } = await outlineGraph({ width: 16, height: 8 });
+  expect([task.drawingPassCount, task.renderRecordCount]).toEqual([3, 4]);
+  const narrowed = vi.spyOn(view, "strictOccludersFor"), listed = vi.spyOn(view, "meshesForGroup");
+  task.onBeforeTaskExecute.notifyObservers(task);
+  expect(narrowed).toHaveBeenLastCalledWith(camera, 16, 8, true);
+  // The frame without view culling, and readiness, take the whole list the same way.
+  scene.skipFrustumClipping = true;
+  listed.mockClear();
+  task.onBeforeTaskExecute.notifyObservers(task);
+  expect(listed).toHaveBeenCalledWith("strict", true);
+  // With no strict outline left there is nothing to seed.
+  setOutlineContribution(view, "component", { kind: "component", color: [1, 0, 0], width: 2, targets: [] });
+  expect([task.drawingPassCount, task.renderRecordCount]).toEqual([0, 0]);
+});
+
+it("keeps drawing its own occluders when the scene depth is not the mask's pixels", async () => {
+  // An authored chain at half resolution: its depth is another size than the outline's target.
+  const { camera, view, task } = await outlineGraph({ width: 8, height: 4 });
+  expect([task.drawingPassCount, task.renderRecordCount]).toEqual([2, 3]);
+  const narrowed = vi.spyOn(view, "strictOccludersFor");
+  task.onBeforeTaskExecute.notifyObservers(task);
+  expect(narrowed).toHaveBeenLastCalledWith(camera, 16, 8, false);
+});
+
+it("waits for the depth copy's program only where the strict mask is seeded", async () => {
+  const pending = (task: FrameGraphSharedOutlineTask) =>
+    vi.spyOn((task as unknown as { seed: { isReady(): boolean } }).seed, "isReady").mockReturnValue(false);
+  const seeded = await outlineGraph({ width: 16, height: 8 });
+  expect(seeded.task.isReady()).toBe(true);
+  const compiling = pending(seeded.task);
+  expect(seeded.task.isReady()).toBe(false);
+  compiling.mockRestore();
+  expect(seeded.task.isReady()).toBe(true);
+  // A mask that draws its own occluders never draws the copy.
+  const own = await outlineGraph();
+  pending(own.task);
+  expect(own.task.isReady()).toBe(true);
+});
+

@@ -12,7 +12,7 @@ import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal,
   type ManagedRenderLease,
 } from "./managed-render-resources";
-import { cullStrictOccluders } from "./shared-outline-occluders";
+import { cullStrictOccluders, writesSceneDepth } from "./shared-outline-occluders";
 
 export const SHARED_OUTLINE_ATTRIBUTE = "hapticOutlineIdentity";
 const SHARED_OUTLINE_MAX_ID = 65_535;
@@ -346,7 +346,7 @@ export class SharedOutlineView {
   private readonly styles = new Map<SharedOutlineGroup, StyleRecord>();
   private readonly maximumWidths = new Map<SharedOutlineGroup, number>();
   private occluders: readonly AbstractMesh[] | null = null;
-  private readonly meshLists = new Map<SharedOutlineGroup, { revision: number; sceneRevision: number; meshes: AbstractMesh[] }>();
+  private readonly meshLists = new Map<SharedOutlineGroup | "strictOverSceneDepth", { revision: number; sceneRevision: number; meshes: AbstractMesh[] }>();
   /** The strict occluder list Babylon observes; rewritten only when the culled occluders change. */
   private readonly strictOccluders: AbstractMesh[] = [];
   /** This view's working list for the cull; see `cullStrictOccluders`. */
@@ -503,31 +503,42 @@ export class SharedOutlineView {
   maximumWidthForGroup(group: SharedOutlineGroup): number {
     this.prepare(); return this.maximumWidths.get(group) ?? 0;
   }
-  meshesForGroup(group: SharedOutlineGroup): AbstractMesh[] {
+  /**
+   * The meshes a group's mask pass draws and probes. `overSceneDepth` (the strict group only): the mask is seeded from
+   * the scene's depth, which holds every occluder the colour pass wrote, so the list is the members and the occluders
+   * that depth lacks (`writesSceneDepth`) as they are when the list is built; the frame's cull asks again.
+   */
+  meshesForGroup(group: SharedOutlineGroup, overSceneDepth = false): AbstractMesh[] {
     this.prepare();
-    const previous = this.meshLists.get(group);
+    const key = group === "strict" && overSceneDepth ? "strictOverSceneDepth" : group;
+    const previous = this.meshLists.get(key);
     if (previous?.revision === this.revision && previous.sceneRevision === this.owner.meshRevision) return previous.meshes;
     const data = this.styles.get(group)?.data;
-    const fresh = group === "strict" ? (this.occluders ?? this.scene.meshes).filter((mesh) => !mesh.isDisposed()) :
-      this.scene.meshes.filter((mesh) => !mesh.isDisposed() && (data?.[this.owner.identityFor(mesh) * 4 + 3] ?? 0) > 0);
+    const fresh = key === "strictOverSceneDepth"
+      ? this.meshesForGroup("strict").filter((mesh) => this.isStrictMember(mesh) || !writesSceneDepth(mesh))
+      : group === "strict" ? (this.occluders ?? this.scene.meshes).filter((mesh) => !mesh.isDisposed()) :
+        this.scene.meshes.filter((mesh) => !mesh.isDisposed() && (data?.[this.owner.identityFor(mesh) * 4 + 3] ?? 0) > 0);
     // Another group's or a style change leaves this membership alone. Keeping the
     // array lets readiness skip a group whose members were already probed.
     const meshes = previous && sameMeshes(previous.meshes, fresh) ? previous.meshes : fresh;
-    this.meshLists.set(group, { revision: this.revision, sceneRevision: this.owner.meshRevision, meshes });
+    this.meshLists.set(key, { revision: this.revision, sceneRevision: this.owner.meshRevision, meshes });
     return meshes;
+  }
+  /** Whether the strict group outlines `mesh`. Per-instance identities live in an instanced buffer: such sources are members. */
+  private isStrictMember(mesh: AbstractMesh): boolean {
+    return (this.styles.get("strict")?.data[this.owner.identityFor(mesh) * 4 + 3] ?? 0) > 0 ||
+      mesh.instancedBuffers?.[SHARED_OUTLINE_ATTRIBUTE] !== undefined;
   }
   /**
    * The strict group's occluders that can affect this frame's mask for
    * `camera`; readiness keeps using the full `meshesForGroup("strict")` list.
+   * `overSceneDepth`: of the occluders, only those the scene's depth lacks now.
    */
-  strictOccludersFor(camera: Camera, widthPx: number, heightPx: number): AbstractMesh[] {
+  strictOccludersFor(camera: Camera, widthPx: number, heightPx: number, overSceneDepth = false): AbstractMesh[] {
     const candidates = this.meshesForGroup("strict");
-    const data = this.styles.get("strict")?.data;
-    // Per-instance identities live in an instanced buffer: keep such sources as members.
-    const isMember = (mesh: AbstractMesh) => (data?.[this.owner.identityFor(mesh) * 4 + 3] ?? 0) > 0 ||
-      mesh.instancedBuffers?.[SHARED_OUTLINE_ATTRIBUTE] !== undefined;
-    return cullStrictOccluders(candidates, isMember, camera, widthPx, heightPx,
-      Math.ceil(this.maximumWidthForGroup("strict")) + 1, this.strictOccluders, this.strictOccluderScratch);
+    return cullStrictOccluders(candidates, (mesh) => this.isStrictMember(mesh), camera, widthPx, heightPx,
+      Math.ceil(this.maximumWidthForGroup("strict")) + 1, this.strictOccluders, this.strictOccluderScratch,
+      overSceneDepth ? lacksSceneDepth : undefined);
   }
   diagnostics() {
     return { revision: this.revision, consumerCount: this.contributions.size,
@@ -546,6 +557,7 @@ export class SharedOutlineView {
     this.strictOccluders.length = 0; this.strictOccluderScratch.length = 0;
   }
 }
+const lacksSceneDepth = (mesh: AbstractMesh) => !writesSceneDepth(mesh);
 function sameContribution(a: SharedOutlineContribution, b: SharedOutlineContribution): boolean {
   return a.kind === b.kind && a.width === b.width && !!a.throughMeshes === !!b.throughMeshes &&
     a.distanceFade?.start === b.distanceFade?.start && a.distanceFade?.end === b.distanceFade?.end &&

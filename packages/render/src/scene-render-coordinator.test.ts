@@ -1289,6 +1289,41 @@ it("composes a multisampled WebGL2 view's outlines onto the backbuffer after its
   view.dispose();
 });
 
+// A game's world view (`outlinesOverSceneDepth`) starts its strict outline mask from the scene's depth wherever that is
+// a texture: the view's own multisampled pair's (resolved by sample) or a settings chain's. The backbuffer's cannot be read.
+it.each([
+  ["msaa4", true, true, true],
+  ["fxaa", true, true, false],
+  ["off", true, false, false],
+  ["msaa4", false, false, false],
+] as const)("with %s and the option %s, seeds the strict outline mask from the scene's depth: %s", async (antiAliasing, option, seeded, resolvesDepth) => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 80; options.renderHeight = 64;
+  const engine = adaptNullEngineFrameGraph(new NullEngine(options));
+  engines.push(engine);
+  Object.assign(engine.getCaps(), { maxMSAASamples: 4 });
+  vi.spyOn(engine, "webGLVersion", "get").mockReturnValue(2);
+  const scene = new Scene(engine);
+  scene.activeCamera = new FreeCamera("camera", new Vector3(0, 0, -4), scene);
+  const renderer = new SceneRenderCoordinator(scene, { outlinesOverSceneDepth: option });
+  allowSceneScreenShadows(scene, () => false);
+  sceneRenderingSettings(scene).qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing });
+  updateSceneRenderingSettings(scene, {});
+  const box = MeshBuilder.CreateBox("outlined", {}, scene);
+  const view = SharedOutlineOwner.forScene(scene).createView("play");
+  setOutlineContribution(view, "component", { kind: "component", targets: [{ key: "actor", meshes: [box] }], color: [1, 0, 0], width: 1 });
+  const detach = renderer.attachSharedOutline(view);
+  await renderer.prepare();
+  expect(renderer.render()).toMatchObject({ path: "frameGraph", rendered: true });
+  // The compose and the strict mask, and the depth copy where the mask is seeded.
+  expect(renderer.sharedOutlineDiagnostics().drawingPassCount).toBe(seeded ? 3 : 2);
+  const graph = (renderer as unknown as { graph: { objects: FrameGraphObjectRendererTask } }).graph;
+  expect(graph.objects.resolveMSAADepth).toBe(resolvesDepth);
+  detach();
+  renderer.dispose();
+  view.dispose();
+});
+
 it("rejects an outlined view on a scene the graph cannot draw without drawing it", async () => {
   const { scene, renderer } = host();
   const box = MeshBuilder.CreateBox("outlined", {}, scene);

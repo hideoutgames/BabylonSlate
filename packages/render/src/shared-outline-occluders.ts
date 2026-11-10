@@ -1,4 +1,6 @@
 import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { Material } from "@babylonjs/core/Materials/material";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { rewriteRenderList } from "./observed-render-list";
 import { isRevealPending } from "./reveal-pending";
@@ -41,6 +43,18 @@ function commit(fresh: readonly AbstractMesh[], out: AbstractMesh[]): AbstractMe
 }
 
 /**
+ * Whether the view's colour pass writes `mesh`'s depth, so a mask seeded from the scene's depth already holds it as an
+ * occluder: every Material it draws with writes depth and is opaque or alpha tested, or blended with a depth pre-pass
+ * or a forced depth write. A blended surface without either leaves the scene's depth as it was.
+ */
+export function writesSceneDepth(mesh: AbstractMesh): boolean {
+  const writes = (material: Material | null | undefined) => !material ||
+    (!material.disableDepthWrite && (!material.needAlphaBlendingForMesh(mesh) || material.needDepthPrePass || material.forceDepthWrite));
+  const material = mesh.material ?? mesh.getScene().defaultMaterial;
+  return material instanceof MultiMaterial ? material.subMaterials.every(writes) : writes(material);
+}
+
+/**
  * Strict-group occluders worth drawing this frame. The strict mask only needs
  * depth where a member or its stroke can appear: every member is kept, and any
  * other mesh whose screen bounds overlap the members' bounds (padded by the
@@ -52,6 +66,9 @@ function commit(fresh: readonly AbstractMesh[], out: AbstractMesh[]): AbstractMe
  * differs from what it holds. `scratch` is the working list, reused so a frame
  * allocates nothing; it is not `out`, and it keeps the last cull's meshes alive,
  * so its owner clears it together with `out`.
+ *
+ * `occludes` narrows the non-members further: a mask seeded from the scene's depth draws only the occluders that
+ * depth lacks (`writesSceneDepth`). Members are always kept.
  */
 export function cullStrictOccluders(
   candidates: readonly AbstractMesh[],
@@ -62,6 +79,7 @@ export function cullStrictOccluders(
   paddingPx: number,
   out: AbstractMesh[] = [],
   scratch: AbstractMesh[] = [],
+  occludes?: (mesh: AbstractMesh) => boolean,
 ): AbstractMesh[] {
   const fresh = scratch;
   fresh.length = 0;
@@ -89,6 +107,7 @@ export function cullStrictOccluders(
   if (minX > maxX || minY > maxY) return commit(fresh, out);
   for (const mesh of candidates) {
     if (isMember(mesh) || !mesh.isEnabled() || !mesh.isVisible || isRevealPending(mesh)) continue;
+    if (occludes && !occludes(mesh)) continue;
     measure(mesh, viewProjection, view, handedness, bounds);
     if (!bounds.front || bounds.near >= far) continue;
     if (!bounds.behind && (bounds.maxX < minX || bounds.minX > maxX || bounds.maxY < minY || bounds.minY > maxY)) continue;

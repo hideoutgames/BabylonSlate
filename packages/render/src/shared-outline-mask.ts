@@ -28,6 +28,9 @@ type MaskProgram = {
   readyRenderId?: number; readyHardware?: boolean;
 };
 
+/** The polygon offset of a mask draw over a depth seeded from the scene's (`SharedOutlineMaskRenderer.overSceneDepth`). */
+const SCENE_DEPTH_BIAS = { slope: 1, units: 4 } as const;
+
 /** Native submesh submission with pass-owned programs; original materials never change. */
 export class SharedOutlineMaskRenderer {
   private readonly programs = new Map<SubMesh, MaskProgram>();
@@ -38,6 +41,12 @@ export class SharedOutlineMaskRenderer {
   private readonly group: SharedOutlineGroup;
   /** Instancing mode of the most recent instances() call. */
   private hardware = false;
+  /**
+   * The mask's depth was seeded from the scene's (`FrameGraphSharedOutlineTask`): an outlined mesh the colour pass
+   * drew is in it already, at the depth this pass's program computes again, so each draw is biased toward the camera
+   * by `SCENE_DEPTH_BIAS` and passes its own surface. The bias is a few of the depth format's smallest steps.
+   */
+  overSceneDepth = false;
   private currentEffect: Effect | undefined;
   // One callback for every submission; _processRendering invokes it synchronously.
   private readonly setInstanceWorld = (_instance: boolean, world: Matrix) => this.currentEffect!.setMatrix("world", world);
@@ -223,8 +232,10 @@ export class SharedOutlineMaskRenderer {
     let orientation = original._getEffectiveOrientation(mesh);
     if (effective._getWorldMatrixDeterminant() < 0)
       orientation = orientation === Material.ClockWiseSideOrientation ? Material.CounterClockWiseSideOrientation : Material.ClockWiseSideOrientation;
-    engine.setState(original.backFaceCulling, original.zOffset, undefined, orientation === Material.ClockWiseSideOrientation,
-      original.cullBackFaces, undefined, original.zOffsetUnits);
+    // Negative is nearer; the Engine turns the offset round itself for a reversed depth buffer.
+    const bias = this.overSceneDepth ? -1 : 0;
+    engine.setState(original.backFaceCulling, original.zOffset + bias * SCENE_DEPTH_BIAS.slope, undefined, orientation === Material.ClockWiseSideOrientation,
+      original.cullBackFaces, undefined, original.zOffsetUnits + bias * SCENE_DEPTH_BIAS.units);
     const program = this.programs.get(subMesh)!, wrapper = program.wrapper!, effect = wrapper.effect!;
     engine.enableEffect(wrapper);
     if (!hardware) mesh._bind(subMesh, effect, original.fillMode);

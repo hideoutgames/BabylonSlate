@@ -497,7 +497,11 @@ function initializeEngine(
   // The world view draws every frame and presents only rendered ones, so a
   // draw whose WebGPU pipeline is still compiling holds the last image.
   // A world view culls by occlusion while its scene does; previews never do.
-  const worldRenderer = new SceneRenderCoordinator(scene, { deferPipelines: true, occlusion: !presentRtt && !options.previewLighting });
+  const worldRenderer = new SceneRenderCoordinator(scene, {
+    deferPipelines: true, occlusion: !presentRtt && !options.previewLighting,
+    // A game's view only: the editor viewport's depth also holds its helper visuals.
+    outlinesOverSceneDepth: options.playMode === true,
+  });
   onRollback(() => worldRenderer.dispose());
   let disposed = false;
   let streamAdmission: ReturnType<typeof createSceneStreamAdmission> | undefined;
