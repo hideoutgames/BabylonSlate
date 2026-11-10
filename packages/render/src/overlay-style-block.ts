@@ -34,7 +34,7 @@ export class OverlayStyleBlock extends NodeMaterialBlock {
     state._emitUniformFromString(this.uniform, Types.Vector4);
     state.sharedData.forcedBindableBlocks.push(this);
     // The component's tint: bound, or a draw batch's own per vertex.
-    const value = drawBatchValue(state, DRAW_BATCH_TINT_KIND, this.uniform);
+    const value = drawBatchValue(state, DRAW_BATCH_TINT_KIND, `${state.shaderLanguage === 1 ? "uniforms." : ""}${this.uniform}`);
     state.compilationString += `${state._declareOutput(this.rgba)} = ${value};\n`;
     state.compilationString += `${state._declareOutput(this.rgb)} = ${value}.rgb;\n`;
     state.compilationString += `${state._declareOutput(this.alpha)} = ${value}.a;\n`;

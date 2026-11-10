@@ -22,6 +22,11 @@ export const DRAW_BATCH_WORLD_KINDS = ["batchWorld0", "batchWorld1", "batchWorld
  */
 export const DRAW_BATCH_COLOR_KIND = "batchColor";
 export const DRAW_BATCH_TINT_KIND = "batchTint";
+/**
+ * The vertex attributes a batch of a text Material's glyphs carries each glyph's own values in: its rectangle on the
+ * atlas, its rectangle in the text's Material space, and its span colour with its visibility.
+ */
+export const DRAW_BATCH_TEXT_KINDS = ["batchTextAtlasRect", "batchTextMaterialRect", "batchTextTint"] as const;
 
 const batchMeshes = new WeakSet<AbstractMesh>();
 
@@ -49,19 +54,26 @@ export function isBoundedMaterial(material: Material): boolean {
   return boundedMaterials.has(material);
 }
 
-const batchMaterials = new WeakSet<Material>();
+/** Authored Materials whose draws may batch, and whether each is a text's. */
+const batchMaterials = new WeakMap<Material, boolean>();
 
 /**
  * Marks an authored `material` whose draws may batch: but for the world matrix and the overlay style, which a batch
  * carries per vertex, and Receive Shadows, which its members share, it draws every mesh the same (the compiler marks a
- * Scene Layer surface with the stock vertex stage and no per-mesh text or water values).
+ * Scene Layer surface with the stock vertex stage and nothing else bound per mesh). A `text` Material's glyphs each
+ * bind values of their own besides, which a batch carries per vertex too (`DRAW_BATCH_TEXT_KINDS`).
  */
-export function markDrawBatchMaterial(material: Material): void {
-  batchMaterials.add(material);
+export function markDrawBatchMaterial(material: Material, text = false): void {
+  batchMaterials.set(material, text);
 }
 
 export function isDrawBatchMaterial(material: Material): boolean {
   return batchMaterials.has(material);
+}
+
+/** Whether `material` is a text's whose glyphs may batch. */
+export function isDrawBatchTextMaterial(material: Material): boolean {
+  return batchMaterials.get(material) === true;
 }
 
 /**
@@ -116,10 +128,10 @@ export function drawBatchWorld(name: string, instances: InstancesBlock, blocks: 
 /**
  * Fragment: a per-mesh vec4 that a draw batch's mesh carries with each vertex instead of binding it. Under `HAPTIC_BATCH`
  * the value is the vertex attribute `kind`, handed on flat: every vertex of a member holds the same value, and a flat
- * varying gives the fragment stage exactly it, where an interpolated one could round. Every other draw reads `uniform`.
- * Returns a local that holds the value, for the block's code to use in place of the uniform.
+ * varying gives the fragment stage exactly it, where an interpolated one could round. Every other draw reads `bound`,
+ * the expression of the value as it binds it. Returns a local that holds the value, for the block's code to use.
  */
-export function drawBatchValue(state: NodeMaterialBuildState, kind: string, uniform: string): string {
+export function drawBatchValue(state: NodeMaterialBuildState, kind: string, bound: string): string {
   const wgsl = state.shaderLanguage === ShaderLanguage.WGSL;
   const vertex = state._vertexState;
   const varying = `v_${kind}`;
@@ -137,6 +149,6 @@ export function drawBatchValue(state: NodeMaterialBuildState, kind: string, unif
   }
   const local = state._getFreeVariableName(`${kind}Value`);
   const declared = state._declareLocalVar(local, Types.Vector4);
-  state.compilationString += `#ifdef HAPTIC_BATCH\n${declared} = ${varying};\n#else\n${declared} = ${wgsl ? "uniforms." : ""}${uniform};\n#endif\n`;
+  state.compilationString += `#ifdef HAPTIC_BATCH\n${declared} = ${varying};\n#else\n${declared} = ${bound};\n#endif\n`;
   return local;
 }

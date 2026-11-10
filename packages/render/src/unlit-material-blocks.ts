@@ -211,7 +211,7 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
     state._emitUniformFromString(U.color, Types.Vector4);
     state._emitUniformFromString(U.alpha, Types.Vector4);
     // The mesh's colour and alpha: bound, or a draw batch's own per vertex.
-    const meshColor = drawBatchValue(state, DRAW_BATCH_COLOR_KIND, U.color);
+    const meshColor = drawBatchValue(state, DRAW_BATCH_COLOR_KIND, `${u}${U.color}`);
     if (!wgsl) state._emitExtension("derivatives", "#extension GL_OES_standard_derivatives : enable");
     const sample = state._getFreeVariableName("unlitSample");
     const position = this.worldPosition.associatedVariableName;
@@ -277,7 +277,7 @@ export class UnlitFinishBlock extends NodeMaterialBlock {
     state._emitUniformFromString(U.tint, Types.Vector4);
     const u = state.shaderLanguage === 1 ? "uniforms." : "";
     // The overlay style's tint: bound, or a draw batch's own per vertex.
-    const tint = drawBatchValue(state, DRAW_BATCH_TINT_KIND, U.tint);
+    const tint = drawBatchValue(state, DRAW_BATCH_TINT_KIND, `${u}${U.tint}`);
     const output = this.output.associatedVariableName;
     state.compilationString += `${state._declareOutput(this.output)} = ${this.input.associatedVariableName};\n`;
     state.compilationString += `${output}.a *= ${u}${U.finish}.x;\n${output} *= ${tint};\n`;

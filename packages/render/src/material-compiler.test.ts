@@ -30,7 +30,7 @@ import {
   newCustomGlslProperties,
   type MaterialDocument,
 } from "@haptic/shader-graph";
-import { isBoundedMaterial, isDrawBatchMaterial } from "./draw-batch-world-block";
+import { isBoundedMaterial, isDrawBatchMaterial, isDrawBatchTextMaterial } from "./draw-batch-world-block";
 import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
 // The WGSL fog cases fake a WebGPU Engine, whose code registers the WGSL includes Haptic's blocks emit as it loads.
 import "./webgpu-registrations";
@@ -399,9 +399,20 @@ describe("material compiler", () => {
     // offset one's does not.
     expect([overlay, mirrored, lifted].map(isBoundedMaterial)).toEqual([true, true, false]);
     expect(isBoundedMaterial(await compiled("world bounds", () => {}, false))).toBe(true);
-    // A text's Material binds each mesh's own glyphs: it stays on its mesh, and joins no batch.
-    const text = await compiled("text", () => {}, true, "text");
-    expect({ bounded: isBoundedMaterial(text), batches: isDrawBatchMaterial(text) }).toEqual({ bounded: true, batches: false });
+    // A text's Material binds each glyph's own rectangles, colour and visibility, which a batch of glyphs carries with
+    // their vertices: marked as a text's, in a Scene Layer or the world.
+    for (const overlay of [true, false]) {
+      const text = await compiled(`text ${overlay}`, () => {}, overlay, "text");
+      expect({ bounded: isBoundedMaterial(text), batches: isDrawBatchMaterial(text), text: isDrawBatchTextMaterial(text) })
+        .toEqual({ bounded: true, batches: true, text: true });
+    }
+    expect(isDrawBatchTextMaterial(overlay)).toBe(false);
+    const glyphs = (await compiled("glyphs", () => {}, true, "text")).compiledShaders.split("// Fragment shader").map((stage) => stage.replace(/\s+/g, " "));
+    for (const [kind, bound] of [["batchTextAtlasRect", /textAtlasRect\w*/], ["batchTextMaterialRect", /textMaterialRect\w*/],
+      ["batchTextTint", /vec4\(textGlyphTint\w*, textGlyphOpacity\w*\)/]] as const) {
+      expect(glyphs[0]).toContain(`#ifdef HAPTIC_BATCH attribute vec4 ${kind}; #endif`);
+      expect(glyphs[1]).toMatch(new RegExp(`#ifdef HAPTIC_BATCH vec4 (\\w+) = v_${kind}; #else vec4 \\1 = ${bound.source}; #endif`));
+    }
   });
 
   it("reports deferred Babylon build failures through readiness", async () => {

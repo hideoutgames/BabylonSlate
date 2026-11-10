@@ -1,6 +1,6 @@
 /**
  * Test-build-only oracle for Scene Layer draw batching: a HUD made like the Feature Test's (`buildSceneLayerHud`, every
- * second tinted background with an authored Material) drawn
+ * second tinted background with an authored Material, and a line of text with an authored Text Material) drawn
  * by a Play compositor over a cleared backbuffer, with batching on and off, under the default layer camera, a panned
  * and zoomed one and a turned one. Each pair of images must match exactly; the batched draws are fewer.
  */
@@ -66,8 +66,15 @@ export async function runSceneLayerBatchingProof(backend: "webgl2" | "webgpu") {
     const authored = compileMaterialPlan(lowered.plan, { scene: layer.scene, name: "authoredPanel", overlay: true });
     if (!authored.ok) throw new Error("The proof's authored Material did not compile");
     await authored.ready;
+    // And an authored Text Material for a line of text, whose glyphs are a mesh each.
+    const textPlan = lowerMaterialDocument(createDefaultMaterialDocument("Text", "text"));
+    if (!textPlan.ok) throw new Error("The proof's Text Material did not lower");
+    const text = compileMaterialPlan(textPlan.plan, { scene: layer.scene, name: "authoredText", overlay: true });
+    if (!text.ok) throw new Error("The proof's Text Material did not compile");
+    await text.ready;
     buildSceneLayerHud(layer.scene, {
       authoredPanelMaterial: authored.material,
+      textMaterial: text.material,
       texture: (guid) => {
         let texture = textures.get(guid);
         if (!texture) textures.set(guid, (texture = RawTexture.CreateRGBATexture(iconPixels(textures.size), 64, 64, layer.scene)));
