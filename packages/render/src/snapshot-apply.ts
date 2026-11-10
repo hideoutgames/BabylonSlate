@@ -212,6 +212,23 @@ export function retirePlaySlot(
   binding.onVisualChanged?.(slotId);
 }
 
+/**
+ * Retires the slot a despawn command names. The snapshot the view holds was taken before the command, and a frame can
+ * apply it again before the next one arrives (commands and their tick's snapshot are separate deliveries): its row
+ * for the slot is of the actor that left. Until a snapshot is received (`notePlaySnapshotReceived`), applying one
+ * skips the slot's rows, so that row neither builds a visual for the freed slot nor marks the slot seen. A slot left
+ * marked seen would have the next actor to take its id retired by a snapshot that predates it.
+ */
+export function despawnPlaySlot(binding: SnapshotSceneBinding, slotId: number): void {
+  retirePlaySlot(binding, slotId);
+  binding.despawnedSlots.add(slotId);
+}
+
+/** The view received a snapshot: it was taken after every despawn command applied so far, so its rows are current. */
+export function notePlaySnapshotReceived(binding: SnapshotSceneBinding): void {
+  binding.despawnedSlots.clear();
+}
+
 /** Drop world Play visuals/cameras; overlay compositor slots stay. */
 export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
   const slots = new Set<number>([
@@ -258,6 +275,7 @@ function reconcileSnapshotVisuals(
   const live = binding.liveSlots;
   live.clear();
   const seen = binding.seenSlots;
+  const despawned = binding.despawnedSlots.size > 0 ? binding.despawnedSlots : null;
   const animationScenes = binding.tilemapAnimationScenes ??= new Set();
   animationScenes.clear();
   animationScenes.add(scene);
@@ -273,6 +291,8 @@ function reconcileSnapshotVisuals(
     for (let i = 0; i < count; i++) {
       const actor = snapshot.actors[i]!;
       binding.snapshotMeshes[i] = null;
+      // The row of an actor a command despawned after this snapshot was taken (`despawnPlaySlot`).
+      if (despawned?.has(actor.slotId)) continue;
       live.add(actor.slotId);
       const wantsOverlay = snapshotSlotWantsOverlay(actor, binding);
       const overlayScene = binding.sceneForSlot?.(actor.slotId) ?? null;
@@ -501,6 +521,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.liveSlots.clear();
   binding.snapshotMeshes.length = 0;
   binding.seenSlots.clear();
+  binding.despawnedSlots.clear();
   binding.spriteOverlays?.clear();
   binding.slotAnimationGroups?.clear();
   binding.pendingAnimState?.clear();

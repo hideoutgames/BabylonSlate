@@ -69,6 +69,11 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   /** Slot ids observed in an applied snapshot; gates absence-retire so
    * command-built visuals survive a stale buffer that predates them. */
   seenSlots: Set<number>;
+  /**
+   * Slots a despawn command retired since the view received the snapshot it holds (`despawnPlaySlot`). That snapshot
+   * was taken before the command, so its rows for these slots are of the actors that left.
+   */
+  despawnedSlots: Set<number>;
   /** meshKind from assignMesh, keyed by slotId. */
   meshKinds: Map<number, string | null>;
   /** Sprite / mesh asset guid from assignMesh, keyed by slotId. */
@@ -251,6 +256,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     liveSlots: new Set(),
     snapshotMeshes: [],
     seenSlots: new Set(),
+    despawnedSlots: new Set(),
     meshKinds: new Map(),
     meshAssetGuids: new Map(),
     meshParts: new Map(),

@@ -76,18 +76,20 @@ export class SnapshotSampler {
     return true;
   }
 
-  push(buffer: Float32Array): void {
-    if (!isPublishedSnapshot(buffer)) return;
+  /** Buffers `buffer` as the latest snapshot; false when it is ignored (unpublished, another layout, too large). */
+  push(buffer: Float32Array): boolean {
+    if (!isPublishedSnapshot(buffer)) return false;
     const header = readSnapshotHeader(buffer);
-    if (header.layoutGeneration !== this.generation) return;
+    if (header.layoutGeneration !== this.generation) return false;
     const dest = this.buffer;
     // Copy only the header and live rows; `sample` never reads past
     // `actorCount`, so a count the buffer cannot hold would expose stale rows.
     const span = snapshotActiveFloatCount(buffer);
-    if (span > dest.length || snapshotFloatCount(header.actorCount) > buffer.length) return;
+    if (span > dest.length || snapshotFloatCount(header.actorCount) > buffer.length) return false;
     dest.set(span === buffer.length ? buffer : buffer.subarray(0, span));
     this.latest = dest;
     this.buffered++;
+    return true;
   }
 
   /** Drop the buffered snapshot so the next sample is null until a fresh push. */

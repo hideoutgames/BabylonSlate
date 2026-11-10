@@ -198,7 +198,8 @@ import {
   disposeWorldOverlayLeftovers,
   refreshPlayActiveCamera,
   resolvePlayGameCamera,
-  retirePlaySlot,
+  despawnPlaySlot,
+  notePlaySnapshotReceived,
   retirePlayWorldSlots,
   migratePlaySlotVisual,
   meshForPlayComponent,
@@ -2780,7 +2781,7 @@ function initializeEngine(
     pushSnapshot: (buffer: Float32Array) => {
       // Deliveries already queued when the view stopped must not repose it.
       if (disposed) return;
-      snapshots.push(buffer);
+      if (snapshots.push(buffer)) notePlaySnapshotReceived(binding);
       appliedSnapshotIdentity = null;
       const sampled = snapshots.sample();
       if (sampled) publishPositions(sampled);
@@ -2906,7 +2907,7 @@ function initializeEngine(
         worldPlaySlots.delete(command.slotId);
         sceneLayerCompositor?.noteDespawn(command.slotId);
         const previousCamera = scene.activeCamera;
-        retirePlaySlot(binding, command.slotId);
+        despawnPlaySlot(binding, command.slotId);
         refreshPlayActiveCamera(scene, binding);
         rebuildIfActiveCameraChanged(previousCamera);
       }

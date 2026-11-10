@@ -2917,6 +2917,110 @@ describe("Play createEngine view", () => {
     }
   });
 
+  describe("a slot id an actor takes after another left it", () => {
+    // A tick's commands and its snapshot are separate deliveries: a frame can draw between them, and it applies the
+    // snapshot of the tick before, which knows nothing of those commands.
+    function play() {
+      const engine = sharedEngine();
+      const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+      const { handle } = playHandle(engine);
+      const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+      const frame = () => {
+        engine.onBeginFrameObservable.notifyObservers(engine);
+        renderLoop();
+        engine.onEndFrameObservable.notifyObservers(engine);
+      };
+      return { handle, frame };
+    }
+
+    /** A snapshot that poses `slots` at x = `frameId`. */
+    function posing(frameId: number, slots: number[], flags = SNAPSHOT_FLAG_VISIBLE): Float32Array {
+      const snapshot = new Float32Array(snapshotFloatCount(8));
+      writeSnapshotHeader(snapshot, { frameId, tickIndex: frameId, actorCount: slots.length, scriptMs: 0, physicsMs: 0 });
+      slots.forEach((slotId, row) => writeActorSlot(snapshot, row, {
+        slotId, position: { x: frameId, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 }, flags,
+      }));
+      return snapshot;
+    }
+
+    it("keeps a Scene Layer actor's visual when frames draw before the snapshots of the ticks that freed and reused its slot", () => {
+      const { handle, frame } = play();
+      handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+      const layer = handle.sceneLayerScenes()[0]!.scene;
+      const inLayer = SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY;
+      const spawnCard = (actorGuid: string) => {
+        handle.applyCommand({ type: "spawn", slotId: 3, actorGuid, classId: "SceneLayerActor", sceneLayerId: "hud" });
+        handle.applyCommand({ type: "assignMesh", slotId: 3, meshAssetGuid: null, meshKind: "2dtexture", actorGuid });
+      };
+      spawnCard("card-a");
+      handle.pushSnapshot(posing(1, [3], inLayer));
+      frame();
+      expect(layer.getMeshByName("actor-3")!.isVisible).toBe(true);
+
+      // Tick 2: card A leaves, and a frame draws before the tick's snapshot arrives.
+      handle.applyCommand({ type: "despawn", slotId: 3, actorGuid: "card-a" });
+      frame();
+      expect(layer.getMeshByName("actor-3")).toBeNull();
+      handle.pushSnapshot(posing(2, [], inLayer));
+      frame();
+
+      // Tick 3: card B takes the slot, and again a frame draws first.
+      spawnCard("card-b");
+      const card = layer.getMeshByName("actor-3")!;
+      frame();
+      expect(card.isDisposed()).toBe(false);
+      expect(card.isVisible).toBe(false);
+      handle.pushSnapshot(posing(3, [3], inLayer));
+      frame();
+      expect(layer.getMeshByName("actor-3")).toBe(card);
+      expect(card.isVisible).toBe(true);
+      expect(card.position.x).toBe(3);
+    });
+
+    it("keeps a world actor's visual when its slot was freed the tick before", () => {
+      const { handle, frame } = play();
+      const spawn = (actorGuid: string, meshKind: string) => {
+        handle.applyCommand({ type: "spawn", slotId: 4, actorGuid, classId: "Actor" });
+        handle.applyCommand({ type: "assignMesh", slotId: 4, meshAssetGuid: null, meshKind, actorGuid });
+      };
+      spawn("crate", "box");
+      handle.pushSnapshot(posing(1, [4]));
+      frame();
+
+      // Tick 2: the crate leaves, and a frame draws before the tick's snapshot arrives.
+      handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "crate" });
+      frame();
+      expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+
+      // That snapshot arrives with tick 3's commands right behind it: no frame applies it before the ball exists.
+      handle.pushSnapshot(posing(2, []));
+      spawn("ball", "sphere");
+      const ball = handle.scene.getMeshByName("actor-4")!;
+      // The crate's row never counted for the slot, so the ball waits hidden for a snapshot of its own.
+      expect(ball.isVisible).toBe(false);
+      frame();
+      expect(ball.isDisposed()).toBe(false);
+      handle.pushSnapshot(posing(3, [4]));
+      frame();
+      expect(handle.scene.getMeshByName("actor-4")).toBe(ball);
+      expect(ball.isVisible).toBe(true);
+      expect(ball.position.x).toBe(3);
+    });
+
+    it("does not take a buffer the sampler ignores for the despawn tick's snapshot", () => {
+      const { handle, frame } = play();
+      handle.applyCommand({ type: "spawn", slotId: 4, actorGuid: "crate", classId: "Actor" });
+      handle.applyCommand({ type: "assignMesh", slotId: 4, meshAssetGuid: null, meshKind: "box", actorGuid: "crate" });
+      handle.pushSnapshot(posing(1, [4]));
+      frame();
+      handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "crate" });
+      // An unpublished spare: the view still holds the snapshot that lists the crate.
+      handle.pushSnapshot(new Float32Array(snapshotFloatCount(8)));
+      frame();
+      expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+    });
+  });
+
   it("moves a bone-attached camera with its bone on running frames that bring no new pose, without re-applying the snapshot", () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
