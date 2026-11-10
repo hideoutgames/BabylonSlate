@@ -45,8 +45,6 @@ export interface FeatureTestBreakdownBase {
   /** How the report names it (`FeatureTestBreakdownInfo.tier`). */
   label: string;
   commands: readonly string[];
-  /** After the scene's last step and `quality reset`: what returns the session to how Play started it. */
-  cleanup: readonly string[];
 }
 
 const MEDIUM = { ...RENDER_QUALITY_PROFILES.medium, shadows: SHADOW_PROFILES.medium };
@@ -70,17 +68,15 @@ export const FEATURE_TEST_BREAKDOWN_BASES: Readonly<Record<FeatureTestBreakdownM
       "postprocessing off",
       "rendertargets off",
     ],
-    cleanup: ["postprocessing on", "rendertargets on"],
   },
   "remove-one": {
     label: "medium",
     // Tiers below Ultra turn dynamic resolution on, which a Feature Test project keeps off so the workload stays fixed.
     commands: ["quality medium", "quality resolution reset"],
-    cleanup: [],
   },
   // Half resolution keeps a tablet's GPU below the point where it drops to its slower speed (SATURATED at full
   // resolution), so each water step's change is that part's own cost.
-  water: { label: "medium at resolution 0.5", commands: ["quality medium", "quality resolution scale 0.5"], cleanup: [] },
+  water: { label: "medium at resolution 0.5", commands: ["quality medium", "quality resolution scale 0.5"] },
 };
 
 /**
@@ -321,10 +317,9 @@ export interface FeatureTestBreakdownView {
   steps: readonly FeatureTestBreakdownStep[];
 }
 
-/** What a Breakdown measures in one scene, and what returns the session to the scene's own camera afterwards. */
+/** What a Breakdown measures in one scene. */
 export interface FeatureTestBreakdownPlan {
   views: readonly FeatureTestBreakdownView[];
-  exit?: readonly string[];
 }
 
 const OCCLUSION_STEPS: Readonly<Record<Exclude<FeatureTestBreakdownMethod, "water">, FeatureTestBreakdownStep>> = {
@@ -341,7 +336,6 @@ function occlusionPlan(method: Exclude<FeatureTestBreakdownMethod, "water">): Fe
   const step = OCCLUSION_STEPS[method];
   return {
     views: [{ steps: [step] }, { name: "rooms", enter: ['possess "Rooms Camera"'], steps: [step] }],
-    exit: ['possess "Camera"'],
   };
 }
 
@@ -1499,14 +1493,15 @@ async function settleView(
 }
 
 /** A Profile's base: the session's own quality tier, so no commands; `quality reset` alone returns to it. */
-const PROFILE_BASE: FeatureTestBreakdownBase = { label: "the session's quality", commands: [], cleanup: [] };
+const PROFILE_BASE: FeatureTestBreakdownBase = { label: "the session's quality", commands: [] };
 
 /**
  * Sweeps FEATURE_TEST_BENCHMARK_PROFILES (a Benchmark, frame cap lifted), the scene's Breakdown plan (a Breakdown at
  * the normal cap on its method's base) or a Profile's plan (at the session's own tier and frame cap), undoing each
- * Breakdown or Profile step after it, into `samples`, one as each finishes; then restores the session's quality, render
- * path, camera and cap. A step whose fields already hold its values is skipped (`breakdownSkip`), and so is the
- * baseline after it, the one before still being adjacent. A Profile also fills `profile`.
+ * Breakdown or Profile step after it, into `samples`, one as each finishes. A Profile then restores the session's
+ * quality and checks it; a Benchmark and a Breakdown restore the cap alone, their session ending with the sweep. A step
+ * whose fields already hold its values is skipped (`breakdownSkip`), and so is the baseline after it, the one before
+ * still being adjacent. A Profile also fills `profile`.
  */
 async function benchmarkProfiles(
   sceneName: string,
@@ -1647,8 +1642,16 @@ async function benchmarkProfiles(
       }
       steps = breakdownSequence(featureTestProfilePlan(profileState(reference(undefined), rendering?.frameBackpressure?.mode)).views);
     }
-    for (const step of steps) {
+    for (const [index, step] of steps.entries()) {
       if (step.baseline && skippedLast) { skippedLast = false; continue; }
+      /**
+       * Back to the base for the step that follows. After a Breakdown's last one nothing follows but Stop (see the end
+       * of the sweep); `skipsBaseline`: the baseline right after this step is not measured.
+       */
+      const restoreForNext = async (skipsBaseline: boolean) => {
+        const follows = steps.slice(index + 1).some((later, offset) => !(skipsBaseline && offset === 0 && later.baseline));
+        if (profile || follows) await restore();
+      };
       deps.onProgress?.(`${sceneName}: ${interleaved ? "measuring" : "benchmarking"} ${step.label}`);
       const failed: string[] = [];
       if (step.restore) pendingRestore.push(...step.restore);
@@ -1668,7 +1671,7 @@ async function benchmarkProfiles(
           failed: carried.splice(0), baseline: false, skipped: skip, ...(step.view ? { view: step.view } : {}),
         });
         skippedLast = true;
-        await restore();
+        await restoreForNext(true);
         continue;
       }
       skippedLast = false;
@@ -1684,18 +1687,24 @@ async function benchmarkProfiles(
       }
       samples.push(sample);
       if (!steady) break;
-      await restore();
+      await restoreForNext(false);
     }
   } finally {
     if (!signal.aborted) {
       if (gpuBusy) await run("gpubusy off");
-      // The session's own quality again, as Play started it.
-      await run("quality reset");
-      for (const line of pendingRestore.splice(0)) await run(line);
-      if (breakdown) for (const line of [...base.cleanup, ...plan.exit ?? []]) await run(line);
-      if (mode !== "profile") await run(`framecap ${cap ?? 60}`);
-      // Back as the session was before the first step: `quality reset` must not have dropped or kept anything else.
-      if (profile) await checkProfileRestored(play, waitForDraws, samples.find((sample) => sample.warmup)?.settings, profile);
+      if (profile) {
+        // The session's own quality again, as Play started it.
+        await run("quality reset");
+        for (const line of pendingRestore.splice(0)) await run(line);
+        // Back as the session was before the first step: `quality reset` must not have dropped or kept anything else.
+        await checkProfileRestored(play, waitForDraws, samples.find((sample) => sample.warmup)?.settings, profile);
+      } else {
+        // A Benchmark's or a Breakdown's session ends with its sweep: the caller stops Play next. Nothing the view draws
+        // is restored (quality, render path, camera), since a view about to be torn down would prepare it first: a tier
+        // switch allocates its render targets beside the last step's and compiles its variants, with Stop already under
+        // way. The cap is pacing only.
+        await run(`framecap ${cap ?? 60}`);
+      }
     }
   }
 }

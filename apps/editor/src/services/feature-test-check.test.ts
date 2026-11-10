@@ -360,7 +360,7 @@ describe("runFeatureTestCheck", () => {
     expect(editor.started).toEqual(["scene:assets/stuck.scene.hasset"]);
   });
 
-  it("benchmarks every profile with the frame cap lifted, then restores the session settings", async () => {
+  it("benchmarks every profile with the frame cap lifted, and ends on the last one without another tier switch", async () => {
     const editor = fakeEditor({});
     const report = await runFeatureTestCheck({
       mode: "benchmark", scenes: [scene("main")], deps: editor.deps, signal: new AbortController().signal,
@@ -369,8 +369,9 @@ describe("runFeatureTestCheck", () => {
     expect(main.passed).toBe(true);
     expect(main.play.benchmark.map((sample) => sample.label)).toEqual(FEATURE_TEST_BENCHMARK_PROFILES.map((profile) => profile.label));
     expect(editor.commands.slice(0, 2)).toEqual(["framecap", "framecap 240"]);
-    expect(editor.commands.slice(-2)).toEqual(["quality reset", "framecap 30"]);
-    expect(editor.commands).toContain("quality ultra");
+    // Play is stopped next: a view about to be torn down is not asked to prepare the session's own tier again.
+    expect(editor.commands.slice(-2)).toEqual(["quality ultra", "framecap 30"]);
+    expect(editor.commands).not.toContain("quality reset");
     expect(editor.commands).not.toContain("ft_stats");
   });
 
@@ -400,9 +401,10 @@ describe("runFeatureTestCheck", () => {
     // GPU-busy time is restarted for every sample and stopped at the end.
     expect(commands.filter((line) => line === "gpubusy on")).toHaveLength(samples.length);
     // iOS paces frames to the display: a lifted cap only queues frames behind the GPU. The tier applies before the
-    // warm-up, so the warm-up runs at the baselines' settings; the session's own quality returns at the end.
+    // warm-up, so the warm-up runs at the baselines' settings. The session ends on the last baseline: nothing follows
+    // its sample but the cap.
     expect(commands.slice(0, 5)).toEqual(["framecap", "framecap 60", "quality medium", "quality resolution reset", "gpubusy on"]);
-    expect(commands.slice(-3)).toEqual(["gpubusy off", "quality reset", "framecap 30"]);
+    expect(commands.slice(-3)).toEqual(["gpubusy on", "gpubusy off", "framecap 30"]);
   });
 
   it("measures each part of water off on its own from the Medium tier at half resolution, in FT_World unless every scene is asked for", async () => {
@@ -465,9 +467,9 @@ describe("runFeatureTestCheck", () => {
     const at = (line: string) => commands.indexOf(line);
     // The rooms camera is possessed before its first baseline is sampled, and kept for its step.
     expect(commands.slice(at('possess "Rooms Camera"') + 1, at('possess "Rooms Camera"') + 2)).toEqual(["gpubusy on"]);
-    expect(commands.filter((line) => line.startsWith("possess"))).toEqual(['possess "Rooms Camera"', 'possess "Camera"']);
-    // Back to the scene's own camera at the end, after its quality and the add-one base's toggles.
-    expect(commands.slice(-6)).toEqual(["gpubusy off", "quality reset", "postprocessing on", "rendertargets on", 'possess "Camera"', "framecap 30"]);
+    expect(commands.filter((line) => line.startsWith("possess"))).toEqual(['possess "Rooms Camera"']);
+    // The session ends in the rooms, on the base: Play is stopped next, so neither camera nor quality is put back.
+    expect(commands.slice(-3)).toEqual(["gpubusy on", "gpubusy off", "framecap 30"]);
   });
 
   it("alternates baselines and steps per camera, so every step sits between two baselines of its own camera", () => {
@@ -481,7 +483,7 @@ describe("runFeatureTestCheck", () => {
     ]);
   });
 
-  it("measures add-one by default: each feature on top of the light base, undone by the base, which Play leaves at the end", async () => {
+  it("measures add-one by default: each feature on top of the light base, undone by the base, which the session ends on", async () => {
     const editor = fakeEditor({});
     const report = await runFeatureTestCheck({
       mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: new AbortController().signal,
@@ -503,8 +505,9 @@ describe("runFeatureTestCheck", () => {
     expect(commands).toContain("quality water refractionScale 0.5");
     expect(commands).toContain("quality water reflectionSteps 8");
     expect(commands).toContain("quality water planarScale 0.5");
-    // Play gets its post-processing and captures back.
-    expect(commands.slice(-5)).toEqual(["gpubusy off", "quality reset", "postprocessing on", "rendertargets on", "framecap 30"]);
+    // The base's toggles stay off: the session ends with the last baseline.
+    expect(commands.slice(-3)).toEqual(["gpubusy on", "gpubusy off", "framecap 30"]);
+    expect(commands.lastIndexOf("postprocessing off")).toBeGreaterThan(commands.lastIndexOf("postprocessing on"));
   });
 
   it("skips a step whose setting already holds its value, and the baseline after it, without sampling either", async () => {
@@ -539,6 +542,32 @@ describe("runFeatureTestCheck", () => {
     expect(labels.slice(labels.indexOf("shadows off"), labels.indexOf("shadows off") + 5))
       .toEqual(["shadows off", "baseline 2", "shadows medium", "shadow filter medium", "baseline 4"]);
     expect(editor.sampled.length).toBe(report.scenes[0]!.play.benchmark.filter((sample) => !sample.skipped).length + 2);
+  });
+
+  it("changes nothing after a skipped last step: its baseline is not measured, and Play is stopped next", async () => {
+    const editor = fakeEditor({});
+    // A fingerprint that never changes: every step already holds its value.
+    const settings = { "geometry.occlusion": "on" };
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      play: () => {
+        const play = editor.deps.play();
+        return play && { ...play, snapshot: () => ({
+          ...play.snapshot(),
+          rendering: { cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1, settings } as unknown as RenderDiagnostics,
+        }) };
+      },
+    };
+    const report = await runFeatureTestCheck({
+      mode: "breakdown", scenes: [scene("FT_Occlusion")], deps, signal: new AbortController().signal,
+    });
+    const measured = report.scenes[0]!.play.benchmark.filter((sample) => !sample.warmup);
+    expect(measured.map((sample) => [sample.label, sample.skipped !== undefined])).toEqual([
+      ["baseline 1", false], ["occlusion on", true], ["rooms baseline 1", false], ["rooms occlusion on", true],
+    ]);
+    // The first skipped step is undone for the rooms' baseline; the last is followed by nothing but the cap.
+    expect(editor.commands.filter((line) => line === "quality reset")).toHaveLength(3);
+    expect(editor.commands.slice(-3)).toEqual(["quality geometry occlusion on", "gpubusy off", "framecap 30"]);
   });
 
   it("warms up until two windows agree within 3%, and no longer than its bound when they never do", async () => {
@@ -587,7 +616,7 @@ describe("runFeatureTestCheck", () => {
     expect(breakdownDelta(samples, samples.find((sample) => sample.label === "MSAA 2x")!)).toMatchObject({ ms: 0, basis: "gpu" });
   });
 
-  it("restores a step's toggle when the sweep stops at it", async () => {
+  it("changes nothing more once the sweep stops at a step", async () => {
     const controller = new AbortController();
     const editor = fakeEditor({}, undefined, (_now, commands) => commands.includes("rendertargets off")
       ? { drawn: 0, held: commands.length }
@@ -595,9 +624,9 @@ describe("runFeatureTestCheck", () => {
     await runFeatureTestCheck({
       mode: "breakdown", scenes: [scene("FT_World")], deps: editor.deps, signal: controller.signal, breakdown: REMOVE_ONE,
     });
-    // `captures off` never draws steadily: the sweep stops there and still turns captures back on.
+    // `captures off` never draws steadily: the sweep stops there, and Play is stopped with the step as it is.
     expect(editor.commands).not.toContain("quality resolution scale 0.5");
-    expect(editor.commands.slice(-3)).toEqual(["quality reset", "rendertargets on", "framecap 30"]);
+    expect(editor.commands.slice(-4)).toEqual(["rendertargets off", "gpubusy on", "gpubusy off", "framecap 30"]);
   });
 
   it("samples a recompiling profile only once the view draws without held frames, within a bound", async () => {
@@ -625,10 +654,10 @@ describe("runFeatureTestCheck", () => {
     expect(benchmark.find((sample) => sample.label === "medium")!.failed).toEqual([]);
     expect(benchmark.find((sample) => sample.label === "high")!.failed)
       .toEqual(["The view did not draw steadily within 90 s; the remaining profiles were skipped."]);
-    // Nothing more piles onto a view that stopped drawing; the session settings are still restored.
+    // Nothing more piles onto a view that stopped drawing, the session's own tier included.
     expect(benchmark.at(-1)!.label).toBe("high");
     expect(editor.commands).not.toContain("quality ultra");
-    expect(editor.commands.slice(-2)).toEqual(["quality reset", "framecap 30"]);
+    expect(editor.commands.slice(-2)).toEqual(["quality high", "framecap 30"]);
   });
 });
 

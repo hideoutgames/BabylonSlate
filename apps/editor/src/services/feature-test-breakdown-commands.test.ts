@@ -11,10 +11,10 @@ function measuredCommands(): { source: string; line: string }[] {
   const lines: { source: string; line: string }[] = [];
   for (const profile of FEATURE_TEST_BENCHMARK_PROFILES)
     for (const line of profile.commands) lines.push({ source: `benchmark ${profile.label}`, line });
-  // Each method's base and cleanup, then its plan per scene.
+  // Each method's base, then its plan per scene.
   for (const method of FEATURE_TEST_BREAKDOWN_METHODS) {
     const base = FEATURE_TEST_BREAKDOWN_BASES[method];
-    for (const line of [...base.commands, ...base.cleanup]) lines.push({ source: `${method} base`, line });
+    for (const line of base.commands) lines.push({ source: `${method} base`, line });
     for (const scene of FEATURE_TEST_BREAKDOWN_SCENES) {
       const plan = featureTestBreakdownPlan(scene.name, method);
       for (const view of plan.views) {
@@ -22,7 +22,6 @@ function measuredCommands(): { source: string; line: string }[] {
         for (const step of view.steps)
           for (const line of [...step.commands, ...(step.restore ?? [])]) lines.push({ source: `${method} ${scene.name} ${step.label}`, line });
       }
-      for (const line of plan.exit ?? []) lines.push({ source: `${method} ${scene.name} exit`, line });
     }
   }
   // A Profile's steps and restores, for each state they toggle back to.
