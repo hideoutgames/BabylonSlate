@@ -345,8 +345,8 @@ export class SceneShadowController {
     return entry?.standby ? null : (entry?.generator ?? null);
   }
   /**
-   * Asks every caster for its depth variant of each kind of atlas map (the sun's cascades, a
-   * spot light's tile, a point light's faces) ahead of that kind's first shadow start, which then compiles none
+   * Asks every caster for its depth variant of each kind of atlas map (the sun's cascades; a local light's, which a
+   * spot light's tile and a point light's faces share) ahead of that kind's first shadow start, which then compiles none
    * (`ShadowCasterVariants`; Play's world presentation, in its loading frames, as its starting state poses the casters).
    * New shadow settings ask again.
    */

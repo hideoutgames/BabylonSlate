@@ -1,7 +1,6 @@
 import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import type { Light } from "@babylonjs/core/Lights/light";
-import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
@@ -26,7 +25,7 @@ import { createDetachedShadowGenerator, type ShadowMapContext } from "./shadow-m
 
 /** The maps' tiles (a map's kind, format and filter shape its casters' depth variants, never its size). */
 const TILE = 64;
-/** Their atlas: room for four cascades, a spot light's tile and a point light's six faces. */
+/** Their atlas: room for four cascades and a spot light's tile. */
 const EDGE = 4 * TILE;
 
 /**
@@ -53,12 +52,14 @@ function batchVariantsReady(generator: ShadowGenerator, caster: InstancedMesh | 
 }
 
 /**
- * Lighting plan: on the light block's path a light's first shadow map of a kind (the sun's cascades, a spot light's
- * tile, a point light's faces) draws its casters with that kind's depth variants, which would compile mid-game. Play
- * asks for them ahead, in its world presentation's loading frames, for the casters as its starting state poses them (a
- * variant reads the caster's scaling; `SceneShadowController.warmCasterVariants`): a map of each kind, built as an
- * admitted map is, on a stand-in light outside the Scene, with tiles in a private atlas of the atlas's format, asks
- * every caster for its depth variant, as the map's own readiness check would, whatever its light's reach. The
+ * Lighting plan: on the light block's path a light's first shadow map of a kind draws its casters with that kind's
+ * depth variants, which would compile mid-game. There are two kinds: the sun's cascades, and a local light's, which a
+ * spot light's tile and a point light's faces share (`AtlasShadowGenerator` asks a caster for the same defines for
+ * both). Play asks for them ahead, in its world presentation's loading frames, for the casters as its starting state
+ * poses them (a variant reads the caster's scaling; `SceneShadowController.warmCasterVariants`): a map of each kind,
+ * built as an admitted map is, on a stand-in light outside the Scene (a spot light for the local kind), with tiles in a
+ * private atlas of the atlas's format, asks every caster for its depth variant, as the map's own readiness check
+ * would, whatever its light's reach. The
  * controller's syncs ask again only the casters that check found not ready (the map's shaders loading, an Effect
  * compiling, a depth wrapper's variant Material not yet ready, which its first ask compiles), so a caster that never
  * becomes ready costs one check per sync.
@@ -116,12 +117,11 @@ export class ShadowCasterVariants {
     lease.commit([{ handle: atlas.target, bytes, category: "shadow" }]);
     this.lights = [
       new DirectionalLight("hapticCasterVariants:directional", Vector3.Down(), scene, true),
-      new SpotLight("hapticCasterVariants:spot", Vector3.Zero(), Vector3.Down(), Math.PI / 2, 2, scene, true),
-      new PointLight("hapticCasterVariants:point", Vector3.Zero(), scene, true),
+      new SpotLight("hapticCasterVariants:local", Vector3.Zero(), Vector3.Down(), Math.PI / 2, 2, scene, true),
     ];
     for (const light of this.lights) {
       const map = placeInPrivateAtlas(atlas, () =>
-        createDetachedShadowGenerator(this.context, light as DirectionalLight | SpotLight | PointLight, settings, TILE, EDGE));
+        createDetachedShadowGenerator(this.context, light as DirectionalLight | SpotLight, settings, TILE, EDGE));
       // It asks the casters itself (`request`), so its list holds none.
       map.getShadowMap()!.renderList = [];
       this.maps.push(map);

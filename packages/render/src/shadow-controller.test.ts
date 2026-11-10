@@ -1627,6 +1627,13 @@ function cascadeFit(generator: CascadedShadowGenerator): number[][] {
   return Array.from({ length: generator.numCascades }, (_, layer) => [...generator.getCascadeTransformMatrix(layer)!.m]);
 }
 
+/**
+ * The kind of a shadow-depth variant, undefined for any other Effect: the sun's cascades, or a local light's, which a
+ * spot light's tile and a point light's faces share (`AtlasShadowGenerator` names no light class).
+ */
+const depthKind = (effect: Effect): "sun" | "local" | undefined =>
+  !/#define SM_FLOAT\b/.test(effect.defines) ? undefined : /SM_LIGHTTYPE_DIRECTIONALLIGHT\b/.test(effect.defines) ? "sun" : "local";
+
 describe("atlas caster variants", () => {
   it.each([1, 2])("hold each atlas kind's caster depth variant that a first shadow start then draws with (%i cascades)", async (cascades) => {
     const { scene, controller } = fixture();
@@ -1643,11 +1650,11 @@ describe("atlas caster variants", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     controller.sync();
     const held = [...compiled()].filter((effect) => !before.has(effect));
-    expect(held.map((effect) => /SM_LIGHTTYPE_(\w+)/.exec(effect.defines)?.[1]).sort()).toEqual(["DIRECTIONALLIGHT", "POINTLIGHT", "SPOTLIGHT"]);
+    expect(held.map(depthKind).sort()).toEqual(["local", "sun"]);
     expect(held.every((effect) => /NONUNIFORMSCALING/.test(effect.defines))).toBe(true);
     // The stand-ins hold nothing of the Scene's: no light, no atlas tile, no texture.
     expect([scene.lights.length, shadowAtlasBytes(scene), scene.textures.length]).toEqual([0, 0, 0]);
-    // The first map of each kind draws its caster with the variant held for it.
+    // The first map of each light type draws its caster with a variant held: the point light's faces with the local one.
     const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
     const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, scene);
     const lamp = new PointLight("lamp", new Vector3(2, 2, 0), scene);
@@ -1678,7 +1685,7 @@ describe("atlas caster variants", () => {
     source.createInstance("copy").position.x = 3;
     const variants = () => Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects)
       .flatMap((effect) => {
-        const kind = /SM_LIGHTTYPE_(\w+)/.exec(effect.defines)?.[1];
+        const kind = depthKind(effect);
         return kind ? [`${kind} ${/#define INSTANCES\b/.test(effect.defines) ? "instanced" : "plain"}`] : [];
       }).sort();
     controller.sync();
@@ -1687,9 +1694,7 @@ describe("atlas caster variants", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       controller.sync();
     }
-    expect(variants()).toEqual([
-      "DIRECTIONALLIGHT instanced", "DIRECTIONALLIGHT plain", "POINTLIGHT instanced", "POINTLIGHT plain", "SPOTLIGHT instanced", "SPOTLIGHT plain",
-    ]);
+    expect(variants()).toEqual(["local instanced", "local plain", "sun instanced", "sun plain"]);
   });
 
   it("asks a caster whose Material draws its depth through a wrapper until it holds its variants, then no more", async () => {
@@ -1704,14 +1709,14 @@ describe("atlas caster variants", () => {
       new ShadowDepthWrapper(new StandardMaterial("offset depth", scene), scene, { standalone: true });
     const asked = vi.spyOn(wrapper, "isReadyForSubMesh");
     const kinds = () => Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects)
-      .map((effect) => /SM_LIGHTTYPE_(\w+)/.exec(effect.defines)?.[1]).filter(Boolean).sort();
+      .map(depthKind).filter(Boolean).sort();
     controller.sync();
     controller.warmCasterVariants();
     for (let frame = 0; frame < 4; frame++) {
       await new Promise((resolve) => setTimeout(resolve, 0));
       controller.sync();
     }
-    expect(kinds()).toEqual(["DIRECTIONALLIGHT", "POINTLIGHT", "SPOTLIGHT"]);
+    expect(kinds()).toEqual(["local", "sun"]);
     asked.mockClear();
     for (let frame = 0; frame < 3; frame++) controller.sync();
     expect(asked).not.toHaveBeenCalled();
@@ -1722,18 +1727,18 @@ describe("atlas caster variants", () => {
     const engine = scene.getEngine();
     MeshBuilder.CreateBox("crate", { size: 1 }, scene);
     const variants = () => Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects)
-      .filter((effect) => /SM_LIGHTTYPE/.test(effect.defines));
+      .filter((effect) => depthKind(effect) !== undefined);
     controller.warmCasterVariants();
     await new Promise((resolve) => setTimeout(resolve, 0));
     controller.sync();
-    expect(variants().map((effect) => /SM_NORMALBIAS (\d)/.exec(effect.defines)?.[1])).toEqual(["1", "1", "1"]);
+    expect(variants().map((effect) => /SM_NORMALBIAS (\d)/.exec(effect.defines)?.[1])).toEqual(["1", "1"]);
     // Without normal bias the casters draw other variants: the next syncs hold those too (Babylon releases the others
     // at a frame's end).
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, maxLocalLights: 1, normalBias: 0 }) });
     controller.sync();
     await new Promise((resolve) => setTimeout(resolve, 0));
     controller.sync();
-    expect(variants().filter((effect) => /SM_NORMALBIAS 0/.test(effect.defines))).toHaveLength(3);
+    expect(variants().filter((effect) => /SM_NORMALBIAS 0/.test(effect.defines))).toHaveLength(2);
   });
 
   it("keeps its maps through a change of the shadow level's label alone", async () => {
