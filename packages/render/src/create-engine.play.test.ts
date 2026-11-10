@@ -84,6 +84,7 @@ import { installTimerClock } from "./virtual-clock-test-fixtures";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
+import { DisplayConversion } from "./display-conversion";
 import type { SharedOutlineView } from "./shared-outline";
 import * as sceneWork from "./scene-work";
 import * as gpuBusyProbe from "./gpu-busy-probe";
@@ -5723,6 +5724,8 @@ describe("Play createEngine view", () => {
     const draw = vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
       owners.push(this.activeCamera!.name);
     });
+    // The pass that stores a colour capture's image compiles in a browser: here it is ready.
+    const stored = [vi.spyOn(DisplayConversion.prototype, "ready").mockReturnValue(true), vi.spyOn(DisplayConversion.prototype, "draw").mockImplementation(() => {})];
     try {
       captures.render();
       expect(owners).toEqual(["renderTargetCapture:loaded"]);
@@ -5733,7 +5736,7 @@ describe("Play createEngine view", () => {
       handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "pending" });
       captures.render();
       expect(owners.at(-1)).toBe("renderTargetCapture:loaded");
-    } finally { ready.mockRestore(); draw.mockRestore(); }
+    } finally { ready.mockRestore(); draw.mockRestore(); for (const spy of stored) spy.mockRestore(); }
   });
 
   it("refreshes spawned area lights when prepared assets arrive or disappear without another actor command", async () => {
