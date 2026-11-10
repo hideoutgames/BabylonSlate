@@ -134,7 +134,9 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
       const deadline = performance.now() + 10000;
       let captured = false;
       do {
-        const target = scene.textures.find((entry) => entry.name === "renderTarget:target") as RenderTargetTexture | undefined;
+        // A colour capture's pass draws its scene colour target; a data capture's draws its output.
+        const target = (scene.textures.find((entry) => entry.name === "renderTarget:target:scene") ??
+          scene.textures.find((entry) => entry.name === "renderTarget:target")) as RenderTargetTexture | undefined;
         const observer = target?.onAfterRenderObservable.add(() => { captured = true; });
         captures.request("capture");
         engine.beginFrame(); captures.render(); engine.endFrame();

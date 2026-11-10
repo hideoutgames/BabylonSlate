@@ -13,6 +13,7 @@ import { RENDERING_GROUP } from "./sorting";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { VisualBundle } from "./visual-bundle";
 import { applyMaterialBounds } from "./material-bounds";
+import { markBoundsHoldInstances } from "./play-view-culling";
 import { sharedVertexBuffer } from "./shared-vertex-buffer";
 
 const preparations = new WeakMap<Mesh, Promise<void>>();
@@ -144,6 +145,8 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
           });
           mesh.thinInstanceSetBuffer("matrix", matrices, 16, true);
           mesh.thinInstanceRefreshBoundingInfo(true);
+          // A cell's instances are final: a view that does not see its bounds draws none of them.
+          markBoundsHoldInstances(mesh);
         }
       }
     }

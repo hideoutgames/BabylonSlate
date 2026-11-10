@@ -21,8 +21,10 @@ import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Material
 import "@babylonjs/core/Rendering/outlineRenderer";
 import { createDefaultRenderTargetCaptureProperties } from "@haptic/core";
 import { RenderTargetCaptures } from "./render-target-capture";
+import { DisplayConversion } from "./display-conversion";
 import { createStartingStateDraw } from "./starting-state-draw";
 import { beginManagedRenderAllocation, managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
+import { renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { GRID_MESH_NAME, CAMERA_BOUNDS_MESH_NAME } from "./editor-grid";
 import * as normalMaterial from "./render-target-normal-material";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
@@ -70,13 +72,21 @@ function host(floatingOrigin = false) {
   captures.configure("capture", settings, () => root);
   // Drawing has a real-browser pixel proof; isolate that GPU boundary here.
   vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+  // The pass that stores a colour capture's drawn image compiles in a browser: here it is ready, and recorded.
+  let linearSource = false;
+  vi.spyOn(DisplayConversion.prototype, "ready").mockImplementation((linear) => { linearSource = linear; return true; });
+  const stored: Array<{ from: string; into: string | undefined; linear: boolean; texture: unknown }> = [];
+  vi.spyOn(DisplayConversion.prototype, "draw").mockImplementation((source) => {
+    const into = scene.textures.find((texture) => (texture as RenderTargetTexture).renderTarget === engine._currentRenderTarget);
+    stored.push({ from: source.name, into: into?.name, linear: linearSource, texture: into?.getInternalTexture() });
+  });
   const draws: Array<readonly Mesh[]> = [];
   const particleDraws: unknown[][] = [];
   vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
     draws.push([...(this.renderList ?? [])] as Mesh[]);
     particleDraws.push([...(this.particleSystemList ?? [])]);
   });
-  return { engine, scene, camera, captures, root, settings, draws, particleDraws };
+  return { engine, scene, camera, captures, root, settings, draws, particleDraws, stored };
 }
 
 it("manual capture allocates only on demand, coalesces requests and preserves the last frame", () => {
@@ -94,6 +104,88 @@ it("manual capture allocates only on demand, coalesces requests and preserves th
   expect(output.isRenderTarget).toBe(false);
   expect(scene.customRenderTargets).toEqual([]);
   expect(scene.activeCamera).toBe(camera);
+});
+
+const texture = (scene: Scene, name: string) => scene.textures.find((entry) => entry.name === name) as RenderTargetTexture | undefined;
+const colourBytes = (type: number) => renderTargetAllocationBytes({ width: 16, height: 8, format: Constants.TEXTUREFORMAT_RGBA, type });
+
+it.each([
+  ["a Scene Linear", true, Constants.TEXTURETYPE_HALF_FLOAT],
+  ["any other", false, Constants.TEXTURETYPE_UNSIGNED_BYTE],
+] as const)("draws a Fast colour capture with %s view's own programs, then stores it display-referred in its output", (_view, linear, type) => {
+  const { scene, engine, captures, stored } = host();
+  scene.imageProcessingConfiguration.applyByPostProcess = linear;
+  const output = captures.acquireTexture("texture")!.resource;
+  const drawn: Array<{ name: string; programs: boolean }> = [];
+  vi.mocked(RenderTargetTexture.prototype.render).mockImplementation(function (this: RenderTargetTexture) {
+    // What the Scene's Materials compile for while the pass draws: the view's own setting.
+    drawn.push({ name: this.name, programs: scene.imageProcessingConfiguration.applyByPostProcess });
+  });
+  captures.request("capture"); captures.render();
+  expect(drawn).toEqual([{ name: "renderTarget:target:scene", programs: linear }]);
+  const pass = texture(scene, "renderTarget:target:scene")!, published = texture(scene, "renderTarget:target")!;
+  expect(stored).toEqual([{ from: "renderTarget:target:scene", into: "renderTarget:target", linear, texture: published.getInternalTexture() }]);
+  expect(output.getInternalTexture()).toBe(published.getInternalTexture());
+  // The pass has the depth and, for linear colour, the range; the output holds display colour alone.
+  expect([pass.getInternalTexture()!.type, pass.renderTarget!._generateDepthBuffer]).toEqual([type, true]);
+  expect([published.getInternalTexture()!.type, published.renderTarget!._generateDepthBuffer]).toEqual([Constants.TEXTURETYPE_UNSIGNED_BYTE, false]);
+  expect([published.gammaSpace, pass.gammaSpace]).toEqual([true, !linear]);
+  // (The headless Engine makes no depth buffer to count.)
+  expect(managedRenderReservations(engine).reservedBytes).toBe(4 + colourBytes(Constants.TEXTURETYPE_UNSIGNED_BYTE) + colourBytes(type));
+  const released = vi.spyOn(DisplayConversion.prototype, "dispose");
+  captures.dispose();
+  expect(managedRenderReservations(engine).reservedBytes).toBe(0);
+  expect(texture(scene, "renderTarget:target:scene")).toBeUndefined();
+  expect(released).toHaveBeenCalledTimes(1);
+});
+
+it("admits no colour capture whose pass the shared rendering ceiling cannot fit beside its output", () => {
+  const { scene, captures, engine, draws } = host();
+  // Room for the output alone.
+  limitManagedRenderBytes(engine, colourBytes(Constants.TEXTURETYPE_UNSIGNED_BYTE) + 16 * 8 * 5);
+  captures.request("capture"); captures.render();
+  expect(draws).toEqual([]);
+  expect(managedRenderReservations(engine).reservedBytes).toBe(0);
+  expect(texture(scene, "renderTarget:target")).toBeUndefined();
+});
+
+it("makes a Fast colour capture's pass anew when the view's programs change what they write", () => {
+  const { scene, captures, stored } = host();
+  captures.request("capture"); captures.render();
+  const first = texture(scene, "renderTarget:target:scene")!;
+  expect(first.getInternalTexture()!.type).toBe(Constants.TEXTURETYPE_UNSIGNED_BYTE);
+  scene.imageProcessingConfiguration.applyByPostProcess = true;
+  captures.request("capture"); captures.render();
+  const passes = scene.textures.filter((entry) => entry.name === "renderTarget:target:scene");
+  expect(passes).toHaveLength(1);
+  expect(passes[0]).not.toBe(first);
+  expect(passes[0]!.getInternalTexture()!.type).toBe(Constants.TEXTURETYPE_HALF_FLOAT);
+  expect(stored.map((entry) => entry.linear)).toEqual([false, true]);
+});
+
+it("keeps a colour capture's request and last image while the pass that stores it compiles", () => {
+  const { captures, draws, stored } = host();
+  const output = captures.acquireTexture("texture")!.resource;
+  vi.mocked(DisplayConversion.prototype.ready).mockReturnValue(false);
+  captures.request("capture"); captures.render();
+  expect([draws.length, stored.length]).toEqual([0, 0]);
+  expect(output.getSize()).toEqual({ width: 1, height: 1 });
+  vi.mocked(DisplayConversion.prototype.ready).mockReturnValue(true);
+  captures.render();
+  expect([draws.length, stored.length]).toEqual([1, 1]);
+  expect(output.getSize()).toEqual({ width: 16, height: 8 });
+});
+
+it("draws a data capture's override Materials straight into its output", () => {
+  const { scene, captures, draws, stored, root, settings } = host();
+  captures.setAssets(new Map([["target", { mode: "DepthPass", width: 16, height: 8 }]]), new Map([["texture", { renderTargetGuid: "target" }]]));
+  captures.configure("capture", settings, () => root);
+  vi.spyOn(scene.getEngine().getCaps(), "textureHalfFloatRender", "get").mockReturnValue(true);
+  captures.request("capture"); captures.render();
+  expect(draws).toHaveLength(1);
+  expect(stored).toEqual([]);
+  expect(texture(scene, "renderTarget:target:scene")).toBeUndefined();
+  expect(texture(scene, "renderTarget:target")!.renderTarget!._generateDepthBuffer).toBe(true);
 });
 
 it("suspends every-frame captures without releasing them, while manual requests still draw", () => {
@@ -193,20 +285,20 @@ it("actor filtering is opt-in, includes component descendants, and an empty list
 });
 
 it("captures self-sampling meshes from the previous output with bounded buffers and one draw per request", () => {
-  const { scene, captures, draws, engine } = host();
+  const { scene, captures, draws, engine, stored } = host();
   const output = captures.acquireTexture("texture")!.resource;
   const screen = MeshBuilder.CreatePlane("Screen", {}, scene);
   const material = new StandardMaterial("Screen Material", scene);
   material.emissiveTexture = output; screen.material = material;
   const other = MeshBuilder.CreateBox("Other", {}, scene);
   const sampled: unknown[] = [];
-  const written: unknown[] = [];
   const draw = vi.mocked(RenderTargetTexture.prototype.render).getMockImplementation()!;
   vi.mocked(RenderTargetTexture.prototype.render).mockImplementation(function (this: RenderTargetTexture) {
     sampled.push(output.getInternalTexture());
-    written.push(this.getInternalTexture());
     draw.call(this);
   });
+  // What each capture's image is stored in: never the buffer its own draw sampled.
+  const written = () => stored.map((entry) => entry.texture);
   captures.request("capture"); captures.render();
   const first = output.getInternalTexture();
   const firstBytes = managedRenderReservations(engine).reservedBytes;
@@ -222,7 +314,10 @@ it("captures self-sampling meshes from the previous output with bounded buffers 
   captures.request("capture"); captures.render();
   expect(output.getInternalTexture()).toBe(first);
   expect(sampled.slice(1)).toEqual([first, second]);
-  for (let index = 0; index < written.length; index++) expect(written[index]).not.toBe(sampled[index]);
+  expect(stored.map((entry) => entry.into)).toEqual(["renderTarget:target", "renderTarget:target:history", "renderTarget:target"]);
+  // The history buffer is an output too: colour alone.
+  expect(texture(scene, "renderTarget:target:history")!.renderTarget!._generateDepthBuffer).toBe(false);
+  for (let index = 0; index < 3; index++) expect(written()[index]).not.toBe(sampled[index]);
   expect(draws).toHaveLength(3);
   expect(managedRenderReservations(engine).reservedBytes).toBe(bufferedBytes);
   expect(dirty).not.toHaveBeenCalled();
@@ -262,6 +357,38 @@ it("retains the completed self-capture while its spare buffer is unavailable or 
   captures.render();
   expect(draws).toHaveLength(2);
   expect(output.getInternalTexture()).not.toBe(first);
+});
+
+it("draws only what a Fast capture's camera sees, at its target's shape", () => {
+  const { scene, captures, draws, root, settings } = host();
+  // The capture looks along +z from the origin, 60 degrees tall, into a target twice as wide as tall.
+  captures.configure("capture", { ...settings, fieldOfView: 60 }, () => root);
+  const at = (name: string, x: number, z: number) => {
+    const mesh = MeshBuilder.CreateBox(name, {}, scene);
+    mesh.position.set(x, 0, z);
+    return mesh;
+  };
+  const ahead = at("ahead", 0, 10), behind = at("behind", 0, -10), beside = at("beside", 30, 10);
+  // Inside the view at its width; a view as wide as tall would end before it.
+  at("wide", 8.5, 10);
+  // What follows the camera, and what is marked always drawn, pass whatever the view.
+  const sky = at("sky", 0, -10); sky.infiniteDistance = true;
+  const marked = at("marked", 0, -10); marked.alwaysSelectAsActiveMesh = true;
+  // Babylon draws a system only while its emitter is in the pass's list: it stays though it is behind the camera.
+  const emitter = new Mesh("emitter", scene); emitter.position.z = -10;
+  new ParticleSystem("particles", 8, scene).emitter = emitter;
+  // A frame's passes move the Scene's render id on, under which a mesh compares its transform again.
+  const drawn = () => { scene.incrementRenderId(); captures.request("capture"); captures.render(); return draws.at(-1)!.map((mesh) => mesh.name).sort(); };
+  expect(drawn()).toEqual(["ahead", "emitter", "marked", "sky", "wide"]);
+  // A move made since counts.
+  behind.position.z = 10;
+  ahead.position.z = -10;
+  expect(drawn()).toEqual(["behind", "emitter", "marked", "sky", "wide"]);
+  // The capture's own pose too.
+  root.rotation.y = Math.PI;
+  expect(drawn()).toEqual(["ahead", "emitter", "marked", "sky"]);
+  // Never seen, never drawn.
+  expect(draws.flat()).not.toContain(beside);
 });
 
 it("captures another target's output without allocating feedback storage", () => {

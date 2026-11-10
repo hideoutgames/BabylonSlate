@@ -13,6 +13,7 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Material } from "@babylonjs/core/Materials/material";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
@@ -29,6 +30,8 @@ import {
 import { authoredActorMatrices, authoredComponentActorTransform, authoredTransformMatrix } from "./authored-transform-matrices";
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 import { managedRenderTargetResources, renderTargetAllocationBytes } from "./render-target-resource-cost";
+import { DisplayConversion } from "./display-conversion";
+import { buildViewProjectionMatrix, drawsInsidePlanes } from "./planar-mirror";
 import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import { createRenderTargetDepthMaterial, createRenderTargetNormalMaterial } from "./render-target-normal-material";
 import type { ResourceLease } from "./resource-cache";
@@ -172,6 +175,14 @@ type Target = CaptureBuffer & {
   quality: RenderTargetCaptureQuality;
   /** Allocated only after a capture needs to sample its published attachment. */
   spare?: CaptureBuffer;
+  /**
+   * A Fast colour capture's own pass: the scene colour target, with the depth, it draws in with the view's programs.
+   * One pass then stores that image display-referred in `texture` or `spare` (`DisplayConversion`), which hold colour
+   * alone. A data capture draws its override Materials straight into its output and has none.
+   */
+  scene?: CaptureBuffer;
+  /** Whether `scene` holds linear colour, as the view's programs wrote when it was made. */
+  linear: boolean;
   view?: CaptureView;
   owner: string;
   depth?: NodeMaterial;
@@ -197,6 +208,8 @@ export class RenderTargetCaptures {
   private readonly actorRoots = new Map<string, () => AbstractMesh | null>();
   private readonly rootOwners = new Map<AbstractMesh, string>();
   private rootsDirty = true;
+  /** The pass that stores a Fast colour capture's drawn image display-referred; made at the first such draw. */
+  private conversion: DisplayConversion | null = null;
   private readonly addedMesh: Observer<AbstractMesh>;
   private readonly removedMesh: Observer<AbstractMesh>;
   private readonly targets = new Map<string, Target>();
@@ -235,6 +248,10 @@ export class RenderTargetCaptures {
   private readonly rotation = new Quaternion();
   private readonly scale = new Vector3();
   private readonly world = Matrix.Identity();
+  /** A Fast capture's view: its camera's projection at its target's shape, and the planes its list is culled by. */
+  private readonly projection = Matrix.Identity();
+  private readonly viewProjection = Matrix.Identity();
+  private readonly planes = Frustum.GetPlanes(Matrix.Identity());
   private readonly scene: Scene;
   constructor(scene: Scene) {
     this.scene = scene;
@@ -420,7 +437,7 @@ export class RenderTargetCaptures {
       }
       const meshes = this.collectCandidates(capture, target);
       if (!target.depth && !target.normals && !target.spare && this.samplesAttachment(target, target.texture)) {
-        target.spare = this.createBuffer(`${guid}:history`, definition, capture.camera);
+        target.spare = this.createBuffer(`${guid}:history`, definition, capture.camera, "output");
         // Keep the previous image and pending manual request if admission fails.
         if (!target.spare) continue;
       }
@@ -428,9 +445,11 @@ export class RenderTargetCaptures {
       // Public wrappers read the completed front buffer. Fail closed for a
       // foreign alias of the back buffer rather than submitting GPU feedback.
       if (target.spare && this.samplesAttachment(target, destination)) continue;
-      if (!target.depth && !target.normals) destination.clearColor = this.scene.clearColor;
-      destination.renderList = meshes;
-      destination.particleSystemList = target.particles;
+      // A colour capture's pass draws its scene colour target, which one pass then stores in the destination.
+      const pass = target.scene?.texture ?? destination;
+      if (!target.depth && !target.normals) pass.clearColor = this.scene.clearColor;
+      pass.renderList = meshes;
+      pass.particleSystemList = target.particles;
       if (target.normals || target.depth) {
         target.pendingOverrides.clear();
         for (const mesh of meshes) target.pendingOverrides.add(mesh);
@@ -455,11 +474,11 @@ export class RenderTargetCaptures {
       // consumes a manual request, and that view holds its last image until a
       // complete draw. Any other owner's frame creates pipelines synchronously.
       const deferral = beginPipelineDeferral(this.scene.getEngine(),
-        (renderPassId) => destination.renderPassIds.includes(renderPassId), { nested: true });
+        (renderPassId) => pass.renderPassIds.includes(renderPassId), { nested: true });
       let drawn: boolean;
       let skipped: number;
       try {
-        drawn = this.stageDraw(target, guid, actorId, () => this.draw(() => this.drawReady(destination), !target.depth && !target.normals));
+        drawn = this.stageDraw(target, guid, actorId, () => this.draw(() => this.drawReady(pass, target.scene ? { texture: destination, linear: target.linear } : null)));
       } finally {
         skipped = deferral?.close() ?? 0;
       }
@@ -637,7 +656,7 @@ export class RenderTargetCaptures {
     }
     // Shader and graph preparation run asynchronously; until the view is ready
     // the target keeps its last image (or the transparent fallback).
-    return this.draw(() => view.renderer.render(false).rendered, false);
+    return this.draw(() => view.renderer.render(false).rendered);
   }
   private createCamera(actorId: string): UniversalCamera {
     const previous = this.scene.activeCamera;
@@ -649,25 +668,35 @@ export class RenderTargetCaptures {
   }
   private targetKey(definition: RenderTargetPayload, owner: string, quality: RenderTargetCaptureQuality): string {
     const value = normalizeRenderTargetPayload(definition);
-    return JSON.stringify([owner, value.mode, value.width, value.height, quality]);
+    // A Fast colour capture's scene colour target is half-float only where the view's programs write linear colour.
+    const linear = quality === "fast" && value.mode === "SceneColor" && this.scene.imageProcessingConfiguration.applyByPostProcess;
+    return JSON.stringify([owner, value.mode, value.width, value.height, quality, linear]);
   }
   private ensureTarget(guid: string, definition: RenderTargetPayload, owner: string, camera: UniversalCamera,
     quality: RenderTargetCaptureQuality): Target | undefined {
     const previous = this.targets.get(guid);
-    if (previous && previous.owner === owner && previous.definition === definition && previous.quality === quality) return previous;
+    if (previous && previous.owner === owner && previous.definition === definition && previous.quality === quality &&
+      (!previous.scene || previous.linear === this.scene.imageProcessingConfiguration.applyByPostProcess)) return previous;
     const key = this.targetKey(definition, owner, quality);
     if (previous?.key === key) { previous.definition = definition; return previous; }
     if (previous) this.retire(guid);
     if (quality !== "fast") return this.createViewTarget(guid, definition, owner, camera, key, quality);
-    const buffer = this.createBuffer(guid, definition, camera);
+    const colour = normalizeRenderTargetPayload(definition).mode === "SceneColor";
+    const buffer = this.createBuffer(guid, definition, camera, colour ? "output" : "pass");
     if (!buffer) return undefined;
+    const scene = colour ? this.createBuffer(`${guid}:scene`, definition, camera, "scene") : undefined;
+    if (colour && !scene) {
+      buffer.texture.dispose();
+      buffer.lease.release();
+      return undefined;
+    }
     let normals: NodeMaterial | undefined;
     let depth: NodeMaterial | undefined;
     try {
       if (definition.mode === "DepthPass") depth = createRenderTargetDepthMaterial(this.scene);
       if (definition.mode === "WorldNormal") normals = createRenderTargetNormalMaterial(this.scene);
       const target: Target = {
-        key, definition, quality, ...buffer, owner, depth, normals,
+        key, definition, quality, ...buffer, scene, linear: this.scene.imageProcessingConfiguration.applyByPostProcess, owner, depth, normals,
         normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), materialRetirement: Promise.resolve(),
         overrides: new Set(), pendingOverrides: new Set(), meshes: [], particles: [], published: false,
       };
@@ -678,6 +707,8 @@ export class RenderTargetCaptures {
       normals?.dispose();
       buffer.texture.dispose();
       buffer.lease.release();
+      scene?.texture.dispose();
+      scene?.lease.release();
       throw error;
     }
   }
@@ -724,7 +755,7 @@ export class RenderTargetCaptures {
       renderer = new SceneRenderCoordinator(this.scene, { waterPlanarReflections: false, auxiliary: { camera, objects, screenEffects: quality === "fullQuality" }, deferPipelines: true });
       shadows = findSceneShadowController(this.scene)?.attachView(camera, captureSunCascades(definition)) ?? null;
       const target: Target = {
-        key, definition, quality, texture, lease, owner,
+        key, definition, quality, texture, lease, owner, linear: false,
         view: { renderer, camera, postProcess: null, postProcessRevision: -1, outlines: null, outlineRevision: -1, shadows },
         normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), materialRetirement: Promise.resolve(),
         overrides: new Set(), pendingOverrides: new Set(), meshes, particles, published: false,
@@ -740,27 +771,35 @@ export class RenderTargetCaptures {
       throw error;
     }
   }
-  private createBuffer(guid: string, definition: RenderTargetPayload, camera: UniversalCamera): CaptureBuffer | undefined {
+  /**
+   * One of a Fast capture's buffers: the `pass` a data capture draws and publishes, a colour capture's `output` (what
+   * it publishes: colour alone, written by the conversion pass) or its `scene` colour target (what its pass draws,
+   * with the depth: half-float where the view's programs write linear colour).
+   */
+  private createBuffer(guid: string, definition: RenderTargetPayload, camera: UniversalCamera, role: "pass" | "output" | "scene"): CaptureBuffer | undefined {
     const { width, height, mode } = normalizeRenderTargetPayload(definition);
     const engine = this.scene.getEngine();
     if (width > engine.getCaps().maxTextureSize || height > engine.getCaps().maxTextureSize) return undefined;
+    // Half-float wherever the view's own scene colour is (`ForwardSceneFrameGraph`): linear colour needs its range.
+    const linear = role === "scene" && this.scene.imageProcessingConfiguration.applyByPostProcess;
     // A scalar floating-point depth image avoids packed RGBA decoding in the
     // material graph. Unsupported devices fail closed to the blank output.
     // Only red carries depth: an R16F target samples as (d, 0, 0, 1), as the
     // capture writes and clears it, at a quarter of RGBA16F's bytes.
-    const type = mode === "DepthPass" ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
+    const type = mode === "DepthPass" || linear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     if (mode === "DepthPass" && !engine.getCaps().textureHalfFloatRender) return undefined;
     const format = mode === "DepthPass" ? Constants.TEXTUREFORMAT_R : Constants.TEXTUREFORMAT_RGBA;
+    const depthBuffer = role !== "output";
     const bytes = renderTargetAllocationBytes({ width, height, format, type }) +
-      renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH32FLOAT_STENCIL8, renderbuffer: true });
+      (depthBuffer ? renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH32FLOAT_STENCIL8, renderbuffer: true }) : 0);
     const lease = beginManagedRenderAllocation(engine, bytes);
     if (!lease) return undefined;
     let texture: CaptureRenderTarget | undefined;
     try {
       const captureTexture = new CaptureRenderTarget(`renderTarget:${guid}`, { width, height }, this.scene, {
         generateMipMaps: false, doNotChangeAspectRatio: false, type, format,
-        samplingMode: Texture.NEAREST_SAMPLINGMODE, generateDepthBuffer: true, generateStencilBuffer: false,
-        gammaSpace: mode === "SceneColor",
+        samplingMode: Texture.NEAREST_SAMPLINGMODE, generateDepthBuffer: depthBuffer, generateStencilBuffer: false,
+        gammaSpace: mode === "SceneColor" && !linear,
       });
       captureTexture.configurePass();
       texture = captureTexture;
@@ -797,11 +836,21 @@ export class RenderTargetCaptures {
       return false;
     } finally { checked.clear(); }
   }
+  /**
+   * What a Fast capture draws: the eligible meshes its camera sees. Babylon culls no explicit list, so without the
+   * test a capture drew every eligible mesh of the Scene, behind its camera included. A mesh is tested where the
+   * capture's draw puts it: by the world matrix it holds under the current render id, as that draw reads it. An
+   * emitter stays whatever the view: its particles draw only while it is in the list.
+   */
   private renderList(capture: Capture, target: Target): AbstractMesh[] {
     const meshes = admittedSceneMeshes(this.scene) ?? this.scene.meshes;
+    const { width, height } = target.texture.getSize();
+    buildViewProjectionMatrix(this.scene, capture.camera, width / height, this.projection);
+    capture.camera.getViewMatrix().multiplyToRef(this.projection, this.viewProjection);
+    Frustum.GetPlanesToRef(this.viewProjection, this.planes);
     let count = 0;
     for (const mesh of meshes) {
-      if (this.isEligible(capture, target, mesh)) target.meshes[count++] = mesh;
+      if (this.isEligible(capture, target, mesh) && (this.emitters.has(mesh) || drawsInsidePlanes(mesh, this.planes))) target.meshes[count++] = mesh;
     }
     target.meshes.length = count;
     return target.meshes;
@@ -936,27 +985,39 @@ export class RenderTargetCaptures {
     }
     return undefined;
   }
-  private draw(run: () => boolean, materialImageProcessing: boolean): boolean {
+  private draw(run: () => boolean): boolean {
     const engine = this.scene.getEngine();
     enterDrawPass(engine, "captures", true);
     try {
-      return drawOutsideSceneView(this.scene, run, materialImageProcessing);
+      return drawOutsideSceneView(this.scene, run);
     } finally {
       leaveDrawPass(engine);
     }
   }
-  private drawReady(destination: CaptureRenderTarget): boolean {
+  /**
+   * Draws `pass` once it is ready. A colour capture's pass drew with the view's own programs: `output` then takes its
+   * image display-referred, as each Material wrote it when a capture drew with image processing in its Materials and
+   * so compiled every one of them a second time.
+   */
+  private drawReady(pass: CaptureRenderTarget, output: { texture: CaptureRenderTarget; linear: boolean } | null): boolean {
     let ready = false;
+    const conversion = output ? this.conversion ??= new DisplayConversion(this.scene.getEngine()) : null;
     // Readiness initializes the native renderer, so it needs the same
     // framebuffer/state protection as the draw.
-    drawBorrowedTarget(this.scene, destination, () => {
+    drawBorrowedTarget(this.scene, pass, () => {
       const engine = this.scene.getEngine();
       engine.setAlphaMode(Constants.ALPHA_DISABLE);
       engine.setDepthBuffer(true);
       engine.setDepthWrite(true);
       engine.setColorWrite(true);
-      ready = destination.isReadyForRendering();
-      if (ready) destination.renderPrepared();
+      ready = (!conversion || conversion.ready(output!.linear)) && pass.isReadyForRendering();
+      if (!ready) return;
+      pass.renderPrepared();
+      if (!conversion) return;
+      const stored = output!.texture.renderTarget!;
+      engine.bindFramebuffer(stored);
+      conversion.draw(pass);
+      engine.unBindFramebuffer(stored);
     }, {
       restoreAlpha: true, wrapDrawFailure: false, message: "Render target capture failed.",
     });
@@ -1024,6 +1085,8 @@ export class RenderTargetCaptures {
     target.lease.release();
     target.spare?.texture.dispose();
     target.spare?.lease.release();
+    target.scene?.texture.dispose();
+    target.scene?.lease.release();
   }
   /**
    * The view's graph borrows the output: free the output and its lease only
@@ -1080,6 +1143,8 @@ export class RenderTargetCaptures {
     this.textures.clear();
     this.fallback?.dispose();
     this.fallbackLease?.release();
+    this.conversion?.dispose();
+    this.conversion = null;
   }
 }
 
@@ -1087,7 +1152,7 @@ export class RenderTargetCaptures {
  * Runs a capture draw outside the scene view's own pass, then restores that
  * view's camera, matrices, UBO, pass, viewport and floating-origin context.
  */
-export function drawOutsideSceneView(scene: Scene, run: () => boolean, materialImageProcessing: boolean): boolean {
+export function drawOutsideSceneView(scene: Scene, run: () => boolean): boolean {
   const camera = scene.activeCamera;
   const cameras = scene.activeCameras;
   const ubo = scene.getSceneUniformBuffer();
@@ -1104,22 +1169,14 @@ export function drawOutsideSceneView(scene: Scene, run: () => boolean, materialI
   const height = engine.getRenderHeight();
   const outlines = scene.getOutlineRenderer?.();
   const outlinesEnabled = outlines?.enabled;
-  const imageProcessing = scene.imageProcessingConfiguration;
-  const applyByPostProcess = imageProcessing.applyByPostProcess;
   // Manual RTT draws bypass Scene.render(), which normally selects this
   // global context. A sibling scene may still own it (or have no matrices).
   const unpin = pinFloatingOrigin(scene);
   drawing.add(scene);
   try {
-    // Match authored unlit surfaces: Scene Color is display/gamma encoded.
-    // Like Babylon's ObjectRenderer, avoid the setter's scene-wide shader
-    // invalidation; the capture has its own material render-pass defines.
-    // A High or Full Quality view keeps the scene's pipeline and its Display Color stage.
-    if (materialImageProcessing) imageProcessing._applyByPostProcess = false;
     return run();
   } finally {
     try {
-      imageProcessing._applyByPostProcess = applyByPostProcess;
       scene.activeCamera = camera;
       scene.activeCameras = cameras;
       FloatingOriginCurrentScene.eyeAtCamera = true;

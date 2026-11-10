@@ -17,6 +17,7 @@ import {
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { RenderTargetCaptures } from "./render-target-capture";
+import { DisplayConversion } from "./display-conversion";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { sceneShadowController } from "./shadow-controller";
 
@@ -146,6 +147,9 @@ describe("draw passes of a Forward graph frame", () => {
     root.position.set(0, 1, -4);
     captures.configure("capture", { ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "target" }, () => root);
     captures.acquireTexture("texture");
+    // The pass that stores the capture's image compiles in a browser: here it is ready, and its one draw is counted.
+    vi.spyOn(DisplayConversion.prototype, "ready").mockReturnValue(true);
+    vi.spyOn(DisplayConversion.prototype, "draw").mockImplementation(() => { engine.drawElementsType(0, 0, 6); });
     const graph = new ForwardSceneFrameGraph(scene);
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
     const frame = new DrawPassFrame(engine);
@@ -158,12 +162,13 @@ describe("draw passes of a Forward graph frame", () => {
       publishDrawPassFrame(frame);
       return { passes: { ...frame.last }, total: engine._drawCalls.current };
     };
-    // The spot light's one map draws its one caster; the capture and the objects pass each draw the caster and the floor.
-    expect(render()).toEqual({ passes: { ...emptyDrawPasses(), shadows: 1, captures: 2, objects: 2 }, total: 5 });
+    // The spot light's one map draws its one caster; the capture and the objects pass each draw the caster and the
+    // floor, and the capture stores its image in one more draw.
+    expect(render()).toEqual({ passes: { ...emptyDrawPasses(), shadows: 1, captures: 3, objects: 2 }, total: 6 });
     // A map draws only when what it holds changes: a static frame draws the capture and the objects again.
-    expect(render()).toEqual({ passes: { ...emptyDrawPasses(), captures: 2, objects: 2 }, total: 4 });
+    expect(render()).toEqual({ passes: { ...emptyDrawPasses(), captures: 3, objects: 2 }, total: 5 });
     caster.position.x = 0.25;
-    expect(render().passes).toEqual({ ...emptyDrawPasses(), shadows: 1, captures: 2, objects: 2 });
+    expect(render().passes).toEqual({ ...emptyDrawPasses(), shadows: 1, captures: 3, objects: 2 });
     graph.dispose();
     captures.dispose();
   });
