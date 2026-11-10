@@ -1,3 +1,4 @@
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
@@ -24,7 +25,7 @@ import { normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
 import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { areaEmissionTexture, setRectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
-import { HapticLightingBlock } from "./haptic-lighting-block";
+import { environmentPlaceholderCube, HapticLightingBlock } from "./haptic-lighting-block";
 import {
   HAPTIC_LIGHT_MAXIMUM, HAPTIC_SHADOW_VIEW_VEC4S, bindHapticClusters, hapticLightBuffer, setHapticLightCulling,
 } from "./haptic-lights";
@@ -147,6 +148,26 @@ describe("HapticLightingBlock and the HapticLights block", () => {
       expect(bound, mode).toEqual(expect.arrayContaining(["hapticEnvironmentBrdfSampler", "hapticAreaLtcSampler", "hapticAreaEmissionSampler"]));
       expect(bound.includes("hapticEnvironmentSampler"), mode).toBe(cube);
     }
+  });
+
+  it("takes the Engine's empty cube where no environment lights a mesh, making no render target inside a pass", () => {
+    // An Engine with a context: its own raw 1 × 1 cube. Creating a render target would unbind the framebuffer in use.
+    const empty = { isCube: true };
+    const createRenderTargetCubeTexture = vi.fn();
+    const context = { emptyCubeTexture: empty, createRenderTargetCubeTexture } as unknown as AbstractEngine;
+    expect(environmentPlaceholderCube(context)).toEqual({ texture: empty, release: null });
+    expect(createRenderTargetCubeTexture).not.toHaveBeenCalled();
+    // A headless Engine has no raw cubes: a render target's, released with its Scene.
+    const { engine, scene } = host();
+    const created = vi.spyOn(engine, "createRenderTargetCubeTexture");
+    const headless = environmentPlaceholderCube(engine);
+    expect(created).toHaveBeenCalledTimes(1);
+    const target = created.mock.results[0]!.value as { texture: unknown; dispose(): void };
+    expect(headless.texture).toBe(target.texture);
+    const disposed = vi.spyOn(target, "dispose");
+    headless.release!();
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect(scene.isDisposed).toBe(false);
   });
 
   it("draws a lit Material with one program whatever environment lights its mesh, binding its presence and form", async () => {

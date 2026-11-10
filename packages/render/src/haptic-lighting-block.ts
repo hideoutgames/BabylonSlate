@@ -1,5 +1,6 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Constants } from "@babylonjs/core/Engines/constants";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { ThinEngine } from "@babylonjs/core/Engines/thinEngine";
 import {
   NodeMaterialBlockConnectionPointTypes,
@@ -9,6 +10,7 @@ import type { NodeMaterial, NodeMaterialDefines } from "@babylonjs/core/Material
 import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import type { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Material } from "@babylonjs/core/Materials/material";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
@@ -132,28 +134,41 @@ function environmentCube(scene: Scene): BaseTexture | null {
   return texture && texture.isCube && texture.isReadyOrNotBlocking() ? texture : null;
 }
 
+/**
+ * The 1 × 1 cube behind `environmentPlaceholder`: the Engine's own empty cube, made from raw data. A lit draw's bind may
+ * be the first to ask for it, in the middle of a pass, and creating a render target there unbinds the pass's
+ * framebuffer on WebGL2, so the draws that follow would land on the canvas. A headless Engine (tests, tools) cannot
+ * make a raw cube and has no framebuffer to lose: it takes a render target's, which `release` disposes.
+ */
+export function environmentPlaceholderCube(engine: AbstractEngine): { texture: InternalTexture; release: (() => void) | null } {
+  if (!(engine instanceof NullEngine)) return { texture: engine.emptyCubeTexture, release: null };
+  const target = engine.createRenderTargetCubeTexture(1, {
+    generateMipMaps: false, generateDepthBuffer: false, generateStencilBuffer: false, type: Constants.TEXTURETYPE_UNSIGNED_BYTE,
+    format: Constants.TEXTUREFORMAT_RGBA, samplingMode: Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+  });
+  return { texture: target.texture!, release: () => target.dispose() };
+}
+
 const environmentPlaceholders = new WeakMap<Scene, BaseTexture>();
 /**
  * A 1 × 1 cube a lit program binds where no environment lights its mesh: every such program declares the cube (WebGPU
  * draws only with every declared texture bound, and WebGL2 warns of a sampled unit with none), and none samples it at
- * a scale of zero. A render target's, which every Engine allocates, a headless one (tests, tools) included.
+ * a scale of zero.
  */
 function environmentPlaceholder(scene: Scene): BaseTexture {
   let texture = environmentPlaceholders.get(scene);
   if (!texture) {
     const engine = scene.getEngine();
-    const target = engine.createRenderTargetCubeTexture(1, {
-      generateMipMaps: false, generateDepthBuffer: false, generateStencilBuffer: false, type: Constants.TEXTURETYPE_UNSIGNED_BYTE,
-      format: Constants.TEXTUREFORMAT_RGBA, samplingMode: Constants.TEXTURE_NEAREST_SAMPLINGMODE,
-    });
+    const source = environmentPlaceholderCube(engine);
     // Engine-owned, so it stays out of the Scene's texture list.
-    const cube = texture = new BaseTexture(engine, target.texture);
+    const cube = texture = new BaseTexture(engine, source.texture);
     cube.name = "haptic:environmentPlaceholder";
     environmentPlaceholders.set(scene, cube);
     scene.onDisposeObservable.addOnce(() => {
       environmentPlaceholders.delete(scene);
+      // The cube is its Engine's or its render target's, never this view of it's.
       cube._texture = null;
-      target.dispose();
+      source.release?.();
     });
   }
   return texture;
