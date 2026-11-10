@@ -3340,6 +3340,50 @@ describe("container constructor hydration", () => {
   });
 });
 
+describe("sequence hydrate", () => {
+  const execPin = (id: string, name: string, direction: "in" | "out") =>
+    ({ id, name, kind: "exec", direction, type: { kind: "exec" } });
+  const sequenceGraph = (count: number): SerializedGraph => ({
+    nodes: [
+      {
+        id: "seq",
+        type: "flow.sequence",
+        position: { x: 0, y: 0 },
+        data: {
+          count,
+          // Saved before Outputs changed from 3.
+          __pins: [
+            execPin("execIn", "exec", "in"),
+            execPin("then0", "then_0", "out"),
+            execPin("then1", "then_1", "out"),
+            execPin("then2", "then_2", "out"),
+          ],
+        },
+      },
+      { id: "first", type: "debug.log", position: { x: 80, y: 0 }, data: {} },
+      { id: "last", type: "debug.log", position: { x: 80, y: 80 }, data: {} },
+    ],
+    edges: [
+      { id: "then0-wire", source: "seq", target: "first", sourceHandle: "then0", targetHandle: "execIn" },
+      { id: "then2-wire", source: "seq", target: "last", sourceHandle: "then2", targetHandle: "execIn" },
+    ],
+  });
+
+  it("removes Then outputs above Outputs and the wires leaving them", () => {
+    const hydrated = hydrateSerializedGraphForEditor(sequenceGraph(2), registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
+    expect(pins.map((pin) => pin.id)).toEqual(["execIn", "then0", "then1"]);
+    expect(hydrated.edges.map((edge) => edge.id)).toEqual(["then0-wire"]);
+  });
+
+  it("adds Then outputs up to Outputs and keeps existing wires", () => {
+    const hydrated = hydrateSerializedGraphForEditor(sequenceGraph(5), registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
+    expect(pins.map((pin) => pin.id)).toEqual(["execIn", "then0", "then1", "then2", "then3", "then4"]);
+    expect(hydrated.edges.map((edge) => edge.id)).toEqual(["then0-wire", "then2-wire"]);
+  });
+});
+
 describe("flow switch hydrate", () => {
   it("regenerates Switch on Int case pins, keeps matching wires, and prunes removed ones", () => {
     const keepPin = "case:1";

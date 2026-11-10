@@ -1123,11 +1123,16 @@ function functionEndpointPins(
     : [pin("then", "then", "in", EXEC)];
 }
 
-/** Sequence outputs: a whole count from 1 to 32, or 2 when the count is not a finite number. */
-function sequenceOutputCount(properties: Record<string, unknown>): number {
-  const raw = Number(properties.count ?? 2);
-  if (!Number.isFinite(raw)) return 2;
-  return Math.max(1, Math.min(32, Math.floor(raw)));
+/** The most Then outputs a Sequence node can have. */
+export const SEQUENCE_MAX_OUTPUTS = 32;
+/** Then outputs of a new Sequence node, and of one whose `count` is not a finite number. */
+export const SEQUENCE_DEFAULT_OUTPUTS = 2;
+
+/** Sequence outputs: a whole `count` from 1 to {@link SEQUENCE_MAX_OUTPUTS}, or {@link SEQUENCE_DEFAULT_OUTPUTS} when it is not a finite number. */
+export function sequenceOutputCount(properties: Record<string, unknown>): number {
+  const raw = Number(properties.count ?? SEQUENCE_DEFAULT_OUTPUTS);
+  if (!Number.isFinite(raw)) return SEQUENCE_DEFAULT_OUTPUTS;
+  return Math.max(1, Math.min(SEQUENCE_MAX_OUTPUTS, Math.floor(raw)));
 }
 
 function pinTypeForCommandParam(type: string | undefined): PinType {

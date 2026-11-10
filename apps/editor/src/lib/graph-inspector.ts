@@ -50,6 +50,11 @@ import {
   type TypeSchemas,
   type StructField,
 } from "@haptic/scripting";
+import {
+  SEQUENCE_DEFAULT_OUTPUTS,
+  SEQUENCE_MAX_OUTPUTS,
+  sequenceOutputCount,
+} from "@haptic/scripting-nodes";
 
 export function connectedInputPinIds(
   edges: ReadonlyArray<{ target: string; targetHandle?: string }>,
@@ -862,6 +867,29 @@ export function containerConstructorPropertyRows(
       max: MAKE_CONTAINER_MAX_COUNT,
       onChange: (value) =>
         onPatch({ count: Math.max(0, Math.min(MAKE_CONTAINER_MAX_COUNT, Math.floor(value))) }),
+    },
+  ];
+}
+
+/** The Sequence node's **Outputs** row: how many Then outputs it runs, in order. */
+export function sequencePropertyRows(
+  typeId: string,
+  data: Record<string, unknown>,
+  onPatch: (patch: Record<string, unknown>) => void,
+): PropertyRow[] {
+  if (typeId !== "flow.sequence") return [];
+  return [
+    {
+      kind: "number",
+      id: "count",
+      label: "Outputs",
+      value: sequenceOutputCount(data),
+      defaultValue: SEQUENCE_DEFAULT_OUTPUTS,
+      min: 1,
+      max: SEQUENCE_MAX_OUTPUTS,
+      precision: 0,
+      sensitivity: 0.1,
+      onChange: (value) => onPatch({ count: sequenceOutputCount({ count: value }) }),
     },
   ];
 }
