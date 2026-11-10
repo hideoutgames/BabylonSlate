@@ -1,5 +1,6 @@
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
+import { posedBeyondBounds } from "./play-view-culling";
 
 /**
  * How a view's cull tests a mesh. Babylon's default asks only whether the bounding sphere touches the frustum, and a
@@ -13,13 +14,25 @@ const STRATEGY = AbstractMesh.CULLINGSTRATEGY_OPTIMISTIC_INCLUSION;
 const scenes = new WeakSet<Scene>();
 
 /**
- * Culls `scene`'s meshes, those it has and those added later, by their boxes where their spheres alone would pass
- * (`mesh.isInFrustum`: the view's cull, mirror and capture lists). Once per Scene.
+ * A mesh a pose moves on the GPU (`posedBeyondBounds`) is drawn whatever the view: culled by its bounds, a character
+ * would vanish at the screen's edge while its pose still reached into the view, or stay hidden where its rest pose
+ * stands away from its vertices as authored. Play's own cull keeps the same meshes (`keepsDrawingOutsideView`).
  */
-export function cullSceneByBoxes(scene: Scene): void {
+function settle(mesh: AbstractMesh): void {
+  mesh.cullingStrategy = STRATEGY;
+  if (posedBeyondBounds(mesh)) mesh.alwaysSelectAsActiveMesh = true;
+}
+
+/**
+ * Culls `scene`'s meshes, those it has and those added later, by what of them can show: by their boxes where their
+ * spheres alone would pass (`mesh.isInFrustum`: the view's cull, mirror and capture lists), and never one whose
+ * bounds its pose has left. Once per Scene.
+ */
+export function cullSceneByWhatShows(scene: Scene): void {
   if (scenes.has(scene)) return;
   scenes.add(scene);
-  for (const mesh of scene.meshes) mesh.cullingStrategy = STRATEGY;
-  // Babylon announces a new mesh on a later task: until then it is culled by its sphere, which only keeps more.
-  scene.onNewMeshAddedObservable.add((mesh) => { mesh.cullingStrategy = STRATEGY; });
+  for (const mesh of scene.meshes) settle(mesh);
+  // Babylon announces a new mesh on a later task, when a loader has given it its skeleton: until then it is culled
+  // by its sphere, which only keeps more.
+  scene.onNewMeshAddedObservable.add(settle);
 }

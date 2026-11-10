@@ -40,6 +40,16 @@ export function markBoundsHoldInstances(mesh: AbstractMesh): void {
 }
 
 /**
+ * Whether a pose moves `mesh`'s vertices on the GPU with no bounds to follow it: skinning, morph targets, baked
+ * vertex animation; a regular instance as its source. Its bounds hold the vertices as authored, which even a rest
+ * pose can put elsewhere, so no view may cull it by them (`cullSceneByWhatShows`).
+ */
+export function posedBeyondBounds(mesh: AbstractMesh): boolean {
+  const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
+  return source instanceof Mesh && (!!source.skeleton || !!source.morphTargetManager || !!source.bakedVertexAnimationManager);
+}
+
+/**
  * Whether the cull must draw `mesh` whatever the view. A regular instance is culled by its own bounds (its source's
  * geometry through its world matrix) unless its source's vertices can leave them.
  */
@@ -48,8 +58,7 @@ export function keepsDrawingOutsideView(mesh: AbstractMesh): boolean {
   const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
   if (!(source instanceof Mesh) || source.getTotalVertices() === 0) return true;
   if (source.hasThinInstances && !instanceBounds.has(source)) return true;
-  // A pose moves these vertices on the GPU, and nothing moves their bounds with it.
-  return !!source.skeleton || !!source.morphTargetManager || !!source.bakedVertexAnimationManager;
+  return posedBeyondBounds(source);
 }
 
 /** Per culled Scene, the meshes already settled (each is settled once). */

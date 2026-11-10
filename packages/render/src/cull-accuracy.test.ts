@@ -3,10 +3,13 @@ import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Frustum } from "@babylonjs/core/Maths/math.frustum";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Skeleton } from "@babylonjs/core/Bones/skeleton";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
-import { cullSceneByBoxes } from "./cull-accuracy";
+import { cullSceneByWhatShows } from "./cull-accuracy";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 
@@ -41,7 +44,7 @@ it("culls a long mesh by its box where its sphere alone would keep it, and a mes
   expect(seen(beam)).toEqual({ beam: true });
   // A mesh the Scene has already announced takes the strategy too.
   await announced();
-  cullSceneByBoxes(scene);
+  cullSceneByWhatShows(scene);
   expect(seen(beam)).toEqual({ beam: false });
   const later = at("later", -14, { width: 0.2, height: 40 });
   // What the view does show stays: a mesh in front, and one whose box crosses the view's edge.
@@ -51,8 +54,27 @@ it("culls a long mesh by its box where its sphere alone would keep it, and a mes
   expect(seen(beam, later, ahead, crossing)).toEqual({ beam: false, later: false, ahead: true, crossing: true });
   // Asking again adds no second observer.
   const observers = scene.onNewMeshAddedObservable.observers.length;
-  cullSceneByBoxes(scene);
+  cullSceneByWhatShows(scene);
   expect(scene.onNewMeshAddedObservable.observers.length).toBe(observers);
+});
+
+it("never culls a mesh a pose moves on the GPU, whose bounds do not follow the pose", async () => {
+  const { scene, at } = fixture();
+  const skinned = at("skinned", 14, { width: 1, height: 1 });
+  skinned.skeleton = new Skeleton("skeleton", "skeleton", scene);
+  const morphed = at("morphed", 14, { width: 1, height: 1 });
+  morphed.morphTargetManager = new MorphTargetManager(scene);
+  const plain = at("plain", 14, { width: 1, height: 1 });
+  const drawn = (...meshes: AbstractMesh[]) => Object.fromEntries(meshes.map((mesh) => [mesh.name, mesh.alwaysSelectAsActiveMesh]));
+  await announced();
+  cullSceneByWhatShows(scene);
+  expect(drawn(skinned, morphed, plain)).toEqual({ skinned: true, morphed: true, plain: false });
+  // One added later, and an instance, which draws its source's posed vertices.
+  const later = at("later", 14, { width: 1, height: 1 });
+  later.skeleton = skinned.skeleton;
+  const copy = skinned.createInstance("copy"), plainCopy = plain.createInstance("plain copy");
+  await announced();
+  expect(drawn(later, copy, plainCopy)).toEqual({ later: true, copy: true, "plain copy": false });
 });
 
 it("is how every Scene a view draws culls", async () => {
