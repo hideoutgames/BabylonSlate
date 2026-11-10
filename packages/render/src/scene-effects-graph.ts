@@ -43,6 +43,11 @@ export interface SceneEffectsGraphOptions {
   outputHeight?: number;
   /** Samples per pixel of the own scene colour and depth (MSAA); 1 when omitted. */
   samples?: number;
+  /**
+   * A game's world view: a geometry pass that only feeds the view depth starts from the scene's depth
+   * (`SpatialEffectsGraph.seeded`), the graph's own or, with an authored stack, that chain's (`authoredDepthTexture`).
+   */
+  geometryOverSceneDepth?: { authoredDepthTexture?: FrameGraphTextureHandle };
   /** The view's output colour. When the chain ends in one of its own post processes at the output size, that stage
    * renders straight into it (`rendersToOutput`), so the caller needs no output copy. */
   outputTarget?: FrameGraphTextureHandle;
@@ -131,7 +136,8 @@ export class SceneEffectsGraph {
             this.sceneColorTexture !== null && this.depthTexture !== null ? [
               { handle: this.sceneColorTexture, category: "sceneColor", samples },
               { handle: this.depthTexture, category: "depth", samples },
-            ] : []);
+            ] : [],
+            options.geometryOverSceneDepth ? this.depthTexture ?? options.geometryOverSceneDepth.authoredDepthTexture : undefined);
           for (const task of this.spatial.tasks) {
             this.tasks.push(task);
             this.externalTasks.add(task);

@@ -97,8 +97,8 @@ export type SceneRenderCoordinatorOptions = {
   deferPipelines?: boolean;
   /** A world view: culls its camera's list by occlusion while the scene does (`ForwardSceneFrameGraphOptions.occlusion`). */
   occlusion?: boolean;
-  /** A game's world view: its strict outline mask starts from the scene's depth (`ForwardSceneFrameGraphOptions.outlinesOverSceneDepth`). */
-  outlinesOverSceneDepth?: boolean;
+  /** A game's world view: its strict outline mask and a depth-only geometry pass start from the scene's depth (`ForwardSceneFrameGraphOptions.seedsFromSceneDepth`). */
+  seedsFromSceneDepth?: boolean;
 };
 
 /** Scene-owned graph lifetime; the host still owns scheduling and presentation. */
@@ -136,7 +136,7 @@ export class SceneRenderCoordinator {
     this.deferPipelines = options.deferPipelines === true;
     this.graph = new ForwardSceneFrameGraph(scene, options.auxiliary
       ? { auxiliary: { objects: options.auxiliary.objects, screenEffects: options.auxiliary.screenEffects } }
-      : { occlusion: options.occlusion === true, outlinesOverSceneDepth: options.outlinesOverSceneDepth === true });
+      : { occlusion: options.occlusion === true, seedsFromSceneDepth: options.seedsFromSceneDepth === true });
     this.detachReadinessDirty = onSceneReadinessDirty(scene, () =>
       this.graph.markReadinessDirty(),
     );

@@ -7,6 +7,7 @@ import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGr
 import type { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
+import { drawGeometryDepthSeed, type GeometryDepthSeed } from "./geometry-depth-seed";
 import { LightNeutralGeometryRendererTask } from "./light-neutral-tasks";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 
@@ -30,9 +31,15 @@ export function geometryDepthTextureType(
  */
 export class LogicalGeometryTask extends LightNeutralGeometryRendererTask {
   private pass: FrameGraphRenderPass | undefined;
+  /**
+   * Set before the task records, on a pass whose only attachment is the view depth: the pass starts from the scene's
+   * depth (`geometry-depth-seed.ts`) and its object list holds only the meshes that depth lacks.
+   */
+  seed: GeometryDepthSeed | undefined;
 
   override record(...args: Parameters<FrameGraphGeometryRendererTask["record"]>): FrameGraphRenderPass {
     this.pass = super.record(...args);
+    if (this.seed) this.pass.addDependencies(this.seed.depth);
     return this.pass;
   }
 
@@ -51,6 +58,11 @@ export class LogicalGeometryTask extends LightNeutralGeometryRendererTask {
       // presentation and leaves the view depth uncleared.
       context.bindRenderTarget(this.pass.frameGraphRenderTarget);
       context.clearColorAttachments(new Color4(far, 0, 0, 1), this._frameGraph.engine.buildTextureLayout(depth));
+      if (this.seed) {
+        drawGeometryDepthSeed(context, this._frameGraph.engine, this.seed, this.camera, far);
+        // The full-screen draw leaves its own depth states: the meshes draw with the pass's.
+        context.setDepthStates(this.depthTest && depthEnabled, this.depthWrite && depthEnabled);
+      }
       context.restoreDefaultFramebuffer();
     }
     return layout;
@@ -83,7 +95,9 @@ export class LogicalGeometryTask extends LightNeutralGeometryRendererTask {
       return false;
     };
     try {
-      const done = withSceneReadinessState(this._frameGraph.scene, () => super.isReady());
+      // Probe the meshes even while the seed compiles, so their variants link meanwhile.
+      const seeded = this.seed?.wrapper.isReady() ?? true;
+      const done = withSceneReadinessState(this._frameGraph.scene, () => super.isReady()) && seeded;
       if (done) this.requestedAhead.clear();
       return done;
     } finally { this.objectRenderer.customIsReadyFunction = ready; }

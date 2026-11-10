@@ -500,7 +500,7 @@ function initializeEngine(
   const worldRenderer = new SceneRenderCoordinator(scene, {
     deferPipelines: true, occlusion: !presentRtt && !options.previewLighting,
     // A game's view only: the editor viewport's depth also holds its helper visuals.
-    outlinesOverSceneDepth: options.playMode === true,
+    seedsFromSceneDepth: options.playMode === true,
   });
   onRollback(() => worldRenderer.dispose());
   let disposed = false;

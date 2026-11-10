@@ -6,6 +6,7 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { geometryDepthTextureType, LogicalGeometryTask } from "./framegraph-logical-buffers";
+import { createGeometryDepthSeed } from "./geometry-depth-seed";
 import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
 // Unlit Standard surfaces write no reflectivity: installed before any reflectivity geometry pass compiles.
 import {
@@ -100,6 +101,14 @@ export class SpatialEffectsGraph {
   readonly output: FrameGraphTextureHandle;
   /** Screen-Space Shadows: a pass after the geometry pass that the owner adds before its objects (`screen-shadows.ts`). */
   readonly screenShadows?: ScreenShadowsGraph;
+  /**
+   * The geometry pass starts from the scene's depth (`sceneDepth`): every stage reads the view depth alone (no ambient
+   * occlusion, reflections or Screen-Space Shadows, whose normals, reflectivity and caster marks only the meshes'
+   * own draws give), so the pass draws only the meshes that depth lacks. The owner then adds the geometry tasks after
+   * its object pass and gives the pass that narrower list.
+   */
+  readonly seeded: boolean = false;
+  private seedRetirement: OwnedEffectRetirement | undefined;
   private readonly lease: ManagedRenderLease;
   private readonly handles: {
     handle: FrameGraphTextureHandle;
@@ -124,6 +133,8 @@ export class SpatialEffectsGraph {
       category: ManagedRenderCategory;
       samples?: number;
     }[] = [],
+    /** The view's scene depth, single-sample once its object pass has run; undefined keeps the pass's own draws. */
+    sceneDepth?: FrameGraphTextureHandle,
   ) {
     this.graph = graph;
     const reason = spatialEffectsUnsupported(graph.scene);
@@ -207,6 +218,11 @@ export class SpatialEffectsGraph {
       }
       for (const handle of Object.values(buffers))
         this.handles.push({ handle, category: "geometry" });
+      if (sceneDepth !== undefined && !plan.ambientOcclusion && !plan.reflections && !plan.screenShadows) {
+        this.geometry.seed = createGeometryDepthSeed(graph.engine, "Spatial Geometry Depth Seed", sceneDepth,
+          this.compileFailure.for("Spatial Geometry Depth Seed"));
+        this.seeded = true;
+      }
       const stages = createSpatialStages(
         graph.scene,
         camera,
@@ -294,20 +310,20 @@ export class SpatialEffectsGraph {
     if (this.disposed) return;
     for (const task of this.tasks) task.dispose();
     this.screenShadows?.dispose();
+    const seed = this.geometry?.seed?.wrapper;
+    if (seed) this.seedRetirement = retireOwnedEffect(seed.effect, () => seed.dispose());
     if (this.geometry) unregisterSpatialGeometryPass(this.graph.scene, this.geometry.objectRenderer.renderPassId);
     this.geometry?.dispose();
     this.clear?.dispose();
     this.disposed = true;
   }
   whenDisposed(): Promise<void> {
-    return Promise.all([...this.tasks.map((task) => task.whenDisposed()), this.screenShadows?.whenDisposed()]).then(
-      () => {},
-    );
+    return Promise.all([...this.tasks.map((task) => task.whenDisposed()), this.screenShadows?.whenDisposed(),
+      this.seedRetirement?.completion]).then(() => {});
   }
   whenReleased(): Promise<void> {
-    return Promise.all([...this.tasks.map((task) => task.whenReleased()), this.screenShadows?.whenReleased()]).then(
-      () => {},
-    );
+    return Promise.all([...this.tasks.map((task) => task.whenReleased()), this.screenShadows?.whenReleased(),
+      this.seedRetirement?.released]).then(() => {});
   }
   releaseAfterGraphDisposal(): Promise<void> {
     if (!this.disposed)

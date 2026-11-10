@@ -1289,7 +1289,7 @@ it("composes a multisampled WebGL2 view's outlines onto the backbuffer after its
   view.dispose();
 });
 
-// A game's world view (`outlinesOverSceneDepth`) starts its strict outline mask from the scene's depth wherever that is
+// A game's world view (`seedsFromSceneDepth`) starts its strict outline mask from the scene's depth wherever that is
 // a texture: the view's own multisampled pair's (resolved by sample) or a settings chain's. The backbuffer's cannot be read.
 it.each([
   ["msaa4", true, true, true],
@@ -1305,7 +1305,7 @@ it.each([
   vi.spyOn(engine, "webGLVersion", "get").mockReturnValue(2);
   const scene = new Scene(engine);
   scene.activeCamera = new FreeCamera("camera", new Vector3(0, 0, -4), scene);
-  const renderer = new SceneRenderCoordinator(scene, { outlinesOverSceneDepth: option });
+  const renderer = new SceneRenderCoordinator(scene, { seedsFromSceneDepth: option });
   allowSceneScreenShadows(scene, () => false);
   sceneRenderingSettings(scene).qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing });
   updateSceneRenderingSettings(scene, {});

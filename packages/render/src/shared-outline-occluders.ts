@@ -43,9 +43,10 @@ function commit(fresh: readonly AbstractMesh[], out: AbstractMesh[]): AbstractMe
 }
 
 /**
- * Whether the view's colour pass writes `mesh`'s depth, so a mask seeded from the scene's depth already holds it as an
- * occluder: every Material it draws with writes depth and is opaque or alpha tested, or blended with a depth pre-pass
- * or a forced depth write. A blended surface without either leaves the scene's depth as it was.
+ * Whether the view's colour pass writes `mesh`'s depth, so a pass seeded from the scene's depth already holds it (the
+ * strict mask as an occluder, a depth-only geometry pass as its surface): every Material it draws with writes depth
+ * and is opaque or alpha tested, or blended with a depth pre-pass or a forced depth write. A blended surface without
+ * either leaves the scene's depth as it was.
  */
 export function writesSceneDepth(mesh: AbstractMesh): boolean {
   const writes = (material: Material | null | undefined) => !material ||

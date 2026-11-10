@@ -13,6 +13,7 @@ import { displayEncodingEffects, planWithoutScreenEffects, upscaledRenderSize, t
 import { scaledOutputSize, sceneOutputScale } from "./scene-output-scale";
 import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
+import { writesSceneDepth } from "./shared-outline-occluders";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { endAlphaToCoverage, guardAlphaToCoverageBlending } from "./alpha-to-coverage";
@@ -93,11 +94,13 @@ type ForwardSceneFrameGraphOptions = {
    */
   occlusion?: boolean;
   /**
-   * A game's world view (Play's, the player's): its strict outline mask starts from the scene's depth where that is a
-   * texture, drawing the outlined meshes and only the occluders that depth lacks (`FrameGraphSharedOutlineTask
-   * .sceneDepthTexture`). Not the editor's viewport, whose depth also holds its helper visuals. Never with `auxiliary`.
+   * A game's world view (Play's, the player's): its passes that draw the scene again only for its depth start from
+   * the depth the object pass stored, where that is a texture, and draw only what it lacks. The strict outline mask
+   * draws the outlined meshes and the occluders that depth lacks (`FrameGraphSharedOutlineTask.sceneDepthTexture`); a
+   * spatial geometry pass that only feeds the view depth draws the meshes it lacks (`SpatialEffectsGraph.seeded`).
+   * Not the editor's viewport, whose depth also holds its helper visuals. Never with `auxiliary`.
    */
-  outlinesOverSceneDepth?: boolean;
+  seedsFromSceneDepth?: boolean;
 };
 /**
  * Graph renders and camera assignments in progress, per scene. Babylon clears
@@ -148,6 +151,8 @@ const membershipCounts: readonly ((scene: Scene) => number)[] = [
 const NO_CULLED_MESHES: readonly AbstractMesh[] = [];
 /** What a spatial geometry pass draws of a view's culled meshes: everything but editor and Play helper visuals. */
 const isWorldMesh = (mesh: AbstractMesh): boolean => !isEditorHelperMesh(mesh);
+/** What a spatial geometry pass seeded from the scene's depth draws of them: the meshes that depth lacks. */
+const isWorldMeshSceneDepthLacks = (mesh: AbstractMesh): boolean => isWorldMesh(mesh) && !writesSceneDepth(mesh);
 const isShown = (mesh: AbstractMesh): boolean => !isRevealPending(mesh);
 
 /** Native camera frustum calculation reads the currently bound target's aspect. */
@@ -162,6 +167,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   readonly worldObjectList: FrameGraphObjectList = { meshes: this.world, particleSystems: null };
   /** Whether a spatial geometry pass draws `worldObjectList`; without one the cull builds no world list. */
   publishesWorld = false;
+  /** That pass starts from the scene's depth (`SpatialEffectsGraph.seeded`): the list holds only the meshes it lacks. */
+  worldOverSceneDepth = false;
   /** A world view's occlusion culling, and the colour pass whose first draws keep a mesh in the list. */
   occlusion: { view: ViewOcclusion; colourPass: () => number } | null = null;
 
@@ -208,7 +215,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
       return;
     }
     // The geometry pass's renderer observes this list, so a frame's cull must not empty and refill it.
-    rewriteRenderList(world, this.outputObjectList.meshes ?? NO_CULLED_MESHES, isWorldMesh);
+    rewriteRenderList(world, this.outputObjectList.meshes ?? NO_CULLED_MESHES,
+      this.worldOverSceneDepth ? isWorldMeshSceneDepthLacks : isWorldMesh);
     this.worldObjectList.particleSystems = this.outputObjectList.particleSystems;
   }
 
@@ -281,7 +289,9 @@ export class ForwardSceneFrameGraph {
   private cull: CameraOutputCullTask | undefined;
   /** A world view's occlusion culling; kept across graph rebuilds. */
   private readonly occlusion: ViewOcclusion | undefined;
-  private readonly outlinesOverSceneDepth: boolean;
+  private readonly seedsFromSceneDepth: boolean;
+  /** The candidates a seeded spatial geometry pass's readiness probe asks (`sceneDepthLacks`). */
+  private readonly seededProbeList: FrameGraphObjectList = { meshes: [], particleSystems: null };
   private clear: FrameGraphClearTextureTask | undefined;
   private preparedWidth = 0;
   private preparedHeight = 0;
@@ -352,7 +362,7 @@ export class ForwardSceneFrameGraph {
     this.scene = scene;
     this.auxiliary = options.auxiliary;
     this.occlusion = options.occlusion && !options.auxiliary ? new ViewOcclusion() : undefined;
-    this.outlinesOverSceneDepth = options.outlinesOverSceneDepth === true && !options.auxiliary;
+    this.seedsFromSceneDepth = options.seedsFromSceneDepth === true && !options.auxiliary;
     // Strict readiness probes rebuild every light/material variant. Cache the
     // result and re-probe only after scene or rendering-definition changes.
     const mark = () => this.markReadinessDirty();
@@ -1217,6 +1227,7 @@ export class ForwardSceneFrameGraph {
             outputWidth: output.width,
             outputHeight: output.height,
             samples,
+            geometryOverSceneDepth: this.seedsFromSceneDepth ? { authoredDepthTexture: this.postProcessGraph?.depthTexture ?? undefined } : undefined,
             beforeAntialiasing: this.preparedOutlineView ? composeOutline : undefined,
             outputTarget: color,
           });
@@ -1270,12 +1281,14 @@ export class ForwardSceneFrameGraph {
         this.objects.warmsPipelines = !this.auxiliary;
         // The strict outline mask reads the scene's depth after this pass where a chain or the view's own pair holds
         // it as a texture (the backbuffer's cannot be read): resolved by sample where the pass is multisampled.
-        const outlineDepth = this.outlineTask && this.outlinesOverSceneDepth
+        const outlineDepth = this.outlineTask && this.seedsFromSceneDepth
           ? this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture ?? this.ownScene?.depth : undefined;
         if (this.outlineTask && outlineDepth !== undefined) {
           this.outlineTask.sceneDepthTexture = outlineDepth;
           if (samples > 1) this.objects.resolveMSAADepth = true;
         }
+        // A seeded spatial geometry pass samples it too.
+        if (this.effectsGraph?.spatial?.seeded && samples > 1) this.objects.resolveMSAADepth = true;
         if (waterDemand > 0) {
           // The water scene copy samples the scene depth after this pass: resolve it too.
           if (samples > 1) this.objects.resolveMSAADepth = true;
@@ -1318,15 +1331,22 @@ export class ForwardSceneFrameGraph {
           this.graph.addTask(this.cull);
         }
         for (const task of this.postProcessGraph?.geometryTasks ?? []) this.graph.addTask(task);
-        if (this.effectsGraph?.spatial) {
-          this.graph.addTask(this.effectsGraph.spatial.clear);
-          this.graph.addTask(this.effectsGraph.spatial.geometry);
-          if (this.effectsGraph.spatial.screenShadows) this.graph.addTask(this.effectsGraph.spatial.screenShadows.task);
+        const spatialGeometry = this.effectsGraph?.spatial;
+        // A geometry pass seeded from the scene's depth follows the passes that write it; any other precedes the
+        // objects, which read Screen-Space Shadows.
+        if (spatialGeometry && !spatialGeometry.seeded) {
+          this.graph.addTask(spatialGeometry.clear);
+          this.graph.addTask(spatialGeometry.geometry);
+          if (spatialGeometry.screenShadows) this.graph.addTask(spatialGeometry.screenShadows.task);
         }
         if (this.water && !this.water.splitsClear) this.graph.addTask(this.water.split);
         this.graph.addTask(this.objects);
         // The opaque copy and transparent pass precede every chain and the output copy.
         for (const task of this.water?.afterObjects ?? []) this.graph.addTask(task);
+        if (spatialGeometry?.seeded) {
+          this.graph.addTask(spatialGeometry.clear);
+          this.graph.addTask(spatialGeometry.geometry);
+        }
         for (const task of this.postProcessGraph?.postProcessTasks ?? []) this.graph.addTask(task);
         for (const task of this.effectsGraph?.tasks ?? []) this.graph.addTask(task);
         if (this.outlineTask && !this.effectsGraph && !outlineOnOutput) this.graph.addTask(this.outlineTask);
@@ -1579,6 +1599,15 @@ export class ForwardSceneFrameGraph {
       () => revealRound(() => this.collectingEffects(() => this.probeReady()))));
   }
 
+  /** `candidates` narrowed to what a seeded spatial geometry pass draws, so its probe compiles no variant it never draws. */
+  private sceneDepthLacks(candidates: FrameGraphObjectList): FrameGraphObjectList {
+    const meshes = this.seededProbeList.meshes!;
+    meshes.length = 0;
+    for (const mesh of candidates.meshes ?? NO_CULLED_MESHES) if (isWorldMeshSceneDepthLacks(mesh)) meshes.push(mesh);
+    this.seededProbeList.particleSystems = candidates.particleSystems;
+    return this.seededProbeList;
+  }
+
   private probeReady(): boolean {
     this.strictChecks += 1;
     const cameras = this.scene.activeCameras;
@@ -1601,7 +1630,7 @@ export class ForwardSceneFrameGraph {
       // all current candidates before presenting; culling itself never draws.
       this.objects!.objectList = this.cull!.objectList;
       if (geometry) geometry.objectList = this.cull!.objectList;
-      if (spatial) spatial.objectList = this.cull!.objectList;
+      if (spatial) spatial.objectList = spatial.seed ? this.sceneDepthLacks(this.cull!.objectList) : this.cull!.objectList;
       this.water?.beginProbe(this.cull!.objectList);
       return withSceneReadinessState(this.scene, () => {
         const camera = this.objects!.camera;
@@ -1745,6 +1774,7 @@ export class ForwardSceneFrameGraph {
       geometry.camera = this.objects!.camera;
     }
     this.cull!.publishesWorld = !!this.effectsGraph?.spatial;
+    this.cull!.worldOverSceneDepth = this.effectsGraph?.spatial?.seeded === true;
     if (this.effectsGraph?.spatial) {
       this.effectsGraph.spatial.geometry.objectList = this.cull!.worldObjectList;
       this.effectsGraph.spatial.geometry.camera = this.objects!.camera;
