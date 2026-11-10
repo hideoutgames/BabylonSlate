@@ -41,7 +41,7 @@ import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { SharedOutlineOwner } from "./shared-outline";
 import { createGizmoHost } from "./gizmo-host";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
-import { beginPipelineDeferral, PIPELINE_DEFERRAL_HOLD_CAP_MS } from "./webgpu-pipeline-deferral";
+import { beginPipelineDeferral, PIPELINE_DEFERRAL_HOLD_CAP_MS, pipelinesDeferred } from "./webgpu-pipeline-deferral";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
 import { registerPipelineWarmPasses, withPipelineWarmupRound } from "./variant-pipeline-warmup";
@@ -51,15 +51,16 @@ import { setOutlineContribution } from "./test-support/shared-outline-contributi
 // NullEngine is not WebGPU, so the deferral itself never engages; its scopes are the seam here.
 vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./webgpu-pipeline-deferral")>();
-  return { ...actual, beginPipelineDeferral: vi.fn(actual.beginPipelineDeferral) };
+  return { ...actual, beginPipelineDeferral: vi.fn(actual.beginPipelineDeferral), pipelinesDeferred: vi.fn(actual.pipelinesDeferred) };
 });
-const { beginPipelineDeferral: actualBeginPipelineDeferral } =
+const { beginPipelineDeferral: actualBeginPipelineDeferral, pipelinesDeferred: actualPipelinesDeferred } =
   await vi.importActual<typeof import("./webgpu-pipeline-deferral")>("./webgpu-pipeline-deferral");
 
 const engines: NullEngine[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
   vi.mocked(beginPipelineDeferral).mockImplementation(actualBeginPipelineDeferral);
+  vi.mocked(pipelinesDeferred).mockImplementation(actualPipelinesDeferred);
   for (const engine of engines.splice(0)) engine.dispose();
 });
 
@@ -1100,6 +1101,57 @@ it("draws unvalidated frames without acknowledging them and re-probes a scene ch
   expect(renderer.render(false)).toEqual({ path: "frameGraph", rendered: true, readyForPresentation: false });
   expect(renderer.render()).toEqual({ path: "frameGraph", rendered: true, readyForPresentation: true });
   expect(frame).toHaveBeenCalledTimes(3);
+  expect(renderer.strictReadinessChecks).toBe(checks + 1);
+  renderer.dispose();
+});
+
+// Where pipelines are deferred (WebGPU) the probe that first sees a joined mesh runs before the shadow controller lists
+// it as a caster, so a spawn whose pipelines exist is revealed in that frame; the admission's probe follows.
+it.each([[false, 1], [true, 2]] as const)("probes in the frame a mesh joins a Scene that casts shadows, with pipelines deferred %s: %i time(s)", async (deferred, probes) => {
+  vi.mocked(pipelinesDeferred).mockReturnValue(deferred);
+  const { scene, engine, renderer } = host();
+  Object.assign(engine.getCaps(), { maxTextureSize: 4096, textureHalfFloatRender: true, textureHalfFloatLinearFiltering: true });
+  engine._features.supportCSM = true;
+  const sun = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
+  const controller = sceneShadowController(scene);
+  controller.register(sun, true);
+  setSceneRenderSettings(scene, { shadows: normalizeShadowSettings({ profile: "medium", cascades: 1 }) });
+  MeshBuilder.CreateBox("box", {}, scene);
+  await renderer.prepare();
+  await vi.waitFor(() => { expect(renderer.render(false)).toMatchObject({ rendered: true }); });
+  expect(renderer.render(false)).toMatchObject({ rendered: true });
+  const checks = renderer.strictReadinessChecks;
+  // The shadow controller learns of the mesh at the frame's admission, which stales readiness for its casters.
+  const added = MeshBuilder.CreateBox("added", {}, scene);
+  expect(renderer.render(false)).toMatchObject({ rendered: true });
+  expect(controller.generator(sun)?.getShadowMap()?.renderList).toContain(added);
+  expect(renderer.strictReadinessChecks).toBe(checks + probes);
+  expect(renderer.render(false)).toMatchObject({ rendered: true });
+  expect(renderer.strictReadinessChecks).toBe(checks + probes);
+  renderer.dispose();
+});
+
+it.each(["isReady", "render"] as const)("probes a Scene that is not ready once for each %s", async (probe) => {
+  const { scene, renderer } = host();
+  MeshBuilder.CreateBox("box", {}, scene);
+  await renderer.prepare();
+  expect(renderer.render(false)).toMatchObject({ rendered: true });
+  let ready = false;
+  const asked = vi.fn(() => ready);
+  scene.addIsReadyCheck({ isReady: asked });
+  const ask = () => probe === "isReady" ? renderer.isReady() : renderer.render(false).rendered;
+  for (let frame = 1; frame <= 3; frame += 1) {
+    const checks = renderer.strictReadinessChecks;
+    asked.mockClear();
+    expect(ask()).toBe(false);
+    expect(renderer.strictReadinessChecks).toBe(checks + 1);
+    expect(asked).toHaveBeenCalledOnce();
+  }
+  ready = true;
+  const checks = renderer.strictReadinessChecks;
+  expect(ask()).toBe(true);
+  expect(renderer.strictReadinessChecks).toBe(checks + 1);
+  expect(ask()).toBe(true);
   expect(renderer.strictReadinessChecks).toBe(checks + 1);
   renderer.dispose();
 });
