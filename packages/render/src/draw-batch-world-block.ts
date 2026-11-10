@@ -34,6 +34,21 @@ export function isDrawBatchMesh(mesh: AbstractMesh): boolean {
   return batchMeshes.has(mesh);
 }
 
+const boundedMaterials = new WeakSet<Material>();
+
+/**
+ * Marks an authored `material` whose vertex stage keeps every vertex on its mesh's own geometry (no World Position
+ * Offset, no custom or wave stage): a mesh drawing it stays inside its bounds, whatever the Material binds per mesh. A
+ * batcher orders its batches around such a draw by where it is, even when it cannot join one.
+ */
+export function markBoundedMaterial(material: Material): void {
+  boundedMaterials.add(material);
+}
+
+export function isBoundedMaterial(material: Material): boolean {
+  return boundedMaterials.has(material);
+}
+
 const batchMaterials = new WeakSet<Material>();
 
 /**

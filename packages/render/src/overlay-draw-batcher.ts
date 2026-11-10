@@ -9,7 +9,7 @@ import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import type { FloatArray, IndicesArray } from "@babylonjs/core/types";
 import type { OverlayLayoutRect } from "@haptic/core";
-import { DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TINT_KIND, DRAW_BATCH_WORLD_KINDS, isDrawBatchMaterial, markDrawBatchMesh } from "./draw-batch-world-block";
+import { DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TINT_KIND, DRAW_BATCH_WORLD_KINDS, isBoundedMaterial, isDrawBatchMaterial, markDrawBatchMesh } from "./draw-batch-world-block";
 import { sceneDrawBatcher, setSceneDrawBatcher, type SceneDrawBatcher } from "./draw-batching";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { disableOverlayClipScissor, enableOverlayClipScissor, overlayDrawClip } from "./overlay-layout-render";
@@ -322,7 +322,7 @@ function sameDraw(a: Entry, b: Entry): boolean {
 function boundsHold(mesh: AbstractMesh, material: Material | null): boolean {
   if (!(mesh instanceof Mesh) || mesh.hasInstances || mesh.hasThinInstances || mesh.skeleton || mesh.morphTargetManager) return false;
   if (mesh.doNotSyncBoundingInfo || hasMeshLatticeDeformer(mesh)) return false;
-  return !material || isDrawBatchMaterial(material) || hasStockOrPlannedVertexStage(material);
+  return !material || isBoundedMaterial(material) || hasStockOrPlannedVertexStage(material);
 }
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };

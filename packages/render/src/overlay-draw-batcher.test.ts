@@ -6,7 +6,7 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Scene } from "@babylonjs/core/scene";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
-import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sceneDrawBatcher } from "./draw-batching";
 import { beginEngineDrawCallFrame } from "./draw-calls";
@@ -101,11 +101,15 @@ function sprite(scene: Scene, name: string, x: number, texture: RawTexture): Mes
   return mesh;
 }
 
-/** An authored unlit, translucent Material compiled for a Scene Layer, as a Feature Test panel's is. */
-async function authoredOverlay(scene: Scene): Promise<NodeMaterial> {
+/**
+ * An authored unlit, translucent Material compiled for a Scene Layer, as a Feature Test panel's is; `edit` changes its
+ * document first.
+ */
+async function authoredOverlay(scene: Scene, edit: (document: MaterialDocument) => void = () => {}): Promise<NodeMaterial> {
   const document = createDefaultMaterialDocument();
   document.shadingModel = "unlit";
   document.blendMode = "translucent";
+  edit(document);
   const lowered = lowerMaterialDocument(document);
   if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
   const result = compileMaterialPlan(lowered.plan, { scene, name: "authored", overlay: true });
@@ -543,6 +547,33 @@ describe("Scene Layer draw batching", () => {
     const mixed = emptyOverlayBatchStats();
     countOverlayBatches(mixed, () => layerDraws(engine, compositor, 1));
     expect(mixed).toMatchObject({ visuals: 4, draws: 3, batches: 1, batched: 2, alone: { material: 2 } });
+  });
+
+  it("orders batches around an authored draw it cannot batch by where that draw is", async () => {
+    // Blended, back to front: a (farthest), a mirror's panel, c. a and c draw the same; the panel's Material binds its
+    // mesh's own reflection, so it joins no batch, but its stock vertex stage keeps it inside its bounds.
+    const context = host();
+    const { scene } = context;
+    quad(scene, "a", 0, 0, { z: 0.9 });
+    const mirror = MeshBuilder.CreatePlane("mirror", { size: 1 }, scene);
+    mirror.material = await authoredOverlay(scene, (document) => {
+      document.nodes.push({ id: "reflection", type: "input.mirrorReflection", position: { x: 0, y: 0 }, properties: {} });
+      document.edges = [{ id: "reflection-output", sourceNodeId: "reflection", sourcePinId: "color", targetNodeId: "output", targetPinId: "baseColor" }];
+    });
+    // Off to the side, and 10.49 from the layer camera at (0, 0, -10): between a (10.9) and c (10.17) in the order.
+    mirror.position.set(4, 0, -0.3);
+    quad(scene, "c", 1.2, 0, { z: 0.1 });
+    // The panel overlaps neither: c joins a across it.
+    expect(await drawsBothWays(context)).toEqual({ batched: 2, unbatched: 3 });
+    // Over c (10.61 from the camera), the panel must draw before it: c cannot join a, which draws before the panel.
+    mirror.position.set(1.5, 0, 0.5);
+    expect(await drawsBothWays(context)).toEqual({ batched: 3, unbatched: 3 });
+    // A Material that moves vertices in its vertex stage may draw anywhere: every draw after it stays after it.
+    mirror.position.set(4, 0, -0.3);
+    mirror.material = await authoredOverlay(scene, (document) => {
+      document.nodes.find((node) => node.type === "output.surface")!.properties = { "default:worldPositionOffset": [0, 1, 0] };
+    });
+    expect(await drawsBothWays(context)).toEqual({ batched: 3, unbatched: 3 });
   });
 
   it("draws the Feature Test HUD in far fewer draws", async () => {

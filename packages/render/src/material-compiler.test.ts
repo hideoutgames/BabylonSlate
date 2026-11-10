@@ -30,7 +30,7 @@ import {
   newCustomGlslProperties,
   type MaterialDocument,
 } from "@haptic/shader-graph";
-import { isDrawBatchMaterial } from "./draw-batch-world-block";
+import { isBoundedMaterial, isDrawBatchMaterial } from "./draw-batch-world-block";
 import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
 // The WGSL fog cases fake a WebGPU Engine, whose code registers the WGSL includes Haptic's blocks emit as it loads.
 import "./webgpu-registrations";
@@ -365,9 +365,9 @@ describe("material compiler", () => {
 
   it("marks a Scene Layer surface whose draws may batch: the stock vertex stage and nothing bound that depends on the mesh", async () => {
     const scene = host();
-    const compiled = async (name: string, edit: (doc: MaterialDocument) => void, overlay: boolean) => {
-      const doc = createDefaultMaterialDocument();
-      doc.shadingModel = "unlit";
+    const compiled = async (name: string, edit: (doc: MaterialDocument) => void, overlay: boolean, domain: "surface" | "text" = "surface") => {
+      const doc = createDefaultMaterialDocument(name, domain);
+      if (domain === "surface") doc.shadingModel = "unlit";
       edit(doc);
       const result = compileMaterialPlan(planFor(doc), { scene, name, overlay });
       if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
@@ -395,6 +395,13 @@ describe("material compiler", () => {
       doc.edges = [{ id: "reflection-output", sourceNodeId: "reflection", sourcePinId: "color", targetNodeId: "output", targetPinId: "baseColor" }];
     }, true);
     expect(isDrawBatchMaterial(mirrored)).toBe(false);
+    // Whether a mesh stays inside its bounds is the vertex stage's alone: the mirror's and a world surface's do, an
+    // offset one's does not.
+    expect([overlay, mirrored, lifted].map(isBoundedMaterial)).toEqual([true, true, false]);
+    expect(isBoundedMaterial(await compiled("world bounds", () => {}, false))).toBe(true);
+    // A text's Material binds each mesh's own glyphs: it stays on its mesh, and joins no batch.
+    const text = await compiled("text", () => {}, true, "text");
+    expect({ bounded: isBoundedMaterial(text), batches: isDrawBatchMaterial(text) }).toEqual({ bounded: true, batches: false });
   });
 
   it("reports deferred Babylon build failures through readiness", async () => {

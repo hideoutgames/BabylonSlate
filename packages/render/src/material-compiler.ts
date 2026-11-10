@@ -82,7 +82,7 @@ import { WaterCoverageBlock, WaterCutBlock } from "./water-node-blocks";
 import { WaterSurfaceBlock } from "./water-surface-block";
 import { WaterWavesBlock } from "./water-waves-block";
 import { markCageShadowWrapper, registerLatticeShadowAdapter } from "./lattice-deformer-binding";
-import { markDrawBatchMaterial } from "./draw-batch-world-block";
+import { markBoundedMaterial, markDrawBatchMaterial } from "./draw-batch-world-block";
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { SceneFogBlock } from "./scene-fog-block";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
@@ -1052,11 +1052,15 @@ export function compileMaterialPlan(
     (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock | LatticeDeformerBlock | OverlayStyleBlock | WaterWavesBlock | GeometrySurfaceOutputBlock =>
       block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock || block instanceof LatticeDeformerBlock || block instanceof OverlayStyleBlock || block instanceof WaterWavesBlock || block instanceof GeometrySurfaceOutputBlock,
   );
-  // A Scene Layer surface with the stock vertex stage draws every mesh the same but for its world matrix, its overlay
-  // style and Receive Shadows, so its draws may batch, provided nothing else it binds can depend on the mesh.
-  if (options.overlay && !auxiliary && plan.domain === "surface" && plan.cost.customBlocks === 0 &&
-    isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null) && created.every(bindsAsABatchDoes))
-    markDrawBatchMaterial(material);
+  // The stock vertex stage keeps a surface's or a text's vertices on its mesh: no custom blocks, and no World Position
+  // Offset (which is also how a graph's water waves move them).
+  const bounded = (plan.domain === "surface" || plan.domain === "text") && plan.cost.customBlocks === 0 &&
+    isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
+  if (bounded) markBoundedMaterial(material);
+  // A Scene Layer Material with the stock vertex stage draws every mesh the same but for its world matrix, its overlay
+  // style and Receive Shadows, so its draws may batch, provided nothing else it binds can depend on the mesh (a text's
+  // glyphs do).
+  if (bounded && options.overlay && created.every(bindsAsABatchDoes)) markDrawBatchMaterial(material);
   // The light block rebinds only its receiver terms.
   const lightingBlocks = created.filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock);
   if (perMeshBlocks.length > 0 || lightingBlocks.length > 0) {
