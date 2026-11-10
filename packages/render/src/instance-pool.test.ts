@@ -71,23 +71,19 @@ describe("groups", () => {
     expect(pool.diagnostics()).toMatchObject({ groups: 7, pooled: 8, rekeys: 0 });
   });
 
-  it("builds a hidden source at identity that draws its members' normals for any scaling, never casts and only draws instanced", () => {
+  it("builds a hidden source at identity that never casts and only draws instanced", () => {
     const { pool, key, surface } = fixture();
     const member = pool.join(key({ receiveShadows: true }), "member");
     const source = member.sourceMesh;
-    member.scaling.set(1, 3, 1);
     expect({
       visible: source.isVisible, pickable: source.isPickable, material: source.material === surface, receives: source.receiveShadows,
       group: source.renderingGroupId, frozen: source.isWorldMatrixFrozen, identity: source.getWorldMatrix().isIdentity(),
-      nonUniform: source.nonUniformScaling, pool: isInstancePoolSource(source), variants: drawnMaterialVariants(source),
+      pool: isInstancePoolSource(source), variants: drawnMaterialVariants(source),
       participates: participatesInShadows(source), participation: authoredShadowParticipation(source),
     }).toEqual({
-      visible: false, pickable: false, material: true, receives: true, group: 1, frozen: true, identity: true, nonUniform: true,
+      visible: false, pickable: false, material: true, receives: true, group: 1, frozen: true, identity: true,
       pool: true, variants: { plain: false, instanced: true }, participates: true, participation: { castShadows: false, receiveShadows: true },
     });
-    // A frozen world matrix never recomputes its scaling state.
-    source.computeWorldMatrix(true);
-    expect(source.nonUniformScaling).toBe(true);
   });
 
   it("holds the geometry's owner while the group lives", () => {

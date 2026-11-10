@@ -60,7 +60,6 @@ type MeshInternals = {
   _occlusionDataStorage?: { occlusionType: number } | null;
   renderOutline?: boolean;
   renderOverlay?: boolean;
-  _updateNonUniformScalingState(value: boolean): boolean;
 };
 
 /** A member's own vertices and its world matrix as its draw uploads it, kept while neither changes. */
@@ -330,10 +329,9 @@ function sameDraw(a: Entry, b: Entry): boolean {
     if (a.text.atlas !== b.text.atlas || a.text.mode !== b.text.mode || a.text.outline !== b.text.outline ||
       !sameColor(a.text.outlineColor, b.text.outlineColor)) return false;
   } else if (meshA.visibility !== meshB.visibility) return false;
-  // What else a draw binds per mesh: the unlit binding, or an authored Material's lighting term, Receive Shadows. A
-  // stretched mesh also draws an authored Material with a program of its own (normals by the inverse transpose).
+  // What else a draw binds per mesh: the unlit binding, or an authored Material's lighting term, Receive Shadows.
   if (a.binding && b.binding) return sameBinding(a.binding, b.binding);
-  return meshA.receiveShadows === meshB.receiveShadows && meshA.nonUniformScaling === meshB.nonUniformScaling;
+  return meshA.receiveShadows === meshB.receiveShadows;
 }
 
 /** Whether `mesh`'s bounding box contains what it draws: no skinning, morphs, lattice, instances or moving vertex stage. */
@@ -636,12 +634,6 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     else {
       if (first.text) bindTextMaterialGlyph(mesh, first.text);
       mesh.receiveShadows = member.receiveShadows;
-      if (mesh.nonUniformScaling !== member.nonUniformScaling) {
-        // The batch's mesh compiles the program its members do. Its own world matrix is frozen at the identity, so
-        // nothing sets the state back; the define, once set for a submesh, stays set, so its defines start anew.
-        (mesh as unknown as MeshInternals)._updateNonUniformScalingState(member.nonUniformScaling);
-        mesh.subMeshes?.[0]?.resetDrawCache();
-      }
     }
     shareOverlayVisualStyle(mesh, member);
     mesh.visibility = member.visibility;
