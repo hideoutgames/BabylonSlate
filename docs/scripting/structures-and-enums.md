@@ -22,6 +22,8 @@ Choose **Enum** as a variable or pin type, then pick the Enum under **Enum Type*
 
 Drag from an Enum pin to see these nodes first. When you remove a member, Switch and Select nodes lose that member's pin and its wires.
 
+An Enum value is always one of its members, never empty. An Enum input on a node, an Enum input of a function and an Enum variable start as the Enum's first member until you choose another, and they run with that member.
+
 ## Create a Structure
 
 1. In the **Content Browser**, choose **New Asset > Scripting > Structure**.
