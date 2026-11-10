@@ -36,7 +36,6 @@ import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import { createRenderTargetDepthMaterial, createRenderTargetNormalMaterial } from "./render-target-normal-material";
 import type { ResourceLease } from "./resource-cache";
 import { isRenderTargetCaptureCandidate, renderTargetCaptureDrawing } from "./render-target-capture-state";
-import { particleMaterialForSystem } from "./node-material-particles";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { acquireAuthoredMaterialVariant, type AuthoredMaterialVariant } from "./material-compiler";
 import { retireOwnedEffect } from "./owned-effect-retirement";
@@ -173,12 +172,11 @@ type Target = CaptureBuffer & {
   key: string;
   definition: RenderTargetPayload;
   quality: RenderTargetCaptureQuality;
-  /** Allocated only after a capture needs to sample its published attachment. */
-  spare?: CaptureBuffer;
   /**
    * A Fast colour capture's own pass: the scene colour target, with the depth, it draws in with the view's programs.
-   * One pass then stores that image display-referred in `texture` or `spare` (`DisplayConversion`), which hold colour
-   * alone. A data capture draws its override Materials straight into its output and has none.
+   * One pass then stores that image display-referred in `texture` (`DisplayConversion`), which holds colour alone. So
+   * a monitor inside its own capture samples the last stored image while the next is drawn: the pass never draws into
+   * what its Materials sample. A data capture draws its override Materials straight into its output and has none.
    */
   scene?: CaptureBuffer;
   /** Whether `scene` holds linear colour, as the view's programs wrote when it was made. */
@@ -215,7 +213,6 @@ export class RenderTargetCaptures {
   private readonly targets = new Map<string, Target>();
   private readonly textures = new Map<string, CaptureTexture>();
   private readonly frameOwners = new Set<string>();
-  private readonly checkedMaterials = new Set<Material>();
   private readonly consumerScenes = new Map<Scene, Observer<Scene>>();
   private fallback: RawTexture | undefined;
   private fallbackLease: ManagedRenderLease | undefined;
@@ -436,15 +433,7 @@ export class RenderTargetCaptures {
         continue;
       }
       const meshes = this.collectCandidates(capture, target);
-      if (!target.depth && !target.normals && !target.spare && this.samplesAttachment(target, target.texture)) {
-        target.spare = this.createBuffer(`${guid}:history`, definition, capture.camera, "output");
-        // Keep the previous image and pending manual request if admission fails.
-        if (!target.spare) continue;
-      }
-      const destination = target.spare?.texture ?? target.texture;
-      // Public wrappers read the completed front buffer. Fail closed for a
-      // foreign alias of the back buffer rather than submitting GPU feedback.
-      if (target.spare && this.samplesAttachment(target, destination)) continue;
+      const destination = target.texture;
       // A colour capture's pass draws its scene colour target, which one pass then stores in the destination.
       const pass = target.scene?.texture ?? destination;
       if (!target.depth && !target.normals) pass.clearColor = this.scene.clearColor;
@@ -478,7 +467,10 @@ export class RenderTargetCaptures {
       let drawn: boolean;
       let skipped: number;
       try {
-        drawn = this.stageDraw(target, guid, actorId, () => this.draw(() => this.drawReady(pass, target.scene ? { texture: destination, linear: target.linear } : null)));
+        // A pass that skipped a draw stores nothing: the output keeps its last complete image. Closing twice is safe.
+        const complete = () => !(deferral?.close() ?? 0);
+        drawn = this.stageDraw(target, guid, actorId, () => this.draw(() => this.drawReady(pass,
+          target.scene ? { texture: destination, linear: target.linear, complete } : null)));
       } finally {
         skipped = deferral?.close() ?? 0;
       }
@@ -487,12 +479,6 @@ export class RenderTargetCaptures {
         this.pendingRehearsals.delete(guid);
         this.rehearsed.add(guid);
         continue;
-      }
-      if (target.spare) {
-        const previous = { texture: target.texture, lease: target.lease };
-        target.texture = target.spare.texture;
-        target.lease = target.spare.lease;
-        target.spare = previous;
       }
       this.published(capture, target);
     }
@@ -635,7 +621,7 @@ export class RenderTargetCaptures {
     capture.waitedForShadows = false;
     const wasPublished = target.published;
     target.published = true;
-    if (!wasPublished || target.spare) this.publishTextures(wasPublished);
+    if (!wasPublished) this.publishTextures();
   }
   /**
    * Re-attach the scene's outlines, and for Full Quality its authored stack, when they changed, then draw the view if
@@ -819,23 +805,6 @@ export class RenderTargetCaptures {
       throw error;
     }
   }
-  /** Runs every frame for each color target, so each shared material is inspected once. */
-  private samplesAttachment(target: Target, destination: CaptureRenderTarget): boolean {
-    const attachment = destination.getInternalTexture();
-    const checked = this.checkedMaterials;
-    const samples = (material: Material | null | undefined): boolean => {
-      if (!material || checked.has(material)) return false;
-      checked.add(material);
-      return material.getActiveTextures().some((texture) => texture.getInternalTexture() === attachment);
-    };
-    try {
-      for (const mesh of target.meshes) if (samples(mesh.material)) return true;
-      for (const system of target.particles) {
-        if (system.particleTexture?.getInternalTexture() === attachment || samples(particleMaterialForSystem(system))) return true;
-      }
-      return false;
-    } finally { checked.clear(); }
-  }
   /**
    * What a Fast capture draws: the eligible meshes its camera sees. Babylon culls no explicit list, so without the
    * test a capture drew every eligible mesh of the Scene, behind its camera included. A mesh is tested where the
@@ -999,7 +968,7 @@ export class RenderTargetCaptures {
    * image display-referred, as each Material wrote it when a capture drew with image processing in its Materials and
    * so compiled every one of them a second time.
    */
-  private drawReady(pass: CaptureRenderTarget, output: { texture: CaptureRenderTarget; linear: boolean } | null): boolean {
+  private drawReady(pass: CaptureRenderTarget, output: { texture: CaptureRenderTarget; linear: boolean; complete(): boolean } | null): boolean {
     let ready = false;
     const conversion = output ? this.conversion ??= new DisplayConversion(this.scene.getEngine()) : null;
     // Readiness initializes the native renderer, so it needs the same
@@ -1013,7 +982,7 @@ export class RenderTargetCaptures {
       ready = (!conversion || conversion.ready(output!.linear)) && pass.isReadyForRendering();
       if (!ready) return;
       pass.renderPrepared();
-      if (!conversion) return;
+      if (!conversion || !output!.complete()) return;
       const stored = output!.texture.renderTarget!;
       engine.bindFramebuffer(stored);
       conversion.draw(pass);
@@ -1023,7 +992,7 @@ export class RenderTargetCaptures {
     });
     return ready;
   }
-  private publishTextures(rebindOnly = false): void {
+  private publishTextures(): void {
     if (!this.textures.size) return;
     if (!this.fallback) {
       const lease = beginManagedRenderAllocation(this.scene.getEngine(), 4);
@@ -1044,29 +1013,9 @@ export class RenderTargetCaptures {
       if (texture.bind(target?.published ? target.texture.getInternalTexture()! : fallback, gammaSpace)) changed.add(texture);
     }
     if (!changed.size) return;
-    for (const scene of this.consumerScenes.keys()) {
-      const rebound = new Set<Material>();
-      for (const material of scene.materials) {
-        if (!material.getActiveTextures().some((texture) => changed.has(texture as CaptureTexture))) continue;
-        // Mode/size changes still invalidate defines. A history swap keeps the
-        // shader contract and only refreshes frozen material texture bindings.
-        if (rebindOnly) rebound.add(material);
-        else material.markDirty(true);
-      }
-      if (!rebound.size) continue;
-      scene.resetCachedMaterial();
-      // WebGL has no material contexts. Resolve each pass/slot explicitly so
-      // unrelated frozen materials retain their bindings on both backends.
-      for (const mesh of scene.meshes) for (const subMesh of mesh.subMeshes ?? []) {
-        const renderingMesh = subMesh.getRenderingMesh();
-        for (let pass = 0; pass < subMesh._drawWrappers.length; pass++) {
-          const wrapper = subMesh._drawWrappers[pass];
-          if (!wrapper) continue;
-          const root = renderingMesh.getMaterialForRenderPass(pass) ?? renderingMesh.material;
-          const material = root instanceof MultiMaterial ? root.getSubMaterial(subMesh.materialIndex) : root;
-          if (material && rebound.has(material)) wrapper._forceRebindOnNextCall = true;
-        }
-      }
+    // A new backing texture can change a consumer's defines (mode, size, the fallback's colour space).
+    for (const scene of this.consumerScenes.keys()) for (const material of scene.materials) {
+      if (material.getActiveTextures().some((texture) => changed.has(texture as CaptureTexture))) material.markDirty(true);
     }
   }
   private retire(guid: string): void {
@@ -1083,8 +1032,6 @@ export class RenderTargetCaptures {
     target.normals?.dispose();
     target.texture.dispose();
     target.lease.release();
-    target.spare?.texture.dispose();
-    target.spare?.lease.release();
     target.scene?.texture.dispose();
     target.scene?.lease.release();
   }

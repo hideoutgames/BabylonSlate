@@ -23,7 +23,7 @@ import { createDefaultRenderTargetCaptureProperties } from "@haptic/core";
 import { RenderTargetCaptures } from "./render-target-capture";
 import { DisplayConversion } from "./display-conversion";
 import { createStartingStateDraw } from "./starting-state-draw";
-import { beginManagedRenderAllocation, managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
+import { managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
 import { renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { GRID_MESH_NAME, CAMERA_BOUNDS_MESH_NAME } from "./editor-grid";
 import * as normalMaterial from "./render-target-normal-material";
@@ -211,18 +211,21 @@ it("suspends every-frame captures without releasing them, while manual requests 
   expect(draws).toHaveLength(3);
 });
 
-it("publishes nothing and keeps a manual request while its draw waits for a compiling pipeline", () => {
-  const { captures, draws } = host();
+it("stores and publishes nothing, and keeps a manual request, while its draw waits for a compiling pipeline", () => {
+  const { captures, draws, stored } = host();
   const output = captures.acquireTexture("texture")!.resource;
   captures.request("capture");
   // Inside a deferring view's frame, a draw skipped for a pipeline still compiling.
   vi.mocked(beginPipelineDeferral).mockImplementation(() => ({ close: () => 1, waiting: () => true, warmed: () => false }));
   captures.render();
   expect(draws).toHaveLength(1);
+  // The pass lacks a mesh: its image never reaches the output, which keeps what it held.
+  expect(stored).toHaveLength(0);
   expect(output.getSize()).not.toEqual({ width: 16, height: 8 });
   vi.mocked(beginPipelineDeferral).mockImplementation(actualBeginPipelineDeferral);
   captures.render();
   expect(draws).toHaveLength(2);
+  expect(stored).toHaveLength(1);
   expect(output.getSize()).toEqual({ width: 16, height: 8 });
   captures.render();
   expect(draws).toHaveLength(2);
@@ -284,46 +287,42 @@ it("actor filtering is opt-in, includes component descendants, and an empty list
   expect(draws[2]).toEqual([]);
 });
 
-it("captures self-sampling meshes from the previous output with bounded buffers and one draw per request", () => {
+it("draws a capture that samples itself into its own pass, and stores the image in the one output afterwards", () => {
   const { scene, captures, draws, engine, stored } = host();
   const output = captures.acquireTexture("texture")!.resource;
+  const fallback = output.getInternalTexture();
   const screen = MeshBuilder.CreatePlane("Screen", {}, scene);
   const material = new StandardMaterial("Screen Material", scene);
   material.emissiveTexture = output; screen.material = material;
   const other = MeshBuilder.CreateBox("Other", {}, scene);
-  const sampled: unknown[] = [];
+  // What the screen samples while each pass draws, and what that pass draws into.
+  const sampled: unknown[] = [], passes: string[] = [];
   const draw = vi.mocked(RenderTargetTexture.prototype.render).getMockImplementation()!;
   vi.mocked(RenderTargetTexture.prototype.render).mockImplementation(function (this: RenderTargetTexture) {
     sampled.push(output.getInternalTexture());
+    passes.push(this.name);
     draw.call(this);
   });
-  // What each capture's image is stored in: never the buffer its own draw sampled.
-  const written = () => stored.map((entry) => entry.texture);
   captures.request("capture"); captures.render();
   const first = output.getInternalTexture();
-  const firstBytes = managedRenderReservations(engine).reservedBytes;
-  // A completed material keeps its shader state across attachment swaps.
+  const bytes = managedRenderReservations(engine).reservedBytes;
+  // A completed material keeps its shader state: the output it samples never changes again.
   const dirty = vi.spyOn(material, "markDirty");
-  captures.request("capture"); captures.render();
-  const second = output.getInternalTexture();
-  const bufferedBytes = managedRenderReservations(engine).reservedBytes;
-  expect(second).not.toBe(first);
-  expect(bufferedBytes).toBeGreaterThan(firstBytes);
-  expect(draws[1]).toContain(other);
-  expect(draws[1]).toContain(screen);
-  captures.request("capture"); captures.render();
-  expect(output.getInternalTexture()).toBe(first);
-  expect(sampled.slice(1)).toEqual([first, second]);
-  expect(stored.map((entry) => entry.into)).toEqual(["renderTarget:target", "renderTarget:target:history", "renderTarget:target"]);
-  // The history buffer is an output too: colour alone.
-  expect(texture(scene, "renderTarget:target:history")!.renderTarget!._generateDepthBuffer).toBe(false);
-  for (let index = 0; index < 3; index++) expect(written()[index]).not.toBe(sampled[index]);
+  for (let frame = 0; frame < 2; frame++) { captures.request("capture"); captures.render(); }
   expect(draws).toHaveLength(3);
-  expect(managedRenderReservations(engine).reservedBytes).toBe(bufferedBytes);
+  expect(draws[1]).toEqual(expect.arrayContaining([other, screen]));
+  // Each pass draws into the scene colour target while the screen shows the last stored image.
+  expect(passes).toEqual(Array(3).fill("renderTarget:target:scene"));
+  expect(sampled).toEqual([fallback, first, first]);
+  // Only then is the image stored, in the output itself: no second buffer, no swap.
+  expect(stored.map((entry) => [entry.into, entry.texture])).toEqual(Array(3).fill(["renderTarget:target", first]));
+  expect(output.getInternalTexture()).toBe(first);
+  expect(scene.textures.map((entry) => entry.name).filter((name) => name?.startsWith("renderTarget:target")).sort())
+    .toEqual(["renderTarget:target", "renderTarget:target:scene"]);
+  expect(managedRenderReservations(engine).reservedBytes).toBe(bytes);
   expect(dirty).not.toHaveBeenCalled();
   captures.render();
   expect(draws).toHaveLength(3);
-  expect(output.getInternalTexture()).toBe(first);
   captures.clear();
   expect(output.getSize()).toEqual({ width: 1, height: 1 });
   expect(managedRenderReservations(engine).reservedBytes).toBe(4);
@@ -331,32 +330,22 @@ it("captures self-sampling meshes from the previous output with bounded buffers 
   expect(managedRenderReservations(engine).reservedBytes).toBe(0);
 });
 
-it("retains the completed self-capture while its spare buffer is unavailable or not ready", () => {
-  const { scene, captures, engine, draws } = host();
+it("keeps the last stored image, and the request, while a capture's pass is not ready or fails", () => {
+  const { captures, draws, stored } = host();
   const output = captures.acquireTexture("texture")!.resource;
-  const screen = MeshBuilder.CreatePlane("Screen", {}, scene);
-  const material = new StandardMaterial("Screen Material", scene);
-  material.emissiveTexture = output; screen.material = material;
   captures.request("capture"); captures.render();
   const first = output.getInternalTexture();
-  const used = managedRenderReservations(engine).reservedBytes;
-  limitManagedRenderBytes(engine, 4096);
-  const blocker = beginManagedRenderAllocation(engine, 4096 - used)!;
-  captures.request("capture"); captures.render();
-  expect(draws).toHaveLength(1);
-  expect(output.getInternalTexture()).toBe(first);
-  expect(managedRenderReservations(engine).reservedBytes).toBe(4096);
-  blocker.release();
+  captures.request("capture");
   vi.mocked(RenderTargetTexture.prototype.isReadyForRendering).mockReturnValueOnce(false);
   captures.render();
-  expect(draws).toHaveLength(1);
-  expect(output.getInternalTexture()).toBe(first);
+  expect([draws.length, stored.length]).toEqual([1, 1]);
   vi.mocked(RenderTargetTexture.prototype.render).mockImplementationOnce(() => { throw new Error("Interrupted capture"); });
   expect(() => captures.render()).toThrow("Interrupted capture");
-  expect(output.getInternalTexture()).toBe(first);
+  // The pass threw before anything was stored.
+  expect(stored).toHaveLength(1);
   captures.render();
-  expect(draws).toHaveLength(2);
-  expect(output.getInternalTexture()).not.toBe(first);
+  expect([draws.length, stored.length]).toEqual([2, 2]);
+  expect(output.getInternalTexture()).toBe(first);
 });
 
 it("draws only what a Fast capture's camera sees, at its target's shape", () => {

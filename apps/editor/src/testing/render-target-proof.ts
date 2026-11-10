@@ -244,8 +244,10 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
       for (const mode of ["DepthPass", "WorldNormal"] as const) await capture(mode, false, `${label} ${mode}`);
     }
     // A monitor inside its own capture must sample the completed image while
-    // the next one is drawn. Repeated swaps exercise frozen NodeMaterial
-    // bindings on both GPU backends, including after the image changes.
+    // the next one is drawn: the pass draws its scene colour target, and the
+    // output it is then stored in keeps one texture. Repeated captures exercise
+    // frozen NodeMaterial bindings on both GPU backends, including after the
+    // image changes.
     plane.material = material;
     await capture("SceneColor", false, "Feedback Seed");
     const feedback = library.acquire(scene, "feedback-sampler", graph);
@@ -258,15 +260,21 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
     feedback.material.freeze();
     const feedbackOutput = captures.acquireTexture("texture")!.resource;
     const nextFeedback = async (label: string) => {
-      const previous = feedbackOutput.getInternalTexture();
+      const stored = feedbackOutput.getInternalTexture();
+      const pass = scene.textures.find((entry) => entry.name === "renderTarget:target:scene") as RenderTargetTexture | undefined;
+      if (!pass) throw new Error(`Feedback capture has no pass: ${label}`);
+      let drawn = false;
+      const observer = pass.onAfterRenderObservable.add(() => { drawn = true; });
       captures.request("capture");
       const deadline = performance.now() + 10000;
       do {
         engine.beginFrame(); captures.render(); engine.endFrame();
-        if (feedbackOutput.getInternalTexture() !== previous) break;
+        if (drawn) break;
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       } while (performance.now() < deadline);
-      if (feedbackOutput.getInternalTexture() === previous) throw new Error(`Feedback capture did not complete: ${label}`);
+      pass.onAfterRenderObservable.remove(observer);
+      if (!drawn) throw new Error(`Feedback capture did not complete: ${label}`);
+      if (feedbackOutput.getInternalTexture() !== stored) throw new Error(`Feedback capture replaced its output: ${label}`);
       const pixels = await feedbackOutput.readPixels(0, 0, null, true, false, 16, 16, 1, 1);
       if (!pixels) throw new Error("Feedback capture returned no pixels.");
       results.push({ mode: label, pixel: Array.from(pixels as Uint8Array) });
