@@ -11,6 +11,8 @@ import { latticeShaderDeclarations, latticeShaderFunctions, LATTICE_WORLD_POSITI
 
 export const SHARED_OUTLINE_MASK_SHADER = "hapticSharedOutlineMask";
 export const SHARED_OUTLINE_COMPOSE_SHADER = "hapticSharedOutlineCompose";
+/** Copies the scene's depth into the strict mask's own, so its pass draws no occluder that depth holds. */
+export const SHARED_OUTLINE_DEPTH_SEED_SHADER = "hapticSharedOutlineDepthSeed";
 
 function maskVertex(source: string, wgsl: boolean): string {
   const scene = EngineStore.LastCreatedScene;
@@ -80,6 +82,22 @@ ${output}vOutlineAlpha*=${vertex}instanceColor.a;
  * WGSL selection stage, which only the WebGPU Engine's code registers, so only a WebGPU Engine's outline builds it.
  */
 export function registerSharedOutlineShaders(webgpu: boolean): void {
+  ShaderStore.ShadersStore[`${SHARED_OUTLINE_DEPTH_SEED_SHADER}PixelShader`] = `
+varying vec2 vUV;
+uniform sampler2D sceneDepth;
+void main(void) {
+  gl_FragColor = vec4(0.0);
+  gl_FragDepth = texture2DLodEXT(sceneDepth, vUV, 0.0).r;
+}`;
+  if (webgpu)
+    ShaderStore.ShadersStoreWGSL[`${SHARED_OUTLINE_DEPTH_SEED_SHADER}PixelShader`] = `
+varying vUV: vec2f;
+var sceneDepthSampler: sampler; var sceneDepth: texture_2d<f32>;
+@fragment
+fn main(input: FragmentInputs) -> FragmentOutputs {
+  fragmentOutputs.color = vec4f(0.0);
+  fragmentOutputs.fragDepth = textureSampleLevel(sceneDepth, sceneDepthSampler, fragmentInputs.vUV, 0.0).r;
+}`;
   ShaderStore.ShadersStore[`${SHARED_OUTLINE_MASK_SHADER}VertexShader`] =
     maskVertex(selectionVertexShader.shader, false);
   if (webgpu)

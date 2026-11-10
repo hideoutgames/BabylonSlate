@@ -194,3 +194,62 @@ for (const backend of ["webgl2"] as const) {
     expect(report.unpresentedRetirement.retainedRenderers).toBe(0);
   });
 }
+
+// A game's world view starts its strict mask from the scene's depth and draws only the outlined meshes and the
+// occluders that depth lacks. What it shows must be what the mask's own occluder draws showed, under the same
+// anti-aliasing: FXAA reads a settings chain's depth, MSAA the view's own pair's, resolved by sample.
+for (const [backend, antiAliasing] of [["webgl2", "fxaa"], ["webgl2", "msaa4"], ["webgpu", "fxaa"]] as const) {
+  test(`a strict outline mask seeded from the scene's depth shows what its own occluders showed: ${backend} ${antiAliasing}`, async ({ browser }, testInfo) => {
+    test.setTimeout(240_000);
+    const run = async (overSceneDepth: boolean) => {
+      const page = await browser.newPage();
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      page.on("console", (message) => {
+        if (message.type() === "error" && /GPUValidationError|validation error|WebGL.*INVALID_|shader.*(?:error|failed)/i.test(message.text()))
+          errors.push(message.text());
+      });
+      await page.goto("/?test=1&sharedOutlineProof=1");
+      await page.waitForFunction(() => "__hapticSharedOutlineProof" in window);
+      const report = await page.evaluate(([backend, antiAliasing, overSceneDepth]) => {
+        const host = window as unknown as { __hapticSharedOutlineProof: typeof runSharedOutlineProof };
+        return host.__hapticSharedOutlineProof(backend, undefined, { antiAliasing, overSceneDepth });
+      }, [backend, antiAliasing, overSceneDepth] as const);
+      await page.close();
+      expect(errors).toEqual([]);
+      expect(report.effectiveBackend).toBe(backend);
+      return report;
+    };
+    const own = await run(false), seeded = await run(true);
+    expect(seeded.snapshots.map((snapshot) => snapshot.name)).toEqual(own.snapshots.map((snapshot) => snapshot.name));
+    // A single-sample scene depth is the mask's own pixels, so every stage's image is the same. A multisampled one
+    // resolves to one sample's depth per pixel: where outlined meshes abut, a corner pixel's stroke may take the
+    // neighbour's colour, a handful of pixels in a stage, and nothing an occluder hides may show.
+    const exact = antiAliasing === "fxaa";
+    const differing: string[] = [];
+    for (const [index, before] of own.snapshots.entries()) {
+      const after = seeded.snapshots[index]!;
+      if (after.image !== before.image) {
+        differing.push(before.name);
+        await testInfo.attach(`${before.name}-own`, { body: Buffer.from(before.image.split(",")[1]!, "base64"), contentType: "image/png" });
+        await testInfo.attach(`${before.name}-seeded`, { body: Buffer.from(after.image.split(",")[1]!, "base64"), contentType: "image/png" });
+      }
+      for (const [lane, counts] of before.lanes.entries())
+        for (const color of ["red", "green", "blue"] as const)
+          expect(Math.abs(after.lanes[lane]![color] - counts[color]), `${before.name}: lane ${lane} ${color}`).toBeLessThanOrEqual(exact ? 0 : 8);
+      expect(after.coveredPartialRed, before.name).toBe(before.coveredPartialRed);
+      expect(after.coveredBoundaryRed, before.name).toBe(before.coveredBoundaryRed);
+    }
+    expect(differing.length, differing.join(", ")).toBeLessThanOrEqual(exact ? 0 : 2);
+    const at = (report: typeof own, name: string) => report.snapshots.find((snapshot) => snapshot.name === name)!;
+    // The seeded runs did take the scene's depth: one depth copy joins the strict mask's passes, and it stands in for
+    // the occluders' draws (two boxes here, so no fewer draws; a scene's worth in a game).
+    for (const name of ["strict-full-and-partial-occlusion", "close-partial-occluder"]) {
+      expect(at(seeded, name).outline, name).toEqual({
+        drawingPassCount: at(own, name).outline.drawingPassCount + 1, renderRecordCount: at(own, name).outline.renderRecordCount + 1,
+      });
+      expect(at(seeded, name).draws, name).toBeLessThanOrEqual(at(own, name).draws);
+    }
+  });
+}
+

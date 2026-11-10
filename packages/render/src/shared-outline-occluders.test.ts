@@ -6,7 +6,9 @@ import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
-import { cullStrictOccluders } from "./shared-outline-occluders";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { cullStrictOccluders, writesSceneDepth } from "./shared-outline-occluders";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { for (const dispose of cleanups.splice(0)) dispose(); });
@@ -35,10 +37,10 @@ function setup() {
   cleanups.push(() => { renderer.dispose(); scene.dispose(); engine.dispose(); });
   const list: AbstractMesh[] = [], scratch: AbstractMesh[] = [];
   const lightDirty = vi.spyOn(member, "_markSubMeshesAsLightDirty");
-  const cull = (candidates: readonly AbstractMesh[] = [member, front, near, beside]) =>
-    cullStrictOccluders(candidates, (mesh) => mesh === member, camera, 512, 256, 2, list, scratch);
+  const cull = (candidates: readonly AbstractMesh[] = [member, front, near, beside], occludes?: (mesh: AbstractMesh) => boolean) =>
+    cullStrictOccluders(candidates, (mesh) => mesh === member, camera, 512, 256, 2, list, scratch, occludes);
   const observe = () => { renderer.renderList = list; lightDirty.mockClear(); };
-  return { member, front, near, beside, list, lightDirty, cull, observe };
+  return { scene, member, front, near, beside, list, lightDirty, cull, observe };
 }
 
 describe("strict occluder cull and the render list Babylon observes", () => {
@@ -90,5 +92,66 @@ describe("strict occluder cull and the render list Babylon observes", () => {
     expect(names(cull())).toEqual(["member", "front"]);
     expect(names(list)).toEqual(["member", "front"]);
     expect(lightDirty).toHaveBeenCalled();
+  });
+
+  it("draws, over a mask seeded from the scene's depth, only the occluders that depth lacks, and every member", () => {
+    const { scene, member, front, near, cull } = setup();
+    near.isVisible = true;
+    const glass = new StandardMaterial("glass", scene);
+    glass.alpha = 0.5;
+    near.material = glass;
+    // The opaque box in front is in the scene's depth already; the blended one is not.
+    expect(names(cull(undefined, (mesh) => !writesSceneDepth(mesh)))).toEqual(["member", "near"]);
+    // A member is drawn whatever the scene's depth holds of it: the mask needs its identity.
+    member.material = glass;
+    front.material = glass;
+    expect(names(cull(undefined, (mesh) => !writesSceneDepth(mesh)))).toEqual(["member", "front", "near"]);
+    expect(names(cull(undefined, () => false))).toEqual(["member"]);
+  });
+});
+
+describe("what the colour pass writes into the scene's depth", () => {
+  function fixture() {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    cleanups.push(() => { scene.dispose(); engine.dispose(); });
+    const mesh = MeshBuilder.CreateBox("mesh", {}, scene);
+    const material = (name: string, edit: (material: StandardMaterial) => void = () => {}) => {
+      const created = new StandardMaterial(name, scene);
+      edit(created);
+      return created;
+    };
+    return { scene, mesh, material };
+  }
+
+  it.each([
+    ["an opaque Material", () => {}, true],
+    ["an alpha-tested Material", (material: StandardMaterial) => { material.transparencyMode = StandardMaterial.MATERIAL_ALPHATEST; }, true],
+    ["a blended Material", (material: StandardMaterial) => { material.alpha = 0.5; }, false],
+    ["a blended Material with a depth pre-pass", (material: StandardMaterial) => { material.alpha = 0.5; material.needDepthPrePass = true; }, true],
+    ["a blended Material that forces its depth write", (material: StandardMaterial) => { material.alpha = 0.5; material.forceDepthWrite = true; }, true],
+    ["an opaque Material that writes no depth", (material: StandardMaterial) => { material.disableDepthWrite = true; }, false],
+  ] as const)("holds a mesh drawn with %s: %s", (_name, edit, expected) => {
+    const { mesh, material } = fixture();
+    mesh.material = material("material", edit);
+    expect(writesSceneDepth(mesh)).toBe(expected);
+  });
+
+  it("holds a mesh without a Material, and not a mesh faded by its own visibility", () => {
+    const { mesh, material } = fixture();
+    expect(writesSceneDepth(mesh)).toBe(true);
+    mesh.material = material("opaque");
+    mesh.visibility = 0.5;
+    expect(writesSceneDepth(mesh)).toBe(false);
+  });
+
+  it("holds a multi-Material mesh only when every part writes its depth", () => {
+    const { scene, mesh, material } = fixture();
+    const parts = new MultiMaterial("parts", scene);
+    parts.subMaterials = [material("solid"), null, material("solid too")];
+    mesh.material = parts;
+    expect(writesSceneDepth(mesh)).toBe(true);
+    parts.subMaterials = [material("solid"), material("glass", (glass) => { glass.alpha = 0.5; })];
+    expect(writesSceneDepth(mesh)).toBe(false);
   });
 });

@@ -92,6 +92,12 @@ type ForwardSceneFrameGraphOptions = {
    * while the scene culls by occlusion (`view-occlusion.ts`). Never with `auxiliary`.
    */
   occlusion?: boolean;
+  /**
+   * A game's world view (Play's, the player's): its strict outline mask starts from the scene's depth where that is a
+   * texture, drawing the outlined meshes and only the occluders that depth lacks (`FrameGraphSharedOutlineTask
+   * .sceneDepthTexture`). Not the editor's viewport, whose depth also holds its helper visuals. Never with `auxiliary`.
+   */
+  outlinesOverSceneDepth?: boolean;
 };
 /**
  * Graph renders and camera assignments in progress, per scene. Babylon clears
@@ -275,6 +281,7 @@ export class ForwardSceneFrameGraph {
   private cull: CameraOutputCullTask | undefined;
   /** A world view's occlusion culling; kept across graph rebuilds. */
   private readonly occlusion: ViewOcclusion | undefined;
+  private readonly outlinesOverSceneDepth: boolean;
   private clear: FrameGraphClearTextureTask | undefined;
   private preparedWidth = 0;
   private preparedHeight = 0;
@@ -345,6 +352,7 @@ export class ForwardSceneFrameGraph {
     this.scene = scene;
     this.auxiliary = options.auxiliary;
     this.occlusion = options.occlusion && !options.auxiliary ? new ViewOcclusion() : undefined;
+    this.outlinesOverSceneDepth = options.outlinesOverSceneDepth === true && !options.auxiliary;
     // Strict readiness probes rebuild every light/material variant. Cache the
     // result and re-probe only after scene or rendering-definition changes.
     const mark = () => this.markReadinessDirty();
@@ -1260,9 +1268,17 @@ export class ForwardSceneFrameGraph {
         guardAlphaToCoverageBlending(scene.getEngine());
         this.objects.objectRenderer.onFinishRenderingObservable.add(() => endAlphaToCoverage(scene.getEngine()));
         this.objects.warmsPipelines = !this.auxiliary;
+        // The strict outline mask reads the scene's depth after this pass where a chain or the view's own pair holds
+        // it as a texture (the backbuffer's cannot be read): resolved by sample where the pass is multisampled.
+        const outlineDepth = this.outlineTask && this.outlinesOverSceneDepth
+          ? this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture ?? this.ownScene?.depth : undefined;
+        if (this.outlineTask && outlineDepth !== undefined) {
+          this.outlineTask.sceneDepthTexture = outlineDepth;
+          if (samples > 1) this.objects.resolveMSAADepth = true;
+        }
         if (waterDemand > 0) {
           // The water scene copy samples the scene depth after this pass: resolve it too.
-          this.objects.resolveMSAADepth = samples > 1;
+          if (samples > 1) this.objects.resolveMSAADepth = true;
           // Sample the chain's scene targets or an imported output directly;
           // only the backbuffer (or a stencil depth) needs an own pair.
           const sceneColor = this.postProcessGraph?.sceneColorTexture ?? this.effectsGraph?.sceneColorTexture ?? this.ownScene?.color;

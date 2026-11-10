@@ -9,6 +9,8 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, type SharedOutlineContribution } from "@haptic/render";
+import { normalizeRenderingQuality } from "@haptic/core";
+import { allowSceneScreenShadows, updateSceneRenderingSettings } from "@haptic/render/render-settings";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { removeOutlineContribution, setOutlineContribution } from "@haptic/render/shared-outline-contributions";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
@@ -20,8 +22,18 @@ export interface SharedOutlineProofProgress {
   image?: string;
 }
 
+export interface SharedOutlineProofOptions {
+  /**
+   * The view's anti-aliasing, with every other effect off. With it the scene's depth is a texture the strict mask can
+   * start from: a settings chain's for FXAA, the view's own multisampled pair's, resolved, for MSAA.
+   */
+  antiAliasing?: "fxaa" | "msaa4";
+  /** The strict mask starts from the scene's depth, as a game's world view's does (`outlinesOverSceneDepth`). */
+  overSceneDepth?: boolean;
+}
+
 export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
-  onProgress?: (progress: SharedOutlineProofProgress) => void | Promise<void>) {
+  onProgress?: (progress: SharedOutlineProofProgress) => void | Promise<void>, options: SharedOutlineProofOptions = {}) {
   const canvas = document.createElement("canvas");
   const width = canvas.width = 240, height = canvas.height = 120;
   document.getElementById("root")!.append(canvas);
@@ -39,6 +51,13 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
   } });
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0, 0, 0, 1);
+  if (options.antiAliasing) {
+    // Only a world view's Scene follows the tier's anti-aliasing.
+    allowSceneScreenShadows(scene, () => false);
+    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({
+      postprocessing: { resolutionScale: 1, antiAliasing: options.antiAliasing, ambientOcclusion: false, reflections: false, volumetricLighting: false },
+    }) });
+  }
   const camera = new FreeCamera("Shared Outline Camera", new Vector3(0, 0, -5), scene);
   camera.setTarget(Vector3.Zero());
   camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
@@ -60,7 +79,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
   const targets = instances.map((mesh, index) => ({ key: `actor-${index}`, meshes: [mesh] }));
   const owner = SharedOutlineOwner.forScene(scene);
   const view = owner.createView("shared-outline-proof");
-  const renderer = new SceneRenderCoordinator(scene);
+  const renderer = new SceneRenderCoordinator(scene, { outlinesOverSceneDepth: options.overSceneDepth === true });
   const detach = renderer.attachSharedOutline(view);
   const contributions: Record<string, SharedOutlineContribution> = {
     global: { kind: "global", targets: [targets[0]!], color: [1, 0, 0], width: 2, throughMeshes: false },

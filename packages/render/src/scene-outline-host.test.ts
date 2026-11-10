@@ -78,6 +78,36 @@ describe("authored scene outline host", () => {
     camera.setTarget(new Vector3(5, 0, 0));
     expect(host.view.strictOccludersFor(camera, 512, 256)).toEqual([outlined, floor]);
   });
+  it("lists, for a mask seeded from the scene's depth, the outlined actor and only the occluders that depth lacks", () => {
+    const { scene, host } = setup();
+    const camera = new UniversalCamera("camera", new Vector3(0, 0, -10), scene);
+    camera.setTarget(Vector3.Zero());
+    const box = (name: string, z: number) => {
+      const mesh = MeshBuilder.CreateBox(name, {}, scene);
+      mesh.position.set(0, 0, z);
+      return mesh;
+    };
+    const outlined = box("outlined", 0);
+    const wall = box("wall in front", -5);
+    const pane = box("glass pane in front", -3);
+    const farPane = box("glass pane behind", 10);
+    const glass = new StandardMaterial("glass", scene);
+    glass.alpha = 0.5;
+    pane.material = farPane.material = glass;
+    for (const mesh of scene.meshes) mesh.computeWorldMatrix(true);
+    host.replaceActors([
+      { id: "outlined", meshes: [outlined], bindings: authored("outlined") },
+      ...[wall, pane, farPane].map((mesh) => ({ id: mesh.name, meshes: [mesh], bindings: [] })),
+    ]);
+    // What the pass probes: the wall's depth comes with the scene's, the panes' does not.
+    expect(host.view.meshesForGroup("strict", true)).toEqual([outlined, pane, farPane]);
+    expect(host.view.meshesForGroup("strict")).toEqual([outlined, wall, pane, farPane]);
+    // What a frame draws: of those, what can cover the outline.
+    expect(host.view.strictOccludersFor(camera, 512, 256, true)).toEqual([outlined, pane]);
+    // A wall that turns to glass joins the frame's occluders at once.
+    wall.material = glass;
+    expect(host.view.strictOccludersFor(camera, 512, 256, true)).toEqual([outlined, wall, pane]);
+  });
   it("selects triangle visuals without admitting line or wireframe topology", () => {
     const { scene, host } = setup();
     const solid = MeshBuilder.CreateBox("solid", {}, scene);

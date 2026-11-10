@@ -139,6 +139,47 @@ it("revalidates coverage edited after a drawn mask pass for readiness and the ne
   }
 });
 
+it("draws nearer by a small offset, added to the Material's own, only over a depth seeded from the scene's", async () => {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  const camera = new FreeCamera("camera", new Vector3(0, 0, -4), scene);
+  scene.activeCamera = camera;
+  const member = MeshBuilder.CreateBox("member", {}, scene);
+  const material = new StandardMaterial("decal", scene);
+  material.zOffset = 2; material.zOffsetUnits = 3;
+  member.material = material;
+  const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
+  setOutlineContribution(view, "member", { kind: "component", targets: [{ key: "member", meshes: [member] }], color: [1, 0, 0], width: 1 });
+  registerSharedOutlineShaders(false);
+  const objects = new ObjectRenderer("mask", scene);
+  objects.activeCamera = camera;
+  objects.renderList = [member];
+  owner.registerRenderPass(objects.renderPassId);
+  const mask = new SharedOutlineMaskRenderer(objects, view, "strict");
+  const state = vi.spyOn(engine, "setState");
+  /** The polygon offset (slope factor, units) of the mask pass's draw. */
+  const offsets = () => {
+    state.mockClear();
+    scene.incrementRenderId(); scene._intermediateRendering = true;
+    objects.prepareRenderList(); objects.initRender(80, 64); objects.render(); objects.finishRender();
+    scene._intermediateRendering = false;
+    expect(state).toHaveBeenCalledTimes(1);
+    return [state.mock.calls[0]![1], state.mock.calls[0]![6]];
+  };
+  try {
+    expect(objects.isReadyForRendering(80, 64)).toBe(true);
+    // Its own depth, drawn by its own occluders: the Material's offsets as they are.
+    expect(offsets()).toEqual([2, 3]);
+    // Over the scene's depth the outlined mesh is there already, at the depth this program computes again.
+    mask.overSceneDepth = true;
+    expect(offsets()).toEqual([1, -1]);
+  } finally {
+    mask.dispose(); objects.dispose(); view.dispose();
+    await owner.whenReleased();
+    scene.dispose(); engine.dispose();
+  }
+});
+
 it("releases the authored coverage variants of pruned and disposed mask programs", async () => {
   const engine = new NullEngine();
   const scene = new Scene(engine);
