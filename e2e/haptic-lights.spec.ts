@@ -178,10 +178,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(outliers(captures.get(pose)!, captures.get("all lights")!), pose).toBeGreaterThan(300);
     for (const pose of ["rotated environment", "box-projected environment", "rect light"])
       expect(outliers(captures.get(pose)!, captures.get("environment only")!), pose).toBeGreaterThan(300);
-    // Two programs per regular Material (the plain and the box-projected cube) and one for each of the white metal, the
-    // matte, the black and the mirror Materials, which draw no box; none carries Babylon's light defines. WebGPU
-    // releases a program once no draw holds it, so there only those of the Materials drawn since remain.
-    expect(result.hapticEffects).toBe(backend === "webgl2" ? 11 : 9);
+    // One program per Material, whatever environment lit it (the sky cube, plain and box-projected, the face-coloured
+    // and the uniform cubes): the three regular ones and the white metal, the matte, the black and the mirror, seven;
+    // none carries Babylon's light defines. WebGPU releases a program once no draw holds it, so there only those of the
+    // Materials drawn since remain.
+    expect(result.hapticEffects).toBe(backend === "webgl2" ? 7 : 5);
     expect(result.lightDefines).toBe(0);
     expect(result.steps).toEqual(LIGHT_STEPS);
 

@@ -7,7 +7,7 @@ import {
 import { NodeMaterialBlockTargets } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockTargets";
 import type { NodeMaterial, NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
-import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import type { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Material } from "@babylonjs/core/Materials/material";
@@ -40,7 +40,7 @@ import { isWaterSurfaceMesh } from "./water-surface-block";
 import { waterDebugOff } from "./water-debug";
 import { shadowAtlasTexture } from "./shadow-atlas";
 
-const VECTOR4_UNIFORMS = ["hapticEnvironment", "hapticEnvironmentBoxPosition", "hapticEnvironmentBoxSize", ...HAPTIC_IRRADIANCE_UNIFORMS];
+const VECTOR4_UNIFORMS = ["hapticEnvironment", "hapticEnvironmentForm", "hapticEnvironmentBoxPosition", "hapticEnvironmentBoxSize", ...HAPTIC_IRRADIANCE_UNIFORMS];
 
 const harmonicsByPolynomial = new WeakMap<SphericalPolynomial, SphericalHarmonics>();
 
@@ -132,6 +132,33 @@ function environmentCube(scene: Scene): BaseTexture | null {
   return texture && texture.isCube && texture.isReadyOrNotBlocking() ? texture : null;
 }
 
+const environmentPlaceholders = new WeakMap<Scene, BaseTexture>();
+/**
+ * A 1 × 1 cube a lit program binds where no environment lights its mesh: every such program declares the cube (WebGPU
+ * draws only with every declared texture bound, and WebGL2 warns of a sampled unit with none), and none samples it at
+ * a scale of zero. A render target's, which every Engine allocates, a headless one (tests, tools) included.
+ */
+function environmentPlaceholder(scene: Scene): BaseTexture {
+  let texture = environmentPlaceholders.get(scene);
+  if (!texture) {
+    const engine = scene.getEngine();
+    const target = engine.createRenderTargetCubeTexture(1, {
+      generateMipMaps: false, generateDepthBuffer: false, generateStencilBuffer: false, type: Constants.TEXTURETYPE_UNSIGNED_BYTE,
+      format: Constants.TEXTUREFORMAT_RGBA, samplingMode: Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+    });
+    // Engine-owned, so it stays out of the Scene's texture list.
+    const cube = texture = new BaseTexture(engine, target.texture);
+    cube.name = "haptic:environmentPlaceholder";
+    environmentPlaceholders.set(scene, cube);
+    scene.onDisposeObservable.addOnce(() => {
+      environmentPlaceholders.delete(scene);
+      cube._texture = null;
+      target.dispose();
+    });
+  }
+  return texture;
+}
+
 const lightLoopProofScenes = new WeakSet<Scene>();
 
 /**
@@ -154,7 +181,8 @@ export class HapticLightingBlock extends NodeMaterialBlock {
   unlit = false;
   /**
    * The Material's Environment Influence is a constant 0 (built-in water's): the environment's light is compiled out
-   * (no `HAPTIC_ENVIRONMENT`), not computed and multiplied by zero. Set by the compiler before the first prepare.
+   * (no `HAPTIC_ENVIRONMENT`), a property of the Material and not of the Scene's environment. Set by the compiler
+   * before the first prepare.
    */
   noEnvironment = false;
 
@@ -197,21 +225,17 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     if (!mesh) return;
     const scene = mesh.getScene();
     const cel = celMode(scene);
-    // CEL lights with the cube's irradiance polynomial alone (`bindCelSettings`), so its programs ignore the cube.
-    const environment = cel || this.noEnvironment ? null : environmentCube(scene);
     defines.setValue("HAPTIC_CEL", cel, true);
     // `waterdebug lighting off` draws water unlit, to measure what its lighting costs.
     defines.setValue("HAPTIC_UNLIT", this.unlit || (isWaterSurfaceMesh(mesh) && waterDebugOff(scene, "lighting")), true);
     // Water receives every shadow through low quality's four taps, without Contact Hardening: on its moving surface a
     // wider penumbra barely shows, and it would cost up to sixteen taps (more with Contact Hardening) per water pixel.
     defines.setValue("HAPTIC_SHADOW_NARROW", isWaterSurfaceMesh(mesh), true);
-    // A different cube format or projection is a settings change, which may compile; lights never are.
-    defines.setValue("HAPTIC_ENVIRONMENT", !!environment, true);
-    defines.setValue("HAPTIC_ENVIRONMENT_RGBD", !!environment?.isRGBD, true);
-    defines.setValue("HAPTIC_ENVIRONMENT_GAMMA", !!environment && !environment.isRGBD && environment.gammaSpace, true);
-    defines.setValue("HAPTIC_ENVIRONMENT_BOX", !!(environment as CubeTexture | null)?.boundingBoxSize, true);
-    defines.setValue("HAPTIC_ENVIRONMENT_OPPOSITEZ", !!environment && (scene.useRightHandedSystem ? !environment.invertZ : environment.invertZ), true);
-    defines.setValue("HAPTIC_ENVIRONMENT_INVERTY", environment?.coordinatesMode === Constants.TEXTURE_INVCUBIC_MODE, true);
+    // The environment's light is part of every lit program, whatever environment lights the mesh: its presence, a
+    // reflection probe's box, its handedness and its encoding are bound values (`bind`), so an environment that
+    // appears, a probe's volume the mesh enters or a cube of another encoding compiles nothing, as no light does. CEL
+    // lights with the cube's irradiance polynomial alone (`bindCelSettings`), so its programs have no cube.
+    defines.setValue("HAPTIC_ENVIRONMENT", !cel && !this.noEnvironment, true);
     defines.setValue("HAPTIC_BRDF_RGBD", !!GetEnvironmentBRDFTexture(scene)?.isRGBD, true);
     defines.setValue("HAPTIC_EXACT_SRGB", scene.getEngine().useExactSrgbConversions, true);
     defines.setValue("HAPTIC_TWO_SIDED", !nodeMaterial.backFaceCulling, true);
@@ -267,13 +291,24 @@ export class HapticLightingBlock extends NodeMaterialBlock {
       bindCelSettings(effect, scene);
       return;
     }
-    const environment = this.noEnvironment ? null : environmentCube(scene);
-    if (!environment) return;
+    if (this.noEnvironment) return;
+    const environment = environmentCube(scene);
+    if (!environment) {
+      // No environment lights this mesh: a scale of zero, which the program reads before it samples anything.
+      effect.setTexture("hapticEnvironmentSampler", environmentPlaceholder(scene));
+      effect.setFloat4("hapticEnvironment", 1, 0, 0, 0);
+      return;
+    }
     effect.setTexture("hapticEnvironmentSampler", environment);
     effect.setMatrix("hapticEnvironmentMatrix", environment.getReflectionTextureMatrix());
     effect.setFloat4("hapticEnvironment", environment.getSize().width, environment.lodGenerationScale, environment.lodGenerationOffset,
       scene.iblIntensity * environment.level);
     const box = environment as CubeTexture;
+    // Its form: a probe's box projection, the signs of the cube's y and z axes, and its encoding (0 linear, 1 gamma, 2 RGBD).
+    effect.setFloat4("hapticEnvironmentForm", box.boundingBoxSize ? 1 : 0,
+      environment.coordinatesMode === Constants.TEXTURE_INVCUBIC_MODE ? -1 : 1,
+      (scene.useRightHandedSystem ? !environment.invertZ : environment.invertZ) ? -1 : 1,
+      environment.isRGBD ? 2 : environment.gammaSpace ? 1 : 0);
     if (box.boundingBoxSize) {
       // Relative to the floating origin, as the surface's world position is (the app's WebGPU Engine's).
       const origin = scene.floatingOriginOffset;

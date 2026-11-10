@@ -11,6 +11,7 @@ import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { RectAreaLight } from "@babylonjs/core/Lights/rectAreaLight";
 import { Scene } from "@babylonjs/core/scene";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
@@ -135,17 +136,53 @@ describe("HapticLightingBlock and the HapticLights block", () => {
   it("binds every texture a program declares, as WebGPU needs: the split-sum table in both modes, the cube only where declared", async () => {
     const { scene } = host();
     const { mesh, material } = await litBox(scene);
-    // A Scene without an environment cube compiles no cube sampler.
+    // Only a lit program declares the cube, and it does whether or not the Scene has an environment.
     expect(material.compiledShaders).toMatch(/#if defined\(HAPTIC_ENVIRONMENT\)\s+uniform samplerCube hapticEnvironmentSampler;/);
-    for (const mode of ["pbr", "cel"] as const) {
+    for (const [mode, cube] of [["pbr", true], ["cel", false]] as const) {
       setSceneRenderSettings(scene, { mode });
       await drawnDefines(scene, mesh, material);
       const effect = mesh.subMeshes[0]!.effect!, bound: string[] = [];
       vi.spyOn(effect, "setTexture").mockImplementation((name) => { bound.push(name); });
       material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
       expect(bound, mode).toEqual(expect.arrayContaining(["hapticEnvironmentBrdfSampler", "hapticAreaLtcSampler", "hapticAreaEmissionSampler"]));
-      expect(bound, mode).not.toContain("hapticEnvironmentSampler");
+      expect(bound.includes("hapticEnvironmentSampler"), mode).toBe(cube);
     }
+  });
+
+  it("draws a lit Material with one program whatever environment lights its mesh, binding its presence and form", async () => {
+    const { engine, scene } = host();
+    const { mesh, material } = await litBox(scene);
+    const none = await drawnDefines(scene, mesh, material);
+    expect(none).toContain("#define HAPTIC_ENVIRONMENT");
+    const bound = () => {
+      const effect = mesh.subMeshes[0]!.effect!, values = new Map<string, number[]>();
+      vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { values.set(name, [x, y, z, w]); return effect; });
+      material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
+      return { scale: values.get("hapticEnvironment")?.[3], form: values.get("hapticEnvironmentForm") };
+    };
+    // No environment: a scale of zero, and nothing else of it.
+    expect(bound()).toEqual({ scale: 0, form: undefined });
+    const cube = (setup: (texture: CubeTexture) => void) => {
+      const internal = engine.createTexture("sky", false, false, null);
+      internal.isCube = true;
+      internal._sphericalPolynomial = new SphericalPolynomial();
+      const texture = new CubeTexture("", scene);
+      texture._texture = internal;
+      texture.level = 0.5;
+      setup(texture);
+      scene.environmentTexture = texture;
+    };
+    // A linear cube, then a reflection probe's gamma cube with a box, then an RGBD cube sampled with y inverted: each
+    // draws with the program the mesh already had. The form is the box, the signs of y and z, and the encoding.
+    cube((texture) => { texture.gammaSpace = false; });
+    expect(await drawnDefines(scene, mesh, material)).toEqual(none);
+    expect(bound()).toEqual({ scale: 0.5, form: [0, 1, 1, 0] });
+    cube((texture) => { texture.boundingBoxSize = new Vector3(4, 4, 4); texture.gammaSpace = true; texture.invertZ = true; });
+    expect(await drawnDefines(scene, mesh, material)).toEqual(none);
+    expect(bound()).toEqual({ scale: 0.5, form: [1, 1, -1, 1] });
+    cube((texture) => { texture.isRGBD = true; texture.coordinatesMode = Constants.TEXTURE_INVCUBIC_MODE; });
+    expect(await drawnDefines(scene, mesh, material)).toEqual(none);
+    expect(bound()).toEqual({ scale: 0.5, form: [0, -1, 1, 2] });
   });
 
   it("compiles the environment's light out of a Material whose Environment Influence is a constant 0, as built-in water's is", async () => {
