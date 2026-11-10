@@ -43,7 +43,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
-import type { MirrorProperties } from "@haptic/core";
+import type { MirrorProperties, MirrorReflects } from "@haptic/core";
 import type { ManagedRenderResource } from "./managed-render-resources";
 import { MirrorReflectionBlock } from "./mirror-reflection-block";
 import { MIRROR_RENDERS_PER_FRAME, selectMirrorsToRender, type MirrorCandidate } from "./mirror-selection";
@@ -70,6 +70,8 @@ import { sceneViewRenderSize } from "./scene-output-scale";
 import { upscaledRenderSize } from "./scene-effects";
 import { sceneRenderingSettings } from "./render-settings";
 import { isWaterSurfaceMesh } from "./water-mesh-surface";
+import { isSceneStaticMesh } from "./scene-static-meshes";
+import { isSkyboxMesh } from "./skybox";
 
 const DRAW_POLICY = { restoreAlpha: true, wrapDrawFailure: false, message: "Mirror reflection failed." };
 
@@ -108,7 +110,15 @@ type Surface = MirrorCandidate & {
   dirty: boolean;
   /** The mirror view-projection of the last draw. */
   readonly drawnViewProjection: Matrix;
+  /** Whether the last draw listed nothing: its image is open everywhere, whatever the view. */
+  drawnEmpty: boolean;
 };
+
+/** What a Moving Actors reflection is cleared to: no colour, and alpha 1, which a drawn fragment turns to 0. */
+const OPEN = new Color4(0, 0, 0, 1);
+/** Blend factors as both backends' alpha state takes them: the GL values. */
+const BLEND_ZERO = 0;
+const BLEND_ONE = 1;
 
 const owners = new WeakMap<Scene, SceneMirrors>();
 
@@ -176,6 +186,9 @@ class SceneMirrors {
   private readonly reflectionPlanes = Frustum.GetPlanes(Matrix.Identity());
   private readonly nextViewProjection = new Matrix();
   private readonly scratch = new Vector3();
+  /** Not drawn into a Moving Actors reflection: what a Mirror never draws, the sky, and the actors that never move. */
+  private readonly excludedStill = (mesh: AbstractMesh) =>
+    excludedFromMirrors(mesh) || mesh.infiniteDistance || isSkyboxMesh(mesh) || isSceneStaticMesh(this.scene, mesh);
   private readonly drawPass = () => {
     const surface = this.drawSurface!, target = this.drawTarget!;
     beginPlanarMirrorPassState(this.scene.getEngine());
@@ -185,11 +198,20 @@ class SceneMirrors {
     if (!surface.ready) complete = surface.ready = target.texture.isReadyForRendering();
     if (!surface.ready) return;
     const engine = this.scene.getEngine();
+    // A Moving Actors reflection keeps each fragment's colour and writes alpha 0 over the cleared 1, whatever alpha its
+    // Material outputs: the surface reads the alpha as where nothing drew, and filtered edges as partly so.
+    const alpha = this.mode(surface) === "movingActors" ? engine._alphaState : null;
+    if (alpha) {
+      alpha.setAlphaBlendFunctionParameters(BLEND_ONE, BLEND_ZERO, BLEND_ZERO, BLEND_ZERO);
+      alpha.setAlphaEquationParameters(Constants.GL_ALPHA_EQUATION_ADD, Constants.GL_ALPHA_EQUATION_ADD);
+      alpha.alphaBlend = true;
+    }
     enterDrawPass(engine, "mirrors", true);
     try {
       target.texture.render(false);
     } finally {
       leaveDrawPass(engine);
+      if (alpha) alpha.alphaBlend = false;
     }
     this.drew = true;
     surface.dirty = !(complete || target.texture.isReadyForRendering());
@@ -201,9 +223,9 @@ class SceneMirrors {
 
   add(mesh: Mesh, properties: MirrorProperties): void {
     const surface: Surface = {
-      mesh, properties, binding: createMirrorReflectionBinding(mesh, properties.tint), plane: { nx: 0, ny: 0, nz: -1, d: 0 },
+      mesh, properties, binding: createMirrorReflectionBinding(mesh, properties.tint, properties.reflects), plane: { nx: 0, ny: 0, nz: -1, d: 0 },
       target: null, ready: false, failed: false, content: new ReflectedContent(), dirty: true, drawnViewProjection: new Matrix(),
-      drawn: false, visible: false, order: this.order++, distance: 0,
+      drawnEmpty: false, drawn: false, visible: false, order: this.order++, distance: 0,
       cx: 0, cy: 0, cz: 0, nx: 0, ny: 0, nz: -1, ux: 0, uy: 0, uz: 0, vx: 0, vy: 0, vz: 0,
     };
     this.surfaces.push(surface);
@@ -220,6 +242,11 @@ class SceneMirrors {
       shadowPasses: shadowChangeSequence(this.scene),
       sunShadowViews: this.surfaces.filter((surface) => surface.target?.sunShadows.holdsMaps).length,
     };
+  }
+
+  /** What `surface` draws live. */
+  private mode(surface: Surface): MirrorReflects {
+    return surface.properties.reflects;
   }
 
   private remove(surface: Surface): void {
@@ -261,6 +288,13 @@ class SceneMirrors {
       // Off, every surface gives its maps back now; a current one then draws again, unshadowed.
       if (!this.sunShadows) surface.target?.sunShadows.release();
       this.place(surface, camera.layerMask);
+      const mode = surface.binding.reflects = this.mode(surface);
+      // An Environment surface draws no reflection and holds no storage for one: its Material shows the environment.
+      if (mode === "environment") {
+        surface.visible = false;
+        if (surface.target) this.release(surface);
+        continue;
+      }
       // A current reflection is not a candidate: the budget goes to surfaces whose image is due.
       if (surface.visible && this.current(surface, camera, drawnWidth, drawnHeight, type, maxSize)) {
         surface.visible = false;
@@ -306,6 +340,7 @@ class SceneMirrors {
     const length = normal.length();
     if (!(length > 0)) return;
     surface.nx = normal.x / length; surface.ny = normal.y / length; surface.nz = normal.z / length;
+    surface.binding.normal.set(surface.nx, surface.ny, surface.nz);
     const plane = surface.plane;
     plane.nx = surface.nx; plane.ny = surface.ny; plane.nz = surface.nz;
     plane.d = -(surface.nx * surface.cx + surface.ny * surface.cy + surface.nz * surface.cz);
@@ -325,6 +360,8 @@ class SceneMirrors {
     if (target.width !== planarMirrorTargetSize(drawnWidth, scale, maxSize) || target.height !== planarMirrorTargetSize(drawnHeight, scale, maxSize)) return false;
     if (!this.mirrorAndCull(surface, camera, target)) return false;
     if (surface.content.changed(this.scene, target.texture.renderList!)) surface.dirty = true;
+    // Nothing drew and nothing would (a mesh entering the list is a change): the image is open everywhere from any view.
+    if (surface.drawnEmpty && !surface.dirty) return true;
     if (target.sunShadows.due(this.sunShadows, this.projection)) surface.dirty = true;
     target.mirror.mirrorView.multiplyToRef(target.projection, this.nextViewProjection);
     return !surface.dirty && surface.drawnViewProjection.equals(this.nextViewProjection);
@@ -347,7 +384,8 @@ class SceneMirrors {
     target.mirror.mirrorView.multiplyToRef(this.projection, this.cullViewProjection);
     const cull = this.cropToSurface(surface, target) ? this.cropViewProjection : this.cullViewProjection;
     clipFrustumAtMirror(cull, surface.plane, this.reflectionPlanes);
-    collectPlanarMirrorMeshes(this.scene, target.texture.renderList!, camera.layerMask, this.reflectionPlanes, excludedFromMirrors);
+    collectPlanarMirrorMeshes(this.scene, target.texture.renderList!, camera.layerMask, this.reflectionPlanes,
+      this.mode(surface) === "movingActors" ? this.excludedStill : excludedFromMirrors);
     return true;
   }
 
@@ -381,6 +419,8 @@ class SceneMirrors {
     const target = this.ensureTarget(surface, camera, width, height, type);
     if (!target) return false;
     if (!this.mirrorAndCull(surface, camera, target)) return false;
+    // A view without its own clear colour clears like the scene view does.
+    target.texture.clearColor = this.mode(surface) === "movingActors" ? OPEN : this.scene.clearColor ?? new Color4(0, 0, 0, 1);
     // Its own sun maps first: the shadow passes the content follows from on are then those after them.
     target.sunShadows.prepare(this.sunShadows, this.projection, "mirrors", this.renders);
     // Follows the drawn list from this draw on (a surface's first draw starts following it here).
@@ -389,6 +429,7 @@ class SceneMirrors {
     this.draws++;
     this.drawnMeshes += target.texture.renderList!.length;
     surface.drawn = true;
+    surface.drawnEmpty = this.mode(surface) === "movingActors" && !target.texture.renderList!.length;
     target.mirror.mirrorView.multiplyToRef(target.projection, surface.drawnViewProjection);
     const binding = surface.binding;
     // The shader's positions are relative to the floating origin (the view's eye) when it is on.
@@ -404,13 +445,10 @@ class SceneMirrors {
     let target = surface.target;
     // A colour-type change (Scene Linear on or off) is a settings change: rebuild the target for its new format.
     if (target && target.type !== type) {
-      surface.binding.texture = null;
-      surface.drawn = false;
-      disposePlanarMirrorTarget(this.scene, target);
-      target = surface.target = null;
+      this.release(surface);
+      target = null;
     }
     if (!target) {
-      // A view without its own clear colour clears like the scene view does.
       target = createPlanarMirrorTarget(this.scene, `mirror:${surface.mesh.name}`, camera, width, height, type,
         mirrorResources, this.scene.clearColor ?? new Color4(0, 0, 0, 1));
       surface.target = target;
@@ -421,6 +459,14 @@ class SceneMirrors {
     surface.binding.texture = null;
     surface.drawn = false;
     return null;
+  }
+
+  /** Gives up the surface's target and what it drew. */
+  private release(surface: Surface): void {
+    surface.binding.texture = null;
+    surface.drawn = surface.drawnEmpty = false;
+    if (surface.target) disposePlanarMirrorTarget(this.scene, surface.target);
+    surface.target = null;
   }
 
   private draw(surface: Surface, target: PlanarMirrorTargetState): boolean {

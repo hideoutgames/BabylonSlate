@@ -129,7 +129,8 @@ function celEffect(effect: Effect): boolean {
 }
 
 /** The Scene's environment cube as it lights `scene`'s current mesh (a reflection probe's, `mesh-environment.ts`). */
-function environmentCube(scene: Scene): BaseTexture | null {
+/** The cube that lights the mesh being bound (its Reflection Probe's, or the Scene's), once it can be sampled. */
+export function environmentCube(scene: Scene): BaseTexture | null {
   const texture = scene.environmentTexture;
   return texture && texture.isCube && texture.isReadyOrNotBlocking() ? texture : null;
 }
@@ -155,7 +156,7 @@ const environmentPlaceholders = new WeakMap<Scene, BaseTexture>();
  * draws only with every declared texture bound, and WebGL2 warns of a sampled unit with none), and none samples it at
  * a scale of zero.
  */
-function environmentPlaceholder(scene: Scene): BaseTexture {
+export function environmentPlaceholder(scene: Scene): BaseTexture {
   let texture = environmentPlaceholders.get(scene);
   if (!texture) {
     const engine = scene.getEngine();

@@ -27,6 +27,27 @@ const world = {};
 const mesh = { lightSources: [] };
 
 describe("rebindEmptiedDrawContexts", () => {
+  it("binds through its class's bind as it is when a draw asks, so a later patch of the class reaches it", () => {
+    const calls: string[] = [];
+    class Fake {
+      isFrozen = false;
+      maxSimultaneousLights = 4;
+      bindForSubMesh(...draw: unknown[]): void { calls.push(draw.length === 3 ? "class" : "class without its draw"); }
+    }
+    const material = new Fake();
+    rebindEmptiedDrawContexts(material as unknown as NodeMaterial);
+    const sm = subMesh({});
+    material.bindForSubMesh(world, mesh, sm);
+    // As the per-mesh environment patches Node materials when a Reflection Probe first publishes.
+    const before = Fake.prototype.bindForSubMesh;
+    Fake.prototype.bindForSubMesh = function (this: Fake, ...draw: unknown[]) {
+      calls.push("patch");
+      before.apply(this, draw);
+    };
+    material.bindForSubMesh(world, mesh, sm);
+    expect(calls).toEqual(["class", "patch", "class"]);
+  });
+
   it("forces a rebind when a frozen draw context misses a declared buffer", () => {
     const { material, original } = fakeMaterial(true);
     const sm = subMesh({ Light0: {} });

@@ -22,6 +22,7 @@ Returns the reflection a Mirror component shows at the current point of its surf
 
 - Use it in a Material assigned as a [**Mirror**](../../components/mirror.md) component's **Material**. On any other mesh, and in the Material editor preview, it returns black.
 - Before the mirror has drawn its first reflection, it returns black.
+- On a mirror whose [**Reflects**](../../components/mirror.md#cheaper-reflections) is Moving Actors or Environment, it returns the combined image: what the mirror drew, over its Reflection Probe or the environment. **Offset** moves only the drawn part.
 - For ripples, feed **Offset** a small value that changes across the surface, such as [**Perlin Noise**](perlin-noise.md) of [**UV**](uv.md) and [**Time**](time.md) multiplied by about 0.01, or the X and Y of a normal map scaled down the same way.
 - A mirror draws only the part of the scene its surface can show. When **Offset** comes from another node, the mirror can't tell how far the node reads, so each reflection draws the whole mirrored view, which costs more. A fixed **Offset** value keeps the saving.
 - The output skips the Mirror's **Tint**: multiply it yourself.

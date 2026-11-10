@@ -4,7 +4,8 @@ import { readHassetHeader } from "../packages/assets/src/hasset";
 import { MATERIAL_PAYLOAD_VERSION } from "../packages/assets/src/migration";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import {
-  createActor, createMeshComponent, createText3DComponent, identitySerializedTransform, MAIN_SCENE_FILE, parseMirrorProperties, type SerializedScene,
+  createActor, createMeshComponent, createText3DComponent, identitySerializedTransform, MAIN_SCENE_FILE, parseMirrorProperties,
+  parseReflectionProbeProperties, type SerializedScene,
 } from "../packages/core/src/index";
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
@@ -24,20 +25,20 @@ type ViewportHost = {
   };
 };
 
-/** Average colour of the canvas's central tenth: the middle of the mirror. */
-async function centerColor(canvas: Locator): Promise<number[]> {
-  return canvas.evaluate((node: HTMLCanvasElement) => {
+/** Average colour of a tenth of the canvas, centred at `x` of its width: by default its middle, the middle of the mirror. */
+async function centerColor(canvas: Locator, x = 0.5): Promise<number[]> {
+  return canvas.evaluate((node: HTMLCanvasElement, at: number) => {
     // Read a copy: reading the view canvas itself would change how the browser backs it.
     const copy = document.createElement("canvas");
     copy.width = node.width;
     copy.height = node.height;
     const ctx = copy.getContext("2d", { willReadFrequently: true })!;
     ctx.drawImage(node, 0, 0);
-    const data = ctx.getImageData(Math.floor(node.width * 0.45), Math.floor(node.height * 0.45), Math.max(1, Math.floor(node.width * 0.1)), Math.max(1, Math.floor(node.height * 0.1))).data;
+    const data = ctx.getImageData(Math.floor(node.width * (at - 0.05)), Math.floor(node.height * 0.45), Math.max(1, Math.floor(node.width * 0.1)), Math.max(1, Math.floor(node.height * 0.1))).data;
     const sum = [0, 0, 0];
     for (let i = 0; i < data.length; i += 4) for (let channel = 0; channel < 3; channel++) sum[channel] += data[i + channel]!;
     return sum.map((value) => value / (data.length / 4));
-  });
+  }, x);
 }
 
 /**
@@ -433,5 +434,92 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows the su
   expect(Math.abs(offWithoutSlab - offWithSlab)).toBeLessThan(4);
   // Without the slab, the floor is as bright either way.
   expect(Math.abs(onWithoutSlab - offWithoutSlab)).toBeLessThan(4);
+  expect(errors).toEqual([]);
+});
+
+/**
+ * A Mirror inside a Reflection Probe's box, facing a red wall whose actor never moves and, in front of it, a blue box
+ * whose actor can (it has a body that is not static). What the Mirror draws live follows its Reflects property, and
+ * the rest comes from the probe: the middle of the Mirror shows the box or, when nothing is drawn live, the wall
+ * behind it; a quarter of the view to the side shows the wall, drawn or from the probe.
+ */
+for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws what its Reflects property says and shows the rest from its Reflection Probe, on ${backend}`, async ({ page }) => {
+  test.setTimeout(420_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type()) &&
+      /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID|INVALID_OPERATION|feedback loop|Mirror reflection|outlived/i.test(message.text())) errors.push(message.text());
+  });
+  const dominant = (color: number[]) => {
+    const [r, g, b] = color as [number, number, number];
+    return Math.min(r - g, r - b) > 80 ? "red" : Math.min(b - g, b - r) > 80 ? "blue" : `neither (${color.map(Math.round).join(", ")})`;
+  };
+  for (const [reflects, middle, meshes] of [["everything", "blue", "several"], ["movingActors", "blue", "one"], ["environment", "red", "none"]] as const) {
+    const files = await minimalProjectFiles();
+    const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
+    project.settings.render.gpuBackend = backend;
+    files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
+    const unlit = async (guid: string, name: string, color: [number, number, number]) => {
+      const material = createDefaultMaterialDocument(name);
+      material.shadingModel = "unlit";
+      material.nodes.find((node) => node.id === "baseColor")!.properties.value = color;
+      files.set(`assets/${name}.material.hasset`, await encodeAssetDocument({
+        guid, type: "Material", name, version: MATERIAL_PAYLOAD_VERSION, payload: material as unknown as Record<string, unknown>,
+      }));
+      return guid;
+    };
+    const red = await unlit("00000000-0000-4000-8000-000000000040", "Red", [1, 0, 0]);
+    const blue = await unlit("00000000-0000-4000-8000-000000000041", "Blue", [0, 0, 1]);
+    const sceneFile = files.get(MAIN_SCENE_FILE)!;
+    const decoded = await decodeAssetDocument(sceneFile);
+    const scene = decoded.payload as unknown as SerializedScene;
+    const camera = scene.actors.find((actor) => actor.id === scene.settings.defaultCameraActorId)!;
+    camera.transform = { ...identitySerializedTransform(), position: [0, 2, -4] };
+    const mesh = (id: string, materialGuid: string) => {
+      const component = createMeshComponent(id, "box");
+      component.properties = { ...component.properties, materialGuid };
+      return component;
+    };
+    scene.actors = [
+      camera,
+      createActor("mirror", "Mirror", {
+        transform: { ...identitySerializedTransform(), position: [0, 2, 0] },
+        components: [{ id: "mirror-surface", classId: "MirrorComponent", properties: { ...parseMirrorProperties({ width: 6, height: 4, reflects }) }, parentId: null, transform: identitySerializedTransform() }],
+      }),
+      createActor("wall", "Wall", {
+        transform: { ...identitySerializedTransform(), position: [0, 2, -14], scale: [40, 24, 0.5] },
+        components: [mesh("wall-mesh", red)],
+      }),
+      createActor("mover", "Mover", {
+        transform: { ...identitySerializedTransform(), position: [0, 2, -9], scale: [3, 3, 3] },
+        components: [mesh("mover-mesh", blue), { id: "mover-body", classId: "RigidBodyComponent", properties: { motionType: "kinematic", mass: 0, gravityScale: 0 }, parentId: null }],
+      }),
+      // Its box holds the Mirror and ends just behind the wall.
+      createActor("probe", "Reflection Probe", {
+        transform: { ...identitySerializedTransform(), position: [0, 2, -6] },
+        components: [{ id: "probe-box", classId: "ReflectionProbeComponent", properties: { ...parseReflectionProbeProperties({ size: [44, 28, 20] }) }, parentId: null }],
+      }),
+    ];
+    files.set(MAIN_SCENE_FILE, await encodeAssetDocument(
+      { ...decoded, payload: scene as unknown as Record<string, unknown> },
+      { dependencies: [...readHassetHeader(sceneFile).dependencies, red, blue] },
+    ));
+    await openMinimalTestProject(page, files);
+    await openMainScene(page);
+    expect(await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.renderingBaseline()?.backend)).toBe(backend);
+    await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2, -4], [0, 2, 0], 0.8));
+    const viewport = page.getByTestId("viewport-canvas");
+    try {
+      await expect.poll(async () => `${dominant(await centerColor(viewport))} in the middle, ${dominant(await centerColor(viewport, 0.25))} to the side`,
+        { timeout: 60_000 }).toBe(`${middle} in the middle, red to the side`);
+    } finally {
+      await viewport.screenshot({ path: test.info().outputPath(`mirror-${reflects}-${backend}.png`) });
+    }
+    const drawn = await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.mirrorDiagnostics());
+    const perDraw = drawn && drawn.draws ? drawn.drawnMeshes / drawn.draws : 0;
+    // Everything draws the wall and the box at least; Moving Actors the box alone; Environment draws no reflection.
+    expect(perDraw === 0 ? "none" : perDraw === 1 ? "one" : "several", `${reflects}: ${JSON.stringify(drawn)}`).toBe(meshes);
+  }
   expect(errors).toEqual([]);
 });

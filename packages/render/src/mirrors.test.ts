@@ -4,6 +4,8 @@ import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import { Scene } from "@babylonjs/core/scene";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
@@ -19,6 +21,7 @@ import { isReflectionCamera } from "./reflection-camera";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { sceneShadowController } from "./shadow-controller";
 import { mirrorReflectionBinding } from "./mirror-surface-state";
+import { setSceneStaticMeshes } from "./scene-static-meshes";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { createSpriteQuad, setSpriteQuadSize } from "./sprite-quad";
 import { createText3DMesh } from "./text3d-mesh";
@@ -41,7 +44,7 @@ function host() {
     target.texture!.format = Constants.TEXTUREFORMAT_RGBA;
     return target;
   });
-  const passes: { target: string; meshes: string[]; eye: Vector3; active: boolean; size: [number, number] }[][] = [];
+  const passes: { target: string; meshes: string[]; eye: Vector3; active: boolean; size: [number, number]; clear: number[]; blend: number[] | null }[][] = [];
   vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
   vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
     const camera = this.activeCamera;
@@ -49,7 +52,9 @@ function host() {
     const { width, height } = this.getSize();
     passes.at(-1)!.push({
       target: this.name, meshes: (this.renderList ?? []).map((mesh) => mesh.name), eye: camera.globalPosition.clone(),
-      active: this.getScene()!.activeCamera === camera, size: [width, height],
+      active: this.getScene()!.activeCamera === camera, size: [width, height], clear: this.clearColor.asArray(),
+      // The blend factors in force while the pass draws, when it blends at all.
+      blend: engine._alphaState.alphaBlend ? Array.from((engine._alphaState as unknown as { _blendFunctionParameters: number[] })._blendFunctionParameters.slice(0, 4)) : null,
     });
   });
   const scene = new Scene(engine);
@@ -62,7 +67,7 @@ function host() {
     engine.endFrame();
     return passes.at(-1)!.map((pass) => pass.target);
   };
-  return { scene, camera, passes, frame };
+  return { engine, scene, camera, passes, frame };
 }
 
 function mirror(scene: Scene, name: string, at: Vector3, yaw = 0) {
@@ -373,4 +378,138 @@ it("compiles a Mirror Reflection Material that reads the reflection on a Mirror 
   expect(elsewhere.defines).not.toContain("SLATE_MIRROR_REFLECTION");
   expect(elsewhere.textures).not.toContain(reflection);
   compiled.dispose();
+});
+
+/** A Mirror at z = 3 facing the view, with a box in front of it that an actor that never moves owns, and one that moves. */
+function reflectedPair(reflects: string) {
+  const fixture = host();
+  const { scene } = fixture;
+  const surface = createMirrorSurfaceMesh(scene, "mirror", parseMirrorProperties({ width: 2, height: 2, reflects }));
+  surface.position.set(0, 1, 3);
+  const wall = MeshBuilder.CreateBox("wall", { size: 0.5 }, scene);
+  wall.position.set(0.6, 1, 1.5);
+  const mover = MeshBuilder.CreateBox("mover", { size: 0.5 }, scene);
+  mover.position.set(-0.6, 1, 1.5);
+  // The sky follows the camera, as a skybox does.
+  const sky = MeshBuilder.CreateBox("sky", { size: 50 }, scene);
+  sky.infiniteDistance = true;
+  setSceneStaticMeshes(scene, (mesh) => mesh === wall);
+  return { ...fixture, surface, wall, mover, sky };
+}
+
+it("draws everything into a Mirror that reflects everything, cleared as the view is and unblended", () => {
+  const { scene, passes, frame } = reflectedPair("everything");
+  scene.clearColor.set(0.2, 0.3, 0.4, 1);
+  expect(frame()).toEqual(["mirror:mirror"]);
+  expect(passes.at(-1)![0]).toMatchObject({ meshes: ["wall", "mover", "sky"], clear: [0.2, 0.3, 0.4, 1], blend: null });
+});
+
+it("draws only the actors that move into a Moving Actors Mirror, over a clear its alpha marks as open", () => {
+  const { engine, scene, surface, passes, frame } = reflectedPair("movingActors");
+  scene.clearColor.set(0.2, 0.3, 0.4, 1);
+  // Known from the start: a readiness probe before the first render compiles the surface's own variant.
+  expect(mirrorReflectionBinding(surface)!.reflects).toBe("movingActors");
+  expect(frame()).toEqual(["mirror:mirror"]);
+  // Not the wall (its actor never moves) nor the sky: the surface's Material shows the environment there. A drawn
+  // fragment keeps its colour (one, zero) and writes alpha 0 (zero, zero) over the cleared 1.
+  expect(passes.at(-1)![0]).toMatchObject({ meshes: ["mover"], clear: [0, 0, 0, 1], blend: [1, 0, 0, 0] });
+  // The pass leaves no blending behind.
+  expect(engine._alphaState.alphaBlend).toBe(false);
+  expect(mirrorReflectionBinding(surface)).toMatchObject({ reflects: "movingActors" });
+  expect(mirrorReflectionBinding(surface)!.normal.asArray()).toEqual([0, 0, -1]);
+  expect(mirrorReflectionBinding(surface)!.texture).not.toBeNull();
+});
+
+it("draws every mesh into a Moving Actors Mirror while no host has said which actors never move", () => {
+  const { scene, passes, frame } = reflectedPair("movingActors");
+  setSceneStaticMeshes(scene, null);
+  frame();
+  expect(passes.at(-1)![0]!.meshes).toEqual(["wall", "mover"]);
+});
+
+it("keeps a Moving Actors image that drew nothing until something that moves comes into it, whatever the view", () => {
+  const { scene, camera, mover, frame } = reflectedPair("movingActors");
+  mover.setEnabled(false);
+  // Drawn once, empty: open everywhere.
+  expect(frame()).toEqual(["mirror:mirror"]);
+  expect(frame()).toEqual([]);
+  // Another view of nothing is the same image.
+  camera.position.x = 0.4;
+  expect(frame()).toEqual([]);
+  expect(mirrorDiagnostics(scene)!.reuses).toBe(2);
+  mover.setEnabled(true);
+  expect(frame()).toEqual(["mirror:mirror"]);
+  // With something in it the view matters again.
+  camera.position.x = 0;
+  expect(frame()).toEqual(["mirror:mirror"]);
+});
+
+it("draws no reflection for an Environment Mirror, and holds no storage for one", () => {
+  const { scene, surface, frame } = reflectedPair("environment");
+  expect(frame()).toEqual([]);
+  expect(frame()).toEqual([]);
+  expect(mirrorDiagnostics(scene)).toMatchObject({ surfaces: 1, targets: 0, draws: 0 });
+  expect(mirrorReflectionBinding(surface)).toMatchObject({ reflects: "environment", texture: null });
+  expect(mirrorReflectionBinding(surface)!.normal.asArray()).toEqual([0, 0, -1]);
+  // Its Material looks the environment up across the plane as it stands now.
+  surface.rotation.y = Math.PI / 2;
+  frame();
+  const normal = mirrorReflectionBinding(surface)!.normal;
+  expect([normal.x, normal.y, normal.z].map((value) => Math.round(value * 1000) / 1000 + 0)).toEqual([-1, 0, 0]);
+});
+
+it("compiles the environment into a surface that does not reflect everything, and binds the cube that lights it", async () => {
+  const { scene, surface, frame } = reflectedPair("movingActors");
+  const plain = createMirrorSurfaceMesh(scene, "plain", parseMirrorProperties({ width: 2, height: 2 }));
+  plain.position.set(1.5, 1, 6);
+  const material = surface.material as NodeMaterial;
+  expect(plain.material).toBe(material);
+  // A Reflection Probe's cube: its box is what the lookup is projected onto.
+  const probe = new RenderTargetTexture("probe", 16, scene, { isCube: true });
+  probe.boundingBoxSize = new Vector3(4, 3, 4);
+  probe.boundingBoxPosition = new Vector3(0, 1.5, 2);
+  // NullEngine never draws it, and makes its storage no cube; a cube that cannot be sampled yet is not read.
+  vi.spyOn(probe, "isReady").mockReturnValue(true);
+  vi.spyOn(probe, "isCube", "get").mockReturnValue(true);
+  scene.environmentTexture = probe;
+  scene.clearColor.set(0.2, 0.3, 0.4, 1);
+  for (const mesh of [surface, plain]) await material.forceCompilationAsync(mesh);
+  // A frame draws both surfaces, each with its own variant.
+  frame();
+  const bound = (mesh: AbstractMesh) => {
+    const subMesh = mesh.subMeshes[0]!, effect = subMesh.effect!;
+    const floats = [vi.spyOn(effect, "setFloat3"), vi.spyOn(effect, "setFloat4")];
+    const textures = vi.spyOn(effect, "setTexture");
+    scene.resetCachedMaterial();
+    material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh as never, subMesh);
+    const values = new Map<string, number[]>();
+    // Sums with zero: a difference of equal coordinates may be a negative zero.
+    for (const spy of floats) for (const [name, ...value] of spy.mock.calls) values.set(name.replace(/\d+$/, ""), (value as number[]).map((entry) => entry + 0));
+    const sampled = new Map(textures.mock.calls.map(([name, texture]) => [name.replace(/\d+$/, ""), texture]));
+    for (const spy of [...floats, textures]) spy.mockRestore();
+    return { defines: subMesh.materialDefines!.toString(), values, sampled };
+  };
+  const moving = bound(surface), everything = bound(plain);
+  expect(moving.defines).toContain("SLATE_MIRROR_ENVIRONMENT");
+  expect(everything.defines).toContain("SLATE_MIRROR_REFLECTION");
+  expect(everything.defines).not.toContain("SLATE_MIRROR_ENVIRONMENT");
+  // The eye (with a cube to read), the plane's normal, and the probe's box with the cube's sharpest level.
+  expect(moving.values.get("slateMirrorEye")).toEqual([0, 1, 0, 1]);
+  expect(moving.values.get("slateMirrorNormal")).toEqual([0, 0, -1]);
+  expect(moving.values.get("slateMirrorEnvironmentBoxPosition")).toEqual([0, 1.5, 2, 0]);
+  expect(moving.values.get("slateMirrorEnvironmentBoxSize")).toEqual([4, 3, 4]);
+  expect(moving.values.get("slateMirrorEnvironmentForm")![0]).toBe(1);
+  expect(moving.sampled.get("slateMirrorEnvironmentSampler")).toBe(probe);
+  // A surface that reflects everything binds none of it.
+  expect(everything.values.has("slateMirrorEye")).toBe(false);
+  expect(everything.sampled.has("slateMirrorEnvironmentSampler")).toBe(false);
+  // The Scene's own environment has no box to project onto.
+  probe.boundingBoxSize = undefined as never;
+  expect(bound(surface).values.get("slateMirrorEnvironmentForm")![0]).toBe(0);
+  // Without any environment the surface shows the Scene's clear colour, and binds a placeholder cube.
+  scene.environmentTexture = null;
+  const bare = bound(surface);
+  expect(bare.values.get("slateMirrorEye")).toEqual([0, 1, 0, 0]);
+  expect(bare.values.get("slateMirrorBackdrop")!.map((value) => Math.round(value * 10) / 10)).toEqual([0.2, 0.3, 0.4]);
+  expect((bare.sampled.get("slateMirrorEnvironmentSampler") as unknown as { name: string }).name).toBe("haptic:environmentPlaceholder");
 });

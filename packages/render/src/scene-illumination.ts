@@ -1,6 +1,7 @@
 import { setAuthoredLightEnabled, syncDirectionalLightPolicy } from "./light-policy";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
-import { findSceneReflectionProbes, sceneReflectionProbes } from "./reflection-probes";
+import { findSceneReflectionProbes, isEditorStaticMesh, sceneReflectionProbes } from "./reflection-probes";
+import { setSceneStaticMeshes } from "./scene-static-meshes";
 import { AreaRectLightGroup } from "./area-rect-light";
 import { Light2DGroup, Occluder2DGroup } from "./light-2d-group";
 import { scene2DLighting, setScene2DLighting, type Light2DRecord } from "./lights-2d";
@@ -28,7 +29,10 @@ import {
   normalizeSceneFogSettings,
   sceneDefaultCameraActor,
   sceneEnvironmentTextureGuid,
+  MIRROR_CLASS_ID,
+  parseMirrorProperties,
   REFLECTION_PROBE_CLASS_ID,
+  reflectionProbeStaticActors,
 } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { sceneShadowController } from "./shadow-controller";
@@ -685,6 +689,25 @@ export function syncAuthoredIllumination(
   }
 }
 
+const staticMeshDocuments = new WeakMap<Scene, SerializedScene>();
+
+/**
+ * Tells the Scene which meshes belong to actors that never move, while the document has a Mirror that draws only the
+ * moving ones (`setSceneStaticMeshes`); other documents pay nothing.
+ */
+function syncStaticMeshes(scene: Scene, sceneData: SerializedScene): void {
+  if (staticMeshDocuments.get(scene) === sceneData) return;
+  staticMeshDocuments.set(scene, sceneData);
+  const asked = sceneData.actors.some((actor) => actor.components.some((component) =>
+    component.classId === MIRROR_CLASS_ID && parseMirrorProperties(component.properties).reflects === "movingActors"));
+  if (!asked) {
+    setSceneStaticMeshes(scene, null);
+    return;
+  }
+  const statics = reflectionProbeStaticActors(sceneData.actors);
+  setSceneStaticMeshes(scene, (mesh) => isEditorStaticMesh(mesh, statics));
+}
+
 /** Ordered actor work; the caller owns cancellation and rendering obstruction. */
 export function* syncAuthoredIlluminationSteps(
   scene: Scene,
@@ -699,6 +722,7 @@ export function* syncAuthoredIlluminationSteps(
   // A controller exists only while some document had a probe; others pay nothing.
   if (findSceneReflectionProbes(scene) || sceneData.actors.some((actor) => actor.components.some((component) => component.classId === REFLECTION_PROBE_CLASS_ID)))
     sceneReflectionProbes(scene).syncAuthored(sceneData);
+  syncStaticMeshes(scene, sceneData);
   applySceneEnvironment(scene, sceneData, { assets: options.assets });
 
   const liveLights = new Set<string>();

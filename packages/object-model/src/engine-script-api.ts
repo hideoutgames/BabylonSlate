@@ -789,6 +789,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     classId: "MirrorComponent",
     variables: [
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Reflects", typeId: "string", propertyKey: "reflects" },
       { name: "Width", typeId: "float", propertyKey: "width" },
       { name: "Height", typeId: "float", propertyKey: "height" },
       { name: "Resolution Scale", typeId: "float", propertyKey: "resolutionScale" },
@@ -808,6 +809,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     classId: "AreaRectLightComponent",
     variables: [
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Reflects", typeId: "string", propertyKey: "reflects" },
       { name: "Width", typeId: "float", propertyKey: "width" },
       { name: "Height", typeId: "float", propertyKey: "height" },
       { name: "Color", typeId: "color", propertyKey: "color" },

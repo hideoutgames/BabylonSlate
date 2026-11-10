@@ -9,6 +9,7 @@ import type { CreateEngineOptions } from "./create-engine-types";
 import { removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { markLatticeComponentRoot } from "./lattice-deformer";
 import { findSceneReflectionProbes, sceneReflectionProbes } from "./reflection-probes";
+import { setSceneStaticMeshes } from "./scene-static-meshes";
 import type { RenderScheduler } from "./render-scheduler";
 import type { SceneDeformerHost } from "./scene-deformer-host";
 import type { SceneOutlineHost } from "./scene-outline-host";
@@ -117,6 +118,8 @@ export function createPlayVisualBindings({
     }
     return false;
   };
+  // A Mirror that draws only the actors that move asks the same question, with or without a probe in the Scene.
+  if (!options.editor) setSceneStaticMeshes(scene, playProbeStatic);
   const refreshRuntimeReflectionProbes = (slotId: number) => {
     if (options.editor) return;
     const root = worldSlotRoot(slotId);

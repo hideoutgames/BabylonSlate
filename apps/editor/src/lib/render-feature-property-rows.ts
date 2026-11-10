@@ -132,6 +132,10 @@ export function mirrorPropertyRows(
       value: properties.enabled, defaultValue: defaults.enabled,
       description: "The reflective side faces local -Z, as a Plane mesh does. Off hides the surface.",
       onChange: (next) => update("enabled", next) },
+    { kind: "enum", id: rowId(actorId, component.id, "reflects"), label: "Reflects", value: properties.reflects, defaultValue: defaults.reflects,
+      options: [{ value: "everything", label: "Everything" }, { value: "movingActors", label: "Moving Actors" }, { value: "environment", label: "Environment" }],
+      description: "Moving Actors and Environment show what they do not draw from the Reflection Probe the Mirror stands in, or the sky.",
+      onChange: (next) => update("reflects", next) },
     ...(["width", "height"] as const).map((key): PropertyRow => ({
       kind: "number", id: rowId(actorId, component.id, key), label: key === "width" ? "Width" : "Height",
       value: properties[key], defaultValue: defaults[key], min: 0.01, sensitivity: 0.05,

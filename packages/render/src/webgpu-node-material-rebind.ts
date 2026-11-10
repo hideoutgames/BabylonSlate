@@ -16,7 +16,11 @@ const lightBufferName = (index: number): string =>
  * missing or stale binding, without dirtying materials or rebuilding effects.
  */
 export function rebindEmptiedDrawContexts(material: NodeMaterial): void {
-  const original = material.bindForSubMesh.bind(material);
+  // The bind the material's class has when a draw asks, not the one it had here: a later patch of the class (the
+  // per-mesh environment a Reflection Probe installs when it first publishes) must reach this material too.
+  const own = Object.prototype.hasOwnProperty.call(material, "bindForSubMesh") ? material.bindForSubMesh : null;
+  const original: NodeMaterial["bindForSubMesh"] = (world, mesh, subMesh) =>
+    (own ?? (Object.getPrototypeOf(material) as NodeMaterial).bindForSubMesh).call(material, world, mesh, subMesh);
   material.bindForSubMesh = (world, mesh, subMesh) => {
     const wrapper = subMesh._drawWrapper;
     const effect = wrapper.effect as
