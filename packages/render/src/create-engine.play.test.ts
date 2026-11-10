@@ -94,6 +94,7 @@ import * as presentation from "./presented-frame";
 import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import { DEFAULT_CAMERA_PREVIEW_FRAME_RATE } from "./editor-debug-overlay";
 import { findSceneReflectionProbes } from "./reflection-probes";
+import { isSceneStaticMesh } from "./scene-static-meshes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
 import { managedRenderReservations } from "./managed-render-resources";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
@@ -5626,6 +5627,28 @@ describe("Play createEngine view", () => {
     handle.applyCommand({ type: "despawn", slotId: 4, actorGuid: "mist" });
     expect(hasFogVolumes(handle.scene)).toBe(false);
     expect(sceneRenderingSettings(handle.scene).effectsPlan).toBeNull();
+  });
+
+  it("answers which meshes belong to actors that never move, with or without a Reflection Probe in the Scene", () => {
+    const { handle } = playHandle(sharedEngine());
+    const mesh = (id: string) => ({ id, classId: "MeshComponent", properties: {} });
+    // A plain actor of still components never moves; a body that is not static can.
+    handle.applySceneEnvironment({
+      ...createDefaultScene(),
+      actors: [
+        createActor("wall", "Wall", { components: [mesh("wall-mesh")] }),
+        createActor("crate", "Crate", { components: [mesh("crate-mesh"), { id: "crate-body", classId: "RigidBodyComponent", properties: { motionType: "dynamic" } }] }),
+      ],
+    });
+    for (const [slotId, actorGuid] of [[4, "wall"], [5, "crate"], [6, "spawned"]] as const) {
+      handle.applyCommand({ type: "spawn", slotId, actorGuid, classId: "Actor" });
+      handle.applyCommand({ type: "assignMesh", slotId, actorGuid, meshAssetGuid: null, meshKind: "box" });
+    }
+    const isStatic = (slotId: number) => isSceneStaticMesh(handle.scene, handle.scene.getMeshByName(`actor-${slotId}`)!);
+    // A Mirror that draws only the actors that move leaves the wall to its probe or the sky; an actor the authored
+    // Scene does not name (a spawned one) may move.
+    expect([isStatic(4), isStatic(5), isStatic(6)]).toEqual([true, false, false]);
+    expect(findSceneReflectionProbes(handle.scene)).toBeUndefined();
   });
 
   it("forgets a despawned actor's reflection probes before another actor reuses its slot", () => {

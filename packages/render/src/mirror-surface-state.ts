@@ -5,6 +5,7 @@ import type { Material } from "@babylonjs/core/Materials/material";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
+import type { MirrorReflects } from "@haptic/core";
 
 /** What a Mirror surface's material samples: written by the scene's mirror owner, read by Mirror Reflection blocks. */
 export interface MirrorReflectionBinding {
@@ -20,6 +21,15 @@ export interface MirrorReflectionBinding {
   gammaSpace: boolean;
   /** The component's Tint, applied by the built-in surface only. */
   tint: [number, number, number];
+  /**
+   * What `texture` holds of the view behind the surface. `everything`: all of it. `movingActors`: the actors that can
+   * move, premultiplied by their coverage, with alpha 1 where none drew; the block shows the Scene's environment there
+   * (the Reflection Probe the surface stands in, or the sky). `environment`: the surface draws no reflection and the
+   * block shows the environment alone.
+   */
+  reflects: MirrorReflects;
+  /** Unit world normal of the reflective side, which the environment is looked up across. */
+  readonly normal: Vector3;
 }
 
 const bindings = new WeakMap<AbstractMesh, MirrorReflectionBinding>();
@@ -45,8 +55,10 @@ export function existingMirrorFallbackTexture(scene: Scene): RawTexture | undefi
   return fallbacks.get(scene);
 }
 
-export function createMirrorReflectionBinding(mesh: AbstractMesh, tint: [number, number, number]): MirrorReflectionBinding {
-  const binding: MirrorReflectionBinding = { texture: null, viewProjection: Matrix.Identity(), origin: Vector3.Zero(), gammaSpace: true, tint };
+export function createMirrorReflectionBinding(mesh: AbstractMesh, tint: [number, number, number], reflects: MirrorReflects = "everything"): MirrorReflectionBinding {
+  const binding: MirrorReflectionBinding = {
+    texture: null, viewProjection: Matrix.Identity(), origin: Vector3.Zero(), gammaSpace: true, tint, reflects, normal: new Vector3(0, 0, -1),
+  };
   bindings.set(mesh, binding);
   return binding;
 }

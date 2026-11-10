@@ -3,9 +3,18 @@ export const MIRROR_CLASS_ID = "MirrorComponent";
 /** Lowest Resolution Scale: below it a reflection is too coarse to read as a mirror. */
 const MIN_MIRROR_RESOLUTION_SCALE = 0.1;
 
+/**
+ * What a Mirror draws live, most first. `movingActors` draws only the actors that can move (every actor a Reflection
+ * Probe does not capture: `reflectionProbeStaticActors`) and shows the rest from the Reflection Probe the Mirror stands
+ * in, or the sky; `environment` draws nothing and shows only that.
+ */
+export const MIRROR_REFLECTS = ["everything", "movingActors", "environment"] as const;
+export type MirrorReflects = (typeof MIRROR_REFLECTS)[number];
+
 /** Authored data only. The reflection target, mirror camera and surface mesh belong to the view. */
 export type MirrorProperties = {
   enabled: boolean;
+  reflects: MirrorReflects;
   /** Surface size along the component's local X and Y; actor and component scale also apply. */
   width: number;
   height: number;
@@ -26,6 +35,7 @@ export function parseMirrorProperties(value: unknown): MirrorProperties {
     : [1, 1, 1] as [number, number, number];
   return {
     enabled: source.enabled !== false,
+    reflects: MIRROR_REFLECTS.includes(source.reflects as MirrorReflects) ? source.reflects as MirrorReflects : "everything",
     width: positive(source.width, 2),
     height: positive(source.height, 2),
     resolutionScale: finite(source.resolutionScale)

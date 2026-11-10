@@ -833,6 +833,11 @@ function placeEffects(ctx: FeatureTestContext, refs: RenderingRefs): void {
       ...parseReflectionProbeProperties({ size: [4, 3, 4], resolution: 128 }),
     }),
   ]));
+  // On the back wall, facing out of the booth: it draws live only what can move (a mannequin walking up to it) and
+  // shows the booth's walls and the ball from the probe it stands in.
+  add(actor("ft-render-probe-mirror", "Probe Booth Mirror", tf(boothAt(0, 1.5, 1.85)), [
+    comp("ft-render-probe-mirror-surface", "MirrorComponent", { ...parseMirrorProperties({ width: 2, height: 1.5, reflects: "movingActors" }) }),
+  ]));
 
   // The wall stands between the main camera and the cylinder, so only the x-ray outline shows through.
   add(actor("ft-render-outline-xray", "Outlined Cylinder", tf(zone.at(0, 0.75, -4)), [
