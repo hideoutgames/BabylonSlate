@@ -17,6 +17,16 @@ export function writeRenderListEntry<T>(list: T[], index: number, entry: T): voi
   else list[index] = entry;
 }
 
+/**
+ * Replace the contents of a list no light define reads (any but a shadow map's) with `entries`, in order, by index
+ * alone: Babylon hears nothing, not even that an empty list filled. `entries` must not be `list`.
+ */
+export function rewriteUnreadRenderList<T>(list: T[], entries: readonly T[]): T[] {
+  for (let index = 0; index < entries.length; index++) list[index] = entries[index]!;
+  list.length = entries.length;
+  return list;
+}
+
 /** Replace a list's contents with `entries` (those `keep` accepts), in order. `entries` must not be `list`. */
 export function rewriteRenderList<T>(list: T[], entries: readonly T[], keep?: (entry: T) => boolean): T[] {
   let count = 0;

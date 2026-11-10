@@ -216,11 +216,12 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     return pass;
   }
   /**
-   * `cull` narrows the strict occluders to those that can affect this frame;
-   * readiness keeps the full list so an occluder's program is ready before it
-   * comes into view. A frame drawn without view culling (`skipFrustumClipping`:
-   * Play's starting-state draw) draws the full list, so each occluder's program
-   * has its first draw there rather than when it comes into view.
+   * `cull` narrows each group's members to those that can show this frame, and
+   * the strict occluders to those that can affect them; readiness keeps the
+   * full lists so a mesh's program is ready before it comes into view. A frame
+   * drawn without view culling (`skipFrustumClipping`: Play's starting-state
+   * draw) draws the full lists, so each program has its first draw there
+   * rather than when its mesh comes into view.
    */
   private sync(cull = false): void {
     if (this.disposed) return;
@@ -234,9 +235,9 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
       record.objects.camera = this.camera;
       // An inactive group's pass is disabled and never probed, so it keeps one empty list.
       const overSceneDepth = record.group === "strict" && this.seeded;
-      const meshes = !active ? record.inactive : narrow && record.group === "strict"
-        ? this.view.strictOccludersFor(this.camera, this.width, this.height, overSceneDepth)
-        : this.view.meshesForGroup(record.group, overSceneDepth);
+      const meshes = !active ? record.inactive : !narrow ? this.view.meshesForGroup(record.group, overSceneDepth)
+        : record.group === "strict" ? this.view.strictOccludersFor(this.camera, this.width, this.height, overSceneDepth)
+        : this.view.membersFor(record.group, this.camera, this.width, this.height);
       const list = record.objects.objectList;
       if (list.meshes !== meshes) list.meshes = meshes;
       record.renderer.prune();

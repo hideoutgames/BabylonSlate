@@ -12,7 +12,7 @@ import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal,
   type ManagedRenderLease,
 } from "./managed-render-resources";
-import { cullStrictOccluders, writesSceneDepth } from "./shared-outline-occluders";
+import { cullOutlineMembers, cullStrictOccluders, writesSceneDepth } from "./shared-outline-occluders";
 
 export const SHARED_OUTLINE_ATTRIBUTE = "hapticOutlineIdentity";
 const SHARED_OUTLINE_MAX_ID = 65_535;
@@ -351,6 +351,8 @@ export class SharedOutlineView {
   private readonly strictOccluders: AbstractMesh[] = [];
   /** This view's working list for the cull; see `cullStrictOccluders`. */
   private readonly strictOccluderScratch: AbstractMesh[] = [];
+  /** A through or selection group's members in view: the list Babylon observes and the cull's working list. */
+  private readonly membersInView = new Map<SharedOutlineGroup, { out: AbstractMesh[]; scratch: AbstractMesh[] }>();
   private styleUploads = 0;
   tableWidth = 1;
   tableHeight = 1;
@@ -540,6 +542,16 @@ export class SharedOutlineView {
       Math.ceil(this.maximumWidthForGroup("strict")) + 1, this.strictOccluders, this.strictOccluderScratch,
       overSceneDepth ? lacksSceneDepth : undefined);
   }
+  /**
+   * A through or selection group's members that can show in `camera`'s view this frame, strokes included; readiness
+   * keeps using the full `meshesForGroup` list.
+   */
+  membersFor(group: Exclude<SharedOutlineGroup, "strict">, camera: Camera, widthPx: number, heightPx: number): AbstractMesh[] {
+    let lists = this.membersInView.get(group);
+    if (!lists) this.membersInView.set(group, lists = { out: [], scratch: [] });
+    return cullOutlineMembers(this.meshesForGroup(group), camera, widthPx, heightPx,
+      Math.ceil(this.maximumWidthForGroup(group)) + 1, lists.out, lists.scratch);
+  }
   diagnostics() {
     return { revision: this.revision, consumerCount: this.contributions.size,
       targetCount: new Set([...this.contributions.values()].flatMap((entry) => entry.targets.map((target) => target.key))).size,
@@ -555,6 +567,7 @@ export class SharedOutlineView {
     this.contributions.clear(); this.meshLists.clear(); this.releaseStyles(); this.owner.removeView(this); this.revision++;
     // Neither list may keep the last frame's occluders, disposed ones included, reachable.
     this.strictOccluders.length = 0; this.strictOccluderScratch.length = 0;
+    this.membersInView.clear();
   }
 }
 const lacksSceneDepth = (mesh: AbstractMesh) => !writesSceneDepth(mesh);

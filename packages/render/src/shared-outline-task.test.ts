@@ -65,6 +65,26 @@ it("draws every strict occluder in a frame without view culling, and only those 
   expect(narrowed).toHaveBeenCalledTimes(1);
 });
 
+it("draws a through group's members that can show in a steady frame, and all of them in a frame without view culling", async () => {
+  const { scene, view, task } = await outlineGraph();
+  const through = MeshBuilder.CreateBox("through", {}, scene);
+  setOutlineContribution(view, "through", { kind: "component", color: [0, 1, 0], width: 2, throughMeshes: true, targets: [{ key: "through", meshes: [through] }] });
+  expect(view.groupActive("through")).toBe(true);
+  const list = () => (task as unknown as { masks: { group: string; objects: { objectList: { meshes: unknown[] } } }[] }).masks
+    .find((record) => record.group === "through")!.objects.objectList.meshes.length;
+  task.onBeforeTaskExecute.notifyObservers(task);
+  expect(list()).toBe(1);
+  // Far beside the view: nothing of it, or of its stroke, can show.
+  through.position.x = 100; through.computeWorldMatrix(true);
+  task.onBeforeTaskExecute.notifyObservers(task);
+  expect(list()).toBe(0);
+  // Readiness and the frame without view culling keep the whole group, so its program is ready and drawn ahead.
+  expect(view.meshesForGroup("through")).toHaveLength(1);
+  scene.skipFrustumClipping = true;
+  task.onBeforeTaskExecute.notifyObservers(task);
+  expect(list()).toBe(1);
+});
+
 it("seeds the strict mask from a scene depth of its own size: one depth copy, and only the meshes that depth lacks", async () => {
   const own = await outlineGraph();
   // The compose and the strict mask; a clear and a draw per mask.

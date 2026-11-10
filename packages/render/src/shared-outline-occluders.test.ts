@@ -8,7 +8,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
-import { cullStrictOccluders, writesSceneDepth } from "./shared-outline-occluders";
+import { cullOutlineMembers, cullStrictOccluders, writesSceneDepth } from "./shared-outline-occluders";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { for (const dispose of cleanups.splice(0)) dispose(); });
@@ -40,7 +40,7 @@ function setup() {
   const cull = (candidates: readonly AbstractMesh[] = [member, front, near, beside], occludes?: (mesh: AbstractMesh) => boolean) =>
     cullStrictOccluders(candidates, (mesh) => mesh === member, camera, 512, 256, 2, list, scratch, occludes);
   const observe = () => { renderer.renderList = list; lightDirty.mockClear(); };
-  return { scene, member, front, near, beside, list, lightDirty, cull, observe };
+  return { scene, camera, box, member, front, near, beside, list, lightDirty, cull, observe };
 }
 
 describe("strict occluder cull and the render list Babylon observes", () => {
@@ -83,7 +83,7 @@ describe("strict occluder cull and the render list Babylon observes", () => {
     expect(lightDirty).not.toHaveBeenCalled();
   });
 
-  it("still tells Babylon when the list goes from empty to populated", () => {
+  it("tells Babylon nothing when the list fills: no light define reads a mask's list", () => {
     const { member, list, lightDirty, cull, observe } = setup();
     member.isVisible = false;
     expect(cull()).toHaveLength(0);
@@ -91,7 +91,8 @@ describe("strict occluder cull and the render list Babylon observes", () => {
     member.isVisible = true;
     expect(names(cull())).toEqual(["member", "front"]);
     expect(names(list)).toEqual(["member", "front"]);
-    expect(lightDirty).toHaveBeenCalled();
+    // What a mask draws comes and goes with the view: a pass over the Scene's meshes each time would cost a hitch.
+    expect(lightDirty).not.toHaveBeenCalled();
   });
 
   it("draws, over a mask seeded from the scene's depth, only the occluders that depth lacks, and every member", () => {
@@ -107,6 +108,68 @@ describe("strict occluder cull and the render list Babylon observes", () => {
     front.material = glass;
     expect(names(cull(undefined, (mesh) => !writesSceneDepth(mesh)))).toEqual(["member", "front", "near"]);
     expect(names(cull(undefined, () => false))).toEqual(["member"]);
+  });
+});
+
+/**
+ * The camera sees 8.46 units to either side of the origin at the members' depth (a 512 by 256 view, 0.8 radians tall).
+ */
+describe("members the view cannot show", () => {
+  it("leaves out a member beside the screen, and the meshes that could only hide that one", () => {
+    const { camera, box, member, front } = setup();
+    const away = box("away", 20, 0), edge = box("edge", 3.5, -5);
+    const members = new Set<AbstractMesh>([member, away]);
+    const cull = () => names(cullStrictOccluders([member, front, edge, away], (mesh) => members.has(mesh), camera, 512, 256, 2));
+    // `edge` sits between the camera and the way to `away`, on screen: it can hide no pixel of `member`.
+    expect(cull()).toEqual(["member", "front"]);
+    // Back in view, `away` is drawn, and so is what stands before it.
+    away.position.x = 7; away.computeWorldMatrix(true);
+    expect(cull()).toEqual(["member", "away", "front", "edge"]);
+  });
+
+  it("keeps a member beside the screen by less than its stroke", () => {
+    const { camera, box, member } = setup();
+    // Its nearest edge is 1.4% of the half width past the screen's: 3.5 pixels of a 512 pixel view.
+    const beyond = box("beyond", 9.5, 0);
+    const cull = (paddingPx: number) => names(cullStrictOccluders([member, beyond], () => true, camera, 512, 256, paddingPx));
+    expect(cull(2)).toEqual(["member"]);
+    expect(cull(8)).toEqual(["member", "beyond"]);
+  });
+
+  it("leaves out a member behind the camera, and keeps one that crosses its plane", () => {
+    const { camera, box, member } = setup();
+    // `across` straddles the camera's plane off to one side: the corners before the camera project beside the screen,
+    // which says nothing of where the rest of it shows.
+    const behind = box("behind", 0, -20), across = box("across", 3, -10);
+    expect(names(cullStrictOccluders([member, behind, across], () => true, camera, 512, 256, 2))).toEqual(["member", "across"]);
+  });
+
+  it("keeps a member that is drawn whatever the view: its bounds do not say where it draws", () => {
+    const { camera, box, member } = setup();
+    const skinned = box("skinned", 20, 0), sky = box("sky", 0, -20);
+    skinned.alwaysSelectAsActiveMesh = true;
+    sky.infiniteDistance = true;
+    expect(names(cullStrictOccluders([member, skinned, sky], () => true, camera, 512, 256, 2))).toEqual(["member", "skinned", "sky"]);
+  });
+
+  it("narrows a group without occluders the same way, in the list Babylon observes", () => {
+    const { camera, box, member, lightDirty } = setup();
+    const away = box("away", 20, 0);
+    const list: AbstractMesh[] = [], scratch: AbstractMesh[] = [];
+    const renderer = new ObjectRenderer("through", camera.getScene());
+    cleanups.push(() => renderer.dispose());
+    const cull = () => cullOutlineMembers([member, away], camera, 512, 256, 2, list, scratch);
+    expect(names(cull())).toEqual(["member"]);
+    renderer.renderList = list;
+    lightDirty.mockClear();
+    expect(cull()).toBe(list);
+    // Its only member in view leaves and comes back: the list empties and fills, and Babylon runs no pass for it.
+    member.position.x = -20; member.computeWorldMatrix(true);
+    expect(cull()).toHaveLength(0);
+    member.position.x = 0; member.computeWorldMatrix(true);
+    away.position.x = 7; away.computeWorldMatrix(true);
+    expect(names(cull())).toEqual(["member", "away"]);
+    expect(lightDirty).not.toHaveBeenCalled();
   });
 });
 
