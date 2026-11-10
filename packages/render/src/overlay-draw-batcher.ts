@@ -1,4 +1,5 @@
-import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { Buffer, VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Material } from "@babylonjs/core/Materials/material";
 import type { Matrix } from "@babylonjs/core/Maths/math.vector";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport";
@@ -8,6 +9,7 @@ import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import type { FloatArray, IndicesArray } from "@babylonjs/core/types";
 import type { OverlayLayoutRect } from "@haptic/core";
+import { DRAW_BATCH_WORLD_KINDS, markDrawBatchMesh } from "./draw-batch-world-block";
 import { sceneDrawBatcher, setSceneDrawBatcher, type SceneDrawBatcher } from "./draw-batching";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { disableOverlayClipScissor, enableOverlayClipScissor, overlayDrawClip } from "./overlay-layout-render";
@@ -27,12 +29,14 @@ import { setUnlitBinding, unlitBinding, type UnlitBinding } from "./unlit-materi
  *   everything.
  * - **Values.** A batch's members draw the same Material and Effect and bind the same values: the unlit binding,
  *   visibility, overlay style, side orientation and clip (one scissor). The batch mesh binds them as its first member.
- * - **Vertices.** Members' vertices are written in the eye-relative world space the GPU computes (the floating
- *   origin's offset world matrix, rounded to 32 bits as uploaded), and the batch draws them with an offset world of
- *   zero, so each vertex's position is the same 32-bit value. Only members whose world matrix scales and translates
- *   (no rotation or mirroring) and whose products and sums are exact in 32 bits join; the rest draw on their own.
+ * - **Vertices.** A batch holds its members' own vertices and, for each vertex, the rows of its member's world
+ *   matrix as the member's draw uploads them (the floating origin's translation minus the eye, then 32-bit). The
+ *   Material's vertex stage builds the world matrix from those for a batch's mesh (`DrawBatchWorldBlock`), so every
+ *   vertex is transformed by the same expression on the same values as in its member's draw, whatever its pose. A
+ *   mirrored member, whose faces Babylon draws the other way round, draws on its own.
  * - **Readiness.** A batch draws only when every member's own draw would draw now (Babylon's readiness gate) and its
- *   mesh is ready with their Effect; otherwise its members draw one by one, each through its own gate.
+ *   mesh is ready with their program's batch variant (the same defines and `HAPTIC_BATCH`); otherwise its members draw
+ *   one by one, each through its own gate.
  *
  * Batch meshes stay out of `scene.meshes` (never culled, picked, probed or counted) and keep their buffers between
  * frames. Each is used at most once per Engine frame (WebGPU queues buffer writes ahead of the frame's draws) and
@@ -50,18 +54,23 @@ type MeshInternals = {
   renderOverlay?: boolean;
 };
 
-/** A member's vertices in eye-relative world space, recomputed when its world matrix, positions or the eye change. */
+/** A member's own vertices and its world matrix as its draw uploads it, kept while neither changes. */
 interface Bake {
   flag: number;
   source: FloatArray;
-  /** `source` as baked (32-bit): compared each frame, as an owner may rewrite the array in place. */
+  /** `source` in 32 bits, as its vertex buffer holds it: compared each frame, as an owner may rewrite the array in place. */
   copy: Float32Array;
   eyeX: number;
   eyeY: number;
   eyeZ: number;
-  /** Null when a vertex is not exact in 32 bits (or the matrix rotates): the mesh draws on its own. */
-  positions: Float32Array | null;
-  /** Bounds of `positions`, eye-relative. */
+  /** Storage for `world`. */
+  rows: Float32Array;
+  /**
+   * The world matrix's first three rows as the member's draw uploads them; null when it mirrors or is not affine: the
+   * mesh draws on its own.
+   */
+  world: Float32Array | null;
+  /** Bounds of `copy`, in the member's own space. */
   min: [number, number, number];
   max: [number, number, number];
 }
@@ -104,9 +113,15 @@ interface Slot {
   /** What the buffers hold (`vertexCount` and `indexCount` of them in use). */
   positions: Float32Array;
   uvs: Float32Array | null;
+  /** Each vertex's world matrix, three rows of four floats, in `worldBuffer` (the `DRAW_BATCH_WORLD_KINDS` attributes). */
+  worlds: Float32Array;
+  worldBuffer: Buffer | null;
   indices: Uint16Array | Uint32Array;
   vertexCount: number;
   indexCount: number;
+  /** The members' Effect and the batch's last found to differ by the batch's define alone. */
+  memberEffect: Effect | null;
+  batchEffect: Effect | null;
 }
 
 const bakes = new WeakMap<Mesh, Bake>();
@@ -119,9 +134,9 @@ export type OverlayAloneReason = "single" | "material" | "transform" | "vertexCo
 /**
  * Batched passes counted (`countOverlayBatches`): the draws asked for (`visuals`), the draws made, the batches among
  * them with the visuals they drew, and the visuals drawn on their own by reason: a pass's only draw, a Material other
- * than the unlit one (an authored 2D Material, a 3D-lit sprite), a rotated or mirrored pose (or one not exact in 32
- * bits), vertex colours, anything else a batch cannot reproduce, and batchable visuals no other draw matched (or whose
- * batch could not draw as one then). `visuals` is `batched` plus every `alone` count.
+ * than the unlit one (an authored 2D Material, a 3D-lit sprite), a mirrored pose (or one that is not affine), vertex
+ * colours, anything else a batch cannot reproduce, and batchable visuals no other draw matched (or whose batch could
+ * not draw as one then). `visuals` is `batched` plus every `alone` count.
  */
 export interface OverlayBatchStats {
   visuals: number;
@@ -169,38 +184,31 @@ function packedFloats(mesh: Mesh, kind: string, size: number): FloatArray | null
   return data instanceof Float32Array || Array.isArray(data) ? data : null;
 }
 
-/** `scale × value + offset` as the GPU computes it in 32 bits, or NaN when the product or sum would round there. */
-function exactAffine(scale: number, value: number, offset: number): number {
-  const product = scale * value;
-  if (Math.fround(product) !== product) return Number.NaN;
-  const sum = product + offset;
-  if (sum - offset !== product || sum - product !== offset) return Number.NaN;
-  return Math.fround(sum);
-}
-
 /**
- * The member's eye-relative vertices: the world matrix the floating origin uploads (translation minus the eye, then
- * 32-bit) applied as the vertex stage applies it. Exact only for a scale and translation: every other entry of the
- * upper 3 × 4 is zero and the diagonal positive (a mirrored member draws with flipped faces).
+ * The member's vertices and world matrix as its own draw gives them to the vertex stage: the positions its vertex buffer
+ * holds, and the world matrix the floating origin uploads (translation minus the eye, then 32-bit).
  */
 function bakeOf(mesh: Mesh, eye: { x: number; y: number; z: number }): Bake | null {
   const source = packedFloats(mesh, VertexBuffer.PositionKind, 3);
   if (!source) return null;
+  let bake = bakes.get(mesh);
+  if (!bake)
+    bakes.set(mesh, (bake = {
+      flag: -1, source, copy: new Float32Array(0), eyeX: Number.NaN, eyeY: Number.NaN, eyeZ: Number.NaN, rows: new Float32Array(WORLD_FLOATS), world: null,
+      min: [0, 0, 0], max: [0, 0, 0],
+    }));
+  if (bake.source !== source || !holds(bake.copy, source)) {
+    bake.source = source;
+    if (bake.copy.length !== source.length) bake.copy = new Float32Array(source.length);
+    bake.copy.set(source);
+    boundPositions(bake);
+  }
   const world = mesh.getWorldMatrix();
-  const cached = bakes.get(mesh);
-  if (cached && cached.flag === world.updateFlag && cached.source === source && cached.eyeX === eye.x && cached.eyeY === eye.y &&
-    cached.eyeZ === eye.z && holds(cached.copy, source))
-    return cached;
-  const bake: Bake = cached ?? {
-    flag: 0, source, copy: new Float32Array(0), eyeX: 0, eyeY: 0, eyeZ: 0, positions: null, min: [0, 0, 0], max: [0, 0, 0],
-  };
-  bake.flag = world.updateFlag;
-  bake.source = source;
-  if (bake.copy.length !== source.length) bake.copy = new Float32Array(source.length);
-  bake.copy.set(source);
-  bake.eyeX = eye.x; bake.eyeY = eye.y; bake.eyeZ = eye.z;
-  bake.positions = bakePositions(world, bake.copy, eye, bake);
-  bakes.set(mesh, bake);
+  if (bake.flag !== world.updateFlag || bake.eyeX !== eye.x || bake.eyeY !== eye.y || bake.eyeZ !== eye.z) {
+    bake.flag = world.updateFlag;
+    bake.eyeX = eye.x; bake.eyeY = eye.y; bake.eyeZ = eye.z;
+    bake.world = worldRows(world, eye, bake.rows);
+  }
   return bake;
 }
 
@@ -212,27 +220,38 @@ function holds(copy: Float32Array, source: FloatArray): boolean {
   return true;
 }
 
-function bakePositions(world: Matrix, source: Float32Array, eye: { x: number; y: number; z: number }, bake: Bake): Float32Array | null {
-  const m = world.asArray();
-  if (m[1] !== 0 || m[2] !== 0 || m[3] !== 0 || m[4] !== 0 || m[6] !== 0 || m[7] !== 0 || m[8] !== 0 || m[9] !== 0 || m[11] !== 0 || m[15] !== 1)
-    return null;
-  const sx = Math.fround(m[0]!), sy = Math.fround(m[5]!), sz = Math.fround(m[10]!);
-  if (!(sx > 0 && sy > 0 && sz > 0)) return null;
-  const tx = Math.fround(m[12]! - eye.x), ty = Math.fround(m[13]! - eye.y), tz = Math.fround(m[14]! - eye.z);
-  const count = source.length - (source.length % 3);
-  const positions = bake.positions?.length === count ? bake.positions : new Float32Array(count);
-  const { min, max } = bake;
+function boundPositions(bake: Bake): void {
+  const { copy, min, max } = bake;
   min[0] = min[1] = min[2] = Number.POSITIVE_INFINITY;
   max[0] = max[1] = max[2] = Number.NEGATIVE_INFINITY;
-  for (let index = 0; index < count; index += 3) {
-    const x = exactAffine(sx, source[index]!, tx), y = exactAffine(sy, source[index + 1]!, ty), z = exactAffine(sz, source[index + 2]!, tz);
-    if (Number.isNaN(x) || Number.isNaN(y) || Number.isNaN(z)) return null;
-    positions[index] = x; positions[index + 1] = y; positions[index + 2] = z;
+  for (let index = 0; index + 2 < copy.length; index += 3) {
+    const x = copy[index]!, y = copy[index + 1]!, z = copy[index + 2]!;
     if (x < min[0]) min[0] = x; if (x > max[0]) max[0] = x;
     if (y < min[1]) min[1] = y; if (y > max[1]) max[1] = y;
     if (z < min[2]) min[2] = z; if (z > max[2]) max[2] = z;
   }
-  return positions;
+}
+
+/** Floats of a world matrix a batch carries per vertex: three rows. */
+const WORLD_FLOATS = 12;
+
+/**
+ * The first three rows of `world` as a draw uploads it (`OffsetWorldToRef`, then 32 bits), into `rows`; null for a
+ * matrix that is not affine or that mirrors: Babylon draws a mesh of negative determinant with its faces the other
+ * way round.
+ */
+function worldRows(world: Matrix, eye: { x: number; y: number; z: number }, rows: Float32Array): Float32Array | null {
+  const m = world.asArray();
+  if (m[3] !== 0 || m[7] !== 0 || m[11] !== 0 || m[15] !== 1 || world.determinant() < 0) return null;
+  for (let row = 0; row < 3; row += 1) {
+    rows[row * 4] = m[row]!;
+    rows[row * 4 + 1] = m[row + 4]!;
+    rows[row * 4 + 2] = m[row + 8]!;
+  }
+  rows[3] = m[12]! - eye.x;
+  rows[7] = m[13]! - eye.y;
+  rows[11] = m[14]! - eye.z;
+  return rows;
 }
 
 function sameColor(a: readonly number[], b: readonly number[]): boolean {
@@ -346,7 +365,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
         for (let index = 0; index < count; index += 1) drawOne(sorted[index]!);
         return;
       }
-      this.group(count, eye);
+      this.group(count);
       this.drawBatches(transparent, drawOne, stats);
     } finally {
       for (let index = 0; index < count; index += 1) this.release(entries[index]!);
@@ -359,7 +378,10 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    for (const slot of this.slots) slot.mesh.dispose(false, false);
+    for (const slot of this.slots) {
+      slot.mesh.dispose(false, false);
+      slot.worldBuffer?.dispose();
+    }
     this.slots.length = 0;
     this.entries.length = 0;
     this.batches.length = 0;
@@ -397,9 +419,10 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     const uvs = mesh.isVerticesDataPresent(VertexBuffer.UVKind) ? packedFloats(mesh, VertexBuffer.UVKind, 2) : null;
     if (mesh.isVerticesDataPresent(VertexBuffer.UVKind) && !uvs) return "other";
     const bake = bakeOf(mesh, eye);
-    // No baked positions: the pose rotates, mirrors or is not exact in 32 bits.
-    if (!bake?.positions) return bake ? "transform" : "other";
-    if (bake.positions.length !== vertices * 3 || (uvs && uvs.length < vertices * 2)) return "other";
+    if (!bake) return "other";
+    // A pose that mirrors, or is not affine.
+    if (!bake.world) return "transform";
+    if (bake.copy.length !== vertices * 3 || (uvs && uvs.length < vertices * 2)) return "other";
     entry.mesh = mesh;
     entry.material = material;
     entry.binding = unlitBinding(mesh);
@@ -411,15 +434,16 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   }
 
   /** Projected bounds of every draw, two of the viewport's pixels wider on each side; unbounded when not known. */
-  private bound(entry: Entry, eye: { x: number; y: number; z: number }, transform: Matrix, marginX: number, marginY: number): void {
+  private bound(entry: Entry, transform: Matrix, marginX: number, marginY: number): void {
     entry.minX = entry.minY = Number.POSITIVE_INFINITY;
     entry.maxX = entry.maxY = Number.NEGATIVE_INFINITY;
     const mesh = entry.subMesh.getMesh();
     let min: readonly number[], max: readonly number[];
-    let offsetX = 0, offsetY = 0, offsetZ = 0;
+    // A batchable draw's own box, posed: tighter than its world box when it is turned.
+    let world: ArrayLike<number> | null = null;
     if (entry.bake) {
       ({ min, max } = entry.bake);
-      offsetX = eye.x; offsetY = eye.y; offsetZ = eye.z;
+      world = mesh.getWorldMatrix().asArray();
     } else if (boundsHold(mesh, entry.subMesh.getMaterial())) {
       const box = entry.subMesh.getBoundingInfo().boundingBox;
       min = box.minimumWorld.asArray(); max = box.maximumWorld.asArray();
@@ -430,20 +454,25 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     const m = transform.asArray();
     const corner = this.scratchCorner;
     for (let index = 0; index < 8; index += 1) {
-      corner.x = (index & 1 ? max[0]! : min[0]!) + offsetX;
-      corner.y = (index & 2 ? max[1]! : min[1]!) + offsetY;
-      corner.z = (index & 4 ? max[2]! : min[2]!) + offsetZ;
+      const x = index & 1 ? max[0]! : min[0]!, y = index & 2 ? max[1]! : min[1]!, z = index & 4 ? max[2]! : min[2]!;
+      if (world) {
+        corner.x = x * world[0]! + y * world[4]! + z * world[8]! + world[12]!;
+        corner.y = x * world[1]! + y * world[5]! + z * world[9]! + world[13]!;
+        corner.z = x * world[2]! + y * world[6]! + z * world[10]! + world[14]!;
+      } else {
+        corner.x = x; corner.y = y; corner.z = z;
+      }
       const w = corner.x * m[3]! + corner.y * m[7]! + corner.z * m[11]! + m[15]!;
       if (!(w > 0)) {
         unbounded(entry);
         return;
       }
-      const x = (corner.x * m[0]! + corner.y * m[4]! + corner.z * m[8]! + m[12]!) / w;
-      const y = (corner.x * m[1]! + corner.y * m[5]! + corner.z * m[9]! + m[13]!) / w;
-      if (x < entry.minX) entry.minX = x;
-      if (x > entry.maxX) entry.maxX = x;
-      if (y < entry.minY) entry.minY = y;
-      if (y > entry.maxY) entry.maxY = y;
+      const projectedX = (corner.x * m[0]! + corner.y * m[4]! + corner.z * m[8]! + m[12]!) / w;
+      const projectedY = (corner.x * m[1]! + corner.y * m[5]! + corner.z * m[9]! + m[13]!) / w;
+      if (projectedX < entry.minX) entry.minX = projectedX;
+      if (projectedX > entry.maxX) entry.maxX = projectedX;
+      if (projectedY < entry.minY) entry.minY = projectedY;
+      if (projectedY > entry.maxY) entry.maxY = projectedY;
     }
     // A non-finite corner (or none) leaves bounds that would overlap nothing.
     if (!(entry.minX <= entry.maxX && entry.minY <= entry.maxY)) {
@@ -458,7 +487,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
    * Puts each draw in the first batch it can join: one of the same draw at or after the last batch holding a draw it
    * overlaps (so it still draws after every draw it covers), else a new batch at the end.
    */
-  private group(count: number, eye: { x: number; y: number; z: number }): void {
+  private group(count: number): void {
     const scene = this.scene, engine = scene.getEngine();
     const transform = scene.getTransformMatrix();
     const width = engine.getRenderWidth(), height = engine.getRenderHeight();
@@ -472,7 +501,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     let used = 0;
     for (let index = 0; index < count; index += 1) {
       const entry = entries[index]!;
-      this.bound(entry, eye, transform, marginX, marginY);
+      this.bound(entry, transform, marginX, marginY);
       let last = used - 1;
       for (; last >= 0; last -= 1) {
         const batch = batches[last]!;
@@ -522,7 +551,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     }
   }
 
-  /** Draws `members` as one batch; false (nothing drawn) when its mesh is not ready with their Effect. */
+  /** Draws `members` as one batch; false (nothing drawn) when its mesh is not ready with their program's batch variant. */
   private drawBatch(members: readonly Entry[], transparent: boolean): boolean {
     const scene = this.scene;
     const first = members[0]!;
@@ -534,17 +563,11 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     shareOverlayVisualStyle(mesh, member);
     mesh.visibility = member.visibility;
     mesh.sideOrientation = member.sideOrientation;
-    // A translation by the eye, which the floating origin uploads as zero: the baked vertices are already eye-relative.
-    const eye = scene.floatingOriginOffset;
-    if (!mesh.position.equals(eye)) mesh.position.copyFrom(eye);
-    const world = mesh.computeWorldMatrix(true).asArray();
-    if (world[12] !== eye.x || world[13] !== eye.y || world[14] !== eye.z) return false;
     this.fill(slot, members);
     const subMesh = mesh.subMeshes[0]!;
     if (!first.material!.isReadyForSubMesh(mesh, subMesh, false)) return false;
     const effect = subMesh.effect;
-    if (!effect) return false;
-    for (const entry of members) if (entry.subMesh.effect !== effect) return false;
+    if (!effect || !sameProgram(slot, effect, members)) return false;
     const engine = scene.getEngine();
     const scissored = first.clip !== null && enableOverlayClipScissor(scene, first.clip);
     try {
@@ -585,9 +608,10 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       mesh.isPickable = false;
       mesh.isVisible = false;
       mesh.doNotSyncBoundingInfo = true;
+      markDrawBatchMesh(mesh);
       slot = {
-        mesh, textured, vertexCapacity: 0, indexCapacity: 0, positions: new Float32Array(0), uvs: null, indices: new Uint16Array(0),
-        vertexCount: 0, indexCount: 0,
+        mesh, textured, vertexCapacity: 0, indexCapacity: 0, positions: new Float32Array(0), uvs: null, worlds: new Float32Array(0),
+        worldBuffer: null, indices: new Uint16Array(0), vertexCount: 0, indexCount: 0, memberEffect: null, batchEffect: null,
       };
       this.slots.push(slot);
     }
@@ -600,11 +624,11 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     return slot;
   }
 
-  /** Writes the members' vertices, UVs and indices into the slot's buffers, uploading only what changed. */
+  /** Writes the members' vertices, world matrices, UVs and indices into the slot's buffers, uploading only what changed. */
   private fill(slot: Slot, members: readonly Entry[]): void {
     let vertexCount = 0, indexCount = 0;
     for (const entry of members) {
-      vertexCount += entry.bake!.positions!.length / 3;
+      vertexCount += entry.bake!.copy.length / 3;
       indexCount += entry.indices!.length;
     }
     const mesh = slot.mesh;
@@ -614,17 +638,22 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       slot.indexCapacity = Math.max(96, 2 ** Math.ceil(Math.log2(indexCount)));
       slot.positions = new Float32Array(slot.vertexCapacity * 3);
       slot.uvs = slot.textured ? new Float32Array(slot.vertexCapacity * 2) : null;
+      slot.worlds = new Float32Array(slot.vertexCapacity * WORLD_FLOATS);
       slot.indices = slot.vertexCapacity > 65536 ? new Uint32Array(slot.indexCapacity) : new Uint16Array(slot.indexCapacity);
     }
-    const { positions, uvs, indices } = slot;
+    const { positions, uvs, worlds, indices } = slot;
     let changed = grow || vertexCount !== slot.vertexCount || indexCount !== slot.indexCount;
     let vertex = 0, index = 0;
     for (const entry of members) {
-      const baked = entry.bake!.positions!;
-      const memberVertices = baked.length / 3;
-      for (let offset = 0, at = vertex * 3; offset < baked.length; offset += 1, at += 1) {
-        const value = baked[offset]!;
+      const own = entry.bake!.copy, world = entry.bake!.world!;
+      const memberVertices = own.length / 3;
+      for (let offset = 0, at = vertex * 3; offset < own.length; offset += 1, at += 1) {
+        const value = own[offset]!;
         if (positions[at] !== value) { positions[at] = value; changed = true; }
+      }
+      for (let offset = 0, at = vertex * WORLD_FLOATS; offset < memberVertices * WORLD_FLOATS; offset += 1, at += 1) {
+        const value = world[offset % WORLD_FLOATS]!;
+        if (worlds[at] !== value) { worlds[at] = value; changed = true; }
       }
       if (uvs) {
         const source = entry.uvs!;
@@ -651,6 +680,11 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
         mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
         if (uvs) mesh.setVerticesData(VertexBuffer.UVKind, uvs, true);
         else if (mesh.isVerticesDataPresent(VertexBuffer.UVKind)) mesh.removeVerticesData(VertexBuffer.UVKind);
+        // One buffer for the three rows; its views do not own it.
+        const previous = slot.worldBuffer;
+        const buffer = slot.worldBuffer = new Buffer(mesh.getEngine(), worlds, true, WORLD_FLOATS);
+        DRAW_BATCH_WORLD_KINDS.forEach((kind, row) => mesh.setVerticesBuffer(buffer.createVertexBuffer(kind, row * 4, 4)));
+        previous?.dispose();
         mesh.setIndices(indices, slot.vertexCapacity, true);
       } finally {
         mesh.getScene()._blockEntityCollection = blocked;
@@ -659,6 +693,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       // In place: the buffers (and their vertex array objects) stay. Whole arrays, which the buffers keep for a rebuild.
       mesh.getVertexBuffer(VertexBuffer.PositionKind)!.updateDirectly(positions, 0);
       if (uvs) mesh.getVertexBuffer(VertexBuffer.UVKind)!.updateDirectly(uvs, 0);
+      slot.worldBuffer!.updateDirectly(worlds, 0);
       mesh.updateIndices(indices, 0, true);
     }
     const subMesh = mesh.subMeshes[0]!;
@@ -667,6 +702,24 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     subMesh.indexStart = 0;
     subMesh.indexCount = index;
   }
+}
+
+const BATCH_DEFINE = "#define HAPTIC_BATCH\n";
+
+/**
+ * Whether the batch's `effect` is its members' program but for the batch's own define: every member draws with one
+ * Effect, and the batch mesh, set up as its first member, compiled with the same defines and `HAPTIC_BATCH`.
+ */
+function sameProgram(slot: Slot, effect: Effect, members: readonly Entry[]): boolean {
+  const memberEffect = members[0]!.subMesh.effect;
+  if (!memberEffect) return false;
+  for (const entry of members) if (entry.subMesh.effect !== memberEffect) return false;
+  if (slot.batchEffect === effect && slot.memberEffect === memberEffect) return true;
+  const defines = effect.defines.replace(BATCH_DEFINE, "");
+  if (defines === effect.defines || defines !== memberEffect.defines) return false;
+  slot.batchEffect = effect;
+  slot.memberEffect = memberEffect;
+  return true;
 }
 
 function unbounded(entry: Bounds): void {

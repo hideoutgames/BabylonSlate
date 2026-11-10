@@ -30,7 +30,7 @@ export interface SceneLayerHudOptions {
  * A HUD made like the Feature Test's `FT_HUD` Scene Layer, with Play's visual builders and actor names
  * (`actor-<slot>`): revealed rich text with letter effects, an underline and an image, headers, form controls, a
  * clipped scroll box of text rows, clipped virtualized list and grid windows, a widget row of icons, masked images and
- * buttons, card samples and a joystick, over texture and tinted panels. Letter effects hold their first sample, so
+ * buttons, card samples, a row of turned widgets and a joystick, over texture and tinted panels. Letter effects hold their first sample, so
  * frames repeat exactly. For draw-batching tests and the browser proof.
  */
 export function buildSceneLayerHud(scene: Scene, options: SceneLayerHudOptions): OverlayLayoutRenderer {
@@ -160,6 +160,15 @@ export function buildSceneLayerHud(scene: Scene, options: SceneLayerHudOptions):
     card.scaling.set(0.6, 0.6, 1);
     panel(card, tint as [number, number, number, number], 2.8, 0.85);
     label(card, index ? "Card B" : "Card A", 26, [270, 32], { alignment: "center", bold: true });
+  }
+
+  // Turned and unevenly scaled widgets, as animated ones are: none of these angles or scales has an exact 32-bit form.
+  for (let index = 0; index < SCENE_LAYER_HUD_ICONS.length; index += 1) {
+    const turned = actor(-7 + index * 1.75, -4.6, -0.2);
+    turned.rotation.z = 0.37 + index * 0.61;
+    turned.scaling.set(0.83 + index * 0.07, 1.11 - index * 0.05, 1);
+    panel(turned, [0.9, 0.35 + index * 0.08, 0.2, 0.8], 1.3, 0.9);
+    icon(turned, SCENE_LAYER_HUD_ICONS[index]!, 0, 0, -0.02, 0.8);
   }
 
   part(actor(-14.2, -7.35), createJoystick2DMesh(scene, `actor-${next - 1}|stick`, { radius: 1, joystickRadius: 0.42 }));

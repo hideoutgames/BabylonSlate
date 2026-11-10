@@ -46,6 +46,7 @@ import {
 import { Light2DBlock, UnlitLinearColorBlock } from "./unlit-lighting-blocks";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import { registerAlphaToCoverage, samplesSteppedAlpha } from "./alpha-to-coverage";
+import { drawBatchWorld } from "./draw-batch-world-block";
 
 export type { UnlitBinding } from "./unlit-material-blocks";
 
@@ -157,11 +158,13 @@ function buildSurface(material: NodeMaterial, { textured, msdf, lighting }: Surf
   const world = matrixInput(`${NAME}_world`, NodeMaterialSystemValues.World, blocks);
   const instancesBlock = new InstancesBlock(`${NAME}_instances`);
   world.output.connectTo(instancesBlock.world);
+  // What every transform reads: a draw batch's mesh carries its members' world matrices per vertex.
+  const drawWorld = drawBatchWorld(NAME, instancesBlock, blocks);
   const view = matrixInput(`${NAME}_view`, NodeMaterialSystemValues.View, blocks);
   const viewProjection = matrixInput(`${NAME}_viewProjection`, NodeMaterialSystemValues.ViewProjection, blocks);
   const worldPosition = new TransformBlock(`${NAME}_worldPos`);
   position.output.connectTo(worldPosition.vector);
-  instancesBlock.output.connectTo(worldPosition.transform);
+  drawWorld.connectTo(worldPosition.transform);
   // The lattice deformer moves positions; unlit has no normal, so it deforms a constant one nothing reads.
   const normal = new InputBlock(`${NAME}_normal`, undefined, Types.Vector4);
   normal.value = new Vector4(0, 1, 0, 0);
@@ -173,7 +176,7 @@ function buildSurface(material: NodeMaterial, { textured, msdf, lighting }: Surf
     const worldNormal = new TransformBlock(`${NAME}_worldNormal`);
     worldNormal.complementW = 0;
     meshNormal.output.connectTo(worldNormal.vector);
-    instancesBlock.output.connectTo(worldNormal.transform);
+    drawWorld.connectTo(worldNormal.transform);
     blocks.push(meshNormal, worldNormal);
     plumbing.worldNormal4 = worldNormal.output;
   }

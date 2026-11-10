@@ -88,7 +88,7 @@ type LayerBatches = NonNullable<RenderDiagnostics["layerBatches"]>;
 /** Why a Scene Layer visual drew on its own, as a report names each reason. */
 const ALONE_LABELS: Record<OverlayAloneReason, string> = {
   unmatched: "nothing else drew the same",
-  transform: "rotated or mirrored",
+  transform: "mirrored",
   material: "another Material",
   vertexColor: "vertex colours",
   single: "only draw of its pass",
