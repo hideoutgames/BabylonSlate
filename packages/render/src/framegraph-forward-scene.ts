@@ -48,7 +48,7 @@ import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
 import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
-import { drawsInPass } from "./webgpu-pipeline-deferral";
+import { drawsInPass, pipelinesDeferred } from "./webgpu-pipeline-deferral";
 import { isRevealPending, revealRound } from "./reveal-pending";
 import { withPipelineWarmupRound } from "./variant-pipeline-warmup";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
@@ -742,7 +742,10 @@ export class ForwardSceneFrameGraph {
     if (this.swapsStillPending()) return false;
     // What admission stales (a caster that joined or left, a light capacity that changed) is staled before the probe:
     // `readiness` admits right after it, and would otherwise probe every mesh a second time in the same frame.
-    if (this.readinessDirtyFlag) this.syncShadowAdmission(camera);
+    // Not where pipelines are deferred (WebGPU): there a spawn whose pipelines exist is revealed by the probe that
+    // first sees it, in its first frame, and only then does the admission list it in the drawn shadow maps, which
+    // its reveal would otherwise ask for theirs and wait a frame for (`casterPipelinesWarm`).
+    if (this.readinessDirtyFlag && !pipelinesDeferred(this.scene.getEngine())) this.syncShadowAdmission(camera);
     // A settings change stales a prepared graph like a stack revision; with
     // no graph yet there is no baked chain to re-key.
     if (!this.readinessDirtyFlag &&
