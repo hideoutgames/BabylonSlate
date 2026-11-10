@@ -32,6 +32,8 @@ import {
 } from "@haptic/shader-graph";
 import { isBoundedMaterial, isDrawBatchMaterial, isDrawBatchTextMaterial } from "./draw-batch-world-block";
 import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
+import { blockAdapterFor } from "./material-block-registry";
+import { TransformBlock } from "@babylonjs/core/Materials/Node/Blocks/transformBlock";
 // The WGSL fog cases fake a WebGPU Engine, whose code registers the WGSL includes Haptic's blocks emit as it loads.
 import "./webgpu-registrations";
 import { HapticLightingBlock } from "./haptic-lighting-block";
@@ -429,6 +431,18 @@ describe("material compiler", () => {
     const errors = await result.ready;
     expect(errors).toEqual(expect.arrayContaining([expect.objectContaining({ code: "material.compile.buildFailed" })]));
     expect(result.buildState).toBe("failed");
+  });
+  it("builds a Normal Map's frame around a unit normal, whatever the mesh's scale", () => {
+    // Without tangents Babylon's block keeps the normal it is given as its frame's third axis: one whose length
+    // followed the mesh's scale made the map weaker or stronger with it.
+    const adapter = blockAdapterFor("shading.normalMap")!;
+    const transform = new TransformBlock("worldNormal");
+    const built = adapter({ name: "bump", plumbing: { worldNormal4: transform.output }, operation: { inputs: {}, properties: {} } } as never);
+    const perturb = built.blocks.find((block) => block.getClassName() === "PerturbNormalBlock")!;
+    const normal = perturb.getInputByName("worldNormal")!.connectedPoint!.ownerBlock;
+    expect(normal.getClassName()).toBe("NormalizeBlock");
+    expect(normal.getInputByName("input")!.connectedPoint).toBe(transform.output);
+    expect(built.blocks).toContain(normal);
   });
   it.each(["pbr", "unlit"] as const)(
     "keeps authored emissive color on the %s fragment path without creating lights",
@@ -964,6 +978,43 @@ describe("material compiler", () => {
         (block) => block instanceof HapticLightingBlock,
       ),
     ).toBe(false);
+  });
+
+  it("draws a Material's meshes with one program however they are scaled, and gives the nodes that read the normal's length a unit normal", async () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "rim", type: "shading.fresnel", position: { x: 0, y: 0 }, properties: {} });
+    doc.nodes.push({ id: "raw", type: "input.worldNormal", position: { x: 0, y: 0 }, properties: {} });
+    doc.edges.push({ id: "rim-out", sourceNodeId: "rim", sourcePinId: "out", targetNodeId: "output", targetPinId: "metallic" });
+    doc.edges.push({ id: "raw-out", sourceNodeId: "raw", sourcePinId: "normal", targetNodeId: "output", targetPinId: "normal" });
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "scaled" });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(() => result.material.dispose());
+    expect(await result.ready).toEqual([]);
+    const meshes = [[1, 1, 1], [2, 2, 2], [3, 0.5, 1]].map((scale, index) => {
+      const mesh = MeshBuilder.CreateBox(`box${index}`, {}, scene);
+      mesh.scaling.set(scale[0]!, scale[1]!, scale[2]!);
+      mesh.computeWorldMatrix(true);
+      mesh.material = result.material;
+      return mesh;
+    });
+    await vi.waitFor(() => { for (const mesh of meshes) expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true); });
+    // A scaling define that followed the mesh compiled the Material once for evenly scaled meshes and once for the rest.
+    expect(new Set(meshes.map((mesh) => mesh.subMeshes[0]!.effect)).size).toBe(1);
+    const [vertex, fragment] = result.material.compiledShaders.split("// Fragment shader").map((stage) => stage.replace(/\s+/g, " "));
+    // The vertex stage turns the normal by the inverse transpose, whose length follows the mesh's scale. Babylon's
+    // Fresnel reads the normal as it is, so it gets one of unit length at each pixel.
+    expect(vertex).toMatch(/#ifdef NONUNIFORMSCALING (\w+) = transposeMat3\(inverseMat3\(\1\)\); #endif/);
+    expect(fragment).toMatch(/vec4 (\w+) = normalize\(v_\w+\); .*computeFresnelTerm\(\w+\.xyz, \1\.xyz,/);
+    const blocks = result.material.attachedBlocks;
+    const source = (className: string, input: string) => blocks.find((block) => block.getClassName() === className)!.getInputByName(input)!.connectedPoint!.ownerBlock;
+    expect(source("FresnelBlock", "worldNormal").getClassName()).toBe("NormalizeBlock");
+    // The World Normal node stays as transformed, as documented (the lighting makes its own unit normal of it).
+    const lighting = blocks.find((block) => block instanceof HapticLightingBlock) as HapticLightingBlock;
+    const normalised = (point: NodeMaterialConnectionPoint | null): boolean => !!point && (point.ownerBlock.getClassName() === "NormalizeBlock" ||
+      point.ownerBlock.inputs.some((input) => normalised(input.connectedPoint)));
+    expect(lighting.normal.isConnected).toBe(true);
+    expect(normalised(lighting.normal.connectedPoint)).toBe(false);
   });
 
   it("brightens Fresnel toward the silhouette, shaped by Bias and Power", () => {

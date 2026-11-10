@@ -334,9 +334,9 @@ index e9b7db89b862fc9abb62e955da36e782c93d8006..785e699fb93290c6338127cc5d13af71
 -                if (mesh && mesh.nonUniformScaling) {
 -                    defines.setValue("NONUNIFORMSCALING", true);
 -                }
-+                // Keyed on first preparation, so a mesh whose scaling turns non-uniform later builds the same define string
-+                // (and Effect) as one that starts so. Once set it stays set, as before.
-+                defines.setValue("NONUNIFORMSCALING", defines.NONUNIFORMSCALING === true || !!(mesh && mesh.nonUniformScaling));
++                // Always: a direction transforms by the inverse transpose, which turns it the same way a uniformly scaled
++                // matrix does. A define that followed the mesh compiled every Material twice.
++                defines.setValue("NONUNIFORMSCALING", true);
              }
              /**
               * Serializes the block

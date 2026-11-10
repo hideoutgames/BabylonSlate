@@ -354,9 +354,9 @@ export class SceneInstancePool {
 
 /**
  * A group's source: hidden and unpickable (its members draw and pick), at identity with its world matrix frozen (the
- * instance constructor copies the source's transform, and Babylon multiplies nothing by it), drawing its members'
- * normals for any scaling (`NONUNIFORMSCALING`), and never a caster. Its name must not start with `__`, which shadow
- * participation rejects (the controller would then force every member's receiving off).
+ * instance constructor copies the source's transform, and Babylon multiplies nothing by it), and never a caster. Its
+ * name must not start with `__`, which shadow participation rejects (the controller would then force every member's
+ * receiving off).
  */
 function configureSource(source: Mesh, key: InstanceGroupKey): void {
   source.material = key.material;
@@ -370,8 +370,6 @@ function configureSource(source: Mesh, key: InstanceGroupKey): void {
   source.rotation.setAll(0);
   source.scaling.set(1, 1, key.mirrored ? -1 : 1);
   source.freezeWorldMatrix();
-  // After the freeze, which found a uniform scale: a frozen world matrix never updates it again.
-  (source as unknown as { _updateNonUniformScalingState(value: boolean): boolean })._updateNonUniformScalingState(true);
   const participation: SourceShadowParticipation = { castShadows: false, receiveShadows: key.receiveShadows };
   source.metadata = { ...(source.metadata as object | null), slateShadowParticipation: participation, hapticInstanceSource: true };
   markInstanceSource(source);

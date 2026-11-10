@@ -779,7 +779,10 @@ const ADAPTERS: Record<string, BlockAdapter> = {
    */
   "shading.fresnel": ({ name, plumbing }) => {
     const facing = new FresnelBlock(name);
-    plumbing.worldNormal4?.connectTo(facing.worldNormal);
+    // Babylon's block reads the normal as it is: of unit length, the term no longer follows the mesh's scale.
+    const normal = new NormalizeBlock(`${name}_normal`);
+    plumbing.worldNormal4?.connectTo(normal.input);
+    normal.output.connectTo(facing.worldNormal);
     plumbing.viewDirection?.connectTo(facing.viewDirection);
     const facingBias = createConstantBlock(`${name}_facingBias`, "float", [0]);
     const facingPower = createConstantBlock(`${name}_facingPower`, "float", [1]);
@@ -800,7 +803,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     base.output.connectTo(shaped.value);
     shaped.output.connectTo(rim.value);
     return {
-      blocks: [facing, facingBias, facingPower, edge, biased, base, shaped, rim],
+      blocks: [normal, facing, facingBias, facingPower, edge, biased, base, shaped, rim],
       inputs: { bias: biased.right, power: shaped.power },
       outputs: { out: rim.output },
     };
@@ -808,13 +811,17 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   "shading.normalMap": ({ name, plumbing, operation }) => {
     const block = new PerturbNormalBlock(name);
     plumbing.worldPosition?.connectTo(block.worldPosition);
-    plumbing.worldNormal4?.connectTo(block.worldNormal);
+    // Without tangents Babylon's block builds its frame around the normal as it is: of unit length, the map's
+    // strength no longer follows the mesh's scale.
+    const normal = new NormalizeBlock(`${name}_normal`);
+    plumbing.worldNormal4?.connectTo(normal.input);
+    normal.output.connectTo(block.worldNormal);
     if (!operation.inputs.uv) plumbing.uv?.connectTo(block.uv);
     // Babylon emits a Vector 4 normal; the graph pin is a Vector 3.
     const split = new VectorSplitterBlock(`${name}_xyz`);
     block.output.connectTo(split.xyzw);
     return {
-      blocks: [block, split],
+      blocks: [normal, block, split],
       inputs: { packed: block.normalMapColor, uv: block.uv, strength: block.strength },
       outputs: { normal: split.xyzOut },
     };

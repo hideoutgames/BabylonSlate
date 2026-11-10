@@ -212,7 +212,7 @@ describe("Water Waves node", () => {
     expect(await result.ready).toEqual([]);
     const global = (name: string) => createWaterMesh(scene, name, normalizeWaterBody({}, "global"), createDefaultWaterDefinition(), result.material);
     const a = global("a"), b = global("b");
-    // Uniform scaling keeps one program for both (Babylon compiles NONUNIFORMSCALING separately).
+    // One program draws both.
     b.position.set(100, 0, -30); b.rotation.y = Math.PI / 2; b.scaling.set(2, 2, 2);
     updateSceneWater(scene);
     const effect = await programFor(result.material, a);

@@ -521,23 +521,10 @@ describe("Scene Layer draw batching", () => {
     const receiving = drawnMeshes(() => layerDraws(engine, compositor, 1));
     expect(receiving.map((mesh) => mesh.receiveShadows)).toEqual([true]);
     for (const mesh of panels) mesh.receiveShadows = false;
-    // One scaled evenly draws with another program than the stretched rest: apart.
+    // One program draws a Material's meshes however they are scaled: one scaled evenly shares the stretched rest's draw.
     panels[3]!.scaling.setAll(2);
-    expect(await drawsBothWays(context)).toEqual({ batched: 2, unbatched: 4 });
+    expect(await drawsBothWays(context)).toEqual({ batched: 1, unbatched: 4 });
     panels[3]!.scaling.set(2, 0.5, 1);
-    // The batch's mesh follows its members: the same batch mesh that drew the stretched panels draws unstretched
-    // ones, which never compiled the stretched program, in one draw too.
-    setSceneDrawBatching(scene, true);
-    await compositor.prepare("hud", () => {});
-    const stretched = drawnMeshes(() => layerDraws(engine, compositor, 1));
-    expect(stretched).toHaveLength(1);
-    for (const mesh of panels) mesh.setEnabled(false);
-    const plain = [panel("plain0", -2, [1, 1, 1, 0.5]), panel("plain1", 2, [1, 1, 1, 0.5])];
-    await compositor.prepare("hud", () => {});
-    layerDraws(engine, compositor);
-    expect(drawnMeshes(() => layerDraws(engine, compositor, 1))).toEqual(stretched);
-    for (const mesh of plain) mesh.dispose();
-    for (const mesh of panels) mesh.setEnabled(true);
     // A Material that is not a Scene Layer's authored one draws each mesh on its own, as before.
     const standard = new StandardMaterial("standard", scene);
     standard.alpha = 0.5;
