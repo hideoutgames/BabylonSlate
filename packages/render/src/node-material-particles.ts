@@ -3,6 +3,7 @@ import { DrawWrapper } from "@babylonjs/core/Materials/drawWrapper";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
+import { BaseParticleSystem } from "@babylonjs/core/Particles/baseParticleSystem";
 import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
 // Custom effects bypass GPUParticleSystem's default effect initializer, which
 // normally imports its WGSL vertex shader before requesting compilation; the
@@ -17,6 +18,19 @@ type ParticleMaterialInternals = { _createEffectForParticles: NativeParticleBind
 type Binding = { effect: Effect; observer: Observer<Effect>; wrapper: DrawWrapper };
 const adapted = new WeakSet<NodeMaterial>();
 const boundMaterials = new WeakMap<IParticleSystem, NodeMaterial>();
+
+/**
+ * After a bound system's blend mode changed: one that now blends Multiply gets the program that mode draws with,
+ * which its binding left out while it blended otherwise. Until it has one Babylon would draw it with the other modes'.
+ */
+export function syncParticleBlendProgram(system: IParticleSystem): void {
+  const material = boundMaterials.get(system);
+  if (!material) return;
+  const wrappers = (system as unknown as { _customWrappers?: Record<number, DrawWrapper | undefined> })._customWrappers;
+  if (wrappers?.[BaseParticleSystem.BLENDMODE_MULTIPLY]) return;
+  // The binding leaves it out again unless the system blends Multiply now.
+  (material as unknown as ParticleMaterialInternals)._createEffectForParticles(system, BaseParticleSystem.BLENDMODE_MULTIPLY);
+}
 
 /** The live authored material, shared with capture feedback checks. */
 export function particleMaterialForSystem(system: IParticleSystem): NodeMaterial | undefined {
@@ -57,6 +71,10 @@ export function prepareNodeMaterialParticleBindings(material: NodeMaterial): voi
     system.onBeforeDrawParticlesObservable.remove(owned.drawObserver);
   };
   const bind: NativeParticleBinder = function(system, blend, onCompiled, onError, effect, defines, joined) {
+    // Babylon asks for a Multiply program beside the one every other blend mode draws with (`createEffectForParticles`).
+    // Only a system that blends so draws it: for any other it would compile and never draw
+    // (`syncParticleBlendProgram` asks for it when a bound system's mode becomes Multiply).
+    if (blend === BaseParticleSystem.BLENDMODE_MULTIPLY && system.blendMode !== BaseParticleSystem.BLENDMODE_MULTIPLY) return;
     // Material defines and vertex streams depend on the lazily allocated
     // gradient textures. Prepare them before capturing the first custom effect,
     // rather than replacing a mismatched effect during its first native draw.
