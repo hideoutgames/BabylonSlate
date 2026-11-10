@@ -25,7 +25,7 @@ import type {
 } from "@haptic/assets";
 import { prewarmMaterial } from "./material-compiler";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
-import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
+import { prepareNodeMaterialParticleBindings, syncParticleBlendProgram } from "./node-material-particles";
 import { PARTICLE_BILLBOARD_MODES, PARTICLE_BLEND_MODES } from "./particle-render-modes";
 import { markSceneReadinessDirty } from "./scene-perf";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
@@ -235,6 +235,7 @@ export function applyBasicEmitterPlan(system: IParticleSystem, plan: BasicEmitte
     system.billboardMode = PARTICLE_BILLBOARD_MODES[plan.billboard];
   }
   system.blendMode = PARTICLE_BLEND_MODES[plan.blendMode];
+  syncParticleBlendProgram(system);
   if (scope === "create") system.isLocal = plan.isLocal;
   // Recreating an emitter of the same class keeps the GPU update-shader defines.
   applyShape(system, plan.shape);

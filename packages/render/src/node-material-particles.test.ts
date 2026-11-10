@@ -7,7 +7,8 @@ import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createTestEngine } from "./test-support/test-engine";
 import { keepPlayEffects } from "./effect-bridge";
 import { MaterialLibrary, materialUnavailable } from "./material-library";
-import { bindParticleMaterial } from "./particle-system-factory";
+import { normalizeParticleEmitterPayload, resolveBasicEmitterPlan } from "@haptic/assets";
+import { applyBasicEmitterPlan, bindParticleMaterial } from "./particle-system-factory";
 
 describe("compiled particle effect bindings", () => {
   const cleanup: (() => void)[] = [];
@@ -29,6 +30,33 @@ describe("compiled particle effect bindings", () => {
     };
     return { engine, scene, create, library, compiled };
   }
+
+  it("compiles the Multiply program only for a system that blends Multiply, and when one becomes so", async () => {
+    const { create, compiled: { material } } = await host();
+    const custom = (system: ParticleSystem) =>
+      Object.keys((system as unknown as { _customWrappers: Record<number, unknown> })._customWrappers).map(Number).sort();
+    // Every blend mode but Multiply draws with the first program (Babylon's fallback): a system holds no other.
+    const additive = await create("additive");
+    expect(custom(additive)).toEqual([ParticleSystem.BLENDMODE_ONEONE]);
+    // A system whose plan changes its mode to Multiply after its Material was bound gets that mode's program then.
+    const plan = resolveBasicEmitterPlan(normalizeParticleEmitterPayload({}), { backend: "cpu", space: "world" });
+    applyBasicEmitterPlan(additive, { ...plan, blendMode: "multiply" }, "live");
+    expect(custom(additive)).toEqual([ParticleSystem.BLENDMODE_ONEONE, ParticleSystem.BLENDMODE_MULTIPLY]);
+    const multiply = additive.getCustomEffect(ParticleSystem.BLENDMODE_MULTIPLY)!;
+    expect(multiply).not.toBe(additive.getCustomEffect(ParticleSystem.BLENDMODE_ONEONE));
+    expect(multiply.defines).toContain("#define BLENDMULTIPLYMODE");
+    // Once: a later plan asks for nothing the system holds.
+    const asked = vi.spyOn(material as unknown as { _createEffectForParticles(): void }, "_createEffectForParticles");
+    applyBasicEmitterPlan(additive, { ...plan, blendMode: "multiply" }, "live");
+    expect(asked).not.toHaveBeenCalled();
+    // One that blends Multiply when its Material is bound has both from the start.
+    const { scene, compiled } = await host();
+    const born = new ParticleSystem("multiply", 16, scene);
+    born.blendMode = ParticleSystem.BLENDMODE_MULTIPLY;
+    void bindParticleMaterial(born, compiled.material);
+    await compiled.ready;
+    await vi.waitFor(() => expect(custom(born)).toEqual([ParticleSystem.BLENDMODE_ONEONE, ParticleSystem.BLENDMODE_MULTIPLY]));
+  });
 
   it("settles live define changes without appending callbacks during the same bind", async () => {
     const { engine, create } = await host();
