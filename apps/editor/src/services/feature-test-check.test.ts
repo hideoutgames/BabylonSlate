@@ -780,6 +780,44 @@ describe("draw sampling", () => {
     }
   });
 
+  it("gives Play and each benchmark profile the draws of each pass and the Engine's programs as it ended", async () => {
+    const editor = fakeEditor({}, undefined, (now, commands) => ({ drawn: commands.length * 10 + now, held: 0 }));
+    let reads = 0;
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      play: () => {
+        const play = editor.deps.play();
+        return play && {
+          ...play,
+          snapshot: () => {
+            const snapshot = play.snapshot();
+            // The Engine compiles a program between any two reads.
+            reads += 1;
+            const rendering = {
+              cpuMs: 4, gpuMs: null, ...snapshot.rendering,
+              drawPasses: { objects: 124, outlines: 101, layers: 98 },
+              programs: { programs: 200 + reads, neverDrawn: 80, passes: { objects: 60 } },
+            } as NonNullable<typeof snapshot.rendering>;
+            return { ...snapshot, rendering };
+          },
+        };
+      },
+    };
+    const report = await runFeatureTestCheck({
+      mode: "benchmark", scenes: [scene("FT_World")], deps, signal: new AbortController().signal,
+    });
+    const play = report.scenes[0].play;
+    expect(play.counters!.drawPasses).toEqual({ objects: 124, outlines: 101, layers: 98 });
+    expect(play.benchmark.map((sample) => sample.label)).toEqual(["low", "medium", "high", "ultra"]);
+    for (const sample of play.benchmark) {
+      expect(sample.drawPasses).toEqual({ objects: 124, outlines: 101, layers: 98 });
+      expect(sample.programs).toMatchObject({ neverDrawn: 80, passes: { objects: 60 } });
+    }
+    // Each profile's inventory is read as its sample ends: a later profile's holds what the earlier ones compiled.
+    const counts = play.benchmark.map((sample) => sample.programs!.programs);
+    for (let index = 1; index < counts.length; index += 1) expect(counts[index]).toBeGreaterThan(counts[index - 1]!);
+  });
+
   it("summarises the samples by their median and range, and nothing without one", () => {
     expect(counterStats([605, 544, 605, 544])).toEqual({ median: 574.5, min: 544, max: 605, samples: 4 });
     expect(counterStats([544, 605, 544])).toEqual({ median: 544, min: 544, max: 605, samples: 3 });

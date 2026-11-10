@@ -678,8 +678,10 @@ export interface FeatureTestBenchmarkSample {
   skipped?: string;
   /** Shaders first drawn and Effects compiling during the sample (both should be 0), and how long settling took. */
   unsettled?: { firstDraws: number; compiling: number; settleMs: number };
-  /** Breakdown and Profile: each pass's median draw calls per frame while sampled (`RenderDiagnostics.drawPasses`). */
+  /** Each pass's median draw calls per frame while sampled (`RenderDiagnostics.drawPasses`); absent where unattributed. */
   drawPasses?: Partial<Record<DrawPass, number>>;
+  /** The programs the Engine held as the sample ended (`RenderDiagnostics.programs`); absent on WebGPU. */
+  programs?: NonNullable<RenderDiagnostics["programs"]>;
   /**
    * Frames the view drew and held while sampled, over `ms` of the check's clock, and why it held them
    * (`RenderDiagnostics.presentation.heldReasons`); absent where the view reports no counts.
@@ -755,6 +757,8 @@ export interface PlayCounters {
   draws: CounterStats | null;
   cpuMs: CounterStats | null;
   gpuMs: CounterStats | null;
+  /** Each pass's median draw calls per frame while sampled (`RenderDiagnostics.drawPasses`); absent where unattributed. */
+  drawPasses?: Partial<Record<DrawPass, number>> | null;
 }
 
 export interface FrameStats {
@@ -1172,7 +1176,7 @@ async function checkScene(
     const workBefore = play.snapshot().rendering?.rendererWork;
     const sampled = await sampleWithCounters(play, deps.sampleFrames(limits.playSampleMs, signal), deps, signal);
     result.play.frames = sampled.frames;
-    result.play.counters = { draws: sampled.draws, cpuMs: sampled.cpu, gpuMs: sampled.gpu };
+    result.play.counters = { draws: sampled.draws, cpuMs: sampled.cpu, gpuMs: sampled.gpu, drawPasses: sampled.drawPasses };
     result.play.runtimeFps = play.runtimeFps();
     result.play.snapshot = play.snapshot();
     const sampledWork = rendererWorkSince(workBefore, result.play.snapshot.rendering?.rendererWork);
@@ -1640,12 +1644,13 @@ async function benchmarkProfiles(
       } : {}),
       ...(work ? { work } : {}),
       ...(memory ? { memory } : {}),
+      ...(sampled.drawPasses ? { drawPasses: sampled.drawPasses } : {}),
+      ...(rendering?.programs ? { programs: rendering.programs } : {}),
       ...(interleaved ? {
         ...(gpuBusy && rendering?.gpuBusy ? { gpuBusy: { ...rendering.gpuBusy } } : {}),
         ...(rendering?.settings ? { settings: { ...rendering.settings } } : {}),
         unsettled: { firstDraws: (rendering?.firstDraws?.draws ?? 0) - firstDrawsBefore, compiling: sampled.compiling, settleMs: settled.ms },
         ...(sampled.occlusion ? { occlusion: sampled.occlusion } : {}),
-        ...(sampled.drawPasses ? { drawPasses: sampled.drawPasses } : {}),
       } : {}),
     };
     return sample;

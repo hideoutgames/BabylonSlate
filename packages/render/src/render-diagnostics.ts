@@ -13,7 +13,7 @@ import { sceneLightingLimits } from "./scene-lighting";
 import { autoLodDiagnostics, liveMeshCount } from "./model-lod";
 import { sceneOcclusionDiagnostics } from "./view-occlusion";
 import type { RenderScheduler } from "./render-scheduler";
-import type { FirstDrawStats } from "./first-draw-stats";
+import type { FirstDrawStats, ProgramInventory } from "./first-draw-stats";
 import type { GpuBusyStats } from "./gpu-busy-probe";
 import type { FrameBackpressureStats } from "./frame-backpressure";
 import type { DrawPassCounts } from "./draw-passes";
@@ -26,6 +26,11 @@ export type GpuAttribution = "view" | "shared-engine" | "unavailable";
 export type RenderDiagnostics = {
   /** Play: Effects first drawn since its world load presented (`first-draw-stats.ts`); null elsewhere and on WebGPU. */
   firstDraws?: FirstDrawStats | null;
+  /**
+   * The programs the view's Engine holds now, every view's among them: how many, how many it never drew, and the drawn
+   * ones by the pass that first drew each (`programInventory`); null on WebGPU.
+   */
+  programs?: ProgramInventory | null;
   /**
    * A compact fingerprint of the effective settings the Feature Test Check's Breakdown and Profile steps change
    * (`field: value`): `qualitySettingsFingerprint` (shadows, their filter, Screen-Space Shadows and Reflection Shadows, device-clamped water,

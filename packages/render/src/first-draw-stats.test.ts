@@ -8,7 +8,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import { createTestEngine } from "./test-support/test-engine";
 import { beginDrawPassFrame, DrawPassFrame, endDrawPassFrame, withDrawPass } from "./draw-passes";
-import { FIRST_DRAW_STALL_MS, LONG_FRAMES_KEPT, openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
+import { FIRST_DRAW_STALL_MS, LONG_FRAMES_KEPT, openFirstDrawStats, programInventory, trackFirstDraws } from "./first-draw-stats";
 
 /** A Standard Material whose defines differ from a plain lit one's, so it compiles an Effect of its own. */
 function variant(scene: Scene, name: string, define: "unlit" | "fresnel"): StandardMaterial {
@@ -95,6 +95,36 @@ describe("first draw stats", () => {
     expect(stats.passes).toEqual({ shadows: 1, other: 1 });
     expect(stats.longest.map((entry) => entry.passes)).toEqual([{ shadows: 1 }]);
     session.close();
+  });
+
+  it("inventories the Engine's programs: those it never drew, and the rest by the pass that first drew each", async () => {
+    const { engine, scene, frame } = setup();
+    const held = () => Object.keys((engine as unknown as { _compiledEffects: object })._compiledEffects).length;
+    const before = held();
+    const shadowed = MeshBuilder.CreateBox("shadowed", {}, scene);
+    shadowed.material = variant(scene, "unlit", "unlit");
+    const unseen = MeshBuilder.CreateBox("unseen", {}, scene);
+    unseen.material = variant(scene, "fresnel", "fresnel");
+    unseen.setEnabled(false);
+    await shadowed.material.forceCompilationAsync(shadowed);
+    await unseen.material.forceCompilationAsync(unseen);
+    expect(held()).toBe(before + 2);
+    // Compiled, none drawn yet.
+    expect(programInventory(engine)).toEqual({ programs: before + 2, neverDrawn: before + 2, passes: {} });
+    const passes = new DrawPassFrame(engine as unknown as ConstructorParameters<typeof DrawPassFrame>[0]);
+    frame(16, 0, () => {
+      beginDrawPassFrame(passes);
+      withDrawPass(engine, "shadows", () => scene.render());
+      endDrawPassFrame(passes);
+    });
+    // The pass that drew it first keeps it, however often another draws it afterwards.
+    frame();
+    expect(programInventory(engine)).toEqual({ programs: before + 2, neverDrawn: before + 1, passes: { shadows: 1 } });
+  });
+
+  it("has no inventory for an Engine whose draws are not tracked", () => {
+    const { engine } = createTestEngine();
+    expect(programInventory(engine)).toBeNull();
   });
 
   it("does not count while paused, and a shader drawn then is not counted later", async () => {

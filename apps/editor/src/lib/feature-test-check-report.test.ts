@@ -14,6 +14,9 @@ describe("formatFeatureTestCheckReport", () => {
       adapter: { api: "webgl2", vendor: "Apple Inc.", renderer: "Apple GPU", version: "WebGL 2.0" },
       cpuMs: 4.2, gpuMs: null, gpuStatus: "unsupported", width: 2048, height: 1536, scalingLevel: 1,
       qualityLimits: [], pipeline: { effective: { gpuBackend: "webgl2" } },
+      // The last frame's split; the report prefers the medians sampled while Play was measured.
+      drawPasses: { objects: 9, layers: 33 },
+      programs: { programs: 120, neverDrawn: 35, passes: { objects: 50, layers: 15, shadows: 20 } },
     } as unknown as RenderDiagnostics;
     const report: FeatureTestCheckReport = {
       mode: "full", startedAt: Date.UTC(2026, 9, 10, 12), durationMs: 95_000, cancelled: false, pageErrors: ["TypeError: x is undefined"],
@@ -29,6 +32,7 @@ describe("formatFeatureTestCheckReport", () => {
         editor: { status: "ready", ms: 900, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 3000, phase: null, frames: { frames: 300, durationMs: 5000, fps: 60, medianMs: 16.7, meanMs: 5000 / 300, vsync: [1, 0, 0, 0], p95Ms: 17, maxMs: 25, stalls: 0 }, runtimeFps: 60,
           snapshot: { drawCalls: 42, meshes: 80, textures: 30, accountedBytes: 8 * 1048576, rendering },
+          counters: { draws: null, cpuMs: null, gpuMs: null, drawPasses: { objects: 10, shadows: 0, post: 2, layers: 30 } },
           presentation: {
             frames: { drawn: 280, held: 4, skipped: 16, heldReasons: { "Render pipelines are compiling.": 1, "Scene is not ready to render.": 3 } },
             contextLosses: 0, imageBlack: [0, 0.031, null],
@@ -57,6 +61,9 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  Play: timeout after 120.0 s at Loading Models 45%");
     expect(lines).toContain("    [error] Material FT_Glass failed to compile");
     expect(lines).toContain("  > ft_stats: ok in 1.2 s · FeatureTest score 0, spinners 4, spawned 0");
+    // What drew the frame, the most first, and what the Engine compiled for it.
+    expect(lines).toContain("  Draws per pass: layers 30, objects 10, post 2");
+    expect(lines).toContain("  Programs: 120 on the Engine · 35 never drawn · by first pass: objects 50, shadows 20, layers 15");
     // The passes that made the first draws, the most first.
     expect(lines).toContain("  First draws after load: 7 (5 compiled by the load) in 4 frames · 2 over 100 ms · worst 180 ms · most 3 in a frame · by pass: shadows 4, objects 2, outlines 1");
     expect(lines).toContain("  Long frames after load: 6 over 100 ms · longest 240 ms (engine 32 ms, 0 first draws, 0 compiles), 180 ms (engine 170 ms, 3 first draws: shadows 2, objects 1, 1 compile), 150 ms (engine 140 ms, 1 first draw: outlines 1, 2 compiles), 130 ms (engine 20 ms, 0 first draws, 0 compiles)");
@@ -106,8 +113,13 @@ describe("formatFeatureTestCheckReport", () => {
       mode: "benchmark", startedAt: 0, durationMs: 600_000, cancelled: false, pageErrors: [],
       scenes: [
         // The light scene's samples ran with two frames in flight, skipping 1, 0, 2 and 9 renders.
+        // It also reports what each profile drew and what the Engine had compiled by its end.
         scene("light", [sample("low", 60, 18), sample("medium", 60, 19), sample("high", 58, 22),
-          sample("ultra", 40, 30)].map((entry, index) => ({ ...entry, framesInFlight: { mode: 2 as const, skipped: [1, 0, 2, 9][index]! } }))),
+          sample("ultra", 40, 30)].map((entry, index) => ({
+          ...entry, framesInFlight: { mode: 2 as const, skipped: [1, 0, 2, 9][index]! },
+          drawPasses: { objects: 124, geometry: [0, 0, 81, 81][index]!, outlines: 101, layers: 98 },
+          programs: { programs: [280, 290, 310, 320][index]!, neverDrawn: [90, 92, 95, 96][index]!, passes: {} },
+        }))),
         scene("heavy", [sample("low", 59, 20), sample("medium", 35, 40), sample("high", 25, 60),
           sample("ultra", 20, 80)]),
       ],
@@ -115,6 +127,19 @@ describe("formatFeatureTestCheckReport", () => {
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     expect(lines).toContain("Benchmark: highest tier every benchmarked scene holds at 60 fps: low · at 30 fps: medium (2/2 scenes benchmarked)");
     expect(lines).toContain("  Highest tier at 60 fps: high · at 30 fps: ultra");
+    // The passes some profile drew in, in the frame's order; a profile that drew none in a pass shows 0.
+    const table = lines.indexOf("  Draws per pass (median per frame):");
+    expect(lines.slice(table + 1, table + 6)).toEqual([
+      "    Profile           objects geometry outlines layers",
+      "    low               124     0        101      98",
+      "    medium            124     0        101      98",
+      "    high              124     81       101      98",
+      "    ultra             124     81       101      98",
+    ]);
+    expect(lines).toContain("  Programs after each profile: low 280 (90 never drawn) · medium 290 (92 never drawn) · high 310 (95 never drawn) · ultra 320 (96 never drawn)");
+    // The heavy scene's samples attribute no draws and report no programs.
+    expect(lines.filter((line) => line === "  Draws per pass: unreported")).toHaveLength(1);
+    expect(lines.filter((line) => line.startsWith("  Programs after each profile"))).toHaveLength(1);
     // Each scene's header states the GPU backpressure it ran under, or that its samples did not measure it.
     expect(lines.filter((line) => line.startsWith("  Frames in flight: "))).toEqual([
       "  Frames in flight: 2 (12 renders skipped while sampling)", "  Frames in flight: not measured",

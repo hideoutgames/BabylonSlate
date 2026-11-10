@@ -2507,6 +2507,18 @@ describe("Play createEngine view", () => {
     expect(handle.renderDiagnostics().drawPasses).toEqual({ ...emptyDrawPasses(), mirrors: 1 });
   });
 
+  it("reports the programs its Engine holds, every view's among them", async () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    const held = Object.keys((engine as unknown as { _compiledEffects: object })._compiledEffects).length;
+    const programs = handle.renderDiagnostics().programs!;
+    expect(held).toBeGreaterThan(0);
+    expect(programs.programs).toBe(held);
+    // Each is either never drawn or counted to the pass that first drew it.
+    expect(programs.neverDrawn + Object.values(programs.passes).reduce((sum, count) => sum + count, 0)).toBe(held);
+  });
+
   it("honors live Play frame caps without adding render cost to the interval", async () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");

@@ -59,7 +59,7 @@ import { warmSpawnables } from "./spawnable-warm";
 import { bridgeEngineEffects, holdCompiledEffects, keepPlayEffects, releaseBridgedEffects } from "./effect-bridge";
 import { countEffectCompiles } from "./effect-requests";
 import { installPlayViewCulling } from "./play-view-culling";
-import { openFirstDrawStats, trackFirstDraws } from "./first-draw-stats";
+import { openFirstDrawStats, programInventory, trackFirstDraws } from "./first-draw-stats";
 import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
 import { engineFrameBackpressure } from "./frame-backpressure";
 import { HELD_FRAME_LABELS, HELD_FRAME_OTHER, HeldFrameReasons } from "./held-frames";
@@ -1914,7 +1914,7 @@ function initializeEngine(
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: pressureSampled ? { ...lastPressureSample } : null, gpuAttribution: gpuAttribution() }),
-    ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}), firstDraws: firstDraws?.stats() ?? null, settings: breakdownSettings(),
+    ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}), firstDraws: firstDraws?.stats() ?? null, programs: programInventory(engine), settings: breakdownSettings(),
       drawPasses: { ...drawPasses.last },
       gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
