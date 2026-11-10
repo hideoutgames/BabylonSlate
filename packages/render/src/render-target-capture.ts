@@ -13,6 +13,7 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Material } from "@babylonjs/core/Materials/material";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Frustum } from "@babylonjs/core/Maths/math.frustum";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
@@ -30,6 +31,7 @@ import { authoredActorMatrices, authoredComponentActorTransform, authoredTransfo
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 import { managedRenderTargetResources, renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { DisplayConversion } from "./display-conversion";
+import { buildViewProjectionMatrix, drawsInsidePlanes } from "./planar-mirror";
 import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import { createRenderTargetDepthMaterial, createRenderTargetNormalMaterial } from "./render-target-normal-material";
 import type { ResourceLease } from "./resource-cache";
@@ -246,6 +248,10 @@ export class RenderTargetCaptures {
   private readonly rotation = new Quaternion();
   private readonly scale = new Vector3();
   private readonly world = Matrix.Identity();
+  /** A Fast capture's view: its camera's projection at its target's shape, and the planes its list is culled by. */
+  private readonly projection = Matrix.Identity();
+  private readonly viewProjection = Matrix.Identity();
+  private readonly planes = Frustum.GetPlanes(Matrix.Identity());
   private readonly scene: Scene;
   constructor(scene: Scene) {
     this.scene = scene;
@@ -830,11 +836,21 @@ export class RenderTargetCaptures {
       return false;
     } finally { checked.clear(); }
   }
+  /**
+   * What a Fast capture draws: the eligible meshes its camera sees. Babylon culls no explicit list, so without the
+   * test a capture drew every eligible mesh of the Scene, behind its camera included. A mesh is tested where the
+   * capture's draw puts it: by the world matrix it holds under the current render id, as that draw reads it. An
+   * emitter stays whatever the view: its particles draw only while it is in the list.
+   */
   private renderList(capture: Capture, target: Target): AbstractMesh[] {
     const meshes = admittedSceneMeshes(this.scene) ?? this.scene.meshes;
+    const { width, height } = target.texture.getSize();
+    buildViewProjectionMatrix(this.scene, capture.camera, width / height, this.projection);
+    capture.camera.getViewMatrix().multiplyToRef(this.projection, this.viewProjection);
+    Frustum.GetPlanesToRef(this.viewProjection, this.planes);
     let count = 0;
     for (const mesh of meshes) {
-      if (this.isEligible(capture, target, mesh)) target.meshes[count++] = mesh;
+      if (this.isEligible(capture, target, mesh) && (this.emitters.has(mesh) || drawsInsidePlanes(mesh, this.planes))) target.meshes[count++] = mesh;
     }
     target.meshes.length = count;
     return target.meshes;

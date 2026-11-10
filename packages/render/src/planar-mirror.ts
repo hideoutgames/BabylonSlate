@@ -407,6 +407,17 @@ export function cropToFootprint(
 }
 
 /**
+ * Whether a pass that draws an explicit list through `planes` draws `mesh` (Babylon's ObjectRenderer culls no such
+ * list): a mesh that follows the camera or is marked always drawn passes whatever the view, any other by its bounds,
+ * its transform compared once under the current render id.
+ */
+export function drawsInsidePlanes(mesh: AbstractMesh, planes: Plane[]): boolean {
+  if (mesh.infiniteDistance || mesh.alwaysSelectAsActiveMesh) return true;
+  mesh.computeWorldMatrix();
+  return mesh.isInFrustum(planes);
+}
+
+/**
  * Pre-culled opaque list for a mirror pass (ObjectRenderer does not cull an explicit list): enabled, visible meshes
  * in the view's layers with geometry and an opaque material, inside `planes` (the skybox and always-active meshes
  * follow the camera and always pass), never helpers, lines, blended meshes or what `excluded` names.
@@ -430,11 +441,7 @@ export function collectPlanarMirrorMeshes(
       } else opaque = !material.needAlphaBlendingForMesh(mesh);
       if (!opaque) continue;
     }
-    // Transforms set before this frame's render are applied first.
-    if (!mesh.infiniteDistance && !mesh.alwaysSelectAsActiveMesh) {
-      mesh.computeWorldMatrix();
-      if (!mesh.isInFrustum(planes)) continue;
-    }
+    if (!drawsInsidePlanes(mesh, planes)) continue;
     list[count++] = mesh;
   }
   list.length = count;

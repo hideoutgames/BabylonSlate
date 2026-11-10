@@ -7,7 +7,13 @@ import { Scene, ScenePerformancePriority } from "@babylonjs/core/scene";
 import { Skeleton } from "@babylonjs/core/Bones/skeleton";
 // Registers thin instances, which the fixture adds.
 import "@babylonjs/core/Meshes/thinInstanceMesh";
-import { drawWhateverTheView, installPlayViewCulling, settlePlayViewCulling } from "./play-view-culling";
+import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
+import { BakedVertexAnimationManager } from "@babylonjs/core/BakedVertexAnimation/bakedVertexAnimationManager";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { applyMaterialBounds } from "./material-bounds";
+import { drawWhateverTheView, installPlayViewCulling, markBoundsHoldInstances, settlePlayViewCulling } from "./play-view-culling";
+import { markWaterSurfaceMesh } from "./water-mesh-surface";
 
 const engines: NullEngine[] = [];
 afterEach(() => { for (const engine of engines.splice(0)) engine.dispose(); });
@@ -28,14 +34,35 @@ it("culls Play's meshes by view, except those whose bounds do not hold or that t
   thin.thinInstanceAdd(Matrix.Translation(10, 0, 0));
   const skinned = MeshBuilder.CreateBox("skinned", {}, scene);
   skinned.skeleton = new Skeleton("skeleton", "skeleton", scene);
+  const morphed = MeshBuilder.CreateBox("morphed", {}, scene);
+  morphed.morphTargetManager = new MorphTargetManager(scene);
+  const baked = MeshBuilder.CreateBox("baked", {}, scene);
+  baked.bakedVertexAnimationManager = new BakedVertexAnimationManager(scene);
+  // Bounds made to hold what the vertex stage does: a Material's padding, water's wave reach, and a foliage cell's,
+  // refreshed to hold every instance.
+  const padded = MeshBuilder.CreateBox("padded", {}, scene);
+  padded.material = new StandardMaterial("offset", scene);
+  padded.material.metadata = { boundsPadding: 2 };
+  applyMaterialBounds(padded);
+  const water = MeshBuilder.CreateGround("water", {}, scene);
+  markWaterSurfaceMesh(water);
+  const cell = MeshBuilder.CreateBox("cell", {}, scene);
+  cell.thinInstanceAdd(Matrix.Translation(10, 0, 0));
+  cell.thinInstanceRefreshBoundingInfo(true);
+  markBoundsHoldInstances(cell);
   // A glTF node instance: a regular instance draws its source's geometry through its own world matrix.
   const instance = plain.createInstance("instance");
   const skinnedInstance = skinned.createInstance("skinned instance");
-  const meshes = [plain, emitter, particles, thin, skinned, instance, skinnedInstance];
+  const meshes = [plain, emitter, particles, thin, skinned, morphed, baked, padded, water, cell, instance, skinnedInstance];
   // Intermediate marks every mesh it constructs; the next cull settles them.
   expect(meshes.every((mesh) => mesh.alwaysSelectAsActiveMesh)).toBe(true);
   settlePlayViewCulling(scene);
   expect(Object.fromEntries(meshes.map((mesh) => [mesh.name, mesh.alwaysSelectAsActiveMesh]))).toEqual({
-    plain: false, emitter: true, particles: true, thin: true, skinned: true, instance: false, "skinned instance": true,
+    plain: false, emitter: true, particles: true, thin: true, skinned: true, morphed: true, baked: true,
+    padded: false, water: false, cell: false, instance: false, "skinned instance": true,
   });
+  // What the cull then tests holds the padding, and the instance where it stands (a thin-instance mesh draws its
+  // instances alone).
+  expect(padded.getBoundingInfo().boundingBox.maximum.asArray()).toEqual([2.5, 2.5, 2.5]);
+  expect(cell.getBoundingInfo().boundingBox.center.equalsWithEpsilon(new Vector3(10, 0, 0), 1e-6)).toBe(true);
 });
