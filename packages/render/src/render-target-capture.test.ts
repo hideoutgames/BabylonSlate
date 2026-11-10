@@ -359,6 +359,38 @@ it("retains the completed self-capture while its spare buffer is unavailable or 
   expect(output.getInternalTexture()).not.toBe(first);
 });
 
+it("draws only what a Fast capture's camera sees, at its target's shape", () => {
+  const { scene, captures, draws, root, settings } = host();
+  // The capture looks along +z from the origin, 60 degrees tall, into a target twice as wide as tall.
+  captures.configure("capture", { ...settings, fieldOfView: 60 }, () => root);
+  const at = (name: string, x: number, z: number) => {
+    const mesh = MeshBuilder.CreateBox(name, {}, scene);
+    mesh.position.set(x, 0, z);
+    return mesh;
+  };
+  const ahead = at("ahead", 0, 10), behind = at("behind", 0, -10), beside = at("beside", 30, 10);
+  // Inside the view at its width; a view as wide as tall would end before it.
+  at("wide", 8.5, 10);
+  // What follows the camera, and what is marked always drawn, pass whatever the view.
+  const sky = at("sky", 0, -10); sky.infiniteDistance = true;
+  const marked = at("marked", 0, -10); marked.alwaysSelectAsActiveMesh = true;
+  // Babylon draws a system only while its emitter is in the pass's list: it stays though it is behind the camera.
+  const emitter = new Mesh("emitter", scene); emitter.position.z = -10;
+  new ParticleSystem("particles", 8, scene).emitter = emitter;
+  // A frame's passes move the Scene's render id on, under which a mesh compares its transform again.
+  const drawn = () => { scene.incrementRenderId(); captures.request("capture"); captures.render(); return draws.at(-1)!.map((mesh) => mesh.name).sort(); };
+  expect(drawn()).toEqual(["ahead", "emitter", "marked", "sky", "wide"]);
+  // A move made since counts.
+  behind.position.z = 10;
+  ahead.position.z = -10;
+  expect(drawn()).toEqual(["behind", "emitter", "marked", "sky", "wide"]);
+  // The capture's own pose too.
+  root.rotation.y = Math.PI;
+  expect(drawn()).toEqual(["ahead", "emitter", "marked", "sky"]);
+  // Never seen, never drawn.
+  expect(draws.flat()).not.toContain(beside);
+});
+
 it("captures another target's output without allocating feedback storage", () => {
   const { scene, captures, root, settings, engine, draws } = host();
   captures.setAssets(new Map([
