@@ -16,7 +16,13 @@ describe("formatFeatureTestCheckReport", () => {
       qualityLimits: [], pipeline: { effective: { gpuBackend: "webgl2" } },
       // The last frame's split; the report prefers the medians sampled while Play was measured.
       drawPasses: { objects: 9, layers: 33 },
-      programs: { programs: 120, neverDrawn: 35, passes: { objects: 50, layers: 15, shadows: 20 } },
+      programs: {
+        programs: 120, neverDrawn: 35, passes: { objects: 50, layers: 15, shadows: 20 }, shaders: 70, mostVariants: 6,
+        splitBy: [
+          { define: "PREPASS", with: ["PREPASS_DEPTH", "SCENE_MRT_COUNT"], shaders: 30 }, { define: "INSTANCES", with: [], shaders: 4 },
+          ...["A", "B", "C", "D", "E", "F", "G", "H"].map((define) => ({ define, with: [], shaders: 1 })),
+        ],
+      },
     } as unknown as RenderDiagnostics;
     const report: FeatureTestCheckReport = {
       mode: "full", startedAt: Date.UTC(2026, 9, 10, 12), durationMs: 95_000, cancelled: false, pageErrors: ["TypeError: x is undefined"],
@@ -63,7 +69,10 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  > ft_stats: ok in 1.2 s · FeatureTest score 0, spinners 4, spawned 0");
     // What drew the frame, the most first, and what the Engine compiled for it.
     expect(lines).toContain("  Draws per pass: layers 30, objects 10, post 2");
-    expect(lines).toContain("  Programs: 120 on the Engine · 35 never drawn · by first pass: objects 50, shadows 20, layers 15");
+    expect(lines).toContain("  Programs: 120 on the Engine · 35 never drawn · 70 shaders, at most 6 programs of one · by first pass: objects 50, shadows 20, layers 15");
+    // What the further programs are for: the geometry pass's defines (two more with PREPASS) split 30 shaders, instancing 4.
+    // The eight that split most shaders are named and the rest counted.
+    expect(lines).toContain("  Shaders split by define: PREPASS (+2) 30 · INSTANCES 4 · A 1 · B 1 · C 1 · D 1 · E 1 · F 1 · 2 more");
     // The passes that made the first draws, the most first.
     expect(lines).toContain("  First draws after load: 7 (5 compiled by the load) in 4 frames · 2 over 100 ms · worst 180 ms · most 3 in a frame · by pass: shadows 4, objects 2, outlines 1");
     expect(lines).toContain("  Long frames after load: 6 over 100 ms · longest 240 ms (engine 32 ms, 0 first draws, 0 compiles), 180 ms (engine 170 ms, 3 first draws: shadows 2, objects 1, 1 compile), 150 ms (engine 140 ms, 1 first draw: outlines 1, 2 compiles), 130 ms (engine 20 ms, 0 first draws, 0 compiles)");
@@ -118,7 +127,7 @@ describe("formatFeatureTestCheckReport", () => {
           sample("ultra", 40, 30)].map((entry, index) => ({
           ...entry, framesInFlight: { mode: 2 as const, skipped: [1, 0, 2, 9][index]! },
           drawPasses: { objects: 124, geometry: [0, 0, 81, 81][index]!, outlines: 101, layers: 98 },
-          programs: { programs: [280, 290, 310, 320][index]!, neverDrawn: [90, 92, 95, 96][index]!, passes: {} },
+          programs: { programs: [280, 290, 310, 320][index]!, neverDrawn: [90, 92, 95, 96][index]!, passes: {}, shaders: 100, mostVariants: 9, splitBy: [] },
         }))),
         scene("heavy", [sample("low", 59, 20), sample("medium", 35, 40), sample("high", 25, 60),
           sample("ultra", 20, 80)]),

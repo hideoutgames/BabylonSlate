@@ -8,7 +8,8 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import { createTestEngine } from "./test-support/test-engine";
 import { beginDrawPassFrame, DrawPassFrame, endDrawPassFrame, withDrawPass } from "./draw-passes";
-import { FIRST_DRAW_STALL_MS, LONG_FRAMES_KEPT, openFirstDrawStats, programInventory, trackFirstDraws } from "./first-draw-stats";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import { FIRST_DRAW_STALL_MS, LONG_FRAMES_KEPT, openFirstDrawStats, programInventory, programVariants, trackFirstDraws } from "./first-draw-stats";
 
 /** A Standard Material whose defines differ from a plain lit one's, so it compiles an Effect of its own. */
 function variant(scene: Scene, name: string, define: "unlit" | "fresnel"): StandardMaterial {
@@ -110,7 +111,7 @@ describe("first draw stats", () => {
     await unseen.material.forceCompilationAsync(unseen);
     expect(held()).toBe(before + 2);
     // Compiled, none drawn yet.
-    expect(programInventory(engine)).toEqual({ programs: before + 2, neverDrawn: before + 2, passes: {} });
+    expect(programInventory(engine)).toMatchObject({ programs: before + 2, neverDrawn: before + 2, passes: {} });
     const passes = new DrawPassFrame(engine as unknown as ConstructorParameters<typeof DrawPassFrame>[0]);
     frame(16, 0, () => {
       beginDrawPassFrame(passes);
@@ -119,7 +120,58 @@ describe("first draw stats", () => {
     });
     // The pass that drew it first keeps it, however often another draws it afterwards.
     frame();
-    expect(programInventory(engine)).toEqual({ programs: before + 2, neverDrawn: before + 1, passes: { shadows: 1 } });
+    expect(programInventory(engine)).toMatchObject({ programs: before + 2, neverDrawn: before + 1, passes: { shadows: 1 } });
+  });
+
+  it("names what splits a shader into several programs: each define that differs between them, with those that split the same shaders", () => {
+    const effect = (name: string | { vertex?: string; fragment?: string; vertexSource?: string; fragmentSource?: string }, ...defines: string[]) =>
+      ({ name, defines: defines.map((define) => `#define ${define}`).join("\n") }) as unknown as Effect;
+    const unnamed = (vertexSource: string, fragmentSource: string, ...defines: string[]) => effect({ vertexSource, fragmentSource }, ...defines);
+    const variants = programVariants([
+      // A Material's colour and geometry programs: the geometry pass defines two things the colour pass does not.
+      effect("matA", "PREPASS_DEPTH_INDEX 0", "PREPASS", "NUM_BONE_INFLUENCERS 0"),
+      effect("matA", "NUM_BONE_INFLUENCERS 0"),
+      // Another's plain, instanced and instanced geometry programs: all three hold FOG, which splits nothing.
+      effect({ vertex: "matB", fragment: "matB" }, "INSTANCES", "FOG"),
+      effect({ vertex: "matB", fragment: "matB" }, "FOG"),
+      effect({ vertex: "matB", fragment: "matB" }, "INSTANCES", "FOG", "PREPASS", "PREPASS_DEPTH_INDEX 1"),
+      // A shader with one program.
+      effect("post"),
+      // Unnamed shaders are told apart by their sources, the vertex one and the fragment one: three shaders here, the
+      // first with a plain and an instanced program, the second with two that differ by a define's value alone.
+      unnamed("void main() {}", "void main() { discard; }", "INSTANCES"),
+      unnamed("void main() {}", "void main() { discard; }"),
+      unnamed("void main() { gl_Position = vec4(0.0); }", "void main() { discard; }", "NUM_BONE_INFLUENCERS 0"),
+      unnamed("void main() { gl_Position = vec4(0.0); }", "void main() { discard; }", "NUM_BONE_INFLUENCERS 4"),
+      unnamed("void main() {}", "void main() {}", "FOG"),
+    ]);
+    expect(variants).toEqual({
+      shaders: 6, mostVariants: 3,
+      // Most shaders first, then by name. INSTANCES splits matB and the first unnamed shader. The two geometry defines
+      // split the same two shaders (matA and matB): one cause, named by the shorter. The bone count splits one.
+      splitBy: [
+        { define: "INSTANCES", with: [], shaders: 2 },
+        { define: "PREPASS", with: ["PREPASS_DEPTH_INDEX"], shaders: 2 },
+        { define: "NUM_BONE_INFLUENCERS", with: [], shaders: 1 },
+      ],
+    });
+  });
+
+  it("reports what the Engine's programs are variants of with its inventory, as they are now", async () => {
+    const { engine, scene } = setup();
+    const effects = () => Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects);
+    const variants = () => {
+      const { shaders, mostVariants, splitBy } = programInventory(engine)!;
+      return { shaders, mostVariants, splitBy };
+    };
+    const before = variants();
+    expect(before).toEqual(programVariants(effects()));
+    // A program compiled since: the inventory follows the Engine's programs, not what it once computed.
+    const box = MeshBuilder.CreateBox("box", {}, scene);
+    box.material = variant(scene, "unlit", "unlit");
+    await box.material.forceCompilationAsync(box);
+    expect(variants()).toEqual(programVariants(effects()));
+    expect(variants().shaders).toBe(before.shaders + 1);
   });
 
   it("has no inventory for an Engine whose draws are not tracked", () => {

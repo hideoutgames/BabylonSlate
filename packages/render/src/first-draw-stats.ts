@@ -43,9 +43,15 @@ export type FirstDrawPasses = Partial<Record<DrawPass, number>>;
 
 /**
  * The programs an Engine holds now: how many, how many of them it has never drawn (compiled for nothing so far: each
- * cost a compile), and the drawn ones by the pass that first drew each.
+ * cost a compile), and the drawn ones by the pass that first drew each. And what they are variants of: the shaders
+ * they compile (a Material's build, a pass's own shader), the most programs one shader has, and the defines that
+ * differ between programs of one shader (`splitBy`: each cause with the shaders it splits, most first).
  */
-export type ProgramInventory = { programs: number; neverDrawn: number; passes: FirstDrawPasses };
+export type ProgramInventory = { programs: number; neverDrawn: number; passes: FirstDrawPasses } & ProgramVariants;
+
+/** A define that differs between programs of one shader, the defines that split the same shaders, and how many shaders that is. */
+export type ProgramSplit = { define: string; with: string[]; shaders: number };
+export type ProgramVariants = { shaders: number; mostVariants: number; splitBy: ProgramSplit[] };
 
 export type FirstDrawStats = {
   /** Effects first drawn while counting. */
@@ -100,7 +106,11 @@ type Session = {
 };
 
 /** `drawn`: each Effect the Engine has drawn, with the pass that first drew it. */
-type Tracker = { drawn: WeakMap<Effect, DrawPass>; created: WeakSet<Effect>; sessions: Set<Session> };
+type Tracker = {
+  drawn: WeakMap<Effect, DrawPass>; created: WeakSet<Effect>; sessions: Set<Session>;
+  /** What the programs are variants of, for the set of programs it was computed from (`programInventory`). */
+  variants?: { held: number; programs: number; value: ProgramVariants };
+};
 
 const trackers = new WeakMap<AbstractEngine, Tracker>();
 
@@ -150,19 +160,87 @@ export function trackFirstDraws(engine: AbstractEngine): void {
  * Whether some draw on `engine` has drawn with `effect` since its first view; undefined where the Engine is not
  * tracked (WebGPU, or an Engine no view was created on).
  */
+type ShaderName = string | {
+  vertex?: string; fragment?: string; vertexElement?: string; fragmentElement?: string; vertexSource?: string; fragmentSource?: string;
+} | undefined;
+/** The shader an Effect is a program of: its vertex and fragment shaders' names, or their sources where it has none. */
+function shaderOf(effect: Effect): string {
+  const name = effect.name as ShaderName;
+  if (typeof name === "string" || !name) return name ?? "";
+  return `${name.vertex ?? name.vertexElement ?? name.vertexSource ?? ""}|${name.fragment ?? name.fragmentElement ?? name.fragmentSource ?? ""}`;
+}
+
+/** An Effect's defines by name; a define without a value holds an empty one. */
+function definesOf(effect: Effect): Map<string, string> {
+  const defines = new Map<string, string>();
+  for (const match of (effect.defines ?? "").matchAll(/^#define (\w+)[ \t]*(.*)$/gm)) defines.set(match[1]!, match[2]!.trim());
+  return defines;
+}
+
+/**
+ * What `effects` are variants of. A define splits a shader when its programs do not all hold it with one value;
+ * defines that split the same shaders are one cause, named by the shortest of them (a geometry pass's variant differs
+ * from the colour pass's by a family of them).
+ */
+export function programVariants(effects: readonly Effect[]): ProgramVariants {
+  const shaders = new Map<string, Effect[]>();
+  for (const effect of effects) {
+    const shader = shaderOf(effect), programs = shaders.get(shader);
+    if (programs) programs.push(effect);
+    else shaders.set(shader, [effect]);
+  }
+  /** Per define, the shaders it splits. */
+  const split = new Map<string, string[]>();
+  let mostVariants = 0;
+  for (const [shader, programs] of shaders) {
+    mostVariants = Math.max(mostVariants, programs.length);
+    if (programs.length < 2) continue;
+    const defines = programs.map(definesOf);
+    for (const define of new Set(defines.flatMap((held) => [...held.keys()]))) {
+      const first = defines[0]!.get(define);
+      if (defines.every((held) => held.get(define) === first)) continue;
+      const splits = split.get(define);
+      if (splits) splits.push(shader);
+      else split.set(define, [shader]);
+    }
+  }
+  const causes = new Map<string, ProgramSplit>();
+  for (const [define, splits] of split) {
+    const key = splits.join("\n"), cause = causes.get(key);
+    if (!cause) causes.set(key, { define, with: [], shaders: splits.length });
+    else if (define.length < cause.define.length || (define.length === cause.define.length && define < cause.define)) {
+      cause.with.push(cause.define);
+      cause.define = define;
+    } else cause.with.push(define);
+  }
+  for (const cause of causes.values()) cause.with.sort();
+  return {
+    shaders: shaders.size, mostVariants,
+    splitBy: [...causes.values()].sort((a, b) => b.shaders - a.shaders || (a.define < b.define ? -1 : 1)),
+  };
+}
+
 /** The Engine's programs as it holds them now (`ProgramInventory`); null where its draws are not tracked (WebGPU). */
 export function programInventory(engine: AbstractEngine): ProgramInventory | null {
   const tracker = trackers.get(engine);
   const compiled = (engine as unknown as DrawEngine)._compiledEffects;
   if (!tracker || !compiled) return null;
-  const inventory: ProgramInventory = { programs: 0, neverDrawn: 0, passes: {} };
+  const counts = { programs: 0, neverDrawn: 0, passes: {} as FirstDrawPasses };
+  const effects: Effect[] = [];
+  // The set of programs, by their ids: what they are variants of is computed again only when it changed.
+  let held = 0;
   for (const key in compiled) {
-    inventory.programs += 1;
-    const pass = tracker.drawn.get(compiled[key]!);
-    if (pass === undefined) inventory.neverDrawn += 1;
-    else inventory.passes[pass] = (inventory.passes[pass] ?? 0) + 1;
+    const effect = compiled[key]!;
+    effects.push(effect);
+    held += effect.uniqueId + 1;
+    counts.programs += 1;
+    const pass = tracker.drawn.get(effect);
+    if (pass === undefined) counts.neverDrawn += 1;
+    else counts.passes[pass] = (counts.passes[pass] ?? 0) + 1;
   }
-  return inventory;
+  if (!tracker.variants || tracker.variants.held !== held || tracker.variants.programs !== effects.length)
+    tracker.variants = { held, programs: effects.length, value: programVariants(effects) };
+  return { ...counts, ...tracker.variants.value };
 }
 
 export function effectDrawnOn(engine: AbstractEngine, effect: Effect): boolean | undefined {

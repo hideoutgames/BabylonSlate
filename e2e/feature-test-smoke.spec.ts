@@ -20,9 +20,20 @@ const PLAY_MS = 3_000;
 
 type PlayHost = {
   __hapticPlayTest?: {
-    rendering(): { frameAdmission?: { worldLoading: boolean; pendingPresentations: number } } | null;
+    rendering(): {
+      frameAdmission?: { worldLoading: boolean; pendingPresentations: number };
+      programs?: { splitBy: { define: string; with: string[] }[] } | null;
+    } | null;
   };
 };
+
+/**
+ * Defines that no longer split a shader into several programs: what they chose is a bound value now, so the state
+ * they named compiles nothing when it changes mid-game. A light's class and a point light's distance output (a spot
+ * light's tile and a point light's faces draw a caster with one program), and the environment that lights a mesh (its
+ * presence, a reflection probe's box, its handedness and encoding).
+ */
+const BOUND_NOT_COMPILED = /^(SM_LIGHTTYPE_(SPOT|POINT)LIGHT|SM_USEDISTANCE|HAPTIC_ENVIRONMENT\w*)$/;
 
 /** Play's load: loading (the world presenting, or the Scene Loading dialog up for a layer), loaded, or not begun. */
 async function playLoad(page: Page): Promise<"loading" | "loaded" | "closed" | null> {
@@ -49,8 +60,13 @@ test("the Feature Test main scene loads in the editor and in Play without sessio
     started ||= outcome === "loading";
     return outcome === "closed" || (started && outcome === "loaded");
   }, { message: "Play finishes the load", timeout: PLAY_LOAD_MS }).toBe(true);
+  let splitting: string[] | null = null;
   if (outcome === "loaded") {
     await page.waitForTimeout(PLAY_MS);
+    // The starter draws every kind of light, a sky, reflection probes and Materials of every kind: what splits its
+    // shaders into several programs is what would split a game's.
+    splitting = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.programs?.splitBy
+      .flatMap((split) => [split.define, ...split.with]) ?? null);
     // Software GL draws this scene at a frame or two a second, too slow for a click's stability check.
     const close = page.getByTestId("play-overlay-close");
     if (await close.count()) await close.dispatchEvent("click");
@@ -60,6 +76,8 @@ test("the Feature Test main scene loads in the editor and in Play without sessio
   await page.getByTestId("preview-session-report").waitFor({ state: "visible", timeout: 5_000 }).catch(() => {});
   expect(await sessionErrors(page)).toEqual([]);
   expect(outcome, "Play finishes the load before it closes").toBe("loaded");
+  expect(splitting, "Play reports what splits its shaders into several programs").not.toBeNull();
+  expect(splitting!.filter((define) => BOUND_NOT_COMPILED.test(define)), "a bound value compiles no program of its own").toEqual([]);
 });
 
 /** The open session report's error rows, each group with errors expanded to show them. */
