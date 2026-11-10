@@ -31,7 +31,7 @@ import {
 import { joystick2DMesh } from "./joystick2d-mesh";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
-import { text2DBitmapBytes, text2DRedraw } from "./text2d-mesh";
+import { text2DBitmapBytes, text2DRedraw, type Text2DRedraw } from "./text2d-mesh";
 import { SPRING_ARM_MESH_KIND } from "./spring-arm";
 import {
   partsNeedOrigin,
@@ -214,7 +214,12 @@ function redrawTextInPlace(scene: Scene, binding: SnapshotSceneBinding, command:
     materialPreparationRestarts(binding).has(slotId)) return false;
   if (!sameButText(current, command)) return false;
 
-  const redraws: Array<() => void> = [];
+  const redraws: Text2DRedraw[] = [];
+  /** Gives up the redraws planned so far: the caller rebuilds instead. */
+  const rebuild = (): false => {
+    for (const redraw of redraws) redraw.discard();
+    return false;
+  };
   // What stays alive while a text redraws: the bitmap texts the visual holds. A rebuild holds a new copy of each as well.
   const limits = { bitmapLimits: { retainedBytes: text2DBitmapBytes(visual) } };
   /** Plans one text's redraw from the properties a rebuild would build it from; false when the text must be rebuilt. */
@@ -234,16 +239,16 @@ function redrawTextInPlace(scene: Scene, binding: SnapshotSceneBinding, command:
       for (let index = 0; index < command.parts!.length; index++) {
         const part = command.parts![index]!;
         if (part.text2d && current.parts![index]!.text2d?.text !== part.text2d.text &&
-          !plan(components?.get(part.componentId), part.meshKind, part.text2d)) return false;
+          !plan(components?.get(part.componentId), part.meshKind, part.text2d)) return rebuild();
       }
     }
   } catch {
     // An allocation refusal is the rebuild's to meet and report.
-    return false;
+    return rebuild();
   }
   if (redraws.length === 0) return false;
   beginAssignMesh(scene, binding, command);
-  for (const redraw of redraws) redraw();
+  for (const redraw of redraws) redraw.apply();
   recordBuiltVisual(binding, command);
   binding.onVisualChanged?.(slotId);
   return true;

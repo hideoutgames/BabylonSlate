@@ -438,11 +438,14 @@ function drawnText(root: Mesh) {
   };
 }
 
-/** A text's atlas texture, its size and the bitmap bytes the text reports for it. */
-function atlasOf(root: Mesh) {
-  const texture = unlitBinding(root.getChildMeshes()[0]!).texture!;
-  return { texture, size: texture.getSize(), bytes: (root.metadata as { text2dBitmapBytes?: number }).text2dBitmapBytes };
-}
+/** The atlas page a text's first batch samples. */
+const atlasPage = (root: Mesh) => unlitBinding(root.getChildMeshes()[0]!).texture!;
+
+/** The Scene's glyph atlas pages. */
+const atlasPages = (host: { textures: Array<{ name: string }> }) => host.textures.filter((texture) => texture.name.startsWith("text2d-glyph-atlas:"));
+
+/** `count` characters no other test text draws, each a glyph of its own, from `first` on. */
+const distinctGlyphs = (count: number, first = 0) => Array.from({ length: count }, (_, index) => String.fromCodePoint(0x4e00 + first + index)).join("");
 
 describe("text2DRedraw", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> = [];
@@ -470,6 +473,7 @@ describe("text2DRedraw", () => {
     { title: "another colour", from: { text: "HI", color: [1, 0, 0] }, to: { text: "HI", color: [0, 1, 0] } },
     { title: "another wrap box", from: { text: "AB AB", wrapWidth: 400, wrapHeight: 200 }, to: { text: "AB AB", wrapWidth: 40, wrapHeight: 90 } },
     { title: "leading spaces", from: { text: "GO" }, to: { text: "  GO" } },
+    { title: "many more characters than it drew", from: { text: "A" }, to: { text: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" } },
   ])("draws $title as a new text would, with the meshes and atlas it has", ({ from, to }) => {
     const host = scene();
     const text = createText2DMesh(host, "label", { size: 32, ...from });
@@ -486,7 +490,7 @@ describe("text2DRedraw", () => {
 
     const redraw = text2DRedraw(text, { size: 32, ...to });
     expect(redraw).not.toBeNull();
-    redraw!();
+    redraw!.apply();
 
     expect([text, ...text.getChildMeshes()]).toEqual(parts);
     expect(text.getChildMeshes().map((mesh) => unlitBinding(mesh).texture)).toEqual(atlases);
@@ -503,17 +507,30 @@ describe("text2DRedraw", () => {
     expect(drawn.batches[0]!.texels.every((texels) => texels.slice(2).some((value) => value > 0))).toBe(true);
   });
 
-  it("keeps the size of its atlas while the new glyphs fit it, and reports the bytes it holds", () => {
-    const text = createText2DMesh(scene(), "label", { text: "LEVEL 12", size: 32 });
-    const before = atlasOf(text);
-    text2DRedraw(text, { text: "L 1", size: 32 })!();
-    const after = atlasOf(text);
-    expect(after.texture).toBe(before.texture);
-    expect(after.size).toEqual(before.size);
-    expect(after.bytes).toBe(before.size.width * before.size.height * 8);
-    // A text built for the three glyphs alone owns a smaller atlas.
-    const fresh = atlasOf(createText2DMesh(scene(), "label", { text: "L 1", size: 32 }));
-    expect(fresh.size.width * fresh.size.height).toBeLessThan(before.size.width * before.size.height);
+  it("reports the bytes of the glyphs it holds", () => {
+    const bytes = (root: Mesh) => (root.metadata as { text2dBitmapBytes?: number }).text2dBitmapBytes;
+    // At size 32 a glyph of the bundled face is 27 x 37 texels, held on the CPU and the GPU.
+    const text = createText2DMesh(scene(), "label", { text: "L 1", size: 32 });
+    expect(bytes(text)).toBe(2 * 27 * 37 * 8);
+    text2DRedraw(text, { text: "LEVEL 12", size: 32 })!.apply();
+    expect(bytes(text)).toBe(5 * 27 * 37 * 8);
+  });
+
+  it("samples another atlas page when its new glyphs find no room on the one it drew from", () => {
+    const host = scene();
+    const text = createText2DMesh(host, "label", { text: "AB", size: 32 });
+    // A page holds 234 glyphs of this size: with these 232 the first is full, and every glyph on it is held.
+    createText2DMesh(host, "filler", { text: distinctGlyphs(232), size: 32 });
+    const batch = text.getChildMeshes()[0] as Mesh;
+    const first = atlasPage(text);
+    expect(atlasPages(host)).toHaveLength(1);
+
+    text2DRedraw(text, { text: "CD", size: 32 })!.apply();
+
+    expect(text.getChildMeshes()).toEqual([batch]);
+    expect(atlasPages(host)).toHaveLength(2);
+    expect(atlasPage(text)).not.toBe(first);
+    expect(drawnText(text).batches[0]!.texels).toEqual(drawnText(createText2DMesh(scene(), "label", { text: "CD", size: 32 })).batches[0]!.texels);
   });
 
   it("redraws MSDF glyphs from the Font's atlas, and leaves a text whose batches change to a rebuild", () => {
@@ -528,7 +545,7 @@ describe("text2DRedraw", () => {
     const text = createText2DMesh(scene(), "label", msdf("AB"), assets);
     const batches = text.getChildMeshes();
 
-    text2DRedraw(text, msdf("BBA"), assets)!();
+    text2DRedraw(text, msdf("BBA"), assets)!.apply();
 
     expect(text.getChildMeshes()).toEqual(batches);
     // A is the atlas's first 16 texels of 64 and B the next, both in its top row.
@@ -547,7 +564,7 @@ describe("text2DRedraw", () => {
     // Play freezes a slot's root at the pose of its last snapshot, and a frame has culled the text there since.
     text.freezeWorldMatrix();
     text.getBoundingInfo();
-    text2DRedraw(text, { text: "AAAA", size: 32 }, undefined, { metrics: fixedMetrics() })!();
+    text2DRedraw(text, { text: "AAAA", size: 32 }, undefined, { metrics: fixedMetrics() })!.apply();
     // Four glyphs of 0.16 by 0.32 world units, centred on the text.
     const plane = text.getBoundingInfo().boundingBox;
     expect(plane.minimumWorld.asArray()).toEqual([expect.closeTo(2.68, 5), expect.closeTo(1.84, 5), 0]);
@@ -560,7 +577,7 @@ describe("text2DRedraw", () => {
 
   it("re-poses the glyphs it draws now when an overlay box counter-scales them", () => {
     const text = createText2DMesh(scene(), "label", { text: "AB", size: 32 }, undefined, { metrics: fixedMetrics() });
-    text2DRedraw(text, { text: "ABAB", size: 32 }, undefined, { metrics: fixedMetrics() })!();
+    text2DRedraw(text, { text: "ABAB", size: 32 }, undefined, { metrics: fixedMetrics() })!.apply();
     const batch = text.getChildMeshes()[0] as Mesh;
     (batch.metadata as { text2dCounterScale(x: number, y: number): void }).text2dCounterScale(0.5, 1);
     const positions = Array.from(batch.getVerticesData("position") ?? []);
@@ -579,7 +596,6 @@ describe("text2DRedraw", () => {
     { title: "a text in another font", from: { text: "HI" }, to: { text: "HO", fontAssetGuid: "font-1" } },
     { title: "a text that had no glyphs", from: { text: "" }, to: { text: "HO" } },
     { title: "a text left without glyphs", from: { text: "HI" }, to: { text: "" } },
-    { title: "a text whose glyphs need a larger atlas", from: { text: "A" }, to: { text: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" } },
   ])("leaves $title to a rebuild, untouched", ({ from, to, options }) => {
     const text = createText2DMesh(scene(), "label", { size: 32, ...from }, undefined, options);
     const before = drawnText(text);
@@ -611,12 +627,14 @@ describe("text2DRedraw", () => {
     try {
       const text = createText2DMesh(scene(), "label", { text: "AB", size: 16 });
       rasterized = 0;
-      // Twelve glyphs do not fit the atlas built for two.
-      expect(text2DRedraw(text, { text: "ABCDEFGHIJKL", size: 16 })).toBeNull();
+      // An underline is a plane of its own, which the text does not have.
+      expect(text2DRedraw(text, { text: "CDEFGH", size: 16, underline: true })).toBeNull();
       expect(rasterized).toBe(0);
-      // Two other glyphs fit it, and are rasterized for the redraw.
-      expect(text2DRedraw(text, { text: "DC", size: 16 })).not.toBeNull();
+      // Two glyphs it has not drawn are rasterized for a redraw.
+      const redraw = text2DRedraw(text, { text: "DC", size: 16 });
+      expect(redraw).not.toBeNull();
       expect(rasterized).toBe(2);
+      redraw!.discard();
     } finally {
       if (previous === undefined) Reflect.deleteProperty(globalThis, "document");
       else (globalThis as { document: unknown }).document = previous;
@@ -629,6 +647,172 @@ describe("text2DRedraw", () => {
     const limits = { bitmapLimits: { maxWorkingBytes: 64 } };
     expect(() => createText2DMesh(host, "other", { text: "HO", size: 32 }, undefined, limits)).toThrow(/working-set budget/);
     expect(() => text2DRedraw(text, { text: "HO", size: 32 }, undefined, limits)).toThrow(/working-set budget/);
+  });
+});
+
+describe("2D Texts in one Scene", () => {
+  const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> = [];
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    while (handles.length > 0) {
+      const handle = handles.pop();
+      handle?.scene.dispose();
+      handle?.engine.dispose();
+    }
+  });
+
+  function scene() {
+    const handle = createTestEngine();
+    handles.push(handle);
+    return handle.scene;
+  }
+  const label = (host: ReturnType<typeof scene>, text: string, size = 32) => createText2DMesh(host, "label", { text, size });
+  /** The texels each glyph of a text samples, as a text alone in its Scene draws them. */
+  const alone = (text: string, size = 32) => drawnText(label(scene(), text, size)).batches.map((batch) => batch.texels);
+  const texels = (root: Mesh) => drawnText(root).batches.map((batch) => batch.texels);
+
+  it("sample one atlas texture, each its own glyphs", () => {
+    const host = scene();
+    const score = label(host, "SCORE 10");
+    const lives = label(host, "LIVES 3");
+    expect(atlasPages(host)).toHaveLength(1);
+    expect(atlasPage(lives)).toBe(atlasPage(score));
+    // Texts that bind the same values can share a draw.
+    expect(unlitBinding(lives.getChildMeshes()[0]!)).toEqual(unlitBinding(score.getChildMeshes()[0]!));
+    expect(texels(score)).toEqual(alone("SCORE 10"));
+    expect(texels(lives)).toEqual(alone("LIVES 3"));
+  });
+
+  it("keep a glyph one of them still draws when the other is disposed or redrawn", () => {
+    const host = scene();
+    const first = label(host, "AB");
+    const second = label(host, "BC");
+    const third = label(host, "CA");
+    first.dispose();
+    text2DRedraw(third, { text: "XY", size: 32 })!.apply();
+    // Glyphs that fill what is left of the page: nothing the second text draws may give its room up.
+    label(host, distinctGlyphs(230));
+    expect(texels(second)).toEqual(alone("BC"));
+    expect(texels(third)).toEqual(alone("XY"));
+  });
+
+  it.each([
+    { title: "a redraw replaced", settle: (redraw: { apply(): void; discard(): void }) => redraw.apply(), drawn: "CD" },
+    { title: "an abandoned redraw asked for", settle: (redraw: { apply(): void; discard(): void }) => redraw.discard(), drawn: "AB" },
+  ])("let go of the glyphs $title", ({ settle, drawn }) => {
+    const host = scene();
+    const text = label(host, "AB");
+    settle(text2DRedraw(text, { text: "CD", size: 32 })!);
+    // A page holds 234 glyphs: these 232 fit beside the two the text draws only in the room of the two it does not.
+    label(host, distinctGlyphs(232));
+    expect(atlasPages(host)).toHaveLength(1);
+    expect(texels(text)).toEqual(alone(drawn));
+  });
+
+  it("take the room of glyphs no text draws any more before opening another page", () => {
+    const host = scene();
+    // 234 glyphs of this size fill a page.
+    const filler = label(host, distinctGlyphs(234));
+    filler.dispose();
+    const next = label(host, distinctGlyphs(234, 1000));
+    expect(atlasPages(host)).toHaveLength(1);
+    expect(texels(next)).toEqual(alone(distinctGlyphs(234, 1000)));
+  });
+
+  it("open another page while every glyph on the first is drawn, and draw a text from each page it has glyphs on", () => {
+    const host = scene();
+    const held = label(host, distinctGlyphs(200));
+    // 34 of these fit the first page; the other 66 need a second.
+    const spanning = label(host, distinctGlyphs(100, 1000));
+    expect(atlasPages(host)).toHaveLength(2);
+    expect(spanning.getChildMeshes().map((batch) => unlitBinding(batch).texture)).toEqual(atlasPages(host));
+    expect((spanning.getChildMeshes() as Mesh[]).map((batch) => batch.getTotalVertices() / 4)).toEqual([34, 66]);
+    expect(texels(held)).toEqual(alone(distinctGlyphs(200)));
+    expect(texels(spanning).flat()).toEqual(alone(distinctGlyphs(100, 1000)).flat());
+  });
+
+  it("give a glyph larger than a page a page of its own size", () => {
+    const sized = () => { const host = scene(); host.getEngine().getCaps().maxTextureSize = 2048; return host; };
+    // At size 700 a glyph of the bundled face is 502 x 702 texels.
+    const large = label(sized(), "A", 700);
+    expect(atlasPage(large).getSize()).toEqual({ width: 512, height: 1024 });
+    expect(texels(large)).toEqual(drawnText(label(sized(), "A", 700)).batches.map((batch) => batch.texels));
+    expect(texels(large)[0]![0]!.slice(0, 2)).toEqual([504, 704]);
+  });
+
+  it("draw a glyph anew once a font face has loaded, while a text built before keeps the glyph it drew", () => {
+    // A canvas whose glyphs are one stroke, at the column `stroke` names: another column stands for another font.
+    let stroke = 3;
+    const fontsLoaded: Array<() => void> = [];
+    const previous = (globalThis as { document?: unknown }).document;
+    (globalThis as { document: unknown }).document = {
+      fonts: { addEventListener: (_type: string, listener: () => void) => { fontsLoaded.push(listener); } },
+      createElement: () => ({
+        width: 1,
+        height: 1,
+        getContext: () => ({
+          font: "", textBaseline: "top", textAlign: "left", fillStyle: "", strokeStyle: "", lineJoin: "", miterLimit: 0, lineWidth: 0,
+          measureText: () => ({ width: 16, actualBoundingBoxAscent: 16, actualBoundingBoxDescent: 4 }),
+          clearRect() {},
+          fillText() {},
+          strokeText() {},
+          getImageData: (_x: number, _y: number, width: number, height: number) => {
+            const data = new Uint8ClampedArray(width * height * 4);
+            for (let y = 6; y < 18; y++) data[(y * width + stroke) * 4 + 3] = 255;
+            return { data };
+          },
+        }),
+      }),
+    };
+    try {
+      const host = scene();
+      /** The columns of a text's first glyph that hold ink, within its cell. */
+      const inked = (root: Mesh) => {
+        const [width, , ...texels] = drawnText(root).batches[0]!.texels[0]!;
+        const columns = new Set<number>();
+        for (let index = 3; index < texels.length; index += 4) if (texels[index]! > 0) columns.add((index >> 2) % width! - 1);
+        return [...columns];
+      };
+      const before = label(host, "A");
+      expect(inked(before)).toEqual([3]);
+      stroke = 9;
+      for (const listener of fontsLoaded) listener();
+      const after = label(host, "A");
+      expect(inked(after)).toEqual([9]);
+      expect(inked(before)).toEqual([3]);
+    } finally {
+      if (previous === undefined) Reflect.deleteProperty(globalThis, "document");
+      else (globalThis as { document: unknown }).document = previous;
+    }
+  });
+
+  it("upload a page once a frame, and only when a text added glyphs to it", () => {
+    const host = scene();
+    const first = label(host, "AB");
+    const upload = vi.spyOn(atlasPage(first) as unknown as { update(data: ArrayBufferView): void }, "update");
+    const frame = () => { host.onBeforeRenderObservable.notifyObservers(host); return upload.mock.calls.length; };
+    expect(frame()).toBe(1);
+    label(host, "CD");
+    label(host, "EF");
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(frame()).toBe(2);
+    expect(frame()).toBe(2);
+    // Every glyph of this text is on the page already.
+    label(host, "FACE");
+    expect(frame()).toBe(2);
+  });
+
+  it("upload a page before the frame's other before-render work, which may draw the Scene", () => {
+    const host = scene();
+    const uploads: { count: () => number } = { count: () => 0 };
+    let uploadedBefore = -1;
+    // Registered before the Scene has a text, as a render target capture's draw is.
+    host.onBeforeRenderObservable.add(() => { uploadedBefore = uploads.count(); });
+    const upload = vi.spyOn(atlasPage(label(host, "AB")) as unknown as { update(data: ArrayBufferView): void }, "update");
+    uploads.count = () => upload.mock.calls.length;
+    host.onBeforeRenderObservable.notifyObservers(host);
+    expect(uploadedBefore).toBe(1);
   });
 });
 
@@ -700,6 +884,20 @@ describe("a Play 2D text a command rewrites", () => {
     expect(drawnText(root)).toEqual(drawnText(built.binding.meshes.get(4)!));
     expect(stamps(root)).toEqual({ pickable: true, actor: "score", rich: false, glyphsPickable: false });
     expect(binding.text2dProps.get(4)?.text).toBe("SCORE 25");
+  });
+
+  it("redraws a spawned label whose Begin Play writes a longer text, with glyphs it had not drawn", () => {
+    const { scene, binding } = play();
+    applyAssignMesh(scene, binding, label(says("Card A")));
+    const root = binding.meshes.get(4)!;
+    const glyphs = root.getChildMeshes();
+    applyAssignMesh(scene, binding, label(says("Card A (slot 0)")));
+    expect(binding.meshes.get(4)).toBe(root);
+    expect(root.getChildMeshes()).toEqual(glyphs);
+    expect(reads(root)).toBe("Card A (slot 0)");
+    const built = play();
+    applyAssignMesh(built.scene, built.binding, label(says("Card A (slot 0)")));
+    expect(drawnText(root)).toEqual(drawnText(built.binding.meshes.get(4)!));
   });
 
   it("keeps the redrawn text for a repeated command, and redraws it for the next", () => {
@@ -776,6 +974,28 @@ describe("a Play 2D text a command rewrites", () => {
     const built = play();
     applyAssignMesh(built.scene, built.binding, hud("25"));
     expect(drawnText(score)).toEqual(drawnText(built.scene.getMeshByName("actor-7|score") as Mesh));
+  });
+
+  it("holds no glyph for a redraw it gave up when another text of the actor had to be rebuilt", () => {
+    const part = (componentId: string, y: number, text: string, underline = false) => ({
+      componentId, meshKind: "2dtext", meshAssetGuid: null, parentId: null,
+      position: [0, y, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number],
+      scale: [1, 1, 1] as [number, number, number], text2d: { ...says(text), underline },
+    });
+    // The underlined score cannot redraw, so the title's planned redraw is given up and the actor rebuilt.
+    const hud = (title: string, score: string) => ({
+      type: "assignMesh" as const, slotId: 7, meshAssetGuid: null, meshKind: "2dtext", actorGuid: "hud", text2d: says(title),
+      parts: [part("title", 1, title), part("score", -1, score, true)],
+    });
+    const { scene, binding } = play();
+    applyAssignMesh(scene, binding, hud("AB", "1"));
+    const built = binding.meshes.get(7);
+    applyAssignMesh(scene, binding, hud("CD", "2"));
+    expect(binding.meshes.get(7)).not.toBe(built);
+    binding.meshes.get(7)!.dispose();
+    // Nothing is drawn any more: 234 new glyphs fill one page, which they could not beside a glyph still held.
+    createText2DMesh(scene, "filler", { text: Array.from({ length: 234 }, (_, index) => String.fromCodePoint(0x4e00 + index)).join(""), size: 32 });
+    expect(scene.textures.filter((texture) => texture.name.startsWith("text2d-glyph-atlas:"))).toHaveLength(1);
   });
 
   it("applies the rest of a refused assignment when a later command changes only its text", () => {

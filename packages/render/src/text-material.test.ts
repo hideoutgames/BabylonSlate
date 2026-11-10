@@ -41,7 +41,7 @@ describe("Text Materials", () => {
     expect(lowered.plan.outputs.color).toEqual({ kind: "constant", type: "vec4", value: [1, 1, 1, 1] });
   });
 
-  it("keeps per-text atlases when two labels share a frozen Text Material", async () => {
+  it("draws each label's own glyphs when two labels share a frozen Text Material", async () => {
     const { scene, assets, library, document } = host();
     scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
     const appear = { appearModes: ["fade"], appearInterval: 0, appearTransition: "linear" };
@@ -75,6 +75,7 @@ describe("Text Materials", () => {
     const samples: unknown[] = [];
     const opacity: number[] = [];
     const tints: number[][] = [];
+    const rects: number[][] = [];
     const effects = new Set<Effect>();
     for (const glyph of [firstGlyph, secondGlyph, firstGlyph, secondGlyph]) {
       const effect = glyph.subMeshes[0]!.effect!;
@@ -93,15 +94,19 @@ describe("Text Materials", () => {
         const setFloat4 = effect.setFloat4.bind(effect);
         vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => {
           if (name.startsWith("overlayVisualTint")) tints.push([x, y, z, w]);
+          if (name.startsWith("textAtlasRect")) rects.push([x, y, z, w]);
           return setFloat4(name, x, y, z, w);
         });
       }
       material.bindForSubMesh(glyph.computeWorldMatrix(true), glyph, glyph.subMeshes[0]!);
       expect(samples.at(-1)).toBe(textMaterialGlyphBinding(glyph)!.atlas);
+      expect(rects.at(-1)).toEqual([...textMaterialGlyphBinding(glyph)!.atlasRect]);
       expect(opacity.at(-1)).toBe(glyph === firstGlyph ? 0.25 : 0.75);
       expect(tints.at(-1)).toEqual(glyph === firstGlyph ? [1, 0.5, 0.25, 0.25] : [0.25, 1, 0.5, 0.8]);
     }
-    expect(textMaterialGlyphBinding(firstGlyph)!.atlas).not.toBe(textMaterialGlyphBinding(secondGlyph)!.atlas);
+    // Both labels' glyphs are on one atlas page, each in its own rectangle.
+    expect(textMaterialGlyphBinding(firstGlyph)!.atlas).toBe(textMaterialGlyphBinding(secondGlyph)!.atlas);
+    expect(textMaterialGlyphBinding(firstGlyph)!.atlasRect).not.toEqual(textMaterialGlyphBinding(secondGlyph)!.atlasRect);
     first.dispose();
     expect(secondGlyph.material).toBe(material);
     expect(scene.textures).toContain(textMaterialGlyphBinding(secondGlyph)!.atlas);
