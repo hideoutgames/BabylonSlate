@@ -249,6 +249,25 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(atlases).toEqual([["hapticShadowAtlas", atlas], ["hapticShadowAtlasDepth", atlas], ["hapticShadowAtlas", atlas], ["hapticShadowAtlasDepth", atlas]]);
   });
 
+  it("binds the Scene's light and cluster blocks at every draw of a frozen Material, a second mesh's that shares its program too", async () => {
+    const { scene } = host();
+    const { mesh, material } = await litBox(scene);
+    await drawnDefines(scene, mesh, material);
+    const second = mesh.clone("second");
+    await vi.waitFor(() => expect(material.isReadyForSubMesh(second, second.subMeshes[0]!)).toBe(true));
+    const effect = mesh.subMeshes[0]!.effect!;
+    expect(second.subMeshes[0]!.effect).toBe(effect);
+    material.freeze();
+    const bound: string[] = [];
+    vi.spyOn(effect, "bindUniformBuffer").mockImplementation((_buffer, name) => { bound.push(name); });
+    // The first draw binds everything. Babylon skips the next one's bindings, as it shares the Material and the
+    // Effect: on WebGPU that draw's own context would keep the buffers it bound last, which the blocks have left.
+    material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
+    bound.length = 0;
+    material.bindForSubMesh(second.computeWorldMatrix(true), second, second.subMeshes[0]!);
+    expect(bound.filter((name) => name.startsWith("Haptic")).sort()).toEqual(["HapticClusters", "HapticLights"]);
+  });
+
   it("reads the atlas plainly on WebGL2 through a sampler object without compare on its own unit, which a texture bound there next does without", async () => {
     const { engine, scene } = host();
     const { mesh, material } = await litBox(scene);

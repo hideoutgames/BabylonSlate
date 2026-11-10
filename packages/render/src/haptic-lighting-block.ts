@@ -270,12 +270,19 @@ export class HapticLightingBlock extends NodeMaterialBlock {
   }
 
   /**
-   * The drawn mesh's own terms: whether it receives shadows (the atlas's and the screen shadows'). Babylon skips a frozen
-   * Material's bindings for a draw that shares the previous draw's Material and Effect, so the compiler also calls this
-   * for every draw of a frozen Material (`material-compiler.ts`); otherwise one mesh's Receive Shadows leaks to the next.
+   * What every draw binds for itself. Babylon skips a frozen Material's bindings for a draw that shares the previous
+   * draw's Material and Effect, so the compiler also calls this for every draw of a frozen Material
+   * (`material-compiler.ts`).
+   * - The drawn mesh's own terms: whether it receives shadows (the atlas's and the screen shadows'); otherwise one
+   *   mesh's Receive Shadows leaks to the next.
+   * - The Scene's light and cluster blocks. On WebGPU a draw's uniform buffers belong to its own draw context, which
+   *   would keep the buffer it bound last; a block written again in a frame (a caster that leaves moves the shadow
+   *   tiles) has by then moved to another, and the draw would light from what the old one now holds.
    */
   bindReceiver(effect: Effect, mesh: AbstractMesh): void {
     const scene = mesh.getScene();
+    bindHapticLights(scene, effect);
+    bindHapticClusters(scene, effect);
     // `waterdebug shadows off`: water receives none, to measure what they cost on it.
     const receives = mesh.receiveShadows && !(isWaterSurfaceMesh(mesh) && waterDebugOff(scene, "shadows"));
     effect.setFloat("hapticShadowReceiver", receives ? 1 : 0);
@@ -290,8 +297,6 @@ export class HapticLightingBlock extends NodeMaterialBlock {
   override bind(effect: Effect, _nodeMaterial: NodeMaterial, mesh?: Mesh): void {
     if (!mesh) return;
     const scene = mesh.getScene();
-    bindHapticLights(scene, effect);
-    bindHapticClusters(scene, effect);
     effect.setTexture("hapticAreaLtcSampler", areaLightLtcTexture(scene));
     effect.setTexture("hapticAreaEmissionSampler", areaEmissionTexture(scene));
     effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS, shadowAtlasTexture(scene));
