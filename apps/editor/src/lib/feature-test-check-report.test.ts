@@ -38,7 +38,10 @@ describe("formatFeatureTestCheckReport", () => {
         editor: { status: "ready", ms: 900, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 3000, phase: null, frames: { frames: 300, durationMs: 5000, fps: 60, medianMs: 16.7, meanMs: 5000 / 300, vsync: [1, 0, 0, 0], p95Ms: 17, maxMs: 25, stalls: 0 }, runtimeFps: 60,
           snapshot: { drawCalls: 42, meshes: 80, textures: 30, accountedBytes: 8 * 1048576, rendering },
-          counters: { draws: null, cpuMs: null, gpuMs: null, drawPasses: { objects: 10, shadows: 0, post: 2, layers: 30 } },
+          counters: {
+            draws: { median: 400, min: 390, max: 410, samples: 10 }, cpuMs: { median: 40, min: 38, max: 44, samples: 10 }, gpuMs: null,
+            drawPasses: { objects: 10, shadows: 0, post: 2, layers: 30 }, cpuMsWithoutDraws: { median: 12, min: 11, max: 13, samples: 4 },
+          },
           presentation: {
             frames: { drawn: 280, held: 4, skipped: 16, heldReasons: { "Render pipelines are compiling.": 1, "Scene is not ready to render.": 3 } },
             contextLosses: 0, imageBlack: [0, 0.031, null],
@@ -71,6 +74,8 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  Draws per pass: layers 30, objects 10, post 2");
     expect(lines).toContain("  Programs: 120 on the Engine · 35 never drawn · 70 shaders, at most 6 programs of one · by first pass: objects 50, shadows 20, layers 15");
     // What the further programs are for: the geometry pass's defines (two more with PREPASS) split 30 shaders, instancing 4.
+    // 12 of a frame's 40 ms remain without its draws: 30%. Over 400 draw calls that is 30 µs each, and 70 µs for the draw.
+    expect(lines).toContain("  CPU without draws: 12.0 ms of 40.0 ms a frame (30%); draws, clears and uniform uploads take the rest · per draw call 30 µs without and 70 µs for the draw");
     // The eight that split most shaders are named and the rest counted.
     expect(lines).toContain("  Shaders split by define: PREPASS (+2) 30 · INSTANCES 4 · A 1 · B 1 · C 1 · D 1 · E 1 · F 1 · 2 more");
     // The passes that made the first draws, the most first.

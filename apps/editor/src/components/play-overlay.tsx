@@ -1238,6 +1238,8 @@ function PlayOverlayView({
         rendering: () => ReturnType<PlaySession["handle"]["renderDiagnostics"]> | null;
         /** The next presented frame as the player sees it, downsampled (`samplePresentedImage`). */
         presentedImage: () => ReturnType<PlaySession["handle"]["samplePresentedImage"]>;
+        /** Turns the game view's draws into no-ops or back, as a Check's measurement does (`stubWebGlDraws`). */
+        stubWebGlDraws: (on: boolean) => boolean;
         scalability: () => ReturnType<PlaySession["handle"]["scalabilityStatus"]>;
         renderTasks: () => string[];
         shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
@@ -1255,6 +1257,7 @@ function PlayOverlayView({
       actorPositions: () => sessionRef.current?.lastActorPositions() ?? [],
       rendering: () => sessionRef.current?.handle.renderDiagnostics() ?? null,
       presentedImage: () => sessionRef.current?.handle.samplePresentedImage() ?? Promise.resolve(null),
+      stubWebGlDraws: (on) => sessionRef.current?.handle.stubWebGlDraws(on) ?? false,
       scalability: () => sessionRef.current?.handle.scalabilityStatus(),
       renderTasks: () => sessionRef.current?.handle.renderTaskNames() ?? [],
       shadowDiagnostics: () => {
@@ -1343,6 +1346,7 @@ function PlayOverlayView({
       .filter((entry) => entry.severity === "error" || entry.severity === "warning" || entry.severity === "warn")
       .map(({ severity, message }) => ({ severity, message })),
     samplePresentedImage: () => sessionRef.current?.handle.samplePresentedImage() ?? Promise.resolve(null),
+    stubWebGlDraws: (on) => sessionRef.current?.handle.stubWebGlDraws(on) ?? false,
     executeConsoleCommand: (line) => sessionRef.current?.executeConsoleCommand(line)
       ?? Promise.resolve({ success: false, output: "Play is not running." }),
     stop: () => finishSessionRef.current(),

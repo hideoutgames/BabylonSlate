@@ -160,6 +160,12 @@ export interface EngineHandle {
    * where the canvas cannot be read.
    */
   samplePresentedImage: () => Promise<PresentedImageSample | null>;
+  /**
+   * A Check's measurement (`webgl-draw-stub.ts`): turns the Engine's draws, clears and uniform uploads into no-ops
+   * (`true`) or back, so a frame's CPU time without them can be read beside its normal one; whether it did. False on
+   * WebGPU and after a context loss or disposal, which end it.
+   */
+  stubWebGlDraws: (on: boolean) => boolean;
   /** Explicit next coherent game presentation; rejects concurrent profiling. */
   captureFrame: () => Promise<RenderFrameReport>;
   cancelFrameCapture: (reason?: string) => void;

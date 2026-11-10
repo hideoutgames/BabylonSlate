@@ -759,6 +759,12 @@ export interface PlayCounters {
   gpuMs: CounterStats | null;
   /** Each pass's median draw calls per frame while sampled (`RenderDiagnostics.drawPasses`); absent where unattributed. */
   drawPasses?: Partial<Record<DrawPass, number>> | null;
+  /**
+   * A frame's CPU time with its draws, clears and uniform uploads turned into no-ops (`PlayProbe.stubWebGlDraws`),
+   * sampled right after `cpuMs`: what the engine's own JavaScript and state setting cost, so the rest of `cpuMs` is
+   * what the draws cost on this thread. Absent or null where the view cannot be stubbed (WebGPU).
+   */
+  cpuMsWithoutDraws?: CounterStats | null;
 }
 
 export interface FrameStats {
@@ -1184,6 +1190,8 @@ async function checkScene(
     result.play.work = sampledWork && before && drawnAfter ? { drawn: drawnAfter.drawn - before.drawn, work: sampledWork } : null;
     result.play.presentation = await samplePresentation(play, before, deps, signal);
     result.problems.push(...presentationProblems(result.play.presentation));
+    deps.onProgress?.(`${scene.name}: measuring Play without draws`);
+    result.play.counters.cpuMsWithoutDraws = await sampleCpuWithoutDraws(play, deps, signal);
     const run = (line: string) => runCommand(play, line, deps, signal, limits);
     if (mode === "benchmark" || mode === "breakdown" || mode === "profile") {
       result.play.firstDrawsBeforeSweep = play.snapshot().rendering?.firstDraws ?? null;
@@ -1789,6 +1797,29 @@ async function warmUp(
     if (!steady || stable || value === null || window >= bounds.windows || deps.now() - started >= bounds.ms) return;
     previous = value;
   }
+}
+
+/** How many frames' CPU times a stubbed sample reads, half a second apart, after half a second for the first stubbed frames to end. */
+const STUBBED_CPU_READS = 4;
+
+/**
+ * A frame's CPU time while the game view's draws are stubbed (`PlayProbe.stubWebGlDraws`); null where they cannot be.
+ * Each read follows half a second of stubbed frames, so none is of a frame that still drew. The canvas shows no new
+ * frame meanwhile, and the view draws again however the sample ends.
+ */
+async function sampleCpuWithoutDraws(play: PlayProbe, deps: FeatureTestCheckDeps, signal: AbortSignal): Promise<CounterStats | null> {
+  if (!play.stubWebGlDraws(true)) return null;
+  const cpu: number[] = [];
+  try {
+    for (let read = 0; read < STUBBED_CPU_READS; read++) {
+      await deps.sleep(500, signal);
+      const rendering = play.snapshot().rendering;
+      if (rendering) cpu.push(rendering.cpuMs);
+    }
+  } finally {
+    play.stubWebGlDraws(false);
+  }
+  return counterStats(cpu);
 }
 
 /** Reads the per-frame counters every half second while `frames` samples the frame intervals. */

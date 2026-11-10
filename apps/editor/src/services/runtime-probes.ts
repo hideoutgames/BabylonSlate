@@ -19,6 +19,11 @@ export interface PlayProbe {
   };
   /** The next presented frame as the player sees it, downsampled; null when it cannot be read or Play stopped. */
   samplePresentedImage(): Promise<PresentedImageSample | null>;
+  /**
+   * Turns the game view's draws, clears and uniform uploads into no-ops (`true`) or back, so a frame's CPU time without
+   * them can be measured; whether it did (false on WebGPU and once Play stopped).
+   */
+  stubWebGlDraws(on: boolean): boolean;
   /** Error and warning lines the session logged, oldest first. */
   problemLogs(): Array<{ severity: string; message: string }>;
   executeConsoleCommand(line: string): Promise<{ success: boolean; output: string }>;

@@ -43,6 +43,7 @@ import { applyPostProcessParameterCommand } from "./post-process-parameter-comma
 import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { submitPresentedFrame } from "./presented-frame";
 import { samplePresentedImage, type PresentedImageSample } from "./presented-image";
+import { stubWebGlDraws } from "./webgl-draw-stub";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { setSceneBindsPreviousEffects } from "./variant-swaps";
 import { SceneOutlineHost, isOutlineOnlySceneEdit } from "./scene-outline-host";
@@ -2469,6 +2470,7 @@ function initializeEngine(
   const contextLostObserver = engine.onContextLostObservable.add(() => {
     if (disposed) return;
     contextLost = true;
+    stubWebGlDraws(engine, false);
     finalAuthoringDrain?.abort(new Error("The graphics context was lost during final scene capture."));
     runtimeMaterialEdits.cancelAll();
     frameReportFeed.cancel("The graphics context was lost before frame capture completed.");
@@ -2604,6 +2606,8 @@ function initializeEngine(
       runtimeTransformTools?.dispose();
       runtimeTransformTools = null;
       disposed = true;
+      // A measurement this view left running must not outlive it on the shared Engine.
+      stubWebGlDraws(engine, false);
       finalAuthoringDrain?.abort(new Error("The game view stopped during final scene capture."));
       runtimeMaterialEdits.dispose();
       performanceFeed.dispose();
@@ -3280,6 +3284,7 @@ function initializeEngine(
     samplePresentedImage: () => disposed || contextLost
       ? Promise.resolve(null)
       : new Promise<PresentedImageSample | null>((resolve) => { presentedImageRequests.push(resolve); }),
+    stubWebGlDraws: (on) => !disposed && !contextLost && stubWebGlDraws(engine, on),
     captureFrame: () => {
       if (disposed || contextLost) return Promise.reject(new Error("The game view is unavailable."));
       if (performanceFeed.active) return Promise.reject(new Error("Stop performance recording before capturing a frame."));

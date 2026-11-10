@@ -32,6 +32,7 @@ import {
   type FeatureTestStoppedSession,
   type CounterStats,
   type FrameStats,
+  type PlayCounters,
   type PlayPresentation,
 } from "../services/feature-test-check";
 import { DRAW_PASSES } from "@haptic/render";
@@ -66,6 +67,21 @@ type Programs = NonNullable<FeatureTestBenchmarkSample["programs"]>;
 function programsText(programs: Programs): string {
   const passes = firstDrawPasses(programs.passes);
   return `${programs.programs} on the Engine · ${programs.neverDrawn} never drawn · ${programs.shaders} shaders, at most ${programs.mostVariants} programs of one${passes ? ` · by first pass: ${passes}` : ""}`;
+}
+
+/**
+ * A frame's CPU time with its draws, clears and uniform uploads stubbed, against the normal frame's: how much of a
+ * frame is the engine's own work and the state it sets, and, per draw call, what each side costs. Null where it was
+ * not measured.
+ */
+function cpuWithoutDrawsText(counters: PlayCounters | null | undefined): string | null {
+  const without = counters?.cpuMsWithoutDraws?.median, cpu = counters?.cpuMs?.median;
+  if (without === undefined || cpu === undefined || cpu <= 0) return null;
+  const draws = counters?.draws?.median ?? 0;
+  const perDraw = draws > 0
+    ? ` · per draw call ${Math.round(without / draws * 1000)} µs without and ${Math.round(Math.max(0, cpu - without) / draws * 1000)} µs for the draw`
+    : "";
+  return `${without.toFixed(1)} ms of ${cpu.toFixed(1)} ms a frame (${Math.round(without / cpu * 100)}%); draws, clears and uniform uploads take the rest${perDraw}`;
 }
 
 /** How many causes a report names; the rest are counted. */
@@ -197,6 +213,8 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       if (r?.qualityLimits.length) lines.push(`  Quality limits: ${clip(r.qualityLimits.join("; "))}`);
       const passes = firstDrawPasses(counters?.drawPasses ?? r?.drawPasses);
       if (passes) lines.push(`  Draws per pass: ${passes}`);
+      const withoutDraws = cpuWithoutDrawsText(counters);
+      if (withoutDraws) lines.push(`  CPU without draws: ${withoutDraws}`);
       if (r?.programs) {
         lines.push(`  Programs: ${programsText(r.programs)}`);
         const splits = programSplitsText(r.programs);
