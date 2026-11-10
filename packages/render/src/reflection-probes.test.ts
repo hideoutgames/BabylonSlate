@@ -179,7 +179,12 @@ function recordedCapture(scene: Scene, conversionReady: boolean) {
   const order: string[] = [];
   const views: string[] = [];
   vi.mocked(drawOutsideSceneView).mockImplementation((_scene, run) => run());
-  vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+  // As Babylon's own check: it announces a draw of the target, with nothing drawn, to ask its meshes.
+  vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockImplementation(function (this: RenderTargetTexture) {
+    this.onBeforeRenderObservable.notifyObservers(0);
+    this.onAfterUnbindObservable.notifyObservers(this);
+    return true;
+  });
   vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
     this.onBeforeRenderObservable.notifyObservers(0);
     views.push(scene.getViewMatrix().asArray().map((value) => Math.round(value)).join(","));
@@ -215,6 +220,18 @@ it("draws each face with the view's programs, then stores it display-referred in
   const released = vi.spyOn(DisplayConversion.prototype, "dispose");
   scene.dispose();
   expect(released).toHaveBeenCalledTimes(1);
+});
+
+it("captures again after a capture: the readiness check before the six draws announces a draw too", async () => {
+  const { scene, publish, frame } = fixture();
+  const { order } = recordedCapture(scene, true);
+  const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+  await publish([8, 4, 8]);
+  order.length = 0;
+  MeshBuilder.CreateBox("added", {}, scene);
+  frame();
+  expect(warned).not.toHaveBeenCalled();
+  expect(order.filter((entry) => entry.startsWith("convert"))).toHaveLength(6);
 });
 
 it("copies faces a view that is not Scene Linear already drew for display, and waits for the pass to compile", async () => {

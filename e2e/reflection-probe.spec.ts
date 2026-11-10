@@ -111,6 +111,25 @@ test("a Reflection Probe lights surfaces in its box from the captured room in th
     await viewport.screenshot({ path: testInfo.outputPath("probe-on.png") });
   }
 
+  // Every settled edit captures again. With the room gone the probe shows the ball the sky, about 1.16 times the
+  // room's light (a capture stores display colour, clipped at white, so less than the sky's own); with it back, the
+  // room once more.
+  const roomLit = await centreBrightness(viewport);
+  const open = room(true);
+  open.actors = open.actors.filter((actor) => !["floor", "ceiling", "north", "south", "east", "west"].includes(actor.id));
+  await setPreviewScene(page, open);
+  await ready();
+  await aimEditor(page);
+  try {
+    await expect.poll(async () => (await centreBrightness(viewport)) / roomLit, { timeout: 30_000 }).toBeGreaterThan(1.08);
+  } finally {
+    await viewport.screenshot({ path: testInfo.outputPath("probe-open.png") });
+  }
+  await setPreviewScene(page, room(true));
+  await ready();
+  await aimEditor(page);
+  await expectRoomLit(viewport, skyLit);
+
   await clickPlayAndWaitForOverlay(page);
   // The loading dialog covers the ball until the first frame presents.
   await expect(page.getByTestId("scene-loading-dialog")).toHaveCount(0, { timeout: 60_000 });
