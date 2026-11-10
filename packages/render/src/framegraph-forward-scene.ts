@@ -234,7 +234,7 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
  */
 export class ForwardSceneFrameGraph {
   private measureWork = false;
-  private readonly work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0 };
+  private readonly work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, readinessProbeMs: 0 };
   /** Geometry render pass ids that drew in a complete frame of the prepared graph (`noteCompleteFrame`). */
   private readonly drawnGeometryPasses = new Set<number>();
   /** Each geometry render pass id's `drawsInPass` count at the last complete frame. */
@@ -768,11 +768,22 @@ export class ForwardSceneFrameGraph {
       // current demand, and that preparation's own probe compiles it under the pass that draws it.
       // An auxiliary view draws only inside the scene view's ready frames, and
       // the scene probe would bind (refit) shadow maps for its camera.
-      if (!this.auxiliary && !this.collectingEffects(() => isSceneFrameReady(this.scene, [], isBuiltInWaterMesh))) return false;
+      if (!this.auxiliary && !this.timedProbe(() => this.collectingEffects(() => isSceneFrameReady(this.scene, [], isBuiltInWaterMesh)))) return false;
       // A graph that is pending or stale is fully probed when its preparation finishes.
     }
     this.markGraphProbed();
     return true;
+  }
+
+  /** Runs a strict readiness check (each counts in `strictChecks`), adding its time once a reader asked (`diagnostics`). */
+  private timedProbe(probe: () => boolean): boolean {
+    if (!this.measureWork) return probe();
+    const started = performance.now();
+    try {
+      return probe();
+    } finally {
+      this.work.readinessProbeMs += performance.now() - started;
+    }
   }
 
   private watchMesh(mesh: AbstractMesh): void {
@@ -1538,8 +1549,8 @@ export class ForwardSceneFrameGraph {
 
   /** One readiness round: hidden meshes whose every variant its passes probed is ready are revealed at its end. */
   private isReady(): boolean {
-    return withPipelineWarmupRound(this.scene.getEngine(), this.warmsVariants,
-      () => revealRound(() => this.collectingEffects(() => this.probeReady())));
+    return this.timedProbe(() => withPipelineWarmupRound(this.scene.getEngine(), this.warmsVariants,
+      () => revealRound(() => this.collectingEffects(() => this.probeReady()))));
   }
 
   private probeReady(): boolean {

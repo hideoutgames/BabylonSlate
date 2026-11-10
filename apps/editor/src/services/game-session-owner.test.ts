@@ -1,5 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetSessionTrail, sessionTrail } from "@haptic/core";
 import { GameSessionOwner, transitionClosesSessionSource, type GameSessionStopResult } from "./game-session-owner";
+
+afterEach(() => resetSessionTrail());
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -27,6 +30,20 @@ describe("game session ownership", () => {
     release.resolve({ quarantined: false });
     await release.promise;
     expect(owner.begin("simulate")?.mode).toBe("simulate");
+  });
+
+  it("marks each change of the session's lifecycle in the session trail, naming the mode that ended", async () => {
+    const owner = new GameSessionOwner<GameSessionStopResult>();
+    const release = deferred<{ quarantined: boolean }>();
+    const ticket = owner.begin("play")!;
+    owner.attach(ticket, () => ({ released: release.promise }));
+    owner.acknowledgePaused(ticket, true);
+    // The same lifecycle again marks nothing.
+    owner.acknowledgePaused(ticket, true);
+    await owner.stop(ticket);
+    release.resolve({ quarantined: false });
+    await release.promise;
+    expect(sessionTrail().map((mark) => mark.stage)).toEqual(["play: preparing", "play: running", "play: paused", "play: stopping", "play: idle"]);
   });
 
   it("holds cancelled preparation until the outgoing viewport really releases", async () => {

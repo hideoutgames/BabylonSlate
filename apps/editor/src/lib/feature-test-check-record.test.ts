@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FeatureTestCheckReport } from "../services/feature-test-check";
-import { clearUnfinishedCheck, loadCheckEnded, loadSavedCheck, saveCheckEnded, saveUnfinishedCheck } from "./feature-test-check-record";
+import { resetSessionTrail } from "@haptic/core";
+import { clearUnfinishedCheck, loadCheckEnded, loadSavedCheck, saveCheckEnded, saveUnfinishedCheck, withStoppedSessions } from "./feature-test-check-record";
 import { formatFeatureTestCheckReport } from "./feature-test-check-report";
+import { startSessionTrail } from "./session-trail-record";
 
 const report: FeatureTestCheckReport = {
   mode: "benchmark", startedAt: Date.UTC(2026, 9, 28, 12), durationMs: 41_000, cancelled: false, pageErrors: [],
@@ -53,6 +55,72 @@ describe("the unfinished Feature Test Check", () => {
     ]);
     clearUnfinishedCheck();
     expect(loadSavedCheck()).toBeNull();
+  });
+
+  describe("with sessions that stopped without closing", () => {
+    const environment = {
+      appVersion: "1.2.3", userAgent: "iPad", platform: "iPad", touchPoints: 5, devicePixelRatio: 2, screen: "1180x820", viewport: "1180x820", cores: 6, memoryGb: null,
+    };
+    const lastAlive = Date.UTC(2026, 10, 9, 23, 57, 0);
+    let stopTrail: (() => void) | undefined;
+    /** This page a minute after another page's trail was last renewed, with that page's record in storage. */
+    function afterAFreeze(marks: { at: number; stage: string }[]) {
+      const trails = new Map([["haptic:session-trail:froze", JSON.stringify({ alive: lastAlive, marks })]]);
+      stopTrail = startSessionTrail({
+        storage: {
+          get length() { return trails.size; },
+          key: (index) => [...trails.keys()][index] ?? null,
+          getItem: (key) => trails.get(key) ?? null,
+          setItem: (key, value) => { trails.set(key, value); },
+          removeItem: (key) => { trails.delete(key); },
+        },
+        now: () => lastAlive + 60_000,
+        setInterval: () => 0,
+        clearInterval: () => {},
+        watchPage: () => () => {},
+        newPageId: () => "this-page",
+      });
+    }
+    afterEach(() => {
+      stopTrail?.();
+      stopTrail = undefined;
+      resetSessionTrail();
+    });
+
+    it("tells where the page of a stopped check was, and goes on telling until a check that ran to its end has", () => {
+      const marks = [
+        { at: lastAlive - 41_200, stage: "check: main: benchmarking ultra" },
+        { at: lastAlive - 400, stage: "check: main: stopping Play" },
+        { at: lastAlive, stage: "play: disposing" },
+      ];
+      afterAFreeze(marks);
+      saveUnfinishedCheck({ step: "main: stopping Play", report, resources: [] });
+      const restored = loadSavedCheck()!;
+      expect(restored.stoppedSessions).toEqual([{ lastAliveAt: lastAlive, marks }]);
+      expect(formatFeatureTestCheckReport(restored, environment).split("\n").slice(-6)).toEqual([
+        "",
+        "A session stopped without closing (a freeze, a crash or a force close), last alive 2026-11-09T23:57:00.000Z.",
+        "Its last stages, each with how long before that it was reached:",
+        "    41.2 s  check: main: benchmarking ultra",
+        "     0.4 s  check: main: stopping Play",
+        "     0.0 s  play: disposing",
+      ]);
+      // A finished check's report tells of it once more, and it is forgotten.
+      expect(withStoppedSessions(report).stoppedSessions).toHaveLength(1);
+      expect(withStoppedSessions(report, true).stoppedSessions).toHaveLength(1);
+      expect(withStoppedSessions(report)).toBe(report);
+    });
+
+    it("lists a stopped session's last 24 stages", () => {
+      afterAFreeze(Array.from({ length: 26 }, (_, index) => ({ at: lastAlive - (25 - index) * 1_000, stage: `stage ${index}` })));
+      const lines = formatFeatureTestCheckReport(withStoppedSessions(report), environment).split("\n");
+      expect(lines.slice(-25, -22)).toEqual([
+        "Its last stages, each with how long before that it was reached (2 earlier omitted):",
+        "    23.0 s  stage 2",
+        "    22.0 s  stage 3",
+      ]);
+      expect(lines.at(-1)).toBe("     0.0 s  stage 25");
+    });
   });
 
   it("keeps when the last check ended for the next Breakdown's warm-device note, and nothing it cannot read", () => {

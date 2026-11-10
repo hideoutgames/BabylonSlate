@@ -33,11 +33,15 @@ describe("formatFeatureTestCheckReport", () => {
             frames: { drawn: 280, held: 4, skipped: 16, heldReasons: { "Render pipelines are compiling.": 1, "Scene is not ready to render.": 3 } },
             contextLosses: 0, imageBlack: [0, 0.031, null],
           },
-          firstDraws: { draws: 7, loadCompiled: 5, frames: 4, stalls: 2, mostInFrame: 3, worstFrameMs: 180.4, longFrames: 6, longest: [
-            { ms: 240.2, engineMs: 31.5, firstDraws: 0, compiles: 0 }, { ms: 180.4, engineMs: 170.1, firstDraws: 3, compiles: 1 },
-            { ms: 150, engineMs: 140, firstDraws: 1, compiles: 2 }, { ms: 130, engineMs: 20, firstDraws: 0, compiles: 0 },
-            { ms: 120, engineMs: 110, firstDraws: 1, compiles: 0 },
-          ] },
+          firstDraws: { draws: 7, loadCompiled: 5, frames: 4, stalls: 2, mostInFrame: 3, worstFrameMs: 180.4, longFrames: 6,
+            passes: { objects: 2, shadows: 4, outlines: 1 }, longest: [
+              { ms: 240.2, engineMs: 31.5, firstDraws: 0, compiles: 0 },
+              { ms: 180.4, engineMs: 170.1, firstDraws: 3, compiles: 1, passes: { objects: 1, shadows: 2 } },
+              { ms: 150, engineMs: 140, firstDraws: 1, compiles: 2, passes: { outlines: 1 } }, { ms: 130, engineMs: 20, firstDraws: 0, compiles: 0 },
+              { ms: 120, engineMs: 110, firstDraws: 1, compiles: 0, passes: { shadows: 1 } },
+            ] },
+          // 140 strict readiness checks over the 280 frames drawn while sampled, 4.2 s of them.
+          work: { drawn: 280, work: { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 140, readinessProbeMs: 4200, outlineReadinessChecks: 0 } },
           commands: [{ line: "ft_stats", success: true, output: "FeatureTest score 0, spinners 4, spawned 0", ms: 1200 }], benchmark: [], logs: [] },
         session: { diagnostics: [], droppedDiagnostics: 0, runtimeMode: "worker", textures: { before: 30, after: 30, leak: false, quarantined: false } },
       }],
@@ -53,11 +57,38 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  Play: timeout after 120.0 s at Loading Models 45%");
     expect(lines).toContain("    [error] Material FT_Glass failed to compile");
     expect(lines).toContain("  > ft_stats: ok in 1.2 s · FeatureTest score 0, spinners 4, spawned 0");
-    expect(lines).toContain("  First draws after load: 7 (5 compiled by the load) in 4 frames · 2 over 100 ms · worst 180 ms · most 3 in a frame");
-    expect(lines).toContain("  Long frames after load: 6 over 100 ms · longest 240 ms (engine 32 ms, 0 first draws, 0 compiles), 180 ms (engine 170 ms, 3 first draws, 1 compile), 150 ms (engine 140 ms, 1 first draw, 2 compiles), 130 ms (engine 20 ms, 0 first draws, 0 compiles)");
+    // The passes that made the first draws, the most first.
+    expect(lines).toContain("  First draws after load: 7 (5 compiled by the load) in 4 frames · 2 over 100 ms · worst 180 ms · most 3 in a frame · by pass: shadows 4, objects 2, outlines 1");
+    expect(lines).toContain("  Long frames after load: 6 over 100 ms · longest 240 ms (engine 32 ms, 0 first draws, 0 compiles), 180 ms (engine 170 ms, 3 first draws: shadows 2, objects 1, 1 compile), 150 ms (engine 140 ms, 1 first draw: outlines 1, 2 compiles), 130 ms (engine 20 ms, 0 first draws, 0 compiles)");
+    // 4200 ms over 140 checks, and over the 280 frames drawn.
+    expect(lines).toContain("  Readiness probes: 140 in 280 drawn frames · 30.0 ms each · 15.0 ms per drawn frame");
     // Holds by reason, the most first.
     expect(lines).toContain("  Presentation: drawn 280 · held 4 (3 Scene is not ready to render; 1 Render pipelines are compiling) · skipped 16 (frames in flight) · context losses 0 · image near-black 0%, 3%, no frame");
     expect(lines).toContain("  TypeError: x is undefined");
+  });
+
+  it("tells what Play first drew after its load apart from what a sweep's quality changes first drew", () => {
+    const reading = (draws: number, passes: Record<string, number>) => ({
+      draws, loadCompiled: 0, frames: draws, stalls: 0, mostInFrame: 1, worstFrameMs: 40, longFrames: 0, passes, longest: [],
+    });
+    const report: FeatureTestCheckReport = {
+      mode: "benchmark", startedAt: Date.UTC(2026, 9, 28, 12), durationMs: 60_000, cancelled: false, pageErrors: [],
+      scenes: [{
+        name: "main", path: "assets/main.scene.hasset", passed: true, problems: [],
+        editor: { status: "ready", ms: 900, phase: null, frames: null, error: null, gpu: null },
+        play: { status: "loaded", ms: 3000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null,
+          firstDrawsBeforeSweep: reading(3, { objects: 3 }), firstDraws: reading(40, { objects: 20, shadows: 12, post: 8 }),
+          // No readiness check ran while Play was measured.
+          work: { drawn: 300, work: { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 0, readinessProbeMs: 0, outlineReadinessChecks: 0 } },
+          commands: [], benchmark: [], logs: [] },
+        session: null,
+      }],
+    };
+    const lines = formatFeatureTestCheckReport(report, environment).split("\n");
+    expect(lines).toContain("  Readiness probes: none in 300 drawn frames");
+    expect(lines).toContain("  First draws after load, before the sweep: 3 (0 compiled by the load) in 3 frames · 0 over 100 ms · worst 40 ms · most 1 in a frame · by pass: objects 3");
+    expect(lines).toContain("  First draws in the whole session, the sweep's quality changes included: 40 (0 compiled by the load) in 40 frames · 0 over 100 ms · worst 40 ms · most 1 in a frame · by pass: objects 20, shadows 12, post 8");
+    expect(lines).toContain("  Long frames after load, before the sweep: 0 over 100 ms");
   });
 
   it("recommends the highest quality tier every benchmarked scene holds at 60 and 30 fps", () => {
@@ -333,7 +364,7 @@ describe("formatFeatureTestCheckReport", () => {
             }),
             // The world renderer's work while sampled: 40 frames drawn.
             sample("baseline 2", 83, 42, {
-              work: { graphBuilds: 1, strictReadinessChecks: 80, outlineReadinessChecks: 0, shadowAdmissions: 120, shadowAdmissionMs: 24 },
+              work: { graphBuilds: 1, strictReadinessChecks: 80, readinessProbeMs: 320, outlineReadinessChecks: 0, shadowAdmissions: 120, shadowAdmissionMs: 24 },
               memory: { deviceAvailableBytes: 1024 * 1048576, appAvailableBytes: 2048 * 1048576 },
             }),
             sample("resolution 0.5", 70, 40, { settings: { ...settings, "resolution.scale": "0.5" } }),
@@ -368,7 +399,7 @@ describe("formatFeatureTestCheckReport", () => {
     expect(row("resolution 0.5")[0]).toMatch(/-11\.5ms -14% {4}-1\.0ms -2% {6}resolution\.scale=0\.5 · overlaps$/);
     // Per drawn frame, the counters that grew, and the window's graph builds; then the native memory as it ended.
     expect(row("baseline 2")[0]).toMatch(
-      /\+3\.0ms \+4% {6}\+2\.0ms \+5% {6}work\/frame: 2\.0 readiness checks, 3\.0 shadow admissions \(0\.6 ms\) · 1 graph build · device free 1024 MB · app headroom 2048 MB$/);
+      /\+3\.0ms \+4% {6}\+2\.0ms \+5% {6}work\/frame: 2\.0 readiness checks \(8\.0 ms\), 3\.0 shadow admissions \(0\.6 ms\) · 1 graph build · device free 1024 MB · app headroom 2048 MB$/);
     expect(row("baseline 3")[0]).toMatch(/NOT RESTORED: post\.enabled=false$/);
     expect(row("screen shadows off")[0]).toMatch(/ no setting changed \(already shadows\.screen off\)$/);
     // Its held share and top two reasons, the rest counted; a row without counts shows none.

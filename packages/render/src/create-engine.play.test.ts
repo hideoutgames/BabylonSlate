@@ -57,6 +57,8 @@ import {
   parseJoystick2DProperties,
   parseUIControl2DProperties,
   type RenderSettingsPatch,
+  resetSessionTrail,
+  sessionTrail,
 } from "@haptic/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createEngine, PIPELINE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
@@ -2915,6 +2917,19 @@ describe("Play createEngine view", () => {
     } finally {
       apply.mockRestore();
     }
+  });
+
+  it("marks the session trail when its graphics context is lost and restored, and as it is disposed", () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    resetSessionTrail();
+    engine.onContextLostObservable.notifyObservers(engine);
+    engine.onContextRestoredObservable.notifyObservers(engine);
+    handle.dispose();
+    const stages = sessionTrail().map((mark) => mark.stage);
+    expect(stages.slice(0, 3)).toEqual(["play: graphics context lost", "play: graphics context restored", "play: disposing"]);
+    expect(stages).toContain("play: disposed");
+    resetSessionTrail();
   });
 
   describe("a slot id an actor takes after another left it", () => {

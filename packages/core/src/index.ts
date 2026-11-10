@@ -1,5 +1,6 @@
 export * from "./storage-port";
 export * from "./command-bus";
+export * from "./session-trail";
 export * from "./scene";
 export {
   ENGINE_COMPONENT_DESCRIPTORS,

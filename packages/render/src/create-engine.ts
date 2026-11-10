@@ -90,7 +90,7 @@ import { Scene, ScenePerformancePriority } from "@babylonjs/core/scene";
 import type {
   SerializedScene,
 } from "@haptic/core";
-import { engineCommandBus } from "@haptic/core";
+import { engineCommandBus, markSessionTrail } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { spatialEffectsUnsupported } from "./spatial-effects";
@@ -408,6 +408,8 @@ function initializeEngine(
   });
 
   const ownsEngine = !options.sharedEngine;
+  /** How this view names itself in the session trail. */
+  const trailView = options.playMode ? "play" : "editor view";
   const presentRtt = options.present === "rtt";
   // The visible bitmap must survive skipped/loading frames and backend RTT
   // work. Keep owned browser engines on a private constructor canvas, using
@@ -2005,6 +2007,7 @@ function initializeEngine(
       if (layer?.loadId === pending.owner.layerLoadId) layer.ready = true;
     } else {
       worldLoading = false;
+      markSessionTrail(`${trailView}: first frame presented`);
       firstDraws?.resume();
       // Presented: what it draws holds its own Effects, so the closed view's that nothing uses can go.
       releaseBridgedEffects(engine);
@@ -2094,6 +2097,7 @@ function initializeEngine(
       render: appliedOutput, frameCap: normalizePlayFrameCap(options.frameCap),
     } }, {
       apply: (transaction) => {
+        markSessionTrail(`play: quality change ${transaction.revision} applied`);
         const state = sceneRenderingSettings(scene);
         const { quality, shadows, ...visual } = transaction.overrides;
         state.runtimeOverrides = visual;
@@ -2118,11 +2122,13 @@ function initializeEngine(
       },
       prepare: async (assertCurrent) => {
         assertCurrent();
+        markSessionTrail("play: quality change preparing");
         await worldRenderer.prepare(assertCurrent);
         for (const layer of sceneLayerCompositor?.layers() ?? []) {
           if (layerLoads.get(layer.layerId)?.ready !== false) await sceneLayerCompositor?.prepare(layer.layerId, assertCurrent);
         }
         assertCurrent();
+        markSessionTrail("play: quality change prepared");
       },
       read: (transaction) => {
         const state = sceneRenderingSettings(scene);
@@ -2464,6 +2470,7 @@ function initializeEngine(
     answerPresentedImageRequests(null);
     loadGeneration += 1;
     cancelPresentation(contextLostError());
+    markSessionTrail(`${trailView}: graphics context lost`);
     engineCommandBus.dispatch({ type: "log", message: "WebGL context lost" });
   });
   onRollback(() => engine.onContextLostObservable.remove(contextLostObserver));
@@ -2471,6 +2478,7 @@ function initializeEngine(
     if (disposed) return;
     contextLost = false;
     presentationStats.contextRestorations += 1;
+    markSessionTrail(`${trailView}: graphics context restored`);
     engineCommandBus.dispatch({
       type: "log",
       message: "WebGL context restored",
@@ -2575,6 +2583,7 @@ function initializeEngine(
     editor,
     dispose: () => {
       if (disposed) return;
+      markSessionTrail(`${trailView}: disposing`);
       // The Engine's next view (Play after the editor's, the editor's after Play) draws mostly these Effects.
       if (!ownsEngine) bridgeEngineEffects(engine);
       releasePostProcessingPrograms();
@@ -2685,9 +2694,11 @@ function initializeEngine(
         materialFunctionRecord = {};
         materialDocumentsKey = "";
         releaseInitialSources();
+        markSessionTrail(`${trailView}: disposing its Scene`);
         scene.dispose();
         rttPresent?.dispose();
         cacheBinding.dispose(handedOverTextures);
+        markSessionTrail(`${trailView}: Scene disposed`);
       };
       if (!ownsEngine) {
         // Pending native work may still borrow Scene, library and cache
@@ -2728,6 +2739,7 @@ function initializeEngine(
         pipelineHold = false;
         options.onPipelineHold?.(false);
       }
+      markSessionTrail(`${trailView}: disposed`);
     },
     whenReleased: () => releasedHandle ?? Promise.resolve(),
     handOverTextures: () => { handOverTexturesOnDispose = true; },

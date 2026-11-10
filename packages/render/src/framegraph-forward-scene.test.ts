@@ -666,6 +666,35 @@ it("skips strict readiness probes on unchanged frames after admission", async ()
   graph.dispose();
 });
 
+it("adds up the time its strict readiness checks take, once its diagnostics were read", async () => {
+  const { scene, camera } = host();
+  MeshBuilder.CreateBox("box", {}, scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  // A clock that moves 3 ms every time it is read: each timed check reads it at its start and its end.
+  let now = 0;
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => (now += 3));
+  try {
+    // Before a reader asks, checks are counted and not timed.
+    graph.markReadinessDirty();
+    expect(graph.sceneStrictlyReady(camera)).toBe(true);
+    const before = graph.diagnostics();
+    expect(before.readinessProbeMs).toBe(0);
+    graph.markReadinessDirty();
+    expect(graph.sceneStrictlyReady(camera)).toBe(true);
+    // An unchanged Scene is not checked again.
+    expect(graph.sceneStrictlyReady(camera)).toBe(true);
+    const after = graph.diagnostics();
+    expect(after.strictReadinessChecks - before.strictReadinessChecks).toBe(1);
+    expect(after.readinessProbeMs).toBeGreaterThanOrEqual(3);
+    expect(after.readinessProbeMs % 3).toBe(0);
+  } finally {
+    clock.mockRestore();
+    graph.dispose();
+  }
+});
+
 it("skips strict readiness probes on unchanged frames in CEL mode", async () => {
   const { scene, camera } = host();
   const mesh = MeshBuilder.CreateBox("box", {}, scene);

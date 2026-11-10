@@ -1,4 +1,5 @@
 import type { FeatureTestCheckReport, FeatureTestCheckResources, FrameStats } from "../services/feature-test-check";
+import { forgetSessionTrails, unclosedSessionTrails } from "./session-trail-record";
 
 /**
  * The running check's report, kept in this browser after every step and resource sample, so a check the app stops
@@ -28,6 +29,18 @@ function write(key: string, value: string): void {
   } catch {
     // Storage full or unavailable: the check still runs, it only cannot survive a crash.
   }
+}
+
+/**
+ * `report` with the pages that stopped without closing (`unclosedSessionTrails`): a check's own page when the app
+ * stopped during it, and any other since the last report that told of them, such as an ordinary Play session that
+ * froze. `forget` removes their records: the report of a check that ran to its end is the one that tells of them.
+ */
+export function withStoppedSessions(report: FeatureTestCheckReport, forget = false): FeatureTestCheckReport {
+  const trails = unclosedSessionTrails();
+  if (forget) forgetSessionTrails(trails.map((trail) => trail.page));
+  if (!trails.length) return report;
+  return { ...report, stoppedSessions: trails.map((trail) => ({ lastAliveAt: trail.alive, marks: trail.marks })) };
 }
 
 export function saveUnfinishedCheck(check: UnfinishedCheck): void {
@@ -77,9 +90,9 @@ export function loadSavedCheck(): FeatureTestCheckReport | null {
       clearUnfinishedCheck();
       return null;
     }
-    if (check.finished === true) return check.report;
+    if (check.finished === true) return withStoppedSessions(check.report);
     if (typeof check.step !== "string") return null;
-    return { ...check.report, unfinished: { step: check.step, resources: Array.isArray(check.resources) ? check.resources : [] } };
+    return withStoppedSessions({ ...check.report, unfinished: { step: check.step, resources: Array.isArray(check.resources) ? check.resources : [] } });
   } catch {
     return null;
   }

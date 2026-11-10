@@ -63,6 +63,8 @@ export type RenderDiagnostics = {
   };
   rendererWork?: {
     graphBuilds: number; shadowAdmissions: number; shadowAdmissionMs: number; strictReadinessChecks: number;
+    /** The time the strict readiness checks took: each walks the Scene's meshes to ask whether the view may draw. */
+    readinessProbeMs: number;
     /** Outline-task-only probes after a membership or style change. */
     outlineReadinessChecks: number;
   };

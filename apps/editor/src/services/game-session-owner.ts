@@ -1,3 +1,4 @@
+import { markSessionTrail } from "@haptic/core";
 import type { DocumentTransition } from "./document-transition-gate";
 
 /** Game lifetime is independent of the canvas or React surface presenting it. */
@@ -210,6 +211,8 @@ export class GameSessionOwner<Result extends GameSessionStopResult> {
   }
 
   private publish(state: GameSessionState): void {
+    // The session's mode outlives its return to idle in the mark, which names what just ended.
+    if (state.lifecycle !== this.state.lifecycle) markSessionTrail(`${state.mode ?? this.state.mode ?? "session"}: ${state.lifecycle}`);
     this.state = Object.freeze(state);
     for (const listener of this.listeners) listener();
   }

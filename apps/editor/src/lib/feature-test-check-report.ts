@@ -29,6 +29,7 @@ import {
   type FeatureTestCheckReport,
   type FeatureTestCheckResources,
   type FeatureTestCheckSceneResult,
+  type FeatureTestStoppedSession,
   type CounterStats,
   type FrameStats,
   type PlayPresentation,
@@ -37,7 +38,8 @@ import { DRAW_PASSES } from "@haptic/render";
 import { clipText, formatDiagnosticEnvironment, type DiagnosticEnvironment } from "./diagnostic-info";
 
 export type FeatureTestCheckEnvironment = DiagnosticEnvironment;
-type LongFrame = NonNullable<FeatureTestCheckSceneResult["play"]["firstDraws"]>["longest"][number];
+type FirstDraws = NonNullable<FeatureTestCheckSceneResult["play"]["firstDraws"]>;
+type LongFrame = FirstDraws["longest"][number];
 
 const MAX_LOG_LINES = 8;
 const MAX_LONG_FRAMES = 4;
@@ -49,10 +51,37 @@ function s(ms: number): string {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
+/** First draws by the pass that made them, most first: `shadows 12, objects 5`; empty without any. */
+function firstDrawPasses(passes: FirstDraws["passes"] | undefined): string {
+  return Object.entries(passes ?? {}).filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1])
+    .map(([pass, count]) => `${pass} ${count}`).join(", ");
+}
+
 /** A long frame and what it held; time outside the Engine's frame is scripts, layout, garbage collection or waiting. */
 function longFrame(frame: LongFrame): string {
   const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
-  return `${frame.ms.toFixed(0)} ms (engine ${frame.engineMs.toFixed(0)} ms, ${count(frame.firstDraws, "first draw")}, ${count(frame.compiles, "compile")})`;
+  const passes = firstDrawPasses(frame.passes);
+  return `${frame.ms.toFixed(0)} ms (engine ${frame.engineMs.toFixed(0)} ms, ${count(frame.firstDraws, "first draw")}${passes ? `: ${passes}` : ""}, ${count(frame.compiles, "compile")})`;
+}
+
+/** The two report lines of a first-draw reading: the first draws, then the long frames, each named `when`. */
+function firstDrawLines(first: FirstDraws, when: string): string[] {
+  const passes = firstDrawPasses(first.passes);
+  return [
+    `  First draws ${when}: ${first.draws} (${first.loadCompiled} compiled by the load) in ${first.frames} frame${first.frames === 1 ? "" : "s"} · ${first.stalls} over 100 ms · worst ${first.worstFrameMs.toFixed(0)} ms · most ${first.mostInFrame} in a frame${passes ? ` · by pass: ${passes}` : ""}`,
+    `  Long frames ${when}: ${first.longFrames} over 100 ms${first.longest.length ? ` · longest ${first.longest.slice(0, MAX_LONG_FRAMES).map(longFrame).join(", ")}` : ""}`,
+  ];
+}
+
+/**
+ * The Scene readiness probes while Play was sampled: how many of the frames the view drew ran one, and what they
+ * cost. A probe walks every mesh, and runs again after anything joins or leaves the Scene.
+ */
+function readinessText(sampled: NonNullable<FeatureTestCheckSceneResult["play"]["work"]>): string {
+  const { strictReadinessChecks: probes, readinessProbeMs: ms } = sampled.work;
+  if (!probes) return `none in ${sampled.drawn} drawn frames`;
+  const perFrame = sampled.drawn > 0 ? ` · ${(ms / sampled.drawn).toFixed(1)} ms per drawn frame` : "";
+  return `${probes} in ${sampled.drawn} drawn frames · ${(ms / probes).toFixed(1)} ms each${perFrame}`;
 }
 
 function frames(stats: FrameStats | null): string {
@@ -130,11 +159,12 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       if (r?.qualityLimits.length) lines.push(`  Quality limits: ${clip(r.qualityLimits.join("; "))}`);
     }
     if (play.presentation) lines.push(`  Presentation: ${presentationText(play.presentation)}`);
+    if (play.work) lines.push(`  Readiness probes: ${readinessText(play.work)}`);
     const first = play.firstDraws;
-    if (first) {
-      lines.push(`  First draws after load: ${first.draws} (${first.loadCompiled} compiled by the load) in ${first.frames} frame${first.frames === 1 ? "" : "s"} · ${first.stalls} over 100 ms · worst ${first.worstFrameMs.toFixed(0)} ms · most ${first.mostInFrame} in a frame`);
-      lines.push(`  Long frames after load: ${first.longFrames} over 100 ms${first.longest.length ? ` · longest ${first.longest.slice(0, MAX_LONG_FRAMES).map(longFrame).join(", ")}` : ""}`);
-    }
+    const beforeSweep = play.firstDrawsBeforeSweep;
+    // A sweep's quality changes first draw programs of their own: told apart from what Play first drew after its load.
+    if (beforeSweep) lines.push(...firstDrawLines(beforeSweep, "after load, before the sweep"));
+    if (first) lines.push(...firstDrawLines(first, beforeSweep ? "in the whole session, the sweep's quality changes included" : "after load"));
   } else if (play.status !== "not-started") {
     lines.push(`  Play: ${play.status} after ${s(play.ms)}${play.phase ? ` at ${play.phase}` : ""}`);
   }
@@ -313,7 +343,7 @@ function workText(sample: FeatureTestBenchmarkSample): string {
   if (!work || !drawn) return "";
   const perFrame = (value: number) => (value / drawn).toFixed(1);
   const parts = [
-    work.strictReadinessChecks ? `${perFrame(work.strictReadinessChecks)} readiness checks` : "",
+    work.strictReadinessChecks ? `${perFrame(work.strictReadinessChecks)} readiness checks (${perFrame(work.readinessProbeMs)} ms)` : "",
     work.outlineReadinessChecks ? `${perFrame(work.outlineReadinessChecks)} outline checks` : "",
     work.shadowAdmissions ? `${perFrame(work.shadowAdmissions)} shadow admissions (${perFrame(work.shadowAdmissionMs)} ms)` : "",
   ].filter(Boolean);
@@ -559,7 +589,25 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
     lines.push("", `Resources before it stopped (last ${report.unfinished.resources.length} samples, oldest first):`);
     for (const sample of report.unfinished.resources) lines.push(resourceLine(sample));
   }
+  for (const session of report.stoppedSessions ?? []) lines.push("", ...stoppedSessionLines(session));
   return lines.join("\n").trimEnd();
+}
+
+/** Stages of a stopped session's trail a report lists: its last ones. */
+const MAX_TRAIL_LINES = 24;
+
+/**
+ * A session that stopped without closing: when it was last alive, and the stages it passed through last, each with
+ * how long before that moment it was reached.
+ */
+function stoppedSessionLines(session: FeatureTestStoppedSession): string[] {
+  const marks = session.marks.slice(-MAX_TRAIL_LINES);
+  const omitted = session.marks.length - marks.length;
+  return [
+    `A session stopped without closing (a freeze, a crash or a force close), last alive ${new Date(session.lastAliveAt).toISOString()}.`,
+    `Its last stages, each with how long before that it was reached${omitted ? ` (${omitted} earlier omitted)` : ""}:`,
+    ...marks.map((mark) => `  ${s(Math.max(0, session.lastAliveAt - mark.at)).padStart(8)}  ${clip(mark.stage)}`),
+  ];
 }
 
 /** The GPU backpressure mode the samples ran under (`framesinflight`) and the renders it skipped while they sampled. */

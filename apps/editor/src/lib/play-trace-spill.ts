@@ -1,5 +1,5 @@
 import type { ProjectStorage, DocumentRef } from "@haptic/core";
-import { createDocumentRef } from "@haptic/core";
+import { createDocumentRef, markSessionTrail } from "@haptic/core";
 import { writeTraceDocument } from "@haptic/assets";
 import type { TracePayload } from "@haptic/debugger";
 import type { PlaySessionResult } from "../services/play-session";
@@ -38,6 +38,8 @@ export async function finishPlaySessionWithTrace(options: {
   diagnostics?: { dispose(): Promise<void> };
 }): Promise<PlaySessionResult> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  // The view keeps drawing through this wait.
+  markSessionTrail("session: waiting for the game's last reply");
   try {
     await Promise.race([
       options.executeConsoleCommand("snapshot stop"),
@@ -49,5 +51,6 @@ export async function finishPlaySessionWithTrace(options: {
     clearTimeout(timeout);
   }
   await options.diagnostics?.dispose();
+  markSessionTrail("session: stopping its view and worker");
   return options.stop();
 }
