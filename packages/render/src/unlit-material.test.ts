@@ -10,6 +10,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { drawsAlphaCoverage } from "./alpha-to-coverage";
+import { isDrawBatchMesh, markDrawBatchMesh } from "./draw-batch-world-block";
 import { acquireAuthoredMaterialVariant } from "./material-compiler";
 import { materialIneligibility } from "./instance-pool";
 import { unlitBinding } from "./unlit-material-blocks";
@@ -94,6 +95,37 @@ describe("unlit Material", () => {
     // No light block: no light defines, and the surface reads no normal.
     expect(plane.subMeshes[0]!.effect!.defines).not.toMatch(/#define LIGHT\d|#define NORMAL\b|#define UV2\b/);
     expect(plane.subMeshes[0]!.effect!.defines).toMatch(/#define UV1\b/);
+  });
+
+  it("transforms a draw batch's mesh by the world matrix each vertex carries, with a program that differs by that alone", async () => {
+    const target = scene();
+    const member = MeshBuilder.CreatePlane("member", {}, target);
+    const batch = MeshBuilder.CreatePlane("batch", {}, target);
+    markDrawBatchMesh(batch);
+    expect({ member: isDrawBatchMesh(member), batch: isDrawBatchMesh(batch) }).toEqual({ member: false, batch: true });
+    const material = setUnlitMaterial(member, solid, binding());
+    setUnlitMaterial(batch, solid, binding());
+    await ready(material, member);
+    await ready(material, batch);
+    // The batch variant declares the three rows and builds the matrix from them, column by column; every other draw
+    // keeps its own world.
+    const vertex = material.compiledShaders.split("// Fragment shader")[0]!.replace(/\s+/g, " ");
+    const rows = ["batchWorld0", "batchWorld1", "batchWorld2"];
+    for (const row of rows) expect(vertex).toContain(`#ifdef HAPTIC_BATCH attribute vec4 ${row}; #endif`);
+    const column = (part: string, last: string) => `vec4(${rows.map((row) => `${row}.${part}`).join(", ")}, ${last})`;
+    const matrix = `mat4(${column("x", "0.0")}, ${column("y", "0.0")}, ${column("z", "0.0")}, ${column("w", "1.0")})`;
+    const start = vertex.indexOf(`= ${matrix}; #else mat4 `);
+    expect(start).toBeGreaterThan(-1);
+    const world = vertex.slice(0, start).match(/#ifdef HAPTIC_BATCH mat4 (\w+) $/);
+    expect(world).not.toBeNull();
+    // The position is transformed by it.
+    expect(vertex).toContain(`= ${world![1]} * vec4(position, 1.0)`);
+    expect(batch.subMeshes[0]!.effect!.getAttributesNames()).toEqual(expect.arrayContaining(rows));
+    const own = member.subMeshes[0]!.effect!.defines, batched = batch.subMeshes[0]!.effect!.defines;
+    expect(own).not.toContain("#define HAPTIC_BATCH");
+    expect(batched).toContain("#define HAPTIC_BATCH\n");
+    expect(batched.replace("#define HAPTIC_BATCH\n", "")).toBe(own);
+    expect(batch.subMeshes[0]!.effect).not.toBe(member.subMeshes[0]!.effect);
   });
 
   it("samples an MSDF atlas with a program of its own, its outline bound per mesh", async () => {

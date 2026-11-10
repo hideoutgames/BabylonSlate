@@ -74,7 +74,7 @@ describe("formatFeatureTestCheckReport", () => {
     // What drew the frame, the most first, and what the Engine compiled for it.
     expect(lines).toContain("  Draws per pass: layers 30, objects 10, post 2");
     // The layers' visuals: 130 of the 181 drew in 9 batches; the 51 others took a draw each, by reason, the most first.
-    expect(lines).toContain("  Scene Layers: 181 visuals in 60 draws · 130 in 9 batches · alone: 30 another Material, 14 nothing else drew the same, 4 rotated or mirrored, 2 other, 1 only draw of its pass");
+    expect(lines).toContain("  Scene Layers: 181 visuals in 60 draws · 130 in 9 batches · alone: 30 another Material, 14 nothing else drew the same, 4 mirrored, 2 other, 1 only draw of its pass");
     expect(lines).toContain("  Programs: 120 on the Engine · 35 never drawn · 70 shaders, at most 6 programs of one · by first pass: objects 50, shadows 20, layers 15");
     // What the further programs are for: the geometry pass's defines (two more with PREPASS) split 30 shaders, instancing 4.
     // 12 of a frame's 40 ms remain without its draws: 30%. Over 400 draw calls that is 30 µs each, and 70 µs for the draw.

@@ -4,7 +4,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
-import type { Scene } from "@babylonjs/core/scene";
+import { Scene } from "@babylonjs/core/scene";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sceneDrawBatcher } from "./draw-batching";
 import { beginEngineDrawCallFrame } from "./draw-calls";
@@ -127,21 +127,22 @@ describe("Scene Layer draw batching", () => {
     expect(await drawsBothWays(context)).toEqual({ batched: 3, unbatched: 3 });
   });
 
-  it("draws a turned member, and one whose scale rounds in 32 bits, on its own", async () => {
+  it("batches a turned member and one whose scale rounds in 32 bits, and draws a mirrored one on its own", async () => {
     const context = host();
     const quads = [-6, -3, 0, 3, 6].map((x, index) => quad(context.scene, `q${index}`, x, 0));
     expect(await drawsBothWays(context)).toEqual({ batched: 1, unbatched: 5 });
+    // A turned member's vertices are transformed by its own world matrix, which the batch carries with them.
     quads[1]!.rotation.z = 0.2;
-    expect(await drawsBothWays(context)).toEqual({ batched: 2, unbatched: 5 });
-    // 0.15 × 0.7 has more bits than a 32-bit float holds: the vertex stage rounds it, so a baked copy could differ.
+    expect(await drawsBothWays(context)).toEqual({ batched: 1, unbatched: 5 });
+    // 0.15 × 0.7 has more bits than a 32-bit float holds: the vertex stage rounds it, in a batch as in the quad's own draw.
     const small = MeshBuilder.CreatePlane("small", { size: 0.3 }, context.scene);
     applyOverlayUnlitMaterial(small);
     applyOverlayVisualStyle(small, { tint: [0.2, 0.3, 0.5, 0.8] });
     small.position.set(-6, 3, 0);
     small.scaling.setAll(0.7);
-    expect(await drawsBothWays(context)).toEqual({ batched: 3, unbatched: 6 });
-    // A scale whose products stay exact batches.
-    small.scaling.setAll(0.5);
+    expect(await drawsBothWays(context)).toEqual({ batched: 1, unbatched: 6 });
+    // A mirrored member draws with its faces the other way round, which one draw of them all cannot.
+    quads[3]!.scaling.x = -1;
     expect(await drawsBothWays(context)).toEqual({ batched: 2, unbatched: 6 });
   });
 
@@ -186,7 +187,7 @@ describe("Scene Layer draw batching", () => {
     expect(new Set(unbatched)).toEqual(new Set(batched));
   });
 
-  it("writes a batch's vertices in eye-relative space, with a world that the floating origin uploads as zero", async () => {
+  it("writes each member's own vertices with its world matrix as its draw uploads it, less the floating origin's eye", async () => {
     const engine = adaptNullEngineFrameGraph(new NullEngine());
     engines.push(engine);
     vi.spyOn(engine, "getCreationOptions").mockReturnValue({ useLargeWorldRendering: true });
@@ -195,19 +196,34 @@ describe("Scene Layer draw batching", () => {
     expect(layer.scene.floatingOriginMode).toBe(true);
     const first = quad(layer.scene, "first", 2.25, -1.5);
     const second = quad(layer.scene, "second", 5.5, 1.25, { size: 2 });
+    const turned = quad(layer.scene, "turned", -4, 3, { z: 5 });
+    turned.rotation.z = Math.PI / 2;
+    // Panned, the layer camera sits at (1.5, -0.75, -10).
+    compositor.setCamera("hud", { x: 1.5, y: -0.75, rotation: 0, zoom: 1 });
     await compositor.prepare("hud", () => {});
     const drawn = drawnMeshes(() => engineFrame(engine, () => compositor.render()));
     expect(drawn).toHaveLength(1);
     const batch = drawn[0]!;
-    expect([first, second]).not.toContain(batch);
-    // The layer camera sits at (0, 0, -10): the eye, which the floating origin subtracts from every world matrix.
-    expect(batch.getWorldMatrix().getTranslation().asArray().map((value) => value + 0)).toEqual([0, 0, -10]);
-    const positions = Array.from(batch.getVerticesData("position")!.slice(0, 24));
-    // Back to front: the second quad is farther from the eye, and draws first.
-    expect(positions).toEqual([
-      4.5, 0.25, 10, 6.5, 0.25, 10, 6.5, 2.25, 10, 4.5, 2.25, 10,
-      1.75, -2, 10, 2.75, -2, 10, 2.75, -1, 10, 1.75, -1, 10,
-    ]);
+    expect([first, second, turned]).not.toContain(batch);
+    // Each member's vertices as its own buffer holds them: a unit plane's corners, whatever its pose.
+    const corners = [-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0];
+    expect(Array.from(batch.getVerticesData("position")!.slice(0, 36))).toEqual([...corners, ...corners, ...corners]);
+    // With each vertex, its member's world matrix in rows, each ending in the translation. The camera's position is the
+    // eye, which the floating origin subtracts from every translation. Back to front: the turned quad, the second, the first.
+    const rows = (kind: string, member: number) => Array.from(batch.getVerticesData(kind)!.slice(member * 16, member * 16 + 16));
+    const perVertex = (row: number[]) => [...row, ...row, ...row, ...row];
+    const worldOf = (member: number) => ["batchWorld0", "batchWorld1", "batchWorld2"].map((kind) => rows(kind, member));
+    expect(worldOf(1)).toEqual([[2, 0, 0, 4], [0, 2, 0, 2], [0, 0, 2, 10]].map(perVertex));
+    expect(worldOf(2)).toEqual([[1, 0, 0, 0.75], [0, 1, 0, -0.75], [0, 0, 1, 10]].map(perVertex));
+    // A quarter turn about z takes x to y and y to -x, as rounded to 32 bits as the member's own upload is.
+    const uploaded = Array.from(new Float32Array(turned.getWorldMatrix().asArray()));
+    const turnedWorld = worldOf(0);
+    expect(turnedWorld).toEqual([
+      [uploaded[0]!, uploaded[4]!, uploaded[8]!, -5.5], [uploaded[1]!, uploaded[5]!, uploaded[9]!, 3.75], [uploaded[2]!, uploaded[6]!, uploaded[10]!, 15],
+    ].map(perVertex));
+    expect(turnedWorld[1]![0]).toBeCloseTo(1, 6);
+    expect(turnedWorld[0]![1]).toBeCloseTo(-1, 6);
+    expect(Math.abs(turnedWorld[0]![0]!)).toBeLessThan(1e-6);
     await compositor.dispose();
   });
 
@@ -223,17 +239,19 @@ describe("Scene Layer draw batching", () => {
       return drawn[0]!;
     };
     const uvs = (mesh: Mesh) => Array.from(mesh.getVerticesData("uv")!.slice(0, 16));
-    const xs = (mesh: Mesh) => Array.from(mesh.getVerticesData("position")!.slice(0, 24)).filter((_value, index) => index % 3 === 0);
+    const xs = (mesh: Mesh) => Array.from(mesh.getVerticesData("position")!.slice(0, 24)).filter((_value, index) => index % 3 === 0).map((x) => x + 0);
     // Equally far, the two keep their order: idle, then walker.
     expect(uvs(batchOf())).toEqual([0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1]);
     // The sprite's next frame rewrites its UV array in place.
     setSpriteQuadUvs(walker, { u0: 0.5, v0: 0, u1: 0.75, v1: 0.25 });
     expect(uvs(batchOf())).toEqual([0, 0, 1, 0, 1, 1, 0, 1, 0.5, 0, 0.75, 0, 0.75, 0.25, 0.5, 0.25]);
-    // A resize rewrites its position array in place. Each x is the sprite's 32-bit vertex plus its translation,
-    // rounded once to 32 bits, as the vertex stage computes it: idle's corners are 2 ∓ 0.32, walker's -2 and -1.
+    // A resize rewrites its position array in place: idle's own corners are ∓0.32 (in 32 bits), walker's now 0 and 1.
     setSpriteQuadSize(walker, 1, 0.5, { x: 0, y: 0 });
     const half = Math.fround(0.32);
-    expect(xs(batchOf())).toEqual([2 - half, 2 + half, 2 + half, 2 - half, -2, -1, -1, -2].map(Math.fround));
+    expect(xs(batchOf())).toEqual([-half, half, half, -half, 0, 1, 1, 0]);
+    // Where each stands is its world matrix's, with its vertices: idle at x = 2, walker at -2.
+    const translations = Array.from(batchOf().getVerticesData("batchWorld0")!.slice(0, 32)).filter((_value, index) => index % 4 === 3);
+    expect(translations).toEqual([2, 2, 2, 2, -2, -2, -2, -2]);
   });
 
   it("uses each batch mesh once per Engine frame, as WebGPU writes buffers ahead of the frame's draws", async () => {
@@ -291,7 +309,7 @@ describe("Scene Layer draw batching", () => {
     [-6, -3, 0].forEach((x, index) => quad(scene, `same${index}`, x, 0));
     // One of another tint: batchable, but nothing draws the same.
     quad(scene, "tinted", 3, 0, { tint: [0.9, 0.2, 0.1, 0.8] });
-    quad(scene, "turned", 6, 0).rotation.z = 0.2;
+    quad(scene, "mirrored", 6, 0).scaling.x = -1;
     const authored = MeshBuilder.CreatePlane("authored", { size: 1 }, scene);
     authored.material = new StandardMaterial("authored", scene);
     authored.material.alpha = 0.5;
@@ -332,8 +350,8 @@ describe("Scene Layer draw batching", () => {
     expect(countOverlayBatches(stats, () => layerDraws(engine, compositor, 1))).toBe(1);
     layerDraws(engine, compositor);
     expect(stats).toEqual({ visuals: 3, draws: 1, batches: 1, batched: 3, alone: none });
-    // A second counted frame adds to them: three visuals again, one of them turned.
-    quads[0]!.rotation.z = 0.2;
+    // A second counted frame adds to them: three visuals again, one of them mirrored.
+    quads[0]!.scaling.x = -1;
     countOverlayBatches(stats, () => layerDraws(engine, compositor, 1));
     expect(stats).toEqual({ visuals: 6, draws: 3, batches: 2, batched: 5, alone: { ...none, transform: 1 } });
     // Counting within a counted draw takes its own passes and hands back after it.
@@ -345,7 +363,7 @@ describe("Scene Layer draw batching", () => {
     });
     expect({ inner: inner.visuals, outer: outer.visuals }).toEqual({ inner: 3, outer: 6 });
     // A pass with one batchable visual has nothing to batch it with.
-    quads[1]!.rotation.z = 0.2;
+    quads[1]!.scaling.x = -1;
     const lone = emptyOverlayBatchStats();
     countOverlayBatches(lone, () => layerDraws(engine, compositor, 1));
     expect(lone).toEqual({ visuals: 3, draws: 3, batches: 0, batched: 0, alone: { ...none, transform: 2, unmatched: 1 } });
@@ -375,6 +393,26 @@ describe("Scene Layer draw batching", () => {
     });
   });
 
+  it("draws members one by one unless one program, but for the batch's define, draws them all", async () => {
+    const { engine, compositor, scene } = host();
+    scene.fogMode = Scene.FOGMODE_LINEAR;
+    const texture = RawTexture.CreateRGBATexture(new Uint8Array(64 * 64 * 4).fill(255), 64, 64, scene);
+    const sprites = [-4, -2, 0, 2].map((x, index) => sprite(scene, `sprite${index}`, x, texture));
+    const draws = async () => {
+      await compositor.prepare("hud", () => {});
+      return layerDraws(engine, compositor);
+    };
+    expect(await draws()).toBe(1);
+    // One member draws without fog, with a program of its own: no one program draws the four.
+    sprites[1]!.applyFog = false;
+    expect(await draws()).toBe(4);
+    // All without fog share a program, but the batch's mesh, which fogs, compiles another than theirs with its define.
+    for (const mesh of sprites) mesh.applyFog = false;
+    expect(await draws()).toBe(4);
+    for (const mesh of sprites) mesh.applyFog = true;
+    expect(await draws()).toBe(1);
+  });
+
   it("draws the Feature Test HUD in far fewer draws", async () => {
     const { engine, compositor, scene } = host();
     const textures = new Map<string, RawTexture>();
@@ -391,7 +429,8 @@ describe("Scene Layer draw batching", () => {
     const batched = layerDraws(engine, compositor);
     setSceneDrawBatching(scene, false);
     const unbatched = layerDraws(engine, compositor);
-    expect({ batched, unbatched }).toEqual({ batched: 60, unbatched: 181 });
+    // The unevenly scaled cards' and the turned widgets' unlit visuals batch with the rest: each carries its own pose.
+    expect({ batched, unbatched }).toEqual({ batched: 61, unbatched: 195 });
     // Batch meshes join no Scene list: nothing culls, picks, probes or counts them.
     expect(scene.meshes).toHaveLength(meshes);
     await compositor.dispose();
