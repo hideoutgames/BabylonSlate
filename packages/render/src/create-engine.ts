@@ -2008,6 +2008,8 @@ function initializeEngine(
     } else {
       worldLoading = false;
       markSessionTrail(`${trailView}: first frame presented`);
+      // An edited Scene's Materials come and go: the editor keeps the starting state's Effects only while it draws.
+      if (options.editor) endStartingDraw();
       firstDraws?.resume();
       // Presented: what it draws holds its own Effects, so the closed view's that nothing uses can go.
       releaseBridgedEffects(engine);
@@ -3557,7 +3559,7 @@ function initializeEngine(
       // Every instance the load published is in the Scene now; later ones compile as they publish.
       if (!owner) instanceCompileHold = null;
       // A previous load's starting-state draw stops first (its Effects go after the warm-ups below, which may share them).
-      if (!owner && options.playMode) startingDraw?.cancel();
+      if (!owner) startingDraw?.cancel();
       applyRenderingQuality();
       // Water's blend and placement (flat) are otherwise first settled by the first frame's update, after the shader
       // warm-up and the graph's probes compiled every variant without them: each then compiles twice. Copy intent is
@@ -3605,6 +3607,12 @@ function initializeEngine(
             renderTargetCaptures.rehearsalPending() || (particleService?.spawnableSystemsUndrawn() ?? false) });
         startingDraw = draw;
         renderTargetCaptures.rehearseManualCaptures(() => !draw.done);
+      } else if (!owner && options.editor) {
+        // The editor's world view culls by view too, and its load compiled every mesh's programs without drawing
+        // those outside the starting view: each would first draw when the camera first turns to it, a hold per
+        // program on iPad WebKit WebGL2. It draws the loaded Scene once the same way, behind its loading dialog.
+        endStartingDraw();
+        startingDraw = createStartingStateDraw(scene, () => true, { draws: true });
       }
     },
     whenMaterialTexturesReady: async (owner) => {
