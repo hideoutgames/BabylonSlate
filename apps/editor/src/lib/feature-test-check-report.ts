@@ -65,7 +65,21 @@ type Programs = NonNullable<FeatureTestBenchmarkSample["programs"]>;
  */
 function programsText(programs: Programs): string {
   const passes = firstDrawPasses(programs.passes);
-  return `${programs.programs} on the Engine · ${programs.neverDrawn} never drawn${passes ? ` · by first pass: ${passes}` : ""}`;
+  return `${programs.programs} on the Engine · ${programs.neverDrawn} never drawn · ${programs.shaders} shaders, at most ${programs.mostVariants} programs of one${passes ? ` · by first pass: ${passes}` : ""}`;
+}
+
+/** How many causes a report names; the rest are counted. */
+const PROGRAM_SPLITS_SHOWN = 8;
+/**
+ * What a shader's further programs are for: each define that differs between programs of one shader with the shaders
+ * it splits, most first (`+n`: that many other defines always differ with it). Null where every shader has one program.
+ */
+function programSplitsText(programs: Programs): string | null {
+  if (!programs.splitBy.length) return null;
+  const shown = programs.splitBy.slice(0, PROGRAM_SPLITS_SHOWN)
+    .map((split) => `${split.define}${split.with.length ? ` (+${split.with.length})` : ""} ${split.shaders}`);
+  const more = programs.splitBy.length - shown.length;
+  return `${shown.join(" · ")}${more > 0 ? ` · ${more} more` : ""}`;
 }
 
 /** The draws-per-pass table of a sweep's samples, in the frame's pass order; `Draws per pass: unreported` without any. */
@@ -183,7 +197,11 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       if (r?.qualityLimits.length) lines.push(`  Quality limits: ${clip(r.qualityLimits.join("; "))}`);
       const passes = firstDrawPasses(counters?.drawPasses ?? r?.drawPasses);
       if (passes) lines.push(`  Draws per pass: ${passes}`);
-      if (r?.programs) lines.push(`  Programs: ${programsText(r.programs)}`);
+      if (r?.programs) {
+        lines.push(`  Programs: ${programsText(r.programs)}`);
+        const splits = programSplitsText(r.programs);
+        if (splits) lines.push(`  Shaders split by define: ${splits}`);
+      }
     }
     if (play.presentation) lines.push(`  Presentation: ${presentationText(play.presentation)}`);
     if (play.work) lines.push(`  Readiness probes: ${readinessText(play.work)}`);

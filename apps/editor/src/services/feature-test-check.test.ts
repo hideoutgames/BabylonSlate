@@ -796,7 +796,7 @@ describe("draw sampling", () => {
             const rendering = {
               cpuMs: 4, gpuMs: null, ...snapshot.rendering,
               drawPasses: { objects: 124, outlines: 101, layers: 98 },
-              programs: { programs: 200 + reads, neverDrawn: 80, passes: { objects: 60 } },
+              programs: { programs: 200 + reads, neverDrawn: 80, passes: { objects: 60 }, shaders: 90, mostVariants: 4, splitBy: [] as { define: string; with: string[]; shaders: number }[] },
             } as NonNullable<typeof snapshot.rendering>;
             return { ...snapshot, rendering };
           },
