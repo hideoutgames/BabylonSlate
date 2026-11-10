@@ -8,6 +8,7 @@ import { ForwardSceneFrameGraph, type ForwardSceneGraphReadiness, type ForwardSc
 import { onSceneReadinessDirty } from "./scene-perf";
 import type { SharedOutlineView } from "./shared-outline";
 import { flushSceneCables } from "./cable-mesh";
+import { cullSceneByBoxes } from "./cull-accuracy";
 import { DriverCompileWatch, pendingDriverEffects } from "./driver-compile";
 import { beginPipelineDeferral, PIPELINE_DEFERRAL_HOLD_CAP_MS, type PipelineDeferral } from "./webgpu-pipeline-deferral";
 import { whenPresentationFenceClear } from "./presented-frame";
@@ -132,6 +133,7 @@ export class SceneRenderCoordinator {
 
   constructor(scene: Scene, options: SceneRenderCoordinatorOptions = {}) {
     this.scene = scene;
+    cullSceneByBoxes(scene);
     this.auxiliaryCamera = options.auxiliary?.camera;
     this.deferPipelines = options.deferPipelines === true;
     this.graph = new ForwardSceneFrameGraph(scene, options.auxiliary
