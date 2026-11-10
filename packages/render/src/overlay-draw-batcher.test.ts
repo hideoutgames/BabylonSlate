@@ -20,6 +20,7 @@ import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { buildSceneLayerHud } from "./scene-layer-hud-fixture";
 import { createSpriteQuad, setSpriteQuadSize, setSpriteQuadUvs } from "./sprite-quad";
 import { compileMaterialPlan } from "./material-compiler";
+import { bindTextMaterialGlyph, textMaterialGlyphBinding, type TextMaterialBinding } from "./text-material-block";
 import { setUnlitMaterial } from "./unlit-material";
 
 const engines: NullEngine[] = [];
@@ -574,6 +575,71 @@ describe("Scene Layer draw batching", () => {
       document.nodes.find((node) => node.type === "output.surface")!.properties = { "default:worldPositionOffset": [0, 1, 0] };
     });
     expect(await drawsBothWays(context)).toEqual({ batched: 3, unbatched: 3 });
+  });
+
+  it("batches the glyphs of a text that draws an authored Text Material, each with its own rectangles, colour and visibility", async () => {
+    const context = host();
+    const { engine, compositor, scene } = context;
+    const document = createDefaultMaterialDocument("text", "text");
+    const lowered = lowerMaterialDocument(document);
+    if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+    const compiled = compileMaterialPlan(lowered.plan, { scene, name: "authoredText", overlay: true });
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+    expect(await compiled.ready).toEqual([]);
+    const atlas = RawTexture.CreateRGBATexture(new Uint8Array(64 * 64 * 4).fill(255), 64, 64, scene);
+    const glyph = (name: string, x: number, atlasRect: [number, number, number, number], color: [number, number, number], changes: Partial<TextMaterialBinding> = {}) => {
+      const mesh = MeshBuilder.CreatePlane(name, { size: 1 }, scene);
+      mesh.material = compiled.material;
+      mesh.position.x = x;
+      bindTextMaterialGlyph(mesh, { atlas, mode: "bitmap", color, outlineColor: [0, 0, 0], outline: 0, atlasRect, materialRect: [x, 0, 1, 2], ...changes });
+      return mesh;
+    };
+    const glyphs = [glyph("g0", -3, [0, 0, 0.25, 0.5], [1, 0, 0]), glyph("g1", 0, [0.25, 0, 0.25, 0.5], [0, 1, 0]), glyph("g2", 3, [0.5, 0.5, 0.125, 0.25], [0, 0, 1])];
+    // A glyph half revealed: its visibility goes with its vertices too.
+    glyphs[1]!.visibility = 0.5;
+    expect(await drawsBothWays(context)).toEqual({ batched: 1, unbatched: 3 });
+    setSceneDrawBatching(scene, true);
+    const batch = drawnMeshes(() => layerDraws(engine, compositor, 1))[0]!;
+    // The batch binds what its glyphs share (their atlas, mode and outline) as its first glyph does.
+    expect(textMaterialGlyphBinding(batch)?.atlas).toBe(atlas);
+    const at = (kind: string, vertex: number) => Array.from(batch.getVerticesData(kind)!.slice(vertex * 4, vertex * 4 + 4));
+    const carried = new Map<number, number[][]>();
+    for (let vertex = 0; vertex < 12; vertex += 1)
+      carried.set(at("batchWorld0", vertex)[3]!, [at("batchTextAtlasRect", vertex), at("batchTextMaterialRect", vertex), at("batchTextTint", vertex)]);
+    expect(Object.fromEntries(carried)).toEqual({
+      "-3": [[0, 0, 0.25, 0.5], [-3, 0, 1, 2], [1, 0, 0, 1]],
+      "0": [[0.25, 0, 0.25, 0.5], [0, 0, 1, 2], [0, 1, 0, 0.5]],
+      "3": [[0.5, 0.5, 0.125, 0.25], [3, 0, 1, 2], [0, 0, 1, 1]],
+    });
+    // What a text binds once for a draw tells glyphs apart: another outline, mode or atlas.
+    bindTextMaterialGlyph(glyphs[2]!, { ...textMaterialGlyphBinding(glyphs[2]!)!, outline: 1 });
+    expect(await drawsBothWays(context)).toEqual({ batched: 2, unbatched: 3 });
+    bindTextMaterialGlyph(glyphs[2]!, { ...textMaterialGlyphBinding(glyphs[2]!)!, outline: 0, mode: "msdf" });
+    expect(await drawsBothWays(context)).toEqual({ batched: 2, unbatched: 3 });
+    bindTextMaterialGlyph(glyphs[2]!, { ...textMaterialGlyphBinding(glyphs[2]!)!, mode: "bitmap", outlineColor: [1, 1, 1] });
+    expect(await drawsBothWays(context)).toEqual({ batched: 2, unbatched: 3 });
+    const other = RawTexture.CreateRGBATexture(new Uint8Array(64 * 64 * 4).fill(255), 64, 64, scene);
+    bindTextMaterialGlyph(glyphs[2]!, { ...textMaterialGlyphBinding(glyphs[2]!)!, outlineColor: [0, 0, 0], atlas: other });
+    expect(await drawsBothWays(context)).toEqual({ batched: 2, unbatched: 3 });
+    // A mesh that draws the text's Material without a glyph's binding has nothing a batch could carry for it.
+    const bare = MeshBuilder.CreatePlane("bare", { size: 1 }, scene);
+    bare.material = compiled.material;
+    bare.position.set(0, 3, 0);
+    setSceneDrawBatching(scene, true);
+    await compositor.prepare("hud", () => {});
+    const stats = emptyOverlayBatchStats();
+    countOverlayBatches(stats, () => layerDraws(engine, compositor, 1));
+    expect(stats).toMatchObject({ visuals: 4, batched: 2, alone: { other: 1, unmatched: 1 } });
+    // The batch mesh that drew glyphs then draws other visuals without the glyphs' vertex data.
+    const glyphBatch = drawnMeshes(() => layerDraws(engine, compositor, 1)).find((mesh) => mesh.name.startsWith("drawBatch"))!;
+    expect(glyphBatch.isVerticesDataPresent("batchTextTint")).toBe(true);
+    for (const mesh of [...glyphs, bare]) mesh.setEnabled(false);
+    quad(scene, "a", -2, 0);
+    quad(scene, "b", 2, 0);
+    await compositor.prepare("hud", () => {});
+    layerDraws(engine, compositor);
+    expect(drawnMeshes(() => layerDraws(engine, compositor, 1))).toEqual([glyphBatch]);
+    expect(["batchTextAtlasRect", "batchTextMaterialRect", "batchTextTint"].map((kind) => glyphBatch.isVerticesDataPresent(kind))).toEqual([false, false, false]);
   });
 
   it("draws the Feature Test HUD in far fewer draws", async () => {

@@ -342,13 +342,14 @@ function operationBlockName(id: string): string {
 /**
  * Blocks whose bound values a draw batch reproduces (`overlay-draw-batcher.ts`): the Scene's or the Material's own
  * (textures, image processing, fog, the environment), per-mesh ones a batch carries with its vertices (the overlay
- * style) or requires its members to share (the lighting's Receive Shadows), and per-mesh ones of meshes that never
- * batch (bones, morphs, a lattice) or of a pass that draws no batch (the geometry output). A block that binds and is
- * not listed keeps its Material out of batches.
+ * style, a text glyph's rectangles, colour and visibility) or requires its members to share (the lighting's Receive
+ * Shadows, a text's atlas, mode and outline), and per-mesh ones of meshes that never
+ * batch (bones, morphs, a lattice) or of a pass that draws no batch (a fragment output's geometry terms; its
+ * logarithmic depth is the Scene's). A block that binds and is not listed keeps its Material out of batches.
  */
 const BATCH_BINDINGS: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> = [
-  BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, GeometrySurfaceOutputBlock, HapticLightingBlock,
-  ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock,
+  BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, FragmentOutputBlock, HapticLightingBlock,
+  ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock,
 ];
 
 function bindsAsABatchDoes(block: NodeMaterialBlock): boolean {
@@ -1058,9 +1059,9 @@ export function compileMaterialPlan(
     isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
   if (bounded) markBoundedMaterial(material);
   // A Scene Layer Material with the stock vertex stage draws every mesh the same but for its world matrix, its overlay
-  // style and Receive Shadows, so its draws may batch, provided nothing else it binds can depend on the mesh (a text's
-  // glyphs do).
-  if (bounded && options.overlay && created.every(bindsAsABatchDoes)) markDrawBatchMaterial(material);
+  // style and Receive Shadows, so its draws may batch, provided nothing else it binds can depend on the mesh. A text's
+  // Material binds each glyph's own rectangles, colour and visibility, which a batch of glyphs carries with them.
+  if (bounded && (options.overlay || plan.domain === "text") && created.every(bindsAsABatchDoes)) markDrawBatchMaterial(material, plan.domain === "text");
   // The light block rebinds only its receiver terms.
   const lightingBlocks = created.filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock);
   if (perMeshBlocks.length > 0 || lightingBlocks.length > 0) {

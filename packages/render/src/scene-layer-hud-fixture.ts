@@ -26,7 +26,11 @@ export interface SceneLayerHudOptions {
   panelMaterial?: Material;
   /** An authored Scene Layer Material that every second tinted background draws instead, beside the others' look. */
   authoredPanelMaterial?: Material;
+  /** An authored Text Material: adds a line of text that draws it, a mesh a glyph. */
+  textMaterial?: Material;
 }
+
+const TEXT_MATERIAL_GUID = "text-material";
 
 /**
  * A HUD made like the Feature Test's `FT_HUD` Scene Layer, with Play's visual builders and actor names
@@ -41,7 +45,7 @@ export function buildSceneLayerHud(scene: Scene, options: SceneLayerHudOptions):
     textureBytes: new Map(SCENE_LAYER_HUD_ICONS.map((guid) => [guid, new Uint8Array([1])])),
     texturePixelSizes: new Map(SCENE_LAYER_HUD_ICONS.map((guid) => [guid, { width: 64, height: 64 }])),
     resourceCache: { acquireTexture: (guid: string) => ({ resource: options.texture(guid), release: () => {} }) } as unknown as TextureResources,
-    resolveMaterial: () => options.panelMaterial ?? null,
+    resolveMaterial: (guid: string) => (guid === TEXT_MATERIAL_GUID ? options.textMaterial : options.panelMaterial) ?? null,
   };
   let next = 1;
   let panels = 0;
@@ -174,6 +178,9 @@ export function buildSceneLayerHud(scene: Scene, options: SceneLayerHudOptions):
     panel(turned, [0.9, 0.35 + index * 0.08, 0.2, 0.8], 1.3, 0.9);
     icon(turned, SCENE_LAYER_HUD_ICONS[index]!, 0, 0, -0.02, 0.8);
   }
+
+  if (options.textMaterial)
+    label(actor(0, 5.9, -0.3), "Material Text 0123", 34, [700, 44], { materialGuid: TEXT_MATERIAL_GUID, alignment: "center", color: [1, 0.8, 0.3], outline: 1 });
 
   part(actor(-14.2, -7.35), createJoystick2DMesh(scene, `actor-${next - 1}|stick`, { radius: 1, joystickRadius: 0.42 }));
 

@@ -12,6 +12,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
+import { DRAW_BATCH_TEXT_KINDS, drawBatchValue } from "./draw-batch-world-block";
 
 export type TextMaterialBinding = {
   atlas: BaseTexture | null;
@@ -28,7 +29,7 @@ const bindings = new WeakMap<AbstractMesh, TextMaterialBinding>();
 export function bindTextMaterialGlyph(mesh: Mesh, binding: TextMaterialBinding): void {
   bindings.set(mesh, binding);
 }
-/** The glyph binding `bindTextMaterialGlyph` set on `mesh`. Test seam: production code does not call it. */
+/** The glyph binding `bindTextMaterialGlyph` set on `mesh`: what a draw batch of glyphs carries or shares. */
 export function textMaterialGlyphBinding(mesh: Mesh): TextMaterialBinding | undefined {
   return bindings.get(mesh);
 }
@@ -96,9 +97,14 @@ export class TextMaterialBlock extends NodeMaterialBlock {
     state._emitUniformFromString(this.opacity, Types.Float);
     const wgsl = state.shaderLanguage === 1;
     const uniform = wgsl ? "uniforms." : "";
-    const params = uniform + this.parameters, tint = uniform + this.tint, stroke = uniform + this.stroke;
-    const atlasRect = uniform + this.atlasRect, rect = uniform + this.materialRect;
+    const params = uniform + this.parameters, stroke = uniform + this.stroke;
     const vec4 = state._getShaderType(Types.Vector4);
+    // What each glyph binds for itself: bound, or a draw batch's own per vertex. The span colour goes with the opacity.
+    const [atlasKind, rectKind, tintKind] = DRAW_BATCH_TEXT_KINDS;
+    const atlasRect = drawBatchValue(state, atlasKind, uniform + this.atlasRect);
+    const rect = drawBatchValue(state, rectKind, uniform + this.materialRect);
+    const tinted = drawBatchValue(state, tintKind, `${vec4}(${uniform}${this.tint}, ${uniform}${this.opacity})`);
+    const tint = `${tinted}.rgb`;
     const sampled = state._getFreeVariableName("textGlyphSample");
     const distance = state._getFreeVariableName("textGlyphDistance");
     const pixel = state._getFreeVariableName("textGlyphPixel");
@@ -117,7 +123,7 @@ export class TextMaterialBlock extends NodeMaterialBlock {
     state.compilationString += `${state._declareLocalVar(fill, Types.Float)} = clamp((${distance} - 0.5) / ${pixel} + 0.5, 0.0, 1.0);\n`;
     state.compilationString += `${state._declareLocalVar(outline, Types.Float)} = clamp((${distance} - 0.5 + ${params}.y) / ${pixel} + 0.5, 0.0, 1.0);\n`;
     state.compilationString += `if (${params}.x > 1.5) { ${this.color.associatedVariableName} = ${vec4}(mix(${stroke}, ${tint}, ${fill}), max(${fill}, ${outline})); }\n`;
-    state.compilationString += `${this.color.associatedVariableName}.a *= ${uniform}${this.opacity};\n`;
+    state.compilationString += `${this.color.associatedVariableName}.a *= ${tinted}.a;\n`;
     return this;
   }
 
