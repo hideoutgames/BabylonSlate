@@ -16,6 +16,7 @@ describe("formatFeatureTestCheckReport", () => {
       qualityLimits: [], pipeline: { effective: { gpuBackend: "webgl2" } },
       // The last frame's split; the report prefers the medians sampled while Play was measured.
       drawPasses: { objects: 9, layers: 33 },
+      layerBatches: { visuals: 181, draws: 60, batches: 9, batched: 130, alone: { single: 1, material: 30, transform: 4, vertexColor: 0, other: 2, unmatched: 14 } },
       programs: {
         programs: 120, neverDrawn: 35, passes: { objects: 50, layers: 15, shadows: 20 }, shaders: 70, mostVariants: 6,
         splitBy: [
@@ -72,6 +73,8 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  > ft_stats: ok in 1.2 s · FeatureTest score 0, spinners 4, spawned 0");
     // What drew the frame, the most first, and what the Engine compiled for it.
     expect(lines).toContain("  Draws per pass: layers 30, objects 10, post 2");
+    // The layers' visuals: 130 of the 181 drew in 9 batches; the 51 others took a draw each, by reason, the most first.
+    expect(lines).toContain("  Scene Layers: 181 visuals in 60 draws · 130 in 9 batches · alone: 30 another Material, 14 nothing else drew the same, 4 rotated or mirrored, 2 other, 1 only draw of its pass");
     expect(lines).toContain("  Programs: 120 on the Engine · 35 never drawn · 70 shaders, at most 6 programs of one · by first pass: objects 50, shadows 20, layers 15");
     // What the further programs are for: the geometry pass's defines (two more with PREPASS) split 30 shaders, instancing 4.
     // 12 of a frame's 40 ms remain without its draws: 30%. Over 400 draw calls that is 30 µs each, and 70 µs for the draw.
@@ -485,6 +488,33 @@ describe("formatFeatureTestCheckReport", () => {
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     expect(lines.some((line) => line.startsWith("  Render: draws 575 (544-605) · meshes 80"))).toBe(true);
     expect(lines.some((line) => line.includes("14.2 (13.1-16.0)ms  -                   575 (544-605) 1180x788@1.00"))).toBe(true);
+  });
+
+  it("says how a frame's Scene Layers drew only where they drew, with the counts in the singular and no reasons when all batched", () => {
+    const alone = { single: 0, material: 0, transform: 0, vertexColor: 0, other: 0, unmatched: 0 };
+    const layers = (layerBatches: RenderDiagnostics["layerBatches"]) => {
+      const rendering = {
+        adapter: { api: "webgl2", vendor: null, renderer: null, version: null }, cpuMs: 1, gpuMs: null, gpuStatus: "unsupported",
+        width: 100, height: 100, scalingLevel: 1, qualityLimits: [], pipeline: { effective: { gpuBackend: "webgl2" } }, layerBatches,
+      } as unknown as RenderDiagnostics;
+      const report: FeatureTestCheckReport = {
+        mode: "quick", startedAt: 0, durationMs: 1000, cancelled: false, pageErrors: [],
+        scenes: [{
+          name: "main", path: "assets/main.scene.hasset", passed: true, problems: [],
+          editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
+          play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null,
+            snapshot: { drawCalls: 5, meshes: 5, textures: 1, accountedBytes: 0, rendering }, presentation: null, firstDraws: null, commands: [], benchmark: [], logs: [] },
+          session: null,
+        }],
+      };
+      return formatFeatureTestCheckReport(report, environment).split("\n").filter((line) => line.startsWith("  Scene Layers:"));
+    };
+    expect(layers({ visuals: 4, draws: 1, batches: 1, batched: 4, alone })).toEqual(["  Scene Layers: 4 visuals in 1 draw · 4 in 1 batch"]);
+    expect(layers({ visuals: 1, draws: 1, batches: 0, batched: 0, alone: { ...alone, vertexColor: 1 } }))
+      .toEqual(["  Scene Layers: 1 visual in 1 draw · 0 in 0 batches · alone: 1 vertex colours"]);
+    // A view that reports none, or whose layers drew nothing, has no line.
+    expect(layers(undefined)).toEqual([]);
+    expect(layers({ visuals: 0, draws: 0, batches: 0, batched: 0, alone })).toEqual([]);
   });
 
   it("shows an editor load failure's error and the viewport's GPU when Play never ran", () => {

@@ -17,6 +17,7 @@ import type { FirstDrawStats, ProgramInventory } from "./first-draw-stats";
 import type { GpuBusyStats } from "./gpu-busy-probe";
 import type { FrameBackpressureStats } from "./frame-backpressure";
 import type { DrawPassCounts } from "./draw-passes";
+import type { OverlayBatchStats } from "./overlay-draw-batcher";
 import { existingSceneInstancePool, type InstancePoolDiagnostics } from "./instance-pool";
 
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
@@ -44,6 +45,11 @@ export type RenderDiagnostics = {
    * `drawCalls`. Absent where the view does not attribute them.
    */
   drawPasses?: DrawPassCounts;
+  /**
+   * The Scene Layers of the view's last drawn frame: the visuals they drew, in how many draws and batches, and why the
+   * rest drew on their own (`OverlayBatchStats`); all zero where it drew none.
+   */
+  layerBatches?: OverlayBatchStats;
   /**
    * GPU-busy time per Engine frame while the `gpubusy` debug command measures (`gpu-busy-probe.ts`); null when it has
    * not measured a frame or the Engine has no fences.

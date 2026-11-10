@@ -233,6 +233,7 @@ import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
 import {
   beginDrawPassFrame, DrawPassFrame, endDrawPassFrame, enterDrawPass, leaveDrawPass, publishDrawPassFrame,
 } from "./draw-passes";
+import { copyOverlayBatchStats, countOverlayBatches, emptyOverlayBatchStats } from "./overlay-draw-batcher";
 import { GlobalParameterSession, globalParameterDefaults } from "./global-parameter-values";
 import { MaterialLibrary } from "./material-library";
 import { refreshText2DMaterials } from "./text2d-mesh";
@@ -376,6 +377,8 @@ function projectEngineOptions(): EngineOptions {
 
 /** Frames with no layer still presenting share this set instead of building one. */
 const NO_PRESENTING_LAYERS: ReadonlySet<string> = new Set();
+/** A frame whose Scene Layers have drawn nothing yet. */
+const NO_LAYER_BATCHES = emptyOverlayBatchStats();
 
 function initializeEngine(
   canvas: HTMLCanvasElement,
@@ -1868,6 +1871,8 @@ function initializeEngine(
   let lastDrawCalls = 0;
   /** The view's frames' draws by pass (`RenderDiagnostics.drawPasses`); `last` is the last frame it drew. */
   const drawPasses = new DrawPassFrame(engine);
+  /** How the view's Scene Layers drew (`RenderDiagnostics.layerBatches`): the frame being drawn, and the last one drawn. */
+  const layerBatches = { current: emptyOverlayBatchStats(), last: emptyOverlayBatchStats() };
   /** `showocclusion`: hosts draw the world view's occlusion buffer over the view. */
   let occlusionOverlay = false;
   let lastRenderCpuMs = 0;
@@ -1920,7 +1925,7 @@ function initializeEngine(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: pressureSampled ? { ...lastPressureSample } : null, gpuAttribution: gpuAttribution() }),
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}), firstDraws: firstDraws?.stats() ?? null, programs: programInventory(engine), settings: breakdownSettings(),
-      drawPasses: { ...drawPasses.last },
+      drawPasses: { ...drawPasses.last }, layerBatches: copyOverlayBatchStats(layerBatches.last),
       gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
@@ -2217,6 +2222,7 @@ function initializeEngine(
     let holdReason: string | undefined;
     beginEngineDrawCallFrame(engine);
     beginDrawPassFrame(drawPasses);
+    copyOverlayBatchStats(NO_LAYER_BATCHES, layerBatches.current);
     // Water created or enabled since the last update (an editor edit or drop, a Play spawn) settles before the world's
     // strict probes below request its variants, and counts in this frame's draw calls. A load frame that draws no world
     // leaves it to the load's own settle, so spawn batches arriving over frames never settle partial sets.
@@ -2337,7 +2343,9 @@ function initializeEngine(
       if (sceneLayerCompositor) {
         enterDrawPass(engine, "layers", true);
         try {
-          sceneLayerCompositor.render(presentingLayers, (layerId, draw, fallback) => drawOwner(`layer:${layerId}`, draw, fallback));
+          const compositor = sceneLayerCompositor;
+          countOverlayBatches(layerBatches.current, () =>
+            compositor.render(presentingLayers, (layerId, draw, fallback) => drawOwner(`layer:${layerId}`, draw, fallback)));
         } finally {
           leaveDrawPass(engine);
         }
@@ -2387,6 +2395,7 @@ function initializeEngine(
     presentationStats.drawn += 1;
     lastDrawCalls = readEngineDrawCalls(engine);
     publishDrawPassFrame(drawPasses);
+    copyOverlayBatchStats(layerBatches.current, layerBatches.last);
     scheduler.noteRendered(frameStart, performance.now());
     lastRenderCpuMs = performance.now() - renderStart;
     if (profileReceipt) {

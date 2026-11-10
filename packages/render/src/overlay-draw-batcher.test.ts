@@ -1,3 +1,4 @@
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
@@ -9,7 +10,7 @@ import { sceneDrawBatcher } from "./draw-batching";
 import { beginEngineDrawCallFrame } from "./draw-calls";
 import { beginDrawPassFrame, DrawPassFrame, endDrawPassFrame, publishDrawPassFrame, withDrawPass } from "./draw-passes";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
-import { setSceneDrawBatching } from "./overlay-draw-batcher";
+import { copyOverlayBatchStats, countOverlayBatches, emptyOverlayBatchStats, setSceneDrawBatching } from "./overlay-draw-batcher";
 import { OverlayLayoutRenderer } from "./overlay-layout-render";
 import { applyOverlayUnlitMaterial } from "./overlay-texture-quad";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
@@ -282,6 +283,96 @@ describe("Scene Layer draw batching", () => {
     // Ready again, the four share a draw.
     notReady.mockRestore();
     expect(pass()).toEqual({ draws: 1, drawn: ["drawBatch:0"] });
+  });
+
+  it("counts a frame's visuals by how each drew: in a batch, or on its own and why", async () => {
+    const { engine, compositor, scene } = host();
+    // Blended, apart from each other. Three bind the same and share a draw.
+    [-6, -3, 0].forEach((x, index) => quad(scene, `same${index}`, x, 0));
+    // One of another tint: batchable, but nothing draws the same.
+    quad(scene, "tinted", 3, 0, { tint: [0.9, 0.2, 0.1, 0.8] });
+    quad(scene, "turned", 6, 0).rotation.z = 0.2;
+    const authored = MeshBuilder.CreatePlane("authored", { size: 1 }, scene);
+    authored.material = new StandardMaterial("authored", scene);
+    authored.material.alpha = 0.5;
+    authored.position.set(-6, 3, 0);
+    quad(scene, "coloured", -3, 3).setVerticesData(VertexBuffer.ColorKind, new Array<number>(16).fill(1));
+    quad(scene, "hooked", 0, 3).onBeforeRenderObservable.add(() => {});
+    // The alpha-tested pass's only draw.
+    sprite(scene, "sprite", 3, RawTexture.CreateRGBATexture(new Uint8Array(64 * 64 * 4).fill(255), 64, 64, scene)).position.y = 3;
+    await compositor.prepare("hud", () => {});
+    layerDraws(engine, compositor);
+    const stats = emptyOverlayBatchStats();
+    const draws = countOverlayBatches(stats, () => layerDraws(engine, compositor, 1));
+    // Nine visuals: three in one draw, six in a draw each.
+    expect(stats).toEqual({
+      visuals: 9, draws: 7, batches: 1, batched: 3,
+      alone: { single: 1, material: 1, transform: 1, vertexColor: 1, other: 1, unmatched: 1 },
+    });
+    expect(draws).toBe(7);
+    // Every layer drawn meanwhile counts: a second one with two visuals that share a draw.
+    const second = compositor.create({ type: "sceneLayerCreate", layerId: "second", assetGuid: "second", zOrder: 1, ownerSceneGuid: null, postProcessStack: [] });
+    quad(second.scene, "a", -2, 0);
+    quad(second.scene, "b", 2, 0);
+    await compositor.prepare("second", () => {});
+    layerDraws(engine, compositor);
+    const both = emptyOverlayBatchStats();
+    countOverlayBatches(both, () => layerDraws(engine, compositor, 1));
+    expect(both).toMatchObject({ visuals: 11, draws: 8, batches: 2, batched: 5 });
+  });
+
+  it("counts only the passes drawn while asked to, adding to the counts it is given", async () => {
+    const { engine, compositor, scene } = host();
+    const quads = [-3, 0, 3].map((x, index) => quad(scene, `q${index}`, x, 0));
+    await compositor.prepare("hud", () => {});
+    const none = { single: 0, material: 0, transform: 0, vertexColor: 0, other: 0, unmatched: 0 };
+    const stats = emptyOverlayBatchStats();
+    // Frames drawn before and after the counted one leave the counts.
+    layerDraws(engine, compositor);
+    expect(countOverlayBatches(stats, () => layerDraws(engine, compositor, 1))).toBe(1);
+    layerDraws(engine, compositor);
+    expect(stats).toEqual({ visuals: 3, draws: 1, batches: 1, batched: 3, alone: none });
+    // A second counted frame adds to them: three visuals again, one of them turned.
+    quads[0]!.rotation.z = 0.2;
+    countOverlayBatches(stats, () => layerDraws(engine, compositor, 1));
+    expect(stats).toEqual({ visuals: 6, draws: 3, batches: 2, batched: 5, alone: { ...none, transform: 1 } });
+    // Counting within a counted draw takes its own passes and hands back after it.
+    const outer = emptyOverlayBatchStats(), inner = emptyOverlayBatchStats();
+    countOverlayBatches(outer, () => {
+      countOverlayBatches(inner, () => layerDraws(engine, compositor, 1));
+      layerDraws(engine, compositor, 1);
+      layerDraws(engine, compositor, 1);
+    });
+    expect({ inner: inner.visuals, outer: outer.visuals }).toEqual({ inner: 3, outer: 6 });
+    // A pass with one batchable visual has nothing to batch it with.
+    quads[1]!.rotation.z = 0.2;
+    const lone = emptyOverlayBatchStats();
+    countOverlayBatches(lone, () => layerDraws(engine, compositor, 1));
+    expect(lone).toEqual({ visuals: 3, draws: 3, batches: 0, batched: 0, alone: { ...none, transform: 2, unmatched: 1 } });
+    // A copy holds the counts as they were.
+    const copy = copyOverlayBatchStats(lone);
+    countOverlayBatches(lone, () => layerDraws(engine, compositor, 1));
+    expect(copy).toEqual({ visuals: 3, draws: 3, batches: 0, batched: 0, alone: { ...none, transform: 2, unmatched: 1 } });
+    expect(copyOverlayBatchStats(stats, copy)).toBe(copy);
+    expect(copy).toEqual(stats);
+  });
+
+  it("counts a batch that cannot draw as one in a frame as its members' own draws", async () => {
+    const { engine, compositor, scene } = host();
+    const texture = RawTexture.CreateRGBATexture(new Uint8Array(64 * 64 * 4).fill(255), 64, 64, scene);
+    const sprites = [-4, -2, 0, 2].map((x, index) => sprite(scene, `sprite${index}`, x, texture));
+    await compositor.prepare("hud", () => {});
+    const material = sprites[0]!.material!;
+    const isReady = material.isReadyForSubMesh.bind(material);
+    vi.spyOn(material, "isReadyForSubMesh").mockImplementation((mesh, subMesh, useInstances) => mesh !== sprites[2] && isReady(mesh, subMesh, useInstances));
+    const subMeshes = sprites.map((mesh) => mesh.subMeshes[0]!);
+    const stats = emptyOverlayBatchStats();
+    countOverlayBatches(stats, () => engineFrame(engine, () =>
+      sceneDrawBatcher(scene)!.draw(subMeshes, subMeshes.length, false, (subMesh) => { subMesh.render(false); })));
+    expect(stats).toEqual({
+      visuals: 4, draws: 4, batches: 0, batched: 0,
+      alone: { single: 0, material: 0, transform: 0, vertexColor: 0, other: 0, unmatched: 4 },
+    });
   });
 
   it("draws the Feature Test HUD in far fewer draws", async () => {

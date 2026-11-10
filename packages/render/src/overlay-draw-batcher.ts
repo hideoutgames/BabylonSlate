@@ -111,6 +111,55 @@ interface Slot {
 
 const bakes = new WeakMap<Mesh, Bake>();
 
+/**
+ * Why a draw goes on its own: it is its pass's only draw, what it draws with or how it is posed cannot join a batch, or
+ * no other draw of its pass draws the same.
+ */
+export type OverlayAloneReason = "single" | "material" | "transform" | "vertexColor" | "other" | "unmatched";
+/**
+ * Batched passes counted (`countOverlayBatches`): the draws asked for (`visuals`), the draws made, the batches among
+ * them with the visuals they drew, and the visuals drawn on their own by reason: a pass's only draw, a Material other
+ * than the unlit one (an authored 2D Material, a 3D-lit sprite), a rotated or mirrored pose (or one not exact in 32
+ * bits), vertex colours, anything else a batch cannot reproduce, and batchable visuals no other draw matched (or whose
+ * batch could not draw as one then). `visuals` is `batched` plus every `alone` count.
+ */
+export interface OverlayBatchStats {
+  visuals: number;
+  draws: number;
+  batches: number;
+  batched: number;
+  alone: Record<OverlayAloneReason, number>;
+}
+
+export function emptyOverlayBatchStats(): OverlayBatchStats {
+  return { visuals: 0, draws: 0, batches: 0, batched: 0, alone: { single: 0, material: 0, transform: 0, vertexColor: 0, other: 0, unmatched: 0 } };
+}
+
+/** Copies `from`'s counts into `to` (a new one when not given) and returns it. */
+export function copyOverlayBatchStats(from: OverlayBatchStats, to: OverlayBatchStats = emptyOverlayBatchStats()): OverlayBatchStats {
+  to.visuals = from.visuals; to.draws = from.draws; to.batches = from.batches; to.batched = from.batched;
+  Object.assign(to.alone, from.alone);
+  return to;
+}
+
+/** The counts being added to, and where passes drawn while nothing counts go (never read). */
+let counting: OverlayBatchStats | undefined;
+const uncounted = emptyOverlayBatchStats();
+
+/**
+ * Adds the batched passes drawn while `draw` runs to `stats`: a view counts its frame's Scene Layers this way
+ * (`RenderDiagnostics.layerBatches`). Passes drawn outside any such call are not counted.
+ */
+export function countOverlayBatches<T>(stats: OverlayBatchStats, draw: () => T): T {
+  const previous = counting;
+  counting = stats;
+  try {
+    return draw();
+  } finally {
+    counting = previous;
+  }
+}
+
 /** The float data of a tightly packed 32-bit float vertex buffer of `size` components, or null. */
 function packedFloats(mesh: Mesh, kind: string, size: number): FloatArray | null {
   const buffer = mesh.getVertexBuffer(kind);
@@ -264,7 +313,15 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
 
   draw(sorted: readonly SubMesh[], count: number, transparent: boolean, drawOne: (subMesh: SubMesh) => void): void {
     const scene = this.scene;
-    if (this.disposed || count < 2 || scene.prePassRenderer) {
+    if (this.disposed || scene.prePassRenderer) {
+      for (let index = 0; index < count; index += 1) drawOne(sorted[index]!);
+      return;
+    }
+    const stats = counting ?? uncounted;
+    stats.visuals += count;
+    if (count < 2) {
+      stats.alone.single += count;
+      stats.draws += count;
       for (let index = 0; index < count; index += 1) drawOne(sorted[index]!);
       return;
     }
@@ -277,15 +334,20 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
         minX: 0, minY: 0, maxX: 0, maxY: 0, batch: -1,
       });
       entry.subMesh = sorted[index]!;
-      if (this.classify(entry, eye)) candidates += 1;
+      const alone = this.classify(entry, eye);
+      if (alone) stats.alone[alone] += 1;
+      else candidates += 1;
     }
     try {
       if (candidates < 2) {
+        // A lone candidate has nothing to batch with.
+        stats.alone.unmatched += candidates;
+        stats.draws += count;
         for (let index = 0; index < count; index += 1) drawOne(sorted[index]!);
         return;
       }
       this.group(count, eye);
-      this.drawBatches(transparent, drawOne);
+      this.drawBatches(transparent, drawOne, stats);
     } finally {
       for (let index = 0; index < count; index += 1) this.release(entries[index]!);
       for (let index = 0; index < this.batchCount; index += 1) this.batches[index]!.entries.length = 0;
@@ -308,33 +370,36 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     entry.batch = -1;
   }
 
-  /** Fills `entry` for a draw that may batch and returns true; otherwise leaves it to draw on its own. */
-  private classify(entry: Entry, eye: { x: number; y: number; z: number }): boolean {
+  /** Fills `entry` for a draw that may batch and returns null; otherwise why it draws on its own. */
+  private classify(entry: Entry, eye: { x: number; y: number; z: number }): Exclude<OverlayAloneReason, "single" | "unmatched"> | null {
     const subMesh = entry.subMesh;
     const mesh = subMesh.getMesh();
     const material = subMesh.getMaterial();
     entry.mesh = null;
-    if (!(mesh instanceof Mesh) || subMesh.getRenderingMesh() !== mesh || !material || !isUnlitMaterial(material)) return false;
-    if (material.needDepthPrePass || material.separateCullingPass) return false;
-    if (mesh.subMeshes.length !== 1 || !boundsHold(mesh, material)) return false;
+    if (!(mesh instanceof Mesh) || subMesh.getRenderingMesh() !== mesh) return "other";
+    if (!material || !isUnlitMaterial(material)) return "material";
+    if (material.needDepthPrePass || material.separateCullingPass) return "other";
+    if (mesh.subMeshes.length !== 1 || !boundsHold(mesh, material)) return "other";
     const internals = mesh as unknown as MeshInternals;
     if (internals._userInstancedBuffersStorage || internals._occlusionDataStorage?.occlusionType || internals.renderOutline || internals.renderOverlay)
-      return false;
-    if (mesh.ignoreCameraMaxZ || mesh.overrideRenderingFillMode !== null || mesh._instanceDataStorage.isFrozen) return false;
-    if (mesh.isVerticesDataPresent(VertexBuffer.ColorKind)) return false;
+      return "other";
+    if (mesh.ignoreCameraMaxZ || mesh.overrideRenderingFillMode !== null || mesh._instanceDataStorage.isFrozen) return "other";
+    if (mesh.isVerticesDataPresent(VertexBuffer.ColorKind)) return "vertexColor";
     // Draw hooks: none but a clip's scissor, which the batch sets itself.
     const clip = overlayDrawClip(mesh);
     const hooks = clip === undefined ? 0 : 1;
     if (mesh.onBeforeRenderObservable.hasObservers() || mesh.onBeforeDrawObservable.hasObservers() ||
-      mesh.onBeforeBindObservable.observers.length !== hooks || mesh.onAfterRenderObservable.observers.length !== hooks) return false;
+      mesh.onBeforeBindObservable.observers.length !== hooks || mesh.onAfterRenderObservable.observers.length !== hooks) return "other";
     const indices = mesh.getIndices(false, false);
     const vertices = mesh.getTotalVertices();
     if (!indices || subMesh.indexStart !== 0 || subMesh.indexCount !== indices.length || subMesh.verticesStart !== 0 || subMesh.verticesCount !== vertices)
-      return false;
+      return "other";
     const uvs = mesh.isVerticesDataPresent(VertexBuffer.UVKind) ? packedFloats(mesh, VertexBuffer.UVKind, 2) : null;
-    if (mesh.isVerticesDataPresent(VertexBuffer.UVKind) && !uvs) return false;
+    if (mesh.isVerticesDataPresent(VertexBuffer.UVKind) && !uvs) return "other";
     const bake = bakeOf(mesh, eye);
-    if (!bake?.positions || bake.positions.length !== vertices * 3 || (uvs && uvs.length < vertices * 2)) return false;
+    // No baked positions: the pose rotates, mirrors or is not exact in 32 bits.
+    if (!bake?.positions) return bake ? "transform" : "other";
+    if (bake.positions.length !== vertices * 3 || (uvs && uvs.length < vertices * 2)) return "other";
     entry.mesh = mesh;
     entry.material = material;
     entry.binding = unlitBinding(mesh);
@@ -342,7 +407,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     entry.bake = bake;
     entry.uvs = uvs;
     entry.indices = indices;
-    return true;
+    return null;
   }
 
   /** Projected bounds of every draw, two of the viewport's pixels wider on each side; unbounded when not known. */
@@ -440,11 +505,19 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     this.batchCount = used;
   }
 
-  private drawBatches(transparent: boolean, drawOne: (subMesh: SubMesh) => void): void {
+  private drawBatches(transparent: boolean, drawOne: (subMesh: SubMesh) => void, stats: OverlayBatchStats): void {
     for (let index = 0; index < this.batchCount; index += 1) {
       const members = this.batches[index]!.entries;
       // A member whose own draw would not draw now (Babylon's readiness gate) leaves its batch's members to their own.
-      if (members.length > 1 && members.every(drawsNow) && this.drawBatch(members, transparent)) continue;
+      if (members.length > 1 && members.every(drawsNow) && this.drawBatch(members, transparent)) {
+        stats.draws += 1;
+        stats.batches += 1;
+        stats.batched += members.length;
+        continue;
+      }
+      stats.draws += members.length;
+      // A candidate nothing matched, or whose batch could not draw as one now; the others were counted as classified.
+      for (const entry of members) if (entry.mesh) stats.alone.unmatched += 1;
       for (const entry of members) drawOne(entry.subMesh);
     }
   }
