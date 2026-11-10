@@ -614,7 +614,8 @@ describe("text2DRedraw", () => {
       // Twelve glyphs do not fit the atlas built for two.
       expect(text2DRedraw(text, { text: "ABCDEFGHIJKL", size: 16 })).toBeNull();
       expect(rasterized).toBe(0);
-      expect(text2DRedraw(text, { text: "BA", size: 16 })).not.toBeNull();
+      // Two other glyphs fit it, and are rasterized for the redraw.
+      expect(text2DRedraw(text, { text: "DC", size: 16 })).not.toBeNull();
       expect(rasterized).toBe(2);
     } finally {
       if (previous === undefined) Reflect.deleteProperty(globalThis, "document");

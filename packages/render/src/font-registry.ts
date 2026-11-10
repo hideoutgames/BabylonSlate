@@ -1,4 +1,5 @@
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
+import { forgetRasterizedGlyphs } from "./text2d-bitmap";
 
 export interface FontFaceLike {
   family: string;
@@ -137,6 +138,8 @@ export class FontRegistry {
       // Wait for this exact face: a family-wide document load matches only the
       // regular face and would mark a bold or italic face ready before it loads.
       await face.load();
+      // Glyphs drawn before this face could draw them came from another font.
+      forgetRasterizedGlyphs();
       // Disposal or newer pending content for this guid supersedes this face.
       const latest = this.registrations.get(entry.guid);
       if (this.disposed || latest !== registration) {
@@ -191,7 +194,10 @@ export class FontRegistry {
   }
 
   private remove(face: FontFaceLike): void {
-    if (this.added.delete(face)) this.host?.delete?.(face);
+    if (!this.added.delete(face)) return;
+    this.host?.delete?.(face);
+    // Glyphs this face drew now fall to another font.
+    forgetRasterizedGlyphs();
   }
 
   /** Await every face before the first UI draw (engineplan §11.4). */
