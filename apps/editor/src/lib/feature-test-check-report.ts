@@ -29,6 +29,7 @@ import {
   type FeatureTestCheckReport,
   type FeatureTestCheckResources,
   type FeatureTestCheckSceneResult,
+  type FeatureTestStoppedSession,
   type CounterStats,
   type FrameStats,
   type PlayPresentation,
@@ -559,7 +560,25 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
     lines.push("", `Resources before it stopped (last ${report.unfinished.resources.length} samples, oldest first):`);
     for (const sample of report.unfinished.resources) lines.push(resourceLine(sample));
   }
+  for (const session of report.stoppedSessions ?? []) lines.push("", ...stoppedSessionLines(session));
   return lines.join("\n").trimEnd();
+}
+
+/** Stages of a stopped session's trail a report lists: its last ones. */
+const MAX_TRAIL_LINES = 24;
+
+/**
+ * A session that stopped without closing: when it was last alive, and the stages it passed through last, each with
+ * how long before that moment it was reached.
+ */
+function stoppedSessionLines(session: FeatureTestStoppedSession): string[] {
+  const marks = session.marks.slice(-MAX_TRAIL_LINES);
+  const omitted = session.marks.length - marks.length;
+  return [
+    `A session stopped without closing (a freeze, a crash or a force close), last alive ${new Date(session.lastAliveAt).toISOString()}.`,
+    `Its last stages, each with how long before that it was reached${omitted ? ` (${omitted} earlier omitted)` : ""}:`,
+    ...marks.map((mark) => `  ${s(Math.max(0, session.lastAliveAt - mark.at)).padStart(8)}  ${clip(mark.stage)}`),
+  ];
 }
 
 /** The GPU backpressure mode the samples ran under (`framesinflight`) and the renders it skipped while they sampled. */

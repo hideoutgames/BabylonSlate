@@ -825,6 +825,17 @@ export interface FeatureTestCheckSceneResult {
   problems: string[];
 }
 
+/**
+ * A page of the app that stopped without closing (a freeze, a crash, a force close), as its stored session trail left
+ * it: with or without a check running, so an ordinary Play session that froze is told by the next report.
+ */
+export interface FeatureTestStoppedSession {
+  /** When the page last renewed its trail (`Date.now()`): at its last mark, or within seconds of stopping. */
+  lastAliveAt: number;
+  /** The stages it passed through last, oldest first. */
+  marks: { at: number; stage: string }[];
+}
+
 /** What the editor held at one moment of a check: shader programs, textures and memory. */
 export interface FeatureTestCheckResources {
   /** Milliseconds since the check started. */
@@ -867,6 +878,8 @@ export interface FeatureTestCheckReport {
   pageErrors: string[];
   /** A check the app stopped during (a crash or reload): its last step and resource samples, oldest first. */
   unfinished?: { step: string; resources: FeatureTestCheckResources[] };
+  /** Pages that stopped without closing since the last report told of them, oldest first (the session trail). */
+  stoppedSessions?: FeatureTestStoppedSession[];
   /** A Breakdown's measurement context; absent for other modes. */
   breakdown?: FeatureTestBreakdownInfo;
 }

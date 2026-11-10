@@ -1,4 +1,4 @@
-import { createSaveStorageServer, createSessionSaveStorage } from "@haptic/core";
+import { createSaveStorageServer, createSessionSaveStorage, markSessionTrail, markSessionTrailStatus } from "@haptic/core";
 import { createSaveGameStorage } from "@haptic/vfs";
 import type { ScalabilityAcknowledgement } from "@haptic/core";
 import {
@@ -106,6 +106,8 @@ export type {
 
 /** How long a stopped worker may take to run End Play and finish its save writes. */
 const WORKER_STOP_TIMEOUT_MS = 3000;
+/** How often a running session renews its status in the session trail. */
+const PLAY_TRAIL_STATUS_MS = 5000;
 
 /**
  * Start a fullscreen Play session. Prefers a dedicated game Worker; falls back
@@ -733,6 +735,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
   let last = performance.now();
   let raf = 0;
   let fpsWindowStart = last;
+  let trailStatusAt = last;
   let sessionDiagnostics: SessionReportEntry[] = [];
   let droppedDiagnostics = 0;
   let lastObservedMoveX: number | null = null;
@@ -767,10 +770,14 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     }
     // Worker pumps itself; host only feeds input + applies snapshots via onSnapshot.
     if (now - fpsWindowStart >= 1000) {
-      emitHudStats(
-        applyPlayFpsSample(hudStats, handle.scheduler.stats().renderedFps),
-      );
+      const { renderedFps } = handle.scheduler.stats();
+      emitHudStats(applyPlayFpsSample(hudStats, renderedFps));
       fpsWindowStart = now;
+      // The trail of a session that freezes ends near when it did, and says what it was doing.
+      if (now - trailStatusAt >= PLAY_TRAIL_STATUS_MS) {
+        trailStatusAt = now;
+        markSessionTrailStatus("play", `${options.mode ?? "play"}: running at tick ${lastWorkerTickIndex}, ${Math.round(renderedFps)} fps`);
+      }
     }
     raf = requestAnimationFrame(pump);
   };
@@ -975,6 +982,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
             clearTimeout(timeout);
             saveServer.dispose();
             stopping.terminate();
+            markSessionTrail(`${options.mode ?? "play"}: game worker stopped`);
             resolve();
           };
         });
@@ -1003,6 +1011,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
         workerStopped,
       ])
         .then(([quarantined]) => {
+          markSessionTrail(`${options.mode ?? "play"}: view ${quarantined ? "did not confirm release" : "released"}`);
           const textureCountAfter =
             sharedEngine.getLoadedTexturesCache().length;
           const retained = texturesRetainedAfterPlay(sharedEngine, texturesBefore, playScenes);

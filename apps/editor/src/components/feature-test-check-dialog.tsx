@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore";
 import type { Effect } from "@babylonjs/core/Materials/effect";
+import { markSessionTrail } from "@haptic/core";
 import { estimateTextureMemory, isEngineContextLost } from "@haptic/render";
 import { getHostMemoryStats, type HostMemoryStats } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
@@ -26,6 +27,7 @@ import {
   loadSavedCheck,
   saveCheckEnded,
   saveUnfinishedCheck,
+  withStoppedSessions,
 } from "../lib/feature-test-check-record";
 import {
   beginSecondPass,
@@ -266,7 +268,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       hostMemory: async () => hostMemoryOf(await getHostMemoryStats()),
       now: () => performance.now(),
       sleep,
-      onProgress: (message) => setPhase({ kind: "running", message }),
+      onProgress: (message) => { markSessionTrail(`check: ${message}`); setPhase({ kind: "running", message }); },
     };
     try {
       const report = await runFeatureTestCheck({
@@ -294,8 +296,10 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
   }, [openDocument]);
 
   /** Shows the final report and records when this check ended, for the next Breakdown's warm-device note. */
-  const finish = useCallback((report: FeatureTestCheckReport, error: string | null = null) => {
+  const finish = useCallback((finished: FeatureTestCheckReport, error: string | null = null) => {
     saveCheckEnded(Date.now());
+    // A report of a check that ran to its end also tells of the sessions that froze or crashed before it.
+    const report = withStoppedSessions(finished, true);
     setPhase({
       kind: "done", report,
       text: error && !report.scenes.length ? `Haptic Feature Test Check failed to run: ${error}` : formatFeatureTestCheckReport(report, collectDiagnosticEnvironment()),
