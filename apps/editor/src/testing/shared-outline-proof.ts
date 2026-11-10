@@ -28,7 +28,7 @@ export interface SharedOutlineProofOptions {
    * start from: a settings chain's for FXAA, the view's own multisampled pair's, resolved, for MSAA.
    */
   antiAliasing?: "fxaa" | "msaa4";
-  /** The strict mask starts from the scene's depth, as a game's world view's does (`outlinesOverSceneDepth`). */
+  /** The strict mask starts from the scene's depth, as a game's world view's does (`seedsFromSceneDepth`). */
   overSceneDepth?: boolean;
 }
 
@@ -79,7 +79,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
   const targets = instances.map((mesh, index) => ({ key: `actor-${index}`, meshes: [mesh] }));
   const owner = SharedOutlineOwner.forScene(scene);
   const view = owner.createView("shared-outline-proof");
-  const renderer = new SceneRenderCoordinator(scene, { outlinesOverSceneDepth: options.overSceneDepth === true });
+  const renderer = new SceneRenderCoordinator(scene, { seedsFromSceneDepth: options.overSceneDepth === true });
   const detach = renderer.attachSharedOutline(view);
   const contributions: Record<string, SharedOutlineContribution> = {
     global: { kind: "global", targets: [targets[0]!], color: [1, 0, 0], width: 2, throughMeshes: false },

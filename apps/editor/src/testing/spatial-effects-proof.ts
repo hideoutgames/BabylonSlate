@@ -27,6 +27,7 @@ import {
   setSceneRenderSettings,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
+import { allowSceneScreenShadows } from "@haptic/render/render-settings";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { removeFogVolumes, upsertFogVolumes } from "@haptic/render/fog-volumes";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
@@ -41,6 +42,7 @@ async function captureFogVolumes(
 ) {
   const root = new TransformNode("Local Fog Actor", scene);
   const properties = { enabled: true, shape: "box", size: [2, 2, 2], density: 0.8, edgeFalloff: 0 };
+  let pane: Mesh | undefined;
   const update = () => upsertFogVolumes(scene, "fog-actor", root, fogVolumeBindings([{
     id: "fog-component",
     classId: "FogVolumeComponent",
@@ -144,12 +146,28 @@ async function captureFogVolumes(
     const both = await draw();
     effects.volumetricLighting.density = 0;
     const volumeFog = await draw();
+
+    // A blended pane between the camera and the volume. The geometry pass writes the pane's own view depth (its output
+    // is opaque whatever the surface's opacity), so the march ends at the pane, in front of the volume, and the view
+    // behind it stays clear. The pane writes no scene depth, so a pass seeded from that depth still has to draw it.
+    pane = MeshBuilder.CreatePlane("Blended Pane", { size: 3 }, scene);
+    pane.position.set(0, 0, 1.5);
+    const glass = new PBRMaterial("Blended Pane", scene);
+    glass.unlit = true;
+    glass.albedoColor = new Color3(0.6, 0.6, 0.6);
+    glass.alpha = 0.6;
+    pane.material = glass;
+    const behindPane = await draw();
+    removeFogVolumes(scene, "fog-actor");
+    const paneClear = await draw();
     return {
       off, box, overlap, moved, sphere, softSphere, disabled, removed, insideOff, inside, walk, beyondClear, beyond,
-      nestedWalk, composition: { clear, sceneFog, volumeFog, both },
+      nestedWalk, composition: { clear, sceneFog, volumeFog, both }, pane: { clear: paneClear, fogged: behindPane },
     };
   } finally {
     removeFogVolumes(scene, "fog-actor");
+    pane?.material?.dispose();
+    pane?.dispose();
     root.dispose();
   }
 }
@@ -325,9 +343,17 @@ function beamLengths(scene: Scene, camera: FreeCamera, engine: AbstractEngine, m
  * block. `volumetricShadows`: the shadowed fog spot light without and with volumetric lighting, its shadow cast and not,
  * over unlit surfaces, with how far each pixel's view ray runs through the beam's shadowed and open parts.
  */
+export interface SpatialEffectsProofOptions {
+  /** The geometry pass starts from the scene's depth where it may, as a game's world view's does (`seedsFromSceneDepth`). */
+  seedsFromSceneDepth?: boolean;
+  /** Draws the scene multisampled, as a world view at the High tier does. */
+  multisampled?: boolean;
+}
+
 export async function runSpatialEffectsProof(
   backend: "webgl2" | "webgpu",
   kind: "combined" | "fogVolumes" | "ambientOcclusion" | "reflections" | "volumetricShadows",
+  options: SpatialEffectsProofOptions = {},
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
@@ -473,8 +499,10 @@ export async function runSpatialEffectsProof(
             distance: 20,
           }),
         });
+      // Only a world view's Scene follows the tier's anti-aliasing (four samples at High).
+      if (options.multisampled) allowSceneScreenShadows(scene, () => false);
       settings();
-      const graph = new ForwardSceneFrameGraph(scene);
+      const graph = new ForwardSceneFrameGraph(scene, { seedsFromSceneDepth: options.seedsFromSceneDepth === true });
       const draw = async (activeCamera = camera) => {
         scene.activeCamera = activeCamera;
         settings();

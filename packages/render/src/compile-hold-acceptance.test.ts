@@ -1837,23 +1837,26 @@ describe("compile holds after the first frame", () => {
     });
   });
 
-  it("a geometry pass that first draws when a Fog Volume comes into view holds the view for its pipelines: webgpu", async () => {
+  it.each([
+    ["opaque meshes alone", false, { geometryVariants: false, held: false, holdReported: false, leftOut: 0, recovered: true }],
+    ["a blended mesh", true, { geometryVariants: true, held: true, holdReported: true, leftOut: 0, recovered: true }],
+  ] as const)("a Fog Volume coming into view over %s holds the view only for the meshes its geometry pass draws: webgpu", async (_name, blended, expected) => {
     // Fog Volumes alone run the geometry pass only while one is in the camera's view (behind the camera it is not), so
-    // the view's complete frames leave it undrawn. Its first draws miss every mesh's pipeline at once, so they hold as a
-    // new graph's do.
+    // the view's complete frames leave it undrawn. A game's world view starts that pass from the scene's depth, so it
+    // draws no opaque mesh and compiles no geometry variant of one: nothing to hold for. A blended mesh the scene's
+    // depth lacks is drawn, and its first draw misses its pipeline in a pass that had not drawn: it holds as a new
+    // graph's do.
     const world = playWorld("webgpu", []);
     Object.assign(world.engine.getCaps(), { texelFetch: true });
     // Fog Volumes alone: Screen-Space Shadows would keep the geometry pass drawing every frame.
     updateSceneRenderingSettings(world.handle.scene, undefined, undefined, { screenShadows: "off" });
+    if (blended) ownMaterials(world, "actor-2")[0]!.alpha = 0.5;
     const fog = new TransformNode("fog", world.handle.scene);
     fog.position.z = -5_000;
     upsertFogVolumes(world.handle.scene, "fog", fog, fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]));
     const record = await measure(world, () => { fog.position.z = 0; });
-    // Its geometry variants are compiled only once it runs: the pass had not drawn before.
     expect({ geometryVariants: world.driver.created.some(geometryVariant), held: record.heldFrames > 0, holdReported: record.holdReported,
-      leftOut: world.driver.omitted.size, recovered: record.recovered }, JSON.stringify(record)).toEqual({
-      geometryVariants: true, held: true, holdReported: true, leftOut: 0, recovered: true,
-    });
+      leftOut: world.driver.omitted.size, recovered: record.recovered }, JSON.stringify(record)).toEqual(expected);
   });
 
   /** Gives the world's meshes (by name) PBR Materials of their own before the load: one can then change alone. */
@@ -1902,7 +1905,8 @@ describe("compile holds after the first frame", () => {
   it("a Fog Volume pass that went idle holds again for its next draws: webgpu", async () => {
     // The pass drew while a volume was in view, then idled (the volume behind the camera) while the crate's geometry
     // variant changed. The volume coming into view again draws that new variant first; an idle pass is forgotten, so it
-    // holds as a first draw.
+    // holds as a first draw. The crate is blended: a game's world view's pass, started from the scene's depth, draws
+    // no other.
     const world = playWorld("webgpu", []);
     Object.assign(world.engine.getCaps(), { texelFetch: true });
     // Fog Volumes alone: Screen-Space Shadows would keep the geometry pass drawing every frame.
@@ -1910,6 +1914,7 @@ describe("compile holds after the first frame", () => {
     const fog = new TransformNode("fog", world.handle.scene);
     upsertFogVolumes(world.handle.scene, "fog", fog, fogVolumeBindings([{ id: "fog", classId: "FogVolumeComponent", properties: {} }]));
     const [crate] = ownMaterials(world, "actor-2");
+    crate!.alpha = 0.5;
     await settle(world);
     fog.position.z = -5_000;
     for (let index = 0; index < 3; index++) await world.frame();

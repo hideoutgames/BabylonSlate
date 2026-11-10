@@ -189,6 +189,68 @@ for (const backend of ["webgl2"] as const) {
   });
 }
 
+/** Per capture that differs between two capture sets: its path, how many pixels differ and the largest colour step. */
+function captureDifferences(own: unknown, seeded: unknown, path = ""): { capture: string; pixels: number; largest: number }[] {
+  if (Array.isArray(own) && typeof own[0] === "number") {
+    const other = seeded as number[];
+    const pixels = new Set<number>();
+    let largest = 0;
+    own.forEach((value: number, index) => {
+      const step = Math.abs(value - other[index]!);
+      if (step === 0) return;
+      pixels.add(Math.floor(index / 4));
+      largest = Math.max(largest, step);
+    });
+    return pixels.size ? [{ capture: path, pixels: pixels.size, largest }] : [];
+  }
+  if (!own || typeof own !== "object") return [];
+  return Object.entries(own).flatMap(([key, value]) =>
+    captureDifferences(value, (seeded as Record<string, unknown>)[key], path ? `${path}.${key}` : key));
+}
+
+// A game's world view starts a Fog Volume's geometry pass from the scene's depth and draws only the meshes that depth
+// lacks. Every capture of the sequence must be what the pass's own draws gave, the blended pane's included, which only
+// a draw of its own puts into that pass; with a multisampled scene the pass reads its resolved depth. The seeded pass
+// computes a pixel's view depth from the scene's 32-bit depth where its own draws interpolate it, so where the fog's
+// amount lies on a rounding boundary a few pixels come out one colour step apart.
+for (const [backend, multisampled] of [["webgl2", false], ["webgl2", true], ["webgpu", false]] as const) {
+  test(`a Fog Volume's geometry pass seeded from the scene's depth fogs as its own draws did on ${backend}${multisampled ? ", multisampled" : ""}`, async ({ page }, testInfo) => {
+    test.setTimeout(180_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["warning", "error"].includes(message.type()) &&
+        /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text()))
+        errors.push(message.text());
+    });
+    await page.goto("/?test=1&spatialEffectsProof=1");
+    await page.waitForFunction(() => typeof (window as unknown as {
+      __spatialEffectsProof?: unknown;
+    }).__spatialEffectsProof === "function");
+    const capture = async (seedsFromSceneDepth: boolean) => {
+      const result = await page.evaluate(([backend, multisampled, seedsFromSceneDepth]) => (window as unknown as {
+        __spatialEffectsProof: typeof runSpatialEffectsProof;
+      }).__spatialEffectsProof(backend, "fogVolumes", { seedsFromSceneDepth, multisampled }), [backend, multisampled, seedsFromSceneDepth] as const);
+      expect(result.reservations.reservedBytes).toBe(0);
+      expect(result.fogCaptures).toHaveLength(1);
+      return result.fogCaptures[0]!;
+    };
+    const own = await capture(false);
+    const seeded = await capture(true);
+    const differences = captureDifferences(own, seeded);
+    await testInfo.attach("fog-volume-seeded-pixels", { body: JSON.stringify({ differences, own, seeded }), contentType: "application/json" });
+    expect(errors).toEqual([]);
+    // The perspective captures are 96 x 72 too: (48, 36) is the view's centre, on the volume and behind the pane.
+    const open = fogDarkening(own.composition.clear, own.composition.volumeFog, 48, 36);
+    const behindPane = fogDarkening(own.pane.clear, own.pane.fogged, 48, 36);
+    expect(open, "the volume fogs the open view").toBeGreaterThan(30);
+    expect(Math.abs(behindPane), "the march ends at the pane, in front of the volume").toBeLessThan(1);
+    // Observed: 8 pixels in one to three of the captures with scene-wide fog, whose amount follows the wall's depth.
+    expect(Math.max(0, ...differences.map((difference) => difference.largest)), "no pixel is more than one colour step apart").toBeLessThanOrEqual(1);
+    expect(differences.reduce((sum, difference) => sum + difference.pixels, 0), "few pixels differ at all").toBeLessThanOrEqual(64);
+  });
+}
+
 /** Pixels at least `threshold` darker in `after`, red channel only. */
 function darkened(before: number[], after: number[], threshold: number) {
   return before.filter((value, i) => i % 4 === 0 && value - after[i]! >= threshold).length;
