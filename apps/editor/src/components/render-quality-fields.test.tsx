@@ -153,6 +153,20 @@ it("turns Occlusion Culling on at every Geometry tier and makes the tier Custom 
   }
 });
 
+it("caps Mirror Reflections within the Geometry tier, with no cap at any tier", async () => {
+  render(<Fields />);
+  expect(selected("Mirror Reflections")).toBe("Everything");
+  await select("Mirror Reflections", "Moving Actors");
+  expect(selected("Mirror Reflections")).toBe("Moving Actors");
+  expect(selected("Geometry Quality")).toBe("Custom");
+  await select("Mirror Reflections", "Environment");
+  expect(selected("Mirror Reflections")).toBe("Environment");
+  for (const tier of ["Low", "Medium", "High", "Ultra"]) {
+    await select("Geometry Quality", tier);
+    expect(selected("Mirror Reflections")).toBe("Everything");
+  }
+});
+
 it("edits Water quality within its tier and disables rows whose feature is off", async () => {
   render(<Fields />);
   expect(selected("Water Quality")).toBe("High");

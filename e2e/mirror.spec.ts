@@ -4,8 +4,8 @@ import { readHassetHeader } from "../packages/assets/src/hasset";
 import { MATERIAL_PAYLOAD_VERSION } from "../packages/assets/src/migration";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import {
-  createActor, createMeshComponent, createText3DComponent, identitySerializedTransform, MAIN_SCENE_FILE, parseMirrorProperties,
-  parseReflectionProbeProperties, type SerializedScene,
+  createActor, createMeshComponent, createText3DComponent, identitySerializedTransform, MAIN_SCENE_FILE, normalizeRenderingQuality,
+  parseMirrorProperties, parseReflectionProbeProperties, type MirrorReflects, type SerializedScene,
 } from "../packages/core/src/index";
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
@@ -441,9 +441,10 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows the su
  * A Mirror inside a Reflection Probe's box, facing a red wall whose actor never moves and, in front of it, a blue box
  * whose actor can (it has a body that is not static). What the Mirror draws live follows its Reflects property, and
  * the rest comes from the probe: the middle of the Mirror shows the box or, when nothing is drawn live, the wall
- * behind it; a quarter of the view to the side shows the wall, drawn or from the probe.
+ * behind it; a quarter of the view to the side shows the wall, drawn or from the probe. The quality level's cap does
+ * the same to a Mirror that asks for everything.
  */
-for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws what its Reflects property says and shows the rest from its Reflection Probe, on ${backend}`, async ({ page }) => {
+for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws what its Reflects property and the quality level's cap say, and shows the rest from its Reflection Probe, on ${backend}`, async ({ page }) => {
   test.setTimeout(420_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -520,6 +521,26 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws what i
     const perDraw = drawn && drawn.draws ? drawn.drawnMeshes / drawn.draws : 0;
     // Everything draws the wall and the box at least; Moving Actors the box alone; Environment draws no reflection.
     expect(perDraw === 0 ? "none" : perDraw === 1 ? "one" : "several", `${reflects}: ${JSON.stringify(drawn)}`).toBe(meshes);
+    if (reflects !== "everything") continue;
+    // The quality level's cap, switched while playing: with no reflection drawn the Mirror shows the wall where the box
+    // was, from the probe, and with no cap the box again.
+    await clickPlayAndWaitForOverlay(page);
+    const play = page.getByTestId("play-canvas");
+    const middleInPlay = (color: string) => expect.poll(async () => dominant(await centerColor(play)), { timeout: 60_000 }).toBe(color);
+    const cap = (mirrorReflections: MirrorReflects) => page.evaluate(
+      (quality) => (window as unknown as { __hapticPlayTest: { setRenderSettings(settings: { quality: unknown }): void } }).__hapticPlayTest.setRenderSettings({ quality }),
+      normalizeRenderingQuality({ geometry: { mirrorReflections } }),
+    );
+    try {
+      await middleInPlay("blue");
+      await cap("environment");
+      await middleInPlay("red");
+      await cap("everything");
+      await middleInPlay("blue");
+    } finally {
+      await play.screenshot({ path: test.info().outputPath(`mirror-cap-play-${backend}.png`) });
+    }
+    await page.getByTestId("play-overlay-close").click();
   }
   expect(errors).toEqual([]);
 });

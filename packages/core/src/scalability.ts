@@ -1,6 +1,7 @@
 import { normalizePlayFrameCap, normalizeRenderProjectSettings, type RenderProjectSettings } from "./project";
 import { RenderingQualitySession, qualityPresetPatch, qualitySettingPatch, QUALITY_GROUPS, isQualityLevel, WATER_REFLECTION_MODES, WATER_SHADING_DETAILS, type QualityGroup, type QualityOverrides } from "./render-quality";
 import type { ShadowOverrides } from "./shadows";
+import { MIRROR_REFLECTS } from "./mirror";
 import { normalizeCelShadingOverrides, normalizeCelShadingSettings, type CelShadingOverrides } from "./cel-shading";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
 import { normalizeRenderEffectsOverrides, type RenderEffectsOverrides } from "./render-effects";
@@ -50,6 +51,7 @@ const ENUMS: Record<string, readonly unknown[]> = {
   "shadows.filter": ["pcf", "pcss"], "shadows.filterQuality": ["low", "medium", "high"],
   "shadows.localLightMode": ["auto", "manual"], "quality.lighting.localLightMode": ["auto", "manual"],
   "quality.water.shadingDetail": WATER_SHADING_DETAILS, "quality.water.reflections": WATER_REFLECTION_MODES,
+  "quality.geometry.mirrorReflections": MIRROR_REFLECTS,
   "effects.colorPipeline.mode": ["legacyDisplay", "sceneLinear"],
   "effects.toneMapping": ["none", "standard", "aces", "neutral"],
 };
@@ -61,6 +63,7 @@ const LIVE_FIELDS = new Set([
   "shadows.softness", "shadows.autoBias", "shadows.depthBias", "shadows.normalBias",
   "quality.textures.anisotropy", "quality.textures.byteBudget", "quality.resolution.targetFps",
   "quality.geometry.autoLod", "quality.geometry.lodDistanceScale", "quality.geometry.occlusionCulling",
+  "quality.geometry.mirrorReflections",
   "environmentLighting.enabled", "environmentLighting.intensity", "environmentLighting.rotationYDegrees",
   "environmentLighting.celStrength",
 ]);

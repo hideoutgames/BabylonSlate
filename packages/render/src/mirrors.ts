@@ -33,7 +33,7 @@ import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlo
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
-import type { Material } from "@babylonjs/core/Materials/material";
+import { Material } from "@babylonjs/core/Materials/material";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Frustum } from "@babylonjs/core/Maths/math.frustum";
@@ -43,7 +43,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
-import type { MirrorProperties, MirrorReflects } from "@haptic/core";
+import { capMirrorReflects, type MirrorProperties, type MirrorReflects } from "@haptic/core";
 import type { ManagedRenderResource } from "./managed-render-resources";
 import { MirrorReflectionBlock } from "./mirror-reflection-block";
 import { MIRROR_RENDERS_PER_FRAME, selectMirrorsToRender, type MirrorCandidate } from "./mirror-selection";
@@ -244,9 +244,9 @@ class SceneMirrors {
     };
   }
 
-  /** What `surface` draws live. */
+  /** What `surface` draws live: what its Mirror asks for, or what the quality level allows when that is less. */
   private mode(surface: Surface): MirrorReflects {
-    return surface.properties.reflects;
+    return capMirrorReflects(surface.properties.reflects, sceneRenderingSettings(this.scene).mirrorReflections);
   }
 
   private remove(surface: Surface): void {
@@ -288,7 +288,13 @@ class SceneMirrors {
       // Off, every surface gives its maps back now; a current one then draws again, unshadowed.
       if (!this.sunShadows) surface.target?.sunShadows.release();
       this.place(surface, camera.layerMask);
-      const mode = surface.binding.reflects = this.mode(surface);
+      const mode = this.mode(surface);
+      if (mode !== surface.binding.reflects) {
+        // The quality level changed what the surface shows: its Material compiles the other variant. The image drawn
+        // for the old one is drawn again, as after any change of the render settings (`ReflectedContent`).
+        surface.binding.reflects = mode;
+        this.recompile(surface.mesh.material);
+      }
       // An Environment surface draws no reflection and holds no storage for one: its Material shows the environment.
       if (mode === "environment") {
         surface.visible = false;
@@ -459,6 +465,22 @@ class SceneMirrors {
     surface.binding.texture = null;
     surface.drawn = false;
     return null;
+  }
+
+  /**
+   * Has `material` prepare its defines again, a frozen one too, whatever blocks the Scene's dirty mechanism now (as a
+   * Reflection Probe's first publish does for the cube its meshes read).
+   */
+  private recompile(material: Material | null): void {
+    if (!material) return;
+    const scene = this.scene, blocked = scene.blockMaterialDirtyMechanism;
+    scene.blockMaterialDirtyMechanism = false;
+    try {
+      material.markAsDirty(Material.MiscDirtyFlag);
+      material.markDirty(true);
+    } finally {
+      scene.blockMaterialDirtyMechanism = blocked;
+    }
   }
 
   /** Gives up the surface's target and what it drew. */

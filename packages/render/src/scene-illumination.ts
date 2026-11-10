@@ -30,7 +30,6 @@ import {
   sceneDefaultCameraActor,
   sceneEnvironmentTextureGuid,
   MIRROR_CLASS_ID,
-  parseMirrorProperties,
   REFLECTION_PROBE_CLASS_ID,
   reflectionProbeStaticActors,
 } from "@haptic/core";
@@ -692,14 +691,13 @@ export function syncAuthoredIllumination(
 const staticMeshDocuments = new WeakMap<Scene, SerializedScene>();
 
 /**
- * Tells the Scene which meshes belong to actors that never move, while the document has a Mirror that draws only the
- * moving ones (`setSceneStaticMeshes`); other documents pay nothing.
+ * Tells the Scene which meshes belong to actors that never move, while the document has a Mirror (its own Reflects or
+ * the quality level's cap can have it draw only the moving ones: `setSceneStaticMeshes`); other documents pay nothing.
  */
 function syncStaticMeshes(scene: Scene, sceneData: SerializedScene): void {
   if (staticMeshDocuments.get(scene) === sceneData) return;
   staticMeshDocuments.set(scene, sceneData);
-  const asked = sceneData.actors.some((actor) => actor.components.some((component) =>
-    component.classId === MIRROR_CLASS_ID && parseMirrorProperties(component.properties).reflects === "movingActors"));
+  const asked = sceneData.actors.some((actor) => actor.components.some((component) => component.classId === MIRROR_CLASS_ID));
   if (!asked) {
     setSceneStaticMeshes(scene, null);
     return;

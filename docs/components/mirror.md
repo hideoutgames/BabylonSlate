@@ -47,6 +47,7 @@ The reflective side faces the actor's local −Z, the same side a Plane mesh sho
 - The part that comes from a probe is as sharp as the probe's **Resolution** and is projected onto the probe's box, so it lines up best when that box matches the room. It shows the scene as the probe last captured it.
 - A moving actor is drawn in front of everything that comes from the probe, even static scenery that stands between it and the mirror.
 - Without a probe or environment lighting, that part shows the scene's background colour.
+- **Mirror Reflections** in the **Geometry** group of [Scalability](../graphics/index.md#scalability) caps every mirror at once, so a project can keep full reflections on fast devices and cheaper ones elsewhere. A mirror draws whichever of its own **Reflects** and the cap draws less.
 
 ## Custom surfaces
 

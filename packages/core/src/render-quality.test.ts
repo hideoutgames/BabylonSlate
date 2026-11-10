@@ -230,6 +230,26 @@ describe("rendering quality sessions", () => {
     expect(resolveRenderingQuality({ quality: normalizeRenderingQuality({}) }, {}, qualityPresetPatch("low")).postprocessing.antiAliasing)
       .toBe("fxaa");
   });
+  it("caps what Mirrors draw live from the console, with no cap at any tier", () => {
+    const session = new RenderingQualitySession();
+    expect(session.effective().geometry.mirrorReflections).toBe("everything");
+    expect(qualitySettingsFingerprint(session.effective())["geometry.mirrors"]).toBe("everything");
+    // Any case, as the other named values are typed.
+    expect(session.execute("geometry", "mirrors", "movingactors").success).toBe(true);
+    expect(session.effective().geometry).toMatchObject({ mirrorReflections: "movingActors", preset: "custom" });
+    expect(qualitySettingsFingerprint(session.effective())["geometry.mirrors"]).toBe("movingActors");
+    expect(session.execute("geometry", "mirrors", "Environment").success).toBe(true);
+    expect(session.effective().geometry.mirrorReflections).toBe("environment");
+    expect(session.execute("geometry", "mirrors", "none").success).toBe(false);
+    expect(session.execute("geometry", "mirrors").success).toBe(false);
+    expect(session.effective().geometry.mirrorReflections).toBe("environment");
+    session.execute("geometry", "reset");
+    expect(session.effective().geometry.mirrorReflections).toBe("everything");
+    for (const level of ["low", "medium", "high", "ultra"] as const) expect(RENDER_QUALITY_PROFILES[level].geometry.mirrorReflections).toBe("everything");
+    // A stored value that is no cap reads as the tier's.
+    expect(normalizeRenderingQuality({ geometry: { mirrorReflections: "sometimes" as never } }).geometry.mirrorReflections).toBe("everything");
+    expect(normalizeRenderingQuality({ geometry: { mirrorReflections: "environment" } }).geometry.mirrorReflections).toBe("environment");
+  });
   it("switches occlusion culling from the console, on at every tier", () => {
     const session = new RenderingQualitySession();
     expect(session.effective().geometry.occlusionCulling).toBe(true);

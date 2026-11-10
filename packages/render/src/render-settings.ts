@@ -33,6 +33,7 @@ import {
   type PostProcessingEffectField,
   type PostProcessingQuality,
   type EffectiveRenderingQuality,
+  type MirrorReflects,
 } from "@haptic/core";
 import { ColorGradingSource } from "./color-grading";
 import type { MeshAssetContext } from "./mesh-assets";
@@ -60,6 +61,8 @@ type SceneRendering = {
   lodDistanceScale: number;
   /** The Occlusion Culling quality setting; a world view culls by it only where its Scene allows (`view-occlusion.ts`). */
   occlusionCulling: boolean;
+  /** The most a Mirror draws live at this quality (`capMirrorReflects`). */
+  mirrorReflections: MirrorReflects;
   /** Resolved Water quality values (no preset metadata); replaced only on a real change. */
   water: Readonly<WaterQuality>;
   /** Process-unique, so a Scene that starts following another never reuses a stale value. */
@@ -153,6 +156,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       autoLod: quality.geometry.autoLod,
       lodDistanceScale: quality.geometry.lodDistanceScale,
       occlusionCulling: quality.geometry.occlusionCulling,
+      mirrorReflections: quality.geometry.mirrorReflections,
       water: waterQualityValues(quality.water),
       waterRevision: ++waterRevisions,
       waterDevice: null,
@@ -231,6 +235,7 @@ export function updateSceneRenderingSettings(
   state.autoLod = quality.geometry.autoLod;
   state.lodDistanceScale = quality.geometry.lodDistanceScale;
   state.occlusionCulling = quality.geometry.occlusionCulling;
+  state.mirrorReflections = quality.geometry.mirrorReflections;
   syncWaterQuality(scene, state, quality.water);
   state.textureAnisotropy = Math.min(quality.textures.anisotropy, scene.getEngine().getCaps().maxAnisotropy ?? 1);
   if (state.fullQuality) holdFullQuality(scene, state);

@@ -106,6 +106,13 @@ describe("runtime scalability session", () => {
     expect(result.message).toContain("clamped");
     expect(settings.requested.render.quality?.geometry).toMatchObject({ autoLod: false, lodDistanceScale: 4, preset: "custom" });
   });
+  it("takes a cap on what Mirrors draw live, and rejects a value that is none", () => {
+    const { settings, transactions } = session();
+    expect(settings.request({ kind: "patch", render: { quality: { geometry: { mirrorReflections: "nothing" } } } } as never).status).toBe("failed");
+    expect(transactions).toHaveLength(0);
+    settings.request({ kind: "patch", render: { quality: { geometry: { mirrorReflections: "movingActors" } } } });
+    expect(settings.requested.render.quality?.geometry).toMatchObject({ mirrorReflections: "movingActors", preset: "custom" });
+  });
   it("rejects unknown water modes and clamps water cost fields into a Custom group", () => {
     const { settings, transactions } = session();
     expect(settings.request({ kind: "patch", render: { quality: { water: { reflections: "mirror" } } } } as never).status).toBe("failed");
