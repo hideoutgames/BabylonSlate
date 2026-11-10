@@ -17,6 +17,8 @@ import {
   normalizeIntSwitchCases,
   normalizeStringSwitchCases,
   isLatentFunctionKey,
+  firstEnumMember,
+  pinDefaultPropertyKey,
 } from "@haptic/scripting";
 import { engineEventTypeClassIds } from "@haptic/object-model";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
@@ -391,6 +393,31 @@ function withVisualMeta(
   return next;
 }
 
+/**
+ * An enum value is never empty. An enum input that nothing set (no stored
+ * value, saved pin default or catalog default) compiles as its enum's first
+ * member, which is what its Inspector row and the node show.
+ */
+function fillEmptyEnumInputs(
+  pins: readonly GraphPin[],
+  properties: Record<string, unknown>,
+  catalogPins: () => readonly GraphPin[] | undefined,
+  enums: HydrateGraphOptions["enums"],
+): void {
+  let catalog: readonly GraphPin[] | undefined;
+  const isEmpty = (value: unknown) => value === undefined || value === "";
+  for (const pin of pins) {
+    if (pin.direction !== "in" || pin.kind !== "data" || pin.type.kind !== "enumRef") continue;
+    if (pin.reference === "required") continue;
+    const key = pinDefaultPropertyKey(pin.id);
+    if (!isEmpty(properties[key]) || !isEmpty(pin.defaultValue)) continue;
+    catalog ??= catalogPins() ?? [];
+    if (!isEmpty(catalog.find((entry) => entry.id === pin.id)?.defaultValue)) continue;
+    const first = firstEnumMember(pin.type.guid, enums);
+    if (first) properties[key] = first;
+  }
+}
+
 export function materializeLogicGraph(
   content: SerializedGraph | LogicGraph,
   graphId: string,
@@ -452,6 +479,9 @@ export function materializeLogicGraph(
         typeId,
         properties,
       };
+    }
+    if (logic.nodes[i]!.properties === properties) {
+      fillEmptyEnumInputs(logic.nodes[i]!.pins, properties, () => def?.pins(pinProperties), options?.enums);
     }
   }
   // Rebuild edges from handles when present on SerializedGraph.

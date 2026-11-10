@@ -25,6 +25,7 @@ Double-tap an Enum to open it.
 - Choose **Enum** as a variable or pin type, then pick the Enum under **Enum Type**.
 - For each Enum, **Add Node** lists nodes named after it. For an Enum called Weapon: **Make Weapon**, **Equal Weapon**, **Not Equal Weapon**, **Weapon to String** and **Switch on Weapon**, plus **Select**.
 - When you remove a member, Switch and Select nodes lose that member's pin and its wires.
+- The first member is the default: an Enum input, function input or variable you have not set uses it.
 
 ## Related
 

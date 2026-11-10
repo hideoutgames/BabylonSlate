@@ -23,6 +23,7 @@ import {
   compileGraph,
   compileTransitionRuleGraph,
   collectLatentFunctions,
+  enumValueOrFirstMember,
   isLatentFunctionKey,
   isLogicGraphPayload,
   jsIdent,
@@ -229,7 +230,7 @@ export function compileGraphDocument(
           stripDevelopmentOnly: options.stripDevelopmentOnly,
           instrumentInfiniteLoops,
           instrumentExecutionTrace: options.instrumentExecutionTrace,
-          localPreamble: localVariablePreamble(locals),
+          localPreamble: localVariablePreamble(locals.map((local) => withVariableEnumDefault(local, options.enums))),
           isLatentFunction,
         }),
       );
@@ -265,7 +266,7 @@ export function compileGraphDocument(
     }
     entryPoints.push(...extra.entryPoints);
   }
-  const metadata = classMetadataFromGraph(content, options.parentClassId);
+  const metadata = classMetadataFromGraph(content, options.parentClassId, options.enums);
   const titled = bound ?? serialized;
   return {
     assetGuid: options.path,
@@ -302,9 +303,20 @@ function withEntryTitle(
   return { ...point, title: graph.members?.find((member) => member.id === memberId)?.name ?? memberId };
 }
 
+/** A single Enum variable is never empty: unset or empty, it starts as its enum's first member. */
+function withVariableEnumDefault<T extends Pick<GraphClassMember, "typeId" | "typeClassId" | "container" | "defaultValue">>(
+  member: T,
+  enums: HydrateGraphOptions["enums"],
+): T {
+  if (member.typeId !== "enum" || member.container === "array" || member.container === "map") return member;
+  const defaultValue = enumValueOrFirstMember(member.defaultValue, member.typeClassId, enums);
+  return defaultValue === member.defaultValue ? member : { ...member, defaultValue };
+}
+
 function classMetadataFromGraph(
   content: SerializedGraph | LogicGraph,
   parentClassId?: string | null,
+  enums?: HydrateGraphOptions["enums"],
 ): Pick<
   ScriptBundleEntry,
   | "parentClassId"
@@ -332,8 +344,9 @@ function classMetadataFromGraph(
       },
     ];
   });
-  const variables = members.flatMap((member) => {
-    if (member.kind !== "variable" || member.functionId) return [];
+  const variables = members.flatMap((entry) => {
+    if (entry.kind !== "variable" || entry.functionId) return [];
+    const member = withVariableEnumDefault(entry, enums);
     return [
       {
         name: member.name,

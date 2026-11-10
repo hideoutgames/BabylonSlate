@@ -135,6 +135,7 @@ export function shouldRegeneratePins(typeId: string): boolean {
     typeId === "enum.switch" ||
     typeId === "enum.select" ||
     typeId === "string.format" ||
+    typeId === "flow.sequence" ||
     typeId === "flow.switchInt" ||
     typeId === "flow.switchString" ||
     typeId === "array.make" ||

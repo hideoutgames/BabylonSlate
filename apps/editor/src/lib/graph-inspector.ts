@@ -50,6 +50,11 @@ import {
   type TypeSchemas,
   type StructField,
 } from "@haptic/scripting";
+import {
+  SEQUENCE_DEFAULT_OUTPUTS,
+  SEQUENCE_MAX_OUTPUTS,
+  sequenceOutputCount,
+} from "@haptic/scripting-nodes";
 
 export function connectedInputPinIds(
   edges: ReadonlyArray<{ target: string; targetHandle?: string }>,
@@ -426,10 +431,12 @@ function pushPinDefaultRows(
         });
         break;
       case "enumRef": {
-        const current = pinDefaultAsString(entry.value);
         const listed = entry.type.guid === "engine:Key"
           ? INPUT_KEYS.map((key) => key.key)
           : mappingNames?.enumMembers?.[entry.type.guid] ?? [];
+        // An enum value is never empty: unset reads as the first member, as it compiles.
+        const first = listed.find((name) => name.trim()) ?? "";
+        const current = pinDefaultAsString(entry.value) || first;
         const options = listed.includes(current)
           ? listed
           : current
@@ -440,7 +447,7 @@ function pushPinDefaultRows(
           id: entry.pinId,
           label: entry.name,
           value: current,
-          defaultValue: pinDefaultAsString(typeDefault),
+          defaultValue: pinDefaultAsString(typeDefault) || first,
           options: options.map((name) => ({
             value: name,
             label: entry.type.kind === "enumRef" && entry.type.guid === "engine:Key"
@@ -862,6 +869,29 @@ export function containerConstructorPropertyRows(
       max: MAKE_CONTAINER_MAX_COUNT,
       onChange: (value) =>
         onPatch({ count: Math.max(0, Math.min(MAKE_CONTAINER_MAX_COUNT, Math.floor(value))) }),
+    },
+  ];
+}
+
+/** The Sequence node's **Outputs** row: how many Then outputs it runs, in order. */
+export function sequencePropertyRows(
+  typeId: string,
+  data: Record<string, unknown>,
+  onPatch: (patch: Record<string, unknown>) => void,
+): PropertyRow[] {
+  if (typeId !== "flow.sequence") return [];
+  return [
+    {
+      kind: "number",
+      id: "count",
+      label: "Outputs",
+      value: sequenceOutputCount(data),
+      defaultValue: SEQUENCE_DEFAULT_OUTPUTS,
+      min: 1,
+      max: SEQUENCE_MAX_OUTPUTS,
+      precision: 0,
+      sensitivity: 0.1,
+      onChange: (value) => onPatch({ count: sequenceOutputCount({ count: value }) }),
     },
   ];
 }

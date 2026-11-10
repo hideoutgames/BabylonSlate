@@ -19,6 +19,7 @@ import {
   pinDefaultPropertyRows,
   pinTypeFromParameterType,
   pinsFromNodeData,
+  sequencePropertyRows,
   structNodePropertyRows,
   tagNodePropertyRows,
   assetPickerAllowedTypes,
@@ -243,6 +244,34 @@ describe("containerConstructorPropertyRows", () => {
   });
 });
 
+describe("sequencePropertyRows", () => {
+  it.each([
+    [{ count: 4 }, 4],
+    [{}, 2],
+  ])("shows the Outputs of a Sequence with %o as %i", (data, outputs) => {
+    const rows = sequencePropertyRows("flow.sequence", data, vi.fn());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: "count", kind: "number", label: "Outputs", value: outputs, defaultValue: 2, min: 1, max: 32 });
+  });
+
+  it.each([
+    [3, 3],
+    [2.7, 2],
+    [0, 1],
+    [40, 32],
+  ])("adds or removes Then outputs: %f stores count %i", (value, count) => {
+    const onPatch = vi.fn();
+    const row = sequencePropertyRows("flow.sequence", { count: 2 }, onPatch)[0]!;
+    if (row.kind !== "number") throw new Error("expected number row");
+    row.onChange(value);
+    expect(onPatch).toHaveBeenCalledWith({ count });
+  });
+
+  it("returns no rows for other flow nodes", () => {
+    expect(sequencePropertyRows("flow.branch", { count: 3 }, vi.fn())).toEqual([]);
+  });
+});
+
 describe("flowSwitchCaseListValues", () => {
   it("normalizes Switch on Int case rows for NamedListEditor", () => {
     expect(
@@ -441,6 +470,18 @@ describe("pinDefaultPropertyRows", () => {
       state.onChange("Run");
     }
     expect(onPatch).toHaveBeenCalledWith({ "default:state": "Run" });
+  });
+
+  it.each([undefined, ""])("shows an enumRef pin with value %o as the first member, which Reset restores", (value) => {
+    const rows = pinDefaultPropertyRows(
+      [{ pinId: "state", name: "state", type: enumRef("enum-1"), value }],
+      vi.fn(),
+      { enumMembers: { "enum-1": ["Idle", "Run"] } },
+    );
+    expect(rows[0]).toMatchObject({ kind: "enum", value: "Idle", defaultValue: "Idle" });
+    if (rows[0]?.kind === "enum") {
+      expect(rows[0].options.map((option) => option.value)).toEqual(["Idle", "Run"]);
+    }
   });
 
   it("keeps an authored enumRef value that is missing from the member list", () => {

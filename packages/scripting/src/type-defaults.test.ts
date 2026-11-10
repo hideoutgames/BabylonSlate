@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   defaultValueForMember,
   defaultValueForPinType,
+  enumValueOrFirstMember,
+  firstEnumMember,
   hydrateStructInstance,
   mergeEngineTypeSchemas,
   structInstanceDefault,
@@ -40,6 +42,22 @@ describe("type defaults", () => {
     expect(defaultValueForPinType(enumRef("enum-team"), schemas)).toBe("None");
     expect(defaultValueForMember("enum", "enum-team", schemas)).toBe("None");
     expect(defaultValueForPinType(enumRef(""), schemas)).toBe("");
+  });
+
+  it("reads an unset or empty enum value as the enum's first member", () => {
+    const enums = {
+      "enum-blank": { name: "Blank", members: [{ name: " ", value: 0 }, { name: "Walk", value: 1 }] },
+      "enum-empty": { name: "Empty", members: [] },
+    };
+    expect(enumValueOrFirstMember(undefined, "enum-blank", enums)).toBe("Walk");
+    expect(enumValueOrFirstMember("", "enum-blank", enums)).toBe("Walk");
+    expect(enumValueOrFirstMember("Run", "enum-blank", enums)).toBe("Run");
+    // Engine enums resolve without project schemas.
+    expect(firstEnumMember("engine:Key")).not.toBe("");
+    expect(enumValueOrFirstMember("", "engine:Key")).toBe(firstEnumMember("engine:Key"));
+    // Nothing to fall back to: the value stays as it is.
+    expect(enumValueOrFirstMember("", "enum-empty", enums)).toBe("");
+    expect(enumValueOrFirstMember(undefined, "enum-missing", enums)).toBeUndefined();
   });
 
   it("creates detached TagContainer defaults and typed Tag collection fields", () => {

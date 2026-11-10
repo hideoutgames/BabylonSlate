@@ -121,6 +121,32 @@ describe("script compiler service", () => {
     ]);
   });
 
+  it("starts an Enum variable that nothing set as its enum's first member", () => {
+    const enums = { "enum-team": { name: "Team", members: [{ name: "Red", value: 0 }, { name: "Blue", value: 1 }] } };
+    const team = { typeId: "enum", typeClassId: "enum-team" } as const;
+    const script = compileGraphDocument({
+      ...tickToLog,
+      members: [
+        { id: "unset", kind: "variable", name: "Unset", ...team },
+        { id: "empty", kind: "variable", name: "Empty", ...team, defaultValue: "" },
+        { id: "blue", kind: "variable", name: "Chosen", ...team, defaultValue: "Blue" },
+        { id: "list", kind: "variable", name: "Teams", ...team, container: "array", defaultValue: [] },
+        { id: "fn", kind: "function", name: "Pick" },
+        { id: "local", kind: "variable", name: "Side", ...team, functionId: "fn" },
+      ],
+      functionGraphs: {
+        fn: { nodes: [{ id: "in", type: "flow.function.input", position: { x: 0, y: 0 }, data: {} }], edges: [] },
+      },
+    }, { path: "assets/Teams.class.hasset", enums });
+    expect(script?.variables).toEqual([
+      { name: "Unset", type: "enum", typeClassId: "enum-team", defaultValue: "Red" },
+      { name: "Empty", type: "enum", typeClassId: "enum-team", defaultValue: "Red" },
+      { name: "Chosen", type: "enum", typeClassId: "enum-team", defaultValue: "Blue" },
+      { name: "Teams", type: "enum", typeClassId: "enum-team", container: "array", defaultValue: [] },
+    ]);
+    expect(script?.source).toMatch(/let \w*Side\w* = "Red";/);
+  });
+
   it("ships component-only classes and their empty child classes for runtime spawning", async () => {
     const { createInProcessRuntime } = await import("@haptic/runtime");
     const scripts = compileGraphDocuments([

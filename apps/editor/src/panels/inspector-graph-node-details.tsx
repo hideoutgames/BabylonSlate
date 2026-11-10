@@ -51,6 +51,7 @@ import {
   patchFlowSwitchCases,
   pinDefaultPropertyRows,
   javaScriptPinsFromRows,
+  sequencePropertyRows,
   structNodePropertyRows,
   tagNodePropertyRows,
 } from "../lib/graph-inspector";
@@ -334,6 +335,11 @@ export function GraphNodeDetails({
     selectedNode.data,
     updateNodeData,
   );
+  const sequenceRows = sequencePropertyRows(
+    selectedNode.type,
+    selectedNode.data,
+    updateNodeData,
+  );
   const tagNodeRows = tagNodePropertyRows(
     selectedNode.type,
     selectedNode.data,
@@ -387,6 +393,9 @@ export function GraphNodeDetails({
             rows={containerConstructorRows}
             data-testid="inspector-container-constructor"
           />
+        ) : null}
+        {sequenceRows.length > 0 ? (
+          <PropertyGrid rows={sequenceRows} data-testid="inspector-sequence" />
         ) : null}
         {tagNodeRows.length > 0 ? (
           <PropertyGrid
