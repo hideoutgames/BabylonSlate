@@ -1,3 +1,4 @@
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
@@ -11,6 +12,7 @@ import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { RectAreaLight } from "@babylonjs/core/Lights/rectAreaLight";
 import { Scene } from "@babylonjs/core/scene";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
@@ -23,7 +25,7 @@ import { normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
 import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { areaEmissionTexture, setRectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
-import { HapticLightingBlock } from "./haptic-lighting-block";
+import { environmentPlaceholderCube, HapticLightingBlock } from "./haptic-lighting-block";
 import {
   HAPTIC_LIGHT_MAXIMUM, HAPTIC_SHADOW_VIEW_VEC4S, bindHapticClusters, hapticLightBuffer, setHapticLightCulling,
 } from "./haptic-lights";
@@ -135,17 +137,73 @@ describe("HapticLightingBlock and the HapticLights block", () => {
   it("binds every texture a program declares, as WebGPU needs: the split-sum table in both modes, the cube only where declared", async () => {
     const { scene } = host();
     const { mesh, material } = await litBox(scene);
-    // A Scene without an environment cube compiles no cube sampler.
+    // Only a lit program declares the cube, and it does whether or not the Scene has an environment.
     expect(material.compiledShaders).toMatch(/#if defined\(HAPTIC_ENVIRONMENT\)\s+uniform samplerCube hapticEnvironmentSampler;/);
-    for (const mode of ["pbr", "cel"] as const) {
+    for (const [mode, cube] of [["pbr", true], ["cel", false]] as const) {
       setSceneRenderSettings(scene, { mode });
       await drawnDefines(scene, mesh, material);
       const effect = mesh.subMeshes[0]!.effect!, bound: string[] = [];
       vi.spyOn(effect, "setTexture").mockImplementation((name) => { bound.push(name); });
       material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
       expect(bound, mode).toEqual(expect.arrayContaining(["hapticEnvironmentBrdfSampler", "hapticAreaLtcSampler", "hapticAreaEmissionSampler"]));
-      expect(bound, mode).not.toContain("hapticEnvironmentSampler");
+      expect(bound.includes("hapticEnvironmentSampler"), mode).toBe(cube);
     }
+  });
+
+  it("takes the Engine's empty cube where no environment lights a mesh, making no render target inside a pass", () => {
+    // An Engine with a context: its own raw 1 × 1 cube. Creating a render target would unbind the framebuffer in use.
+    const empty = { isCube: true };
+    const createRenderTargetCubeTexture = vi.fn();
+    const context = { emptyCubeTexture: empty, createRenderTargetCubeTexture } as unknown as AbstractEngine;
+    expect(environmentPlaceholderCube(context)).toEqual({ texture: empty, release: null });
+    expect(createRenderTargetCubeTexture).not.toHaveBeenCalled();
+    // A headless Engine has no raw cubes: a render target's, released with its Scene.
+    const { engine, scene } = host();
+    const created = vi.spyOn(engine, "createRenderTargetCubeTexture");
+    const headless = environmentPlaceholderCube(engine);
+    expect(created).toHaveBeenCalledTimes(1);
+    const target = created.mock.results[0]!.value as { texture: unknown; dispose(): void };
+    expect(headless.texture).toBe(target.texture);
+    const disposed = vi.spyOn(target, "dispose");
+    headless.release!();
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect(scene.isDisposed).toBe(false);
+  });
+
+  it("draws a lit Material with one program whatever environment lights its mesh, binding its presence and form", async () => {
+    const { engine, scene } = host();
+    const { mesh, material } = await litBox(scene);
+    const none = await drawnDefines(scene, mesh, material);
+    expect(none).toContain("#define HAPTIC_ENVIRONMENT");
+    const bound = () => {
+      const effect = mesh.subMeshes[0]!.effect!, values = new Map<string, number[]>();
+      vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { values.set(name, [x, y, z, w]); return effect; });
+      material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
+      return { scale: values.get("hapticEnvironment")?.[3], form: values.get("hapticEnvironmentForm") };
+    };
+    // No environment: a scale of zero, and nothing else of it.
+    expect(bound()).toEqual({ scale: 0, form: undefined });
+    const cube = (setup: (texture: CubeTexture) => void) => {
+      const internal = engine.createTexture("sky", false, false, null);
+      internal.isCube = true;
+      internal._sphericalPolynomial = new SphericalPolynomial();
+      const texture = new CubeTexture("", scene);
+      texture._texture = internal;
+      texture.level = 0.5;
+      setup(texture);
+      scene.environmentTexture = texture;
+    };
+    // A linear cube, then a reflection probe's gamma cube with a box, then an RGBD cube sampled with y inverted: each
+    // draws with the program the mesh already had. The form is the box, the signs of y and z, and the encoding.
+    cube((texture) => { texture.gammaSpace = false; });
+    expect(await drawnDefines(scene, mesh, material)).toEqual(none);
+    expect(bound()).toEqual({ scale: 0.5, form: [0, 1, 1, 0] });
+    cube((texture) => { texture.boundingBoxSize = new Vector3(4, 4, 4); texture.gammaSpace = true; texture.invertZ = true; });
+    expect(await drawnDefines(scene, mesh, material)).toEqual(none);
+    expect(bound()).toEqual({ scale: 0.5, form: [1, 1, -1, 1] });
+    cube((texture) => { texture.isRGBD = true; texture.coordinatesMode = Constants.TEXTURE_INVCUBIC_MODE; });
+    expect(await drawnDefines(scene, mesh, material)).toEqual(none);
+    expect(bound()).toEqual({ scale: 0.5, form: [0, -1, 1, 2] });
   });
 
   it("compiles the environment's light out of a Material whose Environment Influence is a constant 0, as built-in water's is", async () => {

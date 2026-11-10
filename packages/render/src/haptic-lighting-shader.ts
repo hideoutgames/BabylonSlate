@@ -863,16 +863,12 @@ vec3 hapticBrdfLookup(float NdotV, float roughness) {
 }
 
 #ifdef HAPTIC_ENVIRONMENT
+// The environment's presence and form are bound values, not variants (\`hapticEnvironmentForm\`: x a reflection probe's
+// box projection, y and z the signs of the cube's y and z axes, w its encoding: 0 linear, 1 gamma, 2 RGBD), so an
+// environment that appears, a probe's volume a mesh enters or a cube of another encoding compiles nothing.
 // World direction into the cube's frame (its rotation and handedness).
 vec3 hapticEnvironmentDirection(vec3 direction) {
-  vec3 result = (hapticEnvironmentMatrix * vec4(direction, 0.0)).xyz;
-#ifdef HAPTIC_ENVIRONMENT_INVERTY
-  result.y *= -1.0;
-#endif
-#ifdef HAPTIC_ENVIRONMENT_OPPOSITEZ
-  result.z *= -1.0;
-#endif
-  return result;
+  return (hapticEnvironmentMatrix * vec4(direction, 0.0)).xyz * vec3(1.0, hapticEnvironmentForm.yz);
 }
 vec3 hapticIrradiance(vec3 N) {
   vec3 n = hapticEnvironmentDirection(N);
@@ -883,20 +879,16 @@ vec3 hapticIrradiance(vec3 N) {
 // The prefiltered cube along the reflection, box-projected onto a reflection probe's volume.
 vec3 hapticRadiance(vec3 P, vec3 N, vec3 V, float alpha) {
   vec3 R = normalize(reflect(-V, N));
-#ifdef HAPTIC_ENVIRONMENT_BOX
-  vec3 halfSize = hapticEnvironmentBoxSize.xyz * 0.5;
-  vec3 farthest = max((hapticEnvironmentBoxPosition.xyz + halfSize - P) / R, (hapticEnvironmentBoxPosition.xyz - halfSize - P) / R);
-  R = P + R * min(min(farthest.x, farthest.y), farthest.z) - hapticEnvironmentBoxPosition.xyz;
-#endif
+  if (hapticEnvironmentForm.x > 0.5) {
+    vec3 halfSize = hapticEnvironmentBoxSize.xyz * 0.5;
+    vec3 farthest = max((hapticEnvironmentBoxPosition.xyz + halfSize - P) / R, (hapticEnvironmentBoxPosition.xyz - halfSize - P) / R);
+    R = P + R * min(min(farthest.x, farthest.y), farthest.z) - hapticEnvironmentBoxPosition.xyz;
+  }
   float lod = log2(hapticEnvironment.x * alpha) * hapticEnvironment.y + hapticEnvironment.z;
   vec4 radiance = textureLod(hapticEnvironmentSampler, hapticEnvironmentDirection(R), lod);
-#ifdef HAPTIC_ENVIRONMENT_RGBD
-  return hapticFromRGBD(radiance);
-#elif defined(HAPTIC_ENVIRONMENT_GAMMA)
-  return hapticToLinear(radiance.rgb);
-#else
+  if (hapticEnvironmentForm.w > 1.5) return hapticFromRGBD(radiance);
+  if (hapticEnvironmentForm.w > 0.5) return hapticToLinear(radiance.rgb);
   return radiance.rgb;
-#endif
 }
 #endif
 `;
@@ -939,11 +931,14 @@ ${output.diffuseDirect} = hapticDiffuseLight * hapticS.diffuse;
 ${output.specularDirect} = max(hapticSpecularLight, vec3(0.0)) * hapticEnergy;
 #ifdef HAPTIC_ENVIRONMENT
 float hapticEnvironmentScale = hapticEnvironment.w * hapticInfluence;
-${output.diffuseIndirect} = hapticIrradiance(hapticN) * hapticEnvironmentScale * hapticS.diffuse;
-float hapticHorizon = clamp(1.0 + 1.1 * dot(reflect(-hapticV, hapticN), hapticGeometricN), 0.0, 1.0);
-float hapticOcclusion = hapticHorizon * hapticHorizon * clamp((hapticNdotVUnclamped + 1.0) * (hapticNdotVUnclamped + 1.0), 0.0, 1.0);
-vec3 hapticReflectance = (vec3(1.0) - hapticS.F0) * hapticBrdf.x + hapticS.F0 * hapticBrdf.y;
-${output.specularIndirect} = hapticRadiance(hapticP, hapticN, hapticV, hapticAlpha(hapticS.roughness)) * hapticEnvironmentScale * hapticReflectance * hapticOcclusion * hapticEnergy;
+// Zero where no environment lights the mesh (the Scene has none, or its intensity or the Material's influence is zero).
+if (hapticEnvironmentScale > 0.0) {
+  ${output.diffuseIndirect} = hapticIrradiance(hapticN) * hapticEnvironmentScale * hapticS.diffuse;
+  float hapticHorizon = clamp(1.0 + 1.1 * dot(reflect(-hapticV, hapticN), hapticGeometricN), 0.0, 1.0);
+  float hapticOcclusion = hapticHorizon * hapticHorizon * clamp((hapticNdotVUnclamped + 1.0) * (hapticNdotVUnclamped + 1.0), 0.0, 1.0);
+  vec3 hapticReflectance = (vec3(1.0) - hapticS.F0) * hapticBrdf.x + hapticS.F0 * hapticBrdf.y;
+  ${output.specularIndirect} = hapticRadiance(hapticP, hapticN, hapticV, hapticAlpha(hapticS.roughness)) * hapticEnvironmentScale * hapticReflectance * hapticOcclusion * hapticEnergy;
+}
 #endif
 #endif
 #ifdef HAPTIC_LIGHT_LOOP_PROOF
@@ -1304,14 +1299,7 @@ fn hapticBrdfLookup(NdotV: f32, roughness: f32) -> vec3f {
 
 #ifdef HAPTIC_ENVIRONMENT
 fn hapticEnvironmentDirection(direction: vec3f) -> vec3f {
-  var result = (uniforms.hapticEnvironmentMatrix * vec4f(direction, 0.0)).xyz;
-#ifdef HAPTIC_ENVIRONMENT_INVERTY
-  result.y *= -1.0;
-#endif
-#ifdef HAPTIC_ENVIRONMENT_OPPOSITEZ
-  result.z *= -1.0;
-#endif
-  return result;
+  return (uniforms.hapticEnvironmentMatrix * vec4f(direction, 0.0)).xyz * vec3f(1.0, uniforms.hapticEnvironmentForm.yz);
 }
 fn hapticIrradiance(N: vec3f) -> vec3f {
   let n = hapticEnvironmentDirection(N);
@@ -1321,20 +1309,16 @@ fn hapticIrradiance(N: vec3f) -> vec3f {
 }
 fn hapticRadiance(P: vec3f, N: vec3f, V: vec3f, alpha: f32) -> vec3f {
   var R = normalize(reflect(-V, N));
-#ifdef HAPTIC_ENVIRONMENT_BOX
-  let halfSize = uniforms.hapticEnvironmentBoxSize.xyz * 0.5;
-  let farthest = max((uniforms.hapticEnvironmentBoxPosition.xyz + halfSize - P) / R, (uniforms.hapticEnvironmentBoxPosition.xyz - halfSize - P) / R);
-  R = P + R * min(min(farthest.x, farthest.y), farthest.z) - uniforms.hapticEnvironmentBoxPosition.xyz;
-#endif
+  if (uniforms.hapticEnvironmentForm.x > 0.5) {
+    let halfSize = uniforms.hapticEnvironmentBoxSize.xyz * 0.5;
+    let farthest = max((uniforms.hapticEnvironmentBoxPosition.xyz + halfSize - P) / R, (uniforms.hapticEnvironmentBoxPosition.xyz - halfSize - P) / R);
+    R = P + R * min(min(farthest.x, farthest.y), farthest.z) - uniforms.hapticEnvironmentBoxPosition.xyz;
+  }
   let lod = log2(uniforms.hapticEnvironment.x * alpha) * uniforms.hapticEnvironment.y + uniforms.hapticEnvironment.z;
   let radiance = textureSampleLevel(hapticEnvironmentSampler, hapticEnvironmentSamplerSampler, hapticEnvironmentDirection(R), lod);
-#ifdef HAPTIC_ENVIRONMENT_RGBD
-  return hapticFromRGBD(radiance);
-#elif defined(HAPTIC_ENVIRONMENT_GAMMA)
-  return hapticToLinear(radiance.rgb);
-#else
+  if (uniforms.hapticEnvironmentForm.w > 1.5) { return hapticFromRGBD(radiance); }
+  if (uniforms.hapticEnvironmentForm.w > 0.5) { return hapticToLinear(radiance.rgb); }
   return radiance.rgb;
-#endif
 }
 #endif
 `;
@@ -1375,11 +1359,13 @@ ${output.diffuseDirect} = hapticDiffuseLight * hapticS.diffuse;
 ${output.specularDirect} = max(hapticSpecularLight, vec3f(0.0)) * hapticEnergy;
 #ifdef HAPTIC_ENVIRONMENT
 let hapticEnvironmentScale = uniforms.hapticEnvironment.w * hapticInfluence;
-${output.diffuseIndirect} = hapticIrradiance(hapticN) * hapticEnvironmentScale * hapticS.diffuse;
-let hapticHorizon = clamp(1.0 + 1.1 * dot(reflect(-hapticV, hapticN), hapticGeometricN), 0.0, 1.0);
-let hapticOcclusion = hapticHorizon * hapticHorizon * clamp((hapticNdotVUnclamped + 1.0) * (hapticNdotVUnclamped + 1.0), 0.0, 1.0);
-let hapticReflectance = (vec3f(1.0) - hapticS.F0) * hapticBrdf.x + hapticS.F0 * hapticBrdf.y;
-${output.specularIndirect} = hapticRadiance(hapticP, hapticN, hapticV, hapticAlpha(hapticS.roughness)) * hapticEnvironmentScale * hapticReflectance * hapticOcclusion * hapticEnergy;
+if (hapticEnvironmentScale > 0.0) {
+  ${output.diffuseIndirect} = hapticIrradiance(hapticN) * hapticEnvironmentScale * hapticS.diffuse;
+  let hapticHorizon = clamp(1.0 + 1.1 * dot(reflect(-hapticV, hapticN), hapticGeometricN), 0.0, 1.0);
+  let hapticOcclusion = hapticHorizon * hapticHorizon * clamp((hapticNdotVUnclamped + 1.0) * (hapticNdotVUnclamped + 1.0), 0.0, 1.0);
+  let hapticReflectance = (vec3f(1.0) - hapticS.F0) * hapticBrdf.x + hapticS.F0 * hapticBrdf.y;
+  ${output.specularIndirect} = hapticRadiance(hapticP, hapticN, hapticV, hapticAlpha(hapticS.roughness)) * hapticEnvironmentScale * hapticReflectance * hapticOcclusion * hapticEnergy;
+}
 #endif
 #endif
 #ifdef HAPTIC_LIGHT_LOOP_PROOF
