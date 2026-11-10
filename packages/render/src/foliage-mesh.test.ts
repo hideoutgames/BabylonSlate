@@ -10,6 +10,7 @@ import { createTestEngine } from "./test-support/test-engine";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { createFoliageMesh, foliagePreparation, refreshFoliageMaterials } from "./foliage-mesh";
 import { glbContainerLoadCount } from "./glb-anim";
+import { keepsDrawingOutsideView } from "./play-view-culling";
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
 
@@ -35,6 +36,13 @@ it("shares model vertices while keeping stroke and cell instance buffers indepen
   expect(Array.from(bm.getVertexBuffer("world3")!.getFloatData(bm.thinInstanceCount)!)).toEqual([12, 0, 0, 1]);
   const distantCell = a.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances && mesh !== am)!;
   expect(Array.from(distantCell.getVertexBuffer("world3")!.getFloatData(distantCell.thinInstanceCount)!)).toEqual([40, 0, 0, 1]);
+  // A cell's bounds hold its instances where they stand, and the view's cull is told it can trust them: a view that
+  // does not see a cell draws none of its instances.
+  for (const [cell, x] of [[am, [0, 4]], [distantCell, [40, 40]]] as const) {
+    const box = cell.getBoundingInfo().boundingBox;
+    expect(box.minimumWorld.x <= x[0] && box.maximumWorld.x >= x[1], `${box.minimumWorld.x}..${box.maximumWorld.x}`).toBe(true);
+    expect(keepsDrawingOutsideView(cell)).toBe(false);
+  }
   const source = am.source as Mesh;
   expect(source.isVerticesDataPresent("world0")).toBe(false);
   const paddedMaximum = am.getBoundingInfo().boundingBox.maximum.clone();
