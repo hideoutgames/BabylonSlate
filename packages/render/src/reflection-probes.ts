@@ -17,6 +17,7 @@ import {
   type ReflectionProbeProperties,
   type SerializedScene,
 } from "@haptic/core";
+import { DisplayConversion } from "./display-conversion";
 import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import { environmentPolynomial } from "./environment-irradiance";
 import { createFilteredEnvironmentTarget, filterEnvironment, type FilteredEnvironmentTarget } from "./environment-prefilter";
@@ -36,8 +37,11 @@ import { drawingMesh, isInstanceSource } from "./instance-source";
 export const REFLECTION_PROBE_RECAPTURE_DELAY_MS = 750;
 const NEAR = 0.05;
 
-/** The raw half-float cube a capture draws into, with its depth, under its own lease. */
-type ProbeCapture = { texture: RenderTargetTexture; lease: ManagedRenderLease };
+/**
+ * A capture's targets under one lease: the raw half-float cube its faces are written into, display-referred, and the
+ * scene colour target, with its depth, each face is first drawn in with the view's own programs.
+ */
+type ProbeCapture = { texture: RenderTargetTexture; face: RenderTargetTexture; lease: ManagedRenderLease };
 
 type CaptureTarget = {
   /**
@@ -80,10 +84,16 @@ const faceTargets = [
   new Vector3(0, 1, 0), new Vector3(0, 0, 1), new Vector3(0, 0, -1),
 ];
 
-function captureBytes(size: number): number {
+/** The raw cube with its mips, at 8 bytes a texel. */
+function cubeBytes(size: number): number {
   let colour = 0;
   for (let face = size; face >= 1; face >>= 1) colour += face * face * 6 * 8;
-  return colour + size * size * 6 * 4;
+  return colour;
+}
+
+/** One face's scene colour target and its depth. */
+function faceBytes(size: number): number {
+  return size * size * (8 + 4);
 }
 
 /**
@@ -112,6 +122,10 @@ export class ReflectionProbes {
   /** Whether materials route through `resolve`: only while a probe is published. */
   private resolving = false;
   private capturing = false;
+  /** The cube face the capture under way is drawing. */
+  private face = 0;
+  /** The pass that stores a drawn face display-referred; made at the first capture. */
+  private conversion: DisplayConversion | null = null;
   private dirtyAt = -1;
   private disposed = false;
   private authored: SerializedScene | null = null;
@@ -345,24 +359,33 @@ export class ReflectionProbes {
   private createCapture(probe: Probe): ProbeCapture | null {
     const engine = this.scene.getEngine();
     const size = probe.properties.resolution;
-    const bytes = captureBytes(size);
-    const lease = beginManagedRenderAllocation(engine, bytes);
+    const lease = beginManagedRenderAllocation(engine, cubeBytes(size) + faceBytes(size));
     if (!lease) return null;
     let texture: RenderTargetTexture | undefined;
+    let face: RenderTargetTexture | undefined;
     try {
-      texture = new RenderTargetTexture(`reflectionProbe:${probe.actorId}:${probe.id}`, size, this.scene, {
-        generateMipMaps: true, isCube: true, doNotChangeAspectRatio: true,
-        type: engine.getCaps().textureHalfFloatRender ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE,
+      const name = `reflectionProbe:${probe.actorId}:${probe.id}`;
+      const type = engine.getCaps().textureHalfFloatRender ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
+      // Never rendered as a target of its own: the conversion pass writes each face (`capture`).
+      texture = new RenderTargetTexture(name, size, this.scene, {
+        generateMipMaps: true, isCube: true, doNotChangeAspectRatio: true, generateDepthBuffer: false, type,
         samplingMode: Constants.TEXTURE_TRILINEAR_SAMPLINGMODE,
       });
-      // Captured display-referred, like a Fast Render Target Capture; the filter decodes it.
+      // Stored display-referred, like a Fast Render Target Capture; the filter decodes it.
       texture.gammaSpace = true;
-      texture.clearColor = this.scene.clearColor;
-      texture.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
-      lease.commit([{ handle: texture.getInternalTexture()!, bytes, category: "environment" }]);
-      return { texture, lease };
+      face = new RenderTargetTexture(`${name}:face`, size, this.scene, {
+        generateMipMaps: false, doNotChangeAspectRatio: true, type, samplingMode: Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+      });
+      face.clearColor = this.scene.clearColor;
+      face.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+      lease.commit([
+        { handle: texture.getInternalTexture()!, bytes: cubeBytes(size), category: "environment" },
+        { handle: face.getInternalTexture()!, bytes: faceBytes(size), category: "environment" },
+      ]);
+      return { texture, face, lease };
     } catch (error) {
       texture?.dispose();
+      face?.dispose();
       void releaseManagedRenderLeaseAfterDisposal(engine, lease);
       throw error;
     }
@@ -370,6 +393,7 @@ export class ReflectionProbes {
 
   private disposeCapture(capture: ProbeCapture): void {
     capture.texture.dispose();
+    capture.face.dispose();
     void releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), capture.lease);
   }
 
@@ -388,7 +412,7 @@ export class ReflectionProbes {
     if (!capture) return null;
     if (existing) {
       existing.capture = capture;
-      this.bindFaces(probe, existing, capture.texture);
+      this.bindFaces(probe, existing, capture.face);
       return existing;
     }
     const engine = this.scene.getEngine();
@@ -412,7 +436,7 @@ export class ReflectionProbes {
         : [];
       const target: CaptureTarget = { capture, filtered, view, sceneUbos };
       probe.target = target;
-      this.bindFaces(probe, target, capture.texture);
+      this.bindFaces(probe, target, capture.face);
       return target;
     } catch (error) {
       this.disposeCapture(capture);
@@ -421,10 +445,14 @@ export class ReflectionProbes {
     }
   }
 
-  /** Each face looks along its axis from the probe's centre (Babylon's ReflectionProbe convention). */
+  /**
+   * Each draw of a capture's scene colour target looks along the axis of the face being captured (`face`) from the
+   * probe's centre (Babylon's ReflectionProbe convention).
+   */
   private bindFaces(probe: Probe, target: CaptureTarget, texture: RenderTargetTexture): void {
     const scene = this.scene;
-    texture.onBeforeRenderObservable.add((face) => {
+    texture.onBeforeRenderObservable.add(() => {
+      const face = this.face;
       if (target.sceneUbos.length) {
         scene.setSceneUniformBuffer(target.sceneUbos[face]!);
         scene.getSceneUniformBuffer().unbindEffect();
@@ -456,26 +484,39 @@ export class ReflectionProbes {
       probe.failed = true;
       return true;
     }
-    const texture = target.capture!.texture;
+    const { texture, face } = target.capture!;
     const meshes: AbstractMesh[] = [];
     for (const mesh of admittedSceneMeshes(this.scene) ?? this.scene.meshes) if (this.eligible(mesh)) meshes.push(mesh);
-    texture.renderList = meshes;
+    face.renderList = meshes;
+    // Each face draws with the view's own programs, then one pass stores it display-referred: a capture that drew
+    // with image processing in its Materials compiled every one of them a second time.
+    const linear = this.scene.imageProcessingConfiguration.applyByPostProcess;
+    const conversion = this.conversion ??= new DisplayConversion(this.scene.getEngine());
     let drawn: boolean;
     this.capturing = true;
     try {
       drawn = withDrawPass(this.scene.getEngine(), "probes", () => drawOutsideSceneView(this.scene, () => {
         let ready = false;
-        drawBorrowedTarget(this.scene, texture, () => {
+        drawBorrowedTarget(this.scene, face, () => {
           const engine = this.scene.getEngine();
-          engine.setAlphaMode(Constants.ALPHA_DISABLE);
-          engine.setDepthBuffer(true);
-          engine.setDepthWrite(true);
-          engine.setColorWrite(true);
-          ready = texture.isReadyForRendering();
-          if (ready) texture.render(false);
+          ready = conversion.ready(linear) && face.isReadyForRendering();
+          if (!ready) return;
+          const cube = texture.renderTarget!;
+          for (this.face = 0; this.face < 6; this.face += 1) {
+            // The pass before leaves its own state: a clear writes depth only where depth writes are on.
+            engine.setAlphaMode(Constants.ALPHA_DISABLE);
+            engine.setDepthBuffer(true);
+            engine.setDepthWrite(true);
+            engine.setColorWrite(true);
+            face.render(false);
+            engine.bindFramebuffer(cube, this.face, undefined, undefined, true);
+            conversion.draw(face);
+            engine.unBindFramebuffer(cube, true);
+          }
+          engine.generateMipMapsForCubemap(texture.getInternalTexture()!);
         }, { restoreAlpha: true, wrapDrawFailure: false, message: "Reflection probe capture failed." });
         return ready;
-      }, true));
+      }, false));
     } catch (error) {
       probe.failed = true;
       console.warn(`[render] Reflection probe ${probe.id} capture failed: ${String(error)}`);
@@ -530,6 +571,8 @@ export class ReflectionProbes {
     this.scene.onMeshRemovedObservable.removeCallback(this.meshesChanged);
     for (const probes of this.probes.values()) for (const probe of probes) this.retire(probe);
     this.probes.clear();
+    this.conversion?.dispose();
+    this.conversion = null;
     setMeshEnvironmentResolver(this.scene, null);
     controllers.delete(this.scene);
   }

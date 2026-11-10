@@ -14,6 +14,8 @@ import { REFLECTION_PROBE_CLASS_ID, createActor, createDefaultScene, reflectionP
 import { availableManagedRenderBytes, beginManagedRenderAllocation, managedRenderReservations } from "./managed-render-resources";
 import { environmentPolynomial } from "./environment-irradiance";
 import { createFilteredEnvironmentTarget, filterEnvironment } from "./environment-prefilter";
+import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { DisplayConversion } from "./display-conversion";
 import { REFLECTION_PROBE_RECAPTURE_DELAY_MS, sceneReflectionProbes } from "./reflection-probes";
 import { drawOutsideSceneView } from "./render-target-capture";
 
@@ -139,9 +141,13 @@ it("recompiles meshes for a probe's cube when the first probe publishes and for 
   expect((await readyDefines(scene, material, inside)).USE_LOCAL_REFLECTIONMAP_CUBIC).toBe(false);
 });
 
-/** The raw capture cube's bytes at resolution 64: half-float colour with every mip of six faces, and its depth. */
-const CAPTURE_BYTES_64 = 6 * 8 * (64 * 64 + 32 * 32 + 16 * 16 + 8 * 8 + 4 * 4 + 2 * 2 + 1) + 6 * 64 * 64 * 4;
+/**
+ * A capture's bytes at resolution 64: the raw cube's half-float colour with every mip of six faces, and the scene
+ * colour target one face is drawn in, with its depth.
+ */
+const CAPTURE_BYTES_64 = 6 * 8 * (64 * 64 + 32 * 32 + 16 * 16 + 8 * 8 + 4 * 4 + 2 * 2 + 1) + 64 * 64 * (8 + 4);
 const captureCube = (scene: Scene) => scene.textures.find((texture) => texture.name === "reflectionProbe:actor:probe");
+const captureFace = (scene: Scene) => scene.textures.find((texture) => texture.name === "reflectionProbe:actor:probe:face");
 
 it("frees a runtime probe's raw capture cube once its filtered cube publishes, and captures into a new one when the static scene changes", async () => {
   const { scene, probes, publish, frame } = fixture();
@@ -150,6 +156,7 @@ it("frees a runtime probe's raw capture cube once its filtered cube publishes, a
   // Lighting reads the filtered cube alone: the raw half-float cube and its depth go with their lease.
   await vi.waitFor(() => expect(environment()).toBe(0));
   expect(captureCube(scene)).toBeUndefined();
+  expect(captureFace(scene)).toBeUndefined();
   const draws = vi.mocked(drawOutsideSceneView).mock.calls.length;
   // Its filtering takes a while: the new cube is held until it finishes.
   let filtered!: () => void;
@@ -159,10 +166,75 @@ it("frees a runtime probe's raw capture cube once its filtered cube publishes, a
   expect(vi.mocked(drawOutsideSceneView).mock.calls.length).toBe(draws + 1);
   expect(environment()).toBe(CAPTURE_BYTES_64);
   expect(captureCube(scene)).toBeDefined();
+  expect(captureFace(scene)).toBeDefined();
   filtered();
   await vi.waitFor(() => expect(environment()).toBe(0));
   expect(captureCube(scene)).toBeUndefined();
   expect(probes.diagnostics()[0]?.published).toBe(true);
+});
+
+/** Runs the capture's draw with the GPU work recorded in order instead of done. */
+function recordedCapture(scene: Scene, conversionReady: boolean) {
+  const engine = scene.getEngine();
+  const order: string[] = [];
+  const views: string[] = [];
+  vi.mocked(drawOutsideSceneView).mockImplementation((_scene, run, materialImageProcessing) => {
+    order.push(`image processing in Materials: ${materialImageProcessing}`);
+    return run();
+  });
+  vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
+  vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
+    this.onBeforeRenderObservable.notifyObservers(0);
+    views.push(scene.getViewMatrix().asArray().map((value) => Math.round(value)).join(","));
+    order.push(`draw ${this.name}`);
+  });
+  vi.spyOn(engine, "bindFramebuffer").mockImplementation((target, face) => { order.push(`bind ${target.label ?? "cube"} face ${face}`); });
+  vi.spyOn(engine, "unBindFramebuffer").mockImplementation(() => {});
+  vi.spyOn(engine, "setDepthWrite").mockImplementation((enabled) => { if (order.at(-1) !== `depth writes: ${enabled}`) order.push(`depth writes: ${enabled}`); });
+  vi.spyOn(engine, "generateMipMapsForCubemap").mockImplementation((texture) => { order.push(`mips ${texture.isCube ? "cube" : "other"}`); });
+  vi.spyOn(DisplayConversion.prototype, "ready").mockImplementation((linear) => { order.push(`conversion from linear: ${linear}`); return conversionReady; });
+  vi.spyOn(DisplayConversion.prototype, "draw").mockImplementation((source) => { order.push(`convert ${source.name}`); });
+  return { order, views };
+}
+
+it("draws each face with the view's programs, then stores it display-referred in the cube's face", async () => {
+  const { scene, publish } = fixture();
+  scene.imageProcessingConfiguration.applyByPostProcess = true;
+  const { order, views } = recordedCapture(scene, true);
+  await publish([8, 4, 8]);
+  const face = "reflectionProbe:actor:probe:face";
+  expect(order).toEqual([
+    "image processing in Materials: false",
+    "conversion from linear: true",
+    // A face's clear writes depth only where depth writes are on, whatever the pass before left.
+    ...[0, 1, 2, 3, 4, 5].flatMap((index) => ["depth writes: true", `draw ${face}`, `bind cube face ${index}`, `convert ${face}`]),
+    "mips cube",
+    // The caller's own state, restored.
+    "depth writes: true",
+  ]);
+  // Each draw looks along its own face's axis.
+  expect(new Set(views).size).toBe(6);
+  // The Scene keeps its own setting: nothing compiled for the capture alone.
+  expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(true);
+  const released = vi.spyOn(DisplayConversion.prototype, "dispose");
+  scene.dispose();
+  expect(released).toHaveBeenCalledTimes(1);
+});
+
+it("copies faces a view that is not Scene Linear already drew for display, and waits for the pass to compile", async () => {
+  const { scene, probes, root, frame } = fixture();
+  const { order } = recordedCapture(scene, false);
+  const filters = vi.mocked(filterEnvironment).mock.calls.length;
+  probes.upsert("actor", root, reflectionProbeBindings([{ id: "probe", classId: REFLECTION_PROBE_CLASS_ID, properties: { size: [8, 4, 8], resolution: 64 } }]));
+  frame();
+  // Not compiled yet: nothing is drawn and nothing filtered; the probe tries again.
+  expect(order.filter((entry) => !entry.startsWith("depth writes"))).toEqual(["image processing in Materials: false", "conversion from linear: false"]);
+  expect(vi.mocked(filterEnvironment).mock.calls.length).toBe(filters);
+  expect(probes.diagnostics()[0]?.published).toBe(false);
+  vi.mocked(DisplayConversion.prototype.ready).mockReturnValue(true);
+  frame();
+  await vi.waitFor(() => expect(probes.diagnostics()[0]?.published).toBe(true));
+  expect(order.filter((entry) => entry.startsWith("convert"))).toHaveLength(6);
 });
 
 it("keeps a runtime probe published when the budget refuses its new capture cube, and recaptures once the budget has room", async () => {
