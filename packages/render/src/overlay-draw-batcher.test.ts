@@ -111,10 +111,11 @@ async function drawsBothWays(context: ReturnType<typeof host>): Promise<{ batche
 
 describe("Scene Layer draw batching", () => {
   it("keeps each draw after every draw it overlaps", async () => {
-    // Blended, back to front: a (farthest), b, c. a and c bind the same; b another tint.
+    // Blended, back to front: a (farthest), b, c. a and c bind the same; b draws at another visibility.
     const context = host();
     quad(context.scene, "a", 0, 0, { z: 0.9 });
-    const b = quad(context.scene, "b", 0.6, 0, { z: 0.5, tint: [0.9, 0.2, 0.1, 0.8] });
+    const b = quad(context.scene, "b", 0.6, 0, { z: 0.5 });
+    b.visibility = 0.5;
     const c = quad(context.scene, "c", 1.2, 0, { z: 0.1 });
     // b overlaps both: c must draw after b, so it cannot join a.
     expect(await drawsBothWays(context)).toEqual({ batched: 3, unbatched: 3 });
@@ -146,18 +147,63 @@ describe("Scene Layer draw batching", () => {
     expect(await drawsBothWays(context)).toEqual({ batched: 2, unbatched: 6 });
   });
 
-  it("shares a draw only between draws that bind the same values", async () => {
+  it("shares a draw between draws that differ only in colour, alpha and tint, which go with their vertices", async () => {
     const context = host();
-    const quads = [-6, -3, 0, 3, 6].map((x, index) => quad(context.scene, `q${index}`, x, 0));
-    applyOverlayVisualStyle(quads[1]!, { tint: [0.2, 0.3, 0.5, 0.6] });
+    const { engine, compositor, scene } = context;
+    const key = { textured: false, backFaceCulling: false, fog: true, role: "world" } as const;
+    const quads = [-6, -3, 0, 3, 6].map((x, index) => quad(scene, `q${index}`, x, 0));
+    applyOverlayVisualStyle(quads[1]!, { tint: [0.2, 0.3, 0.5, 0.6], opacity: 0.5 });
+    setUnlitMaterial(quads[3]!, key, { texture: null, color: [1, 0.5, 0.25], alpha: 0.75, cutoff: 0, blend: false, textureAlpha: false, twoSided: false });
+    expect(await drawsBothWays(context)).toEqual({ batched: 1, unbatched: 5 });
+    // Each vertex carries what its member's own draw binds: its colour with its alpha, and its tint, whose alpha is
+    // multiplied by the opacity. Read by where the member stands (the translation its world rows end in).
+    setSceneDrawBatching(scene, true);
+    const batch = drawnMeshes(() => layerDraws(engine, compositor, 1))[0]!;
+    const at = (kind: string, vertex: number) => Array.from(batch.getVerticesData(kind)!.slice(vertex * 4, vertex * 4 + 4));
+    const styles = new Map<number, { color: number[]; tint: number[] }>();
+    for (let vertex = 0; vertex < 20; vertex += 1) styles.set(at("batchWorld0", vertex)[3]!, { color: at("batchColor", vertex), tint: at("batchTint", vertex) });
+    const rounded = (values: number[]) => values.map(Math.fround);
+    const plain = { color: [1, 1, 1, 1], tint: rounded([0.2, 0.3, 0.5, 0.8]) };
+    expect(Object.fromEntries(styles)).toEqual({
+      "-6": plain, "0": plain, "6": plain,
+      // 0.6 × 0.5 opacity.
+      "-3": { color: [1, 1, 1, 1], tint: rounded([0.2, 0.3, 0.5, 0.3]) },
+      "3": { color: [1, 0.5, 0.25, 0.75], tint: plain.tint },
+    });
+    // What a draw binds once for all its vertices still tells draws apart: visibility, and the binding's alpha rules.
     quads[2]!.visibility = 0.5;
-    setUnlitMaterial(quads[3]!, { textured: false, backFaceCulling: false, fog: true, role: "world" },
-      { texture: null, color: [1, 0.5, 0.5], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: false });
-    expect(await drawsBothWays(context)).toEqual({ batched: 4, unbatched: 5 });
-    // The same values in another binding object share a draw.
-    setUnlitMaterial(quads[3]!, { textured: false, backFaceCulling: false, fog: true, role: "world" },
-      { texture: null, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: false });
+    expect(await drawsBothWays(context)).toEqual({ batched: 2, unbatched: 5 });
+    setUnlitMaterial(quads[4]!, key, { texture: null, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: true });
     expect(await drawsBothWays(context)).toEqual({ batched: 3, unbatched: 5 });
+  });
+
+  it("uploads only the buffers whose contents changed: a move the world matrices, a tint the styles", async () => {
+    const { engine, compositor, scene } = host();
+    const moving = quad(scene, "moving", -2, 0);
+    const tinted = quad(scene, "tinted", 2, 0);
+    await compositor.prepare("hud", () => {});
+    const batch = drawnMeshes(() => layerDraws(engine, compositor, 1))[0]!;
+    const buffers = new Map<unknown, string>([["position", "position"], ["batchWorld0", "world"], ["batchColor", "style"]]
+      .map(([kind, name]) => [batch.getVertexBuffer(kind!)!.getBuffer(), name!] as const));
+    const vertexWrites = vi.spyOn(engine, "updateDynamicVertexBuffer");
+    const indexWrites = vi.spyOn(engine, "updateDynamicIndexBuffer");
+    const written = () => {
+      layerDraws(engine, compositor, 1);
+      const names = [...vertexWrites.mock.calls.map(([buffer]) => buffers.get(buffer) ?? "other"), ...indexWrites.mock.calls.map(() => "indices")];
+      vertexWrites.mockClear();
+      indexWrites.mockClear();
+      return names;
+    };
+    // Nothing changed: nothing uploads.
+    expect(written()).toEqual([]);
+    moving.position.x = -3;
+    expect(written()).toEqual(["world"]);
+    applyOverlayVisualStyle(tinted, { tint: [1, 0, 0, 0.8] });
+    expect(written()).toEqual(["style"]);
+    // Every vertex and index of the batch is still the same member's: the tint's and the move's buffers alone.
+    moving.position.y = 1;
+    applyOverlayVisualStyle(moving, { tint: [0, 1, 0, 0.8] });
+    expect(written().sort()).toEqual(["style", "world"]);
   });
 
   it("batches clipped draws per clip, each batch under its clip's scissor", async () => {
@@ -307,8 +353,8 @@ describe("Scene Layer draw batching", () => {
     const { engine, compositor, scene } = host();
     // Blended, apart from each other. Three bind the same and share a draw.
     [-6, -3, 0].forEach((x, index) => quad(scene, `same${index}`, x, 0));
-    // One of another tint: batchable, but nothing draws the same.
-    quad(scene, "tinted", 3, 0, { tint: [0.9, 0.2, 0.1, 0.8] });
+    // One at another visibility: batchable, but nothing draws the same.
+    quad(scene, "faint", 3, 0).visibility = 0.5;
     quad(scene, "mirrored", 6, 0).scaling.x = -1;
     const authored = MeshBuilder.CreatePlane("authored", { size: 1 }, scene);
     authored.material = new StandardMaterial("authored", scene);
@@ -429,8 +475,9 @@ describe("Scene Layer draw batching", () => {
     const batched = layerDraws(engine, compositor);
     setSceneDrawBatching(scene, false);
     const unbatched = layerDraws(engine, compositor);
-    // The unevenly scaled cards' and the turned widgets' unlit visuals batch with the rest: each carries its own pose.
-    expect({ batched, unbatched }).toEqual({ batched: 61, unbatched: 195 });
+    // The unevenly scaled cards' and the turned widgets' unlit visuals batch with the rest, as do texts of different
+    // colours: each visual carries its own pose, colour and tint.
+    expect({ batched, unbatched }).toEqual({ batched: 57, unbatched: 195 });
     // Batch meshes join no Scene list: nothing culls, picks, probes or counts them.
     expect(scene.meshes).toHaveLength(meshes);
     await compositor.dispose();
