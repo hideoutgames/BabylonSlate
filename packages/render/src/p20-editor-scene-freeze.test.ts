@@ -244,6 +244,56 @@ describe("p20-editor-scene-freeze", () => {
     expect(activeMeshesOf(handle.scene)).not.toContain(mesh);
   });
 
+  it("draws a loaded Scene's meshes outside the view once, unpresented, before its first presented frame", async () => {
+    const engine = sharedEngine();
+    // The test draws the frames: no timer draws one while a load step is awaited.
+    engine.customAnimationFrameRequester = { requestAnimationFrame: () => 0, cancelAnimationFrame: () => {} };
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+    handles.push(handle);
+    handle.loadScene({
+      ...createDefaultScene(),
+      actors: [
+        createActor("far", "Far", {
+          transform: { position: [500, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+          components: [createMeshComponent("c1", "box")],
+        }),
+      ],
+    });
+    const mesh = handle.editor!.sync.meshForActor("far")!;
+    handle.scene.updateTransformMatrix();
+    expect(mesh.isInFrustum(handle.scene.frustumPlanes)).toBe(false);
+    const draws = vi.spyOn(mesh, "render");
+    const renderLoop = runRenderLoop.mock.calls[0]![0];
+    const frame = async () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderLoop();
+      engine.onEndFrameObservable.notifyObservers(engine);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    // The load, as the viewport runs it: shaders, then the first presented frame.
+    await handle.prewarmSceneMaterials();
+    /** References to every Effect the box's draw wrappers hold. */
+    const references = () => mesh.subMeshes[0]!._drawWrappers.reduce((total, wrapper) => total + (wrapper?.effect?._refCount ?? 0), 0);
+    const warmed = references();
+    expect(warmed).toBeGreaterThan(0);
+    let presented = false;
+    const presenting = handle.presentFirstFrame().then(() => { presented = true; });
+    await frame();
+    // Drawn without view culling, behind the loading dialog: the load has not presented its first frame yet.
+    expect(draws).toHaveBeenCalled();
+    expect(presented).toBe(false);
+    for (let attempt = 0; attempt < 20 && !presented; attempt++) await frame();
+    await presenting;
+    // The draw kept its Effects compiled only while it ran: an edited Scene's Materials come and go.
+    expect(references()).toBe(warmed);
+    // The view culls by its frustum again: the box outside it draws no more.
+    expect(handle.scene.skipFrustumClipping).toBe(false);
+    draws.mockClear();
+    await frame();
+    expect(draws).not.toHaveBeenCalled();
+  });
+
   it("collects a formerly off-frustum box after a camera move without reapplying the scene", () => {
     const handle = editorHandle();
     handle.loadScene({

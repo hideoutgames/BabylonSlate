@@ -5184,9 +5184,14 @@ describe("Play createEngine view", () => {
     };
     const present = async (handle: ReturnType<typeof createEngine>) => {
       await handle.prewarmSceneMaterials();
-      const presented = handle.presentFirstFrame();
-      renderViews(engine);
-      engine.onEndFrameObservable.notifyObservers(engine);
+      let done = false;
+      const presented = handle.presentFirstFrame().then(() => { done = true; });
+      // An editor view first draws its starting state, unpresented; a later frame presents.
+      for (let attempt = 0; attempt < 10 && !done; attempt++) {
+        renderViews(engine);
+        engine.onEndFrameObservable.notifyObservers(engine);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
       await presented;
     };
     /** The programs `run` compiles: Effects the Engine returns that its cache did not hold. */
