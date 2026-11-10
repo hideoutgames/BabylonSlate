@@ -2500,7 +2500,7 @@ describe("GraphEditor", () => {
     }
   });
 
-  it("marks wired exec pins connected and leaves unused pins on the same node hollow", () => {
+  it("marks wired exec pins connected, filled at the hollow pins' size, and leaves unused pins on the same node hollow", () => {
     const { container } = render(
       <GraphEditor initialGraph={graphWithWiredPins()} />,
     );
@@ -2522,6 +2522,15 @@ describe("GraphEditor", () => {
     expect(execInB?.getAttribute("data-pin-connected")).toBe("true");
     expect(messageA?.getAttribute("data-pin-connected")).toBe("false");
     expect(execOutB?.getAttribute("data-pin-connected")).toBe("false");
+    // A filled pin keeps the hollow pin's outline in the same colour, so it does not shrink.
+    const filled = execOut as HTMLElement;
+    const hollow = execOutB as HTMLElement;
+    expect(hollow.classList.contains("border-2")).toBe(true);
+    expect(hollow.style.borderColor).toMatch(/^var\(--/);
+    expect(filled.classList.contains("border-2")).toBe(true);
+    expect(filled.classList.contains("border-card")).toBe(false);
+    expect(filled.style.borderColor).toBe(hollow.style.borderColor);
+    expect(filled.style.background).toBe(hollow.style.borderColor);
   });
 
   it("refreshes pin connections and defaults across edge replacement and restoration", async () => {
