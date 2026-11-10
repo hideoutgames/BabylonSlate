@@ -178,10 +178,7 @@ function recordedCapture(scene: Scene, conversionReady: boolean) {
   const engine = scene.getEngine();
   const order: string[] = [];
   const views: string[] = [];
-  vi.mocked(drawOutsideSceneView).mockImplementation((_scene, run, materialImageProcessing) => {
-    order.push(`image processing in Materials: ${materialImageProcessing}`);
-    return run();
-  });
+  vi.mocked(drawOutsideSceneView).mockImplementation((_scene, run) => run());
   vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true);
   vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(function (this: RenderTargetTexture) {
     this.onBeforeRenderObservable.notifyObservers(0);
@@ -204,7 +201,6 @@ it("draws each face with the view's programs, then stores it display-referred in
   await publish([8, 4, 8]);
   const face = "reflectionProbe:actor:probe:face";
   expect(order).toEqual([
-    "image processing in Materials: false",
     "conversion from linear: true",
     // A face's clear writes depth only where depth writes are on, whatever the pass before left.
     ...[0, 1, 2, 3, 4, 5].flatMap((index) => ["depth writes: true", `draw ${face}`, `bind cube face ${index}`, `convert ${face}`]),
@@ -228,7 +224,7 @@ it("copies faces a view that is not Scene Linear already drew for display, and w
   probes.upsert("actor", root, reflectionProbeBindings([{ id: "probe", classId: REFLECTION_PROBE_CLASS_ID, properties: { size: [8, 4, 8], resolution: 64 } }]));
   frame();
   // Not compiled yet: nothing is drawn and nothing filtered; the probe tries again.
-  expect(order.filter((entry) => !entry.startsWith("depth writes"))).toEqual(["image processing in Materials: false", "conversion from linear: false"]);
+  expect(order.filter((entry) => !entry.startsWith("depth writes"))).toEqual(["conversion from linear: false"]);
   expect(vi.mocked(filterEnvironment).mock.calls.length).toBe(filters);
   expect(probes.diagnostics()[0]?.published).toBe(false);
   vi.mocked(DisplayConversion.prototype.ready).mockReturnValue(true);

@@ -516,7 +516,7 @@ export class ReflectionProbes {
           engine.generateMipMapsForCubemap(texture.getInternalTexture()!);
         }, { restoreAlpha: true, wrapDrawFailure: false, message: "Reflection probe capture failed." });
         return ready;
-      }, false));
+      }));
     } catch (error) {
       probe.failed = true;
       console.warn(`[render] Reflection probe ${probe.id} capture failed: ${String(error)}`);

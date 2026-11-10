@@ -113,7 +113,8 @@ it("keeps Fast on the lightweight capture pass: no forward view and no water sce
     actorId: "capture", renderTargetGuid: "target", quality: "fast", published: true, taskNames: [], waterSceneCopyPass: null,
     strictReadinessChecks: 0,
   }]);
-  const capturePass = scene.objectRenderers.find((renderer) => renderer.name === "renderTarget:target")!.renderPassId;
+  // A Fast colour capture's pass draws its scene colour target, which one pass then stores in the output.
+  const capturePass = scene.objectRenderers.find((renderer) => renderer.name === "renderTarget:target:scene")!.renderPassId;
   expect(compiled(lake, capturePass)).toMatch(/^#define SLATE_WATER_SURFACE$/m);
   expect(compiled(lake, capturePass)).not.toContain("SLATE_WATER_NODE_COPY\n");
   expect(isMainWaterPass(scene, capturePass)).toBe(false);
