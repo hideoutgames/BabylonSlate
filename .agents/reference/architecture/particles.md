@@ -82,6 +82,7 @@ Basic Particle Emitter, Particle Graph and Particle System assets, `ParticleComp
 
 - `bindParticleMaterial` waits for the NodeMaterial build, then `createEffectForParticles`. Particle-mode Materials are not rebuilt when a sampled texture loads (their effects bind textures per draw; a rebuild drops the draw on WebGPU).
 - Babylon's `isReady()` needs a ready `particleTexture`, so each native system owns a 1×1 white `slate:particleReadiness` texture that no shader samples.
+- A CPU system's `isReady()` also waits for the dynamic import of Babylon's default particle sources that its constructor starts (`_shadersLoaded`), which settles on a later task even when those modules are loaded. A view's readiness probe asks every particle system, so each emitter made while the app runs (a Spawn Emitter's) would hold the image until then. `bindParticleMaterial` ends the wait as it creates the Material's effect, when both sources are in the shader store (`adoptLoadedParticleShaders`); not earlier, since a system that is ready before its Material's effect exists compiles the default particle program.
 - Blend: Additive (`additive`, ONEONE, default), Normal (`standard`), Alpha Additive (`add`), Multiply, Subtract. Only ONEONE and MULTIPLY effects compile; the others reuse ONEONE under their own alpha state. Billboard: Camera Facing (`all`), Y Axis, Stretched.
 - Particle textures encode KTX2 at block-aligned (multiple of 4) sizes because WebGPU rejects unaligned ASTC/BC7 ([asset-registry.md](asset-registry.md)).
 
