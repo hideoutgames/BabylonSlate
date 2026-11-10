@@ -70,6 +70,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/instancing-parity-proof").then(({ runInstancingParityProof }) => Object.assign(window, { __instancingParityProof: runInstancingParityProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("shadowFilterProof")) {
   void import("./testing/shadow-filter-proof").then(({ runShadowFilterProof }) => Object.assign(window, { __shadowFilterProof: runShadowFilterProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("retainedShadowProof")) {
+  void import("./testing/retained-shadow-proof").then(({ runRetainedShadowProof }) => Object.assign(window, { __retainedShadowProof: runRetainedShadowProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("shadowParticipationProof")) {
   void import("./testing/shadow-participation-proof").then(({ runShadowParticipationProof }) => Object.assign(window, { __shadowParticipationProof: runShadowParticipationProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("hapticScreenShadowsProof")) {

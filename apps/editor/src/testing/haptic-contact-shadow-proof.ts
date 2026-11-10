@@ -31,6 +31,7 @@ import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaul
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { isAtlasShadow, type AtlasCascadedShadowGenerator } from "../../../../packages/render/src/shadow-atlas";
+import { setRetainedShadowCasters } from "../../../../packages/render/src/shadow-retained-casters";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 /** `passes`: the light's map passes the capture's frame drew, and `originMoved` whether the render origin moved, where counted. */
@@ -194,7 +195,16 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
     await shadowed(sun, "sun far casters");
     const cascades = sun.getShadowGenerator() as AtlasCascadedShadowGenerator;
     const map = cascades.getShadowMap()!;
-    const listed = () => [0, 1].map((layer) => (map.getCustomRenderList!(layer, map.renderList!, map.renderList!.length) ?? []).includes(pebble));
+    // Asked of Babylon's own list, with the shared caster buffer off: that buffer takes the casters it draws out of the
+    // list, by the same rule and after it.
+    const listed = () => {
+      setRetainedShadowCasters(scene, false);
+      try {
+        return [0, 1].map((layer) => (map.getCustomRenderList!(layer, map.renderList!, map.renderList!.length) ?? []).includes(pebble));
+      } finally {
+        setRetainedShadowCasters(scene, true);
+      }
+    };
     const threshold = cascades.farCasterMinTexels;
     map.resetRefreshCounter();
     const kept = { pixels: await draw() };

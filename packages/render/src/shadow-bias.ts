@@ -41,6 +41,11 @@ export function markSmoothNormalShadowCaster(mesh: object): void {
   smoothNormalCasters.add(mesh);
 }
 
+/** Whether `mesh` draws with a normal bias of its own (`casterNormalBias`), not the map's. */
+export function isSmoothNormalShadowCaster(mesh: object): boolean {
+  return smoothNormalCasters.has(mesh);
+}
+
 /** The normal bias to draw `caster` with: the effective bias, raised for smooth-normal casters when `worldTexelSize` is known. */
 export function casterNormalBias(caster: object, normalBias: number, worldTexelSize: number): number {
   return smoothNormalCasters.has(caster) && worldTexelSize > 0

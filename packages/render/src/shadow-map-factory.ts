@@ -6,6 +6,7 @@ import type { Light } from "@babylonjs/core/Lights/light";
 import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
 import { Frustum } from "@babylonjs/core/Maths/math.frustum";
 import { Plane } from "@babylonjs/core/Maths/math.plane";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
@@ -15,6 +16,7 @@ import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, createAtlasCascaded
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { castsIntoCascade } from "./shadow-caster-size";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
+import type { RetainedShadowCasters } from "./shadow-retained-casters";
 import {
   casterNormalBias,
   resolveDirectionalShadowBias,
@@ -45,6 +47,8 @@ export interface ShadowMapContext {
   /** Per-map closures read their current owner; a local map can move between lights. */
   readonly slots: WeakMap<ShadowGenerator, ShadowMapSlot>;
   readonly counters: ShadowDrawCounters;
+  /** The casters a map draws without Babylon's per-caster work; null where that cannot work (`RetainedShadowCasters`). */
+  readonly retained: RetainedShadowCasters | null;
 }
 
 /**
@@ -289,6 +293,8 @@ export function createShadowGenerator(
   const casters: AbstractMesh[] = [];
   if (map)
     map.getCustomRenderList = (layer) => {
+      // Until this pass lists again, the shared buffer draws nothing into it.
+      context.retained?.discard(generator);
       const transform =
         generator instanceof CascadedShadowGenerator
           ? generator.getCascadeTransformMatrix(layer)
@@ -314,14 +320,24 @@ export function createShadowGenerator(
       const minTexels = layer > 0 && generator instanceof AtlasCascadedShadowGenerator ? generator.farCasterMinTexels : 0;
       const size = minTexels ? shadowTileSize(generator, layer) : 0;
       let kept = 0;
+      // A retained caster is drawn from the shared buffer (the observer below): Babylon's list leaves it out.
+      const retained = context.retained?.begin(generator, activePlanes) ? context.retained : null;
       for (const mesh of casters)
         if ((!isRevealPending(mesh) || listsHiddenCaster(generator, mesh)) &&
           (!position || casterWithinShadowRange(mesh, position, range!)) &&
           (!minTexels || hasDeformingShadowBounds(mesh) ||
-            castsIntoCascade(transform.m, mesh.getBoundingInfo().boundingSphere.radiusWorld, size, minTexels))) casters[kept++] = mesh;
+            castsIntoCascade(transform.m, mesh.getBoundingInfo().boundingSphere.radiusWorld, size, minTexels)) &&
+          !retained?.take(mesh)) casters[kept++] = mesh;
       casters.length = kept;
       return casters;
     };
+  // After the layer's clear (the map's own observer, added first) and before Babylon's casters: the layer listed last.
+  if (map && context.retained) {
+    const retained = context.retained;
+    (map as unknown as { _objectRenderer: ObjectRenderer })._objectRenderer.onBeforeRenderingManagerRenderObservable.add(() => {
+      retained.draw(generator);
+    });
+  }
   generator.customAllowRendering = (part) => {
     if (hasDeformingShadowBounds(part.getMesh())) return true;
     // Babylon draws a mesh's instances in its parts' batches: culled by the mesh's own box, they would draw where it is.
