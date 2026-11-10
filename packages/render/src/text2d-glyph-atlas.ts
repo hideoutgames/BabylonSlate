@@ -37,6 +37,9 @@ function nextPowerOfTwo(value: number): number {
 }
 
 class Page implements GlyphAtlasPage {
+  readonly id: number;
+  readonly width: number;
+  readonly height: number;
   readonly pixels: Uint8Array;
   readonly texture: RawTexture;
   readonly entries = new Set<Entry>();
@@ -47,7 +50,10 @@ class Page implements GlyphAtlasPage {
   private y = 1;
   private rowHeight = 0;
 
-  constructor(readonly id: number, readonly width: number, readonly height: number, scene: Scene, nearest: boolean) {
+  constructor(id: number, width: number, height: number, scene: Scene, nearest: boolean) {
+    this.id = id;
+    this.width = width;
+    this.height = height;
     this.pixels = new Uint8Array(width * height * 4);
     this.texture = RawTexture.CreateRGBATexture(
       this.pixels, width, height, scene, false, true,
@@ -128,8 +134,13 @@ export class SceneGlyphAtlas {
   private readonly pages: Page[] = [];
   private readonly entries = new Map<string, Entry>();
   private nextPage = 0;
+  private readonly scene: Scene;
+  private readonly nearest: boolean;
 
-  constructor(private readonly scene: Scene, private readonly nearest: boolean) {}
+  constructor(scene: Scene, nearest: boolean) {
+    this.scene = scene;
+    this.nearest = nearest;
+  }
 
   /**
    * Holds `cell` for a text until `release`, and returns where it is. A cell another text holds, or held until its
