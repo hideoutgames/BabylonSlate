@@ -1624,6 +1624,31 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("keeps the released wire drawn from its pin while Add Node is open, and drops it when the menu closes", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const { container, getByTestId, queryByTestId } = render(
+        <GraphEditor initialGraph={graphWithPins()} paletteNodes={pinDragPalette} />,
+      );
+      const source = mockPinDragLayout(container);
+      expect(queryByTestId("pending-connection-wire")).toBeNull();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, farDrop);
+      });
+      expect(getByTestId("node-palette-body")).toBeTruthy();
+      const wire = getByTestId("pending-connection-wire").querySelector("path");
+      // A curve from the pin to the release point, in the dragged pin's colour.
+      expect(wire?.getAttribute("d")).toMatch(/^M[\d.-]+,[\d.-]+ C/);
+      expect(wire?.getAttribute("class")).toContain("react-flow__connection-path");
+      expect(wire?.style.stroke).not.toBe("");
+
+      fireEvent.keyDown(getByTestId("node-palette-search"), { key: "Escape" });
+      expect(queryByTestId("pending-connection-wire")).toBeNull();
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("ranks Branch first when dragging a Bool pin off a node that also has Exec", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {

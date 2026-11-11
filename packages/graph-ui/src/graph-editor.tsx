@@ -98,6 +98,7 @@ import {
   type AddNodeHistoryScope,
 } from "./add-node-history";
 import { GraphConnectionLine } from "./connection-line";
+import { PendingConnectionWire } from "./pending-connection-wire";
 import { GraphRunOverlay } from "./graph-run-overlay";
 import type { GraphRunTrace } from "./run-trace";
 import {
@@ -3196,6 +3197,15 @@ function GraphEditorCanvas({
               ))}
             </svg>
           </ViewportPortal>
+          {paletteOpen && pendingConnect?.pin && pendingConnect.nodeId ? (
+            <PendingConnectionWire
+              nodeId={pendingConnect.nodeId}
+              pinId={pendingConnect.pin.id}
+              direction={pendingConnect.pin.direction}
+              to={pendingConnect.position}
+              style={connectionLineStyle}
+            />
+          ) : null}
           <Background
             variant={BackgroundVariant.Dots}
             gap={20}
