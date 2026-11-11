@@ -3386,7 +3386,7 @@ describe("GraphEditor", () => {
       container.querySelector(`[data-id="${node}"] [data-pin-id="${pin}"] [data-pin-shape]`);
     expect(shape("roll", "seed")?.getAttribute("data-pin-shape")).toBe("reference");
     expect(shape("input", "Seed")?.getAttribute("data-pin-shape")).toBe("reference");
-    // A writable output that is not a Pass-By-Reference input stays a circle, as a Get Variable's does.
+    // A writable output that is not a Pass-By-Reference input stays a circle, as an unwired Get Variable's does.
     expect(shape("input", "Count")?.getAttribute("data-pin-shape")).toBe("circle");
     const exec = shape("input", "exec") as HTMLElement;
     expect(exec.getAttribute("data-pin-shape")).toBe("diamond");
@@ -3449,7 +3449,7 @@ describe("GraphEditor", () => {
 
     const { container } = render(<GraphEditor initialGraph={graph} />);
     const shape = (node: string) =>
-      container.querySelector(`[data-id="${node}"] [data-pin-id="value"] [data-pin-shape]`)?.getAttribute("data-pin-shape");
+      container.querySelector(`[data-id="${node}"] [data-handleid="value"] [data-pin-shape]`)?.getAttribute("data-pin-shape");
     expect(shape("loot")).toBe("reference");
     expect(shape("count")).toBe("circle");
     expect(shape("spare")).toBe("circle");
