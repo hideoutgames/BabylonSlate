@@ -381,6 +381,38 @@ index 801aa3c223053ecfb677eb540ffe18ad03b03025..94cc6e2a27e92f4b473d28aef5670062
              this._vertexSourceCode = migratedVertexCode;
              this._fragmentSourceCode = migratedFragmentCode;
              this._prepareEffect(keepExistingPipelineContext);
+diff --git a/Materials/material.pure.js b/Materials/material.pure.js
+index ab1d1a45f703c7adc8963ca45083715854d9edbb..e7771b6aebd48897ba2b3a452e483ff525f30f02 100644
+--- a/Materials/material.pure.js
++++ b/Materials/material.pure.js
+@@ -1468,14 +1468,23 @@ let Material = (() => {
+             _checkScenePerformancePriority() {
+                 if (this._scene.performancePriority !== 0 /* ScenePerformancePriority.BackwardCompatible */) {
+                     this.checkReadyOnlyOnce = true;
++                    // One observer per material until the priority changes, not one per readiness pass.
++                    if (this._performancePriorityObserver) {
++                        return;
++                    }
+                     // re-set the flag when the perf priority changes
+-                    const observer = this._scene.onScenePerformancePriorityChangedObservable.addOnce(() => {
++                    this._performancePriorityObserver = this._scene.onScenePerformancePriorityChangedObservable.addOnce(() => {
++                        this._performancePriorityObserver = null;
+                         this.checkReadyOnlyOnce = false;
+                     });
+                     // if this material is disposed before the scene is disposed, cleanup the observer
+-                    this.onDisposeObservable.add(() => {
+-                        this._scene.onScenePerformancePriorityChangedObservable.remove(observer);
+-                    });
++                    if (!this._performancePriorityDisposeObserved) {
++                        this._performancePriorityDisposeObserved = true;
++                        this.onDisposeObservable.add(() => {
++                            this._scene.onScenePerformancePriorityChangedObservable.remove(this._performancePriorityObserver);
++                            this._performancePriorityObserver = null;
++                        });
++                    }
+                 }
+             }
+             /**
 diff --git a/Materials/materialHelper.geometryrendering.js b/Materials/materialHelper.geometryrendering.js
 index b9761671c22fab766f67bd1441bc0e1def549869..9fadde6a5d64b1b6a53fa792307372dbb05e62cf 100644
 --- a/Materials/materialHelper.geometryrendering.js

@@ -13,7 +13,7 @@ import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
-import { Scene } from "@babylonjs/core/scene";
+import { Scene, ScenePerformancePriority } from "@babylonjs/core/scene";
 import { ThinEngine } from "@babylonjs/core/Engines/thinEngine";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport";
@@ -25,6 +25,7 @@ import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { installTimerClock } from "./virtual-clock-test-fixtures";
 import {
   applyEditorMaterialFreeze,
+  isMeshFrameReady,
   isSceneFrameReady,
   markSceneReadinessDirty,
   materialLibraryAssetGuid,
@@ -53,6 +54,60 @@ it("notifies readiness-dirty listeners per scene until unsubscribed", () => {
   scene.dispose();
   sibling.dispose();
   engine.dispose();
+});
+
+describe("a Play scene's Materials (Babylon's Intermediate performance priority)", () => {
+  it("watch the priority once however often their meshes are probed, and stop when disposed", async () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    try {
+      scene.performancePriority = ScenePerformancePriority.Intermediate;
+      scene.activeCamera = new UniversalCamera("camera", new Vector3(0, 0, -5), scene);
+      const watchers = scene.onScenePerformancePriorityChangedObservable.observers;
+      const unwatched = watchers.length;
+      const meshes = [new PBRMaterial("painted", scene), new StandardMaterial("plain", scene)].map((material) => {
+        const mesh = MeshBuilder.CreateBox(material.name, {}, scene);
+        mesh.material = material;
+        return mesh;
+      });
+      // The NullEngine's Effects are ready a task after their first probe.
+      await vi.waitFor(() => { for (const mesh of meshes) expect(isMeshFrameReady(mesh)).toBe(true); });
+      expect(watchers.length).toBe(unwatched + 2);
+      const disposers = meshes.map((mesh) => mesh.material!.onDisposeObservable.observers.length);
+      // Every probe runs the Material's whole readiness pass: a frame's probes of a steady scene register nothing more.
+      for (let probe = 0; probe < 4; probe += 1) for (const mesh of meshes) expect(isMeshFrameReady(mesh)).toBe(true);
+      expect(watchers.length).toBe(unwatched + 2);
+      expect(meshes.map((mesh) => mesh.material!.onDisposeObservable.observers.length)).toEqual(disposers);
+      meshes[0]!.material!.dispose();
+      // Babylon takes a removed observer out of the list a task later.
+      await vi.waitFor(() => expect(watchers.length).toBe(unwatched + 1));
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
+  });
+
+  it("unfreeze at each priority change and freeze again once ready", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    try {
+      scene.performancePriority = ScenePerformancePriority.Intermediate;
+      const mesh = MeshBuilder.CreateBox("crate", {}, scene);
+      const material = mesh.material = new PBRMaterial("painted", scene);
+      for (let round = 0; round < 2; round += 1) {
+        // Within one render id Babylon answers from its cache, without the pass that freezes.
+        scene.incrementRenderId();
+        expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
+        expect(material.isFrozen).toBe(true);
+        scene.performancePriority = ScenePerformancePriority.BackwardCompatible;
+        expect(material.isFrozen).toBe(false);
+        scene.performancePriority = ScenePerformancePriority.Intermediate;
+      }
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
+  });
 });
 
 describe("applyEditorMaterialFreeze", () => {
