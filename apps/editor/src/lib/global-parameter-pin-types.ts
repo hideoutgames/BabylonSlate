@@ -5,8 +5,12 @@ import type { PinDefaultEditorRequest } from "@haptic/graph-ui";
 const GLOBAL_PARAMETER_NODE_TYPES: Readonly<Record<string, readonly GlobalParameterType[]>> = {
   "globalParameters.setFloatParameter": ["float"],
   "globalParameters.getFloatParameter": ["float"],
-  "globalParameters.setVectorParameter": ["vec2", "vec3"],
-  "globalParameters.getVectorParameter": ["vec2", "vec3"],
+  "globalParameters.setVector2Parameter": ["vec2"],
+  "globalParameters.getVector2Parameter": ["vec2"],
+  "globalParameters.setVector3Parameter": ["vec3"],
+  "globalParameters.getVector3Parameter": ["vec3"],
+  "globalParameters.setVector4Parameter": ["vec4"],
+  "globalParameters.getVector4Parameter": ["vec4"],
   "globalParameters.setColorParameter": ["color"],
   "globalParameters.getColorParameter": ["color"],
 };

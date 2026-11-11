@@ -182,6 +182,7 @@ const FEATURE_TEST_GLOBAL_PARAMETERS = {
     { id: "ft-global-wind-strength", name: "Wind Strength", type: "float", defaultValue: [1] },
     { id: "ft-global-uv-offset", name: "UV Offset", type: "vec2", defaultValue: [0, 0] },
     { id: "ft-global-wind-direction", name: "Wind Direction", type: "vec3", defaultValue: [1, 0, 0] },
+    { id: "ft-global-uv-rect", name: "UV Rect", type: "vec4", defaultValue: [0, 0, 1, 1] },
     { id: "ft-global-sky-tint", name: "Sky Tint", type: "color", defaultValue: [0.6, 0.8, 1, 1] },
   ],
 } as const;

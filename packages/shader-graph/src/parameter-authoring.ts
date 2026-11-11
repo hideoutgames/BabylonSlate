@@ -11,6 +11,7 @@ const MATERIAL_PARAMETER_TYPES = {
   float: "param.float",
   vec2: "param.vec2",
   vec3: "param.vec3",
+  vec4: "param.vec4",
   color: "param.color",
   texture: "param.texture",
 } as const;
@@ -20,6 +21,7 @@ const CONSTANT_FOR_PARAMETER: Readonly<Record<string, string>> = {
   "param.float": "const.float",
   "param.vec2": "const.vec2",
   "param.vec3": "const.vec3",
+  "param.vec4": "const.vec4",
   "param.color": "const.color",
 };
 const PARAMETER_FOR_CONSTANT: Readonly<Record<string, string>> = Object.fromEntries(
@@ -32,7 +34,7 @@ export function materialParameterValueType(type: string): MaterialParameterValue
   return null;
 }
 
-/** Whether **Convert to Parameter** applies: a Float, Vector2, Vector3 or Color Constant. */
+/** Whether **Convert to Parameter** applies: a Float, Vector2, Vector3, Vector4 or Color Constant. */
 export function canConvertMaterialConstantToParameter(type: string): boolean {
   return Object.hasOwn(PARAMETER_FOR_CONSTANT, type);
 }
@@ -107,8 +109,8 @@ function fit(value: unknown, width: number, alpha: boolean): number[] {
 }
 
 const WIDTHS: Readonly<Record<string, number>> = {
-  "param.float": 1, "param.vec2": 2, "param.vec3": 3, "param.color": 4,
-  "const.float": 1, "const.vec2": 2, "const.vec3": 3, "const.color": 3,
+  "param.float": 1, "param.vec2": 2, "param.vec3": 3, "param.vec4": 4, "param.color": 4,
+  "const.float": 1, "const.vec2": 2, "const.vec3": 3, "const.vec4": 4, "const.color": 3,
 };
 
 /** Swap one node's type and properties in place; edges from a pin the new type lacks follow `pins` or are dropped. */
@@ -131,7 +133,7 @@ function replaceNode<T extends GraphDocument>(
 }
 
 /**
- * **Convert to Parameter**: a Float, Vector2, Vector3 or Color Constant becomes the parameter
+ * **Convert to Parameter**: a Float, Vector2, Vector3, Vector4 or Color Constant becomes the parameter
  * of its type holding its value, under a free name. Its id, position and wires stay (a Color's
  * wires move to the parameter's RGB output). Null for other nodes.
  */
@@ -145,7 +147,7 @@ export function convertMaterialConstantToParameter<T extends GraphDocument>(doc:
 }
 
 /**
- * **Convert to Constant**: a Float, Vector2, Vector3 or Color parameter becomes the Constant
+ * **Convert to Constant**: a Float, Vector2, Vector3, Vector4 or Color parameter becomes the Constant
  * of its type holding its default. Its id, position and wires stay (a Color's RGB and RGBA wires
  * both move to the Constant's output). Null for Texture parameters and other nodes.
  */
@@ -170,8 +172,8 @@ export function retypeMaterialParameter<T extends GraphDocument>(doc: T, nodeId:
   const properties: Record<string, unknown> = type === "param.texture"
     ? { name, textureGuid: null }
     : { name, value: fit(node.properties.value, WIDTHS[type]!, type === "param.color") };
-  // Only the shared `out` survives a change of type; a Color's `rgb` exists on Colors alone.
-  const pins: Record<string, string | null> = { rgb: type === "param.color" ? "rgb" : null };
+  // Only the shared `out` survives a change of type; a Color's `rgb` and `a` exist on Colors alone.
+  const pins: Record<string, string | null> = { rgb: type === "param.color" ? "rgb" : null, a: type === "param.color" ? "a" : null };
   if (node.type === "param.texture" || type === "param.texture") pins.out = null;
   return replaceNode(doc, nodeId, type, properties, pins);
 }

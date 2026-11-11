@@ -3,6 +3,7 @@ import type { CommandMessage, RuntimeInspectorAction } from "@haptic/bridge";
 import { createActor, createDefaultSceneSettings, type ParticleParameterCatalog, type SerializedScene } from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 import { RuntimeParticles } from "./runtime-particles";
+import { particleParameterArg, particleParameterResult } from "./particle-parameter-bindings";
 
 const catalog: ParticleParameterCatalog = {
   sparksSystem: [
@@ -166,5 +167,15 @@ describe("RuntimeParticles parameter values", () => {
     expect(particles.prepare(assign("b"))).not.toHaveProperty("parameters");
     particles.observe({ type: "assignParticle", slotId: 1, actorGuid: "actor", componentId: "a", particleSystemGuid: null });
     expect(particles.value("actor", "a", "Heat")).toBeUndefined();
+  });
+
+  it("passes each parameter function's value at the width its name states", () => {
+    expect(particleParameterArg("Float", 2)).toEqual([2]);
+    expect(particleParameterArg("Vector2", { x: 1, y: 2 })).toEqual([1, 2]);
+    expect(particleParameterArg("Vector3", { x: 1, y: 2, z: 3 })).toEqual([1, 2, 3]);
+    expect(particleParameterArg("Color", { x: 1, y: 2, z: 3 })).toEqual([1, 2, 3, 1]);
+    expect(particleParameterResult("Vector2", [1, 2, 3])).toEqual({ x: 1, y: 2 });
+    expect(particleParameterResult("Vector3", [1, 2])).toEqual({ x: 1, y: 2, z: 0 });
+    expect(particleParameterResult("Color", [1, 2, 3])).toEqual({ x: 1, y: 2, z: 3, w: 1 });
   });
 });

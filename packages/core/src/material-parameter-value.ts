@@ -3,6 +3,7 @@ export type MaterialParameterValue =
   | { kind: "float"; value: number }
   | { kind: "vec2"; value: [number, number] }
   | { kind: "vec3"; value: [number, number, number] }
+  | { kind: "vec4"; value: [number, number, number, number] }
   | { kind: "color"; value: [number, number, number, number] }
   | { kind: "texture"; textureAssetGuid: string | null };
 
@@ -36,6 +37,7 @@ export function isFiniteMaterialParameterValue(value: MaterialParameterValue): b
       return finiteNumbers(value.value, 2);
     case "vec3":
       return finiteNumbers(value.value, 3);
+    case "vec4":
     case "color":
       return finiteNumbers(value.value, 4);
     case "texture":
@@ -61,8 +63,8 @@ export function normalizeMaterialParameterOverrides(value: unknown): Record<stri
       entries.push([name, { kind: "vec2", value: [...parameter.value] as [number, number] }]);
     } else if (parameter.kind === "vec3" && finiteNumbers(parameter.value, 3)) {
       entries.push([name, { kind: "vec3", value: [...parameter.value] as [number, number, number] }]);
-    } else if (parameter.kind === "color" && finiteNumbers(parameter.value, 4)) {
-      entries.push([name, { kind: "color", value: [...parameter.value] as [number, number, number, number] }]);
+    } else if ((parameter.kind === "vec4" || parameter.kind === "color") && finiteNumbers(parameter.value, 4)) {
+      entries.push([name, { kind: parameter.kind, value: [...parameter.value] as [number, number, number, number] }]);
     } else if (parameter.kind === "texture" && (parameter.textureAssetGuid === null ||
       (typeof parameter.textureAssetGuid === "string" && parameter.textureAssetGuid.trim()))) {
       entries.push([name, { kind: "texture", textureAssetGuid: parameter.textureAssetGuid as string | null }]);

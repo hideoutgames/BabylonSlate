@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Vector2, Vector3, Vector4 } from "@babylonjs/core/Maths/math.vector";
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
@@ -219,6 +219,40 @@ describe("material parameter bindings", () => {
     expect(compiled.setParameter("Glow", { kind: "vec3", value: [1, NaN, 0] })).toBe(false);
     expect(compiled.resetParameter("Glow")).toBe(true);
     expect(compiled.getParameter("Glow")).toEqual({ kind: "vec3", value: [0.1, 0.2, 0.3] });
+  });
+
+  it("binds a Vector4 parameter as four raw numbers, where a Color parameter's RGB goes to linear space", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "rect", type: "param.vec4", position: { x: 0, y: 0 }, properties: { name: "Rect", value: [0.5, 0.5, 0.5, 0.5] } },
+      { id: "tint", type: "param.color", position: { x: 0, y: 0 }, properties: { name: "Tint", value: [0.5, 0.5, 0.5, 0.5] } },
+      { id: "sum", type: "math.add", position: { x: 0, y: 0 }, properties: {} },
+    );
+    doc.edges.push(
+      { id: "rect-sum", sourceNodeId: "rect", sourcePinId: "out", targetNodeId: "sum", targetPinId: "a" },
+      { id: "tint-sum", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "sum", targetPinId: "b" },
+      { id: "sum-out", sourceNodeId: "sum", sourcePinId: "out", targetNodeId: "output", targetPinId: "emissive" },
+    );
+    const lowered = lowerMaterialDocument(doc);
+    if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+    const compiled = compileMaterialPlan(lowered.plan, { scene, name: "raw" });
+    if (!compiled.ok) throw new Error("Compile failed");
+    disposers.push(compiled.dispose);
+    const rect = compiled.material.getBlockByName("rect") as InputBlock;
+    const tint = compiled.material.getBlockByName("tint") as InputBlock;
+    expect(rect.value).toBeInstanceOf(Vector4);
+    expect(rect.convertToLinearSpace).toBe(false);
+    expect(rect.isConstant).toBe(false);
+    expect(tint.convertToLinearSpace).toBe(true);
+    expect(compiled.getParameter("Rect")).toEqual({ kind: "vec4", value: [0.5, 0.5, 0.5, 0.5] });
+    expect(compiled.setParameter("Rect", { kind: "vec4", value: [1, 2, 3, 4] })).toBe(true);
+    expect((rect.value as Vector4).asArray()).toEqual([1, 2, 3, 4]);
+    // A Vector4 and a Color never stand in for each other.
+    expect(compiled.setParameter("Rect", { kind: "color", value: [1, 1, 1, 1] })).toBe(false);
+    expect(compiled.setParameter("Tint", { kind: "vec4", value: [1, 1, 1, 1] })).toBe(false);
+    expect(compiled.resetParameter("Rect")).toBe(true);
+    expect(compiled.getParameter("Rect")).toEqual({ kind: "vec4", value: [0.5, 0.5, 0.5, 0.5] });
   });
 
   it("isolates parameter changes by material instance while preserving shared defaults", () => {

@@ -274,12 +274,13 @@ const MATERIAL_PARAMETER_TYPE_OPTIONS: { value: MaterialParameterValueType; labe
   { value: "float", label: "Float" },
   { value: "vec2", label: "Vector2" },
   { value: "vec3", label: "Vector3" },
+  { value: "vec4", label: "Vector4" },
   { value: "color", label: "Color" },
   { value: "texture", label: "Texture" },
 ];
 
 /**
- * The node menu's **Convert to Parameter** on a Float, Vector2, Vector3 or Color Constant and
+ * The node menu's **Convert to Parameter** on a Float, Vector2, Vector3, Vector4 or Color Constant and
  * **Convert to Constant** on a parameter that is not a Texture. It reads the document as it is
  * when picked.
  */
@@ -839,7 +840,7 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
     });
   }
   if (node.type === "const.vec2" || node.type === "const.vec3" || node.type === "const.vec4" ||
-    node.type === "param.vec2" || node.type === "param.vec3") {
+    node.type === "param.vec2" || node.type === "param.vec3" || node.type === "param.vec4") {
     const width = node.type.endsWith("vec2") ? 2 : node.type.endsWith("vec3") ? 3 : 4;
     const value = Array.isArray(node.properties.value)
       ? (node.properties.value as number[])

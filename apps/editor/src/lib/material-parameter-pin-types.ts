@@ -3,7 +3,7 @@ import type { MaterialParameterValueType } from "@haptic/shader-graph";
 
 /** Set, Get and Reset Material Parameter nodes, with the parameter types each one's Name pin lists. */
 const MATERIAL_PARAMETER_NODE_TYPES: Readonly<Record<string, readonly MaterialParameterValueType[]>> = Object.fromEntries(
-  ([["Float", ["float"]], ["Vector", ["vec2", "vec3"]], ["Color", ["color"]], ["Texture", ["texture"]]] as const)
+  ([["Float", ["float"]], ["Vector2", ["vec2"]], ["Vector3", ["vec3"]], ["Vector4", ["vec4"]], ["Color", ["color"]], ["Texture", ["texture"]]] as const)
     .flatMap(([kind, types]) => ["set", "get", "reset"].map((action) => [`material.${action}${kind}Parameter`, types])),
 );
 

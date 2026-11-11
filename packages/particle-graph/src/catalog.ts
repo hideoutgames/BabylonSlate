@@ -1,6 +1,6 @@
 import { globalParameterSelection } from "@haptic/core";
 import type { ParticleGraphNode } from "./document";
-import { PARTICLE_GLOBAL_PARAMETER_NODE_TYPE } from "./global-parameter";
+import { PARTICLE_GLOBAL_PARAMETER_NODE_TYPE, particleGlobalParameterValueType } from "./global-parameter";
 import {
   resizeParticleValue,
   type ParticleNumericType,
@@ -899,6 +899,8 @@ export function particleNodeValueType(
   const fallback = VALUE_TYPE_DEFAULTS[type];
   if (!fallback) return undefined;
   const value = properties.valueType;
+  // A Global Parameter keeps its parameter's own type; a Vector4 is read on the graph's Color type.
+  if (value === "vec4" && type === PARTICLE_GLOBAL_PARAMETER_NODE_TYPE) return particleGlobalParameterValueType(value);
   return value === "float" || value === "vec2" || value === "vec3" || value === "color"
     ? value
     : fallback;

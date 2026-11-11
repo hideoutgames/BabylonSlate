@@ -6,7 +6,7 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { Material } from "@babylonjs/core/Materials/material";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
-import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Vector2, Vector3, Vector4 } from "@babylonjs/core/Maths/math.vector";
 import type { MaterialParameterValue } from "@haptic/bridge";
 import { copyMaterialParameterValue } from "@haptic/core";
 import type { MaterialBuildPlan } from "@haptic/shader-graph";
@@ -26,6 +26,7 @@ export function validMaterialParameterValue(
       return parameter.value.length === 2 && parameter.value.every(Number.isFinite);
     case "vec3":
       return parameter.value.length === 3 && parameter.value.every(Number.isFinite);
+    case "vec4":
     case "color":
       return (
         parameter.value.length === 4 && parameter.value.every(Number.isFinite)
@@ -89,6 +90,8 @@ export function createMaterialParameterBindings(
       defaults.set(name, { kind: "vec2", value: [block.value.x, block.value.y] });
     } else if (block instanceof InputBlock && block.value instanceof Vector3) {
       defaults.set(name, { kind: "vec3", value: [block.value.x, block.value.y, block.value.z] });
+    } else if (block instanceof InputBlock && block.value instanceof Vector4) {
+      defaults.set(name, { kind: "vec4", value: [block.value.x, block.value.y, block.value.z, block.value.w] });
     } else if (block instanceof InputBlock && block.value instanceof Color4) {
       const color = block.value;
       defaults.set(name, { kind: "color", value: [color.r, color.g, color.b, color.a] });
@@ -204,6 +207,13 @@ export function createMaterialParameterBindings(
           return true;
         }
         block.value = new Vector3(x, y, z);
+      } else if (parameter.kind === "vec4") {
+        const [x, y, z, w] = parameter.value;
+        if (current instanceof Vector4 && current.x === x && current.y === y && current.z === z && current.w === w) {
+          values.set(name, copy(parameter));
+          return true;
+        }
+        block.value = new Vector4(x, y, z, w);
       } else {
         const [r, g, b, a] = parameter.value;
         if (current instanceof Color4 && current.r === r && current.g === g && current.b === b && current.a === a) {

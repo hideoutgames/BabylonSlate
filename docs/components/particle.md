@@ -28,8 +28,8 @@ Call the component's own functions on a reference to it: in a Class, its entry u
 | Stop | Stops emitting. Live particles finish their lifetime. |
 | Is Playing | Whether the component is playing. |
 | Emit Burst | Emits **Count** extra particles from every emitter, or only the one at **Slot**. Does nothing unless the component is playing. |
-| Set Float Parameter, Set Vector Parameter, Set Color Parameter | Sets a [parameter](../graphics/particles.md#parameters) of the System by **Name** while it plays, without restarting. Not saved. |
-| Get Float Parameter, Get Vector Parameter, Get Color Parameter | The value set while playing, else the component's override, else the System's default. **Found** is false when the System does not declare **Name**. |
+| Set Float Parameter, Set Vector2 Parameter, Set Vector3 Parameter, Set Color Parameter | Sets a [parameter](../graphics/particles.md#parameters) of the System by **Name** while it plays, without restarting. Not saved. |
+| Get Float Parameter, Get Vector2 Parameter, Get Vector3 Parameter, Get Color Parameter | The value set while playing, else the component's override, else the System's default. **Found** is false when the System does not declare **Name**. |
 | Reset Parameter | Drops the value set while playing, back to the override or the default. |
 
 - In a Class graph, the **Name** pin lists the parameters of the type the function takes, from the Systems of the Class's Particle components.

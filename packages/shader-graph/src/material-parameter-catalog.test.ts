@@ -129,23 +129,29 @@ describe("worker Material parameter catalog", () => {
     expect(buildMaterialParameterCatalog(documents, functions)).toEqual({});
   });
 
-  it("exposes Vector2 and Vector3 parameter defaults at their width", () => {
+  it("exposes Vector2, Vector3 and Vector4 parameter defaults at their width", () => {
     const document = createDefaultMaterialDocument("Surface");
     document.nodes.push(
       { id: "glow", type: "param.vec3", position: { x: 0, y: 0 }, properties: { name: "Glow", value: [0.1, 0.2, 0.3] } },
       { id: "tiling", type: "param.vec2", position: { x: 0, y: 0 }, properties: { name: "Tiling", value: [2] } },
       { id: "length", type: "vector.length", position: { x: 0, y: 0 }, properties: {} },
+      { id: "rect", type: "param.vec4", position: { x: 0, y: 0 }, properties: { name: "Rect", value: [0.25, 0.5] } },
+      { id: "rect-length", type: "vector.length", position: { x: 0, y: 0 }, properties: {} },
     );
     document.edges.push(
       { id: "glow-out", sourceNodeId: "glow", sourcePinId: "out", targetNodeId: "output", targetPinId: "emissive" },
       { id: "tiling-length", sourceNodeId: "tiling", sourcePinId: "out", targetNodeId: "length", targetPinId: "value" },
       { id: "length-out", sourceNodeId: "length", sourcePinId: "out", targetNodeId: "output", targetPinId: "metallic" },
+      { id: "rect-in", sourceNodeId: "rect", sourcePinId: "out", targetNodeId: "rect-length", targetPinId: "value" },
+      { id: "rect-out", sourceNodeId: "rect-length", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" },
     );
     const catalog = buildMaterialParameterCatalog(new Map([["mat", normalizeMaterialDocument(document)]]));
     expect(catalog.mat?.parameters).toEqual({
       Glow: { kind: "vec3", value: [0.1, 0.2, 0.3] },
       // The document pads a short value to its width.
       Tiling: { kind: "vec2", value: [2, 0] },
+      // A Vector4's missing components are 0: it is not a Color, whose alpha starts at 1.
+      Rect: { kind: "vec4", value: [0.25, 0.5, 0, 0] },
     });
   });
 

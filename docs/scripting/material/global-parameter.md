@@ -15,11 +15,11 @@ Outputs one parameter of a [Global Parameter Collection](../../assets/global-par
 
 ## Notes
 
-- Its output follows the parameter's type. A Float, Vector2 or Vector3 parameter gives one **Out** pin. A Color gives **RGBA** (Vector4), **RGB** (Vector3) and **A** (Float), like a [Color Parameter](color-parameter.md).
+- Its output follows the parameter's type. A Float, Vector2, Vector3 or Vector4 parameter gives one **Out** pin. A Color gives **RGBA** (Vector4), **RGB** (Vector3) and **A** (Float), like a [Color Parameter](color-parameter.md).
 - Without a parameter the node has no output.
-- The value is the parameter's default until a Class graph sets it with **Set Global Float Parameter**, **Set Global Vector Parameter** or **Set Global Color Parameter**. Every Material and Particle Graph that reads the parameter then draws the new value, without recompiling.
+- The value is the parameter's default until a Class graph sets it with **Set Global Float Parameter**, **Set Global Vector2 Parameter**, **Set Global Vector3 Parameter**, **Set Global Vector4 Parameter** or **Set Global Color Parameter**. Every Material and Particle Graph that reads the parameter then draws the new value, without recompiling.
 - Values start at their defaults when Play starts, keep across Scene changes and are never saved.
 - Editing a default in the collection updates the Material preview, the Scene viewport and a running Play at once. In Play, a parameter a Class graph has already set keeps its value.
-- A Color is picked in display (sRGB) space and converted to linear for shading.
+- A Color is picked in display (sRGB) space and converted to linear for shading. A Vector4 is passed as authored.
 - A Material Instance cannot override it; it is the same for every Material.
 - A warning shows when no parameter is selected, when the parameter has left its collection or when its type has changed. Select the parameter again to update the node.

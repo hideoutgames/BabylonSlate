@@ -2,10 +2,12 @@ import {
   assetRef,
   EXEC,
   BOOL,
+  COLOR,
   FLOAT,
   objectRef,
   pin,
   STRING,
+  VEC2,
   VEC3,
   VEC4,
   type NodeDefinition,
@@ -13,8 +15,18 @@ import {
 } from "@haptic/scripting";
 import { subject } from "./self-pin";
 
+type MaterialParameterKind = "Float" | "Vector2" | "Vector3" | "Vector4" | "Color" | "Texture";
+
+/**
+ * One node of each action per parameter type, each with the exact pin type: a vector node sets only a parameter of its
+ * own width, and a Color node takes a Color, whose RGB the Material converts from sRGB to linear (a Vector4 is passed raw).
+ */
+const PARAMETER_KINDS: ReadonlyArray<readonly [MaterialParameterKind, PinType]> = [
+  ["Float", FLOAT], ["Vector2", VEC2], ["Vector3", VEC3], ["Vector4", VEC4], ["Color", COLOR], ["Texture", assetRef("Texture")],
+];
+
 function setter(
-  kind: "Float" | "Vector" | "Color" | "Texture",
+  kind: MaterialParameterKind,
   valueType: PinType,
 ): NodeDefinition {
   return {
@@ -38,7 +50,7 @@ function setter(
 }
 
 function getter(
-  kind: "Float" | "Vector" | "Color" | "Texture",
+  kind: MaterialParameterKind,
   valueType: PinType,
 ): NodeDefinition {
   return {
@@ -58,7 +70,7 @@ function getter(
     },
   };
 }
-function resetter(kind: "Float" | "Vector" | "Color" | "Texture"): NodeDefinition {
+function resetter(kind: MaterialParameterKind): NodeDefinition {
   return {
     id: `material.reset${kind}Parameter`,
     title: `Reset Material ${kind} Parameter`,
@@ -125,16 +137,7 @@ export const materialNodes: NodeDefinition[] = [
       Material: `ctx.getPostProcessEntry(${ctx.input("Owner")}, ${ctx.input("Entry ID")})`,
     }),
   },
-  getter("Float", FLOAT),
-  getter("Vector", VEC3),
-  getter("Color", VEC4),
-  getter("Texture", assetRef("Texture")),
-  resetter("Float"),
-  resetter("Vector"),
-  resetter("Color"),
-  resetter("Texture"),
-  setter("Float", FLOAT),
-  setter("Vector", VEC3),
-  setter("Color", VEC4),
-  setter("Texture", assetRef("Texture")),
+  ...PARAMETER_KINDS.map(([kind, type]) => getter(kind, type)),
+  ...PARAMETER_KINDS.map(([kind]) => resetter(kind)),
+  ...PARAMETER_KINDS.map(([kind, type]) => setter(kind, type)),
 ];

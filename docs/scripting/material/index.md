@@ -62,6 +62,7 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Texture Parameter](texture-parameter.md) | Outputs a named texture that can be changed at runtime or overridden per Material Instance. |
 | [Vector2 Parameter](vector2-parameter.md) | Outputs a named Vector2 that can be changed at runtime or overridden per Material Instance. |
 | [Vector3 Parameter](vector3-parameter.md) | Outputs a named Vector3 that can be changed at runtime or overridden per Material Instance. |
+| [Vector4 Parameter](vector4-parameter.md) | Outputs four named numbers, passed to the shader as authored, that can be changed at runtime or overridden per Material Instance. |
 
 ## Math
 

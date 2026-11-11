@@ -17,7 +17,7 @@ Returns the current value of a named Color parameter on a Material Object.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Value | Vector4 | Red, green, blue and alpha in X, Y, Z and W. |
+| Value | Color | Red, green, blue and alpha. The Material converts red, green and blue from display colour to linear. |
 | Found | Boolean |  |
 
 ## Notes

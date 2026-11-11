@@ -334,7 +334,7 @@ const GET_MATERIAL: EngineScriptFunction = {
 /** ParticleComponent parameter functions: the component's own runtime values, as the particle parameter nodes set them. */
 const PARTICLE_PARAMETER_NAME: EngineScriptPin = { name: "name", typeId: "string", direction: "in", defaultValue: "" };
 const PARTICLE_PARAMETER_FUNCTIONS: EngineScriptFunction[] = [
-  ...([["Float", "float"], ["Vector", "vec3"], ["Color", "color"]] as const).flatMap(
+  ...([["Float", "float"], ["Vector2", "vec2"], ["Vector3", "vec3"], ["Color", "color"]] as const).flatMap(
     ([kind, typeId]): EngineScriptFunction[] => [
       {
         name: `Set ${kind} Parameter`,

@@ -140,7 +140,7 @@ export function callNativeComponentFunction(
     host.services.emitParticleBurst?.(component.owner.guid, Number(args.count), Number(args.slot ?? -1), component.guid);
     return {};
   }
-  const particleParameter = /^(set|get)Particle(Float|Vector|Color)Parameter$/.exec(name);
+  const particleParameter = /^(set|get)Particle(Float|Vector2|Vector3|Color)Parameter$/.exec(name);
   if (particleParameter || name === "resetParticleParameter") {
     const owner = component.owner;
     const parameterName = String(args.name ?? "");

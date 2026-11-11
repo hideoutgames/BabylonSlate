@@ -554,10 +554,14 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Get Global Color Parameter](get-global-color-parameter.md) | Returns a Color parameter of a Global Parameter Collection. |
 | [Get Global Float Parameter](get-global-float-parameter.md) | Returns a Float parameter of a Global Parameter Collection. |
-| [Get Global Vector Parameter](get-global-vector-parameter.md) | Returns a Vector2 or Vector3 parameter of a Global Parameter Collection. |
+| [Get Global Vector2 Parameter](get-global-vector2-parameter.md) | Returns a Vector2 parameter of a Global Parameter Collection. |
+| [Get Global Vector3 Parameter](get-global-vector3-parameter.md) | Returns a Vector3 parameter of a Global Parameter Collection. |
+| [Get Global Vector4 Parameter](get-global-vector4-parameter.md) | Returns a Vector4 parameter of a Global Parameter Collection. |
 | [Set Global Color Parameter](set-global-color-parameter.md) | Sets a Color parameter of a Global Parameter Collection for the rest of Play. |
 | [Set Global Float Parameter](set-global-float-parameter.md) | Sets a Float parameter of a Global Parameter Collection for the rest of Play. |
-| [Set Global Vector Parameter](set-global-vector-parameter.md) | Sets a Vector2 or Vector3 parameter of a Global Parameter Collection for the rest of Play. |
+| [Set Global Vector2 Parameter](set-global-vector2-parameter.md) | Sets a Vector2 parameter of a Global Parameter Collection for the rest of Play. |
+| [Set Global Vector3 Parameter](set-global-vector3-parameter.md) | Sets a Vector3 parameter of a Global Parameter Collection for the rest of Play. |
+| [Set Global Vector4 Parameter](set-global-vector4-parameter.md) | Sets a Vector4 parameter of a Global Parameter Collection for the rest of Play. |
 
 ## Curve Object
 
@@ -917,17 +921,23 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Material Color Parameter](get-material-color-parameter.md) | Returns the current value of a named Color parameter on a Material Object. |
 | [Get Material Float Parameter](get-material-float-parameter.md) | Returns the current value of a named Float parameter on a Material Object. |
 | [Get Material Texture Parameter](get-material-texture-parameter.md) | Returns the Texture assigned to a named Texture parameter on a Material Object. |
-| [Get Material Vector Parameter](get-material-vector-parameter.md) | Returns the current value of a named Vector2 or Vector3 parameter on a Material Object. |
+| [Get Material Vector2 Parameter](get-material-vector2-parameter.md) | Returns the current value of a named Vector2 parameter on a Material Object. |
+| [Get Material Vector3 Parameter](get-material-vector3-parameter.md) | Returns the current value of a named Vector3 parameter on a Material Object. |
+| [Get Material Vector4 Parameter](get-material-vector4-parameter.md) | Returns the current value of a named Vector4 parameter on a Material Object. |
 | [Get Post Process Entry](get-post-process-entry.md) | Returns the Material Object of one post-process pass on a Scene or Scene Layer. |
 | [Reset Material Color Parameter](reset-material-color-parameter.md) | Restores a Color parameter on a Material Object to its original value. |
 | [Reset Material Float Parameter](reset-material-float-parameter.md) | Restores a Float parameter on a Material Object to its original value. |
 | [Reset Material Texture Parameter](reset-material-texture-parameter.md) | Restores a Texture parameter on a Material Object to its original Texture. |
-| [Reset Material Vector Parameter](reset-material-vector-parameter.md) | Restores a Vector2 or Vector3 parameter on a Material Object to its original value. |
+| [Reset Material Vector2 Parameter](reset-material-vector2-parameter.md) | Restores a Vector2 parameter on a Material Object to its original value. |
+| [Reset Material Vector3 Parameter](reset-material-vector3-parameter.md) | Restores a Vector3 parameter on a Material Object to its original value. |
+| [Reset Material Vector4 Parameter](reset-material-vector4-parameter.md) | Restores a Vector4 parameter on a Material Object to its original value. |
 | [Set Material Color Parameter](set-material-color-parameter.md) | Sets a named Color parameter on a Material Object. |
 | [Set Material Float Parameter](set-material-float-parameter.md) | Sets a named Float parameter on a Material Object. |
 | [Set Material Instance](set-material-instance.md) | Assigns a Material Instance to a mesh component and returns its Material Object. |
 | [Set Material Texture Parameter](set-material-texture-parameter.md) | Sets a named Texture parameter on a Material Object, loading the Texture first. |
-| [Set Material Vector Parameter](set-material-vector-parameter.md) | Sets a named Vector2 or Vector3 parameter on a Material Object. |
+| [Set Material Vector2 Parameter](set-material-vector2-parameter.md) | Sets a named Vector2 parameter on a Material Object. |
+| [Set Material Vector3 Parameter](set-material-vector3-parameter.md) | Sets a named Vector3 parameter on a Material Object. |
+| [Set Material Vector4 Parameter](set-material-vector4-parameter.md) | Sets a named Vector4 parameter on a Material Object. |
 
 ## Timeline
 

@@ -1,19 +1,22 @@
 import type { PropertyRow } from "@haptic/editor-kit";
-import { resizeParticleValue, type ParticleNumericType } from "@haptic/particle-graph";
+import { resizeGlobalParameterValue, type GlobalParameterType } from "@haptic/core";
 
-/** One parameter value as a PropertyGrid row of its type. `onChange` receives the value sized to `type`. */
+/**
+ * One parameter value as a PropertyGrid row of its type, for a Particle Graph parameter or a Global Parameter (the only
+ * one with a Vector4). `onChange` receives the value sized to `type`.
+ */
 export function particleParameterValueRow(options: {
   id: string;
   label: string;
-  type: ParticleNumericType;
+  type: GlobalParameterType;
   value: readonly number[];
   defaultValue?: readonly number[];
   description?: string;
   onChange: (value: number[]) => void;
 }): PropertyRow {
   const { id, label, type, description } = options;
-  const [x = 0, y = 0, z = 0, w = 1] = resizeParticleValue(options.value, type);
-  const fallback = options.defaultValue ? resizeParticleValue(options.defaultValue, type) : undefined;
+  const [x = 0, y = 0, z = 0, w = type === "color" ? 1 : 0] = resizeGlobalParameterValue(options.value, type);
+  const fallback = options.defaultValue ? resizeGlobalParameterValue(options.defaultValue, type) : undefined;
   const base = { id, label, ...(description ? { description } : {}) };
   switch (type) {
     case "float":
@@ -24,6 +27,9 @@ export function particleParameterValueRow(options: {
     case "vec3":
       return { ...base, kind: "vector3", value: [x, y, z],
         defaultValue: fallback ? [fallback[0]!, fallback[1]!, fallback[2]!] : undefined, onChange: (next) => options.onChange([...next]) };
+    case "vec4":
+      return { ...base, kind: "vector3", axes: ["X", "Y", "Z", "W"], value: [x, y, z, w],
+        defaultValue: fallback ? [fallback[0]!, fallback[1]!, fallback[2]!, fallback[3]!] : undefined, onChange: (next) => options.onChange([...next]) };
     case "color":
       return { ...base, kind: "color4", value: [x, y, z, w],
         defaultValue: fallback ? [fallback[0]!, fallback[1]!, fallback[2]!, fallback[3]!] : undefined, onChange: (next) => options.onChange([...next]) };

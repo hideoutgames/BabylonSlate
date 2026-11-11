@@ -283,6 +283,15 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
     outputs: [{ id: "out", name: "Out", type: VEC3 }],
   },
   {
+    // Four raw components. A Color Parameter's RGB is converted from sRGB to linear; this is passed as it is.
+    type: "param.vec4",
+    title: "Vector4 Parameter",
+    category: "Parameter",
+    cost: 0,
+    inputs: [],
+    outputs: [{ id: "out", name: "Out", type: VEC4 }],
+  },
+  {
     type: "param.color",
     title: "Color Parameter",
     category: "Parameter",

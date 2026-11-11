@@ -86,7 +86,7 @@ describe("runtime material parameters", () => {
       expect(commands.some(command => command.type === "setMaterialParameter")).toBe(false);
     } finally { runtime.stop(); }
   });
-  it("sets, reads and resets Vector parameters at their declared width through Get Material", async () => {
+  it("sets, reads and resets Vector2, Vector3 and Vector4 parameters, each through the members of its own width", async () => {
     const commands: CommandMessage[] = [];
     const mesh = createMeshComponent("mesh-1", "box");
     mesh.properties.materialGuid = "mat";
@@ -96,6 +96,7 @@ describe("runtime material parameters", () => {
       materialParameterCatalog: { mat: { domain: "surface", planHash: "mat", parameters: {
         Tiling: { kind: "vec2", value: [1, 1] },
         Glow: { kind: "vec3", value: [0, 0, 0] },
+        Rect: { kind: "vec4", value: [0, 0, 1, 1] },
       } } },
       onCommand: command => commands.push(command) });
     try {
@@ -103,12 +104,17 @@ describe("runtime material parameters", () => {
         source: `export function onBeginPlay(ctx) {
           const mesh = ctx.getComponentById(ctx.self, "mesh-1");
           const material = ctx.callComponentFunction(mesh, "getMaterialObject", {}).material;
-          ctx.setMaterialVectorParameter(material, "Tiling", { x: 2, y: 3, z: 9 });
-          ctx.setMaterialVectorParameter(material, "Glow", { x: 1, y: 0.5, z: 0.25 });
-          ctx.setMaterialVectorParameter(material, "Glow", { x: 1, y: NaN, z: 0 });
-          ctx.log("log", "M", JSON.stringify([ctx.getMaterialVectorParameter(material, "Tiling"),
-            ctx.getMaterialVectorParameter(material, "Glow"), ctx.getMaterialVectorParameter(material, "Missing")]));
-          ctx.log("log", "M", JSON.stringify(ctx.resetMaterialVectorParameter(material, "Tiling")));
+          ctx.setMaterialVector2Parameter(material, "Tiling", { x: 2, y: 3 });
+          ctx.setMaterialVector3Parameter(material, "Glow", { x: 1, y: 0.5, z: 0.25 });
+          ctx.setMaterialVector3Parameter(material, "Glow", { x: 1, y: NaN, z: 0 });
+          ctx.setMaterialVector4Parameter(material, "Rect", { x: 0.25, y: 0.5, z: 0.75, w: 2 });
+          // A value of another width than the member's has a component missing, and is not written.
+          ctx.setMaterialVector4Parameter(material, "Rect", { x: 9, y: 9, z: 9 });
+          ctx.log("log", "M", JSON.stringify([ctx.getMaterialVector2Parameter(material, "Tiling"),
+            ctx.getMaterialVector3Parameter(material, "Glow"), ctx.getMaterialVector4Parameter(material, "Rect"),
+            ctx.getMaterialVector3Parameter(material, "Tiling"), ctx.getMaterialVector4Parameter(material, "Missing")]));
+          ctx.log("log", "M", JSON.stringify([ctx.resetMaterialVector2Parameter(material, "Tiling"),
+            ctx.resetMaterialVector3Parameter(material, "Tiling"), ctx.resetMaterialVector4Parameter(material, "Rect")]));
         }`,
         entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] }]);
       runtime.realizePlayWorld(); runtime.start();
@@ -116,12 +122,16 @@ describe("runtime material parameters", () => {
         command.type === "setMaterialParameter" && [command.parameterName, command.parameter])).toEqual([
         ["Tiling", { kind: "vec2", value: [2, 3] }],
         ["Glow", { kind: "vec3", value: [1, 0.5, 0.25] }],
+        ["Rect", { kind: "vec4", value: [0.25, 0.5, 0.75, 2] }],
         ["Tiling", { kind: "vec2", value: [1, 1] }],
+        ["Rect", { kind: "vec4", value: [0, 0, 1, 1] }],
       ]);
       expect(commands.flatMap((command) => command.type === "log" && command.category === "M" ? [command.message] : [])).toEqual([
-        JSON.stringify([{ found: true, value: { x: 2, y: 3, z: 0 } }, { found: true, value: { x: 1, y: 0.5, z: 0.25 } },
-          { found: false, value: { x: 0, y: 0, z: 0 } }]),
-        "true",
+        JSON.stringify([{ found: true, value: { x: 2, y: 3 } }, { found: true, value: { x: 1, y: 0.5, z: 0.25 } },
+          { found: true, value: { x: 0.25, y: 0.5, z: 0.75, w: 2 } },
+          // A Vector2 parameter is not found by the Vector3 member, and the Vector3 reset leaves it alone.
+          { found: false, value: { x: 0, y: 0, z: 0 } }, { found: false, value: { x: 0, y: 0, z: 0, w: 0 } }]),
+        "[true,false,true]",
       ]);
     } finally { runtime.stop(); }
   });
@@ -307,7 +317,7 @@ describe("runtime material parameters", () => {
       kind: "float",
     });
     expect(nodes[4]!.pins.find((pin) => pin.id === "value")?.type).toEqual({
-      kind: "vec4",
+      kind: "color",
     });
     expect(nodes[5]!.pins.find((pin) => pin.id === "value")?.type).toEqual({
       kind: "assetRef",

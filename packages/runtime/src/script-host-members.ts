@@ -42,6 +42,7 @@ import {
   utcTimeOfDay,
   type CurveAssetCatalogEntry,
   type CurveKind,
+  type MaterialParameterValue,
   type RandomStream,
   type SaveGameValue,
 } from "@haptic/core";
@@ -55,7 +56,8 @@ import { captureActorReferences, captureComponent, captureProperties, setCapture
 import type { ScriptBreakpoints } from "./script-breakpoints";
 import type { DispatcherBindings } from "./script-dispatchers";
 import type { ComponentFunctionHost } from "./script-component-functions";
-import type { HostContextMembers } from "./script-context-types";
+import type { HostContextMembers, Vec2, Vec4 } from "./script-context-types";
+import type { Vec3 } from "@haptic/physics";
 import {
   animationGraphComponentOf,
   asActor,
@@ -76,6 +78,24 @@ import { scriptValuesEqual } from "./script-values-equal";
 import type { LatentFrameRoots } from "./latent-frame-roots";
 
 /** Get Locale: the JavaScript environment's default locale, which browsers take from the user's language. */
+type VectorWidth = 2 | 3 | 4;
+const VECTOR_KINDS = { 2: "vec2", 3: "vec3", 4: "vec4" } as const;
+const VECTOR_AXES = ["x", "y", "z", "w"] as const;
+
+/** The first `width` components of a vector value, or null when one is not a finite number. */
+function vectorComponents(value: unknown, width: VectorWidth): number[] | null {
+  if (!value || typeof value !== "object") return null;
+  const components = VECTOR_AXES.slice(0, width).map((axis) => (value as Record<string, unknown>)[axis]);
+  return components.every((component): component is number => typeof component === "number" && Number.isFinite(component)) ? components : null;
+}
+
+/** `components` as a vector of `width`; a missing component is 0. */
+function vectorOf<W extends VectorWidth>(components: readonly number[], width: W): W extends 2 ? Vec2 : W extends 3 ? Vec3 : Vec4 {
+  const vector: Record<string, number> = {};
+  VECTOR_AXES.slice(0, width).forEach((axis, index) => { vector[axis] = components[index] ?? 0; });
+  return vector as never;
+}
+
 function scriptLocale(): { locale: string; language: string } {
   let locale = "en-US";
   try {
@@ -135,6 +155,24 @@ function unitVolume(value: unknown, fallback: number): number {
 export function createHostMembers(host: HostMembersHost): HostContextMembers {
   const services = host.services;
   const curveObjects = new CurveObjectCache(() => services.curves);
+  // Vector parameters: one member per width, each reading and writing only the parameter kind of its width.
+  const setGlobalVector = (collection: unknown, name: string, value: unknown, width: VectorWidth): void => {
+    const components = vectorComponents(value, width);
+    if (components) services.setGlobalParameter?.(collection, name, components, [VECTOR_KINDS[width]]);
+  };
+  const getGlobalVector = <W extends VectorWidth>(collection: unknown, name: string, width: W) => {
+    const result = services.getGlobalParameter?.(collection, name, [VECTOR_KINDS[width]]) ?? { found: false, value: [] };
+    return { found: result.found, value: vectorOf(result.value, width) };
+  };
+  const setMaterialVector = (material: unknown, name: string, value: unknown, width: VectorWidth): void => {
+    const components = vectorComponents(value, width);
+    if (components) host.materials.setMaterialParameter(material, name, { kind: VECTOR_KINDS[width], value: components } as MaterialParameterValue);
+  };
+  const getMaterialVector = <W extends VectorWidth>(material: unknown, name: string, width: W) => {
+    const result = host.materials.getMaterialParameter(material, name, VECTOR_KINDS[width]);
+    const found = result?.kind === VECTOR_KINDS[width];
+    return { found, value: vectorOf(found ? (result as { value: readonly number[] }).value : [], width) };
+  };
   // Map fields are saved as `{ key, value }` entries and read as a Map; Actor values are saved as persistent IDs.
   const readField = (value: SaveGameValue, type?: string, container?: string): unknown => {
     if (container === "array" && Array.isArray(value)) return value.map((entry) => readField(entry, type));
@@ -252,12 +290,9 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     setGlobalFloatParameter: (collection, name, value) => {
       if (typeof value === "number" && Number.isFinite(value)) services.setGlobalParameter?.(collection, name, [value], ["float"]);
     },
-    setGlobalVectorParameter: (collection, name, value) => {
-      const xyz = value && typeof value === "object" ? [value.x, value.y, value.z] : [];
-      if (xyz.length === 3 && xyz.every((entry) => typeof entry === "number" && Number.isFinite(entry))) {
-        services.setGlobalParameter?.(collection, name, xyz, ["vec2", "vec3"]);
-      }
-    },
+    setGlobalVector2Parameter: (collection, name, value) => setGlobalVector(collection, name, value, 2),
+    setGlobalVector3Parameter: (collection, name, value) => setGlobalVector(collection, name, value, 3),
+    setGlobalVector4Parameter: (collection, name, value) => setGlobalVector(collection, name, value, 4),
     setGlobalColorParameter: (collection, name, value) => {
       const rgba = value && typeof value === "object" ? [value.x, value.y, value.z, value.w] : [];
       if (rgba.length === 4 && rgba.every((entry) => typeof entry === "number" && Number.isFinite(entry))) {
@@ -268,11 +303,9 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
       const result = services.getGlobalParameter?.(collection, name, ["float"]) ?? { found: false, value: [] };
       return { found: result.found, value: result.value[0] ?? 0 };
     },
-    getGlobalVectorParameter: (collection, name) => {
-      const result = services.getGlobalParameter?.(collection, name, ["vec2", "vec3"]) ?? { found: false, value: [] };
-      const [x = 0, y = 0, z = 0] = result.value;
-      return { found: result.found, value: { x, y, z } };
-    },
+    getGlobalVector2Parameter: (collection, name) => getGlobalVector(collection, name, 2),
+    getGlobalVector3Parameter: (collection, name) => getGlobalVector(collection, name, 3),
+    getGlobalVector4Parameter: (collection, name) => getGlobalVector(collection, name, 4),
     getGlobalColorParameter: (collection, name) => {
       const result = services.getGlobalParameter?.(collection, name, ["color"]) ?? { found: false, value: [] };
       const [x = 0, y = 0, z = 0, w = 1] = result.value;
@@ -287,22 +320,18 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
       const [x, y, z, w] = result?.kind === "color" ? result.value : [0, 0, 0, 1];
       return { found: result?.kind === "color", value: { x: x!, y: y!, z: z!, w: w! } };
     },
-    getMaterialVectorParameter: (material, name) => {
-      const result = host.materials.getMaterialParameter(material, name, "vec3")
-        ?? host.materials.getMaterialParameter(material, name, "vec2");
-      const vector = result?.kind === "vec2" || result?.kind === "vec3";
-      const [x = 0, y = 0, z = 0] = vector ? result.value : [];
-      return { found: vector, value: { x, y, z } };
-    },
+    getMaterialVector2Parameter: (material, name) => getMaterialVector(material, name, 2),
+    getMaterialVector3Parameter: (material, name) => getMaterialVector(material, name, 3),
+    getMaterialVector4Parameter: (material, name) => getMaterialVector(material, name, 4),
     getMaterialTextureParameter: (material, name) => {
       const result = host.materials.getMaterialParameter(material, name, "texture");
       return { found: result?.kind === "texture", value: result?.kind === "texture" ? result.textureAssetGuid : null };
     },
     resetMaterialFloatParameter: (material, name) => host.materials.resetMaterialParameter(material, name, "float"),
     resetMaterialColorParameter: (material, name) => host.materials.resetMaterialParameter(material, name, "color"),
-    resetMaterialVectorParameter: (material, name) =>
-      host.materials.resetMaterialParameter(material, name, "vec3") ||
-      host.materials.resetMaterialParameter(material, name, "vec2"),
+    resetMaterialVector2Parameter: (material, name) => host.materials.resetMaterialParameter(material, name, "vec2"),
+    resetMaterialVector3Parameter: (material, name) => host.materials.resetMaterialParameter(material, name, "vec3"),
+    resetMaterialVector4Parameter: (material, name) => host.materials.resetMaterialParameter(material, name, "vec4"),
     resetMaterialTextureParameter: (material, name) => {
       const reset = host.materials.resetMaterialParameter(material, name, "texture");
       // The default texture needs no preload; one an earlier set acquired is released.
@@ -358,15 +387,9 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
         value: rgba,
       });
     },
-    setMaterialVectorParameter: (material, name, value) => {
-      if (!value || typeof value !== "object") return;
-      const { x, y, z } = value;
-      if (![x, y, z].every((entry) => typeof entry === "number" && Number.isFinite(entry))) return;
-      // The parameter's declared width decides what it takes: a Vector2 keeps X and Y.
-      const vec2 = !host.materials.getMaterialParameter(material, name, "vec3") &&
-        host.materials.getMaterialParameter(material, name, "vec2") !== null;
-      host.materials.setMaterialParameter(material, name, vec2 ? { kind: "vec2", value: [x, y] } : { kind: "vec3", value: [x, y, z] });
-    },
+    setMaterialVector2Parameter: (material, name, value) => setMaterialVector(material, name, value, 2),
+    setMaterialVector3Parameter: (material, name, value) => setMaterialVector(material, name, value, 3),
+    setMaterialVector4Parameter: (material, name, value) => setMaterialVector(material, name, value, 4),
     setMaterialTextureParameter: (material, name, value) => {
       if (value !== null && typeof value !== "string") return;
       if (value && services.prepareAssets && services.getAssetLoadState?.(value.trim()) !== "ready") {

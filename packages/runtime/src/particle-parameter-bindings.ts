@@ -104,7 +104,8 @@ export function createParticleParameterBindings(deps: ParticleParameterDeps): Re
 export function particleParameterArg(kind: string, value: unknown): number[] {
   if (kind === "Float") return [Number(value) || 0];
   const { x, y, z } = vec3Arg(value);
-  if (kind === "Vector") return [x, y, z];
+  if (kind === "Vector2") return [x, y];
+  if (kind === "Vector3") return [x, y, z];
   const w = Number((value as { w?: unknown } | null)?.w ?? 1);
   return [x, y, z, Number.isFinite(w) ? w : 1];
 }
@@ -112,6 +113,7 @@ export function particleParameterArg(kind: string, value: unknown): number[] {
 /** Numbers as a Float, Vector (X, Y, Z) or Color (alpha 1 when missing) node value. */
 export function particleParameterResult(kind: string, value: readonly number[]): unknown {
   if (kind === "Float") return value[0] ?? 0;
+  if (kind === "Vector2") return { x: value[0] ?? 0, y: value[1] ?? 0 };
   const vector = { x: value[0] ?? 0, y: value[1] ?? 0, z: value[2] ?? 0 };
-  return kind === "Vector" ? vector : { ...vector, w: value[3] ?? 1 };
+  return kind === "Vector3" ? vector : { ...vector, w: value[3] ?? 1 };
 }

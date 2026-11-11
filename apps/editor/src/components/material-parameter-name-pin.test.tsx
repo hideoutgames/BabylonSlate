@@ -18,7 +18,7 @@ if (typeof window !== "undefined") {
 vi.mock("../lib/use-material-parameter-names", async (original) => ({
   ...(await original<typeof import("../lib/use-material-parameter-names")>()),
   useMaterialParameterNames: (guids: readonly string[]) => new Map(guids.map((guid) => [guid, guid === "rock"
-    ? [{ name: "Tiling", type: "vec2" }, { name: "Tint", type: "color" }, { name: "Glow", type: "vec3" }]
+    ? [{ name: "Tiling", type: "vec2" }, { name: "Tint", type: "color" }, { name: "Glow", type: "vec3" }, { name: "Offset", type: "vec2" }, { name: "Rect", type: "vec4" }]
     : []])),
 }));
 
@@ -34,9 +34,10 @@ function renderPin(nodeType: string, value: string, materials: readonly string[]
 
 describe("Material parameter Name pin", () => {
   it("lists the Class's Material parameters of the node's type", async () => {
-    const onChange = renderPin("material.setVectorParameter", "", ["rock"]);
+    const onChange = renderPin("material.setVector2Parameter", "", ["rock"]);
     fireEvent.click(screen.getByTestId("property-n:name"));
-    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Glow", "Tiling"]);
+    // A Vector2 node lists Vector2 parameters only: not the Vector3 Glow or the Vector4 Rect.
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Offset", "Tiling"]);
     const tiling = screen.getByRole("option", { name: "Tiling" });
     fireEvent.pointerDown(tiling);
     fireEvent.click(tiling);

@@ -2,6 +2,7 @@ import {
   normalizeGlobalParameterCatalog,
   resizeGlobalParameterValue,
   type GlobalParameterCatalog,
+  type GlobalParameterType,
 } from "@haptic/core";
 
 /**
@@ -132,7 +133,7 @@ export function globalParameterComponents(
   source: GlobalParameterValueSource,
   collectionGuid: string,
   parameterId: string,
-  valueType: "float" | "vec2" | "vec3" | "color",
+  valueType: GlobalParameterType,
 ): number[] {
   const value = source.value(collectionGuid, parameterId);
   return resizeGlobalParameterValue(value ? [...value] : valueType === "color" ? [0, 0, 0, 1] : [0], valueType);
