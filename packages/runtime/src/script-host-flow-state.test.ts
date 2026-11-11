@@ -62,7 +62,7 @@ describe("ScriptHost flowState", () => {
       source: [
         "//# sourceURL=haptic:///hero-logic.js",
         "export function onBeginPlay(ctx) { ctx.flowState('gate1').open = true; }",
-        "export function onDestroyed(ctx) { /* host clears around lifecycle */ }",
+        "export function onDestroyed(ctx) { ctx.self.setVariable('gateAtEnd', ctx.flowState('gate1').open); }",
         "",
       ].join("\n"),
       anchors: [],
@@ -88,6 +88,8 @@ describe("ScriptHost flowState", () => {
         .flowState("gate1").open,
     ).toBe(true);
     hooks.onDestroyed?.(actor);
+    // On Actor Destroyed still reads the Gate as Play left it; the state goes after it ran.
+    expect(actor.getVariable("gateAtEnd")).toBe(true);
     expect(
       host
         .createContext(

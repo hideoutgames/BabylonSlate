@@ -27,6 +27,18 @@ export class RuntimeContinuationCancelled extends Error {
   }
 }
 
+/**
+ * A latent call that ends without a result: a later call replaced it (Set Material Instance on
+ * the same mesh), or its caller or target was destroyed while it loaded. It ends the calling
+ * graph like `RuntimeContinuationCancelled` does and is never reported as a script error.
+ */
+export class LatentCallAborted extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AbortError";
+  }
+}
+
 interface SimulationWaitsHost {
   stopped(): boolean;
   paused(): boolean;

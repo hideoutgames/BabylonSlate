@@ -82,6 +82,33 @@ describe("component script API", () => {
       });
     } finally { runtime.stop(); }
   });
+  it("writes a project component's own variable without re-sending the actor's mesh", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
+      playScene: sceneOf([createActor("hero", "Hero", { classId: "Hero", components: [
+        createMeshComponent("mesh"),
+        { id: "stats", classId: "Stats", properties: {}, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
+      ] })]), onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([
+        script('export function Update(ctx) { ctx.setVariableOn(ctx.getComponentById(ctx.self, "stats"), "health", 5); }',
+          { entryPoints: [{ name: "Update", event: "Update", isAsync: false }] }),
+        // Stats is a project component: only its script reads its variables.
+        script("export function onBeginPlay() {}", { assetGuid: "stats-script", classId: "Stats", parentClassId: "ActorComponent" }),
+      ]);
+      runtime.realizePlayWorld();
+      const hero = runtime.getWorld().findActor("hero")!;
+      const assigns = commands.filter((command) => command.type === "assignMesh").length;
+      expect(assigns).toBeGreaterThan(0);
+      runtime.invokeScriptEvent("Hero", "Update", hero);
+      expect(hero.components.find((component) => component.classId === "Stats")!.getVariable("health")).toBe(5);
+      expect(commands.filter((command) => command.type === "assignMesh")).toHaveLength(assigns);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("realizes Global Water Volume in Play and queries distant water through the script API", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,

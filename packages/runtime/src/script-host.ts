@@ -390,9 +390,10 @@ export class ScriptHost {
         );
       },
       onDestroyed: (self) => {
-        this.clearFlowState(self);
         const loaded = this.lifecycleScriptsFor(classId, "onDestroyed");
         if (loaded) this.dispatchFinalEvent(loaded, "onDestroyed", self);
+        // After its last event, which still reads its Gates, Do Once and Flip Flop as Play left them.
+        this.clearFlowState(self);
         // After its last event, which may still Call its dispatchers.
         this.dispatchers.forget(self);
       },
@@ -491,8 +492,14 @@ export class ScriptHost {
    * a later call of its Retriggerable Delay replaced.
    */
   private reportLatentError(error: unknown, owner: EngineObject | null): void {
-    if (error instanceof RuntimeContinuationCancelled && error.reason === "retriggered") return;
-    if (owner?.destroyed && error instanceof RuntimeContinuationCancelled && error.reason === "ownerDestroyed") return;
+    if (error instanceof RuntimeContinuationCancelled) {
+      if (error.reason === "retriggered") return;
+      if (owner?.destroyed && error.reason === "ownerDestroyed") return;
+    } else if (error instanceof Error && error.name === "AbortError") {
+      // A latent call that a later one replaced, that was cancelled (an unloaded Scene, a removed
+      // Scene Layer), or whose caller went away, ends its graph quietly: nothing went wrong.
+      return;
+    }
     this.services.reportError(error);
   }
 

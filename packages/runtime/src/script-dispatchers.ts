@@ -60,6 +60,8 @@ export class DispatcherBindings {
   private readonly lists = new WeakMap<EngineObject, Map<string, DispatcherList>>();
   /** One delegate per object and member, so Unbind finds the one Bind added. */
   private readonly delegates = new WeakMap<EngineObject, Map<string, EventDelegate>>();
+  /** The lists each listener is bound in, so its bindings go when it does, not at the next Call. */
+  private readonly listened = new WeakMap<EngineObject, Set<DispatcherList>>();
 
   /** The delegate for `name` on `object`, or null when there is no object. */
   delegate(
@@ -89,6 +91,9 @@ export class DispatcherBindings {
     const list = this.listFor(owner, name, true)!;
     if (list.bindings.some((binding) => !binding.removed && sameTarget(binding.delegate, delegate))) return;
     list.bindings.push({ delegate, removed: false });
+    let lists = this.listened.get(delegate.object);
+    if (!lists) this.listened.set(delegate.object, lists = new Set());
+    lists.add(list);
   }
 
   unbind(owner: unknown, name: string, delegate: unknown): void {
@@ -152,8 +157,22 @@ export class DispatcherBindings {
     }
   }
 
-  /** Drops every dispatcher binding `owner` holds (its own dispatchers, once it is destroyed). */
+  /**
+   * Drops every dispatcher binding of `owner`, once it is destroyed: those of its own dispatchers,
+   * and those that listen with it on other objects' dispatchers. Without the second, a dispatcher
+   * that is seldom called would keep every destroyed listener alive until Play stops.
+   */
   forget(owner: EngineObject): void {
+    for (const list of this.listened.get(owner) ?? []) {
+      let bound = false;
+      for (const binding of list.bindings) {
+        if (binding.delegate.object !== owner) continue;
+        binding.removed = true;
+        bound = true;
+      }
+      if (bound) list.bindings = list.bindings.filter((binding) => !binding.removed);
+    }
+    this.listened.delete(owner);
     const lists = this.lists.get(owner);
     if (!lists) return;
     for (const list of lists.values()) {
