@@ -435,10 +435,21 @@ index 801aa3c223053ecfb677eb540ffe18ad03b03025..94cc6e2a27e92f4b473d28aef5670062
              this._fragmentSourceCode = migratedFragmentCode;
              this._prepareEffect(keepExistingPipelineContext);
 diff --git a/Materials/material.pure.js b/Materials/material.pure.js
-index ab1d1a45f703c7adc8963ca45083715854d9edbb..e7771b6aebd48897ba2b3a452e483ff525f30f02 100644
+index ab1d1a45f703c7adc8963ca45083715854d9edbb..297eb5523aa1cd1cd1222a9c86d894bf0fbcedf7 100644
 --- a/Materials/material.pure.js
 +++ b/Materials/material.pure.js
-@@ -1468,14 +1468,23 @@ let Material = (() => {
+@@ -1241,7 +1241,9 @@ let Material = (() => {
+                 const currentHotSwapingState = this.allowShaderHotSwapping;
+                 this.allowShaderHotSwapping = false; // Turned off to let us evaluate the real compilation state
+                 const checkReady = () => {
+-                    if (!this._scene || !this._scene.getEngine()) {
++                    // A NodeMaterial disposed while it compiles (dispose clears _sharedData, which its readiness
++                    // reads): its owner gave up waiting, so stop asking.
++                    if (!this._scene || !this._scene.getEngine() || this._sharedData === null) {
+                         return;
+                     }
+                     const clipPlaneState = scene.clipPlane;
+@@ -1468,14 +1470,23 @@ let Material = (() => {
              _checkScenePerformancePriority() {
                  if (this._scene.performancePriority !== 0 /* ScenePerformancePriority.BackwardCompatible */) {
                      this.checkReadyOnlyOnce = true;

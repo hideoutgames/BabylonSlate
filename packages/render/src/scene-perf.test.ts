@@ -22,6 +22,8 @@ import type { Effect } from "@babylonjs/core/Materials/effect";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 // Registers thin instances, which the fixture adds.
 import "@babylonjs/core/Meshes/thinInstanceMesh";
+import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+import { compileMaterialPlan } from "./material-compiler";
 import { installTimerClock } from "./virtual-clock-test-fixtures";
 import {
   applyEditorMaterialFreeze,
@@ -108,6 +110,34 @@ describe("a Play scene's Materials (Babylon's Intermediate performance priority)
       engine.dispose();
     }
   });
+});
+
+it("stops asking a compiled Material that is disposed while its compilation is awaited", async () => {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  try {
+    const mesh = MeshBuilder.CreateBox("part", {}, scene);
+    const lowered = lowerMaterialDocument(createDefaultMaterialDocument(), { functions: {} });
+    if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+    const compiled = compileMaterialPlan(lowered.plan, { scene, name: "compiled" });
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+    await compiled.ready;
+    vi.useFakeTimers();
+    const done = vi.fn();
+    // Babylon asks again every 16 ms until the mesh's variant is ready. Its owner (a thumbnail's Material library)
+    // may dispose the Material first: a disposed NodeMaterial's readiness reads state its disposal cleared.
+    // The driver is the external boundary: the variant is still compiling when Babylon first asks.
+    vi.spyOn(compiled.material, "isReadyForSubMesh").mockReturnValueOnce(false);
+    compiled.material.forceCompilation(mesh, done);
+    expect(done).not.toHaveBeenCalled();
+    compiled.material.dispose();
+    expect(() => vi.advanceTimersByTime(64)).not.toThrow();
+    expect(done).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+    scene.dispose();
+    engine.dispose();
+  }
 });
 
 describe("applyEditorMaterialFreeze", () => {

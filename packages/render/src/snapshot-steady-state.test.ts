@@ -151,7 +151,7 @@ describe("snapshot synchronization native work", () => {
     expect(cleanupSetter).not.toHaveBeenCalled();
   });
 
-  it("keeps settled transform frames out of strict readiness while publishing and retiring geometry invalidate it", async () => {
+  it("keeps settled transform frames and retired geometry out of strict readiness while publishing geometry invalidates it", async () => {
     const { scene, engine, binding, snapshot } = fixture(8);
     // Match the existing coordinator fixture's NullEngine MRT driver boundary;
     // scene readiness, graph tasks, meshes, materials and rendering remain real.
@@ -202,10 +202,10 @@ describe("snapshot synchronization native work", () => {
       snapshot.actorCount -= 1;
       applySnapshotToScene(scene, binding, snapshot);
       expect(retired.isDisposed()).toBe(true);
-      expect(renderer.readinessDirty).toBe(true);
-      await renderer.prepare();
-      expect(renderer.strictReadinessChecks).toBeGreaterThan(beforeRemoval);
+      // What leaves needs nothing compiled.
+      expect(renderer.readinessDirty).toBe(false);
       expect(renderer.render()).toMatchObject({ path: "frameGraph", readyForPresentation: true });
+      expect(renderer.strictReadinessChecks).toBe(beforeRemoval);
       moveFrames();
     } finally {
       await renderer.retire();
