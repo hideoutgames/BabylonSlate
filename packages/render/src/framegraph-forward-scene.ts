@@ -29,7 +29,6 @@ import type { Light } from "@babylonjs/core/Lights/light";
 import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
-import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import type { Observable, Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
@@ -413,9 +412,9 @@ export class ForwardSceneFrameGraph {
       this.knownMeshes.delete(mesh);
       this.foundBeforeAnnounced.delete(mesh);
       this.removedMeshes += 1;
-      // A mesh that leaves needs nothing compiled. Its source does when that was its last instance: it draws without
-      // instancing again (Babylon has taken the instance off its source before it announces the removal).
-      if (mesh.isAnInstance && (mesh as InstancedMesh).sourceMesh.instances.length === 0) this.markReadinessDirty("meshRemoved");
+      // A mesh that leaves needs nothing compiled. An instance's source can: its batch may draw with another variant
+      // once the instance is gone (its last one, so it draws without instancing again; a pool group's warm-up stand-in).
+      if (mesh.isAnInstance) this.markReadinessDirty("meshRemoved");
     });
     watch(scene.onNewMaterialAddedObservable, mark("materialAdded"));
     watch(scene.onMaterialRemovedObservable, mark("materialRemoved"));

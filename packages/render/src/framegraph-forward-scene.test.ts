@@ -852,7 +852,7 @@ it("probes nothing for what leaves the Scene, nor for a particle system's readin
   MeshBuilder.CreateBox("kept", {}, scene);
   const leaving = MeshBuilder.CreateBox("leaving", {}, scene);
   const source = MeshBuilder.CreateBox("source", {}, scene);
-  const [first, last] = [source.createInstance("first"), source.createInstance("last")];
+  const instance = source.createInstance("instance");
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
@@ -864,16 +864,15 @@ it("probes nothing for what leaves the Scene, nor for a particle system's readin
     for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
     return graph.strictReadinessChecks - before;
   };
-  // A mesh that leaves needs nothing compiled, and an instance leaves its source drawing as before.
+  // A mesh that leaves needs nothing compiled.
   expect(await probesOver(() => leaving.dispose())).toBe(0);
-  expect(await probesOver(() => first.dispose())).toBe(0);
   // The placeholder a particle system holds for Babylon's own readiness is drawn by nothing.
   let placeholder!: RawTexture;
   expect(await probesOver(() => { placeholder = createParticleReadinessTexture(scene); })).toBe(0);
   expect(await probesOver(() => placeholder.dispose())).toBe(0);
-  // A source that loses its last instance draws without instancing again: another variant.
+  // An instance that leaves can change the variant its source's batch draws with (here: without instancing again).
   let before = graph.strictReadinessChecks;
-  last.dispose();
+  instance.dispose();
   await vi.waitFor(() => expect(graph.render(camera)).toEqual({ path: "frameGraph" }));
   expect(graph.strictReadinessChecks).toBeGreaterThan(before);
   // Any other texture may be one a Material is about to sample.
