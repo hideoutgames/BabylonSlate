@@ -8,12 +8,13 @@ import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
 import { Frustum } from "@babylonjs/core/Maths/math.frustum";
+import type { BoundingBox } from "@babylonjs/core/Culling/boundingBox";
 import { Plane } from "@babylonjs/core/Maths/math.plane";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasRenderTarget, shadowTileSize } from "./shadow-atlas";
-import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
+import { casterWithinShadowRange, deformsWithinBounds, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { castsIntoCascade } from "./shadow-caster-size";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
 import type { RetainedShadowCasters } from "./shadow-retained-casters";
@@ -306,8 +307,8 @@ export function createShadowGenerator(
           ? upstream
           : planes;
       context.spatial.queryPlanes(activePlanes, casters);
-      // The index never plane-culls deforming casters. A local map ends
-      // at its light's range, so anything that cannot reach it draws nothing.
+      // The index never plane-culls deforming casters: one whose bounds follow its pose is culled here, by them. A
+      // local map ends at its light's range, so anything that cannot reach it draws nothing.
       // A mesh a world view does not draw yet casts nothing either; on WebGPU
       // a steady frame lists it while its reveal waits for this map, only to
       // create its depth pipelines, every draw of it skipped
@@ -316,18 +317,22 @@ export function createShadowGenerator(
       const range = !directionalLight && "range" in light && Number.isFinite(light.range) ? light.range as number : undefined;
       const position = range === undefined ? undefined : (light as LocalShadowLight).getAbsolutePosition();
       // A cascade after the first leaves out a caster too small to resolve in its texels, judged by the whole mesh's
-      // bounds (a thin-instance batch's include its instances); deforming bounds are not the caster's.
+      // bounds (a thin-instance batch's include its instances); deforming bounds are not the caster's, unless they
+      // follow it.
       const minTexels = layer > 0 && generator instanceof AtlasCascadedShadowGenerator ? generator.farCasterMinTexels : 0;
       const size = minTexels ? shadowTileSize(generator, layer) : 0;
       let kept = 0;
       // A retained caster is drawn from the shared buffer (the observer below): Babylon's list leaves it out.
       const retained = context.retained?.begin(generator, activePlanes) ? context.retained : null;
-      for (const mesh of casters)
+      for (const mesh of casters) {
+        const posed = deformsWithinBounds(mesh);
         if ((!isRevealPending(mesh) || listsHiddenCaster(generator, mesh)) &&
           (!position || casterWithinShadowRange(mesh, position, range!)) &&
-          (!minTexels || hasDeformingShadowBounds(mesh) ||
+          (!posed || !boxOutside(mesh.getBoundingInfo().boundingBox, activePlanes)) &&
+          (!minTexels || (!posed && hasDeformingShadowBounds(mesh)) ||
             castsIntoCascade(transform.m, mesh.getBoundingInfo().boundingSphere.radiusWorld, size, minTexels)) &&
           !retained?.take(mesh)) casters[kept++] = mesh;
+      }
       casters.length = kept;
       return casters;
     };
@@ -339,27 +344,33 @@ export function createShadowGenerator(
     });
   }
   generator.customAllowRendering = (part) => {
+    // A deforming mesh's parts are where its pose puts them; one whose bounds follow its pose was culled as a whole,
+    // and its parts share those bounds.
     if (hasDeformingShadowBounds(part.getMesh())) return true;
     // Babylon draws a mesh's instances in its parts' batches: culled by the mesh's own box, they would draw where it is.
     if (part.getRenderingMesh().hasInstances) return true;
     if (!activePlanes || part.getMesh().subMeshes.length < 2)
       return true;
     const box = part.getBoundingInfo()?.boundingBox;
-    if (!box) return true;
-    for (const plane of activePlanes) {
-      const n = plane.normal;
-      if (
-        n.x * (n.x >= 0 ? box.maximumWorld.x : box.minimumWorld.x) +
-          n.y * (n.y >= 0 ? box.maximumWorld.y : box.minimumWorld.y) +
-          n.z * (n.z >= 0 ? box.maximumWorld.z : box.minimumWorld.z) +
-          plane.d <
-        0
-      )
-        return false;
-    }
-    return true;
+    return !box || !boxOutside(box, activePlanes);
   };
   return generator;
+}
+
+/** Whether `box` lies wholly behind one of `planes`: nothing of it is in the volume they bound. */
+function boxOutside(box: BoundingBox, planes: readonly Plane[]): boolean {
+  for (const plane of planes) {
+    const n = plane.normal;
+    if (
+      n.x * (n.x >= 0 ? box.maximumWorld.x : box.minimumWorld.x) +
+        n.y * (n.y >= 0 ? box.maximumWorld.y : box.minimumWorld.y) +
+        n.z * (n.z >= 0 ? box.maximumWorld.z : box.minimumWorld.z) +
+        plane.d <
+      0
+    )
+      return true;
+  }
+  return false;
 }
 
 /** Keep a new, moved or resumed map from sampling empty or stale depth before it draws. */

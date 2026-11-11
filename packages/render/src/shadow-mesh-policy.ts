@@ -6,6 +6,7 @@ import { isEditorHelperMesh } from "./helper-mesh";
 import { isSkyboxMesh } from "./skybox";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { isMirrorSurfaceMesh } from "./mirror-surface-state";
+import { followsPose } from "./pose-bounds";
 import { isWaterSurfaceMesh } from "./water-mesh-surface";
 export type ShadowParticipation = {
   castShadows?: boolean;
@@ -65,10 +66,18 @@ export function hasDeformingShadowBounds(mesh: AbstractMesh): boolean {
 }
 
 /**
+ * Whether `mesh`'s bounds hold what it draws although it deforms: a skinned mesh whose bounds follow its skeleton
+ * (`pose-bounds.ts`), with any padding its Material asks for. A shadow list may then cull it by them.
+ */
+export function deformsWithinBounds(mesh: AbstractMesh): boolean {
+  return followsPose(mesh);
+}
+
+/**
  * Whether a caster can reach a local light's range. Skinned, morphed and
  * lattice-deformed geometry can leave its bind-pose bounds, so it gets twice
- * its bounding radius. The deforming test walks the parent chain and a material,
- * so it runs only for casters between the one-radius and two-radius reach: this
+ * its bounding radius, unless its bounds follow it (`deformsWithinBounds`). The deforming test walks the parent chain
+ * and a material, so it runs only for casters between the one-radius and two-radius reach: this
  * is called for every caster, light and frame.
  */
 export function casterWithinShadowRange(mesh: AbstractMesh, position: Vector3, range: number): boolean {
@@ -78,5 +87,5 @@ export function casterWithinShadowRange(mesh: AbstractMesh, position: Vector3, r
   if (distance <= range + radius) return true;
   // Negated so a NaN distance stays out of range, as with the single comparison.
   if (!(distance <= range + 2 * radius)) return false;
-  return hasDeformingShadowBounds(mesh);
+  return hasDeformingShadowBounds(mesh) && !deformsWithinBounds(mesh);
 }

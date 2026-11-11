@@ -2,6 +2,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
+import { followPose, followsPose } from "./pose-bounds";
 import { isSkyboxMesh } from "./skybox";
 
 /**
@@ -13,8 +14,9 @@ import { isSkyboxMesh } from "./skybox";
  *
  * Kept always drawn: those the engine marks (particle emitters, whose particles draw while the emitter is off screen;
  * debug overlays), meshes without geometry (they draw nothing), skyboxes and infinite-distance meshes, meshes whose
- * vertices a pose moves and no bounds follow (skinning, morph targets, baked vertex animation) and thin instances
- * whose bounds hold the source mesh alone (Babylon's, unless refreshed); a regular instance as its source.
+ * vertices a pose moves and no bounds follow (morph targets, baked vertex animation, and a skinned mesh whose bounds
+ * cannot follow its skeleton: `pose-bounds.ts`) and thin instances whose bounds hold the source mesh alone (Babylon's,
+ * unless refreshed); a regular instance as its source.
  *
  * Culled like any mesh, as the editor's view culls them: those whose bounds are made to hold what their vertex stage
  * does. A Material's padded bounds (`applyMaterialBounds`), a lattice's cage (`setMaterialBoundsExpansion`), water's
@@ -40,13 +42,15 @@ export function markBoundsHoldInstances(mesh: AbstractMesh): void {
 }
 
 /**
- * Whether a pose moves `mesh`'s vertices on the GPU with no bounds to follow it: skinning, morph targets, baked
- * vertex animation; a regular instance as its source. Its bounds hold the vertices as authored, which even a rest
- * pose can put elsewhere, so no view may cull it by them (`cullSceneByWhatShows`).
+ * Whether a pose moves `mesh`'s vertices on the GPU with no bounds to follow it: morph targets, baked vertex
+ * animation, and skinning unless the mesh's bounds follow its skeleton (`followsPose`); a regular instance as its
+ * source. Its bounds hold the vertices as authored, which even a rest pose can put elsewhere, so no view may cull it
+ * by them (`cullSceneByWhatShows`).
  */
 export function posedBeyondBounds(mesh: AbstractMesh): boolean {
   const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
-  return source instanceof Mesh && (!!source.skeleton || !!source.morphTargetManager || !!source.bakedVertexAnimationManager);
+  if (!(source instanceof Mesh) || !(source.skeleton || source.morphTargetManager || source.bakedVertexAnimationManager)) return false;
+  return !followsPose(source);
 }
 
 /**
@@ -83,6 +87,8 @@ export function settlePlayViewCulling(scene: Scene): void {
   for (const mesh of scene.meshes) {
     if (settled.has(mesh)) continue;
     settled.add(mesh);
+    // A skinned mesh's bounds follow its skeleton from here on, where they can: the cull may then trust them.
+    followPose(mesh);
     if (mesh.alwaysSelectAsActiveMesh && !keepsDrawingOutsideView(mesh)) mesh.alwaysSelectAsActiveMesh = false;
   }
 }

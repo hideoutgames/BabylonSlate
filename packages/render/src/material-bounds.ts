@@ -66,6 +66,16 @@ function applyDynamicBounds(mesh: AbstractMesh, state: DynamicBounds): void {
   applyExpansion(mesh, state.bounds);
 }
 
+/**
+ * Ends `updateDynamicMaterialBounds` for a mesh whose bounds are its geometry's again: they are taken from its
+ * vertices as authored, with its Material's padding and any expansion.
+ */
+export function clearDynamicMaterialBounds(mesh: AbstractMesh): void {
+  if (!dynamicBounds.delete(mesh)) return;
+  mesh.refreshBoundingInfo(false, false);
+  applyMaterialBounds(mesh, true);
+}
+
 /** Expand culling bounds for vertex displacement, and restore on reassignment. */
 export function applyMaterialBounds(mesh: AbstractMesh, geometryChanged = false): void {
   const dynamic = dynamicBounds.get(mesh);
