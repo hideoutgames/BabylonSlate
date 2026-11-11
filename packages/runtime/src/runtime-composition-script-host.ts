@@ -33,6 +33,7 @@ import { ScriptHost } from "./script-host";
 export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverOptions, registry: ClassRegistry): ScriptHost {
   const projectName = options.project?.name ?? "";
   const projectVersion = options.project?.version ?? "";
+  const buildNumber = options.project?.buildNumber ?? 1;
   const noticesUrl = options.thirdPartyNoticesUrl;
   let notices: Promise<string> | null = null;
   const getThirdPartyNotices = noticesUrl
@@ -195,6 +196,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     waitForSimulation: (owner) => rt.waits.continueSimulation(owner) ?? Promise.resolve(),
     getProjectName: () => projectName,
     getProjectVersion: () => projectVersion,
+    getBuildNumber: () => buildNumber,
     getDeltaSeconds: () => rt.world.clock.dt,
     getFrameCount: frameId,
     getTimeDilation: () => rt.timeDilation,

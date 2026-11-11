@@ -1,4 +1,4 @@
-import { EXEC, pin, STRING, type NodeDefinition } from "@haptic/scripting";
+import { EXEC, INT, pin, STRING, type NodeDefinition } from "@haptic/scripting";
 
 /** Authored identity, available equally in Play and packaged games. */
 export const projectNodes: NodeDefinition[] = [
@@ -17,6 +17,15 @@ export const projectNodes: NodeDefinition[] = [
     pure: true,
     pins: () => [pin("version", "Version", "out", STRING)],
     codegen: () => ({ version: "ctx.getProjectVersion()" }),
+  },
+  {
+    id: "project.getBuildNumber",
+    title: "Get Build Number",
+    category: "project",
+    pure: true,
+    searchAliases: ["build", "version code", "bundle version"],
+    pins: () => [pin("buildNumber", "Build Number", "out", INT)],
+    codegen: () => ({ buildNumber: "ctx.getBuildNumber()" }),
   },
   {
     id: "project.getThirdPartyNotices",

@@ -237,7 +237,7 @@ export type ControlMessage =
       /** Serialized trace retention budget in bytes for this session. */
       traceByteBudget?: number;
   renderSettings?: Partial<RenderProjectSettings>;
-      project?: { name: string; version: string };
+      project?: { name: string; version: string; buildNumber: number };
       /** URL of the game's `legal/THIRD-PARTY-NOTICES.txt` (same origin), for Get Third-Party Notices. */
       thirdPartyNoticesUrl?: string;
       sceneAssetGuid: string;

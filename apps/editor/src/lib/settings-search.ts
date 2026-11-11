@@ -30,7 +30,6 @@ function category(categoryId: string, sections: readonly SearchSection[]): Setti
 export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
   ...category("general", [
     ["project", "Project", [
-      ["Project Version", "settings-project-version"],
       ["Autosave Interval", "settings-autosave-interval"],
     ]],
     ["scripting", "Scripting", [
@@ -62,8 +61,10 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
     ["appIdentity", "App Identity", [
       ["App ID", "setting-app-id"],
       ["Display Name", "setting-app-display-name"],
+      ["Project Version", "settings-project-version"],
       ["App Icon", "setting-app-icon"],
       ["Build Number", "setting-app-build-number"],
+      ["Auto Increment Build Number", "setting-app-build-number-auto"],
     ]],
     ["alwaysPackageFolders", "Always Package Folders", [["Always Package Folders"]]],
     ["projectBackup", "Project Backup", [["Export Project Backup", "export-project"]]],

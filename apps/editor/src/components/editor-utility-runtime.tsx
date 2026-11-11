@@ -62,6 +62,7 @@ export function EditorUtilityRuntime() {
   const latest = {
     appendLog,
     metadata: projectDocument?.metadata,
+    buildNumber: projectDocument?.settings.appIdentity?.buildNumber ?? 1,
     collectScripts: collectEditorUtilityScripts,
     getOpenDocuments,
     documents,
@@ -94,6 +95,7 @@ export function EditorUtilityRuntime() {
       getAssetCatalog: createRegistryCatalogSource(() => latestRef.current.documents.assetRegistry),
       getProjectName: () => latestRef.current.metadata?.name ?? "",
       getProjectVersion: () => latestRef.current.metadata?.version ?? "",
+      getBuildNumber: () => latestRef.current.buildNumber,
       environment: { ...deviceEnvironment(), inEditor: true, developmentBuild: true },
       copyToClipboard: (text) => applyClipboardWrite({ text }),
       openUrl: (url) => applyOpenUrl({ url }),

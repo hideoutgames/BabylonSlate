@@ -29,7 +29,6 @@ import {
   EmptyTitle,
 } from "@haptic/ui/components/empty";
 import { Button } from "@haptic/ui/components/button";
-import { Input } from "@haptic/ui/components/input";
 import {
   Field,
   FieldDescription,
@@ -415,12 +414,6 @@ export function SettingsModal({
         activeCategoryId === "general" ? (
         <FieldGroup>
           <SettingsSection id="project" title="Project">
-            <Field className="settings-field">
-              <FieldLabel htmlFor="settings-project-version">Project Version</FieldLabel>
-              <Input id="settings-project-version" data-testid="settings-project-version"
-                value={projectDocument.metadata.version}
-                onChange={event => updateProjectVersion(event.target.value)} />
-            </Field>
               <Field className="settings-field">
               <FieldLabel htmlFor="settings-autosave-interval">
                   Auto-Save Interval (Seconds)
@@ -754,6 +747,7 @@ export function SettingsModal({
         <ProjectExportSettings
           projectDocument={projectDocument}
           updateProjectSettings={updateProjectSettings}
+          updateProjectVersion={updateProjectVersion}
           assetRegistry={assetRegistry}
           setAppIconPickerOpen={setAppIconPickerOpen}
           {...projectExport}

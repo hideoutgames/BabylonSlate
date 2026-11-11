@@ -23,6 +23,7 @@ import type { ProjectExport } from "./use-project-export";
 type ProjectExportSettingsProps = ProjectExport & {
   projectDocument: ProjectDocument;
   updateProjectSettings: DocumentActions["updateProjectSettings"];
+  updateProjectVersion: DocumentActions["updateProjectVersion"];
   assetRegistry: RegistryState["assetRegistry"];
   /** Opens the host's Texture picker for the App Icon. */
   setAppIconPickerOpen: (open: boolean) => void;
@@ -33,8 +34,8 @@ type ProjectExportSettingsProps = ProjectExport & {
  * are called, identified by and shown with. A typed App ID is kept as a
  * draft until it is valid, so an unfinished one never replaces the saved one.
  */
-function AppIdentitySection({ projectDocument, updateProjectSettings, assetRegistry, setAppIconPickerOpen }: Pick<ProjectExportSettingsProps,
-  "projectDocument" | "updateProjectSettings" | "assetRegistry" | "setAppIconPickerOpen">) {
+function AppIdentitySection({ projectDocument, updateProjectSettings, updateProjectVersion, assetRegistry, setAppIconPickerOpen }: Pick<ProjectExportSettingsProps,
+  "projectDocument" | "updateProjectSettings" | "updateProjectVersion" | "assetRegistry" | "setAppIconPickerOpen">) {
   const identity = projectDocument.settings.appIdentity;
   const iconAsset = identity.iconTextureGuid ? assetRegistry?.getByGuid(identity.iconTextureGuid) : undefined;
   const iconError = identity.iconTextureGuid ? appIconTextureProblem(iconAsset) : null;
@@ -81,6 +82,17 @@ function AppIdentitySection({ projectDocument, updateProjectSettings, assetRegis
           onChange={(event) => update({ displayName: event.target.value })}
         />
       </Field>
+      <Field className="settings-field">
+        <LabelHint hint="The version players see, such as 1.2.3. iOS needs up to three numbers.">
+          <FieldLabel htmlFor="settings-project-version">Project Version</FieldLabel>
+        </LabelHint>
+        <Input
+          id="settings-project-version"
+          data-testid="settings-project-version"
+          value={projectDocument.metadata.version}
+          onChange={(event) => updateProjectVersion(event.target.value)}
+        />
+      </Field>
       <Field className="settings-field" data-invalid={iconError ? true : undefined}>
         <FieldContent>
           <LabelHint hint="Packages use the Texture's centre square; 1024 × 1024 or larger stays sharp at every size.">
@@ -115,7 +127,7 @@ function AppIdentitySection({ projectDocument, updateProjectSettings, assetRegis
         </Field>
       ) : null}
       <Field className="settings-field">
-        <LabelHint hint="Raise it for every upload to an app store. The version is the project's, in General.">
+        <LabelHint hint="Raise it for every upload to an app store.">
           <FieldLabel htmlFor="setting-app-build-number">Build Number</FieldLabel>
         </LabelHint>
         <NumberField
@@ -123,8 +135,20 @@ function AppIdentitySection({ projectDocument, updateProjectSettings, assetRegis
           data-testid="setting-app-build-number"
           min={1}
           integer
+          disabled={identity.autoIncrementBuildNumber}
           value={identity.buildNumber}
           onChange={(value) => update({ buildNumber: Math.max(1, Math.round(value)) })}
+        />
+      </Field>
+      <Field orientation="horizontal" className="settings-field">
+        <LabelHint hint="Adds 1 to the Build Number after every package, on any platform. The Build Number shows the number the next package gets.">
+          <FieldLabel htmlFor="setting-app-build-number-auto">Auto Increment Build Number</FieldLabel>
+        </LabelHint>
+        <Switch
+          id="setting-app-build-number-auto"
+          data-testid="setting-app-build-number-auto"
+          checked={identity.autoIncrementBuildNumber}
+          onCheckedChange={(checked) => update({ autoIncrementBuildNumber: checked === true })}
         />
       </Field>
     </SettingsSection>
@@ -139,6 +163,7 @@ function AppIdentitySection({ projectDocument, updateProjectSettings, assetRegis
 export function ProjectExportSettings({
   projectDocument,
   updateProjectSettings,
+  updateProjectVersion,
   assetRegistry,
   setAppIconPickerOpen,
   exportProjectBusy,
@@ -200,7 +225,7 @@ export function ProjectExportSettings({
         </Field>
       </SettingsSection>
       <AppIdentitySection projectDocument={projectDocument} updateProjectSettings={updateProjectSettings}
-        assetRegistry={assetRegistry} setAppIconPickerOpen={setAppIconPickerOpen} />
+        updateProjectVersion={updateProjectVersion} assetRegistry={assetRegistry} setAppIconPickerOpen={setAppIconPickerOpen} />
       <SettingsSection id="alwaysPackageFolders" title="Always Package Folders">
         <Field className="settings-row">
           <FieldLabel className="sr-only">Always Package Folders</FieldLabel>

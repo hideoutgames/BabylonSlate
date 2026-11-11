@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appIconCrop, appIconSizeHint, defaultAppId, isValidAppId, normalizeAppIdentity, resolvedAppIdentity } from "./app-identity";
+import { advanceBuildNumber, appIconCrop, appIconSizeHint, defaultAppId, isValidAppId, normalizeAppIdentity, resolvedAppIdentity } from "./app-identity";
 
 describe("App identity", () => {
   it("accept only app IDs Apple and Android both accept", () => {
@@ -11,9 +11,25 @@ describe("App identity", () => {
   it("fill blanks from the project and keep a stored identity only when valid", () => {
     expect(defaultAppId("Space Game 2")).toBe("com.example.spacegame2");
     expect(defaultAppId("2048")).toBe("com.example.game");
-    expect(resolvedAppIdentity(normalizeAppIdentity(undefined), "Space Game")).toEqual({ appId: "com.example.spacegame", displayName: "Space Game", buildNumber: 1, iconTextureGuid: null });
-    expect(normalizeAppIdentity({ appId: "com.bad-id.x", displayName: " Rocket ", buildNumber: 0 })).toEqual({ appId: "", displayName: "Rocket", buildNumber: 1, iconTextureGuid: null });
+    expect(resolvedAppIdentity(normalizeAppIdentity(undefined), "Space Game")).toEqual({ appId: "com.example.spacegame", displayName: "Space Game", buildNumber: 1, autoIncrementBuildNumber: false, iconTextureGuid: null });
+    expect(normalizeAppIdentity({ appId: "com.bad-id.x", displayName: " Rocket ", buildNumber: 0 })).toEqual({ appId: "", displayName: "Rocket", buildNumber: 1, autoIncrementBuildNumber: false, iconTextureGuid: null });
     expect(normalizeAppIdentity({ appId: "com.studio.rocket", buildNumber: 42 })).toMatchObject({ appId: "com.studio.rocket", buildNumber: 42 });
+  });
+
+  it("keep Auto Increment Build Number only when it is exactly on", () => {
+    expect(normalizeAppIdentity({ autoIncrementBuildNumber: true }).autoIncrementBuildNumber).toBe(true);
+    for (const autoIncrementBuildNumber of [undefined, false, "true", 1]) {
+      expect(normalizeAppIdentity({ autoIncrementBuildNumber }).autoIncrementBuildNumber).toBe(false);
+    }
+  });
+
+  it("advance the Build Number after a package only with Auto Increment Build Number on", () => {
+    const auto = normalizeAppIdentity({ buildNumber: 7, autoIncrementBuildNumber: true });
+    expect(advanceBuildNumber(auto, 7)).toEqual({ ...auto, buildNumber: 8 });
+    // A number already set past the built one stays: it is never lowered.
+    expect(advanceBuildNumber({ ...auto, buildNumber: 12 }, 7)).toBeNull();
+    expect(advanceBuildNumber(normalizeAppIdentity({ buildNumber: 7 }), 7)).toBeNull();
+    expect(advanceBuildNumber({ ...auto, buildNumber: Number.MAX_SAFE_INTEGER }, Number.MAX_SAFE_INTEGER)).toBeNull();
   });
 
   it("keep the App Icon Texture, with a blank one meaning none", () => {
