@@ -98,6 +98,11 @@ export function isThumbnailableAssetType(type: string): boolean {
     type === "Material" || type === "Class" || type === "Tileset" || type === "Tilemap";
 }
 
+/** Thumbnails that may be transparent, drawn over a checkerboard: Textures and the 2D tile assets. */
+export function isCheckeredThumbnailType(type: string): boolean {
+  return type === "Texture" || type === "Tileset" || type === "Tilemap";
+}
+
 /**
  * Downsample source image bytes to a small JPEG/PNG for the CB grid.
  * Returns null when the host cannot decode images (e.g. plain Node without

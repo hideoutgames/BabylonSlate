@@ -33,7 +33,7 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | Item | Description |
 | --- | --- |
 | Open | Open the asset in its editor. |
-| Generate Thumbnail | Redraw the thumbnail of a Model, Animation, Material, actor Class, Tileset or Tilemap. |
+| Generate Thumbnail | Redraw the thumbnail of a Texture, Model, Animation, Material, actor Class, Tileset or Tilemap. |
 | Import MSDF Atlas… | Fonts only. Attach a pre-made MSDF atlas: pick one JSON and the PNG it names. A JSON that names no atlas page pairs only with a PNG of the same name that contains `msdf`, such as `Ui-msdf.png` for `Ui-msdf.json`. A second JSON, any other PNG or a file of another type in the pick is refused. |
 | Create … | Make a new asset from the selection. See [Create from assets](#create-from-assets). |
 | Duplicate | Copy the selection in place. |
@@ -96,6 +96,10 @@ Create a folder with **Folder** in the **New Asset** menu, **New Folder** in the
 While **Duplicate** or **Copy to Folder…** runs, a progress window shows the item being copied and how many files are done. Choose **Cancel** to stop; the copies made so far are removed, so the content is left as it was.
 
 A Tileset's thumbnail shows its whole sheet, and a Tilemap's shows all the tiles its visible layers paint, over a checkerboard where nothing is drawn. Both are drawn again when you save them or a Texture or Tileset they show, and **Create Tileset** draws the new Tileset's. A Tileset without a Texture and a Tilemap with nothing painted keep the type icon.
+
+A new project, whether from a starter, a template or an imported project, draws a thumbnail for every asset that has one when it first opens. They appear one by one while you work.
+
+Asset pickers show the same thumbnail: in the closed picker in place of the type icon, and on each row of the **Pick Asset** list. An asset without a thumbnail, or a type that has none, keeps its icon.
 
 A heavy asset can take a long time to draw on a slow device. A thumbnail that takes too long keeps the asset's type icon, and Haptic may try once more, with more time, when nothing else is waiting. Choose **Generate Thumbnail** to draw it again at any time.
 

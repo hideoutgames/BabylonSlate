@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import type { ThumbnailCaptureResult } from "@haptic/render";
-import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
+import { enqueueModelThumbnailJobs, requestProjectThumbnails, type ModelThumbnailJob } from "../lib/model-thumbnail-queue";
 import { holdBlockingSceneLoad } from "../lib/blocking-scene-loads";
 import { setEditorQuiet } from "../lib/editor-quiet";
 import { ModelThumbnailCaptureHost } from "./model-thumbnail-capture-host";
@@ -103,6 +103,22 @@ vi.mock("../lib/tile-asset-thumbnails", () => ({
   generateTileAssetThumbnail: (options: { asset: unknown; sortingLayers?: readonly string[] }) => generateTileAssetThumbnail(options),
 }));
 
+const generateThumbnailBytes = vi.fn<(source: Uint8Array, maxEdge?: number) => Promise<Uint8Array | null>>(
+  async () => new Uint8Array([137, 80, 78, 71]),
+);
+vi.mock("@haptic/assets", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/assets")>()),
+  generateThumbnailBytes: (source: Uint8Array, maxEdge?: number) => generateThumbnailBytes(source, maxEdge),
+}));
+
+const thumbnailJobsFor = vi.fn<(assets: unknown, guids: readonly string[], projectGuid: string, ppu?: number, options?: { onlyIfMissing?: boolean }) => Promise<ModelThumbnailJob[]>>(
+  async () => [],
+);
+vi.mock("../lib/thumbnail-jobs", () => ({
+  thumbnailJobsFor: (assets: unknown, guids: readonly string[], projectGuid: string, ppu?: number, options?: { onlyIfMissing?: boolean }) =>
+    thumbnailJobsFor(assets, guids, projectGuid, ppu, options),
+}));
+
 vi.mock("../lib/asset-thumbnail-input", () => ({
   prepareAssetThumbnailInput: (input: unknown) => prepareAssetThumbnailInput(input),
   prepareThumbnailMaterialSources: (options: unknown, guids: Iterable<string>) => prepareThumbnailMaterialSources(options, guids),
@@ -120,7 +136,10 @@ vi.mock("../context/play-context", () => ({
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   thumbnailsEnabled,
   projectGuid,
-  assetRegistry: { getByGuid: (guid: string) => assets.get(guid) },
+  assetRegistry: {
+    getByGuid: (guid: string) => assets.get(guid),
+    list: () => [...assets].map(([guid, asset]) => ({ ...asset, header: { ...asset.header, guid } })),
+  },
   readAssetChunk,
   createAssetLoadScope,
   collectPlayMaterialLibrary,
@@ -148,6 +167,8 @@ afterEach(() => {
   captureAssetThumbnailPng.mockReset().mockResolvedValue(captured());
   prepareAssetThumbnailInput.mockClear();
   generateTileAssetThumbnail.mockReset().mockResolvedValue(new Uint8Array([137, 80, 78, 71]));
+  generateThumbnailBytes.mockReset().mockResolvedValue(new Uint8Array([137, 80, 78, 71]));
+  thumbnailJobsFor.mockReset().mockResolvedValue([]);
   sharedEngine.engine = { id: "shared-engine" };
   sharedEngine.generation = 1;
 });
@@ -181,6 +202,48 @@ describe("ModelThumbnailCaptureHost", () => {
     expect(generateTileAssetThumbnail).toHaveBeenCalledTimes(2);
     expect(captureAssetThumbnailPng).not.toHaveBeenCalled();
     expect(captureModelThumbnailPng).not.toHaveBeenCalled();
+  });
+
+  it("draws a Texture from its pixels without the shared Engine, and writes nothing when they do not decode", async () => {
+    sharedEngine.engine = null;
+    sharedEngine.generation = 0;
+    readAssetChunk.mockImplementation(async (path) => new Uint8Array(path === "assets/grass.hasset" ? [1, 2] : [3, 4]));
+    generateThumbnailBytes.mockImplementation(async (source) => source[0] === 1 ? new Uint8Array([137, 80, 78, 71]) : null);
+    render(<ModelThumbnailCaptureHost />);
+    enqueueModelThumbnailJobs([
+      { guid: "broken", path: "assets/broken.hasset", type: "Texture", payload: {}, cacheKey: "broken", projectGuid },
+      { guid: "grass", path: "assets/grass.hasset", type: "Texture", payload: {}, cacheKey: "grass", projectGuid },
+    ]);
+    await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("grass", expect.any(Uint8Array), { cacheKey: "grass", projectGuid: "project-a" }));
+    expect(writeAssetThumbnail).toHaveBeenCalledOnce();
+    expect(readAssetChunk).toHaveBeenCalledWith("assets/grass.hasset", "pixels", expect.objectContaining({ priority: "background" }));
+    expect(captureAssetThumbnailPng).not.toHaveBeenCalled();
+    expect(captureModelThumbnailPng).not.toHaveBeenCalled();
+  });
+
+  it("queues every asset once for a project just made from a template, and nothing for other projects", async () => {
+    assets.set("grass", { path: "assets/grass.hasset", header: { type: "Texture", payload: {} } });
+    assets.set("rock", { path: "assets/rock.hasset", header: { type: "Material", payload: {} } });
+    thumbnailJobsFor.mockResolvedValue([
+      { guid: "grass", path: "assets/grass.hasset", type: "Texture", payload: {}, cacheKey: "grass", projectGuid: "project-a", onlyIfMissing: true },
+      { guid: "rock", path: "assets/rock.hasset", type: "Material", payload: {}, cacheKey: "rock.revision-1", projectGuid: "project-a", onlyIfMissing: true },
+    ]);
+    const other = render(<ModelThumbnailCaptureHost />);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(thumbnailJobsFor).not.toHaveBeenCalled();
+    other.unmount();
+
+    requestProjectThumbnails("project-a");
+    const view = render(<ModelThumbnailCaptureHost />);
+    await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledTimes(2));
+    expect(thumbnailJobsFor).toHaveBeenCalledWith(expect.any(Array), ["grass", "rock"], "project-a", undefined, { onlyIfMissing: true });
+    expect(writeAssetThumbnail).toHaveBeenNthCalledWith(1, "grass", expect.any(Uint8Array), { cacheKey: "grass", projectGuid: "project-a" });
+    expect(writeAssetThumbnail).toHaveBeenNthCalledWith(2, "rock", expect.any(Uint8Array), { cacheKey: "rock.revision-1", projectGuid: "project-a" });
+    // The request is used up: opening the project again queues nothing.
+    view.unmount();
+    render(<ModelThumbnailCaptureHost />);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(thumbnailJobsFor).toHaveBeenCalledOnce();
   });
 
   it("keeps a backfill job until the shared Engine is registered", async () => {
