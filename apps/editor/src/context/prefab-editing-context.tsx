@@ -78,6 +78,12 @@ interface PrefabEditingContextValue {
     componentId: string,
     transform: SerializedTransform,
   ) => void;
+  /**
+   * Runs several `updateComponent` / `updateComponentTransform` calls as one
+   * edit: each applies to the result of the one before, and the components
+   * are written once, as one Undo step.
+   */
+  batchComponentEdits: (apply: () => void) => void;
   commitComponentProperties: (
     componentId: string,
     properties: Record<string, unknown>,
@@ -325,14 +331,41 @@ export function PrefabEditingProvider({
     [applyAssetDocumentChange, applyGraphChange, documentId, graph, prefab],
   );
 
+  // The components an open `batchComponentEdits` has written so far.
+  const batchViewsRef = useRef<PrefabComponentView[] | null>(null);
+
   const upsertLocalFromViews = useCallback(
     (views: PrefabComponentView[]) => {
+      if (batchViewsRef.current) {
+        batchViewsRef.current = views;
+        return;
+      }
       // Persist owned components and inherited overrides (full merged snapshot
       // minus pure-parent-only rows that were never touched stays via merge).
       // Store every view so child documents round-trip transforms for inherited.
       persistLocal(stripInheritance(views));
     },
     [persistLocal],
+  );
+
+  const batchComponentEdits = useCallback(
+    (apply: () => void) => {
+      if (batchViewsRef.current) {
+        apply();
+        return;
+      }
+      batchViewsRef.current = components;
+      try {
+        apply();
+      } catch (error) {
+        batchViewsRef.current = null;
+        throw error;
+      }
+      const next = batchViewsRef.current;
+      batchViewsRef.current = null;
+      if (next !== components) persistLocal(stripInheritance(next));
+    },
+    [components, persistLocal],
   );
 
   const addComponent = useCallback(
@@ -416,13 +449,14 @@ export function PrefabEditingProvider({
       value: unknown,
       alsoSet?: Readonly<Record<string, unknown>>,
     ) => {
-      if (property === "sceneGuid" && components.some((component) => component.id === componentId && component.classId === "SceneStreamingComponent")) {
+      const views = batchViewsRef.current ?? components;
+      if (property === "sceneGuid" && views.some((component) => component.id === componentId && component.classId === "SceneStreamingComponent")) {
         const guid = typeof value === "string" ? value : null;
-        upsertLocalFromViews(setSceneStreamingTarget(components, componentId, guid, guid ? assetRegistry?.getByGuid(guid)?.header.name ?? "" : ""));
+        upsertLocalFromViews(setSceneStreamingTarget(views, componentId, guid, guid ? assetRegistry?.getByGuid(guid)?.header.name ?? "" : ""));
         return;
       }
       upsertLocalFromViews(
-        components.map((component) =>
+        views.map((component) =>
           component.id === componentId
             ? {
                 ...component,
@@ -475,7 +509,7 @@ export function PrefabEditingProvider({
   const updateComponentTransform = useCallback(
     (componentId: string, transform: SerializedTransform) => {
       upsertLocalFromViews(
-        applyPrefabComponentTransform(components, componentId, transform),
+        applyPrefabComponentTransform(batchViewsRef.current ?? components, componentId, transform),
       );
     },
     [components, upsertLocalFromViews],
@@ -573,6 +607,7 @@ export function PrefabEditingProvider({
       renameComponent,
       setComponentCategory,
       updateComponentTransform,
+      batchComponentEdits,
       commitComponentProperties,
       commitComponentGizmo,
       commitComponentTransforms,
@@ -591,6 +626,7 @@ export function PrefabEditingProvider({
       renameComponent,
       setComponentCategory,
       updateComponentTransform,
+      batchComponentEdits,
       commitComponentProperties,
       commitComponentGizmo,
       commitComponentTransforms,

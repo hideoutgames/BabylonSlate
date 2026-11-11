@@ -24,7 +24,7 @@ Double-tap a Class to open it.
 
 - **Event Graph**: the class's events. Each function opens in its own tab beside it.
 - **Class**: the class's **Functions**, **Variables**, **Events** and **Interfaces**. Use **+** on a section to add one. Inherited members carry an **Inherited** badge.
-- **Inspector**: the selected node or member.
+- **Inspector**: the selected node, member or component. With several nodes or components selected, it shows the settings and pin defaults they all have, such as **A** and **B** for an **Add** and a **Multiply**, and an edit changes each of them ([multi-selection](../start/editor-tour.md#scene-panels)).
 - **Compiler Results**: errors and warnings for this class.
 - **Prefab** and **Components**: for classes that descend from Actor. Build the actor's components here. A Class whose components you have not edited places as a Box mesh in a 3D Scene, and as an empty actor in a 2D Scene or a Scene Layer. A Scene Layer Actor Class starts with no components, and its Prefab has a **Frame** menu ([Scene Layers](../scenes/scene-layers.md#create-and-edit-a-layer)).
 

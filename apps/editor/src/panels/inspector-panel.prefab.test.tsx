@@ -51,7 +51,11 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         ],
         components: [
           createMeshComponent("prefab-mesh", "box"),
-          createMeshComponent("prefab-sphere", "sphere"),
+          {
+            ...createMeshComponent("prefab-sphere", "sphere"),
+            properties: { ...createMeshComponent("prefab-sphere", "sphere").properties, castShadows: false },
+            transform: { position: [2, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+          },
           { id: "prefab-movement", classId: "MovementComponent", properties: {} },
         ],
       },
@@ -289,6 +293,44 @@ describe("Inspector prefab component details", () => {
     await waitFor(() =>
       expect(applyGraphChange.mock.calls.at(-1)![1].actorDefaults).toEqual({ eventTick: "enabled" }),
     );
+  });
+
+  it("shows the Details two selected components share, with Mixed Values where they differ", () => {
+    renderInspector({ selectedComponentIds: ["prefab-mesh", "prefab-sphere"] });
+    expect(screen.getByTestId("inspector-prefab-multi").textContent).toContain("2 Components");
+    expect(screen.queryByTestId("inspector-prefab-component")).toBeNull();
+    expect(screen.getByTestId("property-prefab-root-prefab-mesh-meshKind").textContent).toContain("Mixed Values");
+    expect((screen.getByTestId("property-prefab-mesh-position-x") as HTMLInputElement).value).toBe("Mixed Values");
+    expect((screen.getByTestId("property-prefab-mesh-position-y") as HTMLInputElement).value).toBe("0");
+  });
+
+  it("sets a value on every selected component in one change", () => {
+    renderInspector({ selectedComponentIds: ["prefab-mesh", "prefab-sphere"] });
+    fireEvent.click(screen.getByTestId("property-prefab-root-prefab-mesh-castShadows"));
+    expect(applyGraphChange).toHaveBeenCalledTimes(1);
+    const components = applyGraphChange.mock.calls[0]![1].components!;
+    expect(components.find((component) => component.id === "prefab-mesh")?.properties.castShadows).toBe(true);
+    expect(components.find((component) => component.id === "prefab-sphere")?.properties.castShadows).toBe(true);
+    expect(components.find((component) => component.id === "prefab-sphere")?.properties.meshKind).toBe("sphere");
+  });
+
+  it("moves each selected component from its own Position when Mixed Values+4 is typed", () => {
+    renderInspector({ selectedComponentIds: ["prefab-mesh", "prefab-sphere"] });
+    const x = screen.getByTestId("property-prefab-mesh-position-x");
+    fireEvent.focus(x);
+    fireEvent.change(x, { target: { value: "Mixed Values+4" } });
+    expect(applyGraphChange).toHaveBeenCalledTimes(1);
+    const components = applyGraphChange.mock.calls[0]![1].components!;
+    expect(components.find((component) => component.id === "prefab-mesh")?.transform?.position).toEqual([4, 0, 0]);
+    expect(components.find((component) => component.id === "prefab-sphere")?.transform?.position).toEqual([6, 0, 0]);
+  });
+
+  it("hides the rows and Transform only one selected component has", () => {
+    renderInspector({ selectedComponentIds: ["prefab-mesh", "prefab-movement"] });
+    expect(screen.getByTestId("inspector-prefab-multi").textContent).toContain("2 Components");
+    expect(screen.queryByTestId("property-prefab-root-prefab-mesh-meshKind")).toBeNull();
+    expect(screen.queryByTestId("property-prefab-root-prefab-movement-radius")).toBeNull();
+    expect(screen.queryByTestId("prefab-component-transform-grid")).toBeNull();
   });
 
   it("shows editable Actor Defaults for an engine Actor subclass", () => {

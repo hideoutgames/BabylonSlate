@@ -11,7 +11,7 @@ export { EditSession, DEFAULT_EDIT_BYTE_BUDGET } from "./session";
 export {
   SetNodeDataCommand,
 } from "./commands/graph";
-export { diffGraphCommands } from "./commands/graph-diff";
+export { diffGraphCommands, graphEditMergeKey } from "./commands/graph-diff";
 export {
   RemoveActorCommand,
   SetActorTransformCommand,

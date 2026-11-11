@@ -1,4 +1,4 @@
-import { useMemo, type Dispatch, type SetStateAction } from "react";
+import { useMemo, useRef, type Dispatch, type SetStateAction } from "react";
 import type { SerializedGraph } from "@haptic/core";
 import {
   AssetPicker,
@@ -11,9 +11,11 @@ import {
   PinListEditor,
   PropertyGrid,
   formatEventMemberName,
+  mergePropertyRows,
   useTags,
   type DelegateSignatureEntry,
   type PinListRow,
+  type PropertyRow,
 } from "@haptic/editor-kit";
 import { OUTPUT_DELEGATE_PIN_ID, POST_PROCESS_MATERIAL_NODE_IDS, isDispatcherNodeType, isTimelineProxyPickerNode } from "@haptic/scripting-nodes";
 import {
@@ -32,30 +34,14 @@ import { subclassClassEntries } from "../lib/component-property-rows";
 import { executeJavaScriptNameError } from "@haptic/scripting-nodes";
 import { isReservedConsoleCommandName } from "@haptic/debugger";
 import {
-  assetPickerAllowedTypes,
   commandParameterRows,
   commandParametersFromRows,
-  connectedEnumGuidFromSerialized,
-  containerConstructorPropertyRows,
-  developmentOnlyPropertyRows,
-  dataNodePropertyRows,
-  dataNodePathOptions,
-  graphDataLiteralField,
-  enumNodePropertyRows,
   flowSwitchCaseListValues,
-  inspectorLiteralPinDefaults,
-  inputEventPropertyRows,
   isFlowSwitchTypeId,
-  logNodePropertyRows,
   javaScriptPinRows,
   patchFlowSwitchCases,
-  pinDefaultPropertyRows,
   javaScriptPinsFromRows,
-  sequencePropertyRows,
-  structNodePropertyRows,
-  tagNodePropertyRows,
 } from "../lib/graph-inspector";
-import { pinDefaultPropertyKey } from "@haptic/scripting";
 import { canRenameCustomEvent, customEventRenameError, patchClassMember, renameCustomEvent } from "../lib/class-members";
 import { filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
 import { dataGraphAssetCreateOptions, dataGraphAssetPickPatch, isDataGraphNode, patchDataGraphNode, patchInspectedGraphNode } from "../lib/data-graph";
@@ -66,7 +52,7 @@ import {
   useOpenDocumentsOfKinds,
 } from "../lib/use-open-documents-of-kinds";
 import { projectTimelineClips } from "../lib/timeline-asset-index";
-import { timelineProxyNodeTarget, timelineProxyPickerRows, timelineScriptAssets } from "../lib/timeline-script-catalog";
+import { timelineProxyNodeTarget, timelineScriptAssets } from "../lib/timeline-script-catalog";
 import {
   committedPinRowIds,
   memberPinsFromRows,
@@ -74,12 +60,16 @@ import {
   type CommittedPinRowIds,
 } from "./inspector-member-rows";
 import { FunctionPinListEditors } from "./inspector-function-pins";
+import {
+  GRAPH_NODE_ROW_SECTIONS,
+  graphNodeInspectorRows,
+  type AssetPinPick,
+  type ClassPinPick,
+  type GraphNodeRowSection,
+} from "./inspector-node-rows";
 import type { InspectorCatalogs } from "./use-inspector-catalogs";
 
-/** The pin whose default the Class picker fills, and the base Class it allows. */
-export type ClassPinPick = { pinId: string; constraintClassId: string };
-/** The pin whose default the asset picker fills, and the asset types it allows. */
-export type AssetPinPick = { pinId: string; assetType: string; allowedTypes: string[] };
+
 /** Command parameter row ids from the last commit, as for member pins. */
 export type CommandRowIds = { nodeId: string; parameters: string; ids: string[] };
 
@@ -146,16 +136,7 @@ export function GraphNodeDetails({
   setCommandRowIds,
   delegateSignatures = [],
 }: GraphNodeDetailsProps) {
-  const {
-    dataAssets,
-    editorGraph,
-    enumMembers,
-    objectClassEntries,
-    pickerAssets,
-    typeAssets,
-    typeCatalog,
-    typeSchemas,
-  } = catalogs;
+  const { dataAssets, objectClassEntries, typeAssets } = catalogs;
   const { assetRegistry, registryEpoch } = useRegistryState();
   const { entries: tags } = useTags();
   // A Timeline Proxy node's clip asset, from its header or its open tab.
@@ -167,13 +148,10 @@ export function GraphNodeDetails({
     const assets = assetRegistry?.list() ?? [];
     return timelineProxyNodeTarget(timelineScriptAssets(assets, projectTimelineClips(assets, clipDocuments)), selectedNode.data).clip;
   }, [assetRegistry, clipDocuments, proxyPicker, registryEpoch, selectedNode.data]);
-  // Open Material tabs' unsaved domains filter the post-process picker.
-  const pickerMaterialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
 
   const isExecJs = selectedNode.type === "debug.executeJavaScript";
   const isCommandRun = selectedNode.type === "flow.event.commandRun";
   const isCustomEvent = selectedNode.type === "flow.event.custom";
-  const isLog = selectedNode.type === "debug.log";
   const inputs = Array.isArray(selectedNode.data.inputs)
     ? (selectedNode.data.inputs as Array<{ name: string; type?: unknown }>)
     : [];
@@ -247,162 +225,28 @@ export function GraphNodeDetails({
       : patchInspectedGraphNode(graph, selectedNode.id, patch, activeFunctionId));
   };
 
-  const proxyRows = timelineProxyPickerRows(selectedNode.type, selectedNode.data, proxyClip, updateNodeData);
-
-  const dataPinWired = (pinId: string) => (inspectGraph?.edges ?? graph.edges)
-    .some((edge) => edge.target === selectedNode.id && edge.targetHandle === pinId);
-  const literalDefaults = inspectorLiteralPinDefaults(selectedNode, inspectGraph?.edges ?? graph.edges, (hydratedInspectGraph ?? inspectGraph)?.nodes);
-  const pathDefaults = literalDefaults.flatMap((entry) => {
-    const options = dataNodePathOptions(selectedNode.type, entry.pinId, selectedNode.data, dataAssets, dataPinWired);
-    return options ? [{ ...options, pin: entry }] : [];
-  });
-  const dataLiteralDefaults = literalDefaults.filter((entry) => graphDataLiteralField(entry, typeSchemas));
-  const pinDefaultRows = pinDefaultPropertyRows(
-    literalDefaults.filter((entry) =>
-      !graphDataLiteralField(entry, typeSchemas) &&
-      !pathDefaults.some((path) => path.pin.pinId === entry.pinId) &&
-      !((selectedNode.type === "input.actionEvent" || selectedNode.type === "input.axisEvent") && entry.pinId === "binding")),
-    updateNodeData,
-    {
-      enumMembers,
-      classEntries: objectClassEntries,
-      onPickClass: (pinId, constraintClassId) => {
-        setClassPinPick({ pinId, constraintClassId });
-      },
-      assetEntries: pickerAssets.map((asset) => ({
-        id: asset.guid,
-        name: asset.name,
-        type: asset.type,
-      })),
-      onPickAsset: (pinId, assetType) => {
-        setAssetPinPick({
-          pinId,
-          assetType,
-          allowedTypes: assetPickerAllowedTypes(assetType),
-        });
-      },
-      schemas: typeSchemas,
-    },
-  );
-  /** A Structure field inside a pin default writes through its own row, not as a pin. */
-  const nestedPinDefaultRow = (rowId: string) =>
-    literalDefaults.some((entry) => entry.pinId === rowId)
-      ? undefined
-      : pinDefaultRows.find((row) => row.id === rowId);
-  const isEnumNode = selectedNode.type.startsWith("enum.");
-  const enumNodeRows = isEnumNode
-    ? enumNodePropertyRows(
-        selectedNode.type,
-        selectedNode.data,
-        updateNodeData,
-        {
-          enums: typeCatalog.enums,
-          // The wire lives in the graph being inspected (event or function).
-          typeSelectDisabled: Boolean(
-            connectedEnumGuidFromSerialized(
-              hydratedInspectGraph ?? inspectGraph ?? graph,
-              selectedNode.id,
-            ),
-          ),
-        },
-      )
-    : [];
-  const logRows = isLog
-    ? logNodePropertyRows(selectedNode.data, updateNodeData)
-    : [];
-  const structNodeRows = structNodePropertyRows(
-    selectedNode.type,
-    selectedNode.data,
-    updateNodeData,
-    typeCatalog.structures,
-    typeCatalog.dataDefinitions,
-  );
-  const dataNodeRows = dataNodePropertyRows(
-    selectedNode.type,
-    selectedNode.data,
-    updateNodeData,
-    typeCatalog.dataDefinitions,
-  );
-  const inputEventRows = inputEventPropertyRows(
-    selectedNode.type,
-    selectedNode.data,
-    updateNodeData,
-    pickerAssets.map((asset) => ({ id: asset.guid, name: asset.name, type: asset.type })),
-    dataPinWired("binding"),
-  );
-  const containerConstructorRows = containerConstructorPropertyRows(
-    selectedNode.type,
-    selectedNode.data,
-    updateNodeData,
-  );
-  const sequenceRows = sequencePropertyRows(
-    selectedNode.type,
-    selectedNode.data,
-    updateNodeData,
-  );
-  const tagNodeRows = tagNodePropertyRows(
-    selectedNode.type,
-    selectedNode.data,
-    updateNodeData,
+  const nodeRows = graphNodeInspectorRows(selectedNode, {
+    graph,
+    inspectGraph,
+    hydratedInspectGraph,
+    catalogs,
     tags,
-  );
+    proxyClip,
+    updateNodeData,
+    onPickClass: setClassPinPick,
+    onPickAsset: setAssetPinPick,
+  });
+  const { sections, pinDefaults: pinDefaultRows, pathDefaults, dataLiteralDefaults } = nodeRows;
   const isFlowSwitch = isFlowSwitchTypeId(selectedNode.type);
   const flowSwitchCases = isFlowSwitch
     ? flowSwitchCaseListValues(selectedNode.type, selectedNode.data)
     : [];
-  const developmentOnlyRows = developmentOnlyPropertyRows(
-    selectedNode.type,
-    selectedNode.data,
-    updateNodeData,
-  );
 
   return (
     <>
       <div className="flex flex-col gap-3 p-3">
         <div className="text-sm font-medium">{title}</div>
-        {inputEventRows.length > 0 ? (
-          <PropertyGrid rows={inputEventRows} data-testid="inspector-input-event" />
-        ) : null}
-        {proxyRows.length > 0 ? (
-          <PropertyGrid rows={proxyRows} data-testid="inspector-timeline-proxy" />
-        ) : null}
-        {logRows.length > 0 ? (
-          <PropertyGrid rows={logRows} data-testid="inspector-log-properties" />
-        ) : null}
-        <PropertyGrid
-          rows={developmentOnlyRows}
-          data-testid="inspector-development-only"
-        />
-        {enumNodeRows.length > 0 ? (
-          <PropertyGrid
-            rows={enumNodeRows}
-            data-testid="inspector-enum-properties"
-          />
-        ) : null}
-        {structNodeRows.length > 0 ? (
-          <PropertyGrid
-            rows={structNodeRows}
-            data-testid="inspector-struct-properties"
-          />
-        ) : null}
-        {dataNodeRows.length > 0 ? (
-          <PropertyGrid rows={dataNodeRows} data-testid="inspector-data-properties" />
-        ) : null}
-        {containerConstructorRows.length > 0 ? (
-          <PropertyGrid
-            rows={containerConstructorRows}
-            data-testid="inspector-container-constructor"
-          />
-        ) : null}
-        {sequenceRows.length > 0 ? (
-          <PropertyGrid rows={sequenceRows} data-testid="inspector-sequence" />
-        ) : null}
-        {tagNodeRows.length > 0 ? (
-          <PropertyGrid
-            rows={tagNodeRows}
-            data-testid="inspector-tag-cases"
-          />
-        ) : null}
+        <GraphNodeRowSections sections={sections} />
         {isFlowSwitch ? (
           <NamedListEditor
             title="Cases"
@@ -644,6 +488,58 @@ export function GraphNodeDetails({
           </>
         ) : null}
       </div>
+      <GraphPinPickers
+        node={selectedNode}
+        catalogs={catalogs}
+        classPinPick={classPinPick}
+        setClassPinPick={setClassPinPick}
+        assetPinPick={assetPinPick}
+        setAssetPinPick={setAssetPinPick}
+        pickClass={nodeRows.pickClass}
+        pickAsset={nodeRows.pickAsset}
+      />
+    </>
+  );
+}
+
+/** A node's PropertyGrid sections, each shown while it has rows. */
+function GraphNodeRowSections({ sections }: { sections: Readonly<Record<GraphNodeRowSection, PropertyRow[]>> }) {
+  return (
+    <>
+      {GRAPH_NODE_ROW_SECTIONS.map(({ section, testId }) =>
+        sections[section].length > 0
+          ? <PropertyGrid key={section} rows={sections[section]} data-testid={testId} />
+          : null)}
+    </>
+  );
+}
+
+/** The Class and asset pickers a pin Default row opens; `node` filters and creates for its type. */
+function GraphPinPickers({
+  node,
+  catalogs,
+  classPinPick,
+  setClassPinPick,
+  assetPinPick,
+  setAssetPinPick,
+  pickClass,
+  pickAsset,
+}: {
+  node: SerializedGraph["nodes"][number];
+  catalogs: InspectorCatalogs;
+  classPinPick: ClassPinPick | null;
+  setClassPinPick: Dispatch<SetStateAction<ClassPinPick | null>>;
+  assetPinPick: AssetPinPick | null;
+  setAssetPinPick: Dispatch<SetStateAction<AssetPinPick | null>>;
+  pickClass: (pinId: string, classId: string) => void;
+  pickAsset: (pinId: string, guid: string | null) => void;
+}) {
+  const { editorGraph, pickerAssets } = catalogs;
+  const { assetRegistry } = useRegistryState();
+  // Open Material tabs' unsaved domains filter the post-process picker.
+  const pickerMaterialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
+  return (
+    <>
       <ClassPicker
         open={classPinPick !== null}
         onOpenChange={(open) => {
@@ -661,13 +557,7 @@ export function GraphNodeDetails({
         allowNone={false}
         createBaseClass={classPinPick?.constraintClassId}
         onPick={(classId) => {
-          if (classPinPick && classId) {
-            const nested = nestedPinDefaultRow(classPinPick.pinId);
-            if (nested?.kind === "asset") nested.onChange(classId);
-            else updateNodeData({
-              [pinDefaultPropertyKey(classPinPick.pinId)]: classId,
-            });
-          }
+          if (classPinPick && classId) pickClass(classPinPick.pinId, classId);
           setClassPinPick(null);
         }}
         data-testid="inspector-class-picker"
@@ -684,29 +574,146 @@ export function GraphNodeDetails({
                 pickerAssets,
                 assetRegistry?.list() ?? [],
                 pickerMaterialDocuments,
-                { nodeType: selectedNode.type },
+                { nodeType: node.type },
               )
             : []
         }
         allowedTypes={assetPinPick?.allowedTypes}
         createOptions={
-          POST_PROCESS_MATERIAL_NODE_IDS.has(selectedNode.type)
+          POST_PROCESS_MATERIAL_NODE_IDS.has(node.type)
             ? { materialDomain: "postProcess" }
             : assetPinPick
-              ? dataGraphAssetCreateOptions(selectedNode.type, assetPinPick.pinId, selectedNode.data)
+              ? dataGraphAssetCreateOptions(node.type, assetPinPick.pinId, node.data)
               : undefined
         }
         allowNone
         title={assetPinPick ? `Pick ${assetPinPick.assetType || "Asset"}` : "Pick Asset"}
         onPick={(guid) => {
-          if (assetPinPick) {
-            const nested = nestedPinDefaultRow(assetPinPick.pinId);
-            if (nested?.kind === "asset") nested.onChange(guid ?? "");
-            else updateNodeData(dataGraphAssetPickPatch(selectedNode.type, assetPinPick.pinId, guid, dataAssets, selectedNode.data, dataPinWired));
-          }
+          if (assetPinPick) pickAsset(assetPinPick.pinId, guid);
           setAssetPinPick(null);
         }}
         data-testid="inspector-asset-picker"
+      />
+    </>
+  );
+}
+
+/** What several selected nodes' details read from the Inspector. */
+export interface GraphNodesDetailsProps {
+  graph: SerializedGraph;
+  inspectGraph: SerializedGraph | null;
+  hydratedInspectGraph: SerializedGraph | null;
+  /** Two or more nodes, in selection order. */
+  selectedNodes: readonly SerializedGraph["nodes"][number][];
+  activeFunctionId: string | null;
+  catalogs: InspectorCatalogs;
+  persistGraph: (next: SerializedGraph) => void;
+  classPinPick: ClassPinPick | null;
+  setClassPinPick: Dispatch<SetStateAction<ClassPinPick | null>>;
+  assetPinPick: AssetPinPick | null;
+  setAssetPinPick: Dispatch<SetStateAction<AssetPinPick | null>>;
+}
+
+/**
+ * Several selected nodes: only the rows every node has, a pin Default by pin
+ * id and type and any other row by its section, key and kind, so an Add and
+ * a Multiply share A and B. Values that differ show Mixed Values, and an edit
+ * changes each node in one graph change (one Undo step). Lists, code and
+ * other custom sections stay with a single node.
+ */
+export function GraphNodesDetails({
+  graph,
+  inspectGraph,
+  hydratedInspectGraph,
+  selectedNodes,
+  activeFunctionId,
+  catalogs,
+  persistGraph,
+  classPinPick,
+  setClassPinPick,
+  assetPinPick,
+  setAssetPinPick,
+}: GraphNodesDetailsProps) {
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const { entries: tags } = useTags();
+  const clipDocuments = useOpenDocumentsOfKinds(TIMELINE_CLIP_DOCUMENT_KINDS);
+  const proxyClips = useMemo(() => {
+    void registryEpoch;
+    if (!selectedNodes.some((node) => isTimelineProxyPickerNode(node.type))) return new Map<string, undefined>();
+    const assets = assetRegistry?.list() ?? [];
+    const scripts = timelineScriptAssets(assets, projectTimelineClips(assets, clipDocuments));
+    return new Map(selectedNodes.map((node) => [
+      node.id,
+      isTimelineProxyPickerNode(node.type) ? timelineProxyNodeTarget(scripts, node.data).clip : undefined,
+    ]));
+  }, [assetRegistry, clipDocuments, registryEpoch, selectedNodes]);
+  // While an edit runs, each node's patch applies to this copy; the edit then persists it once.
+  const working = useRef<SerializedGraph | null>(null);
+  const updateNode = (node: SerializedGraph["nodes"][number]) => (patch: Record<string, unknown>) => {
+    const base = working.current ?? graph;
+    const next = isDataGraphNode(node.type)
+      ? patchDataGraphNode(base, node, patch, activeFunctionId)
+      : patchInspectedGraphNode(base, node.id, patch, activeFunctionId);
+    if (working.current) working.current = next;
+    else persistGraph(next);
+  };
+  const batch = (apply: () => void) => {
+    if (working.current) {
+      apply();
+      return;
+    }
+    working.current = graph;
+    try {
+      apply();
+    } catch (error) {
+      working.current = null;
+      throw error;
+    }
+    const next = working.current;
+    working.current = null;
+    if (next !== graph) persistGraph(next);
+  };
+  const perNode = selectedNodes.map((node) => graphNodeInspectorRows(node, {
+    graph,
+    inspectGraph,
+    hydratedInspectGraph,
+    catalogs,
+    tags,
+    proxyClip: proxyClips.get(node.id),
+    updateNodeData: updateNode(node),
+    onPickClass: setClassPinPick,
+    onPickAsset: setAssetPinPick,
+  }));
+  const sections = Object.fromEntries(GRAPH_NODE_ROW_SECTIONS.map(({ section }) => [
+    section,
+    mergePropertyRows(perNode.map((rows) => rows.sections[section]), { batch }),
+  ])) as Record<GraphNodeRowSection, PropertyRow[]>;
+  const pinKeys = new Map(perNode.flatMap((rows) => [...rows.pinDefaultKeys]));
+  const pinDefaultRows = mergePropertyRows(perNode.map((rows) => rows.pinDefaults), {
+    key: (row) => pinKeys.get(row) ?? row.id,
+    batch,
+  });
+
+  return (
+    <>
+      <div className="flex flex-col gap-3 p-3" data-testid="inspector-multi-node">
+        <div className="text-sm font-medium">{`${selectedNodes.length} Nodes`}</div>
+        <GraphNodeRowSections sections={sections} />
+        {pinDefaultRows.length > 0 ? (
+          <div data-testid="inspector-pin-defaults" className="flex flex-col gap-2">
+            <PropertyGrid title="Defaults" rows={pinDefaultRows} />
+          </div>
+        ) : null}
+      </div>
+      <GraphPinPickers
+        node={selectedNodes[0]!}
+        catalogs={catalogs}
+        classPinPick={classPinPick}
+        setClassPinPick={setClassPinPick}
+        assetPinPick={assetPinPick}
+        setAssetPinPick={setAssetPinPick}
+        pickClass={(pinId, classId) => batch(() => perNode.forEach((rows) => rows.pickClass(pinId, classId)))}
+        pickAsset={(pinId, guid) => batch(() => perNode.forEach((rows) => rows.pickAsset(pinId, guid)))}
       />
     </>
   );

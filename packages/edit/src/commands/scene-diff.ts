@@ -50,8 +50,7 @@ import {
   SetSceneScriptCommand,
 } from "./scene-fields";
 import { ReplaceSceneCommand } from "./replace-scene";
-import { diffGraphCommands } from "./graph-diff";
-import type { EditCommand } from "../command";
+import { diffGraphCommands, graphEditMergeKey } from "./graph-diff";
 
 function transformEqual(a: SerializedTransform, b: SerializedTransform): boolean {
   return (
@@ -322,8 +321,7 @@ function sceneScriptMergeKey(
   after: SerializedGraph | undefined,
 ): string | undefined {
   if (!before || !after) return undefined;
-  const commands: EditCommand<SerializedGraph>[] = diffGraphCommands(before, after);
-  const mergeKey = commands.length === 1 ? commands[0]!.mergeKey : undefined;
+  const mergeKey = graphEditMergeKey(diffGraphCommands(before, after));
   return mergeKey ? `script:${mergeKey}` : undefined;
 }
 

@@ -175,6 +175,19 @@ describe("DocumentEditingService", () => {
     expect(documents.getDocument(id)!.content).toEqual(painted);
   });
 
+  it("keeps a pin default scrub on several selected nodes as one Undo step", async () => {
+    const { documents, editSession, editing, open } = createEditing();
+    const node = (id: string, a: number) => ({ id, type: "math.add", position: { x: 0, y: 0 }, data: { "default:a": a } });
+    const withA = (a: number): SerializedGraph => ({ nodes: [node("add-1", a), node("add-2", a + 2)], edges: [] });
+    const id = await open({ kind: "graph", path: "assets/Hero.class.hasset", label: "Hero" }, withA(1));
+    const saved = documents.getDocument(id)!.content;
+
+    for (const value of [2, 3, 4]) expect(await editing.applyGraphChange(id, withA(value))).toBe(true);
+    expect(editSession.getStack(id).undoDepth).toBe(1);
+    editing.stepHistory("undo", id);
+    expect(documents.getDocument(id)!.content).toEqual(saved);
+  });
+
   it.each([
     {
       kind: "graph" as const,

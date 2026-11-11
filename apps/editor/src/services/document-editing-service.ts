@@ -12,6 +12,7 @@ import {
   commandToJournalPayload,
   diffGraphCommands,
   diffTilemapDocument,
+  graphEditMergeKey,
   PatchTilemapDocumentCommand,
   planSceneChange,
   replayJournalLines,
@@ -134,7 +135,10 @@ export class DocumentEditingService {
     if (commands.length === 0) {
       return false;
     }
-    const result = this.editSession.applyBatch(id, previous, commands)!;
+    // A data edit of several nodes coalesces as one node's does.
+    const result = this.editSession.applyBatch(id, previous, commands, {
+      mergeKey: commands.length > 1 ? graphEditMergeKey(commands) : undefined,
+    })!;
     this.documents.updateGraph(id, result.doc);
     this.reportHistoryOutcome(id, result);
     await this.notifyAppliedCommand(id, result.command);
