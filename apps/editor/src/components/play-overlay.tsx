@@ -12,7 +12,7 @@ import {
 } from "../context/simulation-controls-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
-import { captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText } from "@haptic/render";
+import { captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyScopedReadinessProbes } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { clipText } from "../lib/diagnostic-info";
@@ -1247,6 +1247,8 @@ function PlayOverlayView({
         materialDefines: () => ReturnType<PlaySession["handle"]["playMeshMaterialDefines"]>;
         /** Play's load-time warm-up of what it may spawn. */
         spawnableWarm: () => ReturnType<PlaySession["handle"]["spawnableWarmStats"]>;
+        /** Follows every scoped readiness probe with a probe of every mesh, which must agree (`rendererWork.scopedReadinessMismatches`). */
+        verifyScopedReadinessProbes: (enabled: boolean) => void;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
         flyThrough: (
           options: import("../testing/flythrough-probe").FlyThroughOptions,
@@ -1267,6 +1269,7 @@ function PlayOverlayView({
       setRenderSettings: (settings) => sessionRef.current?.handle.setRenderSettings(settings),
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
       spawnableWarm: () => sessionRef.current?.handle.spawnableWarmStats() ?? null,
+      verifyScopedReadinessProbes,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,

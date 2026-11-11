@@ -165,6 +165,29 @@ const NO_CULLED_MESHES: readonly AbstractMesh[] = [];
 function compiledEffectCount(engine: object): number {
   return Object.keys((engine as { _compiledEffects?: object })._compiledEffects ?? {}).length;
 }
+
+/** Runs `run` and returns how many times it asked the Engine for an Effect, one it already holds included. */
+function countEffectRequests(engine: object, run: () => void): number {
+  const target = engine as { createEffect(...args: unknown[]): unknown };
+  const own = Object.prototype.hasOwnProperty.call(target, "createEffect");
+  const create = target.createEffect;
+  let count = 0;
+  const counting = function (this: unknown, ...args: unknown[]) {
+    count += 1;
+    return create.apply(this, args);
+  };
+  target.createEffect = counting;
+  try {
+    run();
+  } finally {
+    // A hook installed meanwhile wraps this one and stays.
+    if (target.createEffect === counting) {
+      if (own) target.createEffect = create;
+      else delete (target as { createEffect?: unknown }).createEffect;
+    }
+  }
+  return count;
+}
 /** What a spatial geometry pass draws of a view's culled meshes: everything but editor and Play helper visuals. */
 const isWorldMesh = (mesh: AbstractMesh): boolean => !isEditorHelperMesh(mesh);
 /** What a spatial geometry pass seeded from the scene's depth draws of them: the meshes that depth lacks. */
@@ -1745,13 +1768,29 @@ export class ForwardSceneFrameGraph {
     const scope = this.probeScope();
     if (!scope) return round();
     if (this.measureWork) this.scopedProbes += 1;
+    if (!withReadinessProbeScope(scope, round)) return false;
     // A mark for any mesh made by the probe itself is not covered by it: the next probe asks them all.
-    if (!withReadinessProbeScope(scope, round) || this.unscopedMark) return false;
-    if (verifiesScopedReadinessProbes()) {
-      const effects = compiledEffectCount(this.scene.getEngine());
-      if (!round() || compiledEffectCount(this.scene.getEngine()) !== effects) this.scopedMismatches += 1;
+    if (this.unscopedMark) {
+      this.noteFailedProbe();
+      return false;
     }
+    if (verifiesScopedReadinessProbes() && !this.wholeProbeAgrees(round)) this.scopedMismatches += 1;
     return true;
+  }
+
+  /**
+   * Verification: a probe of every mesh right after a scoped one that passed must pass too and ask the Engine for no
+   * Effect. One it creates is a variant the scoped probe left uncompiled; one it asks for again is a mesh outside the
+   * scope whose variant changed. A scoped probe that found a swap pending left a variant unadopted, which every probe
+   * asks for again: then only a new Effect counts.
+   */
+  private wholeProbeAgrees(round: () => boolean): boolean {
+    const engine = this.scene.getEngine();
+    const swapped = this.probeSwapped;
+    const effects = compiledEffectCount(engine);
+    let passed = false;
+    const requests = countEffectRequests(engine, () => { passed = round(); });
+    return passed && compiledEffectCount(engine) === effects && (swapped || requests === 0);
   }
 
   /**

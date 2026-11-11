@@ -1029,11 +1029,17 @@ it("counts a scoped probe that a probe of every mesh disagrees with, while verif
     graph.markReadinessDirty("particleBind", []);
     expect(steadyProbe()).toBe(true);
     expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 1, scopedReadinessMismatches: 0 });
-    // A mark that names too few meshes: the kept mesh is not ready, and only the probe of every mesh sees it.
-    vi.spyOn(keptMaterial, "isReadyForSubMesh").mockReturnValue(false);
+    // A mark that names too few meshes. The kept mesh's variant changed to one the Engine already holds: nothing new
+    // compiles, and only the probe of every mesh asks for it.
+    keptMaterial.markAsDirty(Constants.MATERIAL_AllDirtyFlag);
     graph.markReadinessDirty("particleBind", []);
     expect(steadyProbe()).toBe(true);
     expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 2, scopedReadinessMismatches: 1 });
+    // The kept mesh is not ready, and only the probe of every mesh sees it.
+    vi.spyOn(keptMaterial, "isReadyForSubMesh").mockReturnValue(false);
+    graph.markReadinessDirty("particleBind", []);
+    expect(steadyProbe()).toBe(true);
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 3, scopedReadinessMismatches: 2 });
   } finally {
     verifyScopedReadinessProbes(false);
     graph.dispose();
