@@ -556,39 +556,43 @@ export class SceneShadowController {
     if (scene.meshes.length !== this.knownMeshCount - this.removedSinceScan)
       this.queueUnknownMeshes();
     const hadPending = this.pending.size > 0;
+    // Whether a pending mesh came out receiving differently, or joined or left the casters: what changes a Material
+    // variant or a map's list. A pool member that changes moves to another group, which marks readiness itself.
+    let applied = false;
+    const leaveCasters = (mesh: AbstractMesh) => {
+      if (!this.meshes.delete(mesh)) return;
+      applied = true;
+      this.spatial.remove(mesh);
+      this.maps.retained?.release(mesh);
+      this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
+    };
+    const setFlags = (mesh: AbstractMesh, receives: boolean, casts: boolean) => {
+      const received = mesh.receiveShadows;
+      setMeshShadowFlags(mesh, receives, casts);
+      if (mesh.receiveShadows !== received) applied = true;
+    };
     for (const mesh of this.pending) {
       if (mesh.isDisposed() || !this.listed(mesh)) continue;
       // Shadow maps draw the selected level through its master caster, and a
       // level mirrors its master's receiveShadows.
       if (mesh.isBlocked) {
-        if (this.meshes.delete(mesh)) {
-          this.spatial.remove(mesh);
-          this.maps.retained?.release(mesh);
-          this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
-        }
+        leaveCasters(mesh);
         continue;
       }
       if (!participatesInShadows(mesh)) {
-        setMeshShadowFlags(mesh, false, false);
-        if (this.meshes.delete(mesh)) {
-          this.spatial.remove(mesh);
-          this.maps.retained?.release(mesh);
-          this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
-        }
+        setFlags(mesh, false, false);
+        leaveCasters(mesh);
         continue;
       }
       const participation = authoredShadowParticipation(mesh);
       const casts = participation.castShadows !== false && !neverCastsShadows(mesh);
       // A pool member receives and casts as its group does: it moves to the group that matches.
-      setMeshShadowFlags(mesh, participation.receiveShadows !== false, casts || participation.spawnStandIn === true);
+      setFlags(mesh, participation.receiveShadows !== false, casts || participation.spawnStandIn === true);
       if (!casts) {
-        if (this.meshes.delete(mesh)) {
-          this.spatial.remove(mesh);
-          this.maps.retained?.release(mesh);
-          this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
-        }
+        leaveCasters(mesh);
         continue;
       }
+      if (!this.meshes.has(mesh)) applied = true;
       this.meshes.add(mesh);
       this.spatial.add(mesh);
       partitionShadowGeometry(mesh);
@@ -596,8 +600,9 @@ export class SceneShadowController {
     }
     this.pending.clear();
     // Caster participation and receiveShadows changed material defines or map
-    // membership; cached strict readiness no longer applies.
-    if (hadPending) markSceneReadinessDirty(scene, "shadowCasters");
+    // membership; cached strict readiness no longer applies. A pending mesh that came out as it was (one that neither
+    // casts nor receives, one queued twice) changed neither.
+    if (applied) markSceneReadinessDirty(scene, "shadowCasters");
     let changed = hadPending;
     // Without a map nothing reads caster state, so the walk waits for the first
     // allocation; kept snapshots make the late walk report only real changes.

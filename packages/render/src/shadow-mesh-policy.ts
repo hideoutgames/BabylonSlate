@@ -30,8 +30,11 @@ export function authoredShadowParticipation(
   }
   return {};
 }
-/** Visible geometry-less particle emitters would otherwise refresh shadow maps every frame. */
-const PARTICLE_EMITTER_PREFIX = "particleEmitter:";
+/**
+ * Visible geometry-less particle emitters would otherwise refresh shadow maps every frame: an actor's slot emitters
+ * and the ones a Spawn Emitter makes (`particle-service.ts`).
+ */
+const PARTICLE_EMITTER_PREFIXES = ["particleEmitter:", "particleSpawn:"];
 
 export function participatesInShadows(mesh: AbstractMesh): boolean {
   // A LOD level is drawn by its master's shadow-map entry.
@@ -39,7 +42,7 @@ export function participatesInShadows(mesh: AbstractMesh): boolean {
   if (mesh.name.startsWith("__")) return false;
   if (isSkyboxMesh(mesh)) return false;
   if (mesh instanceof LinesMesh) return false;
-  if (mesh.name.startsWith(PARTICLE_EMITTER_PREFIX)) return false;
+  if (PARTICLE_EMITTER_PREFIXES.some((prefix) => mesh.name.startsWith(prefix))) return false;
   return !isEditorHelperMesh(mesh);
 }
 

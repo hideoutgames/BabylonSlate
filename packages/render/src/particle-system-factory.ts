@@ -26,6 +26,7 @@ import type {
 import { prewarmMaterial } from "./material-compiler";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { prepareNodeMaterialParticleBindings, syncParticleBlendProgram } from "./node-material-particles";
+import { createParticleReadinessPlaceholder } from "./particle-readiness-texture";
 import { PARTICLE_BILLBOARD_MODES, PARTICLE_BLEND_MODES } from "./particle-render-modes";
 import { markSceneReadinessDirty } from "./scene-perf";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
@@ -48,8 +49,8 @@ export function particleSimBackend(engine: AbstractEngine, requested = true): Pa
  * it is assigned to and released by that system's default `dispose()`.
  */
 export function createParticleReadinessTexture(scene: Scene): RawTexture {
-  const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, scene,
-    false, false, Constants.TEXTURE_NEAREST_SAMPLINGMODE);
+  const texture = createParticleReadinessPlaceholder(scene, () => RawTexture.CreateRGBATexture(
+    new Uint8Array([255, 255, 255, 255]), 1, 1, scene, false, false, Constants.TEXTURE_NEAREST_SAMPLINGMODE));
   texture.name = "slate:particleReadiness";
   return texture;
 }

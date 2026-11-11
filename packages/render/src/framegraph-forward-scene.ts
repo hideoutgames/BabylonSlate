@@ -43,6 +43,7 @@ import { ViewOcclusion, type ViewOcclusionDiagnostics } from "./view-occlusion";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import { isSceneFrameReady, type SceneReadinessDirtyReason, withSceneReadinessState } from "./scene-perf";
+import { isParticleReadinessTexture, particleReadinessTextureCount } from "./particle-readiness-texture";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
@@ -135,7 +136,8 @@ const membershipCounts: readonly ((scene: Scene) => number)[] = [
   (scene) => scene.meshes.length,
   (scene) => scene.materials.length,
   (scene) => scene.lights.length,
-  (scene) => scene.textures.length,
+  // Not the placeholders particle systems hold for Babylon's readiness: nothing draws one.
+  (scene) => scene.textures.length - particleReadinessTextureCount(scene),
   (scene) => scene.cameras.length,
   (scene) => scene.skeletons.length,
   (scene) => scene.particleSystems.length,
@@ -147,6 +149,10 @@ const membershipCounts: readonly ((scene: Scene) => number)[] = [
   (scene) => (scene as unknown as { _isReadyChecks?: { length: number }[] })
     ._isReadyChecks?.length ?? 0,
 ];
+
+/** Where `membershipCounts` counts the Scene's meshes and particle systems. */
+const MESH_COUNT = 0;
+const PARTICLE_SYSTEM_COUNT = 6;
 
 const NO_CULLED_MESHES: readonly AbstractMesh[] = [];
 /** What a spatial geometry pass draws of a view's culled meshes: everything but editor and Play helper visuals. */
@@ -346,6 +352,14 @@ export class ForwardSceneFrameGraph {
   private drawnRevision: number | undefined;
   private readonly membership: number[] = [];
   private membershipRecorded = false;
+  /** The Scene's meshes this graph has marked or been told of. */
+  private readonly knownMeshes = new WeakSet<AbstractMesh>();
+  /** Meshes the membership count found, and marked, before Babylon announced them. */
+  private readonly foundBeforeAnnounced = new WeakSet<AbstractMesh>();
+  /** Mesh removals Babylon announced since the last membership count (it announces a removal at once). */
+  private removedMeshes = 0;
+  /** The Scene's particle systems this graph has seen. */
+  private readonly knownParticleSystems = new WeakSet<object>();
   private strictChecks = 0;
   // One-shot record of readiness()'s admission for an immediately following
   // render. Any invalidation bumps the revision; a strict probe bumps checks.
@@ -385,14 +399,34 @@ export class ForwardSceneFrameGraph {
       const observer = observable.add(notify);
       this.readinessDetach.push(() => observable.remove(observer));
     };
-    watch(scene.onNewMeshAddedObservable, (mesh) => { this.watchMesh(mesh); this.markReadinessDirty("meshAdded"); });
-    watch(scene.onMeshRemovedObservable, (mesh) => { this.unwatchMesh(mesh); this.markReadinessDirty("meshRemoved"); });
+    watch(scene.onNewMeshAddedObservable, (mesh) => {
+      this.watchMesh(mesh);
+      // Babylon announces an added mesh on a later task: a frame drawn before then found it by the Scene's mesh count
+      // and marked it, and its probe has run.
+      if (this.foundBeforeAnnounced.delete(mesh)) return;
+      this.knownMeshes.add(mesh);
+      this.markReadinessDirty("meshAdded");
+    });
+    watch(scene.onMeshRemovedObservable, (mesh) => {
+      this.unwatchMesh(mesh);
+      this.knownMeshes.delete(mesh);
+      this.foundBeforeAnnounced.delete(mesh);
+      this.removedMeshes += 1;
+      // A mesh that leaves needs nothing compiled. An instance's source can: its batch may draw with another variant
+      // once the instance is gone (its last one, so it draws without instancing again; a pool group's warm-up stand-in).
+      if (mesh.isAnInstance) this.markReadinessDirty("meshRemoved");
+    });
     watch(scene.onNewMaterialAddedObservable, mark("materialAdded"));
     watch(scene.onMaterialRemovedObservable, mark("materialRemoved"));
     watch(scene.onNewLightAddedObservable, (light) => { this.watchLight(light); this.markReadinessDirty("lightAdded"); });
     watch(scene.onLightRemovedObservable, (light) => { this.unwatchLight(light); this.markReadinessDirty("lightRemoved"); });
-    watch(scene.onNewTextureAddedObservable, mark("textureAdded"));
-    watch(scene.onTextureRemovedObservable, mark("textureRemoved"));
+    // A particle system's readiness placeholder is drawn by nothing (`particle-readiness-texture.ts`).
+    watch(scene.onNewTextureAddedObservable, (texture) => {
+      if (!isParticleReadinessTexture(texture)) this.markReadinessDirty("textureAdded");
+    });
+    watch(scene.onTextureRemovedObservable, (texture) => {
+      if (!isParticleReadinessTexture(texture)) this.markReadinessDirty("textureRemoved");
+    });
     watch(scene.onNewCameraAddedObservable, mark("cameraAdded"));
     watch(scene.onCameraRemovedObservable, mark("cameraRemoved"));
     // Babylon clears and restores activeCamera inside its own graph render;
@@ -402,7 +436,11 @@ export class ForwardSceneFrameGraph {
     });
     watch(scene.onNewSkeletonAddedObservable, mark("skeletonAdded"));
     watch(scene.onSkeletonRemovedObservable, mark("skeletonRemoved"));
-    for (const mesh of scene.meshes) this.watchMesh(mesh);
+    for (const mesh of scene.meshes) {
+      this.watchMesh(mesh);
+      this.knownMeshes.add(mesh);
+    }
+    for (const system of scene.particleSystems) this.knownParticleSystems.add(system);
     for (const light of scene.lights) this.watchLight(light);
     // Babylon 9.29 clears activeCamera at the start of its graph render method.
     // Restore it before existing lighting/floating-origin/lifecycle observers.
@@ -750,13 +788,42 @@ export class ForwardSceneFrameGraph {
     let changed = false;
     for (let index = 0; index < membershipCounts.length; index += 1) {
       const count = membershipCounts[index]!(this.scene);
-      if (count === membership[index]) continue;
+      const previous = membership[index];
       membership[index] = count;
-      changed = true;
+      if (index === PARTICLE_SYSTEM_COUNT) {
+        // A particle system that left needs nothing compiled, and Babylon takes a disposed one out of the Scene
+        // without announcing it: a changed count counts only when it holds a system not seen before.
+        if (count !== previous && (this.holdsNewParticleSystem() || previous === undefined)) changed = true;
+        continue;
+      }
+      // Meshes that left need nothing compiled either: a count that fell by exactly the removals announced since the
+      // last one holds no addition (one that fell by fewer does, added in the same frame).
+      const removed = index === MESH_COUNT ? this.removedMeshes : 0;
+      if (previous === undefined || count !== previous - removed) changed = true;
     }
+    this.removedMeshes = 0;
     // The first call only records the sizes.
-    if (changed && this.membershipRecorded) this.markReadinessDirty("membership");
+    if (changed && this.membershipRecorded) {
+      // Babylon will announce these meshes on a later task: this mark stands for that one.
+      for (const mesh of this.scene.meshes) {
+        if (this.knownMeshes.has(mesh)) continue;
+        this.knownMeshes.add(mesh);
+        this.foundBeforeAnnounced.add(mesh);
+      }
+      this.markReadinessDirty("membership");
+    }
     this.membershipRecorded = true;
+  }
+
+  /** Whether the Scene holds a particle system this graph has not seen; every one it holds counts as seen afterwards. */
+  private holdsNewParticleSystem(): boolean {
+    let found = false;
+    for (const system of this.scene.particleSystems) {
+      if (this.knownParticleSystems.has(system)) continue;
+      this.knownParticleSystems.add(system);
+      found = true;
+    }
+    return found;
   }
 
   /** Assign activeCamera without tripping any graph's readiness-dirty subscription. */
