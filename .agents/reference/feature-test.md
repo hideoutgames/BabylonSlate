@@ -209,6 +209,18 @@ A switched backend or quality is saved before the first scene opens; scene edits
 | `HAPTIC_PERF_SETTLE_MS` | 8000 | How long after ready the settled window keeps counting |
 | `HAPTIC_PERF_LABEL`, `HAPTIC_PERF_OUT` | none | Label; extra report path |
 
+### Heap route
+
+`e2e/feature-test-heap-route.spec.ts` (opt-in `HAPTIC_PERF_HEAP=1`, same config) looks for memory that grows with every frame. It creates FeatureTest, then for each scene measures the page's live JavaScript heap over a window of the editor's viewport and a window of Play, and times Stop. Live heap is read through the DevTools protocol after a forced collection (`HeapProfiler.collectGarbage`, `Runtime.getHeapUsage`), so garbage does not count; a heap that grows steadily while nothing changes is a leak. Each window reports its readings, the growth in megabytes per minute (least squares over the readings) and what it allocated that is still alive at its end, by allocating function, from the sampling heap profiler: the test build is minified, so read those names from a build that is not (`vite build --minify false`). Stop's time is there because a leak that registers observers pays for them at Stop, one removal each. It asserts only that the route ran cleanly, unless `HAPTIC_PERF_HEAP_BUDGET` gives a rate neither window may exceed. A real GPU (`perf-gpu`) is needed for main-scene Play.
+
+| Env | Default | Effect |
+| --- | --- | --- |
+| `HAPTIC_PERF_SCENES` | `main` | Any of `main`, `stress`, `world`, `lights`, `occlusion`, `2d` |
+| `HAPTIC_PERF_HEAP_MS` | 60000 | Length of each window (ten readings) |
+| `HAPTIC_PERF_WARMUP_MS` / `HAPTIC_PERF_SETTLE_MS` | 15000 / 8000 | Play before its window; the editor before its window |
+| `HAPTIC_PERF_HEAP_BUDGET` | none | Megabytes per minute either window may grow before the route fails |
+| `HAPTIC_PERF_LABEL`, `HAPTIC_PERF_OUT` | none | Label; extra report path |
+
 ## Verification
 
 [`apps/editor/src/services/project-service.feature-test.test.ts`](../../apps/editor/src/services/project-service.feature-test.test.ts) (node) creates the project in memory and reopens it. It requires every `ENGINE_COMPONENT_CLASS_IDS` entry (`packages/core/src/engine-components.ts`), every creatable (`CREATABLE_ASSET_TYPES`) and imported asset type, and every `ENGINE_BASE_CLASSES` entry to be present; every dependency to resolve; every document to decode; Play validation to report no errors; every compiled script to load the way Play loads it; every Material and Material Instance to compile; every Particle and Animation Graph to validate; every Scene to open clean (the open-time prefab instance sync leaves it unmodified, so the next Scene opens without an Unsaved Documents prompt); and physics pairing to be clean. Class instances are authored in the form that sync produces, for example both Mesh material override keys. In the browser, [`e2e/feature-test-smoke.spec.ts`](../../e2e/feature-test-smoke.spec.ts) (part of the required e2e shards, about 4 minutes) creates the starter, opens the main scene in the editor viewport, plays it on software GL until the load has finished, Scene Layers included (`frameAdmission.worldLoading` false and no Scene Loading dialog; Play draws frames minutes earlier), and for three seconds more, and fails on any Preview Session Report error, so a renderer combination that fails to load or warm (an outline beside a Mirror once did) or raises a WebGL error that fails the presentation (the built-in Mirror surface's geometry-pass draw once did) fails in CI; a Scene Layer load starving behind the world's slow frames (the HUD's once took ten minutes more) fails it too; the other browser routes are perf-only.
