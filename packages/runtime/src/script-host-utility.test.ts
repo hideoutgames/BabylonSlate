@@ -76,6 +76,9 @@ describe("ScriptHost utility bindings", () => {
     const ints = Array.from({ length: 20 }, () => ctx.random.int(2, 4));
     expect(ints.every((value) => value >= 2 && value <= 4)).toBe(true);
     expect(new Set(ints).size).toBeGreaterThan(1);
+    // Bounds beyond 32 bits are kept, not wrapped to a negative Int.
+    const wide = Array.from({ length: 20 }, () => ctx.random.int(3_000_000_000, 3_000_000_010));
+    expect(wide.every((value) => value >= 3_000_000_000 && value <= 3_000_000_010)).toBe(true);
 
     const bools = Array.from({ length: 20 }, () => ctx.random.bool());
     expect(bools.some(Boolean)).toBe(true);
@@ -253,7 +256,11 @@ describe("ScriptHost utility bindings", () => {
 
     // Query the current scene each time, rather than retaining earlier results.
     const ctx = host.createContext(runner, 0, 0);
+    // Get Component on one actor matches a subclass too: the Shield comes before the first live Health.
+    expect(ctx.getComponent(firstActor, "Health")).toBe(first);
+    expect(ctx.getComponent(secondActor, "Shield")).toBeNull();
     first.destroyed = true;
+    expect(ctx.getComponent(firstActor, "Health")).toBe(second);
     expect(ctx.getFirstComponentOfType("Health")).toBe(second);
     const added = new ActorComponent({ classId: "Shield" });
     secondActor.attachComponent(added);

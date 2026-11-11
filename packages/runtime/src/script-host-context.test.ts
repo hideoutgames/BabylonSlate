@@ -23,8 +23,8 @@ function script(classId: string, source: string, extra: Partial<CompiledScript> 
   return { assetGuid: `${classId}-asset`, classId, source, anchors: [], entryPoints: [], ...extra };
 }
 
-function tickWith(dt: number, tickIndex: number, held: boolean): TickContext {
-  return { dt, tickIndex, world: { rngNextFloat: () => 0 }, isActionHeld: () => held };
+function tickWith(dt: number, tickIndex: number): TickContext {
+  return { dt, tickIndex, world: { rngNextFloat: () => 0 } };
 }
 
 const flush = async () => { for (let index = 0; index < 12; index++) await Promise.resolve(); };
@@ -108,11 +108,11 @@ describe("ScriptContext members", () => {
     expect(b.getVariable("hp")).toBe(9);
   });
 
-  it("gives each dispatch its own self, delta, tick index, input and arguments", async () => {
+  it("gives each dispatch its own self, delta, tick index and arguments", async () => {
     const host = new ScriptHost(services());
     await host.load(script("Hero", [
       "export function onTick(ctx) {",
-      "  ctx.self.setVariable('seen', [ctx.self.guid, ctx.deltaSeconds, ctx.tickIndex, ctx.getVariable('tag'), ctx.isActionHeld('Jump'), ctx.args]);",
+      "  ctx.self.setVariable('seen', [ctx.self.guid, ctx.deltaSeconds, ctx.tickIndex, ctx.getVariable('tag'), ctx.args]);",
       "}",
     ].join("\n"), { entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }] }));
     const a = new Actor({ classId: "Hero", guid: "a" });
@@ -121,11 +121,37 @@ describe("ScriptContext members", () => {
     b.setVariable("tag", "B");
     const hooks = host.hooksFor("Hero")!;
 
-    hooks.onTick!(a, tickWith(0.1, 1, true));
-    hooks.onTick!(b, tickWith(0.2, 2, false));
+    hooks.onTick!(a, tickWith(0.1, 1));
+    hooks.onTick!(b, tickWith(0.2, 2));
 
-    expect(a.getVariable("seen")).toEqual(["a", 0.1, 1, "A", true, {}]);
-    expect(b.getVariable("seen")).toEqual(["b", 0.2, 2, "B", false, {}]);
+    expect(a.getVariable("seen")).toEqual(["a", 0.1, 1, "A", {}]);
+    expect(b.getVariable("seen")).toEqual(["b", 0.2, 2, "B", {}]);
+  });
+});
+
+describe("ScriptContext input", () => {
+  it("reads the host's input from a call no tick dispatched", async () => {
+    const rumbles: number[][] = [];
+    const host = new ScriptHost(services({
+      input: {
+        getCursorPosition: () => ({ x: 80, y: 24, pressed: true }),
+        getTouches: () => [],
+        setGamepadRumble: (...args) => { rumbles.push(args); },
+      },
+    }));
+    await host.load(script("Hero", [
+      "export function begin(ctx) {",
+      "  const cursor = ctx.getCursorPosition();",
+      "  ctx.self.setVariable('cursor', [cursor.x, cursor.y]);",
+      "  ctx.setGamepadRumble(0, 0.5, 100);",
+      "}",
+    ].join("\n"), { entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: false }] }));
+    const hero = new Actor({ classId: "Hero", guid: "hero" });
+
+    host.hooksFor("Hero")!.onCreation!(hero);
+
+    expect(hero.getVariable("cursor")).toEqual([80, 24]);
+    expect(rumbles).toEqual([[0, 0.5, 100]]);
   });
 });
 
@@ -133,7 +159,7 @@ describe("ScriptContext shape", () => {
   it("builds a context without creating a function for it", () => {
     const host = new ScriptHost(services());
     const first = host.createContext(null, 0, 0) as unknown as Record<string, unknown>;
-    const second = host.createContext(new Actor({ classId: "Hero", guid: "a" }), 0.1, 1, { x: 1 }, tickWith(0.1, 1, true)) as unknown as Record<string, unknown>;
+    const second = host.createContext(new Actor({ classId: "Hero", guid: "a" }), 0.1, 1, { x: 1 }) as unknown as Record<string, unknown>;
 
     // Every script call builds a context, so a member made per context is made per call: each function a
     // context offers, its own or inherited, must be the one every other context of the host offers.
@@ -143,7 +169,7 @@ describe("ScriptContext shape", () => {
       functions.push(key);
       expect(second[key], key).toBe(first[key]);
     }
-    expect(functions).toEqual(expect.arrayContaining(["getVariable", "setVariable", "spawnActor", "invokeFunction", "isActionHeld", "log", "print"]));
+    expect(functions).toEqual(expect.arrayContaining(["getVariable", "setVariable", "spawnActor", "invokeFunction", "getCursorPosition", "log", "print"]));
     expect(second.random).toBe(first.random);
   });
 
@@ -171,14 +197,14 @@ describe("ScriptContext shape", () => {
 });
 
 describe("ScriptContext captured by a pending latent run", () => {
-  it("keeps its own self, delta, tick index and input while other dispatches run, including its own re-entry", async () => {
+  it("keeps its own self, delta and tick index while other dispatches run, including its own re-entry", async () => {
     const gates: Array<() => void> = [];
     const host = new ScriptHost(services({ delay: () => new Promise<void>((resolve) => { gates.push(resolve); }) }));
     await host.load(script("Hero", [
       "export async function onTick(ctx) {",
       "  ctx.self.setVariable('runs', (ctx.self.getVariable('runs') ?? 0) + 1);",
       "  await ctx.delay(1);",
-      "  const resumed = [ctx.self.guid, ctx.deltaSeconds, ctx.tickIndex, ctx.getVariable('tag'), ctx.isActionHeld('Jump')];",
+      "  const resumed = [ctx.self.guid, ctx.deltaSeconds, ctx.tickIndex, ctx.getVariable('tag')];",
       "  ctx.self.setVariable('resumed', [...(ctx.self.getVariable('resumed') ?? []), resumed]);",
       "}",
     ].join("\n"), { entryPoints: [{ name: "onTick", event: "onTick", isAsync: true }] }));
@@ -188,9 +214,9 @@ describe("ScriptContext captured by a pending latent run", () => {
     b.setVariable("tag", "B");
     const hooks = host.hooksFor("Hero")!;
 
-    hooks.onTick!(a, tickWith(0.1, 1, true));
-    hooks.onTick!(b, tickWith(0.2, 2, false));
-    hooks.onTick!(a, tickWith(0.3, 3, false));
+    hooks.onTick!(a, tickWith(0.1, 1));
+    hooks.onTick!(b, tickWith(0.2, 2));
+    hooks.onTick!(a, tickWith(0.3, 3));
 
     // Actor a's second tick starts its own run while the first still waits.
     expect(gates).toHaveLength(3);
@@ -200,7 +226,7 @@ describe("ScriptContext captured by a pending latent run", () => {
     for (const open of gates) open();
     await flush();
 
-    expect(a.getVariable("resumed")).toEqual([["a", 0.1, 1, "A", true], ["a", 0.3, 3, "A", false]]);
-    expect(b.getVariable("resumed")).toEqual([["b", 0.2, 2, "B", false]]);
+    expect(a.getVariable("resumed")).toEqual([["a", 0.1, 1, "A"], ["a", 0.3, 3, "A"]]);
+    expect(b.getVariable("resumed")).toEqual([["b", 0.2, 2, "B"]]);
   });
 });

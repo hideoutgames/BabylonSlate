@@ -30,3 +30,4 @@ Lists the saved slots of a profile.
 - An empty **Profile** uses the project's default profile.
 - Each entry has a status of ok, corrupt or incompatible, so damaged slots are listed too.
 - Latent: the node finishes later without pausing the rest of the game.
+- If the object that ran the node is destroyed before it finishes, the operation still completes but neither **Completed** nor **Failed** runs.

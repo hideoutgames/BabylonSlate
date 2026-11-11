@@ -368,8 +368,8 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
           size.safeAreaInsets,
         );
     },
-    onAudioVoiceEnded: (voiceId) => {
-      const control = { type: "audioVoiceEnded" as const, voiceId };
+    onAudioVoiceEnded: (voiceId, dropped) => {
+      const control = { type: "audioVoiceEnded" as const, voiceId, ...(dropped ? { dropped: true } : {}) };
       if (worker) worker.postControl(control);
       else runtime?.applyAudioVoiceEnded(control);
     },

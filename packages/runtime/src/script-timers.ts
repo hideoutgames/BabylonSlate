@@ -23,7 +23,8 @@ export const TIMER_MAX_FIRES_PER_STEP = 64;
 /**
  * Set Timer By Event timers, counted in simulation time (so they follow time dilation) while their
  * owner may run; during a game pause only owners that tick on pause count. A timer fires its event
- * when its interval ends; a looping one then starts the next. Timers end with their owner or the
+ * when its interval ends; a looping one then starts the next. An event has one timer: setting it again
+ * restarts it. Timers end with their owner or the
  * delegate's object, and when Play stops. Handles are ids from 1; 0 is no timer.
  */
 export class ScriptTimers implements RuntimeSubsystem {
@@ -41,14 +42,20 @@ export class ScriptTimers implements RuntimeSubsystem {
   }
 
   /**
-   * Starts a timer, returning its id, or 0 when `time` is not above 0. A `startDelay` above 0 lengthens
-   * only the first interval, as Unreal's Initial Start Delay does.
+   * Starts the event's timer, replacing the one it already had, and returns its id, or 0 when `time` is
+   * not above 0 (which leaves a running timer alone). A `startDelay` above 0 lengthens only the first
+   * interval.
    */
   set(owner: EngineObject | null, delegate: EventDelegate, time: unknown, looping: unknown, startDelay?: unknown): number {
     const rate = Number(time);
     if (!Number.isFinite(rate) || rate <= 0) return 0;
     const delay = Number(startDelay);
     const interval = rate + (Number.isFinite(delay) && delay > 0 ? delay : 0);
+    // One timer per event: setting it again restarts it, and its earlier handle no longer names a timer.
+    for (const timer of this.timers.values()) {
+      const bound = timer.delegate;
+      if (bound.object === delegate.object && bound.name === delegate.name && bound.kind === delegate.kind) this.timers.delete(timer.id);
+    }
     const id = this.nextId++;
     this.timers.set(id, { id, owner, delegate, rate, looping: looping === true, interval, remaining: interval, paused: false });
     return id;

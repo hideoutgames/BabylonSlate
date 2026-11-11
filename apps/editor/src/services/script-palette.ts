@@ -325,6 +325,7 @@ function scriptPaletteCatalogNodes(
   return nodeRegistry
     .list()
     .filter((def) => {
+      if (def.internal) return false;
       if ((def.id.startsWith("saveGame.") || def.id === "flow.event.gameLoaded" || def.id === "flow.event.saveMigration") && isEditorGraphHost(options ?? {})) return false;
       // Events, custom ones included, belong in the Event Graph; a function runs from its own entry node.
       if (options?.activeFunctionId && isEventEntryNodeType(def.id)) return false;

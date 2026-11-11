@@ -99,6 +99,31 @@ describe("script load handles in a running session", () => {
     } finally { runtime.stop(); }
   });
 
+  it("releases the load handles of a created object once nothing references it", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, sessionGeneration: 1,
+      playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Loader" })] }, playSceneGuid: "root",
+      classAssetGuids: { Loader: "loader-script", Crate: "crate-script" }, onCommand: command => commands.push(command) });
+    await runtime.loadScripts([
+      { classId: "Loader", parentClassId: "Actor", assetGuid: "loader-script", anchors: [],
+        source: `export function begin(ctx) { ctx.createObject("Crate"); ctx.collectGarbage(); }`,
+        entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: false }] },
+      { classId: "Crate", parentClassId: "Object", assetGuid: "crate-script", anchors: [],
+        source: `export function init(ctx) { ctx.requestAssetLoad(["tree"]); }`,
+        entryPoints: [{ name: "init", event: "onInit", isAsync: false }] },
+    ]);
+    await runtime.realizePlayWorld();
+    runtime.start();
+    try {
+      const [tree] = requests(commands);
+      expect(tree).toMatchObject({ assetGuids: ["tree"] });
+      expect(releases(commands)).toEqual([]);
+      // The requested pass runs at the end of the next tick and finds the Crate unreachable.
+      runtime.tick();
+      expect(releases(commands)).toEqual([tree!.preloadId]);
+    } finally { runtime.stop(); }
+  });
+
   it("Unload Asset releases the caller's handle that includes the asset and Release drops one handle", async () => {
     const { runtime, commands, actor } = await start(`export async function begin(ctx) {
       const both = ctx.requestAssetLoad(["tree", "rock"]);

@@ -4,12 +4,14 @@ import {
   emptyWaterSample,
   idleDeviceMotion,
   lookAtRotator,
+  randomInt,
   rotatorToQuat,
   SaveGameError,
   updateDeformerProperties,
   type RenderTargetCaptureProperty,
   type RandomStream,
   type SaveGameMigrationData,
+  type SaveGameService,
   type SaveGameValue,
 } from "@haptic/core";
 import {
@@ -23,7 +25,6 @@ import {
   SceneLayer,
   dispatchInterface,
   type InterfaceDispatchTarget,
-  type TickContext,
 } from "@haptic/object-model";
 import { animExitTimeReached } from "@haptic/anim-graph";
 import { isInfiniteLoopError } from "@haptic/debugger";
@@ -55,6 +56,7 @@ import {
   ownedSceneActor,
   refuseParentCycle,
   requireSaveGameService,
+  saveGameUnavailable,
   resolveLiveActor,
   resolveLiveActors,
   transformTarget,
@@ -71,6 +73,7 @@ const EMPTY_DATA = new RuntimeDataCatalog();
 const UNAVAILABLE_EDITOR_DATA = createUnavailableEditorDataApi();
 /** Behaviour Tree hooks of a context without a Behaviour Tree run: they do nothing and read nothing. */
 const NO_BT_HOOK = (): undefined => undefined;
+const NO_GAMEPAD_CONNECTIONS: NonNullable<ScriptContext["gamepadConnections"]> = Object.freeze([]);
 
 const ASSET_LOADING_UNAVAILABLE = "Asset loading is unavailable in this host";
 
@@ -92,7 +95,7 @@ export interface ScriptContextHost extends ComponentFunctionHost {
   flowStateFor(owner: EngineObject | null, nodeId: string, namespace: string): Record<string, unknown>;
   /** Runs `run` with `frame` as the `ctx.callInterface` caller, whose frame its interface handler runs in. */
   withInterfaceCaller<T>(frame: CallerFrame, run: () => T): T;
-  invokeSaveMigration(self: EngineObject, event: string, snapshot: SaveGameMigrationData): Promise<void>;
+  registerSaveMigration(service: SaveGameService, fromVersion: number, owner: EngineObject, event: string): void;
   eventScriptsFor(classId: string, event: string, self: EngineObject | null, componentId?: string): LoadedScript[] | undefined;
   functionScriptsFor(classId: string, exportName: string): LoadedScript[] | undefined;
   dispatchEvent(
@@ -102,7 +105,6 @@ export interface ScriptContextHost extends ComponentFunctionHost {
     deltaSeconds: number,
     tickIndex: number,
     commandArgs?: Record<string, unknown>,
-    tick?: TickContext,
     extras?: ScriptExtras,
     componentId?: string,
   ): { error: unknown } | null;
@@ -116,7 +118,6 @@ export type ScriptContextConstructor = new (
   deltaSeconds: number,
   tickIndex: number,
   commandArgs?: Record<string, unknown>,
-  tick?: TickContext,
   extras?: ScriptExtras,
   flowNamespace?: string,
 ) => ScriptContext;
@@ -127,6 +128,12 @@ type CallValueKey =
   | "inputBindings" | "getInputState" | "gamepadConnections" | "btFinish" | "btEvaluate" | "getBlackboard" | "setBlackboard";
 /** The members that act on a call's state: methods every context of a host shares. */
 type CallMethods = Omit<ScriptContext, HostContextKey | CallValueKey | "random">;
+
+/** The extras that follow a call onto another object: the staged migration and the command result, not the caller's instance state. */
+function chainExtras(extras: ScriptExtras | undefined): ScriptExtras | undefined {
+  if (!extras?.saveMigrationData && !extras?.commandResult) return undefined;
+  return { saveMigrationData: extras.saveMigrationData, commandResult: extras.commandResult };
+}
 
 function migrationData(extras: ScriptExtras | undefined, commandArgs: Record<string, unknown>): SaveGameMigrationData {
   const data = extras?.saveMigrationData ?? commandArgs.saveMigrationData as SaveGameMigrationData | undefined;
@@ -146,6 +153,17 @@ function migrationData(extras: ScriptExtras | undefined, commandArgs: Record<str
  */
 export function createScriptContextClass(host: ScriptContextHost): ScriptContextConstructor {
   const services = host.services;
+  const input = services.input;
+  /**
+   * A host operation awaited for one caller: its graph continues only while the simulation runs and
+   * the caller lives. The operation itself is never cancelled.
+   */
+  const forCaller = async <T>(owner: EngineObject | null, work: Promise<T>): Promise<T> => {
+    const result = await work;
+    await services.waitForSimulation?.(owner);
+    if (owner?.destroyed) throw new LatentCallAborted("The caller was destroyed");
+    return result;
+  };
   const screenProjection = (hit: ReturnType<NonNullable<ScriptHostServices["projectCursorToScene"]>> | undefined): ScreenProjection => ({
     hit: hit?.hit === true,
     location: hit?.location ?? null,
@@ -180,14 +198,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
   // One generator for every context of the host; each context draws from the host RNG, in call order.
   const random: ScriptContext["random"] = {
     float: () => host.rng.nextFloat(),
-    int: (min, max) => {
-      const a = Number(min) | 0;
-      const b = Number(max) | 0;
-      const lo = Math.min(a, b);
-      const hi = Math.max(a, b);
-      if (hi === lo) return lo;
-      return lo + (host.rng.next() % (hi - lo + 1));
-    },
+    int: (min, max) => randomInt(host.rng, min, max),
     bool: () => host.rng.nextFloat() < 0.5,
   };
 
@@ -212,7 +223,6 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
     readonly #store: NonNullable<ScriptExtras["variableStore"]> | EngineObject | null;
     /** Also the Scene query caller: queries answer from this object's world, so a static Function Library call keeps its caller's. */
     readonly #owner: EngineObject | null;
-    readonly #tick: TickContext | undefined;
     readonly #extras: ScriptExtras | undefined;
     readonly #flowNamespace: string;
 
@@ -221,7 +231,6 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
       deltaSeconds: number,
       tickIndex: number,
       commandArgs: Record<string, unknown> = {},
-      tick?: TickContext,
       extras?: ScriptExtras,
       flowNamespace = "",
     ) {
@@ -239,14 +248,13 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
       this.animFacts = extras?.animFacts;
       this.inputBindings = services.inputBindings;
       this.getInputState = services.getInputState;
-      this.gamepadConnections = tick?.gamepadConnections ?? [];
+      this.gamepadConnections = input?.gamepadConnections ?? NO_GAMEPAD_CONNECTIONS;
       this.btFinish = extras?.btFinish ?? NO_BT_HOOK;
       this.btEvaluate = extras?.btEvaluate ?? NO_BT_HOOK;
       this.getBlackboard = extras?.getBlackboard ?? NO_BT_HOOK;
       this.setBlackboard = extras?.setBlackboard ?? NO_BT_HOOK;
       this.#store = store;
       this.#owner = self ?? extras?.callerOwner ?? null;
-      this.#tick = tick;
       this.#extras = extras;
       this.#flowNamespace = flowNamespace;
     }
@@ -261,7 +269,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           if (typeof migrate === "function") service.registerMigration(fromVersion, migrate);
           else {
             if (!self) throw new SaveGameError("invalid", "Visual save migrations require an owning object.");
-            service.registerMigration(fromVersion, (snapshot) => host.invokeSaveMigration(self, migrate, snapshot));
+            host.registerSaveMigration(service, fromVersion, self, migrate);
           }
         },
         // Actor identities remain IDs here: staged actors do not exist yet. Map fields read as a Map, as in gameplay.
@@ -279,6 +287,32 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const stored = container === "map" && value instanceof Map ? [...value].map(([key, entry]) => ({ key, value: entry })) : value;
           const fields = cloneSaveGameValue({ [id]: stored }) as Record<string, SaveGameValue>;
           Object.assign(migrationData(extras, commandArgs).fields, fields);
+        },
+        newGame() {
+          return forCaller(this.#owner, services.saveGame?.newGame() ?? saveGameUnavailable());
+        },
+        saveGame(options) {
+          return forCaller(this.#owner, services.saveGame?.saveGame(options) ?? saveGameUnavailable());
+        },
+        loadGame(options) {
+          return forCaller(this.#owner, services.saveGame?.loadGame(options) ?? saveGameUnavailable());
+        },
+        listSaves(options) {
+          return forCaller(this.#owner, services.saveGame?.listSaves(options) ?? saveGameUnavailable());
+        },
+        deleteSave(options) {
+          return forCaller(this.#owner, services.saveGame?.deleteSave(options) ?? saveGameUnavailable());
+        },
+        getThirdPartyNotices() {
+          const read = async () => {
+            if (!services.getThirdPartyNotices) return { success: false, text: "", errorMessage: "Third-party notices are not available here." };
+            try {
+              return { success: true, text: await services.getThirdPartyNotices(), errorMessage: "" };
+            } catch (error) {
+              return { success: false, text: "", errorMessage: error instanceof Error ? error.message : String(error) };
+            }
+          };
+          return forCaller(this.#owner, read());
         },
         async readDataEntryAsync(tree, path, definitionGuid) {
           const { self } = this;
@@ -529,7 +563,6 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         },
         callInterface(target, interfaceGuid, method, args) {
           const { deltaSeconds, tickIndex } = this;
-          const tick = this.#tick;
           const registry = services.interfaceRegistry;
           if (!registry) return {};
           const receiver = target as InterfaceDispatchTarget | null | undefined;
@@ -537,12 +570,15 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const dispatchTarget: InterfaceDispatchTarget = !receiver ? NO_INTERFACE_RECEIVER
             : !(receiver instanceof EngineObject) || host.canInvokeOwner(receiver) ? receiver
               : { guid: receiver.guid, classId: receiver.classId, implementedInterfaces: receiver.implementedInterfaces };
-          return host.withInterfaceCaller({ deltaSeconds, tickIndex, tick }, () =>
+          return host.withInterfaceCaller({ deltaSeconds, tickIndex }, () =>
             dispatchInterface(registry, dispatchTarget, String(interfaceGuid), String(method), args ?? {}));
         },
         getComponent(actor, classId) {
-          return asActor(actor)?.components.find((c) => c.classId === classId && !c.destroyed) ??
-          null;
+          const target = String(classId ?? "");
+          if (!target) return null;
+          // A subclass matches, as in Get First Component Of Type.
+          return asActor(actor)?.components.find((c) => !c.destroyed &&
+            (c.classId === target || (services.classRegistry?.isA(c.classId, target) ?? false))) ?? null;
         },
         getComponentById(actor, componentId) {
           const target = actor ?? null;
@@ -623,13 +659,6 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const { self } = this;
           return services.unloadAsset?.(String(asset ?? ""), self, options);
         },
-        async prepareAssets(assets) {
-          const { self } = this;
-          if (self?.destroyed) throw new LatentCallAborted("The asset consumer was destroyed");
-          if (!services.prepareAssets) throw new Error("This host cannot prepare cold assets");
-          await services.prepareAssets(assets, self);
-          if (self?.destroyed) throw new LatentCallAborted("The asset consumer was destroyed");
-        },
         async loadSceneBlocking(target) {
           const { self } = this;
           await services.loadScene?.(target, true);
@@ -649,7 +678,6 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         },
         invokeCustomEvent(target, eventName, eventArgs) {
           const { deltaSeconds, tickIndex } = this;
-          const tick = this.#tick;
           const receiver = target as EngineObject | null | undefined;
           if (!receiver || !host.canInvokeOwner(receiver) || typeof eventName !== "string" || !eventName) return;
           // The event runs inside the caller's frame: delta, tick index and input
@@ -658,7 +686,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const dispatch = (object: EngineObject, componentId?: string) => {
             const loaded = host.eventScriptsFor(object.classId, eventName, object, componentId);
             if (!loaded || !host.canInvokeOwner(object)) return;
-            host.dispatchEvent(loaded, eventName, object, deltaSeconds, tickIndex, eventArgs ?? {}, tick, undefined, componentId);
+            host.dispatchEvent(loaded, eventName, object, deltaSeconds, tickIndex, eventArgs ?? {}, undefined, componentId);
           };
           dispatch(receiver);
           if (receiver instanceof ActorComponent && receiver.owner) dispatch(receiver.owner, receiver.guid);
@@ -681,7 +709,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         },
         invokeEvent(classId, eventName, eventArgs) {
           const { self, deltaSeconds, tickIndex } = this;
-          const tick = this.#tick, extras = this.#extras;
+          const extras = this.#extras;
           if (self && !host.canInvokeOwner(self)) return;
           if (typeof classId !== "string" || !classId.trim()) return;
           if (typeof eventName !== "string" || !eventName) return;
@@ -689,19 +717,12 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const loaded = host.eventScriptsFor(classId.trim(), eventName, self);
           if (!loaded) return;
           host.dispatchEvent(
-            loaded,
-            eventName,
-            self,
-            deltaSeconds,
-            tickIndex,
-            eventArgs ?? {},
-            tick,
-            extras,
+            loaded, eventName, self, deltaSeconds, tickIndex, eventArgs ?? {}, extras,
           );
         },
         invokeFunction(target, functionName, fnArgs) {
           const { deltaSeconds, tickIndex } = this;
-          const contextOwner = this.#owner, tick = this.#tick, extras = this.#extras;
+          const contextOwner = this.#owner, extras = this.#extras;
           if (typeof functionName !== "string" || !functionName) {
             if (extras?.saveMigrationData) throw new SaveGameError("incompatible", "A save migration called an invalid function.");
             return {};
@@ -724,7 +745,11 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
             return {};
           }
           const scripts = loaded;
-          const nestedExtras = receiver ? extras : { ...extras, callerOwner: contextOwner };
+          // A function on the caller keeps the call's extras; a static library call also gets its caller as
+          // owner. Another object's function runs on that object's own variables, so only what follows the
+          // whole call chain goes with it.
+          const nestedExtras = !receiver ? { ...extras, callerOwner: contextOwner }
+            : receiver === this.self ? extras : chainExtras(extras);
           const failed = (error: unknown): void => {
             if (extras?.saveMigrationData || isInfiniteLoopError(error)) throw error;
             host.reportLatentError(error, receiver);
@@ -744,7 +769,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
               const entry = scripts[index]!;
               const fn = entry.exports[functionName];
               if (typeof fn !== "function") continue;
-              const nested = new NestedContext(receiver, deltaSeconds, tickIndex, fnArgs ?? {}, tick, nestedExtras, entry.script.assetGuid);
+              const nested = new NestedContext(receiver, deltaSeconds, tickIndex, fnArgs ?? {}, nestedExtras, entry.script.assetGuid);
               try {
                 const value = host.invokeEntry(receiver, entry.script, functionName, () => (fn as (ctx: ScriptContext) => unknown)(nested));
                 if (isThenable(value)) {
@@ -775,65 +800,36 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           };
           return run(0, {});
         },
-        isActionHeld(action) {
-          const tick = this.#tick;
-          return tick?.isActionHeld?.(action) ?? false;
-        },
-        wasActionPressed(action) {
-          const tick = this.#tick;
-          return tick?.wasActionPressed?.(action) ?? false;
-        },
-        wasActionReleased(action) {
-          const tick = this.#tick;
-          return tick?.wasActionReleased?.(action) ?? false;
-        },
         getPressedKeys() {
-          const tick = this.#tick;
-          return tick?.getPressedKeys?.() ?? [];
-        },
-        getAxis(axis) {
-          const tick = this.#tick;
-          return tick?.getAxis?.(axis) ?? 0;
-        },
-        getAxis2D(axis) {
-          const tick = this.#tick;
-          return tick?.getAxis2D?.(axis) ?? { x: 0, y: 0 };
+          return input?.getPressedKeys?.() ?? [];
         },
         getCursorPosition() {
-          const tick = this.#tick;
-          return tick?.getCursorPosition?.() ?? { x: 0, y: 0, pressed: false };
+          return input?.getCursorPosition?.() ?? { x: 0, y: 0, pressed: false };
         },
         getTouches() {
-          const tick = this.#tick;
-          return tick?.getTouches?.() ?? [];
+          return input?.getTouches?.() ?? [];
         },
         getTouchEvents() {
-          const tick = this.#tick;
-          return tick?.getTouchEvents?.() ?? [];
+          return input?.getTouchEvents?.() ?? [];
         },
         getDeviceMotion() {
-          const tick = this.#tick;
-          return tick?.getDeviceMotion?.() ?? idleDeviceMotion();
+          return input?.getDeviceMotion?.() ?? idleDeviceMotion();
         },
         calibrateTilt() {
-          const tick = this.#tick;
-          return tick?.calibrateTilt?.();
+          return input?.calibrateTilt?.();
         },
         setCursorVisible(visible) {
-          const tick = this.#tick;
           if (services.setCursorVisible) {
             services.setCursorVisible(visible === true);
           } else {
-            tick?.setCursorVisible?.(visible === true);
+            input?.setCursorVisible?.(visible === true);
           }
         },
         setGamepadRumble(gamepadIndex, intensity, durationMs) {
-          const tick = this.#tick;
-          tick?.setGamepadRumble?.(gamepadIndex, intensity, durationMs);
+          input?.setGamepadRumble?.(gamepadIndex, intensity, durationMs);
         },
         vibrateDevice(durationMs) {
-          const tick = this.#tick;
-          return tick?.vibrateDevice?.(durationMs);
+          return input?.vibrateDevice?.(durationMs);
         },
         sampleWater(position, waterActor) {
           const contextOwner = this.#owner;

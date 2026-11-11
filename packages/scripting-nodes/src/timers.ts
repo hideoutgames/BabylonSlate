@@ -10,6 +10,8 @@ import {
   ENGINE_TIMER_HANDLE_STRUCT_ID,
 } from "@haptic/scripting";
 
+import { subject } from "./self-pin";
+
 const TIMER_HANDLE = structRef(ENGINE_TIMER_HANDLE_STRUCT_ID);
 const handlePin = (): GraphPin => pin("handle", "Handle", "in", TIMER_HANDLE);
 const execPins = (): GraphPin[] => [pin("execIn", "exec", "in", EXEC), pin("execOut", "then", "out", EXEC)];
@@ -81,11 +83,11 @@ export const timerNodes: NodeDefinition[] = [
     id: "timers.setTimerByEvent",
     title: "Set Timer By Event",
     category: "timers",
-    description: "Runs Event after Time seconds of game time, and again every Time seconds while Looping is on. Returns a Handle for the other Timer nodes.",
+    description: "Runs Event after Time seconds of game time, and again every Time seconds while Looping is on. Setting the same Event again restarts its timer. Returns a Handle for the other Timer nodes.",
     searchAliases: ["timer", "set timer", "repeat", "interval", "schedule"],
     pins: () => [
       ...execPins(),
-      pin("event", "Event", "in", delegateOf([])),
+      subject(pin("event", "Event", "in", delegateOf([]))),
       pin("time", "Time", "in", FLOAT, "data", true, 1),
       pin("looping", "Looping", "in", BOOL, "data", true, false),
       pin("firstDelay", "Initial Start Delay", "in", FLOAT, "data", true, 0),

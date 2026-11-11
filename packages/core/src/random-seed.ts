@@ -97,14 +97,22 @@ export type RandomDraw =
   | "float" | "int" | "bool" | "boolWithWeight" | "unitVector" | "arrayItem" | "shuffle"
   | `range:${RangeKind}`;
 
+/** A whole bound for Random Int: truncated like every Int, never wrapped to 32 bits. */
+function wholeBound(value: unknown): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.trunc(number) : 0;
+}
+
 /** Random Int: Min to Max, both included; reversed bounds swap. One draw unless they are equal. */
-function randomInt(rng: Rng, min: unknown, max: unknown): number {
-  const a = Number(min) | 0;
-  const b = Number(max) | 0;
+export function randomInt(rng: Rng, min: unknown, max: unknown): number {
+  const a = wholeBound(min);
+  const b = wholeBound(max);
   const lo = Math.min(a, b);
   const hi = Math.max(a, b);
   if (hi === lo) return lo;
-  return lo + (rng.next() % (hi - lo + 1));
+  const span = hi - lo + 1;
+  // One uint32 covers a span up to 2^32; a wider one scales a float draw.
+  return span <= 0x100000000 ? lo + (rng.next() % span) : lo + Math.floor(rng.nextFloat() * span);
 }
 
 /** Random Unit Vector: uniform over the sphere from two draws. */

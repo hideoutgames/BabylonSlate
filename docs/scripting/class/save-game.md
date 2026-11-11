@@ -31,3 +31,4 @@ Writes the current save data to a slot.
 - Empty **Slot** and **Profile** use the project defaults.
 - Actors with a Save Game component also save the state selected on it.
 - Latent: the node finishes later without pausing the rest of the game.
+- If the object that ran the node is destroyed before it finishes, the operation still completes but neither **Completed** nor **Failed** runs.

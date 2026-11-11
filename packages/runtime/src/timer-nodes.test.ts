@@ -49,6 +49,31 @@ describe("Timer nodes", () => {
     expect((result.handle as { Id: number }).Id).toBeGreaterThan(0);
   });
 
+  it("log an error and set no timer when Set Timer By Event has no Event", async () => {
+    const graph: LogicGraph = {
+      id: "event-graph", kind: "event",
+      nodes: [
+        graphNode(registry, "begin", "flow.event.beginPlay"),
+        graphNode(registry, "set", "timers.setTimerByEvent", { "default:time": 0.5 }),
+        graphNode(registry, "keep", "variables.set", handleVariable),
+      ],
+      edges: [wire("begin", "execOut", "set", "execIn"), wire("set", "execOut", "keep", "execIn"), wire("set", "handle", "keep", "value")],
+    };
+    const scenario = await startGraphScenario({
+      scripts: [compileClassScript({ registry, classId: "Clock", graph,
+        variables: [{ name: "Timer", type: "struct", typeClassId: ENGINE_TIMER_HANDLE_STRUCT_ID, defaultValue: { Id: 7 } }] })],
+      actors: [createActor("clock", "Clock", { classId: "Clock" })],
+      dt: 0.25,
+    });
+    await scenario.tick(1);
+    const clock = scenario.runtime.getWorld().getActors()[0]!;
+    scenario.stop();
+
+    expect(scenario.logs("Script")).toEqual(["Clock: Set Timer By Event (Event) tried to access null."]);
+    // The nodes after it still run, with a handle that names no timer.
+    expect((clock.getVariable("Timer") as { Id?: number }).Id ?? 0).toBe(0);
+  });
+
   it("stop for good and empty the handle variable with Clear And Invalidate Timer By Handle", async () => {
     const result = await play(true, 8);
     expect(result.diagnostics).toEqual([]);

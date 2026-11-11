@@ -62,13 +62,11 @@ export type StructuredFlowMeta =
   | { kind: "break" }
   | {
       kind: "doOnce";
-      execPin: string;
       resetPin: string;
       thenPin: string;
     }
   | {
       kind: "doN";
-      execPin: string;
       nPin: string;
       resetPin: string;
       thenPin: string;
@@ -76,14 +74,12 @@ export type StructuredFlowMeta =
     }
   | {
       kind: "flipFlop";
-      execPin: string;
       aPin: string;
       bPin: string;
       isAPin: string;
     }
   | {
       kind: "gate";
-      enterPin: string;
       openPin: string;
       closePin: string;
       togglePin: string;

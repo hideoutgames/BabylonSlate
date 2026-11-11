@@ -176,13 +176,15 @@ export class AudioService {
   private readonly cache: AudioBufferCache;
   private readonly ownedCache: boolean;
   private readonly onDiagnostic?: (diagnostic: AudioDiagnostic) => void;
-  private readonly onVoiceEnded?: (voiceId: string) => void;
+  private readonly onVoiceEnded?: (voiceId: string, dropped?: boolean) => void;
   private readonly onAssetReady?: (guid: string) => void;
   private readonly loadSourceBytes?: AudioSourceBytesLoader;
   private readonly prepareAsset?: AudioAssetPreparer;
   private readonly preparation?: NativePreparationScheduler;
   private readonly decodeController = new AbortController();
   private readonly preparingVoices = new Map<string, AbortController>();
+  /** Named voices with a `playSound` accepted and not yet settled, by how many. */
+  private readonly pendingPlays = new Map<string, number>();
   private maxVoices: number;
   private library: AudioLibrary = emptyLibrary();
   private readonly sourceBytes = new Map<string, Uint8Array>();
@@ -224,7 +226,8 @@ export class AudioService {
     backend: AudioPlaybackBackend;
     cache?: AudioBufferCache;
     onDiagnostic?: (diagnostic: AudioDiagnostic) => void;
-    onVoiceEnded?: (voiceId: string) => void;
+    /** A voice played to its end, or (`dropped`) never started, or was stolen at the voice cap. */
+    onVoiceEnded?: (voiceId: string, dropped?: boolean) => void;
     onAssetReady?: (guid: string) => void;
     loadSourceBytes?: AudioSourceBytesLoader;
     prepareAsset?: AudioAssetPreparer;
@@ -419,8 +422,13 @@ export class AudioService {
       return;
     }
     if (!isAudioCommand(command)) return;
+    const named = command.type === "playSound" ? command.voiceId?.trim() : "";
+    if (named) this.pendingPlays.set(named, (this.pendingPlays.get(named) ?? 0) + 1);
     if (!this.unlocked) {
-      if (this.queue.length >= AUDIO_PRE_UNLOCK_QUEUE_CAP) this.queue.shift();
+      if (this.queue.length >= AUDIO_PRE_UNLOCK_QUEUE_CAP) {
+        const discarded = this.queue.shift();
+        if (discarded?.type === "playSound") this.settlePlay(discarded, this.generation);
+      }
       this.queue.push(command);
       this.publishStats();
       return;
@@ -459,7 +467,7 @@ export class AudioService {
     while (this.voices.size > this.maxVoices) {
       const oldest = this.voices.keys().next().value;
       if (!oldest) break;
-      this.stopVoice(oldest);
+      this.stealVoice(oldest);
     }
   }
 
@@ -569,6 +577,7 @@ export class AudioService {
     this.generation++;
     for (const controller of this.preparingVoices.values()) controller.abort(new Error("Audio session changed during loading."));
     this.preparingVoices.clear();
+    this.pendingPlays.clear();
     for (const voiceId of [...this.voices.keys()]) {
       this.stopVoice(voiceId);
     }
@@ -687,7 +696,28 @@ export class AudioService {
       this.backend.setVoicePlaybackRate(voice.voiceId, voice.pitch);
       return;
     }
-    await this.play(command, generation);
+    try {
+      await this.play(command, generation);
+    } finally {
+      this.settlePlay(command, generation);
+    }
+  }
+
+  /**
+   * A named voice's play has settled. When no later play of that voice waits and it is not
+   * playing (its source was missing or failed, or it was stopped while it loaded), its owner is
+   * told it dropped, so nothing keeps treating it as playing.
+   */
+  private settlePlay(command: PlaySoundCommand, generation: number): void {
+    const voiceId = command.voiceId?.trim();
+    if (!voiceId || !this.isCurrent(generation)) return;
+    const pending = (this.pendingPlays.get(voiceId) ?? 1) - 1;
+    if (pending > 0) {
+      this.pendingPlays.set(voiceId, pending);
+      return;
+    }
+    this.pendingPlays.delete(voiceId);
+    if (!this.voices.has(voiceId)) this.onVoiceEnded?.(voiceId, true);
   }
 
   private async resolveSourceBytes(
@@ -816,7 +846,7 @@ export class AudioService {
     this.stopVoice(voiceId);
     if (this.voices.size >= this.maxVoices) {
       const oldest = this.voices.keys().next().value;
-      if (oldest) this.stopVoice(oldest);
+      if (oldest) this.stealVoice(oldest);
     }
     const attenuation = payload.soundAttenuationGuid
       ? (this.library.attenuations.get(payload.soundAttenuationGuid) ?? null)
@@ -907,6 +937,12 @@ export class AudioService {
     const pose = this.emitterPoseSource(slotId);
     // Copied: the host's row is scratch that its next sample overwrites.
     if (pose) this.slotPoses.set(slotId, { ...pose });
+  }
+
+  /** Stops a voice to make room under the voice cap and tells its owner it dropped. */
+  private stealVoice(voiceId: string): void {
+    this.stopVoice(voiceId);
+    this.onVoiceEnded?.(voiceId, true);
   }
 
   private stopVoice(voiceId: string): void {

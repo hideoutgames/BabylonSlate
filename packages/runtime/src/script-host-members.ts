@@ -43,7 +43,6 @@ import {
   type CurveAssetCatalogEntry,
   type CurveKind,
   type RandomStream,
-  type SaveGameResult,
   type SaveGameValue,
 } from "@haptic/core";
 import { Actor, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipInstance, TimelineClipObject, TimelineObject } from "@haptic/object-model";
@@ -136,9 +135,6 @@ function unitVolume(value: unknown, fallback: number): number {
 export function createHostMembers(host: HostMembersHost): HostContextMembers {
   const services = host.services;
   const curveObjects = new CurveObjectCache(() => services.curves);
-  const unavailable = async <T>(): Promise<SaveGameResult<T>> => ({ ok: false, error: {
-    code: "unavailable", message: "Select a default Save Game in Project Settings before using saves.",
-  } });
   // Map fields are saved as `{ key, value }` entries and read as a Map; Actor values are saved as persistent IDs.
   const readField = (value: SaveGameValue, type?: string, container?: string): unknown => {
     if (container === "array" && Array.isArray(value)) return value.map((entry) => readField(entry, type));
@@ -171,11 +167,6 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     getSaveData: <TData extends object>() => requireSaveGameService(services).getSaveData() as TData,
     getSaveField: (id, type, container) => readField(requireSaveGameService(services).getField(id), type, container),
     setSaveField: (id, value, type, container) => requireSaveGameService(services).setField(id, writeField(value, type, container)),
-    newGame: () => services.saveGame?.newGame() ?? unavailable(),
-    saveGame: (options) => services.saveGame?.saveGame(options) ?? unavailable(),
-    loadGame: (options) => services.saveGame?.loadGame(options) ?? unavailable(),
-    listSaves: (options) => services.saveGame?.listSaves(options) ?? unavailable(),
-    deleteSave: (options) => services.saveGame?.deleteSave(options) ?? unavailable(),
     registerSaveActor: (actor, persistentId) => {
       if (!(actor instanceof Actor) || actor.destroyed) throw new SaveGameError("invalid", "Register Save Actor requires a live actor.");
       if (!services.registerSaveActor) throw new SaveGameError("unavailable", "Actor persistence is not available in this host.");
@@ -518,16 +509,6 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
       else services.log("warning", "Script", `Open URL opens only http and https addresses, not "${String(url ?? "")}".`);
     },
     newGuid: () => newGuid(),
-    getThirdPartyNotices: async () => {
-      if (!services.getThirdPartyNotices) {
-        return { success: false, text: "", errorMessage: "Third-party notices are not available here." };
-      }
-      try {
-        return { success: true, text: await services.getThirdPartyNotices(), errorMessage: "" };
-      } catch (error) {
-        return { success: false, text: "", errorMessage: error instanceof Error ? error.message : String(error) };
-      }
-    },
     getSubsystem: (classId) => {
       const id = typeof classId === "string" ? classId.trim() : "";
       return id ? (services.getSubsystem?.(id) ?? null) : null;
@@ -578,8 +559,6 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     clearSceneLayers: () => {
       services.clearSceneLayers?.();
     },
-    setFocusTarget: (target) => services.setFocusTarget?.(target) ?? false,
-    clearFocusTarget: (target) => { services.clearFocusTarget?.(target); },
     registerSceneLayerPostProcess: (layer, materialGuid) => {
       const guid = sceneLayerGuidOf(layer);
       const registered = guid ? services.registerSceneLayerPostProcess?.(guid, String(materialGuid ?? "")) : null;

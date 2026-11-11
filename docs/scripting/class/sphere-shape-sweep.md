@@ -13,7 +13,7 @@ Sweeps a sphere from a start point to an end point and reports the first hit.
 | In | Exec |  |
 | Start | Vector3 |  |
 | End | Vector3 |  |
-| Radius | Float |  |
+| Radius | Float | Defaults to 0.5. |
 | Channel | CollisionChannel | Limits which colliders the sphere can hit, as on [**Line Trace**](line-trace.md). Defaults to All. |
 
 ## Outputs

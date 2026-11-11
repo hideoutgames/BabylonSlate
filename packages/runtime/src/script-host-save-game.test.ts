@@ -36,6 +36,18 @@ describe("ScriptHost save APIs", () => {
     expect(ctx.getSaveData()).toEqual({ Coins: 21 });
   });
 
+  it("ends a caller's graph when the caller is destroyed while Save Game writes", async () => {
+    const host = new ScriptHost(services({ saveGame: new SaveGameService({ projectId: "project", definition, storage: storage() }) }));
+    const hero = new Actor({ classId: "Hero", guid: "hero" });
+    const waiting = host.createContext(hero, 0, 0).saveGame({ slot: "checkpoint" });
+
+    hero.destroyed = true;
+
+    await expect(waiting).rejects.toMatchObject({ name: "AbortError" });
+    // The save itself is not cancelled.
+    expect(await host.createContext(null, 0, 0).loadGame({ slot: "checkpoint" })).toMatchObject({ ok: true });
+  });
+
   it("maps typed actor fields through persistent IDs, including arrays and Map values", () => {
     const hero = new Actor({ classId: "Actor", guid: "runtime-hero" });
     const saveGame = new SaveGameService({ projectId: "project", storage: storage(), definition: { id: "party", schemaVersion: 1,
@@ -81,6 +93,32 @@ describe("ScriptHost save APIs", () => {
     expect(ctx.getSaveData()).toEqual({ Coins: fail ? 0 : 12 });
     expect((await old.loadGame()).ok).toBe(true);
     expect(old.getSaveData()).toEqual({ Coins: 7 });
+  });
+
+  it("hands a migration step to the object that registers it after its first owner was destroyed", async () => {
+    const disk = storage();
+    const previous = new SaveGameService({ projectId: "project", definition, storage: disk });
+    previous.getSaveData().Coins = 8;
+    expect((await previous.saveGame()).ok).toBe(true);
+    const host = new ScriptHost(services({ saveGame: new SaveGameService({ projectId: "project", storage: disk, definition: { ...definition, schemaVersion: 2 } }) }));
+    await host.load({ assetGuid: "migration", classId: "Migrator", anchors: [],
+      entryPoints: [{ name: "migrate", event: "onSaveMigration", isAsync: false }],
+      source: `export function migrate(ctx) { ctx.setSaveMigrationField('coins', ctx.getSaveMigrationField('coins') + ctx.self.getVariable('bonus')); }` });
+    const first = new Actor({ classId: "Migrator", guid: "first" });
+    const second = new Actor({ classId: "Migrator", guid: "second" });
+    first.setVariable("bonus", 1);
+    second.setVariable("bonus", 100);
+    host.createContext(first, 0, 0).registerSaveMigration(1, "onSaveMigration");
+    // A second live owner of the same step is refused.
+    expect(() => host.createContext(second, 0, 0).registerSaveMigration(1, "onSaveMigration")).toThrow(/already registered/);
+
+    // The Scene reloads: the first owner is destroyed and its replacement registers again.
+    first.destroyed = true;
+    const ctx = host.createContext(second, 0, 0);
+    ctx.registerSaveMigration(1, "onSaveMigration");
+
+    expect((await ctx.loadGame()).ok).toBe(true);
+    expect(ctx.getSaveData()).toEqual({ Coins: 108 });
   });
 
   it.each([false, true])("preserves staged fields through nested async functions and aborts their errors (fail=%s)", async (fail) => {

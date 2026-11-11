@@ -26,10 +26,6 @@ export function selectOptionPinId(memberName: string): string {
   return `${SELECT_OPTION_PIN_PREFIX}${encodeURIComponent(memberName)}`;
 }
 
-export function titleCaseSelectMember(name: string): string {
-  return titleCaseEnumMember(name);
-}
-
 function typedSelect(
   id: string,
   title: string,
@@ -113,7 +109,7 @@ export const selectNodes: NodeDefinition[] = [
         ...enumMembersOf(properties).map((member) =>
           pin(
             selectOptionPinId(member.name),
-            titleCaseSelectMember(member.name),
+            titleCaseEnumMember(member.name),
             "in",
             RESOLVING_WILDCARD,
             "data",

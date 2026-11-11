@@ -30,3 +30,4 @@ Deletes a saved slot, including the older copies kept for migration.
 - Empty **Slot** and **Profile** use the project defaults.
 - Use it to clear a damaged slot before saving to it again.
 - Latent: the node finishes later without pausing the rest of the game.
+- If the object that ran the node is destroyed before it finishes, the operation still completes but neither **Completed** nor **Failed** runs.

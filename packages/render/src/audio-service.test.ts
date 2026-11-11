@@ -1725,6 +1725,43 @@ describe("AudioService", () => {
     service.dispose();
   });
 
+  it("reports a named voice that never starts, or is stolen at the voice cap, as dropped", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const ended: Array<[string, boolean | undefined]> = [];
+    const service = new AudioService({ backend, maxVoices: 1, onVoiceEnded: (voiceId, dropped) => ended.push([voiceId, dropped]) });
+    service.setLibrary(library({ audio: { bed: { ...createDefaultAudioPayload(), loop: true }, silent: createDefaultAudioPayload() } }));
+    service.setSourceBytes("bed", new Uint8Array([1]));
+    await service.unlockAsync();
+    const play = (assetGuid: string, voiceId: string) => service.handleCommand({ type: "playSound", assetGuid, volume: 1, frameId: 1, voiceId });
+
+    // No source bytes: the voice never plays.
+    play("silent", "missing");
+    await service.flush();
+    expect(ended).toEqual([["missing", true]]);
+
+    // A second voice over the cap of one steals the first.
+    play("bed", "first");
+    play("bed", "second");
+    await service.flush();
+    expect(ended).toEqual([["missing", true], ["first", true]]);
+  });
+
+  it("does not report a voice as dropped while a later play of it still waits", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const ended: string[] = [];
+    const service = new AudioService({ backend, onVoiceEnded: (voiceId) => ended.push(voiceId) });
+    service.setLibrary(library({ audio: { bed: { ...createDefaultAudioPayload(), loop: true }, silent: createDefaultAudioPayload() } }));
+    service.setSourceBytes("bed", new Uint8Array([1]));
+    await service.unlockAsync();
+
+    service.handleCommand({ type: "playSound", assetGuid: "silent", volume: 1, frameId: 1, voiceId: "music" });
+    service.handleCommand({ type: "playSound", assetGuid: "bed", volume: 1, frameId: 2, voiceId: "music" });
+    await service.flush();
+
+    expect(ended).toEqual([]);
+    expect(service.stats().voices).toBe(1);
+  });
+
   it("notifies onVoiceEnded for finished non-looping voices", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const ended: string[] = [];

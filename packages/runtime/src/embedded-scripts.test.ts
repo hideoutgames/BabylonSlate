@@ -67,6 +67,32 @@ describe("SceneScript and SceneLayerScript", () => {
     runtime.stop();
   });
 
+  it("delivers touches and the cursor to a Scene's script", async () => {
+    const classId = sceneAssetClassId("level-1");
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: scene("Level1"), playSceneGuid: "level-1" });
+    await runtime.loadScripts([{
+      classId, parentClassId: "Scene", assetGuid: "level-1", anchors: [],
+      source: `export function input(ctx) {
+          for (const touch of ctx.getTouchEvents()) ctx.self.setVariable("touch", touch.Phase);
+        }
+        export function tick(ctx) { ctx.self.setVariable("cursor", ctx.getCursorPosition().x); }`,
+      entryPoints: [
+        { name: "input", event: "onInput", isAsync: false },
+        { name: "tick", event: "onTick", isAsync: false },
+      ],
+    }]);
+    runtime.realizePlayWorld();
+    const level = runtime.getWorld().currentScene!;
+    runtime.start();
+
+    runtime.pushInput([{ kind: "pointer", tick: 0, pointerId: 1, phase: "down", x: 80, y: 24, button: 0, pointerType: "touch" }]);
+    runtime.tick();
+
+    expect(level.getVariable("touch")).toBe("Began");
+    expect(level.getVariable("cursor")).toBe(80);
+    runtime.stop();
+  });
+
   it("gives each Scene Layer instance its own script, ended when its owning Scene unloads", async () => {
     const commands: CommandMessage[] = [];
     const overlay = { ...createDefaultSceneLayer(), actors: [createActor("panel", "Panel", {

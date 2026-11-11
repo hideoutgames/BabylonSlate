@@ -26,6 +26,30 @@ describe("Script timers", () => {
     expect([system.remaining(once), system.elapsed(once)]).toEqual([-1, -1]);
   });
 
+  it("restart an event's timer when it is set again, leaving other events' and other objects' timers alone", () => {
+    const { system, fired } = timers();
+    const hero = owner();
+    const other = owner();
+    const first = system.set(hero, event(hero, "Tick"), 1, false);
+    system.set(hero, event(hero, "Other"), 1, false);
+    system.set(other, event(other, "Tick"), 1, false);
+    system.advance(0.75);
+
+    const second = system.set(hero, event(hero, "Tick"), 1, false);
+
+    expect(system.exists(first)).toBe(false);
+    expect(system.remaining(second)).toBe(1);
+    system.advance(0.25);
+    // The other two fire on time; the restarted one has 0.75 s left.
+    expect(fired).toEqual(["Other", "Tick"]);
+    system.advance(0.75);
+    expect(fired).toEqual(["Other", "Tick", "Tick"]);
+    // A refused time leaves the running timer alone.
+    const looping = system.set(hero, event(hero, "Loop"), 1, true);
+    expect(system.set(hero, event(hero, "Loop"), 0, true)).toBe(0);
+    expect(system.exists(looping)).toBe(true);
+  });
+
   it("hold while paused, end when cleared or when the owner or event object goes, and hold for an owner that may not run", () => {
     let running = true;
     const { system, fired } = timers(() => running);

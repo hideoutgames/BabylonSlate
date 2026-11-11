@@ -28,7 +28,6 @@ const tick: TickContext = {
   dt: 0.25,
   tickIndex: 7,
   world: { rngNextFloat: () => 0 },
-  isActionHeld: (action) => action === "Jump",
 };
 
 function interfaces(outputs: Record<string, unknown> = {}): InterfaceRegistry {
@@ -42,8 +41,8 @@ describe("ScriptHost nested dispatch", () => {
     const host = new ScriptHost(services({ interfaceRegistry: interfaces() }));
     await host.load(script("Hero", [
       "export function onTick(ctx) { ctx.invokeCustomEvent(ctx.self, 'OnPing', {}); ctx.callInterface(ctx.self, 'probe', 'Probe', {}); }",
-      "export function OnPing(ctx) { ctx.self.setVariable('event', [ctx.deltaSeconds, ctx.tickIndex, ctx.isActionHeld('Jump')]); }",
-      "export function Probe(ctx) { ctx.self.setVariable('handler', [ctx.deltaSeconds, ctx.tickIndex, ctx.isActionHeld('Jump')]); return {}; }",
+      "export function OnPing(ctx) { ctx.self.setVariable('event', [ctx.deltaSeconds, ctx.tickIndex]); }",
+      "export function Probe(ctx) { ctx.self.setVariable('handler', [ctx.deltaSeconds, ctx.tickIndex]); return {}; }",
     ].join("\n"), {
       entryPoints: [
         { name: "onTick", event: "onTick", isAsync: false },
@@ -57,8 +56,25 @@ describe("ScriptHost nested dispatch", () => {
 
     host.hooksFor("Hero")!.onTick!(hero, tick);
 
-    expect(hero.getVariable("event")).toEqual([0.25, 7, true]);
-    expect(hero.getVariable("handler")).toEqual([0.25, 7, true]);
+    expect(hero.getVariable("event")).toEqual([0.25, 7]);
+    expect(hero.getVariable("handler")).toEqual([0.25, 7]);
+  });
+
+  it("runs a function called on another object against that object's variables, not the caller's variable store", async () => {
+    const host = new ScriptHost(services());
+    await host.load(script("Hero", "export function Read(ctx) { return { hp: ctx.getVariable('hp') }; }", {
+      entryPoints: [{ name: "Read", isAsync: false }],
+    }));
+    const caller = new Actor({ classId: "Hero", guid: "caller" });
+    const other = new Actor({ classId: "Hero", guid: "other" });
+    other.setVariable("hp", 7);
+    // An Animation Graph's scripts run on the actor while reading the graph component's variables.
+    const store = new Actor({ classId: "Hero", guid: "store" });
+    store.setVariable("hp", 99);
+    const ctx = host.createContext(caller, 0, 0, {}, { variableStore: store });
+
+    expect(ctx.invokeFunction(caller, "Read", {})).toEqual({ hp: 99 });
+    expect(ctx.invokeFunction(other, "Read", {})).toEqual({ hp: 7 });
   });
 
   it("indexes a module's entry points on its first dispatch instead of scanning them on every tick", async () => {

@@ -75,6 +75,8 @@ const NO_ENTRY_POINTS: readonly IndexedEntryPoint[] = [];
  */
 export class ScriptHost {
   private readonly boundInterfaceKeys = new WeakMap<EngineObject, Set<string>>();
+  /** Each save service's visual migration steps and the object whose event runs them. */
+  private readonly saveMigrationOwners = new WeakMap<SaveGameService, Map<number, { owner: EngineObject; event: string }>>();
   /** Text components whose On Text Changed handlers are running now. */
   private readonly textChangeDispatches = new Set<ActorComponent>();
   private readonly byClassId = new Map<string, LoadedScript[]>();
@@ -156,7 +158,7 @@ export class ScriptHost {
       debugTraceFor: (store) => this.debugTraceFor(store),
       flowStateFor: (owner, nodeId, namespace) => this.flowStateFor(owner, nodeId, namespace),
       withInterfaceCaller: <T>(frame: CallerFrame, run: () => T): T => this.withInterfaceCaller(frame, run),
-      invokeSaveMigration: (self, event, snapshot) => this.invokeSaveMigration(self, event, snapshot),
+      registerSaveMigration: (service, fromVersion, owner, event) => this.registerSaveMigration(service, fromVersion, owner, event),
       eventScriptsFor: (classId, event, self, componentId) => this.eventScriptsFor(classId, event, self, componentId),
       functionScriptsFor: (classId, exportName) => this.functionScriptsFor(classId, exportName),
       // Forwarded as given, so an omitted argument still takes its default.
@@ -189,6 +191,28 @@ export class ScriptHost {
     this.services.saveGame = service;
   }
 
+  /**
+   * Registers `owner`'s migration event for one schema step. The service holds one handler per
+   * step for the session, so the handler looks its owner up here: an owner that registers again,
+   * or a new one after the first was destroyed (a level actor respawned by a Scene change),
+   * takes the step over. A second live owner is refused.
+   */
+  registerSaveMigration(service: SaveGameService, fromVersion: number, owner: EngineObject, event: string): void {
+    let steps = this.saveMigrationOwners.get(service);
+    if (!steps) this.saveMigrationOwners.set(service, steps = new Map());
+    const current = steps.get(fromVersion);
+    if (current && current.owner !== owner && !current.owner.destroyed) {
+      throw new SaveGameError("invalid", `A migration from version ${fromVersion} is already registered.`);
+    }
+    if (!current) {
+      service.registerMigration(fromVersion, (snapshot) => {
+        const step = steps.get(fromVersion)!;
+        return this.invokeSaveMigration(step.owner, step.event, snapshot);
+      });
+    }
+    steps.set(fromVersion, { owner, event });
+  }
+
   /** Migration exceptions must propagate to the transaction, unlike ordinary events. */
   private async invokeSaveMigration(self: EngineObject, event: string, snapshot: SaveGameMigrationData): Promise<void> {
     if (self.destroyed) throw new SaveGameError("incompatible", "The registered save migration owner no longer exists.");
@@ -199,7 +223,7 @@ export class ScriptHost {
         if (point.event !== event) continue;
         const handler = entry.exports[point.name];
         if (typeof handler !== "function") continue;
-        const context = this.createContext(self, 0, 0, { saveMigrationData: snapshot }, undefined, { saveMigrationData: snapshot }, entry.script.assetGuid);
+        const context = this.createContext(self, 0, 0, { saveMigrationData: snapshot }, { saveMigrationData: snapshot }, entry.script.assetGuid);
         await this.invokeOwned(self, () => (handler as (ctx: ScriptContext) => unknown)(context));
       }
     }
@@ -375,19 +399,13 @@ export class ScriptHost {
       onTick: (self, ctx: TickContext) => {
         // Input first, as the tick's Event Tick may act on it.
         for (const loaded of this.inputScriptsFor(classId)) {
-          this.dispatchEvent(loaded, INPUT_EVENT, self, ctx.dt, ctx.tickIndex, {}, ctx);
+          this.dispatchEvent(loaded, INPUT_EVENT, self, ctx.dt, ctx.tickIndex, {});
           if (self.destroyed) return;
         }
         const loaded = this.lifecycleScriptsFor(classId, "onTick");
         if (!loaded) return;
         this.dispatchEvent(
-          loaded,
-          "onTick",
-          self,
-          ctx.dt,
-          ctx.tickIndex,
-          {},
-          ctx,
+          loaded, "onTick", self, ctx.dt, ctx.tickIndex, {},
         );
       },
       onDestroyed: (self) => {
@@ -432,7 +450,7 @@ export class ScriptHost {
     }
     // Each run owns its result, so a nested command cannot replace it.
     const result = { success: true, output: "" };
-    const failure = this.dispatchEvent(loaded, "onCommandRun", null, 0, 0, args, undefined, { commandResult: result });
+    const failure = this.dispatchEvent(loaded, "onCommandRun", null, 0, 0, args, { commandResult: result });
     if (failure) return { success: false, output: failure.error instanceof Error ? failure.error.message : String(failure.error) };
     return result;
   }
@@ -446,7 +464,7 @@ export class ScriptHost {
       const fn = entry.exports[point.name];
       if (typeof fn !== "function") continue;
       signal.throwIfAborted();
-      const ctx = this.createContext(null, 0, 0, args, undefined, { commandResult: result }, entry.script.assetGuid);
+      const ctx = this.createContext(null, 0, 0, args, { commandResult: result }, entry.script.assetGuid);
       await new Promise<void>((resolve, reject) => {
         const abort = () => reject(signal.reason ?? new Error("Console command cancelled"));
         signal.addEventListener("abort", abort, { once: true });
@@ -537,7 +555,7 @@ export class ScriptHost {
     const loaded = this.eventScriptsFor(classId, event, self, componentId);
     if (!loaded) return;
     if (self && !this.canInvokeOwner(self)) return;
-    this.dispatchEvent(loaded, event, self, 0, 0, args, undefined, undefined, componentId);
+    this.dispatchEvent(loaded, event, self, 0, 0, args, undefined, componentId);
   }
 
   hasClass(classId: string): boolean {
@@ -553,7 +571,7 @@ export class ScriptHost {
   ): void {
     const loaded = this.byClassId.get(classId);
     if (!loaded || loaded.length === 0) return;
-    this.dispatchEvent(loaded, event, self, deltaSeconds, 0, {}, undefined, extras);
+    this.dispatchEvent(loaded, event, self, deltaSeconds, 0, {}, extras);
   }
 
   /**
@@ -573,7 +591,7 @@ export class ScriptHost {
   ): void {
     const loaded = this.byClassId.get(classId);
     if (!loaded || loaded.length === 0) return;
-    this.dispatchEvent(loaded, event, self, deltaSeconds, 0, {}, undefined, extras);
+    this.dispatchEvent(loaded, event, self, deltaSeconds, 0, {}, extras);
   }
 
   invokeAnimRule(
@@ -586,13 +604,7 @@ export class ScriptHost {
     const evaluate = loaded[0]?.exports.evaluate;
     if (typeof evaluate !== "function") return undefined;
     const ctx = this.createContext(
-      self,
-      0,
-      0,
-      {},
-      undefined,
-      extras,
-      loaded[0]!.script.assetGuid,
+      self, 0, 0, {}, extras, loaded[0]!.script.assetGuid,
     );
     try {
       const result = this.invokeEntry(self, loaded[0]!.script, "evaluate", () => (evaluate as (context: ScriptContext) => unknown)(ctx));
@@ -676,13 +688,7 @@ export class ScriptHost {
     // The handler runs inside its caller's frame, so input and delta reads match the caller.
     const frame = this.interfaceCaller;
     const ctx = this.createContext(
-      object,
-      frame?.deltaSeconds ?? 0,
-      frame?.tickIndex ?? 0,
-      args,
-      frame?.tick,
-      undefined,
-      entry.script.assetGuid,
+      object, frame?.deltaSeconds ?? 0, frame?.tickIndex ?? 0, args, undefined, entry.script.assetGuid,
     );
     try {
       const result = this.invokeEntry(object, entry.script, exportName, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
@@ -716,7 +722,6 @@ export class ScriptHost {
     deltaSeconds: number,
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
-    tick?: TickContext,
     extras?: ScriptExtras,
     componentId?: string,
   ): { error: unknown } | null {
@@ -728,13 +733,7 @@ export class ScriptHost {
         }
         // Every call runs, also while an earlier run of a latent entry still waits: each waits on its own.
         const ctx = this.createContext(
-          self,
-          deltaSeconds,
-          tickIndex,
-          commandArgs,
-          tick,
-          extras,
-          entry.script.assetGuid,
+          self, deltaSeconds, tickIndex, commandArgs, extras, entry.script.assetGuid,
         );
         try {
           const result = this.invokeEntry(self, entry.script, point.name, () => fn(ctx));
@@ -827,11 +826,10 @@ export class ScriptHost {
     deltaSeconds: number,
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
-    tick?: TickContext,
     extras?: ScriptExtras,
     flowNamespace = "",
   ): ScriptContext {
-    return new this.Context(self, deltaSeconds, tickIndex, commandArgs, tick, extras, flowNamespace);
+    return new this.Context(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace);
   }
 
   private applyComponentVariable(
