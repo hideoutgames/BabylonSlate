@@ -17,7 +17,14 @@ export type HoistChunk = {
   bodyAnchors?: readonly HoistBodyAnchor[];
 };
 
-export type BodyLine = { text: string; anchor?: Omit<CompileAnchor, "line"> };
+export type BodyLine = {
+  text: string;
+  anchor?: Omit<CompileAnchor, "line">;
+  /** A line that only starts a statement epoch; dropped when the entry reads no memo. */
+  epoch?: boolean;
+};
+/** A line that starts an epoch inline: `fragment` becomes `plain` when the entry reads no memo. */
+export type EpochFragment = { line: BodyLine; fragment: string; plain: string };
 export type ExecScope = { label: string; opening: BodyLine; repeats: boolean };
 export type ExecPath = Map<string, ExecScope>;
 /** A loop Break can leave; its opening gains a label once a Break uses it. */
@@ -68,11 +75,14 @@ export type CodegenState = {
    * Statement-scoped memos: each holds the value computed during the current
    * `__stmt` epoch. Every emitted exec node, each While Loop condition check
    * and each For Loop bound check after the first starts a new epoch.
-   * Declared per entry point.
+   * Declared per entry point, and only when the entry reads them
+   * (`entryDeclarations`).
    */
   memoDecls: string[];
   readonly memoByKey: Map<string, string>;
   useEpoch: boolean;
+  /** Loop headers that start an epoch inline, for `entryDeclarations` to undo. */
+  readonly epochFragments: EpochFragment[];
   /**
    * Impure output slots are declared once at the top of the entry point so a
    * node emitted under several exec branches neither redeclares them nor
@@ -124,6 +134,7 @@ export function createCodegenState(
     memoDecls: [],
     memoByKey: new Map<string, string>(),
     useEpoch: false,
+    epochFragments: [],
     outputDecls: new Map<string, string>(),
     isAsync: false,
   };
@@ -137,6 +148,7 @@ export function beginEntry(s: CodegenState): void {
   s.pureExpressions = createPureExpressions(s.graph, s.options.registry);
   s.memoDecls = [];
   s.memoByKey.clear();
+  s.epochFragments.length = 0;
   s.isAsync = false;
 }
 
@@ -163,6 +175,62 @@ export function loopCheck(s: CodegenState, nodeId: string): string {
   return `ctx.checkInfiniteLoop(${JSON.stringify({
     assetGuid: s.options.assetGuid, graphId: s.graph.id, nodeId,
   })});`;
+}
+
+/** Starts a statement epoch on a line of its own. */
+export function emitEpoch(s: CodegenState): void {
+  if (s.useEpoch) emitBody(s, "  __stmt++;").epoch = true;
+}
+
+/**
+ * `expression` behind an epoch start, for a loop header that checks it once per iteration. The
+ * caller passes the line it put the result on to `trackEpochFragment`.
+ */
+export function epochFragment(s: CodegenState, fragment: string, plain: string): string {
+  return s.useEpoch ? fragment : plain;
+}
+
+export function trackEpochFragment(s: CodegenState, line: BodyLine, fragment: string, plain: string): void {
+  if (s.useEpoch) s.epochFragments.push({ line, fragment, plain });
+}
+
+/** Names of the memo and pure-expression closures `text` calls. */
+const DECLARED_CLOSURE = /(?<![\w$])(__memo_\d+|_pure_\d+)(?![\w$])/g;
+
+/**
+ * The memo and pure-expression declarations an entry point needs: those its statements call, and
+ * those these call in turn. Every pure node of the graph is compiled for every entry point, so
+ * without this an entry would build the closures of chains it never runs on each call. An entry
+ * that reads no memo also loses its epoch counter.
+ */
+export function entryDeclarations(s: CodegenState): string[] {
+  const pure = s.pureExpressions.declarations;
+  const declarationOf = (name: string): string | undefined => {
+    const index = Number(name.slice(name.lastIndexOf("_") + 1));
+    return name.startsWith("__memo_") ? s.memoDecls[index] : pure[index];
+  };
+  const used = new Set<string>();
+  const pending: string[] = [...s.body.map((line) => line.text), ...s.outputDecls.values()];
+  while (pending.length > 0) {
+    for (const match of pending.pop()!.matchAll(DECLARED_CLOSURE)) {
+      const name = match[1]!;
+      if (used.has(name)) continue;
+      used.add(name);
+      const declaration = declarationOf(name);
+      if (declaration !== undefined) pending.push(declaration);
+    }
+  }
+  const memos = s.memoDecls.filter((_, index) => used.has(`__memo_${index}`));
+  if (memos.length === 0) {
+    for (const line of s.body) if (line.epoch) line.text = "";
+    for (const { line, fragment, plain } of s.epochFragments) {
+      line.text = line.text.replace(fragment, () => plain);
+    }
+  }
+  return [
+    ...pure.filter((_, index) => used.has(`_pure_${index}`)),
+    ...(memos.length > 0 ? ["  let __stmt = 0;", ...memos] : []),
+  ];
 }
 
 export function memoExpression(s: CodegenState, key: string, expression: string): string {

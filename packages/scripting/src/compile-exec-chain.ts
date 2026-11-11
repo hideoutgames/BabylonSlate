@@ -8,6 +8,7 @@ import {
 } from "./compile-graph-index";
 import {
   emitBody,
+  emitEpoch,
   loopCheck,
   traceProbe,
   type CodegenState,
@@ -17,7 +18,11 @@ import {
 import { ensurePure, makeCtx } from "./compile-expressions";
 import { deadReference } from "./compile-pin-values";
 import { emitExecProbes, emitStatementNode } from "./compile-statements";
-import { emitFlowSwitch, emitStructuredFlow } from "./compile-structured-flow";
+import {
+  emitFlowSwitch,
+  emitStructuredFlow,
+  emitSwitchCases,
+} from "./compile-structured-flow";
 import { emitInputEventEntry } from "./compile-input-events";
 
 /**
@@ -104,7 +109,7 @@ export function emitExecChain(
     }
     // Event entries that gate their chain on live input report inside the gate.
     if (!GATED_EVENT_TYPE_IDS.has(node.typeId)) emitExecProbes(s, node.id);
-    if (s.useEpoch) emitBody(s, "  __stmt++;");
+    emitEpoch(s);
 
     if (node.typeId === "flow.branch") {
       const ctx = makeCtx(s, node);
@@ -149,43 +154,30 @@ export function emitExecChain(
         graphId: s.graph.id,
         nodeId: node.id,
       };
-      const valueExpr = ctx.input("value");
-      const cases = node.pins.filter(
+      const wiredCases = node.pins.filter(
         (pin) =>
           pin.kind === "exec" &&
           pin.direction === "out" &&
-          enumSwitchMemberNameFromPinId(pin.id) !== undefined,
-      );
-      const wiredCases = cases.filter(
-        (pin) => execSuccessorEdges(s.index, node.id, pin.id).length > 0,
+          enumSwitchMemberNameFromPinId(pin.id) !== undefined &&
+          execSuccessorEdges(s.index, node.id, pin.id).length > 0,
       );
       const defaultTargets = execSuccessorEdges(s.index, node.id, "default");
       if (wiredCases.length === 0 && defaultTargets.length === 0) {
         emitBody(s, `  /* enum.switch ${node.id}: no exec outs */`, anchor);
         break;
       }
-      for (let i = 0; i < wiredCases.length; i++) {
-        const pin = wiredCases[i]!;
-        const memberName = enumSwitchMemberNameFromPinId(pin.id) ?? pin.name;
-        const keyword = i === 0 ? "if" : "} else if";
-        emitBody(
-          s,
-          `  ${keyword} (${valueExpr} === ${JSON.stringify(memberName)}) {`,
-          anchor,
-        );
-        emitAlong(s, execSuccessorEdges(s.index, node.id, pin.id), visited);
-      }
-      if (defaultTargets.length > 0) {
-        if (wiredCases.length > 0) {
-          emitBody(s, `  } else {`, anchor);
-        }
-        emitAlong(s, defaultTargets, visited);
-        if (wiredCases.length > 0) {
-          emitBody(s, `  }`, anchor);
-        }
-      } else if (wiredCases.length > 0) {
-        emitBody(s, `  }`, anchor);
-      }
+      emitSwitchCases(
+        s,
+        node,
+        ctx.input("value"),
+        wiredCases.map((pin) => ({
+          pinId: pin.id,
+          literal: JSON.stringify(enumSwitchMemberNameFromPinId(pin.id) ?? pin.name),
+        })),
+        defaultTargets,
+        visited,
+        emitAlong,
+      );
       break;
     }
 

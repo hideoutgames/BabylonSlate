@@ -3,7 +3,9 @@ import {
   INT,
   STRING,
   compileGraph,
+  enumSwitchCasePinId,
   flowSwitchCasePinId,
+  pin,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -139,6 +141,48 @@ describe("Switch on Int / Switch on String compile", () => {
     expect(compiled.anchors.some((anchor) => anchor.nodeId === "sw")).toBe(
       true,
     );
+  });
+
+  it.each([
+    ["flow.switchInt", { cases: [1, 2, 3] }, 3, flowSwitchCasePinId("3")],
+    ["flow.switchString", { cases: ["a", "b", "c"] }, "c", flowSwitchCasePinId("c")],
+    ["enum.switch", { members: [{ name: "A", value: 0 }, { name: "B", value: 1 }, { name: "C", value: 2 }] }, "C", enumSwitchCasePinId("C")],
+  ] as const)("%s reads its value once, whichever case matches", (typeId, properties, value, casePin) => {
+    const registry = createDefaultNodeRegistry();
+    const sw = node(registry, "sw", typeId, properties);
+    registry.register({
+      id: "test.read", title: "Read", category: "test", pure: true,
+      pins: () => [pin("out", "Out", "out", sw.pins.find((entry) => entry.id === "value")!.type)],
+      codegen: () => ({ out: "ctx.read()" }),
+    });
+    // Every wired case is tested in turn; the last one matching means all of them were.
+    const cases = sw.pins.filter((pin) => pin.kind === "exec" && pin.direction === "out" && pin.id !== "default");
+    expect(cases.map((pin) => pin.id)).toContain(casePin);
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "read", "test.read"),
+        sw,
+        ...cases.map((pin, index) => node(registry, `log${index}`, "debug.log", { "default:message": pin.id })),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "sw", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "read", sourcePinId: "out", targetNodeId: "sw", targetPinId: "value" },
+        ...cases.map((pin, index) => ({ id: `c${index}`, sourceNodeId: "sw", sourcePinId: pin.id, targetNodeId: `log${index}`, targetPinId: "execIn" })),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    let reads = 0;
+    const logs: string[] = [];
+    const body = compiled.source.replace(/export\s+function\s+/g, "function ");
+    (new Function(`${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => void)({
+      read: () => { reads += 1; return value; },
+      formatValue: (v: unknown) => String(v),
+      log: (_severity: string, _category: string, message: string) => logs.push(message),
+    });
+    expect({ reads, logs }).toEqual({ reads: 1, logs: [casePin] });
   });
 
   it("compiles Switch on String against encoded case pin values", () => {

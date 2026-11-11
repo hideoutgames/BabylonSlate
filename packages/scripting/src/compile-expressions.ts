@@ -164,7 +164,9 @@ export function makeCtx(s: CodegenState, node: GraphNode, continuation?: (expres
       emitBody(s, `  ${statement}`, anchor);
     },
     hoist(source, bodyAnchors) {
-      const next = s.instrumentLoops
+      // Only an authored body can loop without end, and only its function takes `ctx`: a guard
+      // in a module-scope helper would name a `ctx` that is not in scope there.
+      const next = s.instrumentLoops && (bodyAnchors?.length ?? 0) > 0
         ? instrumentJsLoops(source, loopCheck(s, node.id))
         : source;
       if (s.hoisted.some((chunk) => chunk.source === next)) return;

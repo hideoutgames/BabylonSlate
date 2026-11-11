@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { arrayOf, FLOAT, type CodegenContext, type GraphPin } from "@haptic/scripting";
+import {
+  arrayOf, BOOL, compileGraph, FLOAT, pin,
+  type CodegenContext, type GraphNode, type GraphPin, type LogicGraph, type PinType,
+} from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 import { utilityHelperNodes } from "./utility-helpers";
 
@@ -145,5 +148,63 @@ describe("utility helper nodes", () => {
     ["array.minOfInt", [4, 3], { index: 1, value: 3 }],
   ] as const)("%s %j", (id, array, expected) => {
     expect(run(id, { array })).toEqual(expected);
+  });
+
+  /**
+   * Compiles Begin Play -> Print of `typeId`'s `output`, with `input` wired from a node that counts
+   * its reads, and runs it. `compile` are the compile options an editor Play adds.
+   */
+  function runCompiled(typeId: string, input: string, output: string, type: PinType, read: () => unknown,
+    properties: Record<string, unknown> = {}, compile: { instrumentInfiniteLoops?: boolean } = {}) {
+    const registry = createDefaultNodeRegistry();
+    registry.register({
+      id: "test.read", title: "Read", category: "test", pure: true,
+      pins: () => [pin("out", "Out", "out", type)], codegen: () => ({ out: "ctx.read()" }),
+    });
+    const node = (id: string, nodeType: string, nodeProperties: Record<string, unknown> = {}): GraphNode => ({
+      id, typeId: nodeType, position: { x: 0, y: 0 }, pins: registry.get(nodeType)!.pins(nodeProperties), properties: nodeProperties,
+    });
+    const op = node("op", typeId, properties);
+    const exec = op.pins.some((entry) => entry.kind === "exec");
+    const edge = (id: string, sourceNodeId: string, sourcePinId: string, targetNodeId: string, targetPinId: string) =>
+      ({ id, sourceNodeId, sourcePinId, targetNodeId, targetPinId });
+    const graph: LogicGraph = {
+      id: "g", kind: "event",
+      nodes: [node("begin", "flow.event.beginPlay"), node("read", "test.read"), op, node("log", "debug.log")],
+      edges: [
+        ...(exec
+          ? [edge("e1", "begin", "execOut", "op", "execIn"), edge("e2", "op", "execOut", "log", "execIn")]
+          : [edge("e1", "begin", "execOut", "log", "execIn")]),
+        edge("e3", "read", "out", "op", input),
+        edge("e4", "op", output, "log", "message"),
+      ],
+    };
+    const source = compileGraph(graph, { assetGuid: "a", registry, ...compile }).source.replace(/export\s+function\s+/g, "function ");
+    let reads = 0;
+    const logged: unknown[] = [];
+    (new Function(`${source}\nreturn onBeginPlay;`)() as (ctx: unknown) => void)({
+      read: () => { reads += 1; return read(); },
+      checkInfiniteLoop: () => {},
+      formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, value: unknown) => logged.push(value),
+    });
+    return { reads, logged };
+  }
+
+  it("Max Of runs in an editor compile, whose loop guards need a ctx the helper does not have", () => {
+    expect(runCompiled("array.maxOfFloat", "array", "value", arrayOf(FLOAT), () => [1, 5.5, 2], {}, { instrumentInfiniteLoops: true }))
+      .toEqual({ reads: 1, logged: [5.5] });
+  });
+
+  it.each([
+    ["math.square", "value", FLOAT, () => 3, 9],
+    ["vector.nearlyEqual", "tolerance", FLOAT, () => 0.5, true],
+  ] as const)("%s reads a changing %s once", (typeId, input, type, read, expected) => {
+    expect(runCompiled(typeId, input, "out", type, read)).toEqual({ reads: 1, logged: [expected] });
+  });
+
+  it("Sort Array reads Descending once, not once per comparison", () => {
+    expect(runCompiled("array.sort", "descending", "out", BOOL, () => true, { "default:array": [2, 9, 4, 7, 1] }))
+      .toEqual({ reads: 1, logged: [[9, 7, 4, 2, 1]] });
   });
 });

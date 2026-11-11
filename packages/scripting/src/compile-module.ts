@@ -10,6 +10,7 @@ import { eventNameForEntry } from "./compile-events";
 import {
   beginEntry,
   emitBody,
+  entryDeclarations,
   type BodyLine,
   type CodegenState,
   type HoistChunk,
@@ -78,6 +79,8 @@ export function compileEntry(
     entry ? entryExportName(entry, exportName) : exportName,
     usedNames,
   );
+  // Before `s.body` is read below: an entry without memos drops its epoch lines.
+  const closures = entryDeclarations(s);
   return {
     entry: {
       name,
@@ -95,8 +98,7 @@ export function compileEntry(
         ? [`  const __bp = ctx.breakpoints === null ? null : ctx.breakpoints.graph(${JSON.stringify(s.options.assetGuid)}, ${JSON.stringify(s.graph.id)});`]
         : []),
       ...s.outputDecls.values(),
-      ...s.pureExpressions.declarations,
-      ...(s.memoDecls.length > 0 ? ["  let __stmt = 0;", ...s.memoDecls] : []),
+      ...closures,
     ],
     bodyLines: s.body.filter((line) => line.text !== ""),
   };
