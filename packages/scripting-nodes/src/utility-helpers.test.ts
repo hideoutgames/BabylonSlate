@@ -197,10 +197,10 @@ describe("utility helper nodes", () => {
   });
 
   it.each([
-    ["math.square", "value", FLOAT, () => 3, 9],
-    ["vector.nearlyEqual", "tolerance", FLOAT, () => 0.5, true],
-  ] as const)("%s reads a changing %s once", (typeId, input, type, read, expected) => {
-    expect(runCompiled(typeId, input, "out", type, read)).toEqual({ reads: 1, logged: [expected] });
+    ["math.square", "value", 3, 9],
+    ["vector.nearlyEqual", "tolerance", 0.5, true],
+  ] as const)("%s reads a changing %s once", (typeId, input, value, expected) => {
+    expect(runCompiled(typeId, input, "out", FLOAT, () => value)).toEqual({ reads: 1, logged: [expected] });
   });
 
   it("Sort Array reads Descending once, not once per comparison", () => {
