@@ -25,7 +25,7 @@ Build one with **Make Seed** and read it with **Break Seed** or [Get Step Count]
 
 Every Random node has a **Seeded** version, such as [Seeded Random Float](class/seeded-random-float.md), that draws from a Seed of its own instead of the global one.
 
-- Its **Seed** input is a [reference pin](pin-types.md#reference-pins): connect a Seed variable. The node draws from that variable and moves its **Step** on, so the next draw continues the sequence.
+- Its **Seed** input is a [reference pin](pin-types.md#reference-pins): connect a Seed variable. The node draws from that variable and moves its **Step** on, so the next draw continues the sequence. The variable's Get node shows the reference diamond too while it is connected.
 - Each value drawn is one step. [Seeded Random Unit Vector](class/seeded-random-unit-vector.md) takes two, a Vector In Range three, and a shuffle one for each item after the first. Picking from an empty Array, or between two equal numbers, takes none.
 - Seeded draws never touch the global seed, and the global seed's draws never touch a Seed variable. Give each system its own Seed variable, such as one for loot and one for level generation, so they cannot change each other's values.
 

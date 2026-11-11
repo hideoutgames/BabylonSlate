@@ -60,6 +60,7 @@ A small diamond, smaller than an execution pin, is a reference pin. It takes a v
 - Connect a Get node of a writable variable: a class variable, a local variable or a function's [Pass-By-Reference](functions.md#pass-by-reference) input. A value from any other node, such as **Make Seed**, is an error in **Compiler Results**, and so is leaving the pin unconnected.
 - The variable must have exactly the pin's type. [Set By-Ref Var](class/set-by-ref-var.md) takes a variable of any type.
 - Examples are the **Seed** of the [Seeded Random](random-numbers.md#seeded-random-nodes) nodes, the **Target** of [Assign Tag](class/assign-tag.md) and the **Target** of the value tweens such as [Tween Float](class/tween-float.md).
+- A Get node's output turns into the same diamond while it is connected to a reference pin, because it passes its variable rather than a copy.
 
 ## Inline values
 

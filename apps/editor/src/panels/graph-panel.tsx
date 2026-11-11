@@ -106,6 +106,7 @@ import {
   type FunctionGraphPanelParams,
 } from "../shell/function-graph-panels";
 import { claimFocusRouting, graphOwningNode } from "../lib/function-graph-focus";
+import { useEndFocusOnDeselect } from "../lib/use-end-focus-on-deselect";
 import { ClassParticleSystemsContext } from "../context/class-particle-systems-context";
 import { particleSystemGuidsOf } from "../lib/use-particle-system-parameters";
 import { meshMaterialGuidsOf } from "../lib/use-material-parameter-names";
@@ -133,6 +134,7 @@ export function GraphPanel(
   const { activeDocumentId, animEditorMode, sceneMode } = useActiveDocumentState();
   const { focusedNodeId, openSessionSource } = usePlay();
   const {
+    selectedNodeIds,
     setSelectedNodeIds,
     setSelectedMemberId,
     activeFunctionId: focusedFunctionId,
@@ -601,6 +603,15 @@ export function GraphPanel(
       : graphContent?.nodes;
     return new Map((nodes ?? []).map((node) => [node.id, node.type]));
   }, [activeFunctionId, graphContent]);
+  // A Compiler Results or Session Report focus ends once the user selects something
+  // else, or nothing, in the graph that holds its node.
+  const focusNodeId = focusDiagnostic?.nodeId;
+  const endFocus = useCallback(() => setFocusDiagnostic(null), [setFocusDiagnostic]);
+  useEndFocusOnDeselect(
+    focusNodeId && documentId === activeDocumentId && nodeTypeById.has(focusNodeId) ? focusNodeId : undefined,
+    selectedNodeIds,
+    endFocus,
+  );
   /** Commit a change to one node's data in the open graph (Event Graph or function). */
   const commitNodeData = useCallback(
     (base: SerializedGraph, nodeId: string, patch: Record<string, unknown>) => {
@@ -717,10 +728,6 @@ export function GraphPanel(
       ) : null;
     },
     [nodeTypeById, renderCreateEventBody],
-  );
-  const onNavigateRequest = useCallback(
-    () => setFocusDiagnostic(null),
-    [setFocusDiagnostic],
   );
   // Extension entries read the node the menu was opened on when they run.
   const extensionNodeRef = useRef<{ id: string; type: string | null } | null>(null);
@@ -860,7 +867,7 @@ export function GraphPanel(
             addNodeHistoryScope="script"
             pinTypeNames={pinTypeNames}
             onCanvasApi={setCanvasApi}
-            onNavigateRequest={onNavigateRequest}
+            onNavigateRequest={endFocus}
             onSelectionChange={setSelectedNodeIds}
             // An empty click in a function's tab selects the function itself.
             onEmptyCanvasClick={functionMember ? () => setSelectedMemberId(functionMember.id) : undefined}

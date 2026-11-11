@@ -17,7 +17,7 @@ import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-c
 import { GraphEditingProvider, useGraphEditing } from "../context/graph-editing-context";
 import type { GraphDebugStore } from "../services/graph-debug-store";
 import { classIdForGraphPath } from "../services/script-compiler";
-import { ValidationProvider } from "../context/validation-context";
+import { ValidationProvider, useValidation } from "../context/validation-context";
 import { createProjectAsset } from "../lib/create-project-asset";
 import {
   addClassMember,
@@ -76,12 +76,19 @@ const seen: {
   panelProps: IDockviewPanelProps;
   graphId: string;
   selection: { nodeIds: string[]; memberId: string | null } | null;
-} = { actions: null, documents: null, panelProps: {} as IDockviewPanelProps, graphId: MAIN_CLASS_ID, selection: null };
+  validation: ReturnType<typeof useValidation> | null;
+} = { actions: null, documents: null, panelProps: {} as IDockviewPanelProps, graphId: MAIN_CLASS_ID, selection: null, validation: null };
 
 /** Records the shared graph selection the Inspector and Class window read. */
 function GraphSelectionProbe() {
   const { selectedNodeIds, selectedMemberId } = useGraphEditing();
   seen.selection = { nodeIds: selectedNodeIds, memberId: selectedMemberId };
+  return null;
+}
+
+/** Records the Compiler Results focus the graph frames. */
+function ValidationProbe() {
+  seen.validation = useValidation();
   return null;
 }
 
@@ -97,6 +104,7 @@ function MainClassGraph() {
     <ValidationProvider>
       <GraphEditingProvider>
         <GraphSelectionProbe />
+        <ValidationProbe />
         <DocumentWorkspaceProvider documentId={graphId}>
           <GraphPanel {...seen.panelProps} />
         </DocumentWorkspaceProvider>
@@ -120,6 +128,7 @@ afterEach(async () => {
   seen.panelProps = {} as IDockviewPanelProps;
   seen.graphId = MAIN_CLASS_ID;
   seen.selection = null;
+  seen.validation = null;
 });
 
 describe("Graph panel", () => {
@@ -326,6 +335,41 @@ describe("Graph panel", () => {
       ),
     );
     expect(panelApi.close).toHaveBeenCalled();
+  });
+
+  it("selects a focused diagnostic's node and ends the focus once the user clicks away", async () => {
+    render(
+      <DocumentProvider>
+        <MainClassGraph />
+      </DocumentProvider>,
+    );
+    await waitFor(() => expect(seen.documents?.homepageReady).toBe(true));
+    const actions = seen.actions!;
+    await act(() => actions.createEmptyProject("Focus", { kind: "2d" }));
+    await act(() =>
+      actions.openDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }),
+    );
+    const tick = { id: "tick", type: "flow.event.tick", position: { x: 80, y: 80 }, data: { title: "Event Tick", __nodeType: "flow.event.tick" } };
+    await act(() =>
+      actions.applyGraphChange(MAIN_CLASS_ID, { ...openContent<SerializedGraph>(MAIN_CLASS_ID), nodes: [tick], edges: [] }),
+    );
+    await waitFor(() => expect(document.querySelector('[data-id="tick"]')).toBeTruthy());
+
+    const diagnostic = {
+      severity: "warning" as const,
+      code: "graph.unused_event",
+      message: "Event Tick does nothing.",
+      assetGuid: MAIN_CLASS_FILE,
+      graphId: MAIN_CLASS_ID,
+      nodeId: "tick",
+    };
+    act(() => seen.validation!.setFocusDiagnostic(diagnostic));
+    await waitFor(() => expect(seen.selection?.nodeIds).toEqual(["tick"]));
+    expect(seen.validation!.focusDiagnostic).toBe(diagnostic);
+
+    fireEvent.click(document.querySelector(".react-flow__pane")!);
+    await waitFor(() => expect(seen.validation!.focusDiagnostic).toBeNull());
+    expect(seen.selection?.nodeIds).toEqual([]);
   });
 
   it("selects its function when the empty canvas of a function tab is clicked", async () => {
