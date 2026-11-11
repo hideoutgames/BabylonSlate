@@ -118,6 +118,10 @@ export class SceneRenderCoordinator {
   private readonly releaseWaterPlanarReflections: () => void;
   private readonly auxiliaryCamera: Camera | undefined;
   private readonly deferPipelines: boolean;
+  /** Counts `supersedeRequestedPreparation`: a preparation the view asked for itself ends when it has changed. */
+  private requestsSuperseded = 0;
+  /** The pending preparation the view asked for itself, if it is the one running. */
+  private requested: { generation: number } | undefined;
   /** The last drawn frame's deferral, while it skipped draws. */
   private deferral: PipelineDeferral | undefined;
   /** When the current run of frames held for deferred pipelines began. */
@@ -543,6 +547,18 @@ export class SceneRenderCoordinator {
     return this.auxiliaryCamera ?? this.scene.activeCamera;
   }
 
+  /**
+   * Ends a preparation the view asked for itself (a frame or a readiness question found it unprepared); an owner's
+   * goes on. For an owner about to replace what the view draws and prepare it itself (a game's Scene load): left
+   * running, that preparation restarts for every invalidation of the load and builds a graph for each.
+   */
+  supersedeRequestedPreparation(): void {
+    this.requestsSuperseded += 1;
+    // The owner's `prepare()` must not join the one that is ending: it starts its own once that has settled.
+    if (this.requested && this.pending === this.requested) this.requested.generation = Number.NaN;
+    this.requested = undefined;
+  }
+
   private requestPreparation(): void {
     if (this.pending?.generation === this.generation) return;
     // An auxiliary view retries a failed preparation (a refused budget, an
@@ -559,8 +575,14 @@ export class SceneRenderCoordinator {
     // variant compiled. A strict question asks again once it is done. Until the view draws steady frames (loading,
     // its starting-state draw and first presentation), what draws next is a strict frame, so it probes strictly.
     const tolerate = this.toleratesVariantSwaps() && this.graph.warmsVariants;
-    void this.prepare(undefined, { tolerateVariantSwaps: tolerate }).catch((error: unknown) => {
-      if (this.disposed || generation !== this.generation) return;
+    const request = this.requestsSuperseded;
+    const current = () => {
+      if (request !== this.requestsSuperseded) throw new PreparationChanged("Scene rendering preparation was superseded by its owner's.");
+    };
+    const preparation = this.prepare(current, { tolerateVariantSwaps: tolerate });
+    this.requested = this.pending;
+    void preparation.catch((error: unknown) => {
+      if (this.disposed || generation !== this.generation || request !== this.requestsSuperseded) return;
       this.failure = error;
       this.failedAt = performance.now();
       const message = String(error);
