@@ -112,6 +112,9 @@ type Surface = MirrorCandidate & {
   readonly drawnViewProjection: Matrix;
   /** Whether the last draw listed nothing: its image is open everywhere, whatever the view. */
   drawnEmpty: boolean;
+  /** The owner's `culls` value when the pass's list was last culled, and the target it was culled into. */
+  culledAt: number;
+  culledInto: PlanarMirrorTargetState | null;
 };
 
 /** What a Moving Actors reflection is cleared to: no colour, and alpha 1, which a drawn fragment turns to 0. */
@@ -169,6 +172,12 @@ class SceneMirrors {
   /** The owner's renders, and whether Reflection Shadows is on in this one. */
   private renders = 0;
   private sunShadows = false;
+  /**
+   * Bumped as an update starts and as each surface starts drawing: a pass list `current` made under the same value
+   * was made for this view, and nothing that can change what it lists (a shadow map or mirror pass, which run render
+   * hooks) has run since.
+   */
+  private culls = 0;
   private order = 0;
   private drawing = false;
   private drawTarget: PlanarMirrorTargetState | null = null;
@@ -225,7 +234,7 @@ class SceneMirrors {
     const surface: Surface = {
       mesh, properties, binding: createMirrorReflectionBinding(mesh, properties.tint, properties.reflects), plane: { nx: 0, ny: 0, nz: -1, d: 0 },
       target: null, ready: false, failed: false, content: new ReflectedContent(), dirty: true, drawnViewProjection: new Matrix(),
-      drawnEmpty: false, drawn: false, visible: false, order: this.order++, distance: 0,
+      drawnEmpty: false, culledAt: 0, culledInto: null, drawn: false, visible: false, order: this.order++, distance: 0,
       cx: 0, cy: 0, cz: 0, nx: 0, ny: 0, nz: -1, ux: 0, uy: 0, uz: 0, vx: 0, vy: 0, vz: 0,
     };
     this.surfaces.push(surface);
@@ -254,7 +263,7 @@ class SceneMirrors {
     if (index >= 0) this.surfaces.splice(index, 1);
     surface.binding.texture = null;
     if (surface.target) disposePlanarMirrorTarget(this.scene, surface.target);
-    surface.target = null;
+    surface.target = surface.culledInto = null;
     surface.content.dispose();
     if (!this.surfaces.length) {
       this.scene.onBeforeRenderObservable.remove(this.beforeRender);
@@ -283,6 +292,7 @@ class SceneMirrors {
     const maxSize = engine.getCaps().maxTextureSize;
     const type = linear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     const tick = ++this.renders;
+    this.culls++;
     this.sunShadows = reflectionShadowsEnabled(scene);
     for (const surface of this.surfaces) {
       // Off, every surface gives its maps back now; a current one then draws again, unshadowed.
@@ -373,8 +383,11 @@ class SceneMirrors {
     return !surface.dirty && surface.drawnViewProjection.equals(this.nextViewProjection);
   }
 
-  /** Places the surface's mirror camera for the view and culls the pass's list; false when the eye cannot see it. */
-  private mirrorAndCull(surface: Surface, camera: Camera, target: PlanarMirrorTargetState): boolean {
+  /**
+   * Places the surface's mirror camera for the view and culls the pass's list, unless `listed` (the list is already
+   * the one this placement culls); false when the eye cannot see it.
+   */
+  private mirrorAndCull(surface: Surface, camera: Camera, target: PlanarMirrorTargetState, listed = false): boolean {
     const engine = this.scene.getEngine();
     if (!this.math.mirror(camera.getViewMatrix(), camera.globalPosition, surface.plane, this.projection,
       engine.useReverseDepthBuffer, engine.isNDCHalfZRange, target.mirror.mirrorView, target.projection)) return false;
@@ -385,6 +398,7 @@ class SceneMirrors {
     mirror.minZ = camera.minZ;
     mirror.maxZ = camera.maxZ;
     mirror.getViewMatrix(true);
+    if (listed) return true;
     // Cull with the mirror camera's ordinary frustum, cropped to the surface's footprint, its near plane replaced by the
     // mirror plane.
     target.mirror.mirrorView.multiplyToRef(this.projection, this.cullViewProjection);
@@ -392,6 +406,8 @@ class SceneMirrors {
     clipFrustumAtMirror(cull, surface.plane, this.reflectionPlanes);
     collectPlanarMirrorMeshes(this.scene, target.texture.renderList!, camera.layerMask, this.reflectionPlanes,
       this.mode(surface) === "movingActors" ? this.excludedStill : excludedFromMirrors);
+    surface.culledAt = this.culls;
+    surface.culledInto = target;
     return true;
   }
 
@@ -422,9 +438,13 @@ class SceneMirrors {
     const scale = surface.properties.resolutionScale;
     const width = planarMirrorTargetSize(drawnWidth, scale, maxSize), height = planarMirrorTargetSize(drawnHeight, scale, maxSize);
     const type = linear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
+    // The list `current` culled this update is still the pass's for the first surface to draw: the same view, plane,
+    // mode and target (`current` checked its size and type, so `ensureTarget` keeps it as it is), and no pass has run.
+    const listed = surface.culledAt === this.culls;
+    this.culls++;
     const target = this.ensureTarget(surface, camera, width, height, type);
     if (!target) return false;
-    if (!this.mirrorAndCull(surface, camera, target)) return false;
+    if (!this.mirrorAndCull(surface, camera, target, listed && surface.culledInto === target)) return false;
     // A view without its own clear colour clears like the scene view does.
     target.texture.clearColor = this.mode(surface) === "movingActors" ? OPEN : this.scene.clearColor ?? new Color4(0, 0, 0, 1);
     // Its own sun maps first: the shadow passes the content follows from on are then those after them.
@@ -488,7 +508,7 @@ class SceneMirrors {
     surface.binding.texture = null;
     surface.drawn = surface.drawnEmpty = false;
     if (surface.target) disposePlanarMirrorTarget(this.scene, surface.target);
-    surface.target = null;
+    surface.target = surface.culledInto = null;
   }
 
   private draw(surface: Surface, target: PlanarMirrorTargetState): boolean {
