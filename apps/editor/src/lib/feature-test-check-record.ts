@@ -67,11 +67,15 @@ function completeFrames(stats: unknown): boolean {
   return typeof frames?.medianMs === "number" && typeof frames.meanMs === "number" && Array.isArray(frames.vsync);
 }
 
-/** Whether every scene of a stored report holds complete frame statistics, so formatting it reads no missing field. */
+/**
+ * Whether every scene of a stored report holds complete frame statistics and readiness probe causes, so formatting it
+ * reads no missing field.
+ */
 function completeReport(report: FeatureTestCheckReport): boolean {
   return report.scenes.every((scene) => {
     const { editor, play } = scene as Partial<typeof scene>;
     return completeFrames(editor?.frames) && completeFrames(play?.frames) &&
+      (!play?.work || typeof play.work.work?.readinessProbeReasons === "object") &&
       Array.isArray(play?.benchmark) && play.benchmark.every((sample) => completeFrames(sample.frames));
   });
 }
