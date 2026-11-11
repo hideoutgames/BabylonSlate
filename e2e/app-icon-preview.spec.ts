@@ -33,7 +33,7 @@ async function sampledColours(page: Page, testId: string): Promise<{ red: number
   });
 }
 
-test("a non-square App Icon is cropped to its centre square in Export settings and Packaging previews", async ({ page }) => {
+test("a non-square App Icon is cropped to its centre square in Export settings and Packaging previews", async ({ page }, testInfo) => {
   await openMinimalTestProject(page);
   await openContentBrowser(page);
   await selectContentBrowserAssetsFolder(page);
@@ -45,6 +45,9 @@ test("a non-square App Icon is cropped to its centre square in Export settings a
   await page.getByTestId("project-settings").click();
   await page.getByTestId("settings-modal-category-export").click();
   await page.getByTestId("setting-app-icon").click();
+  // The Pick Asset list shows the Texture's thumbnail in its row.
+  await expect(page.getByTestId(`search-item-${guid}`).getByTestId(`asset-row-thumbnail-${guid}`).locator("img")).toBeVisible({ timeout: 15_000 });
+  await page.screenshot({ path: testInfo.outputPath("pick-asset-thumbnail.png"), animations: "disabled" });
   await page.getByTestId(`search-item-${guid}`).click();
   await expect(page.getByTestId("setting-app-icon-picker")).toHaveCount(0);
 

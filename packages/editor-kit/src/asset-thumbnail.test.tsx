@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { Button } from "@haptic/ui/components/button";
+import { AssetPicker } from "./asset-picker";
 import { AssetPickerControl } from "./asset-picker-control";
 import { AssetThumbnailProvider, type AssetThumbnailApi } from "./asset-thumbnail";
 import { PickerIdentity, assetRowIdentity, selectedPickerIdentity } from "./picker-identity";
@@ -68,5 +69,27 @@ describe("closed picker thumbnails", () => {
     );
     expect(screen.queryByTestId("picker-thumbnail")).toBeNull();
     expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("show Texture thumbnails in the Pick Asset list and the type icon for other rows", async () => {
+    const load = vi.fn(async (guid: string) => (guid === "tex-grass" ? PNG : null));
+    render(
+      <AssetThumbnailProvider value={{ load, versions: {} }}>
+        <AssetPicker
+          open
+          onOpenChange={() => {}}
+          onPick={() => {}}
+          assets={[
+            { guid: "tex-grass", name: "Grass", type: "Texture" },
+            { guid: "mat-rock", name: "Rock", type: "Material" },
+          ]}
+        />
+      </AssetThumbnailProvider>,
+    );
+    const image = await waitFor(() => screen.getByTestId("asset-row-thumbnail-tex-grass").querySelector("img")!);
+    expect(image.getAttribute("src")).toBe("blob:thumb-1");
+    expect(screen.getByTestId("search-item-tex-grass").contains(image)).toBe(true);
+    expect(screen.queryByTestId("asset-row-thumbnail-mat-rock")).toBeNull();
+    expect(load).not.toHaveBeenCalledWith("mat-rock");
   });
 });

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { thumbnailMime } from "@haptic/assets";
 import { cn } from "@haptic/ui/lib/utils";
+import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
 
 /** Reads asset thumbnails for closed pickers: the project's stored thumbnail bytes and a version that changes when one is rewritten. */
 export type AssetThumbnailApi = {
@@ -65,4 +66,15 @@ export function AssetThumbnail({ url, className, "data-testid": testId }: { url:
       <img src={url} alt="" draggable={false} className="size-full object-contain" />
     </span>
   );
+}
+
+/**
+ * A Pick Asset row's glyph: a Texture's thumbnail once it loads, otherwise the
+ * asset type's icon. Only Textures show a thumbnail, as their closed pickers do.
+ */
+export function AssetRowGlyph({ guid, type }: { guid: string; type: string }) {
+  const url = useAssetThumbnailUrl(type === "Texture" ? guid : null);
+  return url
+    ? <AssetThumbnail url={url} className="size-[22px]" data-testid={`asset-row-thumbnail-${guid}`} />
+    : <TypeVisualIcon visual={resolveTypeVisual({ assetType: type })} />;
 }
