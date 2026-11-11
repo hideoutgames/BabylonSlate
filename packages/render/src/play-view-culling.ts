@@ -68,6 +68,15 @@ export function keepsDrawingOutsideView(mesh: AbstractMesh): boolean {
 /** Per culled Scene, the meshes already settled (each is settled once). */
 const cullings = new WeakMap<Scene, WeakSet<AbstractMesh>>();
 
+/**
+ * Whether `mesh` is marked drawn whatever the view on purpose. In a Scene Play culls, Babylon's mark alone says
+ * nothing: every mesh carries it until the next cull settles it, and one without geometry keeps it.
+ */
+export function drawnWhateverTheViewOnPurpose(mesh: AbstractMesh): boolean {
+  if (!mesh.alwaysSelectAsActiveMesh) return false;
+  return !cullings.has(mesh.getScene()) || alwaysDrawn.has(mesh) || posedBeyondBounds(mesh);
+}
+
 /** Culls `scene`'s meshes by view from its next cull on; returns the release. */
 export function installPlayViewCulling(scene: Scene): () => void {
   const settled = new WeakSet<AbstractMesh>();

@@ -9,7 +9,8 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { Scene } from "@babylonjs/core/scene";
+import { Scene, ScenePerformancePriority } from "@babylonjs/core/scene";
+import { drawWhateverTheView, installPlayViewCulling } from "./play-view-culling";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
@@ -1747,6 +1748,42 @@ describe("createPlayMesh", () => {
     expect(secondWorld.getTranslation().asArray()).toEqual([4, -1, 0]);
     expect(binding.meshes.get(0)!.isWorldMatrixFrozen).toBe(true);
     expect(binding.meshes.get(1)!.isWorldMatrixFrozen).toBe(true);
+  });
+
+  it("freezes a Play actor's world matrix from its first snapshot, before the view's cull has settled its mesh", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    // Play's Scene: Babylon marks every mesh it constructs always drawn, and the view's next cull clears the mark.
+    scene.performancePriority = ScenePerformancePriority.Intermediate;
+    installPlayViewCulling(scene);
+    const binding = createSnapshotSceneBinding();
+    for (const slotId of [0, 1]) applyAssignMesh(scene, binding, { type: "assignMesh", slotId, meshAssetGuid: null, meshKind: "box" });
+    // The engine draws this one whatever the view on purpose (a particle emitter): it is never frozen.
+    drawWhateverTheView(binding.meshes.get(1)!);
+    const snapshot = (frameId: number, x: number) => ({
+      frameId,
+      tickIndex: frameId,
+      actorCount: 2,
+      actors: [0, 1].map((slotId) => ({
+        slotId,
+        position: { x, y: slotId, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+        flags: 1,
+      })),
+    });
+    applySnapshotToScene(scene, binding, snapshot(1, -3));
+    const [actor, emitter] = [binding.meshes.get(0)!, binding.meshes.get(1)!];
+    expect(actor.alwaysSelectAsActiveMesh).toBe(true);
+    expect(actor.isWorldMatrixFrozen).toBe(true);
+    expect(emitter.isWorldMatrixFrozen).toBe(false);
+    expect(actor.getWorldMatrix().getTranslation().asArray()).toEqual([-3, 0, 0]);
+    // A frozen actor still follows the next snapshot that moves it.
+    applySnapshotToScene(scene, binding, snapshot(2, 5));
+    expect(actor.isWorldMatrixFrozen).toBe(true);
+    expect(actor.getWorldMatrix().getTranslation().asArray()).toEqual([5, 0, 0]);
+    expect(emitter.getWorldMatrix().getTranslation().asArray()).toEqual([5, 1, 0]);
   });
 
   it("rebuilds a slot visual when assignMesh arrives after the first snapshot", () => {
