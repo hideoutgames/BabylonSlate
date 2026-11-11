@@ -251,7 +251,8 @@ export function NumericDragField({
           spellCheck={false}
           id={id}
           className={cn(
-            "h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 rounded-md border border-input bg-control px-1.5 py-0 text-xs",
+            // A narrow axis cuts Mixed Values with an ellipsis rather than mid-word.
+            "h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 text-ellipsis rounded-md border border-input bg-control px-1.5 py-0 text-xs",
             !label && "pr-6",
           )}
           aria-label={ariaLabel ?? (label || undefined)}

@@ -1102,7 +1102,10 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
         const requests: BtAssetPick[] = [];
         pickCollector.requests = requests;
         try {
-          for (const itemRows of items) itemRows.find((entry) => entry.id === row.id)?.onPick?.();
+          for (const itemRows of items) {
+            const entry = itemRows.find((candidate) => candidate.id === row.id);
+            if (entry?.kind === "asset") entry.onPick();
+          }
         } finally {
           pickCollector.requests = null;
         }
