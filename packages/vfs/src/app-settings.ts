@@ -245,6 +245,8 @@ export const engineSettingsSchema = z.object({
   viewportPlaceOnSurfaces: z.boolean().default(true),
   /** How far that trace reaches, in world units; a miss places the actor at its end. */
   viewportPlacementDistance: z.number().finite().positive().default(DEFAULT_EDITOR_PLACEMENT_DISTANCE),
+  /** The viewport View menu's Show FPS: editor viewports show their rendered frames per second under the toolbar. */
+  viewportShowFps: z.boolean().default(false),
   /**
    * Which 2D hosts stack new actors: an actor placed, dragged in, pasted or
    * duplicated there goes one Z-Order above the highest actor that draws.

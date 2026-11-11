@@ -130,6 +130,7 @@ export function updateActiveViewportPrefs(
     | "viewportSnapTranslate"
     | "viewportSnapRotateDeg"
     | "viewportSnapScale"
+    | "viewportShowFps"
   >,
 ): Promise<void> {
   return activeOwner.update((settings) => Object.assign(settings, patch));

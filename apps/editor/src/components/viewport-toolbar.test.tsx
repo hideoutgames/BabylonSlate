@@ -85,6 +85,7 @@ vi.mock("../lib/viewport-engine-prefs", async (importOriginal) => ({
     flySpeed: 8,
     editorTextureLodEnabled: true,
     editorTextureLodQuality: 1,
+    showFps: false,
   }),
 }));
 
@@ -661,6 +662,17 @@ describe("ViewportToolbar", () => {
     fireEvent.click(screen.getByTestId("viewport-view"));
     fireEvent.click(screen.getByTestId("viewport-show-collisions-toggle"));
     expect(harness.setCollisionsVisible).toHaveBeenCalledWith(true);
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+  });
+
+  it("turns Show FPS on as an editor preference, off by default", () => {
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("viewport-view"));
+    const toggle = screen.getByTestId("viewport-show-fps-toggle");
+    expect(toggle.textContent).toBe("Show FPS");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    expect(harness.patchPrefs).toHaveBeenCalledWith({ viewportShowFps: true });
     expect(harness.applySceneChange).not.toHaveBeenCalled();
   });
 

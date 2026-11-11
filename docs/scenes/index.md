@@ -29,10 +29,12 @@ See [Touch Gestures](../start/gestures.md) for the full list.
 | **Snap Grid** | Snaps gizmo moves to the increment shown on the button (<kbd>G</kbd>). Hold or right-click it for **Grid Settings**. |
 | **Drag Select** | The next drag draws a selection box (<kbd>Q</kbd>). |
 | **Drop** | Drops the selected actors straight down onto the nearest collision surface (<kbd>End</kbd>). |
-| **View** | Shows how the viewport draws the scene (**PBR** or **CEL**, **Unlit**, **Wireframe**) and holds **Show Grid**, **Show Navmesh** and **Show Collisions**. |
+| **View** | Shows how the viewport draws the scene (**PBR** or **CEL**, **Unlit**, **Wireframe**) and holds **Show Grid**, **Show Navmesh**, **Show Collisions** and **Show FPS**. |
 | **Game Camera** | Looks through the scene's Default Camera (<kbd>Shift</kbd>+<kbd>C</kbd>); viewport navigation then moves that camera. Not shown for Scene Layers, whose camera only scripts move. |
 | **Viewport Settings** | **Joystick**, **Pivot Around Center**, **Grid Settings** and **Camera Speed**. |
 | **2D** / **3D** | One switch: tap anywhere on it to flip the scene between 2D and 3D (<kbd>Alt</kbd>+<kbd>V</kbd>). The active side is highlighted. |
+
+**Show FPS** (off by default) shows the frames the viewport draws per second under the toolbar, at the right, as a whole number that updates four times a second. It is green from 55, yellow from 25, orange from 15 and red below 15. It is an editor preference: it applies to every viewport and stays on until you turn it off. The viewport draws no faster than **Viewport Frame Cap (FPS)** in [Engine Settings](../editor/settings.md) (default 60).
 
 **Grid Settings** holds **Grid Size** (visible cell spacing), **Grid Snap** (move increment), **Rotation Snap** and **Scale Snap**. From **Viewport Settings** it opens beside the menu; from **Snap Grid** it opens as a small popup under the button. Changes apply when you press Enter or close it by tapping outside. New scenes use 1, 1, 15 and 0.25.
 

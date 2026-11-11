@@ -20,6 +20,7 @@ import {
 } from "@haptic/render";
 import { isTestModeEnabled } from "@haptic/vfs";
 import { ViewportToolbar } from "../components/viewport-toolbar";
+import { ViewportFpsCounter } from "../components/viewport-fps-counter";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { SceneLayerActorFrameControls } from "../components/scene-layer-actor-frame-controls";
 import { usePrefabEditing } from "../context/prefab-editing-context";
@@ -720,7 +721,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background"
       data-testid="prefab-viewport-panel"
     >
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col items-center gap-1.5 p-2">
         <div className="pointer-events-auto toolbar-island">
           <ViewportToolbar
             testIdPrefix="prefab-"
@@ -739,6 +740,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
             ) : undefined}
           />
         </div>
+        <ViewportFpsCounter scheduler={() => engineRef.current?.scheduler} className="mr-1 self-end" testId="prefab-viewport-fps" />
       </div>
       <canvas
         ref={canvasRef}
