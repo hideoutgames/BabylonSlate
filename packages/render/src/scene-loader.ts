@@ -42,6 +42,7 @@ import {
   syncEditorBillboardParentScale,
 } from "./editor-billboard";
 import { isSkyboxMesh } from "./skybox";
+import { drawnWhateverTheViewOnPurpose } from "./play-view-culling";
 import { isColliderVisualMesh } from "./collider-visual";
 import { GRID_MESH_NAME } from "./editor-grid";
 import { isEditorCameraModel } from "./editor-camera-model";
@@ -543,7 +544,8 @@ export function shouldFreezeStaticWorldMatrix(mesh: Mesh): boolean {
   if (isSkyboxMesh(mesh)) return false;
   if (mesh.billboardMode !== Mesh.BILLBOARDMODE_NONE) return false;
   if (mesh.name === GRID_MESH_NAME) return false;
-  if (mesh.alwaysSelectAsActiveMesh) return false;
+  // Not Babylon's own mark in Play, which every new mesh carries when its first snapshot poses it.
+  if (drawnWhateverTheViewOnPurpose(mesh)) return false;
   return true;
 }
 
