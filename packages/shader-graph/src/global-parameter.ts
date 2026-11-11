@@ -19,6 +19,7 @@ const OUTPUTS: Readonly<Record<GlobalParameterType, readonly MaterialPinDefiniti
   color: [
     { id: "out", name: "RGBA", type: { kind: "vec4" }, colorHint: true },
     { id: "rgb", name: "RGB", type: { kind: "vec3" }, colorHint: true },
+    { id: "a", name: "A", type: { kind: "float" } },
   ],
 };
 

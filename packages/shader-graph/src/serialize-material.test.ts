@@ -5,6 +5,7 @@ import {
 } from "./document";
 import {
   hydrateMaterialGraphForEditor,
+  materialAddNodePalette,
   materialGraphToSerialized,
   materialPaletteNodes,
   materialPinsAreCompatible,
@@ -39,10 +40,19 @@ describe("material graph serialization", () => {
     expect(pasted.nodes.find((node) => node.id === "roughness-copy")?.properties.name).toBe("Roughness_1");
     expect(pasted.nodes.find((node) => node.id === "roughness-copy")?.properties.value).toEqual([0.4]);
   });
-  it("exposes a Color Parameter RGBA value and an explicit RGB output", () => {
-    expect(pinsForMaterialNode("param.color").map((pin) => [pin.id, pin.type.kind])).toEqual([
-      ["out", "vec4"], ["rgb", "vec3"],
-    ]);
+  it.each(["param.color", "input.vertexColor", "input.particleColor", "input.sceneColor", "texture.sample", "texture.triplanar"])(
+    "gives %s the RGBA, RGB and A outputs every color source has", (type) => {
+      const outputs = pinsForMaterialNode(type).filter((pin) => pin.direction === "out");
+      expect(outputs.filter((pin) => ["RGBA", "RGB", "A"].includes(pin.name)).map((pin) => [pin.name, pin.type.kind])).toEqual([
+        ["RGBA", "vec4"], ["RGB", "vec3"], ["A", "float"],
+      ]);
+    });
+  it("offers every node but the output node in Add Node, which each Material already has one of", () => {
+    for (const domain of ["surface", "landscape", "postProcess", "particle", "text"] as const) {
+      const ids = materialAddNodePalette(domain).map((node) => node.id);
+      expect(ids.filter((id) => id.startsWith("output."))).toEqual([]);
+      expect(ids).toContain("math.add");
+    }
   });
   it("round-trips a document through the graph shell shape", () => {
     const doc = createDefaultMaterialDocument();

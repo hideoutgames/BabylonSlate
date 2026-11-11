@@ -15,7 +15,7 @@ Outputs one parameter of a [Global Parameter Collection](../../assets/global-par
 
 ## Notes
 
-- Its output follows the parameter's type. A Float, Vector2 or Vector3 parameter gives one **Out** pin. A Color gives **RGBA** (Vector4) and **RGB** (Vector3), like a [Color Parameter](color-parameter.md).
+- Its output follows the parameter's type. A Float, Vector2 or Vector3 parameter gives one **Out** pin. A Color gives **RGBA** (Vector4), **RGB** (Vector3) and **A** (Float), like a [Color Parameter](color-parameter.md).
 - Without a parameter the node has no output.
 - The value is the parameter's default until a Class graph sets it with **Set Global Float Parameter**, **Set Global Vector Parameter** or **Set Global Color Parameter**. Every Material and Particle Graph that reads the parameter then draws the new value, without recompiling.
 - Values start at their defaults when Play starts, keep across Scene changes and are never saved.

@@ -479,6 +479,36 @@ describe("Material details panel", () => {
     expect(lastCommit().nodes.find((node) => node.id === "uv")?.properties).toEqual({ channel: 1 });
   });
 
+  it("builds a Swizzle from one component row each, and ends the vector at a row set to None", async () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes.push({ id: "swizzle", type: "vector.swizzle", position: { x: 0, y: 0 }, properties: {} });
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "swizzle";
+    const choose = async (row: number, name: string) => {
+      fireEvent.click(screen.getByTestId(`property-swizzle-${row}`));
+      const option = await screen.findByRole("option", { name });
+      fireEvent.pointerDown(option, { pointerType: "mouse" });
+      fireEvent.click(option);
+      return lastCommit().nodes.find((node) => node.id === "swizzle")?.properties;
+    };
+    const view = render(<MaterialDetailsPanel {...panelProps} />);
+    expect(await choose(0, "Z")).toEqual({ components: "zyz" });
+    view.unmount();
+    render(<MaterialDetailsPanel {...panelProps} />);
+    expect(await choose(1, "None")).toEqual({ components: "x" });
+  });
+
+  it("names Component Mask toggles X, Y, Z and W, as the other Vector nodes name components", () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes.push({ id: "mask", type: "vector.mask", position: { x: 0, y: 0 }, properties: {} });
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "mask";
+    render(<MaterialDetailsPanel {...panelProps} />);
+    for (const [channel, label] of [["r", "X"], ["g", "Y"], ["b", "Z"], ["a", "W"]]) {
+      expect(document.getElementById(`property-mask-${channel}-caption`)?.textContent).toBe(label);
+    }
+  });
+
   it("writes an authored pin default from Details", () => {
     harness.selectedNodeId = "output";
     render(<MaterialDetailsPanel {...panelProps} />);
@@ -606,6 +636,12 @@ describe("Material graph panel", () => {
     fireEvent.click(await screen.findByTestId("material-convert-to-constant"));
     expect(lastCommit().nodes.find((node) => node.id === "baseColor")?.type).toBe("const.color");
     expect(lastCommit().edges.find((edge) => edge.sourceNodeId === "baseColor")?.sourcePinId).toBe("out");
+  });
+  it("offers no second output node in Add Node", () => {
+    render(<MaterialGraphPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("graph-add-node"));
+    fireEvent.change(screen.getByTestId("node-palette-search"), { target: { value: "Output" } });
+    expect(screen.queryByTestId("node-palette-item-output.surface")).toBeNull();
   });
   it("finds the Float and Vector constants by their short type names", () => {
     render(<MaterialGraphPanel {...panelProps} />);

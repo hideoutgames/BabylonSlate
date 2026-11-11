@@ -46,7 +46,10 @@ import {
   retypeMaterialParameter,
   type MaterialParameterValueType,
   materialGradientStops,
+  vectorMaskChannelName,
   vectorMaskChannels,
+  swizzleComponents,
+  SWIZZLE_AXES,
   VECTOR_MASK_CHANNELS,
   materialNodeDefinition,
   customGlslInterface,
@@ -55,7 +58,7 @@ import {
   selectMaterialGlobalParameter,
   listUnconnectedMaterialPinDefaults,
   materialGraphToSerialized,
-  materialPaletteNodes,
+  materialAddNodePalette,
   materialPinDefaultPropertyKey,
   materialPinsAreCompatible,
   normalizeMaterialDocument,
@@ -348,7 +351,7 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           renderNodeBody={renderMaterialNodeBody}
           initialGraph={initialGraph}
           diagnostics={diagnostics}
-          paletteNodes={materialPaletteNodes(document.domain)}
+          paletteNodes={materialAddNodePalette(document.domain)}
           pinCompatibility={materialPinsAreCompatible}
           addNodeHistoryScope="material"
           sessionViewport={sessionViewport}
@@ -414,7 +417,7 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
           renderNodeBody={renderMaterialNodeBody}
           initialGraph={initialGraph}
           diagnostics={diagnostics}
-          paletteNodes={materialPaletteNodes("surface")}
+          paletteNodes={materialAddNodePalette("surface")}
           pinCompatibility={materialPinsAreCompatible}
           addNodeHistoryScope="material"
           sessionViewport={sessionViewport}
@@ -853,9 +856,19 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
 
   if (node.type === "vector.mask") {
     const selected = vectorMaskChannels(node.properties);
-    for (const channel of VECTOR_MASK_CHANNELS) rows.push({ id: `mask-${channel}`, kind: "boolean", label: channel.toUpperCase(), value: selected.includes(channel), disabled: selected.length === 1 && selected.includes(channel), onChange: (value) => setProperties({ [channel]: value }) });
+    for (const channel of VECTOR_MASK_CHANNELS) rows.push({ id: `mask-${channel}`, kind: "boolean", label: vectorMaskChannelName(channel), value: selected.includes(channel), disabled: selected.length === 1 && selected.includes(channel), onChange: (value) => setProperties({ [channel]: value }) });
   }
-  if (node.type === "texture.sample" || node.type === "texture.sampleLod") rows.push({
+  if (node.type === "vector.swizzle") {
+    // One row per output component; a row set to None ends the vector there.
+    const axes = swizzleComponents(node.properties);
+    for (let index = 0; index < 4; index += 1) rows.push({
+      id: `swizzle-${index}`, kind: "enum", label: `Component ${index + 1}`, value: axes[index] ?? "none",
+      options: [...(index > 0 ? [{ value: "none", label: "None" }] : []), ...SWIZZLE_AXES.map((axis) => ({ value: axis, label: axis.toUpperCase() }))],
+      disabled: index > axes.length,
+      onChange: (axis) => setProperties({ components: (axis === "none" ? axes.slice(0, index) : [...axes.slice(0, index), axis, ...axes.slice(index + 1)]).join("") }),
+    });
+  }
+  if (node.type === "texture.sample" || node.type === "texture.sampleLod" || node.type === "texture.triplanar") rows.push({
     id: "colorSpace", kind: "enum", label: "Color Space", value: String(node.properties.colorSpace ?? "color"),
     options: [{ value: "color", label: "Color (sRGB)" }, { value: "data", label: "Data (Linear)" }],
     onChange: (colorSpace) => setProperties({ colorSpace }),

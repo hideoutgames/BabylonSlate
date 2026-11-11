@@ -225,9 +225,10 @@ describe("switching material domain", () => {
     expect(
       surface.nodes.some((node) => node.type === "input.sceneColor"),
     ).toBe(false);
+    // Screen UV is legal in every domain, so it stays.
     expect(
       surface.nodes.some((node) => node.type === "input.screenUv"),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("creates a particle-domain graph with Particle Color into the particle terminal", () => {

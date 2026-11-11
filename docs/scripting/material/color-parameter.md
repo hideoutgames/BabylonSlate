@@ -12,6 +12,7 @@ Outputs a named colour that can be changed at runtime or overridden per Material
 | --- | --- | --- |
 | RGBA | Vector4 | Red, green, blue and alpha. |
 | RGB | Vector3 | Red, green and blue only, for three-channel inputs such as **Base Color**. |
+| A | Float | Alpha only, for one-channel inputs such as **Opacity**. |
 
 ## Settings
 

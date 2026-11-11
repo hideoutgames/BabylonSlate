@@ -404,7 +404,7 @@ export function compileMaterialPlan(
   const realized = new Map<string, BlockRealization>();
   const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview,
     logicalSceneBuffers: plan.domain === "postProcess" && options.logicalSceneBuffers };
-  if (plan.operations.some((operation) => ["input.worldPosition", "input.cameraPosition", "landscape.uv", "landscape.height"].includes(operation.nodeType))) {
+  if (plan.operations.some((operation) => ["input.worldPosition", "input.cameraPosition", "input.objectPosition", "texture.triplanar", "landscape.uv", "landscape.height"].includes(operation.nodeType))) {
     const origin = new InputBlock("slateFloatingOrigin", undefined, NodeMaterialBlockConnectionPointTypes.Vector3);
     origin.valueCallback = () => scene.floatingOriginOffset;
     plumbing.worldOrigin = origin.output;
@@ -543,6 +543,7 @@ export function compileMaterialPlan(
           block.output.connectTo(split.xyzw);
           blocks.push(split);
           outputs.rgb = split.xyzOut;
+          outputs.a = split.w;
         }
       }
       created.push(...blocks);
@@ -594,6 +595,7 @@ export function compileMaterialPlan(
         created.push(split);
         blocks.push(split);
         outputs.rgb = split.xyzOut;
+        outputs.a = split.w;
       }
       realized.set(operation.id, {
         blocks,
@@ -679,6 +681,7 @@ export function compileMaterialPlan(
         );
         if (!point) continue;
         point.connectTo(target);
+        for (const further of realization.fanIn?.[pinId] ?? []) point.connectTo(further);
         if (pinId === "texture" && (operation.nodeType === "texture.sample" || operation.nodeType === "texture.sampleLod")) {
           realization.outputs.textureOut = point;
         }
@@ -701,6 +704,7 @@ export function compileMaterialPlan(
     if (uvTarget && !uvTarget.isConnected && uvFallback) {
       try {
         uvFallback.connectTo(uvTarget);
+        for (const further of realization.fanIn?.uv ?? []) uvFallback.connectTo(further);
       } catch (error) {
         diagnostics.push({
           code: "material.compile.connectionFailed",

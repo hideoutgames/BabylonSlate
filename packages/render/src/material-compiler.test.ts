@@ -1006,9 +1006,9 @@ describe("material compiler", () => {
     const scene = host();
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({ id: "rim", type: "shading.fresnel", position: { x: 0, y: 0 }, properties: {} });
-    doc.nodes.push({ id: "raw", type: "input.worldNormal", position: { x: 0, y: 0 }, properties: {} });
+    doc.nodes.push({ id: "facing", type: "input.worldNormal", position: { x: 0, y: 0 }, properties: {} });
     doc.edges.push({ id: "rim-out", sourceNodeId: "rim", sourcePinId: "out", targetNodeId: "output", targetPinId: "metallic" });
-    doc.edges.push({ id: "raw-out", sourceNodeId: "raw", sourcePinId: "normal", targetNodeId: "output", targetPinId: "normal" });
+    doc.edges.push({ id: "facing-out", sourceNodeId: "facing", sourcePinId: "normal", targetNodeId: "output", targetPinId: "normal" });
     const result = compileMaterialPlan(planFor(doc), { scene, name: "scaled" });
     if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
     disposers.push(() => result.material.dispose());
@@ -1031,12 +1031,12 @@ describe("material compiler", () => {
     const blocks = result.material.attachedBlocks;
     const source = (className: string, input: string) => blocks.find((block) => block.getClassName() === className)!.getInputByName(input)!.connectedPoint!.ownerBlock;
     expect(source("FresnelBlock", "worldNormal").getClassName()).toBe("NormalizeBlock");
-    // The World Normal node stays as transformed, as documented (the lighting makes its own unit normal of it).
+    // The World Normal node gives a unit normal too, so no second node is needed for one.
     const lighting = blocks.find((block) => block instanceof HapticLightingBlock) as HapticLightingBlock;
     const normalised = (point: NodeMaterialConnectionPoint | null): boolean => !!point && (point.ownerBlock.getClassName() === "NormalizeBlock" ||
       point.ownerBlock.inputs.some((input) => normalised(input.connectedPoint)));
     expect(lighting.normal.isConnected).toBe(true);
-    expect(normalised(lighting.normal.connectedPoint)).toBe(false);
+    expect(normalised(lighting.normal.connectedPoint)).toBe(true);
   });
 
   it("brightens Fresnel toward the silhouette, shaped by Bias and Power", () => {

@@ -11,18 +11,19 @@ import { CurrentScreenBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/c
 import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
 import { DerivativeBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/derivativeBlock";
 import { PerturbNormalBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/perturbNormalBlock";
+import { FragCoordBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/fragCoordBlock";
 import { ScreenSizeBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/screenSizeBlock";
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import { AddBlock } from "@babylonjs/core/Materials/Node/Blocks/addBlock";
 import { ArcTan2Block } from "@babylonjs/core/Materials/Node/Blocks/arcTan2Block";
 import { ClampBlock } from "@babylonjs/core/Materials/Node/Blocks/clampBlock";
 import { ConditionalBlock, ConditionalBlockConditions } from "@babylonjs/core/Materials/Node/Blocks/conditionalBlock";
+import { ColorConverterBlock } from "@babylonjs/core/Materials/Node/Blocks/colorConverterBlock";
 import { CrossBlock } from "@babylonjs/core/Materials/Node/Blocks/crossBlock";
 import { DesaturateBlock } from "@babylonjs/core/Materials/Node/Blocks/desaturateBlock";
 import { DistanceBlock } from "@babylonjs/core/Materials/Node/Blocks/distanceBlock";
 import { DivideBlock } from "@babylonjs/core/Materials/Node/Blocks/divideBlock";
 import { DotBlock } from "@babylonjs/core/Materials/Node/Blocks/dotBlock";
-import { ElbowBlock } from "@babylonjs/core/Materials/Node/Blocks/elbowBlock";
 import { FresnelBlock } from "@babylonjs/core/Materials/Node/Blocks/fresnelBlock";
 import { GradientBlock, GradientBlockColorStep } from "@babylonjs/core/Materials/Node/Blocks/gradientBlock";
 import { LengthBlock } from "@babylonjs/core/Materials/Node/Blocks/lengthBlock";
@@ -32,8 +33,11 @@ import { MinBlock } from "@babylonjs/core/Materials/Node/Blocks/minBlock";
 import { ModBlock } from "@babylonjs/core/Materials/Node/Blocks/modBlock";
 import { MultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/multiplyBlock";
 import { NegateBlock } from "@babylonjs/core/Materials/Node/Blocks/negateBlock";
+import { NormalBlendBlock } from "@babylonjs/core/Materials/Node/Blocks/normalBlendBlock";
 import { NormalizeBlock } from "@babylonjs/core/Materials/Node/Blocks/normalizeBlock";
 import { OneMinusBlock } from "@babylonjs/core/Materials/Node/Blocks/oneMinusBlock";
+import { PannerBlock } from "@babylonjs/core/Materials/Node/Blocks/pannerBlock";
+import { PosterizeBlock } from "@babylonjs/core/Materials/Node/Blocks/posterizeBlock";
 import { PowBlock } from "@babylonjs/core/Materials/Node/Blocks/powBlock";
 import { ReciprocalBlock } from "@babylonjs/core/Materials/Node/Blocks/reciprocalBlock";
 import { RefractBlock } from "@babylonjs/core/Materials/Node/Blocks/refractBlock";
@@ -44,6 +48,7 @@ import { SmoothStepBlock } from "@babylonjs/core/Materials/Node/Blocks/smoothSte
 import { StepBlock } from "@babylonjs/core/Materials/Node/Blocks/stepBlock";
 import { SubtractBlock } from "@babylonjs/core/Materials/Node/Blocks/subtractBlock";
 import { TransformBlock } from "@babylonjs/core/Materials/Node/Blocks/transformBlock";
+import { TriPlanarBlock } from "@babylonjs/core/Materials/Node/Blocks/triPlanarBlock";
 import {
   TrigonometryBlock,
   TrigonometryBlockOperations,
@@ -68,7 +73,7 @@ import type {
   MaterialOperation,
   MaterialValueType,
 } from "@haptic/shader-graph";
-import { componentCount, customGlslInterface, materialGradientStops, vectorMaskChannels, VECTOR_MASK_CHANNELS } from "@haptic/shader-graph";
+import { componentCount, customGlslInterface, materialGradientStops, swizzleComponents, vectorMaskChannels, VECTOR_MASK_CHANNELS } from "@haptic/shader-graph";
 import { customGlslFunctionName } from "./material-glsl-diagnostics";
 
 /**
@@ -81,6 +86,12 @@ import { customGlslFunctionName } from "./material-glsl-diagnostics";
 export interface BlockRealization {
   blocks: NodeMaterialBlock[];
   inputs: Record<string, NodeMaterialConnectionPoint>;
+  /**
+   * The further connection points of an input pin that feeds several blocks of a composite; the compiler wires the
+   * pin's value to each. A pass-through block is no substitute: Babylon's Elbow builds in the vertex stage behind a
+   * constant or a parameter, which costs a varying and hands the fragment stage an interpolated copy.
+   */
+  fanIn?: Record<string, NodeMaterialConnectionPoint[]>;
   outputs: Record<string, NodeMaterialConnectionPoint>;
 }
 
@@ -286,6 +297,7 @@ function componentwise(scalar: BlockAdapter): BlockAdapter {
           inputs[pin] = width === 2 ? split.xyIn : width === 3 ? split.xyzIn : split.xyzw;
         }
         split[axis].connectTo(input);
+        for (const further of part.fanIn?.[pin] ?? []) split[axis].connectTo(further);
       }
       part.outputs.out!.connectTo(result[axis]);
     }
@@ -309,31 +321,188 @@ function conditional(condition: ConditionalBlockConditions): BlockAdapter {
   });
 }
 
+/** Links two blocks of a composite whose types only resolve once the compiler wires the node's inputs. */
+function link(from: NodeMaterialConnectionPoint, to: NodeMaterialConnectionPoint): void {
+  from.connectTo(to, true);
+}
+
+function trigBlock(name: string, operation: TrigonometryBlockOperations): TrigonometryBlock {
+  const block = new TrigonometryBlock(name);
+  block.operation = operation;
+  return block;
+}
+
+/** 1 where a Float reads as true (above 0.5, as Select reads its Condition) and 0 elsewhere; `invert` swaps the two. */
+function maskTest(name: string, invert = false) {
+  const block = new ConditionalBlock(name);
+  block.condition = ConditionalBlockConditions.GreaterThan;
+  const threshold = createConstantBlock(`${name}_threshold`, "float", [0.5]);
+  const whenTrue = createConstantBlock(`${name}_true`, "float", [invert ? 0 : 1]);
+  const whenFalse = createConstantBlock(`${name}_false`, "float", [invert ? 1 : 0]);
+  threshold.output.connectTo(block.b);
+  whenTrue.output.connectTo(block.true);
+  whenFalse.output.connectTo(block.false);
+  return { blocks: [block, threshold, whenTrue, whenFalse] as NodeMaterialBlock[], input: block.a, output: block.output };
+}
+
+/** And is the smaller of two masks read as true or false, Or the larger. */
+function maskCombine(factory: typeof MinBlock | typeof MaxBlock): BlockAdapter {
+  return componentwise(({ name }) => {
+    const combined = new factory(`${name}_combined`);
+    const test = maskTest(name);
+    combined.output.connectTo(test.input, true);
+    return { blocks: [combined, ...test.blocks], inputs: { a: combined.left, b: combined.right }, outputs: { out: test.output } };
+  });
+}
+
+const selectBlock: BlockAdapter = ({ name }) => {
+  const block = new ConditionalBlock(name);
+  block.condition = ConditionalBlockConditions.GreaterThan;
+  const threshold = createConstantBlock(`${name}_threshold`, "float", [0.5]);
+  threshold.output.connectTo(block.b);
+  return {
+    blocks: [block, threshold],
+    inputs: { condition: block.a, whenTrue: block.true, whenFalse: block.false },
+    outputs: { out: block.output },
+  };
+};
+
+/**
+ * Select picks each component by its own Condition component. A Condition that is one Float for the whole value
+ * (the common case) keeps one conditional; only a vector Condition pays for one per component.
+ */
+const selectAdapter: BlockAdapter = (context) => {
+  const { name, operation } = context;
+  const width = componentCount(operation.resolvedType);
+  const condition = operation.inputs.condition;
+  const uniform = !condition || (condition.kind === "constant"
+    ? condition.value.every((component) => component === condition.value[0])
+    : condition.conversions?.at(-1)?.from === "float");
+  if (width === 1) return selectBlock(context);
+  if (!uniform) return componentwise(selectBlock)(context);
+  const select = selectBlock(context);
+  const split = new VectorSplitterBlock(`${name}_condition`);
+  split.x.connectTo(select.inputs.condition!);
+  return {
+    blocks: [...select.blocks, split],
+    inputs: { ...select.inputs, condition: width === 2 ? split.xyIn : width === 3 ? split.xyzIn : split.xyzw },
+    outputs: select.outputs,
+  };
+};
+
+/** A Color4 source's RGBA with its RGB and A beside it, the three outputs every color source has. */
+function colorOutputs(name: string, color: NodeMaterialConnectionPoint, blocks: NodeMaterialBlock[]): BlockRealization {
+  const split = new VectorSplitterBlock(`${name}_channels`);
+  color.connectTo(split.xyzw);
+  return { blocks: [...blocks, split], inputs: {}, outputs: { color, rgb: split.xyzOut, a: split.w } };
+}
+
+/**
+ * The cell of a sprite sheet as UVs. Frame 0 is the top left cell, frames run left to right and then down, and a
+ * Frame past the last cell starts over. Textures load with V up, so the top row holds the highest V.
+ */
+const flipbookAdapter: BlockAdapter = ({ name }) => {
+  const total = new MultiplyBlock(`${name}_total`);
+  const frame = trigBlock(`${name}_frame`, TrigonometryBlockOperations.Floor);
+  // frame - total * floor(frame / total): the wrapped frame, never negative on either backend.
+  const laps = new DivideBlock(`${name}_laps`);
+  link(frame.output, laps.left);
+  link(total.output, laps.right);
+  const wholeLaps = trigBlock(`${name}_wholeLaps`, TrigonometryBlockOperations.Floor);
+  link(laps.output, wholeLaps.input);
+  const lapped = new MultiplyBlock(`${name}_lapped`);
+  link(total.output, lapped.left);
+  link(wholeLaps.output, lapped.right);
+  const index = new SubtractBlock(`${name}_index`);
+  link(frame.output, index.left);
+  link(lapped.output, index.right);
+  const rowRatio = new DivideBlock(`${name}_rowRatio`);
+  link(index.output, rowRatio.left);
+  const row = trigBlock(`${name}_row`, TrigonometryBlockOperations.Floor);
+  link(rowRatio.output, row.input);
+  const rowStart = new MultiplyBlock(`${name}_rowStart`);
+  link(row.output, rowStart.right);
+  const column = new SubtractBlock(`${name}_column`);
+  link(index.output, column.left);
+  link(rowStart.output, column.right);
+  const uv = new VectorSplitterBlock(`${name}_uv`);
+  const u = new AddBlock(`${name}_u`);
+  uv.x.connectTo(u.left);
+  link(column.output, u.right);
+  const cellU = new DivideBlock(`${name}_cellU`);
+  u.output.connectTo(cellU.left);
+  const one = createConstantBlock(`${name}_one`, "float", [1]);
+  const lastRow = new SubtractBlock(`${name}_lastRow`);
+  one.output.connectTo(lastRow.right);
+  const fromBottom = new SubtractBlock(`${name}_fromBottom`);
+  link(lastRow.output, fromBottom.left);
+  link(row.output, fromBottom.right);
+  const v = new AddBlock(`${name}_v`);
+  uv.y.connectTo(v.left);
+  link(fromBottom.output, v.right);
+  const cellV = new DivideBlock(`${name}_cellV`);
+  v.output.connectTo(cellV.left);
+  const result = new VectorMergerBlock(name);
+  link(cellU.output, result.x);
+  link(cellV.output, result.y);
+  return {
+    blocks: [total, frame, laps, wholeLaps, lapped, index, rowRatio, row, rowStart, column, uv, u, cellU, one, lastRow, fromBottom, v, cellV, result],
+    inputs: { uv: uv.xyIn, columns: total.left, rows: total.right, frame: frame.input },
+    fanIn: { columns: [rowRatio.right, rowStart.left, cellU.right], rows: [lastRow.left, cellV.right] },
+    outputs: { out: result.xyOut },
+  };
+};
+
+/** Overlay per component: 2ab where the base is below 0.5, else 1 - 2(1 - a)(1 - b). */
+const blendOverlayAdapter = componentwise(({ name }) => {
+  const two = createConstantBlock(`${name}_two`, "float", [2]);
+  const product = new MultiplyBlock(`${name}_product`);
+  const dark = new MultiplyBlock(`${name}_dark`);
+  link(product.output, dark.left);
+  two.output.connectTo(dark.right);
+  const inverseBase = new OneMinusBlock(`${name}_inverseBase`);
+  const inverseBlend = new OneMinusBlock(`${name}_inverseBlend`);
+  const inverseProduct = new MultiplyBlock(`${name}_inverseProduct`);
+  link(inverseBase.output, inverseProduct.left);
+  link(inverseBlend.output, inverseProduct.right);
+  const doubled = new MultiplyBlock(`${name}_doubled`);
+  link(inverseProduct.output, doubled.left);
+  two.output.connectTo(doubled.right);
+  const light = new OneMinusBlock(`${name}_light`);
+  link(doubled.output, light.input);
+  const pick = new ConditionalBlock(name);
+  pick.condition = ConditionalBlockConditions.LessThan;
+  const half = createConstantBlock(`${name}_half`, "float", [0.5]);
+  half.output.connectTo(pick.b);
+  link(dark.output, pick.true);
+  link(light.output, pick.false);
+  return {
+    blocks: [two, product, dark, inverseBase, inverseBlend, inverseProduct, doubled, light, pick, half],
+    inputs: { base: product.left, blend: product.right },
+    fanIn: { base: [inverseBase.input, pick.a], blend: [inverseBlend.input] },
+    outputs: { out: pick.output },
+  };
+});
+
 const dotAdapter: BlockAdapter = (context) =>
   binary(context.operation.resolvedType === "float" ? MultiplyBlock : DotBlock)(context);
 
 /** reflect(I, N) = I - 2 * dot(N, I) * N, preserving every resolved channel. */
 const reflectAdapter: BlockAdapter = (context) => {
-  const { name, operation } = context;
-  const incident = new ElbowBlock(`${name}_incident`);
-  const normal = new ElbowBlock(`${name}_normal`);
-  incident.input.type = normal.input.type = babylonTypeFor(operation.resolvedType);
+  const { name } = context;
   const dot = dotAdapter({ ...context, name: `${name}_dot` });
-  incident.output.connectTo(dot.inputs.a!);
-  normal.output.connectTo(dot.inputs.b!);
   const twice = new ScaleBlock(`${name}_twice`);
   const two = createConstantBlock(`${name}_two`, "float", [2]);
-  dot.outputs.out!.connectTo(twice.input);
+  link(dot.outputs.out!, twice.input);
   two.output.connectTo(twice.factor);
   const projected = new ScaleBlock(`${name}_projected`);
-  normal.output.connectTo(projected.input);
-  twice.output.connectTo(projected.factor);
+  link(twice.output, projected.factor);
   const result = new SubtractBlock(name);
-  incident.output.connectTo(result.left);
-  projected.output.connectTo(result.right);
+  link(projected.output, result.right);
   return {
-    blocks: [incident, normal, ...dot.blocks, twice, two, projected, result],
-    inputs: { incident: incident.input, normal: normal.input },
+    blocks: [...dot.blocks, twice, two, projected, result],
+    inputs: { incident: dot.inputs.a!, normal: dot.inputs.b! },
+    fanIn: { incident: [result.left], normal: [projected.input] },
     outputs: { out: result.output },
   };
 };
@@ -343,30 +512,20 @@ const reflectAdapter: BlockAdapter = (context) => {
  * GLSL `mod` (the sign of B) on WebGL2 and WGSL `%` (the sign of A) on WebGPU; the two agree
  * once both operands are positive.
  */
-const moduloAdapter: BlockAdapter = ({ name, operation }) => {
-  const a = new ElbowBlock(`${name}_a`);
-  const b = new ElbowBlock(`${name}_b`);
-  a.input.type = b.input.type = babylonTypeFor(operation.resolvedType);
-  const trig = (suffix: string, kind: TrigonometryBlockOperations) => {
-    const block = new TrigonometryBlock(`${name}_${suffix}`);
-    block.operation = kind;
-    return block;
-  };
-  const absA = trig("absA", TrigonometryBlockOperations.Abs);
-  const absB = trig("absB", TrigonometryBlockOperations.Abs);
-  const sign = trig("sign", TrigonometryBlockOperations.Sign);
+const moduloAdapter: BlockAdapter = ({ name }) => {
+  const absA = trigBlock(`${name}_absA`, TrigonometryBlockOperations.Abs);
+  const absB = trigBlock(`${name}_absB`, TrigonometryBlockOperations.Abs);
+  const sign = trigBlock(`${name}_sign`, TrigonometryBlockOperations.Sign);
   const mod = new ModBlock(`${name}_mod`);
   const result = new MultiplyBlock(name);
-  a.output.connectTo(absA.input);
-  a.output.connectTo(sign.input);
-  b.output.connectTo(absB.input);
-  absA.output.connectTo(mod.left);
-  absB.output.connectTo(mod.right);
-  sign.output.connectTo(result.left);
-  mod.output.connectTo(result.right);
+  link(absA.output, mod.left);
+  link(absB.output, mod.right);
+  link(sign.output, result.left);
+  link(mod.output, result.right);
   return {
-    blocks: [a, b, absA, absB, sign, mod, result],
-    inputs: { a: a.input, b: b.input },
+    blocks: [absA, absB, sign, mod, result],
+    inputs: { a: absA.input, b: absB.input },
+    fanIn: { a: [sign.input] },
     outputs: { out: result.output },
   };
 };
@@ -648,6 +807,14 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     channels.forEach((channel, index) => channel.connectTo([merge.x, merge.y, merge.z, merge.w][index]!));
     return { blocks: [split, merge], inputs: { value }, outputs: { out: channels.length === 2 ? merge.xyOut : channels.length === 3 ? merge.xyzOut : merge.xyzw } };
   },
+  "vector.swizzle": ({ name, operation }): BlockRealization => {
+    const split = new VectorSplitterBlock(`${name}_split`);
+    const axes = swizzleComponents(operation.properties).map((axis) => split[axis]);
+    if (axes.length === 1) return { blocks: [split], inputs: { value: split.xyzw }, outputs: { out: axes[0]! } };
+    const merge = new VectorMergerBlock(`${name}_merge`);
+    axes.forEach((axis, index) => axis.connectTo([merge.x, merge.y, merge.z, merge.w][index]!));
+    return { blocks: [split, merge], inputs: { value: split.xyzw }, outputs: { out: axes.length === 2 ? merge.xyOut : axes.length === 3 ? merge.xyzOut : merge.xyzw } };
+  },
   "vector.split": ({ name }): BlockRealization => {
     const block = new VectorSplitterBlock(name);
     return {
@@ -660,21 +827,15 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   "logic.notEqual": conditional(ConditionalBlockConditions.NotEqual),
   "logic.lessThan": conditional(ConditionalBlockConditions.LessThan),
   "logic.greaterThan": conditional(ConditionalBlockConditions.GreaterThan),
-  "logic.select": ({ name }) => {
-    const block = new ConditionalBlock(name);
-    block.condition = ConditionalBlockConditions.GreaterThan;
-    const threshold = createConstantBlock(`${name}_threshold`, "float", [0.5]);
-    threshold.output.connectTo(block.b);
-    return {
-      blocks: [block, threshold],
-      inputs: {
-        condition: block.a,
-        whenTrue: block.true,
-        whenFalse: block.false,
-      },
-      outputs: { out: block.output },
-    };
-  },
+  "logic.lessOrEqual": conditional(ConditionalBlockConditions.LessOrEqual),
+  "logic.greaterOrEqual": conditional(ConditionalBlockConditions.GreaterOrEqual),
+  "logic.and": maskCombine(MinBlock),
+  "logic.or": maskCombine(MaxBlock),
+  "logic.not": componentwise(({ name }) => {
+    const test = maskTest(name, true);
+    return { blocks: test.blocks, inputs: { value: test.input }, outputs: { out: test.output } };
+  }),
+  "logic.select": selectAdapter,
   "derivative.ddx": ({ name }) => {
     const block = new DerivativeBlock(name);
     return single(block, { value: block.input }, { out: block.dx });
@@ -699,15 +860,17 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     block.setAsAttribute(second ? "uv2" : "uv");
     return single(block, {}, { uv: block.output });
   },
-  "input.vertexColor": attributeInput(
-    "color",
-    NodeMaterialBlockConnectionPointTypes.Color4,
-    "color",
-  ),
+  "input.vertexColor": (context) => {
+    const color = attributeInput("color", NodeMaterialBlockConnectionPointTypes.Color4, "color")(context);
+    return colorOutputs(context.name, color.outputs.color!, color.blocks);
+  },
   "input.particleColor": (context) => {
-    if (!context.plumbing.particlePreview) return attributeInput("particle_color", NodeMaterialBlockConnectionPointTypes.Color4, "color")(context);
+    if (!context.plumbing.particlePreview) {
+      const color = attributeInput("particle_color", NodeMaterialBlockConnectionPointTypes.Color4, "color")(context);
+      return colorOutputs(context.name, color.outputs.color!, color.blocks);
+    }
     const block = new InputBlock(context.name); block.value = new Color4(1, 1, 1, 1);
-    return single(block, {}, { color: block.output });
+    return colorOutputs(context.name, block.output, [block]);
   },
   "input.time": ({ name }) => {
     const block = new GameTimeInputBlock(name);
@@ -784,16 +947,20 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     const block = new ScreenSizeBlock(name);
     return single(block, {}, { size: block.xy });
   },
-  "input.screenUv": ({ plumbing }) => {
-    // The compiler derives this from the fullscreen pass position.
-    if (!plumbing.screenUv) {
-      throw new Error("Screen UV is only available in a post-process material");
-    }
-    return { blocks: [], inputs: {}, outputs: { uv: plumbing.screenUv } };
+  "input.screenUv": ({ name, plumbing }) => {
+    // A post-process reads the fullscreen pass position the compiler derives; any other material divides the
+    // pixel's coordinate by the screen size. Both run 0 to 1 from the bottom left, on WebGL2 and WebGPU alike.
+    if (plumbing.screenUv) return { blocks: [], inputs: {}, outputs: { uv: plumbing.screenUv } };
+    const pixel = new FragCoordBlock(`${name}_pixel`);
+    const size = new ScreenSizeBlock(`${name}_size`);
+    const uv = new DivideBlock(name);
+    pixel.xy.connectTo(uv.left);
+    size.xy.connectTo(uv.right);
+    return { blocks: [pixel, size, uv], inputs: {}, outputs: { uv: uv.output } };
   },
   "input.sceneColor": ({ name }) => {
     const block = new CurrentScreenBlock(name);
-    return single(block, { uv: block.uv }, { color: block.rgba });
+    return single(block, { uv: block.uv }, { color: block.rgba, rgb: block.rgb, a: block.a });
   },
   "input.mirrorReflection": ({ name, plumbing }) => {
     // A Mirror surface's reflection at its own screen position; black on any other mesh.
@@ -824,6 +991,105 @@ const ADAPTERS: Record<string, BlockAdapter> = {
       },
       outputs: { out: offset.output },
     };
+  },
+  "texture.panner": ({ name, operation }) => {
+    const block = new PannerBlock(name);
+    const blocks: NodeMaterialBlock[] = [block];
+    if (!operation.inputs.time) {
+      // Unwired, Time is the game's own clock, as the Time node gives it.
+      const time = new GameTimeInputBlock(`${name}_time`);
+      time.output.connectTo(block.time);
+      blocks.push(time);
+    }
+    return { blocks, inputs: { uv: block.uv, speed: block.speed, time: block.time }, outputs: { out: block.output } };
+  },
+  "texture.rotator": ({ name }) => {
+    // Rotation around Center: move Center to the origin, rotate, move back.
+    const offset = new SubtractBlock(`${name}_offset`);
+    const rotate = new Rotate2dBlock(`${name}_rotation`);
+    // Subtract's output takes its type from the UV it is given; Rotate 2D's input is Vector2.
+    link(offset.output, rotate.input);
+    const result = new AddBlock(name);
+    rotate.output.connectTo(result.left);
+    return {
+      blocks: [offset, rotate, result],
+      inputs: { uv: offset.left, center: offset.right, angle: rotate.angle },
+      fanIn: { center: [result.right] },
+      outputs: { out: result.output },
+    };
+  },
+  "texture.flipbook": flipbookAdapter,
+  "texture.triplanar": (context) => {
+    const { name, operation, plumbing } = context;
+    if (!plumbing.worldPosition || !plumbing.worldNormal) throw new Error("Triplanar is only available in a Surface material");
+    const block = new TriPlanarBlock(name);
+    block.convertToLinearSpace = operation.properties.colorSpace !== "data";
+    // The absolute world position, so the pattern stays put when the render origin moves.
+    const position = ADAPTERS["input.worldPosition"]!({ ...context, name: `${name}_position` });
+    const scaled = new ScaleBlock(`${name}_scaled`);
+    position.outputs.position!.connectTo(scaled.input);
+    scaled.output.connectTo(block.position);
+    plumbing.worldNormal.connectTo(block.normal);
+    return {
+      blocks: [...position.blocks, scaled, block],
+      inputs: { texture: block.source, scale: scaled.factor, sharpness: block.sharpness },
+      outputs: { rgba: block.rgba, rgb: block.rgb, a: block.a },
+    };
+  },
+  "shading.normalBlend": ({ name }) => {
+    const block = new NormalBlendBlock(name);
+    return single(block, { a: block.normalMap0, b: block.normalMap1 }, { out: block.output });
+  },
+  "color.luminance": ({ name }) => {
+    // The weights Desaturate turns a color gray by, so the two nodes agree.
+    const weights = createConstantBlock(`${name}_weights`, "vec3", [0.3, 0.59, 0.11]);
+    const block = new DotBlock(name);
+    weights.output.connectTo(block.right);
+    return { blocks: [block, weights], inputs: { color: block.left }, outputs: { out: block.output } };
+  },
+  "color.contrast": ({ name }) => {
+    // (Color - 0.5) * Contrast + 0.5: mid gray stays, everything else moves away from or toward it.
+    const middle = createConstantBlock(`${name}_middle`, "vec3", [0.5, 0.5, 0.5]);
+    const centered = new SubtractBlock(`${name}_centered`);
+    middle.output.connectTo(centered.right);
+    const scaled = new ScaleBlock(`${name}_scaled`);
+    centered.output.connectTo(scaled.input);
+    const result = new AddBlock(name);
+    scaled.output.connectTo(result.left);
+    middle.output.connectTo(result.right);
+    return {
+      blocks: [middle, centered, scaled, result],
+      inputs: { color: centered.left, contrast: scaled.factor },
+      outputs: { out: result.output },
+    };
+  },
+  "color.posterize": ({ name }) => {
+    const block = new PosterizeBlock(name);
+    return single(block, { value: block.value, steps: block.steps }, { out: block.output });
+  },
+  "color.blendScreen": ({ name }) => {
+    // 1 - (1 - Base)(1 - Blend).
+    const inverseBase = new OneMinusBlock(`${name}_inverseBase`);
+    const inverseBlend = new OneMinusBlock(`${name}_inverseBlend`);
+    const product = new MultiplyBlock(`${name}_product`);
+    inverseBase.output.connectTo(product.left);
+    inverseBlend.output.connectTo(product.right);
+    const result = new OneMinusBlock(name);
+    product.output.connectTo(result.input);
+    return {
+      blocks: [inverseBase, inverseBlend, product, result],
+      inputs: { base: inverseBase.input, blend: inverseBlend.input },
+      outputs: { out: result.output },
+    };
+  },
+  "color.blendOverlay": blendOverlayAdapter,
+  "color.rgbToHsl": ({ name }) => {
+    const block = new ColorConverterBlock(name);
+    return single(block, { color: block.rgbIn }, { out: block.hslOut });
+  },
+  "color.hslToRgb": ({ name }) => {
+    const block = new ColorConverterBlock(name);
+    return single(block, { hsl: block.hslIn }, { out: block.rgbOut });
   },
   "color.desaturate": ({ name }) => {
     const block = new DesaturateBlock(name);
@@ -962,18 +1228,31 @@ ADAPTERS["input.vertexNormal"] = ({ name, plumbing }) => {
   const block = attributeVector(name, "normal", 3);
   return single(block, {}, { normal: block.output });
 };
-ADAPTERS["input.vertexNormalWS"] = ({ name, plumbing }) => {
+
+/** The surface's world normal at unit length, whatever the mesh's scale and wherever it is read. */
+ADAPTERS["input.worldNormal"] = ({ name, plumbing }) => {
   const unit = new NormalizeBlock(name);
-  plumbing.worldNormal?.connectTo(unit.input);
-  return single(unit, {}, { normal: unit.output });
+  if (plumbing.worldNormal) {
+    plumbing.worldNormal.connectTo(unit.input);
+    return single(unit, {}, { normal: unit.output });
+  }
+  const block = attributeVector(`${name}_attribute`, "normal", 3);
+  block.output.connectTo(unit.input);
+  return { blocks: [block, unit], inputs: {}, outputs: { normal: unit.output } };
 };
 
-ADAPTERS["input.worldNormal"] = ({ name, plumbing }) => {
-  if (plumbing.worldNormal) {
-    return { blocks: [], inputs: {}, outputs: { normal: plumbing.worldNormal } };
-  }
-  const block = attributeVector(name, "normal", 3);
-  return single(block, {}, { normal: block.output });
+/** The mesh's own origin in the scene: the world matrix applied to the local origin, the same for every pixel. */
+ADAPTERS["input.objectPosition"] = ({ name, plumbing }) => {
+  if (!plumbing.world) throw new Error("Object Position is only available in a Surface material");
+  const origin = createConstantBlock(`${name}_origin`, "vec3", [0, 0, 0]);
+  const world = new TransformBlock(name);
+  origin.output.connectTo(world.vector);
+  plumbing.world.connectTo(world.transform);
+  if (!plumbing.worldOrigin) return { blocks: [origin, world], inputs: {}, outputs: { position: world.xyz } };
+  const absolute = new AddBlock(`${name}_absolute`);
+  world.xyz.connectTo(absolute.left);
+  plumbing.worldOrigin.connectTo(absolute.right);
+  return { blocks: [origin, world, absolute], inputs: {}, outputs: { position: absolute.output } };
 };
 
 ADAPTERS["landscape.uv"] = (context) => {
@@ -993,28 +1272,22 @@ ADAPTERS["landscape.height"] = (context) => {
   return { blocks: [...position.blocks, split], inputs: {}, outputs: { height: split.y } };
 };
 ADAPTERS["landscape.slope"] = (context) => {
-  const normal = ADAPTERS["input.worldNormal"]!(context);
-  const unit = new NormalizeBlock(`${context.name}_unit`);
-  normal.outputs.normal!.connectTo(unit.input);
+  const normal = ADAPTERS["input.worldNormal"]!({ ...context, name: `${context.name}_unit` });
   const split = new VectorSplitterBlock(`${context.name}_split`);
-  unit.output.connectTo(split.xyzIn);
+  normal.outputs.normal!.connectTo(split.xyzIn);
   const abs = new TrigonometryBlock(`${context.name}_abs`);
   abs.operation = TrigonometryBlockOperations.Abs;
   split.y.connectTo(abs.input);
   const one = new InputBlock(`${context.name}_one`); one.value = 1;
   const slope = new SubtractBlock(context.name);
   one.output.connectTo(slope.left); abs.output.connectTo(slope.right);
-  return { blocks: [...normal.blocks, unit, split, abs, one, slope], inputs: {}, outputs: { slope: slope.output } };
+  return { blocks: [...normal.blocks, split, abs, one, slope], inputs: {}, outputs: { slope: slope.output } };
 };
 ADAPTERS["landscape.layers"] = ({ name }) => {
   const color = new InputBlock(`${name}_weights`, undefined, NodeMaterialBlockConnectionPointTypes.Color4);
   color.setAsAttribute("color");
   const split = new VectorSplitterBlock(name); color.output.connectTo(split.xyzw);
   return { blocks: [color, split], inputs: {}, outputs: { layer1: split.x, layer2: split.y, layer3: split.z, layer4: split.w } };
-};
-ADAPTERS["landscape.blend"] = ({ name }) => {
-  const blend = new LerpBlock(name);
-  return single(blend, { base: blend.left, layer: blend.right, weight: blend.gradient }, { color: blend.output });
 };
 
 ADAPTERS["input.worldTangent"] = ({ name, plumbing }) => {

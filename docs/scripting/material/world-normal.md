@@ -4,7 +4,7 @@ node: input.worldNormal
 
 # World Normal
 
-Returns the surface normal in world space.
+Returns the surface normal in world space, scaled to a length of 1.
 
 ## Outputs
 
@@ -14,5 +14,5 @@ Returns the surface normal in world space.
 
 ## Notes
 
-- The direction is not scaled to a length of 1: its length follows the mesh's scale. Use [**Vertex Normal (World)**](vertex-normal-world.md) for a unit-length normal.
+- The length is 1 whatever the mesh's scale.
 - Only in Surface and Landscape materials.

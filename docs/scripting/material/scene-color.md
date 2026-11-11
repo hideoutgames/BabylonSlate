@@ -14,9 +14,11 @@ Returns the colour of the rendered scene at a position on the screen.
 
 ## Outputs
 
-| Pin | Type |
-| --- | --- |
-| Color | Vector4 |
+| Pin | Type | Description |
+| --- | --- | --- |
+| RGBA | Vector4 | Red, green, blue and alpha. |
+| RGB | Vector3 | Red, green and blue only. |
+| A | Float | Alpha only. |
 
 ## Notes
 

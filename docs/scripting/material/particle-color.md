@@ -8,9 +8,11 @@ Returns the colour and alpha the emitter gives to the particle being drawn.
 
 ## Outputs
 
-| Pin | Type |
-| --- | --- |
-| Color | Vector4 |
+| Pin | Type | Description |
+| --- | --- | --- |
+| RGBA | Vector4 | Red, green, blue and alpha. |
+| RGB | Vector3 | Red, green and blue only. |
+| A | Float | Alpha only. |
 
 ## Notes
 

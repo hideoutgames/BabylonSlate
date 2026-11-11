@@ -633,10 +633,10 @@ function landscapeMaterial(name: string): MaterialDocument {
   node(doc, "coords", "landscape.uv", 0, 7, { "default:scale": [0.15] });
   node(doc, "steep", "math.smoothstep", 1, 5, { "default:edgeA": [0.2], "default:edgeB": [0.5] });
   node(doc, "detail", "noise.perlin", 1, 7);
-  node(doc, "slopeRock", "landscape.blend", 2, 0);
-  node(doc, "layerRock", "landscape.blend", 3, 1);
-  node(doc, "layerSand", "landscape.blend", 4, 2);
-  node(doc, "layerSnow", "landscape.blend", 5, 3);
+  node(doc, "slopeRock", "math.mix", 2, 0);
+  node(doc, "layerRock", "math.mix", 3, 1);
+  node(doc, "layerSand", "math.mix", 4, 2);
+  node(doc, "layerSnow", "math.mix", 5, 3);
   node(doc, "roughness", "math.remap", 2, 7, {
     "default:fromMin": [-1],
     "default:fromMax": [1],
@@ -645,19 +645,19 @@ function landscapeMaterial(name: string): MaterialDocument {
   });
   node(doc, "output", "output.surface", 6, 4);
   wire(doc, "slope", "slope", "steep", "value");
-  wire(doc, "grass", "out", "slopeRock", "base");
-  wire(doc, "rock", "out", "slopeRock", "layer");
-  wire(doc, "steep", "out", "slopeRock", "weight");
-  wire(doc, "slopeRock", "color", "layerRock", "base");
-  wire(doc, "scree", "out", "layerRock", "layer");
-  wire(doc, "layers", "layer4", "layerRock", "weight");
-  wire(doc, "layerRock", "color", "layerSand", "base");
-  wire(doc, "sand", "out", "layerSand", "layer");
-  wire(doc, "layers", "layer3", "layerSand", "weight");
-  wire(doc, "layerSand", "color", "layerSnow", "base");
-  wire(doc, "snow", "out", "layerSnow", "layer");
-  wire(doc, "layers", "layer2", "layerSnow", "weight");
-  wire(doc, "layerSnow", "color", "output", "baseColor");
+  wire(doc, "grass", "out", "slopeRock", "a");
+  wire(doc, "rock", "out", "slopeRock", "b");
+  wire(doc, "steep", "out", "slopeRock", "alpha");
+  wire(doc, "slopeRock", "out", "layerRock", "a");
+  wire(doc, "scree", "out", "layerRock", "b");
+  wire(doc, "layers", "layer4", "layerRock", "alpha");
+  wire(doc, "layerRock", "out", "layerSand", "a");
+  wire(doc, "sand", "out", "layerSand", "b");
+  wire(doc, "layers", "layer3", "layerSand", "alpha");
+  wire(doc, "layerSand", "out", "layerSnow", "a");
+  wire(doc, "snow", "out", "layerSnow", "b");
+  wire(doc, "layers", "layer2", "layerSnow", "alpha");
+  wire(doc, "layerSnow", "out", "output", "baseColor");
   wire(doc, "coords", "uv", "detail", "coordinates");
   wire(doc, "detail", "out", "roughness", "value");
   wire(doc, "roughness", "out", "output", "roughness");
