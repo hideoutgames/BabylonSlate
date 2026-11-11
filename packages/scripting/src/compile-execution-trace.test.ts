@@ -429,9 +429,9 @@ export function run(ctx) {
       ],
     };
     const source = compile(graph, TRACED).source;
-    const idle = run(source, "onTick", { getPressedKeys: () => [] });
+    const idle = run(source, "onInput", { getPressedKeys: () => [] });
     expect(idle.events).toEqual([]);
-    const pressed = run(source, "onTick", { getPressedKeys: () => ["KeyW"] });
+    const pressed = run(source, "onInput", { getPressedKeys: () => ["KeyW"] });
     expect(pressed.events).toEqual([
       "exec keys", "write keys.key=KeyW", "edge e1", "exec log", "read log.message=KeyW",
     ]);

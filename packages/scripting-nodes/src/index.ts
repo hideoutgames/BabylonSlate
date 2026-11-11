@@ -1,6 +1,6 @@
 import { waterNodes } from "./water";
-import { NodeRegistry, type NodeDefinition } from "@haptic/scripting";
-import { flowNodes } from "./flow";
+import { EVENT_BY_TYPE_ID, NodeRegistry, type NodeDefinition } from "@haptic/scripting";
+import { catalogEventDefinitions, flowNodes } from "./flow";
 import { mathNodes } from "./math";
 import { vectorNodes } from "./vector";
 import { stringNodes } from "./string";
@@ -187,6 +187,11 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...tagNodes,
     ...curveRangeNodes,
   ];
+}
+
+// Call Parent takes its pins from the event it calls, wherever that event is defined.
+for (const definition of allNodeDefinitions()) {
+  if (Object.hasOwn(EVENT_BY_TYPE_ID, definition.id)) catalogEventDefinitions.set(definition.id, definition);
 }
 
 export function createDefaultNodeRegistry(): NodeRegistry {

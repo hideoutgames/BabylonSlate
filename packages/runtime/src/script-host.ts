@@ -11,6 +11,7 @@ import {
   type TickContext,
 } from "@haptic/object-model";
 import type { AnimTransitionDecision } from "@haptic/anim-graph";
+import { INPUT_EVENT } from "@haptic/scripting";
 import { isInfiniteLoopError } from "@haptic/debugger";
 import { loadCompiledModule } from "./module-loader";
 import type { ScriptBreakpoints } from "./script-breakpoints";
@@ -92,6 +93,8 @@ export class ScriptHost {
    * a reload reaches actors that captured their hooks at creation.
    */
   private readonly lifecycleScriptsByClassId = new Map<string, Map<string, LoadedScript[] | null>>();
+  /** `inputScriptsFor` per class; cleared with the other lineage caches. */
+  private readonly inputScriptsByClassId = new Map<string, readonly LoadedScript[][]>();
   /**
    * Each loaded module's dispatchable entry points by event, in declaration
    * order, built on its first dispatch. A reload loads new `LoadedScript`s.
@@ -250,6 +253,7 @@ export class ScriptHost {
     this.lineageByClassId.clear();
     this.hooksByClassId.clear();
     this.lifecycleScriptsByClassId.clear();
+    this.inputScriptsByClassId.clear();
   }
 
   classIds(): string[] {
@@ -331,6 +335,22 @@ export class ScriptHost {
   }
 
   /**
+   * The classes in `classId`'s lineage that have input events, farthest ancestor first. Every one
+   * of them runs: an input event has no Call Parent, so a child's must not silence its parent's,
+   * nor the parent's Event Tick, which a shared event would do.
+   */
+  private inputScriptsFor(classId: string): readonly LoadedScript[][] {
+    let scripts = this.inputScriptsByClassId.get(classId);
+    if (!scripts) {
+      scripts = this.scriptLineage(classId)
+        .filter((loaded) => loaded.some((entry) => this.entryPointsFor(entry, INPUT_EVENT).length > 0))
+        .reverse();
+      this.inputScriptsByClassId.set(classId, scripts);
+    }
+    return scripts;
+  }
+
+  /**
    * Lifecycle hooks for `classId`. Each event runs the nearest implementation
    * in the class lineage, so a child inherits its parent's events. Creation is
    * On Init for the Game Instance, subsystems and Create Object classes, Begin
@@ -352,6 +372,11 @@ export class ScriptHost {
         if (loaded) this.dispatchEvent(loaded, creationEvent, self, 0, 0);
       },
       onTick: (self, ctx: TickContext) => {
+        // Input first, as the tick's Event Tick may act on it.
+        for (const loaded of this.inputScriptsFor(classId)) {
+          this.dispatchEvent(loaded, INPUT_EVENT, self, ctx.dt, ctx.tickIndex, {}, ctx);
+          if (self.destroyed) return;
+        }
         const loaded = this.lifecycleScriptsFor(classId, "onTick");
         if (!loaded) return;
         this.dispatchEvent(

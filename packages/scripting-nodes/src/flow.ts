@@ -24,6 +24,7 @@ import {
   byReferenceArgumentValue,
   isByReferenceFunctionInput,
   type VariableTypeSpec,
+  EVENT_BY_TYPE_ID,
 } from "@haptic/scripting";
 import {
   CALL_PIN_IDS,
@@ -33,7 +34,6 @@ import {
   memberPinRows,
   memberTargetPin,
   objectLiteralKey,
-  pinTypeForMember,
 } from "./member-pins";
 import {
   OUTPUT_DELEGATE_PIN_ID,
@@ -58,75 +58,23 @@ const CUSTOM_EVENT_PIN_IDS: ReadonlySet<string> = new Set([
 const COMMAND_RUN_PIN_IDS: ReadonlySet<string> = new Set(["execOut"]);
 const MAP_K: PinType = { kind: "resolvingWildcard", group: "K" };
 const MAP_V: PinType = { kind: "resolvingWildcard", group: "V" };
-/** Runtime export names for catalog event entry nodes. */
-const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
-  "flow.event.beginPlay": "onBeginPlay",
-  "flow.event.scalabilityChanged": "onScalabilityChanged",
-  "flow.event.tick": "onTick",
-  "flow.event.destroyed": "onDestroyed",
-  "flow.event.init": "onInit",
-  "flow.event.end": "onEnd",
-  "flow.event.firstSceneLoaded": "onFirstSceneLoaded",
-  "flow.event.sceneStartLoading": "onSceneStartLoading",
-  "flow.event.sceneFinishLoading": "onSceneFinishLoading",
-  "flow.event.sceneExit": "onSceneExit",
-  "flow.event.sceneLoaded": "onSceneLoaded",
-  "flow.event.streamedSceneLoaded": "onStreamedSceneLoaded",
-  "flow.event.streamedSceneUnloaded": "onStreamedSceneUnloaded",
-  "flow.event.sceneLayerAdded": "onSceneLayerAdded",
-  "flow.event.sceneLayerRemoved": "onSceneLayerRemoved",
-  "flow.event.sceneActorSpawned": "onSceneActorSpawned",
-  "flow.event.sceneActorDestroyed": "onSceneActorDestroyed",
-  "flow.event.hit": "onHit",
-  "flow.event.beginOverlap": "onBeginOverlap",
-  "flow.event.endOverlap": "onEndOverlap",
-  "flow.event.commandRun": "onCommandRun",
-  "flow.event.editorBeginPlay": "onEditorBeginPlay",
-  "flow.event.editorStartup": "onEditorStartup",
-  "flow.event.sceneOpen": "onSceneOpen",
-  "flow.event.sceneSaved": "onSceneSaved",
-  "flow.event.editorShutdown": "onEditorShutdown",
-  "flow.event.onMouseEnter": "onMouseEnter",
-  "flow.event.onMouseLeave": "onMouseLeave",
-  "flow.event.onClick": "onClick",
-  "flow.event.onPressStart": "onPressStart",
-  "flow.event.onPressEnd": "onPressEnd",
-  "flow.event.focusEnter": "onFocusEnter",
-  "flow.event.focusLeave": "onFocusLeave",
-  "flow.event.focusActivate": "onFocusActivate",
-  "flow.event.textChanged": "onTextChanged",
-  "flow.event.uiValueChanged": "onUIValueChanged",
-  "flow.event.uiRangeChanged": "onUIRangeChanged",
-  "flow.event.uiCheckedChanged": "onUICheckedChanged",
-  "flow.event.uiTextChanged": "onUITextChanged",
-  "flow.event.uiTextSubmitted": "onUITextSubmitted",
-  "flow.event.uiSelectionChanged": "onUISelectionChanged",
-  "flow.event.sceneLayerActorSwitching": "onSceneLayerActorSwitching",
-  "flow.event.sceneLayerActorSwitched": "onSceneLayerActorSwitched",
-  "flow.event.sceneLayerActorSwitchedTo": "onSceneLayerActorSwitchedTo",
-  "flow.event.sceneLayerActorSwitchedFrom": "onSceneLayerActorSwitchedFrom",
-  "flow.event.audioFinished": "onAudioFinished",
-  "flow.event.particlesFinished": "onParticlesFinished",
-  "flow.event.movementStarted": "onMovementStarted",
-  "flow.event.movementStopped": "onMovementStopped",
-  "flow.event.movementJumped": "onMovementJumped",
-  "flow.event.movementLeftGround": "onMovementLeftGround",
-  "flow.event.movementLanded": "onMovementLanded",
-  "bt.event.activate": "onActivate",
-  "bt.event.tick": "onBtTick",
-  "bt.event.abort": "onAbort",
-  "bt.event.evaluate": "onEvaluate",
-};
+/**
+ * Catalog event entry nodes by id, for Call Parent's pins. This module's own are added below;
+ * the catalog index adds the events other modules define (Scalability Changed, On Game Loaded).
+ */
+export const catalogEventDefinitions = new Map<string, NodeDefinition>();
 
-/** Runtime export of the catalog event a Call Parent node targets, if any. */
+/**
+ * Runtime event of the catalog event a Call Parent node targets, if any. Input events have no
+ * Call Parent: every class in a lineage runs its own.
+ */
 function catalogEventExport(
   properties: Record<string, unknown>,
 ): string | undefined {
   const eventType =
     typeof properties.eventType === "string" ? properties.eventType : "";
-  return Object.prototype.hasOwnProperty.call(EVENT_EXPORT_BY_TYPE, eventType)
-    ? EVENT_EXPORT_BY_TYPE[eventType]
-    : undefined;
+  if (!Object.hasOwn(EVENT_BY_TYPE_ID, eventType) || eventType.startsWith("input.")) return undefined;
+  return EVENT_BY_TYPE_ID[eventType];
 }
 
 type EventArgPin = { id: string; name: string; type: PinType };
@@ -146,7 +94,7 @@ type CallParentArg = {
  */
 function callParentArgs(properties: Record<string, unknown>): CallParentArg[] {
   if (catalogEventExport(properties)) {
-    const def = flowNodes.find((entry) => entry.id === properties.eventType);
+    const def = catalogEventDefinitions.get(String(properties.eventType));
     return (def?.pins({}) ?? [])
       .filter((entry) => entry.kind === "data" && entry.direction === "out")
       .map((entry) => ({
@@ -165,7 +113,8 @@ function callParentArgs(properties: Record<string, unknown>): CallParentArg[] {
     return [{
       key: row.name,
       name: row.name,
-      type: pinTypeForMember(row.typeId, row.typeClassId),
+      // The whole row: a Delegate keeps its signature and an Array stays an Array.
+      type: pinTypeForVariable(row),
       inId: memberArgPinId(row.name, EXEC_PIN_IDS),
       outId: `${row.name}__out`,
     }];
@@ -595,7 +544,7 @@ export const flowNodes: NodeDefinition[] = [
         ) {
           continue;
         }
-        args.push(`${JSON.stringify(pinDef.name)}: ${ctx.input(pinDef.id)}`);
+        args.push(`${objectLiteralKey(pinDef.name)}: ${ctx.input(pinDef.id)}`);
       }
       ctx.emit(
         `ctx.invokeCustomEvent(${targetExpr}, ${JSON.stringify(eventName)}, { ${args.join(", ")} });`,
@@ -631,7 +580,7 @@ export const flowNodes: NodeDefinition[] = [
       // input replaces one. Custom events send exactly their inputs.
       const fields = args
         .filter((arg) => !catalogEvent || ctx.isWired(arg.inId))
-        .map((arg) => `${JSON.stringify(arg.key)}: ${ctx.input(arg.inId)}`);
+        .map((arg) => `${objectLiteralKey(arg.key)}: ${ctx.input(arg.inId)}`);
       const sent = catalogEvent
         ? `{ ...ctx.args${fields.map((field) => `, ${field}`).join("")} }`
         : `{ ${fields.join(", ")} }`;
@@ -1147,4 +1096,8 @@ function pinTypeForCommandParam(type: string | undefined): PinType {
     default:
       return FLOAT;
   }
+}
+
+for (const definition of flowNodes) {
+  if (Object.hasOwn(EVENT_BY_TYPE_ID, definition.id)) catalogEventDefinitions.set(definition.id, definition);
 }

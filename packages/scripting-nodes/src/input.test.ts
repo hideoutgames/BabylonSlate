@@ -34,12 +34,13 @@ function edge(
   return { id, sourceNodeId, sourcePinId, targetNodeId, targetPinId };
 }
 
-function loadModule(source: string): Record<string, unknown> {
+/** Input event entries export `onInput`; Event Tick exports `onTick`. */
+function loadModule(source: string, entry = "onInput"): Record<string, unknown> {
   const body = source.replace(
     /export\s+(async\s+)?function\s+/g,
     "$1function ",
   );
-  return new Function(`${body}\nreturn { onTick };`)() as Record<
+  return new Function(`${body}\nreturn { ${entry} };`)() as Record<
     string,
     unknown
   >;
@@ -63,7 +64,7 @@ describe("input nodes", () => {
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(compiled.source).toContain("ctx.getCursorPosition");
-    const mod = loadModule(compiled.source);
+    const mod = loadModule(compiled.source, "onTick");
     const logs: string[] = [];
     (mod.onTick as (ctx: unknown) => void)({
       formatValue: (v: unknown) => String((v as { x: number }).x),
@@ -123,7 +124,7 @@ describe("asset input event compilation", () => {
           },
         ]),
       );
-      (mod.onTick as (ctx: unknown) => void)({
+      (mod.onInput as (ctx: unknown) => void)({
         getPressedKeys: () => ["KeyI"],
         inputBindings: controls,
         formatValue: String,
@@ -176,7 +177,7 @@ describe("asset input event compilation", () => {
       const compiled = compileGraph(graph, { assetGuid: "a", registry });
       const mod = loadModule(compiled.source);
       const values: unknown[] = [];
-      (mod.onTick as (ctx: unknown) => void)({
+      (mod.onInput as (ctx: unknown) => void)({
         getInputState: (input: unknown) => {
           expect(input).toEqual({ Name: "Move", Asset: "move" });
           return {
@@ -192,7 +193,7 @@ describe("asset input event compilation", () => {
           values.push(entry),
       });
       expect(values).toEqual([value]);
-      (mod.onTick as (ctx: unknown) => void)({
+      (mod.onInput as (ctx: unknown) => void)({
         getInputState: () => ({
           valueType: valueType === "button" ? "2d" : "button",
           started: true,
@@ -225,18 +226,18 @@ describe("asset input event compilation", () => {
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     const mod = loadModule(compiled.source);
     const logged: string[] = [];
-    const onTick = mod.onTick as (ctx: unknown) => void;
+    const onInput = mod.onInput as (ctx: unknown) => void;
     const ctx = {
       formatValue: String,
       log: (_severity: string, _category: string, key: string) =>
         logged.push(key),
     };
-    onTick({
+    onInput({
       ...ctx,
       getPressedKeys: () => ["KeyW", "MouseLeft", "Gamepad2Button0"],
     });
-    onTick({ ...ctx, getPressedKeys: () => [] });
-    onTick(ctx);
+    onInput({ ...ctx, getPressedKeys: () => [] });
+    onInput(ctx);
     expect(logged).toEqual(["KeyW", "MouseLeft", "Gamepad2Button0"]);
   });
 
@@ -262,7 +263,7 @@ describe("asset input event compilation", () => {
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     const mod = loadModule(compiled.source);
     const values: unknown[] = [];
-    (mod.onTick as (ctx: unknown) => void)({
+    (mod.onInput as (ctx: unknown) => void)({
       getInputState: () => ({ valueType: "2d", started: false, held: true, released: false, value: { x: 0.25, y: -1 } }),
       formatValue: (entry: unknown) => entry,
       log: (_severity: string, _category: string, entry: unknown) => values.push(entry),
@@ -308,15 +309,15 @@ describe("asset input event compilation", () => {
       formatValue: String,
       log: (_s: string, _c: string, message: string) => logs.push(message),
     };
-    (mod.onTick as (ctx: unknown) => void)(ctx);
+    (mod.onInput as (ctx: unknown) => void)(ctx);
     expect(logs).toEqual(["started", "held"]);
     logs.length = 0;
     snapshot = { ...snapshot, held: false, released: true, value: false };
-    (mod.onTick as (ctx: unknown) => void)(ctx);
+    (mod.onInput as (ctx: unknown) => void)(ctx);
     expect(logs).toEqual(["started", "released"]);
     logs.length = 0;
     snapshot = { ...snapshot, held: true, value: true };
-    (mod.onTick as (ctx: unknown) => void)(ctx);
+    (mod.onInput as (ctx: unknown) => void)(ctx);
     expect(logs).toEqual(["released", "started", "held"]);
   });
 });
