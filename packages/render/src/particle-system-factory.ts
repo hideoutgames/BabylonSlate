@@ -450,7 +450,7 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
     scene.removeIsReadyCheck(readiness);
     system.onDisposeObservable.remove(disposeObserver);
     stopBound();
-    markSceneReadinessDirty(scene);
+    markSceneReadinessDirty(scene, "particleCancel");
     if (successor) successor.then(resolve, reject);
     else resolve();
   };
@@ -459,7 +459,7 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
   scene.addIsReadyCheck(readiness);
   // Custom checks join strict readiness without a Scene observable; admit the
   // new check by invalidating the coordinator's cached readiness result.
-  markSceneReadinessDirty(scene);
+  markSceneReadinessDirty(scene, "particleBind");
   const fail = (error: unknown) => {
     if (pendingParticleMaterials.get(system) !== cancel) return;
     reject(error);

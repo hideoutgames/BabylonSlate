@@ -345,7 +345,7 @@ class LatticeOwner {
     }
     // markDirty also resets frozen draw-wrapper readiness, unlike markAsDirty.
     for (const material of materials) material.markDirty(true);
-    markSceneReadinessDirty(this.root.getScene());
+    markSceneReadinessDirty(this.root.getScene(), "lattice");
   }
   private applyOffsets(lattice: Lattice, config: LatticeDeformerConfig): void {
     for (let z = 0; z < lattice.resolutionZ; z++) for (let y = 0; y < lattice.resolutionY; y++) for (let x = 0; x < lattice.resolutionX; x++) {

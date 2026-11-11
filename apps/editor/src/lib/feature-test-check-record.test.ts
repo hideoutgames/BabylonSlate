@@ -142,6 +142,12 @@ describe("the unfinished Feature Test Check", () => {
     store.set("haptic:feature-test-check:unfinished", JSON.stringify({ finished: true, report: incomplete }));
     expect(loadSavedCheck()).toBeNull();
     expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
+    // Play's sampled renderer work without the causes of its readiness probes would format as a missing field.
+    const work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 4, readinessProbeMs: 40, outlineReadinessChecks: 0 };
+    const causeless = { ...report, scenes: [{ ...report.scenes[0]!, play: { ...report.scenes[0]!.play, work: { drawn: 10, work } } }] };
+    store.set("haptic:feature-test-check:unfinished", JSON.stringify({ finished: true, report: causeless }));
+    expect(loadSavedCheck()).toBeNull();
+    expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
     vi.stubGlobal("localStorage", { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("full"); }, removeItem: () => { throw new Error("denied"); } });
     expect(() => saveUnfinishedCheck({ step: "x", report, resources: [] })).not.toThrow();
     expect(loadSavedCheck()).toBeNull();

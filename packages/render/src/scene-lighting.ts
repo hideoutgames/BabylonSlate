@@ -83,7 +83,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
     dirty = false;
     // Light membership changed; the cached strict readiness
     // result no longer describes the effects these materials will build.
-    markSceneReadinessDirty(scene);
+    markSceneReadinessDirty(scene, "sceneLighting");
     lightCount = scene.lights.length;
     materialCount = scene.materials.length;
     sceneLightsEnabled = scene.lightsEnabled;

@@ -1266,7 +1266,10 @@ describe("Profile", () => {
   it("records the world renderer's work each row did while sampled, and the native memory as it ended", async () => {
     // Two strict readiness checks and one shadow admission per attempt, three times as many while shadows are off.
     let attempts = 0;
-    const work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 0, readinessProbeMs: 0, outlineReadinessChecks: 0 };
+    const work = {
+      graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 0, readinessProbeMs: 0, outlineReadinessChecks: 0,
+      readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0,
+    };
     const editor = fakeEditor({}, undefined, (now, commands) => {
       for (; attempts < Math.floor(now / 25); attempts++) {
         const scale = shadowsOff(commands) ? 3 : 1;
@@ -1319,12 +1322,16 @@ describe("Profile", () => {
   });
 
   it("records the readiness checks of the frames drawn while Play is measured, and what Play first drew before a sweep", async () => {
-    // A frame every 25 ms, after the 100 the load drew; each runs one strict readiness check that takes 30 ms.
+    // A frame every 25 ms, after the 100 the load drew; each runs one strict readiness check that takes 30 ms, for a
+    // mesh added, and fails twice before it. The three preparation checks were all before the measured window.
     const view = (now: number) => {
       const drawn = 100 + Math.floor(now / 25);
       return {
         drawn, held: 0,
-        rendererWork: { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: drawn, readinessProbeMs: drawn * 30, outlineReadinessChecks: 0 },
+        rendererWork: {
+          graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: drawn, readinessProbeMs: drawn * 30, outlineReadinessChecks: 0,
+          readinessProbeReasons: { meshAdded: drawn, prepare: 3 }, readinessSwapRechecks: 0, failedReadinessProbes: drawn * 2,
+        },
       };
     };
     const run = async (mode: "quick" | "benchmark") => {
@@ -1334,10 +1341,13 @@ describe("Profile", () => {
     };
     const quick = await run("quick");
     // The fake's frame sample returns at once, so the measured window is the runner's one 500 ms poll of the
-    // counters: 20 frames drawn, 20 checks, 600 ms of them.
+    // counters: 20 frames drawn, 20 checks, 600 ms of them; causes that did not grow are left out.
     expect(quick.work).toEqual({
       drawn: 20,
-      work: { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 20, readinessProbeMs: 600, outlineReadinessChecks: 0 },
+      work: {
+        graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 20, readinessProbeMs: 600, outlineReadinessChecks: 0,
+        readinessProbeReasons: { meshAdded: 20 }, readinessSwapRechecks: 0, failedReadinessProbes: 40,
+      },
     });
     expect(quick.firstDrawsBeforeSweep).toBeUndefined();
     // The fake first draws one shader per command: none before the sweep, then the cap, four tiers and the cap.

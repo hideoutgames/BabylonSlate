@@ -266,7 +266,7 @@ export class ReflectionProbes {
     } finally {
       this.scene.blockMaterialDirtyMechanism = blocked;
     }
-    markSceneReadinessDirty(this.scene);
+    markSceneReadinessDirty(this.scene, "reflectionProbes");
   }
 
   /**
@@ -295,7 +295,7 @@ export class ReflectionProbes {
       this.resolving = any;
       this.invalidateMaterials();
     }
-    markSceneReadinessDirty(this.scene);
+    markSceneReadinessDirty(this.scene, "reflectionProbes");
   }
 
   private update(): void {
@@ -568,7 +568,7 @@ export class ReflectionProbes {
         const first = !probe.published;
         probe.published = true;
         if (first) this.republish();
-        else markSceneReadinessDirty(this.scene);
+        else markSceneReadinessDirty(this.scene, "reflectionProbes");
       }, (error: unknown) => {
         if (!current()) return;
         probe.failed = true;

@@ -47,7 +47,7 @@ export function applyOverlayVisualStyle(root: AbstractMesh, value: unknown): voi
   }
   const before = binding.style.opacity * binding.style.tint[3];
   binding.style = parseOverlayVisualStyle(value);
-  if ((before < 1) !== (binding.style.opacity * binding.style.tint[3] < 1)) markSceneReadinessDirty(root.getScene());
+  if ((before < 1) !== (binding.style.opacity * binding.style.tint[3] < 1)) markSceneReadinessDirty(root.getScene(), "layerStyle");
 }
 
 /** Also called when a texture finishes replacing its owned construction material. */

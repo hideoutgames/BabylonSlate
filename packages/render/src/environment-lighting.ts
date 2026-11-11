@@ -229,12 +229,12 @@ class EnvironmentLighting {
           if (this.pendingLease !== lease || this.disposed || this.scene.isDisposed) { lease.release(); return; }
           this.pendingLease = undefined;
           try { this.publish(lease); this.sync(); this.invalidateMaterials(); }
-          catch (error) { lease.release(); markSceneReadinessDirty(this.scene); console.error("Environment texture replacement failed", error); }
+          catch (error) { lease.release(); markSceneReadinessDirty(this.scene, "environmentLighting"); console.error("Environment texture replacement failed", error); }
         }, (error) => {
           if (this.pendingLease !== lease) return;
           this.pendingLease = undefined;
           lease.release();
-          markSceneReadinessDirty(this.scene);
+          markSceneReadinessDirty(this.scene, "environmentLighting");
           console.error("Environment texture replacement failed", error);
         });
       } else {
@@ -326,7 +326,7 @@ class EnvironmentLighting {
     void filtered?.ready.then(() => {
       if (this.skyFilter !== request) return;
       request.state = "ready";
-      markSceneReadinessDirty(this.scene);
+      markSceneReadinessDirty(this.scene, "environmentLighting");
       this.sync();
     }, (error) => {
       if (this.skyFilter !== request) return;
@@ -335,7 +335,7 @@ class EnvironmentLighting {
       request.filtered?.release();
       request.filtered = null;
       console.error("Skybox environment filtering failed; lighting from the unfiltered sky", error);
-      markSceneReadinessDirty(this.scene);
+      markSceneReadinessDirty(this.scene, "environmentLighting");
       this.sync();
     });
     return request;
@@ -422,7 +422,7 @@ class EnvironmentLighting {
     if (this.sourceLease !== lease || this.disposed) return;
     this.preparationError = error instanceof Error ? error : new Error(String(error));
     this.clear();
-    markSceneReadinessDirty(this.scene);
+    markSceneReadinessDirty(this.scene, "environmentLighting");
   }
 
   private clear(): void {
@@ -443,7 +443,7 @@ class EnvironmentLighting {
   }
 
   private invalidateMaterials(): void {
-    markSceneReadinessDirty(this.scene);
+    markSceneReadinessDirty(this.scene, "environmentLighting");
     const blocked = this.scene.blockMaterialDirtyMechanism;
     this.scene.blockMaterialDirtyMechanism = false;
     try {
