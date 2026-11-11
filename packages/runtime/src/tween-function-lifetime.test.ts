@@ -62,7 +62,9 @@ describe("FunctionLibrary tween lifetime", () => {
     runtime.cancelInvalid();
     expect(messages).toEqual([]);
     runtime.advance(1.5);
-    await Promise.all([cancelled, surviving]);
+    // The destroyed caller's graph ends at the Call, as after a Delay of its own; the other continues.
+    const [ended] = await Promise.allSettled([cancelled, surviving]);
+    expect(ended).toMatchObject({ status: "rejected", reason: { reason: "ownerDestroyed" } });
     expect(messages).toEqual(["8"]);
     expect(errors).toEqual([]);
     runtime.stop();

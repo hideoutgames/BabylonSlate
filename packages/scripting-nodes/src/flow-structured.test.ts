@@ -378,6 +378,41 @@ describe("structured flow compile + runtime", () => {
     expect(logs).toEqual(["0", "1", "0", "1", "outerDone"]);
   });
 
+  it("Break inside a plain For Loop leaves the With Break loop around it", () => {
+    const registry = createDefaultNodeRegistry();
+    // The validator accepts this Break for `outer`; the plain inner loop takes none.
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "outer", "flow.forLoopWithBreak", { "default:firstIndex": 0, "default:lastIndex": 3 }),
+        node(registry, "inner", "flow.forLoop", { "default:firstIndex": 0, "default:lastIndex": 3 }),
+        node(registry, "gt", "math.greater", { "default:b": 0 }),
+        node(registry, "branch", "flow.branch"),
+        node(registry, "brk", "flow.break"),
+        node(registry, "log", "debug.log"),
+        node(registry, "outerDone", "debug.log", { "default:message": "outerDone" }),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "outer", "execIn"),
+        edge("e2", "outer", "loopBody", "inner", "execIn"),
+        edge("e3", "inner", "loopBody", "branch", "execIn"),
+        edge("e4", "inner", "index", "gt", "a"),
+        edge("e5", "gt", "out", "branch", "condition"),
+        edge("e6", "branch", "true", "brk", "execIn"),
+        edge("e7", "branch", "false", "log", "execIn"),
+        edge("e8", "inner", "index", "log", "message"),
+        edge("e9", "outer", "completed", "outerDone", "execIn"),
+      ],
+    };
+    expect(validateGraphs([graph], { assetGuid: "a" }, { registry }).filter((d) => d.code === "flow.break_outside_loop")).toEqual([]);
+    const logs: string[] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source).run as (ctx: unknown) => void)(stubCtx({ logs }));
+    // Leaving only the inner loop would log "0" once per outer pass: four times.
+    expect(logs).toEqual(["0", "outerDone"]);
+  });
+
   it("Do Once / Do N / Flip Flop / Gate use ctx.flowState rather than module globals", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

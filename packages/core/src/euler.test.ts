@@ -5,6 +5,7 @@ import {
   inverseRotator,
   lookAtRotation,
   lookAtRotator,
+  inverseQuat,
   quatRotateVector,
   quatToRotator,
   quaternionToEulerDegrees,
@@ -131,5 +132,15 @@ describe("rotator object helpers", () => {
     expect(normalized.y).toBeCloseTo(0, 4);
     expect(normalized.z).toBeCloseTo(0, 4);
     expect(normalized.w).toBeCloseTo(1, 4);
+  });
+
+  it("reads a quaternion of any length as the rotation it points along", () => {
+    // (0, 1, 0, 1) is a 90° yaw twice as long as a unit quaternion.
+    const long = { x: 0, y: 1, z: 0, w: 1 };
+    expect(quatToRotator(long).yaw).toBeCloseTo(90, 9);
+    const rotated = quatRotateVector(long, { x: 0, y: 0, z: 1 });
+    expect([rotated.x, rotated.y, rotated.z].map((n) => Math.round(n * 1e9) / 1e9 + 0)).toEqual([1, 0, 0]);
+    const back = quatRotateVector(inverseQuat(long), rotated);
+    expect([back.x, back.y, back.z].map((n) => Math.round(n * 1e9) / 1e9 + 0)).toEqual([0, 0, 1]);
   });
 });

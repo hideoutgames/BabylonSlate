@@ -1,21 +1,74 @@
 import type { GraphNode } from "./ir";
 import { flowSwitchCaseValueFromPinId } from "./flow-switch-pins";
 import {
+  isBreakableLoopKind,
   isFlowSwitchMeta,
   isLoopMeta,
   type StructuredFlowMeta,
 } from "./structured-flow";
 import { jsIdent } from "./compile-events";
-import { entryPinMatches, execSuccessorEdges } from "./compile-graph-index";
+import {
+  entryPinMatches,
+  execSuccessorEdges,
+  type ExecTarget,
+} from "./compile-graph-index";
 import {
   emitBody,
+  epochFragment,
   loopCheck,
+  trackEpochFragment,
+  type BodyLine,
   type CodegenState,
   type EmitAlong,
   type ExecPath,
 } from "./compile-codegen-state";
 import { makeCtx } from "./compile-expressions";
 import { declareDataOuts, emitOutputProbe } from "./compile-statements";
+
+/**
+ * Opens a frame Break can leave when `kind` takes one. A plain For Loop or For
+ * Each gets none, so a Break in its body leaves the With Break loop around it,
+ * the loop the validator accepted the Break for.
+ */
+function pushLoop(s: CodegenState, kind: StructuredFlowMeta["kind"], opening: BodyLine): boolean {
+  if (!isBreakableLoopKind(kind)) return false;
+  s.loopStack.push({ label: `__loop_${s.nextLabel++}`, opening });
+  return true;
+}
+
+/**
+ * A switch's wired cases as an `if` chain over its value, then Default. The
+ * value is read once into a local, so every case tests the same one: a Random
+ * Int wired to it draws a single number.
+ */
+export function emitSwitchCases(
+  s: CodegenState,
+  node: GraphNode,
+  valueExpr: string,
+  cases: readonly { pinId: string; literal: string }[],
+  defaultTargets: ExecTarget[],
+  visited: ExecPath,
+  along: EmitAlong,
+): void {
+  const anchor = { column: 1, assetGuid: s.options.assetGuid, graphId: s.graph.id, nodeId: node.id };
+  if (cases.length === 0) {
+    along(s, defaultTargets, visited);
+    return;
+  }
+  const value = `__switch_${jsIdent(node.id)}`;
+  emitBody(s, `  {`, anchor);
+  emitBody(s, `  const ${value} = ${valueExpr};`, anchor);
+  cases.forEach((entry, index) => {
+    emitBody(s, `  ${index === 0 ? "if" : "} else if"} (${value} === ${entry.literal}) {`, anchor);
+    along(s, execSuccessorEdges(s.index, node.id, entry.pinId), visited);
+  });
+  if (defaultTargets.length > 0) {
+    emitBody(s, `  } else {`, anchor);
+    along(s, defaultTargets, visited);
+  }
+  emitBody(s, `  }`, anchor);
+  emitBody(s, `  }`, anchor);
+}
 
 export function emitFlowSwitch(
   s: CodegenState,
@@ -32,7 +85,6 @@ export function emitFlowSwitch(
     graphId: s.graph.id,
     nodeId: node.id,
   };
-  const valueExpr = ctx.input(meta.valuePin);
   const cases = node.pins.filter(
     (pin) =>
       pin.kind === "exec" &&
@@ -47,26 +99,21 @@ export function emitFlowSwitch(
     emitBody(s, `  /* ${node.typeId} ${node.id}: no exec outs */`, anchor);
     return true;
   }
-  for (let i = 0; i < wiredCases.length; i++) {
-    const pin = wiredCases[i]!;
-    const raw = flowSwitchCaseValueFromPinId(pin.id) ?? pin.name;
-    const compare =
-      meta.kind === "switchOnInt" ? String(Number(raw)) : JSON.stringify(raw);
-    const keyword = i === 0 ? "if" : "} else if";
-    emitBody(s, `  ${keyword} (${valueExpr} === ${compare}) {`, anchor);
-    along(s, execSuccessorEdges(s.index, node.id, pin.id), visited);
-  }
-  if (defaultTargets.length > 0) {
-    if (wiredCases.length > 0) {
-      emitBody(s, `  } else {`, anchor);
-    }
-    along(s, defaultTargets, visited);
-    if (wiredCases.length > 0) {
-      emitBody(s, `  }`, anchor);
-    }
-  } else if (wiredCases.length > 0) {
-    emitBody(s, `  }`, anchor);
-  }
+  emitSwitchCases(
+    s,
+    node,
+    ctx.input(meta.valuePin),
+    wiredCases.map((pin) => {
+      const raw = flowSwitchCaseValueFromPinId(pin.id) ?? pin.name;
+      return {
+        pinId: pin.id,
+        literal: meta.kind === "switchOnInt" ? String(Number(raw)) : JSON.stringify(raw),
+      };
+    }),
+    defaultTargets,
+    visited,
+    along,
+  );
   return true;
 }
 
@@ -87,9 +134,10 @@ export function emitStructuredFlow(
   };
 
   if (meta.kind === "break") {
+    // The nearest loop that takes a Break: a plain For Loop or For Each between
+    // the two is left along with it. Outside one the validator reports
+    // flow.break_outside_loop; a bare `break;` would stop the module from parsing.
     const loop = s.loopStack.at(-1);
-    // Outside a loop the validator reports flow.break_outside_loop; a bare
-    // `break;` would stop the whole module from parsing.
     if (!loop) {
       emitBody(s, `  /* flow.break ${node.id}: not inside a loop */`, anchor);
       return true;
@@ -105,8 +153,9 @@ export function emitStructuredFlow(
   if (meta.kind === "whileLoop") {
     const conditionExpr = ctx.input(meta.conditionPin);
     // Each condition check is a statement of its own.
-    const condition = s.useEpoch ? `(__stmt++, ${conditionExpr})` : conditionExpr;
-    const opening = emitBody(s, `  while (${condition}) {`, anchor);
+    const epochCondition = `(__stmt++, ${conditionExpr})`;
+    const opening = emitBody(s, `  while (${epochFragment(s, epochCondition, conditionExpr)}) {`, anchor);
+    trackEpochFragment(s, opening, epochCondition, conditionExpr);
     if (s.instrumentLoops) emitBody(s, `    ${loopCheck(s, anchor.nodeId)}`, anchor);
     s.loopStack.push({ label: `__loop_${s.nextLabel++}`, opening });
     along(s, execSuccessorEdges(s.index, node.id, meta.loopBodyPin), visited);
@@ -134,22 +183,24 @@ export function emitStructuredFlow(
       );
       // The first Last Index check shares the For Loop's statement with
       // First Index; each later check is a statement of its own.
-      const update = s.useEpoch ? `${iter}++, __stmt++` : `${iter}++`;
+      const epochUpdate = `${iter}++, __stmt++) {`;
+      const plainUpdate = `${iter}++) {`;
       const opening = emitBody(
         s,
-        `    for (let ${iter} = ${bound}(${firstExpr}); ${iter} <= ${bound}(${lastExpr}); ${update}) {`,
+        `    for (let ${iter} = ${bound}(${firstExpr}); ${iter} <= ${bound}(${lastExpr}); ${epochFragment(s, epochUpdate, plainUpdate)}`,
         anchor,
       );
+      trackEpochFragment(s, opening, epochUpdate, plainUpdate);
       if (s.instrumentLoops) emitBody(s, `      ${loopCheck(s, anchor.nodeId)}`, anchor);
       emitBody(s, `      ${indexSlot} = ${iter};`, anchor);
       emitOutputProbe(s, node, ctx);
-      s.loopStack.push({ label: `__loop_${s.nextLabel++}`, opening });
+      const breakable = pushLoop(s, meta.kind, opening);
       along(
         s,
         execSuccessorEdges(s.index, node.id, meta.loopBodyPin),
         visited,
       );
-      s.loopStack.pop();
+      if (breakable) s.loopStack.pop();
       emitBody(s, `    }`, anchor);
       emitBody(s, `  }`, anchor);
     } else if (meta.kind === "forEach" || meta.kind === "forEachWithBreak") {
@@ -174,13 +225,13 @@ export function emitStructuredFlow(
       emitBody(s, `      ${indexSlot} = ${iter};`, anchor);
       emitBody(s, `      ${elementSlot} = ${snap}[${iter}];`, anchor);
       emitOutputProbe(s, node, ctx);
-      s.loopStack.push({ label: `__loop_${s.nextLabel++}`, opening });
+      const breakable = pushLoop(s, meta.kind, opening);
       along(
         s,
         execSuccessorEdges(s.index, node.id, meta.loopBodyPin),
         visited,
       );
-      s.loopStack.pop();
+      if (breakable) s.loopStack.pop();
       emitBody(s, `    }`, anchor);
       emitBody(s, `  }`, anchor);
     } else if (
@@ -208,13 +259,13 @@ export function emitStructuredFlow(
       emitBody(s, `      ${keySlot} = ${snap}[${iter}][0];`, anchor);
       emitBody(s, `      ${valueSlot} = ${snap}[${iter}][1];`, anchor);
       emitOutputProbe(s, node, ctx);
-      s.loopStack.push({ label: `__loop_${s.nextLabel++}`, opening });
+      const breakable = pushLoop(s, meta.kind, opening);
       along(
         s,
         execSuccessorEdges(s.index, node.id, meta.loopBodyPin),
         visited,
       );
-      s.loopStack.pop();
+      if (breakable) s.loopStack.pop();
       emitBody(s, `    }`, anchor);
       emitBody(s, `  }`, anchor);
     }

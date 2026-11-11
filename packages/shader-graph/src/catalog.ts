@@ -541,6 +541,8 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     type: "input.screenSize",
     title: "Screen Size",
     category: "Input",
+    // Babylon's block exists in the fragment stage only.
+    stages: ["fragment"],
     cost: 0,
     inputs: [],
     outputs: [{ id: "size", name: "Size", type: VEC2 }],
@@ -843,6 +845,9 @@ const TEXTURE_NODES: MaterialNodeDefinition[] = [
     outputs: [
       { id: "rgba", name: "RGBA", type: VEC4, colorHint: true },
       { id: "rgb", name: "RGB", type: VEC3, colorHint: true },
+      { id: "r", name: "R", type: FLOAT },
+      { id: "g", name: "G", type: FLOAT },
+      { id: "b", name: "B", type: FLOAT },
       { id: "a", name: "A", type: FLOAT },
       { id: "textureOut", name: "Texture", type: TEXTURE },
     ],
@@ -883,7 +888,8 @@ const SHADING_NODES: MaterialNodeDefinition[] = [
     stages: ["fragment"],
     cost: 5,
     inputs: [
-      { id: "packed", name: "Packed", type: VEC3 },
+      // The flat tangent-space normal: an unwired Normal Map leaves the surface normal as it is.
+      { id: "packed", name: "Packed", type: VEC3, defaultValue: [0.5, 0.5, 1] },
       { id: "uv", name: "UV", type: VEC2 },
       { id: "strength", name: "Strength", type: FLOAT, defaultValue: [1] },
     ],
@@ -895,7 +901,7 @@ const SHADING_NODES: MaterialNodeDefinition[] = [
     category: "Color",
     cost: 3,
     inputs: [
-      { id: "color", name: "Color", type: VEC3, colorHint: true },
+      { id: "color", name: "Color", type: VEC3, colorHint: true, defaultValue: [1, 1, 1] },
       { id: "level", name: "Level", type: FLOAT, defaultValue: [1] },
     ],
     outputs: [{ id: "out", name: "Out", type: VEC3, colorHint: true }],

@@ -41,19 +41,29 @@ function entry(source: string, name: string): (ctx: unknown) => unknown {
 }
 
 describe("shared pure expression compilation", () => {
-  it("does not share mutable output allocations between reads", () => {
+  it("gives one statement's readers one evaluation of a shared output, and the next statement a fresh one", () => {
     const { graph, registry, node, wire } = fixture(0);
     registry.register({ id: "vector", title: "Vector", category: "math", pure: true, referentiallyTransparent: true,
-      pins: () => [pin("out", "out", "out", VEC3)], codegen: () => ({ out: `({ x: ${"1 + ".repeat(150)}0, y: 2, z: 3 })` }) });
-    registry.register({ id: "compare", title: "Compare", category: "debug",
-      pins: () => [pin("execIn", "exec", "in", EXEC), pin("a", "a", "in", VEC3), pin("b", "b", "in", VEC3)],
-      codegen: (ctx) => ctx.emit(`ctx.log(${ctx.input("a")} === ${ctx.input("b")});`) });
+      pins: () => [pin("out", "out", "out", VEC3)], codegen: () => ({ out: "ctx.make()" }) });
+    registry.register({ id: "keep", title: "Keep", category: "debug",
+      pins: () => [pin("execIn", "exec", "in", EXEC), pin("execOut", "then", "out", EXEC), pin("a", "a", "in", VEC3), pin("b", "b", "in", VEC3)],
+      codegen: (ctx) => ctx.emit(`ctx.keep(${ctx.input("a")}, ${ctx.input("b")});`) });
     graph.edges = [];
-    graph.nodes.push(node("vector", "vector"), node("compare", "compare"));
-    wire("begin", "compare", "execIn", "execOut"); wire("vector", "compare", "a"); wire("vector", "compare", "b");
-    const values: unknown[] = [];
-    entry(compileGraph(graph, { assetGuid: "mutable", registry }).source, "onBeginPlay")({ log: (value: unknown) => values.push(value) });
-    expect(values).toEqual([false]);
+    graph.nodes.push(node("vector", "vector"), node("first", "keep"), node("second", "keep"));
+    wire("begin", "first", "execIn", "execOut"); wire("first", "second", "execIn", "execOut");
+    for (const reader of ["first", "second"]) { wire("vector", reader, "a"); wire("vector", reader, "b"); }
+    let made = 0;
+    const kept: unknown[][] = [];
+    entry(compileGraph(graph, { assetGuid: "shared", registry }).source, "onBeginPlay")({
+      make: () => ({ x: ++made, y: 2, z: 3 }),
+      keep: (a: unknown, b: unknown) => kept.push([a, b]),
+    });
+    // Both wires into one exec node carry the same value; the next exec node evaluates again,
+    // so a value one statement kept is never the object a later one reads.
+    expect(made).toBe(2);
+    expect(kept[0]![0]).toBe(kept[0]![1]);
+    expect(kept[1]![0]).toBe(kept[1]![1]);
+    expect(kept[1]![0]).not.toBe(kept[0]![0]);
   });
 
   it("keeps deep DAG source bounded in events and transition rules", () => {
@@ -95,7 +105,7 @@ describe("shared pure expression compilation", () => {
     expect(entry(compileTransitionRuleGraph(graph, { assetGuid: "rule", registry }).source, "evaluate")({})).toEqual({ enter: "", exit: true });
   });
 
-  it("preserves short-circuit laziness, volatile read counts, and writes between consumers", () => {
+  it("reads a shared volatile node once per statement, keeps short-circuit laziness, and sees writes between statements", () => {
     const { graph, registry } = fixture(8, true);
     const run = entry(compileGraph(graph, { assetGuid: "volatile", registry }).source, "onBeginPlay");
     let reads = 0, current = 1;
@@ -106,7 +116,9 @@ describe("shared pure expression compilation", () => {
     expect(values).toEqual([0, 0]);
     ctx.enabled = true; current = 1; values.length = 0;
     run(ctx);
-    expect(reads).toBe(512);
+    // Eight Adds each read the node before them on both inputs: 256 paths lead to the one
+    // volatile node, which each of the two statements still reads once.
+    expect(reads).toBe(2);
     expect(values).toEqual([256, 512]);
   });
 });

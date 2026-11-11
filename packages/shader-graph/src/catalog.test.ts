@@ -204,4 +204,10 @@ describe("material node catalog", () => {
     expect(sample.cost).toBeGreaterThan(multiply.cost);
     expect(sample.samples).toBe(1);
   });
+
+  it("gives Texture Sample LOD the channel outputs of Texture Sample", () => {
+    const outputs = (type: string) => materialNodeDefinition(type)!.outputs.map((pin) => pin.id);
+    // Both nodes share one realisation, which provides every channel.
+    expect(outputs("texture.sampleLod")).toEqual(outputs("texture.sample"));
+  });
 });

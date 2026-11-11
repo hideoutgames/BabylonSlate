@@ -98,6 +98,16 @@ function textureLibrary() {
   return { scene, cache, sources, leases, library, onTextureError };
 }
 
+/**
+ * Makes `doc` lower cleanly and fail when Babylon builds it: Screen Size exists in the fragment stage
+ * only, and World Position Offset is computed per vertex. The library lowers without validating, so
+ * the graph reaches the build.
+ */
+function failsToBuild(doc: MaterialDocument): void {
+  doc.nodes.push({ id: "screen", type: "input.screenSize", position: { x: 0, y: 0 }, properties: {} });
+  doc.edges.push({ id: "screen-offset", sourceNodeId: "screen", sourcePinId: "size", targetNodeId: "output", targetPinId: "worldPositionOffset" });
+}
+
 describe("material library", () => {
   it("keeps compile-time texture preparation alive when an initial override replaces its binding", async () => {
     const f = textureLibrary();
@@ -455,8 +465,7 @@ describe("material library", () => {
     if (!first.ok) throw new Error("Expected a compiled material");
     await first.ready;
     const invalid = tinted(0.2);
-    invalid.nodes.push({ id: "normal", type: "shading.normalMap", position: { x: 0, y: 0 }, properties: {} });
-    invalid.edges.push({ id: "normal-output", sourceNodeId: "normal", sourcePinId: "normal", targetNodeId: "output", targetPinId: "normal" });
+    failsToBuild(invalid);
     const failed = library.acquire(scene, "material", invalid);
     const diagnostics = failed.ok ? await failed.ready : failed.diagnostics;
     expect(diagnostics.length).toBeGreaterThan(0);
@@ -606,8 +615,7 @@ describe("material library", () => {
     if (!first.ok) return;
     expect(await first.ready).toEqual([]);
     const invalid = tinted(0.2);
-    invalid.nodes.push({ id: "normal", type: "shading.normalMap", position: { x: 0, y: 0 }, properties: {} });
-    invalid.edges.push({ id: "normal-output", sourceNodeId: "normal", sourcePinId: "normal", targetNodeId: "output", targetPinId: "normal" });
+    failsToBuild(invalid);
     const replacement = library.acquire(scene, "material", invalid);
     if (replacement.ok) expect((await replacement.ready).length).toBeGreaterThan(0);
     expect(library.materialFor(scene, "material")).toBe(first.material);

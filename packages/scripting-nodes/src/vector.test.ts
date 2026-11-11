@@ -234,6 +234,59 @@ describe("vector nodes", () => {
     expect({ reads, logs }).toEqual({ reads: 2, logs: ["110", "200"] });
   });
 
+  it("an entry point declares only the memos it reads, and its loops still run without the statement counter", () => {
+    const registry = createDefaultNodeRegistry();
+    // Begin Play reads Break Vector3 through a memo. Tick reads none: building Begin Play's memo
+    // and counting statements on every tick would be work for nothing.
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "pos", "variables.get", { variableName: "Pos", typeId: "vec3", implicitSelf: true }),
+        node(registry, "break", "vector.break3"),
+        node(registry, "concat", "string.concat"),
+        node(registry, "logXY", "debug.log"),
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "loop", "flow.forLoop", { "default:firstIndex": 0, "default:lastIndex": 1 }),
+        node(registry, "logIndex", "debug.log"),
+        node(registry, "count", "variables.get", { variableName: "Count", typeId: "float", implicitSelf: true }),
+        node(registry, "less", "math.less", { "default:b": 2 }),
+        node(registry, "while", "flow.whileLoop"),
+        node(registry, "logWhile", "debug.log", { "default:message": "while" }),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "logXY", "execIn"),
+        edge("e2", "pos", "value", "break", "in"),
+        edge("e3", "break", "x", "concat", "a"),
+        edge("e4", "break", "y", "concat", "b"),
+        edge("e5", "concat", "out", "logXY", "message"),
+        edge("e6", "tick", "execOut", "loop", "execIn"),
+        edge("e7", "loop", "loopBody", "logIndex", "execIn"),
+        edge("e8", "loop", "index", "logIndex", "message"),
+        edge("e9", "loop", "completed", "while", "execIn"),
+        edge("e10", "count", "value", "less", "a"),
+        edge("e11", "less", "out", "while", "condition"),
+        edge("e12", "while", "loopBody", "logWhile", "execIn"),
+      ],
+    };
+    const source = compileGraph(graph, { assetGuid: "a", registry }).source;
+    const tickSource = source.slice(source.indexOf("export function onTick("));
+    // The generated text is the contract here: what an entry declares is what each call builds.
+    expect(tickSource).toContain("for (");
+    expect(tickSource).not.toMatch(/__memo_|__stmt/);
+    expect(source.slice(source.indexOf("export function onBeginPlay("), source.indexOf("export function onTick("))).toMatch(/__memo_0\(\)/);
+    let count = 0;
+    const logs: string[] = [];
+    const body = source.replace(/export\s+function\s+/g, "function ");
+    (new Function(`${body}\nreturn onTick;`)() as (ctx: unknown) => void)({
+      getVariable: () => count++,
+      formatValue: (value: unknown) => String(value),
+      log: (_severity: string, _category: string, message: string) => logs.push(message),
+    });
+    expect(logs).toEqual(["0", "1", "while", "while"]);
+  });
+
   it("declares arithmetic helpers ahead of every anchor so a throw inside one maps to its calling statement", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

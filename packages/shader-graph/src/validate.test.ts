@@ -580,6 +580,24 @@ describe("material validation", () => {
     expect(diagnostic?.message).toMatch(/World Position Offset/i);
   });
 
+  it("flags Screen Size wired into World Position Offset, where its block cannot run", () => {
+    const doc = createDefaultMaterialDocument();
+    const edge = (sourceNodeId: string, sourcePinId: string, targetNodeId: string, targetPinId: string) =>
+      ({ id: `${sourceNodeId}-${targetNodeId}`, sourceNodeId, sourcePinId, targetNodeId, targetPinId });
+    doc.nodes.push(
+      { id: "size", type: "input.screenSize", position: { x: 0, y: 0 }, properties: {} },
+      { id: "split", type: "vector.split", position: { x: 0, y: 0 }, properties: {} },
+      { id: "combine", type: "vector.combine", position: { x: 0, y: 0 }, properties: {} },
+    );
+    doc.edges.push(
+      edge("size", "size", "split", "value"),
+      edge("split", "x", "combine", "x"),
+      edge("combine", "xyz", "output", "worldPositionOffset"),
+    );
+    // Unreported, this reaches Babylon and fails the whole build with no node to point at.
+    expect(validateMaterialDocument(doc).find((row) => row.code === "material.stageMismatch")?.nodeId).toBe("size");
+  });
+
   it("allows Time and Sine to drive World Position Offset", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push(

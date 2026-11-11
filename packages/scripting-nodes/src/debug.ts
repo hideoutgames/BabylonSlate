@@ -260,8 +260,11 @@ export const debugNodes: NodeDefinition[] = [
       const outReturn = `{ ${outputs.map((o) => o.name).join(", ")} }`;
       const params = ["ctx", ...inputs.map((i) => i.name)].join(", ");
       const asyncKw = isAsync ? "async " : "";
-      const header = `${asyncKw}function ${fnName}(${params}) {\n${outDecls}\n  // --- user body ---`;
-      const footer = `  // --- end user body ---\n  return ${outReturn};\n}`;
+      // The body runs in a function of its own, so an early `return` ends the body and the
+      // outputs assigned so far are still returned. It opens and closes on the marker lines,
+      // which keeps every body line where the anchors expect it.
+      const header = `${asyncKw}function ${fnName}(${params}) {\n${outDecls}\n  ${isAsync ? "await (async " : "("}() => { // --- user body ---`;
+      const footer = `  })(); // --- end user body ---\n  return ${outReturn};\n}`;
       const bodyLines = body.split("\n");
       const source = `${header}\n${bodyLines.join("\n")}\n${footer}`;
       const headerLineCount = header.split("\n").length;

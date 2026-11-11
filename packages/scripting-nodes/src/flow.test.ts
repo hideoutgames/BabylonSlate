@@ -474,6 +474,67 @@ describe("flow nodes", () => {
     ]);
   });
 
+  it("Call Parent reaches events other catalog modules define, with their pins", () => {
+    const registry = createDefaultNodeRegistry();
+    // On Game Loaded and Scalability Changed are not defined beside Call Parent.
+    const settings = registry.get("flow.event.scalabilityChanged")!.pins({})
+      .filter((pin) => pin.kind === "data").map((pin) => pin.id);
+    expect(settings.length).toBeGreaterThan(0);
+    expect(
+      node(registry, "cp", "flow.event.callParent", { eventType: "flow.event.scalabilityChanged", parentClassId: "Base" })
+        .pins.filter((pin) => pin.kind === "data" && pin.direction === "in").map((pin) => pin.id),
+    ).toEqual(settings);
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "loaded", "flow.event.gameLoaded"),
+        node(registry, "cp", "flow.event.callParent", { eventType: "flow.event.gameLoaded", eventName: "On Game Loaded", parentClassId: "Base" }),
+      ],
+      edges: [{ id: "e1", sourceNodeId: "loaded", sourcePinId: "execOut", targetNodeId: "cp", targetPinId: "execIn" }],
+    };
+    const calls: unknown[][] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source, "onGameLoaded").onGameLoaded as (ctx: unknown) => void)({
+      args: {},
+      invokeEvent: (...call: unknown[]) => calls.push(call),
+    });
+    // The parent's handler is dispatched by this event name; a name made from the title matches nothing.
+    expect(calls.map((call) => call.slice(0, 2))).toEqual([["Base", "onGameLoaded"]]);
+  });
+
+  it("types Call Parent pins from the whole signature row and keeps a __proto__ argument a field", () => {
+    const registry = createDefaultNodeRegistry();
+    const rows = [
+      { name: "scores", typeId: "float", container: "array", direction: "out" },
+      { name: "done", typeId: "delegate", signature: [{ typeId: "int" }], direction: "out" },
+    ];
+    const callParent = node(registry, "cp", "flow.event.callParent", { eventType: "flow.event.custom", eventName: "Tally", parentClassId: "Base", pins: rows });
+    const event = node(registry, "event", "flow.event.custom", { name: "Tally", pins: rows });
+    // Call Parent is wired from the event's own outputs, so the two must agree.
+    for (const row of rows) {
+      expect(callParent.pins.find((pin) => pin.id === row.name)?.type)
+        .toEqual(event.pins.find((pin) => pin.id === row.name)?.type);
+    }
+    expect(callParent.pins.find((pin) => pin.id === "scores")?.type).toEqual({ kind: "array", element: FLOAT });
+
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "flow.event.call", { name: "Tally", implicitSelf: true, pins: [{ name: "__proto__", typeId: "float", direction: "in" }], "default:__proto__": 7 }),
+      ],
+      edges: [{ id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "call", targetPinId: "execIn" }],
+    };
+    const sent: Record<string, unknown>[] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source).onBeginPlay as (ctx: unknown) => void)({
+      self: {},
+      invokeCustomEvent: (_target: unknown, _name: string, args: Record<string, unknown>) => sent.push(args),
+    });
+    expect(Object.hasOwn(sent[0]!, "__proto__")).toBe(true);
+    expect(Object.entries(sent[0]!)).toEqual([["__proto__", 7]]);
+  });
+
   it("compiles function Output data pins as a return object", () => {
     const registry = createDefaultNodeRegistry();
     const pins = [

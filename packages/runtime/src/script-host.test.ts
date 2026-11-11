@@ -1209,7 +1209,7 @@ describe("script host runs compiled graphs", () => {
       ],
     });
     const script = toScript(graph, registry, "Jumper", "jumper-asset");
-    expect(script.entryPoints[0]?.event).toBe("onTick");
+    expect(script.entryPoints[0]?.event).toBe("onInput");
     await runtime.loadScripts([script]);
     runtime.spawnScriptedActor({ classId: "Jumper" });
     runtime.start();

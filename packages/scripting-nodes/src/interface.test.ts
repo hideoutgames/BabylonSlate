@@ -196,6 +196,20 @@ describe("interface nodes", () => {
     );
   });
 
+  it("types a method's Delegate and Array parameters from the whole signature row", () => {
+    const registry = createDefaultNodeRegistry();
+    const call = node(registry, "call", "interface.call", {
+      method: "Notify",
+      pins: [
+        { name: "onDone", typeId: "delegate", signature: [{ typeId: "int" }], direction: "in" },
+        { name: "names", typeId: "string", container: "array", direction: "out" },
+      ],
+    });
+    // Without its input types a delegate pin accepts no event that has inputs.
+    expect(call.pins.find((pin) => pin.id === "onDone")?.type).toEqual({ kind: "delegate", inputs: [{ kind: "int" }], outputs: [] });
+    expect(call.pins.find((pin) => pin.id === "names")?.type).toEqual({ kind: "array", element: { kind: "string" } });
+  });
+
   it("compiled Call Interface nodes pass args and destructure outputs", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

@@ -196,7 +196,8 @@ export const sceneObjectNodes: NodeDefinition[] = [
     category: "object",
     pure: true,
     description: "Returns the object's Class, or None for a missing object.",
-    pins: () => [subject(pin("object", "Object", "in", objectRef("Object"))), pin("class", "Class", "out", classRef("Object"))],
+    // None is an answer here, not a mistake: the pin is no subject.
+    pins: () => [pin("object", "Object", "in", objectRef("Object")), pin("class", "Class", "out", classRef("Object"))],
     codegen: (ctx) => ({ class: `ctx.getObjectClass(${ctx.input("object")})` }),
   },
   {

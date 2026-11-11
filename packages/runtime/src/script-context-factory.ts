@@ -62,6 +62,7 @@ import {
 } from "./script-host-helpers";
 import type { ScriptHostServices } from "./script-host-services";
 import type { ScriptMaterialOwnership } from "./script-material-ownership";
+import { LatentCallAborted, RuntimeContinuationCancelled } from "./simulation-waits";
 import { tweenOwnerAlive } from "./tween-runtime";
 import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
 
@@ -282,7 +283,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const { self } = this;
           if (services.prepareAssets) await services.prepareAssets([tree, ...(definitionGuid ? [definitionGuid] : [])], self);
           else if (!services.data?.hasTree(tree)) throw new Error(`Data Tree ${tree} is not prepared; this host cannot load cold data.`);
-          if (self?.destroyed) throw Object.assign(new Error("The data reader was destroyed"), { name: "AbortError" });
+          if (self?.destroyed) throw new LatentCallAborted("The data reader was destroyed");
           return services.data?.readEntry(tree, path, definitionGuid) ?? null;
         },
         animExitTimeReached(exitTime) {
@@ -405,7 +406,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           try {
             if (guid && services.prepareAssets) preload = await host.materials.prepareMaterialAsset(guid, target);
             if (self?.destroyed || !host.canInvokeOwner(target) || !host.materials.isMaterialReplacementCurrent(target, "material", version)) {
-              throw Object.assign(new Error("The material replacement was cancelled or superseded"), { name: "AbortError" });
+              throw new LatentCallAborted("The material replacement was cancelled or superseded");
             }
             const material = this.setMeshMaterial(target, guid);
             host.materials.retainMaterialPreload(target, "material", { id: preload, guid });
@@ -425,7 +426,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           try {
             if (guid && services.prepareAssets) preload = await host.materials.prepareMaterialAsset(guid, material instanceof MaterialObject ? material.component : self);
             if (self?.destroyed || !host.materials.materialAvailable(material) || !host.materials.isMaterialReplacementCurrent(material, key, version)) {
-              throw Object.assign(new Error("The texture replacement was cancelled or superseded"), { name: "AbortError" });
+              throw new LatentCallAborted("The texture replacement was cancelled or superseded");
             }
             this.setMaterialTextureParameter(material, name, guid || null);
             host.materials.retainMaterialPreload(material, key, { id: preload, guid });
@@ -501,31 +502,28 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         async executeConsoleCommandAsync(command) {
           const { self } = this;
           const result = await (services.executeConsoleCommandAsync?.(String(command ?? "")) ?? services.executeConsoleCommand(String(command ?? "")));
-          if (self?.destroyed) throw Object.assign(new Error("The console command caller was destroyed"), { name: "AbortError" });
+          if (self?.destroyed) throw new LatentCallAborted("The console command caller was destroyed");
           return result;
         },
+        // Waits and timers belong to the object running the graph, which in a Function Library
+        // call is the caller: they end with it, pause with it, and each object has its own.
         delay(seconds) {
-          const { self } = this;
-          return services.delay(seconds, self);
+          return services.delay(seconds, this.#owner);
         },
         delayOneTick() {
-          const { self } = this;
           if (!services.delayOneTick) throw new Error("This host cannot delay by one tick");
-          return services.delayOneTick(self);
+          return services.delayOneTick(this.#owner);
         },
         // Keyed like `flowState`: one wait per node of this script for each object.
         retriggerableDelay(nodeId, seconds) {
-          const { self } = this;
           const flowNamespace = this.#flowNamespace;
           if (!services.retriggerableDelay) throw new Error("This host cannot run a Retriggerable Delay");
           const key = flowNamespace ? `${flowNamespace}\0${String(nodeId)}` : String(nodeId);
-          return services.retriggerableDelay(key, seconds, self);
+          return services.retriggerableDelay(key, seconds, this.#owner);
         },
-        // The timer belongs to the object running the graph: it ends with it, and pauses with it.
         setTimer(delegate, time, looping, firstDelay) {
-          const { self } = this;
           return ({
-          Id: delegate instanceof EventDelegate ? services.timers?.set(self ?? null, delegate, time, looping, firstDelay) ?? 0 : 0,
+          Id: delegate instanceof EventDelegate ? services.timers?.set(this.#owner, delegate, time, looping, firstDelay) ?? 0 : 0,
         });
         },
         callInterface(target, interfaceGuid, method, args) {
@@ -586,14 +584,14 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const { self } = this;
           if (!services.spawnActorAsync) throw new Error("This host cannot prepare a cold actor; use a runtime with asset loading");
           const actor = await services.spawnActorAsync(String(classId), transform, self, { blocking: options?.blocking === true });
-          if (self?.destroyed) throw Object.assign(new Error("The spawn caller was destroyed"), { name: "AbortError" });
+          if (self?.destroyed) throw new LatentCallAborted("The spawn caller was destroyed");
           return actor;
         },
         async beginDeferredSpawnActorAsync(classId, transform, options) {
           const { self } = this;
           if (!services.beginDeferredSpawnAsync) throw new Error("This host cannot defer an actor spawn");
           const actor = await services.beginDeferredSpawnAsync(String(classId), transform, self, { blocking: options?.blocking === true });
-          if (self?.destroyed) throw Object.assign(new Error("The spawn caller was destroyed"), { name: "AbortError" });
+          if (self?.destroyed) throw new LatentCallAborted("The spawn caller was destroyed");
           return actor;
         },
         finishDeferredSpawnActor(actor) {
@@ -617,7 +615,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const result = await services.waitForAssetLoad?.(handle, self, options?.blocking === true) ?? {
             success: false, errorMessage: ASSET_LOADING_UNAVAILABLE,
           };
-          if (self?.destroyed) throw Object.assign(new Error("The asset load caller was destroyed"), { name: "AbortError" });
+          if (self?.destroyed) throw new LatentCallAborted("The asset load caller was destroyed");
           return result;
         },
         unloadAsset(asset, options) {
@@ -626,22 +624,22 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         },
         async prepareAssets(assets) {
           const { self } = this;
-          if (self?.destroyed) throw Object.assign(new Error("The asset consumer was destroyed"), { name: "AbortError" });
+          if (self?.destroyed) throw new LatentCallAborted("The asset consumer was destroyed");
           if (!services.prepareAssets) throw new Error("This host cannot prepare cold assets");
           await services.prepareAssets(assets, self);
-          if (self?.destroyed) throw Object.assign(new Error("The asset consumer was destroyed"), { name: "AbortError" });
+          if (self?.destroyed) throw new LatentCallAborted("The asset consumer was destroyed");
         },
         async loadSceneBlocking(target) {
           const { self } = this;
           await services.loadScene?.(target, true);
           await services.waitForSimulation?.(self);
-          if (self?.destroyed) throw Object.assign(new Error("The streaming caller was destroyed."), { name: "AbortError" });
+          if (self?.destroyed) throw new LatentCallAborted("The streaming caller was destroyed.");
         },
         async unloadSceneBlocking(target) {
           const { self } = this;
           await services.unloadScene?.(target, true);
           await services.waitForSimulation?.(self);
-          if (self?.destroyed) throw Object.assign(new Error("The streaming caller was destroyed."), { name: "AbortError" });
+          if (self?.destroyed) throw new LatentCallAborted("The streaming caller was destroyed.");
         },
         getSceneReference() {
           const { self } = this;
@@ -732,6 +730,10 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           };
           const record = (value: unknown): Record<string, unknown> =>
             (value && typeof value === "object" && !Array.isArray(value) ? value : {}) as Record<string, unknown>;
+          // A caller destroyed while the function waited does not resume, like after its own Delay.
+          const resumeCaller = (): void => {
+            if (contextOwner?.destroyed) throw new RuntimeContinuationCancelled("ownerDestroyed");
+          };
           // Every module exporting the function runs in order. A latent one is
           // awaited before the next starts; the last result is returned. A
           // continuation stops once its receiver may no longer run.
@@ -746,13 +748,23 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
                 const value = host.invokeEntry(receiver, entry.script, functionName, () => (fn as (ctx: ScriptContext) => unknown)(nested));
                 if (value instanceof Promise) {
                   const previous = result;
-                  return value.then(
-                    (resolved) => run(index + 1, resolved),
+                  const settled = value.then(
+                    (resolved) => {
+                      resumeCaller();
+                      return run(index + 1, resolved);
+                    },
                     (error) => {
+                      // A wait that was replaced, or that Stop ended, ends the caller's graph too:
+                      // continuing would run the nodes after the Call at once, with default outputs.
+                      if (error instanceof RuntimeContinuationCancelled && error.reason !== "ownerDestroyed") throw error;
+                      resumeCaller();
                       failed(error);
                       return run(index + 1, previous);
                     },
                   );
+                  // A caller that does not await the Call must not leave the rejection unhandled.
+                  settled.catch(() => {});
+                  return settled;
                 }
                 result = value;
               } catch (error) {
@@ -975,7 +987,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const { self } = this;
           if (!services.createSceneLayerAsync) throw new Error("This host cannot prepare a cold SceneLayer");
           const layer = await services.createSceneLayerAsync(String(assetGuid ?? ""), Number(zOrder) || 0, self);
-          if (self?.destroyed) throw Object.assign(new Error("The SceneLayer caller was destroyed"), { name: "AbortError" });
+          if (self?.destroyed) throw new LatentCallAborted("The SceneLayer caller was destroyed");
           return layer;
         },
         moveTo(actor, destination) {

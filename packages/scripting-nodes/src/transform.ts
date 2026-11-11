@@ -6,7 +6,29 @@ import {
   TRANSFORM,
   ROTATOR,
 } from "@haptic/scripting";
+import { hoistedCall } from "./hoisted-helper";
 import { selfActorPin } from "./self-pin";
+
+type Ctx = Parameters<NodeDefinition["codegen"]>[0];
+
+/**
+ * The actor getters return copies. The runtime moves an actor by writing into its transform's own
+ * position, rotation and scale objects, so a value that aliased one would follow the actor: a
+ * stored start location would always equal the current one.
+ */
+const actorVector = (ctx: Ctx, field: "position" | "scale", fallback: number): string =>
+  hoistedCall(ctx, `__xf_${field}`, "a",
+    `{ const v = a?.transform?.${field}; return v ? { x: v.x, y: v.y, z: v.z } : { x: ${fallback}, y: ${fallback}, z: ${fallback} }; }`,
+    [ctx.input("target")]);
+
+const actorTransform = (ctx: Ctx): string =>
+  hoistedCall(ctx, "__xf_transform", "a",
+    "{ const t = a?.transform; return { position: { x: 0, y: 0, z: 0, ...t?.position }, rotation: { x: 0, y: 0, z: 0, w: 1, ...t?.rotation }, scale: { x: 1, y: 1, z: 1, ...t?.scale } }; }",
+    [ctx.input("target")]);
+
+/** A local axis of the actor in world space, rotated by its quaternion without a detour through Euler angles. */
+const actorAxis = (ctx: Ctx, axis: string): string =>
+  `ctx.quatRotateVector(${ctx.input("target")}?.transform?.rotation, ${axis})`;
 
 export const transformNodes: NodeDefinition[] = [
   {
@@ -18,9 +40,7 @@ export const transformNodes: NodeDefinition[] = [
       selfActorPin("target", "Target"),
       pin("out", "Out", "out", VEC3),
     ],
-    codegen: (ctx) => ({
-      out: `(${ctx.input("target")}?.transform?.position ?? { x: 0, y: 0, z: 0 })`,
-    }),
+    codegen: (ctx) => ({ out: actorVector(ctx, "position", 0) }),
   },
   {
     id: "transform.setLocation",
@@ -76,9 +96,7 @@ export const transformNodes: NodeDefinition[] = [
       selfActorPin("target", "Target"),
       pin("out", "Out", "out", VEC3),
     ],
-    codegen: (ctx) => ({
-      out: `(${ctx.input("target")}?.transform?.scale ?? { x: 1, y: 1, z: 1 })`,
-    }),
+    codegen: (ctx) => ({ out: actorVector(ctx, "scale", 1) }),
   },
   {
     id: "transform.setScale",
@@ -105,9 +123,7 @@ export const transformNodes: NodeDefinition[] = [
       selfActorPin("target", "Target"),
       pin("out", "Out", "out", TRANSFORM),
     ],
-    codegen: (ctx) => ({
-      out: `(${ctx.input("target")}?.transform ?? null)`,
-    }),
+    codegen: (ctx) => ({ out: actorTransform(ctx) }),
   },
   {
     id: "transform.set",
@@ -135,7 +151,7 @@ export const transformNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
-      out: `ctx.rotatorForward(ctx.quatToRotator(${ctx.input("target")}?.transform?.rotation))`,
+      out: actorAxis(ctx, "{ x: 0, y: 0, z: 1 }"),
     }),
   },
   {
@@ -148,7 +164,7 @@ export const transformNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
-      out: `ctx.rotatorRight(ctx.quatToRotator(${ctx.input("target")}?.transform?.rotation))`,
+      out: actorAxis(ctx, "{ x: 1, y: 0, z: 0 }"),
     }),
   },
   {
@@ -161,7 +177,7 @@ export const transformNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
-      out: `ctx.rotatorUp(ctx.quatToRotator(${ctx.input("target")}?.transform?.rotation))`,
+      out: actorAxis(ctx, "{ x: 0, y: 1, z: 0 }"),
     }),
   },
   {

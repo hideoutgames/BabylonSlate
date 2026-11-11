@@ -183,6 +183,48 @@ describe("user class inheritance at runtime", () => {
     }
   });
 
+  it("runs a parent's Tick and input events when a child adds an input event of its own", async () => {
+    const commands: CommandMessage[] = [];
+    // The compiler exports every input event entry under the event `onInput`.
+    const pilot = classScript("Pilot", "Actor", `${trace}
+      export function onTick(ctx) { trace(ctx, "Pilot.tick"); }
+      export function onInput(ctx) { trace(ctx, "Pilot.input"); }
+    `, ["onTick", "onInput"]);
+    // Ace : Pilot only adds an input event; Rookie : Pilot replaces Tick without Call Parent.
+    const ace = classScript("Ace", "Pilot", `${trace}
+      export function onInput(ctx) { trace(ctx, "Ace.input"); }
+    `, ["onInput"]);
+    const rookie = classScript("Rookie", "Pilot", `${trace}
+      export function onTick(ctx) { trace(ctx, "Rookie.tick"); }
+    `, ["onTick"]);
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: sceneOf([
+        createActor("ace", "Ace", { classId: "Ace" }),
+        createActor("rookie", "Rookie", { classId: "Rookie" }),
+      ]),
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([pilot, ace, rookie]);
+      runtime.realizePlayWorld();
+      runtime.start();
+      runtime.tick();
+      expect(scriptLogs(commands)).toEqual([
+        // Input events add up along the lineage, parent first; Tick is inherited.
+        "Pilot.input@Ace",
+        "Ace.input@Ace",
+        "Pilot.tick@Ace",
+        // Replacing Tick leaves the parent's input events running.
+        "Pilot.input@Rookie",
+        "Rookie.tick@Rookie",
+      ]);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("resolves inherited functions, custom events and interface handlers on a child instance", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({

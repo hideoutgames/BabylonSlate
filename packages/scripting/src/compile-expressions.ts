@@ -18,6 +18,9 @@ import {
   type CodegenState,
 } from "./compile-codegen-state";
 
+/** A name or a member read off one: nothing to evaluate twice. */
+const PLAIN_READ = /^[\w$]+(\.[\w$]+)*$/;
+
 function pinExpr(s: CodegenState, node: GraphNode, dataPin: GraphPin): string {
   const key = `${node.id}:${dataPin.id}`;
   const cached = s.exprCache.get(key);
@@ -164,7 +167,9 @@ export function makeCtx(s: CodegenState, node: GraphNode, continuation?: (expres
       emitBody(s, `  ${statement}`, anchor);
     },
     hoist(source, bodyAnchors) {
-      const next = s.instrumentLoops
+      // Only an authored body can loop without end, and only its function takes `ctx`: a guard
+      // in a module-scope helper would name a `ctx` that is not in scope there.
+      const next = s.instrumentLoops && (bodyAnchors?.length ?? 0) > 0
         ? instrumentJsLoops(source, loopCheck(s, node.id))
         : source;
       if (s.hoisted.some((chunk) => chunk.source === next)) return;
@@ -210,10 +215,17 @@ export function ensurePure(s: CodegenState, node: GraphNode) {
       const guarded = subjects.length > 0
         ? guardPureExpression(subjects, subjectArgs, expr, defaultValueLiteral(outPin.type))
         : expr;
-      s.exprCache.set(
-        `${node.id}:${outPin.id}`,
-        tracedPureOutput(s, node, outPin, s.pureExpressions.expression(node, outPin, guarded)),
-      );
+      // An output several wires read is evaluated once per statement, as the inputs of a node
+      // with several outputs are: every reader of one exec node sees one value (a Random Float
+      // wired to both inputs of an Add is one number), and a chain that fans out and joins again
+      // costs one evaluation per node instead of one per path. A constant needs no memo, and
+      // neither does a plain read (`ctx.deltaSeconds`, an output slot), which costs less.
+      const memoized = s.sharedOutputs.has(`${node.id}:${outPin.id}`) &&
+        !PLAIN_READ.test(guarded) && !s.pureExpressions.isConstant(node, outPin);
+      const expression = memoized
+        ? memoExpression(s, `out:${node.id}:${outPin.id}`, guarded)
+        : s.pureExpressions.expression(node, outPin, guarded);
+      s.exprCache.set(`${node.id}:${outPin.id}`, tracedPureOutput(s, node, outPin, expression));
     }
   }
 }

@@ -13,6 +13,7 @@ import {
   type ActorComponent,
   type MaterialInstanceObject,
   type World,
+  isLockedEngineClassId,
 } from "@haptic/object-model";
 import type { AudioParticleEmitter } from "./audio-particle-emitter";
 import type { OwnerAdmission } from "./owner-admission";
@@ -83,6 +84,11 @@ export class RuntimePropertyWrites {
   refreshComponent(component: ActorComponent, propertyName?: string): void {
     const owner = component.owner;
     if (!owner || owner.destroyed) return;
+    // A project component's variables belong to its script: nothing drawn, simulated, heard or laid
+    // out reads them, so writing one re-sends nothing. Only its visibility and transform reach the
+    // components attached to it.
+    if (propertyName !== undefined && propertyName !== "visible" && propertyName !== "transform" &&
+      !isLockedEngineClassId(component.classId)) return;
     // A written Layer, Mask or Overlap Mask makes the collider Custom, keeping its preset's other values.
     if (propertyName === "layer" || propertyName === "mask" || propertyName === "overlapMask") {
       const preset = this.host.physics().collisionPreset(component.getVariable("collisionPreset"));

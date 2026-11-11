@@ -107,10 +107,22 @@ export function rotatorToQuat(
   return { x, y, z, w };
 }
 
+/**
+ * `value` as a rotation: scaled to unit length. Make Quaternion and arithmetic on quaternions can
+ * hand over any length, and the formulas below assume one: (0, 1, 0, 1) is a 90° yaw, not 116°.
+ */
+function readRotation(value: Partial<QuatObject> | null | undefined): QuatObject {
+  const q = readQuat(value);
+  const length = Math.hypot(q.x, q.y, q.z, q.w);
+  if (!(length > 0) || !Number.isFinite(length)) return { x: 0, y: 0, z: 0, w: 1 };
+  if (Math.abs(length - 1) < 1e-9) return q;
+  return { x: q.x / length, y: q.y / length, z: q.z / length, w: q.w / length };
+}
+
 export function quatToRotator(
   quat: Partial<QuatObject> | null | undefined,
 ): RotatorObject {
-  const q = readQuat(quat);
+  const q = readRotation(quat);
   const [pitch, yaw, roll] = quaternionToEulerDegrees([q.x, q.y, q.z, q.w]);
   return { pitch, yaw, roll };
 }
@@ -132,7 +144,7 @@ export function multiplyQuats(
 export function inverseQuat(
   quat: Partial<QuatObject> | null | undefined,
 ): QuatObject {
-  const q = readQuat(quat);
+  const q = readRotation(quat);
   return { x: -q.x, y: -q.y, z: -q.z, w: q.w };
 }
 
@@ -208,7 +220,7 @@ export function quatRotateVector(
   quat: Partial<QuatObject> | null | undefined,
   vector: Partial<Vec3Object> | null | undefined,
 ): Vec3Object {
-  const q = readQuat(quat);
+  const q = readRotation(quat);
   const v = readVec3(vector);
   const tx = 2 * (q.y * v.z - q.z * v.y);
   const ty = 2 * (q.z * v.x - q.x * v.z);

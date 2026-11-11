@@ -1,5 +1,6 @@
 import {
   pin,
+  pinTypeForVariable,
   type NodeDefinition,
   EXEC,
 } from "@haptic/scripting";
@@ -10,7 +11,6 @@ import {
   memberPinRows,
   memberTargetPin,
   objectLiteralKey,
-  pinTypeForMember,
   type MemberPinRow,
 } from "./member-pins";
 
@@ -47,7 +47,7 @@ function signaturePins(properties: Record<string, unknown>) {
           memberArgPinId(row.name!, CALL_PIN_IDS),
           row.name!,
           direction,
-          pinTypeForMember(row.typeId, row.typeClassId),
+          pinTypeForVariable(row),
         ),
       ];
     }),

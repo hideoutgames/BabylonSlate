@@ -15,6 +15,7 @@ import {
   ENGINE_TOUCH_PHASE_ENUM_ID,
   ENGINE_TOUCH_STRUCT_ID,
 } from "@haptic/scripting";
+import { hoistedCall } from "./hoisted-helper";
 import { inputBindingNodes } from "./input-bindings";
 
 const HIT_RESULT = structRef(ENGINE_HIT_RESULT_STRUCT_ID);
@@ -183,10 +184,14 @@ export const inputNodes: NodeDefinition[] = [
       pin("out", "Position", "out", VEC2),
       pin("pressed", "Pressed", "out", BOOL, "data", true),
     ],
-    codegen: () => ({
-      out: `(ctx.getCursorPosition?.() ?? { x: 0, y: 0, pressed: false })`,
-      pressed: `(ctx.getCursorPosition?.()?.pressed ?? false)`,
-    }),
+    // One read for both outputs; Position is a plain Vector 2, without the reading's `pressed`.
+    codegen: (ctx) => {
+      const cursor = ctx.shared?.("ctx.getCursorPosition?.()") ?? "ctx.getCursorPosition?.()";
+      return {
+        out: hoistedCall(ctx, "__input_cursorPosition", "c", "({ x: c?.x ?? 0, y: c?.y ?? 0 })", [cursor]),
+        pressed: `(${cursor}?.pressed ?? false)`,
+      };
+    },
   },
   {
     id: "input.onTouchBegan",

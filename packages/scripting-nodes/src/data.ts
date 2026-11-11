@@ -50,7 +50,8 @@ export const dataNodes: NodeDefinition[] = [
     ],
     codegen: (ctx) => {
       const args = `${ctx.input("tree")}, ${ctx.input("entryPath")}, ${JSON.stringify(dataDefinitionGuidOf(ctx.node.properties))}`;
-      return { value: `ctx.data.readEntry(${args})`, found: `ctx.data.canReadEntry(${args})` };
+      // A missing entry reads as an empty Structure, so a Break Structure on Value reads field defaults.
+      return { value: `(ctx.data.readEntry(${args}) ?? {})`, found: `ctx.data.canReadEntry(${args})` };
     },
   },
   {
@@ -70,7 +71,8 @@ export const dataNodes: NodeDefinition[] = [
     // The picked literal, not the wire, both types Value and gates the read.
     codegen: (ctx) => {
       const args = `${ctx.input("tree")}, ${ctx.input("entryPath")}, ${JSON.stringify(dataDefinitionPinGuid(ctx.node.properties))}`;
-      return { value: `ctx.data.readEntry(${args})`, found: `ctx.data.canReadEntry(${args})` };
+      // A missing entry reads as an empty Structure, so a Break Structure on Value reads field defaults.
+      return { value: `(ctx.data.readEntry(${args}) ?? {})`, found: `ctx.data.canReadEntry(${args})` };
     },
   },
   ...(["getChildren", "getDescendants"] as const).map((operation): NodeDefinition => ({

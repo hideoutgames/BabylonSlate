@@ -1,6 +1,13 @@
 import type { GraphNode } from "./ir";
 import type { ScriptEventName } from "./compile-types";
 
+/**
+ * The event of every input event entry (Input Action and Axis, Any Key, touch, gamepad
+ * connection). The runtime dispatches it on each tick, before Event Tick, to every class in an
+ * object's lineage: input events add to a parent's, where a lifecycle event replaces it.
+ */
+export const INPUT_EVENT = "onInput";
+
 export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.beginPlay": "onBeginPlay",
   "flow.event.scalabilityChanged": "onScalabilityChanged",
@@ -62,15 +69,16 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "bt.event.evaluate": "onEvaluate",
   "anim.event.initialize": "onInitializeAnimation",
   "anim.event.update": "onUpdateAnimation",
-  // Input event entries gate internally; they run on the tick like Event Tick.
-  "input.actionEvent": "onTick",
-  "input.axisEvent": "onTick",
-  "input.onAnyKeyPressed": "onTick",
-  "input.onGamepadConnected": "onTick",
-  "input.onGamepadDisconnected": "onTick",
-  "input.onTouchBegan": "onTick",
-  "input.onTouchMoved": "onTick",
-  "input.onTouchEnded": "onTick",
+  // Input event entries gate internally. They run with the tick but are their own
+  // event, so a class's input events never replace a parent's Event Tick.
+  "input.actionEvent": INPUT_EVENT,
+  "input.axisEvent": INPUT_EVENT,
+  "input.onAnyKeyPressed": INPUT_EVENT,
+  "input.onGamepadConnected": INPUT_EVENT,
+  "input.onGamepadDisconnected": INPUT_EVENT,
+  "input.onTouchBegan": INPUT_EVENT,
+  "input.onTouchMoved": INPUT_EVENT,
+  "input.onTouchEnded": INPUT_EVENT,
 };
 
 /** Touch event nodes and the `engine:TouchPhase` records each one runs for. */

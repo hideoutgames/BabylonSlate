@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { InfiniteLoopError } from "@haptic/debugger";
 import { Actor, ActorComponent, InterfaceRegistry, type TickContext } from "@haptic/object-model";
 import { ScriptHost, type CompiledScript, type ScriptHostServices } from "./script-host";
+import { RuntimeContinuationCancelled } from "./simulation-waits";
 
 function services(extras: Partial<ScriptHostServices> = {}): ScriptHostServices {
   return {
@@ -182,6 +183,34 @@ describe("ScriptHost nested dispatch", () => {
 
     expect(log).toEqual(["a", "b"]);
     expect(result).toEqual({ value: 2 });
+  });
+
+  it("ends the caller's graph when a function's wait is replaced or the caller is destroyed meanwhile", async () => {
+    const waits: Array<{ owner: unknown; resolve: () => void; reject: (error: unknown) => void }> = [];
+    const reported: unknown[] = [];
+    const host = new ScriptHost(services({
+      delay: (_seconds, owner) => new Promise<void>((resolve, reject) => { waits.push({ owner, resolve, reject }); }),
+      reportError: (error) => reported.push(error),
+    }));
+    await host.replaceScripts([
+      script("WaitLib", "export async function Wait(ctx) { await ctx.delay(1); return { done: true }; }",
+        { entryPoints: [{ name: "Wait", isAsync: true }] }),
+    ]);
+    const settle = (call: unknown) => (call as Promise<unknown>).then((value) => ({ value }), (error: Error) => ({ error: error.message }));
+
+    // A Function Library's wait belongs to the object that called it.
+    const caller = new Actor({ classId: "Hero" });
+    const replaced = settle(host.createContext(caller, 0, 0).invokeFunction("WaitLib", "Wait"));
+    expect(waits[0]!.owner).toBe(caller);
+    // Retriggerable Delay rejects the earlier wait like this when it is called again.
+    waits[0]!.reject(new RuntimeContinuationCancelled("retriggered"));
+    expect(await replaced).toEqual({ error: "Script continuation cancelled: its Retriggerable Delay was called again." });
+
+    const destroyed = settle(host.createContext(caller, 0, 0).invokeFunction("WaitLib", "Wait"));
+    caller.destroyed = true;
+    waits[1]!.resolve();
+    expect(await destroyed).toEqual({ error: "Script continuation cancelled: its owner was destroyed." });
+    expect(reported).toEqual([]);
   });
 
   it("lets hooks held across a script reload run the new scripts, and offers none once the class loses them", async () => {
