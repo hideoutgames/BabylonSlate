@@ -76,9 +76,9 @@ describe("PropertyGrid", () => {
     rerender(<PropertyGrid rows={[{ ...row, value: true }]} />);
     expect(screen.getByText("On")).toBeTruthy();
     rerender(<PropertyGrid rows={[{ ...row, mixed: true, disabled: true }]} />);
-    expect(screen.getByText("Mixed")).toBeTruthy();
+    expect(screen.getByText("Mixed Values")).toBeTruthy();
     onChange.mockClear();
-    fireEvent.click(screen.getByText("Mixed"));
+    fireEvent.click(screen.getByText("Mixed Values"));
     expect(onChange).not.toHaveBeenCalled();
   });
 

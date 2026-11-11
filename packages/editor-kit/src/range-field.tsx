@@ -4,6 +4,7 @@ import { Button } from "@haptic/ui/components/button";
 import { cn } from "@haptic/ui/lib/utils";
 import { NumericDragField } from "./numeric-drag-field";
 import { AXES, applyEdit, endsOf, formatRangeSummary, toValue, type Ends, type RangeFieldKind, type RangeFieldValue } from "./range-values";
+import { MIXED_VALUES_LABEL } from "./numeric-expression";
 
 export interface RangeFieldProps {
   kind: RangeFieldKind;
@@ -94,7 +95,7 @@ export function RangeField({
         onClick={() => setExpanded((open) => !open)}
         data-testid={testId ? `${testId}-toggle` : undefined}
       >
-        <span className="min-w-0 truncate">{mixed ? "Mixed" : formatRangeSummary(kind, value, kind === "rotator" ? "deg" : unit)}</span>
+        <span className="min-w-0 truncate">{mixed ? MIXED_VALUES_LABEL : formatRangeSummary(kind, value, kind === "rotator" ? "deg" : unit)}</span>
         <ChevronDownIcon data-icon="inline-end" className={cn("text-muted-foreground", expanded && "rotate-180")} />
       </Button>
       {expanded ? (

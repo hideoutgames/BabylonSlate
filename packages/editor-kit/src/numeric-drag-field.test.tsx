@@ -42,7 +42,7 @@ describe("NumericDragField", () => {
     cleanup();
   });
 
-  it("shows Mixed until a shared value is entered", () => {
+  it("shows Mixed Values until a shared value is entered", () => {
     const onChange = vi.fn();
     render(
       <NumericDragField
@@ -54,9 +54,68 @@ describe("NumericDragField", () => {
     );
     const input = screen.getByTestId("field") as HTMLInputElement;
     expect(input.value).toBe("");
-    expect(input.placeholder).toBe("Mixed");
+    expect(input.placeholder).toBe("Mixed Values");
     fireEvent.change(input, { target: { value: "7" } });
     expect(onChange).toHaveBeenCalledWith(7);
+  });
+
+  it("edits each selected item from its own value: Mixed Values+4, a plain number, and Escape", () => {
+    const onItemsChange = vi.fn();
+    const onItemsEnd = vi.fn();
+    const onChange = vi.fn();
+    render(
+      <NumericDragField
+        value={1}
+        mixed
+        itemValues={[1, 5, 10]}
+        onItemsChange={onItemsChange}
+        onItemsEnd={onItemsEnd}
+        onChange={onChange}
+        data-testid="field"
+      />,
+    );
+    const input = screen.getByTestId("field") as HTMLInputElement;
+    expect(input.value).toBe("Mixed Values");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "Mixed Values+4" } });
+    expect(onItemsChange).toHaveBeenLastCalledWith([5, 9, 14]);
+    fireEvent.blur(input);
+    expect(onItemsEnd).toHaveBeenLastCalledWith([5, 9, 14], "typed");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "*2" } });
+    expect(onItemsChange).toHaveBeenLastCalledWith([2, 10, 20]);
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(onItemsChange).toHaveBeenLastCalledWith([1, 5, 10]);
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "3" } });
+    expect(onItemsChange).toHaveBeenLastCalledWith([3, 3, 3]);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("scrubs each selected item by the same drag from its own value", () => {
+    const onItemsChange = vi.fn();
+    const onItemsEnd = vi.fn();
+    render(
+      <NumericDragField
+        label="X"
+        value={0}
+        mixed
+        sensitivity={1}
+        itemValues={[0, 100]}
+        onItemsChange={onItemsChange}
+        onItemsEnd={onItemsEnd}
+        onChange={() => {}}
+        data-testid="field"
+      />,
+    );
+    const scrub = screen.getByTestId("field-scrub");
+    dispatchPointerEvent(scrub, "pointerdown", { pointerId: 1, clientX: 0, button: 0, isPrimary: true });
+    dispatchPointerEvent(scrub, "pointermove", { pointerId: 1, clientX: 30 });
+    const [first, second] = onItemsChange.mock.lastCall![0] as number[];
+    expect(second! - first!).toBe(100);
+    expect(first).toBeGreaterThan(0);
+    dispatchPointerEvent(scrub, "pointerup", { pointerId: 1, clientX: 30 });
+    expect(onItemsEnd).toHaveBeenCalledWith([first, second], "drag");
   });
 
   it("explains a rejected expression on blur and clears the feedback when corrected", () => {

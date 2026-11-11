@@ -58,6 +58,7 @@ import { gradientBackground, type Rgba } from "./gradient-colors";
 import { NumericDragField } from "./numeric-drag-field";
 import { ShortcutKeys } from "./shortcut-keys";
 import { useTouchUi } from "./touch-ui";
+import { MIXED_VALUES_LABEL } from "./numeric-expression";
 import { holdDelayMs } from "./gesture-timing";
 
 /** Imperative controls a host binds to its own shortcuts (the Curve asset window's Frame Selection). */
@@ -1482,7 +1483,7 @@ function InterpolationSelect({ "aria-label": ariaLabel, value, mixed, disabled, 
   return (
     <Select value={value} disabled={disabled} onValueChange={(next) => { if (next != null) onChange(next as CurveInterpolation); }}>
       <SelectTrigger aria-label={ariaLabel} size="sm" className={cn("w-full min-w-0 flex-1", !compact && "pointer-coarse:min-h-11")} data-testid={testId}>
-        <SelectValue>{(current: unknown) => (mixed ? "Mixed" : interpolationLabel((current ?? value) as CurveInterpolation))}</SelectValue>
+        <SelectValue>{(current: unknown) => (mixed ? MIXED_VALUES_LABEL : interpolationLabel((current ?? value) as CurveInterpolation))}</SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
