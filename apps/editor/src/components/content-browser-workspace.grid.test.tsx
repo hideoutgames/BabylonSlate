@@ -685,6 +685,31 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull();
   });
 
+  it("runs an inline rename committed while the previous rename still refreshes, instead of dropping it", async () => {
+    const [first, second] = [texture(0), texture(1)];
+    installRegistry([first!, second!]);
+    const renameAsset = vi.fn(async (guid: string, name: string) => ({ ...(guid === first!.header.guid ? first! : second!), path: `assets/${name}.hasset` }));
+    docs.assetRegistry = { ...(docs.assetRegistry as object), renameAsset };
+    let finishRefresh!: () => void;
+    docs.refreshAssetRegistry.mockImplementationOnce(() => new Promise<void>((resolve) => { finishRefresh = resolve; }));
+    render(<ContentBrowserWorkspace />);
+    const rename = (asset: IndexedAsset, value: string) => {
+      fireEvent.contextMenu(screen.getByTestId(`content-item-${asset.path}`));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+      const field = screen.getByTestId(`content-item-rename-${asset.path}`);
+      fireEvent.change(field, { target: { value } });
+      fireEvent.keyDown(field, { key: "Enter" });
+    };
+    rename(first!, "First");
+    await waitFor(() => expect(docs.refreshAssetRegistry).toHaveBeenCalledOnce());
+    // The first rename's refresh is still running: the second waits for it.
+    rename(second!, "Second");
+    expect(renameAsset).toHaveBeenCalledOnce();
+    await act(async () => finishRefresh());
+    await waitFor(() => expect(renameAsset).toHaveBeenLastCalledWith(second!.header.guid, "Second"));
+    expect(renameAsset).toHaveBeenCalledTimes(2);
+  });
+
   it("replaces an unrelated selection before a context-menu delete", async () => {
     installRegistry([texture(0), texture(1)], ["Characters"]);
     render(<ContentBrowserWorkspace />);

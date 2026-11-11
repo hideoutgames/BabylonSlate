@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useState,
   type ComponentProps,
   type Dispatch,
@@ -273,9 +274,24 @@ export function useContentBrowserNameFlow(deps: ContentBrowserNameFlowDeps) {
     setSelectedGuids,
   ]);
 
+  // Inline renames committed while another operation finishes (a previous
+  // rename's registry refresh, an import) wait for it instead of being dropped.
+  const [waitingRenames, setWaitingRenames] = useState<NameEntry[]>([]);
+  useEffect(() => {
+    if (busy || waitingRenames.length === 0) return;
+    const [next, ...rest] = waitingRenames;
+    setWaitingRenames(rest);
+    // Checked again: the operation it waited for may have taken the name.
+    if (nameEntryError(next!)) setNameDialog(next!);
+    else void submitNameEntry(next!);
+    // nameEntryError reads the same registry state submitNameEntry does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, waitingRenames, submitNameEntry]);
+
   /** Inline renames commit directly; an invalid name reopens in the dialog with its error. */
   const commitInlineRename = (entry: NameEntry) => {
     if (nameEntryError(entry)) setNameDialog(entry);
+    else if (busy) setWaitingRenames((waiting) => [...waiting, entry]);
     else void submitNameEntry(entry);
   };
 

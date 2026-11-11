@@ -91,7 +91,7 @@ Create a folder with **Folder** in the **New Asset** menu, **New Folder** in the
 
 ## Rename
 
-**Rename** in the asset menu, or <kbd>F2</kbd> with one asset or folder selected, opens the name on its tile for editing, the same way as a new folder. Type a name and press <kbd>Enter</kbd>, or tap elsewhere; <kbd>Esc</kbd> keeps the old name. A name that is invalid or already used opens **Rename Asset** or **Rename Folder** with the reason. When the current folder does not show the tile (a search hides it), **Rename** opens that dialog instead. In the folder tree, double-tap a name or press <kbd>F2</kbd> to rename it in the tree.
+**Rename** in the asset menu, or <kbd>F2</kbd> with one asset or folder selected, opens the name on its tile for editing, the same way as a new folder. Type a name and press <kbd>Enter</kbd>, or tap elsewhere; <kbd>Esc</kbd> keeps the old name. A name that is invalid or already used opens **Rename Asset** or **Rename Folder** with the reason. When the current folder does not show the tile (a search hides it), **Rename** opens that dialog instead. A rename you finish while another operation, such as the previous rename, is still finishing runs as soon as that operation ends. In the folder tree, double-tap a name or press <kbd>F2</kbd> to rename it in the tree.
 
 While **Duplicate** or **Copy to Folder…** runs, a progress window shows the item being copied and how many files are done. Choose **Cancel** to stop; the copies made so far are removed, so the content is left as it was.
 
