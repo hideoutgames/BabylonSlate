@@ -6,7 +6,7 @@ import { LazyCodeBodyEditor, LazyGlslCodePreview } from "./lazy-code-editors";
 
 const TYPES = ["float", "vec2", "vec3", "vec4"] as const;
 const INPUT_TYPES = [...TYPES, "texture"] as const;
-const LABELS = ["Float", "Vector 2", "Vector 3", "Vector 4"];
+const LABELS = ["Float", "Vector2", "Vector3", "Vector4"];
 // The Function Body tooltip; it also stays readable as screen-reader text in the row.
 const GLSL_SIGNATURE_HINT = "Use input names as variables. Return the primary output; assign additional output names before returning. Pin names are case sensitive. GLSL/WebGL only.";
 

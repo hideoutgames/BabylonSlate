@@ -2,7 +2,7 @@
 node: assets.loadClassBlocking
 ---
 
-# Load Class Blocking
+# Load Class (Blocking)
 
 Loads a Class at High priority and pauses the game until loading finishes.
 

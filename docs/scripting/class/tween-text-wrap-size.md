@@ -12,8 +12,8 @@ Changes the wrap width and height of a 2D text component from A to B over Durati
 | --- | --- | --- |
 | Exec | Exec |  |
 | Target | ActorComponent Reference | A 2D Text or 2D Rich Text component. |
-| A | Vector 2 |  |
-| B | Vector 2 |  |
+| A | Vector2 |  |
+| B | Vector2 |  |
 | Duration | Float | Seconds the tween takes, in game time. Defaults to 2; 0 or less writes B immediately. |
 | Curve | EasingCurve | Easing shape, Linear by default. Back and Elastic curves can overshoot A and B. |
 

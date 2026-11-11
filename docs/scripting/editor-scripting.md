@@ -14,7 +14,7 @@ The editor starts every listed class when the project opens. Changing the list s
 
 | Event | When it runs |
 | --- | --- |
-| [Event Editor On Begin Play](class/event-editor-on-begin-play.md) | First, when the editor loads the class. |
+| [Event On Editor Begin Play](class/event-on-editor-begin-play.md) | First, when the editor loads the class. |
 | [Event On Editor Startup](class/event-on-editor-startup.md) | Next, when the project's editor tools start. |
 | [Event On Scene Open](class/event-on-scene-open.md) | When a scene is opened. Also runs at startup if a scene is already open. |
 | [Event On Scene Saved](class/event-on-scene-saved.md) | When a scene is saved. |

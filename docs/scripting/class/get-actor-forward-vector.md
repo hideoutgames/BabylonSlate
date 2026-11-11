@@ -16,7 +16,7 @@ Returns the direction an actor faces, as a unit vector along its forward axis.
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 3 |
+| Out | Vector3 |
 
 ## Notes
 

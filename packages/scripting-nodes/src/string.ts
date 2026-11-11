@@ -144,7 +144,7 @@ export const stringNodes: NodeDefinition[] = [
   },
   {
     id: "string.length",
-    title: "Length",
+    title: "Get String Length",
     category: "string",
     pure: true,
     pins: () => [
@@ -156,7 +156,7 @@ export const stringNodes: NodeDefinition[] = [
   {
     id: "string.equals",
     searchAliases: ["=","==","===","a == b"],
-    title: "Equals",
+    title: "Equal String",
     category: "string",
     pure: true,
     pins: () => [
@@ -170,7 +170,7 @@ export const stringNodes: NodeDefinition[] = [
   },
   {
     id: "string.contains",
-    title: "Contains",
+    title: "Has Substring",
     category: "string",
     pure: true,
     pins: () => [

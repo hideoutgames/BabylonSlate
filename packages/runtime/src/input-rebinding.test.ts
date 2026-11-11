@@ -251,7 +251,7 @@ describe("compiled runtime input rebinding", () => {
 });
 
 describe("compiled gamepad connection events", () => {
-  it("runs On Gamepad Disconnected once with the index of the pad that disappeared", async () => {
+  it("runs Event On Gamepad Disconnected once with the index of the pad that disappeared", async () => {
     const logs: LogCommand[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,

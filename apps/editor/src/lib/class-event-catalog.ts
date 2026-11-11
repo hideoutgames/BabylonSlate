@@ -65,7 +65,7 @@ export const COLLISION_EVENT_TYPE_IDS = [
 ] as const;
 
 export const NATIVE_EVENT_TITLES: Record<string, string> = {
-  "flow.event.scalabilityChanged": "Event Scalability Changed",
+  "flow.event.scalabilityChanged": "Event On Scalability Changed",
   "flow.event.gameLoaded": "Event On Game Loaded",
   "flow.event.beginPlay": "Event Begin Play",
   "flow.event.tick": "Event Tick",
@@ -101,7 +101,7 @@ export const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.uiValueChanged": "Event On Value Changed",
   "flow.event.uiRangeChanged": "Event On Range Changed",
   "flow.event.uiCheckedChanged": "Event On Checked Changed",
-  "flow.event.uiTextChanged": "Event On Text Changed",
+  "flow.event.uiTextChanged": "Event On UI Text Changed",
   "flow.event.uiTextSubmitted": "Event On Text Submitted",
   "flow.event.uiSelectionChanged": "Event On Selection Changed",
   "flow.event.focusEnter": "Event On Focus Enter",
@@ -113,15 +113,15 @@ export const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.movementLeftGround": "Event On Movement Left Ground",
   "flow.event.movementLanded": "Event On Movement Landed",
   "flow.event.commandRun": "Event On Command Run",
-  "flow.event.editorBeginPlay": "Event Editor On Begin Play",
+  "flow.event.editorBeginPlay": "Event On Editor Begin Play",
   "flow.event.editorStartup": "Event On Editor Startup",
   "flow.event.sceneOpen": "Event On Scene Open",
   "flow.event.sceneSaved": "Event On Scene Saved",
   "flow.event.editorShutdown": "Event On Editor Shutdown",
-  "bt.event.activate": "On Activate",
-  "bt.event.tick": "On Tick",
-  "bt.event.abort": "On Abort",
-  "bt.event.evaluate": "On Evaluate",
+  "bt.event.activate": "Event On Activate",
+  "bt.event.tick": "Event On Tick",
+  "bt.event.abort": "Event On Abort",
+  "bt.event.evaluate": "Event On Evaluate",
 };
 
 const EDITOR_UTILITY_EVENT_TYPES = [

@@ -30,9 +30,9 @@ Drag a dispatcher from the **Class** window onto the graph and choose one of:
 | Choice | Adds |
 | --- | --- |
 | **Call** | [Call Event Dispatcher](class/call-event-dispatcher.md), which runs every bound event. |
-| **Bind** | [Bind Event to Event Dispatcher](class/bind-event-to-event-dispatcher.md), which adds an event. |
-| **Unbind** | [Unbind Event from Event Dispatcher](class/unbind-event-from-event-dispatcher.md), which removes an event. |
-| **Unbind All** | [Unbind All Events from Event Dispatcher](class/unbind-all-events-from-event-dispatcher.md), which removes every event. |
+| **Bind** | [Bind Event To Event Dispatcher](class/bind-event-to-event-dispatcher.md), which adds an event. |
+| **Unbind** | [Unbind Event From Event Dispatcher](class/unbind-event-from-event-dispatcher.md), which removes an event. |
+| **Unbind All** | [Unbind All Events From Event Dispatcher](class/unbind-all-events-from-event-dispatcher.md), which removes every event. |
 | **Event** | A custom event that takes the dispatcher's inputs, named after it: **Event On Damaged**, or **Event On Damaged_1** when the class already has an event of that name. |
 | **Assign** | A Bind node and such a custom event, already wired together. |
 
@@ -64,5 +64,5 @@ A delegate pin is a square. While it is unconnected it is dark red inside a ligh
 - A bound event runs on every Call, even while an earlier run still waits on a latent node such as [Delay](class/delay.md). Each run waits on its own.
 - Events bound or unbound during a Call take effect from the next Call, except that an event unbound during a Call is not run later in that Call.
 - A dispatcher called again from its own bound events stops after 64 levels and reports an error in the **Output Log**.
-- An empty **Target** or **Event** does nothing and reports an error such as `Health Bar: Bind Event to On Damaged (Target) tried to access null.`.
+- An empty **Target** or **Event** does nothing and reports an error such as `Health Bar: Bind Event To On Damaged (Target) tried to access null.`.
 - Bindings last until the object is destroyed or Play stops. They are not saved in [Save Games](save-games.md). The Game Instance and subsystems keep theirs across scene changes.

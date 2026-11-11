@@ -727,7 +727,7 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
     const type = numericType(operation.resolvedType, "color");
     // Babylon's converter inputs end in a space ("xyz "); only the typed getters are used.
     const value = type === "vec2" ? block.xyIn : type === "vec3" ? block.xyzIn : type === "color" ? block.colorIn : null;
-    if (!value) throw new Error("Split needs a Vector 2, Vector 3 or Color value.");
+    if (!value) throw new Error("Split needs a Vector2, Vector3 or Color value.");
     return { blocks: [block], inputs: { value }, outputs: { x: block.xOut, y: block.yOut, z: block.zOut, w: block.wOut } };
   },
   "vector.combine": ({ name }) => {

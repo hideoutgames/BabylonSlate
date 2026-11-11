@@ -56,7 +56,7 @@ function entry(id = "entry"): GraphNode {
 }
 
 describe("validate flow switch cases", () => {
-  it("warns when Switch on Int cases need normalization", () => {
+  it("warns when Switch On Int cases need normalization", () => {
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
@@ -84,7 +84,7 @@ describe("validate flow switch cases", () => {
     ).toBe(true);
   });
 
-  it("warns when Switch on String cases need normalization", () => {
+  it("warns when Switch On String cases need normalization", () => {
     const graph: LogicGraph = {
       id: "g",
       kind: "event",

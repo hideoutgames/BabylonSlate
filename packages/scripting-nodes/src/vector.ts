@@ -330,7 +330,7 @@ export const vectorNodes: NodeDefinition[] = [
   {
     id: "vector.length3",
     searchAliases: ["length(x)","magnitude","|v|"],
-    title: "Vector3 Length",
+    title: "Length Vector3",
     category: "vector",
     pure: true,
     pins: () => [
@@ -342,7 +342,7 @@ export const vectorNodes: NodeDefinition[] = [
   {
     id: "vector.lengthSquared3",
     searchAliases: ["lengthSquared(x)","dot(v,v)","|v|²"],
-    title: "Vector3 Length Squared",
+    title: "Length Squared Vector3",
     category: "vector",
     pure: true,
     pins: () => [
@@ -417,7 +417,7 @@ export const vectorNodes: NodeDefinition[] = [
   {
     id: "vector.length2",
     searchAliases: ["length(x)","magnitude","|v|"],
-    title: "Vector2 Length",
+    title: "Length Vector2",
     category: "vector",
     pure: true,
     pins: () => [
@@ -429,7 +429,7 @@ export const vectorNodes: NodeDefinition[] = [
   {
     id: "vector.lengthSquared2",
     searchAliases: ["lengthSquared(x)","dot(v,v)","|v|²"],
-    title: "Vector2 Length Squared",
+    title: "Length Squared Vector2",
     category: "vector",
     pure: true,
     pins: () => [
@@ -504,7 +504,7 @@ export const vectorNodes: NodeDefinition[] = [
   {
     id: "vector.length4",
     searchAliases: ["length(x)","magnitude","|v|"],
-    title: "Vector4 Length",
+    title: "Length Vector4",
     category: "vector",
     pure: true,
     pins: () => [
@@ -516,7 +516,7 @@ export const vectorNodes: NodeDefinition[] = [
   {
     id: "vector.lengthSquared4",
     searchAliases: ["lengthSquared(x)","dot(v,v)","|v|²"],
-    title: "Vector4 Length Squared",
+    title: "Length Squared Vector4",
     category: "vector",
     pure: true,
     pins: () => [

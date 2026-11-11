@@ -63,7 +63,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.get",
-    title: "Array Get",
+    title: "Get Array Item",
     category: "array",
     pure: true,
     pins: () => [
@@ -84,7 +84,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.length",
-    title: "Array Length",
+    title: "Get Array Length",
     category: "array",
     pure: true,
     pins: () => [
@@ -95,7 +95,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.isEmpty",
-    title: "Is Empty",
+    title: "Is Array Empty",
     category: "array",
     pure: true,
     pins: () => [
@@ -108,7 +108,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.lastIndex",
-    title: "Last Index",
+    title: "Get Last Array Index",
     category: "array",
     pure: true,
     pins: () => [
@@ -121,7 +121,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.isValidIndex",
-    title: "Is Valid Index",
+    title: "Is Valid Array Index",
     category: "array",
     pure: true,
     pins: () => [
@@ -135,7 +135,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.contains",
-    title: "Array Contains",
+    title: "Has Array Item",
     category: "array",
     pure: true,
     pins: () => [
@@ -155,7 +155,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.find",
-    title: "Find Index",
+    title: "Find Array Item",
     category: "array",
     pure: true,
     pins: () => [
@@ -169,7 +169,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.append",
-    title: "Append Item",
+    title: "Append Array Item",
     category: "array",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
@@ -205,7 +205,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.set",
-    title: "Set At Index",
+    title: "Set Array Item",
     category: "array",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
@@ -231,7 +231,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.insert",
-    title: "Array Insert",
+    title: "Insert Array Item",
     category: "array",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
@@ -253,7 +253,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.removeIndex",
-    title: "Remove At",
+    title: "Remove Array Item At",
     category: "array",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
@@ -276,7 +276,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.removeItem",
-    title: "Remove Item",
+    title: "Remove Array Item",
     category: "array",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
@@ -296,7 +296,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.clear",
-    title: "Array Clear",
+    title: "Clear Array",
     category: "array",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
@@ -310,7 +310,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.reverse",
-    title: "Array Reverse",
+    title: "Reverse Array",
     category: "array",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
@@ -325,7 +325,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.slice",
-    title: "Array Slice",
+    title: "Slice Array",
     category: "array",
     pure: true,
     pins: () => [
@@ -340,7 +340,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.first",
-    title: "Array First",
+    title: "Get First Array Item",
     category: "array",
     pure: true,
     pins: () => [
@@ -356,7 +356,7 @@ export const arrayMapNodes: NodeDefinition[] = [
   },
   {
     id: "array.last",
-    title: "Array Last",
+    title: "Get Last Array Item",
     category: "array",
     pure: true,
     pins: () => [

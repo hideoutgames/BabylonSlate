@@ -12,7 +12,7 @@ Moves an actor to a new location.
 | --- | --- |
 | In | Exec |
 | Target | Actor Reference |
-| Location | Vector 3 |
+| Location | Vector3 |
 
 ## Outputs
 

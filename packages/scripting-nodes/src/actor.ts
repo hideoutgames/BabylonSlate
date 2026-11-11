@@ -15,7 +15,7 @@ import { liveReferenceCall } from "./live-reference";
 /**
  * The Spawn Actor nodes prepare the Class, then create the actor. Async lets
  * gameplay run while the Class prepares; Blocking prepares at High priority and
- * holds the simulation meanwhile, like Load Class Blocking. The deferred pair
+ * holds the simulation meanwhile, like Load Class (Blocking). The deferred pair
  * stops before Begin Play, for Finish Deferred Spawn Actor.
  */
 function spawnNode(

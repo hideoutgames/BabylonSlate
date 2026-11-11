@@ -10,13 +10,13 @@ Returns the world-space normal of the scene geometry at a position on the screen
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| UV | Vector 2 | Screen position to read; the current pixel when unconnected. |
+| UV | Vector2 | Screen position to read; the current pixel when unconnected. |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
-| Normal | Vector 3 |
+| Normal | Vector3 |
 
 ## Notes
 

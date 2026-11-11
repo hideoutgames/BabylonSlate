@@ -26,7 +26,7 @@ export interface RangeFieldProps {
 }
 
 /**
- * Min – Max editor for a range. Integer and Float ranges edit in the row; Vector 2, Vector and Rotator
+ * Min – Max editor for a range. Integer and Float ranges edit in the row; Vector2, Vector and Rotator
  * ranges show a one-line summary that expands to a Min – Max pair per axis. Min is always at most Max.
  */
 export function RangeField({

@@ -38,7 +38,7 @@ A clip animates actors through tracks. Each actor in the clip has a row in the *
 | Group | Properties |
 | --- | --- |
 | **Actor** | **Location**, **Rotation**, **Scale** and **Visible**. |
-| **Class Variables** | The actor's Class variables (inherited ones too) of a single Bool, Int, Float, String, Vector 2, Vector 3, Rotator, Color, Enum or Asset value. |
+| **Class Variables** | The actor's Class variables (inherited ones too) of a single Bool, Int, Float, String, Vector2, Vector3, Rotator, Color, Enum or Asset value. |
 | A component | The properties Play can change while the game runs: for example a Light's **Intensity** and **Color**, a Mesh's **Cast Shadows** and **Material**, an Audio component's **Volume**, and the opacity, tint, offset, size and text values of 2D components. |
 
 Right-click or long-press a track or an actor's row for its menu:
@@ -90,7 +90,7 @@ Moving, rotating or scaling an actor with the viewport gizmo works on what the c
 A Custom Event Track calls scripts at moments of the clip, for example to show a subtitle or play a sound. Each one is an event of the clip that the Scene's or layer's script can bind to; see [Bind to a clip's events](#bind-to-a-clips-events).
 
 - In the **Timeline** toolbar, **Track** › **Custom Event Track** adds one, named **On Event**. Event tracks are listed under **Events**, below the actors.
-- Select the track to name it in the **Inspector** (**Event Name**) and give it **Inputs**, such as a **Line** string. An input can be a Boolean, Integer, Float, String, Vector 2, Vector, Rotator or Color.
+- Select the track to name it in the **Inspector** (**Event Name**) and give it **Inputs**, such as a **Line** string. An input can be a Boolean, Integer, Float, String, Vector2, Vector, Rotator or Color.
 - Tap the diamond on the track's row to add a key at the playhead, or to remove the one there. Keys show their first input's value, or the event's name when it has no inputs.
 - Select a key to set its **Time** and a value for each input in the **Inspector**. A key keeps its values when you rename the track or add inputs; removing an input or changing its type drops that value.
 - Keys move, select, delete, copy and paste like other keys; a key's menu has **Go To Key**, **Cut**, **Copy**, **Paste**, **Duplicate** and **Delete**. Pasted event keys go onto the track they came from, or onto an event track of the same name in another clip, with the values of the inputs it has. Right-click or long-press an event track for **Set Key**, **Select All Keys**, **Move Up**, **Move Down** and **Delete Track**.

@@ -2,7 +2,7 @@
 node: literal.makeQuat
 ---
 
-# Make Quaternion
+# Make Quaternion (Literal)
 
 Returns a Quaternion value that you enter on the node.
 

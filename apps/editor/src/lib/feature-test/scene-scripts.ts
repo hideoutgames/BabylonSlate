@@ -38,7 +38,7 @@ const INTRO_LINE: TimelineEventTrack = {
 };
 
 /**
- * Before Play: Bind Event to each of the clip's Custom Event Tracks (a custom
+ * Before Play: Bind Event To each of the clip's Custom Event Tracks (a custom
  * event that asserts the first key's first value and prints it) and to On
  * Finished (a custom event that prints).
  */
@@ -60,7 +60,7 @@ function clipEventBindings(owner: string, probed: ProbedTimelineClip) {
     binds.push(bind);
     nodes.push(
       gNode(bind, "flow.dispatcher.bind", 1040 + index * 260, 0, {
-        title: `Bind Event to ${track.name}`, name: track.name, classId, implicitSelf: false, pins: track.inputs.map((pin) => ({ ...pin })),
+        title: `Bind Event To ${track.name}`, name: track.name, classId, implicitSelf: false, pins: track.inputs.map((pin) => ({ ...pin })),
       }),
       gNode(event.id, "flow.event.custom", 0, 600 + index * 300, { title: `Event ${event.name}`, name: event.name, pins: event.pins }),
       ...(input ? [gNode(`${event.id}-check`, "debug.assertEqual", 260, 600 + index * 300, {
@@ -82,7 +82,7 @@ function clipEventBindings(owner: string, probed: ProbedTimelineClip) {
   binds.push("bind-finished");
   nodes.push(
     gNode("bind-finished", "flow.dispatcher.bind", 1040 + probed.clip.eventTracks.length * 260, 0, {
-      title: "Bind Event to On Finished", name: "On Finished", classId: "TimelineClip", implicitSelf: false, pins: [],
+      title: "Bind Event To On Finished", name: "On Finished", classId: "TimelineClip", implicitSelf: false, pins: [],
     }),
     gNode(finished.id, "flow.event.custom", 0, 300, { title: `Event ${finished.name}`, name: finished.name, pins: [] }),
     printString("finished-print", 260, 300, `${owner} script's ${probed.clip.name} Timeline Clip finished`),
@@ -200,7 +200,7 @@ function withTimelineAssetProbe(graph: SerializedGraph, timelineGuid: string, in
       }),
       gNode("timeline-assert-clip", "debug.assertIsValid", 520, y, { "default:message": "Feature Test scene script could not get Intro through FT_Timeline" }),
       gNode("timeline-bind", "flow.dispatcher.bind", 780, y, {
-        title: `Bind Event to ${name}`, name, classId: timelineClassId(timelineGuid), implicitSelf: false, pins,
+        title: `Bind Event To ${name}`, name, classId: timelineClassId(timelineGuid), implicitSelf: false, pins,
       }),
       gNode(event.id, "flow.event.custom", 0, y + 400, { title: `Event ${event.name}`, name: event.name, pins: event.pins }),
       gNode("timeline-assert-line", "debug.assertEqual", 260, y + 400, {

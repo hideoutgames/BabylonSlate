@@ -28,5 +28,5 @@ Pauses or resumes the game.
   - the Game Instance, when its class has **Tick On Pause** in **Game Instance Defaults**.
 - Those keep their Event Tick, input events, [**Delay**](delay.md) nodes and tweens, and their sounds keep playing. Everything else holds where it is: other actors, Game and Scene Subsystems, physics, animation, timelines, behaviour trees, navigation, particles and other sounds.
 - Taps, clicks and other UI events still reach every actor, so a pause menu button can resume the game.
-- [**Get Game Time In Seconds**](get-game-time-in-seconds.md) stops while the game is paused. [**Get Real Time Seconds**](get-real-time-seconds.md) keeps counting.
+- [**Get Game Time In Seconds**](get-game-time-in-seconds.md) stops while the game is paused. [**Get Real Time In Seconds**](get-real-time-in-seconds.md) keeps counting.
 - This is separate from the editor's **Pause** button, which stops everything.

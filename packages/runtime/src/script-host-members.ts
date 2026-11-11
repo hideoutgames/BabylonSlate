@@ -286,7 +286,7 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
         !host.canInvokeOwner(target)) return null;
       const guid = typeof materialGuid === "string" ? materialGuid.trim() : "";
       if (guid && services.prepareAssets && services.getAssetLoadState?.(guid) !== "ready") {
-        throw new Error(`Material ${guid} is not prepared; use Set Material Instance (ctx.setMeshMaterialAsync), or load the Material first with Async Load Asset`);
+        throw new Error(`Material ${guid} is not prepared; use Set Material Instance (ctx.setMeshMaterialAsync), or load the Material first with Load Asset (Async)`);
       }
       host.materials.beginMaterialReplacement(target, "material");
       // Re-applying the asset a preload holds keeps that preload; re-applying the current asset keeps its runtime parameter values.
@@ -331,7 +331,7 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
       if (!value || typeof value !== "object") return;
       const { x, y, z } = value;
       if (![x, y, z].every((entry) => typeof entry === "number" && Number.isFinite(entry))) return;
-      // The parameter's declared width decides what it takes: a Vector 2 keeps X and Y.
+      // The parameter's declared width decides what it takes: a Vector2 keeps X and Y.
       const vec2 = !host.materials.getMaterialParameter(material, name, "vec3") &&
         host.materials.getMaterialParameter(material, name, "vec2") !== null;
       host.materials.setMaterialParameter(material, name, vec2 ? { kind: "vec2", value: [x, y] } : { kind: "vec3", value: [x, y, z] });
@@ -339,7 +339,7 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     setMaterialTextureParameter: (material, name, value) => {
       if (value !== null && typeof value !== "string") return;
       if (value && services.prepareAssets && services.getAssetLoadState?.(value.trim()) !== "ready") {
-        throw new Error(`Texture ${value} is not prepared; use Set Material Texture Parameter (ctx.setMaterialTextureParameterAsync), or load the Texture first with Async Load Asset`);
+        throw new Error(`Texture ${value} is not prepared; use Set Material Texture Parameter (ctx.setMaterialTextureParameterAsync), or load the Texture first with Load Asset (Async)`);
       }
       const textureAssetGuid = value?.trim() || null;
       if (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) {

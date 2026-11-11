@@ -4,7 +4,7 @@ node: vector.dot
 
 # Dot Product
 
-Returns the dot product of two Vector 3 values.
+Returns the dot product of two Vector3 values.
 
 ## Inputs
 

@@ -21,4 +21,4 @@ Clears every proxy of a Timeline Clip asset instance, so none of its tracks appl
 
 ## Notes
 
-- The objects keep the values the clip last wrote. Bind them again with [Bind Actor to Timeline Proxy](bind-actor-to-timeline-proxy.md) and [Bind Component to Timeline Proxy](bind-component-to-timeline-proxy.md).
+- The objects keep the values the clip last wrote. Bind them again with [Bind Actor To Timeline Proxy](bind-actor-to-timeline-proxy.md) and [Bind Component To Timeline Proxy](bind-component-to-timeline-proxy.md).

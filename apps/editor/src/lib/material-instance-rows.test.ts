@@ -27,7 +27,7 @@ describe("material instance overrides", () => {
     ])).toEqual(["Gone", "Tint"]);
   });
 
-  it("edits Vector 2 and Vector 3 parameters as vector rows of their width", () => {
+  it("edits Vector2 and Vector3 parameters as vector rows of their width", () => {
     const document = { ...createDefaultMaterialInstanceDocument("Rock", "root"), overrides: { Tiling: { kind: "vec2", value: [3, 3] } } } as
       ReturnType<typeof createDefaultMaterialInstanceDocument>;
     const commits: ReturnType<typeof createDefaultMaterialInstanceDocument>[] = [];

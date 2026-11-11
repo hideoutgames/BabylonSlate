@@ -10,7 +10,7 @@ Returns smooth 3D noise for a position, with values from about -1 to 1.
 
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
-| Coordinates | Vector 3 | (0, 0, 0) | Position to sample. Multiply it to change the scale of the noise. |
+| Coordinates | Vector3 | (0, 0, 0) | Position to sample. Multiply it to change the scale of the noise. |
 
 ## Outputs
 

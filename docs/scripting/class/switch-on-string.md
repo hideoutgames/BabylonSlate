@@ -2,7 +2,7 @@
 node: flow.switchString
 ---
 
-# Switch on String
+# Switch On String
 
 Runs the output whose text matches a string value, or Default if none match.
 

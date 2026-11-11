@@ -10,7 +10,7 @@ Returns the direction from the surface point toward the camera, scaled to a leng
 
 | Pin | Type |
 | --- | --- |
-| Direction | Vector 3 |
+| Direction | Vector3 |
 
 ## Notes
 

@@ -17,10 +17,10 @@ Returns a parameter of a [Global Parameter Collection](../../assets/global-param
 
 | Pin | Type |
 | --- | --- |
-| Value | Vector 3 |
+| Value | Vector3 |
 | Found | Boolean |
 
 ## Notes
 
-- It reads a Vector 2 or Vector 3 parameter; a Vector 2 reads with **Z** 0.
+- It reads a Vector2 or Vector3 parameter; a Vector2 reads with **Z** 0.
 - **Found** is false, and **Value** 0, 0, 0, when the collection does not hold such a parameter of that name.

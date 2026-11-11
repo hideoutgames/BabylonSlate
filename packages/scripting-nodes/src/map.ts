@@ -119,7 +119,7 @@ export const mapNodes: NodeDefinition[] = [
   },
   {
     id: "map.get",
-    title: "Map Get",
+    title: "Get Map Value",
     category: "map",
     pure: true,
     pins: () => [
@@ -144,7 +144,7 @@ export const mapNodes: NodeDefinition[] = [
   },
   {
     id: "map.set",
-    title: "Map Set",
+    title: "Set Map Value",
     category: "map",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
@@ -163,7 +163,7 @@ export const mapNodes: NodeDefinition[] = [
   },
   {
     id: "map.has",
-    title: "Map Has",
+    title: "Has Map Key",
     category: "map",
     pure: true,
     pins: () => [
@@ -177,7 +177,7 @@ export const mapNodes: NodeDefinition[] = [
   },
   {
     id: "map.remove",
-    title: "Map Remove",
+    title: "Remove Map Key",
     category: "map",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
@@ -196,7 +196,7 @@ export const mapNodes: NodeDefinition[] = [
   },
   {
     id: "map.size",
-    title: "Map Size",
+    title: "Get Map Size",
     category: "map",
     pure: true,
     pins: () => [
@@ -209,7 +209,7 @@ export const mapNodes: NodeDefinition[] = [
   },
   {
     id: "map.isEmpty",
-    title: "Is Empty",
+    title: "Is Map Empty",
     category: "map",
     pure: true,
     pins: () => [
@@ -222,7 +222,7 @@ export const mapNodes: NodeDefinition[] = [
   },
   {
     id: "map.clear",
-    title: "Map Clear",
+    title: "Clear Map",
     category: "map",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
@@ -236,7 +236,7 @@ export const mapNodes: NodeDefinition[] = [
   },
   {
     id: "map.keys",
-    title: "Map Keys",
+    title: "Get Map Keys",
     category: "map",
     pure: true,
     pins: () => [
@@ -249,7 +249,7 @@ export const mapNodes: NodeDefinition[] = [
   },
   {
     id: "map.values",
-    title: "Map Values",
+    title: "Get Map Values",
     category: "map",
     pure: true,
     pins: () => [

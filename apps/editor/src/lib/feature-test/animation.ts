@@ -336,7 +336,7 @@ function ruleGraph(terms: readonly RuleTerm[]): SerializedGraph {
   for (let index = 1; index < outputs.length; index += 1) {
     const andId = `and-${index}`;
     const next = outputs[index]!;
-    graph.nodes.push(gNode(andId, "boolean.and", 180, 40 + index * 100, { title: "Boolean And" }));
+    graph.nodes.push(gNode(andId, "boolean.and", 180, 40 + index * 100, { title: "And Bool" }));
     graph.edges.push(gWire(result.node, result.pin, andId, "a"), gWire(next.node, next.pin, andId, "b"));
     result = { node: andId, pin: "out" };
   }

@@ -10,7 +10,7 @@ Returns the surface normal in world space.
 
 | Pin | Type |
 | --- | --- |
-| Normal | Vector 3 |
+| Normal | Vector3 |
 
 ## Notes
 

@@ -17,7 +17,7 @@ Returns the logarithm of a number to a chosen base.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Float |
+| Out | Float |
 
 ## Notes
 

@@ -273,7 +273,7 @@ describe("sequencePropertyRows", () => {
 });
 
 describe("flowSwitchCaseListValues", () => {
-  it("normalizes Switch on Int case rows for NamedListEditor", () => {
+  it("normalizes Switch On Int case rows for NamedListEditor", () => {
     expect(
       flowSwitchCaseListValues("flow.switchInt", { cases: [1, "", 1, "2"] }),
     ).toEqual(["1", "2"]);
@@ -282,7 +282,7 @@ describe("flowSwitchCaseListValues", () => {
     ).toEqual({ cases: [3, 4] });
   });
 
-  it("normalizes Switch on String case rows for NamedListEditor", () => {
+  it("normalizes Switch On String case rows for NamedListEditor", () => {
     expect(
       flowSwitchCaseListValues("flow.switchString", {
         cases: ["idle", "", "a/b", "idle"],

@@ -60,26 +60,26 @@ function loadNode(
 }
 
 export const assetLoadingNodes: NodeDefinition[] = [
-  loadNode("assets.asyncLoad", "Async Load Asset", "asset", false,
+  loadNode("assets.asyncLoad", "Load Asset (Async)", "asset", false,
     `Loads the Asset and its required dependencies while gameplay continues, then runs Completed; runs Failed with an Error if it cannot load. ${OWNERSHIP} ${POLICY}`,
     ["preload", "streamable", "soft", "soft reference", "load asset", "request async load", "stream"]),
-  loadNode("assets.asyncLoadMany", "Async Load Assets", "assets", false,
+  loadNode("assets.asyncLoadMany", "Load Assets (Async)", "assets", false,
     `Loads every Asset and its required dependencies as one request while gameplay continues, then runs Completed; runs Failed with an Error if any cannot load, and none stay loaded. ${OWNERSHIP} ${POLICY}`,
     ["preload", "preload assets", "streamable", "soft", "soft reference", "load assets", "stream"]),
-  loadNode("assets.asyncLoadClass", "Async Load Class", "class", false,
+  loadNode("assets.asyncLoadClass", "Load Class (Async)", "class", false,
     `Loads the Class (its scripts and required resources) while gameplay continues, then runs Completed; runs Failed with an Error if it cannot load. Spawn Actor (Async) or Spawn Actor (Blocking) can then create it without waiting. ${OWNERSHIP}`,
     ["preload", "preload class", "streamable", "soft", "soft class", "load class", "stream"]),
-  loadNode("assets.loadBlocking", "Load Asset Blocking", "asset", true,
+  loadNode("assets.loadBlocking", "Load Asset (Blocking)", "asset", true,
     `Loads the Asset at High priority and pauses game simulation (ticks, physics, timers, tweens) until it settles; loading and rendering preparation continue. Runs Completed or Failed with an Error. ${OWNERSHIP}`,
     ["load synchronous", "synchronous", "sync load", "flush async loading", "blocking load", "preload", "loading screen"]),
-  loadNode("assets.loadManyBlocking", "Load Assets Blocking", "assets", true,
+  loadNode("assets.loadManyBlocking", "Load Assets (Blocking)", "assets", true,
     `Loads every Asset at High priority as one request and pauses game simulation until it settles; loading and rendering preparation continue. Runs Completed or Failed with an Error. ${OWNERSHIP}`,
     ["load synchronous", "synchronous", "sync load", "flush async loading", "blocking load", "preload assets", "loading screen"]),
-  loadNode("assets.loadClassBlocking", "Load Class Blocking", "class", true,
+  loadNode("assets.loadClassBlocking", "Load Class (Blocking)", "class", true,
     `Loads the Class at High priority and pauses game simulation until it settles; loading and rendering preparation continue. Runs Completed or Failed with an Error. ${OWNERSHIP}`,
     ["load synchronous", "synchronous", "sync load", "flush async loading", "blocking load", "preload class", "loading screen"]),
   {
-    id: "assets.requestLoad", title: "Request Async Load", category: "assets",
+    id: "assets.requestLoad", title: "Request Load (Async)", category: "assets",
     description: `Starts loading the Assets and returns a Handle at once, without waiting. Follow it with Wait For Load Handle, Get Load Handle State or Get Load Handle Progress. ${OWNERSHIP}`,
     searchAliases: ["preload", "streamable", "soft", "request load", "stream", "async load"],
     pins: () => [

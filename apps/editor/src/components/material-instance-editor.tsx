@@ -110,7 +110,7 @@ export function MaterialInstanceDetailsPanel(_props: IDockviewPanelProps) {
         ) : (
           <FieldDescription className="px-2 py-1" data-testid="material-instance-parameters-empty">
             {instance?.status === "error" ? instance.error
-              : instance?.status === "ready" ? "The parent Material has no parameters. Add Float, Vector 2, Vector 3, Color or Texture Parameters to it."
+              : instance?.status === "ready" ? "The parent Material has no parameters. Add Float, Vector2, Vector3, Color or Texture Parameters to it."
                 : "Loading parent parameters…"}
           </FieldDescription>
         )}

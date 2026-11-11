@@ -87,7 +87,7 @@ describe("Custom Event Track edits", () => {
     } as unknown as SerializedScene;
     const track = { id: "e", name: "On Subtitle", inputs: [{ name: "Text", typeId: "string", direction: "in" as const }], keys: [] };
     const next = syncTimelineEventDispatcher(scene, "intro", "On Line", track).script!;
-    expect(next.nodes[0]!.data).toMatchObject({ name: "On Subtitle", pins: track.inputs, title: "Bind Event to On Subtitle" });
+    expect(next.nodes[0]!.data).toMatchObject({ name: "On Subtitle", pins: track.inputs, title: "Bind Event To On Subtitle" });
     expect(next.nodes[1]!.data.name).toBe("On Line");
     expect(next.nodes[2]!.data.pins).toEqual([{ name: "Text", typeId: "string", direction: "out" }]);
   });

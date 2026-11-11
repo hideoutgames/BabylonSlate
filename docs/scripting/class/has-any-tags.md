@@ -18,7 +18,7 @@ Returns true when a TagContainer matches at least one Tag in a second TagContain
 
 | Pin | Type |
 | --- | --- |
-| Result | Boolean |
+| Out | Boolean |
 
 ## Notes
 

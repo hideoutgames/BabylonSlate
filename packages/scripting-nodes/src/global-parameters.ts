@@ -18,7 +18,7 @@ type GlobalParameterKind = "Float" | "Vector" | "Color";
 
 const VALUES: Record<GlobalParameterKind, { type: PinType; defaultValue: unknown; reads: string }> = {
   Float: { type: FLOAT, defaultValue: 0, reads: "a Float parameter" },
-  Vector: { type: VEC3, defaultValue: { x: 0, y: 0, z: 0 }, reads: "a Vector 2 or Vector 3 parameter; a Vector 2 keeps X and Y" },
+  Vector: { type: VEC3, defaultValue: { x: 0, y: 0, z: 0 }, reads: "a Vector2 or Vector3 parameter; a Vector2 keeps X and Y" },
   Color: { type: COLOR, defaultValue: { x: 1, y: 1, z: 1, w: 1 }, reads: "a Color parameter" },
 };
 

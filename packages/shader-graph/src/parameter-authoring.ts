@@ -32,7 +32,7 @@ export function materialParameterValueType(type: string): MaterialParameterValue
   return null;
 }
 
-/** Whether **Convert to Parameter** applies: a Float, Vector 2, Vector 3 or Color Constant. */
+/** Whether **Convert to Parameter** applies: a Float, Vector2, Vector3 or Color Constant. */
 export function canConvertMaterialConstantToParameter(type: string): boolean {
   return Object.hasOwn(PARAMETER_FOR_CONSTANT, type);
 }
@@ -131,7 +131,7 @@ function replaceNode<T extends GraphDocument>(
 }
 
 /**
- * **Convert to Parameter**: a Float, Vector 2, Vector 3 or Color Constant becomes the parameter
+ * **Convert to Parameter**: a Float, Vector2, Vector3 or Color Constant becomes the parameter
  * of its type holding its value, under a free name. Its id, position and wires stay (a Color's
  * wires move to the parameter's RGB output). Null for other nodes.
  */
@@ -145,7 +145,7 @@ export function convertMaterialConstantToParameter<T extends GraphDocument>(doc:
 }
 
 /**
- * **Convert to Constant**: a Float, Vector 2, Vector 3 or Color parameter becomes the Constant
+ * **Convert to Constant**: a Float, Vector2, Vector3 or Color parameter becomes the Constant
  * of its type holding its default. Its id, position and wires stay (a Color's RGB and RGBA wires
  * both move to the Constant's output). Null for Texture parameters and other nodes.
  */

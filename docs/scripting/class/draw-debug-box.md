@@ -11,8 +11,8 @@ Draws a wireframe box at a world position.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Center | Vector 3 |  |
-| Extent | Vector 3 | Half the box size along each axis, so an Extent of 0.5 draws a 1-unit cube. |
+| Center | Vector3 |  |
+| Extent | Vector3 | Half the box size along each axis, so an Extent of 0.5 draws a 1-unit cube. |
 | Rotation | Rotator | Orientation in degrees (pitch, yaw, roll). |
 | Color | Color | Line colour. Alpha is ignored. Defaults to white. |
 | Duration | Float | Seconds the shape stays visible. 0 shows it for one simulation tick, so call the node every tick to keep it on screen. |

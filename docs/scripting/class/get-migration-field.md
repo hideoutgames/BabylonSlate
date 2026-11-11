@@ -20,6 +20,6 @@ Reads a field of the save being migrated, chosen by its permanent field ID.
 
 ## Notes
 
-- Only valid inside [**Event Save Migration**](event-save-migration.md); elsewhere it reports an error.
+- Only valid inside [**Event On Save Migration**](event-on-save-migration.md); elsewhere it reports an error.
 - It can also read fields that were removed from the current Save Game.
 - Actor references are persistent ID strings here, because actors are not restored yet.

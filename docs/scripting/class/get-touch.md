@@ -19,8 +19,8 @@ Returns one of this tick's touches by its place in the list.
 | Valid | Boolean | False when there is no touch at **Index**. |
 | Touch | Touch | The whole touch as a single structure. |
 | Finger | Integer | The touch's finger number. |
-| Position | Vector 2 | Where the touch is now, in pixels from the top-left corner of the game view. |
-| Delta | Vector 2 | How far the touch moved this tick, in pixels. |
+| Position | Vector2 | Where the touch is now, in pixels from the top-left corner of the game view. |
+| Delta | Vector2 | How far the touch moved this tick, in pixels. |
 | Pressure | Float | From 0 to 1. Fingers and mice without pressure report 0.5. |
 | Phase | TouchPhase | **Began**, **Moved**, **Stationary**, **Ended** or **Cancelled** this tick. |
 

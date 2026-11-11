@@ -10,7 +10,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Call Parent Event](call-parent-event.md) | Runs the parent class's version of an event that this graph overrides. |
 | [Event Begin Play](event-begin-play.md) | Runs once when an actor or one of its components starts playing. |
 | [Event Custom](event-custom.md) | Defines an event of your own that other graphs can call by name. |
-| [Event Editor On Begin Play](event-editor-on-begin-play.md) | Runs when the editor loads an Editor Utility Object. |
+| [Event On Editor Begin Play](event-on-editor-begin-play.md) | Runs when the editor loads an Editor Utility Object. |
 | [Event On Actor Destroyed](event-on-actor-destroyed.md) | Runs when the actor this graph belongs to is destroyed. |
 | [Event On Audio Finished](event-on-audio-finished.md) | Runs when an Audio component finishes playing a sound. |
 | [Event On Begin Overlap](event-on-begin-overlap.md) | Runs when the actor's collider starts overlapping another actor, where one of the two is a trigger. |
@@ -56,12 +56,12 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Event On Selection Changed](event-on-selection-changed.md) | Runs when the selected option of a 2D Dropdown changes. |
 | [Event On Streamed Scene Loaded](event-on-streamed-scene-loaded.md) | Runs on a Scene Subsystem when a streamed sub-scene becomes ready. |
 | [Event On Streamed Scene Unloaded](event-on-streamed-scene-unloaded.md) | Runs on a Scene Subsystem when a streamed sub-scene is unloaded. |
-| [Event On Text Changed](event-on-ui-text-changed.md) | Runs when the text in a 2D Text Input control changes. |
+| [Event On UI Text Changed](event-on-ui-text-changed.md) | Runs when the text in a 2D Text Input control changes. |
 | [Event On Text Changed](event-on-text-changed.md) | Runs when the text of a text display component changes. |
 | [Event On Text Submitted](event-on-text-submitted.md) | Runs when the player confirms the text in a 2D Text Input control. |
 | [Event On Value Changed](event-on-value-changed.md) | Runs when the value of a slider, numeric input or progress bar changes. |
-| [Event Save Migration](event-save-migration.md) | Updates a staged copy of an older save while Load Game runs. |
-| [Event Scalability Changed](event-scalability-changed.md) | Runs when the renderer confirms or rejects the latest quality request. |
+| [Event On Save Migration](event-on-save-migration.md) | Updates a staged copy of an older save while Load Game runs. |
+| [Event On Scalability Changed](event-on-scalability-changed.md) | Runs when the renderer confirms or rejects the latest quality request. |
 | [Event Tick](event-tick.md) | Runs on every simulation step, giving the time since the previous one. |
 
 ## Flow
@@ -84,8 +84,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Input](input.md) | Starts a function and provides the values its caller passed in. |
 | [Output](output.md) | Returns values to the caller and ends the function. |
 | [Sequence](sequence.md) | Runs its outputs one after another, from the first to the last. |
-| [Switch on Int](switch-on-int.md) | Runs the output whose number matches an integer value, or Default if none match. |
-| [Switch on String](switch-on-string.md) | Runs the output whose text matches a string value, or Default if none match. |
+| [Switch On Int](switch-on-int.md) | Runs the output whose number matches an integer value, or Default if none match. |
+| [Switch On String](switch-on-string.md) | Runs the output whose text matches a string value, or Default if none match. |
 | [While Loop](while-loop.md) | Repeats Loop Body for as long as Condition is true. |
 
 ## Variables
@@ -107,11 +107,11 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
-| [Bind Event to Event Dispatcher](bind-event-to-event-dispatcher.md) | Adds an event to an Event Dispatcher, so each Call runs it. |
+| [Bind Event To Event Dispatcher](bind-event-to-event-dispatcher.md) | Adds an event to an Event Dispatcher, so each Call runs it. |
 | [Call Event Dispatcher](call-event-dispatcher.md) | Runs every event bound to an Event Dispatcher, in the order they were bound, then continues. |
 | [Create Event](create-event.md) | A delegate that runs a chosen custom event or function on an object. |
-| [Unbind All Events from Event Dispatcher](unbind-all-events-from-event-dispatcher.md) | Removes every event bound to an Event Dispatcher. |
-| [Unbind Event from Event Dispatcher](unbind-event-from-event-dispatcher.md) | Removes an event from an Event Dispatcher. |
+| [Unbind All Events From Event Dispatcher](unbind-all-events-from-event-dispatcher.md) | Removes every event bound to an Event Dispatcher. |
+| [Unbind Event From Event Dispatcher](unbind-event-from-event-dispatcher.md) | Removes an event from an Event Dispatcher. |
 
 ## Interface
 
@@ -127,18 +127,18 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Float To Int](float-to-int.md) | Converts a Float to an Integer by dropping the fractional part. |
 | [Int To Float](int-to-float.md) | Converts an Integer to a Float with the same value. |
 | [Wildcard Is](wildcard-is.md) | Returns true when a value's type name matches the given tag. |
-| [Wildcard To bool](wildcard-to-bool.md) | Converts an Any value to a Boolean and reports whether it worked. |
-| [Wildcard To color](wildcard-to-color.md) | Converts an Any value to a Color and reports whether it worked. |
-| [Wildcard To float](wildcard-to-float.md) | Converts an Any value to a Float and reports whether it worked. |
-| [Wildcard To int](wildcard-to-int.md) | Converts an Any value to an Integer and reports whether it worked. |
-| [Wildcard To objectRef:Object](wildcard-to-objectref-object.md) | Converts an Any value to an Object Reference and reports whether it worked. |
-| [Wildcard To quat](wildcard-to-quat.md) | Converts an Any value to a Quaternion and reports whether it worked. |
-| [Wildcard To rotator](wildcard-to-rotator.md) | Converts an Any value to a Rotator and reports whether it worked. |
+| [Wildcard To Bool](wildcard-to-bool.md) | Converts an Any value to a Boolean and reports whether it worked. |
+| [Wildcard To Color](wildcard-to-color.md) | Converts an Any value to a Color and reports whether it worked. |
+| [Wildcard To Float](wildcard-to-float.md) | Converts an Any value to a Float and reports whether it worked. |
+| [Wildcard To Int](wildcard-to-int.md) | Converts an Any value to an Integer and reports whether it worked. |
+| [Wildcard To Object](wildcard-to-object.md) | Converts an Any value to an Object Reference and reports whether it worked. |
+| [Wildcard To Quaternion](wildcard-to-quaternion.md) | Converts an Any value to a Quaternion and reports whether it worked. |
+| [Wildcard To Rotator](wildcard-to-rotator.md) | Converts an Any value to a Rotator and reports whether it worked. |
 | [Wildcard To String](wildcard-to-string.md) | Converts any value to text and never fails. |
-| [Wildcard To transform](wildcard-to-transform.md) | Converts an Any value to a Transform and reports whether it worked. |
-| [Wildcard To vec2](wildcard-to-vec2.md) | Converts an Any value to a Vector 2 and reports whether it worked. |
-| [Wildcard To vec3](wildcard-to-vec3.md) | Converts an Any value to a Vector 3 and reports whether it worked. |
-| [Wildcard To vec4](wildcard-to-vec4.md) | Converts an Any value to a Vector 4 and reports whether it worked. |
+| [Wildcard To Transform](wildcard-to-transform.md) | Converts an Any value to a Transform and reports whether it worked. |
+| [Wildcard To Vector2](wildcard-to-vector2.md) | Converts an Any value to a Vector2 and reports whether it worked. |
+| [Wildcard To Vector3](wildcard-to-vector3.md) | Converts an Any value to a Vector3 and reports whether it worked. |
+| [Wildcard To Vector4](wildcard-to-vector4.md) | Converts an Any value to a Vector4 and reports whether it worked. |
 | [Wildcard Type Of](wildcard-type-of.md) | Returns the name of the type a value holds, such as int or vec3. |
 
 ## Literal
@@ -150,16 +150,16 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Make Class](make-class.md) | Returns a class that you pick on the node. |
 | [Make Float](make-float.md) | Returns a Float value that you set on the node. |
 | [Make Int](make-int.md) | Returns an Integer value that you set on the node. |
-| [Make Quaternion](make-quaternion-literal.md) | Returns a Quaternion value that you enter on the node. |
+| [Make Quaternion (Literal)](make-quaternion-literal.md) | Returns a Quaternion value that you enter on the node. |
 | [Make String](make-string.md) | Returns a String value that you set on the node. |
 | [To String (Bool)](to-string-bool.md) | Converts a Boolean to the text true or false. |
 | [To String (Color)](to-string-color.md) | Converts a Color to text that lists its four components. |
 | [To String (Float)](to-string-float.md) | Converts a Float to its text form, such as 1.5. |
 | [To String (Int)](to-string-int.md) | Converts an Integer to its text form, such as 42. |
 | [To String (Rotator)](to-string-rotator.md) | Converts a Rotator to text that lists its pitch, roll and yaw. |
-| [To String (Vector 2)](to-string-vector-2.md) | Converts a Vector 2 to text that lists its x and y values. |
-| [To String (Vector 3)](to-string-vector-3.md) | Converts a Vector 3 to text that lists its x, y and z values. |
-| [To String (Vector 4)](to-string-vector-4.md) | Converts a Vector 4 to text that lists its four values. |
+| [To String (Vector2)](to-string-vector2.md) | Converts a Vector2 to text that lists its x and y values. |
+| [To String (Vector3)](to-string-vector3.md) | Converts a Vector3 to text that lists its x, y and z values. |
+| [To String (Vector4)](to-string-vector4.md) | Converts a Vector4 to text that lists its four values. |
 
 ## Math
 
@@ -180,10 +180,10 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Bitwise Not](bitwise-not.md) | Flips every bit of an integer. |
 | [Bitwise Or](bitwise-or.md) | Returns the bits set in either of two integers. |
 | [Bitwise Xor](bitwise-xor.md) | Returns the bits set in exactly one of two integers. |
-| [Boolean And](boolean-and.md) | Returns true only when both inputs are true. |
-| [Boolean Not](boolean-not.md) | Returns the opposite of the input: true becomes false and false becomes true. |
-| [Boolean Or](boolean-or.md) | Returns true when at least one input is true. |
-| [Boolean Xor](boolean-xor.md) | Returns true when exactly one of two booleans is true. |
+| [And Bool](and-bool.md) | Returns true only when both inputs are true. |
+| [Not Bool](not-bool.md) | Returns the opposite of the input: true becomes false and false becomes true. |
+| [Or Bool](or-bool.md) | Returns true when at least one input is true. |
+| [Xor Bool](xor-bool.md) | Returns true when exactly one of two booleans is true. |
 | [Ceil](ceil.md) | Rounds the input up to the nearest whole number. |
 | [Clamp](clamp.md) | Limits a value so that it stays between a minimum and a maximum. |
 | [Clamp Angle](clamp-angle.md) | Limits an angle in degrees to an arc. |
@@ -195,14 +195,14 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Ease](ease.md) | Blends between two numbers along an easing curve. |
 | [Equal](equal.md) | Returns true when two numbers are exactly equal. |
 | [Exp](exp.md) | Returns e raised to a power. |
-| [Float Interp To](float-interp-to.md) | Moves a number smoothly toward a target, slowing as it arrives. |
-| [Float Interp To Constant](float-interp-to-constant.md) | Moves a number toward a target at a steady speed. |
+| [Interp To Float](interp-to-float.md) | Moves a number smoothly toward a target, slowing as it arrives. |
+| [Interp To Constant Float](interp-to-constant-float.md) | Moves a number toward a target at a steady speed. |
 | [Floor](floor.md) | Rounds the input down to the nearest whole number. |
 | [Fraction](fraction.md) | Returns the part of a number after its whole number. |
-| [Greater or Equal](greater-or-equal.md) | Returns true when **A** is greater than or equal to **B**. |
+| [Greater Or Equal](greater-or-equal.md) | Returns true when **A** is greater than or equal to **B**. |
 | [Greater Than](greater-than.md) | Returns true when **A** is greater than **B**. |
 | [Lerp](lerp.md) | Blends from one value to another by an amount between 0 and 1. |
-| [Less or Equal](less-or-equal.md) | Returns true when **A** is less than or equal to **B**. |
+| [Less Or Equal](less-or-equal.md) | Returns true when **A** is less than or equal to **B**. |
 | [Less Than](less-than.md) | Returns true when **A** is less than **B**. |
 | [Logarithm](logarithm.md) | Returns the logarithm of a number to a chosen base. |
 | [Max](max.md) | Returns the larger of two values, component by component. |
@@ -241,15 +241,15 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Add Vector2](add-vector2.md) | Returns the sum of two vectors, added component by component. |
 | [Add Vector3](add-vector3.md) | Returns the sum of two vectors, added component by component. |
 | [Add Vector4](add-vector4.md) | Returns the sum of two vectors, added component by component. |
-| [Angle Between Vectors](angle-between-vectors.md) | Returns the angle between two vectors in degrees. |
-| [Break Vector2](break-vector2.md) | Splits a Vector 2 into its X and Y numbers. |
-| [Break Vector3](break-vector3.md) | Splits a Vector 3 into its X, Y and Z numbers. |
-| [Break Vector4](break-vector4.md) | Splits a Vector 4 into its X, Y, Z and W numbers. |
-| [Clamp Vector Size](clamp-vector-size.md) | Keeps a vector's length between a minimum and a maximum. |
+| [Angle Between Vector3](angle-between-vector3.md) | Returns the angle between two vectors in degrees. |
+| [Break Vector2](break-vector2.md) | Splits a Vector2 into its X and Y numbers. |
+| [Break Vector3](break-vector3.md) | Splits a Vector3 into its X, Y and Z numbers. |
+| [Break Vector4](break-vector4.md) | Splits a Vector4 into its X, Y, Z and W numbers. |
+| [Clamp Vector3 Size](clamp-vector3-size.md) | Keeps a vector's length between a minimum and a maximum. |
 | [Cross Vector3](cross-vector3.md) | Returns a vector perpendicular to both input vectors. |
 | [Distance Vector2](distance-vector2.md) | Returns the distance between two points. |
 | [Distance Vector3](distance-vector3.md) | Returns the distance between two points. |
-| [Distance Vector4](distance-vector4.md) | Returns the distance between two Vector 4 values. |
+| [Distance Vector4](distance-vector4.md) | Returns the distance between two Vector4 values. |
 | [Divide Vector2](divide-vector2.md) | Divides the first vector by the second, component by component. |
 | [Divide Vector3](divide-vector3.md) | Divides the first vector by the second, component by component. |
 | [Divide Vector4](divide-vector4.md) | Divides the first vector by the second, component by component. |
@@ -260,10 +260,10 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Lerp Vector2](lerp-vector2.md) | Blends between two vectors using a factor from 0 to 1. |
 | [Lerp Vector3](lerp-vector3.md) | Blends between two vectors using a factor from 0 to 1. |
 | [Lerp Vector4](lerp-vector4.md) | Blends between two vectors using a factor from 0 to 1. |
-| [Make Vector2](make-vector2.md) | Builds a Vector 2 from X and Y numbers. |
-| [Make Vector3](make-vector3.md) | Builds a Vector 3 from X, Y and Z numbers. |
-| [Make Vector4](make-vector4.md) | Builds a Vector 4 from X, Y, Z and W numbers. |
-| [Mirror Vector By Normal](mirror-vector-by-normal.md) | Bounces a vector off a surface. |
+| [Make Vector2](make-vector2.md) | Builds a Vector2 from X and Y numbers. |
+| [Make Vector3](make-vector3.md) | Builds a Vector3 from X, Y and Z numbers. |
+| [Make Vector4](make-vector4.md) | Builds a Vector4 from X, Y, Z and W numbers. |
+| [Mirror Vector3 By Normal](mirror-vector3-by-normal.md) | Bounces a vector off a surface. |
 | [Multiply Vector2](multiply-vector2.md) | Multiplies two vectors together, component by component. |
 | [Multiply Vector3](multiply-vector3.md) | Multiplies two vectors together, component by component. |
 | [Multiply Vector4](multiply-vector4.md) | Multiplies two vectors together, component by component. |
@@ -271,23 +271,23 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Normalize Vector2](normalize-vector2.md) | Returns the vector scaled to a length of 1, keeping its direction. |
 | [Normalize Vector3](normalize-vector3.md) | Returns the vector scaled to a length of 1, keeping its direction. |
 | [Normalize Vector4](normalize-vector4.md) | Returns the vector scaled to a length of 1, keeping its direction. |
-| [Project Vector On To Plane](project-vector-on-to-plane.md) | Flattens a vector onto a plane. |
-| [Project Vector On To Vector](project-vector-on-to-vector.md) | Returns the part of a vector that points along another. |
+| [Project Vector3 On To Plane](project-vector3-on-to-plane.md) | Flattens a vector onto a plane. |
+| [Project Vector3 On To Vector3](project-vector3-on-to-vector3.md) | Returns the part of a vector that points along another. |
 | [Scale Vector2](scale-vector2.md) | Multiplies every component of a vector by one number. |
 | [Scale Vector3](scale-vector3.md) | Multiplies every component of a vector by one number. |
 | [Scale Vector4](scale-vector4.md) | Multiplies every component of a vector by one number. |
 | [Subtract Vector2](subtract-vector2.md) | Returns the first vector minus the second, component by component. |
 | [Subtract Vector3](subtract-vector3.md) | Returns the first vector minus the second, component by component. |
 | [Subtract Vector4](subtract-vector4.md) | Returns the first vector minus the second, component by component. |
-| [Vector Interp To](vector-interp-to.md) | Moves a vector smoothly toward a target, slowing as it arrives. |
-| [Vector Interp To Constant](vector-interp-to-constant.md) | Moves a vector straight toward a target at a steady speed. |
-| [Vector2 Length](vector2-length.md) | Returns the length of a vector. |
-| [Vector2 Length Squared](vector2-length-squared.md) | Returns the length of a vector multiplied by itself. |
-| [Vector3 Length](vector3-length.md) | Returns the length of a vector. |
-| [Vector3 Length Squared](vector3-length-squared.md) | Returns the length of a vector multiplied by itself. |
-| [Vector3 Nearly Equal](vector3-nearly-equal.md) | Returns true when two vectors are almost the same. |
-| [Vector4 Length](vector4-length.md) | Returns the length of a vector. |
-| [Vector4 Length Squared](vector4-length-squared.md) | Returns the length of a vector multiplied by itself. |
+| [Interp To Vector3](interp-to-vector3.md) | Moves a vector smoothly toward a target, slowing as it arrives. |
+| [Interp To Constant Vector3](interp-to-constant-vector3.md) | Moves a vector straight toward a target at a steady speed. |
+| [Length Vector2](length-vector2.md) | Returns the length of a vector. |
+| [Length Squared Vector2](length-squared-vector2.md) | Returns the length of a vector multiplied by itself. |
+| [Length Vector3](length-vector3.md) | Returns the length of a vector. |
+| [Length Squared Vector3](length-squared-vector3.md) | Returns the length of a vector multiplied by itself. |
+| [Nearly Equal Vector3](nearly-equal-vector3.md) | Returns true when two vectors are almost the same. |
+| [Length Vector4](length-vector4.md) | Returns the length of a vector. |
+| [Length Squared Vector4](length-squared-vector4.md) | Returns the length of a vector multiplied by itself. |
 
 ## Rotator
 
@@ -303,8 +303,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Inverse Rotator](inverse-rotator.md) | Returns the rotation that undoes a given rotator. |
 | [Lerp Rotator](lerp-rotator.md) | Blends between two rotators along the shortest turn, using Alpha as the amount. |
 | [Make Rotator](make-rotator.md) | Builds a rotator from pitch, yaw and roll angles in degrees. |
-| [Rotator Interp To](rotator-interp-to.md) | Turns a rotator smoothly toward a target, slowing as it arrives. |
-| [Rotator Nearly Equal](rotator-nearly-equal.md) | Returns true when two rotators are equal within a small tolerance. |
+| [Interp To Rotator](interp-to-rotator.md) | Turns a rotator smoothly toward a target, slowing as it arrives. |
+| [Nearly Equal Rotator](nearly-equal-rotator.md) | Returns true when two rotators are equal within a small tolerance. |
 
 ## Quaternion
 
@@ -327,7 +327,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Add Actor Local Offset](add-actor-local-offset.md) | Moves the actor along its own axes, as its rotation turns them; its scale does not stretch the move. |
 | [Add Actor Local Rotation](add-actor-local-rotation.md) | Turns the actor about its own axes. |
 | [Add Actor World Rotation](add-actor-world-rotation.md) | Turns the actor about the world's axes. |
-| [Add World Offset](add-world-offset.md) | Moves an actor by adding an offset to its current location. |
+| [Add Actor World Offset](add-actor-world-offset.md) | Moves an actor by adding an offset to its current location. |
 | [Break Transform](break-transform.md) | Splits a transform into its location, rotation and scale. |
 | [Get Actor Forward Vector](get-actor-forward-vector.md) | Returns the direction an actor faces, as a unit vector along its forward axis. |
 | [Get Actor Location](get-actor-location.md) | Returns an actor's location as a vector. |
@@ -367,7 +367,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | Node | Description |
 | --- | --- |
 | [Break Color](break-color.md) | Splits a colour into its red, green, blue and alpha values. |
-| [Color Nearly Equal](color-nearly-equal.md) | Returns true when two colours are equal within a small tolerance. |
+| [Nearly Equal Color](nearly-equal-color.md) | Returns true when two colours are equal within a small tolerance. |
 | [Lerp Color](lerp-color.md) | Returns a colour blended between two colours, using Alpha as the mix amount. |
 | [Make Color](make-color.md) | Builds a colour from red, green, blue and alpha values. |
 | [Multiply Color](multiply-color.md) | Multiplies two colours channel by channel. |
@@ -377,14 +377,14 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | Node | Description |
 | --- | --- |
 | [Concat](concat.md) | Joins two strings end to end, with A first and B second. |
-| [Contains](contains.md) | Returns true when a string includes the search text anywhere. |
+| [Has Substring](has-substring.md) | Returns true when a string includes the search text anywhere. |
 | [Ends With](ends-with.md) | Returns true when a string finishes with a given suffix. |
-| [Equals](equals.md) | Returns true when two strings are exactly the same. |
+| [Equal String](equal-string.md) | Returns true when two strings are exactly the same. |
 | [Find Substring](find-substring.md) | Returns where a piece of text first appears in a string. |
 | [Format Float](format-float.md) | Turns a number into text with a fixed number of decimals. |
 | [Format String](format-string.md) | Builds text from a template, replacing each placeholder with a wired value. |
 | [Join](join.md) | Combines an array of strings into one string with a separator between items. |
-| [Length](length.md) | Returns the number of characters in a string. |
+| [Get String Length](get-string-length.md) | Returns the number of characters in a string. |
 | [Pad Left](pad-left.md) | Adds characters before a string until it reaches a length. |
 | [Pad Right](pad-right.md) | Adds characters after a string until it reaches a length. |
 | [Parse Float](parse-float.md) | Converts text such as 3.5 into a Float and reports whether it worked. |
@@ -393,7 +393,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Reverse String](reverse-string.md) | Returns a string with its characters in reverse order. |
 | [Split](split.md) | Splits a string into an array of pieces at each separator. |
 | [Starts With](starts-with.md) | Returns true when a string begins with a given prefix. |
-| [String Is Empty](string-is-empty.md) | Returns true when a string has no characters. |
+| [Is String Empty](is-string-empty.md) | Returns true when a string has no characters. |
 | [Substring](substring.md) | Returns part of a string, from a start position up to an end position. |
 | [To Lower](to-lower.md) | Converts every letter in a string to lower case. |
 | [To Upper](to-upper.md) | Converts every letter in a string to upper case. |
@@ -403,31 +403,31 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
-| [Add Unique](add-unique.md) | Adds an item to a copy of an array unless it is already there. |
+| [Add Unique Array Item](add-unique-array-item.md) | Adds an item to a copy of an array unless it is already there. |
 | [Append Array](append-array.md) | Returns a copy of an array with the items of a second array added to the end. |
-| [Append Item](append-item.md) | Returns a copy of an array with one item added to the end. |
-| [Array Clear](array-clear.md) | Returns an empty array, leaving the input array unchanged. |
-| [Array Contains](array-contains.md) | Returns true when an array holds an item equal to the given item. |
-| [Array First](array-first.md) | Returns the first item of an array. |
-| [Array Get](array-get.md) | Returns the item at an index, and whether that index exists. |
-| [Array Insert](array-insert.md) | Returns a copy of an array with an item inserted at an index. |
-| [Array Last](array-last.md) | Returns the last item of an array. |
-| [Array Length](array-length.md) | Returns how many items an array holds. |
-| [Array Reverse](array-reverse.md) | Returns a copy of an array with its items in reverse order. |
-| [Array Slice](array-slice.md) | Returns a new array holding the items from a start index up to an end index. |
-| [Find Index](find-index.md) | Returns the index of the first item equal to the given item. |
-| [Is Empty](array-is-empty.md) | Returns true when an array has no items. |
-| [Is Valid Index](is-valid-index.md) | Returns true when an index points at an item in an array. |
-| [Last Index](last-index.md) | Returns the index of the last item in an array. |
+| [Append Array Item](append-array-item.md) | Returns a copy of an array with one item added to the end. |
+| [Clear Array](clear-array.md) | Returns an empty array, leaving the input array unchanged. |
+| [Has Array Item](has-array-item.md) | Returns true when an array holds an item equal to the given item. |
+| [Get First Array Item](get-first-array-item.md) | Returns the first item of an array. |
+| [Get Array Item](get-array-item.md) | Returns the item at an index, and whether that index exists. |
+| [Insert Array Item](insert-array-item.md) | Returns a copy of an array with an item inserted at an index. |
+| [Get Last Array Item](get-last-array-item.md) | Returns the last item of an array. |
+| [Get Array Length](get-array-length.md) | Returns how many items an array holds. |
+| [Reverse Array](reverse-array.md) | Returns a copy of an array with its items in reverse order. |
+| [Slice Array](slice-array.md) | Returns a new array holding the items from a start index up to an end index. |
+| [Find Array Item](find-array-item.md) | Returns the index of the first item equal to the given item. |
+| [Is Array Empty](is-array-empty.md) | Returns true when an array has no items. |
+| [Is Valid Array Index](is-valid-array-index.md) | Returns true when an index points at an item in an array. |
+| [Get Last Array Index](get-last-array-index.md) | Returns the index of the last item in an array. |
 | [Make Array](make-array.md) | Builds an array from the item inputs you add. |
 | [Max Of Float Array](max-of-float-array.md) | Returns the largest number in an array and its index. |
 | [Max Of Int Array](max-of-int-array.md) | Returns the largest integer in an array and its index. |
 | [Min Of Float Array](min-of-float-array.md) | Returns the smallest number in an array and its index. |
 | [Min Of Int Array](min-of-int-array.md) | Returns the smallest integer in an array and its index. |
-| [Remove At](remove-at.md) | Returns a copy of an array with the item at an index removed. |
-| [Remove Item](remove-item.md) | Returns a copy of an array with the first matching item removed. |
+| [Remove Array Item At](remove-array-item-at.md) | Returns a copy of an array with the item at an index removed. |
+| [Remove Array Item](remove-array-item.md) | Returns a copy of an array with the first matching item removed. |
 | [Resize Array](resize-array.md) | Returns a copy of an array cut or extended to a size. |
-| [Set At Index](set-at-index.md) | Returns a copy of an array with the item at an index replaced. |
+| [Set Array Item](set-array-item.md) | Returns a copy of an array with the item at an index replaced. |
 | [Sort Array](sort-array.md) | Returns a copy of an array in ascending or descending order. |
 | [Swap Array Items](swap-array-items.md) | Returns a copy of an array with two items swapped. |
 
@@ -436,16 +436,16 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | Node | Description |
 | --- | --- |
 | [Break Map](break-map.md) | Splits a map into an array of keys and an array of values. |
-| [Is Empty](map-is-empty.md) | Returns true when a map has no entries. |
+| [Is Map Empty](is-map-empty.md) | Returns true when a map has no entries. |
 | [Make Map](make-map.md) | Builds a map from key and value pairs. |
-| [Map Clear](map-clear.md) | Returns an empty map, leaving the input map unchanged. |
-| [Map Get](map-get.md) | Returns the value stored for a key, and whether the key exists. |
-| [Map Has](map-has.md) | Returns true when a map contains a key. |
-| [Map Keys](map-keys.md) | Returns all keys of a map as an array. |
-| [Map Remove](map-remove.md) | Returns a copy of a map without the given key. |
-| [Map Set](map-set.md) | Returns a copy of a map with a key set to a value. |
-| [Map Size](map-size.md) | Returns how many key and value pairs a map holds. |
-| [Map Values](map-values.md) | Returns all values of a map as an array. |
+| [Clear Map](clear-map.md) | Returns an empty map, leaving the input map unchanged. |
+| [Get Map Value](get-map-value.md) | Returns the value stored for a key, and whether the key exists. |
+| [Has Map Key](has-map-key.md) | Returns true when a map contains a key. |
+| [Get Map Keys](get-map-keys.md) | Returns all keys of a map as an array. |
+| [Remove Map Key](remove-map-key.md) | Returns a copy of a map without the given key. |
+| [Set Map Value](set-map-value.md) | Returns a copy of a map with a key set to a value. |
+| [Get Map Size](get-map-size.md) | Returns how many key and value pairs a map holds. |
+| [Get Map Values](get-map-values.md) | Returns all values of a map as an array. |
 
 ## Select
 
@@ -460,20 +460,20 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Select Tag](select-tag.md) | Returns one of two Tag values, chosen by a Boolean condition. |
 | [Select TagContainer](select-tagcontainer.md) | Returns one of two TagContainer values, chosen by a Boolean condition. |
 | [Select Transform](select-transform.md) | Returns one of two Transform values, chosen by a Boolean condition. |
-| [Select Vector 2](select-vector-2.md) | Returns one of two Vector 2 values, chosen by a Boolean condition. |
-| [Select Vector 3](select-vector-3.md) | Returns one of two Vector 3 values, chosen by a Boolean condition. |
-| [Select Vector 4](select-vector-4.md) | Returns one of two Vector 4 values, chosen by a Boolean condition. |
+| [Select Vector2](select-vector2.md) | Returns one of two Vector2 values, chosen by a Boolean condition. |
+| [Select Vector3](select-vector3.md) | Returns one of two Vector3 values, chosen by a Boolean condition. |
+| [Select Vector4](select-vector4.md) | Returns one of two Vector4 values, chosen by a Boolean condition. |
 
 ## Enum
 
 | Node | Description |
 | --- | --- |
-| [Enum to String](enum-to-string.md) | Returns the name of an enum member as text. |
+| [To String (Enum)](to-string-enum.md) | Returns the name of an enum member as text. |
 | [Equal Enum](equal-enum.md) | Returns true when two enum values are the same member. |
 | [Make Enum](make-enum.md) | Returns a member of an enum that you choose on the node. |
 | [Not Equal Enum](not-equal-enum.md) | Returns true when two enum values are different members. |
 | [Select](select.md) | Returns the value wired to the option that matches an enum member. |
-| [Switch on Enum](switch-on-enum.md) | Runs one execution path depending on which enum member a value holds. |
+| [Switch On Enum](switch-on-enum.md) | Runs one execution path depending on which enum member a value holds. |
 
 ## Struct
 
@@ -487,10 +487,10 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | Node | Description |
 | --- | --- |
 | [Clamp Float To Range](clamp-float-to-range.md) | Returns **Value** limited to the range. |
-| [Clamp Integer To Range](clamp-integer-to-range.md) | Returns **Value** limited to the range. |
-| [Clamp Vector To Range](clamp-vector-to-range.md) | Returns **Value** limited to the range, axis by axis. |
+| [Clamp Int To Range](clamp-int-to-range.md) | Returns **Value** limited to the range. |
+| [Clamp Vector3 To Range](clamp-vector3-to-range.md) | Returns **Value** limited to the range, axis by axis. |
 | [Is Float In Range](is-float-in-range.md) | Returns true when **Value** lies inside the range. |
-| [Is Integer In Range](is-integer-in-range.md) | Returns true when **Value** lies inside the range. |
+| [Is Int In Range](is-int-in-range.md) | Returns true when **Value** lies inside the range. |
 | [Lerp Float Range](lerp-float-range.md) | Returns the value at **Alpha** between the range's **Min** and **Max**. |
 | [Map Float Range](map-float-range.md) | Maps **Value** from the **From** range to the **To** range. |
 
@@ -506,22 +506,22 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Random Float](random-float.md) | Returns a random number from 0 up to, but not including, 1. |
 | [Random Float In Range](random-float-in-range.md) | Returns a random number from **Min** up to, but not including, **Max**. |
 | [Random Int](random-int.md) | Returns a random whole number between **Min** and **Max**. |
-| [Random Integer In Range](random-int-in-range.md) | Returns a random whole number from **Min** to **Max**. |
+| [Random Int In Range](random-int-in-range.md) | Returns a random whole number from **Min** to **Max**. |
 | [Random Rotator In Range](random-rotator-in-range.md) | Returns a random rotator inside the range, with each axis drawn on its own. |
 | [Random Unit Vector](random-unit-vector.md) | Returns a random direction of length 1. |
-| [Random Vector 2 In Range](random-vector2-in-range.md) | Returns a random Vector 2 inside the range, with each axis drawn on its own. |
-| [Random Vector In Range](random-vector-in-range.md) | Returns a random vector inside the range, with each axis drawn on its own. |
+| [Random Vector2 In Range](random-vector2-in-range.md) | Returns a random Vector2 inside the range, with each axis drawn on its own. |
+| [Random Vector3 In Range](random-vector3-in-range.md) | Returns a random vector inside the range, with each axis drawn on its own. |
 | [Seeded Random Array Item](seeded-random-array-item.md) | Returns a random item of the Array and its index, drawn from **Seed**. |
 | [Seeded Random Bool](seeded-random-bool.md) | Returns true or false with equal chance, drawn from **Seed**. |
 | [Seeded Random Bool With Weight](seeded-random-bool-with-weight.md) | Returns true with the chance **Weight**, drawn from **Seed**. |
 | [Seeded Random Float](seeded-random-float.md) | Returns a random number from 0 up to, but not including, 1, drawn from **Seed**. |
 | [Seeded Random Float In Range](seeded-random-float-in-range.md) | Returns a random number from **Min** up to, but not including, **Max**, drawn from **Seed**. |
 | [Seeded Random Int](seeded-random-int.md) | Returns a random whole number between **Min** and **Max**, drawn from **Seed**. |
-| [Seeded Random Integer In Range](seeded-random-int-in-range.md) | Returns a random whole number from **Min** to **Max**, drawn from **Seed**. |
+| [Seeded Random Int In Range](seeded-random-int-in-range.md) | Returns a random whole number from **Min** to **Max**, drawn from **Seed**. |
 | [Seeded Random Rotator In Range](seeded-random-rotator-in-range.md) | Returns a random rotator inside the range, drawn from **Seed**. |
 | [Seeded Random Unit Vector](seeded-random-unit-vector.md) | Returns a random direction of length 1, drawn from **Seed**. |
-| [Seeded Random Vector 2 In Range](seeded-random-vector2-in-range.md) | Returns a random Vector 2 inside the range, drawn from **Seed**. |
-| [Seeded Random Vector In Range](seeded-random-vector-in-range.md) | Returns a random vector inside the range, drawn from **Seed**. |
+| [Seeded Random Vector2 In Range](seeded-random-vector2-in-range.md) | Returns a random Vector2 inside the range, drawn from **Seed**. |
+| [Seeded Random Vector3 In Range](seeded-random-vector3-in-range.md) | Returns a random vector inside the range, drawn from **Seed**. |
 | [Seeded Shuffle Array](seeded-shuffle-array.md) | Returns the Array's items in a random order, drawn from **Seed**. |
 | [Set Global Randomization Seed](set-global-randomization-seed.md) | Makes the normal Random nodes continue from **Seed**. |
 | [Shuffle Array](shuffle-array.md) | Returns the Array's items in a random order. |
@@ -544,10 +544,10 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Get Global Color Parameter](get-global-color-parameter.md) | Returns a Color parameter of a Global Parameter Collection. |
 | [Get Global Float Parameter](get-global-float-parameter.md) | Returns a Float parameter of a Global Parameter Collection. |
-| [Get Global Vector Parameter](get-global-vector-parameter.md) | Returns a Vector 2 or Vector 3 parameter of a Global Parameter Collection. |
+| [Get Global Vector Parameter](get-global-vector-parameter.md) | Returns a Vector2 or Vector3 parameter of a Global Parameter Collection. |
 | [Set Global Color Parameter](set-global-color-parameter.md) | Sets a Color parameter of a Global Parameter Collection for the rest of Play. |
 | [Set Global Float Parameter](set-global-float-parameter.md) | Sets a Float parameter of a Global Parameter Collection for the rest of Play. |
-| [Set Global Vector Parameter](set-global-vector-parameter.md) | Sets a Vector 2 or Vector 3 parameter of a Global Parameter Collection for the rest of Play. |
+| [Set Global Vector Parameter](set-global-vector-parameter.md) | Sets a Vector2 or Vector3 parameter of a Global Parameter Collection for the rest of Play. |
 
 ## Curve Object
 
@@ -601,15 +601,15 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Remove Tag](remove-tag.md) | Returns a new TagContainer without a given Tag. |
 | [Select By Tag](select-by-tag.md) | Returns the value that belongs to the case matching a Tag. |
 | [Switch On Tag](switch-on-tag.md) | Runs the output for the case that matches a Tag. |
-| [Tag Count](tag-count.md) | Returns how many Tags a TagContainer holds. |
-| [Tag To String](tag-to-string.md) | Returns the full dotted path of a Tag as text. |
+| [Get Tag Count](get-tag-count.md) | Returns how many Tags a TagContainer holds. |
+| [To String (Tag)](to-string-tag.md) | Returns the full dotted path of a Tag as text. |
 | [Union Tags](union-tags.md) | Returns a TagContainer with every Tag from either of two TagContainers. |
 
 ## Data
 
 | Node | Description |
 | --- | --- |
-| [Async Read Unknown Data Entry](async-read-unknown-data-entry.md) | Loads a Data Tree and the Data Definition picked on the node in the background, then reads one entry from it. |
+| [Read Unknown Data Entry (Async)](read-unknown-data-entry-async.md) | Loads a Data Tree and the Data Definition picked on the node in the background, then reads one entry from it. |
 | [Get Data Children](get-data-children.md) | Returns the paths of an entry's immediate children, in sibling order. |
 | [Get Data Descendants](get-data-descendants.md) | Returns the paths of every entry below an entry, with parents listed before their children. |
 | [Get Data Parent](get-data-parent.md) | Returns the path of an entry's parent. |
@@ -738,12 +738,12 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Touch Count](get-touch-count.md) | Returns how many touches the game view has this tick. |
 | [Hide Cursor](hide-cursor.md) | Hides the mouse pointer over the game view. |
 | [Import Input Bindings](import-input-bindings.md) | Applies binding changes exported earlier, replacing the current changes. |
-| [On Any Key Pressed](on-any-key-pressed.md) | Runs for each key, mouse button or gamepad control that is newly pressed. |
-| [On Gamepad Connected](on-gamepad-connected.md) | Runs when a gamepad connects, with its index. |
-| [On Gamepad Disconnected](on-gamepad-disconnected.md) | Runs when a gamepad disconnects, with its index. |
-| [On Touch Began](on-touch-began.md) | Runs when a finger, a pen or the left mouse button touches the game view. |
-| [On Touch Ended](on-touch-ended.md) | Runs when a touch lifts from the game view or is cancelled. |
-| [On Touch Moved](on-touch-moved.md) | Runs when a touch moves across the game view. |
+| [Event On Any Key Pressed](event-on-any-key-pressed.md) | Runs for each key, mouse button or gamepad control that is newly pressed. |
+| [Event On Gamepad Connected](event-on-gamepad-connected.md) | Runs when a gamepad connects, with its index. |
+| [Event On Gamepad Disconnected](event-on-gamepad-disconnected.md) | Runs when a gamepad disconnects, with its index. |
+| [Event On Touch Began](event-on-touch-began.md) | Runs when a finger, a pen or the left mouse button touches the game view. |
+| [Event On Touch Ended](event-on-touch-ended.md) | Runs when a touch lifts from the game view or is cancelled. |
+| [Event On Touch Moved](event-on-touch-moved.md) | Runs when a touch moves across the game view. |
 | [Project Cursor To Scene](project-cursor-to-scene.md) | Casts a ray from the active camera through the cursor and returns what it hits. |
 | [Project Touch To Scene](project-touch-to-scene.md) | Casts a ray from the active camera through a touch and returns what it hits. |
 | [Remove Input Action Binding](remove-input-action-binding.md) | Removes every binding of a key from an Input Action. |
@@ -793,10 +793,10 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Finish Execute](finish-execute.md) | Ends the running task and reports success or failure to the Behaviour Tree. |
 | [Get Blackboard](get-blackboard.md) | Returns the value stored under a key in the tree's Blackboard. |
-| [On Abort](on-abort.md) | Runs when the Behaviour Tree stops this task before it finishes. |
-| [On Activate](on-activate.md) | Runs once when the Behaviour Tree starts this task. |
-| [On Evaluate](on-evaluate.md) | Runs when the Behaviour Tree checks this decorator's condition. |
-| [On Tick](on-tick.md) | Runs every update while a task is active, or at each interval for a service. |
+| [Event On Abort](event-on-abort.md) | Runs when the Behaviour Tree stops this task before it finishes. |
+| [Event On Activate](event-on-activate.md) | Runs once when the Behaviour Tree starts this task. |
+| [Event On Evaluate](event-on-evaluate.md) | Runs when the Behaviour Tree checks this decorator's condition. |
+| [Event On Tick](event-on-tick.md) | Runs every update while a task is active, or at each interval for a service. |
 | [Return Condition](return-condition.md) | Sets whether a decorator allows its branch to run. |
 | [Set Blackboard](set-blackboard.md) | Stores a value under a key in the tree's Blackboard. |
 
@@ -825,11 +825,11 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Scene Timeline Clip](get-scene-timeline-clip.md) | Returns a Timeline Clip of this Scene or Scene Layer, in its script, to play and control. |
 | [Get Target Scene Name](get-target-scene-name.md) | Returns the name of the Scene that a Scene Streaming Actor loads. |
 | [Is Scene Loaded](is-scene-loaded.md) | Returns true once all actors and render resources of a streamed Scene are ready. |
-| [Load Scene Async](load-scene-async.md) | Starts loading a Scene Streaming Actor's Scene while the game keeps running. |
-| [Load Scene Blocking](load-scene-blocking.md) | Loads a Scene Streaming Actor's Scene and waits until it is ready, pausing the game. |
+| [Load Scene (Async)](load-scene-async.md) | Starts loading a Scene Streaming Actor's Scene while the game keeps running. |
+| [Load Scene (Blocking)](load-scene-blocking.md) | Loads a Scene Streaming Actor's Scene and waits until it is ready, pausing the game. |
 | [Register Scene Post-Processing](register-scene-post-processing.md) | Adds a post-process Material after the current Scene's post-process passes and returns the new pass's Material Object. |
-| [Unload Scene Async](unload-scene-async.md) | Starts unloading a Scene Streaming Actor's Scene while the game keeps running. |
-| [Unload Scene Blocking](unload-scene-blocking.md) | Unloads a Scene Streaming Actor's Scene and waits until it is gone, pausing the game. |
+| [Unload Scene (Async)](unload-scene-async.md) | Starts unloading a Scene Streaming Actor's Scene while the game keeps running. |
+| [Unload Scene (Blocking)](unload-scene-blocking.md) | Unloads a Scene Streaming Actor's Scene and waits until it is gone, pausing the game. |
 | [Unregister Scene Post-Processing](unregister-scene-post-processing.md) | Removes the first of the current Scene's post-process passes that uses a Material. |
 
 ## Scene Layer
@@ -873,7 +873,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | Node | Description |
 | --- | --- |
 | [Get Effective Scalability](get-effective-scalability.md) | Returns the quality settings you requested and the ones the renderer is using. |
-| [Reset to Project Defaults](reset-to-project-defaults.md) | Clears all temporary quality and rendering changes made during this session. |
+| [Reset Scalability To Project Defaults](reset-scalability-to-project-defaults.md) | Clears all temporary quality and rendering changes made during this session. |
 | [Set Anti-Aliasing](set-anti-aliasing.md) | Sets the view's edge anti-aliasing: MSAA 4x, MSAA 2x, FXAA or off. |
 | [Set CEL Outlines](set-cel-outlines.md) | Turns global CEL outlines on or off and sets their colour and width. |
 | [Set CEL Shading](set-cel-shading.md) | Changes CEL banding, specular highlights, light mixing and outlines. |
@@ -902,24 +902,24 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Material Color Parameter](get-material-color-parameter.md) | Returns the current value of a named Color parameter on a Material Object. |
 | [Get Material Float Parameter](get-material-float-parameter.md) | Returns the current value of a named Float parameter on a Material Object. |
 | [Get Material Texture Parameter](get-material-texture-parameter.md) | Returns the Texture assigned to a named Texture parameter on a Material Object. |
-| [Get Material Vector Parameter](get-material-vector-parameter.md) | Returns the current value of a named Vector 2 or Vector 3 parameter on a Material Object. |
+| [Get Material Vector Parameter](get-material-vector-parameter.md) | Returns the current value of a named Vector2 or Vector3 parameter on a Material Object. |
 | [Get Post Process Entry](get-post-process-entry.md) | Returns the Material Object of one post-process pass on a Scene or Scene Layer. |
 | [Reset Material Color Parameter](reset-material-color-parameter.md) | Restores a Color parameter on a Material Object to its original value. |
 | [Reset Material Float Parameter](reset-material-float-parameter.md) | Restores a Float parameter on a Material Object to its original value. |
 | [Reset Material Texture Parameter](reset-material-texture-parameter.md) | Restores a Texture parameter on a Material Object to its original Texture. |
-| [Reset Material Vector Parameter](reset-material-vector-parameter.md) | Restores a Vector 2 or Vector 3 parameter on a Material Object to its original value. |
+| [Reset Material Vector Parameter](reset-material-vector-parameter.md) | Restores a Vector2 or Vector3 parameter on a Material Object to its original value. |
 | [Set Material Color Parameter](set-material-color-parameter.md) | Sets a named Color parameter on a Material Object. |
 | [Set Material Float Parameter](set-material-float-parameter.md) | Sets a named Float parameter on a Material Object. |
 | [Set Material Instance](set-material-instance.md) | Assigns a Material Instance to a mesh component and returns its Material Object. |
 | [Set Material Texture Parameter](set-material-texture-parameter.md) | Sets a named Texture parameter on a Material Object, loading the Texture first. |
-| [Set Material Vector Parameter](set-material-vector-parameter.md) | Sets a named Vector 2 or Vector 3 parameter on a Material Object. |
+| [Set Material Vector Parameter](set-material-vector-parameter.md) | Sets a named Vector2 or Vector3 parameter on a Material Object. |
 
 ## Timeline
 
 | Node | Description |
 | --- | --- |
-| [Bind Actor to Timeline Proxy](bind-actor-to-timeline-proxy.md) | Adds an actor to an Actor proxy of a Timeline Clip asset instance, so the proxy's tracks animate it. |
-| [Bind Component to Timeline Proxy](bind-component-to-timeline-proxy.md) | Adds a component to a Component proxy of a Timeline Clip asset instance, so the proxy's tracks animate it. |
+| [Bind Actor To Timeline Proxy](bind-actor-to-timeline-proxy.md) | Adds an actor to an Actor proxy of a Timeline Clip asset instance, so the proxy's tracks animate it. |
+| [Bind Component To Timeline Proxy](bind-component-to-timeline-proxy.md) | Adds a component to a Component proxy of a Timeline Clip asset instance, so the proxy's tracks animate it. |
 | [Create Timeline Clip](create-timeline-clip.md) | Creates an instance of a 2D or 3D Timeline Clip asset, with its own playhead and proxy bindings, and binds the objects connected to its proxy inputs. |
 | [Get Loaded Timeline Clips](get-loaded-timeline-clips.md) | Returns every loaded clip of a Timeline asset. |
 | [Get Timeline Asset Clip](get-timeline-asset-clip.md) | Returns one of a Timeline asset's clips through its Timeline, to play and control from any script. |
@@ -951,9 +951,9 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Game Time In Seconds](get-game-time-in-seconds.md) | Returns the game time since Play started, scaled by time dilation. |
 | [Get Local Date Now](get-local-date-now.md) | Returns today's date in the device's time zone. |
 | [Get Local Time Now](get-local-time-now.md) | Returns the current time of day in the device's time zone. |
-| [Get Real Time Seconds](get-real-time-seconds.md) | Returns the time since Play started, ignoring time dilation. |
+| [Get Real Time In Seconds](get-real-time-in-seconds.md) | Returns the time since Play started, ignoring time dilation. |
 | [Get Time Dilation](get-time-dilation.md) | Returns how fast game time runs. |
-| [Get Time MS](get-time-ms.md) | Returns the current Unix time in milliseconds. |
+| [Get Time In Milliseconds](get-time-in-milliseconds.md) | Returns the current Unix time in milliseconds. |
 | [Get Time Now](get-time-now.md) | Returns the current time of day in UTC. |
 | [Set Time Dilation](set-time-dilation.md) | Sets how fast game time runs, for slow motion or a freeze. |
 
@@ -981,18 +981,18 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Tween 2D Opacity](tween-2d-opacity.md) | Fades the opacity of a 2D component from A to B over Duration seconds. |
 | [Tween 2D Tint](tween-2d-tint.md) | Blends the tint colour of a 2D component from A to B over Duration seconds. |
-| [Tween Actor Position](tween-actor-position.md) | Moves an actor from position A to position B over Duration seconds. |
+| [Tween Actor Location](tween-actor-location.md) | Moves an actor from position A to position B over Duration seconds. |
 | [Tween Actor Rotation](tween-actor-rotation.md) | Rotates an actor from rotation A to rotation B over Duration seconds. |
 | [Tween Actor Scale](tween-actor-scale.md) | Scales an actor from scale A to scale B over Duration seconds. |
 | [Tween Actor Transform](tween-actor-transform.md) | Moves, rotates and scales an actor from Transform A to Transform B together. |
 | [Tween Anchor Offset](tween-anchor-offset.md) | Moves a 2D Anchor component's offset from A to B over Duration seconds. |
 | [Tween Color](tween-color.md) | Animates a Color variable from A to B, blending every colour channel. |
-| [Tween Component Position](tween-component-position.md) | Moves a component from position A to position B over Duration seconds. |
+| [Tween Component Location](tween-component-location.md) | Moves a component from position A to position B over Duration seconds. |
 | [Tween Component Rotation](tween-component-rotation.md) | Rotates a component from rotation A to rotation B over Duration seconds. |
 | [Tween Component Scale](tween-component-scale.md) | Scales a component from scale A to scale B over Duration seconds. |
 | [Tween Component Transform](tween-component-transform.md) | Moves, rotates and scales a component from Transform A to Transform B together. |
 | [Tween Float](tween-float.md) | Animates a Float variable from A to B over Duration seconds. |
-| [Tween Integer](tween-integer.md) | Animates an Integer variable from A to B in whole-number steps. |
+| [Tween Int](tween-int.md) | Animates an Integer variable from A to B in whole-number steps. |
 | [Tween Layer Camera Location](tween-layer-camera-location.md) | Pans a Layer Camera from location A to location B over Duration seconds. |
 | [Tween Layer Camera Rotation](tween-layer-camera-rotation.md) | Turns a Layer Camera from angle A to angle B over Duration seconds. |
 | [Tween Layer Camera Zoom](tween-layer-camera-zoom.md) | Zooms a Layer Camera from A to B over Duration seconds. |
@@ -1006,26 +1006,26 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Tween Text Outline Color](tween-text-outline-color.md) | Blends the outline colour of a 2D text component from A to B over Duration seconds. |
 | [Tween Text Wrap Size](tween-text-wrap-size.md) | Changes the wrap width and height of a 2D text component from A to B over Duration seconds. |
 | [Tween Transform](tween-transform.md) | Animates a Transform variable from A to B, blending location, rotation and scale. |
-| [Tween Vector2](tween-vector2.md) | Animates a Vector 2 variable from A to B over Duration seconds. |
-| [Tween Vector3](tween-vector3.md) | Animates a Vector 3 variable from A to B over Duration seconds. |
-| [Tween Vector4](tween-vector4.md) | Animates a Vector 4 variable from A to B over Duration seconds. |
+| [Tween Vector2](tween-vector2.md) | Animates a Vector2 variable from A to B over Duration seconds. |
+| [Tween Vector3](tween-vector3.md) | Animates a Vector3 variable from A to B over Duration seconds. |
+| [Tween Vector4](tween-vector4.md) | Animates a Vector4 variable from A to B over Duration seconds. |
 
 ## Assets
 
 | Node | Description |
 | --- | --- |
-| [Async Load Asset](async-load-asset.md) | Loads an asset and its required dependencies in the background while gameplay continues. |
-| [Async Load Assets](async-load-assets.md) | Loads several assets and their required dependencies as one request while gameplay continues. |
-| [Async Load Class](async-load-class.md) | Loads a Class, with its scripts and required resources, in the background while gameplay continues. |
+| [Load Asset (Async)](load-asset-async.md) | Loads an asset and its required dependencies in the background while gameplay continues. |
+| [Load Assets (Async)](load-assets-async.md) | Loads several assets and their required dependencies as one request while gameplay continues. |
+| [Load Class (Async)](load-class-async.md) | Loads a Class, with its scripts and required resources, in the background while gameplay continues. |
 | [Get Asset Load State](get-asset-load-state.md) | Returns whether an asset is Unloaded, Loading, Loaded or Failed. |
 | [Get Load Handle Progress](get-load-handle-progress.md) | Returns how much of a load has finished, from 0 to 1. |
 | [Get Load Handle State](get-load-handle-state.md) | Returns whether a load handle is Loading, Loaded, Failed or Released. |
 | [Is Asset Loaded](is-asset-loaded.md) | Returns true when an asset is loaded and ready to use right now. |
-| [Load Asset Blocking](load-asset-blocking.md) | Loads an asset at High priority and pauses the game until loading finishes. |
-| [Load Assets Blocking](load-assets-blocking.md) | Loads several assets together at High priority and pauses the game until loading finishes. |
-| [Load Class Blocking](load-class-blocking.md) | Loads a Class at High priority and pauses the game until loading finishes. |
+| [Load Asset (Blocking)](load-asset-blocking.md) | Loads an asset at High priority and pauses the game until loading finishes. |
+| [Load Assets (Blocking)](load-assets-blocking.md) | Loads several assets together at High priority and pauses the game until loading finishes. |
+| [Load Class (Blocking)](load-class-blocking.md) | Loads a Class at High priority and pauses the game until loading finishes. |
 | [Release Load Handle](release-load-handle.md) | Cancels a load that is still pending and releases the handle's hold on its assets. |
-| [Request Async Load](request-async-load.md) | Starts loading assets in the background and returns a handle at once, without waiting. |
+| [Request Load (Async)](request-load-async.md) | Starts loading assets in the background and returns a handle at once, without waiting. |
 | [Unload Asset](unload-asset.md) | Releases the load handles that include an asset and belong to the calling object. |
 | [Wait For Load Handle](wait-for-load-handle.md) | Waits for a load handle to finish loading while gameplay continues. |
 

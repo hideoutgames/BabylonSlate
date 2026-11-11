@@ -22,7 +22,7 @@ Returns a value sampled from a gradient of 2 to 8 stops at a position from 0 to 
 
 | Setting | Description |
 | --- | --- |
-| Value Type | The type of the stops and of the output: Float, Vector 2, Vector 3 or Color. The default is Color. |
+| Value Type | The type of the stops and of the output: Float, Vector2, Vector3 or Color. The default is Color. |
 | Stops | The gradient stops, each with a position from 0 to 1 and a value. Colour stops use a gradient editor and Float stops use a curve editor. |
 
 ## Notes

@@ -2,7 +2,7 @@
 node: flow.dispatcher.bind
 ---
 
-# Bind Event to Event Dispatcher
+# Bind Event To Event Dispatcher
 
 Adds an event to an Event Dispatcher, so each Call runs it.
 
@@ -22,6 +22,6 @@ Adds an event to an Event Dispatcher, so each Call runs it.
 
 ## Notes
 
-- **Add Node** names it after the dispatcher, such as **Bind Event to On Damaged**. **Assign On Damaged** adds it together with a matching custom event.
+- **Add Node** names it after the dispatcher, such as **Bind Event To On Damaged**. **Assign On Damaged** adds it together with a matching custom event.
 - Binding the same event of the same object again keeps one binding.
 - An empty **Target** or **Event** does nothing and reports an error.

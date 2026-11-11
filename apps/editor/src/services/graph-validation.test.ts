@@ -69,8 +69,8 @@ describe("Timeline Clip dispatchers", () => {
   it("offers Bind, Unbind and Assign but no Call for a clip's track and the built-in events", () => {
     const nodes = scriptPaletteNodes(registry, { parentClass: "Scene", classId: "Scene:level", parentOf, ownedActors: [], ownedTimelineClips: clips });
     const titles = (classId: string) => nodes.filter((node) => node.defaultData?.classId === classId && node.category === "eventDispatchers").map((node) => node.title);
-    expect(titles("TimelineClip:level:intro")).toEqual(expect.arrayContaining(["Bind Event to On Line", "Unbind Event from On Line", "Unbind All Events from On Line", "Assign On Line"]));
-    expect(titles("TimelineClip")).toEqual(expect.arrayContaining(["Bind Event to On Finished", "Bind Event to On Looped"]));
+    expect(titles("TimelineClip:level:intro")).toEqual(expect.arrayContaining(["Bind Event To On Line", "Unbind Event From On Line", "Unbind All Events From On Line", "Assign On Line"]));
+    expect(titles("TimelineClip")).toEqual(expect.arrayContaining(["Bind Event To On Finished", "Bind Event To On Looped"]));
     expect(nodes.some((node) => node.title === "Call On Line" || node.title === "Call On Finished")).toBe(false);
     const getter = nodes.find((node) => node.nodeType === "scene.getOwnedTimelineClip")!;
     expect(getter.pins?.[0]?.type).toEqual(objectRef("TimelineClip:level:intro"));
@@ -119,7 +119,7 @@ describe("Timeline Asset scripting", () => {
   const parentOf = (id: string) => (id.startsWith("TimelineClip:") ? "TimelineClip" : id.startsWith("Timeline:") ? "Timeline"
     : id === "TimelineClip" || id === "Timeline" || id === "Actor" ? "Object" : id === "Door" ? "Actor" : null);
 
-  it("offers each clip's getter on its Timeline, Bind rows for the re-fired events and Cast to the asset", () => {
+  it("offers each clip's getter on its Timeline, Bind rows for the re-fired events and Cast To the asset", () => {
     const nodes = scriptPaletteNodes(registry, { parentClass: "Actor", classId: "Door", parentOf, timelineAssets: [story] });
     const getter = nodes.find((node) => node.nodeType === "timeline.getClip")!;
     expect(getter.title).toBe("Get Intro Timeline Clip");
@@ -128,17 +128,17 @@ describe("Timeline Asset scripting", () => {
     expect(nodes.some((node) => node.id === "timeline.getClip")).toBe(false);
     const titles = (classId: string) => nodes.filter((node) => node.defaultData?.classId === classId && node.category === "eventDispatchers").map((node) => node.title);
     expect(titles("Timeline:story")).toEqual(expect.arrayContaining([
-      "Bind Event to On Line (Intro)", "Bind Event to On Finished (Intro)", "Unbind Event from On Looped (Intro)", "Assign On Line (Intro)",
+      "Bind Event To On Line (Intro)", "Bind Event To On Finished (Intro)", "Unbind Event From On Looped (Intro)", "Assign On Line (Intro)",
     ]));
-    expect(nodes.find((node) => node.title === "Bind Event to On Line (Intro)")?.defaultData?.pins).toEqual([
+    expect(nodes.find((node) => node.title === "Bind Event To On Line (Intro)")?.defaultData?.pins).toEqual([
       { name: "Text", typeId: "string", direction: "in" },
       { name: "Timeline Clip", typeId: "object", typeClassId: "TimelineClip:level:intro", direction: "in" },
     ]);
     // The clip reached through the Timeline has its own and the built-in Bind rows, and none has Call.
-    expect(titles("TimelineClip:level:intro")).toContain("Bind Event to On Line");
-    expect(titles("TimelineClip")).toContain("Bind Event to On Finished");
+    expect(titles("TimelineClip:level:intro")).toContain("Bind Event To On Line");
+    expect(titles("TimelineClip")).toContain("Bind Event To On Finished");
     expect(nodes.some((node) => node.title.startsWith("Call On"))).toBe(false);
-    expect(nodes.find((node) => node.id === "casting.cast:Timeline:story")?.title).toBe("Cast to Story");
+    expect(nodes.find((node) => node.id === "casting.cast:Timeline:story")?.title).toBe("Cast To Story");
     // A clip asset has a Create row on its Timeline, with an input per proxy typed to its Class.
     const create = nodes.find((node) => node.id === "timeline.createClip:story:swing")!;
     expect(create.title).toBe("Create Door Swing Timeline Clip");
@@ -154,7 +154,7 @@ describe("Timeline Asset scripting", () => {
     expect(nodes.some((node) => node.id === "timelineProxy.unbindAll")).toBe(true);
     // Without Timeline Assets a Class reaches no Timeline Clip.
     expect(scriptPaletteNodes(registry, { parentClass: "Actor", classId: "Door", parentOf })
-      .some((node) => node.title === "Bind Event to On Finished")).toBe(false);
+      .some((node) => node.title === "Bind Event To On Finished")).toBe(false);
   });
 
   it("types the Timeline from the default of the variable wired into it, and checks Binds on it", () => {
@@ -476,7 +476,7 @@ describe("hydrateSerializedGraphForEditor", () => {
           position: { x: 0, y: 0 },
           data: {
             "default:class": "Hero",
-            title: "Cast to Object",
+            title: "Cast To Object",
             __pins: [
               {
                 id: "result",
@@ -494,7 +494,7 @@ describe("hydrateSerializedGraphForEditor", () => {
     const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
       parentOf: (id) => (id === "Hero" ? "Actor" : undefined),
     });
-    expect(hydrated.nodes[0]?.data.title).toBe("Cast to Hero");
+    expect(hydrated.nodes[0]?.data.title).toBe("Cast To Hero");
     const pins = hydrated.nodes[0]?.data.__pins as Array<{
       id: string;
       type: { kind: string; classId?: string };
@@ -505,7 +505,7 @@ describe("hydrateSerializedGraphForEditor", () => {
     });
   });
 
-  it("titles a wired Cast node Cast to Class and types Result from the connected constraint", () => {
+  it("titles a wired Cast node Cast To Class and types Result from the connected constraint", () => {
     const graph: SerializedGraph = {
       nodes: [
         {
@@ -541,7 +541,7 @@ describe("hydrateSerializedGraphForEditor", () => {
     const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
       parentOf: (id) => (id === "Hero" ? "Actor" : undefined),
     });
-    expect(hydrated.nodes[1]?.data.title).toBe("Cast to Class");
+    expect(hydrated.nodes[1]?.data.title).toBe("Cast To Class");
     const pins = hydrated.nodes[1]?.data.__pins as Array<{
       id: string;
       type: { kind: string; classId?: string };
@@ -575,7 +575,7 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(properties("unset")["default:a"]).toBe("Red");
     expect(properties("unset")["default:b"]).toBe("Blue");
     expect(properties("empty")["default:a"]).toBe("Red");
-    // Request Async Load's Priority keeps its own default (Normal).
+    // Request Load (Async)'s Priority keeps its own default (Normal).
     expect(properties("load")["default:priority"]).toBeUndefined();
   });
 
@@ -1527,7 +1527,7 @@ describe("scriptPaletteNodes", () => {
     );
   });
 
-  it("injects Cast to scene display names and Get-only placed components", () => {
+  it("injects Cast To scene display names and Get-only placed components", () => {
     const nodes = scriptPaletteNodes(registry, {
       parentClass: "GameInstance",
       classId: "MyGame",
@@ -1551,7 +1551,7 @@ describe("scriptPaletteNodes", () => {
     const sceneCast = nodes.find(
       (node) => node.id === "casting.cast:Scene:scene-1",
     );
-    expect(sceneCast?.title).toBe("Cast to Main Hall");
+    expect(sceneCast?.title).toBe("Cast To Main Hall");
     expect(sceneCast?.defaultData).toEqual({ "default:class": "Scene:scene-1" });
     expect(nodes.some((node) => node.title === "Get Scene Name")).toBe(true);
     expect(nodes.some((node) => node.title === "Set Scene Name")).toBe(false);
@@ -2531,7 +2531,7 @@ describe("scriptPaletteNodes", () => {
       },
     });
     expect(hydrated.nodes[1]?.data.enumGuid).toBe("enum-team");
-    expect(hydrated.nodes[1]?.data.title).toBe("Switch on Team");
+    expect(hydrated.nodes[1]?.data.title).toBe("Switch On Team");
     const pins = hydrated.nodes[1]?.data.__pins as Array<{ id: string }>;
     expect(pins?.map((pin) => pin.id)).toEqual([
       "execIn",
@@ -2770,7 +2770,7 @@ describe("scriptPaletteNodes", () => {
     ).toHaveLength(1);
   });
 
-  it("hides generic Cast catalog ids and injects Cast to <Class> rows", () => {
+  it("hides generic Cast catalog ids and injects Cast To <Class> rows", () => {
     const nodes = scriptPaletteNodes(registry, {
       parentClass: "Actor",
       classId: "Hero",
@@ -2781,7 +2781,7 @@ describe("scriptPaletteNodes", () => {
     });
     expect(nodes.some((node) => node.id === "casting.cast")).toBe(false);
     const actorCast = nodes.find((node) => node.id === "casting.cast:Actor");
-    expect(actorCast?.title).toBe("Cast to Actor");
+    expect(actorCast?.title).toBe("Cast To Actor");
     expect(actorCast?.pure).not.toBe(true);
     expect(actorCast?.pins?.some((pin) => pin.id === "execIn")).toBe(true);
     expect(actorCast?.pins?.some((pin) => pin.id === "execOut")).toBe(true);
@@ -2795,10 +2795,10 @@ describe("scriptPaletteNodes", () => {
       ),
     ).toBe(true);
     const heroCast = nodes.find((node) => node.id === "casting.cast:Hero");
-    expect(heroCast?.title).toBe("Cast to Hero");
+    expect(heroCast?.title).toBe("Cast To Hero");
     expect(heroCast?.defaultData).toEqual({ "default:class": "Hero" });
     const giCast = nodes.find((node) => node.id === "casting.cast:GameInstance");
-    expect(giCast?.title).toBe("Cast to GameInstance");
+    expect(giCast?.title).toBe("Cast To GameInstance");
   });
 
   it("does not include removed UserInterface engine classes in the known-class set", () => {
@@ -3404,7 +3404,7 @@ describe("sequence hydrate", () => {
 });
 
 describe("flow switch hydrate", () => {
-  it("regenerates Switch on Int case pins, keeps matching wires, and prunes removed ones", () => {
+  it("regenerates Switch On Int case pins, keeps matching wires, and prunes removed ones", () => {
     const keepPin = "case:1";
     const dropPin = "case:9";
     const graph: SerializedGraph = {
@@ -3483,7 +3483,7 @@ describe("flow switch hydrate", () => {
     expect(hydrated.edges.map((edge) => edge.id)).toEqual(["keep"]);
   });
 
-  it("regenerates Switch on String encoded case pins and materializes the same shape", () => {
+  it("regenerates Switch On String encoded case pins and materializes the same shape", () => {
     const graph: SerializedGraph = {
       nodes: [
         {
@@ -3835,7 +3835,7 @@ describe("subsystems", () => {
     ]));
   });
 
-  it("never offers Cast to the hidden Subsystem base", () => {
+  it("never offers Cast To the hidden Subsystem base", () => {
     const ids = scriptPaletteNodes(registry, { parentClass: "Actor", parentOf, subsystemClasses }).map(
       (node) => node.id,
     );

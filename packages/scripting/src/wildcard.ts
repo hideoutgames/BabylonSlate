@@ -82,13 +82,19 @@ function converterCodegen(target: PinType): NodeDefinition["codegen"] {
   };
 }
 
+/** The type words node titles use, by `pinTypeTag`. */
+const WILDCARD_TARGET_TITLES: Readonly<Record<string, string>> = {
+  bool: "Bool", int: "Int", float: "Float", vec2: "Vector2", vec3: "Vector3", vec4: "Vector4",
+  rotator: "Rotator", quat: "Quaternion", transform: "Transform", color: "Color", "objectRef:Object": "Object",
+};
+
 /** Generated WildcardTo* family + typeof/is helpers. */
 export function createWildcardNodes(): NodeDefinition[] {
   const nodes: NodeDefinition[] = [];
 
   for (const target of CONCRETE_WILDCARD_TARGETS) {
     const id = wildcardConverterNodeId(target);
-    const title = `Wildcard To ${pinTypeTag(target)}`;
+    const title = `Wildcard To ${WILDCARD_TARGET_TITLES[pinTypeTag(target)] ?? pinTypeTag(target)}`;
     nodes.push({
       id,
       title,

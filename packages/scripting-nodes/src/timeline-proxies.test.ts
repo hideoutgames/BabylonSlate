@@ -45,7 +45,7 @@ describe("Timeline Proxy nodes", () => {
     expect(timelineProxyNodeTitle(TIMELINE_PROXY_BIND_ACTOR_NODE_ID, door)).toBe("Bind Door Proxy");
     expect(timelineProxyNodeTitle(TIMELINE_PROXY_UNBIND_NODE_ID, door)).toBe("Unbind Door Proxy");
     expect(timelineProxyNodeTitle(TIMELINE_PROXY_GET_NODE_ID, glow)).toBe("Get Glow Proxy");
-    expect(timelineProxyNodeTitle(TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, {})).toBe("Bind Component to Timeline Proxy");
+    expect(timelineProxyNodeTitle(TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, {})).toBe("Bind Component To Timeline Proxy");
     expect(timelineProxyNodeTitle(TIMELINE_PROXY_GET_NODE_ID, {})).toBe("Get Timeline Proxy");
   });
 

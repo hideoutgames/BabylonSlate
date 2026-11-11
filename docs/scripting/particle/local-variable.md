@@ -26,6 +26,6 @@ Keeps the first value it reads and returns it again, so a random or computed val
 
 ## Notes
 
-- **Value** can be a Float, Vector 2, Vector 3 or Color, and **Value** out has the same type.
+- **Value** can be a Float, Vector2, Vector3 or Color, and **Value** out has the same type.
 - Wire a [Random](random.md) with **Every Read** into it to give each particle a fixed random value in Update nodes.
 - Read where there is no particle, such as **Emit Rate**, **Particle** scope behaves like **Loop**.

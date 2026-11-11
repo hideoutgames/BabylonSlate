@@ -11,8 +11,8 @@ Checks whether a walkable route exists between two points.
 | Pin | Type |
 | --- | --- |
 | In | Exec |
-| From | Vector 3 |
-| To | Vector 3 |
+| From | Vector3 |
+| To | Vector3 |
 
 ## Outputs
 

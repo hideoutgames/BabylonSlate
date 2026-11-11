@@ -16,9 +16,9 @@ Splits a transform into its location, rotation and scale.
 
 | Pin | Type |
 | --- | --- |
-| Location | Vector 3 |
+| Location | Vector3 |
 | Rotation | Rotator |
-| Scale | Vector 3 |
+| Scale | Vector3 |
 
 ## Notes
 

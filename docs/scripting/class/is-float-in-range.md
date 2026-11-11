@@ -17,7 +17,7 @@ Returns true when **Value** lies inside the range.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Result | Boolean |  |
+| Out | Boolean |  |
 
 ## Notes
 

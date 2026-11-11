@@ -50,9 +50,9 @@ Create a Class whose parent is **BTTask**, **BTDecorator** or **BTService**. It 
 
 | Parent class | Events and nodes |
 | --- | --- |
-| BTTask | [On Activate](../scripting/class/on-activate.md), [On Tick](../scripting/class/on-tick.md) and [On Abort](../scripting/class/on-abort.md). Call [Finish Execute](../scripting/class/finish-execute.md) to end the task. |
-| BTDecorator | [On Evaluate](../scripting/class/on-evaluate.md), answered with [Return Condition](../scripting/class/return-condition.md). |
-| BTService | [On Tick](../scripting/class/on-tick.md). |
+| BTTask | [Event On Activate](../scripting/class/event-on-activate.md), [Event On Tick](../scripting/class/event-on-tick.md) and [Event On Abort](../scripting/class/event-on-abort.md). Call [Finish Execute](../scripting/class/finish-execute.md) to end the task. |
+| BTDecorator | [Event On Evaluate](../scripting/class/event-on-evaluate.md), answered with [Return Condition](../scripting/class/return-condition.md). |
+| BTService | [Event On Tick](../scripting/class/event-on-tick.md). |
 
 Read and write keys with [Get Blackboard](../scripting/class/get-blackboard.md) and [Set Blackboard](../scripting/class/set-blackboard.md). Double-tap a custom node or row to open its Class.
 

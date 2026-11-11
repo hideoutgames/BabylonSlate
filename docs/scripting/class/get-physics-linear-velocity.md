@@ -16,7 +16,7 @@ Returns how fast an actor's Rigid Body is moving.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Velocity | Vector 3 | World units per second, at the body's centre of mass. |
+| Velocity | Vector3 | World units per second, at the body's centre of mass. |
 
 ## Notes
 

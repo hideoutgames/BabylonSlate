@@ -11,7 +11,7 @@ Pulls every particle towards a point, more strongly the closer it gets.
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
 | Particle | Particle |  |  |
-| Position | Vector 3 | (0, 0, 0) | The world-space point that particles are pulled towards. |
+| Position | Vector3 | (0, 0, 0) | The world-space point that particles are pulled towards. |
 | Strength | Float | 1 | How strongly particles are pulled. A negative value pushes them away. |
 
 ## Outputs

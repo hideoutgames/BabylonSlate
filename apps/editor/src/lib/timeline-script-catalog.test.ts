@@ -126,7 +126,7 @@ describe("Timeline graph nodes", () => {
       ["timeline.proxy_member_missing", "Unbind Timeline Proxy: pick a proxy in the Inspector."],
     ]);
     expect(codes("timelineProxy.bindActor", { ...stale, timelineProxyId: "glow", timelineProxyName: "Glow" })).toEqual([
-      ["timeline.proxy_kind_mismatch", "Bind Glow Proxy: Glow stands in for a component. Use Bind Component to Timeline Proxy."],
+      ["timeline.proxy_kind_mismatch", "Bind Glow Proxy: Glow stands in for a component. Use Bind Component To Timeline Proxy."],
     ]);
   });
 

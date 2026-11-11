@@ -21,5 +21,5 @@ Divides one value by another, component by component.
 
 ## Notes
 
-- Accepts a Float, Vector 2 or Vector 3, but not a Color. A Float is applied to every component of the other input.
+- Accepts a Float, Vector2 or Vector3, but not a Color. A Float is applied to every component of the other input.
 - Dividing by 0 gives an invalid result.

@@ -65,7 +65,7 @@ function fieldNode(write: boolean, migration = false): NodeDefinition {
   return {
     id: `saveGame.${operation}`,
     title: `${write ? "Set" : "Get"} ${migration ? "Migration" : "Save"} Field`, category: "save-game", pure: !write,
-    description: migration ? "Read or update the staged migration field by its permanent field ID. Actor references are persistent ID strings until world restoration. Only valid inside Event Save Migration."
+    description: migration ? "Read or update the staged migration field by its permanent field ID. Actor references are persistent ID strings until world restoration. Only valid inside Event On Save Migration."
       : "Read or update a typed Save Game field by its permanent ID. Save Game writes changes to storage.",
     pins: (properties) => [
       ...(write ? [pin("execIn", "Exec", "in", EXEC), pin("execOut", "Then", "out", EXEC)] : []),
@@ -102,12 +102,12 @@ export const saveGameNodes: NodeDefinition[] = [
   },
   {
     id: "saveGame.registerMigration", title: "Register Save Migration", category: "save-game",
-    description: "Register during On Init or Begin Play, before Load Game. Event Save Migration receives each registered From Version and can update staged fields. Register every step to the current schema version.",
+    description: "Register during On Init or Begin Play, before Load Game. Event On Save Migration receives each registered From Version and can update staged fields. Register every step to the current schema version.",
     pins: () => [pin("execIn", "Exec", "in", EXEC), pin("execOut", "Then", "out", EXEC), pin("fromVersion", "From Version", "in", INT, "data", true, 1)],
     codegen: (ctx) => { ctx.emit(`ctx.registerSaveMigration(${ctx.input("fromVersion")}, "onSaveMigration");`); },
   },
   {
-    id: "flow.event.saveMigration", title: "Event Save Migration", category: "save-game", pure: true,
+    id: "flow.event.saveMigration", title: "Event On Save Migration", category: "save-game", pure: true,
     description: "Runs against a staged copy during Load Game. Use From Version with migration field nodes. Errors abort loading and preserve the original save.",
     pins: () => [pin("execOut", "Then", "out", EXEC), pin("fromVersion", "From Version", "out", INT)],
     codegen: () => ({ fromVersion: "ctx.args.saveMigrationData.schemaVersion" }),

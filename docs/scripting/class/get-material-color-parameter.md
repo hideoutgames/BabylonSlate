@@ -17,7 +17,7 @@ Returns the current value of a named Color parameter on a Material Object.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Value | Vector 4 | Red, green, blue and alpha in X, Y, Z and W. |
+| Value | Vector4 | Red, green, blue and alpha in X, Y, Z and W. |
 | Found | Boolean |  |
 
 ## Notes

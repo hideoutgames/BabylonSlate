@@ -23,7 +23,7 @@ Double-tap an Enum to open it.
 ## Notes
 
 - Choose **Enum** as a variable or pin type, then pick the Enum under **Enum Type**.
-- For each Enum, **Add Node** lists nodes named after it. For an Enum called Weapon: **Make Weapon**, **Equal Weapon**, **Not Equal Weapon**, **Weapon to String** and **Switch on Weapon**, plus **Select**.
+- For each Enum, **Add Node** lists nodes named after it. For an Enum called Weapon: **Make Weapon**, **Equal Weapon**, **Not Equal Weapon**, **Weapon to String** and **Switch On Weapon**, plus **Select**.
 - When you remove a member, Switch and Select nodes lose that member's pin and its wires.
 - The first member is the default: an Enum input, function input or variable you have not set uses it.
 
@@ -31,5 +31,5 @@ Double-tap an Enum to open it.
 
 - [Structures and Enums](../scripting/structures-and-enums.md)
 - [Make Enum](../scripting/class/make-enum.md)
-- [Switch on Enum](../scripting/class/switch-on-enum.md)
+- [Switch On Enum](../scripting/class/switch-on-enum.md)
 - [Structure](structure.md)

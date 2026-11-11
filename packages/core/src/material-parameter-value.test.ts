@@ -6,7 +6,7 @@ import {
 } from "./material-parameter-value";
 
 describe("material parameter values", () => {
-  it("keeps Vector 2 and Vector 3 overrides of exactly their width", () => {
+  it("keeps Vector2 and Vector3 overrides of exactly their width", () => {
     expect(normalizeMaterialParameterOverrides({
       Tiling: { kind: "vec2", value: [2, 4] },
       Glow: { kind: "vec3", value: [0.1, 0.2, 0.3] },

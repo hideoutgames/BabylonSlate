@@ -33,8 +33,8 @@ Double-tap the asset to open it. The window has **Graph**, **Preview**, **Inspec
 
 A parameter is a value gameplay can set while the emitter runs. Each parameter has one [Parameter](../scripting/particle/parameter.md) node, titled with the parameter's name.
 
-- **Add Node** lists **Float Parameter**, **Vector 2 Parameter**, **Vector 3 Parameter** and **Color Parameter** under **Parameter**. Each adds a node with a new parameter of that type.
-- Right-click a [Float](../scripting/particle/float.md), [Vector 2](../scripting/particle/vector-2.md), [Vector 3](../scripting/particle/vector-3.md) or [Color](../scripting/particle/color.md) node, or long-press it, and choose **Convert to Parameter**. The node becomes a Parameter node of a new parameter whose default is the constant's value. Its wires stay.
+- **Add Node** lists **Float Parameter**, **Vector2 Parameter**, **Vector3 Parameter** and **Color Parameter** under **Parameter**. Each adds a node with a new parameter of that type.
+- Right-click a [Float](../scripting/particle/float.md), [Vector2](../scripting/particle/vector2.md), [Vector3](../scripting/particle/vector3.md) or [Color](../scripting/particle/color.md) node, or long-press it, and choose **Convert to Parameter**. The node becomes a Parameter node of a new parameter whose default is the constant's value. Its wires stay.
 - On a Parameter node, **Convert to Constant** does the reverse: the node becomes a constant holding the parameter's default.
 
 Select a Parameter node to edit its parameter in the **Inspector**.
@@ -42,7 +42,7 @@ Select a Parameter node to edit its parameter in the **Inspector**.
 | Setting | Description |
 | --- | --- |
 | Name | The name gameplay sets it by, up to 64 characters. Names are unique in the graph: a name that is already taken gets **_1**, **_2** and so on. |
-| Type | **Float**, **Vector 2**, **Vector 3** or **Color**. Changing it resizes the default. |
+| Type | **Float**, **Vector2**, **Vector3** or **Color**. Changing it resizes the default. |
 | Default | The value used when nothing sets it. |
 
 - Copying, duplicating or pasting a Parameter node makes a new parameter with the same type and default, named like the original with **_1**, **_2** and so on when the name is taken.

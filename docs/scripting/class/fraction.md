@@ -16,7 +16,7 @@ Returns the part of a number after its whole number.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Float |
+| Out | Float |
 
 ## Notes
 

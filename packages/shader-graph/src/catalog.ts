@@ -178,7 +178,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "const.vec2",
-    title: "Vector 2",
+    title: "Vector2",
     category: "Constants",
     searchAliases: ["V2", "Vec2", "Float2"],
     cost: 0,
@@ -187,7 +187,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "const.vec3",
-    title: "Vector 3",
+    title: "Vector3",
     category: "Constants",
     searchAliases: ["V3", "Vec3", "Float3"],
     cost: 0,
@@ -196,7 +196,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "const.vec4",
-    title: "Vector 4",
+    title: "Vector4",
     category: "Constants",
     searchAliases: ["V4", "Vec4", "Float4"],
     cost: 0,
@@ -221,7 +221,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "param.vec2",
-    title: "Vector 2 Parameter",
+    title: "Vector2 Parameter",
     category: "Parameter",
     cost: 0,
     inputs: [],
@@ -229,7 +229,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "param.vec3",
-    title: "Vector 3 Parameter",
+    title: "Vector3 Parameter",
     category: "Parameter",
     cost: 0,
     inputs: [],

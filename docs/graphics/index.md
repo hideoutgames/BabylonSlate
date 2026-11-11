@@ -87,8 +87,8 @@ Scripts can change rendering for the current session without editing project set
 
 - [Set Scalability Preset](../scripting/class/set-scalability-preset.md) applies a level to every group.
 - [Set Render Scale](../scripting/class/set-render-scale.md), [Set Render Resolution](../scripting/class/set-render-resolution.md), [Set Frame Cap](../scripting/class/set-frame-cap.md) and [Set Render Mode](../scripting/class/set-render-mode.md) change one setting.
-- [Get Effective Scalability](../scripting/class/get-effective-scalability.md) reads what the renderer applied, and [Event Scalability Changed](../scripting/class/event-scalability-changed.md) runs when a request is confirmed or rejected.
-- [Reset to Project Defaults](../scripting/class/reset-to-project-defaults.md) clears session changes.
+- [Get Effective Scalability](../scripting/class/get-effective-scalability.md) reads what the renderer applied, and [Event On Scalability Changed](../scripting/class/event-on-scalability-changed.md) runs when a request is confirmed or rejected.
+- [Reset Scalability To Project Defaults](../scripting/class/reset-scalability-to-project-defaults.md) clears session changes.
 
 Other Scalability nodes cover each group, such as [Set Shadow Quality](../scripting/class/set-shadow-quality.md) and [Set Texture Quality](../scripting/class/set-texture-quality.md). During Play you can also use the `quality` console command; see [Console](../debugging/console.md).
 

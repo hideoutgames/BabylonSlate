@@ -16,7 +16,7 @@ Returns texture coordinates from the world X and Z position, for tiling textures
 
 | Pin | Type |
 | --- | --- |
-| UV | Vector 2 |
+| UV | Vector2 |
 
 ## Notes
 

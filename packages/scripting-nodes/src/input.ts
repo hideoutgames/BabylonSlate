@@ -23,7 +23,7 @@ const COLLISION_CHANNEL = enumRef(ENGINE_COLLISION_CHANNEL_ENUM_ID);
 const TOUCH = structRef(ENGINE_TOUCH_STRUCT_ID);
 const TOUCH_PHASE = enumRef(ENGINE_TOUCH_PHASE_ENUM_ID);
 
-/** On Touch Began / Moved / Ended: compiled as one gated run per matching touch record this tick. */
+/** Event On Touch Began / Moved / Ended: compiled as one gated run per matching touch record this tick. */
 function touchEventPins(extra: ReturnType<typeof pin>[] = []) {
   return [
     pin("execOut", "Then", "out", EXEC),
@@ -116,7 +116,7 @@ export const inputNodes: NodeDefinition[] = [
   ...inputBindingNodes,
   {
     id: "input.onAnyKeyPressed",
-    title: "On Any Key Pressed",
+    title: "Event On Any Key Pressed",
     category: "input",
     pins: () => [
       pin("execOut", "Then", "out", EXEC),
@@ -127,7 +127,7 @@ export const inputNodes: NodeDefinition[] = [
   },
   {
     id: "input.onGamepadConnected",
-    title: "On Gamepad Connected",
+    title: "Event On Gamepad Connected",
     category: "input",
     pins: () => [
       pin("execOut", "then", "out", EXEC),
@@ -137,7 +137,7 @@ export const inputNodes: NodeDefinition[] = [
   },
   {
     id: "input.onGamepadDisconnected",
-    title: "On Gamepad Disconnected",
+    title: "Event On Gamepad Disconnected",
     category: "input",
     pins: () => [
       pin("execOut", "then", "out", EXEC),
@@ -184,7 +184,7 @@ export const inputNodes: NodeDefinition[] = [
       pin("out", "Position", "out", VEC2),
       pin("pressed", "Pressed", "out", BOOL, "data", true),
     ],
-    // One read for both outputs; Position is a plain Vector 2, without the reading's `pressed`.
+    // One read for both outputs; Position is a plain Vector2, without the reading's `pressed`.
     codegen: (ctx) => {
       const cursor = ctx.shared?.("ctx.getCursorPosition?.()") ?? "ctx.getCursorPosition?.()";
       return {
@@ -195,21 +195,21 @@ export const inputNodes: NodeDefinition[] = [
   },
   {
     id: "input.onTouchBegan",
-    title: "On Touch Began",
+    title: "Event On Touch Began",
     category: "input",
     pins: () => touchEventPins(),
     codegen: () => {},
   },
   {
     id: "input.onTouchMoved",
-    title: "On Touch Moved",
+    title: "Event On Touch Moved",
     category: "input",
     pins: () => touchEventPins([pin("delta", "Delta", "out", VEC2)]),
     codegen: () => {},
   },
   {
     id: "input.onTouchEnded",
-    title: "On Touch Ended",
+    title: "Event On Touch Ended",
     category: "input",
     pins: () => touchEventPins([pin("cancelled", "Cancelled", "out", BOOL)]),
     codegen: () => {},

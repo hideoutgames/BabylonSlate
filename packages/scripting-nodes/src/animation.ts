@@ -90,17 +90,17 @@ export const animationNodes: NodeDefinition[] = [
       /* sink compiled by compileTransitionRuleGraph */
     },
   },
-  floatFact("anim.state.elapsedSeconds", "Elapsed Seconds", "elapsedSeconds"),
-  floatFact("anim.state.durationSeconds", "Duration Seconds", "durationSeconds"),
-  floatFact("anim.state.normalisedTime", "Normalised Time", "normalisedTime"),
+  floatFact("anim.state.elapsedSeconds", "Get Elapsed Seconds", "elapsedSeconds"),
+  floatFact("anim.state.durationSeconds", "Get Duration Seconds", "durationSeconds"),
+  floatFact("anim.state.normalisedTime", "Get Normalized Time", "normalisedTime"),
   floatFact(
     "anim.state.remainingSeconds",
-    "Remaining Seconds",
+    "Get Remaining Seconds",
     "remainingSeconds",
   ),
-  floatFact("anim.state.remainingRatio", "Remaining Ratio", "remainingRatio"),
+  floatFact("anim.state.remainingRatio", "Get Remaining Ratio", "remainingRatio"),
   boolFact("anim.state.looping", "Is Looping", "looping"),
-  intFact("anim.state.loopCount", "Loop Count", "loopCount"),
+  intFact("anim.state.loopCount", "Get Loop Count", "loopCount"),
   boolFact("anim.state.justLooped", "Just Looped", "justLooped"),
   boolFact("anim.state.justFinished", "Just Finished", "justFinished"),
   {

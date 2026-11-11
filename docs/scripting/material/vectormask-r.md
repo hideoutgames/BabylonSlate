@@ -4,13 +4,13 @@ node: vector.mask
 
 # VectorMask(R)
 
-Extracts chosen channels from a Vector 4 and outputs them as a Float or a smaller vector.
+Extracts chosen channels from a Vector4 and outputs them as a Float or a smaller vector.
 
 ## Inputs
 
 | Pin | Type | Default |
 | --- | --- | --- |
-| Value | Vector 4 | (0, 0, 0, 0) |
+| Value | Vector4 | (0, 0, 0, 0) |
 
 ## Outputs
 
@@ -30,5 +30,5 @@ Extracts chosen channels from a Vector 4 and outputs them as a Float or a smalle
 ## Notes
 
 - Choose the channels with the R, G, B and A toggles in the **Inspector**. At least one must stay on.
-- The output is a Float for one channel, or a Vector 2, 3 or 4 for more, in R, G, B, A order.
+- The output is a Float for one channel, or a Vector2, 3 or 4 for more, in R, G, B, A order.
 - A Float input fills every channel. A narrower vector fills the missing channels with 1.

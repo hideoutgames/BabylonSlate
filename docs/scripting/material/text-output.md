@@ -10,7 +10,7 @@ Sets the colour of text drawn with a Text material.
 
 | Pin | Type | Default |
 | --- | --- | --- |
-| Color | Vector 4 | (1, 1, 1, 1) |
+| Color | Vector4 | (1, 1, 1, 1) |
 
 ## Notes
 

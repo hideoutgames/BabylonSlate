@@ -2,9 +2,9 @@ import { BOOL, EXEC, arrayOf, objectRef, pin, type NodeDefinition } from "@hapti
 import { subject } from "./self-pin";
 import { TIMELINE_CLIP_CATEGORY } from "./timeline-clips";
 
-/** Bind Actor to Timeline Proxy: binds a clip asset instance's Actor proxy. Hidden; the editor adds one row per Actor proxy. */
+/** Bind Actor To Timeline Proxy: binds a clip asset instance's Actor proxy. Hidden; the editor adds one row per Actor proxy. */
 export const TIMELINE_PROXY_BIND_ACTOR_NODE_ID = "timelineProxy.bindActor";
-/** Bind Component to Timeline Proxy: binds a Component proxy. Hidden; one row per Component proxy. */
+/** Bind Component To Timeline Proxy: binds a Component proxy. Hidden; one row per Component proxy. */
 export const TIMELINE_PROXY_BIND_COMPONENT_NODE_ID = "timelineProxy.bindComponent";
 /** Unbind Timeline Proxy: clears every object bound to one proxy. Hidden; one row per proxy. */
 export const TIMELINE_PROXY_UNBIND_NODE_ID = "timelineProxy.unbind";
@@ -61,8 +61,8 @@ export function timelineProxyNodeTitle(typeId: string, properties: Record<string
   const verb = VERBS[typeId];
   if (!verb) return "";
   if (proxyName) return `${verb} ${proxyName} Proxy`;
-  return typeId === TIMELINE_PROXY_BIND_ACTOR_NODE_ID ? "Bind Actor to Timeline Proxy"
-    : typeId === TIMELINE_PROXY_BIND_COMPONENT_NODE_ID ? "Bind Component to Timeline Proxy"
+  return typeId === TIMELINE_PROXY_BIND_ACTOR_NODE_ID ? "Bind Actor To Timeline Proxy"
+    : typeId === TIMELINE_PROXY_BIND_COMPONENT_NODE_ID ? "Bind Component To Timeline Proxy"
       : `${verb} Timeline Proxy`;
 }
 
@@ -96,9 +96,9 @@ function bindNode(id: string, title: string, objectPin: { id: string; name: stri
  * returns them as an array. A new binding applies from the next tick.
  */
 export const timelineProxyNodes: NodeDefinition[] = [
-  bindNode(TIMELINE_PROXY_BIND_ACTOR_NODE_ID, "Bind Actor to Timeline Proxy", { id: "actor", name: "Actor", base: "Actor" },
+  bindNode(TIMELINE_PROXY_BIND_ACTOR_NODE_ID, "Bind Actor To Timeline Proxy", { id: "actor", name: "Actor", base: "Actor" },
     "Adds an actor to an Actor proxy of the clip; every actor bound to it plays its tracks. Off, Absolute Transform makes the proxy's transform keys offsets from where the actor stands now; on, they set its world transform."),
-  bindNode(TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, "Bind Component to Timeline Proxy", { id: "component", name: "Component", base: "ActorComponent" },
+  bindNode(TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, "Bind Component To Timeline Proxy", { id: "component", name: "Component", base: "ActorComponent" },
     "Adds a component to a Component proxy of the clip; every component bound to it plays its tracks. Off, Absolute Transform makes the proxy's transform keys offsets from the component's transform now; on, they set it relative to its parent."),
   {
     id: TIMELINE_PROXY_UNBIND_NODE_ID,

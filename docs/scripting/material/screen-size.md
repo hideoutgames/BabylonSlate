@@ -10,7 +10,7 @@ Returns the width and height of the screen in pixels.
 
 | Pin | Type |
 | --- | --- |
-| Size | Vector 2 |
+| Size | Vector2 |
 
 ## Notes
 

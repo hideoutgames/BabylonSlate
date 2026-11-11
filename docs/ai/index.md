@@ -19,7 +19,7 @@ Behaviour Trees and Blackboards are created from **New Asset > AI**. NavMesh and
 
 1. Place a NavMesh, tap **Bake NavMesh** and save the scene.
 2. Add a **Nav Agent** to the guard.
-3. Create a Blackboard with a Vector 3 key for the next patrol point.
+3. Create a Blackboard with a Vector3 key for the next patrol point.
 4. Create a Behaviour Tree that uses the Blackboard: a Sequence with **Move To Blackboard Key** and **Wait**, plus a custom task or service that sets the next point.
 5. Add a **Behaviour Tree** component to the guard and pick the tree.
 6. Press **Play**.

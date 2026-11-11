@@ -88,7 +88,7 @@ export const TOUCH_EVENT_PHASES: Readonly<Record<string, readonly string[]>> = {
   "input.onTouchEnded": ["Ended", "Cancelled"],
 };
 
-/** On Touch Began, On Touch Moved and On Touch Ended. */
+/** Event On Touch Began, Event On Touch Moved and Event On Touch Ended. */
 export function isTouchEventNodeType(typeId: string): boolean {
   return Object.hasOwn(TOUCH_EVENT_PHASES, typeId);
 }

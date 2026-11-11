@@ -11,8 +11,8 @@ Draws an arrow from a start position to an end position.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Start | Vector 3 |  |
-| End | Vector 3 |  |
+| Start | Vector3 |  |
+| End | Vector3 |  |
 | Size | Float | Length of the arrow head in world units. |
 | Color | Color | Line colour. Alpha is ignored. Defaults to white. |
 | Duration | Float | Seconds the shape stays visible. 0 shows it for one simulation tick, so call the node every tick to keep it on screen. |

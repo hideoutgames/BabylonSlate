@@ -16,7 +16,7 @@ Returns e raised to a power.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Float |
+| Out | Float |
 
 ## Notes
 

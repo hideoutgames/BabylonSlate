@@ -80,7 +80,7 @@ describe("displayPinTypesForGraph", () => {
     });
   });
 
-  it("displays Array Get out as the array element type", () => {
+  it("displays Get Array Item out as the array element type", () => {
     const display = displayPinTypesForGraph(
       [
         { id: "src", data: { __pins: [arrayFloatOut] } },

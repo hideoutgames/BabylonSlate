@@ -338,7 +338,7 @@ function enumNodeTitle(typeId: string, enumName: string): string {
     case "enum.toString":
       return `${enumName} to String`;
     case "enum.switch":
-      return `Switch on ${enumName}`;
+      return `Switch On ${enumName}`;
     case "enum.select":
       return `Select ${enumName}`;
     default:

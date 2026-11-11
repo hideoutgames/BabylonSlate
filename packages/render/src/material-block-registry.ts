@@ -105,9 +105,9 @@ export interface MaterialPlumbing {
   worldOrigin?: NodeMaterialConnectionPoint;
   view?: NodeMaterialConnectionPoint;
   viewProjection?: NodeMaterialConnectionPoint;
-  /** Vector 3 for graph pins. */
+  /** Vector3 for graph pins. */
   worldNormal?: NodeMaterialConnectionPoint;
-  /** Vector 4 for Babylon blocks that register a Vector 4 normal. */
+  /** Vector4 for Babylon blocks that register a Vector4 normal. */
   worldNormal4?: NodeMaterialConnectionPoint;
   worldTangent?: NodeMaterialConnectionPoint;
   cameraPosition?: NodeMaterialConnectionPoint;
@@ -850,7 +850,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     plumbing.worldNormal4?.connectTo(normal.input);
     normal.output.connectTo(block.worldNormal);
     if (!operation.inputs.uv) plumbing.uv?.connectTo(block.uv);
-    // Babylon emits a Vector 4 normal; the graph pin is a Vector 3.
+    // Babylon emits a Vector4 normal; the graph pin is a Vector3.
     const split = new VectorSplitterBlock(`${name}_xyz`);
     block.output.connectTo(split.xyzw);
     return {
@@ -902,7 +902,7 @@ ADAPTERS["input.worldPosition"] = ({ name, plumbing }) => {
     const block = attributeVector(name, "position", 3);
     return single(block, {}, { position: block.output });
   }
-  // The plumbed world position is a Vector 4; the graph pin is a Vector 3.
+  // The plumbed world position is a Vector4; the graph pin is a Vector3.
   const split = new VectorSplitterBlock(`${name}_xyz`);
   plumbing.worldPosition.connectTo(split.xyzw);
   if (plumbing.worldOrigin) {

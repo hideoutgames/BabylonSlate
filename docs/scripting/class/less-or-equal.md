@@ -2,7 +2,7 @@
 node: math.lessEqual
 ---
 
-# Less or Equal
+# Less Or Equal
 
 Returns true when **A** is less than or equal to **B**.
 

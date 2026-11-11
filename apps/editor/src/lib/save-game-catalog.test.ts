@@ -71,7 +71,7 @@ describe("Save Games linked to a Data Definition", () => {
     expect(resolved.missingDataDefinition).toBe(false);
     expect(resolved.definition.fields).toEqual([
       { id: "coins-id", name: "Coins", type: "int", defaultValue: 50 },
-      // The override no longer fits a Vector 3, so the Data Definition's default applies.
+      // The override no longer fits a Vector3, so the Data Definition's default applies.
       { id: "spawn-id", name: "Spawn", type: "vector3", defaultValue: { x: 1, y: 2, z: 3 } },
       { id: "facing-id", name: "Facing", type: "rotator", defaultValue: { pitch: 0, yaw: 0, roll: 0 } },
       { id: "banner-id", name: "Banner", type: "asset", defaultValue: null },

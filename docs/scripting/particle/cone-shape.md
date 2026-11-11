@@ -16,8 +16,8 @@ Spawns particles inside a cone that opens along the emitter's Y axis and launche
 | Radius Range | Float | 1 | 0 spawns on the surface and 1 fills the volume. |
 | Height Range | Float | 1 | 0 spawns at the wide end only and 1 spawns anywhere from the tip to the wide end. |
 | Direction Randomizer | Float | 0 | Scatters the outward direction at random, from 0 (none) to 1 (most). Ignored when both directions are set. |
-| Direction 1 | Vector 3 |  | Only used when **Direction 2** is also set. Then each particle launches in a random direction between the two. |
-| Direction 2 | Vector 3 |  | Only used when **Direction 1** is also set. |
+| Direction 1 | Vector3 |  | Only used when **Direction 2** is also set. Then each particle launches in a random direction between the two. |
+| Direction 2 | Vector3 |  | Only used when **Direction 1** is also set. |
 
 ## Outputs
 

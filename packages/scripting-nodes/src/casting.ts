@@ -79,7 +79,7 @@ export const castingNodes: NodeDefinition[] = [
   },
   {
     id: "casting.cast",
-    title: "Cast to Object",
+    title: "Cast To Object",
     category: "casting",
     pins: castPins,
     codegen: castCodegen,

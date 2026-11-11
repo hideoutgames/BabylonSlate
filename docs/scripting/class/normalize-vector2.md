@@ -10,13 +10,13 @@ Returns the vector scaled to a length of 1, keeping its direction.
 
 | Pin | Type |
 | --- | --- |
-| V | Vector 2 |
+| V | Vector2 |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 2 |
+| Out | Vector2 |
 
 ## Notes
 

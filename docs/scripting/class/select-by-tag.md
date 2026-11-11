@@ -18,7 +18,7 @@ Returns the value that belongs to the case matching a Tag.
 
 | Pin | Type |
 | --- | --- |
-| Result | Wildcard |
+| Out | Wildcard |
 
 ## Settings
 

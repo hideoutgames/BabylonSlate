@@ -12,7 +12,7 @@ Moves an actor by a distance, sliding along solid colliders instead of passing t
 | --- | --- | --- |
 | In | Exec |  |
 | Target | Actor Reference | Left unconnected the pin shows **Self** and uses the actor running the graph. |
-| Translation | Vector 3 |  |
+| Translation | Vector3 |  |
 | Offset | Float | Gap kept from surfaces, in world units. Uses 0.01 unless above 0, and is read only the first time the actor moves. |
 
 ## Outputs

@@ -78,7 +78,7 @@ export function parseParticleRetrigger(value: unknown): ParticleRetrigger {
   return value === "restart" ? "restart" : "overlap";
 }
 
-/** A particle parameter's value type (Basic emitters bind Float, Vector 3 and Color only). */
+/** A particle parameter's value type (Basic emitters bind Float, Vector3 and Color only). */
 export type ParticleParameterValueType = "float" | "vec2" | "vec3" | "color";
 /** One parameter a Particle System's slots declare: its type and default are the first declaring slot's, or the System's own default. */
 export type ParticleParameterCatalogEntry = { name: string; type: ParticleParameterValueType; defaultValue: number[] };

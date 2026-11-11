@@ -50,7 +50,7 @@ export interface ParticlePinDefault {
 
 /**
  * Details rows for one node's unconnected numeric inputs that have a value:
- * sized to the resolved type (a generic group wired to Vector 3 shows three
+ * sized to the resolved type (a generic group wired to Vector3 shows three
  * components). Particle pins never appear; shape direction pins appear once
  * authored.
  */

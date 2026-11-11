@@ -10,7 +10,7 @@ Returns a fixed colour, including alpha, that you set in the **Inspector**.
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 3 |
+| Out | Vector3 |
 
 ## Settings
 

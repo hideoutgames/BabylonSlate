@@ -129,7 +129,7 @@ describe("worker Material parameter catalog", () => {
     expect(buildMaterialParameterCatalog(documents, functions)).toEqual({});
   });
 
-  it("exposes Vector 2 and Vector 3 parameter defaults at their width", () => {
+  it("exposes Vector2 and Vector3 parameter defaults at their width", () => {
     const document = createDefaultMaterialDocument("Surface");
     document.nodes.push(
       { id: "glow", type: "param.vec3", position: { x: 0, y: 0 }, properties: { name: "Glow", value: [0.1, 0.2, 0.3] } },

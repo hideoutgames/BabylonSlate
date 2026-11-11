@@ -10,7 +10,7 @@ Returns the current velocity of the particle in metres per second.
 
 | Pin | Type |
 | --- | --- |
-| Direction | Vector 3 |
+| Direction | Vector3 |
 
 ## Notes
 

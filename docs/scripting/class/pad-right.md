@@ -18,7 +18,7 @@ Adds characters after a string until it reaches a length.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | String |
+| Out | String |
 
 ## Notes
 

@@ -10,9 +10,9 @@ Returns the Water asset's colours and opacity, so a Custom Material follows the 
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Shallow Color | Vector 3 | The asset's **Shallow Color**, in linear colour. |
-| Deep Color | Vector 3 | The asset's **Deep Color**, in linear colour. |
-| Foam Color | Vector 3 | The asset's **Foam Color**, in linear colour. |
+| Shallow Color | Vector3 | The asset's **Shallow Color**, in linear colour. |
+| Deep Color | Vector3 | The asset's **Deep Color**, in linear colour. |
+| Foam Color | Vector3 | The asset's **Foam Color**, in linear colour. |
 | Opacity | Float | The asset's **Opacity**. |
 | Scene Light | Float | How strongly the scene lights the water's own colour, from 0.05 in the dark to 1.6 in bright daylight. Built-in water multiplies Deep Color by it, so a dim scene keeps a dim sea. |
 

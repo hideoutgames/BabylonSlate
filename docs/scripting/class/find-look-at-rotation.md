@@ -10,8 +10,8 @@ Returns the rotation that makes forward point from one location toward another.
 
 | Pin | Type |
 | --- | --- |
-| From | Vector 3 |
-| Target | Vector 3 |
+| From | Vector3 |
+| Target | Vector3 |
 
 ## Outputs
 

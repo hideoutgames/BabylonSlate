@@ -19,7 +19,7 @@ Blends between two numbers along an easing curve.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Float |
+| Out | Float |
 
 ## Notes
 

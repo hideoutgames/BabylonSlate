@@ -10,8 +10,8 @@ export type GlobalParameterType = (typeof GLOBAL_PARAMETER_TYPES)[number];
 /** Display names of the value types, in Title Case. */
 export const GLOBAL_PARAMETER_TYPE_LABELS: Readonly<Record<GlobalParameterType, string>> = {
   float: "Float",
-  vec2: "Vector 2",
-  vec3: "Vector 3",
+  vec2: "Vector2",
+  vec3: "Vector3",
   color: "Color",
 };
 

@@ -11,7 +11,7 @@ Draws a rectangle outline at a world position.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Center | Vector 3 |  |
+| Center | Vector3 |  |
 | Width | Float | Size along the rectangle's X axis, in world units. |
 | Height | Float | Size along the rectangle's Y axis, in world units. |
 | Rotation | Rotator | Orientation in degrees (pitch, yaw, roll). |

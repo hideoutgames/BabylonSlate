@@ -261,7 +261,7 @@ function rangeStruct(id: string, name: string, typeId: string, min: unknown, max
 const RANGE_STRUCTS: readonly EngineStruct[] = [
   rangeStruct(ENGINE_INT_RANGE_STRUCT_ID, "Int Range", "int", 0, 1),
   rangeStruct(ENGINE_FLOAT_RANGE_STRUCT_ID, "Float Range", "float", 0, 1),
-  rangeStruct(ENGINE_VECTOR2_RANGE_STRUCT_ID, "Vector 2 Range", "vec2", ZERO_VECTOR2, ZERO_VECTOR2),
+  rangeStruct(ENGINE_VECTOR2_RANGE_STRUCT_ID, "Vector2 Range", "vec2", ZERO_VECTOR2, ZERO_VECTOR2),
   rangeStruct(ENGINE_VECTOR_RANGE_STRUCT_ID, "Vector Range", "vec3", ZERO_VECTOR, ZERO_VECTOR),
   rangeStruct(ENGINE_ROTATOR_RANGE_STRUCT_ID, "Rotator Range", "rotator", ZERO_ROTATOR, ZERO_ROTATOR),
 ];

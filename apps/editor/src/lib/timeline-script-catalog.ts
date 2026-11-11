@@ -255,7 +255,7 @@ export function timelineGraphDiagnostics(
             : `${title}: pick a proxy in the Inspector.` });
       } else if (proxyKindMismatch(node.type, proxy)) {
         diagnostics.push({ ...anchor, severity: "error", code: "timeline.proxy_kind_mismatch", nodeId: node.id,
-          message: `${title}: ${proxy.name} stands in for ${proxy.represents === "actor" ? "an actor" : "a component"}. Use Bind ${proxy.represents === "actor" ? "Actor" : "Component"} to Timeline Proxy.` });
+          message: `${title}: ${proxy.name} stands in for ${proxy.represents === "actor" ? "an actor" : "a component"}. Use Bind ${proxy.represents === "actor" ? "Actor" : "Component"} To Timeline Proxy.` });
       }
       continue;
     }

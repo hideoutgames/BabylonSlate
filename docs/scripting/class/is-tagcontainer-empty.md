@@ -16,4 +16,4 @@ Returns true when a TagContainer holds no Tags.
 
 | Pin | Type |
 | --- | --- |
-| Result | Boolean |
+| Out | Boolean |

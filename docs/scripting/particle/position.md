@@ -10,7 +10,7 @@ Returns the current position of the particle in world space.
 
 | Pin | Type |
 | --- | --- |
-| Position | Vector 3 |
+| Position | Vector3 |
 
 ## Notes
 

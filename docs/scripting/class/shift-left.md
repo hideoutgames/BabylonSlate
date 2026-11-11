@@ -17,7 +17,7 @@ Moves an integer's bits toward the high end.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Integer |
+| Out | Integer |
 
 ## Notes
 

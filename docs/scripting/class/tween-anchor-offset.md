@@ -12,8 +12,8 @@ Moves a 2D Anchor component's offset from A to B over Duration seconds.
 | --- | --- | --- |
 | Exec | Exec |  |
 | Target | 2D Anchor Component Reference | A 2D Anchor component. |
-| A | Vector 2 |  |
-| B | Vector 2 |  |
+| A | Vector2 |  |
+| B | Vector2 |  |
 | Duration | Float | Seconds the tween takes, in game time. Defaults to 2; 0 or less writes B immediately. |
 | Curve | EasingCurve | Easing shape, Linear by default. Back and Elastic curves can overshoot A and B. |
 

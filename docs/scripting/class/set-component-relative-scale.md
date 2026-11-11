@@ -12,7 +12,7 @@ Sets the component's scale relative to the component it is attached to, or to it
 | --- | --- |
 | In | Exec |
 | Target | Component Reference |
-| New Scale | Vector 3 |
+| New Scale | Vector3 |
 
 ## Outputs
 

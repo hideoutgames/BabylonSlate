@@ -191,12 +191,12 @@ function enumPaletteNodes(
     rows.push({
       id: `enum.switch:${entry.guid}`,
       nodeType: "enum.switch",
-      title: `Switch on ${entry.name}`,
+      title: `Switch On ${entry.name}`,
       category: switchDef.category,
       pins: switchDef.pins(defaultData),
       pure: switchDef.pure,
       latent: switchDef.latent,
-      defaultData: { ...defaultData, title: `Switch on ${entry.name}` },
+      defaultData: { ...defaultData, title: `Switch On ${entry.name}` },
     });
     const selectData: Record<string, unknown> = {
       enumGuid: entry.guid,

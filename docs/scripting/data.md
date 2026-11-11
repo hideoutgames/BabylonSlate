@@ -40,11 +40,11 @@ The **Data Definition** pin cannot be connected, because a connection could not 
 | --- | --- |
 | [Read Data Entry](class/read-data-entry.md) | Reads one entry from a tree that is already loaded. |
 | [Read Unknown Data Entry](class/read-unknown-data-entry.md) | Reads one entry from a loaded tree as the Data Definition picked on its pin. |
-| [Async Read Unknown Data Entry](class/async-read-unknown-data-entry.md) | Loads a tree chosen while the game runs, then reads one entry as the Data Definition picked on its pin. |
+| [Read Unknown Data Entry (Async)](class/read-unknown-data-entry-async.md) | Loads a tree chosen while the game runs, then reads one entry as the Data Definition picked on its pin. |
 | [Get Data Children](class/get-data-children.md), [Get Data Descendants](class/get-data-descendants.md) | Return the paths below an entry, for example to loop over every weapon. |
 | [Get Data Parent](class/get-data-parent.md) | Returns the path of an entry's parent. |
 
-A tree loads with its class when it is chosen on the node or comes from a variable of the same class. Any other tree, such as one returned by another object or an Asset Registry search, must be loaded first, with **Async Read Unknown Data Entry** or [Async Load Asset](class/async-load-asset.md).
+A tree loads with its class when it is chosen on the node or comes from a variable of the same class. Any other tree, such as one returned by another object or an Asset Registry search, must be loaded first, with **Read Unknown Data Entry (Async)** or [Load Asset (Async)](class/load-asset-async.md).
 
 ## Records in variables
 

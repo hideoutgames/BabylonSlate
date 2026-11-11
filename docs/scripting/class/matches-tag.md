@@ -18,7 +18,7 @@ Returns true when a Tag is the same as, or a child of, a query Tag.
 
 | Pin | Type |
 | --- | --- |
-| Result | Boolean |
+| Out | Boolean |
 
 ## Notes
 

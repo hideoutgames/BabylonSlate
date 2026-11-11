@@ -2,7 +2,7 @@
 node: flow.dispatcher.unbind
 ---
 
-# Unbind Event from Event Dispatcher
+# Unbind Event From Event Dispatcher
 
 Removes an event from an Event Dispatcher.
 
@@ -22,5 +22,5 @@ Removes an event from an Event Dispatcher.
 
 ## Notes
 
-- **Add Node** names it after the dispatcher, such as **Unbind Event from On Damaged**.
+- **Add Node** names it after the dispatcher, such as **Unbind Event From On Damaged**.
 - Removing an event that is not bound does nothing.

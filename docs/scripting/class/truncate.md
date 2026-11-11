@@ -16,7 +16,7 @@ Drops the fraction of a number, rounding toward zero.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Integer |
+| Out | Integer |
 
 ## Notes
 

@@ -150,7 +150,7 @@ export interface ScriptHostServices {
    */
   requestAssetLoad?(assets: readonly string[], owner: EngineObject | null, options?: RuntimeAssetPreloadOptions): string;
   requestClassLoad?(classId: string, owner: EngineObject | null, options?: RuntimeAssetPreloadOptions): string;
-  /** A blocking wait holds the simulation (like Load Scene Blocking) until the handle settles. */
+  /** A blocking wait holds the simulation (like Load Scene (Blocking)) until the handle settles. */
   waitForAssetLoad?(handle: string, owner: EngineObject | null, blocking: boolean): Promise<ScriptAssetLoadResult>;
   releaseAssetLoad?(handle: string): void;
   unloadAsset?(assetGuid: string, owner: EngineObject | null, options?: Pick<RuntimeAssetPreloadOptions, "sessionWide">): void;
@@ -304,7 +304,7 @@ export interface ScriptHostServices {
   timelineClips?(timeline: TimelineObject, only?: { documentGuid: string; clipId: string }): TimelineClipObject[];
   /** A new instance of a clip asset on its Timeline (`Create <Name> Timeline Clip`). */
   createTimelineClip?(timeline: TimelineObject, assetGuid: string, inputs: Record<string, unknown>): TimelineClipObject | null;
-  /** A Timeline Proxy node on a clip asset instance (Bind Actor or Component to Timeline Proxy, Unbind, Unbind All). */
+  /** A Timeline Proxy node on a clip asset instance (Bind Actor or Component To Timeline Proxy, Unbind, Unbind All). */
   timelineProxy?(instance: TimelineClipInstance, action: string, proxyId: string, args: Record<string, unknown>): void;
   /** Get Timeline Proxy: the objects bound to the proxy, in bind order. */
   timelineProxyGet?(instance: TimelineClipInstance, proxyId: string): EngineObject[];

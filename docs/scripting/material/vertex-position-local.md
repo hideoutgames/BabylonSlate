@@ -10,7 +10,7 @@ Returns the vertex position in the mesh's local space, including morph target ch
 
 | Pin | Type |
 | --- | --- |
-| Position | Vector 3 |
+| Position | Vector3 |
 
 ## Notes
 

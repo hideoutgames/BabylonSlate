@@ -17,7 +17,7 @@ Returns a TagContainer with every Tag from either of two TagContainers.
 
 | Pin | Type |
 | --- | --- |
-| Result | TagContainer |
+| Out | TagContainer |
 
 ## Notes
 

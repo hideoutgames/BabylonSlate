@@ -10,7 +10,7 @@ They are ordinary Structures, so **Make** and **Break** work as for any Structur
 | --- | --- |
 | **Int Range** | **Min** and **Max**, whole numbers. |
 | **Float Range** | **Min** and **Max**, numbers. |
-| **Vector 2 Range** | **Min** and **Max**, Vector 2 values. |
+| **Vector2 Range** | **Min** and **Max**, Vector2 values. |
 | **Vector Range** | **Min** and **Max**, vectors. |
 | **Rotator Range** | **Min** and **Max**, rotators. |
 
@@ -25,7 +25,7 @@ They are ordinary Structures, so **Make** and **Break** work as for any Structur
 A range variable, Structure field, Data Definition field or unwired node pin shows one row:
 
 - **Int Range** and **Float Range** edit **Min** and **Max** side by side in the row.
-- **Vector 2 Range**, **Vector Range** and **Rotator Range** show a one-line summary, such as **−5.00, 0.00, −5.00 – 5.00, 2.00, 5.00**. Tap it to expand one **Min** – **Max** pair per axis.
+- **Vector2 Range**, **Vector Range** and **Rotator Range** show a one-line summary, such as **−5.00, 0.00, −5.00 – 5.00, 2.00, 5.00**. Tap it to expand one **Min** – **Max** pair per axis.
 
 Data Tree grids and the Play **Inspector** show the same summary. In a Data Tree, edit a range in **Values**.
 
@@ -100,9 +100,9 @@ When many classes should share one curve, make a **Float Curve**, **Vector Curve
 
 | Node | What it does |
 | --- | --- |
-| [Random Integer In Range](class/random-int-in-range.md), [Random Float In Range](class/random-float-in-range.md), [Random Vector 2 In Range](class/random-vector2-in-range.md), [Random Vector In Range](class/random-vector-in-range.md), [Random Rotator In Range](class/random-rotator-in-range.md) | Pick a random value inside a range. Integers include both ends; other values go from **Min** up to, but not including, **Max**. |
-| [Clamp Integer To Range](class/clamp-integer-to-range.md), [Clamp Float To Range](class/clamp-float-to-range.md), [Clamp Vector To Range](class/clamp-vector-to-range.md) | Limit a value to a range. |
-| [Is Integer In Range](class/is-integer-in-range.md), [Is Float In Range](class/is-float-in-range.md) | Test whether a value is inside a range, both ends included. |
+| [Random Int In Range](class/random-int-in-range.md), [Random Float In Range](class/random-float-in-range.md), [Random Vector2 In Range](class/random-vector2-in-range.md), [Random Vector3 In Range](class/random-vector3-in-range.md), [Random Rotator In Range](class/random-rotator-in-range.md) | Pick a random value inside a range. Integers include both ends; other values go from **Min** up to, but not including, **Max**. |
+| [Clamp Int To Range](class/clamp-int-to-range.md), [Clamp Float To Range](class/clamp-float-to-range.md), [Clamp Vector3 To Range](class/clamp-vector3-to-range.md) | Limit a value to a range. |
+| [Is Int In Range](class/is-int-in-range.md), [Is Float In Range](class/is-float-in-range.md) | Test whether a value is inside a range, both ends included. |
 | [Lerp Float Range](class/lerp-float-range.md), [Map Float Range](class/map-float-range.md) | Blend across a range, or remap a value from one range to another. |
 | [Evaluate Float Curve](class/evaluate-float-curve.md), [Evaluate Vector Curve](class/evaluate-vector-curve.md), [Evaluate Color Curve](class/evaluate-color-curve.md) | Read a curve's value at a time. |
 | [Get Float Curve Time Range](class/get-float-curve-time-range.md), [Get Vector Curve Time Range](class/get-vector-curve-time-range.md), [Get Color Curve Time Range](class/get-color-curve-time-range.md), [Get Float Curve Value Range](class/get-float-curve-value-range.md) | Return the times of the first and last keys, or the lowest and highest key values. |

@@ -113,7 +113,7 @@ export type ScriptPaletteOptions = ClassEventOptions & {
   /** The same owner's Timeline Clips: each gets a Get <Name> Timeline Clip row. */
   ownedTimelineClips?: readonly PaletteOwnedTimelineClip[];
   /**
-   * The project's Timeline Assets: Cast to <Asset>, a Get <Name> Timeline Clip
+   * The project's Timeline Assets: Cast To <Asset>, a Get <Name> Timeline Clip
    * row per scene clip on the asset's Timeline, and Bind rows for the
    * Timeline's re-fired events and the clips' own.
    */
@@ -766,7 +766,7 @@ export function castPaletteNodes(
     return {
       id: `casting.cast:${classId}`,
       nodeType: "casting.cast",
-      title: sceneName ? `Cast to ${sceneName}` : `Cast to ${classId}`,
+      title: sceneName ? `Cast To ${sceneName}` : `Cast To ${classId}`,
       category: def.category,
       pins: def.pins(defaultData),
       pure: def.pure,
@@ -921,8 +921,8 @@ export function timelineClipPaletteNodes(
 
 /**
  * Bind, Unbind and Get rows for each proxy of a clip asset, on its class
- * (`Bind Door Proxy`): Bind Actor to Timeline Proxy for an Actor proxy, Bind
- * Component to Timeline Proxy for a Component proxy.
+ * (`Bind Door Proxy`): Bind Actor To Timeline Proxy for an Actor proxy, Bind
+ * Component To Timeline Proxy for a Component proxy.
  */
 function timelineProxyPaletteNodes(nodeRegistry: NodeRegistry, clip: TimelineScriptClipAsset): PaletteNode[] {
   return clip.proxies.flatMap((proxy) => {
@@ -1069,7 +1069,7 @@ export function dispatcherPaletteNodes(
       id: `${DISPATCHER_NODE_TYPE_IDS.bind}:assign:${row.classId}:${row.name}`,
       nodeType: DISPATCHER_NODE_TYPE_IDS.bind,
       title: `Assign ${row.name}`,
-      description: `Adds Bind Event to ${row.name} and a custom event with its inputs, wired together.`,
+      description: `Adds Bind Event To ${row.name} and a custom event with its inputs, wired together.`,
       category: bindDef.category,
       pins: bindDef.pins(bindData),
       defaultData: bindData,

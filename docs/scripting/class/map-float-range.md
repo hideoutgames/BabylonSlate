@@ -19,7 +19,7 @@ Maps **Value** from the **From** range to the **To** range.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Result | Float |  |
+| Out | Float |  |
 
 ## Notes
 

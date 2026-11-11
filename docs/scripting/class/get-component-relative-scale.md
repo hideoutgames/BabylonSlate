@@ -16,7 +16,7 @@ Returns the component's scale relative to the component it is attached to, or to
 
 | Pin | Type |
 | --- | --- |
-| Relative Scale | Vector 3 |
+| Relative Scale | Vector3 |
 
 ## Notes
 

@@ -105,7 +105,7 @@ describe("NodePalette", () => {
   it("ranks title matches above description matches and highlights the row Enter adds", () => {
     const asyncLoad: PaletteNode = {
       id: "assets.asyncLoadAsset",
-      title: "Async Load Asset",
+      title: "Load Asset (Async)",
       category: "assets",
       description: "Starts loading an asset. Gameplay continues while it loads.",
     };

@@ -11,8 +11,8 @@ Spawns particles at the emitter and launches them in a direction picked between 
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
 | Particle | Particle |  |  |
-| Direction 1 | Vector 3 | (0, 1, 0) | One end of the range the launch direction is picked from. |
-| Direction 2 | Vector 3 | (0, 1, 0) | The other end of that range. |
+| Direction 1 | Vector3 | (0, 1, 0) | One end of the range the launch direction is picked from. |
+| Direction 2 | Vector3 | (0, 1, 0) | The other end of that range. |
 
 ## Outputs
 

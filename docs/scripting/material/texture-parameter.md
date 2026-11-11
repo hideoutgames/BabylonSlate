@@ -17,7 +17,7 @@ Outputs a named texture that can be changed at runtime or overridden per Materia
 | Setting | Description |
 | --- | --- |
 | Parameter Name | The unique name used to set the parameter from a Node Graph or a Material Instance. A taken name gets **_1**, **_2** and so on. |
-| Type | **Float**, **Vector 2**, **Vector 3**, **Color** or **Texture**. Changing it turns the node into that parameter, resizing the default. |
+| Type | **Float**, **Vector2**, **Vector3**, **Color** or **Texture**. Changing it turns the node into that parameter, resizing the default. |
 | Texture | The default texture asset. |
 
 ## Notes

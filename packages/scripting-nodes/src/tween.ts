@@ -53,7 +53,7 @@ function tweenNode(
 
 export const tweenNodes: NodeDefinition[] = [
   tweenNode("float", "Float", FLOAT),
-  tweenNode("integer", "Integer", INT),
+  tweenNode("integer", "Int", INT),
   tweenNode("vector2", "Vector2", VEC2),
   tweenNode("vector3", "Vector3", VEC3),
   tweenNode("vector4", "Vector4", VEC4),
@@ -61,11 +61,11 @@ export const tweenNodes: NodeDefinition[] = [
   tweenNode("quaternion", "Quaternion", QUAT),
   tweenNode("color", "Color", COLOR),
   tweenNode("transform", "Transform", TRANSFORM),
-  tweenNode("actorPosition", "Actor Position", VEC3, actor, "actor.position", true),
+  tweenNode("actorPosition", "Actor Location", VEC3, actor, "actor.position", true),
   tweenNode("actorRotation", "Actor Rotation", ROTATOR, actor, "actor.rotation", true),
   tweenNode("actorScale", "Actor Scale", VEC3, actor, "actor.scale", true),
   tweenNode("actorTransform", "Actor Transform", TRANSFORM, actor, "actor.transform", true),
-  tweenNode("componentPosition", "Component Position", VEC3, component, "component.position", true),
+  tweenNode("componentPosition", "Component Location", VEC3, component, "component.position", true),
   tweenNode("componentRotation", "Component Rotation", ROTATOR, component, "component.rotation", true),
   tweenNode("componentScale", "Component Scale", VEC3, component, "component.scale", true),
   tweenNode("componentTransform", "Component Transform", TRANSFORM, component, "component.transform", true),

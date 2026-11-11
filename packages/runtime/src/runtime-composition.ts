@@ -109,7 +109,7 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   liveVoiceOwners(): Iterable<[voiceId: string, ownerGuid: string | null]>;
   /** Get Game Time In Seconds: the dilated steps since the session started, advanced by the tick phases. */
   gameTimeSeconds: number;
-  /** Get Real Time Seconds: the same steps without time dilation. */
+  /** Get Real Time In Seconds: the same steps without time dilation. */
   realTimeSeconds: number;
   /** Reset by the Scene realizer's `startWorld`, advanced by the tick phases; the driver's `registerTileContent` re-sends it. */
   tilemapAnimationTimeMs: number;

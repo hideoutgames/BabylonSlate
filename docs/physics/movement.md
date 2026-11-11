@@ -27,7 +27,7 @@ A 1D axis works too: use its value as X and leave Y at zero.
 
 | Function | Description |
 | --- | --- |
-| Convert Input | Turns a Vector 2 into a world direction, applying **Dead Zone**, **Input Scale**, **Input Space** and a yaw in degrees. 2D uses X only. |
+| Convert Input | Turns a Vector2 into a world direction, applying **Dead Zone**, **Input Scale**, **Input Space** and a yaw in degrees. 2D uses X only. |
 | Set Movement Input | Keeps moving in a world direction until you set another one. |
 | Add Movement Input | Adds a direction for the next physics tick only. Call it every tick while held. |
 | Set Velocity | Replaces the world velocity, in units per second. |

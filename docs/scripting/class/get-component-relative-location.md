@@ -16,7 +16,7 @@ Returns the component's location relative to the component it is attached to, or
 
 | Pin | Type |
 | --- | --- |
-| Relative Location | Vector 3 |
+| Relative Location | Vector3 |
 
 ## Notes
 

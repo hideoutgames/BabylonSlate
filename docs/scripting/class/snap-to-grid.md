@@ -17,7 +17,7 @@ Rounds a number to the nearest multiple of a grid size.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Float |
+| Out | Float |
 
 ## Notes
 

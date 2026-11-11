@@ -18,7 +18,7 @@ function node(id: string, typeId: string, pins: GraphNode["pins"], properties: R
   return { id, typeId, position: { x: 0, y: 0 }, pins, properties };
 }
 
-/** Begin → Bind Event to On Hit, its Event from Create Event over `createRows`. */
+/** Begin → Bind Event To On Hit, its Event from Create Event over `createRows`. */
 function bindGraph(createProperties: Record<string, unknown>): LogicGraph {
   const delegate = delegateOf([FLOAT]);
   return {

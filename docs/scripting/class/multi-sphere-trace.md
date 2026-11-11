@@ -11,8 +11,8 @@ Sweeps a sphere from a start point to an end point and reports every actor it to
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Start | Vector 3 |  |
-| End | Vector 3 |  |
+| Start | Vector3 |  |
+| End | Vector3 |  |
 | Radius | Float | Defaults to 0.5. |
 | Channel | CollisionChannel | Limits which colliders count, as on [**Line Trace**](line-trace.md). Defaults to All. |
 | Actors To Ignore | Array of Actor Reference | Actors the query passes through. |

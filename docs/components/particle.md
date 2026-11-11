@@ -33,7 +33,7 @@ Call the component's own functions on a reference to it: in a Class, its entry u
 | Reset Parameter | Drops the value set while playing, back to the override or the default. |
 
 - In a Class graph, the **Name** pin lists the parameters of the type the function takes, from the Systems of the Class's Particle components.
-- A Float value fills every component of a Vector or Color parameter; a Vector 2 parameter takes X and Y.
+- A Float value fills every component of a Vector or Color parameter; a Vector2 parameter takes X and Y.
 - A name the System does not declare is ignored, with one warning per name.
 - [Event On Particles Finished](../scripting/class/event-on-particles-finished.md) runs when the component stops playing: a Particle System that does not loop ran out, or **Stop** was called, and the last particles are gone.
 

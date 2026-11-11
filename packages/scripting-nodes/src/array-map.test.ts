@@ -129,7 +129,7 @@ describe("array-map nodes", () => {
     expect(runLog(compiled.source)).toEqual(["3"]);
   });
 
-  it("compiles an Array Get miss to the typed default and a false Valid flag", () => {
+  it("compiles an Get Array Item miss to the typed default and a false Valid flag", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",

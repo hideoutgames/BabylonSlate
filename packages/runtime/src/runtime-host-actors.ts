@@ -127,7 +127,7 @@ export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostSer
       if (!id) return null;
       const guid = deps.classAssetGuids.get(id);
       if (deps.demandAssetCatalog && guid && deps.assetPreloads.getState(guid) !== "ready") {
-        throw new Error(`Class ${id} (${guid}) is not prepared; use Spawn Actor (Async) or Spawn Actor (Blocking), or load the Class first with Async Load Class or Load Class Blocking`);
+        throw new Error(`Class ${id} (${guid}) is not prepared; use Spawn Actor (Async) or Spawn Actor (Blocking), or load the Class first with Load Class (Async) or Load Class (Blocking)`);
       }
       return deps.spawn({
         classId: id,

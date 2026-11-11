@@ -13,7 +13,7 @@ Sets a parameter of a [Global Parameter Collection](../../assets/global-paramete
 | In | Exec |  |
 | Collection | Global Parameter Collection | The collection that holds the parameter. |
 | Parameter | String | The parameter's name. With **Collection** set and unwired, pick it from the list. |
-| Value | Vector 3 | The new value. Default 0, 0, 0. |
+| Value | Vector3 | The new value. Default 0, 0, 0. |
 
 ## Outputs
 
@@ -23,6 +23,6 @@ Sets a parameter of a [Global Parameter Collection](../../assets/global-paramete
 
 ## Notes
 
-- It sets a Vector 2 or Vector 3 parameter. A Vector 2 parameter takes **X** and **Y**.
+- It sets a Vector2 or Vector3 parameter. A Vector2 parameter takes **X** and **Y**.
 - The value is the same for the whole game: every graph that reads the parameter uses it at once. It lasts until Play ends, also across Scene changes, and is never saved.
 - A name the collection does not hold, or a parameter of another type, is ignored, with one warning.

@@ -20,5 +20,5 @@ Returns the result of dividing 1 by the input.
 
 ## Notes
 
-- Accepts a Float, Vector 2, Vector 3 or Color, and works on each component.
+- Accepts a Float, Vector2, Vector3 or Color, and works on each component.
 - A **Value** of 0 gives an invalid result.

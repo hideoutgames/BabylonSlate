@@ -18,7 +18,7 @@ Double-tap a Blackboard to open it. The window has **Keys** and an **Inspector**
 | Setting | Description |
 | --- | --- |
 | Name | The key's name. Tree nodes refer to the key by this name. |
-| Type | The kind of value the key holds, such as **Bool**, **Float**, **String** or **Vector 3**. For an **Enum** or **Structure / Data Definition** key, also pick the **Enum Type** or **Record Type**. See [Pin Types](../scripting/pin-types.md). |
+| Type | The kind of value the key holds, such as **Bool**, **Float**, **String** or **Vector3**. For an **Enum** or **Structure / Data Definition** key, also pick the **Enum Type** or **Record Type**. See [Pin Types](../scripting/pin-types.md). |
 | Default Value | The value the key starts with. The fields depend on the type. |
 
 ## Notes

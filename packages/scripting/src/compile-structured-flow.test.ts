@@ -298,7 +298,7 @@ function flowRegistry(): NodeRegistry {
       pins: () => [pin("execIn", "exec", "in", EXEC), pin("array", "array", "in", arrayOf(STRING)), pin("loopBody", "loopBody", "out", EXEC),
         pin("element", "element", "out", STRING), pin("index", "index", "out", INT), pin("completed", "completed", "out", EXEC)],
       codegen: () => {}, structuredFlow: { kind: "forEach", arrayPin: "array", loopBodyPin: "loopBody", completedPin: "completed", elementPin: "element", indexPin: "index" } },
-    { id: "flow.switchString", title: "Switch on String", category: "flow",
+    { id: "flow.switchString", title: "Switch On String", category: "flow",
       pins: (properties) => [pin("execIn", "exec", "in", EXEC), pin("value", "value", "in", STRING),
         ...(properties.cases as string[]).map((value) => pin(flowSwitchCasePinId(value), value, "out", EXEC)),
         pin("default", "Default", "out", EXEC)],
@@ -353,7 +353,7 @@ describe("compiled structured flow behavior", () => {
     expect(runCompiled(graph, registry, {})).toEqual(["before"]);
   });
 
-  it("keeps a Switch on String case named Default apart from the Default output", () => {
+  it("keeps a Switch On String case named Default apart from the Default output", () => {
     const registry = flowRegistry();
     const graph = flowGraph(registry, [
       ["entry", "flow.entry"],

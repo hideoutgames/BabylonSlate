@@ -46,7 +46,7 @@ The next value drawn is the one that would have come next in the saved game, bec
 | [Random Int](class/random-int.md) | A whole number between **Min** and **Max**, both included. |
 | [Random Bool](class/random-bool.md), [Random Bool With Weight](class/random-bool-with-weight.md) | True or false, with equal chance or with the chance **Weight**. |
 | [Random Unit Vector](class/random-unit-vector.md) | A random direction of length 1. |
-| [Random Integer In Range](class/random-int-in-range.md), [Random Float In Range](class/random-float-in-range.md), [Random Vector 2 In Range](class/random-vector2-in-range.md), [Random Vector In Range](class/random-vector-in-range.md), [Random Rotator In Range](class/random-rotator-in-range.md) | A value inside a range. See [Curves and ranges](curves-and-ranges.md). |
+| [Random Int In Range](class/random-int-in-range.md), [Random Float In Range](class/random-float-in-range.md), [Random Vector2 In Range](class/random-vector2-in-range.md), [Random Vector3 In Range](class/random-vector3-in-range.md), [Random Rotator In Range](class/random-rotator-in-range.md) | A value inside a range. See [Curves and ranges](curves-and-ranges.md). |
 | [Random Array Item](class/random-array-item.md) | A random item of an Array and its index. |
 | [Shuffle Array](class/shuffle-array.md) | The Array's items in a random order. |
 | [Set Global Randomization Seed](class/set-global-randomization-seed.md), [Get Global Randomization Seed](class/get-global-randomization-seed.md) | Set or read the global seed. |

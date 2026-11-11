@@ -231,10 +231,10 @@ describe("GraphConnectionLineView refusal", () => {
   it("shows why the hovered pin refuses the wire", () => {
     const { getByTestId } = renderLine({
       toHandle: { id: "message" },
-      refusal: "Float does not connect to Vector 3",
+      refusal: "Float does not connect to Vector3",
     });
     expect(getByTestId("connection-refusal").textContent).toBe(
-      "Float does not connect to Vector 3",
+      "Float does not connect to Vector3",
     );
   });
 

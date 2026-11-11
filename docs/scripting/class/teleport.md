@@ -12,7 +12,7 @@ Moves and turns the actor at once, without sweeping through what lies between.
 | --- | --- | --- |
 | In | Exec |  |
 | Target | Actor Reference |  |
-| Dest Location | Vector 3 |  |
+| Dest Location | Vector3 |  |
 | Dest Rotation | Rotator |  |
 | Reset Velocity | Boolean | Stop a physics body's movement as it arrives. |
 

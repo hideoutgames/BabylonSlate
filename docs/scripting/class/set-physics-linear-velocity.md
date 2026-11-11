@@ -12,7 +12,7 @@ Sets how fast an actor's Rigid Body moves.
 | --- | --- | --- |
 | In | Exec |  |
 | Target | Actor Reference | Left unconnected the pin shows **Self** and uses the actor running the graph. |
-| Velocity | Vector 3 | World units per second. |
+| Velocity | Vector3 | World units per second. |
 | Add To Current | Boolean | Adds **Velocity** to the body's current velocity instead of replacing it. |
 
 ## Outputs

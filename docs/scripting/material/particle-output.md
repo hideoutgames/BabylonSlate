@@ -10,7 +10,7 @@ Sets the colour and alpha of each particle drawn with the material.
 
 | Pin | Type | Default |
 | --- | --- | --- |
-| Color | Vector 4 | (1, 1, 1, 1) |
+| Color | Vector4 | (1, 1, 1, 1) |
 
 ## Notes
 

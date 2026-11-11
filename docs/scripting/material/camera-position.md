@@ -10,7 +10,7 @@ Returns the position of the camera in world space.
 
 | Pin | Type |
 | --- | --- |
-| Position | Vector 3 |
+| Position | Vector3 |
 
 ## Notes
 

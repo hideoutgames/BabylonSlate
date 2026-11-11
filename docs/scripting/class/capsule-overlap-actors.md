@@ -11,7 +11,7 @@ Returns the actors whose colliders overlap a capsule at a given point.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Center | Vector 3 |  |
+| Center | Vector3 |  |
 | Radius | Float | Defaults to 0.5. |
 | Half Height | Float | Half the length of the capsule's straight part, along its up axis. Defaults to 0.5. |
 | Orientation | Rotator | Turns the shape. Defaults to no turn. |

@@ -10,7 +10,7 @@ Returns the world-space position of the emitter.
 
 | Pin | Type |
 | --- | --- |
-| Emitter Position | Vector 3 |
+| Emitter Position | Vector3 |
 
 ## Notes
 

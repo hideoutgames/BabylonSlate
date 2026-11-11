@@ -18,7 +18,7 @@ Keeps a number within a range by wrapping it round.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Float |
+| Out | Float |
 
 ## Notes
 

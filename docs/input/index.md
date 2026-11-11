@@ -46,7 +46,7 @@ In **Add Node**, the **Input** category has [Event Input Action](../scripting/cl
 | Started | Once when the input becomes active. |
 | Held | Every tick while active, including the first. |
 | Released | Once when the input stops. Connect it to stop movement. |
-| Value | True or false for an action; a number or Vector 2 for an axis. |
+| Value | True or false for an action; a number or Vector2 for an axis. |
 | Held Seconds | How long the current press has lasted. |
 | Last Held Seconds | How long the last press lasted. |
 
@@ -58,13 +58,13 @@ Input events work in the event graphs of classes that tick, such as Actors. They
 
 | Node | Use |
 | --- | --- |
-| [On Any Key Pressed](../scripting/class/on-any-key-pressed.md) | Runs for every newly pressed key, button or stick. |
+| [Event On Any Key Pressed](../scripting/class/event-on-any-key-pressed.md) | Runs for every newly pressed key, button or stick. |
 | [Get Cursor Position](../scripting/class/get-cursor-position.md) | The pointer position on the game view. |
 | [Project Cursor To Scene](../scripting/class/project-cursor-to-scene.md) | What is under the pointer in the world. |
 | [Show Cursor](../scripting/class/show-cursor.md), [Hide Cursor](../scripting/class/hide-cursor.md) | Show or hide the pointer over the game view. |
 | [Set Gamepad Rumble](../scripting/class/set-gamepad-rumble.md) | Vibrates a gamepad. |
 | [Vibrate Device](../scripting/class/vibrate-device.md) | Vibrates an Android phone or tablet. iPhone and iPad browsers cannot vibrate. |
-| [On Gamepad Connected](../scripting/class/on-gamepad-connected.md), [On Gamepad Disconnected](../scripting/class/on-gamepad-disconnected.md) | Run when a pad appears or goes away. |
+| [Event On Gamepad Connected](../scripting/class/event-on-gamepad-connected.md), [Event On Gamepad Disconnected](../scripting/class/event-on-gamepad-disconnected.md) | Run when a pad appears or goes away. |
 
 Menus in Scene Layers can also be driven by your inputs: **Project Settings > Focus Navigation** picks the Input assets that move focus between buttons.
 
@@ -74,7 +74,7 @@ The touch nodes see every finger on the game view, plus pen tips and the left mo
 
 | Node | Use |
 | --- | --- |
-| [On Touch Began](../scripting/class/on-touch-began.md), [On Touch Moved](../scripting/class/on-touch-moved.md), [On Touch Ended](../scripting/class/on-touch-ended.md) | Run once for each touch that begins, moves or ends in a tick. |
+| [Event On Touch Began](../scripting/class/event-on-touch-began.md), [Event On Touch Moved](../scripting/class/event-on-touch-moved.md), [Event On Touch Ended](../scripting/class/event-on-touch-ended.md) | Run once for each touch that begins, moves or ends in a tick. |
 | [Get Touch Count](../scripting/class/get-touch-count.md), [Get Touch](../scripting/class/get-touch.md) | Read every touch this tick, lowest finger first. |
 | [Find Touch](../scripting/class/find-touch.md) | Read the touch with a given finger number, to follow one finger. |
 | [Project Touch To Scene](../scripting/class/project-touch-to-scene.md) | What is under a touch in the world. |
@@ -86,7 +86,7 @@ Each node also returns the whole touch as a **Touch** structure:
 | Finger | The touch's finger number. |
 | Position | Where the touch is, in pixels from the top-left corner of the game view. |
 | Delta | How far it moved this tick, in pixels. |
-| Velocity | How fast it moves, in pixels per second, smoothed over the last few ticks. On **On Touch Ended** it is the speed of a flick. |
+| Velocity | How fast it moves, in pixels per second, smoothed over the last few ticks. On **Event On Touch Ended** it is the speed of a flick. |
 | Start Position | Where it began. |
 | Pressure | From 0 to 1. A pen reports how hard it presses; fingers and mice without pressure report 0.5. |
 | Phase | **Began**, **Moved**, **Stationary**, **Ended** or **Cancelled** this tick. |
@@ -112,7 +112,7 @@ Haptic recognizes common gestures from the touches. Bind them like any other con
 - Gestures are timed in real time, so they behave the same while the game slows down or pauses time with time dilation.
 - Pinch, Two-Finger Rotate and Two-Finger Drag follow the two lowest-numbered fingers, from the tick both are down.
 - Values per tick are small. Use the control's **Scale** or **Sensitivity** to turn them into the speed your game needs.
-- For the speed of a swipe, read **Velocity** from [On Touch Ended](../scripting/class/on-touch-ended.md).
+- For the speed of a swipe, read **Velocity** from [Event On Touch Ended](../scripting/class/event-on-touch-ended.md).
 
 ## Motion
 

@@ -263,7 +263,7 @@ export function hydrateSerializedGraphForEditor(
           data: withVisualMeta(
             {
               ...properties,
-              title: wiredClassId ? "Cast to Class" : `Cast to ${defaultClassId}`,
+              title: wiredClassId ? "Cast To Class" : `Cast To ${defaultClassId}`,
               __pins: pins,
             },
             def,

@@ -119,7 +119,7 @@ export const enumNodes: NodeDefinition[] = [
   },
   {
     id: "enum.toString",
-    title: "Enum to String",
+    title: "To String (Enum)",
     category: "enum",
     pure: true,
     pins: (properties) => [
@@ -132,7 +132,7 @@ export const enumNodes: NodeDefinition[] = [
   },
   {
     id: "enum.switch",
-    title: "Switch on Enum",
+    title: "Switch On Enum",
     category: "enum",
     pins: (properties) => [
       pin("execIn", "exec", "in", EXEC),

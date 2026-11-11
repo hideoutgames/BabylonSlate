@@ -10,7 +10,7 @@ Returns the vertex normal in the mesh's local space, including morph target chan
 
 | Pin | Type |
 | --- | --- |
-| Normal | Vector 3 |
+| Normal | Vector3 |
 
 ## Notes
 

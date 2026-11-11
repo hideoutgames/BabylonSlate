@@ -2,7 +2,7 @@
 node: wildcard.to_transform
 ---
 
-# Wildcard To transform
+# Wildcard To Transform
 
 Converts an Any value to a Transform and reports whether it worked.
 

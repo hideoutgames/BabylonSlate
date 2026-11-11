@@ -103,7 +103,7 @@ describe("normalizeStringSwitchCases", () => {
     const result = normalizeStringSwitchCases(["a", 1, true]);
     expect(result.cases).toEqual(["a"]);
     expect(result.warnings).toEqual([
-      expect.objectContaining({ code: "flow.switch.invalid_string", value: "1", message: "Non-string Switch on String case was removed." }),
+      expect.objectContaining({ code: "flow.switch.invalid_string", value: "1", message: "Non-string Switch On String case was removed." }),
       expect.objectContaining({ code: "flow.switch.invalid_string", value: "true" }),
     ]);
   });

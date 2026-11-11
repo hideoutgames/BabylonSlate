@@ -10,7 +10,7 @@ Returns the colour and alpha the emitter gives to the particle being drawn.
 
 | Pin | Type |
 | --- | --- |
-| Color | Vector 4 |
+| Color | Vector4 |
 
 ## Notes
 

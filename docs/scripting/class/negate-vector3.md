@@ -10,13 +10,13 @@ Returns a vector pointing the opposite way.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Vector | Vector 3 |  |
+| Vector | Vector3 |  |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Vector 3 |
+| Out | Vector3 |
 
 ## Notes
 

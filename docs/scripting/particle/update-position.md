@@ -11,7 +11,7 @@ Sets the position of every particle each frame.
 | Pin | Type |
 | --- | --- |
 | Particle | Particle |
-| Position | Vector 3 |
+| Position | Vector3 |
 
 ## Outputs
 

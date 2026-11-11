@@ -4,16 +4,16 @@ node: tween.vector4
 
 # Tween Vector4
 
-Animates a Vector 4 variable from A to B over Duration seconds.
+Animates a Vector4 variable from A to B over Duration seconds.
 
 ## Inputs
 
 | Pin | Type | Description |
 | --- | --- | --- |
 | Exec | Exec |  |
-| Target | Vector 4 | Connect a [**Get Variable**](get-variable.md) node for a writable variable. Constants, computed values and read-only variables cannot be tweened. |
-| A | Vector 4 |  |
-| B | Vector 4 |  |
+| Target | Vector4 | Connect a [**Get Variable**](get-variable.md) node for a writable variable. Constants, computed values and read-only variables cannot be tweened. |
+| A | Vector4 |  |
+| B | Vector4 |  |
 | Duration | Float | Seconds the tween takes, in game time. Defaults to 2; 0 or less writes B immediately. |
 | Curve | EasingCurve | Easing shape, Linear by default. Back and Elastic curves can overshoot A and B. |
 

@@ -451,7 +451,7 @@ describe("material node contracts", () => {
     expect(result.setParameter("Minimum", { kind: "float", value: 0.2 })).toBe(true);
   });
 
-  it.each(["vector.refract", "logic.lessThan", "logic.equal"])("compiles ordinary Vector 3 inputs for %s", async (type) => {
+  it.each(["vector.refract", "logic.lessThan", "logic.equal"])("compiles ordinary Vector3 inputs for %s", async (type) => {
     const doc = createDefaultMaterialDocument();
     node(doc, "a", "const.vec3", { value: [0, 0, -1] });
     node(doc, "b", "const.vec3", { value: [0, 0, 1] });

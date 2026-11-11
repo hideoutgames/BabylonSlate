@@ -48,9 +48,9 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | --- | --- |
 | [Color](color.md) | Returns a fixed colour, including alpha, that you set in the **Inspector**. |
 | [Float](float.md) | Returns a fixed number that you set in the **Inspector**. |
-| [Vector 2](vector-2.md) | Returns a fixed Vector 2 that you set in the **Inspector**. |
-| [Vector 3](vector-3.md) | Returns a fixed Vector 3 that you set in the **Inspector**. |
-| [Vector 4](vector-4.md) | Outputs a fixed Vector 4 value set in the **Inspector**. |
+| [Vector2](vector2.md) | Returns a fixed Vector2 that you set in the **Inspector**. |
+| [Vector3](vector3.md) | Returns a fixed Vector3 that you set in the **Inspector**. |
+| [Vector4](vector4.md) | Outputs a fixed Vector4 value set in the **Inspector**. |
 
 ## Parameter
 
@@ -60,8 +60,8 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Float Parameter](float-parameter.md) | Outputs a named Float that can be changed at runtime or overridden per Material Instance. |
 | [Global Parameter](global-parameter.md) | Outputs one parameter of a Global Parameter Collection, a value the whole game shares. |
 | [Texture Parameter](texture-parameter.md) | Outputs a named texture that can be changed at runtime or overridden per Material Instance. |
-| [Vector 2 Parameter](vector-2-parameter.md) | Outputs a named Vector 2 that can be changed at runtime or overridden per Material Instance. |
-| [Vector 3 Parameter](vector-3-parameter.md) | Outputs a named Vector 3 that can be changed at runtime or overridden per Material Instance. |
+| [Vector2 Parameter](vector2-parameter.md) | Outputs a named Vector2 that can be changed at runtime or overridden per Material Instance. |
+| [Vector3 Parameter](vector3-parameter.md) | Outputs a named Vector3 that can be changed at runtime or overridden per Material Instance. |
 
 ## Math
 
@@ -116,16 +116,16 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 
 | Node | Description |
 | --- | --- |
-| [Combine](combine.md) | Builds a Vector 2, Vector 3 or Color from separate Float values. |
+| [Combine](combine.md) | Builds a Vector2, Vector3 or Color from separate Float values. |
 | [Cross Product](cross-product.md) | Returns the vector perpendicular to both A and B. |
-| [Distance](distance.md) | Returns the straight-line distance between two Vector 3 positions. |
-| [Dot Product](dot-product.md) | Returns the dot product of two Vector 3 values. |
-| [Length](length.md) | Returns the length of a Vector 3. |
+| [Distance](distance.md) | Returns the straight-line distance between two Vector3 positions. |
+| [Dot Product](dot-product.md) | Returns the dot product of two Vector3 values. |
+| [Length](length.md) | Returns the length of a Vector3. |
 | [Normalize](normalize.md) | Scales a vector to a length of 1 without changing its direction. |
 | [Reflect](reflect.md) | Reflects Incident around Normal and returns the bounced direction. |
 | [Refract](refract.md) | Bends the Incident direction as it passes through a surface with the given Normal and Eta. |
-| [Split](split.md) | Splits a Vector 2, Vector 3 or Color into separate Float components. |
-| [VectorMask(R)](vectormask-r.md) | Extracts chosen channels from a Vector 4 and outputs them as a Float or a smaller vector. |
+| [Split](split.md) | Splits a Vector2, Vector3 or Color into separate Float components. |
+| [VectorMask(R)](vectormask-r.md) | Extracts chosen channels from a Vector4 and outputs them as a Float or a smaller vector. |
 
 ## Logic
 

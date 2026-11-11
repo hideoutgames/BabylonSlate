@@ -10,7 +10,7 @@ Returns the vertex normal in world space, scaled to a length of 1.
 
 | Pin | Type |
 | --- | --- |
-| Normal | Vector 3 |
+| Normal | Vector3 |
 
 ## Notes
 

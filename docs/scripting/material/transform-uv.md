@@ -10,16 +10,16 @@ Scales, rotates and offsets UV coordinates, for tiling, turning and scrolling te
 
 | Pin | Type | Default |
 | --- | --- | --- |
-| UV | Vector 2 |  |
-| Tiling | Vector 2 | (1, 1) |
+| UV | Vector2 |  |
+| Tiling | Vector2 | (1, 1) |
 | Rotation | Float | 0 |
-| Offset | Vector 2 | (0, 0) |
+| Offset | Vector2 | (0, 0) |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 2 |
+| Out | Vector2 |
 
 ## Notes
 

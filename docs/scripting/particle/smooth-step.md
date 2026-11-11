@@ -22,5 +22,5 @@ Returns 0 below the first edge, 1 above the second, and a smooth curve in betwee
 
 ## Notes
 
-- Accepts a Float, Vector 2 or Vector 3, but not a Color.
+- Accepts a Float, Vector2 or Vector3, but not a Color.
 - Use it to ease a value in or out instead of changing it in a straight line.

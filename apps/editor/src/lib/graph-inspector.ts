@@ -682,7 +682,7 @@ export function enumNodePropertyRows(
           ? typeId === "enum.make"
             ? `Make ${next.name}`
             : typeId === "enum.switch"
-              ? `Switch on ${next.name}`
+              ? `Switch On ${next.name}`
               : typeId === "enum.select"
                 ? `Select ${next.name}`
               : typeId === "enum.equals"
@@ -900,7 +900,7 @@ export function isFlowSwitchTypeId(typeId: string): boolean {
   return typeId === "flow.switchInt" || typeId === "flow.switchString";
 }
 
-/** NamedListEditor display values for Switch on Int / String cases. */
+/** NamedListEditor display values for Switch On Int / String cases. */
 export function flowSwitchCaseListValues(
   typeId: string,
   data: Record<string, unknown>,

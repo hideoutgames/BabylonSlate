@@ -10,8 +10,8 @@ Returns the dot product of two vectors.
 
 | Pin | Type |
 | --- | --- |
-| A | Vector 4 |
-| B | Vector 4 |
+| A | Vector4 |
+| B | Vector4 |
 
 ## Outputs
 

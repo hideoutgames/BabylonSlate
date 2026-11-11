@@ -11,7 +11,7 @@ Sets the width and height scale of every particle each frame.
 | Pin | Type |
 | --- | --- |
 | Particle | Particle |
-| Scale | Vector 2 |
+| Scale | Vector2 |
 
 ## Outputs
 

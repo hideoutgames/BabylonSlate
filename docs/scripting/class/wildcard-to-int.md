@@ -2,7 +2,7 @@
 node: wildcard.to_int
 ---
 
-# Wildcard To int
+# Wildcard To Int
 
 Converts an Any value to an Integer and reports whether it worked.
 

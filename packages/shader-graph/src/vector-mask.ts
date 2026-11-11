@@ -11,7 +11,7 @@ export function vectorMaskDefinition(node: MaterialGraphNode, base: MaterialNode
   const kind: MaterialValueType = (["float", "float", "vec2", "vec3", "vec4"] as const)[channels.length]!;
   return { ...base, title: `VectorMask(${channels.join("").toUpperCase()})`, outputs: [{ id: "out", name: "Out", type: { kind }, ...(kind === "vec4" ? { colorHint: true } : {}) }] };
 }
-/** The Value pin is always Vector 4, so only an empty channel selection can be wrong. */
+/** The Value pin is always Vector4, so only an empty channel selection can be wrong. */
 export function vectorMaskError(properties: Record<string, unknown>): string | null {
   return vectorMaskChannels(properties).length ? null : "VectorMask requires at least one channel";
 }

@@ -2,7 +2,7 @@
 node: random.seededIntInRange
 ---
 
-# Seeded Random Integer In Range
+# Seeded Random Int In Range
 
 Returns a random whole number from **Min** to **Max**.
 
@@ -21,7 +21,7 @@ Returns a random whole number from **Min** to **Max**.
 
 ## Notes
 
-- Draws from **Seed** instead of the global seed, so the same Seed and Step give the same result on every device. [Random Integer In Range](random-int-in-range.md) draws from the global seed.
+- Draws from **Seed** instead of the global seed, so the same Seed and Step give the same result on every device. [Random Int In Range](random-int-in-range.md) draws from the global seed.
 - **Seed** is a [reference pin](../pin-types.md#reference-pins): connect a Seed variable, not a value.
 - Takes one step, or none when **Min** equals **Max**. Each step adds 1 to the Seed variable's **Step**.
 - Both **Min** and **Max** can be returned.

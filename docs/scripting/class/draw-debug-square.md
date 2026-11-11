@@ -11,7 +11,7 @@ Draws a square outline at a world position.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Center | Vector 3 |  |
+| Center | Vector3 |  |
 | Size | Float | Length of each side in world units. |
 | Rotation | Rotator | Orientation in degrees (pitch, yaw, roll). |
 | Color | Color | Line colour. Alpha is ignored. Defaults to white. |

@@ -2,7 +2,7 @@
 node: timelineProxy.bindActor
 ---
 
-# Bind Actor to Timeline Proxy
+# Bind Actor To Timeline Proxy
 
 Adds an actor to an Actor proxy of a Timeline Clip asset instance, so the proxy's tracks animate it.
 

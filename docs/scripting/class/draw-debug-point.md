@@ -11,7 +11,7 @@ Draws a small three-axis cross at a world position.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Position | Vector 3 |  |
+| Position | Vector3 |  |
 | Size | Float | Overall width of the cross in world units. |
 | Color | Color | Line colour. Alpha is ignored. Defaults to white. |
 | Duration | Float | Seconds the shape stays visible. 0 shows it for one simulation tick, so call the node every tick to keep it on screen. |

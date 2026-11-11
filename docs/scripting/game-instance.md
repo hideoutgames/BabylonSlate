@@ -21,7 +21,7 @@ Use it for state that must outlive a scene, such as the score or the chosen char
 | [Event Tick](class/event-tick.md) | Every simulation step, before the actors tick. |
 | [Event On End](class/event-on-end.md) | Once, when Play stops or the game quits. Changing scenes never runs it. |
 
-[Event On Game Loaded](class/event-on-game-loaded.md) runs after Load Game restores a save, and [Event Scalability Changed](class/event-scalability-changed.md) when the renderer answers a quality request. On Game Loaded runs only on the Game Instance and Game Subsystems, so other objects that need it bind to an [Event Dispatcher](event-dispatchers.md) the Game Instance calls from it.
+[Event On Game Loaded](class/event-on-game-loaded.md) runs after Load Game restores a save, and [Event On Scalability Changed](class/event-on-scalability-changed.md) when the renderer answers a quality request. On Game Loaded runs only on the Game Instance and Game Subsystems, so other objects that need it bind to an [Event Dispatcher](event-dispatchers.md) the Game Instance calls from it.
 
 In Game Instance graphs, [Get Scene Loading Progress](class/get-scene-loading-progress.md) drives a loading screen and [Get Scene Reference](class/get-scene-reference.md) returns the current scene.
 

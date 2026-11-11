@@ -11,8 +11,8 @@ Spawns particles on the surface of a mesh and launches them along the surface or
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
 | Particle | Particle |  |  |
-| Direction 1 | Vector 3 | (0, 1, 0) | One end of the range the launch direction is picked from, when **Use Mesh Normals** is off. |
-| Direction 2 | Vector 3 | (0, 1, 0) | The other end of that range. |
+| Direction 1 | Vector3 | (0, 1, 0) | One end of the range the launch direction is picked from, when **Use Mesh Normals** is off. |
+| Direction 2 | Vector3 | (0, 1, 0) | The other end of that range. |
 
 ## Outputs
 

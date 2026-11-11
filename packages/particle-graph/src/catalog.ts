@@ -145,8 +145,8 @@ export const PARTICLE_VALUE_TYPE_OPTIONS: readonly {
   label: string;
 }[] = [
   { id: "float", label: "Float" },
-  { id: "vec2", label: "Vector 2" },
-  { id: "vec3", label: "Vector 3" },
+  { id: "vec2", label: "Vector2" },
+  { id: "vec3", label: "Vector3" },
   { id: "color", label: "Color" },
 ];
 
@@ -174,7 +174,7 @@ const GENERIC_NO_COLOR: ParticlePinType = {
   accepts: ["float", "vec2", "vec3"],
 };
 
-/** Normalized Lerp blends directions: Vector 2 or Vector 3, Vector 3 until wired. */
+/** Normalized Lerp blends directions: Vector2 or Vector3, Vector3 until wired. */
 const NLERP_VECTOR: ParticlePinType = { kind: "generic", accepts: ["vec2", "vec3"], fallback: "vec3" };
 
 /** Particle pins come first so the spine sits in the first pin row. */
@@ -605,8 +605,8 @@ const INPUT_NODES: ParticleNodeDefinition[] = [
   systemValueNode("input.system.emitterPosition", "Emitter Position", VEC3, "World-space position of the emitter."),
   systemValueNode("input.system.cameraPosition", "Camera Position", VEC3, "World-space position of the active camera."),
   constantNode("const.float", "Float", FLOAT),
-  constantNode("const.vec2", "Vector 2", VEC2),
-  constantNode("const.vec3", "Vector 3", VEC3),
+  constantNode("const.vec2", "Vector2", VEC2),
+  constantNode("const.vec3", "Vector3", VEC3),
   constantNode("const.color", "Color", COLOR),
   {
     type: "input.parameter",

@@ -23,7 +23,7 @@ Returns a random value between a minimum and a maximum.
 
 | Setting | Description |
 | --- | --- |
-| Value Type | The type of **Min**, **Max** and **Value**: Float, Vector 2, Vector 3 or Color. The default is Float. |
+| Value Type | The type of **Min**, **Max** and **Value**: Float, Vector2, Vector3 or Color. The default is Float. |
 | Lock Mode | Per Particle rolls once per particle: the value is fixed in Create Particle inputs and rolled again every frame in Update inputs. Every Read rolls a new value each time it is read. |
 
 ## Notes

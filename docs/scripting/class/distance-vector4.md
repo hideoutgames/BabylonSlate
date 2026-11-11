@@ -4,14 +4,14 @@ node: vector.distance4
 
 # Distance Vector4
 
-Returns the distance between two Vector 4 values.
+Returns the distance between two Vector4 values.
 
 ## Inputs
 
 | Pin | Type |
 | --- | --- |
-| A | Vector 4 |
-| B | Vector 4 |
+| A | Vector4 |
+| B | Vector4 |
 
 ## Outputs
 

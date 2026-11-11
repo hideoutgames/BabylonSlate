@@ -2,7 +2,7 @@
 node: enum.switch
 ---
 
-# Switch on Enum
+# Switch On Enum
 
 Runs one execution path depending on which enum member a value holds.
 

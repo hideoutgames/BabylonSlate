@@ -16,7 +16,7 @@ Returns how fast an actor's Rigid Body is spinning.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Angular Velocity | Vector 3 | Degrees per second about each world axis. |
+| Angular Velocity | Vector3 | Degrees per second about each world axis. |
 
 ## Notes
 

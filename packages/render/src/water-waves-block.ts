@@ -57,7 +57,7 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     this.registerOutput("subsurface", Types.Float, NodeMaterialBlockTargets.Fragment);
     this.registerOutput("edgeTurbulence", Types.Float, NodeMaterialBlockTargets.Fragment);
   }
-  /** The undisplaced world position of the vertex (the rest point), Vector 4. */
+  /** The undisplaced world position of the vertex (the rest point), Vector4. */
   get worldPosition() { return this._inputs[0]!; }
   /** The world normal passed through where the mesh is not water displaced by this block; Up when unconnected. */
   get worldNormal() { return this._inputs[1]!; }

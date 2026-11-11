@@ -10,7 +10,7 @@ Returns the linear depth of the rendered scene at a position on the screen.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| UV | Vector 2 | Screen position to read; the current pixel when unconnected. |
+| UV | Vector2 | Screen position to read; the current pixel when unconnected. |
 
 ## Outputs
 

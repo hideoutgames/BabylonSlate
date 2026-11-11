@@ -21,7 +21,7 @@ describe("evaluateTimelineTrack", () => {
     expect(evaluateTimelineTrack(track("float", []), 1)).toBeUndefined();
   });
 
-  it("interpolates vectors, Vector 2 values and colours per channel", () => {
+  it("interpolates vectors, Vector2 values and colours per channel", () => {
     expect(evaluateTimelineTrack(track("vec3", [key(0, { x: 0, y: 0, z: 0 }), key(2, { x: 2, y: 4, z: -2 })]), 1)).toEqual({ x: 1, y: 2, z: -1 });
     expect(evaluateTimelineTrack(track("vec2", [key(0, { x: 0, y: 10 }), key(1, { x: 4, y: 0 })]), 0.25)).toEqual({ x: 1, y: 7.5 });
     expect(evaluateTimelineTrack(track("color", [key(0, { x: 0, y: 0, z: 0, w: 1 }), key(1, { x: 1, y: 0.5, z: 0, w: 0 })]), 0.5))

@@ -12,8 +12,8 @@ Scales a component from scale A to scale B over Duration seconds.
 | --- | --- | --- |
 | Exec | Exec |  |
 | Target | ActorComponent Reference | Component to move. It must have a transform; 2D Anchor and Movement components are not supported. If it is empty or destroyed, the tween is cancelled. |
-| A | Vector 3 |  |
-| B | Vector 3 |  |
+| A | Vector3 |  |
+| B | Vector3 |  |
 | Duration | Float | Seconds the tween takes, in game time. Defaults to 2; 0 or less writes B immediately. |
 | Curve | EasingCurve | Easing shape, Linear by default. Back and Elastic curves can overshoot A and B. |
 | Space | TweenSpace | Local (default) is relative to the parent; World uses world coordinates and follows a moving parent. |

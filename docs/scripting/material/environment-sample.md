@@ -10,14 +10,14 @@ Returns the colour of the scene's environment lighting in a direction, blurred b
 
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
-| Direction | Vector 3 | (0, 0, 1) | World-space direction to sample; a zero vector samples along +Z. |
+| Direction | Vector3 | (0, 0, 1) | World-space direction to sample; a zero vector samples along +Z. |
 | Roughness | Float | 0 | 0 is a sharp view of the environment and 1 is the blurriest. Values are limited to 0 to 1. |
 
 ## Outputs
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Linear Radiance | Vector 3 | Environment colour as linear radiance, before any tone mapping. |
+| Linear Radiance | Vector3 | Environment colour as linear radiance, before any tone mapping. |
 
 ## Notes
 
