@@ -62,7 +62,7 @@ Drag a window's tab to dock it somewhere else. See [Windows and Layout](../edito
 
 ## Status bar
 
-The bar at the bottom shows the save state (for example **All Changes Saved** or **2 Unsaved Documents**), the number of errors and the active document's name. Phones do not show it.
+The bar at the bottom shows the save state (for example **All Changes Saved** or **2 Unsaved Documents**) and the number of errors. Phones do not show it.
 
 ## On a phone
 

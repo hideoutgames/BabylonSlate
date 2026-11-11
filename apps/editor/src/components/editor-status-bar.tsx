@@ -1,9 +1,5 @@
 import { CircleAlertIcon } from "lucide-react";
-import {
-  useActiveDocumentId,
-  useOpenDocumentTabs,
-  useSaveState,
-} from "../context/document-context";
+import { useSaveState } from "../context/document-context";
 import { useValidation } from "../context/validation-context";
 import { getBuildLabel } from "../lib/build-identity";
 import { usePhoneLayout } from "../shell/use-platform-layout";
@@ -16,9 +12,6 @@ function saveStateLabel(unsaved: number, projectDirty: boolean, unrecovered: boo
 }
 
 export function EditorStatusBar() {
-  const activeDocumentId = useActiveDocumentId();
-  // The label only: tab-level changes, not each content edit.
-  const active = useOpenDocumentTabs().find((doc) => doc.id === activeDocumentId);
   const { dirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable } = useSaveState();
   const { errorCount } = useValidation();
   const phone = usePhoneLayout();
@@ -42,12 +35,6 @@ export function EditorStatusBar() {
             <CircleAlertIcon aria-hidden="true" />
             {errorCount} {errorCount === 1 ? "Error" : "Errors"}
           </span>
-        ) : null}
-        {active ? (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className="editor-status-document">{active.ref.label}</span>
-          </>
         ) : null}
       </p>
       <span className="editor-status-version">{getBuildLabel()}</span>

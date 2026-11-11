@@ -129,8 +129,6 @@ export function ThemePreview({ colors }: { colors: ThemeColors }) {
         <footer className="editor-statusbar">
           <p className="editor-status-summary">
             <span>All Changes Saved</span>
-            <span aria-hidden="true">·</span>
-            <span className="editor-status-document">Mannequin Class</span>
           </p>
           <span className="editor-status-version">Development build</span>
         </footer>

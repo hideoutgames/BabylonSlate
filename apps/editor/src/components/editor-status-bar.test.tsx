@@ -28,9 +28,10 @@ afterEach(() => {
 });
 
 describe("EditorStatusBar", () => {
-  it("reads saved when nothing is waiting", () => {
+  it("reads saved when nothing is waiting, without naming the open document", () => {
     render(<EditorStatusBar />);
     expect(screen.getByRole("status").textContent).toBe("All Changes Saved");
+    expect(screen.getByTestId("editor-status-bar").querySelector(".editor-status-summary")!.textContent).toBe("All Changes Saved");
   });
 
   it.each([null, { state: "saved" as const }])("never reads saved while edits wait for Recover or Discard (auto-save %j)", (autoSaveStatus) => {
