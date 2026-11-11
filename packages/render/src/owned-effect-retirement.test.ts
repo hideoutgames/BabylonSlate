@@ -1,4 +1,5 @@
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { DrawWrapper } from "@babylonjs/core/Materials/drawWrapper";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { afterEach, expect, it, vi } from "vitest";
 import { disposeKeepingLinkingEffects } from "./owned-effect-retirement";
@@ -49,4 +50,22 @@ it("leaves an Effect another owner still draws with alive, whether or not it lin
   disposeKeepingLinkingEffects([shared], () => shared.dispose());
   expect(shared.isDisposed).toBe(false);
   expect(shared._refCount).toBe(1);
+});
+
+it("keeps the Effect of a draw wrapper Babylon disposes a frame later while its program still links", async () => {
+  const engine = new NullEngine();
+  engines.push(engine);
+  const linking = compile(engine, "0.25");
+  const ready = compile(engine, "0.75");
+  stillLinking(linking);
+  // What a mesh's submesh holds: Babylon disposes the wrapper's Effect at the end of the next Engine frame.
+  for (const effect of [linking, ready]) {
+    const wrapper = new DrawWrapper(engine);
+    wrapper.setEffect(effect, "");
+    wrapper.dispose();
+  }
+  await vi.waitFor(() => { engine.endFrame(); expect(ready.isDisposed).toBe(true); });
+  expect(linking.isDisposed).toBe(false);
+  linking.onCompileObservable.notifyObservers(linking);
+  await vi.waitFor(() => expect(linking.isDisposed).toBe(true));
 });
