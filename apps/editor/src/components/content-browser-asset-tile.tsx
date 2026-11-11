@@ -1,4 +1,4 @@
-import { stripAssetFileSuffix, type IndexedAsset } from "@haptic/assets";
+import { isCheckeredThumbnailType, stripAssetFileSuffix, type IndexedAsset } from "@haptic/assets";
 import {
   SelectableText,
   TYPE_VISUAL_ICON_TILE_SIZE,
@@ -46,8 +46,6 @@ export interface ContentBrowserAssetTileProps {
   onRenameDone?: (name: string | null) => void;
 }
 
-/** Thumbnails drawn over a checkerboard wherever they are transparent. */
-const CHECKERED_THUMBNAIL_TYPES: ReadonlySet<string> = new Set(["Texture", "Tileset", "Tilemap"]);
 /** Thumbnails shown whole (letterboxed onto the checkerboard) rather than cropped to the square. */
 const WHOLE_THUMBNAIL_TYPES: ReadonlySet<string> = new Set(["Tileset", "Tilemap"]);
 const CHECKERBOARD = {
@@ -127,7 +125,7 @@ export function ContentBrowserAssetTile({
                 alt=""
                 data-testid={`content-item-thumb-${asset.header.guid}`}
                 className={cn("size-full", WHOLE_THUMBNAIL_TYPES.has(asset.header.type) ? "object-contain" : "object-cover")}
-                style={CHECKERED_THUMBNAIL_TYPES.has(asset.header.type) ? CHECKERBOARD : undefined}
+                style={isCheckeredThumbnailType(asset.header.type) ? CHECKERBOARD : undefined}
               />
             ) : (
               <TypeVisualIcon

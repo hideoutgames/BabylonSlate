@@ -4,6 +4,7 @@ import {
   openContentBrowser,
   openMainScene,
   openTestProject,
+  selectContentBrowserAssetsFolder,
 } from "./open-test-project";
 
 /** Inspect the real RTT preview blit: tan model surfaces versus cyan bones. */
@@ -40,6 +41,18 @@ async function previewPixels(surface: Locator) {
 }
 
 test.describe("3D Empty Kenney Mannequin", () => {
+  test("a new project draws its starter thumbnails without Generate Thumbnail", async ({ page }, testInfo) => {
+    await openTestProject(page);
+    await openContentBrowser(page);
+    await selectContentBrowserAssetsFolder(page);
+    await page.getByTestId("content-folder-assets/Mannequin").dblclick();
+    // Nothing was saved or chosen: the new project queued every asset that has a thumbnail.
+    const thumbnail = page.locator('[data-asset-path="assets/Mannequin/mannequin.hasset"] img');
+    await expect(thumbnail).toBeVisible({ timeout: 90_000 });
+    await expect.poll(async () => (await previewPixels(thumbnail)).model).toBeGreaterThan(100);
+    await page.screenshot({ path: testInfo.outputPath("new-project-thumbnails.png"), animations: "disabled" });
+  });
+
   test("selected Model and Animation assets generate rendered browser thumbnails", async ({
     page,
   }) => {

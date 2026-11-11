@@ -8,6 +8,7 @@ import {
 import { createEmptyProjectFiles } from "../../../../packages/assets/src/test-support/project-files";
 import { SCENE_SCHEMA_VERSION } from "@haptic/core";
 import { MemoryStorageAdapter } from "@haptic/vfs";
+import { takeProjectThumbnailRequest } from "../lib/model-thumbnail-queue";
 import { ProjectService } from "./project-service";
 
 async function folderWithTemplates() {
@@ -37,6 +38,9 @@ describe("Create Project from a template", () => {
     });
 
     expect(document.metadata.name).toBe("MyPlatformer");
+    // A template brings no thumbnails: the new project's first editor session generates them, once.
+    expect(takeProjectThumbnailRequest(service.guid!)).toBe(true);
+    expect(takeProjectThumbnailRequest(service.guid!)).toBe(false);
     const manifest = JSON.parse(await destination.readText("project.json"));
     expect(manifest.metadata.name).toBe("MyPlatformer");
     expect(manifest.guid).not.toBe("tpl");

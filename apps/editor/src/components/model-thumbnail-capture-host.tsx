@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import {
+  DEFAULT_THUMBNAIL_MAX_EDGE,
+  generateThumbnailBytes,
   normalizeAnimationPayload,
   modelMaterialGuids,
   normalizeModelPayload,
@@ -18,9 +20,12 @@ import {
 } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import {
+  enqueueModelThumbnailJobs,
   subscribeModelThumbnailJobs,
+  takeProjectThumbnailRequest,
   type ModelThumbnailJob,
 } from "../lib/model-thumbnail-queue";
+import { thumbnailJobsFor } from "../lib/thumbnail-jobs";
 import { prepareAssetThumbnailInput, prepareThumbnailMaterialSources } from "../lib/asset-thumbnail-input";
 import { blockingSceneLoadOpen, subscribeBlockingSceneLoads, whenNoBlockingSceneLoad } from "../lib/blocking-scene-loads";
 import { whenEditorAwake } from "../lib/editor-quiet";
@@ -44,7 +49,9 @@ type CaptureEnd = "written" | "ceiling" | "none";
  * One serialized queue for Content Browser captures on the shared Engine.
  * Model/Animation keep construction GLB materials; saved Materials and Actor
  * Prefabs resolve just their own dependencies through the shared resource cache.
- * Tilesets and Tilemaps are drawn in 2D from their saved tiles, without the Engine.
+ * Tilesets and Tilemaps are drawn in 2D from their saved tiles, and Textures
+ * downsampled from their pixels, without the Engine. A project just made from a
+ * template or imported (`requestProjectThumbnails`) queues every asset once.
  * Must sit under PlayProvider. Never holds the Importing overlay.
  * The queue pauses while a blocking scene load is open (viewport, document or
  * Play): a capture's shader compiles would count as that load's progress on the
@@ -220,6 +227,13 @@ export function ModelThumbnailCaptureHost() {
         }
         return "written";
       };
+      if (job.type === "Texture") {
+        // Downsampled from the source pixels, as at import: no Engine needed.
+        const pixels = await readChunk(job.path, "pixels");
+        if (!pixels?.byteLength || !shouldContinue()) return "none";
+        const png = await generateThumbnailBytes(pixels, DEFAULT_THUMBNAIL_MAX_EDGE);
+        return finish(png ? { outcome: "captured", png } : { outcome: "failed" });
+      }
       if (job.type === "Tileset" || job.type === "Tilemap") {
         // Drawn in 2D from the saved tiles: no Engine needed.
         const asset = assetRegistry?.getByGuid(job.guid);
@@ -306,6 +320,20 @@ export function ModelThumbnailCaptureHost() {
           ...(ceilingMs === undefined ? {} : { ceilingMs }),
         },
       ));
+    }
+    // A new project brings no thumbnails: queue every asset that has one, once.
+    const registry = latest.current.assetRegistry;
+    if (thumbnailsEnabled && projectGuid && registry && takeProjectThumbnailRequest(projectGuid)) {
+      const assets = registry.list();
+      void thumbnailJobsFor(
+        assets,
+        assets.map((asset) => asset.header.guid),
+        projectGuid,
+        latest.current.projectDocument?.settings.twoD.pixelsPerUnit,
+        { onlyIfMissing: true },
+      ).then((jobs) => {
+        if (!cancelled) enqueueModelThumbnailJobs(jobs);
+      }).catch(() => undefined);
     }
     return () => {
       cancelled = true;

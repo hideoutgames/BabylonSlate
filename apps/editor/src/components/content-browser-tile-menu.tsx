@@ -21,8 +21,8 @@ import {
 } from "@haptic/assets";
 import type { ProjectDocument } from "@haptic/core";
 import { pickImportFiles } from "@haptic/vfs";
-import { enqueueModelThumbnailJobs, type ModelThumbnailJob } from "../lib/model-thumbnail-queue";
-import { createAssetThumbnailRevisionIndex } from "../lib/asset-thumbnail-revision";
+import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
+import { thumbnailJobsFor } from "../lib/thumbnail-jobs";
 import type { useKeybindings } from "../context/keybind-context";
 import {
   guidsOutsideSelectedFolders,
@@ -36,7 +36,7 @@ import type { ContentBrowserCopyProgress } from "./content-browser-copy-progress
 import type { ImportProgress } from "./import-progress-dialog";
 import type { ContentBrowserTileHit } from "./content-browser-grid-tiles";
 import { contentBrowserCreateMenuItems } from "./content-browser-create-menu";
-import { isTileThumbnailType, tileThumbnailJobs } from "../lib/tile-asset-thumbnails";
+import { tileThumbnailJobs } from "../lib/tile-asset-thumbnails";
 import type { OpenDocument } from "../services/document-service";
 
 /** One item of a Copy to Folder or Duplicate; `run` returns how to remove its copy. */
@@ -137,23 +137,9 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
       onSelect: () => {
         if (!assetRegistry || !projectGuid || !thumbnailsEnabled) return;
         const guids = [...menuTargetGuidsRef.current];
-        const revisions = createAssetThumbnailRevisionIndex(
-          assetRegistry.list(), projectDocument?.settings.twoD?.pixelsPerUnit,
-        );
-        void (async () => {
-          const jobs: ModelThumbnailJob[] = [];
-          for (const guid of guids) {
-            const asset = assetRegistry.getByGuid(guid);
-            if (!asset) continue;
-            const type = asset.header.type;
-            if (type !== "Model" && type !== "Animation" && type !== "Material" && type !== "Class" && !isTileThumbnailType(type)) continue;
-            jobs.push({
-              guid, path: asset.path, type, payload: asset.header.payload,
-              projectGuid, cacheKey: await revisions.cacheKey(guid) ?? guid,
-            });
-          }
-          enqueueModelThumbnailJobs(jobs);
-        })().catch((error) => setImportErrors([error instanceof Error ? error.message : String(error)]));
+        void thumbnailJobsFor(assetRegistry.list(), guids, projectGuid, projectDocument?.settings.twoD?.pixelsPerUnit)
+          .then(enqueueModelThumbnailJobs)
+          .catch((error) => setImportErrors([error instanceof Error ? error.message : String(error)]));
       },
     },
     {

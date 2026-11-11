@@ -9,7 +9,7 @@ import {
   SearchDialog,
   type SearchDialogItem,
 } from "./search-dialog";
-import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
+import { AssetRowGlyph } from "./asset-thumbnail";
 import { useAssetCreate, type AssetCreateOptions } from "./asset-create-context";
 import { usePickerCreate } from "./use-picker-create";
 
@@ -93,9 +93,7 @@ export function AssetPicker({
       label: asset.name,
       description: [asset.type, asset.path].filter(Boolean).join(" · "),
       group: asset.path,
-      leading: (
-        <TypeVisualIcon visual={resolveTypeVisual({ assetType: asset.type })} />
-      ),
+      leading: <AssetRowGlyph guid={asset.guid} type={asset.type} />,
     }));
     const createRows: SearchDialogItem[] = api
       ? offeredCreateTypes.map((type) => {

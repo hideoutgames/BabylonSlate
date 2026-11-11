@@ -1,4 +1,5 @@
 import { useContext, type ReactNode } from "react";
+import { isThumbnailableAssetType } from "@haptic/assets";
 import { AssetThumbnail, PickerAssetGuidContext, useAssetThumbnailUrl } from "./asset-thumbnail";
 import { TypeVisualIcon, resolveTypeVisual, type TypeVisualQuery } from "./type-visuals";
 
@@ -16,12 +17,13 @@ export function PickerIdentity({
   leading,
   visual,
 }: PickerIdentityProps) {
-  // A closed Texture picker shows the Texture itself in place of the type icon.
+  // A closed asset picker shows the asset's thumbnail in place of the type icon.
   const pickedGuid = useContext(PickerAssetGuidContext);
-  const thumbnailUrl = useAssetThumbnailUrl(!leading && visual?.assetType === "Texture" ? pickedGuid : null);
+  const assetType = visual?.assetType;
+  const thumbnailUrl = useAssetThumbnailUrl(!leading && assetType && isThumbnailableAssetType(assetType) ? pickedGuid : null);
   const glyph =
     leading ??
-    (thumbnailUrl ? <AssetThumbnail url={thumbnailUrl} className="size-[22px]" data-testid="picker-thumbnail" />
+    (thumbnailUrl ? <AssetThumbnail url={thumbnailUrl} type={assetType} className="size-[22px]" data-testid="picker-thumbnail" />
       : visual ? <TypeVisualIcon visual={resolveTypeVisual(visual)} /> : null);
   return (
     <span className="flex min-w-0 items-center gap-2">

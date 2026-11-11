@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { Button } from "@haptic/ui/components/button";
+import { AssetPicker } from "./asset-picker";
 import { AssetPickerControl } from "./asset-picker-control";
 import { AssetThumbnailProvider, type AssetThumbnailApi } from "./asset-thumbnail";
 import { PickerIdentity, assetRowIdentity, selectedPickerIdentity } from "./picker-identity";
@@ -52,9 +53,23 @@ describe("closed picker thumbnails", () => {
     expect(revoked).toEqual(["blob:thumb-1"]);
   });
 
-  it("keep the type icon for other asset types, a Texture without a thumbnail, and rows outside a closed picker", async () => {
+  it("show a Model's thumbnail on the muted background, and a Texture's over the checkerboard", async () => {
+    const load = vi.fn(async () => PNG);
+    const { unmount } = render(closedPicker({ load, versions: {} }, "model-hero", { name: "Hero", type: "Model" }));
+    const model = await waitFor(() => screen.getByTestId("picker-thumbnail"));
+    expect(load).toHaveBeenCalledWith("model-hero");
+    expect(model.className).toContain("bg-muted");
+    expect(model.style.backgroundImage).toBe("");
+    unmount();
+    render(closedPicker({ load, versions: {} }, "tex-grass", { name: "Grass", type: "Texture" }));
+    const texture = await waitFor(() => screen.getByTestId("picker-thumbnail"));
+    expect(texture.className).not.toContain("bg-muted");
+    expect(texture.style.backgroundImage).toContain("conic-gradient");
+  });
+
+  it("keep the type icon for types without thumbnails, an asset without a stored one, and rows outside a closed picker", async () => {
     const load = vi.fn(async (guid: string) => (guid === "tex-none" ? null : PNG));
-    const { unmount } = render(closedPicker({ load, versions: {} }, "mat-rock", { name: "Rock", type: "Material" }));
+    const { unmount } = render(closedPicker({ load, versions: {} }, "song", { name: "Song", type: "Audio" }));
     expect(load).not.toHaveBeenCalled();
     unmount();
     render(closedPicker({ load, versions: {} }, "tex-none", { name: "Blank", type: "Texture" }));
@@ -68,5 +83,32 @@ describe("closed picker thumbnails", () => {
     );
     expect(screen.queryByTestId("picker-thumbnail")).toBeNull();
     expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("show thumbnails in the Pick Asset list and the type icon for other rows", async () => {
+    const load = vi.fn(async (guid: string) => (guid === "tex-grass" || guid === "model-hero" ? PNG : null));
+    render(
+      <AssetThumbnailProvider value={{ load, versions: {} }}>
+        <AssetPicker
+          open
+          onOpenChange={() => {}}
+          onPick={() => {}}
+          assets={[
+            { guid: "tex-grass", name: "Grass", type: "Texture" },
+            { guid: "model-hero", name: "Hero", type: "Model" },
+            { guid: "mat-rock", name: "Rock", type: "Material" },
+            { guid: "song", name: "Song", type: "Audio" },
+          ]}
+        />
+      </AssetThumbnailProvider>,
+    );
+    const image = await waitFor(() => screen.getByTestId("asset-row-thumbnail-tex-grass").querySelector("img")!);
+    expect(image.getAttribute("src")).toBe("blob:thumb-1");
+    expect(screen.getByTestId("search-item-tex-grass").contains(image)).toBe(true);
+    await waitFor(() => expect(screen.getByTestId("asset-row-thumbnail-model-hero")).toBeTruthy());
+    // A Material without a stored thumbnail keeps its icon; Audio has none to ask for.
+    expect(load).toHaveBeenCalledWith("mat-rock");
+    expect(screen.queryByTestId("asset-row-thumbnail-mat-rock")).toBeNull();
+    expect(load).not.toHaveBeenCalledWith("song");
   });
 });
