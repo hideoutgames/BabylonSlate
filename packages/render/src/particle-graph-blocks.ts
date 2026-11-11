@@ -76,6 +76,7 @@ import {
   type ParticleSpace,
 } from "@haptic/core";
 import {
+  particleGlobalParameterValueType,
   particleSpriteSheetSettings,
   resizeParticleValue,
   type ParticleGradientStop,
@@ -294,7 +295,7 @@ class GlobalParameterInputBlock extends ParticleInputBlock {
   private revision = Number.NaN;
 
   constructor(name: string, selection: GlobalParameterSelection, source: GlobalParameterValueSource) {
-    super(name, BABYLON_TYPES[selection.valueType]);
+    super(name, BABYLON_TYPES[particleGlobalParameterValueType(selection.valueType)]);
     this.selection = selection;
     this.source = source;
   }
@@ -305,7 +306,7 @@ class GlobalParameterInputBlock extends ParticleInputBlock {
     if (source && source.revision !== this.revision) {
       this.revision = source.revision;
       const { collectionGuid, parameterId, valueType } = this.selection;
-      super.value = babylonValue(valueType, globalParameterComponents(source, collectionGuid, parameterId, valueType));
+      super.value = babylonValue(particleGlobalParameterValueType(valueType), globalParameterComponents(source, collectionGuid, parameterId, valueType));
     }
     return super.value;
   }

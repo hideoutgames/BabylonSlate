@@ -4,7 +4,7 @@ import { resizeParticleParameterValue } from "./particle-settings";
 export const GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE = "GlobalParameterCollection";
 
 /** The value types a global parameter can hold. */
-export const GLOBAL_PARAMETER_TYPES = ["float", "vec2", "vec3", "color"] as const;
+export const GLOBAL_PARAMETER_TYPES = ["float", "vec2", "vec3", "vec4", "color"] as const;
 export type GlobalParameterType = (typeof GLOBAL_PARAMETER_TYPES)[number];
 
 /** Display names of the value types, in Title Case. */
@@ -12,6 +12,7 @@ export const GLOBAL_PARAMETER_TYPE_LABELS: Readonly<Record<GlobalParameterType, 
   float: "Float",
   vec2: "Vector2",
   vec3: "Vector3",
+  vec4: "Vector4",
   color: "Color",
 };
 

@@ -62,8 +62,10 @@ describe("particle parameter Name pin", () => {
   });
 
   it("applies only to Particle component parameter functions", () => {
-    expect(particleParameterNameTypes("functions.call", { classId: "ParticleComponent", runtime: "setParticleVectorParameter" }))
-      .toEqual(["vec2", "vec3"]);
+    expect(particleParameterNameTypes("functions.call", { classId: "ParticleComponent", runtime: "setParticleVector3Parameter" }))
+      .toEqual(["vec3"]);
+    expect(particleParameterNameTypes("functions.call", { classId: "ParticleComponent", runtime: "getParticleVector2Parameter" }))
+      .toEqual(["vec2"]);
     expect(particleParameterNameTypes("functions.call", { classId: "ParticleComponent", runtime: "playParticles" })).toBeUndefined();
     expect(particleParameterNameTypes("functions.call", { classId: "AudioComponent", runtime: "resetParticleParameter" })).toBeUndefined();
     expect(particleParameterNameTypes("particles.setFloatParameter", {})).toBeUndefined();

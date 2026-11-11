@@ -3,7 +3,7 @@ import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Vector3, Vector4 } from "@babylonjs/core/Maths/math.vector";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { GlobalParameterSession, type GlobalParameterValueSource } from "./global-parameter-values";
@@ -78,6 +78,18 @@ describe("Material Global Parameter uniform", () => {
     // A wider value keeps its leading components.
     session.set("fx", "wind", [1, 2, 3, 4]);
     expect((uniform.valueCallback!() as Vector3).asArray()).toEqual([1, 2, 3]);
+  });
+
+  it("reads a Vector4 as four raw numbers, refreshed in place", () => {
+    const session = new GlobalParameterSession(defaults({ "fx/rect": [0.5, 0.5, 0.5, 0.5] }));
+    const uniform = compile(globalMaterial({ collectionGuid: "fx", parameterId: "rect", valueType: "vec4" }, "out"), session);
+    expect(uniform.convertToLinearSpace).toBe(false);
+    const value = uniform.valueCallback!() as Vector4;
+    expect(value).toBeInstanceOf(Vector4);
+    expect(value.asArray()).toEqual([0.5, 0.5, 0.5, 0.5]);
+    session.set("fx", "rect", [1, 2, 3, 4]);
+    expect(uniform.valueCallback!()).toBe(value);
+    expect(value.asArray()).toEqual([1, 2, 3, 4]);
   });
 });
 

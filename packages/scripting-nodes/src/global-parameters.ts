@@ -4,7 +4,9 @@ import {
   EXEC,
   FLOAT,
   STRING,
+  VEC2,
   VEC3,
+  VEC4,
   assetRef,
   pin,
   type NodeDefinition,
@@ -14,13 +16,17 @@ import {
 /** Global Parameter Collection asset type, as the Collection pin picks it. */
 const COLLECTION = assetRef("GlobalParameterCollection");
 
-type GlobalParameterKind = "Float" | "Vector" | "Color";
+type GlobalParameterKind = "Float" | "Vector2" | "Vector3" | "Vector4" | "Color";
 
 const VALUES: Record<GlobalParameterKind, { type: PinType; defaultValue: unknown; reads: string }> = {
   Float: { type: FLOAT, defaultValue: 0, reads: "a Float parameter" },
-  Vector: { type: VEC3, defaultValue: { x: 0, y: 0, z: 0 }, reads: "a Vector2 or Vector3 parameter; a Vector2 keeps X and Y" },
+  Vector2: { type: VEC2, defaultValue: { x: 0, y: 0 }, reads: "a Vector2 parameter" },
+  Vector3: { type: VEC3, defaultValue: { x: 0, y: 0, z: 0 }, reads: "a Vector3 parameter" },
+  Vector4: { type: VEC4, defaultValue: { x: 0, y: 0, z: 0, w: 0 }, reads: "a Vector4 parameter" },
   Color: { type: COLOR, defaultValue: { x: 1, y: 1, z: 1, w: 1 }, reads: "a Color parameter" },
 };
+
+const KINDS: readonly GlobalParameterKind[] = ["Float", "Vector2", "Vector3", "Vector4", "Color"];
 
 /** Collection, then Parameter: the name of one of its parameters (a dropdown once Collection is set). */
 const targetPins = () => [
@@ -69,10 +75,6 @@ function getter(kind: GlobalParameterKind): NodeDefinition {
 }
 
 export const globalParameterNodes: NodeDefinition[] = [
-  setter("Float"),
-  setter("Vector"),
-  setter("Color"),
-  getter("Float"),
-  getter("Vector"),
-  getter("Color"),
+  ...KINDS.map(setter),
+  ...KINDS.map(getter),
 ];

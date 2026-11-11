@@ -40,8 +40,8 @@ In CEL projects, lit Surface Materials switch to CEL lighting automatically. Unl
 
 Parameters are the values you can change per instance or from scripts.
 
-1. Add a [Float Parameter](../scripting/material/float-parameter.md), [Vector2 Parameter](../scripting/material/vector2-parameter.md), [Vector3 Parameter](../scripting/material/vector3-parameter.md), [Color Parameter](../scripting/material/color-parameter.md) or [Texture Parameter](../scripting/material/texture-parameter.md).
-   They are listed under **Parameter** in **Add Node**. You can also right-click a Float, Vector2, Vector3 or Color constant, or long-press it, and choose **Convert to Parameter**; **Convert to Constant** turns a parameter back.
+1. Add a [Float Parameter](../scripting/material/float-parameter.md), [Vector2 Parameter](../scripting/material/vector2-parameter.md), [Vector3 Parameter](../scripting/material/vector3-parameter.md), [Vector4 Parameter](../scripting/material/vector4-parameter.md), [Color Parameter](../scripting/material/color-parameter.md) or [Texture Parameter](../scripting/material/texture-parameter.md).
+   They are listed under **Parameter** in **Add Node**. You can also right-click a Float, Vector2, Vector3, Vector4 or Color constant, or long-press it, and choose **Convert to Parameter**; **Convert to Constant** turns a parameter back.
 2. Select it and set its **Parameter Name** in the **Inspector**. A new parameter is named **Parameter**; names are case-sensitive and unique in the graph, and a name that is already taken gets **_1**, **_2** and so on. A copied or pasted parameter gets a free name the same way.
 3. Set its **Type** and default value in the Inspector. Changing the type resizes the default and removes wires the new type cannot carry.
 
@@ -77,7 +77,7 @@ To turn existing fragment GLSL into an editable node graph, enable the Experimen
 
 Call a Mesh component's **Get Material** function, then use:
 
-- [Set Material Float Parameter](../scripting/class/set-material-float-parameter.md), [Set Material Vector Parameter](../scripting/class/set-material-vector-parameter.md), [Set Material Color Parameter](../scripting/class/set-material-color-parameter.md) and [Set Material Texture Parameter](../scripting/class/set-material-texture-parameter.md) to change a named parameter.
+- [Set Material Float Parameter](../scripting/class/set-material-float-parameter.md), [Set Material Vector2 Parameter](../scripting/class/set-material-vector2-parameter.md), [Set Material Vector3 Parameter](../scripting/class/set-material-vector3-parameter.md), [Set Material Vector4 Parameter](../scripting/class/set-material-vector4-parameter.md), [Set Material Color Parameter](../scripting/class/set-material-color-parameter.md) and [Set Material Texture Parameter](../scripting/class/set-material-texture-parameter.md) to change a named parameter.
 - The matching Get and Reset nodes, such as [Reset Material Float Parameter](../scripting/class/reset-material-float-parameter.md), to read a value or return to the default.
 - [Set Material Instance](../scripting/class/set-material-instance.md) to swap a mesh to another instance. The old Material stays until the new one is ready.
 

@@ -13,6 +13,7 @@ describe("global parameter collections", () => {
       parameters: [
         { id: "wind", name: " Wind ", type: "vec3", defaultValue: [2] },
         { id: "tint", name: "Tint", type: "color", defaultValue: [1, 0, 0] },
+        { id: "rect", name: "Rect", type: "vec4", defaultValue: [1, 0, 0] },
         { id: "wind", name: "Again", type: "float", defaultValue: [1] },
         { id: "copy", name: "Wind", type: "vec2" },
         { id: "bad", name: "Bad", type: "texture" },
@@ -22,6 +23,8 @@ describe("global parameter collections", () => {
       parameters: [
         { id: "wind", name: "Wind", type: "vec3", defaultValue: [2, 2, 2] },
         { id: "tint", name: "Tint", type: "color", defaultValue: [1, 0, 0, 1] },
+        // A Vector4's missing component is 0: only a Color's alpha starts at 1.
+        { id: "rect", name: "Rect", type: "vec4", defaultValue: [1, 0, 0, 0] },
         { id: "copy", name: "Wind_1", type: "vec2", defaultValue: [0, 0] },
       ],
     });
@@ -34,6 +37,7 @@ describe("global parameter collections", () => {
     expect(uniqueGlobalParameterName(taken, "Parameter", "a")).toBe("Parameter");
     expect(globalParameterStartValue("color")).toEqual([1, 1, 1, 1]);
     expect(globalParameterStartValue("vec2")).toEqual([0, 0]);
+    expect(globalParameterStartValue("vec4")).toEqual([0, 0, 0, 0]);
     const catalog = normalizeGlobalParameterCatalog({ fx: [{ id: "heat", name: "Heat", type: "float", defaultValue: [3] }], " ": [] });
     expect(Object.keys(catalog)).toEqual(["fx"]);
     expect(findGlobalParameter(catalog, "fx", "heat")?.name).toBe("Heat");

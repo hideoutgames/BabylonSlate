@@ -94,6 +94,11 @@ export function materialParameterDefaults(plan: MaterialBuildPlan): Record<strin
     )
       parameters.push([name, { kind: "vec3", value: [x, y, z] }]);
     else if (
+      operation.nodeType === "param.vec4" &&
+      [x, y, z, w].every((v) => typeof v === "number" && Number.isFinite(v))
+    )
+      parameters.push([name, { kind: "vec4", value: [x, y, z, w] }]);
+    else if (
       operation.nodeType === "param.color" &&
       [x, y, z, w].every((v) => typeof v === "number" && Number.isFinite(v))
     )

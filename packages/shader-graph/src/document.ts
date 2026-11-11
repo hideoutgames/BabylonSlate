@@ -129,6 +129,9 @@ function normalizeNodeProperties(
   if (type === "param.vec3") {
     return { ...properties, value: [asNumber(value[0], 0), asNumber(value[1], 0), asNumber(value[2], 0)] };
   }
+  if (type === "param.vec4") {
+    return { ...properties, value: [asNumber(value[0], 0), asNumber(value[1], 0), asNumber(value[2], 0), asNumber(value[3], 0)] };
+  }
   return properties;
 }
 

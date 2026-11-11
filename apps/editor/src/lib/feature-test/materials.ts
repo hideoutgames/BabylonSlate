@@ -435,8 +435,8 @@ function surfaceMaterial(name: string, albedoGuid: string, tintGuid: string, pul
 
 /**
  * Dark lit base with color bands scrolling up the mesh (UV V + time) as emissive light. Band
- * Tiling (Vector2) scales the UVs and Glow Tint (Vector3) tints the light; their defaults
- * leave the look unchanged.
+ * Tiling (Vector2) scales the UVs, Glow Tint (Vector3) tints the light and Glow Gain (Vector4, four raw
+ * numbers) scales it per channel; their defaults leave the look unchanged.
  */
 function emissiveMaterial(name: string): MaterialDocument {
   const doc = blankMaterial(name, "surface");
@@ -448,6 +448,8 @@ function emissiveMaterial(name: string): MaterialDocument {
   node(doc, "strength", "param.float", 0, 6, { name: "Emissive Strength", value: [2.5] });
   node(doc, "tiling", "param.vec2", 0, 3, { name: "Band Tiling", value: [1, 1] });
   node(doc, "glowTint", "param.vec3", 4, 4, { name: "Glow Tint", value: [1, 1, 1] });
+  node(doc, "glowGain", "param.vec4", 4, 5, { name: "Glow Gain", value: [1, 1, 1, 1] });
+  node(doc, "gained", "math.multiply", 7, 4);
   node(doc, "tile", "math.multiply", 1, 3);
   node(doc, "tinted", "math.multiply", 6, 4);
   node(doc, "scroll", "math.multiply", 1, 0);
@@ -480,7 +482,9 @@ function emissiveMaterial(name: string): MaterialDocument {
   wire(doc, "roughness", "out", "output", "roughness");
   wire(doc, "glow", "out", "tinted", "a");
   wire(doc, "glowTint", "out", "tinted", "b");
-  wire(doc, "tinted", "out", "output", "emissive");
+  wire(doc, "tinted", "out", "gained", "a");
+  wire(doc, "glowGain", "out", "gained", "b");
+  wire(doc, "gained", "out", "output", "emissive");
   return doc;
 }
 

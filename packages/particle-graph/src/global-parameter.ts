@@ -1,10 +1,20 @@
 import type { GlobalParameterType } from "@haptic/core";
 import type { ParticleGraphDocument, ParticleGraphNode } from "./document";
+import type { ParticleNumericType } from "./types";
 
 /** The Particle Graph **Global Parameter** node: one parameter of a Global Parameter Collection. */
 export const PARTICLE_GLOBAL_PARAMETER_NODE_TYPE = "global.parameter";
 
 const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+
+/**
+ * The Particle Graph type a Global Parameter of `type` is read as. A Particle Graph has no Vector4
+ * (Babylon's particle nodes have none): its four-component type is Color, which it passes as raw
+ * numbers, so a Vector4 arrives on a Color pin unchanged.
+ */
+export function particleGlobalParameterValueType(type: GlobalParameterType): ParticleNumericType {
+  return type === "vec4" ? "color" : type;
+}
 
 /**
  * Point a Global Parameter node at `collectionGuid` and, when given, one of its parameters; the

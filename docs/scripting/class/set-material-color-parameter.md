@@ -13,7 +13,7 @@ Sets a named Color parameter on a Material Object.
 | Exec | Exec |  |
 | Material | MaterialObject Reference |  |
 | Name | String | The parameter name, as authored in the Material. In a Class whose mesh components have Materials, pick it from their parameters of this type. |
-| Value | Vector4 | Red, green, blue and alpha in X, Y, Z and W. |
+| Value | Color | Red, green, blue and alpha. The Material converts red, green and blue from display colour to linear. |
 
 ## Outputs
 

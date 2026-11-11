@@ -15,8 +15,8 @@ Returns one parameter of a [Global Parameter Collection](../../assets/global-par
 
 ## Notes
 
-- Its **Value** output takes the parameter's type: Float, Vector2, Vector3 or Color. Without a parameter the node has no output, and its wires are removed.
-- The value is the parameter's default until a Class graph sets it with **Set Global Float Parameter**, **Set Global Vector Parameter** or **Set Global Color Parameter**. Every running emitter that reads it takes the new value on its next frame, and so does every Material.
+- Its **Value** output takes the parameter's type: Float, Vector2, Vector3 or Color. A Vector4 parameter is read on a Color pin, the Particle Graph's four-number type, with its numbers unchanged. Without a parameter the node has no output, and its wires are removed.
+- The value is the parameter's default until a Class graph sets it with **Set Global Float Parameter**, **Set Global Vector2 Parameter**, **Set Global Vector3 Parameter**, **Set Global Vector4 Parameter** or **Set Global Color Parameter**. Every running emitter that reads it takes the new value on its next frame, and so does every Material.
 - Values start at their defaults when Play starts, keep across Scene changes and are never saved.
 - Editing a default in the collection updates previews and a running Play at once. In Play, a parameter a Class graph has already set keeps its value.
 - Unlike a graph [Parameter](parameter.md), it cannot be set per Particle component: it is the same for every emitter.

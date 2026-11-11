@@ -10,6 +10,7 @@ const catalog: GlobalParameterCatalog = {
   fx: [
     { id: "wind", name: "Wind Strength", type: "float", defaultValue: [1] },
     { id: "tint", name: "Sky Tint", type: "color", defaultValue: [1, 1, 1, 1] },
+    { id: "rect", name: "Rect", type: "vec4", defaultValue: [0, 0, 1, 1] },
   ],
 };
 
@@ -43,6 +44,13 @@ describe("Particle Graph Global Parameter node", () => {
     expect(hydrated(graph({ collectionGuid: "fx", parameterId: "wind", valueType: "float" }), catalog))
       .toEqual({ title: "Wind Strength (Global Float)", outputs: ["out:float"] });
     expect(hydrated(graph({ collectionGuid: "fx" }), catalog)).toEqual({ title: "Global Parameter", outputs: [] });
+  });
+
+  it("reads a Vector4 on the graph's Color type, its only four-component type, and keeps the parameter's own type on the node", () => {
+    const doc = selectParticleGlobalParameter(graph({ collectionGuid: "fx" }), "global", "fx", { id: "rect", type: "vec4" });
+    expect(doc.nodes.find((node) => node.id === "global")?.properties).toEqual({ collectionGuid: "fx", parameterId: "rect", valueType: "vec4" });
+    expect(hydrated(doc, catalog)).toEqual({ title: "Rect (Global Vector4)", outputs: ["out:color"] });
+    expect(validateParticleGraphDocument(doc, { globalParameters: catalog }).filter((row) => row.code === "particle.globalParameter")).toEqual([]);
   });
 
   it("keeps its wires on a new parameter and drops them without one", () => {

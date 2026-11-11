@@ -55,6 +55,10 @@ import type { ScriptBreakpoints } from "./script-breakpoints";
 import type { ScriptDebugTrace } from "./script-debug";
 import type { EventDelegate } from "./script-dispatchers";
 import type { ScriptAssetLoadResult, ScriptColor, SpawnActorOptions } from "./script-host-services";
+
+/** A Vector2 and a Vector4 as graphs hold them; a Vector3 is physics' `Vec3`. */
+export type Vec2 = { x: number; y: number };
+export type Vec4 = { x: number; y: number; z: number; w: number };
 import type { TweenReference } from "./tween-runtime";
 
 /** What is under a point of the game view: Project Cursor To Scene and Project Touch To Scene. */
@@ -677,20 +681,25 @@ export interface ScriptContext {
   ): void;
   /** Set Global Float / Vector / Color Parameter: the session value of `name` in Global Parameter Collection `collection`. */
   setGlobalFloatParameter(collection: unknown, name: string, value: number): void;
-  /** A Vector2 parameter takes X and Y. */
-  setGlobalVectorParameter(collection: unknown, name: string, value: Vec3): void;
+  /** Each vector member sets only a parameter of its own width. */
+  setGlobalVector2Parameter(collection: unknown, name: string, value: Vec2): void;
+  setGlobalVector3Parameter(collection: unknown, name: string, value: Vec3): void;
+  setGlobalVector4Parameter(collection: unknown, name: string, value: Vec4): void;
   setGlobalColorParameter(collection: unknown, name: string, value: ScriptColor): void;
   getGlobalFloatParameter(collection: unknown, name: string): { found: boolean; value: number };
-  /** A Vector2 parameter reads with Z 0. */
-  getGlobalVectorParameter(collection: unknown, name: string): { found: boolean; value: Vec3 };
+  getGlobalVector2Parameter(collection: unknown, name: string): { found: boolean; value: Vec2 };
+  getGlobalVector3Parameter(collection: unknown, name: string): { found: boolean; value: Vec3 };
+  getGlobalVector4Parameter(collection: unknown, name: string): { found: boolean; value: Vec4 };
   getGlobalColorParameter(collection: unknown, name: string): { found: boolean; value: ScriptColor };
   setMaterialColorParameter(
     material: unknown,
     name: string,
     value: ScriptColor,
   ): void;
-  /** A Vector2 parameter takes X and Y. */
-  setMaterialVectorParameter(material: unknown, name: string, value: Vec3): void;
+  /** Each vector member sets only a parameter of its own width. */
+  setMaterialVector2Parameter(material: unknown, name: string, value: Vec2): void;
+  setMaterialVector3Parameter(material: unknown, name: string, value: Vec3): void;
+  setMaterialVector4Parameter(material: unknown, name: string, value: Vec4): void;
   setMaterialTextureParameter(
     material: unknown,
     name: string,
@@ -700,12 +709,15 @@ export interface ScriptContext {
   getPostProcessEntry(owner: unknown, entryId: string): PostProcessMaterialObject | null;
   getMaterialFloatParameter(material: unknown, name: string): { found: boolean; value: number };
   getMaterialColorParameter(material: unknown, name: string): { found: boolean; value: ScriptColor };
-  /** A Vector2 parameter reads with Z 0. */
-  getMaterialVectorParameter(material: unknown, name: string): { found: boolean; value: Vec3 };
+  getMaterialVector2Parameter(material: unknown, name: string): { found: boolean; value: Vec2 };
+  getMaterialVector3Parameter(material: unknown, name: string): { found: boolean; value: Vec3 };
+  getMaterialVector4Parameter(material: unknown, name: string): { found: boolean; value: Vec4 };
   getMaterialTextureParameter(material: unknown, name: string): { found: boolean; value: string | null };
   resetMaterialFloatParameter(material: unknown, name: string): boolean;
   resetMaterialColorParameter(material: unknown, name: string): boolean;
-  resetMaterialVectorParameter(material: unknown, name: string): boolean;
+  resetMaterialVector2Parameter(material: unknown, name: string): boolean;
+  resetMaterialVector3Parameter(material: unknown, name: string): boolean;
+  resetMaterialVector4Parameter(material: unknown, name: string): boolean;
   resetMaterialTextureParameter(material: unknown, name: string): boolean;
   setMeshMaterial(component: unknown, materialGuid: string | null): MaterialObject | null;
   setMeshMaterialAsync(component: unknown, materialGuid: string | null): Promise<MaterialObject | null>;
@@ -804,13 +816,13 @@ export type LoadedScript = {
 export type HostContextKey =
   | "getSaveData" | "getSaveField" | "setSaveField" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "holdFrame" | "createObject" | "collectGarbage" | "assertFailed" | "assertEqual" | "print"
   | "eventDelegate" | "bindDispatcher" | "unbindDispatcher" | "unbindAllDispatcher"
-  | "setGlobalFloatParameter" | "setGlobalVectorParameter" | "setGlobalColorParameter"
-  | "getGlobalFloatParameter" | "getGlobalVectorParameter" | "getGlobalColorParameter"
+  | "setGlobalFloatParameter" | "setGlobalVector2Parameter" | "setGlobalVector3Parameter" | "setGlobalVector4Parameter" | "setGlobalColorParameter"
+  | "getGlobalFloatParameter" | "getGlobalVector2Parameter" | "getGlobalVector3Parameter" | "getGlobalVector4Parameter" | "getGlobalColorParameter"
   | "drawDebug" | "getPostProcessEntry" | "getMaterialFloatParameter" | "getMaterialColorParameter"
-  | "getMaterialVectorParameter" | "getMaterialTextureParameter" | "resetMaterialFloatParameter"
-  | "resetMaterialColorParameter" | "resetMaterialVectorParameter" | "resetMaterialTextureParameter"
+  | "getMaterialVector2Parameter" | "getMaterialVector3Parameter" | "getMaterialVector4Parameter" | "getMaterialTextureParameter" | "resetMaterialFloatParameter"
+  | "resetMaterialColorParameter" | "resetMaterialVector2Parameter" | "resetMaterialVector3Parameter" | "resetMaterialVector4Parameter" | "resetMaterialTextureParameter"
   | "setMeshMaterial" | "getMaterialAsset" | "setMaterialFloatParameter"
-  | "setMaterialColorParameter" | "setMaterialVectorParameter" | "setMaterialTextureParameter" | "rotatorToQuat" | "quatToRotator"
+  | "setMaterialColorParameter" | "setMaterialVector2Parameter" | "setMaterialVector3Parameter" | "setMaterialVector4Parameter" | "setMaterialTextureParameter" | "rotatorToQuat" | "quatToRotator"
   | "combineRotators" | "inverseRotator" | "deltaRotator" | "lerpRotator" | "rotatorForward" | "rotatorRight"
   | "rotatorUp" | "lookAtRotator" | "multiplyQuats" | "inverseQuat" | "slerpQuats" | "quatRotateVector"
   | "normalizeQuat" | "randomInRange" | "randomDraw" | "seededRandomDraw" | "getGlobalRandomSeed" | "setGlobalRandomSeed"

@@ -15,6 +15,7 @@ const OUTPUTS: Readonly<Record<GlobalParameterType, readonly MaterialPinDefiniti
   float: [{ id: "out", name: "Out", type: { kind: "float" } }],
   vec2: [{ id: "out", name: "Out", type: { kind: "vec2" } }],
   vec3: [{ id: "out", name: "Out", type: { kind: "vec3" } }],
+  vec4: [{ id: "out", name: "Out", type: { kind: "vec4" } }],
   // As a Color Parameter: the full color and its RGB.
   color: [
     { id: "out", name: "RGBA", type: { kind: "vec4" }, colorHint: true },

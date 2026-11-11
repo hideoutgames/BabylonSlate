@@ -6,6 +6,7 @@ export function isMaterialParameterNode(type: string): boolean {
     type === "param.float" ||
     type === "param.vec2" ||
     type === "param.vec3" ||
+    type === "param.vec4" ||
     type === "param.color" ||
     type === "param.texture"
   );
@@ -25,7 +26,7 @@ export function materialParameterName(node: MaterialGraphNode): string {
     : "";
 }
 
-/** Names share one namespace across Float, Color, and Texture parameters. */
+/** Names share one namespace across every parameter type. */
 export function validateMaterialParameterNames(
   graph: { nodes: readonly MaterialGraphNode[] },
 ): MaterialDiagnostic[] {

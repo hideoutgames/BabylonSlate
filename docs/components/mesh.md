@@ -31,7 +31,7 @@ Select an actor, then choose **Add Component > Rendering > Mesh**. You can also 
 - Mesh collision works only in a 3D physics world. In a 2D scene the **Collision** setting is hidden, the Mesh does not collide, and Compiler Results warns when it was left on.
 - Name collision layers in **Project Settings > Physics > Collision Layers** and define presets in **Collision Presets**.
 - Add a [Deformer](deformer.md) or [Outline](outline.md) to the same actor to bend or outline the mesh.
-- Its **Get Material** function returns the Material Object to change its parameters from a script, such as with [Set Material Vector Parameter](../scripting/class/set-material-vector-parameter.md). It is empty while the Mesh has no Material of its own.
+- Its **Get Material** function returns the Material Object to change its parameters from a script, such as with [Set Material Vector3 Parameter](../scripting/class/set-material-vector3-parameter.md). It is empty while the Mesh has no Material of its own.
 
 ## Related
 

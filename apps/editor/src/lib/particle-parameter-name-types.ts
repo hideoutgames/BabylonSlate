@@ -2,8 +2,10 @@
 const PARTICLE_PARAMETER_FUNCTION_TYPES: Readonly<Record<string, readonly string[] | null>> = {
   setParticleFloatParameter: ["float"],
   getParticleFloatParameter: ["float"],
-  setParticleVectorParameter: ["vec2", "vec3"],
-  getParticleVectorParameter: ["vec2", "vec3"],
+  setParticleVector2Parameter: ["vec2"],
+  getParticleVector2Parameter: ["vec2"],
+  setParticleVector3Parameter: ["vec3"],
+  getParticleVector3Parameter: ["vec3"],
   setParticleColorParameter: ["color"],
   getParticleColorParameter: ["color"],
   resetParticleParameter: null,

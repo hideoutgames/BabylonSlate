@@ -47,6 +47,11 @@ describe("material parameter authoring", () => {
     const parameter = convertMaterialConstantToParameter(doc, "v")!;
     expect(parameter.nodes[0]).toMatchObject({ type: "param.vec3", properties: { value: [1, 2, 3] } });
     expect(parameter.edges).toEqual(doc.edges);
+    // A Vector4 Constant becomes a Vector4 Parameter, not a Color: its four values stay raw numbers.
+    const four = { nodes: [node("v", "const.vec4", { value: [1, 2, 3, 4] })], edges: [edge("e", "v", "out")] };
+    const raw = convertMaterialConstantToParameter(four, "v")!;
+    expect(raw.nodes[0]).toMatchObject({ type: "param.vec4", properties: { value: [1, 2, 3, 4] } });
+    expect(convertMaterialParameterToConstant(raw, "v")!.nodes[0]).toMatchObject({ type: "const.vec4", properties: { value: [1, 2, 3, 4] } });
   });
 
   it("retypes a parameter, resizing its default and dropping wires the new type cannot carry", () => {
@@ -54,6 +59,10 @@ describe("material parameter authoring", () => {
       nodes: [node("p", "param.color", { name: "Tint", value: [0.5, 0.5, 0.5, 1] })],
       edges: [edge("rgba", "p", "out"), edge("rgb", "p", "rgb")],
     };
+    // To a Vector4: the four components stay, and the Color-only RGB and A wires go.
+    const four = retypeMaterialParameter({ ...doc, edges: [...doc.edges, edge("alpha", "p", "a")] }, "p", "vec4");
+    expect(four.nodes[0]).toMatchObject({ type: "param.vec4", properties: { name: "Tint", value: [0.5, 0.5, 0.5, 1] } });
+    expect(four.edges.map((entry) => entry.id)).toEqual(["rgba"]);
     const vector = retypeMaterialParameter(doc, "p", "vec2");
     expect(vector.nodes[0]).toMatchObject({ type: "param.vec2", properties: { name: "Tint", value: [0.5, 0.5] } });
     expect(vector.edges.map((entry) => entry.id)).toEqual(["rgba"]);

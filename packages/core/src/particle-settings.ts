@@ -88,11 +88,13 @@ export type ParticleParameterCatalogEntry = { name: string; type: ParticleParame
  */
 export type ParticleParameterCatalog = Readonly<Record<string, readonly ParticleParameterCatalogEntry[]>>;
 
-const PARTICLE_PARAMETER_VALUE_WIDTHS: Readonly<Record<ParticleParameterValueType, number>> = { float: 1, vec2: 2, vec3: 3, color: 4 };
+/** The value types a parameter can hold across Particle Graphs and Global Parameter Collections. A Particle Graph has no Vector4. */
+type ParameterValueType = ParticleParameterValueType | "vec4";
+const PARAMETER_VALUE_WIDTHS: Readonly<Record<ParameterValueType, number>> = { float: 1, vec2: 2, vec3: 3, vec4: 4, color: 4 };
 
 /** `value` as `type`: one number splats, missing components are 0 (Color alpha 1), extras are dropped. */
-export function resizeParticleParameterValue(value: readonly unknown[] | undefined, type: ParticleParameterValueType): number[] {
-  const width = PARTICLE_PARAMETER_VALUE_WIDTHS[type];
+export function resizeParticleParameterValue(value: readonly unknown[] | undefined, type: ParameterValueType): number[] {
+  const width = PARAMETER_VALUE_WIDTHS[type];
   const source = (value ?? []).map((component) => (typeof component === "number" && Number.isFinite(component) ? component : 0));
   if (source.length === 1) return Array.from({ length: width }, () => source[0]!);
   return Array.from({ length: width }, (_, index) => (index < source.length ? source[index]! : type === "color" && index === 3 ? 1 : 0));

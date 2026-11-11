@@ -24,7 +24,7 @@ Drag the component into a graph to find its functions:
 
 | Function | Description |
 | --- | --- |
-| Get Material | The Material Object to change the Material's parameters, such as with [Set Material Vector Parameter](../scripting/class/set-material-vector-parameter.md). |
+| Get Material | The Material Object to change the Material's parameters, such as with [Set Material Vector3 Parameter](../scripting/class/set-material-vector3-parameter.md). |
 | Set Geometry | Replaces the mesh from lists of positions and triangle indices. Normals and UVs are optional. |
 | Update Vertices | Changes a run of vertices starting at an index, keeping the triangles. |
 | Clear Geometry | Removes all geometry. |

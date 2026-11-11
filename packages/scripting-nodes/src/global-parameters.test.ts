@@ -16,7 +16,7 @@ describe("global parameter nodes", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "set", "globalParameters.setVectorParameter", { "default:collection": "fx", "default:parameter": "Wind", "default:value": { x: 1, y: 2, z: 3 } }),
+        node(registry, "set", "globalParameters.setVector4Parameter", { "default:collection": "fx", "default:parameter": "Wind", "default:value": { x: 1, y: 2, z: 3, w: 4 } }),
         node(registry, "get", "globalParameters.getColorParameter", { "default:collection": "fx", "default:parameter": "Tint" }),
         node(registry, "log", "debug.log"),
       ],
@@ -34,11 +34,25 @@ describe("global parameter nodes", () => {
       self: { guid: "self" },
       formatValue: (value: unknown) => value,
       log: (_severity: string, _category: string, value: unknown) => logged.push(value),
-      setGlobalVectorParameter: (...args: unknown[]) => calls.push(["set", ...args]),
+      setGlobalVector4Parameter: (...args: unknown[]) => calls.push(["set", ...args]),
       getGlobalColorParameter: (...args: unknown[]) => { calls.push(["get", ...args]); return { found: true, value: { x: 1, y: 1, z: 1, w: 1 } }; },
     });
-    expect(calls).toEqual([["set", "fx", "Wind", { x: 1, y: 2, z: 3 }], ["get", "fx", "Tint"]]);
+    expect(calls).toEqual([["set", "fx", "Wind", { x: 1, y: 2, z: 3, w: 4 }], ["get", "fx", "Tint"]]);
     expect(logged).toEqual([true]);
     expect(registry.get("globalParameters.getFloatParameter")?.pure).toBe(true);
+  });
+
+  it("has one Set and one Get node per parameter type, each with a pin of exactly that type", () => {
+    const registry = createDefaultNodeRegistry();
+    const pinKind = (id: string, direction: "in" | "out") => registry.get(id)?.pins({}).find((pin) => pin.id === "value" && pin.direction === direction)?.type.kind;
+    for (const [kind, type] of [["Float", "float"], ["Vector2", "vec2"], ["Vector3", "vec3"], ["Vector4", "vec4"], ["Color", "color"]]) {
+      expect(pinKind(`globalParameters.set${kind}Parameter`, "in")).toBe(type);
+      expect(pinKind(`globalParameters.get${kind}Parameter`, "out")).toBe(type);
+      expect(pinKind(`material.set${kind}Parameter`, "in")).toBe(type);
+      expect(pinKind(`material.get${kind}Parameter`, "out")).toBe(type);
+      expect(registry.get(`material.reset${kind}Parameter`)).toBeDefined();
+    }
+    // The catch-all Vector nodes are gone: they took a Vector3 and dropped Z for a Vector2 parameter.
+    for (const id of ["globalParameters.setVectorParameter", "material.setVectorParameter", "material.getVectorParameter"]) expect(registry.get(id)).toBeUndefined();
   });
 });

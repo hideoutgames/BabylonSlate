@@ -5,6 +5,7 @@ const catalog = {
   fx: [
     { id: "heat", name: "Heat", type: "float", defaultValue: [1] },
     { id: "wind", name: "Wind", type: "vec2", defaultValue: [0, 0] },
+    { id: "rect", name: "Rect", type: "vec4", defaultValue: [0, 0, 1, 1] },
   ],
 };
 
@@ -22,6 +23,20 @@ describe("runtime global parameters", () => {
     expect(globals.set("fx", "Missing", [2], ["float"])).toBeNull();
     expect(globals.get("other", "Heat", ["float"])).toEqual({ found: false, value: [] });
     expect(warnings).toHaveLength(3);
+  });
+
+  it("holds a Vector4 as four raw numbers, set only by a node of its type", () => {
+    const warnings: string[] = [];
+    const globals = new RuntimeGlobalParameters((message) => warnings.push(message));
+    globals.replaceCatalog(catalog);
+    expect(globals.get("fx", "Rect", ["vec4"])).toEqual({ found: true, value: [0, 0, 1, 1] });
+    expect(globals.set("fx", "Rect", [0.25, 0.5, 0.75, 2], ["vec4"])?.id).toBe("rect");
+    expect(globals.get("fx", "Rect", ["vec4"]).value).toEqual([0.25, 0.5, 0.75, 2]);
+    // A Vector3 node and a Color node leave it alone.
+    expect(globals.set("fx", "Rect", [9, 9, 9], ["vec3"])).toBeNull();
+    expect(globals.set("fx", "Rect", [9, 9, 9, 9], ["color"])).toBeNull();
+    expect(globals.get("fx", "Rect", ["color"]).found).toBe(false);
+    expect(globals.get("fx", "Rect", ["vec4"]).value).toEqual([0.25, 0.5, 0.75, 2]);
   });
 
   it("keeps values across a Scene's catalog and drops those whose parameter changed", () => {

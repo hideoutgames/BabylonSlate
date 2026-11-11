@@ -1,10 +1,10 @@
 ---
-node: material.resetVectorParameter
+node: material.resetVector3Parameter
 ---
 
-# Reset Material Vector Parameter
+# Reset Material Vector3 Parameter
 
-Restores a Vector2 or Vector3 parameter on a Material Object to its original value.
+Restores a Vector3 parameter on a Material Object to its original value.
 
 ## Inputs
 
@@ -24,4 +24,4 @@ Restores a Vector2 or Vector3 parameter on a Material Object to its original val
 ## Notes
 
 - The original value is the one authored in the Material, or the one saved on a post-process pass.
-- **Success** is false when the parameter does not exist or the Material Object is no longer valid.
+- **Success** is false when the parameter does not exist, is not a Vector3, or the Material Object is no longer valid.
